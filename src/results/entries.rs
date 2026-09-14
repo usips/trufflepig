@@ -1,6 +1,6 @@
 //! Tagged persisted identities share one result cache and expiry policy.
 use super::Hit;
-use crate::identity::{ByteSpan, GitOid};
+use crate::identity::{ByteSpan, ContentRevision, GitOid};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -8,6 +8,7 @@ pub struct HistoricalSource {
     pub repository: String,
     pub commit: GitOid,
     pub blob: GitOid,
+    pub revision: ContentRevision,
     pub path: String,
     pub span: ByteSpan,
 }

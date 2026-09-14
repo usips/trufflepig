@@ -75,6 +75,7 @@ fn historical_fixture(
         repository: crate::store::encode_path(&root.path().join(".git").canonicalize().unwrap()),
         commit,
         blob,
+        revision: crate::identity::ContentRevision::of(bytes.as_bytes()),
         path: "lib.rs".into(),
         span: ByteSpan::new(0, bytes.len()).unwrap(),
     };
@@ -206,6 +207,7 @@ fn historical_reads_decode_repository_and_non_utf8_file_paths() {
         repository: crate::store::encode_path(&root.path().join(".git").canonicalize().unwrap()),
         commit: GitOid::parse(&git(root.path(), &["rev-parse", "HEAD"])).unwrap(),
         blob: GitOid::parse(std::str::from_utf8(&output.stdout).unwrap().trim()).unwrap(),
+        revision: crate::identity::ContentRevision::of(bytes),
         path: crate::store::encode_path(filename),
         span: ByteSpan::new(0, bytes.len()).unwrap(),
     };
@@ -227,4 +229,23 @@ fn historical_reads_decode_repository_and_non_utf8_file_paths() {
     assert_eq!(value["historical"]["repository"], identity.repository);
     assert_eq!(value["path"], identity.path);
     assert_eq!(value["lines"][0]["text"], "fn original_bytes() {}\n");
+}
+
+#[test]
+fn historical_content_revision_must_match_verified_blob() {
+    let (_root, _cache, store, mut identity) = historical_fixture("sha1");
+    identity.revision = crate::identity::ContentRevision::of(b"incorrect identity");
+    let handle = save_change(&store, identity);
+    let error = show_with_side(
+        &store,
+        &handle,
+        Some(SourceSide::After),
+        &OutputBudget::new(600).unwrap(),
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("historical content revision does not match")
+    );
 }

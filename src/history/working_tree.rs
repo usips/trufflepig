@@ -80,7 +80,7 @@ pub(super) fn since_uncommitted(
                     let file = old_file.expect("preimage span has tree file");
                     entries.push(ResultEntry::Change(ChangeEntry {
                         handle: String::new(), name: path.clone(), status: status.clone(),
-                        before: Some(HistoricalSource { repository: encode_path(&history.repository.common_dir), commit: *revision, blob: file.oid, path: path.clone(), span }),
+                        before: Some(HistoricalSource { repository: encode_path(&history.repository.common_dir), commit: *revision, blob: file.oid, revision: ContentRevision::of(old.as_deref().expect("preimage content")), path: path.clone(), span }),
                         after: None, correspondence: correspondence.clone(),
                     }));
                 }

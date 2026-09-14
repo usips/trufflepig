@@ -175,6 +175,10 @@ fn acquire_historical(
         .blob(&identity.blob)
         .context("source_unavailable: historical blob is unavailable")?;
     let revision = ContentRevision::of(&bytes);
+    ensure!(
+        revision == identity.revision,
+        "source_unavailable: historical content revision does not match recorded identity"
+    );
     let span = identity.span.validate(bytes.len())?;
     Ok(AcquiredSource {
         bytes,

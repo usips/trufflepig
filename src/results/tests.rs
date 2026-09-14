@@ -172,6 +172,7 @@ fn historical_entries_share_cache_and_reject_live_context() {
             repository: "/repo/.git".into(),
             commit: oid,
             blob: oid,
+            revision: crate::identity::ContentRevision::of(b""),
             path: "lib.rs".into(),
             span: crate::identity::ByteSpan::new(0, 12).unwrap(),
         }),
