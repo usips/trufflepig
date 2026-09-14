@@ -198,6 +198,7 @@ fn execute_os(directory: &Path, args: &[&OsStr], input: Option<&[u8]>) -> Result
                 | "ls-files"
                 | "status"
                 | "check-ignore"
+                | "config"
         ),
         "unsupported Git plumbing command"
     );
@@ -205,6 +206,22 @@ fn execute_os(directory: &Path, args: &[&OsStr], input: Option<&[u8]>) -> Result
         name != "hash-object" || !args.contains(&OsStr::new("-w")),
         "Git object writes are forbidden"
     );
+    ensure!(
+        name != "config"
+            || args
+                == [
+                    OsStr::new("config"),
+                    OsStr::new("--null"),
+                    OsStr::new("--name-only"),
+                    OsStr::new("--list")
+                ],
+        "only read-only Git configuration enumeration is permitted"
+    );
+    let filter_overrides = if name == "blame" {
+        filter_overrides(directory)?
+    } else {
+        Vec::new()
+    };
     let mut command = Command::new("git");
     for (key, _) in std::env::vars_os() {
         if key.to_string_lossy().starts_with("GIT_") {
@@ -223,6 +240,8 @@ fn execute_os(directory: &Path, args: &[&OsStr], input: Option<&[u8]>) -> Result
         .args([
             "-c",
             "core.fsmonitor=false",
+            "-c",
+            "core.autocrlf=false",
             "-c",
             "log.showSignature=false",
             "-c",
@@ -246,6 +265,12 @@ fn execute_os(directory: &Path, args: &[&OsStr], input: Option<&[u8]>) -> Result
         .env("GIT_PAGER", "cat")
         .env("LC_ALL", "C")
         .arg(name);
+    command.env("GIT_CONFIG_COUNT", filter_overrides.len().to_string());
+    for (index, (key, value)) in filter_overrides.iter().enumerate() {
+        command
+            .env(format!("GIT_CONFIG_KEY_{index}"), key)
+            .env(format!("GIT_CONFIG_VALUE_{index}"), value);
+    }
     if matches!(name, "diff" | "diff-tree" | "show" | "log") {
         command.args(["--no-ext-diff", "--no-textconv"]);
     }
@@ -254,6 +279,42 @@ fn execute_os(directory: &Path, args: &[&OsStr], input: Option<&[u8]>) -> Result
     }
     command.args(&args[1..]);
     collect_process(command, input, COMMAND_TIMEOUT, MAX_OUTPUT_BYTES)
+}
+
+// Git's supplied-buffer blame calls convert_to_git even with --no-textconv.
+// Config keys stay native bytes; environment overrides avoid parsing subsection names.
+fn filter_overrides(directory: &Path) -> Result<Vec<(OsString, &'static str)>> {
+    let names = execute(
+        directory,
+        &["config", "--null", "--name-only", "--list"],
+        None,
+    )?;
+    let filters: std::collections::BTreeSet<_> = names
+        .split(|&byte| byte == 0)
+        .filter_map(|name| {
+            name.starts_with(b"filter.")
+                .then_some(name)
+                .and_then(|name| name.rsplitn(2, |&byte| byte == b'.').nth(1))
+        })
+        .collect();
+    ensure!(
+        filters.len() <= 1024 && filters.iter().all(|name| name.len() <= 4096),
+        "Git filter configuration exceeds resource limit"
+    );
+    let mut overrides = Vec::with_capacity(filters.len() * 3);
+    for name in filters {
+        for (suffix, value) in [
+            (b".clean".as_slice(), ""),
+            (b".process".as_slice(), ""),
+            (b".required".as_slice(), "false"),
+        ] {
+            let mut key = Vec::with_capacity(name.len() + suffix.len());
+            key.extend_from_slice(name);
+            key.extend_from_slice(suffix);
+            overrides.push((OsString::from_vec(key), value));
+        }
+    }
+    Ok(overrides)
 }
 
 struct ProcessGroup(Child);
@@ -581,6 +642,69 @@ mod tests {
             .run(&["log", "-1", "--format=%H", oid.trim()])
             .unwrap();
         assert!(!marker.exists());
+    }
+
+    #[test]
+    fn git_supplied_blame_disables_clean_and_process_helpers() {
+        use std::os::unix::fs::PermissionsExt;
+        for driver in ["clean", "process"] {
+            let directory = repository("sha1");
+            let helper = directory.path().join("filter-helper");
+            std::fs::write(&helper, "#!/bin/sh\ntouch \"$0.ran\"\ncat\n").unwrap();
+            std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700)).unwrap();
+            std::fs::write(
+                directory.path().join(".gitattributes"),
+                "*.rs filter=hostile\n",
+            )
+            .unwrap();
+            git(
+                directory.path(),
+                &[
+                    "config",
+                    &format!("filter.hostile.{driver}"),
+                    helper.to_str().unwrap(),
+                ],
+            );
+            git(
+                directory.path(),
+                &["config", "filter.hostile.required", "true"],
+            );
+            git(directory.path(), &["config", "core.autocrlf", "true"]);
+            let arguments = [
+                "blame",
+                "--no-textconv",
+                "--line-porcelain",
+                "--contents",
+                "-",
+                "--",
+                "inside/[literal].rs",
+            ];
+            let contents = b"fn original() {}\r\n";
+            let mut unprotected = Command::new("git");
+            unprotected.current_dir(directory.path()).args(arguments);
+            let _ = collect_process(
+                unprotected,
+                Some(contents),
+                Duration::from_millis(500),
+                MAX_OUTPUT_BYTES,
+            );
+            let marker = directory.path().join("filter-helper.ran");
+            assert!(
+                marker.exists(),
+                "fixture must execute configured {driver} helper"
+            );
+            std::fs::remove_file(&marker).unwrap();
+            let repository = GitRepository::discover(directory.path()).unwrap();
+            let output = repository.run_with_input(&arguments, contents).unwrap();
+            assert!(
+                !marker.exists(),
+                "configured {driver} helper must remain disabled"
+            );
+            assert!(
+                output.ends_with(b"\tfn original() {}\r\n"),
+                "original bytes must be retained"
+            );
+        }
     }
 
     #[test]

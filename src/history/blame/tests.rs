@@ -206,3 +206,29 @@ fn blame_untracked_and_corrupt_publications_are_unavailable() {
         .unwrap_err();
     assert!(error.to_string().contains("identity mismatch"));
 }
+
+#[test]
+fn blame_rejects_attribute_transforms_of_original_bytes() {
+    let (root, _cache, mut store, history) = fixture();
+    std::fs::write(
+        root.path().join("a.rs"),
+        b"fn original() {}\r\nfn second() {}\r\n",
+    )
+    .unwrap();
+    std::fs::write(root.path().join(".gitattributes"), "*.rs text\n").unwrap();
+    store.index().unwrap();
+    let error = history
+        .blame(
+            &mut store,
+            "path:a.rs",
+            false,
+            None,
+            &OutputBudget::new(4000).unwrap(),
+        )
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("attributes transformed supplied source bytes")
+    );
+}

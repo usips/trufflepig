@@ -98,11 +98,29 @@ pub(super) fn blame(
     let mut pending = None;
     let mut ignored_line = false;
     let mut unblamable = false;
+    let count = if span.start == span.end {
+        0
+    } else {
+        last - first + 1
+    };
+    let mut expected_lines = bytes
+        .split_inclusive(|&byte| byte == b'\n')
+        .enumerate()
+        .skip(first - 1)
+        .take(count);
     for line in output.split(|&b| b == b'\n') {
         if line.first() == Some(&b'\t') {
             let (oid, original, final_line) = pending
                 .take()
                 .context("history_unavailable: incomplete blame record")?;
+            let (index, expected) = expected_lines
+                .next()
+                .context("history_unavailable: unexpected blame source line")?;
+            let expected = expected.strip_suffix(b"\n").unwrap_or(expected);
+            ensure!(
+                line[1..] == *expected && final_line == index as u64 + 1,
+                "history_unavailable: Git attributes transformed supplied source bytes"
+            );
             let can_join = runs.last().is_some_and(|r| {
                 r["commit"] == json!(oid)
                     && r["original_start"].as_u64().unwrap_or(0) + r["lines"].as_u64().unwrap_or(0)
@@ -135,6 +153,10 @@ pub(super) fn blame(
             }
         }
     }
+    ensure!(
+        expected_lines.next().is_none() && pending.is_none(),
+        "history_unavailable: incomplete blame source coverage"
+    );
     let total = runs.len();
     loop {
         let value = json!({"operation":"blame","tip":history.tip,"path":target.path,"commit":target.commit,"blob":blob,"revision":revision,"publication":publication,"endpoint":endpoint,"first_parent":true,"movement":!raw,"ignore_whitespace":!raw,"runs":runs,"runs_total":total,"truncated":runs.len()<total,"tokenizer":"o200k_base"});
