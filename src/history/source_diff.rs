@@ -2,10 +2,15 @@
 //! All byte and line ranges are end-exclusive; line indexes are zero based.
 
 mod correspondence;
+mod fingerprints;
 #[cfg(test)]
 mod tests;
 
 pub use correspondence::{DeclarationCorrespondence, DeclarationRelation, correspond_declarations};
+pub use fingerprints::{
+    FingerprintFact, FingerprintLines, correspond_fingerprints, diff_fingerprints,
+    fingerprint_lines,
+};
 
 use crate::identity::ByteSpan;
 use imara_diff::{Algorithm, Diff, InternedInput};
@@ -57,10 +62,16 @@ impl SourceDiff {
 /// Compare bytes without normalizing encoding, whitespace, CRLF, or final newlines.
 pub fn diff_sources(before: &[u8], after: &[u8]) -> SourceDiff {
     let input = InternedInput::new(before, after);
+    diff_interned(&input, &line_offsets(before), &line_offsets(after))
+}
+
+fn diff_interned<T>(
+    input: &InternedInput<T>,
+    before_offsets: &[usize],
+    after_offsets: &[usize],
+) -> SourceDiff {
     let mut diff = Diff::compute(Algorithm::Histogram, &input);
-    diff.postprocess_lines(&input);
-    let before_offsets = line_offsets(before);
-    let after_offsets = line_offsets(after);
+    diff.postprocess_no_heuristic(&input);
     let hunk_count = diff.hunks().count();
     let mut result = SourceDiff {
         changes: Vec::with_capacity(hunk_count),
