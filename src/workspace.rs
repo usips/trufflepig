@@ -179,7 +179,10 @@ pub(crate) fn local(
         "serve" | "history-serve" | "workspace-serve" => {
             bail!("invalid_command: internal server command")
         }
-        _ => retrieval::search(config, cache, &results, options, context, session),
+        "search" | "refs" | "map" => {
+            retrieval::search(config, cache, &results, options, context, session)
+        }
+        _ => bail!("invalid_command: unknown command {verb}; use search for queries"),
     }
 }
 fn inspect(config: &WorkspaceConfig, options: &Arguments, budget: &OutputBudget) -> Result<String> {

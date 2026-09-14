@@ -69,7 +69,10 @@ impl Fixture {
     }
 
     fn handle(&self, member: &str) -> String {
-        self.json("engine", &["sym:SharedThing", &format!("in:{member}")])["hits"][0]["handle"]
+        self.json(
+            "engine",
+            &["search", "sym:SharedThing", &format!("in:{member}")],
+        )["hits"][0]["handle"]
             .as_str()
             .unwrap()
             .to_owned()
@@ -89,7 +92,7 @@ fn source_text(value: &Value) -> String {
 fn default_budget_has_fair_order_and_complete_member_provenance() {
     let fixture = Fixture::new();
     let budget = OutputBudget::new(600).unwrap();
-    let output = fixture.run("pack", &["sym:SharedThing"]).unwrap();
+    let output = fixture.run("pack", &["search", "sym:SharedThing"]).unwrap();
     assert!(budget.fits(&output));
     let mut page: Value = serde_json::from_str(&output).unwrap();
     let mut members = Vec::new();
@@ -115,6 +118,14 @@ fn default_budget_has_fair_order_and_complete_member_provenance() {
         page = fixture.json("upstream", &["more", next]);
     }
     assert_eq!(members, ["pack", "engine", "upstream"]);
+}
+
+#[test]
+fn unknown_workspace_command_is_rejected() {
+    let fixture = Fixture::new();
+    let error = fixture.run("engine", &["not-a-command"]).unwrap_err();
+    assert!(error.to_string().contains("unknown_command"));
+    assert!(error.to_string().contains("not-a-command"));
 }
 
 #[test]
@@ -144,7 +155,7 @@ fn duplicate_paths_route_show_and_context_to_the_recorded_member() {
 #[test]
 fn pagination_keeps_original_order_when_the_home_member_changes() {
     let fixture = Fixture::new();
-    let first = fixture.json("upstream", &["--limit", "1", "sym:SharedThing"]);
+    let first = fixture.json("upstream", &["--limit", "1", "search", "sym:SharedThing"]);
     assert_eq!(first["hits"][0]["member"], "upstream");
     let second = fixture.json(
         "pack",
@@ -163,14 +174,14 @@ fn pagination_keeps_original_order_when_the_home_member_changes() {
 #[test]
 fn explicit_scopes_limit_members_and_unavailable_members_remain_visible() {
     let fixture = Fixture::new();
-    let scoped = fixture.json("engine", &["sym:SharedThing", "in:upstream"]);
+    let scoped = fixture.json("engine", &["search", "sym:SharedThing", "in:upstream"]);
     assert_eq!(scoped["hits"].as_array().unwrap().len(), 1);
     assert_eq!(scoped["hits"][0]["member"], "upstream");
     assert_eq!(scoped["coverage"].as_array().unwrap().len(), 1);
-    let home = fixture.json("pack", &["sym:SharedThing", "ws:home"]);
+    let home = fixture.json("pack", &["search", "sym:SharedThing", "ws:home"]);
     assert_eq!(home["hits"][0]["member"], "pack");
     fs::remove_dir_all(fixture.root.path().join("upstream")).unwrap();
-    let partial = fixture.json("engine", &["sym:SharedThing"]);
+    let partial = fixture.json("engine", &["search", "sym:SharedThing"]);
     assert!(
         partial["coverage"]
             .as_array()
@@ -187,7 +198,7 @@ fn explicit_scopes_limit_members_and_unavailable_members_remain_visible() {
     );
     assert!(
         fixture
-            .run("engine", &["sym:SharedThing", "in:upstream"])
+            .run("engine", &["search", "sym:SharedThing", "in:upstream"])
             .unwrap_err()
             .to_string()
             .contains("workspace_unavailable")
@@ -240,7 +251,7 @@ fn changed_source_and_republished_graph_reject_old_workspace_handles() {
             .to_string()
             .contains("stale_source")
     );
-    fixture.json("engine", &["sym:Replacement", "in:pack"]);
+    fixture.json("engine", &["search", "sym:Replacement", "in:pack"]);
     assert!(
         fixture
             .run("upstream", &["ctx", &handle])
@@ -307,11 +318,13 @@ fn no_workspace_keeps_singleton_search_and_navigation() {
         fixture.root.path().join("engine").display().to_string(),
         "--cache".into(),
         cache.path().display().to_string(),
+        "search".into(),
         "sym:SharedThing".into(),
     ];
     let page: Value = serde_json::from_str(&cli::run(&args).unwrap()).unwrap();
     assert!(page.get("workspace").is_none());
     assert_eq!(page["hits"].as_array().unwrap().len(), 1);
+    args.pop();
     args.pop();
     args.extend([
         "show".into(),
@@ -342,6 +355,7 @@ fn selector_only_queries_and_cache_root_boundaries_are_safe() -> anyhow::Result<
         "off".into(),
         "--cache".into(),
         dir.path().join("cache").display().to_string(),
+        "search".into(),
         "in:one".into(),
     ];
     let output: serde_json::Value = serde_json::from_str(&crate::cli::run(&args)?)?;

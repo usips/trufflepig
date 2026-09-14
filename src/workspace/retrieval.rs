@@ -77,12 +77,11 @@ pub(super) fn search(
     let log_cache = super::diagnostic_location(options)
         .map(|(_, cache, _, _)| cache)
         .unwrap_or_else(|_| cache.to_path_buf());
-    let verb = words.first().map(String::as_str).unwrap_or("search");
-    let text = if verb == "search" {
-        words.get(1..).unwrap_or(&[]).join(" ")
-    } else {
-        words.join(" ")
-    };
+    let verb = words
+        .first()
+        .map(String::as_str)
+        .context("usage: retrieval command is required")?;
+    let text = words[1..].join(" ");
     let query = Query::parse(&text)?;
     let semantic = options.sem && !matches!(verb, "refs" | "map") && !text.starts_with("refs:");
     let started = std::time::Instant::now();

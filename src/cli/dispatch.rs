@@ -202,13 +202,13 @@ fn local_dispatch(
         "show"=>source::show_with_side(&store,argument()?,options.side.as_deref().map(source::SourceSide::parse).transpose()?,&budget),
         "more"=>results::more(&store,argument()?,options.limit,&budget),
         "ctx"=>search::context(&store,argument()?,&budget),
-        _=>{
+        "search" | "refs" | "map" => {
             if !daemon_running || store.generation()?==0 {store.index()?;}
             let set=match verb {
                 "refs"=>search::references(&store,argument()?)?,
                 "map"=>search::map(&store,options.words.get(1).map(String::as_str).unwrap_or(""))?,
-                _=>{
-                    let text=if verb=="search" {options.words[1..].join(" ")}else{options.words.join(" ")};
+                "search"=>{
+                    let text=options.words[1..].join(" ");
                     if let Some(name)=text.strip_prefix("refs:"){search::references(&store,name)?}
                     else{{
                         let mut trace = if options.diagnostics == "off" { search::telemetry::RetrievalTrace::disabled() } else { search::telemetry::RetrievalTrace::default() };
@@ -223,9 +223,11 @@ fn local_dispatch(
                         result?
                     }}
                 }
+                _=>unreachable!(),
             };
             let id=results::save(&mut store,set)?;
             results::page(&store,&id,0,options.limit,&budget)
         }
+        _ => bail!("invalid_command: unknown command {verb}; use search for queries"),
     }
 }

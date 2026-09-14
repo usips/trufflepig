@@ -115,7 +115,7 @@ fn workspace_page_emission_records_foreign_identity_and_one_final_receipt() {
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     assert_eq!(
         execute(
-            &fixture.args(&["sym:SharedThing"]),
+            &fixture.args(&["search", "sym:SharedThing"]),
             &mut stdout,
             &mut stderr
         ),
@@ -194,7 +194,7 @@ impl Write for PartialWriter {
 #[test]
 fn workspace_source_emission_counts_complete_delivery_only() {
     let fixture = Fixture::new();
-    let mut search_args = fixture.args(&["sym:SharedThing", "in:pack"]);
+    let mut search_args = fixture.args(&["search", "sym:SharedThing", "in:pack"]);
     let mode = search_args
         .iter()
         .position(|arg| arg == "metadata")
@@ -283,6 +283,7 @@ fn workspace_ancestor_does_not_redirect_explicit_subtree_diagnostics() {
         fixture.cache.path().display().to_string(),
         "--diagnostics".into(),
         "metadata".into(),
+        "search".into(),
         "sym:SubtreeThing".into(),
     ];
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());

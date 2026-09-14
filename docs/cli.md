@@ -1,20 +1,25 @@
 # CLI usage
 
-Build with `cargo build`. Commands below run the resulting Linux binary from the
-repository root. `--root` defaults to the current directory. Without a workspace,
+Install the Linux binary with `cargo install --path . --locked`. Put Cargo's
+binary directory (`$CARGO_HOME/bin`, default `$HOME/.cargo/bin`) on the harness's
+`PATH`; `command -v trufflepig` verifies discovery. Reinstall after source changes.
+`--root` defaults to the current directory. Without a workspace,
 root discovery does not walk up to Git metadata; choose the same root and cache
 for follow-up reads. Configured workspaces route reads to their recorded member.
 
 ```sh
-cargo build
-target/debug/trufflepig --root . --no-daemon index
-target/debug/trufflepig --root . --no-daemon search 'refill tokens'
-target/debug/trufflepig --root . --no-daemon search 'sym:TokenBucket'
-target/debug/trufflepig --root . --no-daemon search 're:fn .*helper lang:rust'
-target/debug/trufflepig --root . --no-daemon search 'file:src/ kind:function'
+trufflepig --help -b 2000
+trufflepig --root . --no-daemon index
+trufflepig --root . --no-daemon search 'refill tokens'
+trufflepig --root . --no-daemon search 'sym:TokenBucket'
+trufflepig --root . --no-daemon search 're:fn .*helper lang:rust'
+trufflepig --root . --no-daemon search 'file:src/ kind:function'
 ```
 
-`search` is optional before ordinary query words. `sym:` requests an exact
+Harnesses should pass `--no-daemon` on every invocation to keep processing in the
+foreground without leaving background processes. Use an explicit `search` verb
+for all queries; unknown commands exit 2 with an error. No command means `status`.
+`sym:` requests an exact
 case-sensitive definition name. `re:` scans live bytes. `file:` is a root-relative
 path-prefix filter; `lang:` and `kind:` filter recorded classifications. Language
 names are `rust`, `typescript`, `javascript`, `luau`, `dreammaker`, and `text`;
@@ -24,6 +29,8 @@ One JSON object plus newline is the default output; `--json` accepts the same
 format. `-b/--budget` defaults to 600 `o200k_base` tokens for the entire serialized
 stdout response. `-n/--limit` defaults to 20 candidate hits per page; the budget
 may fit fewer. Increase the budget when a hit or source line cannot fit.
+Budget failures include a retry hint on stderr even when no JSON error fits.
+Help is also budgeted; use `--help -b 2000` for full flag descriptions.
 
 ## Workspace search
 
@@ -68,7 +75,6 @@ trufflepig map src/
 trufflepig show path:src/main.rs:1-20
 ```
 
-Use `target/debug/trufflepig` as above when the binary is not installed on PATH.
 A handle is a 32-character result-set ID plus a one-based ordinal. A pagination
 cursor uses the same set ID and a zero-based next offset. Handles survive restart
 within their retention limits; they never name the latest unrelated query.
@@ -163,8 +169,9 @@ fallback and resource limits are documented in the [index contract](index-contra
 
 ## Optional CPU semantics
 
-Default builds provide lexical/structural retrieval. Build with
-`cargo build --features semantic` to enable `--sem`. Install the exact pinned
+Default builds provide lexical/structural retrieval. Install with
+`cargo install --path . --locked --features semantic` to enable `--sem` in the
+PATH binary. Install the exact pinned
 assets and runtime described in the
 [CPU gate guide](../evaluation/semantic_gate/README.md), then run
 `semantic-check MODEL_DIRECTORY`. Set `TRUFFLEPIG_MODEL_DIR` and `ORT_DYLIB_PATH`
