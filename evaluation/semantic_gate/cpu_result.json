@@ -1,0 +1,20 @@
+{
+  "status": "passed",
+  "harness": "Rust semantic::run_gate, fastembed 6.1.0, ort 2.0.0-rc.13",
+  "runtime": "ONNX Runtime 1.29.0 CPUExecutionProvider",
+  "model": "jinaai/jina-embeddings-v2-base-code",
+  "revision": "516f4baf13dec4ddddda8631e019b5737c8bc250",
+  "dimensions": 768,
+  "precision": "f32",
+  "pooling": "masked_mean",
+  "normalization": "l2",
+  "intra_threads": 2,
+  "max_input_tokens": 8192,
+  "publisher_cosine": 0.7281748759529421,
+  "measured_cosine": 0.7281747460365295,
+  "absolute_tolerance": 0.002,
+  "initialize_ms": 8545,
+  "total_ms": 8597,
+  "peak_rss_kib": 1500748,
+  "scope": "Two publisher inputs; does not establish retrieval quality or long-input resource bounds"
+}
