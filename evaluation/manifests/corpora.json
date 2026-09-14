@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "status": "reserved; no admitted external tasks",
+  "development": [
+    "lunatic",
+    "tgstation"
+  ],
+  "held_out": [
+    "tales-from-space",
+    "Baystation12",
+    "CEV-Eris"
+  ],
+  "held_out_within_repository": [
+    "Rust subsystems and time periods",
+    "TypeScript subsystems and time periods"
+  ],
+  "limitations": [
+    "Rust/TypeScript have no independent-repository held-out coverage.",
+    "Reserved corpora establish no retrieval or agent-success results."
+  ],
+  "tasks": []
+}

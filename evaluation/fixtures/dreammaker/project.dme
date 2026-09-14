@@ -1,0 +1,4 @@
+#include "signal_registry.dm"
+#ifdef ENABLE_BRACES
+#include "brace_bucket.dm"
+#endif

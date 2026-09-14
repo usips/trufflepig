@@ -1,0 +1,301 @@
+{
+  "schema_version": 1,
+  "root": "../fixtures",
+  "snapshot": {
+    "kind": "sha256-files",
+    "files": {
+      "dreammaker/brace_bucket.dm": "0f59489c22f1315f093ba4ad8345878817977e864682bcb9a6dff05511304bde",
+      "dreammaker/project.dme": "5ba83bf1147409d416b8272a7dad22d0b64a1cf18263a81bf2f8bf8050520a48",
+      "dreammaker/signal_registry.dm": "cedab34554237f29a432f83a1c22c8a31395fa429081c4a350794457f91b63b4",
+      "luau/signal_client.luau": "88f040f16b8b28f59b540b209dd7226537ada3bc31219be31dd18d333d7044cd",
+      "luau/signal_queue.luau": "e75b700b57ff7044ef45061086fc5dbf215bd0ad49d85b137f6f9cab291eba31",
+      "other/routing_config.toml": "5374c07dcf04b8133e4786cb815aab79b37e913049982792627b4fc98698c745",
+      "other/search_notes.md": "b8b85ccf041f0a6640cfcfbb5d80035718c75836b5d61f376c3226eb99ed511e",
+      "rust/token_bucket.rs": "1ccd9400574bb8a045e9d9346cd28f505808a5b59a0877c33142b8a4f8c4d301",
+      "typescript/request_router.ts": "4a3db46778e71f04afbfb97c10e1a8417b1f77140d53f025f46faa2f262e2f0e",
+      "typescript/route_client.js": "8264877028fd467e1512a12ecf7d7db901a6aba246d217c965270e8e4c654d27"
+    }
+  },
+  "tasks": [
+    {
+      "id": "rust-refill",
+      "group": "rust-refill",
+      "split": "fixture",
+      "language": "rust",
+      "intent": "identifier",
+      "query": "sym:refill_tokens",
+      "baseline": {
+        "pattern": "refill_tokens",
+        "literal": true
+      },
+      "relevant": [
+        {
+          "path": "rust/token_bucket.rs",
+          "start": 130,
+          "end": 143
+        }
+      ],
+      "label_provenance": "authored fixture span; not independently graded"
+    },
+    {
+      "id": "rust-local",
+      "group": "rust-local",
+      "split": "fixture",
+      "language": "rust",
+      "intent": "identifier",
+      "query": "re:replenished",
+      "baseline": {
+        "pattern": "replenished",
+        "literal": true
+      },
+      "relevant": [
+        {
+          "path": "rust/token_bucket.rs",
+          "start": 184,
+          "end": 195
+        }
+      ],
+      "label_provenance": "authored fixture span; not independently graded"
+    },
+    {
+      "id": "rust-direct",
+      "group": "rust-direct",
+      "split": "fixture",
+      "language": "rust",
+      "intent": "identifier",
+      "query": "sym:direct_helper",
+      "baseline": {
+        "pattern": "direct_helper",
+        "literal": true
+      },
+      "relevant": [
+        {
+          "path": "rust/token_bucket.rs",
+          "start": 272,
+          "end": 285
+        }
+      ],
+      "label_provenance": "authored fixture span; not independently graded"
+    },
+    {
+      "id": "rust-conditional",
+      "group": "rust-conditional",
+      "split": "fixture",
+      "language": "rust",
+      "intent": "identifier",
+      "query": "sym:configured_limit",
+      "baseline": {
+        "pattern": "configured_limit",
+        "literal": true
+      },
+      "relevant": [
+        {
+          "path": "rust/token_bucket.rs",
+          "start": 527,
+          "end": 543
+        }
+      ],
+      "label_provenance": "authored fixture span; not independently graded"
+    },
+    {
+      "id": "ts-arrow",
+      "group": "ts-arrow",
+      "split": "fixture",
+      "language": "typescript",
+      "intent": "identifier",
+      "query": "sym:routeRequest",
+      "baseline": {
+        "pattern": "routeRequest",
+        "literal": true
+      },
+      "relevant": [
+        {
+          "path": "typescript/request_router.ts",
+          "start": 49,
+          "end": 61
+        }
+      ],
+      "label_provenance": "authored fixture span; not independently graded"
+    },
+    {
+      "id": "ts-overload",
+      "group": "ts-overload",
+      "split": "fixture",
+      "language": "typescript",
+      "intent": "identifier",
+      "query": "sym:parseRoute",
+      "baseline": {
+        "pattern": "parseRoute",
+        "literal": true
+      },
+      "relevant": [
+        {
+          "path": "typescript/request_router.ts",
+          "start": 208,
+          "end": 218
+        }
+      ],
+      "label_provenance": "authored fixture span; not independently graded"
+    },
+    {
+      "id": "js-import",
+      "group": "js-import",
+      "split": "fixture",
+      "language": "javascript",
+      "intent": "identifier",
+      "query": "sym:readRoute",
+      "baseline": {
+        "pattern": "readRoute",
+        "literal": true
+      },
+      "relevant": [
+        {
+          "path": "typescript/route_client.js",
+          "start": 66,
+          "end": 75
+        }
+      ],
+      "label_provenance": "authored fixture span; not independently graded"
+    },
+    {
+      "id": "luau-export",
+      "group": "luau-export",
+      "split": "fixture",
+      "language": "luau",
+      "intent": "identifier",
+      "query": "sym:enqueueSignal",
+      "baseline": {
+        "pattern": "enqueueSignal",
+        "literal": true
+      },
+      "relevant": [
+        {
+          "path": "luau/signal_queue.luau",
+          "start": 169,
+          "end": 182
+        }
+      ],
+      "label_provenance": "authored fixture span; not independently graded"
+    },
+    {
+      "id": "luau-binding",
+      "group": "luau-binding",
+      "split": "fixture",
+      "language": "luau",
+      "intent": "identifier",
+      "query": "sym:sendQueuedSignal",
+      "baseline": {
+        "pattern": "sendQueuedSignal",
+        "literal": true
+      },
+      "relevant": [
+        {
+          "path": "luau/signal_client.luau",
+          "start": 55,
+          "end": 71
+        }
+      ],
+      "label_provenance": "authored fixture span; not independently graded"
+    },
+    {
+      "id": "dm-proc",
+      "group": "dm-proc",
+      "split": "fixture",
+      "language": "dm",
+      "intent": "identifier",
+      "query": "sym:refill_tokens",
+      "baseline": {
+        "pattern": "refill_tokens",
+        "literal": true
+      },
+      "relevant": [
+        {
+          "path": "dreammaker/signal_registry.dm",
+          "start": 96,
+          "end": 109
+        }
+      ],
+      "label_provenance": "authored fixture span; not independently graded"
+    },
+    {
+      "id": "dm-signal",
+      "group": "dm-signal",
+      "split": "fixture",
+      "language": "dm",
+      "intent": "identifier",
+      "query": "COMSIG_BUCKET_REFILL",
+      "baseline": {
+        "pattern": "COMSIG_BUCKET_REFILL",
+        "literal": true
+      },
+      "relevant": [
+        {
+          "path": "dreammaker/signal_registry.dm",
+          "start": 8,
+          "end": 28
+        }
+      ],
+      "label_provenance": "authored fixture span; not independently graded"
+    },
+    {
+      "id": "dm-braces",
+      "group": "dm-braces",
+      "split": "fixture",
+      "language": "dm",
+      "intent": "identifier",
+      "query": "sym:read_capacity",
+      "baseline": {
+        "pattern": "read_capacity",
+        "literal": true
+      },
+      "relevant": [
+        {
+          "path": "dreammaker/brace_bucket.dm",
+          "start": 31,
+          "end": 44
+        }
+      ],
+      "label_provenance": "authored fixture span; not independently graded"
+    },
+    {
+      "id": "docs-middle",
+      "group": "docs-middle",
+      "split": "fixture",
+      "language": "markdown",
+      "intent": "identifier",
+      "query": "middle_capacity_marker",
+      "baseline": {
+        "pattern": "middle_capacity_marker",
+        "literal": true
+      },
+      "relevant": [
+        {
+          "path": "other/search_notes.md",
+          "start": 148,
+          "end": 170
+        }
+      ],
+      "label_provenance": "authored fixture span; not independently graded"
+    },
+    {
+      "id": "config-field",
+      "group": "config-field",
+      "split": "fixture",
+      "language": "toml",
+      "intent": "identifier",
+      "query": "queue_alias",
+      "baseline": {
+        "pattern": "queue_alias",
+        "literal": true
+      },
+      "relevant": [
+        {
+          "path": "other/routing_config.toml",
+          "start": 8,
+          "end": 19
+        }
+      ],
+      "label_provenance": "authored fixture span; not independently graded"
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+[queue]
+queue_alias = "signal_queue"
+capacity_limit = 17
