@@ -208,6 +208,11 @@ pub(super) fn history(
             return workspace_results.page(&id, 0, options.limit, budget);
         }
     }
+    if let Some(hits) = value["hits"].as_array_mut() {
+        for hit in hits {
+            hit["member"] = member.name.clone().into();
+        }
+    }
     value["workspace"] = config.name.clone().into();
     value["member"] = member.name.clone().into();
     value["repository"] = crate::store::encode_path(&member.root).into();
