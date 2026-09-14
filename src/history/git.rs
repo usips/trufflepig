@@ -2,8 +2,10 @@
 
 use crate::identity::GitOid;
 use anyhow::{Context, Result, bail, ensure};
+use std::ffi::{OsStr, OsString};
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
+use std::os::unix::ffi::OsStringExt;
 use std::os::unix::process::CommandExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -75,6 +77,28 @@ impl GitRepository {
         execute(&self.root, args, None)
     }
 
+    pub fn tree_entry(&self, commit: &GitOid, root_relative: &Path) -> Result<Vec<u8>> {
+        ensure!(
+            !root_relative.as_os_str().is_empty()
+                && root_relative
+                    .components()
+                    .all(|c| matches!(c, Component::Normal(_))),
+            "target must be a confined relative path"
+        );
+        let path = Path::new(&self.root_prefix).join(root_relative);
+        execute_os(
+            &self.root,
+            &[
+                OsStr::new("ls-tree"),
+                OsStr::new("-z"),
+                OsStr::new(commit.as_str()),
+                OsStr::new("--"),
+                path.as_os_str(),
+            ],
+            None,
+        )
+    }
+
     pub fn run_with_input(&self, args: &[&str], input: &[u8]) -> Result<Vec<u8>> {
         ensure!(
             input.len() <= MAX_BLOB_BYTES,
@@ -142,12 +166,20 @@ pub fn read_blob(repository: &Path, blob: &str) -> Result<Vec<u8>> {
 }
 
 fn output_path(bytes: Vec<u8>) -> Result<PathBuf> {
-    let text = String::from_utf8(bytes)?;
-    Ok(PathBuf::from(text.strip_suffix('\n').unwrap_or(&text)))
+    let mut bytes = bytes;
+    if bytes.last() == Some(&b'\n') {
+        bytes.pop();
+    }
+    Ok(PathBuf::from(OsString::from_vec(bytes)))
 }
 
 fn execute(directory: &Path, args: &[&str], input: Option<&[u8]>) -> Result<Vec<u8>> {
-    let name = args.first().copied().unwrap_or("");
+    let arguments: Vec<_> = args.iter().map(OsStr::new).collect();
+    execute_os(directory, &arguments, input)
+}
+
+fn execute_os(directory: &Path, args: &[&OsStr], input: Option<&[u8]>) -> Result<Vec<u8>> {
+    let name = args.first().and_then(|name| name.to_str()).unwrap_or("");
     ensure!(
         matches!(
             name,
@@ -170,7 +202,7 @@ fn execute(directory: &Path, args: &[&str], input: Option<&[u8]>) -> Result<Vec<
         "unsupported Git plumbing command"
     );
     ensure!(
-        name != "hash-object" || !args.contains(&"-w"),
+        name != "hash-object" || !args.contains(&OsStr::new("-w")),
         "Git object writes are forbidden"
     );
     let mut command = Command::new("git");
@@ -191,6 +223,8 @@ fn execute(directory: &Path, args: &[&str], input: Option<&[u8]>) -> Result<Vec<
         .args([
             "-c",
             "core.fsmonitor=false",
+            "-c",
+            "log.showSignature=false",
             "-c",
             "core.hooksPath=/dev/null",
             "-c",
@@ -503,5 +537,71 @@ mod tests {
                 .contains("timed out")
         );
         assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn git_suppresses_configured_signature_verifier() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = repository("sha1");
+        let verifier = directory.path().join("verifier");
+        std::fs::write(&verifier, "#!/bin/sh\ntouch \"$0.ran\"\nexit 1\n").unwrap();
+        std::fs::set_permissions(&verifier, std::fs::Permissions::from_mode(0o700)).unwrap();
+        git(
+            directory.path(),
+            &["config", "gpg.program", verifier.to_str().unwrap()],
+        );
+        git(directory.path(), &["config", "log.showSignature", "true"]);
+        let original = git(directory.path(), &["cat-file", "commit", "HEAD"]);
+        let signed = original.replacen("\n\n", "\ngpgsig -----BEGIN PGP SIGNATURE-----\n \n ZmFrZQ==\n -----END PGP SIGNATURE-----\n\n", 1);
+        let mut process = Command::new("git")
+            .current_dir(directory.path())
+            .args(["hash-object", "-t", "commit", "-w", "--stdin"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        process
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(signed.as_bytes())
+            .unwrap();
+        let output = process.wait_with_output().unwrap();
+        assert!(output.status.success());
+        let oid = String::from_utf8(output.stdout).unwrap();
+        git(directory.path(), &["log", "-1", "--format=%H", oid.trim()]);
+        let marker = directory.path().join("verifier.ran");
+        assert!(
+            marker.exists(),
+            "fixture must exercise the configured verifier"
+        );
+        std::fs::remove_file(&marker).unwrap();
+        let repository = GitRepository::discover(directory.path()).unwrap();
+        repository
+            .run(&["log", "-1", "--format=%H", oid.trim()])
+            .unwrap();
+        assert!(!marker.exists());
+    }
+
+    #[test]
+    fn git_native_tree_paths_preserve_non_utf8_bytes() {
+        let directory = repository("sha1");
+        let filename = OsString::from_vec(b"inside/raw-\xff.rs".to_vec());
+        std::fs::write(directory.path().join(&filename), b"fn raw() {}\n").unwrap();
+        git(directory.path(), &["add", "."]);
+        git(directory.path(), &["commit", "-m", "native path"]);
+        let repository = GitRepository::discover(directory.path()).unwrap();
+        let entry = repository
+            .tree_entry(&repository.resolve("HEAD").unwrap(), Path::new(&filename))
+            .unwrap();
+        assert!(entry.ends_with(b"\tinside/raw-\xff.rs\0"));
+        assert!(
+            repository
+                .tree_entry(
+                    &repository.resolve("HEAD").unwrap(),
+                    Path::new("../outside")
+                )
+                .is_err()
+        );
     }
 }
