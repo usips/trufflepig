@@ -1,0 +1,337 @@
+{
+  "schema_version": 1,
+  "measurement": "single-run process/index-cache smoke, not a quality benchmark",
+  "platform": "Linux-7.2.4-arch1-2-x86_64-with-glibc2.44",
+  "binary_sha256": "43fbde5de4278f896fbb072177ad476eaeb0ea03cb427a5c209e6bf971d3c4f0",
+  "binary_profile": "debug",
+  "implementation_head": "d06f81ab02a69459e87e8660c4b58aa7eb79b40f",
+  "implementation_dirty": true,
+  "timer": "Python monotonic + Linux wait4 rusage; /usr/bin/time unavailable",
+  "os_page_cache": "not flushed; cold means empty Trufflepig index cache",
+  "search_mode": "ordinary lexical, fresh process, --no-daemon; includes reconciliation",
+  "corpora": [
+    {
+      "name": "lunatic",
+      "head": "7df86d2b11164c4774a7e05b865addb3f95c163c",
+      "dirty": false,
+      "snapshot": "current working tree; HEAD records provenance, not frozen inputs",
+      "runs": {
+        "cold_index": {
+          "words": [
+            "index"
+          ],
+          "elapsed_seconds": 112.4753,
+          "user_seconds": 110.6179,
+          "system_seconds": 1.3527,
+          "peak_rss_kib": 90552,
+          "exit_code": 0,
+          "timed_out": false,
+          "timeout_seconds": 120,
+          "cache_before": {
+            "apparent_bytes": 0,
+            "allocated_bytes": 0
+          },
+          "cache_after": {
+            "apparent_bytes": 472199168,
+            "allocated_bytes": 472203264
+          },
+          "cache_growth_bytes": 472199168,
+          "response": {
+            "coverage": {
+              "excluded_files": 9,
+              "indexed_bytes": 21976435,
+              "indexed_files": 2480,
+              "parse_failures": 14,
+              "semantic_files": 0,
+              "total_files": 2489,
+              "truncated_files": 0,
+              "walk_failures": 0
+            },
+            "generation": 1
+          },
+          "stderr": ""
+        },
+        "warm_index": {
+          "words": [
+            "index"
+          ],
+          "elapsed_seconds": 21.9218,
+          "user_seconds": 21.4304,
+          "system_seconds": 0.4124,
+          "peak_rss_kib": 88696,
+          "exit_code": 0,
+          "timed_out": false,
+          "timeout_seconds": 120,
+          "cache_before": {
+            "apparent_bytes": 472199168,
+            "allocated_bytes": 472203264
+          },
+          "cache_after": {
+            "apparent_bytes": 472199168,
+            "allocated_bytes": 472203264
+          },
+          "cache_growth_bytes": 0,
+          "response": {
+            "coverage": {
+              "excluded_files": 9,
+              "indexed_bytes": 21976435,
+              "indexed_files": 2480,
+              "parse_failures": 14,
+              "semantic_files": 0,
+              "total_files": 2489,
+              "truncated_files": 0,
+              "walk_failures": 0
+            },
+            "generation": 1
+          },
+          "stderr": ""
+        },
+        "ordinary_search": {
+          "words": [
+            "search",
+            "isAllowedOrdinaryContactAction"
+          ],
+          "elapsed_seconds": 21.7581,
+          "user_seconds": 21.3063,
+          "system_seconds": 0.3562,
+          "peak_rss_kib": 89668,
+          "exit_code": 0,
+          "timed_out": false,
+          "timeout_seconds": 120,
+          "cache_before": {
+            "apparent_bytes": 472199168,
+            "allocated_bytes": 472203264
+          },
+          "cache_after": {
+            "apparent_bytes": 472207360,
+            "allocated_bytes": 472211456
+          },
+          "cache_growth_bytes": 8192,
+          "response": {
+            "coverage": {
+              "excluded_files": 9,
+              "indexed_bytes": 21976435,
+              "indexed_files": 2480,
+              "parse_failures": 14,
+              "semantic_files": 0,
+              "total_files": 2489,
+              "truncated_files": 0,
+              "walk_failures": 0
+            },
+            "generation": 1,
+            "hits": [
+              {
+                "end": 4720,
+                "end_line": 124,
+                "handle": "b25b588cd7b34aca8657a4e61595b88d:1",
+                "kind": "function",
+                "name": "isAllowedOrdinaryContactAction",
+                "path": "web/src/gameplay.ts",
+                "provenance": "exact_identifier",
+                "revision": "0f1d5dbe1bb98a4a0637bc1df8691540e80fd056c392f6cee1844b46c2b8eaa7",
+                "start": 4261,
+                "start_line": 109
+              },
+              {
+                "container": "gameplayFaults",
+                "end": 4188,
+                "end_line": 121,
+                "handle": "b25b588cd7b34aca8657a4e61595b88d:2",
+                "kind": "variable",
+                "name": "isAllowedOrdinaryContactAction",
+                "path": "web/tests/pack-ui/gameplay.mjs",
+                "provenance": "exact_identifier",
+                "revision": "45c9e7f1cadac398f5632a26842ecde581586fc3b3529a0817fe258a3719a26f",
+                "start": 4038,
+                "start_line": 120
+              },
+              {
+                "end": 4325,
+                "end_line": 111,
+                "handle": "b25b588cd7b34aca8657a4e61595b88d:3",
+                "kind": "function",
+                "name": "isAllowedOrdinaryContactAction",
+                "path": "web/src/gameplay.ts",
+                "provenance": "lexical",
+                "revision": "0f1d5dbe1bb98a4a0637bc1df8691540e80fd056c392f6cee1844b46c2b8eaa7",
+                "start": 4321,
+                "start_line": 110
+              },
+              {
+                "end": 4341,
+                "end_line": 112,
+                "handle": "b25b588cd7b34aca8657a4e61595b88d:4",
+                "kind": "function",
+                "name": "isAllowedOrdinaryContactAction",
+                "path": "web/src/gameplay.ts",
+                "provenance": "lexical",
+                "revision": "0f1d5dbe1bb98a4a0637bc1df8691540e80fd056c392f6cee1844b46c2b8eaa7",
+                "start": 4337,
+                "start_line": 111
+              }
+            ],
+            "next": "b25b588cd7b34aca8657a4e61595b88d@4",
+            "tokenizer": "o200k_base",
+            "truncated": false
+          },
+          "stderr": ""
+        }
+      }
+    },
+    {
+      "name": "tgstation",
+      "head": "7cb126ac8864a0d0952c48d25375a5bebaef512b",
+      "dirty": true,
+      "snapshot": "current working tree; HEAD records provenance, not frozen inputs",
+      "runs": {
+        "cold_index": {
+          "words": [
+            "index"
+          ],
+          "elapsed_seconds": 102.2915,
+          "user_seconds": 96.2036,
+          "system_seconds": 4.0306,
+          "peak_rss_kib": 100392,
+          "exit_code": 0,
+          "timed_out": false,
+          "timeout_seconds": 120,
+          "cache_before": {
+            "apparent_bytes": 0,
+            "allocated_bytes": 0
+          },
+          "cache_after": {
+            "apparent_bytes": 1322606592,
+            "allocated_bytes": 1322606592
+          },
+          "cache_growth_bytes": 1322606592,
+          "response": {
+            "coverage": {
+              "excluded_files": 6573,
+              "indexed_bytes": 77412815,
+              "indexed_files": 11620,
+              "parse_failures": 849,
+              "semantic_files": 0,
+              "total_files": 18193,
+              "truncated_files": 0,
+              "walk_failures": 0
+            },
+            "generation": 1
+          },
+          "stderr": ""
+        },
+        "warm_index": {
+          "words": [
+            "index"
+          ],
+          "elapsed_seconds": 52.8309,
+          "user_seconds": 51.2171,
+          "system_seconds": 1.4342,
+          "peak_rss_kib": 97132,
+          "exit_code": 0,
+          "timed_out": false,
+          "timeout_seconds": 120,
+          "cache_before": {
+            "apparent_bytes": 1322606592,
+            "allocated_bytes": 1322606592
+          },
+          "cache_after": {
+            "apparent_bytes": 1322606592,
+            "allocated_bytes": 1322606592
+          },
+          "cache_growth_bytes": 0,
+          "response": {
+            "coverage": {
+              "excluded_files": 6573,
+              "indexed_bytes": 77412815,
+              "indexed_files": 11620,
+              "parse_failures": 849,
+              "semantic_files": 0,
+              "total_files": 18193,
+              "truncated_files": 0,
+              "walk_failures": 0
+            },
+            "generation": 1
+          },
+          "stderr": ""
+        },
+        "ordinary_search": {
+          "words": [
+            "search",
+            "Recreate_MC"
+          ],
+          "elapsed_seconds": 52.5758,
+          "user_seconds": 51.033,
+          "system_seconds": 1.3619,
+          "peak_rss_kib": 96996,
+          "exit_code": 0,
+          "timed_out": false,
+          "timeout_seconds": 120,
+          "cache_before": {
+            "apparent_bytes": 1322606592,
+            "allocated_bytes": 1322606592
+          },
+          "cache_after": {
+            "apparent_bytes": 1322614784,
+            "allocated_bytes": 1322614784
+          },
+          "cache_growth_bytes": 8192,
+          "response": {
+            "coverage": {
+              "excluded_files": 6573,
+              "indexed_bytes": 77412815,
+              "indexed_files": 11620,
+              "parse_failures": 849,
+              "semantic_files": 0,
+              "total_files": 18193,
+              "truncated_files": 0,
+              "walk_failures": 0
+            },
+            "generation": 1,
+            "hits": [
+              {
+                "end": 8709,
+                "end_line": 274,
+                "handle": "e3c10b6e31b74b9d8741dcc6beaa97b9:1",
+                "kind": "proc",
+                "name": "Recreate_MC",
+                "path": "code/controllers/master.dm",
+                "provenance": "exact_identifier",
+                "revision": "d623f846a96170e3f8dd425ae44c999d35f18311d5394549c2c7cb3d68b2c14f",
+                "start": 8198,
+                "start_line": 256
+              },
+              {
+                "end": 8393,
+                "end_line": 263,
+                "handle": "e3c10b6e31b74b9d8741dcc6beaa97b9:2",
+                "kind": "proc",
+                "name": "Recreate_MC",
+                "path": "code/controllers/master.dm",
+                "provenance": "lexical",
+                "revision": "d623f846a96170e3f8dd425ae44c999d35f18311d5394549c2c7cb3d68b2c14f",
+                "start": 8198,
+                "start_line": 256
+              },
+              {
+                "end": 3222,
+                "end_line": 77,
+                "handle": "e3c10b6e31b74b9d8741dcc6beaa97b9:3",
+                "kind": "binding",
+                "name": "rtn",
+                "path": "code/controllers/failsafe.dm",
+                "provenance": "lexical",
+                "revision": "f2245b84b1b6824840ce9fa83a8c2c494d3583cbe39a27fb630a9ca3dcbf47a7",
+                "start": 3198,
+                "start_line": 77
+              }
+            ],
+            "next": "e3c10b6e31b74b9d8741dcc6beaa97b9@3",
+            "tokenizer": "o200k_base",
+            "truncated": false
+          },
+          "stderr": ""
+        }
+      }
+    }
+  ]
+}
