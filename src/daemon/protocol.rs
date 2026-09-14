@@ -9,13 +9,17 @@ const ARGUMENT_LIMIT: usize = 256;
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "command", content = "arguments", deny_unknown_fields)]
 pub(super) enum DaemonRequest {
-    Arguments(Vec<String>),
+    Arguments {
+        context: crate::diagnostics::RequestContext,
+        args: Vec<String>,
+    },
     Stop,
 }
 
 impl DaemonRequest {
     pub(super) fn validate(&self) -> Result<()> {
-        if let Self::Arguments(args) = self {
+        if let Self::Arguments { context, args } = self {
+            uuid::Uuid::parse_str(&context.request_id).context("invalid request UUID")?;
             ensure!(args.len() <= ARGUMENT_LIMIT, "too many daemon arguments");
             let bytes = args
                 .iter()

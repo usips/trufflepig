@@ -8,8 +8,9 @@ repository-wide current HEAD. Immutable object/change facts may be reused after
 rewrites. `hist-status` reports the captured tip, cutoff, visited count, depth
 limit, traversal boundary, failure, and completion.
 
-`hist-index` schedules work; `--wait` processes batches until completion or a
-reported failure. `--no-daemon hist-index` performs one bounded foreground batch
+`hist-index` persists a captured-tip request and schedules work. `--wait` polls
+that view until completion or a reported failure while the root daemon remains
+available for queries; foreground mode processes bounded batches locally. `--no-daemon hist-index` performs one bounded foreground batch
 unless `--wait` is supplied. `hist TARGET` lists first-parent changes from indexed
 traversal; foreground mode first indexes a bounded batch. A history request
 examines at most 256 indexed commits, reports `examined`, and sets truncation
@@ -29,8 +30,8 @@ identify published live source and can become stale when disk changes.
 root commit's empty preimage. Unscoped output contains metadata summaries.
 Explicit targets permit budgeted hunks with separate before/after byte coordinates
 and one context line for file changes. Oversized hunks may be omitted while their
-persisted handles remain readable. Invalid UTF-8 hunk previews are labeled lossy;
-exact byte-escaped source is available through `show`.
+persisted handles remain readable. Invalid UTF-8 hunks and `show` reads use
+exact byte-escaped text with an explicit encoding label.
 
 `blame TARGET` returns contiguous attribution runs with first-parent traversal,
 movement detection (`-M`), and ignored whitespace (`-w`). `--raw` disables those

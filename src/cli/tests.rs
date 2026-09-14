@@ -1,4 +1,5 @@
 use super::*;
+use crate::search;
 
 #[test]
 fn daemon_dispatch_rejects_wrong_root_and_unbounded_options() {

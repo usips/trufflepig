@@ -73,7 +73,10 @@ fn daemon_protocol_rejects_oversized_and_truncated_frames() {
     assert!(protocol::read_request(&mut Cursor::new(header)).is_err());
     let bytes = [0, 0, 0, 8, b'{'];
     assert!(protocol::read_request(&mut Cursor::new(bytes)).is_err());
-    let request = DaemonRequest::Arguments(vec![String::new(); 257]);
+    let request = DaemonRequest::Arguments {
+        context: crate::diagnostics::RequestContext::new(None, None),
+        args: vec![String::new(); 257],
+    };
     assert!(protocol::write_request(&mut Vec::new(), &request).is_err());
 }
 
@@ -118,8 +121,9 @@ fn daemon_serves_recovers_protocol_errors_watches_and_stops() {
     let serve_cache = cache.clone();
     let daemon = std::thread::spawn(move || {
         serve(&serve_root, &serve_cache, |args| match args {
-            Some(args) => Ok(args.join("|")),
-            None => {
+            DaemonEvent::Request { args, .. } => Ok(args.join("|")),
+            DaemonEvent::Idle => Ok(String::new()),
+            DaemonEvent::Reconcile => {
                 let _ = sender.send(());
                 Ok(String::new())
             }
@@ -134,7 +138,11 @@ fn daemon_serves_recovers_protocol_errors_watches_and_stops() {
         .write_all(&((protocol::REQUEST_LIMIT + 1) as u32).to_be_bytes())
         .unwrap();
     let bad_reply = protocol::read_reply(&mut bad_client);
-    let reply = request(&cache, &["search".to_owned(), "a\nb".to_owned()]);
+    let reply = request(
+        &cache,
+        &["search".to_owned(), "a\nb".to_owned()],
+        &crate::diagnostics::RequestContext::new(None, None),
+    );
     fs::write(root.join("changed.rs"), "fn changed() {}\n").unwrap();
     let watched = receiver.recv_timeout(Duration::from_secs(5));
     let stopped = stop(&cache);
@@ -143,5 +151,13 @@ fn daemon_serves_recovers_protocol_errors_watches_and_stops() {
     assert_eq!(reply.unwrap().as_deref(), Some("search|a\nb"));
     assert!(watched.is_ok(), "watcher did not trigger reconciliation");
     assert!(stopped.unwrap().contains("stopped"));
-    assert_eq!(request(&cache, &[]).unwrap(), None);
+    assert_eq!(
+        request(
+            &cache,
+            &[],
+            &crate::diagnostics::RequestContext::new(None, None)
+        )
+        .unwrap(),
+        None
+    );
 }

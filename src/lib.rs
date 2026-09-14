@@ -1,7 +1,11 @@
 pub mod cli;
 pub mod daemon;
+pub mod diagnostics;
 pub mod extract;
+pub mod history;
+pub mod identity;
 pub mod output;
+pub mod probes;
 pub mod results;
 pub mod search;
 pub mod semantic;

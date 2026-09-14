@@ -24,8 +24,18 @@ const DEBOUNCE: Duration = Duration::from_millis(75);
 const MAX_DEBOUNCE: Duration = Duration::from_secs(1);
 
 /// Returns `None` only when no daemon is listening; protocol errors stay errors.
-pub fn request(cache: &Path, args: &[String]) -> Result<Option<String>> {
-    exchange(cache, &DaemonRequest::Arguments(args.to_vec()))
+pub fn request(
+    cache: &Path,
+    args: &[String],
+    context: &crate::diagnostics::RequestContext,
+) -> Result<Option<String>> {
+    exchange(
+        cache,
+        &DaemonRequest::Arguments {
+            context: context.clone(),
+            args: args.to_vec(),
+        },
+    )
 }
 
 /// Stops a listening daemon through its authenticated-by-filesystem socket.
@@ -187,11 +197,21 @@ fn watch(root: &Path, cache: &Path, dirty: Arc<AtomicBool>) -> Option<notify::Re
     }
 }
 
-/// Calls `handler(None)` on startup and reconciliation, and serializes CLI calls.
+/// Daemon work is serialized; idle ticks do not reconcile the index.
+pub enum DaemonEvent {
+    Request {
+        context: crate::diagnostics::RequestContext,
+        args: Vec<String>,
+    },
+    Reconcile,
+    Idle,
+}
+
+/// Calls the handler at startup, reconciliation, requests, and each idle tick.
 pub fn serve(
     root: &Path,
     cache: &Path,
-    mut handler: impl FnMut(Option<Vec<String>>) -> Result<String>,
+    mut handler: impl FnMut(DaemonEvent) -> Result<String>,
 ) -> Result<()> {
     let root = root.canonicalize().context("resolve watched repository")?;
     fs::create_dir_all(cache)?;
@@ -199,11 +219,11 @@ pub fn serve(
     let socket = DaemonSocket::bind(&cache)?;
     let dirty = Arc::new(AtomicBool::new(false));
     let _watcher = watch(&root, &cache, Arc::clone(&dirty));
-    handler(None).context("initial repository reconciliation")?;
+    handler(DaemonEvent::Reconcile).context("initial repository reconciliation")?;
     let mut schedule = ReconcileSchedule::new(Instant::now());
     loop {
         if schedule.due(Instant::now(), dirty.swap(false, Ordering::AcqRel)) {
-            if let Err(error) = handler(None) {
+            if let Err(error) = handler(DaemonEvent::Reconcile) {
                 eprintln!(
                     "trufflepig: reconciliation failed; periodic retry remains active: {error:#}"
                 );
@@ -218,7 +238,9 @@ pub fn serve(
                 let request = protocol::read_request(&mut stream);
                 let stopping = matches!(&request, Ok(DaemonRequest::Stop));
                 let result = match request {
-                    Ok(DaemonRequest::Arguments(args)) => handler(Some(args)),
+                    Ok(DaemonRequest::Arguments { context, args }) => {
+                        handler(DaemonEvent::Request { context, args })
+                    }
                     Ok(DaemonRequest::Stop) => Ok("{\"status\":\"stopped\"}".to_owned()),
                     Err(error) => Err(error),
                 };
@@ -236,6 +258,7 @@ pub fn serve(
                 }
             }
             Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                let _ = handler(DaemonEvent::Idle);
                 std::thread::sleep(Duration::from_millis(20));
             }
             Err(error) if error.kind() == ErrorKind::Interrupted => {}
