@@ -151,6 +151,9 @@ fn blame_historical_target_uses_its_own_commit_and_span() {
             repository: crate::store::encode_path(&history.repository.common_dir),
             commit,
             blob,
+            revision: crate::identity::ContentRevision::of(
+                &history.repository.blob(&blob).unwrap(),
+            ),
             path: "a.rs".into(),
             span: ByteSpan::new(17, 31).unwrap(),
         }),
