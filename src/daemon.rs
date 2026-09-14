@@ -124,6 +124,7 @@ impl Drop for DaemonSocket {
         {
             let _ = fs::remove_file(&self.path);
         }
+        let _ = FileExt::unlock(&self._lock);
     }
 }
 

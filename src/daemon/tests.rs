@@ -161,3 +161,14 @@ fn daemon_serves_recovers_protocol_errors_watches_and_stops() {
         None
     );
 }
+
+#[test]
+fn daemon_shutdown_unlocks_inherited_file_description() {
+    let scratch = scratch();
+    let socket = DaemonSocket::bind(scratch.path()).unwrap();
+    let inherited = socket._lock.try_clone().unwrap();
+    drop(socket);
+    let replacement = DaemonSocket::bind(scratch.path()).unwrap();
+    drop(inherited);
+    assert!(replacement.path.exists());
+}
