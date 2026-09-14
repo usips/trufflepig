@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "root": "../navigation-fixtures",
+  "snapshot": {
+    "kind": "sha256-files",
+    "files": {
+      "dispatch_a.rs": "562ae56acd113547e6e70d26b3eee9a7ab105bfb862ac810ab8576a4942197c7",
+      "dispatch_b.rs": "c7932f2045a72d2366b1222d9ebeac23d2bdc5831f7e8acb2182988107a8201e",
+      "packet.rs": "58f1bc3f5935145dbb3c89c07b7b8b553da36d9301493792b3bceae279f9fcd2"
+    }
+  },
+  "tasks": [
+    {
+      "id": "complementary-dispatch",
+      "query": "sym:dispatch",
+      "relevant": [
+        {
+          "path": "dispatch_a.rs",
+          "start": 29,
+          "end": 39
+        },
+        {
+          "path": "dispatch_b.rs",
+          "start": 29,
+          "end": 31
+        }
+      ],
+      "language": "rust",
+      "intent": "navigation",
+      "label_provenance": "authored fixture; oracle-assisted selection; not independently graded"
+    },
+    {
+      "id": "required-call-context",
+      "query": "sym:dispatch",
+      "requires_ctx": true,
+      "relevant": [
+        {
+          "path": "dispatch_a.rs",
+          "start": 29,
+          "end": 39
+        }
+      ],
+      "language": "rust",
+      "intent": "navigation",
+      "label_provenance": "authored fixture; oracle-assisted selection; not independently graded"
+    },
+    {
+      "id": "source-continuation",
+      "query": "sym:assemble_packet",
+      "relevant": [
+        {
+          "path": "packet.rs",
+          "start": 761,
+          "end": 769
+        }
+      ],
+      "language": "rust",
+      "intent": "navigation",
+      "label_provenance": "authored fixture; oracle-assisted selection; not independently graded"
+    },
+    {
+      "id": "result-pagination",
+      "query": "step",
+      "relevant": [
+        {
+          "path": "packet.rs",
+          "start": 192,
+          "end": 198
+        }
+      ],
+      "language": "rust",
+      "intent": "navigation",
+      "label_provenance": "authored fixture; oracle-assisted selection; not independently graded"
+    }
+  ]
+}

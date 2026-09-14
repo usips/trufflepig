@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "workflow_version": "navigation-v1",
+  "label": "oracle-assisted navigation replay",
+  "response_budget_tokens": 600,
+  "maximum_result_pages": 3,
+  "maximum_tool_calls": 8,
+  "instructions": [
+    "Verify the frozen file set and SHA-256 hashes before indexing and each task; verify them again after replay.",
+    "Search using the frozen task query. Count the first search toward both result-page and tool-call limits.",
+    "Use relevance labels to select overlapping metadata hits in returned rank order. Record this selection as oracle-assisted.",
+    "Read selected immutable handles using show. Follow only returned show continuations; never substitute a current-path read.",
+    "When the task requires ctx, request ctx for a selected handle. Require a successful complete context response with a nonempty relationship list.",
+    "Follow search-result continuations with more when selected source candidates are exhausted, subject to three total result pages.",
+    "Credit source evidence only for complete successful responses with matching selected revisions and emitted original bytes covering the full labeled span.",
+    "Stop on complete source evidence and required context, exhaustion, three result pages, or eight tool calls.",
+    "Preserve misses, incomplete delivery, elapsed time, bytes, observed costs, and censoring; never infer unknown token counts or task success."
+  ]
+}
