@@ -25,7 +25,8 @@ pub(super) fn resolve(store: &Store, value: &str) -> Result<Selection> {
                 path: hit.path,
                 revision: hit.revision,
                 commit: None,
-                symbol: (hit.kind != "file").then_some(hit.name),
+                symbol: (!matches!(hit.kind.as_str(), "file" | "source_region"))
+                    .then_some(hit.name),
                 span: Some(ByteSpan::new(hit.start, hit.end)?),
             },
             ResultEntry::Change(change) => {
@@ -49,26 +50,37 @@ pub(super) fn resolve(store: &Store, value: &str) -> Result<Selection> {
     }
     if let Some(name) = value.strip_prefix("sym:") {
         let mut query = store.conn.prepare("SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container FROM definitions d JOIN files f ON f.id=d.file_id WHERE d.name=?1 ORDER BY f.path,d.start")?;
-        let hits = query
-            .query_map([name], |r| {
-                Ok(Hit {
-                    handle: String::new(),
-                    path: r.get(0)?,
-                    revision: r.get(1)?,
-                    start: r.get::<_, i64>(2)? as usize,
-                    end: r.get::<_, i64>(3)? as usize,
-                    start_line: 0,
-                    end_line: 0,
-                    name: r.get(4)?,
-                    kind: r.get(5)?,
-                    container: r.get(6)?,
-                    provenance: None,
-                    resolution: None,
-                    candidates: Vec::new(),
-                    target: None,
-                })
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let rows = query.query_map([name], |r| {
+            Ok(Hit {
+                handle: String::new(),
+                path: r.get(0)?,
+                revision: r.get(1)?,
+                start: r.get::<_, i64>(2)? as usize,
+                end: r.get::<_, i64>(3)? as usize,
+                start_line: 0,
+                end_line: 0,
+                name: r.get(4)?,
+                kind: r.get(5)?,
+                container: r.get(6)?,
+                provenance: None,
+                resolution: None,
+                candidates: Vec::new(),
+                target: None,
+            })
+        })?;
+        let mut hits = Vec::with_capacity(16);
+        let mut retained = super::staging::StagingBudget::new(super::staging::ENTRY_BYTES);
+        for row in rows {
+            let hit = row?;
+            anyhow::ensure!(
+                hits.len() < crate::results::MAX_HITS,
+                "history_resource_limited: symbol candidate staging limit"
+            );
+            retained.reserve(super::staging::entry_charge(&ResultEntry::LiveSource(
+                hit.clone(),
+            ))?)?;
+            hits.push(hit);
+        }
         if hits.len() != 1 {
             return Ok(Selection::Candidates(hits));
         }

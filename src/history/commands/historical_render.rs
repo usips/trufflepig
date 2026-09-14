@@ -8,7 +8,8 @@ pub(super) fn scoped_hunks(
     // The persisted coordinates are readable independently if a hunk does not fit.
     let mut value: Value = serde_json::from_str(&response)?;
     let mut hunks = Vec::new();
-    for hit in value["hits"].as_array().into_iter().flatten() {
+    let mut retained = staging::StagingBudget::new(staging::HUNK_BYTES);
+    'hits: for hit in value["hits"].as_array().into_iter().flatten() {
         let entry: ResultEntry = serde_json::from_value(hit.clone())?;
         if let ResultEntry::Change(change) = entry {
             let mut hunk = json!({"handle":change.handle});
@@ -16,6 +17,17 @@ pub(super) fn scoped_hunks(
                 if let Some(side) = side {
                     let bytes = history.repository.blob(&side.blob)?;
                     let span = side.span.validate(bytes.len())?;
+                    let multiplier = if std::str::from_utf8(&bytes[span.start..span.end]).is_ok() {
+                        6
+                    } else {
+                        18
+                    };
+                    if retained
+                        .reserve((span.end - span.start) * multiplier + 1024)
+                        .is_err()
+                    {
+                        break 'hits;
+                    }
                     hunk[name] = json!({"start":span.start,"end":span.end,"text":display_bytes(&bytes[span.start..span.end]),"encoding":if std::str::from_utf8(&bytes[span.start..span.end]).is_ok(){"utf8"}else{"byte-escaped"}});
                 }
             }

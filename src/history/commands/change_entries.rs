@@ -33,19 +33,26 @@ pub(super) fn entries(
                     _ if error.to_string().contains("resource") => "resource_excluded",
                     _ => "object_unavailable",
                 };
-                entries.push(ResultEntry::Change(crate::results::ChangeEntry {
+                let excluded_entry = ResultEntry::Change(crate::results::ChangeEntry {
                     handle: String::new(),
                     name: file.path.clone(),
                     status: status.into(),
                     before: None,
                     after: None,
                     correspondence: "unavailable".into(),
-                }));
+                });
+                let charge = staging::entry_charge(&excluded_entry)?;
+                if charge > staging::ENTRY_BYTES.saturating_sub(staged_bytes) {
+                    truncated = true;
+                    break;
+                }
+                staged_bytes += charge;
+                entries.push(excluded_entry);
                 continue;
             }
         };
-        let entry_bytes = serde_json::to_vec(&entry)?.len();
-        let remaining = (16 * 1024 * 1024usize).saturating_sub(staged_bytes) / entry_bytes.max(1);
+        let entry_bytes = staging::entry_charge(&ResultEntry::Change(entry.clone()))?;
+        let remaining = staging::ENTRY_BYTES.saturating_sub(staged_bytes) / entry_bytes.max(1);
         if remaining == 0 {
             truncated = true;
             excluded += 1;

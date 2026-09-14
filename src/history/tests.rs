@@ -144,6 +144,35 @@ fn diff_marks_omitted_hunks_as_truncated() {
     assert_eq!(response["truncated"], true);
     let handle = response["hits"][0]["handle"].as_str().unwrap();
     let set = crate::results::load_entries(&store, handle.split(':').next().unwrap()).unwrap();
-    assert_eq!(set.hits.len(), crate::results::MAX_HITS);
+    assert!(!set.hits.is_empty() && set.hits.len() <= crate::results::MAX_HITS);
     assert!(set.truncated);
+}
+
+#[test]
+fn source_region_handles_keep_range_without_symbol_inference() {
+    let (root, cache) = fixture();
+    let mut store = Store::open(root.path(), &cache.path().join("live")).unwrap();
+    store.index().unwrap();
+    let mut hit = crate::search::map(&store, "").unwrap().hits.remove(0);
+    hit.kind = "source_region".into();
+    hit.name = hit.path.clone();
+    hit.start = 0;
+    hit.end = 5;
+    let id = crate::results::save_entries(
+        &store,
+        store.generation().unwrap(),
+        serde_json::json!({}),
+        vec![crate::results::ResultEntry::LiveSource(hit)],
+        false,
+    )
+    .unwrap();
+    let targets::Selection::Target(target) = targets::resolve(&store, &format!("{id}:1")).unwrap()
+    else {
+        panic!("explicit region selection");
+    };
+    assert!(target.symbol.is_none());
+    assert_eq!(
+        target.span,
+        Some(crate::identity::ByteSpan { start: 0, end: 5 })
+    );
 }

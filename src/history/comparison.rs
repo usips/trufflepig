@@ -1,3 +1,4 @@
+use super::staging::{self, StagingBudget};
 use super::*;
 use crate::{
     identity::ByteSpan,
@@ -7,6 +8,10 @@ use anyhow::{Context, ensure};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::os::unix::ffi::OsStrExt;
+mod retained_changes;
+use retained_changes::{compare_trees, decode_changes};
+#[cfg(test)]
+mod tests;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(super) struct TreeFile {
@@ -49,6 +54,12 @@ fn tree_unscoped(
         history
             .repository
             .run(&["ls-tree", "-rz", "--full-tree", revision.as_str(), "--"])?;
+    parse_tree(&data)
+}
+
+fn parse_tree(data: &[u8]) -> Result<BTreeMap<String, TreeFile>> {
+    let mut budget = StagingBudget::new(staging::TREE_BYTES);
+    budget.reserve(4096)?;
     let mut entries = BTreeMap::new();
     for row in data.split(|&b| b == 0).filter(|r| !r.is_empty()) {
         let split = row
@@ -63,7 +74,18 @@ fn tree_unscoped(
             "history_unavailable: malformed tree entry"
         );
         let raw = &row[split + 1..];
+        ensure!(
+            raw.len() <= staging::PATH_BYTES / 3,
+            "history_resource_limited: historical path staging limit"
+        );
         let path = crate::store::encode_path(Path::new(std::ffi::OsStr::from_bytes(raw)));
+        budget.reserve(
+            path.capacity()
+                + path.len()
+                + std::mem::size_of::<TreeFile>()
+                + std::mem::size_of::<String>()
+                + 256,
+        )?;
         entries.insert(
             path.clone(),
             TreeFile {
@@ -88,82 +110,25 @@ pub(super) fn compare(
         let cached: Option<String> = history
             .conn
             .query_row(
-                "SELECT payload FROM changes WHERE before_oid=?1 AND after_oid=?2",
+                "SELECT CASE WHEN length(CAST(payload AS BLOB))<=8388608 THEN payload ELSE NULL END FROM changes WHERE before_oid=?1 AND after_oid=?2",
                 rusqlite::params![before_key, after.as_str()],
-                |r| r.get(0),
+                |r| r.get::<_,Option<String>>(0),
             )
-            .optional()?;
+            .optional()?.flatten();
         if let Some(payload) = cached {
-            return Ok(serde_json::from_str(&payload)?);
+            return decode_changes(&payload);
         }
     }
-    let old = tree_unscoped(history, before)?;
-    let new = tree_unscoped(history, Some(after))?;
-    let mut deleted = Vec::new();
-    let mut added = Vec::new();
-    let mut changes = Vec::with_capacity(old.len().min(128));
-    for (path, file) in &old {
-        match new.get(path) {
-            Some(next) if next.oid == file.oid && next.mode == file.mode => {}
-            Some(next) => changes.push(FileChange {
-                before: Some(file.clone()),
-                after: Some(next.clone()),
-                status: "modified".into(),
-            }),
-            None => deleted.push(file.clone()),
-        }
-    }
-    for (path, file) in &new {
-        if !old.contains_key(path) {
-            added.push(file.clone());
-        }
-    }
-    let mut old_counts = HashMap::new();
-    let mut new_counts = HashMap::new();
-    for file in &deleted {
-        *old_counts.entry(file.oid).or_insert(0usize) += 1;
-    }
-    for file in &added {
-        *new_counts.entry(file.oid).or_insert(0usize) += 1;
-    }
-    for file in deleted {
-        let rename = if old_counts[&file.oid] == 1 && new_counts.get(&file.oid) == Some(&1) {
-            added
-                .iter()
-                .position(|a| a.oid == file.oid && a.mode == file.mode)
-        } else {
-            None
-        };
-        if let Some(index) = rename {
-            changes.push(FileChange {
-                before: Some(file),
-                after: Some(added.swap_remove(index)),
-                status: "renamed_exact_blob".into(),
-            });
-        } else {
-            changes.push(FileChange {
-                before: Some(file),
-                after: None,
-                status: "deleted".into(),
-            });
-        }
-    }
-    changes.extend(added.into_iter().map(|file| FileChange {
-        before: None,
-        after: Some(file),
-        status: "added".into(),
-    }));
-    changes.sort_by(|a, b| {
-        a.after
-            .as_ref()
-            .or(a.before.as_ref())
-            .map(|f| &f.path)
-            .cmp(&b.after.as_ref().or(b.before.as_ref()).map(|f| &f.path))
-    });
+    let mut changes = compare_trees(
+        tree_unscoped(history, before)?,
+        tree_unscoped(history, Some(after))?,
+    )?;
     if history.repository.root_prefix.is_empty() {
-        let payload = serde_json::to_string(&changes)?;
+        let payload = staging::bounded_json(&changes, staging::CACHE_BYTES);
         let _writer = storage::write_lease(&history.cache)?;
-        if payload.len() <= 8 * 1024 * 1024 && storage::capacity(history).is_ok() {
+        if let Ok(payload) = payload
+            && storage::capacity(history).is_ok()
+        {
             history.conn.execute(
                 "INSERT OR IGNORE INTO changes VALUES(?1,?2,?3)",
                 rusqlite::params![before_key, after.as_str(), payload],

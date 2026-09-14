@@ -95,6 +95,7 @@ pub(super) fn blame(
         ensure_captured_head(history)?;
     }
     let mut runs: Vec<Value> = Vec::with_capacity(128);
+    let mut retained_runs = staging::StagingBudget::new(staging::HUNK_BYTES);
     let mut pending = None;
     let mut ignored_line = false;
     let mut unblamable = false;
@@ -134,6 +135,8 @@ pub(super) fn blame(
                 let last = runs.last_mut().expect("contiguous run");
                 last["lines"] = json!(last["lines"].as_u64().unwrap_or(0) + 1);
             } else {
+                // Reserve the run, JSON container clone, and serialized response together.
+                retained_runs.reserve(3 * 1024)?;
                 runs.push(json!({"commit":oid,"original_start":original,"start_line":final_line,"lines":1,"ignored":ignored_line,"unblamable":unblamable}));
             }
             ignored_line = false;

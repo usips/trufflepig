@@ -145,6 +145,7 @@ pub(super) fn hist(
     let mut examined = 0usize;
     let mut scope_boundary = false;
     let mut entry_truncated = false;
+    let mut retained_entries = staging::StagingBudget::new(staging::ENTRY_BYTES);
     for (oid, parent, eligible) in commits.iter().take(256) {
         examined += 1;
         let after = GitOid::parse(oid)?;
@@ -189,9 +190,22 @@ pub(super) fn hist(
             entry_truncated |=
                 changes_found.len() > results::MAX_HITS.saturating_sub(collected.len());
             changes_found.truncate(results::MAX_HITS.saturating_sub(collected.len()));
-            collected.append(&mut changes_found);
+            for entry in changes_found {
+                if retained_entries
+                    .reserve(staging::entry_charge(&entry)?)
+                    .is_err()
+                {
+                    entry_truncated = true;
+                    break;
+                }
+                collected.push(entry);
+            }
         }
-        if reached_addition || scope_boundary || collected.len() >= results::MAX_HITS {
+        if reached_addition
+            || scope_boundary
+            || entry_truncated
+            || collected.len() >= results::MAX_HITS
+        {
             break;
         }
     }

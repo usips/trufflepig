@@ -38,7 +38,9 @@ movement detection (`-M`), and ignored whitespace (`-w`). `--raw` disables those
 last two options. `--ignore-revs-file FILE` supplies explicit exclusions; no
 formatter revisions are inferred. Live handles use their published source buffer
 with a captured-HEAD race guard; historical handles use their stored commit
-endpoint. Attribution identifies commits, not an agent's ownership of edits.
+endpoint. Supplied-buffer reads disable configured clean/process filters and
+reject other attribute conversions that change the verified bytes. Attribution
+identifies commits, not an agent's ownership of edits.
 Blame output can truncate to the response budget.
 
 ## Selection and correspondence
@@ -110,12 +112,20 @@ database. Obsolete traversal views expire after thirty days. Publication is not
 atomic across live, history, and diagnostic databases.
 
 Historical blobs and supplied Git input are capped at 2 MiB; each subprocess has
-an 8 MiB combined stdout/stderr cap. Generated entry metadata is capped at
-16 MiB and 10,000 entries for commit comparisons; their hunk construction caps
-combined input at 100,000 newline tokens.
-There is no measured single 64 MiB allocator/RSS ceiling. History SQLite has a
-2 GiB page ceiling; a
-256 MiB WAL threshold requires checkpointing. Capacity checks evict reusable
+an 8 MiB combined stdout/stderr cap. Retained history staging has a conservative
+64 MiB partition: two trees at 6 MiB each, comparison indexes at 4 MiB, changes
+at 8 MiB, cache serialization at 8 MiB, entries at 16 MiB, hunk rendering at
+8 MiB, and Git output at 8 MiB. Charges include owned strings and conservative
+container overhead; phases release their preceding buffers. Cached rows are
+size-checked before loading and decoded incrementally against the change budget.
+Encoded paths are bounded at 128 KiB. Working-tree file metadata uses the tree
+budget and its sorted path references are bounded at 1 MiB.
+Generated entries also have a 10,000-entry cap; hunk construction bounds combined
+input at 100,000 newline tokens. Staging exhaustion reports a resource limit or
+explicit truncation. These are retained-payload bounds, not a measured whole-process
+RSS ceiling; parser, inference, and allocator internals are separate.
+History SQLite has a 2 GiB page ceiling. A 256 MiB WAL ceiling reserves room for
+bounded publication and requires checkpointing. Capacity checks evict reusable
 change-cache entries before indexed progress stops. Blocked checkpoint/capacity
 reports resource-limited coverage. These bounds do not establish foreground
 latency or whole-process memory guarantees under repository-scale load.

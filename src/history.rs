@@ -6,6 +6,7 @@ mod commands;
 mod comparison;
 pub mod git;
 pub mod source_diff;
+mod staging;
 mod storage;
 mod targets;
 #[cfg(test)]
