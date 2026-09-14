@@ -6,7 +6,7 @@ use crate::{
     store::Store,
 };
 use anyhow::{Context, Result, bail, ensure};
-use std::path::{Component, Path};
+use std::path::Component;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SourceSide {
@@ -147,7 +147,7 @@ fn acquire_historical(
 ) -> Result<AcquiredSource> {
     let repository = crate::history::git::GitRepository::discover(&store.root)?;
     ensure!(
-        repository.common_dir == Path::new(&identity.repository),
+        repository.common_dir == crate::store::decode_path(&identity.repository)?,
         "scope_boundary: historical source belongs to another repository"
     );
     let decoded = crate::store::decode_path(&identity.path)?;
@@ -158,12 +158,7 @@ fn acquire_historical(
                 .all(|part| matches!(part, Component::Normal(_))),
         "scope_boundary: historical path is outside configured root"
     );
-    let path = repository.repository_path(
-        decoded
-            .to_str()
-            .context("source_unavailable: Git path requires UTF-8")?,
-    )?;
-    let tree = repository.run(&["ls-tree", "-z", identity.commit.as_str(), "--", &path])?;
+    let tree = repository.tree_entry(&identity.commit, &decoded)?;
     let header = tree.split(|b| *b == b'\t').next().unwrap_or_default();
     let header = std::str::from_utf8(header)?;
     let mut fields = header.split_whitespace();

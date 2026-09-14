@@ -72,14 +72,7 @@ fn historical_fixture(
     let commit = GitOid::parse(&git(root.path(), &["rev-parse", "HEAD"])).unwrap();
     let blob = GitOid::parse(&git(root.path(), &["rev-parse", "HEAD:lib.rs"])).unwrap();
     let identity = HistoricalSource {
-        repository: root
-            .path()
-            .join(".git")
-            .canonicalize()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .into(),
+        repository: crate::store::encode_path(&root.path().join(".git").canonicalize().unwrap()),
         commit,
         blob,
         path: "lib.rs".into(),
@@ -176,4 +169,62 @@ fn historical_scope_and_regular_file_contract_are_checked() {
     let handle = save_change(&subtree, identity);
     assert!(show_with_side(&subtree, &handle, Some(SourceSide::After), &budget).is_err());
     drop(cache);
+}
+
+#[test]
+fn historical_reads_decode_repository_and_non_utf8_file_paths() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+    let root = tempfile::Builder::new()
+        .prefix(OsStr::from_bytes(b"history repo % : @ \xfe "))
+        .tempdir()
+        .unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    git(root.path(), &["init", "-q"]);
+    let filename = Path::new(OsStr::from_bytes(b"literal [x] % : @ \xff.rs"));
+    let bytes = b"fn original_bytes() {}\n";
+    std::fs::write(root.path().join(filename), bytes).unwrap();
+    git(root.path(), &["add", "--all"]);
+    git(
+        root.path(),
+        &[
+            "-c",
+            "core.hooksPath=/dev/null",
+            "commit",
+            "-qm",
+            "byte filename",
+        ],
+    );
+    let output = Command::new("git")
+        .current_dir(root.path())
+        .arg("hash-object")
+        .arg(filename)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let identity = HistoricalSource {
+        repository: crate::store::encode_path(&root.path().join(".git").canonicalize().unwrap()),
+        commit: GitOid::parse(&git(root.path(), &["rev-parse", "HEAD"])).unwrap(),
+        blob: GitOid::parse(std::str::from_utf8(&output.stdout).unwrap().trim()).unwrap(),
+        path: crate::store::encode_path(filename),
+        span: ByteSpan::new(0, bytes.len()).unwrap(),
+    };
+    assert!(identity.repository.contains("%25"));
+    assert!(identity.repository.contains("%3A"));
+    assert!(identity.repository.contains("%40"));
+    let store = Store::open(root.path(), cache.path()).unwrap();
+    let handle = save_change(&store, identity.clone());
+    let value: serde_json::Value = serde_json::from_str(
+        &show_with_side(
+            &store,
+            &handle,
+            Some(SourceSide::After),
+            &OutputBudget::new(600).unwrap(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(value["historical"]["repository"], identity.repository);
+    assert_eq!(value["path"], identity.path);
+    assert_eq!(value["lines"][0]["text"], "fn original_bytes() {}\n");
 }
