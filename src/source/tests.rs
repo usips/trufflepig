@@ -249,3 +249,5 @@ fn historical_content_revision_must_match_verified_blob() {
             .contains("historical content revision does not match")
     );
 }
+
+mod published_spans;

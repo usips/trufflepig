@@ -109,7 +109,7 @@ pub(super) fn since_uncommitted(
                         handle: String::new(), path: path.clone(), revision: current.and_then(|(revision, _)| revision.clone()),
                         start: span.start, end: span.end,
                         start_line: line_number(bytes, span.start), end_line: line_number(bytes, span.end.saturating_sub(1).max(span.start)),
-                        name: path.clone(), kind: "file".into(), container: None,
+                        name: path.clone(), kind: "source_region".into(), container: None,
                         provenance: Some(format!("published_generation:{}:after", publication.generation)),
                         resolution: Some(correspondence), candidates: Vec::new(), target: None,
                     }));
