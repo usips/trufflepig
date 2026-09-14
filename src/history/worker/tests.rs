@@ -161,30 +161,8 @@ fn cache_identity_shares_worktrees_and_isolates_clones_and_overrides() -> Result
     let worktree = directory.path().join("worktree");
     let clone = directory.path().join("clone");
     fs::create_dir(&repository)?;
-    let git = |root: &Path, arguments: &[&std::ffi::OsStr]| -> Result<()> {
-        let output = Command::new("git")
-            .current_dir(root)
-            .args([
-                "-c",
-                "user.name=Worker Test",
-                "-c",
-                "user.email=worker@example.invalid",
-                "-c",
-                "core.hooksPath=/dev/null",
-                "-c",
-                "commit.gpgSign=false",
-            ])
-            .args(arguments)
-            .output()?;
-        anyhow::ensure!(
-            output.status.success(),
-            "fixture Git failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        Ok(())
-    };
-    git(&repository, &["init".as_ref(), "-q".as_ref()])?;
-    git(
+    worker_fixture_git(&repository, &["init".as_ref(), "-q".as_ref()])?;
+    worker_fixture_git(
         &repository,
         &[
             "commit".as_ref(),
@@ -193,7 +171,7 @@ fn cache_identity_shares_worktrees_and_isolates_clones_and_overrides() -> Result
             "root".as_ref(),
         ],
     )?;
-    git(
+    worker_fixture_git(
         &repository,
         &[
             "worktree".as_ref(),
@@ -202,7 +180,7 @@ fn cache_identity_shares_worktrees_and_isolates_clones_and_overrides() -> Result
             worktree.as_os_str(),
         ],
     )?;
-    git(
+    worker_fixture_git(
         directory.path(),
         &[
             "clone".as_ref(),
@@ -221,5 +199,82 @@ fn cache_identity_shares_worktrees_and_isolates_clones_and_overrides() -> Result
         resolve_cache(&repository, Some(&live), Some(&shared))?
     );
     assert!(resolve_cache(&repository, Some(&live), None)?.starts_with(live.join("history")));
+    Ok(())
+}
+
+fn worker_fixture_git(root: &Path, arguments: &[&std::ffi::OsStr]) -> Result<()> {
+    let output = Command::new("git")
+        .current_dir(root)
+        .args([
+            "-c",
+            "user.name=Worker Test",
+            "-c",
+            "user.email=worker@example.invalid",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "commit.gpgSign=false",
+        ])
+        .args(arguments)
+        .output()?;
+    anyhow::ensure!(
+        output.status.success(),
+        "fixture Git failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok(())
+}
+
+#[test]
+fn worker_finishes_a_scheduled_tip_after_head_moves() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let root = directory.path().join("repository");
+    let cache = directory.path().join("cache");
+    fs::create_dir(&root)?;
+    worker_fixture_git(&root, &["init".as_ref(), "-q".as_ref()])?;
+    worker_fixture_git(
+        &root,
+        &[
+            "commit".as_ref(),
+            "--allow-empty".as_ref(),
+            "-qm".as_ref(),
+            "before".as_ref(),
+        ],
+    )?;
+    let captured = History::open(&root, &cache)?;
+    captured.schedule()?;
+    worker_fixture_git(
+        &root,
+        &[
+            "commit".as_ref(),
+            "--allow-empty".as_ref(),
+            "-qm".as_ref(),
+            "after".as_ref(),
+        ],
+    )?;
+    assert_ne!(captured.tip, History::open(&root, &cache)?.tip);
+    register(&root, &cache)?;
+    let worker_cache = cache.clone();
+    let (finished, receive) = std::sync::mpsc::channel();
+    let thread = std::thread::spawn(move || {
+        let _ = finished.send(serve(&worker_cache));
+    });
+    let deadline = std::time::Instant::now() + Duration::from_secs(6);
+    while captured.status()?["complete"] != true {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "worker abandoned scheduled captured tip"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    {
+        let _guard = registration_lock(&cache)?;
+        for entry in fs::read_dir(cache.join(REGISTRATIONS))? {
+            fs::remove_file(entry?.path())?;
+        }
+    }
+    receive.recv_timeout(Duration::from_secs(5))??;
+    thread.join().unwrap();
+    assert_eq!(captured.status()?["visited"], 1);
     Ok(())
 }

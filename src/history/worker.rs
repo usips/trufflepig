@@ -258,7 +258,7 @@ pub fn serve(cache: &Path) -> Result<()> {
                 if hints.is_none() {
                     hints = ref_hints(&history.repository.common_dir);
                 }
-                history.index()
+                history.index_pending()
             });
             if let Err(error) = result {
                 eprintln!("trufflepig: history indexing failed: {error:#}");
