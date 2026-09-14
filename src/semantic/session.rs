@@ -139,7 +139,14 @@ fn resident_bytes() -> Option<u64> {
 
 struct InferenceLease {
     cache: PathBuf,
-    _lock: File,
+    lock: File,
+}
+
+impl Drop for InferenceLease {
+    fn drop(&mut self) {
+        // A duplicated or inherited descriptor must not retain the released lease.
+        let _ = FileExt::unlock(&self.lock);
+    }
 }
 
 impl InferenceLease {
@@ -160,7 +167,7 @@ impl InferenceLease {
             }
             return Err(error).context("semantic_unavailable: cannot acquire inference lock");
         }
-        Ok(Self { cache, _lock: lock })
+        Ok(Self { cache, lock })
     }
 
     fn verify_cache(&self, cache: &Path) -> Result<()> {
@@ -240,15 +247,17 @@ mod tests {
     }
 
     #[test]
-    fn semantic_inference_lease_is_exclusive_and_released() -> Result<()> {
+    fn semantic_inference_lease_releases_duplicated_descriptor() -> Result<()> {
         let directory = tempfile::tempdir()?;
         let lease = InferenceLease::acquire(directory.path())?;
+        let inherited = lease.lock.try_clone()?;
         let error = InferenceLease::acquire(directory.path())
             .err()
             .context("second lease succeeded")?;
         assert!(error.to_string().starts_with("semantic_busy:"));
         drop(lease);
         assert!(InferenceLease::acquire(directory.path()).is_ok());
+        drop(inherited);
         Ok(())
     }
 
