@@ -93,8 +93,10 @@ eviction limits. Historical entries are invalid inputs to live `ctx`.
 
 One client emission boundary handles successful responses, help, version, usage
 errors, execution errors, zero-budget silence, and broken pipes. Errors exit 2
-with a budgeted JSON error when it fits and a separate stderr diagnostic. Budget
-zero emits no stdout bytes. Successful empty complete search exits zero.
+with a budgeted JSON error when it fits and a separate stderr diagnostic.
+Insufficient-budget failures include a retry hint on stderr even when no JSON
+error fits. Budget zero emits no stdout bytes. Successful empty complete search
+exits zero.
 [Diagnostics](diagnostics-contract.md) distinguish prepared tokens from bytes
 accepted by the stdout writer and require complete receipts for viewed evidence.
 

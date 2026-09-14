@@ -32,7 +32,13 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
             Err(error) => {
                 let message = format!("{error:#}");
                 let outcome = error_outcome(&message);
-                let _ = writeln!(stderr, "{}", message.replace(['\n', '\r'], " "));
+                let stderr_message = message.replace(['\n', '\r'], " ");
+                let stderr_message = if stderr_message.contains("budget_too_small") {
+                    format!("{stderr_message}; {}", retry_hint(options.budget))
+                } else {
+                    stderr_message
+                };
+                let _ = writeln!(stderr, "{stderr_message}");
                 (
                     render(options.budget, &json!({"error":message})),
                     outcome,
@@ -61,7 +67,7 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
             }
             (
                 if key == "help" {
-                    OutputBudget::new(options.budget.min(1_000_000)).and_then(|budget| budget.render(&json!({key:message}))).unwrap_or_else(|_| render(options.budget, &json!({"help":"Commands: ws show, ws status, ws discover PATH..., search, show, more, ctx, refs, map, index, status, doctor, hist-index, hist-status, hist, since, diff, blame, session start, session end ID, audit, forget-logs, stop. Options: --workspace, --no-workspace, --member, --root, --cache, --history-cache, --no-daemon, --budget (default 600), --session, --diagnostics off|metadata|detailed.","truncated":true,"details":"Use --help --budget 2000 for full option descriptions"})))
+                    OutputBudget::new(options.budget.min(1_000_000)).and_then(|budget| budget.render(&json!({key:message}))).unwrap_or_else(|_| render(options.budget, &json!({"help":"Commands: ws show, ws status, ws discover PATH..., search, show, more, ctx, refs, map, index, status, doctor, hist-index, hist-status, hist, since, diff, blame, session start, session end ID, audit, forget-logs, stop. Options: --workspace, --no-workspace, --member, --root, --cache, --history-cache, --no-daemon, --budget (default 600), --session, --diagnostics off|metadata|detailed.","truncated":true,"details":"Use --help -b 2000 for full option descriptions"})))
                 } else {
                     render(options.budget, &json!({key:message}))
                 },
@@ -99,11 +105,7 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
         event.member = member;
         capture_emitted(&root, &response, &mut event);
         if matches!(operation, Operation::Search) && options.diagnostics == "detailed" {
-            event.raw_query = Some(if options.words.first().is_some_and(|w| w == "search") {
-                options.words[1..].join(" ")
-            } else {
-                options.words.join(" ")
-            });
+            event.raw_query = Some(options.words[1..].join(" "));
         }
         // Deletion itself must leave no fresh journal or revived session behind.
         if !matches!(operation, Operation::ForgetLogs) {
@@ -148,8 +150,11 @@ pub(super) fn operation(options: &Arguments) -> Operation {
         "session" => Operation::SessionEnd,
         "audit" => Operation::Audit,
         "forget-logs" => Operation::ForgetLogs,
-        "serve" | "history-serve" | "stop" => Operation::Other,
-        _ => Operation::Search,
+        "search" => Operation::Search,
+        "serve" | "history-serve" | "stop" | "ws" | "workspace-serve" | "semantic-check" => {
+            Operation::Other
+        }
+        _ => Operation::Usage,
     }
 }
 
@@ -160,10 +165,26 @@ fn error_outcome(message: &str) -> Outcome {
         Outcome::Stale
     } else if message.contains("unavailable") || message.contains("expired_") {
         Outcome::Unavailable
-    } else if message.contains("invalid_") || message.contains("usage:") {
+    } else if message.contains("invalid_")
+        || message.contains("unknown_command")
+        || message.contains("usage:")
+    {
         Outcome::InvalidInput
     } else {
         Outcome::Failure
+    }
+}
+
+fn retry_budget(current: usize) -> usize {
+    current.saturating_mul(2).max(2_000).min(1_000_000)
+}
+
+fn retry_hint(current: usize) -> String {
+    let suggestion = retry_budget(current);
+    if suggestion > current {
+        format!("retry with -b {suggestion}")
+    } else {
+        "maximum budget is 1000000; narrow the request".into()
     }
 }
 
