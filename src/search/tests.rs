@@ -1,0 +1,162 @@
+use super::*;
+use crate::{output::OutputBudget, results};
+
+fn fixture(files: &[(&str, &[u8])]) -> (tempfile::TempDir, tempfile::TempDir, Store) {
+    let root = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    for (path, bytes) in files {
+        std::fs::write(root.path().join(path), bytes).unwrap();
+    }
+    let mut store = Store::open(root.path(), cache.path()).unwrap();
+    store.index().unwrap();
+    (root, cache, store)
+}
+
+#[test]
+fn excluded_files_remain_visible_and_do_not_break_search() {
+    let (_root, cache, mut store) =
+        fixture(&[("lib.rs", b"fn hello() {}"), ("data.bin", b"\0binary")]);
+    let set = search(&store, &Query::parse("hello").unwrap(), false, cache.path()).unwrap();
+    assert!(set.hits.iter().any(|h| h.name == "hello"));
+    let set = search(
+        &store,
+        &Query::parse("data.bin").unwrap(),
+        false,
+        cache.path(),
+    )
+    .unwrap();
+    assert_eq!(set.hits.len(), 1);
+    assert_eq!(set.hits[0].revision, None);
+    let id = results::save(&mut store, set).unwrap();
+    assert!(
+        source::show(&store, &format!("{id}:1"), &OutputBudget::new(600).unwrap())
+            .unwrap_err()
+            .to_string()
+            .contains("source_excluded")
+    );
+}
+
+#[test]
+fn lexical_search_covers_symbol_middles_gaps_docs_and_config() {
+    let body = format!(
+        "fn long_function() {{\n{}\nlet middle_needle=1;\n{}\n}}\n// gap_needle\n",
+        "// padding\n".repeat(600),
+        "// padding\n".repeat(600)
+    );
+    let (_root, cache, store) = fixture(&[
+        ("lib.rs", body.as_bytes()),
+        ("notes.md", b"documentation_needle"),
+        ("config.toml", b"config_needle=1"),
+    ]);
+    for needle in [
+        "middle_needle",
+        "gap_needle",
+        "documentation_needle",
+        "config_needle",
+    ] {
+        let set = search(&store, &Query::parse(needle).unwrap(), false, cache.path()).unwrap();
+        assert!(!set.hits.is_empty(), "{needle}");
+    }
+    let set = search(
+        &store,
+        &Query::parse("middle needle lang:rust").unwrap(),
+        false,
+        cache.path(),
+    )
+    .unwrap();
+    assert!(!set.hits.is_empty());
+}
+
+#[test]
+fn live_regex_finds_new_files_and_refuses_old_graph() {
+    let (root, cache, mut store) = fixture(&[("lib.rs", b"fn alpha() {}")]);
+    std::fs::write(root.path().join("new.rs"), "fn live_needle() {}\n").unwrap();
+    let set = search(
+        &store,
+        &Query::parse("re:live_needle").unwrap(),
+        false,
+        cache.path(),
+    )
+    .unwrap();
+    assert_eq!(set.hits[0].path, "new.rs");
+    let id = results::save(&mut store, set).unwrap();
+    assert!(
+        context(&store, &format!("{id}:1"), &OutputBudget::new(600).unwrap())
+            .unwrap_err()
+            .to_string()
+            .contains("stale_result")
+    );
+    let set = search(
+        &store,
+        &Query::parse("re:live_needle kind:struct").unwrap(),
+        false,
+        cache.path(),
+    )
+    .unwrap();
+    assert!(set.hits.is_empty());
+}
+
+#[test]
+fn escaped_file_handles_read_current_contents() {
+    let (_root, cache, mut store) = fixture(&[("odd:1-2\n%.md", b"unique file content\n")]);
+    let set = search(&store, &Query::parse("odd").unwrap(), false, cache.path()).unwrap();
+    let path = set
+        .hits
+        .iter()
+        .find(|h| h.kind == "file")
+        .unwrap()
+        .path
+        .clone();
+    assert!(path.contains("%3A"));
+    assert!(path.contains("%0A"));
+    let id = results::save(&mut store, set).unwrap();
+    let set = results::load(&store, &id).unwrap();
+    let hit = set.hits.iter().find(|h| h.kind == "file").unwrap();
+    let budget = OutputBudget::new(600).unwrap();
+    assert!(
+        source::show(&store, &hit.handle, &budget)
+            .unwrap()
+            .contains("unique file content")
+    );
+    assert!(
+        source::show(&store, &format!("path:{path}"), &budget)
+            .unwrap()
+            .contains("unique file content")
+    );
+}
+
+#[test]
+fn duplicate_definitions_remain_distinct_and_ranking_stable() {
+    let (_root, cache, store) = fixture(&[
+        ("a.rs", b"fn duplicate() {}"),
+        ("b.rs", b"fn duplicate() {}"),
+    ]);
+    let query = Query::parse("sym:duplicate").unwrap();
+    let a = search(&store, &query, false, cache.path()).unwrap();
+    let b = search(&store, &query, false, cache.path()).unwrap();
+    assert_eq!(a.hits.len(), 2);
+    assert_ne!(a.hits[0].path, a.hits[1].path);
+    assert_eq!(
+        serde_json::to_string(&a).unwrap(),
+        serde_json::to_string(&b).unwrap()
+    );
+}
+
+#[test]
+fn filter_only_queries_and_reference_identities_are_useful() {
+    let (_root, cache, store) =
+        fixture(&[("lib.rs", b"fn alpha() {}\nfn caller() { alpha(); }\n")]);
+    let set = search(
+        &store,
+        &Query::parse("file:lib.rs kind:function").unwrap(),
+        false,
+        cache.path(),
+    )
+    .unwrap();
+    assert!(set.hits.iter().any(|h| h.name == "alpha"));
+    let set = references(&store, "alpha").unwrap();
+    let call = set.hits.iter().find(|h| h.kind == "call").unwrap();
+    assert_eq!(call.resolution.as_deref(), Some("resolved"));
+    assert_eq!(call.target.as_ref().unwrap().path, "lib.rs");
+    assert_eq!(call.target.as_ref().unwrap().name, "alpha");
+}

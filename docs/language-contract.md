@@ -7,15 +7,18 @@ and occurrence kind. A relationship separately records its target, state, source
 evidence, and resolver provenance. States distinguish statically resolved,
 candidate, and unresolved sites. An occurrence does not imply a resolved edge.
 
-Only lexical scope, explicit import/module binding, or another documented static
-rule establishes resolution. Name-plus-arity and guessed receiver types remain
-candidates even when there is one candidate. Shadowing, duplicate declarations,
-conditional definitions, overloads, and missing module configuration preserve
-ambiguity. An implementation that leaves every reference unresolved is not
-useful support: fixture acceptance requires successful local static cases and
-false-resolution rejection cases.
+Only a documented static rule establishes resolution. Name-plus-arity and guessed
+receiver types remain candidates even with one candidate. Shadowing, duplicate
+declarations, conditional definitions, overloads, and missing module
+configuration preserve ambiguity. Tests cover successful local resolutions and
+false-resolution rejection; this is a local subset, not compiler-equivalent
+resolution across any of the supported languages.
 
-Extraction queries compile against pinned grammar versions before indexing.
+Rust, TypeScript/JavaScript, and Luau use pinned Tree-sitter grammars with compiled
+reference queries. Parsing has a 500 ms cancellation budget; syntax-tree depth is
+bounded at 256. Invalid UTF-8 in these languages is lexical-only. Parse errors
+retain observed facts with unresolved references rather than proving new targets.
+
 Tree-sitter ABI compatibility is a supported range. `Parser` implements `Sync`,
 but parsing mutates it exclusively. Cancellation yields `None`, not an available
 partial tree; reset before the next independent parse.
@@ -23,55 +26,66 @@ partial tree; reset before the next independent parse.
 
 ## Rust
 
-Extract definitions, lexical containers, import syntax, local bindings, and
-reference occurrences. Preserve distinct trait implementations and conditional
-definitions. Resolve local binding references and conservative direct calls when
-the lexical/module binding is established. Record Rust module declarations,
-inline scopes, and imports without pretending to perform macro expansion,
-trait selection, or type inference. Unsupported imports remain visible evidence.
+Extraction records definitions, lexical containers, import syntax, local
+bindings, and references. Trait implementations and conditional definitions stay
+distinct. Local binding references and conservative unqualified direct calls
+resolve when lexical scope establishes their binding. Qualified names, imported
+targets, and receiver-dependent calls remain candidates or unresolved.
+
+Rust module/import syntax does not constitute full workspace resolution. Macro
+expansion, trait selection, and type inference are outside this subset.
 
 ## TypeScript and JavaScript
 
-Extract functions, classes, fields, named arrow functions, overload declarations,
-imports, and local binding references, including JavaScript and JSX. Document the
-implemented module-resolution subset and relevant bundler configuration alongside
-its tests. Preserve type/value distinctions and alias bindings where known.
+Extraction includes functions, classes, fields, named arrow functions, overloads,
+imports, and local bindings, including JavaScript and JSX. Local resolution
+preserves shadowing and type/value distinctions where represented by the grammar.
 
-Relative modules, explicit export/import bindings, and configured aliases can
-establish targets when unique under that subset. Missing configuration,
-unsupported re-export chains, dynamic imports, or unknown receivers remain
-candidate or unresolved evidence. Do not silently assume complete Node or
-TypeScript compiler semantics.
+Only a unique explicit relative static ES source path, such as `./util.ts`, can
+establish an imported module target. Extensionless paths and `.js` to `.ts`
+substitution remain candidates: ignored files and module-resolution settings can
+change the actual target. An imported module does not prove the target of every
+imported call, re-export, or runtime member.
+
+Nearest `tsconfig.json`/`jsconfig.json` supports JSONC comments/trailing commas,
+`compilerOptions.baseUrl`, and single-wildcard `paths` as candidate evidence.
+Configuration with `extends` does not certify those mappings. Full Node/bundler
+resolution, package exports, and compiler project references are not implemented.
 
 ## Luau
 
-Extract local/global functions, table methods, local bindings, type declarations,
-and module exports. Resolve supported string `require` calls through relative
-paths, `.luaurc` aliases, and explicitly configured Rojo mappings. Module export
-tracking ties local tables/functions to their returned binding.
+Extraction records functions, table methods, local bindings, type declarations,
+module export syntax, and `require` occurrences. Local bindings can resolve;
+`require` calls and module exports remain runtime candidate evidence. A spelling
+match does not prove that the builtin `require` is unshadowed or exports static.
 
-Rojo instance names require an actual mapping; basename similarity is candidate
-evidence. Dynamic exports, runtime table mutation, and unknown receiver values
-cannot establish a static target. Missing configuration is visible.
+String paths use relative candidates and nearest `.luaurc` aliases. An explicit
+root `trufflepig.json` selecting `{"rojo_project":"default.project.json"}` enables
+Rojo `$path` mapping candidates. Instance-path requires such as
+`game.Service.Child` stay candidates. Unconfigured instance names, dynamic
+exports, and runtime table mutation do not establish static targets.
 
 ## DreamMaker
 
-Extract absolute and nested declarations in indentation and brace forms,
-proc/verb distinctions, macros, includes, override occurrences, `parent_type`,
-and observed signal registrations/sends. Preserve source order and conditional
-include evidence. A repeated proc name does not collapse distinct declarations.
+DreamMaker uses bounded comment/string-aware recovery over original bytes, not
+a complete grammar or preprocessor. File status is `recovered` or
+`recovered_incomplete`; occurrences carry `dm-recovery` provenance. The subset
+records absolute/nested declarations in indentation and brace forms, procs,
+verbs, locals, macros, includes, overrides, `parent_type`, and observed signals.
+Token/fact/candidate bounds can omit facts and are exposed through status or
+provenance. Unrecognized headers and macro-generated declarations are not a
+complete object tree. Byte recovery accepts non-UTF-8 source without shifting
+canonical offsets.
 
-Bounded comment/string-aware recovery handles unsupported declaration headers
-and marks recovered facts. It must not interpret declarations inside comments or
-strings. Original encoding and offsets remain intact.
-
-Parent calls require established include/override ordering and semantic
-inheritance. The previous implementation of a proc on the same type may precede
-traversal to an inherited type; lexical path ancestry alone is insufficient.
+Same-file lexical bindings can resolve. A prior same-type proc override may
+resolve when the recovered file is complete and neither includes nor conditional
+ordering interfere. Inherited parent calls and project-wide include order remain
+unverified candidates, including explicit `parent_type` cases. Recovery does not
+infer semantic inheritance merely from lexical path ancestry.
 [Upstream parent-proc implementation](https://github.com/SpaceManiac/SpacemanDMM/blob/master/crates/dreammaker/src/objtree.rs#L600)
 
-Signal macros and `PROC_REF`/`TYPE_PROC_REF` patterns produce observed evidence;
-they do not prove a runtime call. Conditional includes and macro expansion may
-leave ordering or targets unresolved. `dmdoc` is not an assumed JSON sidecar; its
-actual interface must be checked before any optional integration.
+`SEND_SIGNAL`, `RegisterSignal`, `PROC_REF`, and related spellings expose observed
+evidence; they do not prove a runtime call. Includes have candidate edges and
+conditional evidence without preprocessor evaluation. No `dmdoc` JSON sidecar is
+assumed or implemented.
 [Upstream dmdoc entry point](https://github.com/SpaceManiac/SpacemanDMM/blob/master/crates/dmdoc/src/main.rs)

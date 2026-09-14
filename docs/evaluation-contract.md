@@ -86,3 +86,8 @@ disk growth, and concurrent agents. Record corpus size, hardware, cache state,
 runtime configuration, and excluded files. Parsing feasibility and a small FTS5
 transaction check do not establish repository-scale performance. The semantic
 lane additionally requires its [inference gate](semantic-contract.md).
+
+The [development-corpus smoke](../evaluation/performance/README.md) records
+single-sample debug indexing, memory, disk, coverage, and reconciliation costs.
+Those measurements expose current limitations and are not acceptance thresholds
+or held-out retrieval results.

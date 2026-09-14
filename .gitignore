@@ -2,3 +2,4 @@
 **/*.rs.bk
 *.profraw
 *.profdata
+__pycache__/

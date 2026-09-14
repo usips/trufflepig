@@ -31,6 +31,11 @@ restart until their ten-minute expiry. Expiration and eviction produce explicit
 errors, never an alias to a newer set. Retention is bounded by 32 MiB total,
 50 sets, and 10,000 hits per set; capped searches report truncation.
 
+Reference targets and candidates carry explicit path, revision, and byte spans.
+A page may shorten a candidate list while reporting `candidates_total` and
+`candidates_truncated`; replay `more SET@OFFSET` with a larger budget to inspect
+the retained list. At least one candidate remains visible when that hit fits.
+
 ## Reads and graph freshness
 
 `show <handle>` opens and reads the source once, hashes that buffer, compares it
@@ -45,7 +50,8 @@ escapes; verify the opened file remains within the root. A path-like filename
 containing separators used by the CLI is reversibly escaped rather than guessed.
 
 Only the current graph is retained. `ctx <handle>` requires the handle's index
-generation to match the current graph; otherwise return `stale_result`. The agent
+generation and source revision to match the current graph; otherwise return
+`stale_result`. The agent
 obtains current graph handles with a fresh search. `refs` exposes occurrence
 evidence and resolver provenance as described in the
 [language contract](language-contract.md).
@@ -54,14 +60,18 @@ evidence and resolver provenance as described in the
 
 Half-open original-file byte spans are canonical. Displayed lines are one-based
 and inclusive. Count newline bytes in the original buffer; CRLF is one break.
-BOM bytes stay in offsets. Any decoding transformation carries a mapping back to
-original bytes; invalid encoding never silently shifts source coordinates.
+BOM bytes stay in offsets. Lexical text may use lossy UTF-8 decoding, but hit spans refer to the original
+byte region rather than offsets inferred from that decoded text. Invalid
+encoding never silently shifts source coordinates.
 
-Paths use reversible escaping, including control bytes and invalid UTF-8.
-Output never injects ANSI control sequences through repository text. Structured
-responses preserve the same identities, spans, evidence, and coverage as text.
+Paths use percent encoding of raw Unix bytes, including `%`, `:`, `@`, spaces,
+control bytes, and non-ASCII bytes. `show` reports invalid source bytes as
+`byte-escaped` text with explicit original-byte start/end values.
+Output never injects ANSI control sequences through repository text. The CLI
+emits one JSON object plus newline by default; `--json` accepts that same format.
+There is no separate compact text renderer.
 
-Every response is bounded by a named tokenizer applied to the complete serialized
+Every stdout response is bounded by `o200k_base` applied to the complete serialized
 response, including headers, escaping, metadata, truncation notices, and the final
 newline. The default is 600 tokens; no minimum hit count is promised. A tokenizer
 count is only a guarantee for that tokenizer, not an estimate guaranteed for
@@ -71,3 +81,8 @@ no complete status fits. Pagination has a fresh response budget.
 Lifecycle fields such as creation/expiry times and random set identifiers are
 excluded from the deterministic-ranking guarantee. Source and metadata are
 clearly distinguishable; source excerpts do not become tool instructions.
+
+`show` emits at most 200 source rows per response and an explicit current-path
+continuation when truncated. Errors exit 2 with a budgeted JSON error when it
+fits, plus an unbudgeted single-line stderr diagnostic. Budget zero emits no
+stdout bytes. Successful empty complete search exits zero.
