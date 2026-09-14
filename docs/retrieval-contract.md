@@ -21,9 +21,10 @@ lanes and stale source are explicit responses.
 
 ## Immutable handles and pagination
 
-Each hit contains an immutable result-set identifier and an ordinal within that
-set. `show <handle>` never resolves against a client's latest search. Concurrent
-and consecutive queries cannot redirect an existing handle.
+Persisted entries are tagged `live_source`, `commit`, or `change`. Each entry
+contains an immutable result-set identifier and an ordinal within that set.
+`show <handle>` never resolves against a client's latest search. Concurrent and
+consecutive queries cannot redirect an existing handle.
 
 `more <cursor>` names its result set and next ordinal explicitly. Pagination
 preserves original ranking and source revisions. Persisted sets survive daemon
@@ -82,7 +83,17 @@ Lifecycle fields such as creation/expiry times and random set identifiers are
 excluded from the deterministic-ranking guarantee. Source and metadata are
 clearly distinguishable; source excerpts do not become tool instructions.
 
-`show` emits at most 200 source rows per response and an explicit current-path
-continuation when truncated. Errors exit 2 with a budgeted JSON error when it
-fits, plus an unbudgeted single-line stderr diagnostic. Budget zero emits no
-stdout bytes. Successful empty complete search exits zero.
+`show` emits at most 200 source rows per response. Its continuation retains the
+original revision and remaining byte range in the persisted result cache, even
+when the first read used an explicit current path. Follow `next` unchanged with
+`show`; edits produce `stale_source` instead of changing continuation identity.
+Historical continuations retain the exact commit/blob/path identity described in
+the [history contract](history-contract.md). They share result-cache expiry and
+eviction limits. Historical entries are invalid inputs to live `ctx`.
+
+One client emission boundary handles successful responses, help, version, usage
+errors, execution errors, zero-budget silence, and broken pipes. Errors exit 2
+with a budgeted JSON error when it fits and a separate stderr diagnostic. Budget
+zero emits no stdout bytes. Successful empty complete search exits zero.
+[Diagnostics](diagnostics-contract.md) distinguish prepared tokens from bytes
+accepted by the stdout writer and require complete receipts for viewed evidence.

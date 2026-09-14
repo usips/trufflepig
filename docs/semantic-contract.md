@@ -59,3 +59,20 @@ background embedding queue. Query coverage reports successful `semantic_regions`
 `semantic_total_regions`, `semantic_failures`, and completely embedded
 `semantic_files` under the query filters. The index-only status counter remains
 zero because embedding state lives in the evictable content cache.
+
+## Idle residency
+
+The daemon unloads its engine after ten minutes without semantic activity at the
+next idle tick. Model destruction precedes release of the inference lease.
+Activity is recorded after the request reaches idle processing, so a long request
+does not immediately expire its own engine. A later semantic request reloads the
+pinned model under the same lease contract.
+
+While loaded, idle processing emits residency observations at thirty-second
+intervals to the diagnostic queue. Linux process RSS is measured for the whole
+process, not attributed exclusively to model tensors. Busy requests can postpone
+sampling and unloading. In-flight ORT cancellation is not implemented.
+[Doctor probes](index-contract.md#bounded-diagnostics-probes) inspect persisted
+vector dimensions, finite normalized values, and model/input provenance without
+starting inference. Cached vectors from another pinned revision are unverified
+for the current model, not corruption merely because they remain reusable.

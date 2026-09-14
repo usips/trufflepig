@@ -28,6 +28,14 @@ containing symbol attached. File records expose resource exclusions.
 5. Roll back every published component if the transaction fails. Prune
    superseded content without discarding unexpired handle revision metadata.
 
+Each published generation records a capture interval and per-file revisions.
+It is a reconciled observation, not an atomic filesystem snapshot. Publication
+observations distinguish edits, additions, deletions, and coverage changes;
+consumers receive an explicit incomplete window after observation retention
+limits are exceeded. The observation journal retains at most 256 generation
+windows, 4,096 observations, and 4 MiB of observation payloads. Sessions persist
+their own baseline fingerprints outside the replaceable live index; see [diagnostics](diagnostics-contract.md).
+
 An exclusive writer lease covers staging through publication. The next lease
 holder removes abandoned staging directories from interrupted indexing.
 
@@ -46,6 +54,10 @@ prevents applying it to current bytes. Reconciliation eventually catches up.
 Each canonical root has one daemon, protected by an exclusive startup lock and
 a length-prefixed JSON Unix socket protocol. Worktrees keep separate databases.
 A stale socket does not permit a second writer while the startup lock is held.
+Requests carry client-created UUIDs and explicit session/client context.
+The [history worker](history-contract.md) shares immutable Git facts across
+linked worktrees through a separate database, keyed by canonical common directory.
+Live and history publication have independent transaction boundaries.
 
 The daemon reconciles at startup and every 30 seconds. Watch events are hints that
 accelerate reconciliation; overflow, watch exhaustion, and missed events trigger
@@ -87,3 +99,18 @@ not establish detached service lifecycle guarantees.
 Local `--no-daemon` searches reconcile synchronously. Metadata/status reads do
 not force reconciliation. No incremental parse tree, parallel parse pool, or
 background embedding queue is implemented.
+
+## Bounded diagnostics probes
+
+`doctor` checks SQLite structure, foreign keys, FTS integrity, unchanged-source
+extraction identity, semantic cache provenance, and accidental model initialization.
+SQL checks have a 100 ms progress deadline and a 10 ms busy wait. Extraction
+samples at most four source files of at most 64 KiB, with a 250 ms inter-file
+cutoff; a running extraction may finish after that cutoff. Semantic checks sample
+at most sixteen vectors without loading a model.
+
+Outcomes distinguish passed, failed, incomplete, and unavailable checks. Source
+drift is reported separately from corruption; unverified cached facts are not
+silently treated as valid. The daemon attempts these checks on idle ticks after
+thirty seconds. FTS verification runs its integrity command inside a rolled-back
+savepoint. No automatic repair or exhaustive integrity claim is made.

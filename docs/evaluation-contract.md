@@ -17,7 +17,10 @@ python3 evaluation/replay.py --trufflepig target/debug/trufflepig
 
 The second command compares both retrieval systems on identical frozen bytes,
 using a ten-hit, 10,000-token Trufflepig cap to isolate retrieval from default
-response packing. Default-budget behavior has separate contract regressions.
+response packing. The separate [navigation evaluation](navigation-evaluation.md)
+uses the 600-token default, up to three result pages and eight calls, and follows
+`show`, source continuations, and required `ctx`. Ground-truth-directed handle
+selection is labeled **oracle-assisted navigation replay**.
 The baseline performs the declared literal/regex search and reads a bounded
 current-file excerpt from the first match. It is a reproducible tool replay,
 not a substitute for a capable agent control. Search protocol bytes and read
@@ -56,6 +59,10 @@ task success before interpreting token or call savings. Higher token cost is a
 regression: for a permitted relative increase `epsilon`, require
 `new_cost <= baseline_cost * (1 + epsilon)`; misses never become free successes.
 No arbitrary three-percent non-regression claim follows from twenty tasks.
+Recall, statistical power, logging overhead, and latency thresholds require
+measured evidence and a declared analysis; draft targets are not acceptance
+results. Runner-neutral versioned records and workflow instructions are defined
+in the [navigation contract](navigation-evaluation.md#versioned-records-and-workflow).
 
 For agent trials, pair the same capable agent and task snapshot with ordinary
 search/read tools versus Trufflepig available. Count all input/output tokens,
@@ -69,6 +76,11 @@ and analysis; report inconclusive results honestly.
   moved/deleted source, and stale graph generations.
 - Reads: concurrent writes, traversal, symlink escape, unusual filenames,
   CRLF/BOM/invalid encoding, and original-byte span correctness.
+- History: roots, first-parent merges, exact renames, ambiguous declarations,
+  rewrites, divergent worktrees, shallow/missing objects, SHA-256, subtree scope,
+  and interrupted publication.
+- Diagnostics: exact writer receipts, partial writes, rotation, log deletion,
+  overlapping explicit sessions, and censored evidence windows.
 - Output: tiny budgets, complete serialized token counts, stable snapshot ranking,
   and separate index/parser/semantic/truncation completeness.
 - Updates: unchanged callers after target edits, configuration/grammar changes,

@@ -41,7 +41,9 @@ Use `target/debug/trufflepig` as above when the binary is not installed on PATH.
 A handle is a 32-character result-set ID plus a one-based ordinal. A pagination
 cursor uses the same set ID and a zero-based next offset. Handles survive restart
 within their retention limits; they never name the latest unrelated query.
-`stale_source` requires a fresh search or an explicitly current path read.
+`show` continuations retain source identity and remaining bytes; pass their
+`next` value unchanged to `show`. `stale_source` requires a fresh search or an
+explicitly current path read.
 `stale_result` means the graph generation changed and `ctx` needs a fresh handle.
 
 `refs` distinguishes observations, resolved targets, candidates, and unresolved
@@ -53,18 +55,73 @@ unchanged into `show`, including `%20` for a space, `%25` for `%`, and `%3A` for
 `:`, so filename punctuation cannot become a line-range separator. Traversal,
 absolute source paths, and symlinks are rejected.
 
+## Historical navigation
+
+```text
+trufflepig hist-index --wait
+trufflepig hist-status
+trufflepig hist path:src/main.rs
+trufflepig hist sym:TokenBucket
+trufflepig since HEAD~3 path:src/main.rs
+trufflepig since HEAD --uncommitted
+trufflepig diff HEAD --target path:src/main.rs
+trufflepig show SET:ORDINAL --side before
+trufflepig blame path:src/main.rs
+trufflepig blame path:src/main.rs --raw
+trufflepig blame path:src/main.rs --ignore-revs-file .git-blame-ignore-revs
+```
+
+History requires Git 2.55 or newer and local objects. Ordinary search remains
+available when history is unavailable. `hist` uses captured first-parent history;
+`since` compares the exact resolved revision directly with captured HEAD, or with
+one published working-tree generation under `--uncommitted`. `diff` compares a
+commit with its first parent; only explicit targets permit budgeted source hunks.
+Historical changes require `show HANDLE --side before|after` for exact source.
+
+`path:` selectors are root-relative. `sym:` uses exact live symbol names;
+ambiguous matches return selectable handles. The [history contract](history-contract.md)
+defines correspondence limits, immutable reads, resource exclusions, and coverage.
+
+## Diagnostics and sessions
+
+```text
+trufflepig session start
+trufflepig --session SESSION_ID search 'refill tokens'
+trufflepig --session SESSION_ID show SET:ORDINAL
+trufflepig session end SESSION_ID
+trufflepig audit SESSION_ID
+trufflepig forget-logs
+```
+
+Pass `--session ID` on each assigned request, or set `TRUFFLEPIG_SESSION` in the
+client environment. A session is not inferred from a process or daemon. Optional
+`--client NAME` labels the caller. Diagnostics default to bounded metadata;
+`--diagnostics detailed` additionally records bounded raw search queries, and
+`--diagnostics off` disables request recording. `audit` reports retained summaries.
+See [diagnostics](diagnostics-contract.md) for delivery evidence, retention,
+overlap labels, and incomplete-window limitations.
+
 ## Cache and daemon
 
 The cache defaults to `$XDG_CACHE_HOME/trufflepig/<root-hash>`, or
 `$HOME/.cache/trufflepig/<root-hash>`. `--cache DIRECTORY` overrides it. Each cache
 belongs to one canonical root. Use a disk-backed cache with room for the index
-and staging database; avoid RAM-backed `/tmp`.
+and staging database; avoid RAM-backed `/tmp`. History defaults to the normal
+cache base keyed by canonical Git common directory, so linked worktrees share
+immutable Git facts. An explicit `--cache` isolates history beneath that override;
+`--history-cache DIRECTORY` selects a shared history-cache base instead.
 
 Ordinary commands start a per-root daemon automatically. `--no-daemon` performs
 local operations and synchronously reconciles before searching. Explicit `index`
 reconciles locally; `status` reports existing indexed coverage. `serve` runs the
 daemon in the foreground and `stop` requests shutdown. Specify the same `--root`
-and `--cache` on these commands.
+and `--cache` on these commands. Daemon startup also launches a leased history
+worker without awaiting indexing. `--no-daemon` launches no background processes;
+its historical commands perform bounded foreground work. `hist-index --wait`
+continues history batches until completion or an explicit failure.
+
+`doctor` runs bounded integrity/provenance probes without starting inference.
+The daemon also attempts probes and semantic residency maintenance while idle.
 
 The daemon serializes requests, reconciles on watch events and periodically, and
 has no build-version negotiation. Stop it before changing binaries. Very long

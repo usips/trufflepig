@@ -15,6 +15,8 @@ semantic retrieval requires an explicit `--sem` request.
 
 - [Search, handles, reads, and output](retrieval-contract.md)
 - [Authoritative storage, publication, and daemon](index-contract.md)
+- [Historical navigation and local Git objects](history-contract.md)
+- [Diagnostic retention, sessions, and delivery evidence](diagnostics-contract.md)
 - [Language extraction and relationship evidence](language-contract.md)
 - [Semantic inference gate and resource limits](semantic-contract.md)
 - [Evaluation and acceptance](evaluation-contract.md)
@@ -31,13 +33,18 @@ edit source, answer questions in generated prose, upload source, or provide a
 complete compiler/type-checker model. Candidates remain visible and distinct
 from statically resolved relationships.
 
-One SQLite WAL database with FTS5 is authoritative. A result identifies the
-source revision and index generation that produced it. There is no independently
-published lexical store or replacement graph joined to old handles.
+The live SQLite WAL database with FTS5 publishes source and graph facts together.
+A separate history database retains immutable Git facts and captured-tip traversal
+views; diagnostics retain bounded observations and explicit session baselines.
+A live result identifies its source revision and index generation. Historical
+changes identify commit, blob, path, and original-byte span on each side. These
+databases have independent transaction boundaries.
 
 Tantivy, custom mmap stores, vector quantization, dimension truncation, ANN,
 reranking, HyDE, PageRank, LSP/SCIP, and MCP are outside the required scope.
-GPU support cannot block CPU use. No latency, memory, hit-count, or retrieval
+All-ref traversal, historical ranking/embeddings, cochange/hotness, agent
+transcript adapters, and paired-agent trial orchestration remain outside this
+release. GPU support cannot block CPU use. No latency, memory, hit-count, or retrieval
 quality guarantee follows from the design.
 
 ## Evidence and limits
