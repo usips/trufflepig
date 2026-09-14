@@ -56,7 +56,10 @@ request event. Later requests form a new observation window.
 generation, capture interval, per-file revision/status, original-byte line hashes,
 and declaration/occurrence key and content fingerprints. Baselines contain no
 source bodies or raw symbol names. They survive replacement of live index
-contents and process restart. At most fifty sessions may remain open; aggregate
+contents and process restart. A persisted index epoch distinguishes recreated
+indexes with reused generation numbers; those sessions still compare endpoint
+fingerprints while reporting an incomplete publication observation window.
+At most fifty sessions may remain open; aggregate
 baseline storage is capped at 64 MiB within the diagnostic budget. Capacity
 exhaustion rejects a new baseline explicitly.
 
