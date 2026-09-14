@@ -42,3 +42,15 @@ storage is approximately 21.5 and 17.1 times indexed source bytes respectively;
 these measurements expose costs requiring optimization. The sampled exact-name
 queries return a source definition first, which establishes neither recall nor
 general ranking quality.
+
+## Background history smoke
+
+Run `python3 evaluation/performance/run_history_smoke.py --trufflepig target/debug/trufflepig`.
+The fixed fixture creates 270 first-parent commits in one Rust file, then runs
+16 exact-symbol queries across five client slots while history indexing proceeds.
+It checks query results, captured-view completion, and daemon shutdown. Scratch
+uses `TMPDIR` or a cache directory beneath the user's home, and is removed.
+
+[Recorded observations](history_smoke_result.json) include complete client elapsed
+times. This small synthetic run establishes concurrent progress only; it is not
+a throughput target, large-repository latency result, or agent effectiveness trial.

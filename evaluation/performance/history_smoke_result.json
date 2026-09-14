@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "workload": "one tracked Rust file, 270 linear commits, 16 exact-symbol queries, five concurrent clients",
+  "budget_tokens": 600,
+  "timing_scope": "complete client invocation, including client preparation and stdout capture",
+  "observations": {
+    "schema_version": 1,
+    "fixture": "single-file-first-parent-v1",
+    "budget_tokens": 600,
+    "timing_scope": "complete client invocation including startup and stdout capture",
+    "commits": 270,
+    "queries": 16,
+    "parallel_clients": 5,
+    "all_queries_correct": true,
+    "initial_history": {
+      "complete": false,
+      "coverage": "indexing",
+      "visited": 128,
+      "worker_running": true
+    },
+    "final_history": {
+      "complete": true,
+      "coverage": "root",
+      "visited": 270,
+      "worker_running": true
+    },
+    "query_elapsed_seconds": [
+      1.3209,
+      0.6559,
+      0.989,
+      1.6536,
+      1.9952,
+      1.6844,
+      1.6841,
+      1.6972,
+      1.6977,
+      1.6959,
+      1.6867,
+      1.6962,
+      1.6946,
+      1.6923,
+      1.6903,
+      1.6898
+    ],
+    "wait_elapsed_seconds": 2.0105
+  },
+  "interpretation": "Synthetic concurrency smoke only; no latency threshold or agent effectiveness conclusion.",
+  "unmeasured": [
+    "real loaded model destruction and reload",
+    "large repository tail latency and agent effectiveness",
+    "whole-process allocator and RSS ceiling, including parser and SQLite allocations"
+  ]
+}
