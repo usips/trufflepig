@@ -1,4 +1,7 @@
-use super::{Query, hit_row};
+use super::{
+    Query, hit_row,
+    telemetry::{Lane, LaneOutcome, RetrievalTrace},
+};
 use crate::{
     results::{Hit, MAX_HITS},
     semantic::{self, Embedding, SemanticEngine},
@@ -12,6 +15,49 @@ pub(super) fn append(
     engine: &mut SemanticEngine,
     vector: &Embedding,
     hits: &mut Vec<Hit>,
+    coverage: &mut serde_json::Value,
+    trace: &mut RetrievalTrace,
+) -> Result<bool> {
+    let started = std::time::Instant::now();
+    let mut semantic_hits = Vec::new();
+    let outcome = retrieve(store, query, engine, vector, &mut semantic_hits, coverage);
+    trace.record(
+        Lane::Semantic,
+        started,
+        &semantic_hits,
+        LaneOutcome::from_result(
+            &outcome,
+            coverage["semantic_failures"].as_u64().unwrap_or(0) > 0,
+        ),
+        outcome.as_ref().copied().unwrap_or(false),
+    );
+    if let Some(generation) = trace.generation {
+        trace.snapshot(generation, coverage);
+    }
+    let truncated = outcome?;
+    // Round-robin fusion preserves each deterministic lane's internal ordering.
+    let lexical = std::mem::take(hits);
+    hits.reserve(lexical.len() + semantic_hits.len());
+    let mut a = lexical.into_iter();
+    let mut b = semantic_hits.into_iter();
+    loop {
+        match (a.next(), b.next()) {
+            (None, None) => break,
+            (a, b) => {
+                hits.extend(a);
+                hits.extend(b);
+            }
+        }
+    }
+    Ok(truncated)
+}
+
+fn retrieve(
+    store: &Store,
+    query: &Query,
+    engine: &mut SemanticEngine,
+    vector: &Embedding,
+    semantic_hits: &mut Vec<Hit>,
     coverage: &mut serde_json::Value,
 ) -> Result<bool> {
     let mut stmt=store.conn.prepare("SELECT r.id,r.body,r.file_id FROM regions r JOIN files f ON f.id=r.file_id WHERE f.revision IS NOT NULL AND substr(f.path,1,length(?1))=?1 AND (?2='' OR f.language=?2) AND (?3='' OR r.kind=?3) ORDER BY r.file_id,r.id")?;
@@ -59,23 +105,9 @@ pub(super) fn append(
     });
     let ranked = semantic::search_top_k(vector, candidates, MAX_HITS);
     let mut stmt=store.conn.prepare("SELECT f.path,f.revision,r.start,r.end,r.name,r.kind,NULL,'semantic',c.bytes FROM regions r JOIN files f ON f.id=r.file_id JOIN contents c ON c.revision=f.revision WHERE r.id=?1")?;
-    // Round-robin fusion preserves each deterministic lane's internal ordering.
-    let mut semantic_hits = Vec::with_capacity(ranked.len());
+    semantic_hits.reserve(ranked.len());
     for hit in ranked {
         semantic_hits.push(stmt.query_row([hit.id as i64], hit_row)?);
-    }
-    let lexical = std::mem::take(hits);
-    hits.reserve(lexical.len() + semantic_hits.len());
-    let mut a = lexical.into_iter();
-    let mut b = semantic_hits.into_iter();
-    loop {
-        match (a.next(), b.next()) {
-            (None, None) => break,
-            (a, b) => {
-                hits.extend(a);
-                hits.extend(b);
-            }
-        }
     }
     if last_file.is_some() && !file_failed {
         complete_files += 1;
