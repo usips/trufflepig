@@ -57,3 +57,6 @@ patch success. [Study and limitations](https://arxiv.org/html/2603.27277v1#S4.SS
 The FTS5 feasibility experiment establishes basic identifier expansion and
 transactional behavior only. Repository-scale performance and retrieval quality
 require the [evaluation protocol](evaluation-contract.md).
+
+Explicit multi-repository retrieval and owner routing follow the
+[workspace contract](workspace-contract.md). Each member retains its own index.

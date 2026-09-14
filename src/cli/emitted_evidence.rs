@@ -3,10 +3,15 @@ use crate::diagnostics::{Outcome, RequestEvent};
 use serde_json::Value;
 
 pub(super) fn capture_emitted(root: &std::path::Path, response: &str, event: &mut RequestEvent) {
-    let Ok(value) = serde_json::from_str::<Value>(response) else {
+    let Ok(mut value) = serde_json::from_str::<Value>(response) else {
         return;
     };
-    let repository = crate::store::encode_path(root);
+    let fallback_repository = crate::store::encode_path(root);
+    let repository = value["repository"]
+        .as_str()
+        .unwrap_or(&fallback_repository)
+        .to_owned();
+    qualify_workspace_evidence(&mut value, &repository);
     event.coverage = value
         .get("coverage")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
@@ -123,6 +128,59 @@ pub(super) fn capture_emitted(root: &std::path::Path, response: &str, event: &mu
     }
 }
 
+fn qualify_workspace_evidence(value: &mut Value, fallback: &str) {
+    let roots = value["members"].clone();
+    let top_member = value["member"].as_str().map(str::to_owned);
+    let qualify = |entry: &mut Value| {
+        let member = entry["member"]
+            .as_str()
+            .map(str::to_owned)
+            .or_else(|| top_member.clone());
+        let root = member
+            .as_deref()
+            .and_then(|name| roots[name].as_str())
+            .unwrap_or(fallback);
+        qualify_identity_tree(entry, root, member.as_deref());
+    };
+    if let Some(hits) = value["hits"].as_array_mut() {
+        for hit in hits {
+            qualify(hit);
+        }
+    }
+    if let Some(hit) = value.get_mut("hit") {
+        qualify(hit);
+    }
+    if let Some(edges) = value["relationships"].as_array_mut() {
+        for edge in edges {
+            qualify(edge);
+        }
+    }
+}
+fn qualify_identity_tree(value: &mut Value, root: &str, member: Option<&str>) {
+    match value {
+        Value::Object(object) => {
+            if object.contains_key("path") {
+                object.entry("owner_root").or_insert_with(|| root.into());
+                object.entry("repository").or_insert_with(|| root.into());
+                if let Some(member) = member {
+                    object.entry("member").or_insert_with(|| member.into());
+                }
+            }
+            for child in object.values_mut() {
+                if child.is_object() || child.is_array() {
+                    qualify_identity_tree(child, root, member);
+                }
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                qualify_identity_tree(child, root, member);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn emitted_identity(
     repository: &str,
     value: &Value,
@@ -130,6 +188,8 @@ fn emitted_identity(
     original_rank: Option<usize>,
 ) -> Option<crate::diagnostics::EmittedIdentity> {
     Some(crate::diagnostics::EmittedIdentity {
+        owner_root: Some(value["owner_root"].as_str().unwrap_or(repository).into()),
+        member: value["member"].as_str().map(str::to_owned),
         repository: value["repository"]
             .as_str()
             .or_else(|| value["historical"]["repository"].as_str())

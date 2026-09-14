@@ -7,12 +7,15 @@ use anyhow::{Context, Result};
 pub use dispatch::local;
 use dispatch::local_with_session;
 mod arguments;
+pub(crate) use arguments::normalized_args;
+use arguments::validate;
 pub use arguments::{Arguments, parse};
-use arguments::{normalized_args, validate};
 #[cfg(test)]
 mod emission_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod workspace_emission_tests;
 use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -41,6 +44,23 @@ pub fn run_with_context(
 ) -> Result<String> {
     let options = parse(args)?;
     validate(&options)?;
+    if options.words.first().is_some_and(|v| v == "ws")
+        && options.words.get(1).is_some_and(|v| v == "discover")
+    {
+        return crate::workspace::discover_paths(&options.words[2..], options.budget);
+    }
+    if !options
+        .words
+        .first()
+        .is_some_and(|v| matches!(v.as_str(), "serve" | "history-serve"))
+    {
+        if let Some(config) = crate::workspace::resolve(&options)? {
+            return crate::workspace::run(config, &options, context);
+        }
+        if options.member.is_some() || options.words.first().is_some_and(|v| v == "ws") {
+            anyhow::bail!("workspace_required: select a workspace configuration");
+        }
+    }
     let root = options
         .root
         .canonicalize()
@@ -190,7 +210,10 @@ pub fn run_with_context(
         if let Some(history_cache) = history_cache {
             command.arg("--resolved-history-cache").arg(history_cache);
         }
-        command.arg("--diagnostics").arg(&options.diagnostics);
+        command
+            .arg("--no-workspace")
+            .arg("--diagnostics")
+            .arg(&options.diagnostics);
         let mut child = command
             .arg("--root")
             .arg(&root)
@@ -250,11 +273,17 @@ fn wait_for_history(root: &Path, options: &Arguments, response: String) -> Resul
         return Ok(response);
     }
     let initial: serde_json::Value = serde_json::from_str(&response)?;
-    let cache = crate::history::worker::resolve_cache(
-        root,
-        options.cache.as_deref(),
-        options.history_cache.as_deref(),
-    )?;
+    let cache = options
+        .resolved_history_cache
+        .clone()
+        .map(Ok)
+        .unwrap_or_else(|| {
+            crate::history::worker::resolve_cache(
+                root,
+                options.cache.as_deref(),
+                options.history_cache.as_deref(),
+            )
+        })?;
     let mut history = crate::history::History::open(root, &cache)?;
     if let Some(tip) = initial["tip"].as_str() {
         history.tip = crate::identity::GitOid::parse(tip)?;

@@ -76,6 +76,10 @@ pub enum Outcome {
 /// Identity is captured when emitted, independently of the expiring result set.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct EmittedIdentity {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_root: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member: Option<String>,
     pub repository: String,
     pub path: String,
     pub content_revision: String,
@@ -93,6 +97,10 @@ pub struct RequestEvent {
     pub context: RequestContext,
     pub stage: EventStage,
     pub timestamp: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member: Option<String>,
     pub operation: Operation,
     pub outcome: Outcome,
     pub elapsed_micros: u64,
@@ -115,6 +123,8 @@ impl RequestEvent {
             context,
             stage: EventStage::Delivery,
             timestamp: now(),
+            workspace: None,
+            member: None,
             operation,
             outcome,
             elapsed_micros: 0,
@@ -179,7 +189,19 @@ pub(super) fn sanitize(event: &mut RequestEvent, mode: DiagnosticsMode) {
         event.emitted.truncate(128);
         event.truncated = true;
     }
+    for value in [&mut event.workspace, &mut event.member]
+        .into_iter()
+        .flatten()
+    {
+        bound(value, 128, &mut event.truncated);
+    }
     for identity in &mut event.emitted {
+        if let Some(root) = &mut identity.owner_root {
+            bound(root, 1024, &mut event.truncated);
+        }
+        if let Some(member) = &mut identity.member {
+            bound(member, 64, &mut event.truncated);
+        }
         bound(&mut identity.repository, 1024, &mut event.truncated);
         bound(&mut identity.path, 4096, &mut event.truncated);
         bound(&mut identity.content_revision, 128, &mut event.truncated);

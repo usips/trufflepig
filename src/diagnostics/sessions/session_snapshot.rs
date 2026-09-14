@@ -207,7 +207,7 @@ pub(super) fn compare(
     }
     changes.truncate(retained);
     Ok(
-        json!({"before_generation":before.generation,"after_generation":after.generation,"before_capture_interval":[before.capture_start,before.capture_end],"after_capture_interval":[after.capture_start,after.capture_end],"before_coverage":before.coverage,"after_coverage":after.coverage,"changes":changes,"changes_truncated":total_changes-changes.len(),"intermediate_edits":"not_observed","ownership":"observational_only","symbol_correspondence":"shared histogram line correspondence and occurrence fingerprints; ambiguous matches remain uncertain"}),
+        json!({"repository":before.root,"before_generation":before.generation,"after_generation":after.generation,"before_capture_interval":[before.capture_start,before.capture_end],"after_capture_interval":[after.capture_start,after.capture_end],"before_coverage":before.coverage,"after_coverage":after.coverage,"changes":changes,"changes_truncated":total_changes-changes.len(),"intermediate_edits":"not_observed","ownership":"observational_only","symbol_correspondence":"shared histogram line correspondence and occurrence fingerprints; ambiguous matches remain uncertain"}),
     )
 }
 

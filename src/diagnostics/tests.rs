@@ -91,6 +91,8 @@ fn incomplete_receipts_never_count_source_as_viewed() {
     let mut request = event();
     request.raw_query = Some("opted in".into());
     request.emitted.push(EmittedIdentity {
+        owner_root: None,
+        member: None,
         repository: "repo".into(),
         path: "lib.rs".into(),
         content_revision: "digest".into(),
@@ -149,6 +151,8 @@ fn ledger_requires_matching_preimage_revision_and_overlapping_source_span() {
     delivered.receipt = Some(emit_response(&mut Vec::new(), "source").unwrap());
     delivered.context.session = Some(session.into());
     let identity = EmittedIdentity {
+        owner_root: None,
+        member: None,
         repository: "repo".into(),
         path: "lib.rs".into(),
         content_revision: "before".into(),
@@ -161,12 +165,27 @@ fn ledger_requires_matching_preimage_revision_and_overlapping_source_span() {
     };
     delivered.emitted.push(identity.clone());
     let report = serde_json::json!({"sessions":[{"session":session,"report":{
+        "repository":"repo",
         "changes":[{"path":"lib.rs","before_revision":"before","category":"modified",
             "source_changes":{"changes":[{"before":{"start":20,"end":30}}]}}]
     }}]});
     let ledger = super::ledger::compare(&report, &[&delivered]);
     assert_eq!(ledger.preimage_source_viewed, 1);
     assert_eq!(ledger.changed_spans_source_viewed, 0);
+    delivered.emitted[0].repository = "foreign-repo".into();
+    let foreign = super::ledger::compare(&report, &[&delivered]);
+    assert_eq!(foreign.preimage_source_viewed, 0);
+    assert_eq!(foreign.preimage_metadata_surfaced, 0);
+    delivered.emitted[0].repository = "repo".into();
+    let mut missing_root = report.clone();
+    missing_root["sessions"][0]["report"]
+        .as_object_mut()
+        .unwrap()
+        .remove("repository");
+    let incomplete = super::ledger::compare(&missing_root, &[&delivered]);
+    assert_eq!(incomplete.preimage_source_viewed, 0);
+    assert_eq!(incomplete.sessions_without_repository_identity, 1);
+    assert!(incomplete.incomplete_change_details > 0);
     delivered.emitted[0].end_byte = 25;
     assert_eq!(
         super::ledger::compare(&report, &[&delivered]).changed_spans_source_viewed,

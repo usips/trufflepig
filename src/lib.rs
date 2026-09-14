@@ -11,3 +11,4 @@ pub mod search;
 pub mod semantic;
 pub mod source;
 pub mod store;
+pub mod workspace;

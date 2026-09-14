@@ -4,7 +4,7 @@ use anyhow::{Result, bail};
 use clap::Parser;
 use std::path::{Path, PathBuf};
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(
     version,
     about = "Repository source search with immutable handles and verified reads"
@@ -12,6 +12,16 @@ use std::path::{Path, PathBuf};
 pub struct Arguments {
     #[arg(long, default_value = ".")]
     pub root: PathBuf,
+    #[arg(long, conflicts_with = "no_workspace")]
+    pub workspace: Option<PathBuf>,
+    #[arg(long)]
+    pub no_workspace: bool,
+    #[arg(long)]
+    pub member: Option<String>,
+    #[arg(skip)]
+    pub explicit_root: bool,
+    #[arg(long, hide = true)]
+    pub implicit_root: bool,
     #[arg(long)]
     pub cache: Option<PathBuf>,
     #[arg(short = 'b', long, default_value_t = 600)]
@@ -51,17 +61,21 @@ pub struct Arguments {
 }
 
 pub fn parse(args: &[String]) -> Result<Arguments> {
-    Ok(Arguments::try_parse_from(
+    let mut options = Arguments::try_parse_from(
         std::iter::once("trufflepig".to_owned()).chain(args.iter().cloned()),
-    )?)
+    )?;
+    options.explicit_root = !options.implicit_root
+        && args
+            .iter()
+            .any(|arg| arg == "--root" || arg.starts_with("--root="));
+    Ok(options)
 }
 
 pub(super) fn validate(options: &Arguments) -> Result<()> {
     if options.no_daemon
-        && options
-            .words
-            .first()
-            .is_some_and(|verb| matches!(verb.as_str(), "serve" | "history-serve"))
+        && options.words.first().is_some_and(|verb| {
+            matches!(verb.as_str(), "serve" | "history-serve" | "workspace-serve")
+        })
     {
         bail!("invalid_options: --no-daemon cannot start a server");
     }
@@ -74,7 +88,7 @@ pub(super) fn validate(options: &Arguments) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn normalized_args(options: &Arguments, root: &Path) -> Vec<String> {
+pub(crate) fn normalized_args(options: &Arguments, root: &Path) -> Vec<String> {
     let mut args = vec![
         "--root".into(),
         root.to_string_lossy().into_owned(),
@@ -83,6 +97,9 @@ pub(super) fn normalized_args(options: &Arguments, root: &Path) -> Vec<String> {
         "--limit".into(),
         options.limit.to_string(),
     ];
+    if !options.explicit_root {
+        args.push("--implicit-root".into());
+    }
     if options.sem {
         args.push("--sem".into());
     }
@@ -98,6 +115,13 @@ pub(super) fn normalized_args(options: &Arguments, root: &Path) -> Vec<String> {
             "--history-cache",
             options
                 .history_cache
+                .as_ref()
+                .map(|p| p.to_string_lossy().into_owned()),
+        ),
+        (
+            "--resolved-history-cache",
+            options
+                .resolved_history_cache
                 .as_ref()
                 .map(|p| p.to_string_lossy().into_owned()),
         ),
@@ -125,6 +149,15 @@ pub(super) fn normalized_args(options: &Arguments, root: &Path) -> Vec<String> {
         if enabled {
             args.push(flag.into());
         }
+    }
+    if let Some(path) = &options.workspace {
+        args.extend(["--workspace".into(), path.to_string_lossy().into_owned()]);
+    }
+    if options.no_workspace {
+        args.push("--no-workspace".into());
+    }
+    if let Some(member) = &options.member {
+        args.extend(["--member".into(), member.clone()]);
     }
     args.extend(options.words.iter().cloned());
     args

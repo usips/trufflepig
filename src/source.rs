@@ -1,6 +1,6 @@
 //! Reads are confined to the root and use one buffer for revision verification and output.
 use crate::{output::OutputBudget, store::Store};
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use serde_json::json;
 use std::{
     ffi::CString,
@@ -93,8 +93,8 @@ fn current_span(bytes: &[u8], first: usize, last: usize) -> Result<(usize, usize
     ))
 }
 
-mod acquisition;
-use acquisition::AcquiredSource;
+pub(crate) mod acquisition;
+pub(crate) use acquisition::AcquiredSource;
 pub use acquisition::SourceSide;
 
 pub fn show(store: &Store, target: &str, budget: &OutputBudget) -> Result<String> {
@@ -111,6 +111,17 @@ pub fn show_with_side(
 }
 
 fn render(source: AcquiredSource, budget: &OutputBudget) -> Result<String> {
+    render_owned(source, budget, &json!({}))
+}
+
+pub(crate) fn render_owned(
+    source: AcquiredSource,
+    budget: &OutputBudget,
+    metadata: &serde_json::Value,
+) -> Result<String> {
+    let metadata = metadata
+        .as_object()
+        .context("invalid_metadata: source metadata must be an object")?;
     let AcquiredSource {
         bytes,
         path,
@@ -148,6 +159,12 @@ fn render(source: AcquiredSource, budget: &OutputBudget) -> Result<String> {
         if let Some(identity) = &historical {
             value["historical"] = serde_json::to_value(identity)?;
         }
+        let object = value.as_object_mut().expect("source response object");
+        ensure!(
+            metadata.keys().all(|key| !object.contains_key(key)),
+            "invalid_metadata: source metadata collides with response identity"
+        );
+        object.extend(metadata.clone());
         let text = budget.encode(&value)?;
         if budget.fits(&text) && (!rows.is_empty() || start == end) {
             return Ok(text);

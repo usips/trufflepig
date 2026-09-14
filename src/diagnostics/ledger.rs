@@ -16,6 +16,7 @@ pub struct ObservationLedger {
     pub uncertain_correspondence: usize,
     pub incomplete_publication_windows: usize,
     pub incomplete_change_details: usize,
+    pub sessions_without_repository_identity: usize,
     pub unpublished_intermediate_edits_observable: bool,
 }
 
@@ -30,6 +31,13 @@ pub(super) fn compare(sessions: &Value, deliveries: &[&RequestEvent]) -> Observa
             continue;
         }
         ledger.available = true;
+        let repository = report["repository"]
+            .as_str()
+            .filter(|root| !root.is_empty());
+        if repository.is_none() {
+            ledger.sessions_without_repository_identity += 1;
+            ledger.incomplete_change_details += 1;
+        }
         ledger.incomplete_publication_windows +=
             usize::from(report["publication_observations"]["complete"] == false);
         ledger.incomplete_change_details +=
@@ -80,7 +88,17 @@ pub(super) fn compare(sessions: &Value, deliveries: &[&RequestEvent]) -> Observa
                             .is_some_and(|completed| completed <= end)
                 })
                 .flat_map(|event| &event.emitted)
-                .filter(|identity| identity.path == path && identity.content_revision == revision)
+                .filter(|identity| {
+                    repository
+                        == Some(
+                            identity
+                                .owner_root
+                                .as_deref()
+                                .unwrap_or(&identity.repository),
+                        )
+                        && identity.path == path
+                        && identity.content_revision == revision
+                })
                 .collect::<Vec<_>>();
             ledger.preimage_metadata_surfaced +=
                 usize::from(matches.iter().any(|identity| !identity.source_body));

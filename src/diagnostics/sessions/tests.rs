@@ -44,6 +44,7 @@ fn session_baseline_survives_live_content_eviction_and_restart() {
     let conn = Connection::open(directory.path().join("diagnostics.sqlite3")).unwrap();
     create_schema(&conn).unwrap();
     let report = end(&conn, &mut store, id).unwrap();
+    assert_eq!(report["repository"], crate::store::encode_path(&store.root));
     assert_eq!(report["changes"][0]["category"], "modified");
     assert!(report["changes"][0]["before_revision"].is_string());
     assert_eq!(

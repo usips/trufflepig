@@ -1,10 +1,10 @@
 use super::hit_row;
 use crate::{
     output::OutputBudget,
-    results::{self, DefinitionTarget, MAX_HITS, ResultSet},
+    results::{self, DefinitionTarget, Hit, MAX_HITS, ResultSet},
     store::Store,
 };
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use rusqlite::{OptionalExtension, params};
 
 pub fn references(store: &Store, name: &str) -> Result<ResultSet> {
@@ -59,8 +59,21 @@ pub fn references(store: &Store, name: &str) -> Result<ResultSet> {
 }
 
 pub fn context(store: &Store, handle: &str, budget: &OutputBudget) -> Result<String> {
-    let snapshot = store.conn.unchecked_transaction()?;
     let (generation, hit) = results::handle(store, handle)?;
+    context_entry(store, generation, hit, budget, &serde_json::json!({}))
+}
+
+pub(crate) fn context_entry(
+    store: &Store,
+    generation: i64,
+    hit: Hit,
+    budget: &OutputBudget,
+    metadata: &serde_json::Value,
+) -> Result<String> {
+    let metadata = metadata
+        .as_object()
+        .context("invalid_metadata: context metadata must be an object")?;
+    let snapshot = store.conn.unchecked_transaction()?;
     if generation != store.generation()? {
         bail!("stale_result: graph generation changed; search again");
     }
@@ -103,7 +116,13 @@ pub fn context(store: &Store, handle: &str, budget: &OutputBudget) -> Result<Str
     let total = edges.len();
     edges.truncate(100);
     loop {
-        let response = serde_json::json!({"generation":generation,"hit":hit,"relationships":edges,"truncated":edges.len()<total,"tokenizer":"o200k_base"});
+        let mut response = serde_json::json!({"generation":generation,"hit":hit,"relationships":edges,"truncated":edges.len()<total,"tokenizer":"o200k_base"});
+        let object = response.as_object_mut().expect("context response object");
+        ensure!(
+            metadata.keys().all(|key| !object.contains_key(key)),
+            "invalid_metadata: context metadata collides with response identity"
+        );
+        object.extend(metadata.clone());
         let text = budget.encode(&response)?;
         if budget.fits(&text) {
             drop(stmt);
@@ -138,4 +157,50 @@ pub fn map(store: &Store, path: &str) -> Result<ResultSet> {
 
 fn definition_target(store: &Store, id: i64) -> Result<DefinitionTarget> {
     Ok(store.conn.query_row("SELECT f.path,f.revision,d.start,d.end,d.name FROM definitions d JOIN files f ON f.id=d.file_id WHERE d.id=?1",[id],|r|Ok(DefinitionTarget{path:r.get(0)?,revision:r.get(1)?,start:r.get::<_,i64>(2)? as usize,end:r.get::<_,i64>(3)? as usize,name:r.get(4)?}))?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn owned_context_preserves_provenance_and_rejects_generation_drift() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("lib.rs"), "struct Engine {}\n").unwrap();
+        let mut store = Store::open(root.path(), cache.path()).unwrap();
+        store.index().unwrap();
+        let mut set = map(&store, "").unwrap();
+        let mut hit = set.hits.pop().unwrap();
+        hit.handle = format!("{}:1", uuid::Uuid::new_v4());
+        let metadata = serde_json::json!({"member":"engine"});
+        let budget = OutputBudget::new(600).unwrap();
+        let output =
+            context_entry(&store, set.generation, hit.clone(), &budget, &metadata).unwrap();
+        assert!(budget.fits(&output));
+        let response: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(response["member"], "engine");
+        assert_eq!(response["hit"]["handle"], hit.handle);
+
+        assert!(
+            context_entry(
+                &store,
+                set.generation,
+                hit.clone(),
+                &OutputBudget::new(1).unwrap(),
+                &metadata
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("budget_too_small")
+        );
+        std::fs::write(root.path().join("lib.rs"), "struct Replacement {}\n").unwrap();
+        store.index().unwrap();
+        assert!(
+            context_entry(&store, set.generation, hit, &budget, &metadata)
+                .unwrap_err()
+                .to_string()
+                .contains("stale_result")
+        );
+    }
 }

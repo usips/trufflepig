@@ -212,6 +212,24 @@ pub enum DaemonEvent {
 pub fn serve(
     root: &Path,
     cache: &Path,
+    handler: impl FnMut(DaemonEvent) -> Result<String>,
+) -> Result<()> {
+    serve_inner(root, cache, true, handler)
+}
+
+/// Serves a coordinator without watching or indexing a repository root.
+pub fn serve_coordinator(
+    root: &Path,
+    cache: &Path,
+    handler: impl FnMut(DaemonEvent) -> Result<String>,
+) -> Result<()> {
+    serve_inner(root, cache, false, handler)
+}
+
+fn serve_inner(
+    root: &Path,
+    cache: &Path,
+    watching: bool,
     mut handler: impl FnMut(DaemonEvent) -> Result<String>,
 ) -> Result<()> {
     let root = root.canonicalize().context("resolve watched repository")?;
@@ -219,7 +237,11 @@ pub fn serve(
     let cache = cache.canonicalize()?;
     let socket = DaemonSocket::bind(&cache)?;
     let dirty = Arc::new(AtomicBool::new(false));
-    let _watcher = watch(&root, &cache, Arc::clone(&dirty));
+    let _watcher = if watching {
+        watch(&root, &cache, Arc::clone(&dirty))
+    } else {
+        None
+    };
     handler(DaemonEvent::Reconcile).context("initial repository reconciliation")?;
     let mut schedule = ReconcileSchedule::new(Instant::now());
     loop {

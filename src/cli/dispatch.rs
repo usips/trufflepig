@@ -115,11 +115,17 @@ fn local_dispatch(
         verb,
         "hist-index" | "hist-status" | "hist" | "since" | "diff" | "blame"
     ) {
-        let history_cache = crate::history::worker::resolve_cache(
-            root,
-            options.cache.as_deref(),
-            options.history_cache.as_deref(),
-        )?;
+        let history_cache = options
+            .resolved_history_cache
+            .clone()
+            .map(Ok)
+            .unwrap_or_else(|| {
+                crate::history::worker::resolve_cache(
+                    root,
+                    options.cache.as_deref(),
+                    options.history_cache.as_deref(),
+                )
+            })?;
         let mut history = crate::history::History::open(root, &history_cache)?;
         if options.no_daemon && verb == "hist" {
             history.index()?;

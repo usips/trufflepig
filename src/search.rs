@@ -5,6 +5,7 @@ mod semantic_lane;
 pub mod telemetry;
 #[cfg(test)]
 mod tests;
+pub(crate) use navigation::context_entry;
 pub use navigation::{context, map, references};
 
 use crate::{
@@ -132,7 +133,27 @@ pub fn search_with_session(
             false,
         );
     }
-    let mut semantic_query = prepared?;
+    let prepared = prepared?;
+    let preparation_us = trace.query_preparation_us;
+    let output = search_prepared(store, query, cache, prepared, trace);
+    trace.query_preparation_us = preparation_us;
+    output
+}
+
+/// Runs retrieval with a query embedding prepared once by the calling scope.
+pub fn search_prepared(
+    store: &Store,
+    query: &Query,
+    cache: &std::path::Path,
+    mut semantic_query: Option<(
+        &mut crate::semantic::SemanticEngine,
+        crate::semantic::Embedding,
+    )>,
+    trace: &mut telemetry::RetrievalTrace,
+) -> Result<ResultSet> {
+    use std::time::Instant;
+    use telemetry::{Lane, LaneOutcome};
+    trace.begin(&store.root);
     let snapshot = store.conn.unchecked_transaction()?;
     let generation = store.generation()?;
     let mut coverage = serde_json::to_value(store.coverage()?)?;

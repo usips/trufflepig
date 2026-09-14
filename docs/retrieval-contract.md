@@ -97,3 +97,7 @@ with a budgeted JSON error when it fits and a separate stderr diagnostic. Budget
 zero emits no stdout bytes. Successful empty complete search exits zero.
 [Diagnostics](diagnostics-contract.md) distinguish prepared tokens from bytes
 accepted by the stdout writer and require complete receipts for viewed evidence.
+
+Workspace queries merge independently ranked member results before rendering.
+Persisted owner identities route foreign reads and context; provenance consumes
+the same output budget. See the [workspace contract](workspace-contract.md).

@@ -1,0 +1,11 @@
+[workspace]
+name = "space"
+
+[members.lunatic]
+path = "~/Source/lunatic"
+
+[members.tales-from-space]
+path = "~/Source/tales-from-space"
+
+[members.tgstation]
+path = "~/Source/tgstation"

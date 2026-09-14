@@ -1,6 +1,6 @@
 //! One client emission boundary for execution, parsing, and delivery failures.
 use super::emitted_evidence::capture_emitted;
-use super::{Arguments, cache_path, request_context};
+use super::{Arguments, request_context};
 use crate::diagnostics::{DiagnosticsMode, Operation, Outcome, RequestEvent};
 use crate::output::OutputBudget;
 use clap::Parser;
@@ -13,11 +13,18 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
         writer: stderr,
         accepted: 0,
     };
-    let parsed =
+    let mut parsed =
         Arguments::try_parse_from(std::iter::once("trufflepig".into()).chain(args.iter().cloned()));
+    if let Ok(options) = &mut parsed {
+        options.explicit_root = !options.implicit_root
+            && args
+                .iter()
+                .any(|arg| arg == "--root" || arg.starts_with("--root="));
+    }
     let fallback = fallback_options(args);
     let options = parsed.as_ref().unwrap_or(&fallback);
     let context = request_context(options);
+    let diagnostic_location = crate::workspace::diagnostic_location(options);
     let mut operation = operation(options);
     let (response, outcome, mut exit_code) = match &parsed {
         Ok(_) => match super::run_with_context(args, &context) {
@@ -54,7 +61,7 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
             }
             (
                 if key == "help" {
-                    OutputBudget::new(options.budget.min(1_000_000)).and_then(|budget| budget.render(&json!({key:message}))).unwrap_or_else(|_| render(options.budget, &json!({"help":"Commands: search, show, more, ctx, refs, map, index, status, doctor, hist-index, hist-status, hist, since, diff, blame, session start, session end ID, audit, forget-logs, stop. Options: --root, --cache, --history-cache, --no-daemon, --budget (default 600), --session, --diagnostics off|metadata|detailed.","truncated":true,"details":"Use --help --budget 2000 for full option descriptions"})))
+                    OutputBudget::new(options.budget.min(1_000_000)).and_then(|budget| budget.render(&json!({key:message}))).unwrap_or_else(|_| render(options.budget, &json!({"help":"Commands: ws show, ws status, ws discover PATH..., search, show, more, ctx, refs, map, index, status, doctor, hist-index, hist-status, hist, since, diff, blame, session start, session end ID, audit, forget-logs, stop. Options: --workspace, --no-workspace, --member, --root, --cache, --history-cache, --no-daemon, --budget (default 600), --session, --diagnostics off|metadata|detailed.","truncated":true,"details":"Use --help --budget 2000 for full option descriptions"})))
                 } else {
                     render(options.budget, &json!({key:message}))
                 },
@@ -86,9 +93,10 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
     }
     // Logging cannot replace or retry the response, including partial delivery.
     if !matches!(operation, Operation::ForgetLogs)
-        && let Ok(root) = options.root.canonicalize()
-        && let Ok(cache) = cache_path(&root, options.cache.as_deref())
+        && let Ok((root, cache, workspace, member)) = diagnostic_location
     {
+        event.workspace = workspace;
+        event.member = member;
         capture_emitted(&root, &response, &mut event);
         if matches!(operation, Operation::Search) && options.diagnostics == "detailed" {
             event.raw_query = Some(if options.words.first().is_some_and(|w| w == "search") {

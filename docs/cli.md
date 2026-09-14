@@ -1,8 +1,9 @@
 # CLI usage
 
 Build with `cargo build`. Commands below run the resulting Linux binary from the
-repository root. `--root` defaults to the current directory; root discovery does
-not walk up to Git metadata. Choose the same root and cache for follow-up reads.
+repository root. `--root` defaults to the current directory. Without a workspace,
+root discovery does not walk up to Git metadata; choose the same root and cache
+for follow-up reads. Configured workspaces route reads to their recorded member.
 
 ```sh
 cargo build
@@ -23,6 +24,36 @@ One JSON object plus newline is the default output; `--json` accepts the same
 format. `-b/--budget` defaults to 600 `o200k_base` tokens for the entire serialized
 stdout response. `-n/--limit` defaults to 20 candidate hits per page; the budget
 may fit fewer. Increase the budget when a hit or source line cannot fit.
+
+## Workspace search
+
+```sh
+trufflepig --workspace evaluation/workspaces/space.toml ws show
+trufflepig --workspace evaluation/workspaces/space.toml search 'airlock'
+trufflepig search 'crayon in:tgstation'
+trufflepig search 'airlock ws:home'
+trufflepig --member tales-from-space hist path:README.md
+trufflepig ws status
+trufflepig ws discover ~/Source/lunatic ~/Source/tales-from-space ~/Source/tgstation
+```
+
+An explicit `--workspace FILE` selects a named set of local checkouts. Otherwise,
+discovery checks the nearest ancestor `trufflepig.workspace.toml`, then the global
+registry. `--no-workspace` retains singleton operation. An explicit subtree
+`--root` never silently expands to a configured member root.
+
+Ordinary workspace queries search all members. `in:NAME` or `--member NAME`
+selects a member; `ws:home` selects the checkout containing the invocation
+directory, and `ws:all` searches the complete workspace. Results interleave member
+ranks, home first and then alphabetically, with provenance inside the same token
+budget. Missing members are reported as incomplete coverage.
+
+Use `show`, `more`, and `ctx` from any member of the same workspace; persisted
+handles retain their original owner. Explicit paths, history revisions, sessions,
+and other owner commands use home or `--member NAME`. `ws discover` only returns
+a proposed configuration; it does not apply it or scan unrelated directories.
+See the [workspace contract](workspace-contract.md) for the configuration schema,
+cache behavior, routing guarantees, and current limits.
 
 ## Follow-up reads and navigation
 
@@ -110,6 +141,8 @@ and staging database; avoid RAM-backed `/tmp`. History defaults to the normal
 cache base keyed by canonical Git common directory, so linked worktrees share
 immutable Git facts. An explicit `--cache` isolates history beneath that override;
 `--history-cache DIRECTORY` selects a shared history-cache base instead.
+In workspace mode, `--cache` instead supplies an isolated base containing
+coordinator state and separate member caches.
 
 Ordinary commands start a per-root daemon automatically. `--no-daemon` performs
 local operations and synchronously reconciles before searching. Explicit `index`
