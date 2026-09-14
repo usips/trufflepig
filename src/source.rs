@@ -1,5 +1,5 @@
 //! Reads are confined to the root and use one buffer for revision verification and output.
-use crate::{output::OutputBudget, results, store::Store};
+use crate::{output::OutputBudget, store::Store};
 use anyhow::{Context, Result, bail};
 use serde_json::json;
 use std::{
@@ -93,60 +93,35 @@ fn current_span(bytes: &[u8], first: usize, last: usize) -> Result<(usize, usize
     ))
 }
 
+mod acquisition;
+use acquisition::AcquiredSource;
+pub use acquisition::SourceSide;
+
 pub fn show(store: &Store, target: &str, budget: &OutputBudget) -> Result<String> {
-    let is_handle = target
-        .rsplit_once(':')
-        .is_some_and(|(id, _)| id.len() == 32 && uuid::Uuid::parse_str(id).is_ok());
-    let (path, expected, span, lines) = if is_handle {
-        let (_, hit) = results::handle(store, target)?;
-        (
-            hit.path,
-            Some(hit.revision.context(
-                "source_excluded: no indexed source revision; use an explicit current path read",
-            )?),
-            if hit.kind == "file" {
-                None
-            } else {
-                Some((hit.start, hit.end))
-            },
-            None,
-        )
-    } else {
-        let target = target.strip_prefix("path:").unwrap_or(target);
-        if let Some((path, range)) = target.rsplit_once(':') {
-            if let Some((a, b)) = range.split_once('-') {
-                (
-                    path.to_owned(),
-                    None,
-                    None,
-                    Some((a.parse::<usize>()?, b.parse::<usize>()?)),
-                )
-            } else {
-                (target.to_owned(), None, None, None)
-            }
-        } else {
-            (target.to_owned(), None, None, None)
-        }
-    };
-    let decoded = crate::store::decode_path(&path)?;
-    let bytes = read_contained(&store.root, &decoded, MAX_READ_BYTES)?;
-    let revision = blake3::hash(&bytes).to_hex().to_string();
-    if expected.as_ref().is_some_and(|hash| hash != &revision) {
-        bail!(
-            "stale_source: source revision changed; search again or use explicit current path coordinates"
-        );
-    }
-    let (start, end) = match span {
-        Some(span) => span,
-        None => current_span(
-            &bytes,
-            lines.unwrap_or((1, usize::MAX)).0,
-            lines.unwrap_or((1, usize::MAX)).1,
-        )?,
-    };
-    if start > end || end > bytes.len() {
-        bail!("invalid_span: indexed coordinates outside verified source");
-    }
+    show_with_side(store, target, None, budget)
+}
+
+pub fn show_with_side(
+    store: &Store,
+    target: &str,
+    side: Option<SourceSide>,
+    budget: &OutputBudget,
+) -> Result<String> {
+    render(acquisition::acquire(store, target, side)?, budget)
+}
+
+fn render(source: AcquiredSource, budget: &OutputBudget) -> Result<String> {
+    let AcquiredSource {
+        bytes,
+        path,
+        revision,
+        span,
+        verified,
+        handle,
+        side,
+        historical,
+    } = source;
+    let (start, end) = (span.start, span.end);
     let (first, last) = line_span(&bytes, start, end);
     let mut offset = start;
     let mut rows = Vec::with_capacity((last - first + 1).min(200));
@@ -165,8 +140,14 @@ pub fn show(store: &Store, target: &str, budget: &OutputBudget) -> Result<String
             .and_then(|r| r["end"].as_u64())
             .unwrap_or(start as u64) as usize;
         let truncated = shown_end < end;
-        let next = truncated.then(|| format!("path:{path}:{}-{last}", line_at(&bytes, shown_end)));
-        let value = json!({"path":path,"revision":revision,"verified":expected.is_some(),"start":start,"end":end,"lines":rows,"truncated":truncated,"next":next,"tokenizer":"o200k_base"});
+        let suffix = side
+            .map(|side| format!(":{}", side.as_str()))
+            .unwrap_or_default();
+        let next = truncated.then(|| format!("read:{handle}{suffix}@{shown_end}"));
+        let mut value = json!({"path":path,"revision":revision,"verified":verified,"start":start,"end":end,"lines":rows,"truncated":truncated,"next":next,"tokenizer":"o200k_base"});
+        if let Some(identity) = &historical {
+            value["historical"] = serde_json::to_value(identity)?;
+        }
         let text = budget.encode(&value)?;
         if budget.fits(&text) && (!rows.is_empty() || start == end) {
             return Ok(text);
@@ -196,20 +177,4 @@ fn display_bytes(bytes: &[u8]) -> (String, &str) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn rejects_traversal_and_symlink_components() {
-        let temp = tempfile::tempdir().unwrap();
-        std::os::unix::fs::symlink("/etc", temp.path().join("outside")).unwrap();
-        assert!(read_contained(temp.path(), Path::new("outside/passwd"), 4096).is_err());
-        assert!(read_contained(temp.path(), Path::new("../x"), 4096).is_err());
-    }
-    #[test]
-    fn original_bom_crlf_and_invalid_bytes() {
-        let bytes = b"\xef\xbb\xbffirst\r\n\xffsecond\r\n";
-        assert_eq!(current_span(bytes, 2, 2).unwrap(), (10, 19));
-        assert_eq!(line_span(bytes, 10, 19), (2, 2));
-        assert_eq!(display_bytes(&bytes[10..]).1, "byte-escaped");
-    }
-}
+mod tests;

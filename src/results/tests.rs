@@ -158,3 +158,122 @@ fn candidate_pages_report_omissions_and_allow_larger_replay() {
     let value: Value = serde_json::from_str(&response).unwrap();
     assert_eq!(value["hits"][0]["candidates"].as_array().unwrap().len(), 64);
 }
+
+#[test]
+fn historical_entries_share_cache_and_reject_live_context() {
+    let (_root, _cache, store) = fixture();
+    let oid = crate::identity::GitOid::parse(&"a".repeat(40)).unwrap();
+    let change = ChangeEntry {
+        handle: String::new(),
+        name: "alpha".into(),
+        status: "modified".into(),
+        before: None,
+        after: Some(HistoricalSource {
+            repository: "/repo/.git".into(),
+            commit: oid,
+            blob: oid,
+            path: "lib.rs".into(),
+            span: crate::identity::ByteSpan::new(0, 12).unwrap(),
+        }),
+        correspondence: "exact".into(),
+    };
+    let id = save_entries(
+        &store,
+        1,
+        serde_json::json!({}),
+        vec![ResultEntry::Change(change)],
+        false,
+    )
+    .unwrap();
+    let handle = format!("{id}:1");
+    assert!(matches!(
+        entry(&store, &handle).unwrap().1,
+        ResultEntry::Change(_)
+    ));
+    let budget = OutputBudget::new(600).unwrap();
+    let response: Value = serde_json::from_str(&page(&store, &id, 0, 1, &budget).unwrap()).unwrap();
+    assert_eq!(response["hits"][0]["entry"], "change");
+    assert!(
+        search::context(&store, &handle, &budget)
+            .unwrap_err()
+            .to_string()
+            .contains("historical_result")
+    );
+    assert!(
+        source::show(&store, &handle, &budget)
+            .unwrap_err()
+            .to_string()
+            .contains("side_required")
+    );
+}
+
+#[test]
+fn immutable_continuation_preserves_range_across_restart_and_edits() {
+    let (root, cache, mut store) = fixture();
+    let source = (0..250)
+        .map(|i| format!("// line {i}\n"))
+        .collect::<String>();
+    std::fs::write(root.path().join("large.rs"), &source).unwrap();
+    store.index().unwrap();
+    let budget = OutputBudget::new(600).unwrap();
+    let page: Value =
+        serde_json::from_str(&source::show(&store, "path:large.rs:3-220", &budget).unwrap())
+            .unwrap();
+    let cursor = page["next"].as_str().unwrap().to_owned();
+    assert!(cursor.starts_with("read:"));
+    assert_eq!(page["verified"], false);
+    drop(store);
+    let store = Store::open(root.path(), cache.path()).unwrap();
+    let next: Value =
+        serde_json::from_str(&source::show(&store, &cursor, &budget).unwrap()).unwrap();
+    assert_eq!(next["verified"], true);
+    assert_eq!(next["revision"], page["revision"]);
+    assert_eq!(
+        next["start"],
+        page["lines"].as_array().unwrap().last().unwrap()["end"]
+    );
+    assert_eq!(next["end"], page["end"]);
+    let outside = format!("{}@0", cursor.rsplit_once('@').unwrap().0);
+    assert!(
+        source::show(&store, &outside, &budget)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid_cursor")
+    );
+    std::fs::write(
+        root.path().join("large.rs"),
+        format!("// changed\n{source}"),
+    )
+    .unwrap();
+    assert!(
+        source::show(&store, &cursor, &budget)
+            .unwrap_err()
+            .to_string()
+            .contains("stale_source")
+    );
+}
+
+#[test]
+fn live_handle_continuation_expires_with_original_set() {
+    let (root, _cache, mut store) = fixture();
+    let source = format!("fn alpha() {{\n{}\n}}\n", "    call();\n".repeat(210));
+    std::fs::write(root.path().join("lib.rs"), source).unwrap();
+    store.index().unwrap();
+    let set = query(&store, "sym:alpha");
+    let id = save(&mut store, set).unwrap();
+    let budget = OutputBudget::new(600).unwrap();
+    let page: Value =
+        serde_json::from_str(&source::show(&store, &format!("{id}:1"), &budget).unwrap()).unwrap();
+    let cursor = page["next"].as_str().unwrap();
+    assert!(cursor.starts_with(&format!("read:{id}:1@")));
+    store
+        .conn
+        .execute("UPDATE result_sets SET expires=0 WHERE id=?1", [&id])
+        .unwrap();
+    assert!(
+        source::show(&store, cursor, &budget)
+            .unwrap_err()
+            .to_string()
+            .contains("expired_result")
+    );
+}

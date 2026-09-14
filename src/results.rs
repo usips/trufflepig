@@ -1,6 +1,12 @@
 //! Immutable, persisted query snapshots. Missing IDs never resolve through newer sets.
-use crate::{output::OutputBudget, store::Store};
+use crate::{
+    identity::{ResultCursor, ResultHandle},
+    output::OutputBudget,
+    store::Store,
+};
+mod entries;
 use anyhow::{Context, Result, bail};
+pub use entries::*;
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -64,7 +70,29 @@ pub fn initialize(store: &Store) -> Result<()> {
     Ok(())
 }
 
-pub fn save(store: &mut Store, mut set: ResultSet) -> Result<String> {
+pub fn save(store: &mut Store, set: ResultSet) -> Result<String> {
+    save_entries(
+        store,
+        set.generation,
+        set.coverage,
+        set.hits.into_iter().map(ResultEntry::LiveSource).collect(),
+        set.truncated,
+    )
+}
+
+pub fn save_entries(
+    store: &Store,
+    generation: i64,
+    coverage: Value,
+    entries: Vec<ResultEntry>,
+    truncated: bool,
+) -> Result<String> {
+    let mut set = StoredResultSet {
+        generation,
+        coverage,
+        hits: entries,
+        truncated,
+    };
     initialize(store)?;
     let id = uuid::Uuid::new_v4().simple().to_string();
     if set.hits.len() > MAX_HITS {
@@ -72,7 +100,7 @@ pub fn save(store: &mut Store, mut set: ResultSet) -> Result<String> {
         set.truncated = true;
     }
     for (ordinal, hit) in set.hits.iter_mut().enumerate() {
-        hit.handle = format!("{id}:{}", ordinal + 1);
+        *hit.handle_mut() = format!("{id}:{}", ordinal + 1);
     }
     let mut payload = serde_json::to_string(&set)?;
     while payload.len() > MAX_BYTES && !set.hits.is_empty() {
@@ -84,9 +112,10 @@ pub fn save(store: &mut Store, mut set: ResultSet) -> Result<String> {
     if payload.len() > MAX_BYTES {
         bail!("result_cache_unavailable: metadata exceeds cache capacity");
     }
-    let tx = store
-        .conn
-        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let tx = rusqlite::Transaction::new_unchecked(
+        &store.conn,
+        rusqlite::TransactionBehavior::Immediate,
+    )?;
     let time = now();
     tx.execute("DELETE FROM result_sets WHERE expires<=?1", [time])?;
     tx.execute(
@@ -109,6 +138,24 @@ pub fn save(store: &mut Store, mut set: ResultSet) -> Result<String> {
 }
 
 pub fn load(store: &Store, id: &str) -> Result<ResultSet> {
+    let set = load_entries(store, id)?;
+    let hits = set
+        .hits
+        .into_iter()
+        .map(|entry| match entry {
+            ResultEntry::LiveSource(hit) => Ok(hit),
+            _ => bail!("historical_result: expected live-source result set"),
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(ResultSet {
+        generation: set.generation,
+        coverage: set.coverage,
+        truncated: set.truncated,
+        hits,
+    })
+}
+
+pub fn load_entries(store: &Store, id: &str) -> Result<StoredResultSet> {
     uuid::Uuid::parse_str(id)
         .context("invalid_handle: expected immutable result-set identifier")?;
     initialize(store)?;
@@ -126,20 +173,26 @@ pub fn load(store: &Store, id: &str) -> Result<ResultSet> {
     if expires <= now() {
         bail!("expired_result: result set expired; search again");
     }
-    Ok(serde_json::from_str(&payload)?)
+    serde_json::from_str(&payload)
+        .context("result_unavailable: stored result format is invalid; search again")
 }
 
 pub fn handle(store: &Store, handle: &str) -> Result<(i64, Hit)> {
-    let (id, ordinal) = handle
-        .rsplit_once(':')
-        .context("invalid_handle: expected SET:ORDINAL")?;
-    let ordinal: usize = ordinal.parse().context("invalid_handle: invalid ordinal")?;
-    let set = load(store, id)?;
-    let hit = ordinal
-        .checked_sub(1)
-        .and_then(|n| set.hits.get(n))
+    let (generation, entry) = entry(store, handle)?;
+    match entry {
+        ResultEntry::LiveSource(hit) => Ok((generation, hit)),
+        _ => bail!("historical_result: historical entries are invalid for live context"),
+    }
+}
+
+pub fn entry(store: &Store, handle: &str) -> Result<(i64, ResultEntry)> {
+    let handle: ResultHandle = handle.parse()?;
+    let set = load_entries(store, &handle.set.simple().to_string())?;
+    let entry = set
+        .hits
+        .get(handle.ordinal - 1)
         .context("invalid_handle: ordinal outside result set")?;
-    Ok((set.generation, hit.clone()))
+    Ok((set.generation, entry.clone()))
 }
 
 pub fn page(
@@ -149,7 +202,7 @@ pub fn page(
     limit: usize,
     budget: &OutputBudget,
 ) -> Result<String> {
-    let set = load(store, id)?;
+    let set = load_entries(store, id)?;
     if offset > set.hits.len() {
         bail!("invalid_cursor: offset outside result set");
     }
@@ -193,13 +246,11 @@ pub fn page(
 }
 
 pub fn more(store: &Store, cursor: &str, limit: usize, budget: &OutputBudget) -> Result<String> {
-    let (id, offset) = cursor
-        .rsplit_once('@')
-        .context("invalid_cursor: expected SET@OFFSET")?;
+    let cursor: ResultCursor = cursor.parse()?;
     page(
         store,
-        id,
-        offset.parse().context("invalid_cursor: invalid offset")?,
+        &cursor.set.simple().to_string(),
+        cursor.offset,
         limit,
         budget,
     )
