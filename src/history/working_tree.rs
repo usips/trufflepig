@@ -1,5 +1,6 @@
 //! Net comparisons read per-file original bytes from one published live generation.
 
+use super::staging::{ENTRY_BYTES, TREE_BYTES};
 use super::{History, comparison, source_diff, targets::Target};
 use crate::{
     identity::{ByteSpan, ContentRevision, GitOid},
@@ -12,7 +13,7 @@ use rusqlite::OptionalExtension;
 use serde_json::json;
 use std::collections::BTreeMap;
 
-const MAX_METADATA_BYTES: usize = 16 * 1024 * 1024;
+const MAX_PATH_VECTOR_BYTES: usize = 1024 * 1024;
 const MAX_DIFF_LINES: usize = 100_000;
 
 #[cfg(test)]
@@ -32,20 +33,26 @@ pub(super) fn since_uncommitted(
     };
     let old_tree = comparison::tree(history, Some(revision))?;
     let (entries, publication, excluded, truncated) = store.with_publication(|conn, publication| {
-        let mut metadata_bytes: usize = old_tree.keys().map(|path| path.len() * 2 + 256).sum();
-        ensure!(metadata_bytes <= MAX_METADATA_BYTES, "history_resource_limited: working tree metadata exceeds staging limit");
+        let metadata_estimate: i64 = conn.query_row("SELECT coalesce(sum(length(CAST(path AS BLOB))+coalesce(length(CAST(revision AS BLOB)),0)+length(CAST(status AS BLOB))+256),0) FROM files", [], |row| row.get(0))?;
+        ensure!(metadata_estimate >= 0 && metadata_estimate <= TREE_BYTES as i64, "history_resource_limited: working tree metadata exceeds staging limit");
+        let mut metadata_bytes = 0;
         let mut files = BTreeMap::new();
         let mut query = conn.prepare("SELECT path,revision,status FROM files ORDER BY path")?;
         for row in query.query_map([], |row| Ok((row.get::<_, String>(0)?, (row.get::<_, Option<String>>(1)?, row.get::<_, String>(2)?))))? {
             let (path, file) = row?;
-            metadata_bytes += path.len() + file.0.as_ref().map_or(0, String::len) + file.1.len() + 256;
-            ensure!(metadata_bytes <= MAX_METADATA_BYTES, "history_resource_limited: working tree metadata exceeds staging limit");
+            metadata_bytes += path.capacity() + file.0.as_ref().map_or(0, String::capacity) + file.1.capacity() + 256;
+            ensure!(metadata_bytes <= TREE_BYTES, "history_resource_limited: working tree metadata exceeds staging limit");
             files.insert(path, file);
         }
-        let mut paths: Vec<_> = old_tree.keys().chain(files.keys()).collect();
-        paths.sort();
+        let path_count = old_tree.len().checked_add(files.len()).ok_or_else(|| anyhow::anyhow!("history_resource_limited: path count overflow"))?;
+        ensure!(path_count <= MAX_PATH_VECTOR_BYTES / std::mem::size_of::<&String>(), "history_resource_limited: path references exceed staging limit");
+        let mut paths = Vec::with_capacity(path_count);
+        paths.extend(old_tree.keys().chain(files.keys()));
+        paths.sort_unstable();
         paths.dedup();
         let mut entries = Vec::with_capacity(paths.len().min(128));
+        let mut entry_bytes = 0;
+        let repository = encode_path(&history.repository.common_dir);
         let mut excluded = 0;
         let mut truncated = false;
         for path in paths {
@@ -53,14 +60,15 @@ pub(super) fn since_uncommitted(
             if entries.len() >= results::MAX_HITS { truncated = true; break; }
             let old_file = old_tree.get(path);
             let current = files.get(path);
+            let entry_cost = 2 * std::mem::size_of::<ResultEntry>() + 256 + path.len() * 2 + repository.len();
             if old_file.is_some_and(|file| !matches!(file.mode.as_str(), "100644" | "100755")) {
                 excluded += 1;
-                entries.push(unavailable(path, "symlink_or_gitlink"));
+                retain_entry(&mut entries, &mut entry_bytes, entry_cost, unavailable(path, "symlink_or_gitlink"))?;
                 continue;
             }
             let old = match old_file.map(|file| history.repository.blob(&file.oid)).transpose() {
                 Ok(bytes) => bytes,
-                Err(_) => { excluded += 1; entries.push(unavailable(path, "historical_source_unavailable")); continue; }
+                Err(_) => { excluded += 1; retain_entry(&mut entries, &mut entry_bytes, entry_cost, unavailable(path, "historical_source_unavailable"))?; continue; }
             };
             let new = current.and_then(|(revision, _)| revision.as_ref()).map(|revision| {
                 let length: i64 = conn.query_row("SELECT length(bytes) FROM contents WHERE revision=?1", [revision], |row| row.get(0))?;
@@ -74,14 +82,15 @@ pub(super) fn since_uncommitted(
             }
             if old.is_none() && new.is_none() && current.is_some() {
                 excluded += 1;
-                entries.push(unavailable(path, &current.expect("covered exclusion").1));
+                let status = &current.expect("covered exclusion").1;
+                retain_entry(&mut entries, &mut entry_bytes, entry_cost + status.len(), unavailable(path, status))?;
                 continue;
             }
             if old == new { continue; }
             let lines = old.iter().chain(new.iter()).flat_map(|bytes| bytes.iter()).filter(|&&byte| byte == b'\n').take(MAX_DIFF_LINES + 1).count();
             if lines > MAX_DIFF_LINES {
                 excluded += 1;
-                entries.push(unavailable(path, "diff_line_resource_excluded"));
+                retain_entry(&mut entries, &mut entry_bytes, entry_cost, unavailable(path, "diff_line_resource_excluded"))?;
                 continue;
             }
             let status = if current.is_some() && new.is_none() {
@@ -97,22 +106,22 @@ pub(super) fn since_uncommitted(
                 if entries.len() + usize::from(before.is_some()) + usize::from(after.is_some()) > results::MAX_HITS { truncated = true; break; }
                 if let Some(span) = before {
                     let file = old_file.expect("preimage span has tree file");
-                    entries.push(ResultEntry::Change(ChangeEntry {
+                    retain_entry(&mut entries, &mut entry_bytes, entry_cost + status.len() + correspondence.len(), ResultEntry::Change(ChangeEntry {
                         handle: String::new(), name: path.clone(), status: status.clone(),
-                        before: Some(HistoricalSource { repository: encode_path(&history.repository.common_dir), commit: *revision, blob: file.oid, revision: ContentRevision::of(old.as_deref().expect("preimage content")), path: path.clone(), span }),
+                        before: Some(HistoricalSource { repository: repository.clone(), commit: *revision, blob: file.oid, revision: ContentRevision::of(old.as_deref().expect("preimage content")), path: path.clone(), span }),
                         after: None, correspondence: correspondence.clone(),
-                    }));
+                    }))?;
                 }
                 if let Some(span) = after {
                     let bytes = new.as_deref().expect("postimage span has content");
-                    entries.push(ResultEntry::LiveSource(Hit {
+                    retain_entry(&mut entries, &mut entry_bytes, entry_cost + correspondence.len(), ResultEntry::LiveSource(Hit {
                         handle: String::new(), path: path.clone(), revision: current.and_then(|(revision, _)| revision.clone()),
                         start: span.start, end: span.end,
                         start_line: line_number(bytes, span.start), end_line: line_number(bytes, span.end.saturating_sub(1).max(span.start)),
                         name: path.clone(), kind: "source_region".into(), container: None,
                         provenance: Some(format!("published_generation:{}:after", publication.generation)),
                         resolution: Some(correspondence), candidates: Vec::new(), target: None,
-                    }));
+                    }))?;
                 }
             }
         }
@@ -134,6 +143,21 @@ pub(super) fn since_uncommitted(
 }
 
 type ChangedSpans = (Option<ByteSpan>, Option<ByteSpan>, String);
+
+fn retain_entry(
+    entries: &mut Vec<ResultEntry>,
+    staged: &mut usize,
+    cost: usize,
+    entry: ResultEntry,
+) -> Result<()> {
+    ensure!(
+        cost <= ENTRY_BYTES.saturating_sub(*staged),
+        "history_resource_limited: result entries exceed staging limit"
+    );
+    *staged += cost;
+    entries.push(entry);
+    Ok(())
+}
 
 fn changed_spans(
     path: &str,

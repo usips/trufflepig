@@ -158,3 +158,26 @@ fn working_generation_rejects_stale_selection_and_excludes_excessive_lines() {
     assert_eq!(page["coverage"]["excluded"], 1);
     assert_eq!(page["hits"][0]["status"], "diff_line_resource_excluded");
 }
+
+#[test]
+fn working_generation_rejects_oversized_persisted_metadata() {
+    let (_directory, mut store, history) = fixture();
+    store
+        .conn
+        .execute_batch(
+            "WITH RECURSIVE paths(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM paths WHERE n<6000)
+         INSERT INTO files(path,revision,language,status,bytes)
+         SELECT printf('%01024d',n),NULL,'text','read_error',0 FROM paths;",
+        )
+        .unwrap();
+    let error = since_uncommitted(
+        &history,
+        &mut store,
+        &history.tip,
+        None,
+        &OutputBudget::new(600).unwrap(),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("history_resource_limited"));
+    assert!(error.to_string().contains("metadata"));
+}
