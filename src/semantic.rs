@@ -12,13 +12,20 @@ mod inference;
 pub use inference::{SemanticEngine, run_gate};
 
 mod session;
-pub use session::SemanticSession;
+pub use session::{ResidencySample, SemanticSession};
 
 pub const MODEL_REVISION: &str = "516f4baf13dec4ddddda8631e019b5737c8bc250";
 pub const DIMENSIONS: usize = 768;
 pub const CACHE_BYTES: u64 = 5 * 1024 * 1024 * 1024;
 pub const MODEL_NAME: &str = "jinaai/jina-embeddings-v2-base-code";
 pub const INPUT_VERSION: &str = "source-only-mean-l2-v1-max8192";
+
+static MODEL_INITIALIZATIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Counts actual process-local model loads, including explicit semantic checks.
+pub fn model_initializations() -> u64 {
+    MODEL_INITIALIZATIONS.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 #[derive(Clone, Debug)]
 pub struct Embedding(pub [f32; DIMENSIONS]);

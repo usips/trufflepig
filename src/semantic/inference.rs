@@ -88,6 +88,7 @@ fn load_verified_model(model_dir: &Path) -> Result<TextEmbedding> {
     let mut model = TextEmbedding::try_new_from_user_defined(model, options).context(
         "semantic_unavailable: CPU ONNX model initialization failed; check ORT_DYLIB_PATH",
     )?;
+    super::MODEL_INITIALIZATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     // Reject excessive input explicitly instead of silently truncating content.
     model
         .tokenizer

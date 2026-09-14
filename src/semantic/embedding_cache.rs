@@ -1,4 +1,4 @@
-use super::{CACHE_BYTES, DIMENSIONS, Embedding};
+use super::{CACHE_BYTES, DIMENSIONS, Embedding, INPUT_VERSION, MODEL_REVISION};
 use anyhow::{Result, bail};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::{fs, path::Path, time::Duration};
@@ -25,6 +25,8 @@ impl EmbeddingCache {
             PRAGMA cache_size=-2048; PRAGMA auto_vacuum=INCREMENTAL;
             CREATE TABLE IF NOT EXISTS embeddings(
                 key TEXT PRIMARY KEY, vector BLOB NOT NULL, touched INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS embedding_provenance(
+                key TEXT PRIMARY KEY, model_revision TEXT NOT NULL, input_version TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS embedding_recency ON embeddings(touched, key);
             CREATE TABLE IF NOT EXISTS cache_clock(id INTEGER PRIMARY KEY CHECK(id=1), tick INTEGER NOT NULL);
             INSERT OR IGNORE INTO cache_clock VALUES(1,0);")?;
@@ -72,6 +74,10 @@ impl EmbeddingCache {
                 (SELECT key FROM embeddings ORDER BY touched,key LIMIT ?1)",
                 [remove as i64],
             )?;
+            tx.execute(
+                "DELETE FROM embedding_provenance WHERE key NOT IN (SELECT key FROM embeddings)",
+                [],
+            )?;
         }
         let mut bytes = [0_u8; DIMENSIONS * 4];
         for (chunk, value) in bytes.as_chunks_mut::<4>().0.iter_mut().zip(vector.0.iter()) {
@@ -82,6 +88,10 @@ impl EmbeddingCache {
             "INSERT OR REPLACE INTO embeddings(key,vector,touched)
             VALUES(?1,?2,(SELECT tick FROM cache_clock WHERE id=1))",
             params![key, bytes.as_slice()],
+        )?;
+        tx.execute(
+            "INSERT OR REPLACE INTO embedding_provenance VALUES(?1,?2,?3)",
+            params![key, MODEL_REVISION, INPUT_VERSION],
         )?;
         tx.commit()?;
         Ok(())
@@ -103,6 +113,22 @@ mod tests {
         cache.put("second", &vector)?;
         assert!(cache.get("first")?.is_none());
         assert!(cache.get("second")?.is_some());
+        let provenance: (String, String, String) = cache.db.query_row(
+            "SELECT key,model_revision,input_version FROM embedding_provenance",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )?;
+        assert_eq!(
+            provenance,
+            ("second".into(), MODEL_REVISION.into(), INPUT_VERSION.into())
+        );
+        let count: i64 =
+            cache
+                .db
+                .query_row("SELECT count(*) FROM embedding_provenance", [], |row| {
+                    row.get(0)
+                })?;
+        assert_eq!(count, 1);
         assert!(fs::metadata(dir.path().join("embeddings.sqlite"))?.len() <= 64 * 1024);
         Ok(())
     }
