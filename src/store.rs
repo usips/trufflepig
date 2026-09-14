@@ -3,6 +3,8 @@
 mod module_config;
 mod module_resolver;
 mod paths;
+#[cfg(test)]
+mod publication_tests;
 mod publish;
 mod regions;
 mod resolve;
@@ -11,6 +13,7 @@ mod schema;
 #[cfg(test)]
 mod tests;
 
+use crate::identity::ContentRevision;
 use anyhow::{Context, Result};
 pub use paths::{decode_path, encode_path};
 use rusqlite::Connection;
@@ -27,6 +30,50 @@ pub struct Coverage {
     pub walk_failures: usize,
     pub truncated_files: usize,
     pub indexed_bytes: u64,
+}
+
+/// One published scan of the configured root; files were observed over an interval.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Publication {
+    pub generation: i64,
+    pub root: String,
+    pub capture_started_ms: u64,
+    pub capture_completed_ms: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PublishedFile {
+    pub path: String,
+    pub revision: Option<ContentRevision>,
+    pub status: String,
+    pub bytes: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PublishedFiles {
+    pub publication: Publication,
+    pub files: Vec<PublishedFile>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PublicationChange {
+    pub generation: i64,
+    pub path: String,
+    pub before_revision: Option<ContentRevision>,
+    pub after_revision: Option<ContentRevision>,
+    pub before_status: Option<String>,
+    pub after_status: Option<String>,
+    pub kind: String,
+}
+
+/// Completeness describes published observations; edits between scans remain unseen.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PublicationObservations {
+    pub from_generation: i64,
+    pub to_generation: i64,
+    pub retained_generation_floor: i64,
+    pub complete: bool,
+    pub changes: Vec<PublicationChange>,
 }
 
 pub struct Store {
@@ -51,6 +98,7 @@ impl Store {
         conn.busy_timeout(std::time::Duration::from_secs(30))?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA cache_size=-8192; PRAGMA foreign_keys=ON;")?;
         schema::create(&conn)?;
+        publish::create_journal(&conn)?;
         let stored_root: Option<String> = conn
             .query_row("SELECT value FROM meta WHERE key='root'", [], |row| {
                 row.get(0)
@@ -88,6 +136,69 @@ impl Store {
         Ok(serde_json::from_str(&value)?)
     }
 
+    /// Returns no interval for an index that has never published a captured scan.
+    pub fn publication(&self) -> Result<Option<Publication>> {
+        let value: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT value FROM meta WHERE key='publication'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        value
+            .map(|value| serde_json::from_str(&value).map_err(Into::into))
+            .transpose()
+    }
+
+    /// Reads metadata and file revisions/content from the same SQLite snapshot.
+    /// Publication is local to this database, not atomic with any history database.
+    pub fn with_publication<T>(
+        &self,
+        read: impl FnOnce(&Connection, &Publication) -> Result<T>,
+    ) -> Result<T> {
+        let transaction = self.conn.unchecked_transaction()?;
+        let publication = self
+            .publication()?
+            .context("working_tree_unavailable: no published capture")?;
+        let result = read(&transaction, &publication)?;
+        transaction.commit()?;
+        Ok(result)
+    }
+
+    pub fn published_files(&self) -> Result<PublishedFiles> {
+        self.with_publication(|conn, publication| {
+            let count: i64 =
+                conn.query_row("SELECT count(*) FROM files", [], |row| row.get(0))?;
+            let mut files = Vec::with_capacity(count.try_into()?);
+            let mut statement =
+                conn.prepare("SELECT path,revision,status,bytes FROM files ORDER BY path")?;
+            let mut rows = statement.query([])?;
+            while let Some(row) = rows.next()? {
+                let revision: Option<String> = row.get(1)?;
+                files.push(PublishedFile {
+                    path: row.get(0)?,
+                    revision: revision
+                        .as_deref()
+                        .map(ContentRevision::parse)
+                        .transpose()?,
+                    status: row.get(2)?,
+                    bytes: row.get::<_, i64>(3)?.try_into()?,
+                });
+            }
+            Ok(PublishedFiles {
+                publication: publication.clone(),
+                files,
+            })
+        })
+    }
+
+    pub fn observations_since(&self, generation: i64) -> Result<PublicationObservations> {
+        self.with_publication(|conn, publication| {
+            publish::observations_since(conn, generation, publication.generation)
+        })
+    }
+
     pub fn index(&mut self) -> Result<Coverage> {
         let writer_lock = std::fs::OpenOptions::new()
             .create(true)
@@ -117,8 +228,10 @@ impl Store {
             "PRAGMA journal_mode=DELETE; PRAGMA synchronous=OFF; PRAGMA cache_size=-4096;",
         )?;
         schema::create(&staged)?;
+        let capture_started_ms = publish::timestamp_ms()?;
         let (coverage, fingerprint) =
             scan::stage(&mut staged, &self.conn, &self.root, &self.cache)?;
+        let capture_completed_ms = publish::timestamp_ms()?.max(capture_started_ms);
         let previous: Option<String> = self
             .conn
             .query_row(
@@ -129,13 +242,26 @@ impl Store {
             .optional()?;
         if previous.as_deref() == Some(&fingerprint)
             && self.coverage()?.walk_failures == coverage.walk_failures
+            && self.publication()?.is_some()
         {
             return Ok(coverage);
         }
         resolve::references(&mut staged)?;
         module_resolver::resolve(&mut staged)?;
         drop(staged);
-        publish::publish(&mut self.conn, &staged_path, &coverage, &fingerprint)?;
+        let publication = Publication {
+            generation: self.generation()? + 1,
+            root: encode_path(&self.root),
+            capture_started_ms,
+            capture_completed_ms,
+        };
+        publish::publish(
+            &mut self.conn,
+            &staged_path,
+            &coverage,
+            &fingerprint,
+            &publication,
+        )?;
         Ok(coverage)
     }
 }
