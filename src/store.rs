@@ -35,6 +35,7 @@ pub struct Coverage {
 /// One published scan of the configured root; files were observed over an interval.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Publication {
+    pub index_epoch: String,
     pub generation: i64,
     pub root: String,
     pub capture_started_ms: u64,
@@ -99,6 +100,10 @@ impl Store {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA cache_size=-8192; PRAGMA foreign_keys=ON;")?;
         schema::create(&conn)?;
         publish::create_journal(&conn)?;
+        conn.execute(
+            "INSERT OR IGNORE INTO meta(key,value) VALUES('index_epoch',?1)",
+            [uuid::Uuid::new_v4().to_string()],
+        )?;
         let stored_root: Option<String> = conn
             .query_row("SELECT value FROM meta WHERE key='root'", [], |row| {
                 row.get(0)
@@ -168,8 +173,7 @@ impl Store {
 
     pub fn published_files(&self) -> Result<PublishedFiles> {
         self.with_publication(|conn, publication| {
-            let count: i64 =
-                conn.query_row("SELECT count(*) FROM files", [], |row| row.get(0))?;
+            let count: i64 = conn.query_row("SELECT count(*) FROM files", [], |row| row.get(0))?;
             let mut files = Vec::with_capacity(count.try_into()?);
             let mut statement =
                 conn.prepare("SELECT path,revision,status,bytes FROM files ORDER BY path")?;
@@ -250,6 +254,11 @@ impl Store {
         module_resolver::resolve(&mut staged)?;
         drop(staged);
         let publication = Publication {
+            index_epoch: self.conn.query_row(
+                "SELECT value FROM meta WHERE key='index_epoch'",
+                [],
+                |row| row.get(0),
+            )?,
             generation: self.generation()? + 1,
             root: encode_path(&self.root),
             capture_started_ms,

@@ -65,6 +65,31 @@ fn publication_reads_hold_one_generation_across_another_writer() {
 }
 
 #[test]
+fn publication_epoch_changes_only_when_index_database_is_recreated() {
+    let (_directory, mut store) = fixture();
+    std::fs::write(store.root.join("file.txt"), "before").unwrap();
+    store.index().unwrap();
+    let first = store.publication().unwrap().unwrap();
+    let root = store.root.clone();
+    let cache = store.cache.clone();
+    drop(store);
+    let mut store = Store::open(&root, &cache).unwrap();
+    std::fs::write(root.join("file.txt"), "after").unwrap();
+    store.index().unwrap();
+    assert_eq!(
+        store.publication().unwrap().unwrap().index_epoch,
+        first.index_epoch
+    );
+    drop(store);
+    std::fs::remove_file(cache.join("index.sqlite3")).unwrap();
+    let mut store = Store::open(&root, &cache).unwrap();
+    store.index().unwrap();
+    let recreated = store.publication().unwrap().unwrap();
+    assert_eq!(recreated.generation, first.generation);
+    assert_ne!(recreated.index_epoch, first.index_epoch);
+}
+
+#[test]
 fn publication_observations_distinguish_ignore_delete_and_net_revert() {
     let (_directory, mut store) = fixture();
     for path in ["ignored.txt", "deleted.txt", "reverted.txt"] {
