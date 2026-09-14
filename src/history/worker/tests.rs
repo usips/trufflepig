@@ -71,6 +71,19 @@ fn worker_lock_excludes_duplicates_and_releases_on_exit() -> Result<()> {
 }
 
 #[test]
+fn worker_exit_unlocks_despite_an_inherited_file_description() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let owner = worker_lock(directory.path())?;
+    owner.try_lock_exclusive()?;
+    // A dup retains the same open-file description as a fork before exec.
+    let inherited = owner.try_clone()?;
+    drop(owner);
+    assert!(!is_running(directory.path())?);
+    drop(inherited);
+    Ok(())
+}
+
+#[test]
 fn oversized_or_malformed_leases_do_not_keep_worker_alive() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let cache = directory.path();

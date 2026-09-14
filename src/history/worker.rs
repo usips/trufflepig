@@ -30,6 +30,23 @@ struct Registration {
     heartbeat_ms: u64,
 }
 
+struct HistoryLock(File);
+
+impl std::ops::Deref for HistoryLock {
+    type Target = File;
+    fn deref(&self) -> &File {
+        &self.0
+    }
+}
+
+impl Drop for HistoryLock {
+    fn drop(&mut self) {
+        // Forked subprocesses can retain the open-file description before exec.
+        // Explicit unlock releases ownership without waiting for those copies.
+        let _ = FileExt::unlock(&self.0);
+    }
+}
+
 /// Selects an isolated history directory, keyed by canonical Git common directory.
 pub fn resolve_cache(
     root: &Path,
@@ -98,23 +115,27 @@ pub fn register(root: &Path, cache: &Path) -> Result<()> {
     Ok(())
 }
 
-fn worker_lock(cache: &Path) -> Result<File> {
+fn worker_lock(cache: &Path) -> Result<HistoryLock> {
     private_directory(cache)?;
-    Ok(OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .read(true)
-        .write(true)
-        .open(cache.join("worker.lock"))?)
+    Ok(HistoryLock(
+        OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(cache.join("worker.lock"))?,
+    ))
 }
 
-fn registration_lock(cache: &Path) -> Result<File> {
-    let lock = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .read(true)
-        .write(true)
-        .open(cache.join("registrations.lock"))?;
+fn registration_lock(cache: &Path) -> Result<HistoryLock> {
+    let lock = HistoryLock(
+        OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(cache.join("registrations.lock"))?,
+    );
     lock.lock_exclusive()?;
     Ok(lock)
 }
@@ -126,7 +147,7 @@ pub fn is_running(cache: &Path) -> Result<bool> {
         .write(true)
         .open(cache.join("worker.lock"))
     {
-        Ok(lock) => lock,
+        Ok(lock) => HistoryLock(lock),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(error).context("inspect history worker lock"),
     };
