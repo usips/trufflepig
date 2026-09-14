@@ -54,3 +54,27 @@ uses `TMPDIR` or a cache directory beneath the user's home, and is removed.
 [Recorded observations](history_smoke_result.json) include complete client elapsed
 times. This small synthetic run establishes concurrent progress only; it is not
 a throughput target, large-repository latency result, or agent effectiveness trial.
+
+## Workspace lifecycle smoke
+
+Run `python3 evaluation/performance/run_workspace_smoke.py --binary target/debug/trufflepig`.
+The synthetic workspace contains two Git repositories with two commits each.
+It checks cold publication warming, foreign source reads from member subdirectories,
+eight queries while source edits continue, reconciliation of the final edit,
+handle persistence across coordinator restart, and index reuse by an overlapping
+workspace. History checks wait for indexing, compare a scoped commit, and read its
+exact preimage through a handle from the other member. An isolated foreground
+query checks that `--no-daemon` starts no fixture background processes.
+
+[Recorded observations](workspace_smoke_result.json) retain each response, exit
+status, complete client elapsed time, and observed edit counts. RSS samples read
+Linux `/proc` for fixture daemons and history workers after client completion;
+they are neither peak memory nor client memory measurements. Cold startup may
+report unavailable until an initial member publication completes. Every command
+has a 35-second deadline; the smoke does not establish a latency target.
+
+Scratch uses `TMPDIR` beneath the user's cache and rejects `/tmp`. Cleanup stops
+the fixture coordinators and member daemons, waits for history registrations to
+expire, and records any forced termination of remaining fixture processes. The
+fixture directories are removed. The recorded run verifies navigation and
+lifecycle mechanisms, not feature placement, model residency, or agent effectiveness.

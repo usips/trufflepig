@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "workflow_version": "workspace-navigation-v1",
+  "tasks": [
+    {
+      "id": "crayons-and-engine-writing",
+      "query": "crayon",
+      "followup_queries": [
+        "documents append"
+      ],
+      "expected": [
+        {
+          "member": "tales-from-space",
+          "path": "content/items/leisure/crayon_red.luau",
+          "sha256": "d7d315c453da9af9d6e8e39a38b1e54732c2933e9d6e8d6850760ebd99b9f407"
+        },
+        {
+          "member": "tgstation",
+          "path": "code/game/objects/items/crayons.dm",
+          "sha256": "a7b3e5d258ada8bdd89dabf8cee61443146c750b1027f7a57fedd912c9e4e956"
+        },
+        {
+          "member": "lunatic",
+          "path": "crates/lunatic-server/src/script/commands_documents.rs",
+          "sha256": "6ab86e68fa29d79c64259a1dcf6006ffc659abbc2a3ad249db1d528fca6987df"
+        }
+      ],
+      "label_provenance": "authored member/path labels; oracle-assisted selection; not independently graded"
+    },
+    {
+      "id": "writing-runtime-and-pack",
+      "query": "documents append",
+      "expected": [
+        {
+          "member": "tales-from-space",
+          "path": "content/lib/writing.luau",
+          "sha256": "2ef6e461f31119d8fe788a2b45acde555ab9112b7739a012d4a327995372c4f1"
+        },
+        {
+          "member": "lunatic",
+          "path": "crates/lunatic-server/src/script/commands_documents.rs",
+          "sha256": "6ab86e68fa29d79c64259a1dcf6006ffc659abbc2a3ad249db1d528fca6987df"
+        }
+      ],
+      "label_provenance": "authored member/path labels; oracle-assisted selection; not independently graded"
+    },
+    {
+      "id": "airlocks-and-atmospherics",
+      "query": "airlock",
+      "followup_queries": [
+        "atmos pressure"
+      ],
+      "expected": [
+        {
+          "member": "tales-from-space",
+          "path": "content/structures/access/airlock.luau",
+          "sha256": "6d578dcdf8242f39e8d0ed07b10d4d9c8ee79c394c5992558b6c07d2167d199d"
+        },
+        {
+          "member": "tgstation",
+          "path": "code/game/machinery/doors/airlock.dm",
+          "sha256": "1a8838fc21544a610bc7b47a93f52508d28e83be35a5ecec41abcfa86a7e0a54"
+        },
+        {
+          "member": "lunatic",
+          "path": "docs/ATMOS.md",
+          "sha256": "44a02c273fa5c1b4720ae0cfe4c370e1578ce43a58796efc4e3e76af77b14aa9"
+        }
+      ],
+      "label_provenance": "authored member/path labels; oracle-assisted selection; not independently graded"
+    }
+  ]
+}
