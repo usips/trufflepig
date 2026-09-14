@@ -12,6 +12,9 @@ use rusqlite::OptionalExtension;
 use serde_json::json;
 use std::collections::BTreeMap;
 
+const MAX_METADATA_BYTES: usize = 16 * 1024 * 1024;
+const MAX_DIFF_LINES: usize = 100_000;
+
 #[cfg(test)]
 mod tests;
 
@@ -29,10 +32,14 @@ pub(super) fn since_uncommitted(
     };
     let old_tree = comparison::tree(history, Some(revision))?;
     let (entries, publication, excluded, truncated) = store.with_publication(|conn, publication| {
+        let mut metadata_bytes: usize = old_tree.keys().map(|path| path.len() * 2 + 256).sum();
+        ensure!(metadata_bytes <= MAX_METADATA_BYTES, "history_resource_limited: working tree metadata exceeds staging limit");
         let mut files = BTreeMap::new();
         let mut query = conn.prepare("SELECT path,revision,status FROM files ORDER BY path")?;
         for row in query.query_map([], |row| Ok((row.get::<_, String>(0)?, (row.get::<_, Option<String>>(1)?, row.get::<_, String>(2)?))))? {
             let (path, file) = row?;
+            metadata_bytes += path.len() + file.0.as_ref().map_or(0, String::len) + file.1.len() + 256;
+            ensure!(metadata_bytes <= MAX_METADATA_BYTES, "history_resource_limited: working tree metadata exceeds staging limit");
             files.insert(path, file);
         }
         let mut paths: Vec<_> = old_tree.keys().chain(files.keys()).collect();
@@ -56,16 +63,27 @@ pub(super) fn since_uncommitted(
                 Err(_) => { excluded += 1; entries.push(unavailable(path, "historical_source_unavailable")); continue; }
             };
             let new = current.and_then(|(revision, _)| revision.as_ref()).map(|revision| {
+                let length: i64 = conn.query_row("SELECT length(bytes) FROM contents WHERE revision=?1", [revision], |row| row.get(0))?;
+                ensure!(length >= 0 && length <= super::MAX_BLOB_BYTES as i64, "history_resource_limited: working tree source exceeds blob limit");
                 let bytes: Vec<u8> = conn.query_row("SELECT bytes FROM contents WHERE revision=?1", [revision], |row| row.get(0))?;
                 ensure!(ContentRevision::of(&bytes) == ContentRevision::parse(revision)?, "working_tree_unavailable: published content identity mismatch");
                 Ok::<_, anyhow::Error>(bytes)
             }).transpose()?;
+            if let Some(expected) = target.as_ref().and_then(|target| target.revision.as_deref()) {
+                ensure!(new.as_deref().is_some_and(|bytes| ContentRevision::of(bytes).to_string() == expected), "stale_handle: selected source differs from published revision");
+            }
             if old.is_none() && new.is_none() && current.is_some() {
                 excluded += 1;
                 entries.push(unavailable(path, &current.expect("covered exclusion").1));
                 continue;
             }
             if old == new { continue; }
+            let lines = old.iter().chain(new.iter()).flat_map(|bytes| bytes.iter()).filter(|&&byte| byte == b'\n').take(MAX_DIFF_LINES + 1).count();
+            if lines > MAX_DIFF_LINES {
+                excluded += 1;
+                entries.push(unavailable(path, "diff_line_resource_excluded"));
+                continue;
+            }
             let status = if current.is_some() && new.is_none() {
                 "coverage_changed".to_owned()
             } else if current.is_none() {
@@ -73,7 +91,8 @@ pub(super) fn since_uncommitted(
                 observed.map(|value| serde_json::from_str::<PublicationChange>(&value).map(|change| change.kind)).transpose()?.unwrap_or_else(|| "absent_from_published_coverage".into())
             } else if old.is_none() { "added".into() } else { "modified".into() };
             if matches!(status.as_str(), "coverage_changed" | "ignored_or_excluded" | "absent_from_published_coverage" | "coverage_unknown") { excluded += 1; }
-            let spans = changed_spans(path, old.as_deref(), new.as_deref(), target.as_ref())?;
+            let (spans, spans_truncated) = changed_spans(path, old.as_deref(), new.as_deref(), target.as_ref())?;
+            truncated |= spans_truncated;
             for (before, after, correspondence) in spans {
                 if entries.len() + usize::from(before.is_some()) + usize::from(after.is_some()) > results::MAX_HITS { truncated = true; break; }
                 if let Some(span) = before {
@@ -121,7 +140,7 @@ fn changed_spans(
     old: Option<&[u8]>,
     new: Option<&[u8]>,
     target: Option<&Target>,
-) -> Result<Vec<ChangedSpans>> {
+) -> Result<(Vec<ChangedSpans>, bool)> {
     let differences = source_diff::diff_sources(old.unwrap_or_default(), new.unwrap_or_default());
     if let Some(target) = target.filter(|target| target.symbol.is_some()) {
         let before = crate::extract::extract(path, old.unwrap_or_default());
@@ -134,6 +153,7 @@ fn changed_spans(
             &differences,
         );
         let mut selected = Vec::with_capacity(correspondence.len().min(16));
+        let mut truncated = false;
         for relation in correspondence {
             if relation.relation == source_diff::DeclarationRelation::Unchanged {
                 continue;
@@ -162,6 +182,10 @@ fn changed_spans(
             let after = right
                 .map(|definition| ByteSpan::new(definition.start, definition.end))
                 .transpose()?;
+            if selected.len() == results::MAX_HITS {
+                truncated = true;
+                break;
+            }
             selected.push((
                 before,
                 after,
@@ -171,32 +195,40 @@ fn changed_spans(
                     .into(),
             ));
         }
-        return Ok(selected);
+        return Ok((selected, truncated));
     }
     if differences.changes.is_empty() {
-        return Ok(vec![(
-            old.map(|bytes| ByteSpan {
-                start: 0,
-                end: bytes.len(),
-            }),
-            new.map(|bytes| ByteSpan {
-                start: 0,
-                end: bytes.len(),
-            }),
-            "path".into(),
-        )]);
-    }
-    Ok(differences
-        .changes
-        .into_iter()
-        .map(|change| {
-            (
-                old.map(|_| change.before),
-                new.map(|_| change.after),
+        return Ok((
+            vec![(
+                old.map(|bytes| ByteSpan {
+                    start: 0,
+                    end: bytes.len(),
+                }),
+                new.map(|bytes| ByteSpan {
+                    start: 0,
+                    end: bytes.len(),
+                }),
                 "path".into(),
-            )
-        })
-        .collect())
+            )],
+            false,
+        ));
+    }
+    let truncated = differences.changes.len() > results::MAX_HITS;
+    Ok((
+        differences
+            .changes
+            .into_iter()
+            .take(results::MAX_HITS)
+            .map(|change| {
+                (
+                    old.map(|_| change.before),
+                    new.map(|_| change.after),
+                    "path".into(),
+                )
+            })
+            .collect(),
+        truncated,
+    ))
 }
 
 fn line_number(bytes: &[u8], offset: usize) -> usize {

@@ -115,3 +115,46 @@ fn working_generation_default_budget_persists_both_source_sides() {
     let reverted: Value = serde_json::from_str(&response).unwrap();
     assert!(reverted["hits"].as_array().unwrap().is_empty());
 }
+
+#[test]
+fn working_generation_rejects_stale_selection_and_excludes_excessive_lines() {
+    let (_directory, mut store, history) = fixture();
+    std::fs::write(store.root.join("changed.txt"), "working\r\nsecond\r\n").unwrap();
+    let budget = OutputBudget::new(8000).unwrap();
+    let response = since_uncommitted(
+        &history,
+        &mut store,
+        &history.tip,
+        Some("path:changed.txt"),
+        &budget,
+    )
+    .unwrap();
+    let page: Value = serde_json::from_str(&response).unwrap();
+    let after = page["hits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|hit| hit["entry"] == "live_source")
+        .unwrap();
+    let handle = after["handle"].as_str().unwrap();
+    std::fs::write(store.root.join("changed.txt"), "newer bytes\n").unwrap();
+    let error =
+        since_uncommitted(&history, &mut store, &history.tip, Some(handle), &budget).unwrap_err();
+    assert!(error.to_string().contains("stale_handle"));
+    std::fs::write(
+        store.root.join("changed.txt"),
+        "\n".repeat(MAX_DIFF_LINES + 1),
+    )
+    .unwrap();
+    let response = since_uncommitted(
+        &history,
+        &mut store,
+        &history.tip,
+        Some("path:changed.txt"),
+        &budget,
+    )
+    .unwrap();
+    let page: Value = serde_json::from_str(&response).unwrap();
+    assert_eq!(page["coverage"]["excluded"], 1);
+    assert_eq!(page["hits"][0]["status"], "diff_line_resource_excluded");
+}
