@@ -135,9 +135,11 @@ fn valid_definition_spans(source: &[u8], definitions: &[Definition]) -> Vec<Defi
         .iter()
         .enumerate()
         .filter_map(|(definition, value)| {
-            (value.start < value.end && value.end <= source.len()
+            (value.start < value.end
+                && value.end <= source.len()
                 && is_utf8_boundary(source, value.start)
-                && is_utf8_boundary(source, value.end)).then_some(DefinitionSpan {
+                && is_utf8_boundary(source, value.end))
+            .then_some(DefinitionSpan {
                 definition,
                 start: value.start,
                 end: value.end,

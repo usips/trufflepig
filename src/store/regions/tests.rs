@@ -22,7 +22,11 @@ fn packed_declaration_leaves_multibyte_tail_intact() {
     let source = format!("{}érest", "a".repeat(REGION_BYTES - 1));
     let definitions = [definition("prefix", 0, REGION_BYTES - 1)];
     let regions = spans(source.as_bytes(), &definitions);
-    assert!(regions.iter().all(|&(start, end, _)| source.is_char_boundary(start) && source.is_char_boundary(end)));
+    assert!(
+        regions
+            .iter()
+            .all(|&(start, end, _)| source.is_char_boundary(start) && source.is_char_boundary(end))
+    );
     assert_eq!(regions[0].1, REGION_BYTES - 1);
     assert_eq!(regions.last().unwrap().1, source.len());
 }
@@ -32,7 +36,11 @@ fn malformed_definition_boundaries_cannot_split_utf8() {
     let source = "éé tail".as_bytes();
     let definitions = [definition("malformed", 1, 3)];
     let regions = spans(source, &definitions);
-    assert!(regions.iter().all(|&(start, end, _)| std::str::from_utf8(&source[start..end]).is_ok()));
+    assert!(
+        regions
+            .iter()
+            .all(|&(start, end, _)| std::str::from_utf8(&source[start..end]).is_ok())
+    );
     assert_eq!(regions.first().unwrap().0, 0);
     assert_eq!(regions.last().unwrap().1, source.len());
 }

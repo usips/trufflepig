@@ -130,8 +130,22 @@ fn configuration_changes_and_resource_exclusions_are_visible() {
     std::fs::write(store.root.join(".luaurc"), "{\"aliases\":{}}").unwrap();
     store.index().unwrap();
     assert_eq!(store.generation().unwrap(), generation + 1);
-    let excluded: i64 = store.conn.query_row("SELECT count(*) FROM regions JOIN files ON regions.file_id=files.id WHERE files.status='resource_excluded'", [], |row| row.get(0)).unwrap();
+    let excluded: i64 = store
+        .conn
+        .query_row(
+            "SELECT count(*) FROM files WHERE status='resource_excluded'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
     assert_eq!(excluded, 1);
+    let empty_regions: i64 = store
+        .conn
+        .query_row("SELECT count(*) FROM regions WHERE start=end", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(empty_regions, 0);
 }
 
 #[test]
