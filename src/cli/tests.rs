@@ -155,3 +155,22 @@ fn semantic_flags_are_mutually_exclusive() {
     let error = parse(&["--sem".into(), "--no-sem".into(), "search".into()]).unwrap_err();
     assert!(error.to_string().contains("cannot be used with"));
 }
+
+#[test]
+fn client_normalization_forwards_rerank_overrides() {
+    let options = parse(&["--rerank".into(), "search".into(), "query".into()]).unwrap();
+    let forwarded = parse(&normalized_args(&options, Path::new("/example"))).unwrap();
+    assert!(forwarded.rerank);
+    assert!(!forwarded.no_rerank);
+
+    let options = parse(&["--no-rerank".into(), "search".into(), "query".into()]).unwrap();
+    let forwarded = parse(&normalized_args(&options, Path::new("/example"))).unwrap();
+    assert!(!forwarded.rerank);
+    assert!(forwarded.no_rerank);
+}
+
+#[test]
+fn rerank_flags_are_mutually_exclusive() {
+    let error = parse(&["--rerank".into(), "--no-rerank".into(), "search".into()]).unwrap_err();
+    assert!(error.to_string().contains("cannot be used with"));
+}

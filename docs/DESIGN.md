@@ -41,10 +41,12 @@ changes identify commit, blob, path, and original-byte span on each side. These
 databases have independent transaction boundaries.
 
 Tantivy, custom mmap stores, vector quantization, dimension truncation, ANN,
-reranking, HyDE, PageRank, LSP/SCIP, and MCP are outside the required scope.
-All-ref traversal, historical ranking/embeddings, cochange/hotness, agent
-transcript adapters, and paired-agent trial orchestration remain outside this
-release. GPU support cannot block CPU use. No latency, memory, hit-count, or retrieval
+HyDE, PageRank, LSP/SCIP, and MCP are outside the required scope. An opt-in
+cross-encoder rerank stage reorders the top 32 fused files; see the
+[semantic contract](semantic-contract.md) for its bounds and fallback. All-ref
+traversal, historical ranking/embeddings, cochange/hotness, agent transcript
+adapters, and paired-agent trial orchestration remain outside this release.
+GPU support cannot block CPU use. No latency, memory, hit-count, or retrieval
 quality guarantee follows from the design.
 
 ## Evidence and limits

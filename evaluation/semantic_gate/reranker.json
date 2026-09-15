@@ -1,0 +1,13 @@
+{
+  "model": "rozgo/bge-reranker-v2-m3",
+  "revision": "fbd57b17b4db111a9d16813bb08b4c804fac18e9",
+  "base_url": "https://huggingface.co/rozgo/bge-reranker-v2-m3/resolve/fbd57b17b4db111a9d16813bb08b4c804fac18e9/",
+  "assets": {
+    "model.onnx": { "sha256": "3af844cd2de818a95d2b5de5893a336836312c8ade03f53b286ac6beae080321", "bytes": 108479 },
+    "model.onnx.data": { "sha256": "84b66c787b9b98977a16d5c993a3959210a214c98fc3466da263c949c2068945", "bytes": 2271088656 },
+    "tokenizer.json": { "sha256": "8bf8afbfd11306bd872018c53bfdf2e160a56f8edbcf49933324404791c148d3", "bytes": 17082900 },
+    "tokenizer_config.json": { "sha256": "7e4c1cc848840aeccdd763458c18dd525eb0f795c992e00ebe9c28554e7db2d4", "bytes": 1173 },
+    "special_tokens_map.json": { "sha256": "8c785abebea9ae3257b61681b4e6fd8365ceafde980c21970d001e834cf10835", "bytes": 964 },
+    "config.json": { "sha256": "835fe05211a0d1535b5cd2accb6d788ad142bdc507f8a8bd7287727915d9d61f", "bytes": 758 }
+  }
+}

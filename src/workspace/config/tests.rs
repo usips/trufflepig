@@ -48,6 +48,20 @@ fn workspace_config_reads_persistent_semantic_opt_in() {
     );
     let config = WorkspaceConfig::load(&path).unwrap();
     assert!(config.semantic.enabled);
+    assert!(!config.semantic.rerank);
+}
+
+#[test]
+fn workspace_config_reads_persistent_rerank_opt_in() {
+    let directory = fixture();
+    fs::create_dir(directory.path().join("engine")).unwrap();
+    let path = write_config(
+        directory.path(),
+        "[workspace]\nname='porting'\n[semantic]\nenabled=true\nrerank=true\n[members.engine]\npath='engine'\n",
+    );
+    let config = WorkspaceConfig::load(&path).unwrap();
+    assert!(config.semantic.enabled);
+    assert!(config.semantic.rerank);
 }
 
 #[test]
@@ -60,6 +74,7 @@ fn workspace_config_semantics_default_to_disabled() {
     );
     let config = WorkspaceConfig::load(&path).unwrap();
     assert!(!config.semantic.enabled);
+    assert!(!config.semantic.rerank);
 }
 
 #[test]

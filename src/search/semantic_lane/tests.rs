@@ -49,6 +49,7 @@ fn prepared_search(
         &Query::parse(text).unwrap(),
         cache,
         Some(vector),
+        None,
         &mut crate::search::telemetry::RetrievalTrace::disabled(),
     )
     .unwrap()
@@ -260,6 +261,7 @@ fn no_daemon_search_uses_cached_query_and_source_vectors_without_model() -> anyh
         &store,
         &Query::parse(query)?,
         true,
+        false,
         cache.path(),
         &mut session,
         &mut crate::search::telemetry::RetrievalTrace::disabled(),

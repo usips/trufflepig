@@ -23,6 +23,7 @@ pub fn run(
 ) -> Result<String> {
     let mut options = options.clone();
     options.sem = (options.sem || config.semantic.enabled) && !options.no_sem;
+    options.rerank = (options.rerank || config.semantic.rerank) && !options.no_rerank;
     options.root = options.root.canonicalize()?;
     options.workspace = Some(config.path.clone());
     if let Some(cache) = &options.cache {
@@ -181,6 +182,7 @@ pub(super) fn ensure_member(member: &Member, options: &Arguments) -> Result<()> 
     .ok();
     local.words = vec!["serve".into()];
     local.sem = false;
+    local.rerank = false;
     let mut command = Command::new(std::env::current_exe()?);
     command.args(normalized_args(&local, &local.root));
 

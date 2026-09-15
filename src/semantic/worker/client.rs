@@ -1,6 +1,6 @@
 use super::{WorkerStatus, lease, protocol};
 use crate::semantic::runtime_config::InferenceConfig;
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use std::{
     io::{self, ErrorKind},
     os::unix::net::UnixStream,
@@ -9,10 +9,66 @@ use std::{
         unix::ffi::OsStrExt,
     },
     path::Path,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 const IO_SLICE: Duration = Duration::from_millis(25);
+
+/// End-to-end deadline for one rerank request through the shared worker.
+pub const RERANK_DEADLINE: Duration = Duration::from_millis(1500);
+
+/// Score (query, document) pairs through the shared worker, bounded to 1.5 s.
+/// Never loads a model in this process.
+pub fn rerank_query(cache_identity: &Path, query: &str, documents: &[String]) -> Result<Vec<f32>> {
+    #[cfg(not(feature = "semantic"))]
+    {
+        let _ = (cache_identity, query, documents);
+        return Err(crate::semantic::unavailable());
+    }
+    let started = Instant::now();
+    let deadline_instant = started + RERANK_DEADLINE;
+    protocol::validate_rerank_inputs(query, documents)?;
+    let config = InferenceConfig::load()?;
+    let cache = super::lease::worker_cache_dir()?;
+    let remaining = deadline_instant.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        bail!("semantic_timeout: request exceeded its deadline before send");
+    }
+    let deadline_ms = SystemTime::now()
+        .checked_add(remaining)
+        .context("semantic_worker: system clock overflow")?
+        .duration_since(UNIX_EPOCH)?
+        .as_millis() as u64;
+    let request = protocol::WorkerRequest::new(
+        &config,
+        protocol::WorkerCommand::Rerank {
+            root_id: cache_identity.to_string_lossy().into_owned(),
+            query: query.to_owned(),
+            documents: documents.to_vec(),
+            deadline_ms,
+        },
+    );
+    let mut stream = match connect(&cache, deadline_instant) {
+        Ok(stream) => stream,
+        Err(error)
+            if error.kind() == ErrorKind::NotFound
+                || error.kind() == ErrorKind::ConnectionRefused =>
+        {
+            let _ = super::ensure_started_until(cache_identity, deadline_instant)?;
+            bail!("semantic_loading: inference worker is starting")
+        }
+        Err(error) => return Err(error.into()),
+    };
+    configure_io(&stream, deadline_instant)?;
+    protocol::write_request_with_deadline(&mut stream, &request, deadline_instant)?;
+    match protocol::read_reply_with_deadline(&mut stream, deadline_instant)? {
+        protocol::WorkerReply::Scores { values } => Ok(values),
+        protocol::WorkerReply::Error { message } => bail!("rerank_worker: {message}"),
+        protocol::WorkerReply::Status(_) | protocol::WorkerReply::Embeddings { .. } => {
+            bail!("rerank_worker: invalid rerank response")
+        }
+    }
+}
 
 pub(super) fn connect(cache: &Path, deadline: Instant) -> io::Result<UnixStream> {
     let path = cache.join(lease::SOCKET_NAME);
@@ -73,7 +129,7 @@ pub(super) fn request_status(
     match protocol::read_reply_with_deadline(&mut stream, deadline)? {
         protocol::WorkerReply::Status(status) => Ok(status),
         protocol::WorkerReply::Error { message } => bail!("{message}"),
-        protocol::WorkerReply::Embeddings { .. } => {
+        protocol::WorkerReply::Embeddings { .. } | protocol::WorkerReply::Scores { .. } => {
             bail!("semantic_worker: invalid status response")
         }
     }

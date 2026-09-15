@@ -1,7 +1,7 @@
 use super::*;
 use crate::{output::OutputBudget, results};
 
-fn fixture(files: &[(&str, &[u8])]) -> (tempfile::TempDir, tempfile::TempDir, Store) {
+pub(super) fn fixture(files: &[(&str, &[u8])]) -> (tempfile::TempDir, tempfile::TempDir, Store) {
     let root = tempfile::tempdir().unwrap();
     let cache = tempfile::tempdir().unwrap();
     for (path, bytes) in files {
@@ -237,4 +237,29 @@ fn filter_only_queries_and_reference_identities_are_useful() {
     assert_eq!(call.resolution.as_deref(), Some("resolved"));
     assert_eq!(call.target.as_ref().unwrap().path, "lib.rs");
     assert_eq!(call.target.as_ref().unwrap().name, "alpha");
+}
+
+#[test]
+fn rerank_gate_excludes_exact_and_regex_queries() {
+    let (_root, cache, store) = fixture(&[("a.md", b"marker\n")]);
+    let mut session = crate::semantic::SemanticSession::default();
+    for text in ["sym:marker", "re:marker"] {
+        let query = Query::parse(text).unwrap();
+        let mut trace = telemetry::RetrievalTrace::disabled();
+        let result = search_with_session(
+            &store,
+            &query,
+            false,
+            true,
+            cache.path(),
+            &mut session,
+            &mut trace,
+        )
+        .unwrap();
+        assert!(
+            result.coverage.get("rerank_status").is_none(),
+            "{text} set rerank_status: {:?}",
+            result.coverage.get("rerank_status")
+        );
+    }
 }

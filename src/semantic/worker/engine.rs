@@ -9,6 +9,12 @@ pub trait Engine: Send {
     fn embed_batch(&mut self, texts: &[String]) -> Result<Vec<Embedding>>;
 }
 
+/// A reranking model engine, opened and unloaded independently of `Engine`
+/// so embedding and reranking can proceed concurrently on separate devices.
+pub trait RerankEngine: Send {
+    fn rerank(&mut self, query: &str, documents: &[String]) -> Result<Vec<f32>>;
+}
+
 #[cfg(feature = "semantic")]
 struct ModelEngine {
     engine: crate::semantic::SemanticInferenceEngine,
@@ -121,5 +127,89 @@ fn open_cuda(config: &InferenceConfig, _: &Path) -> Result<Box<dyn Engine>> {
 
 #[cfg(not(feature = "semantic"))]
 fn open_cuda(_: &InferenceConfig, _: &Path) -> Result<Box<dyn Engine>> {
+    Err(crate::semantic::unavailable())
+}
+
+#[cfg(feature = "semantic")]
+struct ModelRerankEngine {
+    engine: crate::semantic::RerankInferenceEngine,
+    // Declared after `engine` so the model releases its provider before this
+    // process-global preload is closed; see `ModelEngine`.
+    _preload: Option<DynamicLibraryGuard>,
+}
+
+#[cfg(feature = "semantic")]
+impl RerankEngine for ModelRerankEngine {
+    fn rerank(&mut self, query: &str, documents: &[String]) -> Result<Vec<f32>> {
+        let documents = documents.iter().map(String::as_str).collect::<Vec<_>>();
+        self.engine.score(query, &documents)
+    }
+}
+
+/// Opens the reranking engine configured by `rerank_model_dir`/`rerank_cuda_device`.
+/// Independent of [`open_engine`] so the two models can load on different devices.
+pub fn open_rerank_engine(config: &InferenceConfig) -> Result<Box<dyn RerankEngine>> {
+    config.validate()?;
+    if !config.rerank_enabled() {
+        anyhow::bail!("rerank_unavailable: rerank_model_dir is not configured");
+    }
+    match config.provider {
+        InferenceProvider::Cpu => open_rerank_cpu(config),
+        InferenceProvider::Cuda => open_rerank_cuda(config),
+    }
+}
+
+#[cfg(feature = "semantic")]
+fn open_rerank_cpu(config: &InferenceConfig) -> Result<Box<dyn RerankEngine>> {
+    let model = config.rerank_model_dir()?;
+    let provider =
+        crate::semantic::SemanticProviderConfig::cpu().with_arena_max_bytes(config.arena_bytes);
+    let engine = match config.runtime_library() {
+        Ok(runtime) => {
+            crate::semantic::RerankInferenceEngine::open_with_runtime(model, provider, runtime)?
+        }
+        Err(_) => crate::semantic::RerankInferenceEngine::open_with_provider(model, provider)?,
+    };
+    Ok(Box::new(ModelRerankEngine {
+        engine,
+        _preload: None,
+    }))
+}
+
+#[cfg(not(feature = "semantic"))]
+fn open_rerank_cpu(_: &InferenceConfig) -> Result<Box<dyn RerankEngine>> {
+    Err(crate::semantic::unavailable())
+}
+
+#[cfg(feature = "semantic")]
+fn open_rerank_cuda(config: &InferenceConfig) -> Result<Box<dyn RerankEngine>> {
+    let ordinal = i32::try_from(
+        config
+            .rerank_cuda_device()?
+            .context("cuda device is not configured")?,
+    )
+    .context("cuda_unavailable: device ordinal does not fit i32")?;
+    let model = config.rerank_model_dir()?;
+    let provider = crate::semantic::SemanticProviderConfig::cuda(ordinal)
+        .with_arena_max_bytes(config.arena_bytes);
+    let preload = config
+        .cuda_preload_library
+        .as_deref()
+        .map(preload_library)
+        .transpose()?;
+    let engine = match config.runtime_library() {
+        Ok(runtime) => {
+            crate::semantic::RerankInferenceEngine::open_with_runtime(model, provider, runtime)?
+        }
+        Err(_) => crate::semantic::RerankInferenceEngine::open_with_provider(model, provider)?,
+    };
+    Ok(Box::new(ModelRerankEngine {
+        engine,
+        _preload: preload,
+    }))
+}
+
+#[cfg(not(feature = "semantic"))]
+fn open_rerank_cuda(_: &InferenceConfig) -> Result<Box<dyn RerankEngine>> {
     Err(crate::semantic::unavailable())
 }

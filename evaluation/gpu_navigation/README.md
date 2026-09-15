@@ -40,10 +40,13 @@ as `truncated`, consumes the call and delivered tokens, and lets the agent
 continue. A raw stream over the 1 MiB
 capture ceiling is terminated and logged as `output_limit`.
 
-Retrieval arms are `oldlexical`, `newfilefirstlexical`, and `cuda`. The old arm
-points at the operator's existing `~/.cargo/bin/trufflepig`; the other arms
-point at the build selected by the operator. Measured outcomes live separately in [result.json](result.json). Solver arms are paired as
-`ordinarytools` and `ordinarytools+trufflepig`.
+Retrieval arms are `oldlexical`, `newfilefirstlexical`, `cuda`, and
+`cuda_rerank`. The old arm points at the operator's existing
+`~/.cargo/bin/trufflepig`; the other arms point at the build selected by the
+operator, with `cuda_rerank` additionally requiring the reranker asset and
+adding `--rerank` to `cuda`'s flags. Measured outcomes live separately in
+[result.json](result.json). Solver arms are paired as `ordinarytools` and
+`ordinarytools+trufflepig`.
 
 An adapter writes a version-two trace with this shape:
 
@@ -75,17 +78,19 @@ PYTHONPATH=evaluation python3 -m gpu_navigation.replay TRACE.json
 ```
 
 The command uses the adjacent manifest by default; `--manifest PATH` selects
-another frozen task set. Capture the three retrieval arms with:
+another frozen task set. Capture the four retrieval arms with:
 
 ```sh
 PYTHONPATH=evaluation python3 -m gpu_navigation.run_retrieval \
   --workspace WORKSPACE.toml --old-binary OLD --new-binary NEW \
   --old-cache OLD_CACHE --new-cache NEW_CACHE \
-  --inference-config INFERENCE.toml --arms oldlexical,newfilefirstlexical,cuda
+  --inference-config INFERENCE.toml \
+  --arms oldlexical,newfilefirstlexical,cuda,cuda_rerank
 ```
 
-Prepare the CUDA cache before capturing that arm. The runner records first-page
-file recall separately from original bytes delivered by subsequent `show` calls.
+Prepare the CUDA cache, and the reranker for `cuda_rerank`, before capturing
+those arms. The runner records first-page file recall separately from
+original bytes delivered by subsequent `show` calls.
 
 ## Measured readiness
 
@@ -93,6 +98,14 @@ The twelve development tasks give first-page Recall@10 of 0.25 for the old
 lexical response, 0.4583 for file-first lexical, and 0.3333 for CUDA fusion.
 CUDA improves Recall@5 to 0.3333 but demotes useful lexical implementation
 files. These results keep semantic retrieval opt-in.
+
+The `cuda_rerank` arm, re-measured in one session against same-day baselines
+(file-first lexical Recall@5 0.2917 and Recall@10 0.5417; CUDA fusion 0.3333
+and 0.3333), gives Recall@5 0.5417 and Recall@10 0.625 with four misses
+instead of five and eight. Each workspace search reranks three members
+sequentially, so mean search latency rises from about 1.1 s to about 2.7 s at
+the 600-token page. Per-arm records live under `rerank_measurement` in
+[result.json](result.json).
 
 Prepared search p95 is 1.49 seconds across 100 serial requests, with six
 responses reporting incomplete semantic readiness. Six concurrent clients over

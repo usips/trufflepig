@@ -32,6 +32,13 @@
       "binary": "target/debug/trufflepig",
       "lane": "cuda",
       "status": "run only when the CUDA lane is available"
+    },
+    {
+      "id": "cuda_rerank",
+      "kind": "trufflepig",
+      "binary": "target/debug/trufflepig",
+      "lane": "cuda-rerank",
+      "status": "run only when the CUDA lane and reranker are available"
     }
   ],
   "corpora": {

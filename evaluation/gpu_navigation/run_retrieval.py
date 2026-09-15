@@ -1,4 +1,4 @@
-"""Replay the frozen twelve-task retrieval set across the three arms.
+"""Replay the frozen twelve-task retrieval set across the four arms.
 
 The search page is capped at 600 ``o200k_base`` tokens.  Every emitted top-hit
 handle is followed with ``show`` so source evidence is checked against the
@@ -292,6 +292,8 @@ class RetrievalRunner:
             return ["--no-sem"]
         if self.arm == "cuda":
             return ["--sem"]
+        if self.arm == "cuda_rerank":
+            return ["--sem", "--rerank"]
         return []
 
     @property
@@ -659,7 +661,8 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_ARTIFACT_DIR)
     parser.add_argument("--arms", type=_parse_arms,
                         default=["oldlexical", "newfilefirstlexical"],
-                        help="comma-separated arms; add cuda only after its lane is ready")
+                        help="comma-separated arms; add cuda/cuda_rerank only "
+                             "after their lanes are ready")
     args = parser.parse_args()
     try:
         manifest = load_manifest(args.manifest)
@@ -670,9 +673,9 @@ def main() -> int:
         if root not in roots.values():
             raise RetrievalError("--root must be an exact configured workspace member")
         binaries = {"oldlexical": args.old_binary, "newfilefirstlexical": args.new_binary,
-                    "cuda": args.new_binary}
+                    "cuda": args.new_binary, "cuda_rerank": args.new_binary}
         caches = {"oldlexical": args.old_cache, "newfilefirstlexical": args.new_cache,
-                  "cuda": args.new_cache}
+                  "cuda": args.new_cache, "cuda_rerank": args.new_cache}
         for arm in args.arms:
             if not binaries[arm].is_file():
                 raise RetrievalError(f"binary unavailable for {arm}: {binaries[arm]}")

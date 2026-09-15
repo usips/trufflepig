@@ -250,7 +250,7 @@ fn local_dispatch(
                         let preparation_error = if options.sem && !options.no_daemon && !query.exact && !query.regex {
                             preparation_manager.and_then(|manager| manager.schedule(root, cache).err())
                         } else { None };
-                        let mut result = search::search_with_session(&store,&query,options.sem,cache,session,&mut trace);
+                        let mut result = search::search_with_session(&store,&query,options.sem,options.rerank,cache,session,&mut trace);
                         if let (Some(error), Ok(set)) = (preparation_error, &mut result) {
                             set.coverage["semantic_preparation_error"] = error.to_string().into();
                         }

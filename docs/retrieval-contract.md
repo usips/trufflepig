@@ -6,7 +6,9 @@ Ordinary search combines case-sensitive exact identifier lookup and
 identifier-aware lexical retrieval. Original identifiers and snake/camel
 expansions have separate index representations. Fixed snapshot, query, and
 options determine ranking, with stable source-path and byte-span tie breaks;
-wall-clock deadlines do not silently select which lanes contribute.
+wall-clock deadlines do not silently select which lanes contribute. The
+optional [rerank stage](semantic-contract.md#optional-reranking) keeps this
+determinism claim for a fixed model and provider.
 
 `re:<pattern>` searches live files. Path, language, and kind filters apply before
 result limits. Tests, docs, and configuration remain eligible. Hits can identify

@@ -442,6 +442,152 @@
           }
         }
       ]
+    },
+    "cuda_rerank": {
+      "binary_sha256": "907b07c43e4c6e22702ad0e3d5e9ea4ec621f16d41346b6003f143a23551cd7c",
+      "page_budget_tokens": 600,
+      "summary": {
+        "tasks": 12,
+        "snapshot_invalid": 0,
+        "unavailable": 0,
+        "errors": 0,
+        "truncated_searches": 12,
+        "misses": 4,
+        "mean_file_recall_at_5": 0.5416666666666666,
+        "mean_file_recall_at_10": 0.625,
+        "mean_latency_seconds": 0.6553997579626967,
+        "usage": {
+          "tool_calls": 82,
+          "stdout_bytes": 218870,
+          "stderr_bytes": 0,
+          "emitted_tokens": 68316,
+          "tokenizer": "o200k_base",
+          "latency_seconds": 53.74278015294112,
+          "token_cost_censored": false
+        }
+      },
+      "tasks": [
+        {
+          "task_id": "lunatic-document-append-guard",
+          "snapshot_valid": true,
+          "page": {
+            "file_recall_at_5": 1.0,
+            "file_recall_at_10": 1.0,
+            "hits_emitted": 6,
+            "page_complete": false
+          }
+        },
+        {
+          "task_id": "lunatic-legacy-airlock-fixture",
+          "snapshot_valid": true,
+          "page": {
+            "file_recall_at_5": 0.0,
+            "file_recall_at_10": 0.0,
+            "hits_emitted": 6,
+            "page_complete": false
+          }
+        },
+        {
+          "task_id": "lunatic-cycle-link-validation",
+          "snapshot_valid": true,
+          "page": {
+            "file_recall_at_5": 1.0,
+            "file_recall_at_10": 1.0,
+            "hits_emitted": 6,
+            "page_complete": false
+          }
+        },
+        {
+          "task_id": "lunatic-script-permission-interface",
+          "snapshot_valid": true,
+          "page": {
+            "file_recall_at_5": 1.0,
+            "file_recall_at_10": 1.0,
+            "hits_emitted": 6,
+            "page_complete": false
+          }
+        },
+        {
+          "task_id": "tfs-airlock-permission-fixture",
+          "snapshot_valid": true,
+          "page": {
+            "file_recall_at_5": 0.5,
+            "file_recall_at_10": 0.5,
+            "hits_emitted": 6,
+            "page_complete": false
+          }
+        },
+        {
+          "task_id": "tfs-airlock-cycle-state",
+          "snapshot_valid": true,
+          "page": {
+            "file_recall_at_5": 0.0,
+            "file_recall_at_10": 0.0,
+            "hits_emitted": 5,
+            "page_complete": false
+          }
+        },
+        {
+          "task_id": "tfs-airlock-rebuild-fixture",
+          "snapshot_valid": true,
+          "page": {
+            "file_recall_at_5": 1.0,
+            "file_recall_at_10": 1.0,
+            "hits_emitted": 6,
+            "page_complete": false
+          }
+        },
+        {
+          "task_id": "tfs-writing-commit",
+          "snapshot_valid": true,
+          "page": {
+            "file_recall_at_5": 0.0,
+            "file_recall_at_10": 0.0,
+            "hits_emitted": 6,
+            "page_complete": false
+          }
+        },
+        {
+          "task_id": "tg-airlock-controller-cycle",
+          "snapshot_valid": true,
+          "page": {
+            "file_recall_at_5": 1.0,
+            "file_recall_at_10": 1.0,
+            "hits_emitted": 6,
+            "page_complete": false
+          }
+        },
+        {
+          "task_id": "tg-airlock-pump-pressure",
+          "snapshot_valid": true,
+          "page": {
+            "file_recall_at_5": 0.0,
+            "file_recall_at_10": 1.0,
+            "hits_emitted": 6,
+            "page_complete": false
+          }
+        },
+        {
+          "task_id": "tg-airlock-secure-open",
+          "snapshot_valid": true,
+          "page": {
+            "file_recall_at_5": 1.0,
+            "file_recall_at_10": 1.0,
+            "hits_emitted": 6,
+            "page_complete": false
+          }
+        },
+        {
+          "task_id": "tg-airlock-wire-permissions",
+          "snapshot_valid": true,
+          "page": {
+            "file_recall_at_5": 0.0,
+            "file_recall_at_10": 0.0,
+            "hits_emitted": 5,
+            "page_complete": false
+          }
+        }
+      ]
     }
   },
   "latency": {
@@ -489,5 +635,128 @@
     "final_preparation_no_default_tests_passed": 15,
     "python_tests_passed": 59,
     "all_targets_cuda_check": "passed"
+  },
+  "rerank_measurement": {
+    "measured_tree": "uncommitted rerank change on 6c50a74",
+    "binary_sha256": "907b07c43e4c6e22702ad0e3d5e9ea4ec621f16d41346b6003f143a23551cd7c",
+    "reranker": "rozgo/bge-reranker-v2-m3@fbd57b17b4db111a9d16813bb08b4c804fac18e9",
+    "embedding_gpu": "NVIDIA GeForce RTX 4090",
+    "rerank_gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+    "note": "All three arms were re-measured in one session on the current working trees, so the same-day baselines below are the comparison for cuda_rerank; the arms recorded above were measured at 3835a69 on earlier trees.",
+    "same_day_baselines": {
+      "newfilefirstlexical": {
+        "binary_sha256": "907b07c43e4c6e22702ad0e3d5e9ea4ec621f16d41346b6003f143a23551cd7c",
+        "summary": {
+          "tasks": 12,
+          "snapshot_invalid": 0,
+          "unavailable": 0,
+          "errors": 0,
+          "truncated_searches": 10,
+          "misses": 5,
+          "mean_file_recall_at_5": 0.2916666666666667,
+          "mean_file_recall_at_10": 0.5416666666666666,
+          "mean_latency_seconds": 0.3370037924220977,
+          "usage": {
+            "tool_calls": 85,
+            "stdout_bytes": 218053,
+            "stderr_bytes": 0,
+            "emitted_tokens": 68941,
+            "tokenizer": "o200k_base",
+            "latency_seconds": 28.645322355878307,
+            "token_cost_censored": false
+          }
+        }
+      },
+      "cuda": {
+        "binary_sha256": "907b07c43e4c6e22702ad0e3d5e9ea4ec621f16d41346b6003f143a23551cd7c",
+        "summary": {
+          "tasks": 12,
+          "snapshot_invalid": 0,
+          "unavailable": 0,
+          "errors": 0,
+          "truncated_searches": 11,
+          "misses": 8,
+          "mean_file_recall_at_5": 0.3333333333333333,
+          "mean_file_recall_at_10": 0.3333333333333333,
+          "mean_latency_seconds": 0.41867398462051003,
+          "usage": {
+            "tool_calls": 82,
+            "stdout_bytes": 214534,
+            "stderr_bytes": 0,
+            "emitted_tokens": 67192,
+            "tokenizer": "o200k_base",
+            "latency_seconds": 34.33126673888182,
+            "token_cost_censored": false
+          }
+        }
+      }
+    },
+    "per_task_file_recall_at_5": {
+      "lunatic-document-append-guard": {
+        "newfilefirstlexical": 1.0,
+        "cuda": 1.0,
+        "cuda_rerank": 1.0
+      },
+      "lunatic-legacy-airlock-fixture": {
+        "newfilefirstlexical": 0.0,
+        "cuda": 0.0,
+        "cuda_rerank": 0.0
+      },
+      "lunatic-cycle-link-validation": {
+        "newfilefirstlexical": 0.0,
+        "cuda": 0.0,
+        "cuda_rerank": 1.0
+      },
+      "lunatic-script-permission-interface": {
+        "newfilefirstlexical": 0.0,
+        "cuda": 1.0,
+        "cuda_rerank": 1.0
+      },
+      "tfs-airlock-permission-fixture": {
+        "newfilefirstlexical": 0.5,
+        "cuda": 0.0,
+        "cuda_rerank": 0.5
+      },
+      "tfs-airlock-cycle-state": {
+        "newfilefirstlexical": 1.0,
+        "cuda": 0.0,
+        "cuda_rerank": 0.0
+      },
+      "tfs-airlock-rebuild-fixture": {
+        "newfilefirstlexical": 0.0,
+        "cuda": 0.0,
+        "cuda_rerank": 1.0
+      },
+      "tfs-writing-commit": {
+        "newfilefirstlexical": 0.0,
+        "cuda": 0.0,
+        "cuda_rerank": 0.0
+      },
+      "tg-airlock-controller-cycle": {
+        "newfilefirstlexical": 1.0,
+        "cuda": 1.0,
+        "cuda_rerank": 1.0
+      },
+      "tg-airlock-pump-pressure": {
+        "newfilefirstlexical": 0.0,
+        "cuda": 1.0,
+        "cuda_rerank": 0.0
+      },
+      "tg-airlock-secure-open": {
+        "newfilefirstlexical": 0.0,
+        "cuda": 0.0,
+        "cuda_rerank": 1.0
+      },
+      "tg-airlock-wire-permissions": {
+        "newfilefirstlexical": 0.0,
+        "cuda": 0.0,
+        "cuda_rerank": 0.0
+      }
+    },
+    "limitations": [
+      "Twelve development tasks, no held-out evaluation or statistical significance claim.",
+      "Workspace searches rerank each of the three members sequentially; mean search latency rose from about 1.1 s (cuda) to about 2.7 s (cuda_rerank) at a 600-token page.",
+      "Lunatic and tales-from-space working trees have moved since the recorded parent revisions; selected label hashes still validated for all twelve tasks."
+    ]
   }
 }

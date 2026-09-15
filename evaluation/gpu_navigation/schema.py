@@ -21,7 +21,7 @@ MAX_TOOL_CALLS = 12
 MAX_EMITTED_TOKENS = 12_000
 MAX_OUTPUT_TOKENS_PER_CALL = 900
 TASK_TIMEOUT_SECONDS = 600
-ARMS = ("oldlexical", "newfilefirstlexical", "cuda")
+ARMS = ("oldlexical", "newfilefirstlexical", "cuda", "cuda_rerank")
 CORPORA = ("lunatic", "tales-from-space", "tgstation")
 
 
@@ -62,7 +62,7 @@ def validate_manifest(manifest: dict) -> None:
     if (not isinstance(arms, list) or len(arms) != len(ARMS)
             or any(not isinstance(item, dict) for item in arms)
             or {item.get("id") for item in arms} != set(ARMS)):
-        raise ManifestError("gpu manifest must declare all three retrieval arms")
+        raise ManifestError("gpu manifest must declare all four retrieval arms")
     corpora = manifest.get("corpora")
     if not isinstance(corpora, dict) or set(corpora) != set(CORPORA):
         raise ManifestError("gpu manifest must declare the three development corpora")

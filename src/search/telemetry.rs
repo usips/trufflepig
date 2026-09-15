@@ -14,6 +14,7 @@ pub enum Lane {
     File,
     LiveRegex,
     Semantic,
+    Rerank,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -90,7 +91,7 @@ impl Default for RetrievalTrace {
             generation: None,
             query_preparation_us: None,
             coverage: None,
-            lanes: Vec::with_capacity(5),
+            lanes: Vec::with_capacity(6),
         }
     }
 }

@@ -1,4 +1,7 @@
 //! Fair rank merging of independent published member snapshots.
+#[cfg(test)]
+mod tests;
+
 use super::{
     WorkspaceConfig, coordinator, member_cache,
     result_cache::{MemberSnapshot, OwnedEntry, WorkspaceResults, WorkspaceSet},
@@ -83,11 +86,12 @@ pub(super) fn search(
         .context("usage: retrieval command is required")?;
     let text = words[1..].join(" ");
     let query = Query::parse(&text)?;
-    let semantic = options.sem
-        && !query.exact
+    let semantic_eligible_shape = !query.exact
         && !query.regex
         && !matches!(verb, "refs" | "map")
         && !text.starts_with("refs:");
+    let semantic = options.sem && semantic_eligible_shape;
+    let rerank = options.rerank && semantic_eligible_shape;
     let started = std::time::Instant::now();
     session.set_no_daemon(options.no_daemon);
     let (prepared, semantic_error) = match session.prepare(semantic, cache, &query.text) {
@@ -153,7 +157,15 @@ pub(super) fn search(
                 search::map(&store, words.get(1).map(String::as_str).unwrap_or(""))?
             } else {
                 let semantic_query = prepared.clone();
-                search::search_prepared(&store, &query, &member_cache, semantic_query, &mut trace)?
+                let reranker = rerank.then_some(&*session as &dyn search::RerankScorer);
+                search::search_prepared(
+                    &store,
+                    &query,
+                    &member_cache,
+                    semantic_query,
+                    reranker,
+                    &mut trace,
+                )?
             };
             if let Some(error) = &semantic_error {
                 found.coverage["semantic_status"] = "unavailable".into();
@@ -244,6 +256,7 @@ fn partial_coverage(coverage: &serde_json::Value) -> bool {
             coverage["semantic_status"].as_str(),
             Some("unavailable" | "partial")
         )
+        || coverage["rerank_status"].as_str() == Some("unavailable")
         || [
             "parse_failures",
             "excluded_files",
@@ -278,6 +291,8 @@ fn coverage_issues(coverage: &serde_json::Value) -> serde_json::Value {
         "semantic_status",
         "semantic_reason",
         "semantic_preparation_error",
+        "rerank_status",
+        "rerank_reason",
     ] {
         if let Some(value) = coverage.get(key) {
             issues.insert(key.into(), value.clone());

@@ -71,6 +71,7 @@ pub struct WorkspaceConfig {
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct SemanticConfig {
     pub enabled: bool,
+    pub rerank: bool,
 }
 
 #[derive(Deserialize)]
@@ -99,6 +100,8 @@ struct MemberSection {
 struct SemanticSection {
     #[serde(default)]
     enabled: bool,
+    #[serde(default)]
+    rerank: bool,
 }
 
 #[derive(Deserialize)]
@@ -188,6 +191,7 @@ impl WorkspaceConfig {
                 .semantic
                 .map(|semantic| SemanticConfig {
                     enabled: semantic.enabled,
+                    rerank: semantic.rerank,
                 })
                 .unwrap_or_default(),
         })

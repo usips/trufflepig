@@ -20,7 +20,9 @@ before a 1,000-file lane cap. Exact, lexical, and filename ranks combine with
 reciprocal rank fusion (`k = 60`), with stable path ties. Filename evidence has
 weight 2 for an exact normalized stem, 1 for all query tokens in the basename,
 and 0.5 for partial path matches. Available semantic file ranks then fuse with
-the combined source ranking at equal weight. `sym:` and `re:` retain occurrences.
+the combined source ranking at equal weight. An opt-in rerank stage then
+reorders the top 32 fused files; see the [semantic contract](semantic-contract.md).
+`sym:` and `re:` retain occurrences.
 Pages maximize file references before adding optional symbol names.
 
 ## Coherent publication

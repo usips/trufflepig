@@ -74,6 +74,12 @@ pub struct Arguments {
     /// Disable semantic retrieval, including a workspace's persistent opt-in.
     #[arg(long, conflicts_with = "sem")]
     pub no_sem: bool,
+    /// Enable cross-encoder reranking of the top fused hits when available.
+    #[arg(long, conflicts_with = "no_rerank")]
+    pub rerank: bool,
+    /// Disable reranking, including a workspace's persistent opt-in.
+    #[arg(long, conflicts_with = "rerank")]
+    pub no_rerank: bool,
     /// Request JSON responses, which are the default output format.
     #[arg(long)]
     pub json: bool,
@@ -169,6 +175,12 @@ pub(crate) fn normalized_args(options: &Arguments, root: &Path) -> Vec<String> {
     }
     if options.no_sem {
         args.push("--no-sem".into());
+    }
+    if options.rerank {
+        args.push("--rerank".into());
+    }
+    if options.no_rerank {
+        args.push("--no-rerank".into());
     }
     for (flag, value) in [
         (

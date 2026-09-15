@@ -1,6 +1,8 @@
 use super::scheduler::RequestClass;
 use crate::semantic::runtime_config::InferenceConfig;
-use crate::semantic::{MODEL_NAME, MODEL_REVISION};
+use crate::semantic::{
+    MODEL_NAME, MODEL_REVISION, RERANKER_NAME, RERANKER_REVISION, check_rerank_bounds,
+};
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -30,7 +32,14 @@ impl Handshake {
             .as_ref()
             .map(|path| path.to_string_lossy().into_owned())
             .unwrap_or_default();
-        let model = format!("{MODEL_NAME}:{MODEL_REVISION}:{model_path}");
+        let rerank_model_path = config
+            .rerank_model_dir
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let model = format!(
+            "{MODEL_NAME}:{MODEL_REVISION}:{model_path}:{RERANKER_NAME}:{RERANKER_REVISION}:{rerank_model_path}"
+        );
         Self {
             protocol: PROTOCOL_VERSION,
             build: BUILD_ID.into(),
@@ -58,6 +67,12 @@ pub enum WorkerCommand {
         texts: Vec<String>,
         deadline_ms: u64,
     },
+    Rerank {
+        root_id: String,
+        query: String,
+        documents: Vec<String>,
+        deadline_ms: u64,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -65,6 +80,7 @@ pub enum WorkerCommand {
 pub enum WorkerReply {
     Status(super::WorkerStatus),
     Embeddings { values: Vec<Vec<f32>> },
+    Scores { values: Vec<f32> },
     Error { message: String },
 }
 
@@ -217,17 +233,34 @@ pub fn raw_input_bytes(texts: &[String]) -> usize {
         .fold(0_usize, |total, text| total.saturating_add(text.len()))
 }
 
+/// Validates rerank admission bounds shared with [`check_rerank_bounds`].
+pub fn validate_rerank_inputs(query: &str, documents: &[String]) -> Result<()> {
+    check_rerank_bounds(query, documents)
+}
+
 fn validate_command(command: &WorkerCommand) -> Result<()> {
-    if let WorkerCommand::Embed {
-        root_id,
-        texts,
-        deadline_ms,
-        ..
-    } = command
-    {
-        ensure!(!root_id.is_empty(), "semantic_admission: root id is empty");
-        ensure!(*deadline_ms != 0, "semantic_admission: deadline is missing");
-        validate_inputs(texts)?;
+    match command {
+        WorkerCommand::Embed {
+            root_id,
+            texts,
+            deadline_ms,
+            ..
+        } => {
+            ensure!(!root_id.is_empty(), "semantic_admission: root id is empty");
+            ensure!(*deadline_ms != 0, "semantic_admission: deadline is missing");
+            validate_inputs(texts)?;
+        }
+        WorkerCommand::Rerank {
+            root_id,
+            query,
+            documents,
+            deadline_ms,
+        } => {
+            ensure!(!root_id.is_empty(), "rerank_admission: root id is empty");
+            ensure!(*deadline_ms != 0, "rerank_admission: deadline is missing");
+            validate_rerank_inputs(query, documents)?;
+        }
+        WorkerCommand::Status | WorkerCommand::Stop => {}
     }
     Ok(())
 }
@@ -264,6 +297,49 @@ mod tests {
         let values = vec![vec![0.0; DIMENSIONS]; MAX_INPUTS];
         let bytes = serde_json::to_vec(&WorkerReply::Embeddings { values }).unwrap();
         assert!(bytes.len() < FRAME_LIMIT);
+    }
+
+    #[test]
+    fn serialized_scores_reply_is_well_below_frame_limit() {
+        use crate::semantic::RERANK_MAX_DOCUMENTS;
+        let values = vec![0.0_f32; RERANK_MAX_DOCUMENTS];
+        let bytes = serde_json::to_vec(&WorkerReply::Scores { values }).unwrap();
+        assert!(bytes.len() < FRAME_LIMIT);
+    }
+
+    #[test]
+    fn rerank_request_over_document_limit_fails_validation() {
+        use crate::semantic::RERANK_MAX_DOCUMENTS;
+        let command = WorkerCommand::Rerank {
+            root_id: "root".into(),
+            query: "query".into(),
+            documents: vec!["doc".into(); RERANK_MAX_DOCUMENTS + 1],
+            deadline_ms: 1,
+        };
+        let error = validate_command(&command).unwrap_err();
+        assert!(error.to_string().contains("rerank_admission"));
+    }
+
+    #[test]
+    fn worst_case_rerank_request_stays_under_frame_limit() -> Result<()> {
+        use crate::semantic::RERANK_MAX_DOCUMENTS;
+        let request = WorkerRequest {
+            handshake: Handshake {
+                protocol: PROTOCOL_VERSION,
+                build: "x".repeat(64),
+                config: "x".repeat(64),
+                model: "x".repeat(64),
+            },
+            command: WorkerCommand::Rerank {
+                root_id: "x".repeat(256),
+                query: "\"".repeat(4096),
+                documents: vec!["\"".repeat(4096); RERANK_MAX_DOCUMENTS],
+                deadline_ms: u64::MAX,
+            },
+        };
+        let bytes = serde_json::to_vec(&request)?;
+        assert!(bytes.len() < FRAME_LIMIT);
+        Ok(())
     }
 
     #[test]

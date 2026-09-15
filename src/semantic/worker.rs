@@ -6,22 +6,27 @@ mod engine;
 mod lease;
 mod load_retry;
 mod protocol;
+mod rerank_executor;
 mod scheduler;
+mod status;
 
 pub use admission::{AdmissionController, AdmissionLimits, AdmissionTicket};
 pub use protocol::{
     Handshake, PROTOCOL_VERSION, read_frame, read_frame_with_deadline, write_frame,
 };
 pub use scheduler::{FairScheduler, RequestClass, RootIdent, ScheduledRequest};
+pub use status::{WorkerState, WorkerStatus};
 
 use super::Embedding;
 use crate::{background_process::spawn_background, semantic::runtime_config::InferenceConfig};
 use anyhow::{Context, Result, bail, ensure};
+pub use client::{RERANK_DEADLINE, rerank_query};
 use client::{configure_io, connect};
 use engine::{Engine, open_engine};
 use lease::{WorkerLease, WorkerSocket, worker_cache_dir};
 use load_retry::LoadRetry;
 use protocol::{WorkerCommand, WorkerReply, WorkerRequest, write_reply};
+use rerank_executor::RerankLane;
 use std::{
     collections::HashSet,
     env,
@@ -95,49 +100,6 @@ impl EmbedKind {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum WorkerState {
-    NotRunning,
-    Loading,
-    Ready,
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct WorkerStatus {
-    pub state: WorkerState,
-    pub provider: String,
-    pub gpu_uuid: Option<String>,
-    pub pending: usize,
-    pub loaded: bool,
-    pub config_fingerprint: String,
-    pub model_fingerprint: String,
-    pub handshake_match: bool,
-    pub error: Option<String>,
-}
-
-impl WorkerStatus {
-    fn not_running(config: &InferenceConfig) -> Self {
-        let handshake = Handshake::for_config(config);
-        Self {
-            state: WorkerState::NotRunning,
-            provider: config.provider.to_string(),
-            gpu_uuid: config.gpu_uuid.clone(),
-            pending: 0,
-            loaded: false,
-            config_fingerprint: handshake.config,
-            model_fingerprint: handshake.model,
-            handshake_match: true,
-            error: None,
-        }
-    }
-
-    fn loading(config: &InferenceConfig) -> Self {
-        let mut status = Self::not_running(config);
-        status.state = WorkerState::Loading;
-        status
-    }
-}
-
 /// Start the worker without waiting for model initialization.
 pub fn ensure_started(cache_identity: &Path) -> Result<WorkerStatus> {
     #[cfg(not(feature = "semantic"))]
@@ -163,12 +125,11 @@ fn start_worker(cache_identity: &Path, config: &InferenceConfig, cache: &Path) -
     command.args(["--no-daemon", WORKER_COMMAND]);
     command.env("TRUFFLEPIG_WORKER_CACHE", &cache);
     command.env("TRUFFLEPIG_WORKER_ROOT", cache_identity);
-    if config.provider == crate::semantic::runtime_config::InferenceProvider::Cuda {
-        if let Some(uuid) = config.gpu_uuid.as_deref() {
-            // A UUID visibility mask makes CUDA ordinal zero refer to the
-            // configured physical device regardless of host enumeration order.
-            command.env("CUDA_VISIBLE_DEVICES", uuid);
-        }
+    if let Some(visible) = config.cuda_visible_devices() {
+        // A UUID visibility mask makes CUDA ordinals refer to the configured
+        // physical devices regardless of host enumeration order; it covers
+        // both the embedding and (when distinct) the reranking device.
+        command.env("CUDA_VISIBLE_DEVICES", visible);
     }
     if let Some(runtime) = config.runtime_library.as_deref() {
         command.env("ORT_DYLIB_PATH", runtime);
@@ -221,7 +182,9 @@ pub fn stop(_: &Path) -> Result<WorkerStatus> {
     match protocol::read_reply_with_deadline(&mut stream, deadline)? {
         WorkerReply::Status(status) => Ok(status),
         WorkerReply::Error { message } => bail!("semantic_worker: {message}"),
-        WorkerReply::Embeddings { .. } => bail!("semantic_worker: invalid stop response"),
+        WorkerReply::Embeddings { .. } | WorkerReply::Scores { .. } => {
+            bail!("semantic_worker: invalid stop response")
+        }
     }
 }
 
@@ -287,7 +250,9 @@ pub fn embed(kind: EmbedKind, root_id: &Path, texts: &[String]) -> Result<Vec<Em
             .map(|values| Embedding::from_values(&values))
             .collect(),
         WorkerReply::Error { message } => bail!("semantic_worker: {message}"),
-        WorkerReply::Status(_) => bail!("semantic_worker: invalid embedding response"),
+        WorkerReply::Status(_) | WorkerReply::Scores { .. } => {
+            bail!("semantic_worker: invalid embedding response")
+        }
     }
 }
 
@@ -341,8 +306,7 @@ fn require_foreground_cuda_mask(config: &InferenceConfig) -> Result<()> {
         return Ok(());
     }
     let expected = config
-        .gpu_uuid
-        .as_deref()
+        .cuda_visible_devices()
         .context("inference_config_invalid: cuda requires gpu_uuid")?;
     let visible = env::var("CUDA_VISIBLE_DEVICES").unwrap_or_default();
     ensure!(
@@ -399,6 +363,7 @@ impl scheduler::RootIdent for QueuedConnection {
     fn root_id(&self) -> &str {
         match &self.request.command {
             WorkerCommand::Embed { root_id, .. } => root_id,
+            WorkerCommand::Rerank { root_id, .. } => root_id,
             WorkerCommand::Status | WorkerCommand::Stop => "",
         }
     }
@@ -419,6 +384,7 @@ struct WorkerRuntime {
     active: bool,
     executor_send: Sender<ExecutorCommand>,
     executor_receive: Receiver<ExecutorEvent>,
+    rerank_lane: RerankLane,
     stopping: bool,
 }
 
@@ -457,6 +423,7 @@ impl WorkerRuntime {
             .name("semantic-inference".into())
             .spawn(move || inference_loop(executor_commands, executor_events))
             .expect("start semantic inference thread");
+        let rerank_lane = RerankLane::new(config.clone());
         Self {
             config,
             cache,
@@ -472,6 +439,7 @@ impl WorkerRuntime {
             active: false,
             executor_send,
             executor_receive,
+            rerank_lane,
             stopping: false,
         }
     }
@@ -523,18 +491,24 @@ impl WorkerRuntime {
                 Err(error) => return Err(error).context("accept semantic worker request"),
             }
             self.poll_executor();
+            did_work = self.rerank_lane.pump(Instant::now()) || did_work;
             if !self.stopping && !self.active && (!self.loading || self.engine_loaded) {
                 if let Some(item) = self.scheduler.pop() {
                     did_work = true;
                     self.process(item);
                 }
             }
+            if !self.stopping {
+                did_work = self.rerank_lane.poll() || did_work;
+            }
             self.unload_idle();
+            self.rerank_lane.unload_idle();
             if !did_work {
                 thread::sleep(ACCEPT_SLEEP);
             }
         }
         let _ = self.executor_send.send(ExecutorCommand::Shutdown);
+        self.rerank_lane.shutdown();
         Ok(())
     }
 
@@ -624,6 +598,15 @@ impl WorkerRuntime {
                     ticket,
                 };
                 self.scheduler.push(class, queued);
+            }
+            command @ WorkerCommand::Rerank { .. } => {
+                self.rerank_lane.admit(
+                    &self.handshake,
+                    &self.admission,
+                    handshake_match,
+                    command,
+                    stream,
+                );
             }
         }
     }
@@ -760,9 +743,9 @@ impl WorkerRuntime {
                             class,
                             ..
                         } => (root_id, deadline_ms, class),
-                        WorkerCommand::Status | WorkerCommand::Stop => {
-                            (String::new(), 0, RequestClass::Query)
-                        }
+                        WorkerCommand::Status
+                        | WorkerCommand::Stop
+                        | WorkerCommand::Rerank { .. } => (String::new(), 0, RequestClass::Query),
                     };
                     if class == RequestClass::Background {
                         self.background_roots.remove(&root_id);
@@ -801,6 +784,7 @@ impl WorkerRuntime {
         } else {
             WorkerState::Loading
         };
+        let rerank = self.rerank_lane.status_fields();
         WorkerStatus {
             state,
             provider: self.config.provider.to_string(),
@@ -811,6 +795,10 @@ impl WorkerRuntime {
             model_fingerprint: self.handshake.model.clone(),
             handshake_match,
             error: self.load_error.clone(),
+            rerank_loaded: rerank.loaded,
+            rerank_gpu_uuid: rerank.gpu_uuid,
+            rerank_error: rerank.error,
+            rerank_pending: rerank.pending,
         }
     }
 }
@@ -960,5 +948,6 @@ mod tests {
     fn worker_constants_preserve_query_budget() {
         assert_eq!(QUERY_DEADLINE, Duration::from_millis(500));
         assert_eq!(IDLE_UNLOAD, Duration::from_secs(600));
+        assert_eq!(RERANK_DEADLINE, Duration::from_millis(1500));
     }
 }

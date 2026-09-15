@@ -26,6 +26,8 @@ model_dir = "/absolute/path/to/verified/model"
 runtime_library = "/absolute/path/to/libonnxruntime.so"
 cuda_preload_library = "/absolute/path/to/libcudnn.so"
 arena_bytes = 10737418240
+rerank_model_dir = "/absolute/path/to/verified/reranker"
+rerank_gpu_uuid = "GPU-yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
 ```
 
 The optional preload remains loaded until the model is released. A CUDA
@@ -52,9 +54,41 @@ reports p95 `6.08325262699509` seconds against a 5-second limit; serial p95 is
 enable check therefore fails, and semantic retrieval remains opt-in.
 
 The [asset manifest](../evaluation/semantic_gate/model.json) pins the model and
-tokenizer revisions. Use masked mean pooling, L2 normalization, and all 768
+tokenizer revisions; the reranker's assets are pinned separately in
+[`evaluation/semantic_gate/reranker.json`](../evaluation/semantic_gate/reranker.json).
+Use masked mean pooling, L2 normalization, and all 768
 `f32` dimensions. Do not silently substitute another model or tokenizer.
 [Publisher configuration and inference example](https://huggingface.co/jinaai/jina-embeddings-v2-base-code)
+
+## Optional reranking
+
+Reranking is opt-in per request via `--rerank` / `--no-rerank`, or a
+workspace's persistent `[semantic] rerank = true`; see [CLI usage](cli.md).
+The pinned cross-encoder is `rozgo/bge-reranker-v2-m3`, an ONNX export of the
+Apache-2.0 BAAI weights; its manifest is
+[`evaluation/semantic_gate/reranker.json`](../evaluation/semantic_gate/reranker.json).
+Licensing review for these weights is tracked separately and is not part of
+this contract.
+
+The shared per-user worker owns the reranker alongside the embedding model.
+`rerank_model_dir` selects its verified asset directory; an optional
+`rerank_gpu_uuid` names a second GPU for CUDA, and the worker's
+`CUDA_VISIBLE_DEVICES` mask lists both the embedding and rerank GPU UUIDs.
+Without `rerank_gpu_uuid`, the reranker shares `gpu_uuid`.
+
+Each rerank request scores at most 32 documents against one query, with a
+4,096-byte bound per document and per query, truncating tokenized pairs at
+1,024 tokens, in batches of 8, under a 1,500 ms query deadline. The stage
+reorders only the top 32 files from the fused lexical/semantic ranking:
+scored hits sort by descending rerank score, with ties breaking by fused
+rank; hits the reranker could not score keep their fused order below every
+scored hit.
+
+A timeout, missing model, or provider failure keeps the fused order
+unchanged and reports `rerank_status` (`ready`, `unavailable`, or `skipped`)
+and, when unavailable, `rerank_reason` in coverage, along with
+`rerank_window` counting scored hits. `--no-daemon` never reranks, since it
+never contacts the inference worker.
 
 ## Preparation and cache
 
@@ -86,13 +120,16 @@ structural results with an explicit semantic status and coverage issue.
 The embedding cache has a 5 GiB default SQLite page budget and evicts by
 recency. Eviction lowers semantic coverage until preparation recomputes the
 vector. Cache state is keyed by the root and content identity; it never merges
-different source occurrences. No dimension truncation, quantization, ANN,
-reranking, or machine-wide hard memory cap is part of this contract.
+different source occurrences. No dimension truncation, quantization, ANN, or
+machine-wide hard memory cap is part of this contract; the [rerank
+stage](#optional-reranking) below is opt-in and separate from embedding
+preparation.
 
 `--no-daemon` never starts or contacts the inference worker. An explicit
 foreground preparation command acquires the same root preparation lease and
 performs the work locally. Foreground CUDA requires `CUDA_VISIBLE_DEVICES` to
-contain only the configured GPU UUID; the shared worker sets this mask itself.
+equal the comma-joined `gpu_uuid` and `rerank_gpu_uuid` list; the shared worker
+sets this mask itself.
 See [CLI usage](cli.md) for preparation and worker
 status commands.
 

@@ -46,3 +46,31 @@ fn batch_planner_rejects_an_oversized_input() {
     let error = plan_batch_ranges(&[MAX_INPUT_TOKENS + 1]).unwrap_err();
     assert!(error.to_string().contains("exceeds 4096 model tokens"));
 }
+
+/// Gated on the pinned reranker assets and an ONNX Runtime library; skips
+/// (as a pass) when either environment variable is unset.
+#[test]
+fn reranker_scores_relevant_document_higher() {
+    let (Some(model_dir), Some(runtime_library)) = (
+        std::env::var_os("TRUFFLEPIG_RERANK_MODEL_DIR"),
+        std::env::var_os("ORT_DYLIB_PATH"),
+    ) else {
+        return;
+    };
+    let mut engine = RerankInferenceEngine::open_with_runtime(
+        std::path::Path::new(&model_dir),
+        SemanticProviderConfig::cpu(),
+        std::path::Path::new(&runtime_library),
+    )
+    .unwrap();
+    let scores = engine
+        .score(
+            "airlock pressure cycle",
+            &[
+                "proc/airlock_pressure_cycle() equalizes chamber pressure before opening the outer hatch",
+                "fn parse_toml_config()",
+            ],
+        )
+        .unwrap();
+    assert!(scores[0] > scores[1]);
+}

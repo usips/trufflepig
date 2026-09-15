@@ -192,7 +192,7 @@ preparation; `semantic prepare --wait` waits for the requested generation.
 `semantic worker stop` inspect or stop the shared per-user worker. Missing assets,
 provider failures, pending vectors, and query timeouts remain explicit statuses
 while lexical results stay available. `--no-sem` disables semantic retrieval,
-including a workspace's persistent opt-in.
+including a workspace's persistent opt-in; `--rerank`/`--no-rerank` also toggles rerank.
 Source regions are never embedded synchronously during search; search uses the
 cache and has a 500 ms semantic query deadline before returning lexical fallback.
 The [semantic contract](semantic-contract.md) defines worker, cache, snapshot,

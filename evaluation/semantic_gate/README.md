@@ -1,7 +1,8 @@
 # Semantic inference gate evidence
 
 The optional `semantic` feature uses the pinned publisher ONNX and tokenizer
-assets in [model.json](model.json). Asset hashes are checked before model loading.
+assets in [model.json](model.json), and the optional reranker uses the pinned
+assets in [reranker.json](reranker.json). Asset hashes are checked before model loading.
 The engine uses masked mean pooling, L2 normalization and all 768 `f32` dimensions.
 Each input accepts at most 4096 model tokens; a call accepts at most 8 inputs and
 8192 padded tokens. Excessive inputs fail explicitly instead of being truncated.

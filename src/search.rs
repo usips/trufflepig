@@ -2,6 +2,7 @@
 mod file_ranking;
 mod live;
 mod navigation;
+mod rerank_window;
 mod semantic_lane;
 pub mod telemetry;
 #[cfg(test)]
@@ -9,6 +10,7 @@ mod tests;
 pub(crate) use file_ranking::fuse_search_file_lanes as fuse_file_lanes;
 pub(crate) use navigation::context_entry;
 pub use navigation::{context, map, references};
+pub use rerank_window::RerankScorer;
 
 use crate::{
     results::{Hit, MAX_HITS, ResultSet},
@@ -107,6 +109,7 @@ pub fn search(
         store,
         query,
         semantic,
+        false,
         cache,
         &mut session,
         &mut telemetry::RetrievalTrace::disabled(),
@@ -117,6 +120,7 @@ pub fn search_with_session(
     store: &Store,
     query: &Query,
     semantic: bool,
+    rerank: bool,
     cache: &std::path::Path,
     session: &mut crate::semantic::SemanticSession,
     trace: &mut telemetry::RetrievalTrace,
@@ -137,7 +141,9 @@ pub fn search_with_session(
         trace.query_preparation_us = Some(telemetry::elapsed_us(preparation_started));
     }
     let preparation_us = trace.query_preparation_us;
-    let mut output = search_prepared(store, query, cache, prepared, trace);
+    let reranker =
+        (rerank && !query.exact && !query.regex).then_some(&*session as &dyn RerankScorer);
+    let mut output = search_prepared(store, query, cache, prepared, reranker, trace);
     if let (Some(status), Ok(result)) = (&semantic_status, &mut output) {
         result.coverage["semantic_status"] = if status.starts_with("semantic_cache_locked:") {
             "partial"
@@ -167,6 +173,7 @@ pub fn search_prepared(
     query: &Query,
     cache: &std::path::Path,
     semantic_query: Option<crate::semantic::Embedding>,
+    reranker: Option<&dyn RerankScorer>,
     trace: &mut telemetry::RetrievalTrace,
 ) -> Result<ResultSet> {
     use std::time::Instant;
@@ -290,6 +297,17 @@ pub fn search_prepared(
     {
         truncated |=
             semantic_lane::append(store, query, cache, vector, &mut hits, &mut coverage, trace)?;
+    }
+    if let Some(scorer) = reranker {
+        rerank_window::apply(
+            store,
+            &query.text,
+            cache,
+            scorer,
+            &mut hits,
+            &mut coverage,
+            trace,
+        );
     }
     trace.snapshot(generation, &coverage);
     let mut seen = HashSet::with_capacity(hits.len());

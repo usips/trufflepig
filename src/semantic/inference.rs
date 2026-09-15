@@ -4,8 +4,15 @@
 mod batch;
 mod gate;
 mod provider;
+mod reranker;
 
 pub use gate::{compare_cpu_cuda, run_gate, run_gpu_gate};
+pub use reranker::RerankInferenceEngine;
+// Bounds and their validator live in `crate::semantic` unconditionally so the
+// worker protocol can enforce them without the `semantic` feature; re-export
+// them here so this module's siblings (e.g. `provider`, `reranker`) can keep
+// referring to them as `super::NAME`.
+pub use super::{RERANK_BATCH_SIZE, RERANK_MAX_TOKENS, check_rerank_bounds};
 
 use super::Embedding;
 use anyhow::Result;

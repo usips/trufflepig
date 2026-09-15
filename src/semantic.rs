@@ -10,8 +10,8 @@ pub(crate) mod embedding_cache;
 mod inference;
 #[cfg(feature = "semantic")]
 pub use inference::{
-    SemanticInferenceEngine, SemanticProvider, SemanticProviderConfig, compare_cpu_cuda, run_gate,
-    run_gpu_gate,
+    RerankInferenceEngine, SemanticInferenceEngine, SemanticProvider, SemanticProviderConfig,
+    compare_cpu_cuda, run_gate, run_gpu_gate,
 };
 
 pub mod preparation;
@@ -26,6 +26,46 @@ pub const DIMENSIONS: usize = 768;
 pub const CACHE_BYTES: u64 = 5 * 1024 * 1024 * 1024;
 pub const MODEL_NAME: &str = "jinaai/jina-embeddings-v2-base-code";
 pub const INPUT_VERSION: &str = "source-only-mean-l2-v2-regions4096-max4096";
+
+pub const RERANKER_NAME: &str = "rozgo/bge-reranker-v2-m3";
+pub const RERANKER_REVISION: &str = "fbd57b17b4db111a9d16813bb08b4c804fac18e9";
+
+/// Maximum documents scored in one rerank request.
+pub const RERANK_MAX_DOCUMENTS: usize = 32;
+/// Maximum bytes accepted for the rerank query and for each document.
+pub const RERANK_MAX_DOCUMENT_BYTES: usize = 4096;
+/// Maximum tokenized (query, document) pair length; tokenizer truncation stays on.
+pub const RERANK_MAX_TOKENS: usize = 1024;
+/// Documents submitted to one fastembed rerank call.
+pub const RERANK_BATCH_SIZE: usize = 8;
+
+/// Validates rerank admission bounds shared with the worker protocol. Defined
+/// unconditionally so the worker protocol can enforce it without the
+/// `semantic` feature.
+pub fn check_rerank_bounds(query: &str, documents: &[impl AsRef<str>]) -> Result<()> {
+    if documents.len() > RERANK_MAX_DOCUMENTS {
+        bail!(
+            "rerank_admission: {} documents exceeds the limit of {RERANK_MAX_DOCUMENTS}",
+            documents.len()
+        );
+    }
+    if query.len() > RERANK_MAX_DOCUMENT_BYTES {
+        bail!(
+            "rerank_admission: query of {} bytes exceeds the limit of {RERANK_MAX_DOCUMENT_BYTES}",
+            query.len()
+        );
+    }
+    for (index, document) in documents.iter().enumerate() {
+        let document = document.as_ref();
+        if document.len() > RERANK_MAX_DOCUMENT_BYTES {
+            bail!(
+                "rerank_admission: document at index {index} is {} bytes, exceeding the limit of {RERANK_MAX_DOCUMENT_BYTES}",
+                document.len()
+            );
+        }
+    }
+    Ok(())
+}
 
 static MODEL_INITIALIZATIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 

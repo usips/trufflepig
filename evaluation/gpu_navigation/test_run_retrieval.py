@@ -125,6 +125,13 @@ class RetrievalRunnerTests(unittest.TestCase):
         command = cuda.command("search", "query", PAGE_BUDGET)
         self.assertIn("--sem", command)
         self.assertNotIn("--no-daemon", command)
+        cuda_rerank = RetrievalRunner(Path("binary"), Path("workspace"), self.root,
+                                      self.base / "cache", "cuda_rerank",
+                                      self.base / "inference.toml", lambda value: len(value))
+        command = cuda_rerank.command("search", "query", PAGE_BUDGET)
+        self.assertIn("--sem", command)
+        self.assertIn("--rerank", command)
+        self.assertNotIn("--no-daemon", command)
 
     def test_capture_retains_raw_response_and_error_with_exact_counts(self):
         binary = self.base / "fake-binary"
