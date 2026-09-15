@@ -14,7 +14,7 @@ pub use protocol::{
 pub use scheduler::{FairScheduler, RequestClass, RootIdent, ScheduledRequest};
 
 use super::Embedding;
-use crate::semantic::runtime_config::InferenceConfig;
+use crate::{background_process::spawn_background, semantic::runtime_config::InferenceConfig};
 use anyhow::{Context, Result, bail, ensure};
 use client::{configure_io, connect};
 use engine::{Engine, open_engine};
@@ -26,7 +26,7 @@ use std::{
     io::ErrorKind,
     os::unix::net::UnixStream,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
     sync::mpsc::{self, Receiver, Sender, TryRecvError},
     sync::{
         Arc,
@@ -171,11 +171,7 @@ fn start_worker(cache_identity: &Path, config: &InferenceConfig, cache: &Path) -
     if let Some(runtime) = config.runtime_library.as_deref() {
         command.env("ORT_DYLIB_PATH", runtime);
     }
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    let mut child = command.spawn().context("start semantic inference worker")?;
+    let mut child = spawn_background(&mut command).context("start semantic inference worker")?;
     thread::spawn(move || {
         let _ = child.wait();
     });

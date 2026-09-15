@@ -1,6 +1,7 @@
 //! Workspace coordination shares inference while existing root daemons own reconciliation.
 use super::{WorkspaceConfig, cache_path, config::Member, local, member_cache};
 use crate::{
+    background_process::spawn_background,
     cli::{Arguments, normalized_args},
     daemon,
     diagnostics::RequestContext,
@@ -11,7 +12,7 @@ use fs2::FileExt;
 use std::{
     fs::OpenOptions,
     path::Path,
-    process::{Command, Stdio},
+    process::Command,
     time::{Duration, Instant},
 };
 
@@ -80,12 +81,9 @@ pub fn run(
     let mut server = options.clone();
     server.words = vec!["workspace-serve".into()];
     server.member = None;
-    let mut child = Command::new(std::env::current_exe()?)
-        .args(normalized_args(&server, &server.root))
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
+    let mut command = Command::new(std::env::current_exe()?);
+    command.args(normalized_args(&server, &server.root));
+    let mut child = spawn_background(&mut command)?;
     let started = Instant::now();
     while started.elapsed() < Duration::from_secs(3) {
         if let Some(reply) = daemon::request(&cache, &args, context)? {
@@ -186,11 +184,7 @@ pub(super) fn ensure_member(member: &Member, options: &Arguments) -> Result<()> 
     let mut command = Command::new(std::env::current_exe()?);
     command.args(normalized_args(&local, &local.root));
 
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
+    spawn_background(&mut command)?;
     Ok(())
 }
 fn reap_children() {

@@ -1,13 +1,13 @@
-use super::cache_format;
 #[cfg(test)]
 use super::MAX_BATCH_ENTRIES;
+use super::cache_format;
 use crate::semantic::Embedding;
 use anyhow::Result;
 #[cfg(test)]
 use anyhow::bail;
-use rusqlite::{Connection, OpenFlags};
 #[cfg(test)]
 use rusqlite::params_from_iter;
+use rusqlite::{Connection, OpenFlags};
 #[cfg(test)]
 use std::collections::HashMap;
 use std::{path::Path, sync::Arc, time::Duration};

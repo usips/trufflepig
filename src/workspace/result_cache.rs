@@ -314,6 +314,15 @@ fn compact_coverage(values: &[Value]) -> Vec<Value> {
                 }
             }
             if let Some(issues) = compact.get_mut("issues").and_then(Value::as_object_mut) {
+                if issues.get("semantic_status").and_then(Value::as_str) == Some("ready") {
+                    for key in [
+                        "semantic_scope",
+                        "semantic_regions",
+                        "semantic_total_regions",
+                    ] {
+                        issues.remove(key);
+                    }
+                }
                 for key in ["semantic_reason", "semantic_preparation_error"] {
                     if let Some(reason) = issues.get(key).and_then(Value::as_str) {
                         let mut short: String = reason.chars().take(120).collect();

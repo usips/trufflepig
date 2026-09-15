@@ -14,9 +14,9 @@ use std::{
     time::Duration,
 };
 
-pub(crate) use cache_format::content_key;
 #[cfg(test)]
 use cache_format::CacheStatus;
+pub(crate) use cache_format::content_key;
 pub(crate) use snapshot::EmbeddingCacheSnapshot;
 
 const PAGE_SIZE: u64 = 4096;

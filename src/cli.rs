@@ -3,7 +3,7 @@ mod dispatch;
 pub mod emission;
 mod emitted_evidence;
 pub(crate) mod semantic;
-use crate::{daemon, output::OutputBudget, store::Store};
+use crate::{background_process::spawn_background, daemon, output::OutputBudget, store::Store};
 use anyhow::{Context, Result};
 pub use dispatch::local;
 use dispatch::local_with_session;
@@ -20,7 +20,7 @@ mod tests;
 mod workspace_emission_tests;
 use std::{
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
     time::{Duration, Instant},
 };
 
@@ -228,16 +228,14 @@ pub fn run_with_context(
             .arg("--no-workspace")
             .arg("--diagnostics")
             .arg(&options.diagnostics);
-        let mut child = command
-            .arg("--root")
-            .arg(&root)
-            .arg("--cache")
-            .arg(&cache)
-            .arg("serve")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()?;
+        let mut child = spawn_background(
+            &mut command
+                .arg("--root")
+                .arg(&root)
+                .arg("--cache")
+                .arg(&cache)
+                .arg("serve"),
+        )?;
         let deadline = Instant::now() + Duration::from_secs(3);
         while Instant::now() < deadline {
             if let Some(response) =
