@@ -46,6 +46,11 @@ pub fn run_with_context(
 ) -> Result<String> {
     let options = parse(args)?;
     validate(&options)?;
+    let verb = options
+        .words
+        .first()
+        .map(String::as_str)
+        .unwrap_or("status");
     if options
         .words
         .first()
@@ -62,6 +67,40 @@ pub fn run_with_context(
         && options.words.get(1).is_some_and(|v| v == "discover")
     {
         return crate::workspace::discover_paths(&options.words[2..], options.budget);
+    }
+    if verb == "system-serve" {
+        return crate::system::serve().map(|()| String::new());
+    }
+    if verb == "system" {
+        return system_command(&options, context);
+    }
+    if system_routes(&options, verb)
+        && let Ok(root) = options.root.canonicalize()
+        && let Ok(config) = crate::workspace::resolve(&options)
+    {
+        let applied = match config.as_ref() {
+            Some(config) => crate::workspace::apply_config(config, &options)?,
+            None => options.clone(),
+        };
+        let mut forwarded = normalized_args(&applied, &root);
+        if config.is_some()
+            && options.wait
+            && !(verb == "semantic" && options.words.get(1).is_some_and(|c| c == "prepare"))
+        {
+            forwarded.push("--wait".into());
+        }
+        match crate::system::request(&forwarded, context) {
+            Ok(Some(reply)) => {
+                return system_reply(&applied, &root, verb, config.as_ref(), reply);
+            }
+            Ok(None) => {
+                let _ = crate::system::ensure();
+                if let Ok(Some(reply)) = crate::system::request(&forwarded, context) {
+                    return system_reply(&applied, &root, verb, config.as_ref(), reply);
+                }
+            }
+            Err(_) => {}
+        }
     }
     if !options
         .words
@@ -80,11 +119,6 @@ pub fn run_with_context(
         .canonicalize()
         .context("invalid_root: cannot open repository root")?;
     let cache = cache_path(&root, options.cache.as_deref())?;
-    let verb = options
-        .words
-        .first()
-        .map(String::as_str)
-        .unwrap_or("status");
     if verb == "history-serve" {
         return crate::history::worker::serve(
             options
@@ -265,6 +299,90 @@ pub fn run_with_context(
         None,
         None,
     )
+}
+
+/// Routes a verb through the system daemon unless it must run locally.
+fn system_routes(options: &Arguments, verb: &str) -> bool {
+    if options.no_daemon
+        || matches!(
+            verb,
+            "serve"
+                | "history-serve"
+                | "workspace-serve"
+                | "system-serve"
+                | "system"
+                | "ws"
+                | "stop"
+                | "index"
+                | "init"
+                | "semantic-check"
+        )
+    {
+        return false;
+    }
+    !(verb == "semantic" && options.words.get(1).is_some_and(|command| command == "status"))
+}
+
+/// Handles the `system` verb against the per-user routing daemon.
+fn system_command(
+    options: &Arguments,
+    context: &crate::diagnostics::RequestContext,
+) -> Result<String> {
+    let render = |json: &str| -> Result<String> {
+        OutputBudget::new(options.budget)?.render(&serde_json::from_str::<serde_json::Value>(json)?)
+    };
+    match options.words.get(1).map(String::as_str) {
+        Some("ensure") => {
+            crate::system::ensure()?;
+            render("{\"status\":\"ok\"}")
+        }
+        Some("stop") => render(&crate::system::stop()?),
+        None | Some("status") => {
+            let ping = vec!["system".to_owned(), "status".to_owned()];
+            let status = if crate::system::request(&ping, context)
+                .ok()
+                .flatten()
+                .is_some()
+            {
+                "ok"
+            } else {
+                "not_running"
+            };
+            render(&format!("{{\"status\":\"{status}\"}}"))
+        }
+        Some(other) => {
+            anyhow::bail!("usage: system status | system ensure | system stop (got {other})")
+        }
+    }
+}
+
+/// Applies to a system-routed reply the waits a local route would have run.
+fn system_reply(
+    options: &Arguments,
+    root: &Path,
+    verb: &str,
+    config: Option<&crate::workspace::config::WorkspaceConfig>,
+    reply: String,
+) -> Result<String> {
+    if let Some(config) = config {
+        if options.wait
+            && verb == "semantic"
+            && options
+                .words
+                .get(1)
+                .is_some_and(|command| command == "prepare")
+        {
+            return semantic::wait_for_workspace(config, options, reply);
+        }
+        return Ok(reply);
+    }
+    let reply = wait_for_history(root, options, reply)?;
+    if verb == "semantic" {
+        let cache = cache_path(root, options.cache.as_deref())?;
+        semantic::wait_for_schedule(root, &cache, options, reply)
+    } else {
+        Ok(reply)
+    }
 }
 
 /// Re-wakes a manager after indexing when a persisted preparation request was

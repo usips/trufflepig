@@ -67,7 +67,7 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
             }
             (
                 if key == "help" {
-                    OutputBudget::new(options.budget.min(1_000_000)).and_then(|budget| budget.render(&json!({key:message}))).unwrap_or_else(|_| render(options.budget, &json!({"help":"Commands: ws show, ws status, ws discover PATH..., search, show, more, ctx, refs, map, index, status, doctor, hist-index, hist-status, hist, since, diff, blame, session start, session end ID, audit, forget-logs, stop. Options: --workspace, --no-workspace, --member, --root, --cache, --history-cache, --no-daemon, --budget (default 600), --session, --diagnostics off|metadata|detailed.","truncated":true,"details":"Use --help -b 2000 for full option descriptions"})))
+                    OutputBudget::new(options.budget.min(1_000_000)).and_then(|budget| budget.render(&json!({key:message}))).unwrap_or_else(|_| render(options.budget, &json!({"help":"Commands: ws show, ws status, ws discover PATH..., search, show, more, ctx, refs, map, index, status, doctor, hist-index, hist-status, hist, since, diff, blame, session start, session end ID, audit, forget-logs, stop, system status, system ensure, system stop. Options: --workspace, --no-workspace, --member, --root, --cache, --history-cache, --no-daemon, --budget (default 600), --session, --diagnostics off|metadata|detailed.","truncated":true,"details":"Use --help -b 2000 for full option descriptions"})))
                 } else {
                     render(options.budget, &json!({key:message}))
                 },
@@ -172,9 +172,8 @@ pub(super) fn operation(options: &Arguments) -> Operation {
         "audit" => Operation::Audit,
         "forget-logs" => Operation::ForgetLogs,
         "search" => Operation::Search,
-        "serve" | "history-serve" | "stop" | "ws" | "workspace-serve" | "semantic-check" => {
-            Operation::Other
-        }
+        "serve" | "history-serve" | "stop" | "ws" | "workspace-serve" | "system"
+        | "system-serve" | "semantic-check" => Operation::Other,
         _ => Operation::Usage,
     }
 }

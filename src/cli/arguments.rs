@@ -31,9 +31,11 @@ const KNOWN_COMMANDS: &[&str] = &[
     "semantic",
     "semantic-worker-serve",
     "ws",
+    "system",
     "serve",
     "history-serve",
     "workspace-serve",
+    "system-serve",
     "stop",
 ];
 
@@ -153,7 +155,7 @@ pub(super) fn validate(options: &Arguments) -> Result<()> {
     }
     if options.no_daemon
         && options.words.first().is_some_and(|verb| {
-            matches!(verb.as_str(), "serve" | "history-serve" | "workspace-serve")
+            matches!(verb.as_str(), "serve" | "history-serve" | "workspace-serve" | "system-serve")
         })
     {
         bail!("invalid_options: --no-daemon cannot start a server");

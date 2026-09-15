@@ -81,6 +81,51 @@ fn daemon_dispatch_rejects_wrong_root_and_unbounded_options() {
 }
 
 #[test]
+fn system_routes_gates_internal_and_local_verbs() {
+    let routed = |args: &[&str]| {
+        let args: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
+        let options = parse(&args).unwrap();
+        let verb = options
+            .words
+            .first()
+            .map(String::as_str)
+            .unwrap_or("status");
+        system_routes(&options, verb)
+    };
+    for args in [
+        &["serve"][..],
+        &["workspace-serve"][..],
+        &["system-serve"][..],
+        &["system"][..],
+        &["ws"][..],
+        &["stop"][..],
+        &["index"][..],
+        &["init"][..],
+        &["semantic-check", "model"][..],
+        &["semantic", "status"][..],
+        &["--no-daemon", "search", "query"][..],
+    ] {
+        assert!(!routed(args), "expected no system route for {args:?}");
+    }
+    for args in [
+        &["search", "query"][..],
+        &["show", "src/lib.rs"][..],
+        &["ctx", "HANDLE"][..],
+        &["refs", "name"][..],
+        &["map"][..],
+        &["hist", "src/lib.rs"][..],
+        &["blame", "src/lib.rs"][..],
+        &["diff", "src/lib.rs"][..],
+        &["audit"][..],
+        &["doctor"][..],
+        &["semantic", "prepare"][..],
+        &["hist-index"][..],
+    ] {
+        assert!(routed(args), "expected a system route for {args:?}");
+    }
+}
+
+#[test]
 fn unknown_commands_are_rejected_before_root_validation() {
     let root = tempfile::tempdir().unwrap();
     let other = tempfile::tempdir().unwrap();
