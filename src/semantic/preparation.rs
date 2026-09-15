@@ -123,7 +123,7 @@ pub fn schedule(root: &Path, cache: &Path) -> Result<ScheduleReceipt> {
     request_schedule(root, cache)
 }
 
-/// Explicitly retries a failed current-generation preparation run.
+/// Explicitly retries a terminal current-generation preparation run.
 pub fn retry(root: &Path, cache: &Path) -> Result<ScheduleReceipt> {
     request_schedule_with_reset(root, cache)
 }
@@ -203,7 +203,7 @@ enum Command {
     Schedule {
         root: PathBuf,
         cache: PathBuf,
-        reset_failed: bool,
+        reset_terminal: bool,
     },
     Stop,
 }
@@ -245,7 +245,7 @@ impl PreparationManager {
         match self.commands.try_send(Command::Schedule {
             root: root.to_owned(),
             cache: cache.to_owned(),
-            reset_failed: false,
+            reset_terminal: false,
         }) {
             Ok(()) | Err(mpsc::TrySendError::Full(_)) => {}
             Err(mpsc::TrySendError::Disconnected(_)) => {
@@ -256,13 +256,13 @@ impl PreparationManager {
         Ok(receipt)
     }
 
-    /// Schedules the current generation and reopens a failed run.
+    /// Schedules the current generation and reopens a terminal run.
     pub fn retry(&self, root: &Path, cache: &Path) -> Result<ScheduleReceipt> {
         let receipt = request_schedule_with_reset(root, cache)?;
         match self.commands.try_send(Command::Schedule {
             root: root.to_owned(),
             cache: cache.to_owned(),
-            reset_failed: true,
+            reset_terminal: false,
         }) {
             Ok(()) | Err(mpsc::TrySendError::Full(_)) => {}
             Err(mpsc::TrySendError::Disconnected(_)) => {
@@ -337,7 +337,7 @@ fn worker_loop<W: EmbeddingWorker>(
             Command::Schedule {
                 root,
                 cache,
-                reset_failed,
+                reset_terminal,
             } => {
                 let same_context = context
                     .as_ref()
@@ -376,7 +376,7 @@ fn worker_loop<W: EmbeddingWorker>(
                         &mut context.index,
                         &mut context.preparation,
                         &mut worker,
-                        reset_failed,
+                        reset_terminal,
                     )
                 {
                     record_worker_error_in_cache(&mut context.preparation, error.to_string());
@@ -401,7 +401,7 @@ fn request_schedule_with_reset(root: &Path, cache: &Path) -> Result<ScheduleRece
 fn request_schedule_with_reset_inner(
     root: &Path,
     cache: &Path,
-    reset_failed: bool,
+    reset_terminal: bool,
 ) -> Result<ScheduleReceipt> {
     let index = open_index(root, cache)?;
     let generation = read_generation(&index)?;
@@ -410,7 +410,7 @@ fn request_schedule_with_reset_inner(
     }
     let mut preparation = cache::PreparationCache::open(cache)?;
     let requested = preparation.request(generation)?;
-    let reset = reset_failed && preparation.reset_failed(generation)?;
+    let reset = reset_terminal && preparation.reset_terminal(generation)?;
     Ok(ScheduleReceipt {
         captured_generation: generation,
         coalesced: requested && !reset,
@@ -421,9 +421,9 @@ fn process_pending_context<W: EmbeddingWorker>(
     index: &mut Connection,
     preparation: &mut cache::PreparationCache,
     worker: &mut W,
-    reset_failed: bool,
+    reset_terminal: bool,
 ) -> Result<()> {
-    let mut reset_failed = reset_failed;
+    let mut reset_terminal = reset_terminal;
     loop {
         let current_generation = read_generation(index)?;
         if current_generation <= 0 {
@@ -432,12 +432,12 @@ fn process_pending_context<W: EmbeddingWorker>(
         preparation.supersede_older(current_generation)?;
         let requested = preparation.requested_generation()?.max(current_generation);
         let generation = requested.min(current_generation);
-        let Some(run) = prepare_generation(index, preparation, worker, generation, reset_failed)?
+        let Some(run) = prepare_generation(index, preparation, worker, generation, reset_terminal)?
         else {
             return Ok(());
         };
         if run.state == PreparationState::Superseded {
-            reset_failed = false;
+            reset_terminal = false;
             continue;
         }
         // A terminal run is the one sweep for this committed generation.
@@ -450,7 +450,7 @@ fn prepare_generation<W: EmbeddingWorker>(
     preparation: &mut cache::PreparationCache,
     worker: &mut W,
     generation: i64,
-    reset_failed: bool,
+    reset_terminal: bool,
 ) -> Result<Option<cache::RunRecord>> {
     let (observed, total) = snapshot_size(index, generation)?;
     if observed != generation {
@@ -462,7 +462,7 @@ fn prepare_generation<W: EmbeddingWorker>(
         return Ok(preparation.run(generation)?);
     }
     let existing = preparation.run(generation)?;
-    if existing.as_ref().is_none_or(|run| !run.state.terminal()) {
+    if reset_terminal || existing.as_ref().is_none_or(|run| !run.state.terminal()) {
         let (keys_observed, current_keys) = snapshot_content_keys(index, generation, total)?;
         if keys_observed != generation {
             preparation.supersede_generation(
@@ -474,7 +474,7 @@ fn prepare_generation<W: EmbeddingWorker>(
         }
         preparation.prune_completions(current_keys.iter())?;
     }
-    let run = preparation.begin(generation, total, reset_failed)?;
+    let run = preparation.begin(generation, total, reset_terminal)?;
     if run.state.terminal() {
         return Ok(Some(run));
     }

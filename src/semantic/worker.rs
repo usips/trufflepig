@@ -4,6 +4,7 @@ mod admission;
 mod client;
 mod engine;
 mod lease;
+mod load_retry;
 mod protocol;
 mod scheduler;
 
@@ -19,6 +20,7 @@ use anyhow::{Context, Result, bail, ensure};
 use client::{configure_io, connect};
 use engine::{Engine, open_engine};
 use lease::{WorkerLease, WorkerSocket, worker_cache_dir};
+use load_retry::LoadRetry;
 use protocol::{WorkerCommand, WorkerReply, WorkerRequest, write_reply};
 use std::{
     collections::HashSet,
@@ -413,6 +415,7 @@ struct WorkerRuntime {
     loading: bool,
     engine_loaded: bool,
     load_error: Option<String>,
+    load_retry: LoadRetry,
     active: bool,
     executor_send: Sender<ExecutorCommand>,
     executor_receive: Receiver<ExecutorEvent>,
@@ -465,6 +468,7 @@ impl WorkerRuntime {
             loading: false,
             engine_loaded: false,
             load_error: None,
+            load_retry: LoadRetry::default(),
             active: false,
             executor_send,
             executor_receive,
@@ -624,7 +628,11 @@ impl WorkerRuntime {
         }
     }
 
-    fn process(&mut self, mut item: QueuedConnection) {
+    fn process(&mut self, item: QueuedConnection) {
+        self.process_at(item, Instant::now());
+    }
+
+    fn process_at(&mut self, mut item: QueuedConnection, now: Instant) {
         let command = match &item.request.command {
             WorkerCommand::Embed {
                 class,
@@ -645,7 +653,9 @@ impl WorkerRuntime {
             }
             return;
         }
-        if let Some(error) = &self.load_error {
+        if let Some(error) = &self.load_error
+            && !self.load_retry.is_ready(now)
+        {
             let _ = write_reply(
                 &mut item.stream,
                 &WorkerReply::Error {
@@ -663,7 +673,7 @@ impl WorkerRuntime {
         }
         if !self.engine_loaded {
             if !self.loading {
-                self.start_loader();
+                self.start_loader(now);
             }
             self.scheduler.push(class, item);
             return;
@@ -701,9 +711,8 @@ impl WorkerRuntime {
         }
     }
 
-    fn start_loader(&mut self) {
+    fn start_loader(&mut self, now: Instant) {
         self.loading = true;
-        self.load_error = None;
         if self
             .executor_send
             .send(ExecutorCommand::Load {
@@ -712,9 +721,15 @@ impl WorkerRuntime {
             })
             .is_err()
         {
-            self.loading = false;
-            self.load_error = Some("semantic_worker: model loader exited".into());
+            self.record_load_failure("semantic_worker: model loader exited".into(), now);
         }
+    }
+
+    fn record_load_failure(&mut self, error: String, now: Instant) {
+        self.loading = false;
+        self.engine_loaded = false;
+        self.load_error = Some(error);
+        self.load_retry.failed(now);
     }
 
     fn poll_executor(&mut self) {
@@ -723,13 +738,12 @@ impl WorkerRuntime {
                 Ok(ExecutorEvent::Loaded(Ok(()))) => {
                     self.loading = false;
                     self.engine_loaded = true;
+                    self.load_retry.succeeded();
                     self.load_error = None;
                     self.last_used = Some(Instant::now());
                 }
                 Ok(ExecutorEvent::Loaded(Err(error))) => {
-                    self.loading = false;
-                    self.engine_loaded = false;
-                    self.load_error = Some(error);
+                    self.record_load_failure(error, Instant::now());
                 }
                 Ok(ExecutorEvent::Completed {
                     request,
@@ -853,6 +867,29 @@ fn now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::net::UnixStream;
+
+    fn queued_query(config: &InferenceConfig) -> (QueuedConnection, UnixStream) {
+        let (stream, peer) = UnixStream::pair().unwrap();
+        let request = WorkerRequest::new(
+            config,
+            WorkerCommand::Embed {
+                class: RequestClass::Query,
+                root_id: "test-root".into(),
+                texts: vec!["query".into()],
+                deadline_ms: now_ms() + 10_000,
+            },
+        );
+        let ticket = AdmissionController::default().try_admit(1, 5).unwrap();
+        (
+            QueuedConnection {
+                request,
+                stream,
+                ticket,
+            },
+            peer,
+        )
+    }
 
     #[test]
     fn loaded_model_unloads_without_a_completed_query() {
@@ -871,6 +908,52 @@ mod tests {
         runtime.unload_idle();
         assert!(!runtime.engine_loaded);
         assert!(matches!(commands.try_recv(), Ok(ExecutorCommand::Unload)));
+    }
+
+    #[test]
+    fn failed_gpu_load_retries_after_cooldown_without_a_retry_storm() {
+        let config = InferenceConfig::default();
+        let handshake = Handshake::for_config(&config);
+        let mut runtime = WorkerRuntime::new(config.clone(), PathBuf::new(), handshake);
+        let (events, receive) = mpsc::channel();
+        let (send, commands) = mpsc::channel();
+        runtime.executor_receive = receive;
+        runtime.executor_send = send;
+        runtime.loading = true;
+
+        events
+            .send(ExecutorEvent::Loaded(
+                Err("cuda_unavailable: no GPU".into()),
+            ))
+            .unwrap();
+        runtime.poll_executor();
+        let status = runtime.status(true);
+        assert_eq!(status.error.as_deref(), Some("cuda_unavailable: no GPU"));
+        assert!(!status.loaded);
+        let retry_at = runtime.load_retry.retry_at().unwrap();
+
+        let (item, _peer) = queued_query(&config);
+        runtime.process_at(item, retry_at - Duration::from_nanos(1));
+        assert!(commands.try_recv().is_err());
+
+        let (item, _peer) = queued_query(&config);
+        runtime.process_at(item, retry_at);
+        assert!(runtime.loading);
+        assert!(matches!(
+            commands.try_recv(),
+            Ok(ExecutorCommand::Load { .. })
+        ));
+        assert!(commands.try_recv().is_err());
+
+        let (item, _peer) = queued_query(&config);
+        runtime.process_at(item, retry_at);
+        assert!(commands.try_recv().is_err());
+
+        events.send(ExecutorEvent::Loaded(Ok(()))).unwrap();
+        runtime.poll_executor();
+        let status = runtime.status(true);
+        assert!(status.loaded);
+        assert!(status.error.is_none());
     }
 
     #[test]

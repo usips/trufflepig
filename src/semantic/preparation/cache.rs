@@ -176,12 +176,12 @@ impl PreparationCache {
         &mut self,
         generation: i64,
         total: usize,
-        reset_failed: bool,
+        reset_terminal: bool,
     ) -> Result<RunRecord> {
         let existing = self.run(generation)?;
         if let Some(existing) = existing {
-            if reset_failed && existing.state == PreparationState::Failed {
-                self.reset_failed_run(generation, Some(total))?;
+            if reset_terminal && existing.state.terminal() {
+                self.reset_terminal_run(generation, Some(total))?;
                 return self
                     .run(generation)
                     .and_then(|record| record.context("preparation run was not persisted"));
@@ -203,17 +203,17 @@ impl PreparationCache {
             .and_then(|record| record.context("preparation run was not persisted"))
     }
 
-    /// Reopens a failed run for an explicit preparation request.
-    pub(super) fn reset_failed(&mut self, generation: i64) -> Result<bool> {
-        self.reset_failed_run(generation, None)
+    /// Reopens a terminal run for an explicit preparation request.
+    pub(super) fn reset_terminal(&mut self, generation: i64) -> Result<bool> {
+        self.reset_terminal_run(generation, None)
     }
 
-    fn reset_failed_run(&mut self, generation: i64, total: Option<usize>) -> Result<bool> {
+    fn reset_terminal_run(&mut self, generation: i64, total: Option<usize>) -> Result<bool> {
         let tx = self.db.transaction()?;
         let changed = tx.execute(
             "UPDATE preparation_runs SET state='running',cursor=0,cached=0,
              total=coalesce(?2,total),missing=0,failures=0,error=NULL,updated_ms=?3
-             WHERE generation=?1 AND state='failed'",
+             WHERE generation=?1 AND state IN ('completed','superseded','failed','capacity')",
             params![generation, total.map(|total| total as i64), timestamp_ms()],
         )?;
         if changed != 0 {

@@ -233,7 +233,7 @@ fn worker_error_upserts_a_failed_run_before_begin() -> Result<()> {
     assert_eq!(failed.failures, 1);
     assert_eq!(failed.error.as_deref(), Some("fake worker setup failure"));
 
-    assert!(preparation.reset_failed(9)?);
+    assert!(preparation.reset_terminal(9)?);
     assert_eq!(
         preparation.run(9)?.unwrap().state,
         PreparationState::Running
@@ -292,6 +292,55 @@ fn only_explicit_retry_reopens_a_failed_generation() -> Result<()> {
 }
 
 #[test]
+fn explicit_retry_refills_missing_vectors_after_terminal_run() -> Result<()> {
+    let (root, cache) = fixture("fn one() {}\n")?;
+    let source_key = content_key("fn one() {}\n");
+    let completed = run_foreground(root.path(), cache.path(), successful_worker())?;
+    assert_eq!(completed.state, PreparationState::Completed);
+
+    let preparation = cache::PreparationCache::open(cache.path())?;
+    preparation.db.execute(
+        "DELETE FROM preparation_completions WHERE content_key=?1",
+        [&source_key],
+    )?;
+    drop(preparation);
+    #[cfg(feature = "semantic")]
+    {
+        let embeddings = rusqlite::Connection::open(cache.path().join("embeddings.sqlite"))?;
+        embeddings.execute("DELETE FROM embeddings WHERE key=?1", [&source_key])?;
+        embeddings.execute(
+            "DELETE FROM embedding_provenance WHERE key=?1",
+            [&source_key],
+        )?;
+    }
+
+    let ordinary = schedule(root.path(), cache.path())?;
+    assert!(!ordinary.coalesced);
+    assert_eq!(
+        status(root.path(), cache.path())?.state,
+        PreparationState::Capacity
+    );
+    let repeated = schedule(root.path(), cache.path())?;
+    assert!(repeated.coalesced);
+    assert_eq!(
+        status(root.path(), cache.path())?.state,
+        PreparationState::Capacity
+    );
+
+    let retried = retry(root.path(), cache.path())?;
+    assert!(!retried.coalesced);
+    assert_eq!(
+        status(root.path(), cache.path())?.state,
+        PreparationState::Running
+    );
+    let refilled = run_foreground(root.path(), cache.path(), successful_worker())?;
+    assert_eq!(refilled.state, PreparationState::Completed);
+    assert_eq!(refilled.cached, refilled.total);
+    assert_eq!(refilled.missing, 0);
+    Ok(())
+}
+
+#[test]
 fn content_keys_change_when_region_text_changes() {
     assert_ne!(content_key("old"), content_key("new"));
     assert_eq!(content_key("same"), content_key("same"));
@@ -314,5 +363,46 @@ fn foreground_prepare_retries_failed_content_directly() -> Result<()> {
     assert_eq!(retried.state, PreparationState::Completed);
     assert_eq!(retried.failures, 0);
     assert_eq!(retried.missing, 0);
+    Ok(())
+}
+
+#[test]
+fn retry_during_running_preparation_coalesces_after_completion() -> Result<()> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let (root, cache) = fixture("fn one() {}\n")?;
+    let calls = Arc::new(AtomicUsize::new(0));
+    let observed = Arc::clone(&calls);
+    let (started, start) = std::sync::mpsc::channel();
+    let (release, released) = std::sync::mpsc::channel();
+    let worker = ClosureWorker(move |batch: &[EmbeddingInput]| {
+        if observed.fetch_add(1, Ordering::SeqCst) == 0 {
+            started.send(())?;
+            released.recv_timeout(Duration::from_secs(5))?;
+        }
+        Ok(batch
+            .iter()
+            .map(|_| Err(anyhow::anyhow!("permanent input failure")))
+            .collect())
+    });
+    let mut manager = PreparationManager::new(worker);
+    let initial = manager.schedule(root.path(), cache.path())?;
+    start.recv_timeout(Duration::from_secs(5))?;
+    let retry = manager.retry(root.path(), cache.path())?;
+    assert!(retry.coalesced);
+    release.send(())?;
+    manager.wait_timeout(
+        root.path(),
+        cache.path(),
+        initial.captured_generation,
+        Duration::from_secs(5),
+    )?;
+    assert!(manager.commands.send(Command::Stop).is_ok());
+    manager.thread.take().unwrap().join().unwrap();
+    drop(manager);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        status(root.path(), cache.path())?.state,
+        PreparationState::Failed
+    );
     Ok(())
 }
