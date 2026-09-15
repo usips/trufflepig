@@ -1,5 +1,5 @@
 //! One client emission boundary for execution, parsing, and delivery failures.
-use super::emitted_evidence::capture_emitted;
+use super::emitted_evidence::{SavedEntries, capture_emitted};
 use super::{Arguments, request_context};
 use crate::diagnostics::{DiagnosticsMode, Operation, Outcome, RequestEvent};
 use crate::output::OutputBudget;
@@ -101,9 +101,30 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
     if !matches!(operation, Operation::ForgetLogs)
         && let Ok((root, cache, workspace, member)) = diagnostic_location
     {
-        event.workspace = workspace;
+        event.workspace = workspace.clone();
         event.member = member;
-        capture_emitted(&root, &response, &mut event);
+        let saved = if workspace.is_some() {
+            crate::workspace::resolve(options)
+                .ok()
+                .flatten()
+                .and_then(|config| {
+                    let cache_base = options
+                        .cache
+                        .as_deref()
+                        .and_then(|path| std::path::absolute(path).ok());
+                    crate::workspace::cache_path(&config, cache_base.as_deref()).ok()
+                })
+                .map(|workspace_cache| SavedEntries::workspace(&root, &workspace_cache))
+        } else {
+            Some(SavedEntries::singleton(&root, &cache))
+        };
+        capture_emitted(
+            &root,
+            &response,
+            &mut event,
+            saved.as_ref(),
+            options.words.get(1).map(String::as_str),
+        );
         if matches!(operation, Operation::Search) && options.diagnostics == "detailed" {
             event.raw_query = Some(options.words[1..].join(" "));
         }

@@ -101,15 +101,18 @@ fn default_budget_has_fair_order_and_complete_member_provenance() {
         assert_eq!(page["coverage"].as_array().unwrap().len(), 3);
         for coverage in page["coverage"].as_array().unwrap() {
             assert_eq!(coverage["state"], "searched");
-            assert_eq!(coverage["retained"], 1);
         }
         for hit in page["hits"].as_array().unwrap() {
             let member = hit["member"].as_str().unwrap();
             assert_eq!(
-                page["members"][member],
-                encode_path(&fixture.root.path().join(member))
+                hit["file"],
+                format!(
+                    "file://{}/lib.rs",
+                    encode_path(&fixture.root.path().join(member))
+                )
             );
-            assert_eq!(hit["member_rank"], 1);
+            assert!(hit["start_line"].as_u64().is_some());
+            assert!(hit["handle"].as_str().is_some());
             members.push(member.to_owned());
         }
         let Some(next) = page["next"].as_str() else {

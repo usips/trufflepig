@@ -141,7 +141,7 @@ fn workspace_page_emission_records_foreign_identity_and_one_final_receipt() {
             encode_path(&fixture.root.path().join(member))
         );
         assert_eq!(identity.path, "lib.rs");
-        assert_eq!(identity.original_rank, Some(rank + 1));
+        assert_eq!(identity.original_rank, Some(1));
         assert!(!identity.source_body);
     }
     let receipt = event.receipt.as_ref().unwrap();

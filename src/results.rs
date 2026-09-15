@@ -5,12 +5,15 @@ use crate::{
     store::Store,
 };
 mod entries;
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 pub use entries::*;
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    path::{Component, Path},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 const MAX_SETS: usize = 50;
 pub const MAX_BYTES: usize = 32 * 1024 * 1024;
@@ -56,6 +59,109 @@ pub struct ResultSet {
     pub coverage: Value,
     pub truncated: bool,
     pub hits: Vec<Hit>,
+}
+
+const COMPACT_NAME_LIMIT: usize = 96;
+
+/// Render the locator portion of an immutable live hit.
+///
+/// Search pages intentionally expose only coordinates. The stored hit keeps
+/// revisions, byte spans, and resolver evidence for follow-up commands.
+pub(crate) fn compact_hit(
+    hit: &Hit,
+    root: &Path,
+    member: Option<&str>,
+    names: bool,
+) -> Result<Value> {
+    let mut value = serde_json::Map::new();
+    if !hit.handle.is_empty() {
+        value.insert("handle".into(), hit.handle.clone().into());
+    }
+    if let Some(member) = member {
+        value.insert("member".into(), member.into());
+    }
+    value.insert("file".into(), file_uri(root, &hit.path)?.into());
+    value.insert("start_line".into(), hit.start_line.into());
+    value.insert("end_line".into(), hit.end_line.into());
+    if names && concise_name(&hit.name) {
+        value.insert("name".into(), hit.name.clone().into());
+    }
+    if let Some(resolution) = &hit.resolution {
+        value.insert("resolution".into(), resolution.clone().into());
+    }
+    if let Some(target) = &hit.target {
+        value.insert("target".into(), compact_target(target, root, names)?);
+    }
+    if !hit.candidates.is_empty() {
+        value.insert(
+            "candidates".into(),
+            hit.candidates
+                .iter()
+                .map(|target| compact_target(target, root, names))
+                .collect::<Result<Vec<_>>>()?
+                .into(),
+        );
+    }
+    Ok(Value::Object(value))
+}
+
+/// Render one persisted entry for a result page without changing its cache.
+pub(crate) fn compact_entry(
+    entry: &ResultEntry,
+    root: &Path,
+    member: Option<&str>,
+    names: bool,
+) -> Result<Value> {
+    compact_entry_for_page(entry, root, member, names, true)
+}
+
+/// Render an entry according to the result set's output contract.
+pub(crate) fn compact_entry_for_page(
+    entry: &ResultEntry,
+    root: &Path,
+    member: Option<&str>,
+    names: bool,
+    compact_live: bool,
+) -> Result<Value> {
+    match entry {
+        ResultEntry::LiveSource(hit) if compact_live => compact_hit(hit, root, member, names),
+        _ => Ok(serde_json::to_value(entry)?),
+    }
+}
+
+fn compact_target(target: &DefinitionTarget, root: &Path, names: bool) -> Result<Value> {
+    let mut value = serde_json::Map::new();
+    value.insert("file".into(), file_uri(root, &target.path)?.into());
+    value.insert("start".into(), target.start.into());
+    value.insert("end".into(), target.end.into());
+    if names && concise_name(&target.name) {
+        value.insert("name".into(), target.name.clone().into());
+    }
+    Ok(Value::Object(value))
+}
+
+fn concise_name(name: &str) -> bool {
+    !name.is_empty() && name.chars().count() <= COMPACT_NAME_LIMIT
+}
+
+/// Return an absolute `file:` URI while preserving raw Unix path bytes.
+pub(crate) fn file_uri(root: &Path, relative: &str) -> Result<String> {
+    let relative = crate::store::decode_path(relative)?;
+    ensure!(
+        relative.is_relative(),
+        "result_unavailable: stored path is absolute"
+    );
+    ensure!(
+        relative
+            .components()
+            .all(|part| matches!(part, Component::Normal(_))),
+        "result_unavailable: stored path escapes repository root"
+    );
+    let encoded = crate::store::encode_path(&root.join(relative));
+    // `?` and `#` delimit URI query/fragment components, so escape them even
+    // though they are safe in the root-relative CLI path encoding.
+    let encoded = encoded.replace('?', "%3F").replace('#', "%23");
+    Ok(format!("file://{encoded}"))
 }
 
 pub fn now() -> i64 {
@@ -207,42 +313,167 @@ pub fn page(
         bail!("invalid_cursor: offset outside result set");
     }
     let available = set.hits.len() - offset;
-    let mut count = available.min(limit);
-    loop {
-        let next = if offset + count < set.hits.len() {
-            Some(format!("{id}@{}", offset + count))
-        } else {
-            None
-        };
-        let mut value = serde_json::json!({"generation":set.generation,"coverage":set.coverage,"tokenizer":"o200k_base","hits":&set.hits[offset..offset+count],"next":next,"truncated":set.truncated});
-        let text = budget.encode(&value)?;
-        if budget.fits(&text) && (count > 0 || available == 0) {
-            return Ok(text);
-        }
-        if count == 1
-            && let Some(candidates) = value["hits"][0]["candidates"].as_array()
-        {
-            let total = candidates.len();
-            let mut keep = total / 2;
-            while keep > 0 {
-                value["hits"][0]["candidates"]
-                    .as_array_mut()
-                    .expect("candidate array")
-                    .truncate(keep);
-                value["hits"][0]["candidates_total"] = total.into();
-                value["hits"][0]["candidates_truncated"] = true.into();
-                let text = budget.encode(&value)?;
-                if budget.fits(&text) {
-                    return Ok(text);
-                }
-                keep /= 2;
+    let max_count = available.min(limit).min(budget.limit);
+    let compact_live = set.coverage["endpoint"] != "published_working_tree";
+
+    for names in [false, true] {
+        let mut low = 0;
+        let mut high = max_count;
+        while low < high {
+            let count = low + (high - low).div_ceil(2);
+            let value = page_value(
+                &set,
+                id,
+                store.root.as_path(),
+                offset,
+                count,
+                names,
+                None,
+                compact_live,
+            )?;
+            if budget.fits(&budget.encode(&value)?) {
+                low = count;
+            } else {
+                high = count - 1;
             }
         }
-        if count == 0 {
-            bail!("budget_too_small: no hit and pagination envelope fit; increase --budget");
+        if low > 0 {
+            let named = page_value(
+                &set,
+                id,
+                store.root.as_path(),
+                offset,
+                low,
+                true,
+                None,
+                compact_live,
+            )?;
+            let named = budget.encode(&named)?;
+            if budget.fits(&named) {
+                return Ok(named);
+            }
+            let value = page_value(
+                &set,
+                id,
+                store.root.as_path(),
+                offset,
+                low,
+                names,
+                None,
+                compact_live,
+            )?;
+            return budget.encode(&value);
         }
-        count /= 2;
+
+        // A single ambiguous hit may carry a large candidate list. Trim it by
+        // binary search only after the ordinary page shape fails to fit.
+        if max_count > 0 {
+            let value = page_value(
+                &set,
+                id,
+                store.root.as_path(),
+                offset,
+                1,
+                names,
+                None,
+                compact_live,
+            )?;
+            let total = value["hits"][0]["candidates"]
+                .as_array()
+                .map(Vec::len)
+                .unwrap_or(0);
+            let mut candidate_low = 0;
+            let mut candidate_high = total;
+            while candidate_low < candidate_high {
+                let candidate_limit = candidate_low + (candidate_high - candidate_low).div_ceil(2);
+                let value = page_value(
+                    &set,
+                    id,
+                    store.root.as_path(),
+                    offset,
+                    1,
+                    names,
+                    Some(candidate_limit),
+                    compact_live,
+                )?;
+                if budget.fits(&budget.encode(&value)?) {
+                    candidate_low = candidate_limit;
+                } else {
+                    candidate_high = candidate_limit - 1;
+                }
+            }
+            if total > 0 {
+                let value = page_value(
+                    &set,
+                    id,
+                    store.root.as_path(),
+                    offset,
+                    1,
+                    names,
+                    Some(candidate_low),
+                    compact_live,
+                )?;
+                if budget.fits(&budget.encode(&value)?) {
+                    return budget.encode(&value);
+                }
+            }
+        }
     }
+
+    if available == 0 {
+        let value = page_value(
+            &set,
+            id,
+            store.root.as_path(),
+            offset,
+            0,
+            false,
+            None,
+            compact_live,
+        )?;
+        if budget.fits(&budget.encode(&value)?) {
+            return budget.encode(&value);
+        }
+    }
+    bail!("budget_too_small: no hit and pagination envelope fit; increase --budget")
+}
+
+fn page_value(
+    set: &StoredResultSet,
+    id: &str,
+    root: &Path,
+    offset: usize,
+    count: usize,
+    names: bool,
+    candidate_limit: Option<usize>,
+    compact_live: bool,
+) -> Result<Value> {
+    let mut hits = set.hits[offset..offset + count]
+        .iter()
+        .map(|entry| compact_entry_for_page(entry, root, None, names, compact_live))
+        .collect::<Result<Vec<_>>>()?;
+    if let Some(limit) = candidate_limit {
+        for hit in &mut hits {
+            let Some(candidates) = hit["candidates"].as_array_mut() else {
+                continue;
+            };
+            if candidates.len() > limit {
+                let total = candidates.len();
+                candidates.truncate(limit);
+                hit["candidates_total"] = total.into();
+                hit["candidates_truncated"] = true.into();
+            }
+        }
+    }
+    let next = (offset + count < set.hits.len()).then(|| format!("{id}@{}", offset + count));
+    Ok(serde_json::json!({
+        "generation": set.generation,
+        "coverage": set.coverage,
+        "tokenizer": "o200k_base",
+        "hits": hits,
+        "next": next,
+        "truncated": set.truncated
+    }))
 }
 
 pub fn more(store: &Store, cursor: &str, limit: usize, budget: &OutputBudget) -> Result<String> {

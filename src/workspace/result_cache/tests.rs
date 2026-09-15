@@ -83,3 +83,66 @@ fn workspace_result_metadata_never_exceeds_retention_capacity() -> Result<()> {
     assert_eq!(bytes, 0);
     Ok(())
 }
+
+#[test]
+fn workspace_pages_use_absolute_file_locators_and_compact_coverage() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let root = directory.path().join("member");
+    std::fs::create_dir(&root)?;
+    let results = WorkspaceResults::open(directory.path().join("cache").as_path())?;
+    let hit = crate::results::Hit {
+        handle: String::new(),
+        path: "src%20file.rs".into(),
+        revision: Some("revision".into()),
+        start: 2,
+        end: 8,
+        start_line: 2,
+        end_line: 3,
+        name: "AName".into(),
+        kind: "definition".into(),
+        container: Some("Container".into()),
+        provenance: Some("exact_identifier".into()),
+        resolution: None,
+        candidates: Vec::new(),
+        target: None,
+    };
+    let set = WorkspaceSet {
+        workspace: "test".into(),
+        home: Some("member".into()),
+        owners: vec![MemberSnapshot {
+            name: "member".into(),
+            root: encode_path(&root),
+            cache: encode_path(directory.path()),
+            device: 0,
+            inode: 0,
+            index_identity: "epoch".into(),
+            generation: 4,
+            coverage: json!({}),
+        }],
+        coverage: vec![json!({
+            "member":"member",
+            "state":"pending",
+            "reason":"index warming",
+            "detail":{"large":"payload"}
+        })],
+        hits: vec![OwnedEntry {
+            owner: 0,
+            member_rank: 1,
+            entry: ResultEntry::LiveSource(hit),
+        }],
+        truncated: false,
+    };
+    let id = results.save(set)?;
+    let value: Value = serde_json::from_str(&results.page(&id, 0, 1, &OutputBudget::new(600)?)?)?;
+    assert_eq!(
+        value["hits"][0]["file"],
+        format!("file://{}", encode_path(&root.join("src file.rs")))
+    );
+    assert_eq!(value["hits"][0]["member"], "member");
+    assert!(value["hits"][0].get("revision").is_none());
+    assert!(value.get("members").is_none());
+    assert_eq!(value["coverage"][0]["state"], "pending");
+    assert_eq!(value["coverage"][0]["reason"], "index warming");
+    assert!(value["coverage"][0].get("detail").is_none());
+    Ok(())
+}

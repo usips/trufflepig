@@ -117,6 +117,56 @@ fn pagination_respects_full_budget_and_advances_explicitly() {
 }
 
 #[test]
+fn pages_are_file_first_while_saved_entries_keep_full_identity() {
+    let (root, _cache, mut store) = fixture();
+    let result = query(&store, "sym:alpha");
+    let id = save(&mut store, result).unwrap();
+    let response: Value =
+        serde_json::from_str(&page(&store, &id, 0, 1, &OutputBudget::new(600).unwrap()).unwrap())
+            .unwrap();
+    let hit = &response["hits"][0];
+    assert_eq!(
+        hit["file"],
+        format!(
+            "file://{}",
+            crate::store::encode_path(&root.path().join("lib.rs"))
+        )
+    );
+    assert_eq!(hit["start_line"], 1);
+    assert_eq!(hit["end_line"], 1);
+    assert!(hit.get("path").is_none());
+    assert!(hit.get("revision").is_none());
+
+    let stored = load_entries(&store, &id).unwrap();
+    let ResultEntry::LiveSource(stored) = &stored.hits[0] else {
+        panic!("expected live source entry")
+    };
+    assert_eq!(stored.path, "lib.rs");
+    assert!(stored.revision.is_some());
+    assert_eq!(stored.start, 0);
+    assert!(stored.end > stored.start);
+}
+
+#[test]
+fn published_working_tree_pages_keep_detailed_source_identity() {
+    let (root, _cache, mut store) = fixture();
+    let mut result = query(&store, "sym:alpha");
+    result.coverage = serde_json::json!({"endpoint":"published_working_tree"});
+    let id = save(&mut store, result).unwrap();
+    let response: Value =
+        serde_json::from_str(&page(&store, &id, 0, 1, &OutputBudget::new(600).unwrap()).unwrap())
+            .unwrap();
+    let hit = &response["hits"][0];
+    assert_eq!(hit["entry"], "live_source");
+    assert_eq!(hit["path"], "lib.rs");
+    assert!(hit["revision"].is_string());
+    assert_eq!(hit["start"], 0);
+    assert!(hit["end"].as_u64().unwrap() > 0);
+    assert!(hit.get("file").is_none());
+    assert!(root.path().join("lib.rs").is_file());
+}
+
+#[test]
 fn cache_bytes_and_hit_count_are_bounded() {
     let (_root, _cache, mut store) = fixture();
     let mut set = query(&store, "sym:alpha");

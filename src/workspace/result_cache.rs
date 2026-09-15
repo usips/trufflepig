@@ -6,7 +6,7 @@ use crate::{
     results::{self, ResultEntry},
     store::{Store, decode_path, encode_path},
 };
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -215,32 +215,107 @@ impl WorkspaceResults {
             offset <= set.hits.len(),
             "invalid_cursor: offset outside result set"
         );
-        let mut count = limit.min(set.hits.len() - offset);
-        loop {
-            let mut roots = serde_json::Map::new();
-            let mut hits = Vec::with_capacity(count);
-            for hit in &set.hits[offset..offset + count] {
-                let owner = &set.owners[hit.owner];
-                roots.insert(owner.name.clone(), owner.root.clone().into());
-                let mut entry = serde_json::to_value(&hit.entry)?;
-                entry["member"] = owner.name.clone().into();
-                entry["member_rank"] = hit.member_rank.into();
-                hits.push(entry);
+        let available = set.hits.len() - offset;
+        let max_count = available.min(limit).min(budget.limit);
+        for names in [false, true] {
+            let mut low = 0;
+            let mut high = max_count;
+            while low < high {
+                let count = low + (high - low).div_ceil(2);
+                let value = page_value(&set, id, offset, count, names)?;
+                if budget.fits(&budget.encode(&value)?) {
+                    low = count;
+                } else {
+                    high = count - 1;
+                }
             }
-            let next =
-                (offset + count < set.hits.len()).then(|| format!("{id}@{}", offset + count));
-            let value = json!({"workspace":set.workspace,"home":set.home,"members":roots,"coverage":set.coverage,"hits":hits,"next":next,"truncated":set.truncated,"tokenizer":"o200k_base"});
-            let output = budget.encode(&value)?;
-            if budget.fits(&output) && (count > 0 || set.hits.len() == offset) {
-                return Ok(output);
+            if low > 0 {
+                let named = page_value(&set, id, offset, low, true)?;
+                let named = budget.encode(&named)?;
+                if budget.fits(&named) {
+                    return Ok(named);
+                }
+                let value = page_value(&set, id, offset, low, names)?;
+                return budget.encode(&value);
             }
-            ensure!(
-                count > 0,
-                "budget_too_small: workspace provenance and one result do not fit"
-            );
-            count -= 1;
         }
+        if available == 0 {
+            let value = page_value(&set, id, offset, 0, false)?;
+            if budget.fits(&budget.encode(&value)?) {
+                return budget.encode(&value);
+            }
+        }
+        bail!("budget_too_small: workspace coverage and one result do not fit");
     }
+}
+
+fn page_value(
+    set: &WorkspaceSet,
+    id: &str,
+    offset: usize,
+    count: usize,
+    names: bool,
+) -> Result<Value> {
+    let mut hits = Vec::with_capacity(count);
+    for owned in &set.hits[offset..offset + count] {
+        let owner = &set.owners[owned.owner];
+        let root = decode_path(&owner.root)?;
+        let mut entry = results::compact_entry(&owned.entry, &root, Some(&owner.name), names)?;
+        if entry.is_object() {
+            entry["member"] = owner.name.clone().into();
+            if !matches!(&owned.entry, ResultEntry::LiveSource(_)) {
+                entry["member_rank"] = owned.member_rank.into();
+            }
+        }
+        hits.push(entry);
+    }
+    let next = (offset + count < set.hits.len()).then(|| format!("{id}@{}", offset + count));
+    Ok(json!({
+        "workspace": set.workspace,
+        "home": set.home,
+        "coverage": compact_coverage(&set.coverage),
+        "hits": hits,
+        "next": next,
+        "truncated": set.truncated,
+        "tokenizer": "o200k_base"
+    }))
+}
+
+fn compact_coverage(values: &[Value]) -> Vec<Value> {
+    values
+        .iter()
+        .map(|value| {
+            let Some(object) = value.as_object() else {
+                return value.clone();
+            };
+            let mut compact = serde_json::Map::new();
+            for key in [
+                "member",
+                "state",
+                "status",
+                "available",
+                "availability",
+                "pending",
+                "pending_reason",
+                "pending_status",
+                "reason",
+                "reasons",
+                "unavailable_reason",
+                "error",
+                "failure",
+                "generation",
+                "retained",
+                "truncated",
+                "partial",
+                "issues",
+            ] {
+                if let Some(value) = object.get(key) {
+                    compact.insert(key.into(), value.clone());
+                }
+            }
+            Value::Object(compact)
+        })
+        .collect()
 }
 
 fn refresh_retained_counts(set: &mut WorkspaceSet) {
