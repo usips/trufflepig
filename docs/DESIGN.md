@@ -48,6 +48,10 @@ traversal, historical ranking/embeddings, cochange/hotness, agent transcript
 adapters, and paired-agent trial orchestration remain outside this release.
 GPU support cannot block CPU use. No latency, memory, hit-count, or retrieval
 quality guarantee follows from the design.
+Agent harness integration lives in
+[plugins/trufflepig-agent](../plugins/trufflepig-agent/README.md): a shared
+skill, a wrapper command that tags requests and writes per-call audit records,
+and a summarizer that flags struggling sessions.
 
 ## Evidence and limits
 

@@ -1,0 +1,14 @@
+# Append to $KIMI_CODE_HOME/config.toml (default ~/.kimi-code/config.toml).
+# `install.sh --kimi-hooks` does this for you between marker comments.
+# The session hooks let trufflepig-agent tag every call with Kimi's session id
+# so `trufflepig-audit` can group calls per session.
+
+[[hooks]]
+event = "SessionStart"
+command = "trufflepig-agent-session kimi start"
+timeout = 5
+
+[[hooks]]
+event = "SessionEnd"
+command = "trufflepig-agent-session kimi end"
+timeout = 5

@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "name": "trufflepig-agent",
+  "displayName": "Trufflepig Code Search",
+  "version": "0.1.0",
+  "description": "Ranked, reranked repository search with immutable handles and auditable per-call logs.",
+  "compat": {
+    "source": "native",
+    "manifestDir": ".muse-plugin"
+  },
+  "capabilities": {
+    "skills": [
+      {
+        "id": "trufflepig-code-search",
+        "path": "skills/trufflepig-code-search/SKILL.md",
+        "enabledDefault": true
+      }
+    ],
+    "commands": [],
+    "hooks": [
+      {
+        "id": "trufflepig-session-start",
+        "event": "SessionStart",
+        "command": ["sh", "hooks/session-start.sh", "muse", "start"],
+        "timeoutMs": 2000,
+        "statusMessage": "Recording trufflepig audit session"
+      },
+      {
+        "id": "trufflepig-session-end",
+        "event": "SessionEnd",
+        "command": ["sh", "hooks/session-start.sh", "muse", "end"],
+        "timeoutMs": 2000,
+        "statusMessage": "Closing trufflepig audit session"
+      }
+    ],
+    "mcpServers": [],
+    "reminders": []
+  }
+}

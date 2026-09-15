@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+"""Summarize trufflepig-agent audit logs and flag sessions where the tool struggled.
+
+Usage: trufflepig-audit [--harness NAME] [--session ID] [--since HOURS]
+                        [--json] [--calls] [LOG_DIR]
+
+Reads <LOG_DIR>/<harness>.jsonl written by `trufflepig-agent` (default
+$XDG_STATE_HOME/trufflepig/agent-audit) and prints one row per session with
+call counts, error and empty-result rates, truncation, repeated queries,
+latency, and follow-through (searches followed by show/ctx/more). A session
+is flagged when any struggle threshold is crossed. `--calls` lists the
+individual calls that carried signals. Exit code 3 when any session is flagged.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import statistics
+import sys
+import time
+from collections import defaultdict
+from pathlib import Path
+
+THRESHOLDS = {
+    "error_rate": 0.25,
+    "no_hit_rate": 0.5,
+    "repeat_queries": 3,
+    "budget_errors": 2,
+    "stale_errors": 2,
+    "usage_errors": 2,
+    "p95_seconds": 5.0,
+    "min_calls": 3,
+}
+
+
+def default_dir() -> Path:
+    base = os.environ.get("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state")
+    return Path(os.environ.get("TRUFFLEPIG_AGENT_LOG_DIR") or Path(base) / "trufflepig" / "agent-audit")
+
+
+def load(directory: Path, harness: str | None, since_hours: float | None) -> list[dict]:
+    records: list[dict] = []
+    cutoff = time.time() - since_hours * 3600 if since_hours else None
+    for path in sorted(directory.glob("*.jsonl")):
+        if harness and path.stem != harness:
+            continue
+        with path.open(encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except ValueError:
+                    records.append({"harness": path.stem, "session": "?", "malformed": True})
+                    continue
+                if cutoff is not None:
+                    try:
+                        stamp = time.mktime(time.strptime(record["ts"][:19], "%Y-%m-%dT%H:%M:%S"))
+                    except (KeyError, ValueError):
+                        stamp = None
+                    if stamp is not None and stamp < cutoff:
+                        continue
+                records.append(record)
+    return records
+
+
+def summarize(records: list[dict]) -> list[dict]:
+    sessions: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for record in records:
+        sessions[(record.get("harness", "?"), record.get("session", "?"))].append(record)
+    rows = []
+    for (harness, session), calls in sessions.items():
+        calls = [c for c in calls if not c.get("malformed")]
+        if not calls:
+            continue
+        searches = [c for c in calls if c.get("verb") == "search"]
+        latencies = [c.get("elapsed_ms", 0) / 1000 for c in calls]
+        signals = [s for c in calls for s in c.get("signals", [])]
+        follow = 0
+        for index, call in enumerate(calls):
+            if call.get("verb") == "search" and (call.get("hits") or 0) > 0:
+                if any(later.get("verb") in ("show", "ctx", "more") for later in calls[index + 1:index + 4]):
+                    follow += 1
+        productive = sum(1 for c in searches if (c.get("hits") or 0) > 0)
+        row = {
+            "harness": harness,
+            "session": session,
+            "first": calls[0].get("ts"),
+            "last": calls[-1].get("ts"),
+            "calls": len(calls),
+            "searches": len(searches),
+            "shows": sum(1 for c in calls if c.get("verb") in ("show", "more")),
+            "ctx": sum(1 for c in calls if c.get("verb") == "ctx"),
+            "errors": signals.count("error"),
+            "no_hits": signals.count("no_hits"),
+            "truncated": signals.count("truncated"),
+            "repeats": sum(1 for c in calls if "repeat_query" in c.get("signals", [])),
+            "budget": signals.count("budget"),
+            "stale": signals.count("stale"),
+            "usage_errors": signals.count("usage_error"),
+            "semantic_degraded": signals.count("semantic_degraded"),
+            "rerank_unavailable": signals.count("rerank_unavailable"),
+            "slow": signals.count("slow"),
+            "p50_s": round(statistics.median(latencies), 2),
+            "p95_s": round(sorted(latencies)[max(0, int(len(latencies) * 0.95) - 1)], 2),
+            "follow_through": f"{follow}/{productive}",
+        }
+        reasons = []
+        if row["calls"] >= THRESHOLDS["min_calls"]:
+            if row["errors"] / row["calls"] > THRESHOLDS["error_rate"]:
+                reasons.append("error rate")
+            if searches and row["no_hits"] / len(searches) > THRESHOLDS["no_hit_rate"]:
+                reasons.append("empty searches")
+            if row["repeats"] >= THRESHOLDS["repeat_queries"]:
+                reasons.append("repeated queries")
+            if row["budget"] >= THRESHOLDS["budget_errors"]:
+                reasons.append("budget errors")
+            if row["stale"] >= THRESHOLDS["stale_errors"]:
+                reasons.append("stale handles")
+            if row["usage_errors"] >= THRESHOLDS["usage_errors"]:
+                reasons.append("usage errors")
+            if row["p95_s"] > THRESHOLDS["p95_seconds"]:
+                reasons.append("slow")
+            if productive >= 3 and follow == 0:
+                reasons.append("results never opened")
+        row["struggling"] = bool(reasons)
+        row["reasons"] = reasons
+        rows.append(row)
+    rows.sort(key=lambda r: (r["first"] or ""), reverse=True)
+    return rows
+
+
+def print_table(rows: list[dict]) -> None:
+    header = ("harness", "session", "calls", "srch", "show", "ctx", "err", "empty", "trunc",
+              "rept", "p50s", "p95s", "follow", "flag")
+    print("\t".join(header))
+    for row in rows:
+        print("\t".join(str(v) for v in (
+            row["harness"], row["session"][:28], row["calls"], row["searches"], row["shows"],
+            row["ctx"], row["errors"], row["no_hits"], row["truncated"], row["repeats"],
+            row["p50_s"], row["p95_s"], row["follow_through"],
+            ("STRUGGLING: " + ", ".join(row["reasons"])) if row["struggling"] else "ok",
+        )))
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("log_dir", nargs="?", type=Path, default=default_dir())
+    parser.add_argument("--harness")
+    parser.add_argument("--session")
+    parser.add_argument("--since", type=float, help="only calls from the last N hours")
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--calls", action="store_true", help="list calls carrying signals")
+    args = parser.parse_args()
+    if not args.log_dir.is_dir():
+        print(f"no audit log directory at {args.log_dir}", file=sys.stderr)
+        return 1
+    records = load(args.log_dir, args.harness, args.since)
+    if args.session:
+        records = [r for r in records if r.get("session") == args.session]
+    rows = summarize(records)
+    if args.json:
+        print(json.dumps({"sessions": rows, "records": len(records)}, indent=1))
+    else:
+        print_table(rows)
+        if args.calls:
+            print()
+            for record in records:
+                if record.get("signals"):
+                    print(f"{record.get('ts')} {record.get('harness')} {record.get('session', '')[:20]} "
+                          f"{record.get('verb')} {' '.join(record.get('args', []))[:60]!r} "
+                          f"{record.get('elapsed_ms')}ms hits={record.get('hits')} "
+                          f"signals={','.join(record['signals'])} {record.get('error') or record.get('stderr') or ''}"[:220])
+        print(f"\n{len(records)} calls, {len(rows)} sessions, "
+              f"{sum(1 for r in rows if r['struggling'])} flagged. "
+              f"Daemon-side ledger: `trufflepig audit` in the repository.")
+    return 3 if any(r["struggling"] for r in rows) else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

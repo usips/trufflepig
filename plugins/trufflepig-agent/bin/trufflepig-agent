@@ -1,0 +1,278 @@
+#!/usr/bin/env python3
+"""Harness-facing trufflepig wrapper with an auditable per-call JSONL log.
+
+Usage: trufflepig-agent [trufflepig options] COMMAND [ARGS...]
+
+Adds `--json --client HARNESS --session ID --diagnostics detailed` unless the
+caller passed them, runs trufflepig, passes stdout/stderr and the exit code
+through unchanged, and appends one record to
+$TRUFFLEPIG_AGENT_LOG_DIR/<harness>.jsonl (default
+$XDG_STATE_HOME/trufflepig/agent-audit). Records carry the verb, arguments,
+timing, exit code, response status, hit count, truncation, per-member
+coverage flags, and derived struggle signals. `trufflepig-audit` summarizes
+them. Logging never changes the command's output or exit code.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+SLOW_SECONDS = 3.0
+RECENT_LIMIT = 8
+TRUFFLEPIG = os.environ.get("TRUFFLEPIG_BINARY", "trufflepig")
+FLAGS_WITH_VALUES = {
+    "--root", "--workspace", "--member", "--cache", "-b", "--budget", "-n",
+    "--limit", "--history-cache", "--target", "--side", "--ignore-revs-file",
+    "--diagnostics", "--session", "--client",
+}
+def state_dir() -> Path:
+    base = os.environ.get("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state")
+    return Path(base) / "trufflepig"
+
+
+def log_dir() -> Path:
+    return Path(os.environ.get("TRUFFLEPIG_AGENT_LOG_DIR") or state_dir() / "agent-audit")
+
+
+def detect_harness() -> str:
+    explicit = os.environ.get("TRUFFLEPIG_AGENT_HARNESS")
+    if explicit:
+        return explicit
+    for key in os.environ:
+        upper = key.upper()
+        if "KIMI" in upper:
+            return "kimi"
+        if "MUSE" in upper:
+            return "muse"
+    # Walk parent processes and look for a known harness executable name.
+    pid = os.getppid()
+    for _ in range(12):
+        try:
+            comm = Path(f"/proc/{pid}/comm").read_text().strip()
+            stat = Path(f"/proc/{pid}/stat").read_text()
+        except OSError:
+            break
+        lowered = comm.lower()
+        if lowered.startswith("kimi"):
+            return "kimi"
+        if lowered.startswith("muse"):
+            return "muse"
+        try:
+            pid = int(stat.rsplit(")", 1)[1].split()[1])
+        except (IndexError, ValueError):
+            break
+        if pid <= 1:
+            break
+    return "unknown"
+
+
+def cwd_key(cwd: str) -> str:
+    return hashlib.blake2s(cwd.encode(), digest_size=6).hexdigest()
+
+
+def resolve_session(harness: str, cwd: str) -> str:
+    explicit = os.environ.get("TRUFFLEPIG_SESSION")
+    if explicit:
+        return explicit
+    for key in ("KIMI_SESSION_ID", "MUSE_SESSION_ID", "AGENT_SESSION_ID"):
+        if os.environ.get(key):
+            return os.environ[key]
+    # Session files are written by the harness SessionStart hook, one per cwd.
+    marker = state_dir() / "agent-sessions" / harness / cwd_key(cwd)
+    try:
+        session = marker.read_text().strip()
+        if session:
+            return session
+    except OSError:
+        pass
+    return f"{harness}-{cwd_key(cwd)}-{time.strftime('%Y%m%d')}"
+
+
+def split_args(argv: list[str]) -> tuple[list[str], str, list[str], dict[str, str]]:
+    """Return (options, verb, words, option values) without altering argv."""
+    options: list[str] = []
+    values: dict[str, str] = {}
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg == "--":
+            index += 1
+            break
+        if arg.startswith("-") and len(arg) > 1:
+            if "=" in arg and arg.startswith("--"):
+                name, value = arg.split("=", 1)
+                values[name] = value
+                options.append(arg)
+            elif arg in FLAGS_WITH_VALUES and index + 1 < len(argv):
+                values[arg] = argv[index + 1]
+                options.extend(argv[index:index + 2])
+                index += 1
+            elif arg.startswith("-b") and not arg.startswith("--"):
+                values["-b"] = arg[2:]
+                options.append(arg)
+            elif arg.startswith("-n") and not arg.startswith("--"):
+                values["-n"] = arg[2:]
+                options.append(arg)
+            else:
+                options.append(arg)
+            index += 1
+            continue
+        break
+    words = argv[index:]
+    # Unknown first words are recorded verbatim so usage errors stay visible.
+    verb = words[0] if words else "status"
+    return options, verb, words, values
+
+
+def coverage_summary(response: dict) -> dict:
+    coverage = response.get("coverage")
+    summary: dict = {}
+    if isinstance(coverage, list):
+        for member in coverage:
+            if not isinstance(member, dict):
+                continue
+            issues = member.get("issues") or {}
+            summary[str(member.get("member"))] = {
+                "state": member.get("state"),
+                "partial": member.get("partial"),
+                "truncated": member.get("truncated"),
+                "semantic_status": issues.get("semantic_status"),
+                "rerank_status": issues.get("rerank_status"),
+                "rerank_reason": issues.get("rerank_reason"),
+            }
+    elif isinstance(coverage, dict):
+        summary["root"] = {
+            "semantic_status": coverage.get("semantic_status"),
+            "rerank_status": coverage.get("rerank_status"),
+            "rerank_reason": coverage.get("rerank_reason"),
+            "parse_failures": coverage.get("parse_failures"),
+        }
+    return summary
+
+
+def recent_fingerprints(path: Path) -> list[str]:
+    try:
+        return path.read_text().split()[-RECENT_LIMIT:]
+    except OSError:
+        return []
+
+
+def main() -> int:
+    argv = sys.argv[1:]
+    cwd = os.getcwd()
+    harness = detect_harness()
+    session = resolve_session(harness, cwd)
+    options, verb, words, values = split_args(argv)
+    injected: list[str] = []
+    if "--json" not in options:
+        injected.append("--json")
+    if "--client" not in values:
+        injected.extend(["--client", harness])
+    if "--session" not in values:
+        injected.extend(["--session", session])
+    if "--diagnostics" not in values:
+        injected.extend(["--diagnostics", os.environ.get("TRUFFLEPIG_AGENT_DIAGNOSTICS", "detailed")])
+    command = [TRUFFLEPIG, *injected, *argv]
+
+    started = time.monotonic()
+    try:
+        completed = subprocess.run(command, capture_output=True, check=False)
+        exit_code = completed.returncode
+        stdout, stderr = completed.stdout, completed.stderr
+    except FileNotFoundError:
+        exit_code = 127
+        stdout = b""
+        stderr = f"trufflepig-agent: {TRUFFLEPIG} not found on PATH\n".encode()
+    elapsed = time.monotonic() - started
+
+    sys.stdout.buffer.write(stdout)
+    sys.stdout.buffer.flush()
+    sys.stderr.buffer.write(stderr)
+    sys.stderr.buffer.flush()
+
+    response: dict = {}
+    try:
+        first_line = stdout.split(b"\n", 1)[0]
+        parsed = json.loads(first_line) if first_line.strip() else {}
+        response = parsed if isinstance(parsed, dict) else {}
+    except (ValueError, UnicodeDecodeError):
+        response = {}
+
+    hits = response.get("hits")
+    hit_count = len(hits) if isinstance(hits, list) else None
+    status = response.get("status") or ("ok" if exit_code == 0 else "error")
+    error_text = ""
+    if isinstance(response.get("error"), str):
+        error_text = response["error"]
+    stderr_head = stderr.decode("utf-8", "replace").strip()[:300]
+    coverage = coverage_summary(response)
+
+    fingerprint = hashlib.blake2s(" ".join([verb, *words[1:]]).encode(), digest_size=8).hexdigest()
+    recent_path = state_dir() / "agent-recent" / harness / f"{cwd_key(cwd)}-{session}"
+    recent = recent_fingerprints(recent_path)
+    repeat_count = recent.count(fingerprint)
+
+    signals: list[str] = []
+    if exit_code != 0 or status not in ("ok",):
+        signals.append("error")
+    if verb == "search" and hit_count == 0 and exit_code == 0:
+        signals.append("no_hits")
+    if response.get("truncated") is True:
+        signals.append("truncated")
+    lowered = (error_text + " " + stderr_head).lower()
+    if "budget" in lowered:
+        signals.append("budget")
+    if any(key in lowered for key in ("stale_result", "stale_source", "expired_result")):
+        signals.append("stale")
+    if "unknown_command" in lowered or "invalid_query" in lowered or "usage" in lowered:
+        signals.append("usage_error")
+    if any(m.get("semantic_status") in ("unavailable", "partial") for m in coverage.values()):
+        signals.append("semantic_degraded")
+    if any(m.get("rerank_status") == "unavailable" for m in coverage.values()):
+        signals.append("rerank_unavailable")
+    if elapsed > SLOW_SECONDS:
+        signals.append("slow")
+    if repeat_count >= 1 and verb in ("search", "refs", "map"):
+        signals.append("repeat_query")
+
+    record = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "harness": harness,
+        "session": session,
+        "cwd": cwd,
+        "verb": verb,
+        "args": words[1:],
+        "options": {k: v for k, v in values.items() if k not in ("--session", "--client")},
+        "exit_code": exit_code,
+        "elapsed_ms": int(elapsed * 1000),
+        "status": status,
+        "error": error_text[:300],
+        "stderr": stderr_head,
+        "hits": hit_count,
+        "truncated": response.get("truncated"),
+        "has_next": bool(response.get("next")),
+        "stdout_bytes": len(stdout),
+        "coverage": coverage,
+        "repeat_count": repeat_count,
+        "signals": signals,
+    }
+    try:
+        target = log_dir()
+        target.mkdir(parents=True, exist_ok=True)
+        with (target / f"{harness}.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, separators=(",", ":")) + "\n")
+        recent_path.parent.mkdir(parents=True, exist_ok=True)
+        recent_path.write_text(" ".join([*recent, fingerprint][-RECENT_LIMIT:]))
+    except OSError as error:
+        sys.stderr.write(f"trufflepig-agent: audit log unavailable: {error}\n")
+    return exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main())
