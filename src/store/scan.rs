@@ -15,7 +15,7 @@ pub(super) fn stage(
 ) -> Result<(Coverage, String)> {
     let mut coverage = Coverage::default();
     let mut fingerprint = blake3::Hasher::new();
-    fingerprint.update(b"trufflepig-schema-1-extraction-1");
+    fingerprint.update(b"trufflepig-schema-1-extraction-2");
     let cache_version = i64::from_le_bytes(
         blake3::hash(include_bytes!("../../Cargo.lock")).as_bytes()[..8]
             .try_into()
