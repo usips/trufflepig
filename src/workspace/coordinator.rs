@@ -21,6 +21,7 @@ pub fn run(
     context: &RequestContext,
 ) -> Result<String> {
     let mut options = options.clone();
+    options.sem = (options.sem || config.semantic.enabled) && !options.no_sem;
     options.root = options.root.canonicalize()?;
     options.workspace = Some(config.path.clone());
     if let Some(cache) = &options.cache {
@@ -48,7 +49,12 @@ pub fn run(
             &daemon::stop(&cache)?,
         )?);
     }
-    if options.no_daemon || verb == "ws" {
+    let metadata_only = verb == "semantic"
+        && options
+            .words
+            .get(1)
+            .is_some_and(|command| command == "status");
+    if options.no_daemon || verb == "ws" || metadata_only {
         return local(
             &config,
             &cache,
@@ -58,11 +64,17 @@ pub fn run(
         );
     }
     let mut args = normalized_args(&options, &options.root);
-    if options.wait {
+    if options.wait
+        && !(verb == "semantic"
+            && options
+                .words
+                .get(1)
+                .is_some_and(|command| command == "prepare"))
+    {
         args.push("--wait".into());
     }
     if let Some(reply) = daemon::request(&cache, &args, context)? {
-        return Ok(reply);
+        return wait_if_semantic_prepare(&config, &options, reply);
     }
     std::fs::create_dir_all(&cache)?;
     let mut server = options.clone();
@@ -77,7 +89,7 @@ pub fn run(
     let started = Instant::now();
     while started.elapsed() < Duration::from_secs(3) {
         if let Some(reply) = daemon::request(&cache, &args, context)? {
-            return Ok(reply);
+            return wait_if_semantic_prepare(&config, &options, reply);
         }
         if child.try_wait()?.is_some() {
             break;
@@ -88,9 +100,26 @@ pub fn run(
         "workspace_unavailable: coordinator did not start; use --no-daemon or inspect cache permissions"
     )
 }
+
+fn wait_if_semantic_prepare(
+    config: &WorkspaceConfig,
+    options: &Arguments,
+    reply: String,
+) -> Result<String> {
+    if options.wait
+        && options.words.first().is_some_and(|verb| verb == "semantic")
+        && options
+            .words
+            .get(1)
+            .is_some_and(|command| command == "prepare")
+    {
+        crate::cli::semantic::wait_for_workspace(config, options, reply)
+    } else {
+        Ok(reply)
+    }
+}
 fn serve(config: &WorkspaceConfig, cache: &Path) -> Result<()> {
     let mut session = SemanticSession::new();
-    let mut diagnostics_mode = crate::diagnostics::DiagnosticsMode::Metadata;
     let config_path = config.path.clone();
     let config_id = config.id.clone();
     daemon::serve_coordinator(
@@ -113,18 +142,10 @@ fn serve(config: &WorkspaceConfig, cache: &Path) -> Result<()> {
                     cache_path(&current, options.cache.as_deref())? == cache,
                     "invalid_cache: coordinator cache mismatch"
                 );
-                diagnostics_mode = match options.diagnostics.as_str() {
-                    "off" => crate::diagnostics::DiagnosticsMode::Off,
-                    "detailed" => crate::diagnostics::DiagnosticsMode::Detailed,
-                    _ => crate::diagnostics::DiagnosticsMode::Metadata,
-                };
                 let output = local(&current, cache, &options, &context, &mut session);
-                session.request_completed();
-                record_residency(&mut session, cache, &config_id, diagnostics_mode);
                 output
             }
             daemon::DaemonEvent::Idle => {
-                record_residency(&mut session, cache, &config_id, diagnostics_mode);
                 reap_children();
                 Ok(String::new())
             }
@@ -180,24 +201,5 @@ fn reap_children() {
         if pid <= 0 {
             break;
         }
-    }
-}
-
-fn record_residency(
-    session: &mut SemanticSession,
-    cache: &Path,
-    workspace: &str,
-    mode: crate::diagnostics::DiagnosticsMode,
-) {
-    if let Some(sample) = session.idle_tick() {
-        let mut event = crate::diagnostics::RequestEvent::new(
-            RequestContext::new(None, None),
-            crate::diagnostics::Operation::Other,
-            crate::diagnostics::Outcome::Success,
-        );
-        event.stage = crate::diagnostics::EventStage::Maintenance;
-        event.workspace = Some(workspace.into());
-        event.residency = Some(sample);
-        crate::diagnostics::best_effort_record(cache, mode, event);
     }
 }

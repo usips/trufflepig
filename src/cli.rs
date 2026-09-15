@@ -2,10 +2,12 @@
 mod dispatch;
 pub mod emission;
 mod emitted_evidence;
+pub(crate) mod semantic;
 use crate::{daemon, output::OutputBudget, store::Store};
 use anyhow::{Context, Result};
 pub use dispatch::local;
 use dispatch::local_with_session;
+use rusqlite::OptionalExtension;
 mod arguments;
 pub(crate) use arguments::normalized_args;
 use arguments::validate;
@@ -44,6 +46,18 @@ pub fn run_with_context(
 ) -> Result<String> {
     let options = parse(args)?;
     validate(&options)?;
+    if options
+        .words
+        .first()
+        .is_some_and(|verb| verb == "semantic-worker-serve")
+    {
+        return semantic::serve_worker(&options);
+    }
+    if options.words.first().is_some_and(|verb| verb == "semantic")
+        && options.words.get(1).is_some_and(|verb| verb == "worker")
+    {
+        return semantic::worker_command(&options);
+    }
     if options.words.first().is_some_and(|v| v == "ws")
         && options.words.get(1).is_some_and(|v| v == "discover")
     {
@@ -82,6 +96,9 @@ pub fn run_with_context(
     }
     if verb == "serve" {
         let mut semantic_session = crate::semantic::SemanticSession::default();
+        let preparation_manager = crate::semantic::preparation::PreparationManager::new(
+            crate::semantic::preparation::SharedWorker::new(&root),
+        );
         let history_cache = options.resolved_history_cache.clone().or_else(|| {
             crate::history::worker::resolve_cache(
                 &root,
@@ -97,6 +114,7 @@ pub fn run_with_context(
             crate::diagnostics::DiagnosticQueue::open(&cache, emission::diagnostics_mode(&options))
                 .ok();
         let mut last_probe = Instant::now();
+        let mut last_preparation_check = Instant::now();
         daemon::serve(&root, &cache, |request| match request {
             daemon::DaemonEvent::Request { args, context } => {
                 let request_options = parse(&args)?;
@@ -108,20 +126,8 @@ pub fn run_with_context(
                     &mut semantic_session,
                     &context,
                     log_queue.as_ref(),
+                    Some(&preparation_manager),
                 );
-                semantic_session.request_completed();
-                if let Some(sample) = semantic_session.idle_tick() {
-                    let mut event = crate::diagnostics::RequestEvent::new(
-                        crate::diagnostics::RequestContext::new(None, None),
-                        crate::diagnostics::Operation::Other,
-                        crate::diagnostics::Outcome::Success,
-                    );
-                    event.stage = crate::diagnostics::EventStage::Maintenance;
-                    event.residency = Some(sample);
-                    if let Some(queue) = &log_queue {
-                        queue.record(event);
-                    }
-                }
                 if output.is_ok()
                     && request_options
                         .words
@@ -139,20 +145,17 @@ pub fn run_with_context(
             daemon::DaemonEvent::Reconcile => {
                 let mut store = Store::open(&root, &cache)?;
                 store.index()?;
+                schedule_pending_preparation(&preparation_manager, &root, &cache)?;
                 Ok(String::new())
             }
             daemon::DaemonEvent::Idle => {
-                if let Some(sample) = semantic_session.idle_tick() {
-                    let mut event = crate::diagnostics::RequestEvent::new(
-                        crate::diagnostics::RequestContext::new(None, None),
-                        crate::diagnostics::Operation::Other,
-                        crate::diagnostics::Outcome::Success,
-                    );
-                    event.stage = crate::diagnostics::EventStage::Maintenance;
-                    event.residency = Some(sample);
-                    if let Some(queue) = &log_queue {
-                        queue.record(event);
+                if last_preparation_check.elapsed() >= Duration::from_secs(1) {
+                    if let Err(error) =
+                        schedule_pending_preparation(&preparation_manager, &root, &cache)
+                    {
+                        eprintln!("trufflepig: semantic preparation scheduling failed: {error}");
                     }
+                    last_preparation_check = Instant::now();
                 }
                 if last_probe.elapsed() >= Duration::from_secs(30) {
                     if let Ok(store) = Store::open(&root, &cache) {
@@ -192,10 +195,21 @@ pub fn run_with_context(
             serde_json::Value,
         >(&daemon::stop(&cache)?)?);
     }
-    if !options.no_daemon && !matches!(verb, "index" | "init" | "semantic-check") {
+    let metadata_only = verb == "semantic"
+        && options
+            .words
+            .get(1)
+            .is_some_and(|command| command == "status");
+    if !options.no_daemon && !metadata_only && !matches!(verb, "index" | "init" | "semantic-check")
+    {
         if let Some(response) = daemon::request(&cache, &normalized_args(&options, &root), context)?
         {
-            return wait_for_history(&root, &options, response);
+            let response = wait_for_history(&root, &options, response)?;
+            return if options.words.first().is_some_and(|verb| verb == "semantic") {
+                semantic::wait_for_schedule(&root, &cache, &options, response)
+            } else {
+                Ok(response)
+            };
         }
         std::fs::create_dir_all(&cache)?;
         let history_cache = options.resolved_history_cache.clone().or_else(|| {
@@ -229,7 +243,12 @@ pub fn run_with_context(
             if let Some(response) =
                 daemon::request(&cache, &normalized_args(&options, &root), context)?
             {
-                return wait_for_history(&root, &options, response);
+                let response = wait_for_history(&root, &options, response)?;
+                return if options.words.first().is_some_and(|verb| verb == "semantic") {
+                    semantic::wait_for_schedule(&root, &cache, &options, response)
+                } else {
+                    Ok(response)
+                };
             }
             if child.try_wait()?.is_some() {
                 break;
@@ -246,7 +265,51 @@ pub fn run_with_context(
         &mut crate::semantic::SemanticSession::default(),
         context,
         None,
+        None,
     )
+}
+
+/// Re-wakes a manager after indexing when a persisted preparation request was
+/// made while no root daemon was serving. The marker keeps preparation opt-in.
+fn schedule_pending_preparation(
+    manager: &crate::semantic::preparation::PreparationManager,
+    root: &Path,
+    cache: &Path,
+) -> Result<()> {
+    let path = cache.join("preparation.sqlite3");
+    if !path.is_file() {
+        return Ok(());
+    }
+    let connection = rusqlite::Connection::open(path)?;
+    connection.busy_timeout(Duration::from_secs(1))?;
+    let requested: i64 = match connection.query_row(
+        "SELECT requested_generation FROM preparation_requests WHERE id=1",
+        [],
+        |row| row.get(0),
+    ) {
+        Ok(requested) => requested,
+        Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    let generation = Store::open(root, cache)?.generation()?;
+    if requested <= 0 || generation <= 0 {
+        return Ok(());
+    }
+    let state: Option<String> = connection
+        .query_row(
+            "SELECT state FROM preparation_runs WHERE generation=?1",
+            [generation],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if state
+        .as_deref()
+        .is_some_and(|state| matches!(state, "completed" | "failed" | "capacity"))
+    {
+        return Ok(());
+    }
+    manager.schedule(root, cache)?;
+    Ok(())
 }
 
 pub fn cache_path(root: &Path, explicit: Option<&Path>) -> Result<PathBuf> {

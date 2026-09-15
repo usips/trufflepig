@@ -83,9 +83,17 @@ pub(super) fn search(
         .context("usage: retrieval command is required")?;
     let text = words[1..].join(" ");
     let query = Query::parse(&text)?;
-    let semantic = options.sem && !matches!(verb, "refs" | "map") && !text.starts_with("refs:");
+    let semantic = options.sem
+        && !query.exact
+        && !query.regex
+        && !matches!(verb, "refs" | "map")
+        && !text.starts_with("refs:");
     let started = std::time::Instant::now();
-    let mut prepared = session.prepare(semantic, cache, &query.text)?;
+    session.set_no_daemon(options.no_daemon);
+    let (prepared, semantic_error) = match session.prepare(semantic, cache, &query.text) {
+        Ok(prepared) => (prepared, None),
+        Err(error) => (None, Some(error.to_string())),
+    };
     let preparation_us = started.elapsed().as_micros().min(u64::MAX as u128) as u64;
     let mut preparation_recorded = false;
     let mut set = WorkspaceSet {
@@ -127,7 +135,12 @@ pub(super) fn search(
                 store.generation()? > 0,
                 "member_warming: initial index is not published"
             );
-            let found = if verb == "refs" || text.starts_with("refs:") {
+            let preparation_error = if semantic && !options.no_daemon {
+                crate::semantic::preparation::schedule(&member.root, &member_cache).err()
+            } else {
+                None
+            };
+            let mut found = if verb == "refs" || text.starts_with("refs:") {
                 search::references(
                     &store,
                     if verb == "refs" {
@@ -139,11 +152,16 @@ pub(super) fn search(
             } else if verb == "map" {
                 search::map(&store, words.get(1).map(String::as_str).unwrap_or(""))?
             } else {
-                let semantic_query = prepared
-                    .as_mut()
-                    .map(|(engine, vector)| (&mut **engine, vector.clone()));
+                let semantic_query = prepared.clone();
                 search::search_prepared(&store, &query, &member_cache, semantic_query, &mut trace)?
             };
+            if let Some(error) = &semantic_error {
+                found.coverage["semantic_status"] = "unavailable".into();
+                found.coverage["semantic_reason"] = error.clone().into();
+            }
+            if let Some(error) = preparation_error {
+                found.coverage["semantic_preparation_error"] = error.to_string().into();
+            }
             let owner = MemberSnapshot::capture(member, &store, &member_cache, found.generation)?;
             Ok::<_, anyhow::Error>((owner, found))
         })();
@@ -221,17 +239,23 @@ pub(super) fn search(
 }
 
 fn partial_coverage(coverage: &serde_json::Value) -> bool {
-    [
-        "parse_failures",
-        "excluded_files",
-        "walk_failures",
-        "truncated_files",
-        "live_read_failures",
-        "live_walk_failures",
-        "semantic_failures",
-    ]
-    .iter()
-    .any(|key| coverage[key].as_u64().unwrap_or(0) > 0)
+    coverage.get("semantic_preparation_error").is_some()
+        || matches!(
+            coverage["semantic_status"].as_str(),
+            Some("unavailable" | "partial")
+        )
+        || [
+            "parse_failures",
+            "excluded_files",
+            "walk_failures",
+            "truncated_files",
+            "live_read_failures",
+            "live_walk_failures",
+            "semantic_failures",
+            "semantic_pending",
+        ]
+        .iter()
+        .any(|key| coverage[key].as_u64().unwrap_or(0) > 0)
 }
 
 fn coverage_issues(coverage: &serde_json::Value) -> serde_json::Value {
@@ -244,9 +268,19 @@ fn coverage_issues(coverage: &serde_json::Value) -> serde_json::Value {
         "live_read_failures",
         "live_walk_failures",
         "semantic_failures",
+        "semantic_pending",
     ] {
         if coverage[key].as_u64().unwrap_or(0) > 0 {
             issues.insert(key.into(), coverage[key].clone());
+        }
+    }
+    for key in [
+        "semantic_status",
+        "semantic_reason",
+        "semantic_preparation_error",
+    ] {
+        if let Some(value) = coverage.get(key) {
+            issues.insert(key.into(), value.clone());
         }
     }
     if coverage.get("semantic_total_regions").is_some() {

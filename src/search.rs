@@ -1,10 +1,12 @@
 //! Deterministic exact, lexical and live-regex retrieval from one index snapshot.
+mod file_ranking;
 mod live;
 mod navigation;
 mod semantic_lane;
 pub mod telemetry;
 #[cfg(test)]
 mod tests;
+pub(crate) use file_ranking::fuse_search_file_lanes as fuse_file_lanes;
 pub(crate) use navigation::context_entry;
 pub use navigation::{context, map, references};
 
@@ -15,7 +17,10 @@ use crate::{
 };
 use anyhow::{Result, bail};
 use rusqlite::{Row, params};
-use std::collections::HashSet;
+use std::{
+    cmp::Ordering,
+    collections::{BinaryHeap, HashSet},
+};
 
 #[derive(Default, Debug)]
 pub struct Query {
@@ -120,11 +125,27 @@ pub fn search_with_session(
     use telemetry::{Lane, LaneOutcome};
     trace.begin(&store.root);
     let preparation_started = Instant::now();
-    let prepared = session.prepare(semantic, cache, &query.text);
-    if semantic {
+    let semantic_enabled = semantic && !query.exact && !query.regex;
+    let (prepared, semantic_status) = match session.prepare(semantic_enabled, cache, &query.text) {
+        Ok(prepared) => (prepared, None),
+        Err(error) => {
+            let status = format!("{error:#}");
+            (None, Some(status))
+        }
+    };
+    if semantic_enabled {
         trace.query_preparation_us = Some(telemetry::elapsed_us(preparation_started));
     }
-    if prepared.is_err() {
+    let preparation_us = trace.query_preparation_us;
+    let mut output = search_prepared(store, query, cache, prepared, trace);
+    if let (Some(status), Ok(result)) = (&semantic_status, &mut output) {
+        result.coverage["semantic_status"] = if status.starts_with("semantic_cache_locked:") {
+            "partial"
+        } else {
+            "unavailable"
+        }
+        .into();
+        result.coverage["semantic_reason"] = status.clone().into();
         trace.record(
             Lane::Semantic,
             preparation_started,
@@ -132,10 +153,10 @@ pub fn search_with_session(
             LaneOutcome::Failed,
             false,
         );
+        if let Some(generation) = trace.generation {
+            trace.snapshot(generation, &result.coverage);
+        }
     }
-    let prepared = prepared?;
-    let preparation_us = trace.query_preparation_us;
-    let output = search_prepared(store, query, cache, prepared, trace);
     trace.query_preparation_us = preparation_us;
     output
 }
@@ -145,10 +166,7 @@ pub fn search_prepared(
     store: &Store,
     query: &Query,
     cache: &std::path::Path,
-    mut semantic_query: Option<(
-        &mut crate::semantic::SemanticEngine,
-        crate::semantic::Embedding,
-    )>,
+    semantic_query: Option<crate::semantic::Embedding>,
     trace: &mut telemetry::RetrievalTrace,
 ) -> Result<ResultSet> {
     use std::time::Instant;
@@ -185,55 +203,93 @@ pub fn search_prepared(
         outcome?;
     } else {
         let started = Instant::now();
-        let outcome = exact_hits(store, query, &mut hits);
+        let outcome = exact_hits(store, query);
+        let exact = outcome
+            .as_ref()
+            .map(|lane| lane.hits.as_slice())
+            .unwrap_or(&[]);
         trace.record(
             Lane::ExactIdentifier,
             started,
-            &hits,
+            exact,
             LaneOutcome::from_result(&outcome, false),
-            hits.len() > MAX_HITS,
+            outcome.as_ref().is_ok_and(|lane| lane.truncated),
         );
-        outcome?;
+        let exact = outcome?;
         if !query.exact && !query.text.is_empty() {
             let terms = fts_terms(&query.text);
             if !terms.is_empty() {
                 let started = Instant::now();
-                let first = hits.len();
-                let outcome = lexical_hits(store, query, &terms, &mut hits);
+                let outcome = lexical_hits(store, query, &terms);
+                let lexical = outcome
+                    .as_ref()
+                    .map(|lane| lane.hits.as_slice())
+                    .unwrap_or(&[]);
                 trace.record(
                     Lane::Lexical,
                     started,
-                    &hits[first..],
+                    lexical,
                     LaneOutcome::from_result(&outcome, false),
-                    hits.len() - first > MAX_HITS,
+                    outcome.as_ref().is_ok_and(|lane| lane.truncated),
                 );
-                outcome?;
+                let lexical = outcome?;
+                if !query.exact && (query.kind.is_empty() || query.kind == "file") {
+                    let started = Instant::now();
+                    let outcome = file_hits(store, query);
+                    let files = outcome
+                        .as_ref()
+                        .map(|lane| lane.hits.as_slice())
+                        .unwrap_or(&[]);
+                    trace.record(
+                        Lane::File,
+                        started,
+                        files,
+                        LaneOutcome::from_result(&outcome, false),
+                        outcome.as_ref().is_ok_and(|lane| lane.truncated),
+                    );
+                    let files = outcome?;
+                    truncated |= exact.truncated || lexical.truncated || files.truncated;
+                    hits = fuse_file_lanes([
+                        exact.hits.as_slice(),
+                        lexical.hits.as_slice(),
+                        files.hits.as_slice(),
+                    ]);
+                } else {
+                    truncated |= exact.truncated || lexical.truncated;
+                    hits = fuse_file_lanes([exact.hits.as_slice(), lexical.hits.as_slice()]);
+                }
+            } else {
+                truncated |= exact.truncated;
+                hits = exact.hits;
             }
-        }
-        if !query.exact && (query.kind.is_empty() || query.kind == "file") {
+        } else if !query.exact && (query.kind.is_empty() || query.kind == "file") {
             let started = Instant::now();
-            let first = hits.len();
-            let outcome = file_hits(store, query, &mut hits);
+            let outcome = file_hits(store, query);
+            let files = outcome
+                .as_ref()
+                .map(|lane| lane.hits.as_slice())
+                .unwrap_or(&[]);
             trace.record(
                 Lane::File,
                 started,
-                &hits[first..],
+                files,
                 LaneOutcome::from_result(&outcome, false),
-                hits.len() - first > MAX_HITS,
+                outcome.as_ref().is_ok_and(|lane| lane.truncated),
             );
-            outcome?;
+            let files = outcome?;
+            truncated |= exact.truncated || files.truncated;
+            hits = fuse_file_lanes([exact.hits.as_slice(), files.hits.as_slice()]);
+        } else {
+            truncated |= exact.truncated;
+            hits = exact.hits;
         }
     }
-    if let Some((engine, vector)) = &mut semantic_query {
-        truncated |= semantic_lane::append(
-            store,
-            query,
-            engine,
-            vector,
-            &mut hits,
-            &mut coverage,
-            trace,
-        )?;
+    if !query.exact
+        && !query.regex
+        && let Some(vector) = semantic_query.as_ref()
+    {
+        truncated |=
+            semantic_lane::append(store, query, cache, vector, &mut hits, &mut coverage, trace)?;
     }
     trace.snapshot(generation, &coverage);
     let mut seen = HashSet::with_capacity(hits.len());
@@ -251,10 +307,41 @@ pub fn search_prepared(
     })
 }
 
-fn exact_hits(store: &Store, query: &Query, hits: &mut Vec<Hit>) -> Result<()> {
-    let mut statement=store.conn.prepare("SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container,'exact_identifier',c.bytes FROM definitions d JOIN files f ON f.id=d.file_id JOIN contents c ON c.revision=f.revision WHERE (?1='' OR d.name=?1) AND substr(f.path,1,length(?2))=?2 AND (?3='' OR f.language=?3) AND (?4='' OR d.kind=?4) ORDER BY f.path,d.start,d.end,d.id LIMIT ?5")?;
-    hits.extend(
-        statement
+#[derive(Debug)]
+struct LaneHits {
+    hits: Vec<Hit>,
+    truncated: bool,
+}
+
+fn cap_lane(mut hits: Vec<Hit>) -> LaneHits {
+    cap_hits(&mut hits, file_ranking::FILE_CANDIDATE_LIMIT)
+}
+
+fn cap_hits(hits: &mut Vec<Hit>, limit: usize) -> LaneHits {
+    let truncated = hits.len() > limit;
+    hits.truncate(limit);
+    LaneHits {
+        hits: std::mem::take(hits),
+        truncated,
+    }
+}
+
+fn exact_hits(store: &Store, query: &Query) -> Result<LaneHits> {
+    if query.exact {
+        let mut statement = store.conn.prepare(
+            "SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container,
+                    'exact_identifier',c.bytes
+             FROM definitions d
+             JOIN files f ON f.id=d.file_id
+             JOIN contents c ON c.revision=f.revision
+             WHERE d.name=?1
+               AND substr(f.path,1,length(?2))=?2
+               AND (?3='' OR f.language=?3)
+               AND (?4='' OR d.kind=?4)
+             ORDER BY f.path,d.start,d.end,d.id
+             LIMIT ?5",
+        )?;
+        let mut hits = statement
             .query_map(
                 params![
                     query.text,
@@ -265,28 +352,86 @@ fn exact_hits(store: &Store, query: &Query, hits: &mut Vec<Hit>) -> Result<()> {
                 ],
                 hit_row,
             )?
-            .collect::<rusqlite::Result<Vec<_>>>()?,
-    );
-    Ok(())
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        return Ok(cap_hits(&mut hits, MAX_HITS));
+    }
+    let mut statement = store.conn.prepare(
+        "WITH ranked AS (
+             SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container,
+                    'exact_identifier' AS provenance,c.bytes,d.id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY f.path ORDER BY d.start,d.end,d.id
+                    ) AS file_rank
+             FROM definitions d
+             JOIN files f ON f.id=d.file_id
+             JOIN contents c ON c.revision=f.revision
+             WHERE (?1='' OR d.name=?1)
+               AND substr(f.path,1,length(?2))=?2
+               AND (?3='' OR f.language=?3)
+               AND (?4='' OR d.kind=?4)
+         )
+         SELECT path,revision,start,end,name,kind,container,provenance,bytes
+         FROM ranked
+         WHERE file_rank=1
+         ORDER BY path,start,end,id
+         LIMIT ?5",
+    )?;
+    let hits = statement
+        .query_map(
+            params![
+                query.text,
+                query.path,
+                query.language,
+                query.kind,
+                (file_ranking::FILE_CANDIDATE_LIMIT + 1) as i64
+            ],
+            hit_row,
+        )?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(cap_lane(hits))
 }
 
-fn lexical_hits(store: &Store, query: &Query, terms: &str, hits: &mut Vec<Hit>) -> Result<()> {
-    let mut statement=store.conn.prepare("SELECT f.path,f.revision,r.start,r.end,r.name,r.kind,NULL,'lexical',c.bytes FROM documents JOIN regions r ON r.id=documents.rowid JOIN files f ON f.id=r.file_id JOIN contents c ON c.revision=f.revision WHERE documents MATCH ?1 AND substr(f.path,1,length(?2))=?2 AND (?3='' OR f.language=?3) AND (?4='' OR r.kind=?4) ORDER BY bm25(documents,8.0,2.0,1.0,0.5),f.path,r.start,r.end,r.id LIMIT ?5")?;
-    hits.extend(
-        statement
-            .query_map(
-                params![
-                    terms,
-                    query.path,
-                    query.language,
-                    query.kind,
-                    (MAX_HITS + 1) as i64
-                ],
-                hit_row,
-            )?
-            .collect::<rusqlite::Result<Vec<_>>>()?,
-    );
-    Ok(())
+fn lexical_hits(store: &Store, query: &Query, terms: &str) -> Result<LaneHits> {
+    let mut statement = store.conn.prepare(
+        "WITH ranked AS MATERIALIZED (
+             SELECT f.path,f.revision,r.start,r.end,r.name,r.kind,NULL AS container,
+                    'lexical' AS provenance,c.bytes,
+                    bm25(documents,8.0,2.0,1.0,0.5) AS relevance,r.id
+             FROM documents
+             JOIN regions r ON r.id=documents.rowid
+             JOIN files f ON f.id=r.file_id
+             JOIN contents c ON c.revision=f.revision
+             WHERE documents MATCH ?1
+               AND substr(f.path,1,length(?2))=?2
+               AND (?3='' OR f.language=?3)
+               AND (?4='' OR r.kind=?4)
+         )
+         ,numbered AS (
+             SELECT ranked.*,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY path ORDER BY relevance,start,end,id
+                    ) AS file_rank
+             FROM ranked
+         )
+         SELECT path,revision,start,end,name,kind,container,provenance,bytes
+         FROM numbered
+         WHERE file_rank=1
+         ORDER BY relevance,path,start,end,id
+         LIMIT ?5",
+    )?;
+    let hits = statement
+        .query_map(
+            params![
+                terms,
+                query.path,
+                query.language,
+                query.kind,
+                (file_ranking::FILE_CANDIDATE_LIMIT + 1) as i64
+            ],
+            hit_row,
+        )?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(cap_lane(hits))
 }
 
 fn fts_terms(text: &str) -> String {
@@ -297,45 +442,134 @@ fn fts_terms(text: &str) -> String {
         .join(" OR ")
 }
 
-fn file_hits(store: &Store, query: &Query, hits: &mut Vec<Hit>) -> Result<()> {
+fn file_hits(store: &Store, query: &Query) -> Result<LaneHits> {
     if !query.kind.is_empty() && query.kind != "file" {
-        return Ok(());
-    }
-    let mut stmt=store.conn.prepare("SELECT f.path,f.revision,f.language,f.status FROM files f WHERE substr(f.path,1,length(?1))=?1 AND (?2='' OR f.language=?2) AND (?3='' OR instr(lower(f.path),lower(?3))>0) ORDER BY f.path LIMIT ?4")?;
-    let rows = stmt.query_map(
-        params![
-            query.path,
-            query.language,
-            query.text,
-            (MAX_HITS + 1) as i64
-        ],
-        |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, Option<String>>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, String>(3)?,
-            ))
-        },
-    )?;
-    for row in rows {
-        let (path, revision, _language, status) = row?;
-        hits.push(Hit {
-            handle: String::new(),
-            path: path.clone(),
-            revision,
-            start: 0,
-            end: 0,
-            start_line: 1,
-            end_line: 1,
-            name: path,
-            kind: "file".into(),
-            container: None,
-            provenance: Some(status),
-            resolution: None,
-            candidates: Vec::new(),
-            target: None,
+        return Ok(LaneHits {
+            hits: Vec::new(),
+            truncated: false,
         });
     }
-    Ok(())
+    let mut stmt = store.conn.prepare(
+        "SELECT f.path,f.revision
+         FROM files f
+         WHERE substr(f.path,1,length(?1))=?1
+           AND (?2='' OR f.language=?2)
+         ORDER BY f.path",
+    )?;
+    let rows = stmt.query_map(params![query.path, query.language], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
+    })?;
+    let terms = query_terms(&query.text);
+    let mut candidates = BinaryHeap::with_capacity(file_ranking::FILE_CANDIDATE_LIMIT + 1);
+    let mut truncated = false;
+    for row in rows {
+        let (path, revision) = row?;
+        let score = filename_score(&path, &terms);
+        if score == 0 {
+            continue;
+        }
+        let candidate = FilenameCandidate {
+            score,
+            hit: Hit {
+                handle: String::new(),
+                path: path.clone(),
+                revision,
+                start: 0,
+                end: 0,
+                start_line: 1,
+                end_line: 1,
+                name: path,
+                kind: "file".into(),
+                container: None,
+                provenance: Some(
+                    match score {
+                        3 => "filename_exact",
+                        2 => "filename_tokens",
+                        _ => "filename_partial",
+                    }
+                    .into(),
+                ),
+                resolution: None,
+                candidates: Vec::new(),
+                target: None,
+            },
+        };
+        candidates.push(candidate);
+        if candidates.len() > file_ranking::FILE_CANDIDATE_LIMIT {
+            candidates.pop();
+            truncated = true;
+        }
+    }
+    let mut candidates = candidates.into_vec();
+    candidates.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then_with(|| left.hit.path.cmp(&right.hit.path))
+    });
+    Ok(LaneHits {
+        hits: candidates
+            .into_iter()
+            .map(|candidate| candidate.hit)
+            .collect(),
+        truncated,
+    })
+}
+
+struct FilenameCandidate {
+    score: u8,
+    hit: Hit,
+}
+
+impl Ord for FilenameCandidate {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // The heap keeps the least useful candidate at its root for eviction.
+        other
+            .score
+            .cmp(&self.score)
+            .then_with(|| self.hit.path.cmp(&other.hit.path))
+            .then_with(|| self.hit.start.cmp(&other.hit.start))
+            .then_with(|| self.hit.end.cmp(&other.hit.end))
+    }
+}
+
+impl PartialOrd for FilenameCandidate {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for FilenameCandidate {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl Eq for FilenameCandidate {}
+
+fn query_terms(text: &str) -> Vec<String> {
+    text.split(|ch: char| !ch.is_alphanumeric())
+        .filter(|term| !term.is_empty())
+        .map(str::to_lowercase)
+        .collect()
+}
+
+fn filename_score(path: &str, terms: &[String]) -> u8 {
+    if terms.is_empty() {
+        return 1;
+    }
+    let basename = path.rsplit('/').next().unwrap_or(path);
+    let lower_basename = basename.to_lowercase();
+    let lower_path = path.to_lowercase();
+    let stem = basename.rsplit_once('.').map_or(basename, |(stem, _)| stem);
+    if query_terms(stem) == terms {
+        return 3;
+    }
+    if terms.iter().all(|term| lower_basename.contains(term)) {
+        return 2;
+    }
+    if terms.iter().any(|term| lower_path.contains(term)) {
+        return 1;
+    }
+    0
 }

@@ -2,6 +2,50 @@ use super::*;
 use crate::search;
 
 #[test]
+fn reconciliation_resumes_preparation_and_new_generations() -> anyhow::Result<()> {
+    use crate::semantic::{DIMENSIONS, Embedding, preparation};
+    let root = tempfile::tempdir()?;
+    let cache = tempfile::tempdir()?;
+    std::fs::write(root.path().join("source.rs"), "fn example() {}")?;
+    let mut store = Store::open(root.path(), cache.path())?;
+    store.index()?;
+    let receipt = preparation::schedule(root.path(), cache.path())?;
+    let database = rusqlite::Connection::open(cache.path().join("preparation.sqlite3"))?;
+    database.execute("INSERT INTO preparation_runs(generation,state,cursor,total,cached,missing,failures,error,updated_ms) VALUES(?1,'running',0,1,0,1,0,NULL,0)", [receipt.captured_generation])?;
+    let manager = preparation::PreparationManager::new(preparation::ClosureWorker(
+        |inputs: &[preparation::EmbeddingInput]| {
+            Ok(inputs
+                .iter()
+                .map(|_| {
+                    let mut vector = [0.0; DIMENSIONS];
+                    vector[0] = 1.0;
+                    Ok(Embedding(vector))
+                })
+                .collect())
+        },
+    ));
+    schedule_pending_preparation(&manager, root.path(), cache.path())?;
+    let done = preparation::wait_timeout(
+        root.path(),
+        cache.path(),
+        receipt.captured_generation,
+        Duration::from_secs(3),
+    )?;
+    assert_eq!(done.state, preparation::PreparationState::Completed);
+    std::fs::write(root.path().join("source.rs"), "fn changed() {}")?;
+    store.index()?;
+    schedule_pending_preparation(&manager, root.path(), cache.path())?;
+    let done = preparation::wait_timeout(
+        root.path(),
+        cache.path(),
+        store.generation()?,
+        Duration::from_secs(3),
+    )?;
+    assert_eq!(done.state, preparation::PreparationState::Completed);
+    Ok(())
+}
+
+#[test]
 fn daemon_dispatch_rejects_wrong_root_and_unbounded_options() {
     let root = tempfile::tempdir().unwrap();
     let other = tempfile::tempdir().unwrap();
@@ -91,4 +135,23 @@ fn client_normalization_preserves_regex_spaces() {
             .text,
         "a  b"
     );
+}
+
+#[test]
+fn client_normalization_forwards_semantic_overrides() {
+    let options = parse(&["--sem".into(), "search".into(), "query".into()]).unwrap();
+    let forwarded = parse(&normalized_args(&options, Path::new("/example"))).unwrap();
+    assert!(forwarded.sem);
+    assert!(!forwarded.no_sem);
+
+    let options = parse(&["--no-sem".into(), "search".into(), "query".into()]).unwrap();
+    let forwarded = parse(&normalized_args(&options, Path::new("/example"))).unwrap();
+    assert!(!forwarded.sem);
+    assert!(forwarded.no_sem);
+}
+
+#[test]
+fn semantic_flags_are_mutually_exclusive() {
+    let error = parse(&["--sem".into(), "--no-sem".into(), "search".into()]).unwrap_err();
+    assert!(error.to_string().contains("cannot be used with"));
 }

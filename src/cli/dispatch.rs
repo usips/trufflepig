@@ -1,7 +1,7 @@
 //! Local dispatch against published live and captured historical identities.
 use super::{Arguments, emission, request_context, validate};
 use crate::{output::OutputBudget, results, search, source, store::Store};
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use std::path::Path;
 
 pub fn local(
@@ -18,6 +18,7 @@ pub fn local(
         &mut crate::semantic::SemanticSession::default(),
         &request_context(options),
         None,
+        None,
     )
 }
 
@@ -29,6 +30,7 @@ pub(super) fn local_with_session(
     session: &mut crate::semantic::SemanticSession,
     context: &crate::diagnostics::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
+    preparation_manager: Option<&crate::semantic::preparation::PreparationManager>,
 ) -> Result<String> {
     let initializations = crate::semantic::model_initializations();
     let started = std::time::Instant::now();
@@ -40,6 +42,7 @@ pub(super) fn local_with_session(
         session,
         context,
         log_queue,
+        preparation_manager,
     );
     let unexpected = crate::semantic::model_initializations().saturating_sub(initializations);
     if unexpected > 0
@@ -85,8 +88,10 @@ fn local_dispatch(
     session: &mut crate::semantic::SemanticSession,
     context: &crate::diagnostics::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
+    preparation_manager: Option<&crate::semantic::preparation::PreparationManager>,
 ) -> Result<String> {
     validate(options)?;
+    session.set_no_daemon(options.no_daemon);
     if options.root.canonicalize()? != root {
         bail!("invalid_root: daemon cache belongs to another repository");
     }
@@ -96,12 +101,41 @@ fn local_dispatch(
         .first()
         .map(String::as_str)
         .unwrap_or("status");
+    if verb == "semantic" {
+        return super::semantic::local(root, cache, options, preparation_manager);
+    }
     if verb == "semantic-check" {
         let path = options
             .words
             .get(1)
             .context("usage: semantic-check MODEL_DIRECTORY")?;
-        return budget.render(&crate::semantic::run_gate(Path::new(path))?);
+        return match options.words.get(2).map(String::as_str) {
+            None => budget.render(&crate::semantic::run_gate(Path::new(path))?),
+            Some("cuda") => {
+                ensure_semantic_check_arity(options)?;
+                let ordinal = options
+                    .words
+                    .get(3)
+                    .context("usage: semantic-check MODEL_DIRECTORY cuda DEVICE_ORDINAL")?
+                    .parse::<i32>()
+                    .context("invalid CUDA device ordinal")?;
+                #[cfg(feature = "semantic")]
+                {
+                    budget.render(&crate::semantic::run_gpu_gate(
+                        Path::new(path),
+                        crate::semantic::SemanticProviderConfig::cuda(ordinal),
+                    )?)
+                }
+                #[cfg(not(feature = "semantic"))]
+                {
+                    let _ = ordinal;
+                    Err(crate::semantic::unavailable())
+                }
+            }
+            Some(provider) => bail!(
+                "usage: semantic-check MODEL_DIRECTORY [cuda DEVICE_ORDINAL] (got {provider})"
+            ),
+        };
     }
     let mut store = Store::open(root, cache)?;
     let argument = || {
@@ -212,7 +246,14 @@ fn local_dispatch(
                     if let Some(name)=text.strip_prefix("refs:"){search::references(&store,name)?}
                     else{{
                         let mut trace = if options.diagnostics == "off" { search::telemetry::RetrievalTrace::disabled() } else { search::telemetry::RetrievalTrace::default() };
-                        let result = search::search_with_session(&store,&search::Query::parse(&text)?,options.sem,cache,session,&mut trace);
+                        let query = search::Query::parse(&text)?;
+                        let preparation_error = if options.sem && !options.no_daemon && !query.exact && !query.regex {
+                            preparation_manager.and_then(|manager| manager.schedule(root, cache).err())
+                        } else { None };
+                        let mut result = search::search_with_session(&store,&query,options.sem,cache,session,&mut trace);
+                        if let (Some(error), Ok(set)) = (preparation_error, &mut result) {
+                            set.coverage["semantic_preparation_error"] = error.to_string().into();
+                        }
                         let mut event = crate::diagnostics::RequestEvent::new(context.clone(), crate::diagnostics::Operation::Search, if result.is_ok() { crate::diagnostics::Outcome::Success } else { crate::diagnostics::Outcome::Failure });
                         event.stage = crate::diagnostics::EventStage::Server;
                         event.retrieval = Some(trace);
@@ -230,4 +271,12 @@ fn local_dispatch(
         }
         _ => bail!("invalid_command: unknown command {verb}; use search for queries"),
     }
+}
+
+fn ensure_semantic_check_arity(options: &Arguments) -> Result<()> {
+    ensure!(
+        options.words.len() == 4,
+        "usage: semantic-check MODEL_DIRECTORY cuda DEVICE_ORDINAL"
+    );
+    Ok(())
 }

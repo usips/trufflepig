@@ -1,15 +1,7 @@
-use super::{Embedding, SemanticEngine};
-use anyhow::{Context, Result, bail};
-use fs2::FileExt;
-use std::{
-    fs::{self, File, OpenOptions},
-    io::ErrorKind,
-    path::{Path, PathBuf},
-    time::{Duration, Instant},
-};
-
-const IDLE_UNLOAD: Duration = Duration::from_secs(10 * 60);
-const RESIDENCY_INTERVAL: Duration = Duration::from_secs(30);
+//! Query preparation precedes source snapshots; root processes never own a model.
+use super::Embedding;
+use anyhow::Result;
+use std::path::Path;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ResidencySample {
@@ -19,163 +11,89 @@ pub struct ResidencySample {
     pub unloaded: bool,
 }
 
-/// Retains one CPU engine and its cross-process lease for a single root cache.
 #[derive(Default)]
 pub struct SemanticSession {
-    // Declaration order releases model memory before releasing the inference lock.
-    engine: Option<SemanticEngine>,
-    lease: Option<InferenceLease>,
-    last_used: Option<Instant>,
-    last_sample: Option<Instant>,
-    pending_activity: bool,
-    initializations: u64,
+    no_daemon: bool,
 }
 
 impl SemanticSession {
     pub fn new() -> Self {
         Self::default()
     }
-
+    pub fn set_no_daemon(&mut self, no_daemon: bool) {
+        self.no_daemon = no_daemon;
+    }
     pub fn is_loaded(&self) -> bool {
-        self.engine.is_some()
+        false
     }
-
     pub fn initializations(&self) -> u64 {
-        self.initializations
+        0
     }
 
-    /// Marks completed semantic work, including errors, before the next request.
-    pub fn request_completed(&mut self) {
-        self.request_completed_at(Instant::now());
-    }
-
-    fn request_completed_at(&mut self, now: Instant) {
-        if self.pending_activity {
-            self.last_used = Some(now);
-            self.pending_activity = false;
-        }
-    }
-
-    /// Called only between requests; model destruction precedes lease release.
-    pub fn idle_tick(&mut self) -> Option<ResidencySample> {
-        self.idle_tick_at(Instant::now())
-    }
-
-    fn idle_tick_at(&mut self, now: Instant) -> Option<ResidencySample> {
-        let last_used = self.last_used?;
-        if self.lease.is_none() {
-            return None;
-        }
-        let idle = now.saturating_duration_since(last_used);
-        let unloaded = idle >= IDLE_UNLOAD;
-        if unloaded {
-            self.engine = None;
-            self.lease = None;
-            self.last_used = None;
-        } else if self
-            .last_sample
-            .is_some_and(|sample| now.saturating_duration_since(sample) < RESIDENCY_INTERVAL)
-        {
-            return None;
-        }
-        self.last_sample = Some(now);
-        Some(ResidencySample {
-            loaded: self.is_loaded(),
-            idle_seconds: idle.as_secs(),
-            process_resident_bytes: resident_bytes(),
-            unloaded,
-        })
-    }
-
-    /// Embeds the query before callers open their index read snapshot.
     pub fn prepare(
         &mut self,
         enabled: bool,
         cache: &Path,
         text: &str,
-    ) -> Result<Option<(&mut SemanticEngine, Embedding)>> {
+    ) -> Result<Option<Embedding>> {
         if !enabled {
             return Ok(None);
         }
-        if !cfg!(feature = "semantic") {
-            return Err(super::unavailable());
-        }
-        if let Some(lease) = &self.lease {
-            lease.verify_cache(cache)?;
-        }
-        if self.engine.is_none() {
-            let model_dir = std::env::var_os("TRUFFLEPIG_MODEL_DIR").context(
-                "semantic_unavailable: set TRUFFLEPIG_MODEL_DIR to the pinned model assets",
-            )?;
-            let lease = InferenceLease::acquire(cache)?;
-            let engine = SemanticEngine::open(Path::new(&model_dir), &lease.cache)?;
-            self.engine = Some(engine);
-            self.lease = Some(lease);
-            self.initializations += 1;
-            self.last_sample = None;
-        }
-        self.pending_activity = true;
-        self.last_used = Some(Instant::now());
-        let engine = self
-            .engine
-            .as_mut()
-            .context("semantic engine initialization failed")?;
-        let query = engine.embed(text)?;
-        Ok(Some((engine, query)))
+        self.query(cache, text).map(Some)
     }
-}
 
-fn resident_bytes() -> Option<u64> {
-    let status = fs::read_to_string("/proc/self/status").ok()?;
-    status.lines().find_map(|line| {
-        line.strip_prefix("VmRSS:")?
-            .split_whitespace()
-            .next()?
-            .parse::<u64>()
-            .ok()?
-            .checked_mul(1024)
-    })
-}
-
-struct InferenceLease {
-    cache: PathBuf,
-    lock: File,
-}
-
-impl Drop for InferenceLease {
-    fn drop(&mut self) {
-        // A duplicated or inherited descriptor must not retain the released lease.
-        let _ = FileExt::unlock(&self.lock);
-    }
-}
-
-impl InferenceLease {
-    fn acquire(cache: &Path) -> Result<Self> {
-        fs::create_dir_all(cache)?;
-        let cache = fs::canonicalize(cache)?;
-        let lock = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(cache.join("inference.lock"))?;
-        if let Err(error) = FileExt::try_lock_exclusive(&lock) {
-            if error.kind() == ErrorKind::WouldBlock {
-                bail!(
-                    "semantic_busy: another process owns this root's CPU inference session; use its daemon or retry after it exits"
-                );
+    #[cfg(feature = "semantic")]
+    fn query(&self, directory: &Path, text: &str) -> Result<Embedding> {
+        use super::embedding_cache::{EmbeddingCache, content_key};
+        let key = content_key(text);
+        let mut cache_locked = false;
+        match EmbeddingCache::open_query(directory) {
+            Ok(cache) => match cache.get(&key) {
+                Ok(Some(vector)) => return Ok(vector),
+                Ok(None) => {}
+                Err(error) if is_cache_lock(&error) => cache_locked = true,
+                Err(_) => {}
+            },
+            Err(error) => cache_locked = is_cache_lock(&error),
+        }
+        if self.no_daemon {
+            if cache_locked {
+                anyhow::bail!("semantic_cache_locked: cached query is temporarily unavailable");
             }
-            return Err(error).context("semantic_unavailable: cannot acquire inference lock");
+            anyhow::bail!("semantic_pending: query vector is not cached in --no-daemon mode");
         }
-        Ok(Self { cache, lock })
+        let vector = super::worker::embed_query(directory, text)?;
+        // Inference has already met the query deadline. Persistence is an
+        // optimization and must not turn a valid vector into a failed query.
+        if let Ok(mut cache) = EmbeddingCache::open_query_writer(directory) {
+            let _ = cache.put(&key, &vector);
+        }
+        Ok(vector)
     }
 
-    fn verify_cache(&self, cache: &Path) -> Result<()> {
-        if fs::canonicalize(cache)? != self.cache {
-            bail!("semantic_cache_mismatch: a semantic session belongs to exactly one root cache");
-        }
-        Ok(())
+    #[cfg(not(feature = "semantic"))]
+    fn query(&self, _: &Path, _: &str) -> Result<Embedding> {
+        Err(super::unavailable())
     }
+}
+
+#[cfg(feature = "semantic")]
+fn is_cache_lock(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<rusqlite::Error>()
+            .is_some_and(|error| {
+                matches!(
+                    error,
+                    rusqlite::Error::SqliteFailure(code, _)
+                        if matches!(
+                            code.code,
+                            rusqlite::ErrorCode::DatabaseBusy
+                                | rusqlite::ErrorCode::DatabaseLocked
+                        )
+                )
+            })
+    })
 }
 
 #[cfg(test)]
@@ -183,97 +101,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn semantic_session_disabled_does_not_initialize() -> Result<()> {
+    fn semantic_disabled_does_not_create_cache() -> Result<()> {
         let directory = tempfile::tempdir()?;
-        let missing_cache = directory.path().join("absent");
+        let absent = directory.path().join("absent");
         assert!(
             SemanticSession::new()
-                .prepare(false, &missing_cache, "query")?
+                .prepare(false, &absent, "query")?
                 .is_none()
         );
-        assert!(!missing_cache.exists());
+        assert!(!absent.exists());
         Ok(())
     }
 
+    #[cfg(feature = "semantic")]
     #[test]
-    fn semantic_idle_tick_releases_lease_and_throttles_samples() -> Result<()> {
+    fn semantic_no_daemon_reads_cached_query_without_model() -> Result<()> {
+        use super::super::embedding_cache::{EmbeddingCache, content_key};
         let directory = tempfile::tempdir()?;
-        let now = Instant::now();
-        let mut session = SemanticSession {
-            lease: Some(InferenceLease::acquire(directory.path())?),
-            last_used: Some(now),
-            ..SemanticSession::default()
-        };
-        #[cfg(not(feature = "semantic"))]
-        {
-            session.engine = Some(SemanticEngine);
-            assert!(session.is_loaded());
-        }
-        assert!(!session.idle_tick_at(now).unwrap().unloaded);
-        assert!(
+        let mut values = [0.0; super::super::DIMENSIONS];
+        values[0] = 1.0;
+        EmbeddingCache::open(directory.path())?.put(&content_key("cached"), &Embedding(values))?;
+        let mut session = SemanticSession::new();
+        session.set_no_daemon(true);
+        assert_eq!(
             session
-                .idle_tick_at(now + Duration::from_secs(29))
-                .is_none()
-        );
-        assert!(session.idle_tick_at(now + RESIDENCY_INTERVAL).is_some());
-        assert!(InferenceLease::acquire(directory.path()).is_err());
-        assert!(session.idle_tick_at(now + IDLE_UNLOAD).unwrap().unloaded);
-        assert!(!session.is_loaded());
-        assert!(InferenceLease::acquire(directory.path()).is_ok());
-        assert!(session.idle_tick_at(now + IDLE_UNLOAD).is_none());
-        Ok(())
-    }
-
-    #[test]
-    fn semantic_activity_expires_after_queued_nonsemantic_requests() -> Result<()> {
-        let directory = tempfile::tempdir()?;
-        let now = Instant::now();
-        let mut session = SemanticSession {
-            lease: Some(InferenceLease::acquire(directory.path())?),
-            last_used: Some(now),
-            pending_activity: true,
-            ..SemanticSession::default()
-        };
-        session.request_completed_at(now + Duration::from_secs(1));
-        // Ordinary requests do not postpone the last completed semantic work.
-        session.request_completed_at(now + IDLE_UNLOAD);
-        assert!(
-            session
-                .idle_tick_at(now + IDLE_UNLOAD + Duration::from_secs(1))
+                .prepare(true, directory.path(), "cached")?
                 .unwrap()
-                .unloaded
+                .0[0],
+            1.0
         );
-        Ok(())
-    }
-
-    #[test]
-    fn semantic_inference_lease_releases_duplicated_descriptor() -> Result<()> {
-        let directory = tempfile::tempdir()?;
-        let lease = InferenceLease::acquire(directory.path())?;
-        let inherited = lease.lock.try_clone()?;
-        let error = InferenceLease::acquire(directory.path())
-            .err()
-            .context("second lease succeeded")?;
-        assert!(error.to_string().starts_with("semantic_busy:"));
-        drop(lease);
-        assert!(InferenceLease::acquire(directory.path()).is_ok());
-        drop(inherited);
-        Ok(())
-    }
-
-    #[test]
-    fn semantic_inference_lease_rejects_another_root() -> Result<()> {
-        let first = tempfile::tempdir()?;
-        let second = tempfile::tempdir()?;
-        let lease = InferenceLease::acquire(first.path())?;
-        lease.verify_cache(&first.path().join("."))?;
         assert!(
-            lease
-                .verify_cache(second.path())
+            session
+                .prepare(true, directory.path(), "missing")
                 .unwrap_err()
                 .to_string()
-                .starts_with("semantic_cache_mismatch:")
+                .contains("semantic_pending")
         );
+        assert!(!session.is_loaded());
         Ok(())
     }
 }

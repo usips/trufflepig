@@ -165,11 +165,14 @@ fn retrieval_observations_identify_semantic_preparation_failure() {
         &mut SemanticSession::default(),
         &mut trace,
     );
-    assert!(result.is_err());
-    assert_eq!(trace.lanes.len(), 1);
-    assert_eq!(trace.lanes[0].lane, Lane::Semantic);
-    assert_eq!(trace.lanes[0].outcome, LaneOutcome::Failed);
-    assert!(trace.generation.is_none());
+    assert_eq!(result.unwrap().coverage["semantic_status"], "unavailable");
+    let semantic = trace
+        .lanes
+        .iter()
+        .find(|lane| lane.lane == Lane::Semantic)
+        .unwrap();
+    assert_eq!(semantic.outcome, LaneOutcome::Failed);
+    assert!(trace.generation.is_some());
     assert!(trace.query_preparation_us.is_some());
     assert!(
         !serde_json::to_string(&trace)

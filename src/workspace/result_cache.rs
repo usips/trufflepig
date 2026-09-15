@@ -313,6 +313,17 @@ fn compact_coverage(values: &[Value]) -> Vec<Value> {
                     compact.insert(key.into(), value.clone());
                 }
             }
+            if let Some(issues) = compact.get_mut("issues").and_then(Value::as_object_mut) {
+                for key in ["semantic_reason", "semantic_preparation_error"] {
+                    if let Some(reason) = issues.get(key).and_then(Value::as_str) {
+                        let mut short: String = reason.chars().take(120).collect();
+                        if reason.chars().count() > 120 {
+                            short.push('…');
+                        }
+                        issues.insert(key.into(), short.into());
+                    }
+                }
+            }
             Value::Object(compact)
         })
         .collect()

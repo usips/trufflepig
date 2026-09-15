@@ -1,15 +1,22 @@
-//! Optional pinned CPU embeddings and bounded exact vector ranking.
+//! Pinned embeddings, shared inference, and bounded exact vector ranking.
 //! Inputs contain source text only; callers join cached vectors to their read snapshot.
 
 use anyhow::{Result, bail};
 use std::{cmp::Ordering, collections::BinaryHeap};
 
 #[cfg(feature = "semantic")]
-mod embedding_cache;
+pub(crate) mod embedding_cache;
 #[cfg(feature = "semantic")]
 mod inference;
 #[cfg(feature = "semantic")]
-pub use inference::{SemanticEngine, run_gate};
+pub use inference::{
+    SemanticInferenceEngine, SemanticProvider, SemanticProviderConfig, compare_cpu_cuda, run_gate,
+    run_gpu_gate,
+};
+
+pub mod preparation;
+pub mod runtime_config;
+pub mod worker;
 
 mod session;
 pub use session::{ResidencySample, SemanticSession};
@@ -18,7 +25,7 @@ pub const MODEL_REVISION: &str = "516f4baf13dec4ddddda8631e019b5737c8bc250";
 pub const DIMENSIONS: usize = 768;
 pub const CACHE_BYTES: u64 = 5 * 1024 * 1024 * 1024;
 pub const MODEL_NAME: &str = "jinaai/jina-embeddings-v2-base-code";
-pub const INPUT_VERSION: &str = "source-only-mean-l2-v1-max8192";
+pub const INPUT_VERSION: &str = "source-only-mean-l2-v2-regions4096-max4096";
 
 static MODEL_INITIALIZATIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -105,21 +112,10 @@ pub fn search_top_k(
 
 pub fn unavailable() -> anyhow::Error {
     anyhow::anyhow!(
-        "semantic_unavailable: build with --features semantic, install the pinned model assets listed in evaluation/semantic_gate/model.json, set TRUFFLEPIG_MODEL_DIR and ORT_DYLIB_PATH, then run semantic-check"
+        "semantic_unavailable: build with --features semantic-cuda (or semantic for CPU), install the pinned assets in evaluation/semantic_gate/model.json, configure inference.toml, then run semantic prepare"
     )
 }
 
-#[cfg(not(feature = "semantic"))]
-pub struct SemanticEngine;
-#[cfg(not(feature = "semantic"))]
-impl SemanticEngine {
-    pub fn open(_: &std::path::Path, _: &std::path::Path) -> Result<Self> {
-        Err(unavailable())
-    }
-    pub fn embed(&mut self, _: &str) -> Result<Embedding> {
-        Err(unavailable())
-    }
-}
 #[cfg(not(feature = "semantic"))]
 pub fn run_gate(_: &std::path::Path) -> Result<serde_json::Value> {
     Err(unavailable())

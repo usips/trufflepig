@@ -11,6 +11,9 @@ The [retrieval contract](retrieval-contract.md) applies within every member.
 [workspace]
 name = "space"
 
+[semantic]
+enabled = true
+
 [members.lunatic]
 path = "~/Source/lunatic"
 
@@ -65,10 +68,11 @@ Ordinary queries search all members. `in:NAME` and `--member NAME` select a
 member; `ws:home` selects home and `ws:all` selects the whole workspace. Selectors
 do not establish dependency, import, or compiler-resolution relationships.
 
-Each member produces its existing ranked candidate list. The coordinator merges
-these lists in deterministic round-robin rank order: home first, then member
-names alphabetically, skipping exhausted lists. Raw scores from separate indexes
-are not compared. There is no foreign-result cap or elapsed-time lane omission.
+Each member produces its existing ranked candidate list. Retrieval collapses
+each lane to one representative occurrence per file, then fuses file ranks with
+stable path and span tie breaks. The coordinator combines member file lanes with
+member provenance; raw scores from separate indexes are not compared. There is
+no elapsed-time lane omission.
 
 Every emitted hit includes its member name. The page's `members` mapping resolves
 represented names to percent-encoded canonical roots. Coverage distinguishes
@@ -80,17 +84,21 @@ Missing or not-yet-published members produce partial coverage. If no selected
 member is available, the command returns an explicit unavailable outcome.
 
 The normal 600-token `o200k_base` budget applies once to the complete JSON
-response, including provenance and coverage. Labels cannot be removed to squeeze
-in additional hits. Tiny budgets retain explicit insufficient-budget behavior.
-Pages capture each member's publication generation separately; they are not
-atomic snapshots spanning repositories.
+response, including provenance and coverage. Compact entries carry a
+percent-encoded `file` URI, line span, and owner-qualified handle. Labels cannot
+be removed to squeeze in additional hits. Tiny budgets retain explicit
+insufficient-budget behavior. Pages capture each member's publication generation
+separately and freeze those owners for follow-up reads; they are not atomic
+snapshots spanning repositories.
 
 ## Immutable navigation
 
 Workspace results persist independently of member result caches. `SET:ORDINAL`
 and `SET@OFFSET` retain the existing ten-minute expiry and result-cache limits.
 Each persisted entry captures its owning root, filesystem identity, cache,
-generation, source revision, and original-byte coordinates.
+generation, source revision, and original-byte coordinates. Pagination preserves
+the captured file-first order across repositories even when later searches or
+configuration changes produce different ranks.
 
 `show`, continuations, and `ctx` route to the stored owner from any member of the
 same workspace. Configuration edits never retarget handles. Removed members and
@@ -111,7 +119,9 @@ reads published member databases without starting competing index writers. An
 existing member daemon is not asked to reconcile immediately; member freshness
 comes from its root watcher and periodic reconciliation. Unavailable members
 remain visible in coverage. `--no-daemon` performs federation and member
-indexing in the foreground and launches no background processes.
+indexing in the foreground and launches or contacts no background process,
+including the shared inference worker. An explicit foreground semantic
+preparation command holds the root preparation lease.
 
 Coordinator state lives under the normal cache base. `--cache DIRECTORY` selects
 an isolated workspace base containing coordinator state and separate member
@@ -120,9 +130,14 @@ semantics remain root-scoped. A workspace's identity is
 derived from its canonical configuration path, so moving that file selects a
 different result-cache namespace.
 
-Optional semantics prepares one query embedding in the coordinator and shares it
-across member retrieval. Model provenance and ten-minute idle unloading retain
-their existing contracts. Ordinary workspace search does not initialize inference.
+Optional semantics uses the shared per-user inference worker for one query
+embedding and per-root background source preparation. Workspace retrieval reads
+source vectors from member caches only; it never embeds candidate regions during
+search. A 500 ms semantic query deadline returns lexical and structural member
+results with an explicit semantic status when the worker or cache is unavailable.
+`--no-sem` overrides the workspace's `[semantic] enabled = true` setting. Ordinary
+workspace search does not initialize inference unless semantic retrieval is
+enabled.
 
 Diagnostics retain workspace/member identity and actual member retrieval timing
 and rank. Surfaced evidence is counted only at the final client emission boundary.

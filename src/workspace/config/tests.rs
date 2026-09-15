@@ -39,6 +39,30 @@ fn workspace_config_captures_missing_members_and_stable_identity() {
 }
 
 #[test]
+fn workspace_config_reads_persistent_semantic_opt_in() {
+    let directory = fixture();
+    fs::create_dir(directory.path().join("engine")).unwrap();
+    let path = write_config(
+        directory.path(),
+        "[workspace]\nname='porting'\n[semantic]\nenabled=true\n[members.engine]\npath='engine'\n",
+    );
+    let config = WorkspaceConfig::load(&path).unwrap();
+    assert!(config.semantic.enabled);
+}
+
+#[test]
+fn workspace_config_semantics_default_to_disabled() {
+    let directory = fixture();
+    fs::create_dir(directory.path().join("engine")).unwrap();
+    let path = write_config(
+        directory.path(),
+        "[workspace]\nname='porting'\n[members.engine]\npath='engine'\n",
+    );
+    let config = WorkspaceConfig::load(&path).unwrap();
+    assert!(!config.semantic.enabled);
+}
+
+#[test]
 fn workspace_config_rejects_overlap_and_unknown_roles() {
     let directory = fixture();
     let path = write_config(

@@ -64,6 +64,13 @@ pub struct WorkspaceConfig {
     pub id: String,
     pub path: PathBuf,
     pub members: Vec<Member>,
+    pub semantic: SemanticConfig,
+}
+
+/// Persistent workspace-level semantic retrieval preference.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct SemanticConfig {
+    pub enabled: bool,
 }
 
 #[derive(Deserialize)]
@@ -71,6 +78,7 @@ pub struct WorkspaceConfig {
 struct ConfigDocument {
     workspace: WorkspaceSection,
     members: BTreeMap<String, MemberSection>,
+    semantic: Option<SemanticSection>,
 }
 
 #[derive(Deserialize)]
@@ -84,6 +92,13 @@ struct WorkspaceSection {
 #[serde(deny_unknown_fields)]
 struct MemberSection {
     path: PathBuf,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SemanticSection {
+    #[serde(default)]
+    enabled: bool,
 }
 
 #[derive(Deserialize)]
@@ -169,6 +184,12 @@ impl WorkspaceConfig {
             id,
             path,
             members,
+            semantic: document
+                .semantic
+                .map(|semantic| SemanticConfig {
+                    enabled: semantic.enabled,
+                })
+                .unwrap_or_default(),
         })
     }
 

@@ -13,6 +13,16 @@ covered by bounded source regions, preferably on syntax boundaries with the
 containing symbol attached. File records expose resource exclusions.
 [FTS5 reference](https://www.sqlite.org/fts5.html)
 
+## File ranking
+
+Ordinary queries collapse each retrieval lane to its best region per file
+before a 1,000-file lane cap. Exact, lexical, and filename ranks combine with
+reciprocal rank fusion (`k = 60`), with stable path ties. Filename evidence has
+weight 2 for an exact normalized stem, 1 for all query tokens in the basename,
+and 0.5 for partial path matches. Available semantic file ranks then fuse with
+the combined source ranking at equal weight. `sym:` and `re:` retain occurrences.
+Pages maximize file references before adding optional symbol names.
+
 ## Coherent publication
 
 1. Reconcile the working tree, including untracked eligible files. Filesystem
@@ -49,12 +59,29 @@ candidate retrieval and graph joins. File changes between extraction and
 publication may leave an indexed revision behind disk; `show`'s buffer check
 prevents applying it to current bytes. Reconciliation eventually catches up.
 
+## Semantic preparation
+
+Each canonical root has independent preparation state. A preparation request
+captures one committed generation, reads its bounded source regions, and derives
+content keys before submitting missing vectors to the shared per-user inference
+worker. Completions are stored by content key and joined to occurrences only
+from the captured generation; a later publication cannot receive a stale
+completion. Renames can reuse vectors while occurrence identity changes.
+
+Search reads source vectors already present in the root cache. It never embeds
+candidate regions or queues background work on the query path. Missing vectors,
+worker failures, and the 500 ms query deadline produce explicit semantic
+coverage and lexical fallback. Preparation status reports the requested
+generation, progress, cached inputs, missing inputs, and failures.
+
 ## Daemon and invalidation
 
 Each canonical root has one daemon, protected by an exclusive startup lock and
 a length-prefixed JSON Unix socket protocol. Worktrees keep separate databases.
 A stale socket does not permit a second writer while the startup lock is held.
 Requests carry client-created UUIDs and explicit session/client context.
+Semantic inference uses a separate per-user worker and lease; root daemons do
+not own model sessions.
 The [history worker](history-contract.md) shares immutable Git facts across
 linked worktrees through a separate database, keyed by canonical common directory.
 Live and history publication have independent transaction boundaries.
@@ -96,9 +123,10 @@ handshake yet; stop the daemon before replacing its binary. Automatic startup
 spawns a child process and falls back to coherent local access if needed; it does
 not establish detached service lifecycle guarantees.
 
-Local `--no-daemon` searches reconcile synchronously. Metadata/status reads do
-not force reconciliation. No incremental parse tree, parallel parse pool, or
-background embedding queue is implemented.
+Local `--no-daemon` searches reconcile synchronously for the live index and
+launch no background process. Semantic search uses cached vectors only; an
+explicit foreground `semantic prepare` acquires the root preparation lease and
+performs preparation locally. Metadata/status reads do not force reconciliation.
 
 ## Bounded diagnostics probes
 

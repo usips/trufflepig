@@ -1,78 +1,97 @@
 # Optional semantic retrieval
 
-## Executable admission gate
+## Opt-in, runtime, and admission
 
-`--sem` explicitly requests the semantic lane. Ordinary search does not download
-or invoke a model. Missing artifacts produce an actionable unavailable response;
-partial embeddings report successful regions and embedding failures separately.
+Semantic retrieval is opt-in. Build with `semantic` for CPU inference or
+`semantic-cuda` for CUDA inference. A workspace may set `[semantic] enabled =
+true`; `--sem` enables the lane for a request and `--no-sem` overrides that
+setting. Without opt-in, search remains lexical and structural and does not download,
+load, or invoke a model.
 
-The implemented candidate is the published `jina-embeddings-v2-base-code` ONNX
-artifact using Rust fastembed/ORT on CPU. Admission requires real inference, numerical
-parity, and resource check. Pin model and tokenizer revisions, use masked mean
-pooling, normalize, and retain all 768 `f32` dimensions. This candidate has no
-established retrieval advantage on DreamMaker or Luau.
+A single per-user inference worker owns the model and ONNX Runtime session. It
+selects CPU or CUDA from `$HOME/.config/trufflepig/inference.toml` (with model
+and runtime paths also accepted from their environment variables). CUDA
+configuration selects a GPU by UUID and resolves its current ordinal at worker
+startup. The CUDA target is an NVIDIA RTX 4090 with 24 GiB of VRAM. ORT arena
+bytes and the 16 GiB measurement target are recorded separately; neither is a
+hard total-memory bound for the worker or machine.
+
+The runtime configuration uses absolute paths. `TRUFFLEPIG_INFERENCE_CONFIG`
+can select an isolated configuration for evaluation:
+
+```toml
+provider = "cuda"
+gpu_uuid = "GPU-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+model_dir = "/absolute/path/to/verified/model"
+runtime_library = "/absolute/path/to/libonnxruntime.so"
+cuda_preload_library = "/absolute/path/to/libcudnn.so"
+arena_bytes = 10737418240
+```
+
+The optional preload remains loaded until the model is released. A CUDA
+provider failure remains visible; provider registration never silently falls
+back to CPU.
+
+`semantic-check` verifies pinned assets, publisher parity, and normalized
+768-value outputs for the provider it actually runs. A CUDA result is admitted
+only after a gate run records an actual CUDA execution trace. Until that run
+exists, this repository makes no CUDA performance or retrieval-quality claim.
+The existing [CPU result](../evaluation/semantic_gate/cpu_result.json) covers
+two publisher inputs and establishes executable CPU parity only.
+
+The [asset manifest](../evaluation/semantic_gate/model.json) pins the model and
+tokenizer revisions. Use masked mean pooling, L2 normalization, and all 768
+`f32` dimensions. Do not silently substitute another model or tokenizer.
 [Publisher configuration and inference example](https://huggingface.co/jinaai/jina-embeddings-v2-base-code)
 
-The [asset manifest](../evaluation/semantic_gate/model.json) pins hashes, and the
-[recorded CPU result](../evaluation/semantic_gate/cpu_result.json) reports the
-executed two-input publisher cosine check, tolerance, runtime, timings, and peak
-memory. This check passes for those inputs and establishes neither held-out
-retrieval quality nor long-input resource bounds.
-Compare against published reference inference on the same text and tokenizer
-options. A blocked download or missing runtime is an unavailable gate, not a
-successful inference test. Do not silently substitute another model.
+## Preparation and cache
 
-Pooling and dimension handling are model-specific. CodeRankEmbed's published
-pooling configuration uses CLS, and does not establish arbitrary dimension
-truncation support.
-[Pooling configuration](https://huggingface.co/nomic-ai/CodeRankEmbed/blob/main/1_Pooling/config.json)
-Licensing declarations remain [for Josh's review](licensing-notes.md).
+Each canonical root owns preparation state and an evictable embedding cache.
+Background preparation captures one published index generation and its source
+regions, computes content keys, and submits only missing keys to the shared
+worker. A content key includes model and tokenizer revisions, pooling,
+normalization, dimensions, input version, and source bytes. A rename can reuse a
+content vector while source occurrences are updated separately.
 
-## Snapshot and cache contract
+Preparation resumes after root-daemon restarts and retries transient worker
+failures. An explicit `semantic prepare` also retries failed content; ordinary
+search does not repeatedly reopen failed runs.
 
-Compute the query embedding before opening the index read snapshot. Join stored
-vectors to source occurrences from that one snapshot; a completion for stale
-source cannot attach itself to a replacement occurrence.
+Source-region retrieval is cache-only. Search never embeds candidate regions on
+the query path. Query preparation may obtain one query vector from the worker;
+the query vector is computed before opening the index read snapshot. Stored
+vectors join occurrences from that one snapshot, so a completion for stale
+source cannot attach to a replacement occurrence.
 
-Embedding input contains bounded region source text only, without source paths
-or derived symbol context. Version the template and key content reuse by model and
-tokenizer revisions, pooling, normalization, dimensions, and input bytes. A rename
-can reuse content vectors, but still requires source occurrence updates.
+Every actual inference call accepts at most 8 inputs and 8,192 padded tokens;
+each input is bounded at 4,096 model tokens. Excessive inputs fail explicitly.
+Worker admission also bounds queued input bytes and serialized requests.
+Semantic retrieval has a 500 ms query deadline. A timeout, pending vector,
+missing asset, provider failure, or unavailable worker returns lexical and
+structural results with an explicit semantic status and coverage issue.
 
-Stream exact filtered vector search through a bounded top-k heap. Keep CPU
-inference concurrency explicit and bounded. Cache retention is evictable with a
-5 GiB default; evicted vectors reduce reported coverage until recomputed. Do not
-claim dimension truncation, quantization, ANN, reranking, or GPU execution without
-separate implementation and evaluation.
+The embedding cache has a 5 GiB default SQLite page budget and evicts by
+recency. Eviction lowers semantic coverage until preparation recomputes the
+vector. Cache state is keyed by the root and content identity; it never merges
+different source occurrences. No dimension truncation, quantization, ANN,
+reranking, or machine-wide hard memory cap is part of this contract.
 
-The engine verifies asset checksums and publisher parity when opened. It uses
-two inference threads, one input per batch, and mutable serial access per engine;
-inputs exceeding 8,192 model tokens fail explicitly. The daemon retains one engine;
-an exclusive per-root inference lease rejects competing processes with
-`semantic_busy`. Different roots can load separate engines, so no machine-wide
-memory cap is promised.
+`--no-daemon` never starts or contacts the inference worker. An explicit
+foreground preparation command acquires the same root preparation lease and
+performs the work locally. Foreground CUDA requires `CUDA_VISIBLE_DEVICES` to
+contain only the configured GPU UUID; the shared worker sets this mask itself.
+See [CLI usage](cli.md) for preparation and worker
+status commands.
 
-Query inference precedes the read snapshot. Candidate region embeddings are
-computed or reused synchronously while streaming that snapshot. Semantic and
-lexical results merge round-robin with stable lane ordering; there is no
-background embedding queue. Query coverage reports successful `semantic_regions`,
-`semantic_total_regions`, `semantic_failures`, and completely embedded
-`semantic_files` under the query filters. The index-only status counter remains
-zero because embedding state lives in the evictable content cache.
+## Worker lifecycle and diagnostics
 
-## Idle residency
+`semantic worker status` reports whether the per-user worker is running, its
+selected provider and GPU identity, whether the model is loaded, and pending
+work. `semantic worker stop` asks it to release its model and exit. The worker
+may unload an idle model; status and diagnostics report residency without
+attributing whole-process RSS solely to model tensors.
 
-The daemon unloads its engine after ten minutes without semantic activity at the
-next idle tick. Model destruction precedes release of the inference lease.
-Activity is recorded after the request reaches idle processing, so a long request
-does not immediately expire its own engine. A later semantic request reloads the
-pinned model under the same lease contract.
-
-While loaded, idle processing emits residency observations at thirty-second
-intervals to the diagnostic queue. Linux process RSS is measured for the whole
-process, not attributed exclusively to model tensors. Busy requests can postpone
-sampling and unloading. In-flight ORT cancellation is not implemented.
-[Doctor probes](index-contract.md#bounded-diagnostics-probes) inspect persisted
-vector dimensions, finite normalized values, and model/input provenance without
-starting inference. Cached vectors from another pinned revision are unverified
-for the current model, not corruption merely because they remain reusable.
+Doctor probes inspect cached vector dimensions, finite normalized values, and
+model/input provenance without starting inference. Cached vectors from another
+pinned revision are unverified for the current model, even when their content
+bytes remain reusable.

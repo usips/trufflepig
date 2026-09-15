@@ -138,12 +138,16 @@ pub(crate) fn local(
     context: &RequestContext,
     session: &mut crate::semantic::SemanticSession,
 ) -> Result<String> {
+    session.set_no_daemon(options.no_daemon);
     let verb = options
         .words
         .first()
         .map(String::as_str)
         .unwrap_or("status");
     let budget = OutputBudget::new(options.budget)?;
+    if verb == "semantic" {
+        return crate::cli::semantic::workspace(config, options, context);
+    }
     if verb == "ws" {
         return inspect(config, options, &budget);
     }

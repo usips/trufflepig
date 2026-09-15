@@ -25,6 +25,8 @@ const KNOWN_COMMANDS: &[&str] = &[
     "audit",
     "forget-logs",
     "semantic-check",
+    "semantic",
+    "semantic-worker-serve",
     "ws",
     "serve",
     "history-serve",
@@ -67,8 +69,11 @@ pub struct Arguments {
     #[arg(short = 'n', long, default_value_t = 20)]
     pub limit: usize,
     /// Enable semantic retrieval when the semantic feature is available.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "no_sem")]
     pub sem: bool,
+    /// Disable semantic retrieval, including a workspace's persistent opt-in.
+    #[arg(long, conflicts_with = "sem")]
+    pub no_sem: bool,
     /// Request JSON responses, which are the default output format.
     #[arg(long)]
     pub json: bool,
@@ -81,7 +86,7 @@ pub struct Arguments {
     /// Internal resolved history cache forwarded to daemon and worker processes.
     #[arg(long, hide = true)]
     pub resolved_history_cache: Option<PathBuf>,
-    /// Wait for a history index operation to finish.
+    /// Wait for a history index or semantic preparation operation to finish.
     #[arg(long)]
     pub wait: bool,
     /// Include uncommitted working-tree changes in `since`.
@@ -161,6 +166,9 @@ pub(crate) fn normalized_args(options: &Arguments, root: &Path) -> Vec<String> {
     }
     if options.sem {
         args.push("--sem".into());
+    }
+    if options.no_sem {
+        args.push("--no-sem".into());
     }
     for (flag, value) in [
         (

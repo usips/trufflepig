@@ -123,6 +123,7 @@ fn workspace_pages_use_absolute_file_locators_and_compact_coverage() -> Result<(
             "member":"member",
             "state":"pending",
             "reason":"index warming",
+            "issues":{"semantic_status":"unavailable", "semantic_reason":"failure ".repeat(1000)},
             "detail":{"large":"payload"}
         })],
         hits: vec![OwnedEntry {
@@ -144,5 +145,17 @@ fn workspace_pages_use_absolute_file_locators_and_compact_coverage() -> Result<(
     assert_eq!(value["coverage"][0]["state"], "pending");
     assert_eq!(value["coverage"][0]["reason"], "index warming");
     assert!(value["coverage"][0].get("detail").is_none());
+    assert_eq!(
+        value["coverage"][0]["issues"]["semantic_status"],
+        "unavailable"
+    );
+    assert!(
+        value["coverage"][0]["issues"]["semantic_reason"]
+            .as_str()
+            .unwrap()
+            .chars()
+            .count()
+            <= 121
+    );
     Ok(())
 }

@@ -5,7 +5,9 @@ fn fixture(files: &[(&str, &[u8])]) -> (tempfile::TempDir, tempfile::TempDir, St
     let root = tempfile::tempdir().unwrap();
     let cache = tempfile::tempdir().unwrap();
     for (path, bytes) in files {
-        std::fs::write(root.path().join(path), bytes).unwrap();
+        let path = root.path().join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, bytes).unwrap();
     }
     let mut store = Store::open(root.path(), cache.path()).unwrap();
     store.index().unwrap();
@@ -139,6 +141,82 @@ fn duplicate_definitions_remain_distinct_and_ranking_stable() {
     assert_eq!(
         serde_json::to_string(&a).unwrap(),
         serde_json::to_string(&b).unwrap()
+    );
+}
+
+#[test]
+fn repeated_regions_in_one_file_cannot_hide_other_files() {
+    let crowded = (0..1_100)
+        .map(|index| format!("fn needle_{index}() {{}}\n"))
+        .collect::<String>();
+    let (_root, cache, store) = fixture(&[
+        ("crowded.rs", crowded.as_bytes()),
+        ("other.rs", b"fn needle() {}"),
+    ]);
+    let set = search(
+        &store,
+        &Query::parse("needle").unwrap(),
+        false,
+        cache.path(),
+    )
+    .unwrap();
+    assert!(set.hits.iter().any(|hit| hit.path == "crowded.rs"));
+    assert!(set.hits.iter().any(|hit| hit.path == "other.rs"));
+}
+
+#[test]
+fn filename_basename_match_ranks_before_partial_path_match() {
+    let (_root, cache, store) = fixture(&[
+        ("content/airlock.dm", b"unrelated"),
+        ("content/programmable_airlock.dm", b"unrelated"),
+        ("docs/airlock_notes.md", b"unrelated"),
+    ]);
+    let set = search(
+        &store,
+        &Query::parse("airlock").unwrap(),
+        false,
+        cache.path(),
+    )
+    .unwrap();
+    assert_eq!(set.hits[0].path, "content/airlock.dm");
+}
+
+#[test]
+fn exact_and_regex_queries_retain_same_file_occurrences() {
+    let (_root, cache, store) = fixture(&[
+        ("defs.rs", b"fn target() {}\nfn target() {}\n"),
+        ("matches.txt", b"target target\n"),
+    ]);
+    let exact = search(
+        &store,
+        &Query::parse("sym:target").unwrap(),
+        false,
+        cache.path(),
+    )
+    .unwrap();
+    assert_eq!(
+        exact
+            .hits
+            .iter()
+            .filter(|hit| hit.path == "defs.rs")
+            .count(),
+        2
+    );
+
+    let regex = search(
+        &store,
+        &Query::parse("re:target").unwrap(),
+        false,
+        cache.path(),
+    )
+    .unwrap();
+    assert_eq!(
+        regex
+            .hits
+            .iter()
+            .filter(|hit| hit.path == "matches.txt")
+            .count(),
+        2
     );
 }
 
