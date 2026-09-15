@@ -65,6 +65,15 @@ pub struct WorkspaceConfig {
     pub path: PathBuf,
     pub members: Vec<Member>,
     pub semantic: SemanticConfig,
+    pub output: OutputConfig,
+}
+
+/// Persistent workspace-level response defaults applied when a request
+/// does not pass the corresponding flag explicitly.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct OutputConfig {
+    /// Default `o200k_base` token budget for serialized responses.
+    pub budget: Option<usize>,
 }
 
 /// Persistent workspace-level semantic retrieval preference.
@@ -80,6 +89,13 @@ struct ConfigDocument {
     workspace: WorkspaceSection,
     members: BTreeMap<String, MemberSection>,
     semantic: Option<SemanticSection>,
+    output: Option<OutputSection>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OutputSection {
+    budget: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -194,6 +210,17 @@ impl WorkspaceConfig {
                     rerank: semantic.rerank,
                 })
                 .unwrap_or_default(),
+            output: {
+                let budget = document.output.and_then(|output| output.budget);
+                if let Some(budget) = budget {
+                    ensure!(
+                        (1..=crate::cli::MAX_BUDGET).contains(&budget),
+                        "invalid workspace output budget: expected 1..{}",
+                        crate::cli::MAX_BUDGET
+                    );
+                }
+                OutputConfig { budget }
+            },
         })
     }
 

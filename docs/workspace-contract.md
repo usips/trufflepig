@@ -13,6 +13,10 @@ name = "space"
 
 [semantic]
 enabled = true
+rerank = true
+
+[output]
+budget = 1200
 
 [members.lunatic]
 path = "~/Source/lunatic"
@@ -28,7 +32,9 @@ path = "~/Source/tgstation"
 name exactly once. It does not create hidden or excluded membership. Workspace
 and member names contain 1–64 ASCII letters, digits, underscores, or hyphens.
 Unknown fields are errors. A configuration contains 1–32 members and occupies
-at most 256 KiB.
+at most 256 KiB. `[output].budget` sets the workspace's default response
+budget in `o200k_base` tokens (1 to 1,000,000); an explicit `-b/--budget`
+on the request always wins.
 
 Member paths resolve relative to the configuration file. `~` expands to the
 current user's home. Existing roots are canonical directories; missing roots

@@ -157,6 +157,20 @@ fn semantic_flags_are_mutually_exclusive() {
 }
 
 #[test]
+fn explicit_budget_is_recorded_only_when_passed() {
+    let implicit = parse(&["search".into(), "query".into()]).unwrap();
+    assert!(!implicit.explicit_budget);
+    assert_eq!(implicit.budget, 600);
+    let long = parse(&["--budget".into(), "900".into(), "search".into(), "query".into()]).unwrap();
+    assert!(long.explicit_budget);
+    let short = parse(&["-b".into(), "900".into(), "search".into(), "query".into()]).unwrap();
+    assert!(short.explicit_budget);
+    let joined = parse(&["-b900".into(), "search".into(), "query".into()]).unwrap();
+    assert!(joined.explicit_budget);
+    assert_eq!(joined.budget, 900);
+}
+
+#[test]
 fn client_normalization_forwards_rerank_overrides() {
     let options = parse(&["--rerank".into(), "search".into(), "query".into()]).unwrap();
     let forwarded = parse(&normalized_args(&options, Path::new("/example"))).unwrap();

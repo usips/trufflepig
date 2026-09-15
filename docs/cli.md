@@ -28,7 +28,7 @@ classifications. Language names are `rust`, `typescript`, `javascript`, `luau`,
 `dreammaker`, and `text`; `rs`, `ts`, `js`, `lua`, and `dm` are aliases. Docs/config use `text`.
 One JSON object plus newline is the default output; `--json` accepts the same
 format. `-b/--budget` defaults to 600 `o200k_base` tokens for the serialized
-stdout response. Search ranks files first and emits one compact representative
+stdout response, or to the workspace's `[output].budget` when one is set. Search ranks files first and emits one compact representative
 per file before the `-n/--limit` page cap (20 files by default); the budget may
 fit fewer. Each hit includes a `file` URI, line span, and immutable handle.
 Increase the budget when a hit or source line cannot fit.

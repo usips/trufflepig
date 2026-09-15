@@ -4,6 +4,9 @@ use anyhow::{Result, bail};
 use clap::Parser;
 use std::path::{Path, PathBuf};
 
+/// Largest serialized response budget in `o200k_base` tokens.
+pub const MAX_BUDGET: usize = 1_000_000;
+
 const KNOWN_COMMANDS: &[&str] = &[
     "search",
     "show",
@@ -56,6 +59,9 @@ pub struct Arguments {
     /// Internal record of whether the caller supplied `--root` explicitly.
     #[arg(skip)]
     pub explicit_root: bool,
+    /// Internal record of whether the caller supplied `--budget` explicitly.
+    #[arg(skip)]
+    pub explicit_budget: bool,
     /// Internal marker preserving an implicitly selected root when forwarding.
     #[arg(long, hide = true)]
     pub implicit_root: bool,
@@ -133,6 +139,9 @@ pub fn parse(args: &[String]) -> Result<Arguments> {
         && args
             .iter()
             .any(|arg| arg == "--root" || arg.starts_with("--root="));
+    options.explicit_budget = args.iter().any(|arg| {
+        arg == "--budget" || arg.starts_with("--budget=") || arg == "-b" || arg.starts_with("-b")
+    });
     Ok(options)
 }
 
@@ -152,8 +161,8 @@ pub(super) fn validate(options: &Arguments) -> Result<()> {
     if options.limit == 0 || options.limit > results::MAX_HITS {
         bail!("invalid_limit: expected 1..10000");
     }
-    if options.budget > 1_000_000 {
-        bail!("invalid_budget: maximum is 1000000 tokens");
+    if options.budget > MAX_BUDGET {
+        bail!("invalid_budget: maximum is {MAX_BUDGET} tokens");
     }
     Ok(())
 }

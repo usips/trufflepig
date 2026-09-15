@@ -24,6 +24,11 @@ pub fn run(
     let mut options = options.clone();
     options.sem = (options.sem || config.semantic.enabled) && !options.no_sem;
     options.rerank = (options.rerank || config.semantic.rerank) && !options.no_rerank;
+    if !options.explicit_budget
+        && let Some(budget) = config.output.budget
+    {
+        options.budget = budget;
+    }
     options.root = options.root.canonicalize()?;
     options.workspace = Some(config.path.clone());
     if let Some(cache) = &options.cache {

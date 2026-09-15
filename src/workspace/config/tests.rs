@@ -65,6 +65,33 @@ fn workspace_config_reads_persistent_rerank_opt_in() {
 }
 
 #[test]
+fn workspace_config_reads_output_budget_default_and_bounds() {
+    let directory = fixture();
+    fs::create_dir(directory.path().join("engine")).unwrap();
+    let path = write_config(
+        directory.path(),
+        "[workspace]\nname='porting'\n[output]\nbudget=1200\n[members.engine]\npath='engine'\n",
+    );
+    let config = WorkspaceConfig::load(&path).unwrap();
+    assert_eq!(config.output.budget, Some(1200));
+    let absent = write_config(
+        directory.path(),
+        "[workspace]\nname='porting'\n[members.engine]\npath='engine'\n",
+    );
+    assert_eq!(WorkspaceConfig::load(&absent).unwrap().output.budget, None);
+    let zero = write_config(
+        directory.path(),
+        "[workspace]\nname='porting'\n[output]\nbudget=0\n[members.engine]\npath='engine'\n",
+    );
+    assert!(
+        WorkspaceConfig::load(&zero)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid workspace output budget")
+    );
+}
+
+#[test]
 fn workspace_config_semantics_default_to_disabled() {
     let directory = fixture();
     fs::create_dir(directory.path().join("engine")).unwrap();
