@@ -44,16 +44,19 @@ pub fn stop(cache: &Path) -> Result<String> {
         .unwrap_or_else(|| "{\"status\":\"not_running\"}".to_owned()))
 }
 
+/// Sandboxed clients get EPERM/EACCES from `connect`; treat as "no daemon".
+fn unreachable(kind: ErrorKind) -> bool {
+    matches!(
+        kind,
+        ErrorKind::NotFound | ErrorKind::ConnectionRefused | ErrorKind::PermissionDenied
+    )
+}
+
 fn exchange(cache: &Path, request: &DaemonRequest) -> Result<Option<String>> {
     request.validate()?;
     let mut stream = match UnixStream::connect(cache.join(SOCKET_NAME)) {
         Ok(stream) => stream,
-        Err(error)
-            if matches!(
-                error.kind(),
-                ErrorKind::NotFound | ErrorKind::ConnectionRefused
-            ) =>
-        {
+        Err(error) if unreachable(error.kind()) => {
             return Ok(None);
         }
         Err(error) => return Err(error).context("connect to repository daemon"),

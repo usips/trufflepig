@@ -163,6 +163,15 @@ fn daemon_serves_recovers_protocol_errors_watches_and_stops() {
 }
 
 #[test]
+fn daemon_connect_unreachability_includes_sandbox_permission_denial() {
+    assert!(unreachable(ErrorKind::NotFound));
+    assert!(unreachable(ErrorKind::ConnectionRefused));
+    assert!(unreachable(ErrorKind::PermissionDenied));
+    assert!(!unreachable(ErrorKind::ConnectionReset));
+    assert!(!unreachable(ErrorKind::TimedOut));
+}
+
+#[test]
 fn daemon_shutdown_unlocks_inherited_file_description() {
     let scratch = scratch();
     let socket = DaemonSocket::bind(scratch.path()).unwrap();
