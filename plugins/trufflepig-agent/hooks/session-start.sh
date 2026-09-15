@@ -17,5 +17,10 @@ if [ "$phase" = "end" ]; then
     rm -f "$state/$key"
     exit 0
 fi
+# Best-effort: pre-warm the per-user system daemon (sandboxed harnesses cannot
+# spawn it themselves); never change the hook's exit code or add output.
+if [ "$phase" = "start" ]; then
+    command -v trufflepig >/dev/null 2>&1 && trufflepig system ensure >/dev/null 2>&1 || true
+fi
 [ -n "$session" ] || exit 0
 printf '%s\n' "$session" > "$state/$key"

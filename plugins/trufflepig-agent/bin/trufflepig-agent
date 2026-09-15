@@ -215,7 +215,18 @@ def main() -> int:
 
     fingerprint = hashlib.blake2s(" ".join([verb, *words[1:]]).encode(), digest_size=8).hexdigest()
     recent_path = state_dir() / "agent-recent" / harness / f"{cwd_key(cwd)}-{session}"
-    recent = recent_fingerprints(recent_path)
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    runtime_root = Path(runtime) / "trufflepig" if runtime else None
+    audit_fallback = runtime_root / "agent-audit" if runtime_root else None
+    recent_fallback = (
+        runtime_root / "agent-recent" / recent_path.parent.name / recent_path.name
+        if runtime_root
+        else None
+    )
+    try:
+        recent = recent_path.read_text().split()[-RECENT_LIMIT:]
+    except OSError:
+        recent = recent_fingerprints(recent_fallback) if recent_fallback else []
     repeat_count = recent.count(fingerprint)
 
     signals: list[str] = []
@@ -262,15 +273,32 @@ def main() -> int:
         "repeat_count": repeat_count,
         "signals": signals,
     }
-    try:
-        target = log_dir()
-        target.mkdir(parents=True, exist_ok=True)
-        with (target / f"{harness}.jsonl").open("a", encoding="utf-8") as handle:
+    def append_audit(log_target: Path) -> None:
+        log_target.mkdir(parents=True, exist_ok=True)
+        with (log_target / f"{harness}.jsonl").open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, separators=(",", ":")) + "\n")
-        recent_path.parent.mkdir(parents=True, exist_ok=True)
-        recent_path.write_text(" ".join([*recent, fingerprint][-RECENT_LIMIT:]))
-    except OSError as error:
-        sys.stderr.write(f"trufflepig-agent: audit log unavailable: {error}\n")
+
+    def write_recent(recent_file: Path) -> None:
+        recent_file.parent.mkdir(parents=True, exist_ok=True)
+        recent_file.write_text(" ".join([*recent, fingerprint][-RECENT_LIMIT:]))
+
+    def with_fallback(write, primary: Path, fallback: Path | None) -> OSError | None:
+        try:
+            write(primary)
+            return None
+        except OSError as error:
+            if fallback is None:
+                return error
+            try:
+                write(fallback)
+                return None
+            except OSError as fallback_error:
+                return fallback_error
+
+    audit_error = with_fallback(append_audit, log_dir(), audit_fallback)
+    with_fallback(write_recent, recent_path, recent_fallback)
+    if audit_error is not None:
+        sys.stderr.write(f"trufflepig-agent: audit log unavailable: {audit_error}\n")
     return exit_code
 
 
