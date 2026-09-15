@@ -11,6 +11,7 @@ use crate::{
 use anyhow::{Context, Result, bail, ensure};
 use config::{Member, WorkspaceConfig};
 pub use coordinator::run;
+pub(crate) use coordinator::apply_config;
 use result_cache::WorkspaceResults;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};

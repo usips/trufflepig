@@ -14,6 +14,17 @@ pub(crate) fn spawn_background(command: &mut Command) -> io::Result<Child> {
         .spawn()
 }
 
+/// Reclaims exited background daemons and coordinators spawned by this process.
+pub(crate) fn reap_children() {
+    loop {
+        let mut status = 0;
+        let pid = unsafe { libc::waitpid(-1, &mut status, libc::WNOHANG) };
+        if pid <= 0 {
+            break;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::spawn_background;

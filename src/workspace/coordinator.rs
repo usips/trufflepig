@@ -16,11 +16,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub fn run(
-    config: WorkspaceConfig,
-    options: &Arguments,
-    context: &RequestContext,
-) -> Result<String> {
+/// Applies workspace config defaults and absolutizes path options for routing.
+pub(crate) fn apply_config(config: &WorkspaceConfig, options: &Arguments) -> Result<Arguments> {
     let mut options = options.clone();
     options.sem = (options.sem || config.semantic.enabled) && !options.no_sem;
     options.rerank = (options.rerank || config.semantic.rerank) && !options.no_rerank;
@@ -40,6 +37,15 @@ pub fn run(
     if let Some(ignore) = &options.ignore_revs_file {
         options.ignore_revs_file = Some(std::path::absolute(ignore)?);
     }
+    Ok(options)
+}
+
+pub fn run(
+    config: WorkspaceConfig,
+    options: &Arguments,
+    context: &RequestContext,
+) -> Result<String> {
+    let options = apply_config(&config, options)?;
     let cache = cache_path(&config, options.cache.as_deref())?;
     let verb = options
         .words
@@ -150,7 +156,7 @@ fn serve(config: &WorkspaceConfig, cache: &Path) -> Result<()> {
                 output
             }
             daemon::DaemonEvent::Idle => {
-                reap_children();
+                crate::background_process::reap_children();
                 Ok(String::new())
             }
             daemon::DaemonEvent::Reconcile => Ok(String::new()),
@@ -194,13 +200,4 @@ pub(super) fn ensure_member(member: &Member, options: &Arguments) -> Result<()> 
     spawn_background(&mut command)?;
     Ok(())
 }
-fn reap_children() {
-    // This coordinator spawns only background root daemons; reclaim exited children.
-    loop {
-        let mut status = 0;
-        let pid = unsafe { libc::waitpid(-1, &mut status, libc::WNOHANG) };
-        if pid <= 0 {
-            break;
-        }
-    }
-}
+
