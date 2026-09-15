@@ -88,6 +88,15 @@ The [history worker](history-contract.md) shares immutable Git facts across
 linked worktrees through a separate database, keyed by canonical common directory.
 Live and history publication have independent transaction boundaries.
 
+A per-user system daemon routes requests to the owning workspace coordinator or
+per-root daemon as a single endpoint agent harnesses can allowlist; see
+`src/system.rs`. It runs no watcher and no index: it starts the target daemon
+when missing and proxies the reply. Its socket lives in a per-user runtime
+directory (`src/system.rs:dir`). Clients treat connect errors `NotFound`,
+`ConnectionRefused`, and `PermissionDenied` as "no daemon" and fall back
+(`src/daemon.rs:unreachable`). The frame protocol and its limits apply
+unchanged per hop.
+
 The daemon reconciles at startup and every 30 seconds. Watch events are hints that
 accelerate reconciliation; overflow, watch exhaustion, and missed events trigger
 recovery. Events use a 75 ms quiet period with a one-second maximum debounce; no

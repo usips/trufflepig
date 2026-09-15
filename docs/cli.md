@@ -9,15 +9,12 @@ does not walk up to Git metadata; use the same root and cache for follow-up read
 ```sh
 trufflepig --help -b 2000
 trufflepig --root . --no-daemon index
-trufflepig --root . --no-daemon search 'refill tokens'
 trufflepig --root . search 'sym:TokenBucket'
 trufflepig --root . search 're:fn .*helper lang:rust'
 trufflepig --root . --no-daemon search 'file:src/ kind:function'
 trufflepig --root . semantic prepare --wait
-trufflepig --root . --no-daemon semantic prepare --wait
 trufflepig --root . semantic status
 trufflepig semantic worker status
-trufflepig semantic worker stop
 ```
 
 Use an explicit `search` verb for all queries; unknown commands exit 2 with an
@@ -50,19 +47,17 @@ trufflepig ws discover ~/Source/lunatic ~/Source/tales-from-space ~/Source/tgsta
 An explicit `--workspace FILE` selects named local checkouts. Otherwise, discovery
 checks the nearest ancestor `trufflepig.workspace.toml`, then the global registry.
 `--no-workspace` retains singleton operation. An explicit subtree `--root` never
-silently expands to a configured member root.
-Ordinary workspace queries search all members. `in:NAME` or `--member NAME` selects
-a member; `ws:home` selects the invocation checkout and `ws:all` searches the
-complete workspace. File-first ranking fuses member lanes with provenance;
-compact hits carry a percent-encoded `file` URI, lines, and owner-qualified
-handle. Pagination is frozen to captured member snapshots, and missing members
-are reported as incomplete coverage.
-Use `show`, `more`, and `ctx` from any member of the same workspace; persisted
-handles retain their original owner. Explicit paths, history revisions, sessions,
-and other owner commands use home or `--member NAME`. `ws discover` only returns
-a proposed configuration and does not scan unrelated directories. See the
-[workspace contract](workspace-contract.md) for schema, cache behavior, routing
-guarantees, and current limits.
+silently expands to a configured member root. Workspace queries search all members.
+`in:NAME` or `--member NAME` selects a member; `ws:home` selects the invocation
+checkout and `ws:all` searches the complete workspace. File-first ranking fuses
+member lanes with provenance; compact hits carry a percent-encoded `file` URI,
+lines, and owner-qualified handle. Pagination freezes captured member snapshots;
+missing members are reported as incomplete coverage. Use `show`, `more`, and `ctx`
+from any member of the same workspace; persisted handles retain their original
+owner. Explicit paths, history revisions, sessions, and other owner commands use
+home or `--member NAME`. `ws discover` returns only a proposed configuration and
+does not scan unrelated directories. See the [workspace contract](workspace-contract.md)
+for schema, cache behavior, routing guarantees, and current limits.
 
 ## Follow-up reads and navigation
 
@@ -81,15 +76,14 @@ trufflepig show path:src/main.rs:1-20
 A handle is a 32-character result-set ID plus a one-based ordinal. A pagination
 cursor uses the same set ID and a zero-based next offset. Handles survive restart
 within their retention limits; they never name the latest unrelated query. In a
-workspace, the result set freezes each member owner and generation, so later
-ranking or configuration changes cannot retarget a handle.
-`show` continuations retain source identity and remaining bytes; pass their
-`next` value unchanged to `show`. `stale_source` requires a fresh search or an
-explicitly current path read.
+workspace, the result set freezes each member owner and generation, so later ranking
+or configuration changes cannot retarget a handle. `show` continuations retain
+source identity and remaining bytes; pass their `next` value unchanged to `show`.
+`stale_source` requires a fresh search or an explicitly current path read.
 `stale_result` means the graph generation changed and `ctx` needs a fresh handle.
-`refs` reports symbol occurrences and distinguishes observations, resolved
-targets, candidates, and unresolved sites. `map` shows structural module facts.
-These are conservative navigation features; see [language limits](language-contract.md).
+`refs` reports symbol occurrences and distinguishes observations, resolved targets,
+candidates, and unresolved sites. `map` shows structural module facts. These are
+conservative navigation features; see [language limits](language-contract.md).
 
 Paths in responses percent-encode raw filename bytes. Paste the encoded path
 unchanged into `show`, including `%20` for a space, `%25` for `%`, and `%3A` for
@@ -144,57 +138,63 @@ overlap labels, and incomplete-window limits.
 ## Cache and daemon
 
 The cache defaults to `$XDG_CACHE_HOME/trufflepig/<root-hash>`, or
-`$HOME/.cache/trufflepig/<root-hash>`. `--cache DIRECTORY` overrides it. Each
-cache belongs to one canonical root; use disk-backed storage for the index and
-staging database and avoid RAM-backed `/tmp`. History defaults to the normal
-cache base keyed by canonical Git common directory, so linked worktrees share
-immutable Git facts. An explicit `--cache` isolates history; `--history-cache
-DIRECTORY` selects a shared history-cache base.
-In workspace mode, `--cache` supplies an isolated base containing coordinator
-state and separate member caches.
-Ordinary singleton commands start a per-root index daemon automatically. Workspace
-queries start a coordinator automatically unless `--no-daemon` is set;
-`ws show` and `ws status` inspect locally. The coordinator starts member daemons
-when needed and reads their published indexes. Semantic requests may start the
-shared per-user inference worker when semantic retrieval is enabled.
-`--no-daemon` performs local indexing and launches or contacts no background
-process, including the inference worker. Search then uses published indexes and
-cached semantic vectors only. `semantic prepare --no-daemon` is the explicit
-foreground preparation path and holds the root preparation lease while it runs.
-Explicit `index` reconciles locally; `status` reports existing indexed coverage.
-For a singleton root, `serve` runs the index daemon in the foreground and `stop`
-requests shutdown. In workspace mode, `stop` stops only the coordinator; stop a
-member daemon with `trufflepig --no-workspace --root ROOT stop`. Specify matching
-`--root` and `--cache` values for the daemon being controlled. Daemon startup also
-launches a leased history worker without awaiting indexing. `hist-index --wait`
-continues history batches until completion or explicit failure.
-`doctor` runs bounded integrity/provenance probes without starting inference.
-The index daemon attempts probes while idle. `semantic status` reports root
-preparation state; `semantic worker status` reports shared-worker residency.
-
-The daemon serializes requests and reconciles on watch events and periodically;
-it has no build-version negotiation. Stop it before changing binaries. Very long
-cache paths can exceed Unix socket limits; use a shorter `--cache` path. Watcher
-fallback and resource limits are documented in the [index contract](index-contract.md).
+`$HOME/.cache/trufflepig/<root-hash>`. `--cache DIRECTORY` overrides it. Each cache
+belongs to one canonical root; use disk-backed storage for the index and staging
+database and avoid RAM-backed `/tmp`. History defaults to the normal cache base
+keyed by canonical Git common directory, so linked worktrees share immutable Git
+facts. An explicit `--cache` isolates history; `--history-cache DIRECTORY` selects
+a shared history-cache base. In workspace mode, `--cache` supplies an isolated
+base with coordinator state and separate member caches.
+A per-user system daemon gives agent harnesses one endpoint to allowlist. Its
+socket is `daemon.sock` in `$TRUFFLEPIG_SYSTEM_DIR` verbatim, else
+`$XDG_RUNTIME_DIR/trufflepig/system` (the allowlist target), else
+`$XDG_CACHE_HOME/trufflepig/system`, else `$HOME/.cache/trufflepig/system`.
+The router forwards each request to the owning workspace coordinator or per-root
+daemon, starting a missing target and proxying the reply; failure or an unreachable
+socket falls back to the per-root/coordinator path, then local dispatch. `stop`,
+`index`, `init`, `ws`, `semantic status`, `semantic-check`, the `*-serve` verbs, and
+`--no-daemon` requests never touch it. `system ensure` starts the router, `system
+stop` shuts it down, `system status` reports if it runs, and `system-serve` serves
+it in the foreground. The agent plugin's session-start hook best-effort straps it.
+Singleton commands start a per-root index daemon automatically. Workspace queries
+start a coordinator unless `--no-daemon` is set; `ws show` and `ws status` inspect
+locally. The coordinator starts member daemons when needed and reads their published
+indexes. Semantic requests may start the shared per-user inference worker when enabled.
+`--no-daemon` performs local indexing and launches or contacts no background process,
+including the inference worker. Search then uses published indexes and cached
+semantic vectors only. The explicit foreground path `semantic prepare --no-daemon`
+holds the root preparation lease while it runs. Explicit `index` reconciles locally;
+`status` reports existing indexed coverage. `serve` runs the singleton index daemon
+in the foreground and `stop` requests shutdown. In workspace mode, `stop` stops only
+the coordinator; stop a member daemon with `trufflepig --no-workspace --root ROOT
+stop`. Match `--root` and `--cache` to the daemon being controlled. Daemon startup
+also launches a leased history worker without awaiting indexing. `hist-index --wait`
+continues history batches until completion or explicit failure. `doctor` runs bounded
+integrity/provenance probes without starting inference. The index daemon attempts
+probes while idle. `semantic status` reports root preparation state; `semantic worker
+status` reports shared-worker residency.
+The daemon serializes requests and reconciles on watch events and periodically; it
+has no build-version negotiation. Stop it before changing binaries. Very long cache
+paths can exceed Unix socket limits; use a shorter `--cache` path. Watcher fallback
+and resource limits are documented in the [index contract](index-contract.md).
 
 ## Optional semantic retrieval
 
 Default builds provide lexical/structural retrieval. Install with
 `cargo install --path . --locked --features semantic` for CPU inference or
-`--features semantic-cuda` for CUDA support. Configure the pinned model,
-ONNX Runtime library, provider, GPU UUID, and ORT arena in
-`$HOME/.config/trufflepig/inference.toml`; model and runtime paths may also use
-`TRUFFLEPIG_MODEL_DIR` and `ORT_DYLIB_PATH`. Run `semantic-check MODEL_DIRECTORY`
-to verify assets and provider execution before preparing a root.
-`semantic prepare` schedules missing source-region vectors for background
-preparation; `semantic prepare --wait` waits for the requested generation.
+`--features semantic-cuda` for CUDA support. Configure the pinned model, ONNX Runtime
+library, provider, GPU UUID, and ORT arena in `$HOME/.config/trufflepig/inference.toml`;
+model and runtime paths may also use `TRUFFLEPIG_MODEL_DIR` and `ORT_DYLIB_PATH`. Run
+`semantic-check MODEL_DIRECTORY` to verify assets and provider execution before
+preparing a root. `semantic prepare` schedules missing source-region vectors for
+background preparation; `semantic prepare --wait` waits for the requested generation.
 `semantic status` reports preparation coverage. `semantic worker status` and
 `semantic worker stop` inspect or stop the shared per-user worker. Missing assets,
 provider failures, pending vectors, and query timeouts remain explicit statuses
 while lexical results stay available. `--no-sem` disables semantic retrieval,
-including a workspace's persistent opt-in; `--rerank`/`--no-rerank` also toggles rerank.
-Source regions are never embedded synchronously during search; search uses the
-cache and has a 500 ms semantic query deadline before returning lexical fallback.
-The [semantic contract](semantic-contract.md) defines worker, cache, snapshot,
-and status behavior. [Evaluation usage](evaluation-contract.md) defines the
-reproducible fixture and development-task measurements.
+including a workspace's persistent opt-in; `--rerank`/`--no-rerank` also toggles
+rerank. Source regions are never embedded synchronously during search; search uses
+the cache and has a 500 ms semantic query deadline before returning lexical fallback.
+The [semantic contract](semantic-contract.md) defines worker, cache, snapshot, and
+status behavior; [evaluation usage](evaluation-contract.md) defines the reproducible
+fixture and development-task measurements.
