@@ -63,6 +63,39 @@ class WorkspaceReplayTests(unittest.TestCase):
         self.assertEqual(result["events"][0]["identities"][0]["member_rank"], 4)
         self.assertTrue(result["outcome"]["evidence_cost_censored"])
 
+    def test_compact_file_uri_is_resolved_by_show(self):
+        compact = dict(file="file:same.rs", member="pack", handle="set:compact", lines=[2])
+        result = self.run_responses([
+            self.page([compact]),
+            self.source(start=0, end=6),
+        ])
+        self.assertEqual(result["outcome"]["metadata_discovered"], 1)
+        self.assertEqual(result["outcome"]["source_evidenced"], 1)
+        self.assertEqual(self.calls, [("search", "needle"), ("show", "set:compact")])
+        self.assertNotIn("revision", result["events"][0]["identities"][0])
+        self.assertNotIn("start", result["events"][0]["identities"][0])
+        self.assertNotIn("path", result["events"][0]["identities"][0])
+
+    def test_compact_absolute_file_uri_maps_to_member_path(self):
+        compact = dict(file=(self.roots["pack"] / "same.rs").as_uri(),
+                       handle="set:absolute", line=2)
+        result = self.run_responses([self.page([compact]), self.source()])
+        self.assertEqual(result["outcome"]["source_evidenced"], 1)
+
+    def test_show_absolute_file_uri_is_normalized_before_source_check(self):
+        selected = dict(member="pack", repository=str(self.roots["pack"]),
+                        file=(self.roots["pack"] / "same.rs").as_uri(), handle="set:absolute")
+        response = self.source()
+        response.pop("path")
+        response["file"] = (self.roots["pack"] / "same.rs").as_uri()
+        self.assertEqual(source_evidence(response, selected, self.roots)[0]["path"], "same.rs")
+
+    def test_stale_revision_in_noncompact_hit_cannot_credit_show(self):
+        selected = self.hit()
+        response = self.source()
+        response["revision"] = "revision-new"
+        self.assertEqual(source_evidence(response, selected, self.roots), [])
+
     def test_wrong_repository_or_member_cannot_credit_source(self):
         selected = dict(self.hit(), repository=str(self.roots["pack"]))
         source = self.source("engine")

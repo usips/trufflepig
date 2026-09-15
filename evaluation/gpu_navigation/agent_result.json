@@ -1,0 +1,324 @@
+{
+  "schema_version": 1,
+  "split": "development",
+  "solver_model": "gpt-5.6-luna",
+  "reasoning_effort": "xhigh",
+  "grading_model": "gpt-6-astra",
+  "grading_effort": "medium",
+  "blinded": false,
+  "held_out_claim": false,
+  "causal_gpu_effect_claim": false,
+  "model_token_usage": null,
+  "arms": {
+    "ordinarytools": {
+      "total_score": 31,
+      "maximum_score": 48,
+      "tasks": [
+        {
+          "trial": "B01",
+          "task_id": "lunatic-document-append-guard",
+          "score": 2,
+          "assessment": "Names the main concepts but misplaces the critical queue/admission boundary.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 21,
+            "emitted_tool_tokens": 9078,
+            "elapsed_through_last_call_seconds": 117.46298551559448
+          }
+        },
+        {
+          "trial": "B02",
+          "task_id": "lunatic-legacy-airlock-fixture",
+          "score": 3,
+          "assessment": "Correct legacy spelling, private/public rosters, restriction split and pack-owned access vocabulary.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 13,
+            "emitted_tool_tokens": 10464,
+            "elapsed_through_last_call_seconds": 144.6031277179718
+          }
+        },
+        {
+          "trial": "B03",
+          "task_id": "lunatic-cycle-link-validation",
+          "score": 4,
+          "assessment": "Correct occupancy sanity check, coordinate-only duplicate rejection, and deferred directional reciprocal-door resolution contract.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 15,
+            "emitted_tool_tokens": 9031,
+            "elapsed_through_last_call_seconds": 133.74524354934692
+          }
+        },
+        {
+          "trial": "B04",
+          "task_id": "lunatic-script-permission-interface",
+          "score": 4,
+          "assessment": "Covers the requested default/privileged/read-write/interface contract with direct documentation evidence.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 16,
+            "emitted_tool_tokens": 8621,
+            "elapsed_through_last_call_seconds": 133.6656939983368
+          }
+        },
+        {
+          "trial": "B05R",
+          "task_id": "tfs-airlock-permission-fixture",
+          "score": 2,
+          "assessment": "Correct guest default, engineering edit and denied-button result, but missing fixture gate and inventing actor-less routing.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 12,
+            "emitted_tool_tokens": 9618,
+            "elapsed_through_last_call_seconds": 124.45684456825256
+          }
+        },
+        {
+          "trial": "B06",
+          "task_id": "tfs-airlock-cycle-state",
+          "score": 4,
+          "assessment": "Accurately traces generation, west/east ordering, alternating direction, moving-door wait, report filters, pressure thresholds, faults and completion.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 14,
+            "emitted_tool_tokens": 8307,
+            "elapsed_through_last_call_seconds": 143.77934670448303
+          }
+        },
+        {
+          "trial": "B07",
+          "task_id": "tfs-airlock-rebuild-fixture",
+          "score": 3,
+          "assessment": "Correct commissioned bindings/member topology and conceptual network-versus-policy separation, but weak test reconstruction.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 12,
+            "emitted_tool_tokens": 10046,
+            "elapsed_through_last_call_seconds": 147.44843125343323
+          }
+        },
+        {
+          "trial": "B08",
+          "task_id": "tfs-writing-commit",
+          "score": 3,
+          "assessment": "Correct shared view, native route, limits, immutable style, held implement and red-crayon definition; helper checks are only sketched.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 17,
+            "emitted_tool_tokens": 9062,
+            "elapsed_through_last_call_seconds": 93.87266325950623
+          }
+        },
+        {
+          "trial": "B09",
+          "task_id": "tg-airlock-controller-cycle",
+          "score": 3,
+          "assessment": "Correct core controller states, thresholds and unavailable-device waits; setup diagnostic and target-change details are imperfect.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 15,
+            "emitted_tool_tokens": 9452,
+            "elapsed_through_last_call_seconds": 136.22790431976318
+          }
+        },
+        {
+          "trial": "B10",
+          "task_id": "tg-airlock-pump-pressure",
+          "score": 1,
+          "assessment": "Mostly answers the different Luau implementation. Layer and adjacent-tile concepts overlap, but requested DM topology, numbers and completion are missing or wrong.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 15,
+            "emitted_tool_tokens": 8722,
+            "elapsed_through_last_call_seconds": 122.18394088745117
+          }
+        },
+        {
+          "trial": "B11",
+          "task_id": "tg-airlock-secure-open",
+          "score": 1,
+          "assessment": "Locates controller callers but never the requested helper; mostly substitutes a Luau sequence.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 16,
+            "emitted_tool_tokens": 10285,
+            "elapsed_through_last_call_seconds": 122.86390376091003
+          }
+        },
+        {
+          "trial": "B12",
+          "task_id": "tg-airlock-wire-permissions",
+          "score": 1,
+          "assessment": "Some generic bolt/AI/electrification concepts are right, but misses actual wire gates and confuses pulse semantics.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 20,
+            "emitted_tool_tokens": 10078,
+            "elapsed_through_last_call_seconds": 144.73424100875854
+          }
+        }
+      ],
+      "emitted_tool_tokens": 112764
+    },
+    "ordinarytools+trufflepig": {
+      "total_score": 18,
+      "maximum_score": 48,
+      "tasks": [
+        {
+          "trial": "A01",
+          "task_id": "lunatic-document-append-guard",
+          "score": 2,
+          "assessment": "Correct text bounds, live actor, held binding, Mind, snapshots and enqueue. Omits schema validation and the explicitly requested require_writable gate. Names expected_revision but does not explain deferred live revision comparison; script admission only reads and queues that token.",
+          "budget": {
+            "admitted_attempts": 11,
+            "logged_attempts": 11,
+            "emitted_tool_tokens": 6109,
+            "elapsed_through_last_call_seconds": 89.51826739311218
+          }
+        },
+        {
+          "trial": "A02",
+          "task_id": "lunatic-legacy-airlock-fixture",
+          "score": 2,
+          "assessment": "Correct legacy SecureDoor -> regular Door plus restriction and parse/migrate/validate ordering. Omits access=engineering and the pack obligation to declare that opaque tag before preflight. Conflates LegacyTileDef conversion (sets restricted bool) with later absorb_fixtures property insertion; roster discussion substitutes network content roster for legacy fixture roster.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 14,
+            "emitted_tool_tokens": 8100,
+            "elapsed_through_last_call_seconds": 83.07756972312927
+          }
+        },
+        {
+          "trial": "A03",
+          "task_id": "lunatic-cycle-link-validation",
+          "score": 3,
+          "assessment": "Correct anchor check, coordinate-only duplicates, ignored direction at validation, later directional reciprocal scan and warning contract. Does not identify the concrete loading resolver; something_stands_at accepts structures or machines, which is more precise than the barrier wording in its comment.",
+          "budget": {
+            "admitted_attempts": 11,
+            "logged_attempts": 11,
+            "emitted_tool_tokens": 8207,
+            "elapsed_through_last_call_seconds": 110.04117059707642
+          }
+        },
+        {
+          "trial": "A04",
+          "task_id": "lunatic-script-permission-interface",
+          "score": 1,
+          "assessment": "Most requested contract absent. Substitutes DiSL guest sandbox read/write and copy boundary for mod permissions/inter-mod calls. Omits default mod grants, privileged host modlist approval, synchronous shared-depth cycle failure, callee attribution/provenance and occurrence fuel. permissions.md exists; truncated discovery is not absence.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 19,
+            "emitted_tool_tokens": 7757,
+            "elapsed_through_last_call_seconds": 99.96744203567505
+          }
+        },
+        {
+          "trial": "A05",
+          "task_id": "tfs-airlock-permission-fixture",
+          "score": 1,
+          "assessment": "Finds permitted hook and default acceptance, and suggests engineering gating, but never gives return request.engineering or fixture return {allowed = ev.actor == nil or ev.allowed}. Actor-less controller requests versus preservation of hand actor native allowance is the key missing boundary.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 14,
+            "emitted_tool_tokens": 6546,
+            "elapsed_through_last_call_seconds": 82.21233534812927
+          }
+        },
+        {
+          "trial": "A06",
+          "task_id": "tfs-airlock-cycle-state",
+          "score": 3,
+          "assessment": "Correct generation, ordering, movement wait, pressure thresholds/directions, stale ID filtering, phases and fault/timeout behavior. Overstates wrong-device filtering: a failed report with matching ID/operation faults before MAC validation; not every wrong-address report is ignored. wait_close deliberately does not require current phase ID.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 13,
+            "emitted_tool_tokens": 8991,
+            "elapsed_through_last_call_seconds": 100.78639769554138
+          }
+        },
+        {
+          "trial": "A07",
+          "task_id": "tfs-airlock-rebuild-fixture",
+          "score": 2,
+          "assessment": "Correct five joined member types and controller/program concept, but missing exact map file.airlock_controller and program.controller bindings and actual release/rejoin/reinstall test. Release of buttons prevents guest invocation, rather than triggering a missing-member fault. Reference disk-host instructions do not reconstruct the test laptop-copy route; access point has no disk slot in that test.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 15,
+            "emitted_tool_tokens": 10380,
+            "elapsed_through_last_call_seconds": 98.27399396896362
+          }
+        },
+        {
+          "trial": "A08",
+          "task_id": "tfs-writing-commit",
+          "score": 1,
+          "assessment": "Correct documented 4096/8192/64 bounds, native append route and crayon uses/font, but no actual view->append->native trace, expected_revision=document.revision, append-only/body/fragment checks or held implementation binding. Guessed item/library paths omit content; exact red writer metadata and writing.attach connection missing.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 15,
+            "emitted_tool_tokens": 4191,
+            "elapsed_through_last_call_seconds": 70.39533686637878
+          }
+        },
+        {
+          "trial": "A09",
+          "task_id": "tg-airlock-controller-cycle",
+          "score": 0,
+          "assessment": "Wrong corpus/language: answers Luau programmable controller instead of tgstation DM controller. No setup tag lookup/WEAKREF resolution; uses wrong state machine, thresholds and missing-device semantics. DM uses >=0.95 atmosphere and <=0.05 (0.01 sanitize) atmosphere and generally pauses progression for unavailable refs.",
+          "budget": {
+            "admitted_attempts": 10,
+            "logged_attempts": 10,
+            "emitted_tool_tokens": 6714,
+            "elapsed_through_last_call_seconds": 79.96643161773682
+          }
+        },
+        {
+          "trial": "A10",
+          "task_id": "tg-airlock-pump-pressure",
+          "score": 0,
+          "assessment": "Wrong corpus/language: substitutes Luau port and falsely says DM checkout unavailable. DM discovers sides along dir/reverse dir with perpendicular groups; node layers distro L4/waste L2, adjacent tile gas splitting, 1% atmosphere tolerance and 10-second emergency unbolt behavior are not correctly traced. Luau x-sorting, 500/600-tick fault path and l2-intake advice do not answer the target.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 17,
+            "emitted_tool_tokens": 8745,
+            "elapsed_through_last_call_seconds": 76.57129573822021
+          }
+        },
+        {
+          "trial": "A11",
+          "task_id": "tg-airlock-secure-open",
+          "score": 0,
+          "assessment": "No source-backed answer claimed; all requested secure helper ordering missing. Explored CEV-Eris outside the three declared corpora. Target DM secure_open unbolts, updates appearance, waits 0.2 seconds, forced-opens, rebolts and updates; secure_close unbolts, forced-closes, rebolts, waits and updates.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 13,
+            "emitted_tool_tokens": 6948,
+            "elapsed_through_last_call_seconds": 69.78071403503418
+          }
+        },
+        {
+          "trial": "A12",
+          "task_id": "tg-airlock-wire-permissions",
+          "score": 3,
+          "assessment": "Correct main wire gates and open/bolts/ID/AI/safety pulse behavior. Secure predicate unresolved and HAS_SILICON_ACCESS simplified to non-silicon users (access capability is more precise). Base wire gate not unpacked; rest is grounded. Report mentions a mistyped-log attempt not reconstructible from these recorded command arguments.",
+          "budget": {
+            "admitted_attempts": 12,
+            "logged_attempts": 15,
+            "emitted_tool_tokens": 8544,
+            "elapsed_through_last_call_seconds": 82.63706374168396
+          }
+        }
+      ],
+      "emitted_tool_tokens": 91232
+    }
+  },
+  "limitations": [
+    "Descriptive scores only: assisted execution failures prevent a valid causal comparison of GPU search effectiveness.",
+    "Most assisted agents omitted the executable or misused the wrapper, then used ordinary tools. Only A01 and A03 successfully searched through the prescribed frozen CUDA helper; A05 used a different release-binary invocation.",
+    "A09 and A10 answered about Luau despite Dream Maker tasks; A11 did not substantiate an answer and inspected CEV-Eris outside the declared three-repository corpus.",
+    "Grading is unblinded, with assisted scores fixed before the grader read baseline grades. Selected source hashes were validated; complete working trees were not frozen.",
+    "The wrapper logs rejected extra attempts separately. Full model input/output/reasoning tokens and full solve latency are unobserved.",
+    "Original B05 exceeded the execution cap due to a ledger race; a locking regression fix and fresh B05R replace that trial. Unbudgeted pilots and failed coordinator launch attempts are excluded."
+  ]
+}

@@ -1,8 +1,10 @@
 # Navigation evaluation
 
 The [navigation replay](../evaluation/navigation_replay.py) complements the
-[retrieval replay](evaluation-contract.md) with 600-token responses, at most
-three result pages including the first search, and eight total tool calls.
+[retrieval replay](evaluation-contract.md) with 600-token compact, file-first
+responses, at most three result pages including the first search, and eight
+total tool calls. Search entries carry a percent-encoded `file` URI, inclusive
+line span, and immutable handle; source text is retrieved with `show`.
 Its label is **oracle-assisted navigation replay**: relevance labels choose
 which returned handles to read. It measures tool navigation mechanisms, not
 agent judgment, task success, billed usage, or token savings.
@@ -33,9 +35,10 @@ required context. A miss or exhausted limit remains an incomplete outcome.
 
 The [navigation-v1 workflow](../evaluation/workflows/navigation-v1.json) defines
 the selection, stopping, and accounting contract independently of an agent
-runner. Actual agent adapters and paired-trial orchestration are subsequent
-work. A runner may populate input-token usage only from actual observations;
-the CLI replay leaves it unknown.
+runner. Paired development-task trials use the sample and arms in the
+[evaluation contract](evaluation-contract.md); this replay remains a
+runner-neutral navigation measurement. A runner may populate input-token usage
+only from actual observations; the CLI replay leaves it unknown.
 
 ## Evidence and costs
 
@@ -51,7 +54,9 @@ A task requiring context additionally needs a successful, untruncated `ctx`
 response with observed relationships for a selected handle. Context is a
 mechanical navigation requirement, not a grade of relationship relevance.
 Continuations pass their returned target unchanged to `show`; stale revisions
-and unavailable reads remain visible failures.
+and unavailable reads remain visible failures. Workspace result sets retain
+each member owner and publication generation, so `more` preserves the original
+cross-repository file order after the first page.
 
 The harness measures complete captured stdout bytes, separate stderr bytes,
 wall time, and tool calls. Pipe capture is delivery to this local runner; it

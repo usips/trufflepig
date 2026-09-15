@@ -1,0 +1,126 @@
+{
+  "status": "passed",
+  "status_scope": "CUDA numerical gate and bounded execution benchmark",
+  "provider": "CUDA",
+  "model": "jinaai/jina-embeddings-v2-base-code",
+  "revision": "516f4baf13dec4ddddda8631e019b5737c8bc250",
+  "device": {
+    "name": "NVIDIA GeForce RTX 4090",
+    "uuid": "GPU-65ce3b3d-4e39-5c51-a52c-491c5b62175e",
+    "configured_ordinal": 1,
+    "masked_runtime_ordinal": 0
+  },
+  "historical_initial_gate": {
+    "status": "passed",
+    "arena_max_bytes": 12884901888,
+    "publisher_cosine": {
+      "reference": 0.7281748759529421,
+      "cpu": 0.7281747460365295,
+      "cuda": 0.7281746864318848,
+      "absolute_cpu_cuda_difference": 5.960464477539062e-08
+    },
+    "cached_bypass_cosine": {
+      "query": 1.0000003576278687,
+      "source": 0.9999997615814209,
+      "minimum": 0.9999997615814209
+    },
+    "batch_consistency_cosine": {
+      "cpu_query": 1.000000238418579,
+      "cpu_source": 0.9999995827674866,
+      "cuda_query": 0.9999998211860657,
+      "cuda_source": 0.9999998211860657
+    },
+    "required_cached_and_batch_cosine": 0.9990000128746033,
+    "total_ms": 18605,
+    "scope": "Initial short-input publisher, cached-bypass, and batch comparisons"
+  },
+  "final_4096_validation": {
+    "status": "passed",
+    "arena_max_bytes": 10737418240,
+    "max_input_tokens": 4096,
+    "max_batch_padded_tokens": 8192,
+    "max_batch_inputs": 8,
+    "max_region_bytes": 4096,
+    "initialize_ms": 907,
+    "total_ms": 2247,
+    "source_regions": {
+      "count": 256,
+      "bytes_total": 116067,
+      "bytes_min": 39,
+      "bytes_max": 512,
+      "distinct_sha256": 256
+    },
+    "throughput_items_per_second": {
+      "cpu": 10.787577430365346,
+      "cuda": 602.3529411764706,
+      "cuda_speedup": 55.83764705882353
+    },
+    "gpu_memory": {
+      "peak_process_bytes": 8151629824,
+      "peak_process_gib": 7.59,
+      "measurement_limit_bytes": 17179869184,
+      "sample_interval_ms": 50,
+      "sample_count": 49
+    },
+    "mixed_length_batches": {
+      "input_tokens": [
+        4096,
+        1024,
+        1024,
+        1024,
+        1024
+      ],
+      "greedy_batches": [
+        [
+          4096,
+          1024
+        ],
+        [
+          1024,
+          1024,
+          1024
+        ]
+      ],
+      "padded_token_limit": 8192
+    },
+    "scope": "Uncached calls over 256 frozen source regions; throughput excludes model initialization"
+  },
+  "cuda_trace": {
+    "file": "gpu-search-runtime/profiler/trufflepig-worker.nsys-rep",
+    "present": true,
+    "kernel_launches": 1185,
+    "archive_path": "/home/josh/.cache/trufflepig/evaluation/gpu-search/gpu-search-runtime/profiler/trufflepig-worker.nsys-rep",
+    "sha256": "e70400874960f275838bb51f682737fbb0c7dc28ae570fcdc61658263945a0a4",
+    "bytes": 11560232
+  },
+  "retrieval_admission": {
+    "split": "development",
+    "tasks": 12,
+    "held_out": false,
+    "cuda_mean_file_recall_at_10": 0.3333333333333333,
+    "newfilefirstlexical_mean_file_recall_at_10": 0.4583333333333333,
+    "passed": false
+  },
+  "latency_admission": {
+    "serial": {
+      "requests": 100,
+      "p95_seconds": 1.4897110809979495,
+      "p95_limit_seconds": 2.0,
+      "nonready_responses": 6,
+      "passed": false
+    },
+    "concurrent": {
+      "requests": 120,
+      "p95_seconds": 6.08325262699509,
+      "p95_limit_seconds": 5.0,
+      "nonready_responses": 0,
+      "passed": false
+    }
+  },
+  "admission": {
+    "default_enable": false,
+    "status": "failed",
+    "reason": "CUDA Recall@10 is below newfilefirstlexical in the development replay, and concurrent p95 exceeds 5 seconds"
+  },
+  "limits_and_scope": "The throughput sample uses 256 distinct 39-512-byte source regions. It supplies no performance estimate for a full 4096-byte corpus. Retrieval is development-only and not held-out."
+}

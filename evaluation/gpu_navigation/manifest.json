@@ -1,0 +1,273 @@
+{
+  "schema_version": 2,
+  "workflow_version": "gpu-navigation-v1",
+  "label": "development navigation benchmark",
+  "split": "development",
+  "held_out_claim": false,
+  "limits": {
+    "maximum_tool_calls": 12,
+    "maximum_emitted_tokens": 12000,
+    "maximum_output_tokens_per_call": 900,
+    "task_timeout_seconds": 600
+  },
+  "solver_arms": ["ordinarytools", "ordinarytools+trufflepig"],
+  "arms": [
+    {
+      "id": "oldlexical",
+      "kind": "trufflepig",
+      "binary": "~/.cargo/bin/trufflepig",
+      "lane": "lexical",
+      "status": "baseline executable supplied by operator"
+    },
+    {
+      "id": "newfilefirstlexical",
+      "kind": "trufflepig",
+      "binary": "target/debug/trufflepig",
+      "lane": "file-first-lexical",
+      "status": "run after ranking implementation is frozen"
+    },
+    {
+      "id": "cuda",
+      "kind": "trufflepig",
+      "binary": "target/debug/trufflepig",
+      "lane": "cuda",
+      "status": "run only when the CUDA lane is available"
+    }
+  ],
+  "corpora": {
+    "lunatic": {
+      "root": "~/Source/lunatic",
+      "parent_revision": "caee46869d04dfc6eb27e1118458bae135ecb9ab",
+      "language": "rust"
+    },
+    "tales-from-space": {
+      "root": "~/Source/tales-from-space",
+      "parent_revision": "5e38747cbe829117dba8207ecbe3e0bbdf5b2928",
+      "language": "luau"
+    },
+    "tgstation": {
+      "root": "~/Source/tgstation",
+      "parent_revision": "7cb126ac8864a0d0952c48d25375a5bebaef512b",
+      "language": "dm"
+    }
+  },
+  "tasks": [
+    {
+      "id": "lunatic-document-append-guard",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "mechanism",
+      "query": "documents append writer revision",
+      "prompt": "Trace how a scripted document append is admitted. Identify each validation boundary, including the writable runtime, held writer binding, expected revision, text bounds, and Mind requirement, then explain why the effect is queued only after those checks.",
+      "labels": [
+        {"path": "crates/lunatic-server/src/script/commands_documents.rs", "start": 4250, "end": 6509, "sha256": "6ab86e68fa29d79c64259a1dcf6006ffc659abbc2a3ad249db1d528fca6987df", "provenance": "read-evidence-parent-snapshot"}
+      ],
+      "snapshot": {
+        "parent_revision": "caee46869d04dfc6eb27e1118458bae135ecb9ab",
+        "files": [
+          {"path": "crates/lunatic-server/src/script/commands_documents.rs", "sha256": "6ab86e68fa29d79c64259a1dcf6006ffc659abbc2a3ad249db1d528fca6987df"}
+        ]
+      }
+    },
+    {
+      "id": "lunatic-legacy-airlock-fixture",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "mechanism",
+      "query": "SecureDoor restricted airlock fixture",
+      "prompt": "Explain how the legacy map spelling for an access-restricted airlock becomes a regular door plus an access restriction. Follow the fixture roster, deserialization, and migration boundaries and name what remains the content pack's responsibility.",
+      "labels": [
+        {"path": "crates/lunatic-core/src/map/legacy.rs", "start": 781, "end": 1348, "sha256": "eaf1359db628c58db678c6bee7e0f46890c07d8d5d3f762c816932f32e8f1890", "provenance": "read-evidence-parent-snapshot"},
+        {"path": "crates/lunatic-core/src/map/legacy.rs", "start": 2703, "end": 3569, "sha256": "eaf1359db628c58db678c6bee7e0f46890c07d8d5d3f762c816932f32e8f1890", "provenance": "read-evidence-parent-snapshot"}
+      ],
+      "snapshot": {
+        "parent_revision": "caee46869d04dfc6eb27e1118458bae135ecb9ab",
+        "files": [
+          {"path": "crates/lunatic-core/src/map/legacy.rs", "sha256": "eaf1359db628c58db678c6bee7e0f46890c07d8d5d3f762c816932f32e8f1890"}
+        ]
+      }
+    },
+    {
+      "id": "lunatic-cycle-link-validation",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "mechanism",
+      "query": "cycle link duplicate target",
+      "prompt": "Trace map cycle-link validation. Explain why a link must stand on a barrier, why duplicate coordinates fail, and which part of loading resolves the partner and direction later.",
+      "labels": [
+        {"path": "crates/lunatic-core/src/map/validate.rs", "start": 11998, "end": 13666, "sha256": "25f571c45e151cf80f0a83776ad7cf718be01daf61b1e9867453c848e6220173", "provenance": "read-evidence-parent-snapshot"},
+        {"path": "crates/lunatic-core/src/map/validate.rs", "start": 13673, "end": 15793, "sha256": "25f571c45e151cf80f0a83776ad7cf718be01daf61b1e9867453c848e6220173", "provenance": "read-evidence-parent-snapshot"}
+      ],
+      "snapshot": {
+        "parent_revision": "caee46869d04dfc6eb27e1118458bae135ecb9ab",
+        "files": [
+          {"path": "crates/lunatic-core/src/map/validate.rs", "sha256": "25f571c45e151cf80f0a83776ad7cf718be01daf61b1e9867453c848e6220173"}
+        ]
+      }
+    },
+    {
+      "id": "lunatic-script-permission-interface",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "mechanism",
+      "query": "script permissions interface call cycles",
+      "prompt": "Map the script permission contract from default grants through privileged grants to inter-mod calls. Explain the read and write boundary, host approval, copy-only arguments, synchronous cycle failure, and attribution.",
+      "labels": [
+        {"path": "docs/scripting/permissions.md", "start": 2140, "end": 3941, "sha256": "f2d37a6a62cdf1a9587270bb11a92eb77e717e83ecbc432d0e88a1acaf58d1d4", "provenance": "read-evidence-parent-snapshot"},
+        {"path": "docs/scripting/permissions.md", "start": 4921, "end": 6004, "sha256": "f2d37a6a62cdf1a9587270bb11a92eb77e717e83ecbc432d0e88a1acaf58d1d4", "provenance": "read-evidence-parent-snapshot"}
+      ],
+      "snapshot": {
+        "parent_revision": "caee46869d04dfc6eb27e1118458bae135ecb9ab",
+        "files": [
+          {"path": "docs/scripting/permissions.md", "sha256": "f2d37a6a62cdf1a9587270bb11a92eb77e717e83ecbc432d0e88a1acaf58d1d4"}
+        ]
+      }
+    },
+    {
+      "id": "tfs-airlock-permission-fixture",
+      "corpus": "tales-from-space",
+      "language": "luau",
+      "intent": "mechanism",
+      "query": "airlock permitted engineering",
+      "prompt": "Explain the programmable airlock permission path. Identify how the fixture handles actor-less door permission requests, how the guest's permitted function handles a button actor, and what one edit would require engineering access.",
+      "labels": [
+        {"path": "content/fixtures/airlock.luau", "start": 0, "end": 736, "sha256": "603281872aacbbbd32985f0ced0e96599e2a0e9b8efb09a76909dc16dd585069", "provenance": "read-evidence-parent-snapshot"},
+        {"path": "reference/scripts/airlock.luau", "start": 325, "end": 1238, "sha256": "ac9dbbb4e3428038932c0326ad36f9c70d0ec0fb9cc203eddc43b97058b8bc90", "provenance": "read-evidence-parent-snapshot"}
+      ],
+      "snapshot": {
+        "parent_revision": "5e38747cbe829117dba8207ecbe3e0bbdf5b2928",
+        "files": [
+          {"path": "content/fixtures/airlock.luau", "sha256": "603281872aacbbbd32985f0ced0e96599e2a0e9b8efb09a76909dc16dd585069"},
+          {"path": "reference/scripts/airlock.luau", "sha256": "ac9dbbb4e3428038932c0326ad36f9c70d0ec0fb9cc203eddc43b97058b8bc90"}
+        ]
+      }
+    },
+    {
+      "id": "tfs-airlock-cycle-state",
+      "corpus": "tales-from-space",
+      "language": "luau",
+      "intent": "mechanism",
+      "query": "airlock pressure generation",
+      "prompt": "Trace the accepted programmable airlock button cycle from generation and door ordering through pressure direction and thresholds. Explain how stale reports are ignored and how a moving door or failed completion changes the state.",
+      "labels": [
+        {"path": "reference/scripts/airlock.luau", "start": 1593, "end": 3457, "sha256": "ac9dbbb4e3428038932c0326ad36f9c70d0ec0fb9cc203eddc43b97058b8bc90", "provenance": "read-evidence-parent-snapshot"},
+        {"path": "reference/scripts/airlock.luau", "start": 3458, "end": 6223, "sha256": "ac9dbbb4e3428038932c0326ad36f9c70d0ec0fb9cc203eddc43b97058b8bc90", "provenance": "read-evidence-parent-snapshot"}
+      ],
+      "snapshot": {
+        "parent_revision": "5e38747cbe829117dba8207ecbe3e0bbdf5b2928",
+        "files": [
+          {"path": "reference/scripts/airlock.luau", "sha256": "ac9dbbb4e3428038932c0326ad36f9c70d0ec0fb9cc203eddc43b97058b8bc90"}
+        ]
+      }
+    },
+    {
+      "id": "tfs-airlock-rebuild-fixture",
+      "corpus": "tales-from-space",
+      "language": "luau",
+      "intent": "mechanism",
+      "query": "airlock file controller links",
+      "prompt": "Use the programmable airlock fixture and its test to reconstruct commissioning. Explain the access point's file and program bindings, the joined members, and what releasing versus rejoining proves about the network and permissions.",
+      "labels": [
+        {"path": "tests/devices/programmable_airlock_test.luau", "start": 0, "end": 2591, "sha256": "88e04b66aad9987eab9740bbc093c934ff8ca8fc22adcf0f7fdaa5b25e128355", "provenance": "read-evidence-parent-snapshot"},
+        {"path": "tests/devices/programmable_airlock_test.luau", "start": 4781, "end": 7422, "sha256": "88e04b66aad9987eab9740bbc093c934ff8ca8fc22adcf0f7fdaa5b25e128355", "provenance": "read-evidence-parent-snapshot"}
+      ],
+      "snapshot": {
+        "parent_revision": "5e38747cbe829117dba8207ecbe3e0bbdf5b2928",
+        "files": [
+          {"path": "tests/devices/programmable_airlock_test.luau", "sha256": "88e04b66aad9987eab9740bbc093c934ff8ca8fc22adcf0f7fdaa5b25e128355"}
+        ]
+      }
+    },
+    {
+      "id": "tfs-writing-commit",
+      "corpus": "tales-from-space",
+      "language": "luau",
+      "intent": "mechanism",
+      "query": "documents append writer crayon",
+      "prompt": "Trace a writing commit from the shared paper view and append helper to the native document command, then connect the red crayon definition to that route. Identify revision, size, fragment, and held-writer checks.",
+      "labels": [
+        {"path": "content/lib/writing.luau", "start": 3124, "end": 4086, "sha256": "2ef6e461f31119d8fe788a2b45acde555ab9112b7739a012d4a327995372c4f1", "provenance": "read-evidence-parent-snapshot"},
+        {"path": "content/items/leisure/crayon_red.luau", "start": 0, "end": 902, "sha256": "23722d9cd760f24add2aa27a8cef90ecf2189022aef2c1a04eea7d53992379c5", "provenance": "read-evidence-parent-snapshot"}
+      ],
+      "snapshot": {
+        "parent_revision": "5e38747cbe829117dba8207ecbe3e0bbdf5b2928",
+        "files": [
+          {"path": "content/lib/writing.luau", "sha256": "2ef6e461f31119d8fe788a2b45acde555ab9112b7739a012d4a327995372c4f1"},
+          {"path": "content/items/leisure/crayon_red.luau", "sha256": "23722d9cd760f24add2aa27a8cef90ecf2189022aef2c1a04eea7d53992379c5"}
+        ]
+      }
+    },
+    {
+      "id": "tg-airlock-controller-cycle",
+      "corpus": "tgstation",
+      "language": "dm",
+      "intent": "mechanism",
+      "query": "airlock controller pressurize",
+      "prompt": "Trace the Dream Maker airlock controller from setup tags and weak references into its processing state machine. Explain the pressurize and depressurize thresholds, target states, and behavior when a referenced device is unavailable.",
+      "labels": [
+        {"path": "code/game/machinery/embedded_controller/airlock_controller.dm", "start": 0, "end": 2058, "sha256": "d1c5584430cf0c8a5625ec49fd2f67624b844008220eb3384e045ba53c7a1cb9", "provenance": "read-evidence-parent-snapshot"},
+        {"path": "code/game/machinery/embedded_controller/airlock_controller.dm", "start": 2242, "end": 3916, "sha256": "d1c5584430cf0c8a5625ec49fd2f67624b844008220eb3384e045ba53c7a1cb9", "provenance": "read-evidence-parent-snapshot"}
+      ],
+      "snapshot": {
+        "parent_revision": "7cb126ac8864a0d0952c48d25375a5bebaef512b",
+        "files": [
+          {"path": "code/game/machinery/embedded_controller/airlock_controller.dm", "sha256": "d1c5584430cf0c8a5625ec49fd2f67624b844008220eb3384e045ba53c7a1cb9"}
+        ]
+      }
+    },
+    {
+      "id": "tg-airlock-pump-pressure",
+      "corpus": "tgstation",
+      "language": "dm",
+      "intent": "mechanism",
+      "query": "airlock pump adjacent pressure",
+      "prompt": "Explain how the airlock pump discovers its two sides, assigns pipe layers, distributes gas over adjacent tiles, and ends a cycle at its pressure target or timeout. Include the topology and safety assumptions an installer must satisfy.",
+      "labels": [
+        {"path": "code/modules/atmospherics/machinery/components/unary_devices/airlock_pump.dm", "start": 842, "end": 3959, "sha256": "b059fba8845f867116539d7e204b4b766c1d65d2bc1c83bdbb60d3e7ba1e00cd", "provenance": "read-evidence-parent-snapshot"},
+        {"path": "code/modules/atmospherics/machinery/components/unary_devices/airlock_pump.dm", "start": 7668, "end": 10942, "sha256": "b059fba8845f867116539d7e204b4b766c1d65d2bc1c83bdbb60d3e7ba1e00cd", "provenance": "read-evidence-parent-snapshot"},
+        {"path": "code/modules/atmospherics/machinery/components/unary_devices/airlock_pump.dm", "start": 17105, "end": 19600, "sha256": "b059fba8845f867116539d7e204b4b766c1d65d2bc1c83bdbb60d3e7ba1e00cd", "provenance": "read-evidence-parent-snapshot"}
+      ],
+      "snapshot": {
+        "parent_revision": "7cb126ac8864a0d0952c48d25375a5bebaef512b",
+        "files": [
+          {"path": "code/modules/atmospherics/machinery/components/unary_devices/airlock_pump.dm", "sha256": "b059fba8845f867116539d7e204b4b766c1d65d2bc1c83bdbb60d3e7ba1e00cd"}
+        ]
+      }
+    },
+    {
+      "id": "tg-airlock-secure-open",
+      "corpus": "tgstation",
+      "language": "dm",
+      "intent": "mechanism",
+      "query": "airlock secure open close",
+      "prompt": "Explain the secure airlock open and close helpers. Describe the ordering of bolt state, forced door operation, delays, and appearance updates, and why callers use these helpers around a cycle.",
+      "labels": [
+        {"path": "code/game/machinery/airlock_control.dm", "start": 0, "end": 1334, "sha256": "6ad1bf6d02a8572594f22ddb5e4e53ebc7742ed219c38e1a0c98fa4ea7fdc395", "provenance": "read-evidence-parent-snapshot"}
+      ],
+      "snapshot": {
+        "parent_revision": "7cb126ac8864a0d0952c48d25375a5bebaef512b",
+        "files": [
+          {"path": "code/game/machinery/airlock_control.dm", "sha256": "6ad1bf6d02a8572594f22ddb5e4e53ebc7742ed219c38e1a0c98fa4ea7fdc395"}
+        ]
+      }
+    },
+    {
+      "id": "tg-airlock-wire-permissions",
+      "corpus": "tgstation",
+      "language": "dm",
+      "intent": "mechanism",
+      "query": "airlock wire bolts access",
+      "prompt": "Map the airlock wire interaction safety gates and pulse effects. Focus on user access, electrification and secure state, then explain what the open, bolt, ID scan, AI, and safety wires can change.",
+      "labels": [
+        {"path": "code/datums/wires/airlock.dm", "start": 3024, "end": 5480, "sha256": "63f519af0b80b49a9d4acbf8f622217c689a0cc388ac07105c1fac38de1524f6", "provenance": "read-evidence-parent-snapshot"},
+        {"path": "code/datums/wires/airlock.dm", "start": 5480, "end": 8170, "sha256": "63f519af0b80b49a9d4acbf8f622217c689a0cc388ac07105c1fac38de1524f6", "provenance": "read-evidence-parent-snapshot"}
+      ],
+      "snapshot": {
+        "parent_revision": "7cb126ac8864a0d0952c48d25375a5bebaef512b",
+        "files": [
+          {"path": "code/datums/wires/airlock.dm", "sha256": "63f519af0b80b49a9d4acbf8f622217c689a0cc388ac07105c1fac38de1524f6"}
+        ]
+      }
+    }
+  ]
+}

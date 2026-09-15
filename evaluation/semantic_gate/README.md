@@ -1,10 +1,10 @@
-# CPU semantic inference gate
+# Semantic inference gate evidence
 
 The optional `semantic` feature uses the pinned publisher ONNX and tokenizer
 assets in [model.json](model.json). Asset hashes are checked before model loading.
 The engine uses masked mean pooling, L2 normalization and all 768 `f32` dimensions.
-It accepts at most 8192 model tokens and reports excessive inputs instead of
-silently truncating them. Inference uses two CPU threads and one item per batch.
+Each input accepts at most 4096 model tokens; a call accepts at most 8 inputs and
+8192 padded tokens. Excessive inputs fail explicitly instead of being truncated.
 
 Install the manifest assets preserving their relative paths, and provide a
 compatible ONNX Runtime shared library using `ORT_DYLIB_PATH`. Run:
@@ -19,6 +19,28 @@ The JSON report includes load time, total time and process peak RSS. The small
 input gate rejects peak RSS over 4 GiB. Model initialization also runs parity
 before serving requests. This check establishes executable CPU parity only;
 it does not establish retrieval quality, long-input limits, or corpus latency.
+
+## CUDA evidence
+
+The [CUDA result](cuda_result.json) records the numerical gate, bounded 4090
+benchmark, profiler presence, and admission outcomes. The initial short-input
+gate passes publisher CPU/CUDA parity (`0.7281747460365295` and
+`0.7281746864318848`) and cached/batch comparisons above `0.999`.
+
+The final validation uses a 10 GiB ORT arena, 4096-token inputs, 8192 padded
+tokens, and batches of at most 8. It processes 256 distinct source regions of
+39--512 bytes and measures 602.352941 items/s on CUDA versus 10.787577 on CPU
+(55.837647x); sampled process GPU memory peaks at 7.59 GiB. The mixed five-input
+shape `[4096,1024,1024,1024,1024]` is greedily split into `[4096,1024]` and
+`[1024,1024,1024]`, with each call bounded at 8192 padded tokens. The external
+`trufflepig-worker.nsys-rep` trace is present and records 1185 CUDA kernels.
+
+These measurements cover the listed short source regions and supply no
+performance estimate for a full 4096-byte corpus. The development retrieval
+replay gives CUDA Recall@10 `0.333333` versus `0.458333` for
+`newfilefirstlexical`. Concurrent latency has p95 `6.08325262699509` seconds
+against a 5-second limit; serial p95 is `1.4897110809979495` seconds but has 6
+nonready responses. Default enable therefore fails and semantic remains opt-in.
 
 Set `TRUFFLEPIG_MODEL_DIR` to the verified model directory for `--sem` queries.
 The path-independent embedding cache keys include source text, model revision,

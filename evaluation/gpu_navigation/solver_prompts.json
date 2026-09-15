@@ -1,0 +1,200 @@
+{
+  "schema_version": 2,
+  "workflow_version": "gpu-navigation-v1",
+  "split": "development",
+  "held_out_claim": false,
+  "tasks": [
+    {
+      "schema_version": 2,
+      "workflow_version": "gpu-navigation-v1",
+      "id": "lunatic-document-append-guard",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "mechanism",
+      "prompt": "Trace how a scripted document append is admitted. Identify each validation boundary, including the writable runtime, held writer binding, expected revision, text bounds, and Mind requirement, then explain why the effect is queued only after those checks.",
+      "query": "documents append writer revision",
+      "limits": {
+        "maximum_tool_calls": 12,
+        "maximum_emitted_tokens": 12000,
+        "maximum_output_tokens_per_call": 900,
+        "task_timeout_seconds": 600
+      }
+    },
+    {
+      "schema_version": 2,
+      "workflow_version": "gpu-navigation-v1",
+      "id": "lunatic-legacy-airlock-fixture",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "mechanism",
+      "prompt": "Explain how the legacy map spelling for an access-restricted airlock becomes a regular door plus an access restriction. Follow the fixture roster, deserialization, and migration boundaries and name what remains the content pack's responsibility.",
+      "query": "SecureDoor restricted airlock fixture",
+      "limits": {
+        "maximum_tool_calls": 12,
+        "maximum_emitted_tokens": 12000,
+        "maximum_output_tokens_per_call": 900,
+        "task_timeout_seconds": 600
+      }
+    },
+    {
+      "schema_version": 2,
+      "workflow_version": "gpu-navigation-v1",
+      "id": "lunatic-cycle-link-validation",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "mechanism",
+      "prompt": "Trace map cycle-link validation. Explain why a link must stand on a barrier, why duplicate coordinates fail, and which part of loading resolves the partner and direction later.",
+      "query": "cycle link duplicate target",
+      "limits": {
+        "maximum_tool_calls": 12,
+        "maximum_emitted_tokens": 12000,
+        "maximum_output_tokens_per_call": 900,
+        "task_timeout_seconds": 600
+      }
+    },
+    {
+      "schema_version": 2,
+      "workflow_version": "gpu-navigation-v1",
+      "id": "lunatic-script-permission-interface",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "mechanism",
+      "prompt": "Map the script permission contract from default grants through privileged grants to inter-mod calls. Explain the read and write boundary, host approval, copy-only arguments, synchronous cycle failure, and attribution.",
+      "query": "script permissions interface call cycles",
+      "limits": {
+        "maximum_tool_calls": 12,
+        "maximum_emitted_tokens": 12000,
+        "maximum_output_tokens_per_call": 900,
+        "task_timeout_seconds": 600
+      }
+    },
+    {
+      "schema_version": 2,
+      "workflow_version": "gpu-navigation-v1",
+      "id": "tfs-airlock-permission-fixture",
+      "corpus": "tales-from-space",
+      "language": "luau",
+      "intent": "mechanism",
+      "prompt": "Explain the programmable airlock permission path. Identify how the fixture handles actor-less door permission requests, how the guest's permitted function handles a button actor, and what one edit would require engineering access.",
+      "query": "airlock permitted engineering",
+      "limits": {
+        "maximum_tool_calls": 12,
+        "maximum_emitted_tokens": 12000,
+        "maximum_output_tokens_per_call": 900,
+        "task_timeout_seconds": 600
+      }
+    },
+    {
+      "schema_version": 2,
+      "workflow_version": "gpu-navigation-v1",
+      "id": "tfs-airlock-cycle-state",
+      "corpus": "tales-from-space",
+      "language": "luau",
+      "intent": "mechanism",
+      "prompt": "Trace the accepted programmable airlock button cycle from generation and door ordering through pressure direction and thresholds. Explain how stale reports are ignored and how a moving door or failed completion changes the state.",
+      "query": "airlock pressure generation",
+      "limits": {
+        "maximum_tool_calls": 12,
+        "maximum_emitted_tokens": 12000,
+        "maximum_output_tokens_per_call": 900,
+        "task_timeout_seconds": 600
+      }
+    },
+    {
+      "schema_version": 2,
+      "workflow_version": "gpu-navigation-v1",
+      "id": "tfs-airlock-rebuild-fixture",
+      "corpus": "tales-from-space",
+      "language": "luau",
+      "intent": "mechanism",
+      "prompt": "Use the programmable airlock fixture and its test to reconstruct commissioning. Explain the access point's file and program bindings, the joined members, and what releasing versus rejoining proves about the network and permissions.",
+      "query": "airlock file controller links",
+      "limits": {
+        "maximum_tool_calls": 12,
+        "maximum_emitted_tokens": 12000,
+        "maximum_output_tokens_per_call": 900,
+        "task_timeout_seconds": 600
+      }
+    },
+    {
+      "schema_version": 2,
+      "workflow_version": "gpu-navigation-v1",
+      "id": "tfs-writing-commit",
+      "corpus": "tales-from-space",
+      "language": "luau",
+      "intent": "mechanism",
+      "prompt": "Trace a writing commit from the shared paper view and append helper to the native document command, then connect the red crayon definition to that route. Identify revision, size, fragment, and held-writer checks.",
+      "query": "documents append writer crayon",
+      "limits": {
+        "maximum_tool_calls": 12,
+        "maximum_emitted_tokens": 12000,
+        "maximum_output_tokens_per_call": 900,
+        "task_timeout_seconds": 600
+      }
+    },
+    {
+      "schema_version": 2,
+      "workflow_version": "gpu-navigation-v1",
+      "id": "tg-airlock-controller-cycle",
+      "corpus": "tgstation",
+      "language": "dm",
+      "intent": "mechanism",
+      "prompt": "Trace the Dream Maker airlock controller from setup tags and weak references into its processing state machine. Explain the pressurize and depressurize thresholds, target states, and behavior when a referenced device is unavailable.",
+      "query": "airlock controller pressurize",
+      "limits": {
+        "maximum_tool_calls": 12,
+        "maximum_emitted_tokens": 12000,
+        "maximum_output_tokens_per_call": 900,
+        "task_timeout_seconds": 600
+      }
+    },
+    {
+      "schema_version": 2,
+      "workflow_version": "gpu-navigation-v1",
+      "id": "tg-airlock-pump-pressure",
+      "corpus": "tgstation",
+      "language": "dm",
+      "intent": "mechanism",
+      "prompt": "Explain how the airlock pump discovers its two sides, assigns pipe layers, distributes gas over adjacent tiles, and ends a cycle at its pressure target or timeout. Include the topology and safety assumptions an installer must satisfy.",
+      "query": "airlock pump adjacent pressure",
+      "limits": {
+        "maximum_tool_calls": 12,
+        "maximum_emitted_tokens": 12000,
+        "maximum_output_tokens_per_call": 900,
+        "task_timeout_seconds": 600
+      }
+    },
+    {
+      "schema_version": 2,
+      "workflow_version": "gpu-navigation-v1",
+      "id": "tg-airlock-secure-open",
+      "corpus": "tgstation",
+      "language": "dm",
+      "intent": "mechanism",
+      "prompt": "Explain the secure airlock open and close helpers. Describe the ordering of bolt state, forced door operation, delays, and appearance updates, and why callers use these helpers around a cycle.",
+      "query": "airlock secure open close",
+      "limits": {
+        "maximum_tool_calls": 12,
+        "maximum_emitted_tokens": 12000,
+        "maximum_output_tokens_per_call": 900,
+        "task_timeout_seconds": 600
+      }
+    },
+    {
+      "schema_version": 2,
+      "workflow_version": "gpu-navigation-v1",
+      "id": "tg-airlock-wire-permissions",
+      "corpus": "tgstation",
+      "language": "dm",
+      "intent": "mechanism",
+      "prompt": "Map the airlock wire interaction safety gates and pulse effects. Focus on user access, electrification and secure state, then explain what the open, bolt, ID scan, AI, and safety wires can change.",
+      "query": "airlock wire bolts access",
+      "limits": {
+        "maximum_tool_calls": 12,
+        "maximum_emitted_tokens": 12000,
+        "maximum_output_tokens_per_call": 900,
+        "task_timeout_seconds": 600
+      }
+    }
+  ]
+}

@@ -34,10 +34,22 @@ back to CPU.
 
 `semantic-check` verifies pinned assets, publisher parity, and normalized
 768-value outputs for the provider it actually runs. A CUDA result is admitted
-only after a gate run records an actual CUDA execution trace. Until that run
-exists, this repository makes no CUDA performance or retrieval-quality claim.
-The existing [CPU result](../evaluation/semantic_gate/cpu_result.json) covers
-two publisher inputs and establishes executable CPU parity only.
+as executable provider evidence only when the gate also records an actual CUDA
+execution trace. The checked-in
+[CUDA evidence](../evaluation/semantic_gate/cuda_result.json) records the
+initial short-input CPU/CUDA parity, a final 4090 validation at 4,096 input
+tokens, 8,192 padded tokens, 8 inputs, and a 10 GiB ORT arena, plus a trace with
+1,185 CUDA kernel launches. Its bounded 256-region sample reaches 55.837647x
+the measured CPU throughput and samples 7.59 GiB of process GPU memory. These
+figures cover 39--512-byte regions and provide no performance estimate for a
+full 4,096-byte corpus. The existing [CPU result](../evaluation/semantic_gate/cpu_result.json)
+covers two publisher inputs and establishes executable CPU parity only.
+
+The development retrieval replay reports CUDA mean file Recall@10 `0.333333`
+against `0.458333` for `newfilefirstlexical`. The concurrent latency probe
+reports p95 `6.08325262699509` seconds against a 5-second limit; serial p95 is
+`1.4897110809979495` seconds but includes 6 nonready responses. The default
+enable check therefore fails, and semantic retrieval remains opt-in.
 
 The [asset manifest](../evaluation/semantic_gate/model.json) pins the model and
 tokenizer revisions. Use masked mean pooling, L2 normalization, and all 768
@@ -54,8 +66,9 @@ normalization, dimensions, input version, and source bytes. A rename can reuse a
 content vector while source occurrences are updated separately.
 
 Preparation resumes after root-daemon restarts and retries transient worker
-failures. An explicit `semantic prepare` also retries failed content; ordinary
-search does not repeatedly reopen failed runs.
+failures. An explicit `semantic prepare` reconciles terminal `completed` and
+`capacity` runs against the current cache and retries failed content. Ordinary
+scheduling does not reopen terminal runs or repeatedly retry failed content.
 
 Source-region retrieval is cache-only. Search never embeds candidate regions on
 the query path. Query preparation may obtain one query vector from the worker;
@@ -90,6 +103,10 @@ selected provider and GPU identity, whether the model is loaded, and pending
 work. `semantic worker stop` asks it to release its model and exit. The worker
 may unload an idle model; status and diagnostics report residency without
 attributing whole-process RSS solely to model tensors.
+
+After a model-load failure, the worker retries lazily after 500 ms, doubles the
+cooldown after each failure, and caps it at 30 seconds. The latest load error
+remains visible while the cooldown is active; a successful load clears it.
 
 Doctor probes inspect cached vector dimensions, finite normalized values, and
 model/input provenance without starting inference. Cached vectors from another

@@ -18,21 +18,49 @@ python3 evaluation/replay.py --trufflepig target/debug/trufflepig
 The second command compares both retrieval systems on identical frozen bytes,
 using a ten-hit, 10,000-token Trufflepig cap to isolate retrieval from default
 response packing. The separate [navigation evaluation](navigation-evaluation.md)
-uses the 600-token default, up to three result pages and eight calls, and follows
-`show`, source continuations, and required `ctx`. Ground-truth-directed handle
-selection is labeled **oracle-assisted navigation replay**.
+uses 600-token compact file-first pages, up to three result pages and eight calls,
+and follows `show`, source continuations, and required `ctx`. Ground-truth-
+directed handle selection is labeled **oracle-assisted navigation replay**.
 The baseline performs the declared literal/regex search and reads a bounded
 current-file excerpt from the first match. It is a reproducible tool replay,
 not a substitute for a capable agent control. Search protocol bytes and read
 bytes are reported as bytes; neither is labeled another model's token count.
 Reports go to stdout and are not committed as claims of agent success.
 
+## Paired development navigation trials
+
+The [`gpu-navigation-v1` manifest](../evaluation/gpu_navigation/manifest.json)
+defines 12 paired development tasks across the
+`lunatic`, `tales-from-space`, and `tgstation` snapshots. Every arm receives the
+same task prompt and query. Graders retain parent revisions and selected source
+hashes; solvers do not receive relevance labels. The complete working trees are
+not frozen, so selected-file hash validation bounds the snapshot claim. Each task
+allows at most 12 tool calls, 12,000 emitted `o200k_base` tokens, and 600 seconds
+(10 minutes). Count actual input and output tokens, calls, failures, retries,
+timeouts, and task outcomes; a cap or timeout preserves the cost already spent.
+
+The three retrieval arms are `oldlexical` (the existing lexical lane),
+`newfilefirstlexical` (file-first lexical ranking), and `cuda` (the CUDA semantic
+lane). A CUDA trial records provider availability and an actual CUDA execution
+trace; unavailable CUDA is an explicit arm outcome and supplies no performance
+or retrieval-quality result.
+
+The trials compare the same capable agent and task under the declared retrieval
+arms. Grading checks selected source hashes, answer correctness, source evidence, and
+task completion. Navigation-only trials do not measure patch success. This development split establishes no
+held-out result or agent-effectiveness claim; reports remain evidence from the
+completed trials. See the [measured results](../evaluation/gpu_navigation/result.json)
+for retrieval and readiness outcomes.
+
 ## External corpus splits
 
 [evaluation/manifests/corpora.json](../evaluation/manifests/corpora.json) reserves
-`lunatic` and `tgstation` for development, and `tales-from-space`, `Baystation12`,
-and `CEV-Eris` for held-out tasks. Rust/TypeScript held-out subsystems and time
-periods lack independent-repository coverage and must be reported as such.
+`lunatic` and `tgstation` for ordinary development, and `tales-from-space`,
+`Baystation12`, and `CEV-Eris` for held-out tasks. The paired GPU navigation
+workflow has its own development-only snapshot that includes `tales-from-space`;
+that use does not establish a held-out result. Rust/TypeScript held-out
+subsystems and time periods lack independent-repository coverage and must be
+reported as such.
 Reserved corpora have no fabricated task IDs, commits, or relevance labels.
 
 For an admitted task, freeze a parent commit and source-file hashes before
@@ -58,17 +86,16 @@ Contract fixtures must not regress. Assess held-out retrieval recall and agent
 task success before interpreting token or call savings. Higher token cost is a
 regression: for a permitted relative increase `epsilon`, require
 `new_cost <= baseline_cost * (1 + epsilon)`; misses never become free successes.
-No arbitrary three-percent non-regression claim follows from twenty tasks.
 Recall, statistical power, logging overhead, and latency thresholds require
 measured evidence and a declared analysis; draft targets are not acceptance
 results. Runner-neutral versioned records and workflow instructions are defined
 in the [navigation contract](navigation-evaluation.md#versioned-records-and-workflow).
 
-For agent trials, pair the same capable agent and task snapshot with ordinary
-search/read tools versus Trufflepig available. Count all input/output tokens,
-tool calls, failures, retries, and missed tasks. Use independent grading of
-patch success, paired trials, and confidence intervals. Predeclare sample size
-and analysis; report inconclusive results honestly.
+For agent trials, use the paired development workflow above or another declared
+sample. Count all input/output tokens, tool calls, failures, retries, and missed
+tasks. Use independent grading of patch success, paired trials, and confidence
+intervals. Predeclare sample size and analysis; report inconclusive results
+honestly.
 
 ## Required behavioral coverage
 

@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 import tomllib
-from urllib.parse import unquote_to_bytes
+from urllib.parse import unquote_to_bytes, urlsplit
 
 from navigation_replay import (BUDGET, LABEL, MAX_CALLS, MAX_PAGES, CommandRunner,
                                combined_usage, exact_counter, fully_covered, verified_lines)
@@ -80,23 +80,86 @@ def verify_expected(task, roots):
 
 
 def event_identity(hit):
-    return {key: hit[key] for key in ("member", "repository", "path", "revision", "start",
-                                     "end", "handle", "member_rank") if key in hit}
+    # Search responses may be compact.  Keep the identity exactly as emitted;
+    # in particular, never manufacture a revision or byte span from a line.
+    return {key: hit[key] for key in ("member", "repository", "owner_root", "path", "file",
+                                     "revision", "start", "end", "line", "lines", "handle",
+                                     "member_rank") if key in hit}
+
+
+def hit_path(hit):
+    """Return a decoded root-relative path when a result exposes one.
+
+    Workspace result compaction uses a ``file:`` URI and line metadata.  A
+    compact result is still metadata: its handle must be passed to ``show``
+    before revision and byte coordinates can be trusted.
+    """
+    value = hit.get("path")
+    if value is None:
+        value = hit.get("file", hit.get("uri"))
+    if isinstance(value, dict):
+        value = value.get("uri") or value.get("path")
+    if not isinstance(value, str):
+        return None
+    if value.startswith("file:"):
+        parsed = urlsplit(value)
+        if parsed.scheme == "file":
+            value = parsed.path
+            if parsed.netloc and parsed.netloc != "localhost":
+                value = f"//{parsed.netloc}{value}"
+        else:
+            value = value[5:]
+    return os.fsdecode(unquote_to_bytes(value))
+
+
+def hit_with_path(hit, roots):
+    """Annotate a compact hit with its member/path for oracle matching only."""
+    path = hit_path(hit)
+    if path is None:
+        return hit
+    member = hit.get("member")
+    if member in roots:
+        root = str(roots[member])
+        if os.path.isabs(path):
+            try:
+                path = os.path.relpath(path, root)
+            except ValueError:
+                pass
+    elif os.path.isabs(path):
+        for name, root in roots.items():
+            try:
+                relative = os.path.relpath(path, root)
+            except ValueError:
+                continue
+            if relative != os.pardir and not relative.startswith(os.pardir + os.sep):
+                member, path = name, relative
+                break
+    return {**hit, "member": member, "path": path}
 
 
 def provenance_matches(value, roots):
     root = roots.get(value.get("member"))
     encoded = value.get("repository")
-    return root is not None and isinstance(encoded, str) and os.fsdecode(unquote_to_bytes(encoded)) == str(root)
+    if root is None:
+        return False
+    if encoded is None:
+        # Compact member hits rely on the response's ``members`` map.  The
+        # caller adds that mapping before checking provenance.
+        return False
+    return isinstance(encoded, str) and os.fsdecode(unquote_to_bytes(encoded)) == str(root)
 
 
 def matches(hit, label):
-    if hit.get("member") != label["member"] or "path" not in hit:
+    path = hit_path(hit)
+    if hit.get("member") != label["member"] or path is None:
         return False
-    if os.fsdecode(unquote_to_bytes(hit["path"])) != label["path"]:
+    if path != label["path"]:
         return False
-    return "start" not in label or (hit.get("start", 0) < label["end"]
-                                     and label["start"] < hit.get("end", 0))
+    # A compact hit has no byte span.  The file URI is sufficient for a
+    # path-only label; ``show`` establishes exact span overlap below.
+    if "start" not in label or "start" not in hit or "end" not in hit:
+        return True
+    return hit.get("start", 0) < label["end"] and label["start"] < hit.get("end", 0)
 
 
 def covered(label, evidence):
@@ -107,12 +170,29 @@ def covered(label, evidence):
 
 
 def source_evidence(response, selected, roots):
-    if (not selected or response.get("member") != selected["member"]
-            or not provenance_matches(response, roots)
-            or response.get("repository") != selected.get("repository")):
+    if not selected or response.get("member") != selected.get("member"):
+        return []
+    if not provenance_matches(response, roots):
+        return []
+    selected_repository = selected.get("repository")
+    if selected_repository is not None and response.get("repository") != selected_repository:
+        return []
+    if response.get("handle") is not None and response.get("handle") != selected.get("handle"):
+        return []
+    # ``show`` is authoritative for compact hits.  Normalize its URI and
+    # require it to resolve the same path/revision when the hit supplied them.
+    resolved = hit_with_path(response, roots)
+    path = resolved.get("path")
+    revision = response.get("revision") or response.get("content_revision")
+    expected_path = hit_with_path(selected, roots).get("path")
+    if not path or not revision or (expected_path and path != expected_path):
+        return []
+    if selected.get("revision") and revision != selected["revision"]:
         return []
     try:
-        spans = verified_lines(roots[selected["member"]], response, selected)
+        source = {**response, "path": path, "revision": revision}
+        expected = {**selected, "path": path, "revision": revision}
+        spans = verified_lines(roots[selected["member"]], source, expected)
     except (OSError, ValueError, KeyError, TypeError):
         return []
     return [dict(span, member=selected["member"]) for span in spans]
@@ -129,7 +209,8 @@ def navigate(task, roots, runner):
     while len(events) < MAX_CALLS:
         response, status, delivered, usage = runner(operation, argument)
         accepted = delivered and status == "ok"
-        hits = response.get("hits", []) if accepted and operation in ("search", "more") else []
+        hits = response.get("hits", []) if isinstance(response, dict) and accepted \
+            and operation in ("search", "more") else []
         if operation == "search":
             rank = 0
         ranks = list(range(rank + 1, rank + len(hits) + 1))
@@ -138,25 +219,38 @@ def navigate(task, roots, runner):
         if operation in ("search", "more"):
             pages += 1
             next_page = response.get("next") if accepted else None
-            for hit in hits:
-                hit = {**hit, "repository": response.get("members", {}).get(hit.get("member"))}
-                identified.append(event_identity(hit))
+            for raw_hit in hits:
+                member = raw_hit.get("member") or response.get("member")
+                emitted_hit = {**raw_hit,
+                               "member": member,
+                               "repository": raw_hit.get("repository")
+                               or response.get("members", {}).get(member)}
+                identified.append(event_identity(raw_hit))
+                hit = hit_with_path(emitted_hit, roots)
+                hit = {**hit, "repository": response.get("members", {}).get(hit.get("member"))
+                       or hit.get("repository")}
                 if not provenance_matches(hit, roots):
                     continue
                 relevant = {index for index, label in enumerate(labels) if matches(hit, label)}
                 discovered.update(relevant)
-                if relevant and hit.get("handle") and hit.get("revision"):
+                if relevant and hit.get("handle"):
                     pending.append(hit)
         if selected and operation in ("show", "ctx"):
             identified.append(event_identity(selected))
         event = record_dict(EventRecord(task["id"], len(events) + 1, operation, status,
                                        delivered, usage, identified, ranks,
-                                       response.get("coverage"), response.get("truncated", False)))
+                                       response.get("coverage") if isinstance(response, dict) else None,
+                                       response.get("truncated", False) if isinstance(response, dict) else False))
         event["argument"] = argument
         events.append(event)
         if operation == "ctx":
-            subject = response.get("hit", {})
-            context_ok = (accepted and provenance_matches(response, roots)
+            subject = response.get("hit", {}) if isinstance(response, dict) else {}
+            if not isinstance(subject, dict):
+                subject = {}
+            subject = hit_with_path({**subject, "member": subject.get("member")
+                                     or response.get("member")}, roots)
+            context_ok = (accepted and selected is not None
+                          and provenance_matches(response, roots)
                           and response.get("member") == selected["member"]
                           and subject.get("path") == selected["path"]
                           and subject.get("revision") == selected["revision"]
