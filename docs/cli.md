@@ -150,14 +150,21 @@ immutable Git facts. An explicit `--cache` isolates history beneath that overrid
 In workspace mode, `--cache` instead supplies an isolated base containing
 coordinator state and separate member caches.
 
-Ordinary commands start a per-root daemon automatically. `--no-daemon` performs
-local operations and synchronously reconciles before searching. Explicit `index`
-reconciles locally; `status` reports existing indexed coverage. `serve` runs the
-daemon in the foreground and `stop` requests shutdown. Specify the same `--root`
-and `--cache` on these commands. Daemon startup also launches a leased history
-worker without awaiting indexing. `--no-daemon` launches no background processes;
-its historical commands perform bounded foreground work. `hist-index --wait`
-continues history batches until completion or an explicit failure.
+Ordinary singleton commands start a per-root daemon automatically. Workspace
+queries start a coordinator automatically unless `--no-daemon` is set;
+`ws show` and `ws status` inspect locally. The coordinator starts member daemons
+when needed and reads their published indexes.
+`--no-daemon` performs local operations and synchronously reconciles before
+searching. Explicit `index` reconciles locally; `status` reports existing indexed
+coverage. For a singleton root, `serve` runs the daemon in the foreground and
+`stop` requests shutdown. In workspace mode, `stop` stops only the coordinator;
+stop a member daemon with `trufflepig --no-workspace --root ROOT stop`. Specify
+matching `--root` and `--cache` values for the daemon being controlled. Daemon
+startup also launches a leased history worker without awaiting indexing.
+`--no-daemon` launches no background processes; its historical commands perform
+bounded foreground work.
+`hist-index --wait` continues history batches until completion or an explicit
+failure.
 
 `doctor` runs bounded integrity/provenance probes without starting inference.
 The daemon also attempts probes and semantic residency maintenance while idle.

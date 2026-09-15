@@ -3,3 +3,6 @@
 *.profraw
 *.profdata
 __pycache__/
+
+# Local Trufflepig state
+.trufflepig/

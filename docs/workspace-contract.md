@@ -106,10 +106,12 @@ facts with provenance; cross-repository caller and import edges are not inferred
 ## Runtime, diagnostics, and limits
 
 Each canonical root retains its index daemon and publication lifecycle. The
-workspace coordinator requests member reconciliation and reads published member
-databases without starting competing index writers. Unavailable members remain
-visible in coverage. `--no-daemon` performs federation and reconciliation in the
-foreground and launches no background processes.
+workspace coordinator demand-starts a member daemon when none is running and
+reads published member databases without starting competing index writers. An
+existing member daemon is not asked to reconcile immediately; member freshness
+comes from its root watcher and periodic reconciliation. Unavailable members
+remain visible in coverage. `--no-daemon` performs federation and member
+indexing in the foreground and launches no background processes.
 
 Coordinator state lives under the normal cache base. `--cache DIRECTORY` selects
 an isolated workspace base containing coordinator state and separate member
