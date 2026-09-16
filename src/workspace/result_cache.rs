@@ -1,6 +1,9 @@
 //! Bounded workspace snapshots retain immutable entries independently of member caches.
-use super::config::Member;
 mod lines;
+use super::{
+    config::WorkspaceConfig,
+    member_root::{MemberRoot, linked_root_of_member},
+};
 use crate::{
     identity::{ResultCursor, ResultHandle},
     output::{OutputBudget, OutputFormat},
@@ -27,9 +30,17 @@ pub struct MemberSnapshot {
     pub index_identity: String,
     pub generation: i64,
     pub coverage: Value,
+    /// Worktree label when the owning root is a linked worktree of the member.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<String>,
 }
 impl MemberSnapshot {
-    pub fn capture(member: &Member, store: &Store, cache: &Path, generation: i64) -> Result<Self> {
+    pub fn capture(
+        member: &MemberRoot,
+        store: &Store,
+        cache: &Path,
+        generation: i64,
+    ) -> Result<Self> {
         member.verify_identity()?;
         let identity = member
             .identity
@@ -42,7 +53,7 @@ impl MemberSnapshot {
                     r.get(0)
                 })?;
         Ok(Self {
-            name: member.name.clone(),
+            name: member.name().to_owned(),
             root: encode_path(&member.root),
             cache: encode_path(&cache.canonicalize()?),
             device: identity.device,
@@ -50,18 +61,33 @@ impl MemberSnapshot {
             index_identity,
             generation,
             coverage: serde_json::to_value(store.coverage()?)?,
+            worktree: member.worktree.clone(),
         })
     }
-    pub fn open(&self, config: &super::config::WorkspaceConfig) -> Result<Store> {
+    /// The owning member with the recorded root; a worktree owner must still be
+    /// a linked worktree of its configured member.
+    pub fn member_root(&self, config: &WorkspaceConfig) -> Result<MemberRoot> {
         let member = config
             .members
             .iter()
             .find(|member| member.name == self.name)
             .context("member_unavailable: result owner was removed from workspace")?;
-        ensure!(
-            encode_path(&member.root) == self.root,
-            "member_unavailable: result owner path changed"
-        );
+        if self.worktree.is_none() {
+            ensure!(
+                encode_path(&member.root) == self.root,
+                "member_unavailable: result owner path changed"
+            );
+            return Ok(MemberRoot::configured(member));
+        }
+        let root = decode_path(&self.root)?;
+        let root = linked_root_of_member(member, &root)
+            .context("member_unavailable: result owner is missing")?;
+        let mut owner = MemberRoot::linked(member, root)?;
+        owner.is_home = true;
+        Ok(owner)
+    }
+    pub fn open(&self, config: &WorkspaceConfig) -> Result<Store> {
+        let member = self.member_root(config)?;
         let metadata = member
             .root
             .metadata()
@@ -91,7 +117,11 @@ impl MemberSnapshot {
         Ok(store)
     }
     pub fn metadata(&self, workspace: &str) -> Value {
-        json!({"workspace":workspace,"member":self.name,"repository":self.root})
+        let mut value = json!({"workspace":workspace,"member":self.name,"repository":self.root});
+        if let Some(label) = &self.worktree {
+            value["worktree"] = label.clone().into();
+        }
+        value
     }
 }
 

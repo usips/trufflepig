@@ -23,6 +23,18 @@ pub struct GitRepository {
     pub root_prefix: String,
 }
 
+/// Canonical Git common directory of `directory`'s repository or worktree.
+/// Runs only `rev-parse`, without the history version gate.
+pub fn common_dir(directory: &Path) -> Result<PathBuf> {
+    output_path(execute(
+        directory,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        None,
+    )?)?
+    .canonicalize()
+    .context("canonicalize Git common directory")
+}
+
 impl GitRepository {
     pub fn discover(root: &Path) -> Result<Self> {
         let root = root.canonicalize().context("canonicalize history root")?;

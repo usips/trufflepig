@@ -43,10 +43,22 @@ impl Heartbeat {
     }
 }
 
+/// Longest wait for a renewal in flight before the thread is detached.
+const STOP_GRACE: Duration = Duration::from_secs(3);
+
 impl Drop for Heartbeat {
     fn drop(&mut self) {
         let _ = self.stop.send(());
-        if let Some(thread) = self.thread.take() {
+        let Some(thread) = self.thread.take() else {
+            return;
+        };
+        // A renewal blocked on a contended lease lock must not pin a daemon
+        // whose root is gone; the thread dies with the process either way.
+        let deadline = std::time::Instant::now() + STOP_GRACE;
+        while !thread.is_finished() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if thread.is_finished() {
             let _ = thread.join();
         }
     }
@@ -75,6 +87,23 @@ mod tests {
         assert!(stopped > 0);
         std::thread::sleep(Duration::from_millis(20));
         assert_eq!(calls.load(Ordering::SeqCst), stopped);
+        Ok(())
+    }
+
+    #[test]
+    fn drop_detaches_a_renewal_that_never_returns() -> Result<()> {
+        let (started, wait_started) = channel();
+        let heartbeat = Heartbeat::spawn(Duration::from_millis(5), move || {
+            let _ = started.send(());
+            loop {
+                std::thread::sleep(Duration::from_secs(60));
+            }
+        })?;
+        wait_started.recv_timeout(Duration::from_secs(1))?;
+        let start = std::time::Instant::now();
+        drop(heartbeat);
+        let elapsed = start.elapsed();
+        assert!(elapsed >= STOP_GRACE && elapsed < STOP_GRACE + Duration::from_secs(1));
         Ok(())
     }
 

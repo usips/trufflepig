@@ -27,12 +27,13 @@ fn workspace_config_captures_missing_members_and_stable_identity() {
     assert_eq!(config.id, WorkspaceConfig::load(&path).unwrap().id);
     assert_eq!(
         config
-            .home(&directory.path().join("engine/src"))
+            .home_root(&directory.path().join("engine/src"))
             .unwrap()
-            .name,
+            .unwrap()
+            .name(),
         "engine"
     );
-    assert!(config.home(directory.path()).is_none());
+    assert!(config.home_root(directory.path()).unwrap().is_none());
     let alias = directory.path().join("alias.toml");
     symlink(&path, &alias).unwrap();
     assert_eq!(config.id, WorkspaceConfig::load(&alias).unwrap().id);

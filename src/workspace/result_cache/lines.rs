@@ -20,7 +20,11 @@ pub(crate) fn member_coverage_summary(values: &[Value]) -> String {
     let mut semantic: Option<&str> = None;
     let mut rerank_unavailable = false;
     for value in values {
-        let name = value["member"].as_str().unwrap_or("?");
+        let member = value["member"].as_str().unwrap_or("?");
+        let name = match value["worktree"].as_str() {
+            Some(label) => format!("{member}@{label}"),
+            None => member.to_owned(),
+        };
         let state = value["state"].as_str().unwrap_or("unknown");
         let mut part = if state == "searched" {
             let partial = value["partial"].as_bool().unwrap_or(false);
@@ -62,6 +66,8 @@ pub(crate) fn compact_coverage(values: &[Value]) -> Vec<Value> {
             let mut compact = serde_json::Map::new();
             for key in [
                 "member",
+                "root",
+                "worktree",
                 "state",
                 "status",
                 "available",
@@ -130,5 +136,17 @@ mod tests {
         let ready = [json!({"member":"a","state":"searched","partial":false,
                             "issues":{"semantic_status":"ready"}})];
         assert_eq!(member_coverage_summary(&ready), "a complete");
+    }
+
+    #[test]
+    fn member_summary_labels_substituted_worktree_root() {
+        let coverage = [
+            json!({"member":"lunatic","worktree":"feature-x","root":"/tmp/x","state":"searched","partial":false}),
+            json!({"member":"tg","state":"warming"}),
+        ];
+        assert_eq!(
+            member_coverage_summary(&coverage),
+            "lunatic@feature-x complete; tg warming"
+        );
     }
 }

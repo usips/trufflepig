@@ -79,7 +79,13 @@ generation, progress, cached inputs, missing inputs, and failures.
 ## Daemon and invalidation
 
 Each canonical root has one daemon, protected by an exclusive startup lock and
-a length-prefixed JSON Unix socket protocol. Worktrees keep separate databases.
+a length-prefixed JSON Unix socket protocol. Worktrees keep separate databases,
+seeded from the member's (or main checkout's) cache as a warm start
+(`src/store/seed.rs`): the seed copies content-addressed extraction facts and
+embeddings but never a publication, so the first reconcile publishes generation 1
+for the worktree root. A linked worktree's `.git` file is never indexed as
+source. A per-root daemon exits on its own when its root
+disappears, and the router evicts the cache (see [cli](cli.md#cache-and-daemon)).
 A stale socket does not permit a second writer while the startup lock is held.
 Requests carry client-created UUIDs and explicit session/client context.
 Semantic inference uses a separate per-user worker and lease; root daemons do

@@ -141,12 +141,12 @@ pub(crate) fn wait_for_workspace(
             .as_str()
             .context("semantic workspace response omitted member")?;
         let configured = config
-            .members
-            .iter()
-            .find(|candidate| candidate.name == name)
+            .member_roots(&options.root.canonicalize()?)?
+            .into_iter()
+            .find(|candidate| candidate.name() == name)
             .with_context(|| format!("invalid_member: member is not configured: {name}"))?;
         let root = configured.root.clone();
-        let cache = workspace::member_cache(configured, options.cache.as_deref())?;
+        let cache = workspace::member_cache(&configured, options.cache.as_deref())?;
         let generation = member["captured_generation"].as_i64().or_else(|| {
             member
                 .get("preparation")
@@ -228,7 +228,7 @@ pub(crate) fn workspace(
     );
     let members = selected_members(config, options)?;
     let mut values = Vec::with_capacity(members.len());
-    for member in members {
+    for member in &members {
         member.verify_identity()?;
         let cache = workspace::member_cache(member, options.cache.as_deref())?;
         let mut local = options.clone();
@@ -251,24 +251,24 @@ pub(crate) fn workspace(
             context,
         )?;
         let mut value: Value = serde_json::from_str(&output)?;
-        value["member"] = member.name.clone().into();
+        value["member"] = member.name().into();
         values.push(value);
     }
     let rendered = json!({"workspace": config.name, "command": command, "members": values});
     OutputBudget::new(options.budget)?.render(&rendered)
 }
 
-fn selected_members<'a>(
-    config: &'a WorkspaceConfig,
+fn selected_members(
+    config: &WorkspaceConfig,
     options: &Arguments,
-) -> Result<Vec<&'a workspace::config::Member>> {
+) -> Result<Vec<workspace::member_root::MemberRoot>> {
+    let roots = config.member_roots(&options.root.canonicalize()?)?;
     if let Some(name) = &options.member {
-        let member = config
-            .members
-            .iter()
-            .find(|candidate| &candidate.name == name)
+        let member = roots
+            .into_iter()
+            .find(|candidate| candidate.name() == name)
             .with_context(|| format!("invalid_member: member is not configured: {name}"))?;
         return Ok(vec![member]);
     }
-    Ok(config.members.iter().collect())
+    Ok(roots)
 }

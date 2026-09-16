@@ -1,5 +1,6 @@
 //! Per-user system daemon routing CLI requests to owning workspace or root daemons.
 
+pub mod sweep;
 #[cfg(test)]
 mod tests;
 
@@ -15,8 +16,10 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::{Child, Command},
-    time::{Duration, Instant},
+    thread::JoinHandle,
+    time::{Duration, Instant, SystemTime},
 };
+use sweep::{SWEEP_GRACE, SWEEP_INTERVAL, sweep};
 
 fn dir_from(get: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
     if let Some(dir) = get("TRUFFLEPIG_SYSTEM_DIR") {
@@ -85,9 +88,15 @@ pub fn ensure() -> Result<()> {
     bail!("system_unavailable: daemon did not start")
 }
 
-/// Serves the system daemon, proxying socket and spooled requests to their owners.
+/// Serves the system daemon, proxying socket and spooled requests to their
+/// owners and sweeping the default cache base at startup and every
+/// `SWEEP_INTERVAL` on a background thread, so a slow daemon stop never
+/// blocks the request path.
 pub fn serve() -> Result<()> {
     let mut spool = SpoolServer::open(&spool_dir())?;
+    let cache_base = crate::cli::cache_base().ok();
+    let mut last_sweep: Option<Instant> = None;
+    let mut running: Option<JoinHandle<()>> = None;
     daemon::serve_coordinator(
         Path::new("/"),
         &dir().context("system_unavailable: no runtime dir")?,
@@ -97,6 +106,19 @@ pub fn serve() -> Result<()> {
             DaemonEvent::Idle => {
                 spool.drain(|context, args| route(args, context));
                 crate::background_process::reap_children();
+                if let Some(base) = &cache_base
+                    && running.as_ref().is_none_or(JoinHandle::is_finished)
+                    && last_sweep.is_none_or(|started| started.elapsed() >= SWEEP_INTERVAL)
+                {
+                    if let Some(finished) = running.take() {
+                        let _ = finished.join();
+                    }
+                    let base = base.clone();
+                    running = Some(std::thread::spawn(move || {
+                        sweep(&base, SystemTime::now(), SWEEP_GRACE);
+                    }));
+                    last_sweep = Some(Instant::now());
+                }
                 Ok(String::new())
             }
         },

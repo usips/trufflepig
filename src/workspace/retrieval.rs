@@ -4,6 +4,7 @@ mod tests;
 
 use super::{
     WorkspaceConfig, coordinator, member_cache,
+    member_root::MemberRoot,
     result_cache::{MemberSnapshot, OwnedEntry, WorkspaceResults, WorkspaceSet},
 };
 use crate::{
@@ -18,7 +19,7 @@ use crate::{
 use anyhow::{Context, Result, ensure};
 use serde_json::json;
 
-fn scope(config: &WorkspaceConfig, options: &Arguments) -> Result<(Vec<usize>, Vec<String>)> {
+fn scope(roots: &[MemberRoot], options: &Arguments) -> Result<(Vec<usize>, Vec<String>)> {
     let mut selection = options.member.clone().map(|m| format!("in:{m}"));
     let mut words = Vec::with_capacity(options.words.len());
     for argument in &options.words {
@@ -39,9 +40,10 @@ fn scope(config: &WorkspaceConfig, options: &Arguments) -> Result<(Vec<usize>, V
             words.push(remaining.trim_end().to_owned());
         }
     }
-    let home = config
-        .home(&options.root.canonicalize()?)
-        .map(|m| m.name.as_str());
+    let home = roots
+        .iter()
+        .find(|root| root.is_home)
+        .map(|root| root.name());
     let selected = match selection.as_deref() {
         Some("ws:home") => Some(home.context("member_required: ws:home has no home member")?),
         Some("ws:all") | None => None,
@@ -49,23 +51,17 @@ fn scope(config: &WorkspaceConfig, options: &Arguments) -> Result<(Vec<usize>, V
     };
     if let Some(name) = selected {
         ensure!(
-            config.members.iter().any(|m| m.name == name),
+            roots.iter().any(|m| m.name() == name),
             "invalid_member: member is not configured"
         );
     }
-    let mut members: Vec<_> = config
-        .members
+    let mut members: Vec<_> = roots
         .iter()
         .enumerate()
-        .filter(|(_, m)| selected.is_none_or(|n| m.name == n))
+        .filter(|(_, m)| selected.is_none_or(|n| m.name() == n))
         .map(|(i, _)| i)
         .collect();
-    members.sort_by_key(|&i| {
-        (
-            Some(config.members[i].name.as_str()) != home,
-            &config.members[i].name,
-        )
-    });
+    members.sort_by_key(|&i| (Some(roots[i].name()) != home, roots[i].name()));
     Ok((members, words))
 }
 pub(super) fn search(
@@ -76,7 +72,8 @@ pub(super) fn search(
     context: &RequestContext,
     session: &mut SemanticSession,
 ) -> Result<String> {
-    let (selected, words) = scope(config, options)?;
+    let roots = config.member_roots(&options.root.canonicalize()?)?;
+    let (selected, words) = scope(&roots, options)?;
     let log_cache = super::diagnostic_location(options)
         .map(|(_, cache, _, _)| cache)
         .unwrap_or_else(|_| cache.to_path_buf());
@@ -102,9 +99,10 @@ pub(super) fn search(
     let mut preparation_recorded = false;
     let mut set = WorkspaceSet {
         workspace: config.name.clone(),
-        home: config
-            .home(&options.root.canonicalize()?)
-            .map(|m| m.name.clone()),
+        home: roots
+            .iter()
+            .find(|root| root.is_home)
+            .map(|root| root.name().to_owned()),
         owners: Vec::with_capacity(selected.len()),
         coverage: Vec::with_capacity(selected.len()),
         hits: Vec::new(),
@@ -115,7 +113,7 @@ pub(super) fn search(
     let byte_quota = crate::results::MAX_BYTES / selected.len();
     let hit_quota = crate::results::MAX_HITS / selected.len();
     for index in selected {
-        let member = &config.members[index];
+        let member = &roots[index];
         let member_cache = member_cache(member, options.cache.as_deref())?;
         let mode = match options.diagnostics.as_str() {
             "off" => DiagnosticsMode::Off,
@@ -194,7 +192,7 @@ pub(super) fn search(
         event.elapsed_micros = started.elapsed().as_micros().min(u64::MAX as u128) as u64;
         event.retrieval = Some(trace);
         event.workspace = Some(config.id.clone());
-        event.member = Some(member.name.clone());
+        event.member = Some(member.name().to_owned());
         crate::diagnostics::best_effort_record(&log_cache, mode, event);
         match found {
             Ok((mut owner, found)) => {
@@ -216,7 +214,12 @@ pub(super) fn search(
                     entries.push(entry);
                 }
                 let truncated = found.truncated || entries.len() < total;
-                set.coverage.push(json!({"member":member.name,"state":"searched","generation":owner.generation,"retained":entries.len(),"truncated":truncated,"partial":partial_coverage(&found.coverage),"issues":coverage_issues(&found.coverage)}));
+                let mut coverage = json!({"member":member.name(),"state":"searched","generation":owner.generation,"retained":entries.len(),"truncated":truncated,"partial":partial_coverage(&found.coverage),"issues":coverage_issues(&found.coverage)});
+                if let Some(label) = &member.worktree {
+                    coverage["root"] = crate::store::encode_path(&member.root).into();
+                    coverage["worktree"] = label.clone().into();
+                }
+                set.coverage.push(coverage);
                 set.truncated |= truncated;
                 set.owners.push(owner);
                 lists.push(entries.into_iter());
@@ -227,8 +230,12 @@ pub(super) fn search(
                 } else {
                     "unavailable"
                 };
-                set.coverage
-                    .push(json!({"member":member.name,"state":state}));
+                let mut coverage = json!({"member":member.name(),"state":state});
+                if let Some(label) = &member.worktree {
+                    coverage["root"] = crate::store::encode_path(&member.root).into();
+                    coverage["worktree"] = label.clone().into();
+                }
+                set.coverage.push(coverage);
             }
         }
     }

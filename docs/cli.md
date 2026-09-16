@@ -56,7 +56,8 @@ checks the nearest ancestor `trufflepig.workspace.toml`, then the global registr
 `--no-workspace` retains singleton operation. An explicit subtree `--root` never
 silently expands to a configured member root. Workspace queries search all members.
 `in:NAME` or `--member NAME` selects a member; `ws:home` selects the invocation
-checkout and `ws:all` searches the complete workspace. File-first ranking fuses
+checkout, which may be a linked Git worktree standing in for its member, and
+`ws:all` searches the complete workspace. File-first ranking fuses
 member lanes with provenance; compact hits carry a percent-encoded `file` URI,
 lines, and owner-qualified handle. Pagination freezes captured member snapshots;
 missing members are reported as incomplete coverage. Use `show`, `more`, and `ctx`
@@ -148,7 +149,13 @@ overlap labels, and incomplete-window limits.
 The cache defaults to `$XDG_CACHE_HOME/trufflepig/<root-hash>`, or
 `$HOME/.cache/trufflepig/<root-hash>`. `--cache DIRECTORY` overrides it. Each cache
 belongs to one canonical root; use disk-backed storage for the index and staging
-database and avoid RAM-backed `/tmp`. History defaults to the normal cache base
+database and avoid RAM-backed `/tmp`. A linked Git worktree owns its own cache,
+seeded from its main checkout's default cache when that cache holds an index
+(`src/store/seed.rs`). The router evicts a default-base cache whose recorded
+root no longer exists, on startup and every ten minutes, after a one-minute grace
+period and only when the root's parent directory still exists (`src/system/sweep.rs`);
+`system prune` runs that sweep now. Explicit `--cache` bases are never swept.
+History defaults to the normal cache base
 keyed by canonical Git common directory, so linked worktrees share immutable Git
 facts. An explicit `--cache` isolates history; `--history-cache DIRECTORY` selects
 a shared history-cache base. In workspace mode, `--cache` supplies an isolated
@@ -162,8 +169,9 @@ daemon, starting a missing target and proxying the reply; failure or an unreacha
 socket falls back to the per-root/coordinator path, then local dispatch. `stop`,
 `index`, `init`, `ws`, `semantic status`, `semantic-check`, the `*-serve` verbs, and
 `--no-daemon` requests never touch it. `system ensure` starts the router, `system
-stop` shuts it down, `system status` reports if it runs, and `system-serve` serves
-it in the foreground. The agent plugin ships a systemd user unit (`install.sh
+stop` shuts it down, `system status` reports if it runs, `system prune` evicts
+caches for vanished roots immediately, and `system-serve` serves it in the
+foreground. The agent plugin ships a systemd user unit (`install.sh
 --systemd`) that keeps the router running and restarts it on failure; its
 session-start hook starts that service, or straps a detached router when the unit is
 absent. A sandbox whose seccomp filter denies unix-socket connects (Muse's does) cannot

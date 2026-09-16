@@ -1,17 +1,20 @@
 //! Explicit multi-root retrieval with persisted ownership and one final output budget.
 pub mod config;
 mod coordinator;
+pub mod member_root;
 mod navigation;
 mod owned_response;
 mod result_cache;
 mod retrieval;
+mod worktree_cache;
 use crate::{
     cli::Arguments, diagnostics::RequestContext, output::OutputBudget, store::encode_path,
 };
 use anyhow::{Context, Result, bail, ensure};
-use config::{Member, WorkspaceConfig};
+use config::WorkspaceConfig;
 pub(crate) use coordinator::apply_config;
 pub use coordinator::run;
+use member_root::MemberRoot;
 use result_cache::WorkspaceResults;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -31,7 +34,7 @@ pub fn resolve(options: &Arguments) -> Result<Option<WorkspaceConfig>> {
         let base = config::resolve_path(cache, &std::env::current_dir()?)?;
         ensure!(
             config
-                .members
+                .member_roots(&start)?
                 .iter()
                 .all(|member| !base.starts_with(&member.root) && !member.root.starts_with(&base)),
             "invalid_cache: workspace cache base must be outside member roots"
@@ -52,15 +55,21 @@ pub fn cache_path(config: &WorkspaceConfig, explicit: Option<&Path>) -> Result<P
         }
     }
 }
-pub fn member_cache(member: &Member, explicit: Option<&Path>) -> Result<PathBuf> {
-    if let Some(base) = explicit {
-        return Ok(base.join("members").join(
-            &blake3::hash(encode_path(&member.root).as_bytes())
-                .to_hex()
-                .as_str()[..24],
-        ));
+/// Cache directory for a member's effective root; a worktree root is warmed
+/// from its configured member's cache.
+pub fn member_cache(member: &MemberRoot, explicit: Option<&Path>) -> Result<PathBuf> {
+    if member.worktree.is_some() {
+        return worktree_cache::ensure(&member.member.root, &member.root, explicit);
     }
-    crate::cli::cache_path(&member.root, None)
+    hashed_member_cache(&member.root, explicit)
+}
+fn hashed_member_cache(root: &Path, explicit: Option<&Path>) -> Result<PathBuf> {
+    if let Some(base) = explicit {
+        return Ok(base
+            .join("members")
+            .join(&blake3::hash(encode_path(root).as_bytes()).to_hex().as_str()[..24]));
+    }
+    crate::cli::cache_path(root, None)
 }
 /// Captures the request's diagnostic home before execution or configuration changes.
 pub(crate) fn diagnostic_location(
@@ -75,19 +84,21 @@ pub(crate) fn diagnostic_location(
         let member = if scoped {
             Some(selected_member(&config, options)?)
         } else {
-            config.home(&root).or_else(|| {
-                options
+            match config.home_root(&root)? {
+                Some(home) => Some(home),
+                None => options
                     .member
                     .as_ref()
                     .and_then(|name| config.members.iter().find(|m| &m.name == name))
-            })
+                    .map(MemberRoot::configured),
+            }
         };
         if let Some(member) = member {
             return Ok((
                 member.root.clone(),
-                member_cache(member, options.cache.as_deref())?,
+                member_cache(&member, options.cache.as_deref())?,
                 Some(config.id.clone()),
-                Some(member.name.clone()),
+                Some(member.name().to_owned()),
             ));
         }
         return Ok((
@@ -102,7 +113,7 @@ pub(crate) fn diagnostic_location(
     Ok((root, cache, None, None))
 }
 
-fn member_options(options: &Arguments, member: &Member) -> Result<Arguments> {
+fn member_options(options: &Arguments, member: &MemberRoot) -> Result<Arguments> {
     let mut local = options.clone();
     local.root = member.root.clone();
     local.cache = Some(member_cache(member, options.cache.as_deref())?);
@@ -122,16 +133,19 @@ fn member_options(options: &Arguments, member: &Member) -> Result<Arguments> {
     local.format = "json".into();
     Ok(local)
 }
-fn selected_member<'a>(config: &'a WorkspaceConfig, options: &Arguments) -> Result<&'a Member> {
+/// The member an owner-scoped command targets: `--member`, else home, which
+/// may be a linked worktree standing in for its member.
+fn selected_member(config: &WorkspaceConfig, options: &Arguments) -> Result<MemberRoot> {
+    let start = options.root.canonicalize()?;
     if let Some(name) = &options.member {
         return config
-            .members
-            .iter()
-            .find(|m| &m.name == name)
+            .member_roots(&start)?
+            .into_iter()
+            .find(|m| m.name() == name)
             .context("invalid_member: member is not configured");
     }
     config
-        .home(&options.root.canonicalize()?)
+        .home_root(&start)?
         .context("member_required: select --member for an owner-scoped command")
 }
 pub(crate) fn local(
@@ -171,7 +185,7 @@ pub(crate) fn local(
         | "audit" | "forget-logs" | "semantic-check" => {
             let member = selected_member(config, options)?;
             member.verify_identity()?;
-            let mut local = member_options(options, member)?;
+            let mut local = member_options(options, &member)?;
             local.budget = 1_000_000;
             let mut args = crate::cli::normalized_args(&local, &local.root);
             if options.wait {
@@ -180,8 +194,11 @@ pub(crate) fn local(
             let mut value: Value =
                 serde_json::from_str(&crate::cli::run_with_context(&args, context)?)?;
             // Owner commands budget their payload again after adding mandatory provenance.
-            value["member"] = member.name.clone().into();
+            value["member"] = member.name().into();
             value["repository"] = encode_path(&member.root).into();
+            if let Some(label) = &member.worktree {
+                value["worktree"] = label.clone().into();
+            }
             value["workspace"] = config.name.clone().into();
             owned_response::render(value, &budget)
         }
@@ -200,10 +217,15 @@ fn inspect(config: &WorkspaceConfig, options: &Arguments, budget: &OutputBudget)
         matches!(command, "show" | "status"),
         "usage: ws show | ws status | ws discover PATH..."
     );
-    let mut members = Vec::with_capacity(config.members.len());
-    for member in &config.members {
+    let start = options.root.canonicalize()?;
+    let roots = config.member_roots(&start)?;
+    let mut members = Vec::with_capacity(roots.len());
+    for member in &roots {
         let cache = member_cache(member, options.cache.as_deref())?;
-        let mut value = json!({"member":member.name,"root":encode_path(&member.root),"available":member.verify_identity().is_ok()});
+        let mut value = json!({"member":member.name(),"root":encode_path(&member.root),"available":member.verify_identity().is_ok()});
+        if let Some(label) = &member.worktree {
+            value["worktree"] = label.clone().into();
+        }
         if command == "status"
             && member.verify_identity().is_ok()
             && cache.join("index.sqlite3").exists()
@@ -218,7 +240,8 @@ fn inspect(config: &WorkspaceConfig, options: &Arguments, budget: &OutputBudget)
         }
         members.push(value);
     }
-    budget.render(&json!({"workspace":config.name,"config":encode_path(&config.path),"home":config.home(&options.root.canonicalize()?).map(|m| &m.name),"members":members}))
+    let home = config.home_root(&start)?;
+    budget.render(&json!({"workspace":config.name,"config":encode_path(&config.path),"home":home.as_ref().map(MemberRoot::name),"members":members}))
 }
 pub fn discover_paths(paths: &[String], budget: usize) -> Result<String> {
     ensure!(!paths.is_empty(), "usage: ws discover PATH...");

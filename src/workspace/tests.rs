@@ -1,6 +1,19 @@
 use super::*;
 use crate::{cli, output::OutputBudget, results, store::Store};
-use std::fs;
+use std::{fs, process::Command};
+
+fn git(root: &Path, args: &[&str]) {
+    let status = Command::new("git")
+        .current_dir(root)
+        .env("GIT_AUTHOR_NAME", "Test")
+        .env("GIT_AUTHOR_EMAIL", "test@example.invalid")
+        .env("GIT_COMMITTER_NAME", "Test")
+        .env("GIT_COMMITTER_EMAIL", "test@example.invalid")
+        .args(args)
+        .status()
+        .unwrap();
+    assert!(status.success(), "git {args:?}");
+}
 
 struct Fixture {
     root: tempfile::TempDir,
@@ -28,6 +41,44 @@ impl Fixture {
         };
         fixture.configure(&["engine", "pack", "upstream"]);
         fixture
+    }
+
+    /// Members become Git repositories with one commit each, so linked
+    /// worktrees can be created from them.
+    fn git_backed() -> Self {
+        let fixture = Self::new();
+        for member in ["engine", "pack", "upstream"] {
+            let root = fixture.root.path().join(member);
+            git(&root, &["init", "-q", "-b", "main"]);
+            git(&root, &["add", "."]);
+            git(&root, &["commit", "-q", "-m", "init"]);
+        }
+        fixture
+    }
+
+    /// Adds a detached linked worktree of `member` at `path`.
+    fn worktree(&self, member: &str, path: &Path) -> PathBuf {
+        git(
+            &self.root.path().join(member),
+            &["worktree", "add", "--detach", path.to_str().unwrap()],
+        );
+        path.canonicalize().unwrap()
+    }
+
+    fn run_at(&self, root: &Path, words: &[&str]) -> Result<String> {
+        let mut args = vec![
+            "--workspace".into(),
+            self.config.display().to_string(),
+            "--root".into(),
+            root.display().to_string(),
+            "--cache".into(),
+            self.cache.path().display().to_string(),
+            "--no-daemon".into(),
+            "--diagnostics".into(),
+            "off".into(),
+        ];
+        args.extend(words.iter().map(|word| (*word).to_owned()));
+        cli::run(&args)
     }
 
     fn configure(&self, members: &[&str]) {
@@ -65,7 +116,7 @@ impl Fixture {
             .iter()
             .find(|member| member.name == name)
             .unwrap();
-        super::member_cache(member, Some(self.cache.path())).unwrap()
+        super::member_cache(&MemberRoot::configured(member), Some(self.cache.path())).unwrap()
     }
 
     fn handle(&self, member: &str) -> String {
@@ -402,4 +453,157 @@ fn lines_format_prefixes_member_and_summarizes_coverage() {
     assert!(!output.contains("next: "));
     let json = fixture.run("pack", &["search", "sym:SharedThing"]).unwrap();
     assert!(serde_json::from_str::<Value>(&json).is_ok());
+}
+
+fn worktree_substitutes_home_member_root(fixture: &Fixture, worktree: &Path) {
+    let engine = fixture.root.path().join("engine");
+    fs::write(worktree.join("only.rs"), "pub struct WorktreeOnlySymbol;\n").unwrap();
+    fs::write(engine.join("main_only.rs"), "pub struct MainOnlySymbol;\n").unwrap();
+    let label = worktree.file_name().unwrap().to_str().unwrap();
+    let page: Value = serde_json::from_str(
+        &fixture
+            .run_at(worktree, &["search", "sym:WorktreeOnlySymbol"])
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(page["home"], "engine");
+    let hits = page["hits"].as_array().unwrap();
+    assert_eq!(hits.len(), 1, "{page}");
+    assert_eq!(hits[0]["member"], "engine");
+    assert_eq!(
+        hits[0]["file"],
+        format!("file://{}/only.rs", encode_path(worktree))
+    );
+    let coverage = page["coverage"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["member"] == "engine")
+        .unwrap();
+    assert_eq!(coverage["worktree"], label);
+    assert_eq!(coverage["root"], encode_path(worktree));
+    assert_eq!(coverage["state"], "searched");
+    let lines = fixture
+        .run_at(
+            worktree,
+            &["--format", "lines", "search", "sym:WorktreeOnlySymbol"],
+        )
+        .unwrap();
+    assert!(
+        lines.contains(&format!("coverage: engine@{label} complete")),
+        "{lines}"
+    );
+    let main_only: Value = serde_json::from_str(
+        &fixture
+            .run_at(worktree, &["search", "sym:MainOnlySymbol"])
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(
+        main_only["hits"].as_array().unwrap().is_empty(),
+        "{main_only}"
+    );
+    let shared: Value = serde_json::from_str(
+        &fixture
+            .run_at(worktree, &["search", "sym:SharedThing"])
+            .unwrap(),
+    )
+    .unwrap();
+    let members: Vec<_> = shared["hits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|hit| hit["member"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(members, ["engine", "pack", "upstream"]);
+    let pack = fixture.root.path().join("pack").canonicalize().unwrap();
+    assert_eq!(
+        shared["hits"][1]["file"],
+        format!("file://{}/lib.rs", encode_path(&pack))
+    );
+}
+
+#[test]
+fn in_repo_worktree_substitutes_home_member_root() {
+    let fixture = Fixture::git_backed();
+    let worktree = fixture.worktree(
+        "engine",
+        &fixture.root.path().join("engine/.worktrees/inside"),
+    );
+    worktree_substitutes_home_member_root(&fixture, &worktree);
+}
+
+#[test]
+fn external_worktree_substitutes_home_member_root() {
+    let fixture = Fixture::git_backed();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let worktree = fixture.worktree("engine", &elsewhere.path().join("external"));
+    worktree_substitutes_home_member_root(&fixture, &worktree);
+}
+
+#[test]
+fn worktree_search_scopes_ws_home_and_leaves_other_members_unchanged() {
+    let fixture = Fixture::git_backed();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let worktree = fixture.worktree("engine", &elsewhere.path().join("scoped"));
+    let page: Value = serde_json::from_str(
+        &fixture
+            .run_at(
+                &worktree.join("src"),
+                &["search", "ws:home sym:SharedThing"],
+            )
+            .unwrap_or_else(|_| {
+                fixture
+                    .run_at(&worktree, &["search", "ws:home sym:SharedThing"])
+                    .unwrap()
+            }),
+    )
+    .unwrap();
+    let hits = page["hits"].as_array().unwrap();
+    assert_eq!(hits.len(), 1, "{page}");
+    assert_eq!(hits[0]["member"], "engine");
+    assert_eq!(
+        hits[0]["file"],
+        format!("file://{}/lib.rs", encode_path(&worktree))
+    );
+    let status: Value =
+        serde_json::from_str(&fixture.run_at(&worktree, &["ws", "show"]).unwrap()).unwrap();
+    assert_eq!(status["home"], "engine");
+    let engine = status["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|member| member["member"] == "engine")
+        .unwrap();
+    assert_eq!(engine["root"], encode_path(&worktree));
+    assert_eq!(engine["worktree"], "scoped");
+}
+
+#[test]
+fn worktree_handles_reopen_until_worktree_is_removed() {
+    let fixture = Fixture::git_backed();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let worktree = fixture.worktree("engine", &elsewhere.path().join("gone"));
+    let page: Value = serde_json::from_str(
+        &fixture
+            .run_at(&worktree, &["search", "in:engine sym:SharedThing"])
+            .unwrap(),
+    )
+    .unwrap();
+    let handle = page["hits"][0]["handle"].as_str().unwrap().to_owned();
+    let shown: Value =
+        serde_json::from_str(&fixture.run_at(&worktree, &["show", &handle]).unwrap()).unwrap();
+    assert_eq!(shown["member"], "engine");
+    assert_eq!(shown["worktree"], "gone");
+    assert_eq!(shown["repository"], encode_path(&worktree));
+    git(
+        &fixture.root.path().join("engine"),
+        &["worktree", "remove", "--force", worktree.to_str().unwrap()],
+    );
+    let engine = fixture.root.path().join("engine").canonicalize().unwrap();
+    let error = fixture
+        .run_at(&engine, &["show", &handle])
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("member_unavailable"), "{error}");
 }

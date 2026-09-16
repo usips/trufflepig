@@ -296,3 +296,25 @@ fn interrupted_staging_is_discarded_without_replacing_snapshot() {
     assert_eq!(store.generation().unwrap(), generation);
     assert!(super::Store::open(root.path(), root.path()).is_err());
 }
+
+#[test]
+fn linked_worktree_git_file_is_not_indexed() {
+    let (_directory, mut store) = fixture();
+    std::fs::write(
+        store.root.join(".git"),
+        "gitdir: /nowhere/.git/worktrees/x\n",
+    )
+    .unwrap();
+    std::fs::write(store.root.join("lib.rs"), "fn indexed() {}\n").unwrap();
+    store.index().unwrap();
+    let paths: Vec<String> = store
+        .conn
+        .prepare("SELECT path FROM files ORDER BY path")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(paths, ["lib.rs"]);
+    assert_eq!(store.coverage().unwrap().total_files, 1);
+}

@@ -56,12 +56,13 @@ impl Fixture {
 
     fn member_cache(&self, name: &str) -> PathBuf {
         let config = WorkspaceConfig::load(&self.config).unwrap();
+        let member = config
+            .members
+            .iter()
+            .find(|member| member.name == name)
+            .unwrap();
         member_cache(
-            config
-                .members
-                .iter()
-                .find(|member| member.name == name)
-                .unwrap(),
+            &crate::workspace::member_root::MemberRoot::configured(member),
             Some(self.cache.path()),
         )
         .unwrap()

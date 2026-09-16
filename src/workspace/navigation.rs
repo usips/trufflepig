@@ -106,15 +106,15 @@ pub(super) fn read(
     );
     let member = selected_member(config, options)?;
     member.verify_identity()?;
-    let cache = member_cache(member, options.cache.as_deref())?;
+    let cache = member_cache(&member, options.cache.as_deref())?;
     let store = Store::open(&member.root, &cache)?;
     let mut source = acquisition::acquire(&store, target, side)?;
     let (_, entry) = results::entry(&store, &source.handle)?;
-    let owner = MemberSnapshot::capture(member, &store, &cache, store.generation()?)?;
+    let owner = MemberSnapshot::capture(&member, &store, &cache, store.generation()?)?;
     let metadata = owner.metadata(&config.name);
     let id = results.save(WorkspaceSet {
         workspace: config.name.clone(),
-        home: Some(member.name.clone()),
+        home: Some(member.name().to_owned()),
         owners: vec![owner],
         coverage: vec![],
         hits: vec![OwnedEntry {
@@ -146,18 +146,14 @@ pub(super) fn history(
         let owner = &set.owners[set.hits[*index].owner];
         verify_selection(owner, options)?;
         let _ = owner.open(config)?;
-        config
-            .members
-            .iter()
-            .find(|m| m.name == owner.name)
-            .context("member_unavailable: missing owner")?
+        owner.member_root(config)?
     } else {
         selected_member(config, options)?
     };
     member.verify_identity()?;
-    let cache = member_cache(member, options.cache.as_deref())?;
+    let cache = member_cache(&member, options.cache.as_deref())?;
     let store = Store::open(&member.root, &cache)?;
-    let mut local = member_options(options, member)?;
+    let mut local = member_options(options, &member)?;
     local.budget = 1_000_000;
     if let Some((set, index)) = &retained {
         let owned = &set.hits[*index];
@@ -191,7 +187,7 @@ pub(super) fn history(
         let parsed: ResultHandle = handle.parse()?;
         let original = parsed.set.simple().to_string();
         let set = results::load_entries(&store, &original)?;
-        let owner = MemberSnapshot::capture(member, &store, &cache, set.generation)?;
+        let owner = MemberSnapshot::capture(&member, &store, &cache, set.generation)?;
         let entries = set
             .hits
             .into_iter()
@@ -202,7 +198,7 @@ pub(super) fn history(
                 entry,
             })
             .collect();
-        let id = workspace_results.save(WorkspaceSet {workspace:config.name.clone(),home:Some(member.name.clone()),owners:vec![owner],coverage:vec![json!({"member":member.name,"state":"searched","generation":set.generation,"detail":set.coverage})],hits:entries,truncated:set.truncated})?;
+        let id = workspace_results.save(WorkspaceSet {workspace:config.name.clone(),home:Some(member.name().to_owned()),owners:vec![owner],coverage:vec![json!({"member":member.name(),"state":"searched","generation":set.generation,"detail":set.coverage})],hits:entries,truncated:set.truncated})?;
         rewrite_handles(&mut value, &original, &id);
         if value.get("hunks").is_none() {
             return workspace_results.page(&id, 0, options.limit, budget);
@@ -210,11 +206,11 @@ pub(super) fn history(
     }
     if let Some(hits) = value["hits"].as_array_mut() {
         for hit in hits {
-            hit["member"] = member.name.clone().into();
+            hit["member"] = member.name().into();
         }
     }
     value["workspace"] = config.name.clone().into();
-    value["member"] = member.name.clone().into();
+    value["member"] = member.name().into();
     value["repository"] = crate::store::encode_path(&member.root).into();
     render_owned_value(value, budget)
 }

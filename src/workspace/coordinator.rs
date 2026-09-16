@@ -1,5 +1,5 @@
 //! Workspace coordination shares inference while existing root daemons own reconciliation.
-use super::{WorkspaceConfig, cache_path, config::Member, local, member_cache};
+use super::{WorkspaceConfig, cache_path, local, member_cache, member_root::MemberRoot};
 use crate::{
     background_process::spawn_background,
     cli::{Arguments, normalized_args},
@@ -167,7 +167,7 @@ fn serve(config: &WorkspaceConfig, cache: &Path) -> Result<()> {
     )
 }
 /// Starts an unowned root asynchronously. Existing root ownership is left intact.
-pub(super) fn ensure_member(member: &Member, options: &Arguments) -> Result<()> {
+pub(super) fn ensure_member(member: &MemberRoot, options: &Arguments) -> Result<()> {
     if options.no_daemon {
         return Ok(());
     }

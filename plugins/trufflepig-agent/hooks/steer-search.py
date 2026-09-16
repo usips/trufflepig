@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -42,30 +43,78 @@ def cwd_key(cwd: str) -> str:
     return hashlib.blake2s(cwd.encode(), digest_size=6).hexdigest()
 
 
-def workspace_roots() -> list[Path]:
+def load_toml(path: Path) -> dict:
+    try:
+        document = tomllib.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+    return document if isinstance(document, dict) else {}
+
+
+def member_roots_of(config_path: Path) -> list[Path]:
+    """Member roots declared by one workspace config, relative to its directory."""
     roots: list[Path] = []
-    if tomllib is None:
-        return roots
-    config_dir = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "trufflepig"
-    for path in config_dir.glob("*.toml"):
-        try:
-            document = tomllib.loads(path.read_text())
-        except (OSError, ValueError):
-            continue
-        for member in (document.get("members") or {}).values():
-            raw = member.get("path") if isinstance(member, dict) else None
-            if raw:
-                roots.append(Path(os.path.expanduser(raw)).resolve())
+    for member in (load_toml(config_path).get("members") or {}).values():
+        raw = member.get("path") if isinstance(member, dict) else None
+        if raw:
+            roots.append((config_path.parent / Path(os.path.expanduser(raw))).resolve())
     return roots
 
 
+def workspace_roots() -> list[Path]:
+    """Member roots of every workspace listed in the registry `workspaces.toml`."""
+    if tomllib is None:
+        return []
+    config_dir = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "trufflepig"
+    registry = config_dir / "workspaces.toml"
+    entries = load_toml(registry).get("workspaces") or []
+    roots: list[Path] = []
+    for entry in entries:
+        if isinstance(entry, str):
+            roots.extend(member_roots_of((config_dir / Path(os.path.expanduser(entry))).resolve()))
+    return roots
+
+
+def git_common_dir(directory: Path) -> Path | None:
+    """Canonical Git common directory of `directory`, or None outside a repository."""
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(directory), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            capture_output=True, text=True, timeout=2, check=False,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0 or not completed.stdout.strip():
+        return None
+    return Path(completed.stdout.strip()).resolve()
+
+
+def member_common_dir(root: Path) -> Path | None:
+    dot_git = root / ".git"
+    if dot_git.is_dir():
+        return dot_git.resolve()
+    return git_common_dir(root) if dot_git.is_file() else None
+
+
 def indexed_root(cwd: Path) -> Path | None:
-    for root in workspace_roots():
+    """The member root that owns `cwd`: by path, then by Git common directory so a
+    linked worktree anywhere on disk maps to its member."""
+    roots = workspace_roots()
+    for root in roots:
         if cwd == root or root in cwd.parents:
             return root
     for ancestor in (cwd, *cwd.parents):
         if (ancestor / "trufflepig.workspace.toml").is_file():
             return ancestor
+    if not any((ancestor / ".git").is_file() for ancestor in (cwd, *cwd.parents)):
+        return None
+    common = git_common_dir(cwd)
+    if common is None:
+        return None
+    for root in roots:
+        if member_common_dir(root) == common:
+            return root
     return None
 
 

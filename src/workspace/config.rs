@@ -8,6 +8,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
 
+use super::member_root::{self, MemberRoot};
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 
@@ -241,7 +242,7 @@ impl WorkspaceConfig {
         if let Some(path) = explicit {
             let config = Self::load(path)?;
             ensure!(
-                !explicit_root || config.members.iter().any(|member| member.root == start),
+                !explicit_root || config.accepts_explicit_root(&start)?,
                 "explicit root is not an exact workspace member; use --no-workspace for a subtree"
             );
             return Ok(Some(config));
@@ -253,7 +254,7 @@ impl WorkspaceConfig {
                 .context("inspect ancestor workspace configuration")?
             {
                 let config = Self::load(&path)?;
-                return Ok(config.accept_root(&start, explicit_root));
+                return config.accept_root(&start, explicit_root);
             }
         }
         let Some(base) = std::env::var_os("XDG_CONFIG_HOME")
@@ -270,15 +271,45 @@ impl WorkspaceConfig {
         )
     }
 
-    pub fn home(&self, start: &Path) -> Option<&Member> {
-        let start = resolve_path(start, &std::env::current_dir().ok()?).ok()?;
-        self.members
-            .iter()
-            .find(|member| start.starts_with(&member.root))
+    /// The member whose checkout or linked worktree contains `start`.
+    pub fn home_root(&self, start: &Path) -> Result<Option<MemberRoot>> {
+        let start = resolve_path(start, &std::env::current_dir()?)?;
+        Ok(
+            member_root::home_root(&self.members, &start)?.map(|mut home| {
+                home.is_home = true;
+                home
+            }),
+        )
     }
 
-    fn accept_root(self, start: &Path, explicit_root: bool) -> Option<Self> {
-        (!explicit_root || self.members.iter().any(|member| member.root == start)).then_some(self)
+    /// Every member with its effective root for `start`; only home is substituted.
+    pub fn member_roots(&self, start: &Path) -> Result<Vec<MemberRoot>> {
+        let home = self.home_root(start)?;
+        Ok(self
+            .members
+            .iter()
+            .map(|member| match &home {
+                Some(home) if home.member.name == member.name => home.clone(),
+                _ => MemberRoot::configured(member),
+            })
+            .collect())
+    }
+
+    /// An explicit root must name a member root or a linked worktree of one.
+    fn accepts_explicit_root(&self, start: &Path) -> Result<bool> {
+        if self.members.iter().any(|member| member.root == start) {
+            return Ok(true);
+        }
+        Ok(self
+            .home_root(start)?
+            .is_some_and(|home| home.worktree.is_some() && home.root == start))
+    }
+
+    fn accept_root(self, start: &Path, explicit_root: bool) -> Result<Option<Self>> {
+        if explicit_root && !self.accepts_explicit_root(start)? {
+            return Ok(None);
+        }
+        Ok(Some(self))
     }
 }
 
@@ -302,10 +333,10 @@ fn discover_registry(
                 path.display()
             )
         })?;
-        if !seen.insert(config.id.clone()) || config.home(start).is_none() {
+        if !seen.insert(config.id.clone()) || config.home_root(start)?.is_none() {
             continue;
         }
-        if let Some(config) = config.accept_root(start, explicit_root) {
+        if let Some(config) = config.accept_root(start, explicit_root)? {
             if let Some(previous) = &matched {
                 let previous: &WorkspaceConfig = previous;
                 bail!(

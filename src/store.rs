@@ -10,15 +10,21 @@ mod regions;
 mod resolve;
 mod scan;
 mod schema;
+pub mod seed;
+#[cfg(test)]
+mod seed_tests;
 #[cfg(test)]
 mod tests;
+mod worktree_seed_source;
 
 use crate::identity::ContentRevision;
 use anyhow::{Context, Result};
 pub use paths::{decode_path, encode_path};
 use rusqlite::Connection;
+pub use seed::{SeedOutcome, ensure_seeded};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+pub(crate) use worktree_seed_source::linked_worktree_main_checkout;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Coverage {

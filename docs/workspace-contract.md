@@ -52,7 +52,8 @@ workspaces = ["~/Source/space/trufflepig.workspace.toml"]
 ```
 
 Registry paths resolve relative to the registry file. Automatic registry
-selection requires the invocation directory to belong to a member. Multiple
+selection requires the invocation directory to belong to a member: inside its
+configured root, or inside a linked Git worktree of it at any location. Multiple
 matching configurations require explicit selection; stale entries report an
 actionable configuration error. `--no-workspace` disables discovery and conflicts
 with `--workspace`.
@@ -60,8 +61,18 @@ with `--workspace`.
 Home is the member containing the invocation directory. An explicitly selected
 workspace can have no home. A member subdirectory searches the full configured
 root unless an explicit `--root` requests a subtree. An explicit root must exactly
-match a member to activate automatic workspace discovery; an explicit workspace
-with a nonmatching explicit root is an error.
+match a member root, or a linked worktree of one, to activate automatic workspace
+discovery; an explicit workspace with a nonmatching explicit root is an error.
+
+A linked Git worktree of a member is home for that member wherever it lives,
+including under the member's own tree. Worktree membership is decided by
+canonical Git common directory (`src/workspace/member_root.rs`), never by path
+prefix alone, so a nested unrelated repository stays part of its enclosing
+member. The worktree stands in for the member's configured root: its files are
+searched and read under the member's name with a separate index cache, `ws:home`
+selects it, other members keep their configured roots, and coverage reports the
+substitution as `member@worktree` in lines format and as `root` plus `worktree`
+fields in JSON. Hits carry the plain member name.
 
 `ws show` reports configuration, home, roots, and availability. `ws status` adds
 available publication generations and coverage. `ws discover PATH...` validates
@@ -104,8 +115,10 @@ snapshots spanning repositories.
 
 Workspace results persist independently of member result caches. `SET:ORDINAL`
 and `SET@OFFSET` retain the existing ten-minute expiry and result-cache limits.
-Each persisted entry captures its owning root, filesystem identity, cache,
-generation, source revision, and original-byte coordinates. Pagination preserves
+Each persisted entry captures its owning root (the worktree when one stands in
+for the member), filesystem identity, cache, generation, source revision, and
+original-byte coordinates. A worktree owner reopens only while that worktree is
+still a linked worktree of its member. Pagination preserves
 the captured file-first order across repositories even when later searches or
 configuration changes produce different ranks.
 
@@ -122,8 +135,9 @@ facts with provenance; cross-repository caller and import edges are not inferred
 
 ## Runtime, diagnostics, and limits
 
-Each canonical root retains its index daemon and publication lifecycle. The
-workspace coordinator demand-starts a member daemon when none is running and
+Each canonical root, including a linked worktree standing in for a member,
+retains its index daemon and publication lifecycle. The workspace coordinator
+demand-starts a member daemon when none is running and
 reads published member databases without starting competing index writers. An
 existing member daemon is not asked to reconcile immediately; member freshness
 comes from its root watcher and periodic reconciliation. Unavailable members

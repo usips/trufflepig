@@ -119,6 +119,9 @@ pub fn run_with_context(
         .canonicalize()
         .context("invalid_root: cannot open repository root")?;
     let cache = cache_path(&root, options.cache.as_deref())?;
+    if verb != "history-serve" {
+        seed_linked_worktree_cache(&root, &cache);
+    }
     if verb == "history-serve" {
         return crate::history::worker::serve(
             options
@@ -320,7 +323,11 @@ fn system_routes(options: &Arguments, verb: &str) -> bool {
     {
         return false;
     }
-    !(verb == "semantic" && options.words.get(1).is_some_and(|command| command == "status"))
+    !(verb == "semantic"
+        && options
+            .words
+            .get(1)
+            .is_some_and(|command| command == "status"))
 }
 
 /// Handles the `system` verb against the per-user routing daemon.
@@ -337,6 +344,16 @@ fn system_command(
             render("{\"status\":\"ok\"}")
         }
         Some("stop") => render(&crate::system::stop()?),
+        Some("prune") => {
+            let evicted = crate::system::sweep::sweep(
+                &cache_base()?,
+                std::time::SystemTime::now(),
+                crate::system::sweep::SWEEP_GRACE,
+            );
+            render(&serde_json::to_string(
+                &serde_json::json!({ "evicted": evicted }),
+            )?)
+        }
         None | Some("status") => {
             let ping = vec!["system".to_owned(), "status".to_owned()];
             let status = if crate::system::request(&ping, context)
@@ -351,7 +368,9 @@ fn system_command(
             render(&format!("{{\"status\":\"{status}\"}}"))
         }
         Some(other) => {
-            anyhow::bail!("usage: system status | system ensure | system stop (got {other})")
+            anyhow::bail!(
+                "usage: system status | system ensure | system stop | system prune (got {other})"
+            )
         }
     }
 }
@@ -428,18 +447,38 @@ fn schedule_pending_preparation(
     Ok(())
 }
 
-pub fn cache_path(root: &Path, explicit: Option<&Path>) -> Result<PathBuf> {
-    if let Some(path) = explicit {
-        return Ok(path.to_owned());
-    }
+/// Default cache base holding one hashed directory per canonical root.
+pub fn cache_base() -> Result<PathBuf> {
     let base = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
         .context("cache_unavailable: set --cache or XDG_CACHE_HOME")?;
+    Ok(base.join("trufflepig"))
+}
+
+pub fn cache_path(root: &Path, explicit: Option<&Path>) -> Result<PathBuf> {
+    if let Some(path) = explicit {
+        return Ok(path.to_owned());
+    }
     use std::os::unix::ffi::OsStrExt;
-    Ok(base
-        .join("trufflepig")
-        .join(blake3::hash(root.as_os_str().as_bytes()).to_hex().as_str()))
+    Ok(cache_base()?.join(blake3::hash(root.as_os_str().as_bytes()).to_hex().as_str()))
+}
+
+/// Warms an unindexed linked worktree's cache from its main checkout's default
+/// cache before the first `Store::open`; best-effort and never fails the command.
+fn seed_linked_worktree_cache(root: &Path, cache: &Path) {
+    if cache.join("index.sqlite3").exists() {
+        return;
+    }
+    let Some(main_checkout) = crate::store::linked_worktree_main_checkout(root) else {
+        return;
+    };
+    let Ok(member_cache) = cache_path(&main_checkout, None) else {
+        return;
+    };
+    if member_cache.join("index.sqlite3").is_file() {
+        crate::store::ensure_seeded(&member_cache, root, cache);
+    }
 }
 
 fn wait_for_history(root: &Path, options: &Arguments, response: String) -> Result<String> {

@@ -33,11 +33,13 @@ pub(super) fn stage(
         if entry.path().starts_with(&excluded_cache) {
             return false;
         }
-        !entry.file_type().is_some_and(|kind| kind.is_dir())
-            || !matches!(
-                entry.file_name().to_str(),
-                Some(".git" | "target" | "node_modules" | ".trufflepig")
-            )
+        // A linked worktree's `.git` is a file; skip it whatever its type.
+        entry.file_name() != ".git"
+            && (!entry.file_type().is_some_and(|kind| kind.is_dir())
+                || !matches!(
+                    entry.file_name().to_str(),
+                    Some("target" | "node_modules" | ".trufflepig")
+                ))
     });
     let transaction = conn.transaction()?;
     for entry in walker.build() {

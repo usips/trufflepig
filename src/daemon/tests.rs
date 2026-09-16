@@ -164,6 +164,39 @@ fn daemon_serves_recovers_protocol_errors_watches_and_stops() {
 }
 
 #[test]
+fn daemon_exits_when_root_is_removed() {
+    let scratch = scratch();
+    let root = scratch.path().join("repo");
+    let cache = scratch.path().join("cache");
+    fs::create_dir(&root).unwrap();
+    fs::write(root.join("lib.rs"), "fn present() {}\n").unwrap();
+    let (reconciled, reconciles) = mpsc::channel();
+    let (finished, finishes) = mpsc::channel();
+    let serve_root = root.clone();
+    let serve_cache = cache.clone();
+    let daemon = std::thread::spawn(move || {
+        let result = serve(&serve_root, &serve_cache, |event| match event {
+            DaemonEvent::Reconcile => {
+                let _ = reconciled.send(());
+                Ok(String::new())
+            }
+            _ => Ok(String::new()),
+        });
+        let _ = finished.send(());
+        result
+    });
+    reconciles.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert!(cache.join(SOCKET_NAME).exists());
+    fs::remove_dir_all(&root).unwrap();
+    finishes
+        .recv_timeout(Duration::from_secs(5))
+        .expect("daemon did not exit after its root was removed");
+    daemon.join().unwrap().unwrap();
+    assert!(!cache.join(SOCKET_NAME).exists());
+    assert!(DaemonSocket::bind(&cache).is_ok(), "daemon.lock still held");
+}
+
+#[test]
 fn daemon_connect_unreachability_includes_sandbox_permission_denial() {
     assert!(unreachable(ErrorKind::NotFound));
     assert!(unreachable(ErrorKind::ConnectionRefused));

@@ -118,6 +118,7 @@ fn workspace_pages_use_absolute_file_locators_and_compact_coverage() -> Result<(
             index_identity: "epoch".into(),
             generation: 4,
             coverage: json!({}),
+            worktree: None,
         }],
         coverage: vec![json!({
             "member":"member",

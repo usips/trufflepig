@@ -212,7 +212,8 @@ pub enum DaemonEvent {
     Idle,
 }
 
-/// Calls the handler at startup, reconciliation, requests, and each idle tick.
+/// Calls the handler at startup, reconciliation, requests, and each idle tick;
+/// returns `Ok` on its own once the watched root is no longer a directory.
 pub fn serve(
     root: &Path,
     cache: &Path,
@@ -250,6 +251,14 @@ fn serve_inner(
     let mut schedule = ReconcileSchedule::new(Instant::now());
     loop {
         if schedule.due(Instant::now(), dirty.swap(false, Ordering::AcqRel)) {
+            // Returning drops the socket and releases `daemon.lock` for the router sweep.
+            if watching && !root.is_dir() {
+                eprintln!(
+                    "trufflepig: root {} is gone; daemon exiting",
+                    root.display()
+                );
+                return Ok(());
+            }
             if let Err(error) = handler(DaemonEvent::Reconcile) {
                 eprintln!(
                     "trufflepig: reconciliation failed; periodic retry remains active: {error:#}"
