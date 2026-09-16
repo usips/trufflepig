@@ -159,8 +159,12 @@ it in the foreground. The agent plugin ships a systemd user unit (`install.sh
 --systemd`) that keeps the router running and restarts it on failure; its
 session-start hook starts that service, or straps a detached router when the unit is
 absent. A sandbox whose seccomp filter denies unix-socket connects (Muse's does) cannot
-reach any daemon, and its read-only cache also blocks `--no-daemon`; such harnesses
-must run trufflepig unsandboxed, and `workspace_unavailable` says so.
+reach any socket, and its read-only cache also blocks `--no-daemon`; such clients reach
+the router through its file spool instead. The router drains `<request>.request` files
+from `$TRUFFLEPIG_SPOOL_DIR`, else `/tmp/trufflepig-<uid>/spool` (the one location
+Muse leaves writable), answers each with `<request>.reply`, and refreshes a `heartbeat`
+file every second; a client whose socket connect fails spools its request only while
+that heartbeat is under five seconds old, and otherwise reports `workspace_unavailable`.
 Singleton commands start a per-root index daemon automatically. Workspace queries
 start a coordinator unless `--no-daemon` is set; `ws show` and `ws status` inspect
 locally. The coordinator starts member daemons when needed and reads their published

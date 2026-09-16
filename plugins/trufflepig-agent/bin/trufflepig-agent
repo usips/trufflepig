@@ -7,7 +7,8 @@ Adds `--json --client HARNESS --session ID --diagnostics detailed` unless the
 caller passed them, runs trufflepig, passes stdout/stderr and the exit code
 through unchanged, and appends one record to
 $TRUFFLEPIG_AGENT_LOG_DIR/<harness>.jsonl (default
-$XDG_STATE_HOME/trufflepig/agent-audit). Records carry the verb, arguments,
+$XDG_STATE_HOME/trufflepig/agent-audit; a sandbox that cannot write there
+falls back to /tmp/trufflepig-<uid>/agent-audit). Records carry the verb, arguments,
 timing, exit code, response status, hit count, truncation, per-member
 coverage flags, and derived struggle signals. `trufflepig-audit` summarizes
 them. Logging never changes the command's output or exit code.
@@ -215,18 +216,14 @@ def main() -> int:
 
     fingerprint = hashlib.blake2s(" ".join([verb, *words[1:]]).encode(), digest_size=8).hexdigest()
     recent_path = state_dir() / "agent-recent" / harness / f"{cwd_key(cwd)}-{session}"
-    runtime = os.environ.get("XDG_RUNTIME_DIR")
-    runtime_root = Path(runtime) / "trufflepig" if runtime else None
-    audit_fallback = runtime_root / "agent-audit" if runtime_root else None
-    recent_fallback = (
-        runtime_root / "agent-recent" / recent_path.parent.name / recent_path.name
-        if runtime_root
-        else None
-    )
+    # Sandboxes such as Muse's leave only /tmp writable outside the workspace.
+    fallback_root = Path(f"/tmp/trufflepig-{os.getuid()}")
+    audit_fallback = fallback_root / "agent-audit"
+    recent_fallback = fallback_root / "agent-recent" / recent_path.parent.name / recent_path.name
     try:
         recent = recent_path.read_text().split()[-RECENT_LIMIT:]
     except OSError:
-        recent = recent_fingerprints(recent_fallback) if recent_fallback else []
+        recent = recent_fingerprints(recent_fallback)
     repeat_count = recent.count(fingerprint)
 
     signals: list[str] = []
@@ -282,13 +279,11 @@ def main() -> int:
         recent_file.parent.mkdir(parents=True, exist_ok=True)
         recent_file.write_text(" ".join([*recent, fingerprint][-RECENT_LIMIT:]))
 
-    def with_fallback(write, primary: Path, fallback: Path | None) -> OSError | None:
+    def with_fallback(write, primary: Path, fallback: Path) -> OSError | None:
         try:
             write(primary)
             return None
-        except OSError as error:
-            if fallback is None:
-                return error
+        except OSError:
             try:
                 write(fallback)
                 return None

@@ -45,9 +45,9 @@ semantic-cuda`) and `~/.local/bin` on `PATH`. Muse users can validate with
 
 Every wrapper call appends a JSON line to
 `$XDG_STATE_HOME/trufflepig/agent-audit/<harness>.jsonl`
-(default `~/.local/state/trufflepig/agent-audit/`; if that location is not
-writable, it retries once under `$XDG_RUNTIME_DIR/trufflepig/agent-audit/`
-when `XDG_RUNTIME_DIR` is set) with the verb, arguments,
+(default `~/.local/state/trufflepig/agent-audit/`; a sandbox that cannot
+write there, such as Muse's, falls back to `/tmp/trufflepig-<uid>/agent-audit/`,
+which `trufflepig-audit` reads alongside the default) with the verb, arguments,
 exit code, latency, response status, hit count, truncation, per-member
 `semantic_status`/`rerank_status`, and derived signals: `error`, `no_hits`,
 `truncated`, `budget`, `stale`, `usage_error`, `semantic_degraded`,

@@ -6,7 +6,7 @@ mod tests;
 use crate::{
     background_process::spawn_background,
     cli::normalized_args,
-    daemon::{self, DaemonEvent},
+    daemon::{self, DaemonEvent, spool::SpoolServer},
     diagnostics::RequestContext,
 };
 use anyhow::{Context, Result, bail, ensure};
@@ -34,17 +34,33 @@ pub fn dir() -> Option<PathBuf> {
     dir_from(|name| std::env::var_os(name))
 }
 
+fn spool_dir_from(get: impl Fn(&str) -> Option<OsString>, uid: u32) -> PathBuf {
+    match get("TRUFFLEPIG_SPOOL_DIR") {
+        Some(dir) => PathBuf::from(dir),
+        None => PathBuf::from(format!("/tmp/trufflepig-{uid}/spool")),
+    }
+}
+
+/// Spool directory for sandboxed clients; `/tmp` is what such sandboxes leave writable.
+pub fn spool_dir() -> PathBuf {
+    // SAFETY: getuid has no preconditions and cannot fail.
+    spool_dir_from(|name| std::env::var_os(name), unsafe { libc::getuid() })
+}
+
 /// Stops a listening system daemon through its socket.
 pub fn stop() -> Result<String> {
     daemon::stop(&dir().context("system_unavailable: no runtime dir")?)
 }
 
-/// Sends a request to the system daemon; `None` means no router is listening.
+/// Sends a request to the system daemon over its socket, else its spool;
+/// `None` means no router answered either way.
 pub fn request(args: &[String], context: &RequestContext) -> Result<Option<String>> {
-    let Some(dir) = dir() else {
-        return Ok(None);
-    };
-    daemon::request(&dir, args, context)
+    if let Some(dir) = dir()
+        && let Some(reply) = daemon::request(&dir, args, context)?
+    {
+        return Ok(Some(reply));
+    }
+    daemon::spool::request(&spool_dir(), args, context)
 }
 
 /// Starts the system daemon when no router answers its status ping.
@@ -69,8 +85,9 @@ pub fn ensure() -> Result<()> {
     bail!("system_unavailable: daemon did not start")
 }
 
-/// Serves the system daemon, proxying each request to its owning daemon.
+/// Serves the system daemon, proxying socket and spooled requests to their owners.
 pub fn serve() -> Result<()> {
+    let mut spool = SpoolServer::open(&spool_dir())?;
     daemon::serve_coordinator(
         Path::new("/"),
         &dir().context("system_unavailable: no runtime dir")?,
@@ -78,6 +95,7 @@ pub fn serve() -> Result<()> {
             DaemonEvent::Request { context, args } => route(args, context),
             DaemonEvent::Reconcile => Ok(String::new()),
             DaemonEvent::Idle => {
+                spool.drain(|context, args| route(args, context));
                 crate::background_process::reap_children();
                 Ok(String::new())
             }

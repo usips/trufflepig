@@ -1,6 +1,7 @@
 use super::*;
 use std::io::{Cursor, Write};
 use std::sync::{Barrier, mpsc};
+use std::time::SystemTime;
 
 fn scratch() -> tempfile::TempDir {
     tempfile::Builder::new()
@@ -180,4 +181,74 @@ fn daemon_shutdown_unlocks_inherited_file_description() {
     let replacement = DaemonSocket::bind(scratch.path()).unwrap();
     drop(inherited);
     assert!(replacement.path.exists());
+}
+
+#[test]
+fn spool_round_trip_answers_request_and_cleans_up() {
+    let scratch = scratch();
+    let dir = scratch.path().join("spool");
+    let mut server = spool::SpoolServer::open(&dir).unwrap();
+    server.drain(|_, _| unreachable!("no request pending"));
+    let context = crate::diagnostics::RequestContext::new(None, None);
+    let args = vec!["status".to_owned()];
+    let client = {
+        let (dir, context) = (dir.clone(), context.clone());
+        std::thread::spawn(move || spool::request(&dir, &args, &context))
+    };
+    let request = dir.join(format!("{}.request", context.request_id));
+    while !request.exists() {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    server.drain(|context, args| Ok(format!("{}:{}", context.request_id, args.join(" "))));
+    let reply = client.join().unwrap().unwrap();
+    assert_eq!(reply, Some(format!("{}:status", context.request_id)));
+    let leftovers: Vec<_> = fs::read_dir(&dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(leftovers, vec![std::ffi::OsString::from("heartbeat")]);
+}
+
+#[test]
+fn spool_without_heartbeat_reports_no_daemon() {
+    let scratch = scratch();
+    let dir = scratch.path().join("spool");
+    let context = crate::diagnostics::RequestContext::new(None, None);
+    assert_eq!(
+        spool::request(&dir, &["status".to_owned()], &context).unwrap(),
+        None
+    );
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("heartbeat"), b"").unwrap();
+    let stale = SystemTime::now() - Duration::from_secs(60);
+    File::open(dir.join("heartbeat"))
+        .unwrap()
+        .set_modified(stale)
+        .unwrap();
+    assert_eq!(
+        spool::request(&dir, &["status".to_owned()], &context).unwrap(),
+        None
+    );
+    assert!(fs::read_dir(&dir).unwrap().count() == 1);
+}
+
+#[test]
+fn spool_reports_handler_failure_and_ignores_foreign_files() {
+    let scratch = scratch();
+    let dir = scratch.path().join("spool");
+    let mut server = spool::SpoolServer::open(&dir).unwrap();
+    fs::write(dir.join("notes.txt"), b"keep").unwrap();
+    let context = crate::diagnostics::RequestContext::new(None, None);
+    let client = {
+        let (dir, context) = (dir.clone(), context.clone());
+        std::thread::spawn(move || spool::request(&dir, &["search".to_owned()], &context))
+    };
+    let request = dir.join(format!("{}.request", context.request_id));
+    while !request.exists() {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    server.drain(|_, _| anyhow::bail!("boom"));
+    let error = client.join().unwrap().unwrap_err();
+    assert!(error.to_string().contains("boom"), "{error:#}");
+    assert!(dir.join("notes.txt").exists());
 }

@@ -1,6 +1,7 @@
 //! Per-root Unix daemon with serialized requests and reconciled filesystem updates.
 
 mod protocol;
+pub mod spool;
 #[cfg(test)]
 mod tests;
 

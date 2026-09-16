@@ -5,7 +5,8 @@ Usage: trufflepig-audit [--harness NAME] [--session ID] [--since HOURS]
                         [--json] [--calls] [LOG_DIR]
 
 Reads <LOG_DIR>/<harness>.jsonl written by `trufflepig-agent` (default
-$XDG_STATE_HOME/trufflepig/agent-audit) and prints one row per session with
+$XDG_STATE_HOME/trufflepig/agent-audit plus the sandbox fallback
+/tmp/trufflepig-<uid>/agent-audit) and prints one row per session with
 call counts, error and empty-result rates, truncation, repeated queries,
 latency, and follow-through (searches followed by show/ctx/more). A session
 is flagged when any struggle threshold is crossed. `--calls` lists the
@@ -39,10 +40,14 @@ def default_dir() -> Path:
     return Path(os.environ.get("TRUFFLEPIG_AGENT_LOG_DIR") or Path(base) / "trufflepig" / "agent-audit")
 
 
-def load(directory: Path, harness: str | None, since_hours: float | None) -> list[dict]:
+def fallback_dir() -> Path:
+    return Path(f"/tmp/trufflepig-{os.getuid()}") / "agent-audit"
+
+
+def load(directories: list[Path], harness: str | None, since_hours: float | None) -> list[dict]:
     records: list[dict] = []
     cutoff = time.time() - since_hours * 3600 if since_hours else None
-    for path in sorted(directory.glob("*.jsonl")):
+    for path in sorted(path for directory in directories for path in directory.glob("*.jsonl")):
         if harness and path.stem != harness:
             continue
         with path.open(encoding="utf-8") as handle:
@@ -152,17 +157,19 @@ def print_table(rows: list[dict]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("log_dir", nargs="?", type=Path, default=default_dir())
+    parser.add_argument("log_dir", nargs="?", type=Path, help="audit log directory")
     parser.add_argument("--harness")
     parser.add_argument("--session")
     parser.add_argument("--since", type=float, help="only calls from the last N hours")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--calls", action="store_true", help="list calls carrying signals")
     args = parser.parse_args()
-    if not args.log_dir.is_dir():
-        print(f"no audit log directory at {args.log_dir}", file=sys.stderr)
+    directories = [args.log_dir] if args.log_dir else [default_dir(), fallback_dir()]
+    directories = [directory for directory in directories if directory.is_dir()]
+    if not directories:
+        print(f"no audit log directory at {args.log_dir or default_dir()}", file=sys.stderr)
         return 1
-    records = load(args.log_dir, args.harness, args.since)
+    records = load(directories, args.harness, args.since)
     if args.session:
         records = [r for r in records if r.get("session") == args.session]
     rows = summarize(records)
