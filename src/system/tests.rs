@@ -33,7 +33,10 @@ fn runtime_dir_beats_cache_and_home() {
 
 #[test]
 fn cache_home_beats_home() {
-    let dir = dir_from(lookup(&[("XDG_CACHE_HOME", "/xdg-cache"), ("HOME", "/home")]));
+    let dir = dir_from(lookup(&[
+        ("XDG_CACHE_HOME", "/xdg-cache"),
+        ("HOME", "/home"),
+    ]));
     assert_eq!(dir, Some(PathBuf::from("/xdg-cache/trufflepig/system")));
 }
 

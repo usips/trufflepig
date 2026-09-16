@@ -159,3 +159,19 @@ fn emission_broken_pipe_returns_failure_without_retry() {
     );
     assert_eq!(writer.accepted, 7);
 }
+
+#[test]
+fn lines_format_errors_stay_json() {
+    let scratch = tempfile::tempdir().unwrap();
+    std::fs::create_dir(scratch.path().join("root")).unwrap();
+    let cache = scratch.path().join("cache");
+    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+    let code = execute(
+        &args(&cache, &["--format", "lines", "show"]),
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(code, 2);
+    let response: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    assert!(response["error"].as_str().unwrap().contains("usage"));
+}

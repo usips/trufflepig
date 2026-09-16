@@ -1,5 +1,5 @@
 //! Parsed client options and explicit daemon argument forwarding.
-use crate::results;
+use crate::{output::OutputFormat, results};
 use anyhow::{Result, bail};
 use clap::Parser;
 use std::path::{Path, PathBuf};
@@ -91,6 +91,9 @@ pub struct Arguments {
     /// Request JSON responses, which are the default output format.
     #[arg(long)]
     pub json: bool,
+    /// Output format for search, refs, map, more, and show: `json` or `lines`.
+    #[arg(long, default_value = "json", value_parser = ["json", "lines"])]
+    pub format: String,
     /// Run locally without starting or using a daemon.
     #[arg(long)]
     pub no_daemon: bool,
@@ -132,6 +135,13 @@ pub struct Arguments {
     pub words: Vec<String>,
 }
 
+impl Arguments {
+    /// The page format selected by `--format`; validation rejects other values.
+    pub fn output_format(&self) -> OutputFormat {
+        OutputFormat::parse(&self.format).unwrap_or_default()
+    }
+}
+
 /// Parse command-line arguments without performing repository validation.
 pub fn parse(args: &[String]) -> Result<Arguments> {
     let mut options = Arguments::try_parse_from(
@@ -155,10 +165,16 @@ pub(super) fn validate(options: &Arguments) -> Result<()> {
     }
     if options.no_daemon
         && options.words.first().is_some_and(|verb| {
-            matches!(verb.as_str(), "serve" | "history-serve" | "workspace-serve" | "system-serve")
+            matches!(
+                verb.as_str(),
+                "serve" | "history-serve" | "workspace-serve" | "system-serve"
+            )
         })
     {
         bail!("invalid_options: --no-daemon cannot start a server");
+    }
+    if options.json && options.format != "json" {
+        bail!("invalid_options: --json conflicts with --format lines");
     }
     if options.limit == 0 || options.limit > results::MAX_HITS {
         bail!("invalid_limit: expected 1..10000");
@@ -225,6 +241,7 @@ pub(crate) fn normalized_args(options: &Arguments, root: &Path) -> Vec<String> {
                 .map(|p| p.to_string_lossy().into_owned()),
         ),
         ("--diagnostics", Some(options.diagnostics.clone())),
+        ("--format", Some(options.format.clone())),
     ] {
         if let Some(value) = value {
             args.extend([flag.into(), value]);

@@ -72,11 +72,14 @@ control bytes, and non-ASCII bytes. `show` reports invalid source bytes as
 `byte-escaped` text with explicit original-byte start/end values.
 Output never injects ANSI control sequences through repository text. The CLI
 emits one JSON object plus newline by default; `--json` accepts that same format.
-There is no separate compact text renderer.
+`--format lines` selects the tab-separated renderer for result pages and `show`
+(`src/results/lines.rs`, `src/source/lines.rs`); it carries the same handles,
+paths, line spans, cursors, and truncation flags with a one-line coverage summary,
+keeps byte-escaped text verbatim, and never applies to errors or other verbs.
 
 Every stdout response is bounded by `o200k_base` applied to the complete serialized
-response, including headers, escaping, metadata, truncation notices, and the final
-newline. The default is 600 tokens; no minimum hit count is promised. A tokenizer
+response in the selected format, including headers, escaping, metadata, truncation
+notices, and the final newline. The default is 600 tokens; no minimum hit count is promised. A tokenizer
 count is only a guarantee for that tokenizer, not an estimate guaranteed for
 another model. Tiny budgets return a fitting explicit status or no bytes when
 no complete status fits. Pagination has a fresh response budget.

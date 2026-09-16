@@ -372,3 +372,34 @@ fn selector_only_queries_and_cache_root_boundaries_are_safe() -> anyhow::Result<
     );
     Ok(())
 }
+
+#[test]
+fn lines_format_prefixes_member_and_summarizes_coverage() {
+    let fixture = Fixture::new();
+    let output = fixture
+        .run("pack", &["--format", "lines", "search", "sym:SharedThing"])
+        .unwrap();
+    let lines: Vec<_> = output.lines().collect();
+    let hits: Vec<_> = crate::output::lines::emitted_handles(&output).collect();
+    assert_eq!(hits.len(), 3, "{output}");
+    for (line, member) in lines.iter().zip(["pack", "engine", "upstream"]) {
+        let mut fields = line.split('\t');
+        fields
+            .next()
+            .unwrap()
+            .parse::<crate::identity::ResultHandle>()
+            .unwrap();
+        assert_eq!(fields.next().unwrap(), format!("{member}/lib.rs:1-1"));
+        assert_eq!(fields.next().unwrap(), "SharedThing");
+    }
+    let coverage = lines[3].strip_prefix("coverage: ").unwrap();
+    for member in ["engine", "pack", "upstream"] {
+        assert!(
+            coverage.contains(&format!("{member} complete")),
+            "{coverage}"
+        );
+    }
+    assert!(!output.contains("next: "));
+    let json = fixture.run("pack", &["search", "sym:SharedThing"]).unwrap();
+    assert!(serde_json::from_str::<Value>(&json).is_ok());
+}

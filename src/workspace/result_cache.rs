@@ -1,12 +1,14 @@
 //! Bounded workspace snapshots retain immutable entries independently of member caches.
 use super::config::Member;
+mod lines;
 use crate::{
     identity::{ResultCursor, ResultHandle},
-    output::OutputBudget,
+    output::{OutputBudget, OutputFormat},
     results::{self, ResultEntry},
     store::{Store, decode_path, encode_path},
 };
 use anyhow::{Context, Result, bail, ensure};
+use lines::{compact_coverage, member_coverage_summary};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -217,32 +219,44 @@ impl WorkspaceResults {
         );
         let available = set.hits.len() - offset;
         let max_count = available.min(limit).min(budget.limit);
+        let coverage_line = member_coverage_summary(&set.coverage);
+        let render = |count: usize, names: bool| -> Result<String> {
+            match budget.format {
+                OutputFormat::Json => budget.encode(&page_value(&set, id, offset, count, names)?),
+                OutputFormat::Lines => Ok(results::lines::page_text(
+                    set.hits[offset..offset + count]
+                        .iter()
+                        .map(|owned| (Some(set.owners[owned.owner].name.as_str()), &owned.entry)),
+                    names,
+                    &coverage_line,
+                    results::lines::next_cursor(id, offset, count, set.hits.len()).as_deref(),
+                    set.truncated,
+                )),
+            }
+        };
         for names in [false, true] {
             let mut low = 0;
             let mut high = max_count;
             while low < high {
                 let count = low + (high - low).div_ceil(2);
-                let value = page_value(&set, id, offset, count, names)?;
-                if budget.fits(&budget.encode(&value)?) {
+                if budget.fits(&render(count, names)?) {
                     low = count;
                 } else {
                     high = count - 1;
                 }
             }
             if low > 0 {
-                let named = page_value(&set, id, offset, low, true)?;
-                let named = budget.encode(&named)?;
+                let named = render(low, true)?;
                 if budget.fits(&named) {
                     return Ok(named);
                 }
-                let value = page_value(&set, id, offset, low, names)?;
-                return budget.encode(&value);
+                return render(low, names);
             }
         }
         if available == 0 {
-            let value = page_value(&set, id, offset, 0, false)?;
-            if budget.fits(&budget.encode(&value)?) {
-                return budget.encode(&value);
+            let text = render(0, false)?;
+            if budget.fits(&text) {
+                return Ok(text);
             }
         }
         bail!("budget_too_small: workspace coverage and one result do not fit");
@@ -279,63 +293,6 @@ fn page_value(
         "truncated": set.truncated,
         "tokenizer": "o200k_base"
     }))
-}
-
-fn compact_coverage(values: &[Value]) -> Vec<Value> {
-    values
-        .iter()
-        .map(|value| {
-            let Some(object) = value.as_object() else {
-                return value.clone();
-            };
-            let mut compact = serde_json::Map::new();
-            for key in [
-                "member",
-                "state",
-                "status",
-                "available",
-                "availability",
-                "pending",
-                "pending_reason",
-                "pending_status",
-                "reason",
-                "reasons",
-                "unavailable_reason",
-                "error",
-                "failure",
-                "generation",
-                "retained",
-                "truncated",
-                "partial",
-                "issues",
-            ] {
-                if let Some(value) = object.get(key) {
-                    compact.insert(key.into(), value.clone());
-                }
-            }
-            if let Some(issues) = compact.get_mut("issues").and_then(Value::as_object_mut) {
-                if issues.get("semantic_status").and_then(Value::as_str) == Some("ready") {
-                    for key in [
-                        "semantic_scope",
-                        "semantic_regions",
-                        "semantic_total_regions",
-                    ] {
-                        issues.remove(key);
-                    }
-                }
-                for key in ["semantic_reason", "semantic_preparation_error"] {
-                    if let Some(reason) = issues.get(key).and_then(Value::as_str) {
-                        let mut short: String = reason.chars().take(120).collect();
-                        if reason.chars().count() > 120 {
-                            short.push('…');
-                        }
-                        issues.insert(key.into(), short.into());
-                    }
-                }
-            }
-            Value::Object(compact)
-        })
-        .collect()
 }
 
 fn refresh_retained_counts(set: &mut WorkspaceSet) {

@@ -1,4 +1,5 @@
 use super::*;
+use crate::output::{OutputBudget, OutputFormat};
 use crate::{search, source};
 
 fn fixture() -> (tempfile::TempDir, tempfile::TempDir, Store) {
@@ -327,4 +328,117 @@ fn live_handle_continuation_expires_with_original_set() {
             .to_string()
             .contains("expired_result")
     );
+}
+
+fn lines_budget(limit: usize) -> OutputBudget {
+    OutputBudget::new(limit)
+        .unwrap()
+        .with_format(OutputFormat::Lines)
+}
+
+#[test]
+fn lines_page_fits_more_hits_than_json_for_same_budget() {
+    let (root, _cache, mut store) = fixture();
+    for index in 0..40 {
+        std::fs::write(
+            root.path().join(format!("module_{index}.rs")),
+            format!("fn gamma_{index}() {{ alpha(); }}\n"),
+        )
+        .unwrap();
+    }
+    store.index().unwrap();
+    let set = query(&store, "gamma");
+    let id = save(&mut store, set).unwrap();
+    let json: Value =
+        serde_json::from_str(&page(&store, &id, 0, 40, &OutputBudget::new(300).unwrap()).unwrap())
+            .unwrap();
+    let json_hits = json["hits"].as_array().unwrap().len();
+    let text = page(&store, &id, 0, 40, &lines_budget(300)).unwrap();
+    let handles: Vec<_> = crate::output::lines::emitted_handles(&text).collect();
+    assert!(
+        handles.len() > json_hits,
+        "lines {} vs json {json_hits}",
+        handles.len()
+    );
+    assert!(lines_budget(300).fits(&text));
+    let coverage = text
+        .lines()
+        .find(|line| line.starts_with("coverage: "))
+        .unwrap();
+    assert!(coverage.contains("indexed "), "{coverage}");
+    assert!(text.lines().any(|line| line.starts_with("next: ")));
+    let first = text.lines().next().unwrap();
+    assert!(first.starts_with(&format!("{id}:1\tmodule_")), "{first}");
+    assert!(first.contains(":1-1"), "{first}");
+}
+
+#[test]
+fn lines_more_renders_commit_and_change_entries() {
+    let (_root, _cache, store) = fixture();
+    let oid = crate::identity::GitOid::parse(&"b".repeat(40)).unwrap();
+    let change = ChangeEntry {
+        handle: String::new(),
+        name: "alpha".into(),
+        status: "modified".into(),
+        before: None,
+        after: Some(HistoricalSource {
+            repository: "/repo/.git".into(),
+            commit: oid,
+            blob: oid,
+            revision: crate::identity::ContentRevision::of(b""),
+            path: "lib.rs".into(),
+            span: crate::identity::ByteSpan::new(0, 12).unwrap(),
+        }),
+        correspondence: "exact".into(),
+    };
+    let commit = CommitEntry {
+        handle: String::new(),
+        repository: "/repo/.git".into(),
+        commit: oid,
+        parent: None,
+        summary: "first line\nbody".into(),
+        committer_time: 0,
+    };
+    let id = save_entries(
+        &store,
+        1,
+        serde_json::json!({}),
+        vec![ResultEntry::Commit(commit), ResultEntry::Change(change)],
+        true,
+    )
+    .unwrap();
+    let text = page(&store, &id, 0, 1, &lines_budget(600)).unwrap();
+    assert_eq!(
+        text.lines().next().unwrap(),
+        format!("{id}:1\tcommit:{}\tfirst line", "b".repeat(40))
+    );
+    let cursor = text
+        .lines()
+        .find_map(|line| line.strip_prefix("next: "))
+        .unwrap();
+    let text = more(&store, cursor, 1, &lines_budget(600)).unwrap();
+    assert_eq!(
+        text.lines().next().unwrap(),
+        format!("{id}:2\tchange:modified\tlib.rs\talpha")
+    );
+    assert!(text.lines().any(|line| line == "truncated: true"));
+}
+
+#[test]
+fn lines_show_prints_numbered_lines_and_cursor_footer() {
+    let (root, _cache, mut store) = fixture();
+    let source = (0..250)
+        .map(|i| format!("// line {i}\n"))
+        .collect::<String>();
+    std::fs::write(root.path().join("large.rs"), &source).unwrap();
+    store.index().unwrap();
+    let text = source::show(&store, "path:large.rs:3-220", &lines_budget(300)).unwrap();
+    let mut lines = text.lines();
+    assert!(lines.next().unwrap().starts_with("large.rs "));
+    assert_eq!(lines.next().unwrap(), "3\t// line 2");
+    assert!(text.lines().any(|line| line.starts_with("next: read:")));
+    assert!(text.lines().any(|line| line == "truncated: true"));
+    assert!(text.lines().any(|line| line.starts_with("verified: ")));
+    assert!(!text.contains("encoding:"));
+    assert!(lines_budget(300).fits(&text));
 }

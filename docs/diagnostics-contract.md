@@ -18,7 +18,9 @@ Writer acceptance is an observation, not proof a human or agent understood it.
 
 Events retain identities at emission time, so audits do not need surviving result
 sets. Search telemetry records actual retrieval lanes, elapsed time, candidate
-identity and original rank, coverage, and typed outcomes. It does not invent
+identity and original rank, coverage, and typed outcomes. A `--format lines`
+delivery records emitted handles from the page's first column but no coverage
+(`src/cli/emitted_evidence.rs:capture_emitted`). It does not invent
 graph retrieval, confidence probabilities, billed usage, or token savings.
 
 ## Modes and retention

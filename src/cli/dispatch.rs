@@ -96,6 +96,7 @@ fn local_dispatch(
         bail!("invalid_root: daemon cache belongs to another repository");
     }
     let budget = OutputBudget::new(options.budget)?;
+    let page_budget = OutputBudget::new(options.budget)?.with_format(options.output_format());
     let verb = options
         .words
         .first()
@@ -233,8 +234,8 @@ fn local_dispatch(
         "index"|"init"=>{let coverage=store.index()?;budget.render(&serde_json::json!({"generation":store.generation()?,"coverage":coverage}))},
         "doctor"=>budget.render(&crate::probes::doctor(&store, cache, session)?),
         "status"=>budget.render(&serde_json::json!({"generation":store.generation()?,"coverage":store.coverage()?,"semantic_feature":cfg!(feature="semantic"),"tokenizer":"o200k_base"})),
-        "show"=>source::show_with_side(&store,argument()?,options.side.as_deref().map(source::SourceSide::parse).transpose()?,&budget),
-        "more"=>results::more(&store,argument()?,options.limit,&budget),
+        "show"=>source::show_with_side(&store,argument()?,options.side.as_deref().map(source::SourceSide::parse).transpose()?,&page_budget),
+        "more"=>results::more(&store,argument()?,options.limit,&page_budget),
         "ctx"=>search::context(&store,argument()?,&budget),
         "search" | "refs" | "map" => {
             if !daemon_running || store.generation()?==0 {store.index()?;}
@@ -267,7 +268,7 @@ fn local_dispatch(
                 _=>unreachable!(),
             };
             let id=results::save(&mut store,set)?;
-            results::page(&store,&id,0,options.limit,&budget)
+            results::page(&store,&id,0,options.limit,&page_budget)
         }
         _ => bail!("invalid_command: unknown command {verb}; use search for queries"),
     }

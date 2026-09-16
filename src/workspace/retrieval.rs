@@ -247,7 +247,8 @@ pub(super) fn search(
         }
     }
     let id = results.save(set)?;
-    results.page(&id, 0, options.limit, &OutputBudget::new(options.budget)?)
+    let budget = OutputBudget::new(options.budget)?.with_format(options.output_format());
+    results.page(&id, 0, options.limit, &budget)
 }
 
 fn partial_coverage(coverage: &serde_json::Value) -> bool {

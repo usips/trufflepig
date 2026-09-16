@@ -305,3 +305,36 @@ fn workspace_ancestor_does_not_redirect_explicit_subtree_diagnostics() {
     assert_eq!(audit.complete_deliveries, 1);
     assert_eq!(audit.surfaced_metadata_identities, 1);
 }
+
+#[test]
+fn lines_format_records_emitted_handles_and_token_receipt() {
+    let fixture = Fixture::new();
+    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+    assert_eq!(
+        execute(
+            &fixture.args(&["--format", "lines", "search", "sym:SharedThing"]),
+            &mut stdout,
+            &mut stderr
+        ),
+        0
+    );
+    assert!(stderr.is_empty());
+    let text = std::str::from_utf8(&stdout).unwrap();
+    assert!(serde_json::from_str::<Value>(text).is_err());
+    let handles: Vec<_> = crate::output::lines::emitted_handles(text).collect();
+    assert_eq!(handles.len(), 2, "{text}");
+    let cache = fixture.member_cache("engine");
+    let events = deliveries(&cache, 1);
+    let event = &events[0];
+    assert_eq!(event.emitted.len(), 2);
+    for (rank, member) in ["engine", "pack"].iter().enumerate() {
+        let identity = &event.emitted[rank];
+        assert_eq!(identity.member.as_deref(), Some(*member));
+        assert_eq!(identity.original_rank, Some(1));
+    }
+    assert!(event.coverage.is_none());
+    let receipt = event.receipt.as_ref().unwrap();
+    assert!(receipt.complete);
+    assert_eq!(receipt.accepted_bytes, stdout.len());
+    assert!(receipt.prepared_tokens <= 600);
+}

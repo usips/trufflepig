@@ -1,12 +1,11 @@
 //! Immutable, persisted query snapshots. Missing IDs never resolve through newer sets.
-use crate::{
-    identity::{ResultCursor, ResultHandle},
-    output::OutputBudget,
-    store::Store,
-};
+use crate::{identity::ResultHandle, store::Store};
 mod entries;
+pub(crate) mod lines;
+mod page;
 use anyhow::{Context, Result, bail, ensure};
 pub use entries::*;
+pub use page::{more, page};
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -140,7 +139,7 @@ fn compact_target(target: &DefinitionTarget, root: &Path, names: bool) -> Result
     Ok(Value::Object(value))
 }
 
-fn concise_name(name: &str) -> bool {
+pub(crate) fn concise_name(name: &str) -> bool {
     !name.is_empty() && name.chars().count() <= COMPACT_NAME_LIMIT
 }
 
@@ -299,192 +298,6 @@ pub fn entry(store: &Store, handle: &str) -> Result<(i64, ResultEntry)> {
         .get(handle.ordinal - 1)
         .context("invalid_handle: ordinal outside result set")?;
     Ok((set.generation, entry.clone()))
-}
-
-pub fn page(
-    store: &Store,
-    id: &str,
-    offset: usize,
-    limit: usize,
-    budget: &OutputBudget,
-) -> Result<String> {
-    let set = load_entries(store, id)?;
-    if offset > set.hits.len() {
-        bail!("invalid_cursor: offset outside result set");
-    }
-    let available = set.hits.len() - offset;
-    let max_count = available.min(limit).min(budget.limit);
-    let compact_live = set.coverage["endpoint"] != "published_working_tree";
-
-    for names in [false, true] {
-        let mut low = 0;
-        let mut high = max_count;
-        while low < high {
-            let count = low + (high - low).div_ceil(2);
-            let value = page_value(
-                &set,
-                id,
-                store.root.as_path(),
-                offset,
-                count,
-                names,
-                None,
-                compact_live,
-            )?;
-            if budget.fits(&budget.encode(&value)?) {
-                low = count;
-            } else {
-                high = count - 1;
-            }
-        }
-        if low > 0 {
-            let named = page_value(
-                &set,
-                id,
-                store.root.as_path(),
-                offset,
-                low,
-                true,
-                None,
-                compact_live,
-            )?;
-            let named = budget.encode(&named)?;
-            if budget.fits(&named) {
-                return Ok(named);
-            }
-            let value = page_value(
-                &set,
-                id,
-                store.root.as_path(),
-                offset,
-                low,
-                names,
-                None,
-                compact_live,
-            )?;
-            return budget.encode(&value);
-        }
-
-        // A single ambiguous hit may carry a large candidate list. Trim it by
-        // binary search only after the ordinary page shape fails to fit.
-        if max_count > 0 {
-            let value = page_value(
-                &set,
-                id,
-                store.root.as_path(),
-                offset,
-                1,
-                names,
-                None,
-                compact_live,
-            )?;
-            let total = value["hits"][0]["candidates"]
-                .as_array()
-                .map(Vec::len)
-                .unwrap_or(0);
-            let mut candidate_low = 0;
-            let mut candidate_high = total;
-            while candidate_low < candidate_high {
-                let candidate_limit = candidate_low + (candidate_high - candidate_low).div_ceil(2);
-                let value = page_value(
-                    &set,
-                    id,
-                    store.root.as_path(),
-                    offset,
-                    1,
-                    names,
-                    Some(candidate_limit),
-                    compact_live,
-                )?;
-                if budget.fits(&budget.encode(&value)?) {
-                    candidate_low = candidate_limit;
-                } else {
-                    candidate_high = candidate_limit - 1;
-                }
-            }
-            if total > 0 {
-                let value = page_value(
-                    &set,
-                    id,
-                    store.root.as_path(),
-                    offset,
-                    1,
-                    names,
-                    Some(candidate_low),
-                    compact_live,
-                )?;
-                if budget.fits(&budget.encode(&value)?) {
-                    return budget.encode(&value);
-                }
-            }
-        }
-    }
-
-    if available == 0 {
-        let value = page_value(
-            &set,
-            id,
-            store.root.as_path(),
-            offset,
-            0,
-            false,
-            None,
-            compact_live,
-        )?;
-        if budget.fits(&budget.encode(&value)?) {
-            return budget.encode(&value);
-        }
-    }
-    bail!("budget_too_small: no hit and pagination envelope fit; increase --budget")
-}
-
-fn page_value(
-    set: &StoredResultSet,
-    id: &str,
-    root: &Path,
-    offset: usize,
-    count: usize,
-    names: bool,
-    candidate_limit: Option<usize>,
-    compact_live: bool,
-) -> Result<Value> {
-    let mut hits = set.hits[offset..offset + count]
-        .iter()
-        .map(|entry| compact_entry_for_page(entry, root, None, names, compact_live))
-        .collect::<Result<Vec<_>>>()?;
-    if let Some(limit) = candidate_limit {
-        for hit in &mut hits {
-            let Some(candidates) = hit["candidates"].as_array_mut() else {
-                continue;
-            };
-            if candidates.len() > limit {
-                let total = candidates.len();
-                candidates.truncate(limit);
-                hit["candidates_total"] = total.into();
-                hit["candidates_truncated"] = true.into();
-            }
-        }
-    }
-    let next = (offset + count < set.hits.len()).then(|| format!("{id}@{}", offset + count));
-    Ok(serde_json::json!({
-        "generation": set.generation,
-        "coverage": set.coverage,
-        "tokenizer": "o200k_base",
-        "hits": hits,
-        "next": next,
-        "truncated": set.truncated
-    }))
-}
-
-pub fn more(store: &Store, cursor: &str, limit: usize, budget: &OutputBudget) -> Result<String> {
-    let cursor: ResultCursor = cursor.parse()?;
-    page(
-        store,
-        &cursor.set.simple().to_string(),
-        cursor.offset,
-        limit,
-        budget,
-    )
 }
 
 #[cfg(test)]

@@ -10,8 +10,8 @@ use crate::{
 };
 use anyhow::{Context, Result, bail, ensure};
 use config::{Member, WorkspaceConfig};
-pub use coordinator::run;
 pub(crate) use coordinator::apply_config;
+pub use coordinator::run;
 use result_cache::WorkspaceResults;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -118,6 +118,8 @@ fn member_options(options: &Arguments, member: &Member) -> Result<Arguments> {
     local.workspace = None;
     local.no_workspace = true;
     local.member = None;
+    // Owner-forwarded and history sub-requests are re-parsed as JSON.
+    local.format = "json".into();
     Ok(local)
 }
 fn selected_member<'a>(config: &'a WorkspaceConfig, options: &Arguments) -> Result<&'a Member> {
@@ -153,13 +155,15 @@ pub(crate) fn local(
         return inspect(config, options, &budget);
     }
     let results = WorkspaceResults::open(cache)?;
+    let page_budget = OutputBudget::new(options.budget)?.with_format(options.output_format());
     match verb {
         "more" => results.more(
             options.words.get(1).context("usage: more SET@OFFSET")?,
             options.limit,
-            &budget,
+            &page_budget,
         ),
-        "show" | "ctx" => navigation::read(config, &results, options, &budget),
+        "show" => navigation::read(config, &results, options, &page_budget),
+        "ctx" => navigation::read(config, &results, options, &budget),
         "hist" | "since" | "diff" | "blame" => {
             navigation::history(config, &results, options, &budget)
         }

@@ -94,6 +94,7 @@ fn current_span(bytes: &[u8], first: usize, last: usize) -> Result<(usize, usize
 }
 
 pub(crate) mod acquisition;
+mod lines;
 pub(crate) use acquisition::AcquiredSource;
 pub use acquisition::SourceSide;
 
@@ -165,7 +166,10 @@ pub(crate) fn render_owned(
             "invalid_metadata: source metadata collides with response identity"
         );
         object.extend(metadata.clone());
-        let text = budget.encode(&value)?;
+        let text = match budget.format {
+            crate::output::OutputFormat::Json => budget.encode(&value)?,
+            crate::output::OutputFormat::Lines => lines::show_text(&value),
+        };
         if budget.fits(&text) && (!rows.is_empty() || start == end) {
             return Ok(text);
         }

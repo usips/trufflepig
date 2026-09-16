@@ -206,7 +206,13 @@ fn explicit_budget_is_recorded_only_when_passed() {
     let implicit = parse(&["search".into(), "query".into()]).unwrap();
     assert!(!implicit.explicit_budget);
     assert_eq!(implicit.budget, 600);
-    let long = parse(&["--budget".into(), "900".into(), "search".into(), "query".into()]).unwrap();
+    let long = parse(&[
+        "--budget".into(),
+        "900".into(),
+        "search".into(),
+        "query".into(),
+    ])
+    .unwrap();
     assert!(long.explicit_budget);
     let short = parse(&["-b".into(), "900".into(), "search".into(), "query".into()]).unwrap();
     assert!(short.explicit_budget);
@@ -232,4 +238,41 @@ fn client_normalization_forwards_rerank_overrides() {
 fn rerank_flags_are_mutually_exclusive() {
     let error = parse(&["--rerank".into(), "--no-rerank".into(), "search".into()]).unwrap_err();
     assert!(error.to_string().contains("cannot be used with"));
+}
+
+#[test]
+fn client_normalization_forwards_format() {
+    let options = parse(&[
+        "--format".into(),
+        "lines".into(),
+        "search".into(),
+        "q".into(),
+    ])
+    .unwrap();
+    let forwarded = parse(&normalized_args(&options, Path::new("/example"))).unwrap();
+    assert_eq!(forwarded.format, "lines");
+    assert_eq!(
+        forwarded.output_format(),
+        crate::output::OutputFormat::Lines
+    );
+    let implicit = parse(&["search".into(), "q".into()]).unwrap();
+    assert_eq!(implicit.output_format(), crate::output::OutputFormat::Json);
+}
+
+#[test]
+fn json_flag_conflicts_with_lines_format() {
+    let options = parse(&[
+        "--json".into(),
+        "--format".into(),
+        "lines".into(),
+        "status".into(),
+    ])
+    .unwrap();
+    assert!(
+        validate(&options)
+            .unwrap_err()
+            .to_string()
+            .contains("--json conflicts with --format lines")
+    );
+    assert!(parse(&["--format".into(), "yaml".into(), "status".into()]).is_err());
 }

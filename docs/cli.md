@@ -24,8 +24,15 @@ a root-relative path-prefix filter; `lang:` and `kind:` filter recorded
 classifications. Language names are `rust`, `typescript`, `javascript`, `luau`,
 `dreammaker`, and `text`; `rs`, `ts`, `js`, `lua`, and `dm` are aliases. Docs/config use `text`.
 One JSON object plus newline is the default output; `--json` accepts the same
-format. `-b/--budget` defaults to 600 `o200k_base` tokens for the serialized
-stdout response, or to the workspace's `[output].budget` when one is set. Search ranks files first and emits one compact representative
+format. `--format lines` renders `search`, `refs`, `map`, `more`, and `show` as
+tab-separated lines for agents that read output directly: one
+`HANDLE<TAB>[MEMBER/]PATH:START-END[<TAB>NAME]` line per hit, then a one-line
+`coverage:` summary, then `next: CURSOR` and `truncated: true` when present;
+`show` prints a `PATH [(MEMBER)] REVISION START-END` header, `LINE<TAB>text`
+rows, and a `verified:` footer that flags `encoding: byte-escaped` once. Errors
+and every other verb stay JSON. `-b/--budget` defaults to 600 `o200k_base`
+tokens for the serialized stdout response, measured on the rendered text of the
+selected format, or to the workspace's `[output].budget` when one is set. Search ranks files first and emits one compact representative
 per file before the `-n/--limit` page cap (20 files by default); the budget may
 fit fewer. Each hit includes a `file` URI, line span, and immutable handle.
 Increase the budget when a hit or source line cannot fit.
@@ -61,8 +68,9 @@ for schema, cache behavior, routing guarantees, and current limits.
 
 ## Follow-up reads and navigation
 
-Copy `hits[].handle` or `next` into the appropriate command. Search pages use
-compact file-first entries; `show` supplies source lines for a selected handle.
+Copy `hits[].handle` (the first column in lines format) or `next` into the
+appropriate command. Search pages use compact file-first entries, whose `name`
+appears only for symbol hits; `show` supplies source lines for a selected handle.
 
 ```text
 trufflepig show SET:ORDINAL

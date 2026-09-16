@@ -7,14 +7,15 @@ One directory that serves both Kimi Code and Muse Code:
   `.agents/skills/` in a project, Muse's personal skill store).
 - `.muse-plugin/plugin.json` is the native Muse plugin manifest for builds
   that ship `muse plugins`; skills-only installs work everywhere.
-- `bin/trufflepig-agent` wraps the CLI: it injects `--json`, `--client`,
+- `bin/trufflepig-agent` wraps the CLI: it injects `--format lines`, `--client`,
   `--session`, and `--diagnostics detailed`, passes the response through
   unchanged, and appends one audit record per call.
 - `bin/trufflepig-audit` summarizes those records per harness session and
   flags sessions where the tool struggled.
 - `hooks/session-start.sh` records the harness session id per working
   directory so calls group by real session; `kimi/hooks.toml` wires it into
-  Kimi, the Muse manifest wires it into Muse. On session start it also
+  Kimi, the Muse manifest wires it into Muse. A marker older than twelve hours
+  is ignored, so a harness without session hooks falls back to a per-day id. On session start it also
   best-effort starts the per-user system daemon, since sandboxed harnesses
   cannot spawn it themselves: the `trufflepig-system` user service when
   installed, else a detached `trufflepig system ensure`.
@@ -75,6 +76,7 @@ and searches whose results were never opened.
 - `TRUFFLEPIG_AGENT_HARNESS` overrides harness detection (`kimi`, `muse`).
 - `TRUFFLEPIG_SESSION` overrides the session id.
 - `TRUFFLEPIG_AGENT_LOG_DIR` relocates the audit log directory.
+- Pass `--json` to get the JSON page instead of the injected `--format lines`.
 - `TRUFFLEPIG_AGENT_DIAGNOSTICS` sets the daemon diagnostics mode
   (`detailed` by default, `metadata`, or `off`).
 - `TRUFFLEPIG_BINARY` points at a specific trufflepig executable.

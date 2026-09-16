@@ -89,10 +89,13 @@ candidate/byte ceiling; omissions are explicit rather than exhaustive counts.
 Missing or not-yet-published members produce partial coverage. If no selected
 member is available, the command returns an explicit unavailable outcome.
 
-The normal 600-token `o200k_base` budget applies once to the complete JSON
-response, including provenance and coverage. Compact entries carry a
-percent-encoded `file` URI, line span, and owner-qualified handle. Labels cannot
-be removed to squeeze in additional hits. Tiny budgets retain explicit
+The normal 600-token `o200k_base` budget applies once to the complete
+response in the selected format, including provenance and coverage. Compact
+entries carry a percent-encoded `file` URI, line span, and owner-qualified
+handle; lines format prefixes each path with its member and reduces coverage to
+one line that still names every member's `partial` and `truncated` state
+(`src/workspace/result_cache/lines.rs`). Labels cannot be removed to squeeze in
+additional hits. Tiny budgets retain explicit
 insufficient-budget behavior. Pages capture each member's publication generation
 separately and freeze those owners for follow-up reads; they are not atomic
 snapshots spanning repositories.

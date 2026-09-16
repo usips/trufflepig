@@ -116,6 +116,15 @@ pub(super) fn capture_emitted(
     requested_target: Option<&str>,
 ) {
     let Ok(value) = serde_json::from_str::<Value>(response) else {
+        // A lines page names its handles in the first column; coverage is not captured.
+        for (rank, handle) in crate::output::lines::emitted_handles(response)
+            .enumerate()
+            .take(128)
+        {
+            if let Some(identity) = resolved_handle(saved, handle, false, Some(rank + 1)) {
+                event.emitted.push(identity);
+            }
+        }
         return;
     };
     let fallback_repository = encode_path(root);

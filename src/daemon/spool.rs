@@ -121,7 +121,8 @@ impl SpoolServer {
             let result = fs::read(&path)
                 .context("read spooled daemon request")
                 .and_then(|bytes| {
-                    serde_json::from_slice::<DaemonRequest>(&bytes).context("decode spooled request")
+                    serde_json::from_slice::<DaemonRequest>(&bytes)
+                        .context("decode spooled request")
                 })
                 .and_then(|request| {
                     request.validate()?;
