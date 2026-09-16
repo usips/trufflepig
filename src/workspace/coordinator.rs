@@ -107,9 +107,10 @@ pub fn run(
         std::thread::sleep(Duration::from_millis(25));
     }
     anyhow::bail!(
-        "workspace_unavailable: coordinator did not start and no system router answered; \
-         from a sandbox run `trufflepig system ensure` outside it (or enable the \
-         trufflepig-system user service), else use --no-daemon or inspect cache permissions"
+        "workspace_unavailable: no daemon reachable and the coordinator did not start; \
+         a sandbox that blocks unix sockets or cache writes must run trufflepig \
+         unsandboxed; otherwise start the trufflepig-system service, use --no-daemon, \
+         or inspect cache permissions"
     )
 }
 
