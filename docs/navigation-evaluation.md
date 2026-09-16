@@ -45,7 +45,8 @@ only from actual observations; the CLI replay leaves it unknown.
 A hit overlapping a labeled span counts as metadata discovery. Source evidence
 requires the entire labeled byte span to be covered by emitted source lines
 from successful, completely delivered responses. Each source response must
-verify the selected metadata revision, and its emitted text must match the
+be verified; the first read pins the revision for continuations, since compact
+search metadata omits revisions. Its emitted text must match the
 frozen source at its original byte coordinates. Multiple reads may jointly
 cover a label; repeated or overlapping lines do not fill gaps. Search metadata
 and `ctx` relationships do not count as source evidence.

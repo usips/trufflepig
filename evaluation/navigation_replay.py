@@ -8,7 +8,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import time
-from urllib.parse import unquote_to_bytes
+from urllib.parse import unquote_to_bytes, urlsplit
 
 from records import EventRecord, OutcomeRecord, TaskRecord, UsageRecord, record_dict
 from replay import source_path, verify_snapshot
@@ -25,12 +25,27 @@ def overlap(left, right):
 
 
 def identity(hit):
-    return {key: hit[key] for key in ("path", "revision", "start", "end", "handle")
+    return {key: hit[key] for key in ("file", "start_line", "end_line", "path", "revision", "start", "end", "handle")
             if key in hit}
 
 
 def decoded_hit(hit):
     return {**hit, "path": os.fsdecode(unquote_to_bytes(hit["path"]))}
+
+
+def located_hit(root, hit):
+    """Map compact line locators to frozen-corpus byte spans for oracle selection."""
+    uri = urlsplit(hit["file"])
+    if uri.scheme != "file" or uri.netloc or uri.query or uri.fragment:
+        raise ValueError("invalid search file URI")
+    path = Path(os.fsdecode(unquote_to_bytes(uri.path))).relative_to(root)
+    source = source_path(root, str(path)).read_bytes()
+    lines = source.splitlines(keepends=True)
+    start, end = hit["start_line"], hit["end_line"]
+    if not 1 <= start <= end <= len(lines):
+        raise ValueError("search line span outside frozen source")
+    return dict(path=str(path), start=sum(map(len, lines[:start-1])),
+                end=sum(map(len, lines[:end])))
 
 
 def exact_counter():
@@ -47,7 +62,7 @@ class CommandRunner:
 
     def __init__(self, binary, root, cache, counter=None):
         self.prefix = [str(binary), "--root", str(root), "--cache", str(cache),
-                       "--no-daemon", "--json", "--budget", str(BUDGET)]
+                       "--no-workspace", "--no-daemon", "--json", "--budget", str(BUDGET)]
         self.counter = counter
 
     def __call__(self, operation, argument):
@@ -145,9 +160,9 @@ def navigate(task, root, runner):
             pages += 1
             next_page = response.get("next") if accepted else None
             for hit in hits:
-                matching = {i for i, span in enumerate(relevant) if overlap(decoded_hit(hit), span)}
+                matching = {i for i, span in enumerate(relevant) if overlap(located_hit(root, hit), span)}
                 discovered.update(matching)
-                if matching and hit.get("handle") and hit.get("revision"):
+                if matching and hit.get("handle"):
                     pending.append(hit)
         if selected and operation in ("show", "ctx"):
             identities.append(identity(selected))
@@ -157,6 +172,12 @@ def navigate(task, root, runner):
         if operation == "ctx":
             context_ok = accepted and bool(response.get("relationships")) and not response.get("truncated")
         if operation == "show":
+            if accepted and "revision" not in selected:
+                # Compact discovery has no revision. First verified show pins it;
+                # all source bytes must still match the frozen corpus.
+                if decoded_hit(response)["path"] == located_hit(root, selected)["path"]:
+                    selected = {**selected, "path": response.get("path"),
+                                "revision": response.get("revision")}
             lines = verified_lines(root, response, selected) if accepted else []
             evidence.extend(lines)
             source_next = response.get("next") if lines else None
@@ -175,7 +196,7 @@ def navigate(task, root, runner):
         else:
             source_next = None
             pending = [hit for hit in pending if ("show", hit["handle"]) not in attempted
-                       and any(overlap(decoded_hit(hit), span) and not fully_covered(span, evidence)
+                       and any(overlap(located_hit(root, hit), span) and not fully_covered(span, evidence)
                                for span in relevant)]
             if pending:
                 selected = pending.pop(0)
@@ -210,7 +231,7 @@ def replay_navigation(manifest_path, binary):
     records = []
     with tempfile.TemporaryDirectory(prefix="navigation-eval-", dir=scratch) as cache:
         indexed = subprocess.run([str(binary), "--root", str(root), "--cache", cache,
-                                  "--no-daemon", "index"], capture_output=True, timeout=120)
+                                  "--no-workspace", "--no-daemon", "index"], capture_output=True, timeout=120)
         if indexed.returncode:
             raise RuntimeError("Trufflepig index failed")
         runner = CommandRunner(binary, root, cache, exact_counter())

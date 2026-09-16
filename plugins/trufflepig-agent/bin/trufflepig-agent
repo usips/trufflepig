@@ -1,28 +1,22 @@
 #!/usr/bin/env python3
-"""Harness-facing trufflepig wrapper with an auditable per-call JSONL log.
+"""Audited harness wrapper: inject compact output, client, session, and diagnostics.
 
+Explicit CLI options win. Preserve stdout, stderr, and exit code while logging
+bounded per-call metadata to the state directory or configured runtime fallback.
 Usage: trufflepig-agent [trufflepig options] COMMAND [ARGS...]
-
-Adds `--format lines --client HARNESS --session ID --diagnostics detailed`
-unless the caller passed them (`--json` keeps the JSON page), runs trufflepig,
-passes stdout/stderr and the exit code through unchanged, and appends one record to
-$TRUFFLEPIG_AGENT_LOG_DIR/<harness>.jsonl (default
-$XDG_STATE_HOME/trufflepig/agent-audit; a sandbox that cannot write there
-falls back to /tmp/trufflepig-<uid>/agent-audit). Records carry the verb, arguments,
-timing, exit code, response status, hit count, truncation, per-member
-coverage flags, and derived struggle signals. `trufflepig-audit` summarizes
-them. Logging never changes the command's output or exit code.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import os
-import re
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+from trufflepig_runtime import client_environment, fallback_root
+from trufflepig_audit_response import coverage_summary, parse_lines_response
 
 SLOW_SECONDS = 3.0
 RECENT_LIMIT = 8
@@ -46,6 +40,10 @@ def detect_harness() -> str:
     explicit = os.environ.get("TRUFFLEPIG_AGENT_HARNESS")
     if explicit:
         return explicit
+    if os.environ.get("CLAUDECODE") == "1" or os.environ.get("CLAUDE_CODE_CHILD_SESSION") == "1":
+        return "claude"
+    if any(os.environ.get(key) for key in ("CODEX_THREAD_ID", "CODEX_SESSION_ID", "CODEX_VERSION")):
+        return "codex"
     for key in os.environ:
         upper = key.upper()
         if "KIMI" in upper:
@@ -61,6 +59,10 @@ def detect_harness() -> str:
         except OSError:
             break
         lowered = comm.lower()
+        if lowered == "claude":
+            return "claude"
+        if lowered == "codex" or lowered.startswith("codex-"):
+            return "codex"
         if lowered.startswith("kimi"):
             return "kimi"
         if lowered.startswith("muse"):
@@ -82,7 +84,9 @@ def resolve_session(harness: str, cwd: str) -> str:
     explicit = os.environ.get("TRUFFLEPIG_SESSION")
     if explicit:
         return explicit
-    for key in ("KIMI_SESSION_ID", "MUSE_SESSION_ID", "AGENT_SESSION_ID"):
+    keys = {"claude": ("TRUFFLEPIG_CLAUDE_SESSION",), "codex": ("CODEX_THREAD_ID", "CODEX_SESSION_ID"),
+            "kimi": ("KIMI_SESSION_ID",), "muse": ("MUSE_SESSION_ID",)}
+    for key in (*keys.get(harness, ()), "AGENT_SESSION_ID"):
         if os.environ.get(key):
             return os.environ[key]
     # Session files are written by the harness SessionStart hook, one per cwd.
@@ -103,11 +107,12 @@ def split_args(argv: list[str]) -> tuple[list[str], str, list[str], dict[str, st
     """Return (options, verb, words, option values) without altering argv."""
     options: list[str] = []
     values: dict[str, str] = {}
+    words: list[str] = []
     index = 0
     while index < len(argv):
         arg = argv[index]
         if arg == "--":
-            index += 1
+            words.extend(argv[index + 1:])
             break
         if arg.startswith("-") and len(arg) > 1:
             if "=" in arg and arg.startswith("--"):
@@ -128,85 +133,11 @@ def split_args(argv: list[str]) -> tuple[list[str], str, list[str], dict[str, st
                 options.append(arg)
             index += 1
             continue
-        break
-    words = argv[index:]
+        words.append(arg)
+        index += 1
     # Unknown first words are recorded verbatim so usage errors stay visible.
     verb = words[0] if words else "status"
     return options, verb, words, values
-
-
-LANE_KEYS = {"semantic": "semantic_status", "rerank": "rerank_status"}
-SINGLE_REPO_KEYS = {"indexed", "excluded", "parse_failures", "walk_failures", "truncated", "endpoint"}
-
-
-def parse_lines_response(stdout: bytes) -> dict:
-    """Rebuild the response fields the audit needs from a `--format lines` page."""
-    text = stdout.decode("utf-8", "replace")
-    response: dict = {"hits": []}
-    lanes: dict = {}
-    members: dict = {}
-    single: dict = {}
-    seen_coverage = False
-    for line in text.splitlines():
-        if not seen_coverage:
-            if line.startswith("coverage: "):
-                seen_coverage = True
-                for part in line[len("coverage: "):].split("; "):
-                    words = part.split()
-                    if not words:
-                        continue
-                    if words[0] in LANE_KEYS and len(words) == 2:
-                        lanes[LANE_KEYS[words[0]]] = words[1]
-                    elif words[0] in SINGLE_REPO_KEYS:
-                        single[words[0]] = words[1] if len(words) > 1 else True
-                    else:
-                        members[words[0]] = {
-                            "state": "searched" if words[1:2] in (["complete"], ["partial"]) else (words[1] if len(words) > 1 else None),
-                            "partial": words[1:2] == ["partial"],
-                            "truncated": "truncated" in words[2:],
-                        }
-            elif "\t" in line:
-                response["hits"].append({"handle": line.split("\t", 1)[0]})
-            continue
-        if line.startswith("next: "):
-            response["next"] = line[len("next: "):]
-        elif line == "truncated: true":
-            response["truncated"] = True
-    if members:
-        response["coverage"] = [
-            {"member": name, "state": fields["state"], "partial": fields["partial"],
-             "truncated": fields["truncated"], "issues": dict(lanes)}
-            for name, fields in members.items()
-        ]
-    elif seen_coverage:
-        response["coverage"] = {"parse_failures": single.get("parse_failures"), **lanes}
-    return response
-
-
-def coverage_summary(response: dict) -> dict:
-    coverage = response.get("coverage")
-    summary: dict = {}
-    if isinstance(coverage, list):
-        for member in coverage:
-            if not isinstance(member, dict):
-                continue
-            issues = member.get("issues") or {}
-            summary[str(member.get("member"))] = {
-                "state": member.get("state"),
-                "partial": member.get("partial"),
-                "truncated": member.get("truncated"),
-                "semantic_status": issues.get("semantic_status"),
-                "rerank_status": issues.get("rerank_status"),
-                "rerank_reason": issues.get("rerank_reason"),
-            }
-    elif isinstance(coverage, dict):
-        summary["root"] = {
-            "semantic_status": coverage.get("semantic_status"),
-            "rerank_status": coverage.get("rerank_status"),
-            "rerank_reason": coverage.get("rerank_reason"),
-            "parse_failures": coverage.get("parse_failures"),
-        }
-    return summary
 
 
 def recent_fingerprints(path: Path) -> list[str]:
@@ -222,6 +153,8 @@ def main() -> int:
     harness = detect_harness()
     session = resolve_session(harness, cwd)
     options, verb, words, values = split_args(argv)
+    harness = values.get("--client", harness)
+    session = values.get("--session", session)
     injected: list[str] = []
     if "--json" not in options and "--format" not in values:
         injected.extend(["--format", "lines"])
@@ -235,7 +168,7 @@ def main() -> int:
 
     started = time.monotonic()
     try:
-        completed = subprocess.run(command, capture_output=True, check=False)
+        completed = subprocess.run(command, capture_output=True, check=False, env=client_environment())
         exit_code = completed.returncode
         stdout, stderr = completed.stdout, completed.stderr
     except FileNotFoundError:
@@ -271,10 +204,9 @@ def main() -> int:
 
     fingerprint = hashlib.blake2s(" ".join([verb, *words[1:]]).encode(), digest_size=8).hexdigest()
     recent_path = state_dir() / "agent-recent" / harness / f"{cwd_key(cwd)}-{session}"
-    # Sandboxes such as Muse's leave only /tmp writable outside the workspace.
-    fallback_root = Path(f"/tmp/trufflepig-{os.getuid()}")
-    audit_fallback = fallback_root / "agent-audit"
-    recent_fallback = fallback_root / "agent-recent" / recent_path.parent.name / recent_path.name
+    runtime = fallback_root()
+    audit_fallback = runtime / "agent-audit"
+    recent_fallback = runtime / "agent-recent" / recent_path.parent.name / recent_path.name
     try:
         recent = recent_path.read_text().split()[-RECENT_LIMIT:]
     except OSError:

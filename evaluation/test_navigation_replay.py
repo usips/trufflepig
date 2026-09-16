@@ -23,7 +23,9 @@ class NavigationReplayTests(unittest.TestCase):
         self.calls = []
 
     def hit(self, start=0, end=5, handle="set:1"):
-        return dict(path="a.rs", start=start, end=end, revision="revision-a", handle=handle)
+        data = (self.root / "a.rs").read_bytes()
+        return dict(file=(self.root / "a.rs").as_uri(), start_line=data[:start].count(b"\n") + 1,
+                    end_line=data[:end-1].count(b"\n") + 1, handle=handle)
 
     def source(self, start=0, end=6, **kwargs):
         return dict(path="a.rs", revision="revision-a", verified=True,
@@ -96,16 +98,24 @@ class NavigationReplayTests(unittest.TestCase):
         self.assertEqual(result["outcome"]["status"], "incomplete")
         self.assertFalse(result["outcome"]["context_satisfied"])
 
-    def test_changed_revision_cannot_credit_identical_source(self):
-        source = self.source()
+    def test_changed_revision_cannot_credit_continuation(self):
+        self.task["relevant"] = [dict(path="a.rs", start=0, end=12)]
+        source = self.source(6, 12)
         source["revision"] = "revision-b"
+        result = self.run_responses([{"hits": [self.hit(0, 18)]},
+                                     self.source(next="continuation"), source])
+        self.assertEqual(result["outcome"]["source_evidenced"], 0)
+
+    def test_wrong_source_path_cannot_credit_compact_hit(self):
+        source = self.source()
+        source["path"] = "other.rs"
         result = self.run_responses([{"hits": [self.hit()]}, source])
         self.assertEqual(result["outcome"]["source_evidenced"], 0)
 
     def test_changed_bytes_cannot_credit_same_coordinates(self):
         source = self.source()
         source["lines"][0]["text"] = "other\n"
-        self.assertEqual(verified_lines(self.root, source, self.hit()), [])
+        self.assertEqual(verified_lines(self.root, source, dict(path="a.rs", revision="revision-a")), [])
 
     def test_partial_delivery_never_credits_source(self):
         source = self.source(_complete=False)

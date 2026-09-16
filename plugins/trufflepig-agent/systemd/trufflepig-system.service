@@ -1,7 +1,6 @@
 # Per-user trufflepig router. `install.sh --systemd` copies this into
 # ~/.config/systemd/user with the trufflepig path resolved, then enables it.
-# The router only proxies requests; the workspace and per-root daemons it
-# spawns are detached, so stopping the service leaves them running.
+# Stop/restart includes all router-owned daemons so upgrades replace old code.
 [Unit]
 Description=trufflepig per-user routing daemon
 
@@ -10,7 +9,7 @@ Type=simple
 ExecStart=@TRUFFLEPIG@ system-serve
 Restart=on-failure
 RestartSec=2
-KillMode=process
+KillMode=control-group
 
 [Install]
 WantedBy=default.target

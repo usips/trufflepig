@@ -6,7 +6,7 @@ Usage: trufflepig-audit [--harness NAME] [--session ID] [--since HOURS]
 
 Reads <LOG_DIR>/<harness>.jsonl written by `trufflepig-agent` (default
 $XDG_STATE_HOME/trufflepig/agent-audit plus the sandbox fallback
-/tmp/trufflepig-<uid>/agent-audit) and prints one row per session with
+configured disk-backed runtime directory) and prints one row per session with
 call counts, error and empty-result rates, truncation, repeated queries,
 latency, and follow-through (searches followed by show/ctx/more). A session
 is flagged when any struggle threshold is crossed. `--calls` lists the
@@ -22,6 +22,8 @@ import sys
 import time
 from collections import defaultdict
 from pathlib import Path
+
+from trufflepig_runtime import fallback_root
 
 THRESHOLDS = {
     "error_rate": 0.25,
@@ -41,7 +43,7 @@ def default_dir() -> Path:
 
 
 def fallback_dir() -> Path:
-    return Path(f"/tmp/trufflepig-{os.getuid()}") / "agent-audit"
+    return fallback_root() / "agent-audit"
 
 
 def load(directories: list[Path], harness: str | None, since_hours: float | None) -> list[dict]:
@@ -68,6 +70,7 @@ def load(directories: list[Path], harness: str | None, since_hours: float | None
                     if stamp is not None and stamp < cutoff:
                         continue
                 records.append(record)
+    records.sort(key=lambda record: record.get("ts", ""))
     return records
 
 
@@ -165,7 +168,7 @@ def main() -> int:
     parser.add_argument("--calls", action="store_true", help="list calls carrying signals")
     args = parser.parse_args()
     directories = [args.log_dir] if args.log_dir else [default_dir(), fallback_dir()]
-    directories = [directory for directory in directories if directory.is_dir()]
+    directories = list(dict.fromkeys(directory.resolve() for directory in directories if directory.is_dir()))
     if not directories:
         print(f"no audit log directory at {args.log_dir or default_dir()}", file=sys.stderr)
         return 1

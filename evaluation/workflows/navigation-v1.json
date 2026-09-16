@@ -12,7 +12,7 @@
     "Read selected immutable handles using show. Follow only returned show continuations; never substitute a current-path read.",
     "When the task requires ctx, request ctx for a selected handle. Require a successful complete context response with a nonempty relationship list.",
     "Follow search-result continuations with more when selected source candidates are exhausted, subject to three total result pages.",
-    "Credit source evidence only for complete successful responses with matching selected revisions and emitted original bytes covering the full labeled span.",
+    "Credit source evidence only for complete successful verified responses whose emitted original bytes cover the full labeled span. Compact search locators carry no revision; pin it on the first source read and require matching revisions on continuations.",
     "Stop on complete source evidence and required context, exhaustion, three result pages, or eight tool calls.",
     "Preserve misses, incomplete delivery, elapsed time, bytes, observed costs, and censoring; never infer unknown token counts or task success."
   ]

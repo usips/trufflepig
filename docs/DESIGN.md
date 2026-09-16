@@ -14,7 +14,8 @@ semantic retrieval requires an explicit `--sem` request.
 [CLI usage](cli.md) describes runnable commands and current operational limits.
 
 - [Search, handles, reads, and output](retrieval-contract.md)
-- [Authoritative storage, publication, and daemon](index-contract.md)
+- [Authoritative storage and publication](index-contract.md)
+- [Cache ownership, daemon lifecycle, and transport](runtime-contract.md)
 - [Historical navigation and local Git objects](history-contract.md)
 - [Diagnostic retention, sessions, and delivery evidence](diagnostics-contract.md)
 - [Language extraction and relationship evidence](language-contract.md)

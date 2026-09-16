@@ -1,0 +1,6 @@
+interface:
+  display_name: "Trufflepig code search"
+  short_description: "Find project code and follow implementation evidence"
+  default_prompt: "Use $trufflepig-code-search to locate the implementation and inspect its relevant dependencies."
+policy:
+  allow_implicit_invocation: true
