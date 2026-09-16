@@ -17,10 +17,16 @@ if [ "$phase" = "end" ]; then
     rm -f "$state/$key"
     exit 0
 fi
-# Best-effort: pre-warm the per-user system daemon (sandboxed harnesses cannot
-# spawn it themselves); never change the hook's exit code or add output.
+# Best-effort: make sure the per-user system daemon runs (sandboxed harnesses
+# cannot spawn it themselves). Prefer the systemd user service installed by
+# `install.sh --systemd`, which also restarts the router after a crash; fall
+# back to a detached spawn. Never change the hook's exit code or add output.
 if [ "$phase" = "start" ]; then
-    command -v trufflepig >/dev/null 2>&1 && trufflepig system ensure >/dev/null 2>&1 || true
+    if command -v systemctl >/dev/null 2>&1 && systemctl --user is-enabled trufflepig-system.service >/dev/null 2>&1; then
+        systemctl --user start trufflepig-system.service >/dev/null 2>&1 || true
+    else
+        command -v trufflepig >/dev/null 2>&1 && trufflepig system ensure >/dev/null 2>&1 || true
+    fi
 fi
 [ -n "$session" ] || exit 0
 printf '%s\n' "$session" > "$state/$key"

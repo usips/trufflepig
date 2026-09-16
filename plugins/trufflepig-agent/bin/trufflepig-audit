@@ -75,9 +75,13 @@ def summarize(records: list[dict]) -> list[dict]:
         calls = [c for c in calls if not c.get("malformed")]
         if not calls:
             continue
+        hooks = [c for c in calls if str(c.get("verb", "")).startswith("hook:")]
+        calls = [c for c in calls if not str(c.get("verb", "")).startswith("hook:")]
+        signals = [s for c in [*calls, *hooks] for s in c.get("signals", [])]
+        if not calls:
+            calls = hooks  # a session that only tripped the hook still shows up
         searches = [c for c in calls if c.get("verb") == "search"]
         latencies = [c.get("elapsed_ms", 0) / 1000 for c in calls]
-        signals = [s for c in calls for s in c.get("signals", [])]
         follow = 0
         for index, call in enumerate(calls):
             if call.get("verb") == "search" and (call.get("hits") or 0) > 0:
@@ -103,6 +107,7 @@ def summarize(records: list[dict]) -> list[dict]:
             "semantic_degraded": signals.count("semantic_degraded"),
             "rerank_unavailable": signals.count("rerank_unavailable"),
             "slow": signals.count("slow"),
+            "steer": signals.count("steer_block") + signals.count("steer_nudge"),
             "p50_s": round(statistics.median(latencies), 2),
             "p95_s": round(sorted(latencies)[max(0, int(len(latencies) * 0.95) - 1)], 2),
             "follow_through": f"{follow}/{productive}",
@@ -134,13 +139,13 @@ def summarize(records: list[dict]) -> list[dict]:
 
 def print_table(rows: list[dict]) -> None:
     header = ("harness", "session", "calls", "srch", "show", "ctx", "err", "empty", "trunc",
-              "rept", "p50s", "p95s", "follow", "flag")
+              "rept", "steer", "p50s", "p95s", "follow", "flag")
     print("\t".join(header))
     for row in rows:
         print("\t".join(str(v) for v in (
             row["harness"], row["session"][:28], row["calls"], row["searches"], row["shows"],
             row["ctx"], row["errors"], row["no_hits"], row["truncated"], row["repeats"],
-            row["p50_s"], row["p95_s"], row["follow_through"],
+            row["steer"], row["p50_s"], row["p95_s"], row["follow_through"],
             ("STRUGGLING: " + ", ".join(row["reasons"])) if row["struggling"] else "ok",
         )))
 

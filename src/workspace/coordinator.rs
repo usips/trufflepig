@@ -107,7 +107,9 @@ pub fn run(
         std::thread::sleep(Duration::from_millis(25));
     }
     anyhow::bail!(
-        "workspace_unavailable: coordinator did not start; use --no-daemon or inspect cache permissions"
+        "workspace_unavailable: coordinator did not start and no system router answered; \
+         from a sandbox run `trufflepig system ensure` outside it (or enable the \
+         trufflepig-system user service), else use --no-daemon or inspect cache permissions"
     )
 }
 
@@ -200,4 +202,3 @@ pub(super) fn ensure_member(member: &Member, options: &Arguments) -> Result<()> 
     spawn_background(&mut command)?;
     Ok(())
 }
-

@@ -19,6 +19,13 @@
     "commands": [],
     "hooks": [
       {
+        "id": "trufflepig-steer-search",
+        "event": "PreToolUse",
+        "command": ["python3", "hooks/steer-search.py", "muse"],
+        "timeoutMs": 3000,
+        "statusMessage": "Steering search toward trufflepig-agent"
+      },
+      {
         "id": "trufflepig-session-start",
         "event": "SessionStart",
         "command": ["sh", "hooks/session-start.sh", "muse", "start"],

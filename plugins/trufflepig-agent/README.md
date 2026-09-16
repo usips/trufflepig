@@ -14,12 +14,26 @@ One directory that serves both Kimi Code and Muse Code:
   flags sessions where the tool struggled.
 - `hooks/session-start.sh` records the harness session id per working
   directory so calls group by real session; `kimi/hooks.toml` wires it into
-  Kimi, the Muse manifest wires it into Muse.
+  Kimi, the Muse manifest wires it into Muse. On session start it also
+  best-effort starts the per-user system daemon, since sandboxed harnesses
+  cannot spawn it themselves: the `trufflepig-system` user service when
+  installed, else a detached `trufflepig system ensure`.
+- `systemd/trufflepig-system.service` runs the router under systemd's user
+  manager with restart-on-failure, so it survives crashes and outlives any
+  one harness session. `install.sh --systemd` installs and enables it.
+- `hooks/steer-search.py` is a `PreToolUse` hook for Grep, Glob, and shell
+  `rg`/`grep`/`find`. Inside a repository that belongs to a registered
+  trufflepig workspace it blocks those calls (exit 2, reason on stderr)
+  until `trufflepig-agent` has been used in the session for that
+  directory, then allows them. `TRUFFLEPIG_AGENT_STEER=nudge` only appends
+  a reminder; `=off` disables it. Each decision is logged as
+  `hook:steer` with a `steer_block` or `steer_nudge` signal, so
+  `trufflepig-audit` shows how often an agent reached for grep first.
 
 ## Install
 
 ```sh
-plugins/trufflepig-agent/install.sh --kimi --muse --kimi-hooks
+plugins/trufflepig-agent/install.sh --kimi --muse --kimi-hooks --systemd
 plugins/trufflepig-agent/install.sh --project ~/Source/lunatic   # per-repo alternative
 ```
 
@@ -31,7 +45,9 @@ semantic-cuda`) and `~/.local/bin` on `PATH`. Muse users can validate with
 
 Every wrapper call appends a JSON line to
 `$XDG_STATE_HOME/trufflepig/agent-audit/<harness>.jsonl`
-(default `~/.local/state/trufflepig/agent-audit/`) with the verb, arguments,
+(default `~/.local/state/trufflepig/agent-audit/`; if that location is not
+writable, it retries once under `$XDG_RUNTIME_DIR/trufflepig/agent-audit/`
+when `XDG_RUNTIME_DIR` is set) with the verb, arguments,
 exit code, latency, response status, hit count, truncation, per-member
 `semantic_status`/`rerank_status`, and derived signals: `error`, `no_hits`,
 `truncated`, `budget`, `stale`, `usage_error`, `semantic_degraded`,

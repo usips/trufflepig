@@ -1,7 +1,7 @@
 ---
 name: trufflepig-code-search
-description: Use trufflepig-agent before broad file reads whenever you need to find, trace, or understand code in an indexed repository or workspace - "where is X defined", "who calls Y", "how does feature Z work", symbol lookups, regex scans, file outlines, and recent-change questions. It returns ranked file hits with immutable handles you follow with show and ctx.
-whenToUse: Any task that would otherwise start with grep, find, ripgrep, or reading several files to locate code. Not for editing files or running builds.
+description: Use trufflepig-agent instead of Grep, Glob, rg, or multi-file reads to locate code - definitions, callers, feature traces, symbol or regex lookups, outlines, recent changes. Ranked hits with handles for show and ctx.
+whenToUse: Any task that would otherwise start with Grep, Glob, rg, find, or reading several files to locate code in an indexed repository. Not for editing files or running builds.
 ---
 
 # Trufflepig code search
@@ -59,6 +59,9 @@ Read whole files only after search has told you which file matters.
 
 ## Do not
 
+- Do not start with Grep, Glob, `rg`, or `find` in an indexed repository: a
+  hook blocks them until you have made one `trufflepig-agent` call. Use
+  `re:pattern` for regex needs.
 - Do not run the identical query more than twice in a session.
 - Do not paste large `show` output into your reply; cite `file:line` instead.
 - Do not add `--no-daemon`, `--cache`, or `--root` unless the user asks.

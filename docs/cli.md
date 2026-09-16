@@ -155,7 +155,11 @@ socket falls back to the per-root/coordinator path, then local dispatch. `stop`,
 `index`, `init`, `ws`, `semantic status`, `semantic-check`, the `*-serve` verbs, and
 `--no-daemon` requests never touch it. `system ensure` starts the router, `system
 stop` shuts it down, `system status` reports if it runs, and `system-serve` serves
-it in the foreground. The agent plugin's session-start hook best-effort straps it.
+it in the foreground. The agent plugin ships a systemd user unit (`install.sh
+--systemd`) that keeps the router running and restarts it on failure; its
+session-start hook starts that service, or straps a detached router when the unit is
+absent. Under a sandbox that can neither spawn processes nor write the cache, a
+missing router surfaces as `workspace_unavailable` naming that fix.
 Singleton commands start a per-root index daemon automatically. Workspace queries
 start a coordinator unless `--no-daemon` is set; `ws show` and `ws status` inspect
 locally. The coordinator starts member daemons when needed and reads their published
