@@ -30,14 +30,10 @@ checkout are reusable; conflicting unmanaged destinations fail without replaceme
 `--bin DIR` changes the default `~/.local/bin` wrapper destination. With no
 selectors, the installer attempts Kimi and Muse installation.
 
-`--omp` installs the omp integration into omp's own config root, which is always
-`~/.omp` (not governed by `XDG_CONFIG_HOME`): the shared skill under
-`~/.omp/agent/skills` and a session-attribution extension under
-`~/.omp/agent/extensions`, which omp auto-discovers. It shares the same wrapper
-and skill as the other harnesses; running `--codex` and `--omp` together leaves
-the skill at two paths, but omp deduplicates by skill name, so there is no
-functional conflict. See [omp integration](omp.md) for discovery, session
-lifecycle, verification, and removal.
+`--omp` links the shared skill and a session-attribution extension under
+omp's config root, always `~/.omp/agent` (not governed by `XDG_CONFIG_HOME`).
+See [omp integration](omp.md) for discovery, session lifecycle, verification,
+and removal.
 
 Codex discovers skills by their description and also supports explicit
 `$trufflepig-code-search` invocation. Start a fresh session if discovery does not
@@ -118,13 +114,10 @@ diagnostics unless explicitly supplied. Codex markers identify the harness;
 `CODEX_SESSION_ID` as a fallback. Explicit CLI `--client`/`--session` win over
 `TRUFFLEPIG_AGENT_HARNESS`/`TRUFFLEPIG_SESSION`, which win over detection.
 Claude attribution uses its session environment hook as described in
-[Claude integration](claude.md). omp attribution identifies the harness from
-`OMPCODE` or the parent process, then reads a per-cwd marker written by the omp
-extension at session start, keyed by `sha256(cwd)` (Bun/Node expose no
-`digest_size=6` blake2s, so omp uses sha256; other harnesses keep blake2s).
-Kimi/Muse retain their own session variables and session-start markers; a marker
-older than twelve hours is ignored. Without session information, attribution
-falls back to a harness/directory/day identifier.
+[Claude integration](claude.md). Kimi, Muse, and omp write a per-directory
+session marker from their session hooks, as described in
+[omp integration](omp.md); a marker older than twelve hours is ignored. Without
+session information, attribution falls back to a harness/directory/day identifier.
 
 Each call logs arguments, exit code, latency, byte count, coverage, truncation,
 and struggle signals under `$TRUFFLEPIG_AGENT_LOG_DIR`, otherwise

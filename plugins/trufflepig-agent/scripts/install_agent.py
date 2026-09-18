@@ -74,7 +74,6 @@ def main() -> int:
         omp_home = Path.home() / ".omp"
         links.append((skill, omp_home / "agent/skills/trufflepig-code-search"))
         links.append((PLUGIN / "omp/session.ts", omp_home / "agent/extensions/trufflepig-session.ts"))
-
     links.extend((skill, root.absolute() / ".agents/skills/trufflepig-code-search") for root in args.project)
     for source, destination in links:
         check_link(source, destination)

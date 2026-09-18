@@ -15,7 +15,7 @@ import sys
 import time
 from pathlib import Path
 
-from trufflepig_runtime import client_environment, fallback_root, omp_marker_key
+from trufflepig_runtime import client_environment, fallback_root
 from trufflepig_audit_response import coverage_summary, parse_lines_response
 
 SLOW_SECONDS = 3.0
@@ -40,7 +40,9 @@ def detect_harness() -> str:
     explicit = os.environ.get("TRUFFLEPIG_AGENT_HARNESS")
     if explicit:
         return explicit
-    if os.environ.get("OMPCODE") == "1" or os.environ.get("PI_SESSION_FILE"):
+    # omp's shell tool exports CLAUDECODE=1 alongside OMPCODE=1, so omp must be
+    # tested before Claude or every omp call would be attributed to Claude.
+    if os.environ.get("OMPCODE") == "1":
         return "omp"
     if os.environ.get("CLAUDECODE") == "1" or os.environ.get("CLAUDE_CODE_CHILD_SESSION") == "1":
         return "claude"
@@ -81,7 +83,13 @@ def detect_harness() -> str:
 
 
 def cwd_key(cwd: str) -> str:
-    return hashlib.blake2s(cwd.encode(), digest_size=6).hexdigest()
+    """Per-directory marker name shared with hooks/session-start.sh and omp/session.ts.
+
+    SHA-256 truncated to 12 hex digits: the omp extension runs on Bun/Node, whose
+    crypto exposes no short-digest blake2s, and truncated SHA-256 is identical
+    everywhere.
+    """
+    return hashlib.sha256(cwd.encode()).hexdigest()[:12]
 
 
 def resolve_session(harness: str, cwd: str) -> str:
@@ -93,9 +101,10 @@ def resolve_session(harness: str, cwd: str) -> str:
     for key in (*keys.get(harness, ()), "AGENT_SESSION_ID"):
         if os.environ.get(key):
             return os.environ[key]
-    # omp sessions are keyed by SHA-256 (see omp_marker_key); the other
-    # harnesses use blake2s. The key must match what the harness hook wrote.
-    key = omp_marker_key(cwd) if harness == "omp" else cwd_key(cwd)
+    # Session files are written by the harness session hook, one per cwd.
+    # A marker older than the age limit is a leftover from a harness that no
+    # longer runs its SessionEnd hook, so it is ignored rather than reused.
+    key = cwd_key(cwd)
     marker = state_dir() / "agent-sessions" / harness / key
     try:
         fresh = time.time() - marker.stat().st_mtime < SESSION_MARKER_MAX_AGE

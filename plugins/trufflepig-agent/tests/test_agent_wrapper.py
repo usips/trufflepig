@@ -87,6 +87,31 @@ sys.exit(int(os.environ.get("EXIT", "0")))
         self.run_wrapper("search", "x")
         self.assertEqual(self.record("kimi")["session"], "explicit")
 
+    def test_session_hook_marker_is_read_back_for_its_directory(self):
+        # The hook also tries to start the daemon; a shim keeps that inert.
+        shim = self.root / "shim/trufflepig"
+        shim.parent.mkdir()
+        shim.write_text("#!/bin/sh\nexit 0\n")
+        shim.chmod(0o755)
+        hook_env = dict(self.env, PATH=f"{shim.parent}:{self.env['PATH']}")
+        payload = json.dumps({"session_id": "kimi-session", "cwd": str(self.root)})
+        hook = subprocess.run(["sh", str(PLUGIN / "hooks/session-start.sh"), "kimi", "start"],
+                              input=payload, env=hook_env, capture_output=True, text=True)
+        self.assertEqual((hook.returncode, hook.stdout), (0, ""), hook.stderr)
+        del self.env["CODEX_THREAD_ID"]
+        self.env["KIMI_CODE_HOME"] = str(self.root / "kimi")
+        self.run_wrapper("search", "x")
+        self.assertEqual(self.record("kimi")["session"], "kimi-session")
+        other = self.root / "other directory"
+        other.mkdir()
+        self.run_wrapper("search", "x", cwd=other)
+        self.assertTrue(self.record("kimi")["session"].startswith("kimi-"))
+        self.assertNotEqual(self.record("kimi")["session"], "kimi-session")
+        subprocess.run(["sh", str(PLUGIN / "hooks/session-start.sh"), "kimi", "end"],
+                       input=payload, env=hook_env, capture_output=True, text=True)
+        self.run_wrapper("search", "y")
+        self.assertNotEqual(self.record("kimi")["session"], "kimi-session")
+
     def test_codex_session_fallback_and_harness_isolation(self):
         del self.env["CODEX_THREAD_ID"]
         self.env.update(CODEX_SESSION_ID="codex-session", KIMI_SESSION_ID="unrelated")
