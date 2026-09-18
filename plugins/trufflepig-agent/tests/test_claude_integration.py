@@ -58,6 +58,9 @@ class ClaudeIntegrationTests(unittest.TestCase):
         self.assertEqual((config / "skills/trufflepig-code-search").resolve(),
                          PLUGIN / "skills/trufflepig-code-search")
         self.assertFalse((self.root / ".agents/skills").exists())
+        # The SessionStart hook command must resolve to an installed executable.
+        hook = self.root / ".local/bin/trufflepig-claude-session"
+        self.assertEqual(hook.resolve(), PLUGIN / "hooks/claude-session.py")
 
     def test_invalid_settings_fail_before_installing_files(self):
         config = self.root / ".claude"

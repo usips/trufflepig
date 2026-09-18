@@ -69,6 +69,7 @@ def main() -> int:
         links.append((skill, Path.home() / ".agents/skills/trufflepig-code-search"))
     if args.claude:
         links.append((skill, claude_home() / "skills/trufflepig-code-search"))
+        links.append((PLUGIN / "hooks/claude-session.py", args.bin / "trufflepig-claude-session"))
     if args.omp:
         # omp's config root is ~/.omp (not governed by XDG_CONFIG_HOME).
         omp_home = Path.home() / ".omp"
