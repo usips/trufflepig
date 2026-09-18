@@ -15,7 +15,7 @@ class AgentWrapperTests(unittest.TestCase):
         self.addCleanup(self.scratch.cleanup)
         self.root = Path(self.scratch.name)
         self.env = {key: value for key, value in os.environ.items()
-                    if not key.startswith(("TRUFFLEPIG", "CODEX", "CLAUDE", "KIMI", "MUSE", "AGENT_SESSION"))}
+                    if not key.startswith(("TRUFFLEPIG", "CODEX", "CLAUDE", "KIMI", "MUSE", "AGENT_SESSION", "OMP", "PI_"))}
         self.env.update(HOME=str(self.root), XDG_CONFIG_HOME=str(self.root / "config"),
                         XDG_STATE_HOME=str(self.root / "state"), TMPDIR=str(self.root),
                         CODEX_THREAD_ID="thread-one")
