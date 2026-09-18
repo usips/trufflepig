@@ -6,12 +6,20 @@
 plugins/trufflepig-agent/install.sh --omp --check "$PWD"
 ```
 
-`--omp` installs into omp's own config root, which is always `~/.omp` (not
-governed by `XDG_CONFIG_HOME`):
+`--omp` installs the skill into `skills/trufflepig-code-search` and the
+attribution extension into `extensions/trufflepig-session.ts` under the active
+agent directory. Resolution follows omp's native configuration:
 
-- the shared skill at `~/.omp/agent/skills/trufflepig-code-search`, and
-- a session-attribution extension at
-  `~/.omp/agent/extensions/trufflepig-session.ts`.
+- `--omp-agent-dir DIR` explicitly selects an installation destination.
+- A named `OMP_PROFILE` (or `PI_PROFILE` when unset) selects
+  `~/<PI_CONFIG_DIR>/profiles/<profile>/agent`.
+- For the default profile, `PI_CODING_AGENT_DIR` overrides the directory;
+  otherwise it is `~/<PI_CONFIG_DIR>/agent`, with `.omp` as the default root.
+
+An empty or `default` profile selects the default profile. `XDG_CONFIG_HOME`
+does not select this directory. For a profile chosen through `omp --profile`,
+pass its directory explicitly or set the matching profile environment variable
+when installing. See [omp configuration](https://github.com/can1357/oh-my-pi/blob/main/docs/config-usage.md).
 
 omp scans both directories on startup and loads top-level `.ts`/`.js`
 extension files, including symlinks, without a manifest. Both links point into
@@ -26,33 +34,19 @@ skill per name.
 
 ## Session attribution
 
-omp's shell tool exports `OMPCODE=1` to child processes but no session
-identifier, so the marker file is the identity channel, the same pattern as
-Kimi and Muse. The extension writes the session id to a per-cwd marker:
+The extension handles omp's `tool_call` event for `bash` and returns the
+original input with `TRUFFLEPIG_OMP_SESSION` added to its environment. It reads
+`ctx.sessionManager.getSessionId()` for each call, so `/new`, `/resume`, forks,
+and directory changes retain the current session identity. Other tool inputs
+and existing shell environment values are preserved. This requires omp's
+extension API to support returning revised `tool_call` input.
 
-```
-$XDG_STATE_HOME/trufflepig/agent-sessions/omp/<key>
-```
-
-`XDG_STATE_HOME` defaults to `~/.local/state`. The key is the shared
-`cwd_key()` contract in `bin/trufflepig-agent`: SHA-256 of the working
-directory, first twelve hex digits, computed identically by the Python
-wrapper, the Kimi/Muse shell hook, and this TypeScript extension.
-
-The extension writes the marker on `session_start` (once per process) and on
-`session_switch` (`/new`, `/resume`, fork, and handoff), when omp changes the
-session id in place. It does not remove the marker on shutdown; a marker older
-than twelve hours is ignored by the wrapper.
-
-The wrapper detects omp from `OMPCODE=1` or a parent process named `omp`. omp
-also exports `CLAUDECODE=1` to its shell, so the wrapper tests omp before
-Claude. Without a marker, attribution falls back to a visibly synthetic
-harness/directory/day identifier. Explicit CLI `--client`/`--session` and
-`TRUFFLEPIG_SESSION` retain precedence over detection and markers.
-
-Concurrent omp sessions in one repository share the per-cwd marker, so the
-latest start or switch wins. This matches Kimi and Muse and is a documented
-limitation of per-cwd markers.
+The wrapper detects omp from `OMPCODE=1` before `CLAUDECODE=1`, which omp also
+exports. It reads the injected session identifier independently of cwd; no
+per-directory marker is used for omp. Separate sessions do not overwrite each
+other's attribution. Without the extension, attribution falls back to a
+visibly synthetic harness/directory/day identifier. Explicit CLI `--session`
+and `TRUFFLEPIG_SESSION` override the injected session identifier.
 
 ## Execution
 
@@ -70,8 +64,8 @@ trufflepig-audit --harness omp --since 1 --json
 ```
 
 The test suite runs the extension under `bun` when it is on `PATH` and checks
-that the wrapper reads the marker it wrote. In a fresh omp session, ask omp to
-locate an implementation, then confirm the audit rows carry `harness=omp` and
-the session id in the marker. To remove the integration, delete the two
-symlinks under `~/.omp/agent`. Shared wrapper commands, runtime configuration,
+that searches from the session root, a subdirectory, and a sibling directory
+retain the session identity, including after a switch. In a fresh omp session,
+ask omp to locate an implementation and check its audit session id. To remove
+the integration, delete the two symlinks under the selected agent directory. Shared wrapper commands, runtime configuration,
 and any user service may still be used by other harnesses.

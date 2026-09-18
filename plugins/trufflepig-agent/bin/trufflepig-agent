@@ -96,7 +96,7 @@ def resolve_session(harness: str, cwd: str) -> str:
     explicit = os.environ.get("TRUFFLEPIG_SESSION")
     if explicit:
         return explicit
-    keys = {"claude": ("TRUFFLEPIG_CLAUDE_SESSION",), "codex": ("CODEX_THREAD_ID", "CODEX_SESSION_ID"),
+    keys = {"omp": ("TRUFFLEPIG_OMP_SESSION",), "claude": ("TRUFFLEPIG_CLAUDE_SESSION",), "codex": ("CODEX_THREAD_ID", "CODEX_SESSION_ID"),
             "kimi": ("KIMI_SESSION_ID",), "muse": ("MUSE_SESSION_ID",)}
     for key in (*keys.get(harness, ()), "AGENT_SESSION_ID"):
         if os.environ.get(key):
@@ -105,6 +105,8 @@ def resolve_session(harness: str, cwd: str) -> str:
     # A marker older than the age limit is a leftover from a harness that no
     # longer runs its SessionEnd hook, so it is ignored rather than reused.
     key = cwd_key(cwd)
+    if harness == "omp":
+        return f"{harness}-{key}-{time.strftime('%Y%m%d')}"
     marker = state_dir() / "agent-sessions" / harness / key
     try:
         fresh = time.time() - marker.stat().st_mtime < SESSION_MARKER_MAX_AGE

@@ -70,19 +70,49 @@ sys.stdout.write('{"hits":[],"truncated":false}\\n')
         self.assertEqual((unmanaged / "SKILL.md").read_text(), "not ours\n")
         self.assertFalse((self.root / ".omp/agent/extensions").exists())
 
-    def test_omp_reads_marker_even_when_claudecode_is_exported(self):
-        # omp's shell tool exports both OMPCODE=1 and CLAUDECODE=1.
+    def test_omp_session_environment_beats_claude_and_stale_marker(self):
         cwd = self.root / "repo dir"
         cwd.mkdir()
         self.marker(cwd).parent.mkdir(parents=True)
-        self.marker(cwd).write_text("omp-session-1\n")
-        self.env.update(OMPCODE="1", CLAUDECODE="1")
+        self.marker(cwd).write_text("stale-session\n")
+        self.env.update(OMPCODE="1", CLAUDECODE="1", TRUFFLEPIG_OMP_SESSION="omp-session-1")
         result = self.run_wrapper("search", "x", cwd=cwd)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual((self.record()["harness"], self.record()["session"]),
-                         ("omp", "omp-session-1"))
-        self.run_wrapper("search", "x", "--session", "explicit-omp", cwd=cwd)
-        self.assertEqual(self.record()["session"], "explicit-omp")
+        self.assertEqual(self.record()["session"], "omp-session-1")
+        self.env["TRUFFLEPIG_SESSION"] = "explicit-env"
+        self.run_wrapper("search", "x", cwd=cwd)
+        self.assertEqual(self.record()["session"], "explicit-env")
+        self.run_wrapper("search", "x", "--session", "explicit-cli", cwd=cwd)
+        self.assertEqual(self.record()["session"], "explicit-cli")
+        del self.env["TRUFFLEPIG_SESSION"]
+        del self.env["TRUFFLEPIG_OMP_SESSION"]
+        self.run_wrapper("search", "x", cwd=cwd)
+        self.assertTrue(self.record()["session"].startswith("omp-"))
+
+    def test_custom_agent_directory_and_profile(self):
+        cases = [
+            ({"PI_CODING_AGENT_DIR": str(self.root / "custom")}, self.root / "custom"),
+            ({"PI_CONFIG_DIR": ".custom-omp"}, self.root / ".custom-omp/agent"),
+            ({"OMP_PROFILE": "work", "PI_CODING_AGENT_DIR": "ignored"},
+             self.root / ".omp/profiles/work/agent"),
+            ({"PI_PROFILE": "legacy"}, self.root / ".omp/profiles/legacy/agent"),
+            ({"OMP_PROFILE": "", "PI_PROFILE": "ignored"}, self.root / ".omp/agent"),
+        ]
+        original = self.env.copy()
+        for values, expected in cases:
+            with self.subTest(values=values):
+                self.env = dict(original, **values)
+                result = self.install()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual((expected / "extensions/trufflepig-session.ts").resolve(),
+                                 PLUGIN / "omp/session.ts")
+                self.assertEqual((expected / "skills/trufflepig-code-search").resolve(),
+                                 PLUGIN / "skills/trufflepig-code-search")
+        explicit = self.root / "explicit path"
+        result = subprocess.run([str(PLUGIN / "install.sh"), "--omp", "--omp-agent-dir", str(explicit)],
+                                env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((explicit / "extensions/trufflepig-session.ts").exists())
 
     def test_omp_fallback_identity_without_marker(self):
         cwd = self.root / "empty dir"
@@ -93,28 +123,38 @@ sys.stdout.write('{"hits":[],"truncated":false}\\n')
         self.assertTrue(session.startswith("omp-" + marker_key(cwd) + "-"), session)
 
     @unittest.skipUnless(shutil.which("bun"), "bun runs the TypeScript extension")
-    def test_extension_writes_wrapper_readable_marker_on_start_and_switch(self):
-        cwd = self.root / "repo dir"
-        cwd.mkdir()
+    def test_extension_attributes_cross_directory_calls_and_session_switch(self):
+        repo = self.root / "repo"
+        child = repo / "src"
+        sibling = self.root / "sibling"
+        child.mkdir(parents=True)
+        sibling.mkdir()
         driver = self.root / "driver.ts"
         driver.write_text(f'''
 import extension from {json.dumps(str(PLUGIN / "omp/session.ts"))};
-const handlers: Record<string, (event: unknown, ctx: unknown) => unknown> = {{}};
+const handlers: Record<string, any> = {{}};
 extension({{ on: (event: string, handler: any) => {{ handlers[event] = handler; }} }} as any);
-let id = "omp-session-1";
-const ctx = {{ cwd: {json.dumps(str(cwd))}, sessionManager: {{ getSessionId: () => id }} }};
-await handlers.session_start({{ type: "session_start" }}, ctx);
-console.log(require("node:fs").readFileSync(process.argv[2], "utf8"));
-id = "omp-session-2";
-await handlers.session_switch({{ type: "session_switch", reason: "new" }}, ctx);
+let id = "first-session";
+const ctx = {{ cwd: {json.dumps(str(repo))}, sessionManager: {{ getSessionId: () => id }} }};
+for (const cwd of {json.dumps([str(repo), str(child), str(sibling), str(repo)])}) {{
+    const input = {{ command: "search", cwd, env: {{ KEEP: "yes" }} }};
+    const result = await handlers.tool_call({{ toolName: "bash", input }}, ctx);
+    if (result.input.env.KEEP !== "yes" || result.input.cwd !== cwd) throw Error("lost input");
+    const run = Bun.spawnSync([{json.dumps(str(PLUGIN / "bin/trufflepig-agent"))}, "search", "x"],
+        {{ cwd, env: {{ ...process.env, ...result.input.env, OMPCODE: "1" }} }});
+    if (run.exitCode !== 0) throw Error(run.stderr.toString());
+    id = "second-session";
+}}
+if (await handlers.tool_call({{ toolName: "read", input: {{}} }}, ctx) !== undefined)
+    throw Error("changed non-shell tool");
 ''')
-        result = subprocess.run(["bun", "run", str(driver), str(self.marker(cwd))],
-                                env=self.env, cwd=self.root, capture_output=True, text=True)
+        result = subprocess.run(["bun", "run", str(driver)], env=self.env,
+                                cwd=self.root, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, "omp-session-1\n\n")
-        self.env["OMPCODE"] = "1"
-        self.run_wrapper("search", "x", cwd=cwd)
-        self.assertEqual(self.record()["session"], "omp-session-2")
+        log = self.root / "state/trufflepig/agent-audit/omp.jsonl"
+        rows = [json.loads(line) for line in log.read_text().splitlines()]
+        self.assertEqual([row["session"] for row in rows],
+                         ["first-session", "second-session", "second-session", "second-session"])
 
 
 if __name__ == "__main__":

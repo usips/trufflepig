@@ -31,7 +31,8 @@ checkout are reusable; conflicting unmanaged destinations fail without replaceme
 selectors, the installer attempts Kimi and Muse installation.
 
 `--omp` links the shared skill and a session-attribution extension under
-omp's config root, always `~/.omp/agent` (not governed by `XDG_CONFIG_HOME`).
+omp's active agent directory (default `~/.omp/agent`), honoring its environment
+overrides and profiles; `--omp-agent-dir DIR` selects an explicit destination.
 See [omp integration](omp.md) for discovery, session lifecycle, verification,
 and removal.
 
@@ -114,10 +115,10 @@ diagnostics unless explicitly supplied. Codex markers identify the harness;
 `CODEX_SESSION_ID` as a fallback. Explicit CLI `--client`/`--session` win over
 `TRUFFLEPIG_AGENT_HARNESS`/`TRUFFLEPIG_SESSION`, which win over detection.
 Claude attribution uses its session environment hook as described in
-[Claude integration](claude.md). Kimi, Muse, and omp write a per-directory
-session marker from their session hooks, as described in
-[omp integration](omp.md); a marker older than twelve hours is ignored. Without
-session information, attribution falls back to a harness/directory/day identifier.
+[Claude integration](claude.md). [omp integration](omp.md) supplies session
+identity in each shell invocation.
+Kimi and Muse write per-directory session markers; markers older than twelve
+hours are ignored. Without session information, attribution falls back to a harness/directory/day identifier.
 
 Each call logs arguments, exit code, latency, byte count, coverage, truncation,
 and struggle signals under `$TRUFFLEPIG_AGENT_LOG_DIR`, otherwise
