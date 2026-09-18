@@ -1,6 +1,6 @@
 # Trufflepig agent integration
 
-Shared search skill and audited CLI wrapper for Codex, Claude Code, Kimi Code, and Muse Code.
+Shared search skill and audited CLI wrapper for Codex, Claude Code, Grok Build, Kimi Code, and Muse Code.
 The skill makes Trufflepig the default for project discovery, with targeted
 fallbacks for unavailable or unsupported operations. It does not block shell
 commands or require a Codex hook or MCP server.
@@ -14,6 +14,7 @@ semantic-cuda` when updating an existing GPU installation.
 ```sh
 plugins/trufflepig-agent/install.sh --codex --systemd --check "$PWD"
 plugins/trufflepig-agent/install.sh --claude --check "$PWD"
+plugins/trufflepig-agent/install.sh --grok --check "$PWD"
 plugins/trufflepig-agent/install.sh --project ~/Source/lunatic
 plugins/trufflepig-agent/install.sh --kimi --muse --kimi-hooks --systemd
 ```
@@ -21,6 +22,9 @@ plugins/trufflepig-agent/install.sh --kimi --muse --kimi-hooks --systemd
 `--claude` installs the personal skill, session hook, and narrow sandbox runtime
 access while preserving existing settings. See [Claude integration](claude.md)
 for discovery, session lifecycle, permissions, verification, and removal.
+
+`--grok` installs the shared skill into `$GROK_HOME/skills` (default
+`~/.grok/skills`). See [Grok integration](grok.md) for discovery and verification.
 
 `--codex` symlinks the shared skill into `~/.agents/skills`, with automatic
 selection enabled. `--project DIR` installs into `DIR/.agents/skills`; avoid
@@ -34,7 +38,7 @@ Codex discovers skills by their description and also supports explicit
 refresh. See [Codex skill discovery](https://learn.chatgpt.com/docs/build-skills).
 Skill availability does not guarantee automatic selection on every prompt.
 
-The Codex and Claude installers configure a data-only `agent-runtime.json` under
+The Codex, Claude, and Grok installers configure a data-only `agent-runtime.json` under
 `$XDG_CONFIG_HOME/trufflepig` (default `~/.config/trufflepig`). Its `runtime_dir`
 is `~/.cache/codex-tmp/trufflepig-agent` by default; `--runtime-dir DIR` selects
 another disk-backed directory the sandbox permits writing. `spool_dir` is its

@@ -46,16 +46,16 @@ def service_text(binary: str, spool: Path | None) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bin", type=Path, default=Path.home() / ".local/bin")
-    for flag in ("codex", "claude", "kimi", "muse", "kimi-hooks", "systemd"):
+    for flag in ("codex", "claude", "grok", "kimi", "muse", "kimi-hooks", "systemd"):
         parser.add_argument(f"--{flag}", action="store_true")
     parser.add_argument("--project", type=Path, action="append", default=[])
     parser.add_argument("--runtime-dir", type=Path, help="disk-backed, sandbox-writable agent runtime")
     parser.add_argument("--check", type=Path, metavar="ROOT", help="search and read a file through the installed wrapper")
     args = parser.parse_args()
-    if not any((args.codex, args.claude, args.kimi, args.muse, args.kimi_hooks, args.systemd, args.project, args.check)):
+    if not any((args.codex, args.claude, args.grok, args.kimi, args.muse, args.kimi_hooks, args.systemd, args.project, args.check)):
         args.kimi = args.muse = True
-    if args.runtime_dir and not (args.codex or args.claude):
-        parser.error("--runtime-dir requires --codex or --claude")
+    if args.runtime_dir and not (args.codex or args.claude or args.grok):
+        parser.error("--runtime-dir requires --codex, --claude, or --grok")
 
     skill = PLUGIN / "skills/trufflepig-code-search"
     links = [(PLUGIN / "bin" / name, args.bin / name)
@@ -67,6 +67,9 @@ def main() -> int:
         links.append((skill, kimi_home / "skills/trufflepig-code-search"))
     if args.codex:
         links.append((skill, Path.home() / ".agents/skills/trufflepig-code-search"))
+    if args.grok:
+        grok_home = Path(os.environ.get("GROK_HOME") or Path.home() / ".grok").expanduser().absolute()
+        links.append((skill, grok_home / "skills/trufflepig-code-search"))
     if args.claude:
         links.append((skill, claude_home() / "skills/trufflepig-code-search"))
         links.append((PLUGIN / "hooks/claude-session.py", args.bin / "trufflepig-claude-session"))
@@ -80,7 +83,7 @@ def main() -> int:
         settings = json.loads(config_path.read_text())
         if not isinstance(settings, dict):
             raise ValueError(f"expected an object in {config_path}")
-    if args.codex or args.claude:
+    if args.codex or args.claude or args.grok:
         runtime = (args.runtime_dir or Path(settings.get("runtime_dir") or
                    Path.home() / ".cache/codex-tmp/trufflepig-agent")).resolve()
         if runtime == Path("/tmp") or Path("/tmp") in runtime.parents:
@@ -97,7 +100,7 @@ def main() -> int:
                                            args.bin / "trufflepig-claude-session", runtime)
     for source, destination in links:
         link(source, destination)
-    if args.codex or args.claude:
+    if args.codex or args.claude or args.grok:
         runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(json.dumps(settings, indent=2) + "\n")

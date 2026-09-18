@@ -40,6 +40,8 @@ def detect_harness() -> str:
     explicit = os.environ.get("TRUFFLEPIG_AGENT_HARNESS")
     if explicit:
         return explicit
+    if os.environ.get("GROK_SESSION_ID"):
+        return "grok"
     if os.environ.get("CLAUDECODE") == "1" or os.environ.get("CLAUDE_CODE_CHILD_SESSION") == "1":
         return "claude"
     if any(os.environ.get(key) for key in ("CODEX_THREAD_ID", "CODEX_SESSION_ID", "CODEX_VERSION")):
@@ -59,6 +61,8 @@ def detect_harness() -> str:
         except OSError:
             break
         lowered = comm.lower()
+        if lowered == "grok" or lowered.startswith("grok-"):
+            return "grok"
         if lowered == "claude":
             return "claude"
         if lowered == "codex" or lowered.startswith("codex-"):
@@ -84,7 +88,7 @@ def resolve_session(harness: str, cwd: str) -> str:
     explicit = os.environ.get("TRUFFLEPIG_SESSION")
     if explicit:
         return explicit
-    keys = {"claude": ("TRUFFLEPIG_CLAUDE_SESSION",), "codex": ("CODEX_THREAD_ID", "CODEX_SESSION_ID"),
+    keys = {"grok": ("GROK_SESSION_ID",), "claude": ("TRUFFLEPIG_CLAUDE_SESSION",), "codex": ("CODEX_THREAD_ID", "CODEX_SESSION_ID"),
             "kimi": ("KIMI_SESSION_ID",), "muse": ("MUSE_SESSION_ID",)}
     for key in (*keys.get(harness, ()), "AGENT_SESSION_ID"):
         if os.environ.get(key):

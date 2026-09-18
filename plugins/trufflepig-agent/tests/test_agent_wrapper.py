@@ -15,7 +15,7 @@ class AgentWrapperTests(unittest.TestCase):
         self.addCleanup(self.scratch.cleanup)
         self.root = Path(self.scratch.name)
         self.env = {key: value for key, value in os.environ.items()
-                    if not key.startswith(("TRUFFLEPIG", "CODEX", "CLAUDE", "KIMI", "MUSE", "AGENT_SESSION"))}
+                    if not key.startswith(("TRUFFLEPIG", "CODEX", "CLAUDE", "GROK", "KIMI", "MUSE", "AGENT_SESSION"))}
         self.env.update(HOME=str(self.root), XDG_CONFIG_HOME=str(self.root / "config"),
                         XDG_STATE_HOME=str(self.root / "state"), TMPDIR=str(self.root),
                         CODEX_THREAD_ID="thread-one")
@@ -70,6 +70,13 @@ sys.exit(int(os.environ.get("EXIT", "0")))
         self.env["CLAUDE_CODE_CHILD_SESSION"] = "1"
         self.run_wrapper("search", "x")
         self.assertTrue(self.record("claude")["session"].startswith("claude-"))
+
+    def test_grok_session_and_explicit_override(self):
+        self.env["GROK_SESSION_ID"] = "grok-session"
+        self.assertEqual(self.run_wrapper("search", "x").returncode, 0)
+        self.assertEqual(self.record("grok")["session"], "grok-session")
+        self.run_wrapper("--session", "explicit-session", "search", "y")
+        self.assertEqual(self.record("grok")["session"], "explicit-session")
 
     def test_flags_after_command_and_cli_attribution_win(self):
         self.env.update(TRUFFLEPIG_AGENT_HARNESS="muse", TRUFFLEPIG_SESSION="env-session")
