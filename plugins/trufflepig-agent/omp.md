@@ -10,11 +10,14 @@ plugins/trufflepig-agent/install.sh --omp --check "$PWD"
 attribution extension into `extensions/trufflepig-session.ts` under the active
 agent directory. Resolution follows omp's native configuration:
 
-- `--omp-agent-dir DIR` explicitly selects an installation destination.
+- `--omp-agent-dir DIR` explicitly selects an installation destination and
+  wins over any profile or directory environment variable.
 - A named `OMP_PROFILE` (or `PI_PROFILE` when unset) selects
   `~/<PI_CONFIG_DIR>/profiles/<profile>/agent`.
 - For the default profile, `PI_CODING_AGENT_DIR` overrides the directory;
   otherwise it is `~/<PI_CONFIG_DIR>/agent`, with `.omp` as the default root.
+  Like omp, an absolute `PI_CONFIG_DIR` is still joined under the home
+  directory.
 
 An empty or `default` profile selects the default profile. `XDG_CONFIG_HOME`
 does not select this directory. For a profile chosen through `omp --profile`,

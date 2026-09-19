@@ -83,11 +83,9 @@ def detect_harness() -> str:
 
 
 def cwd_key(cwd: str) -> str:
-    """Per-directory marker name shared with hooks/session-start.sh and omp/session.ts.
+    """Per-directory marker name shared with hooks/session-start.sh (Kimi, Muse).
 
-    SHA-256 truncated to 12 hex digits: the omp extension runs on Bun/Node, whose
-    crypto exposes no short-digest blake2s, and truncated SHA-256 is identical
-    everywhere.
+    SHA-256 truncated to 12 hex digits; the hook computes the same digest.
     """
     return hashlib.sha256(cwd.encode()).hexdigest()[:12]
 
@@ -101,7 +99,8 @@ def resolve_session(harness: str, cwd: str) -> str:
     for key in (*keys.get(harness, ()), "AGENT_SESSION_ID"):
         if os.environ.get(key):
             return os.environ[key]
-    # Session files are written by the harness session hook, one per cwd.
+    # Kimi and Muse session hooks write one marker per cwd; Claude and omp
+    # arrive through their environment variables above and never read one.
     # A marker older than the age limit is a leftover from a harness that no
     # longer runs its SessionEnd hook, so it is ignored rather than reused.
     key = cwd_key(cwd)

@@ -4,11 +4,16 @@ from pathlib import Path
 import re
 
 
+def node_join(*segments: str) -> Path:
+    """Node ``path.join``: an absolute later segment extends the path, never restarts it."""
+    return Path(os.path.normpath("/".join(segments)))
+
+
 def omp_agent_dir(explicit: Path | None = None) -> Path:
     if explicit is not None:
         return explicit.expanduser().absolute()
     profile = os.environ.get("OMP_PROFILE", os.environ.get("PI_PROFILE", "")).strip()
-    root = Path.home() / (os.environ.get("PI_CONFIG_DIR") or ".omp")
+    root = node_join(str(Path.home()), os.environ.get("PI_CONFIG_DIR") or ".omp")
     if profile and profile != "default":
         if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", profile) or profile.endswith("."):
             raise ValueError("invalid omp profile name")

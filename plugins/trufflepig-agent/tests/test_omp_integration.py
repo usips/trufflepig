@@ -1,4 +1,4 @@
-"""omp installation, the shared marker-key contract, and per-cwd attribution."""
+"""omp installation, native directory resolution, and cwd-independent attribution."""
 import hashlib
 import json
 import os
@@ -12,7 +12,7 @@ PLUGIN = Path(__file__).resolve().parents[1]
 
 
 def marker_key(cwd: Path) -> str:
-    # Pinned independently of the wrapper: the extension must produce this too.
+    # Pinned independently of the wrapper: omp's synthetic fallback id embeds it.
     return hashlib.sha256(str(cwd).encode()).hexdigest()[:12]
 
 
@@ -93,6 +93,8 @@ sys.stdout.write('{"hits":[],"truncated":false}\\n')
         cases = [
             ({"PI_CODING_AGENT_DIR": str(self.root / "custom")}, self.root / "custom"),
             ({"PI_CONFIG_DIR": ".custom-omp"}, self.root / ".custom-omp/agent"),
+            # omp path.join()s the root under $HOME even when it is absolute.
+            ({"PI_CONFIG_DIR": "/abs-omp"}, self.root / "abs-omp/agent"),
             ({"OMP_PROFILE": "work", "PI_CODING_AGENT_DIR": "ignored"},
              self.root / ".omp/profiles/work/agent"),
             ({"PI_PROFILE": "legacy"}, self.root / ".omp/profiles/legacy/agent"),
@@ -147,6 +149,8 @@ for (const cwd of {json.dumps([str(repo), str(child), str(sibling), str(repo)])}
 }}
 if (await handlers.tool_call({{ toolName: "read", input: {{}} }}, ctx) !== undefined)
     throw Error("changed non-shell tool");
+if (await handlers.tool_call({{ toolName: "bash", input: undefined }}, ctx) !== undefined)
+    throw Error("revised a bash call without input");
 ''')
         result = subprocess.run(["bun", "run", str(driver)], env=self.env,
                                 cwd=self.root, capture_output=True, text=True)

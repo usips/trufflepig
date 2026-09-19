@@ -6,7 +6,8 @@ export default function (pi: ExtensionAPI) {
 		if (event.toolName !== "bash") return;
 		const input = (event as BashToolCallEvent).input;
 		const session = ctx.sessionManager.getSessionId();
-		if (!session) return;
+		// A throwing handler blocks every bash call, so never spread a missing input.
+		if (!input || typeof input !== "object" || !session) return;
 		return {
 			input: {
 				...input,
