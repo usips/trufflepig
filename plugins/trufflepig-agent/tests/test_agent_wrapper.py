@@ -15,7 +15,7 @@ class AgentWrapperTests(unittest.TestCase):
         self.addCleanup(self.scratch.cleanup)
         self.root = Path(self.scratch.name)
         self.env = {key: value for key, value in os.environ.items()
-                    if not key.startswith(("TRUFFLEPIG", "CODEX", "CLAUDE", "KIMI", "MUSE", "AGENT_SESSION"))}
+                    if not key.startswith(("TRUFFLEPIG", "CODEX", "CLAUDE", "KIMI", "MUSE", "AGENT_SESSION", "OMP", "PI_"))}
         self.env.update(HOME=str(self.root), XDG_CONFIG_HOME=str(self.root / "config"),
                         XDG_STATE_HOME=str(self.root / "state"), TMPDIR=str(self.root),
                         CODEX_THREAD_ID="thread-one")
@@ -86,6 +86,31 @@ sys.exit(int(os.environ.get("EXIT", "0")))
         self.env.update(TRUFFLEPIG_AGENT_HARNESS="kimi", TRUFFLEPIG_SESSION="explicit")
         self.run_wrapper("search", "x")
         self.assertEqual(self.record("kimi")["session"], "explicit")
+
+    def test_session_hook_marker_is_read_back_for_its_directory(self):
+        # The hook also tries to start the daemon; a shim keeps that inert.
+        shim = self.root / "shim/trufflepig"
+        shim.parent.mkdir()
+        shim.write_text("#!/bin/sh\nexit 0\n")
+        shim.chmod(0o755)
+        hook_env = dict(self.env, PATH=f"{shim.parent}:{self.env['PATH']}")
+        payload = json.dumps({"session_id": "kimi-session", "cwd": str(self.root)})
+        hook = subprocess.run(["sh", str(PLUGIN / "hooks/session-start.sh"), "kimi", "start"],
+                              input=payload, env=hook_env, capture_output=True, text=True)
+        self.assertEqual((hook.returncode, hook.stdout), (0, ""), hook.stderr)
+        del self.env["CODEX_THREAD_ID"]
+        self.env["KIMI_CODE_HOME"] = str(self.root / "kimi")
+        self.run_wrapper("search", "x")
+        self.assertEqual(self.record("kimi")["session"], "kimi-session")
+        other = self.root / "other directory"
+        other.mkdir()
+        self.run_wrapper("search", "x", cwd=other)
+        self.assertTrue(self.record("kimi")["session"].startswith("kimi-"))
+        self.assertNotEqual(self.record("kimi")["session"], "kimi-session")
+        subprocess.run(["sh", str(PLUGIN / "hooks/session-start.sh"), "kimi", "end"],
+                       input=payload, env=hook_env, capture_output=True, text=True)
+        self.run_wrapper("search", "y")
+        self.assertNotEqual(self.record("kimi")["session"], "kimi-session")
 
     def test_codex_session_fallback_and_harness_isolation(self):
         del self.env["CODEX_THREAD_ID"]
