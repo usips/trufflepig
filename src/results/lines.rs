@@ -2,15 +2,17 @@
 //! one-line coverage summary, then the shared footer. The budget measures this
 //! text, so a lines page carries more hits than the JSON page for the same limit.
 
-use super::{ResultEntry, concise_name};
+use super::{HitDetail, ResultEntry, concise_name};
 use crate::output::lines::{COVERAGE_KEY, footer};
 use serde_json::Value;
 use std::fmt::Write;
 
 /// Renders one entry: `HANDLE<TAB>[MEMBER/]PATH:START-END[<TAB>NAME]` for live
-/// hits, `HANDLE<TAB>commit:OID<TAB>SUMMARY` and
+/// hits, followed by an indented `  LINE: TEXT` snippet line when present,
+/// `HANDLE<TAB>commit:OID<TAB>SUMMARY` and
 /// `HANDLE<TAB>change:STATUS<TAB>[MEMBER/]PATH<TAB>NAME` for history entries.
-pub(crate) fn entry_line(entry: &ResultEntry, member: Option<&str>, names: bool) -> String {
+pub(crate) fn entry_line(entry: &ResultEntry, member: Option<&str>, detail: HitDetail) -> String {
+    let names = detail.names;
     let prefix = member
         .map(|member| format!("{member}/"))
         .unwrap_or_default();
@@ -22,13 +24,22 @@ pub(crate) fn entry_line(entry: &ResultEntry, member: Option<&str>, names: bool)
                 "{}\t{prefix}{}:{}-{}",
                 hit.handle, hit.path, hit.start_line, hit.end_line
             );
-            // File-first regions are named after their path; repeating it is noise.
-            if names && concise_name(&hit.name) && hit.name != hit.path {
+            // File-first regions are named after their path, and a regex hit's name
+            // is the matched text its snippet already shows; repeating either is noise.
+            let previewed = detail.snippets
+                && hit.snippet.is_some()
+                && hit.provenance.as_deref() == Some("live_regex");
+            if names && concise_name(&hit.name) && hit.name != hit.path && !previewed {
                 line.push('\t');
                 line.push_str(&hit.name);
             }
             if let Some(resolution) = &hit.resolution {
                 let _ = write!(line, "\tresolution={resolution}");
+            }
+            if detail.snippets
+                && let Some(snippet) = &hit.snippet
+            {
+                let _ = write!(line, "\n  {}: {}", snippet.line, snippet.text);
             }
         }
         ResultEntry::Commit(commit) => {
@@ -95,14 +106,14 @@ pub(crate) fn single_repo_coverage(coverage: &Value) -> String {
 /// Renders a page: the entries, the coverage line, then the footer.
 pub(crate) fn page_text<'a>(
     entries: impl ExactSizeIterator<Item = (Option<&'a str>, &'a ResultEntry)>,
-    names: bool,
+    detail: HitDetail,
     coverage: &str,
     next: Option<&str>,
     truncated: bool,
 ) -> String {
     let mut out = String::with_capacity(entries.len() * 160 + coverage.len() + 64);
     for (member, entry) in entries {
-        out.push_str(&entry_line(entry, member, names));
+        out.push_str(&entry_line(entry, member, detail));
         out.push('\n');
     }
     out.push_str(COVERAGE_KEY);
@@ -139,26 +150,49 @@ mod tests {
             resolution: None,
             candidates: vec![],
             target: None,
+            snippet: Some(crate::results::Snippet {
+                line: 4,
+                text: "fn run() {".into(),
+            }),
         })
+    }
+
+    fn named(names: bool) -> HitDetail {
+        HitDetail {
+            names,
+            snippets: false,
+        }
     }
 
     #[test]
     fn live_line_carries_member_prefix_and_optional_name() {
         assert_eq!(
-            entry_line(&hit("run"), Some("lunatic"), true),
+            entry_line(&hit("run"), Some("lunatic"), named(true)),
             "00000000000000000000000000000000:1\tlunatic/src/a%20b.rs:3-9\trun"
         );
         assert_eq!(
-            entry_line(&hit(""), None, true),
+            entry_line(&hit(""), None, named(true)),
             "00000000000000000000000000000000:1\tsrc/a%20b.rs:3-9"
         );
         assert_eq!(
-            entry_line(&hit("run"), None, false),
+            entry_line(&hit("run"), None, named(false)),
             "00000000000000000000000000000000:1\tsrc/a%20b.rs:3-9"
         );
         assert_eq!(
-            entry_line(&hit("src/a%20b.rs"), None, true),
+            entry_line(&hit("src/a%20b.rs"), None, named(true)),
             "00000000000000000000000000000000:1\tsrc/a%20b.rs:3-9"
+        );
+    }
+
+    #[test]
+    fn snippet_follows_its_hit_on_an_indented_line() {
+        let detail = HitDetail {
+            names: true,
+            snippets: true,
+        };
+        assert_eq!(
+            entry_line(&hit("run"), None, detail),
+            "00000000000000000000000000000000:1\tsrc/a%20b.rs:3-9\trun\n  4: fn run() {"
         );
     }
 
@@ -181,7 +215,7 @@ mod tests {
         let next = next_cursor("00000000000000000000000000000000", 0, 2, 5);
         let text = page_text(
             entries.iter().map(|entry| (None, entry)),
-            true,
+            named(true),
             "indexed 1/1",
             next.as_deref(),
             true,

@@ -6,6 +6,7 @@ mod page;
 use anyhow::{Context, Result, bail, ensure};
 pub use entries::*;
 pub use page::{more, page};
+pub(crate) use page::{largest_fitting, snippet_page};
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -50,6 +51,17 @@ pub struct Hit {
     pub candidates: Vec<DefinitionTarget>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<DefinitionTarget>,
+    /// Preview of the most relevant line inside the span, captured at search time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snippet: Option<Snippet>,
+}
+
+/// One trimmed source line (at most 120 characters) previewing a hit. It locates
+/// evidence; it is not a verified read.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Snippet {
+    pub line: usize,
+    pub text: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -62,16 +74,25 @@ pub struct ResultSet {
 
 const COMPACT_NAME_LIMIT: usize = 96;
 
-/// Render the locator portion of an immutable live hit.
+/// Optional parts of a compact hit, dropped (snippets first, then names) when a
+/// page would otherwise not fit its budget.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct HitDetail {
+    pub names: bool,
+    pub snippets: bool,
+}
+
+/// Render the locator portion of an immutable live hit, plus its snippet.
 ///
-/// Search pages intentionally expose only coordinates. The stored hit keeps
-/// revisions, byte spans, and resolver evidence for follow-up commands.
+/// The stored hit keeps revisions, byte spans, and resolver evidence for
+/// follow-up commands; pages expose coordinates and a one-line preview.
 pub(crate) fn compact_hit(
     hit: &Hit,
     root: &Path,
     member: Option<&str>,
-    names: bool,
+    detail: HitDetail,
 ) -> Result<Value> {
+    let names = detail.names;
     let mut value = serde_json::Map::new();
     if !hit.handle.is_empty() {
         value.insert("handle".into(), hit.handle.clone().into());
@@ -84,6 +105,11 @@ pub(crate) fn compact_hit(
     value.insert("end_line".into(), hit.end_line.into());
     if names && concise_name(&hit.name) {
         value.insert("name".into(), hit.name.clone().into());
+    }
+    if detail.snippets
+        && let Some(snippet) = &hit.snippet
+    {
+        value.insert("snippet".into(), serde_json::to_value(snippet)?);
     }
     if let Some(resolution) = &hit.resolution {
         value.insert("resolution".into(), resolution.clone().into());
@@ -109,9 +135,9 @@ pub(crate) fn compact_entry(
     entry: &ResultEntry,
     root: &Path,
     member: Option<&str>,
-    names: bool,
+    detail: HitDetail,
 ) -> Result<Value> {
-    compact_entry_for_page(entry, root, member, names, true)
+    compact_entry_for_page(entry, root, member, detail, true)
 }
 
 /// Render an entry according to the result set's output contract.
@@ -119,11 +145,11 @@ pub(crate) fn compact_entry_for_page(
     entry: &ResultEntry,
     root: &Path,
     member: Option<&str>,
-    names: bool,
+    detail: HitDetail,
     compact_live: bool,
 ) -> Result<Value> {
     match entry {
-        ResultEntry::LiveSource(hit) if compact_live => compact_hit(hit, root, member, names),
+        ResultEntry::LiveSource(hit) if compact_live => compact_hit(hit, root, member, detail),
         _ => Ok(serde_json::to_value(entry)?),
     }
 }

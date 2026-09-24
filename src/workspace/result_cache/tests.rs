@@ -106,6 +106,7 @@ fn workspace_pages_use_absolute_file_locators_and_compact_coverage() -> Result<(
         resolution: None,
         candidates: Vec::new(),
         target: None,
+        snippet: None,
     };
     let set = WorkspaceSet {
         workspace: "test".into(),

@@ -37,6 +37,7 @@ fn bare_hit(path: &str, kind: &str, start: usize, end: usize) -> Hit {
         resolution: None,
         candidates: Vec::new(),
         target: None,
+        snippet: None,
     }
 }
 

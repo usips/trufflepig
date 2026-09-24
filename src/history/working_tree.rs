@@ -121,6 +121,7 @@ pub(super) fn since_uncommitted(
                         name: path.clone(), kind: "source_region".into(), container: None,
                         provenance: Some(format!("published_generation:{}:after", publication.generation)),
                         resolution: Some(correspondence), candidates: Vec::new(), target: None,
+                        snippet: None,
                     }))?;
                 }
             }

@@ -27,16 +27,20 @@ classifications. Language names are `rust`, `typescript`, `javascript`, `luau`,
 One JSON object plus newline is the default output; `--json` accepts the same
 format. `--format lines` renders `search`, `refs`, `map`, `more`, and `show` as
 tab-separated lines for agents that read output directly: one
-`HANDLE<TAB>[MEMBER/]PATH:START-END[<TAB>NAME]` line per hit, then a one-line
-`coverage:` summary, then `next: CURSOR` and `truncated: true` when present;
+`HANDLE<TAB>[MEMBER/]PATH:START-END[<TAB>NAME]` line per hit, each followed by
+an indented `  LINE: TEXT` snippet, then a one-line `coverage:` summary, then `next: CURSOR` and `truncated: true` when present;
 `show` prints a `PATH [(MEMBER)] REVISION START-END` header, `LINE<TAB>text`
 rows, and a `verified:` footer that flags `encoding: byte-escaped` once. Errors
 and every other verb stay JSON. `-b/--budget` defaults to 600 `o200k_base`
 tokens for the serialized stdout response, measured on the rendered text of the
 selected format, or to the workspace's `[output].budget` when one is set. Search ranks files first and emits one compact representative
 per file before the `-n/--limit` page cap (20 files by default); the budget may
-fit fewer. Each hit includes a `file` URI, line span, and immutable handle.
-Increase the budget when a hit or source line cannot fit.
+fit fewer. Each hit includes a `file` URI, line span, and immutable handle, and
+a `snippet` (`line`, `text` of at most 120 characters): the first line in the
+span that mentions a query term or the hit's name, preferring code over comments.
+A page keeps snippets while at least eight hits (or all remaining hits) fit,
+otherwise it drops them for more locators. Snippets locate evidence; `show`
+remains the verified read. Increase the budget when a hit or source line cannot fit.
 Budget failures include a retry hint on stderr even when no JSON error fits.
 `--help` and `--version` print plain, unbudgeted text; help ends with a query
 and navigation summary.

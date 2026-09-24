@@ -7,7 +7,7 @@ use super::{
 use crate::{
     identity::{ResultCursor, ResultHandle},
     output::{OutputBudget, OutputFormat},
-    results::{self, ResultEntry},
+    results::{self, HitDetail, ResultEntry},
     store::{Store, decode_path, encode_path},
 };
 use anyhow::{Context, Result, bail, ensure};
@@ -257,31 +257,33 @@ impl WorkspaceResults {
             Some(scope) => format!("{}; scope {scope}", member_coverage_summary(&set.coverage)),
             None => member_coverage_summary(&set.coverage),
         };
-        let render = |count: usize, names: bool| -> Result<String> {
+        let render_detail = |count: usize, detail: HitDetail| -> Result<String> {
             match budget.format {
-                OutputFormat::Json => budget.encode(&page_value(&set, id, offset, count, names)?),
+                OutputFormat::Json => budget.encode(&page_value(&set, id, offset, count, detail)?),
                 OutputFormat::Lines => Ok(results::lines::page_text(
                     set.hits[offset..offset + count]
                         .iter()
                         .map(|owned| (Some(set.owners[owned.owner].name.as_str()), &owned.entry)),
-                    names,
+                    detail,
                     &coverage_line,
                     results::lines::next_cursor(id, offset, count, set.hits.len()).as_deref(),
                     set.truncated,
                 )),
             }
         };
+        if let Some(text) = results::snippet_page(max_count, budget, render_detail)? {
+            return Ok(text);
+        }
+        let render = |count: usize, names: bool| {
+            let detail = HitDetail {
+                names,
+                snippets: false,
+            };
+            render_detail(count, detail)
+        };
         for names in [false, true] {
-            let mut low = 0;
-            let mut high = max_count;
-            while low < high {
-                let count = low + (high - low).div_ceil(2);
-                if budget.fits(&render(count, names)?) {
-                    low = count;
-                } else {
-                    high = count - 1;
-                }
-            }
+            let low =
+                results::largest_fitting(max_count, |count| Ok(budget.fits(&render(count, names)?)))?;
             if low > 0 {
                 let named = render(low, true)?;
                 if budget.fits(&named) {
@@ -305,13 +307,13 @@ fn page_value(
     id: &str,
     offset: usize,
     count: usize,
-    names: bool,
+    detail: HitDetail,
 ) -> Result<Value> {
     let mut hits = Vec::with_capacity(count);
     for owned in &set.hits[offset..offset + count] {
         let owner = &set.owners[owned.owner];
         let root = decode_path(&owner.root)?;
-        let mut entry = results::compact_entry(&owned.entry, &root, Some(&owner.name), names)?;
+        let mut entry = results::compact_entry(&owned.entry, &root, Some(&owner.name), detail)?;
         if entry.is_object() {
             entry["member"] = owner.name.clone().into();
             if !matches!(&owned.entry, ResultEntry::LiveSource(_)) {

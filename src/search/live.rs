@@ -113,6 +113,14 @@ pub(super) fn live_regex(
                 resolution: None,
                 candidates: Vec::new(),
                 target: None,
+                snippet: super::snippets::preview(
+                    &source,
+                    matched.start(),
+                    matched.end(),
+                    start_line,
+                    &[],
+                    "",
+                ),
             });
         }
     }

@@ -49,6 +49,7 @@ pub fn references(store: &Store, name: &str) -> Result<ResultSet> {
     truncated |= hits.len() > MAX_HITS;
     hits.truncate(MAX_HITS);
     drop(stmt);
+    super::snippets::attach(store, &super::snippets::preview_terms(name), &mut hits)?;
     snapshot.commit()?;
     Ok(ResultSet {
         generation,
@@ -146,6 +147,7 @@ pub fn map(store: &Store, path: &str) -> Result<ResultSet> {
     let truncated = hits.len() > MAX_HITS;
     hits.truncate(MAX_HITS);
     drop(stmt);
+    super::snippets::attach(store, &[], &mut hits)?;
     snapshot.commit()?;
     Ok(ResultSet {
         generation,

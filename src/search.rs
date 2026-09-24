@@ -4,6 +4,7 @@ mod live;
 mod navigation;
 mod rerank_window;
 mod semantic_lane;
+mod snippets;
 pub mod telemetry;
 #[cfg(test)]
 mod tests;
@@ -94,6 +95,7 @@ pub(super) fn hit_row(row: &Row<'_>) -> rusqlite::Result<Hit> {
         resolution: None,
         candidates: Vec::new(),
         target: None,
+        snippet: None,
     })
 }
 
@@ -316,6 +318,7 @@ pub fn search_prepared(
         hits.truncate(MAX_HITS);
         truncated = true;
     }
+    snippets::attach(store, &snippets::preview_terms(&query.text), &mut hits)?;
     snapshot.commit()?;
     Ok(ResultSet {
         generation,
@@ -510,6 +513,7 @@ fn file_hits(store: &Store, query: &Query) -> Result<LaneHits> {
                 resolution: None,
                 candidates: Vec::new(),
                 target: None,
+                snippet: None,
             },
         };
         candidates.push(candidate);

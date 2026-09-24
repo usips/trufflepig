@@ -115,6 +115,7 @@ mod tests {
             resolution: None,
             candidates: Vec::new(),
             target: None,
+            snippet: None,
         }
     }
 

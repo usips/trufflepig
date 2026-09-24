@@ -468,7 +468,11 @@ fn lines_format_prefixes_member_and_summarizes_coverage() {
             &["--format", "lines", "search", "sym:SharedThing", "ws:all"],
         )
         .unwrap();
-    let lines: Vec<_> = output.lines().collect();
+    // Each hit line is followed by its indented snippet line.
+    let snippets: Vec<_> = output.lines().filter(|line| line.starts_with("  ")).collect();
+    assert_eq!(snippets.len(), 3, "{output}");
+    assert!(snippets.iter().all(|line| line.starts_with("  1: ")));
+    let lines: Vec<_> = output.lines().filter(|line| !line.starts_with("  ")).collect();
     let hits: Vec<_> = crate::output::lines::emitted_handles(&output).collect();
     assert_eq!(hits.len(), 3, "{output}");
     for (line, member) in lines.iter().zip(["pack", "engine", "upstream"]) {

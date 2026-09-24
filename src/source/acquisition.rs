@@ -233,6 +233,7 @@ fn acquire_path(store: &Store, target: &str) -> Result<AcquiredSource> {
         resolution: None,
         candidates: Vec::new(),
         target: None,
+        snippet: None,
     };
     let set = results::save_entries(
         store,
