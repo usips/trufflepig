@@ -116,7 +116,8 @@ pub(super) fn search(
     session.set_no_daemon(options.no_daemon);
     let (prepared, semantic_error) = match session.prepare(semantic, cache, &query.text) {
         Ok(prepared) => (prepared, None),
-        Err(error) => (None, Some(error.to_string())),
+        // Keep the cause chain: the outer context alone hides why the worker failed.
+        Err(error) => (None, Some(format!("{error:#}"))),
     };
     let preparation_us = started.elapsed().as_micros().min(u64::MAX as u128) as u64;
     let mut preparation_recorded = false;
