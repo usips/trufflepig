@@ -67,6 +67,12 @@ pub(crate) fn entry_line(entry: &ResultEntry, member: Option<&str>, detail: HitD
     line
 }
 
+/// Whether a lane reason means the lane was never configured rather than failed;
+/// coverage summaries omit such lanes.
+pub(crate) fn unconfigured(reason: Option<&str>) -> bool {
+    reason.is_some_and(|reason| reason.contains("model_dir") || reason.contains("not configured"))
+}
+
 /// Summarizes a single repository's coverage: indexed ratio, nonzero issue
 /// counters, and any retrieval lane that is not `ready`.
 pub(crate) fn single_repo_coverage(coverage: &Value) -> String {
@@ -87,9 +93,13 @@ pub(crate) fn single_repo_coverage(coverage: &Value) -> String {
             parts.push(format!("{} {value}", key.trim_end_matches("_files")));
         }
     }
-    for (label, key) in [("semantic", "semantic_status"), ("rerank", "rerank_status")] {
+    for (label, key, reason) in [
+        ("semantic", "semantic_status", "semantic_reason"),
+        ("rerank", "rerank_status", "rerank_reason"),
+    ] {
         if let Some(status) = coverage[key].as_str()
             && status != "ready"
+            && !unconfigured(coverage[reason].as_str())
         {
             parts.push(format!("{label} {status}"));
         }

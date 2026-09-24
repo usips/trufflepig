@@ -85,7 +85,7 @@ A query without a selector searches the home member when the invocation is
 inside one, waiting up to eight seconds for a home index that is not yet
 published (for example a freshly seeded worktree). When home yields no hits or
 no published index, the query widens to all members. The page's `scope` records
-which happened (`home; ws:all adds N members`, `all (no home hits)`, or
+which happened (`home (ws:all adds N members)`, `all (no home hits)`, or
 `all (home unavailable)`) and lines output appends it to the coverage line.
 Outside any member, queries search all members. `in:NAME` and `--member NAME`
 select a member; `ws:home` selects home and `ws:all` selects the whole
@@ -101,8 +101,12 @@ no elapsed-time lane omission.
 Every emitted hit includes its member name. The page's `members` mapping resolves
 represented names to percent-encoded canonical roots. Coverage distinguishes
 unavailable members and retained candidate counts from exhaustive match counts.
-Per-member `partial` and `issues` retain extraction, live-read, and semantic
-coverage limitations. Each member receives an equal share of the retained
+A member is `partial` only when files could not be examined (walk, live-read,
+or truncation failures), counted as `unsearched`; excluded binary or oversized
+files, parse failures (still lexically searchable), and semantic or rerank
+status remain in `issues`. The lines summary reads `MEMBER complete` or
+`MEMBER partial (N unsearched)` and omits lanes whose reason says they were
+never configured. Each member receives an equal share of the retained
 candidate/byte ceiling; omissions are explicit rather than exhaustive counts.
 Missing or not-yet-published members produce partial coverage. If no selected
 member is available, the command returns an explicit unavailable outcome.

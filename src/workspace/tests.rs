@@ -188,7 +188,7 @@ fn unselected_queries_search_home_and_widen_without_home_hits() {
         .collect();
     assert_eq!(members, ["engine"]);
     assert_eq!(home["coverage"].as_array().unwrap().len(), 1);
-    assert_eq!(home["scope"], "home; ws:all adds 2 members");
+    assert_eq!(home["scope"], "home (ws:all adds 2 members)");
     let widened = fixture.json("engine", &["search", "re:pack_marker"]);
     assert_eq!(widened["hits"][0]["member"], "pack");
     assert_eq!(widened["scope"], "all (no home hits)");
@@ -199,7 +199,7 @@ fn unselected_queries_search_home_and_widen_without_home_hits() {
         )
         .unwrap();
     assert!(
-        lines.contains("coverage: engine complete; scope home; ws:all adds 2 members"),
+        lines.contains("coverage: engine complete; scope home (ws:all adds 2 members)"),
         "{lines}"
     );
     let explicit = fixture.json("engine", &["search", "sym:SharedThing", "ws:home"]);
@@ -469,10 +469,16 @@ fn lines_format_prefixes_member_and_summarizes_coverage() {
         )
         .unwrap();
     // Each hit line is followed by its indented snippet line.
-    let snippets: Vec<_> = output.lines().filter(|line| line.starts_with("  ")).collect();
+    let snippets: Vec<_> = output
+        .lines()
+        .filter(|line| line.starts_with("  "))
+        .collect();
     assert_eq!(snippets.len(), 3, "{output}");
     assert!(snippets.iter().all(|line| line.starts_with("  1: ")));
-    let lines: Vec<_> = output.lines().filter(|line| !line.starts_with("  ")).collect();
+    let lines: Vec<_> = output
+        .lines()
+        .filter(|line| !line.starts_with("  "))
+        .collect();
     let hits: Vec<_> = crate::output::lines::emitted_handles(&output).collect();
     assert_eq!(hits.len(), 3, "{output}");
     for (line, member) in lines.iter().zip(["pack", "engine", "upstream"]) {

@@ -139,7 +139,7 @@ pub struct WorkspaceSet {
     pub coverage: Vec<Value>,
     pub hits: Vec<OwnedEntry>,
     pub truncated: bool,
-    /// How an unselected query was scoped: `home; ws:all adds N members` or
+    /// How an unselected query was scoped: `home (ws:all adds N members)` or
     /// `all (no home hits)`. Absent when the query named its scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
@@ -282,8 +282,9 @@ impl WorkspaceResults {
             render_detail(count, detail)
         };
         for names in [false, true] {
-            let low =
-                results::largest_fitting(max_count, |count| Ok(budget.fits(&render(count, names)?)))?;
+            let low = results::largest_fitting(max_count, |count| {
+                Ok(budget.fits(&render(count, names)?))
+            })?;
             if low > 0 {
                 let named = render(low, true)?;
                 if budget.fits(&named) {

@@ -2,15 +2,26 @@ use super::*;
 use serde_json::json;
 
 #[test]
-fn rerank_unavailable_marks_partial_coverage_and_surfaces_reason() {
+fn unavailable_lanes_surface_reasons_without_marking_lexical_coverage_partial() {
     let coverage = json!({
         "rerank_status": "unavailable",
         "rerank_reason": "rerank_worker_unreachable",
+        "semantic_status": "unavailable",
+        "excluded_files": 20,
+        "parse_failures": 18,
     });
-    assert!(partial_coverage(&coverage));
+    assert!(!partial_coverage(&coverage));
     let issues = coverage_issues(&coverage);
     assert_eq!(issues["rerank_status"], "unavailable");
     assert_eq!(issues["rerank_reason"], "rerank_worker_unreachable");
+    assert_eq!(issues["parse_failures"], 18);
+}
+
+#[test]
+fn unsearched_files_mark_partial_coverage_with_a_count() {
+    let coverage = json!({"walk_failures": 1, "live_read_failures": 2});
+    assert!(partial_coverage(&coverage));
+    assert_eq!(unsearched_files(&coverage), 3);
 }
 
 #[test]

@@ -2,6 +2,7 @@
 //! one-line member summary. The summary keeps every member's partial and
 //! truncated state visible; only detail reasons are folded away.
 
+use crate::results::lines::unconfigured;
 use serde_json::Value;
 
 /// Ranks retrieval-lane statuses so the summary can report the worst member.
@@ -14,7 +15,8 @@ fn status_rank(status: &str) -> u8 {
     }
 }
 
-/// `MEMBER STATE[ truncated]; ...; semantic STATUS; rerank unavailable`.
+/// `MEMBER complete|partial (N unsearched)[ truncated]; ...; semantic STATUS;
+/// rerank unavailable`. Lanes that were never configured are omitted.
 pub(crate) fn member_coverage_summary(values: &[Value]) -> String {
     let mut parts = Vec::with_capacity(values.len() + 2);
     let mut semantic: Option<&str> = None;
@@ -27,8 +29,11 @@ pub(crate) fn member_coverage_summary(values: &[Value]) -> String {
         };
         let state = value["state"].as_str().unwrap_or("unknown");
         let mut part = if state == "searched" {
-            let partial = value["partial"].as_bool().unwrap_or(false);
-            format!("{name} {}", if partial { "partial" } else { "complete" })
+            match value["unsearched"].as_u64() {
+                _ if !value["partial"].as_bool().unwrap_or(false) => format!("{name} complete"),
+                Some(count) if count > 0 => format!("{name} partial ({count} unsearched)"),
+                _ => format!("{name} partial"),
+            }
         } else {
             format!("{name} {state}")
         };
@@ -38,11 +43,13 @@ pub(crate) fn member_coverage_summary(values: &[Value]) -> String {
         parts.push(part);
         let issues = &value["issues"];
         if let Some(status) = issues["semantic_status"].as_str()
+            && !unconfigured(issues["semantic_reason"].as_str())
             && semantic.is_none_or(|current| status_rank(status) > status_rank(current))
         {
             semantic = Some(status);
         }
-        rerank_unavailable |= issues["rerank_status"].as_str() == Some("unavailable");
+        rerank_unavailable |= issues["rerank_status"].as_str() == Some("unavailable")
+            && !unconfigured(issues["rerank_reason"].as_str());
     }
     if let Some(status) = semantic
         && status != "ready"
@@ -84,6 +91,7 @@ pub(crate) fn compact_coverage(values: &[Value]) -> Vec<Value> {
                 "retained",
                 "truncated",
                 "partial",
+                "unsearched",
                 "issues",
             ] {
                 if let Some(value) = object.get(key) {
@@ -136,6 +144,23 @@ mod tests {
         let ready = [json!({"member":"a","state":"searched","partial":false,
                             "issues":{"semantic_status":"ready"}})];
         assert_eq!(member_coverage_summary(&ready), "a complete");
+    }
+
+    #[test]
+    fn member_summary_counts_unsearched_files_and_omits_unconfigured_lanes() {
+        let coverage = [
+            json!({"member":"a","state":"searched","partial":true,"unsearched":3,
+                   "issues":{"semantic_status":"unavailable",
+                             "semantic_reason":"semantic_unavailable: set model_dir in inference.toml",
+                             "rerank_status":"unavailable",
+                             "rerank_reason":"semantic_worker: model directory is not configured"}}),
+            json!({"member":"b","state":"searched","partial":false,"unsearched":0,
+                   "issues":{"excluded_files":40,"parse_failures":2}}),
+        ];
+        assert_eq!(
+            member_coverage_summary(&coverage),
+            "a partial (3 unsearched); b complete"
+        );
     }
 
     #[test]

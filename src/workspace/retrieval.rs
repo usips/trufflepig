@@ -246,7 +246,7 @@ pub(super) fn search(
                     entries.push(entry);
                 }
                 let truncated = found.truncated || entries.len() < total;
-                let mut coverage = json!({"member":member.name(),"state":"searched","generation":owner.generation,"retained":entries.len(),"truncated":truncated,"partial":partial_coverage(&found.coverage),"issues":coverage_issues(&found.coverage)});
+                let mut coverage = json!({"member":member.name(),"state":"searched","generation":owner.generation,"retained":entries.len(),"truncated":truncated,"partial":partial_coverage(&found.coverage),"unsearched":unsearched_files(&found.coverage),"issues":coverage_issues(&found.coverage)});
                 if let Some(label) = &member.worktree {
                     coverage["root"] = crate::store::encode_path(&member.root).into();
                     coverage["worktree"] = label.clone().into();
@@ -285,7 +285,7 @@ pub(super) fn search(
                 format!("all ({reason})")
             } else {
                 format!(
-                    "home; ws:all adds {others} member{}",
+                    "home (ws:all adds {others} member{})",
                     if others == 1 { "" } else { "s" }
                 )
             });
@@ -310,25 +310,28 @@ pub(super) fn search(
     results.page(&id, 0, options.limit, &budget)
 }
 
+/// Counters of files whose bytes a search could not examine. Excluded (binary,
+/// oversized) files, parse failures (still lexically searchable), and semantic
+/// lane status do not make lexical coverage partial; they stay in `issues`.
+const UNSEARCHED_KEYS: [&str; 4] = [
+    "walk_failures",
+    "truncated_files",
+    "live_read_failures",
+    "live_walk_failures",
+];
+
 fn partial_coverage(coverage: &serde_json::Value) -> bool {
-    coverage.get("semantic_preparation_error").is_some()
-        || matches!(
-            coverage["semantic_status"].as_str(),
-            Some("unavailable" | "partial")
-        )
-        || coverage["rerank_status"].as_str() == Some("unavailable")
-        || [
-            "parse_failures",
-            "excluded_files",
-            "walk_failures",
-            "truncated_files",
-            "live_read_failures",
-            "live_walk_failures",
-            "semantic_failures",
-            "semantic_pending",
-        ]
+    UNSEARCHED_KEYS
         .iter()
         .any(|key| coverage[key].as_u64().unwrap_or(0) > 0)
+}
+
+/// Files a search could not examine, for the `partial (N unsearched)` summary.
+fn unsearched_files(coverage: &serde_json::Value) -> u64 {
+    UNSEARCHED_KEYS
+        .iter()
+        .map(|key| coverage[key].as_u64().unwrap_or(0))
+        .sum()
 }
 
 fn coverage_issues(coverage: &serde_json::Value) -> serde_json::Value {

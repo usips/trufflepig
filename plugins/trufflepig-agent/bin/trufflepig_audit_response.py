@@ -25,7 +25,9 @@ def parse_lines_response(stdout: bytes) -> dict:
                     words = part.split()
                     if not words:
                         continue
-                    if words[0] in LANE_KEYS and len(words) == 2:
+                    if words[0] == "scope":
+                        response["scope"] = part[len("scope "):]
+                    elif words[0] in LANE_KEYS and len(words) == 2:
                         lanes[LANE_KEYS[words[0]]] = words[1]
                     elif words[0] in SINGLE_REPO_KEYS:
                         single[words[0]] = words[1] if len(words) > 1 else True

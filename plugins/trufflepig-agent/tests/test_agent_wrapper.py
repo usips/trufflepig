@@ -115,6 +115,18 @@ sys.exit(int(os.environ.get("EXIT", "0")))
         self.assertTrue(record["has_next"])
         self.assertTrue(record["truncated"])
 
+    def test_lines_page_snippets_and_scope_are_not_hits_or_members(self):
+        handle = "0" * 32
+        self.env["RESPONSE"] = (
+            f"{handle}:1\tlunatic/src/a.rs:3-9\trun\n  4: fn run() {{\n"
+            "coverage: lunatic partial (2 unsearched); semantic unavailable; scope home (ws:all adds 2 members)\n"
+        )
+        self.run_wrapper("search", "run")
+        record = self.record()
+        self.assertEqual(record["hits"], 1)
+        self.assertEqual(set(record["coverage"]), {"lunatic"}, record["coverage"])
+        self.assertIn("semantic_degraded", record["signals"])
+
     def test_runtime_spool_and_disk_fallback(self):
         runtime = self.root / "disk runtime"
         config = self.root / "config/trufflepig/agent-runtime.json"

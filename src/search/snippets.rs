@@ -132,10 +132,16 @@ mod tests {
         let end = source.len();
         let terms = preview_terms("capacity");
         let hit = preview(source, 0, end, 10, &terms, "refill").unwrap();
-        assert_eq!((hit.line, hit.text.as_str()), (13, "self.tokens = self.capacity;"));
+        assert_eq!(
+            (hit.line, hit.text.as_str()),
+            (13, "self.tokens = self.capacity;")
+        );
         // A named definition previews its signature, not its doc comment.
         let hit = preview(source, 0, end, 10, &[], "refill").unwrap();
-        assert_eq!((hit.line, hit.text.as_str()), (12, "pub fn refill(&mut self) {"));
+        assert_eq!(
+            (hit.line, hit.text.as_str()),
+            (12, "pub fn refill(&mut self) {")
+        );
         let hit = preview(source, 0, end, 10, &preview_terms("refill"), "").unwrap();
         assert_eq!(hit.line, 12);
         let hit = preview(source, 0, end, 10, &preview_terms("zzz"), "").unwrap();
@@ -146,7 +152,15 @@ mod tests {
     fn preview_stays_inside_the_span_and_bounds_its_text() {
         let long = format!("a\tb {}\nneedle\n", "x".repeat(200));
         let span_end = long.find('\n').unwrap();
-        let hit = preview(long.as_bytes(), 0, span_end, 1, &preview_terms("needle"), "").unwrap();
+        let hit = preview(
+            long.as_bytes(),
+            0,
+            span_end,
+            1,
+            &preview_terms("needle"),
+            "",
+        )
+        .unwrap();
         assert_eq!(hit.line, 1);
         assert!(hit.text.starts_with("a b "));
         assert_eq!(hit.text.chars().count(), SNIPPET_CHARS + 1);
