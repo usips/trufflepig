@@ -1,6 +1,6 @@
 ---
 name: trufflepig-code-search
-description: Search and navigate local projects with Trufflepig to locate implementations, vague concepts, symbols, references, files, and dependencies. Prefer its ranked, budgeted results and verified source reads over Grep, Glob, and shell searches. Use during code investigation and before edits; not for editing, builds, or searching outside projects.
+description: Use instead of grep, rg, or find to search code in indexed local projects. Finds a symbol's definition (sym:), a definition's full body (show), identifier references (refs), a file's outline (map), regex and file-name matches, and implementations of vague concepts, with ranked, budgeted hits and verified source reads. Use during code investigation and before edits; not for command output, logs, files outside the project, other git revisions, editing, or builds.
 ---
 
 # Trufflepig code search
@@ -8,6 +8,22 @@ description: Search and navigate local projects with Trufflepig to locate implem
 Use `trufflepig-agent` for project discovery and navigation. It supplies compact
 output, session attribution, and audit records. User instructions take precedence;
 ordinary search tools remain available for a specific unsupported need or failure.
+
+## Replacing shell searches
+
+| Instead of | Run |
+| --- | --- |
+| `grep -rn "fn refill"` / `"struct TokenBucket"` | `trufflepig-agent search 'sym:refill'` |
+| `grep -n "fn refill" -A30 FILE` | `search 'sym:refill'`, then `show HANDLE` |
+| `grep -rn refill_tokens` (uses of an identifier) | `trufflepig-agent refs refill_tokens` |
+| `grep -n "pub fn\|struct" FILE` (outline) | `trufflepig-agent map FILE` |
+| `grep -rn 'Bucket::new(' src/` | `trufflepig-agent search 're:Bucket::new\( file:src/'` |
+| `find src -name '*bucket*'` | `trufflepig-agent search 'bucket kind:file'` |
+
+Run each `trufflepig-agent` command as its own shell call, without `; echo`,
+`&&` chains, or pipes: its exit status and footer are the result. Symbols,
+bodies, references, and outlines cover Rust, TypeScript, JavaScript, Luau, and
+DreamMaker; other files are searchable as text with `re:` and plain queries.
 
 ## Choose the evidence you need
 
