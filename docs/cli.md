@@ -56,7 +56,9 @@ trufflepig ws discover ~/Source/lunatic ~/Source/tales-from-space ~/Source/tgsta
 An explicit `--workspace FILE` selects named local checkouts. Otherwise, discovery
 checks the nearest ancestor `trufflepig.workspace.toml`, then the global registry.
 `--no-workspace` retains singleton operation. An explicit subtree `--root` never
-silently expands to a configured member root. Workspace queries search all members.
+silently expands to a configured member root. Unselected workspace queries search
+the home member and widen to all members when home has no hits; see the
+[workspace contract](workspace-contract.md#retrieval-and-output).
 `in:NAME` or `--member NAME` selects a member; `ws:home` selects the invocation
 checkout, which may be a linked Git worktree standing in for its member, and
 `ws:all` searches the complete workspace. File-first ranking fuses

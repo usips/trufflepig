@@ -81,9 +81,16 @@ does not apply the proposal, fetch repositories, or discover unrelated siblings.
 
 ## Retrieval and output
 
-Ordinary queries search all members. `in:NAME` and `--member NAME` select a
-member; `ws:home` selects home and `ws:all` selects the whole workspace. Selectors
-do not establish dependency, import, or compiler-resolution relationships.
+A query without a selector searches the home member when the invocation is
+inside one, waiting up to eight seconds for a home index that is not yet
+published (for example a freshly seeded worktree). When home yields no hits or
+no published index, the query widens to all members. The page's `scope` records
+which happened (`home; ws:all adds N members`, `all (no home hits)`, or
+`all (home unavailable)`) and lines output appends it to the coverage line.
+Outside any member, queries search all members. `in:NAME` and `--member NAME`
+select a member; `ws:home` selects home and `ws:all` selects the whole
+workspace, and explicit selectors never widen. Selectors do not establish
+dependency, import, or compiler-resolution relationships.
 
 Each member produces its existing ranked candidate list. Retrieval collapses
 each lane to one representative occurrence per file, then fuses file ranks with

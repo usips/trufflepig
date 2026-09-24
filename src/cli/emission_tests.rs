@@ -48,7 +48,11 @@ fn emission_handles_help_version_usage_and_zero_budget() {
         execute(&args(&cache, &["--version"]), &mut stdout, &mut stderr),
         0
     );
-    assert!(String::from_utf8(stdout).unwrap().starts_with("trufflepig "));
+    assert!(
+        String::from_utf8(stdout)
+            .unwrap()
+            .starts_with("trufflepig ")
+    );
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     execute(
         &args(&cache, &["--budget", "0", "show"]),

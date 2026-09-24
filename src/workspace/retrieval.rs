@@ -19,7 +19,20 @@ use crate::{
 use anyhow::{Context, Result, ensure};
 use serde_json::json;
 
-fn scope(roots: &[MemberRoot], options: &Arguments) -> Result<(Vec<usize>, Vec<String>)> {
+/// How long a query waits for the home member's first publication, typically a
+/// freshly seeded worktree, before answering from the rest of the workspace.
+const HOME_PUBLICATION_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
+
+/// Members to search. Without a selector, only the home member is searched when
+/// one exists (`implicit_home`); `search` widens to all members when home has no
+/// hits or no published index.
+struct Scope {
+    members: Vec<usize>,
+    words: Vec<String>,
+    implicit_home: bool,
+}
+
+fn scope(roots: &[MemberRoot], options: &Arguments) -> Result<Scope> {
     let mut selection = options.member.clone().map(|m| format!("in:{m}"));
     let mut words = Vec::with_capacity(options.words.len());
     for argument in &options.words {
@@ -44,9 +57,11 @@ fn scope(roots: &[MemberRoot], options: &Arguments) -> Result<(Vec<usize>, Vec<S
         .iter()
         .find(|root| root.is_home)
         .map(|root| root.name());
+    let implicit_home = selection.is_none() && home.is_some();
     let selected = match selection.as_deref() {
         Some("ws:home") => Some(home.context("member_required: ws:home has no home member")?),
-        Some("ws:all") | None => None,
+        Some("ws:all") => None,
+        None => home,
         Some(s) => Some(s.strip_prefix("in:").expect("validated selector")),
     };
     if let Some(name) = selected {
@@ -62,7 +77,11 @@ fn scope(roots: &[MemberRoot], options: &Arguments) -> Result<(Vec<usize>, Vec<S
         .map(|(i, _)| i)
         .collect();
     members.sort_by_key(|&i| (Some(roots[i].name()) != home, roots[i].name()));
-    Ok((members, words))
+    Ok(Scope {
+        members,
+        words,
+        implicit_home,
+    })
 }
 pub(super) fn search(
     config: &WorkspaceConfig,
@@ -73,7 +92,11 @@ pub(super) fn search(
     session: &mut SemanticSession,
 ) -> Result<String> {
     let roots = config.member_roots(&options.root.canonicalize()?)?;
-    let (selected, words) = scope(&roots, options)?;
+    let Scope {
+        members: mut queue,
+        words,
+        implicit_home,
+    } = scope(&roots, options)?;
     let log_cache = super::diagnostic_location(options)
         .map(|(_, cache, _, _)| cache)
         .unwrap_or_else(|_| cache.to_path_buf());
@@ -103,16 +126,20 @@ pub(super) fn search(
             .iter()
             .find(|root| root.is_home)
             .map(|root| root.name().to_owned()),
-        owners: Vec::with_capacity(selected.len()),
-        coverage: Vec::with_capacity(selected.len()),
+        owners: Vec::with_capacity(roots.len()),
+        coverage: Vec::with_capacity(roots.len()),
         hits: Vec::new(),
         truncated: false,
+        scope: None,
     };
-    let mut lists = Vec::with_capacity(selected.len());
-    // A member cannot reserve the full workspace staging capacity before others run.
-    let byte_quota = crate::results::MAX_BYTES / selected.len();
-    let hit_quota = crate::results::MAX_HITS / selected.len();
-    for index in selected {
+    let mut lists = Vec::with_capacity(roots.len());
+    let mut position = 0;
+    while position < queue.len() {
+        let index = queue[position];
+        position += 1;
+        // A member cannot reserve the full workspace staging capacity before others run.
+        let byte_quota = crate::results::MAX_BYTES / queue.len();
+        let hit_quota = crate::results::MAX_HITS / queue.len();
         let member = &roots[index];
         let member_cache = member_cache(member, options.cache.as_deref())?;
         let mode = match options.diagnostics.as_str() {
@@ -132,6 +159,11 @@ pub(super) fn search(
             let mut store = Store::open(&member.root, &member_cache)?;
             if options.no_daemon {
                 store.index()?;
+            } else if member.is_home {
+                let deadline = std::time::Instant::now() + HOME_PUBLICATION_WAIT;
+                while store.generation()? == 0 && std::time::Instant::now() < deadline {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
             }
             ensure!(
                 store.generation()? > 0,
@@ -237,6 +269,26 @@ pub(super) fn search(
                 }
                 set.coverage.push(coverage);
             }
+        }
+        if implicit_home && position == 1 {
+            let others = roots.len() - 1;
+            let home_empty = lists.first().is_none_or(|list| list.len() == 0);
+            set.scope = Some(if others == 0 {
+                "home".to_owned()
+            } else if home_empty {
+                queue.extend((0..roots.len()).filter(|&i| i != index));
+                let reason = if lists.is_empty() {
+                    "home unavailable"
+                } else {
+                    "no home hits"
+                };
+                format!("all ({reason})")
+            } else {
+                format!(
+                    "home; ws:all adds {others} member{}",
+                    if others == 1 { "" } else { "s" }
+                )
+            });
         }
     }
     ensure!(

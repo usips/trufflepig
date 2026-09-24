@@ -116,7 +116,7 @@ fn workspace_page_emission_records_foreign_identity_and_one_final_receipt() {
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     assert_eq!(
         execute(
-            &fixture.args(&["search", "sym:SharedThing"]),
+            &fixture.args(&["search", "sym:SharedThing", "ws:all"]),
             &mut stdout,
             &mut stderr
         ),
@@ -313,7 +313,7 @@ fn lines_format_records_emitted_handles_and_token_receipt() {
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     assert_eq!(
         execute(
-            &fixture.args(&["--format", "lines", "search", "sym:SharedThing"]),
+            &fixture.args(&["--format", "lines", "search", "sym:SharedThing", "ws:all"]),
             &mut stdout,
             &mut stderr
         ),

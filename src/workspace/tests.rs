@@ -143,7 +143,9 @@ fn source_text(value: &Value) -> String {
 fn default_budget_has_fair_order_and_complete_member_provenance() {
     let fixture = Fixture::new();
     let budget = OutputBudget::new(600).unwrap();
-    let output = fixture.run("pack", &["search", "sym:SharedThing"]).unwrap();
+    let output = fixture
+        .run("pack", &["search", "sym:SharedThing", "ws:all"])
+        .unwrap();
     assert!(budget.fits(&output));
     let mut page: Value = serde_json::from_str(&output).unwrap();
     let mut members = Vec::new();
@@ -172,6 +174,36 @@ fn default_budget_has_fair_order_and_complete_member_provenance() {
         page = fixture.json("upstream", &["more", next]);
     }
     assert_eq!(members, ["pack", "engine", "upstream"]);
+}
+
+#[test]
+fn unselected_queries_search_home_and_widen_without_home_hits() {
+    let fixture = Fixture::new();
+    let home = fixture.json("engine", &["search", "sym:SharedThing"]);
+    let members: Vec<_> = home["hits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|hit| &hit["member"])
+        .collect();
+    assert_eq!(members, ["engine"]);
+    assert_eq!(home["coverage"].as_array().unwrap().len(), 1);
+    assert_eq!(home["scope"], "home; ws:all adds 2 members");
+    let widened = fixture.json("engine", &["search", "re:pack_marker"]);
+    assert_eq!(widened["hits"][0]["member"], "pack");
+    assert_eq!(widened["scope"], "all (no home hits)");
+    let lines = fixture
+        .run(
+            "engine",
+            &["--format", "lines", "search", "sym:SharedThing"],
+        )
+        .unwrap();
+    assert!(
+        lines.contains("coverage: engine complete; scope home; ws:all adds 2 members"),
+        "{lines}"
+    );
+    let explicit = fixture.json("engine", &["search", "sym:SharedThing", "ws:home"]);
+    assert!(explicit["scope"].is_null());
 }
 
 #[test]
@@ -209,7 +241,10 @@ fn duplicate_paths_route_show_and_context_to_the_recorded_member() {
 #[test]
 fn pagination_keeps_original_order_when_the_home_member_changes() {
     let fixture = Fixture::new();
-    let first = fixture.json("upstream", &["--limit", "1", "search", "sym:SharedThing"]);
+    let first = fixture.json(
+        "upstream",
+        &["--limit", "1", "search", "sym:SharedThing", "ws:all"],
+    );
     assert_eq!(first["hits"][0]["member"], "upstream");
     let second = fixture.json(
         "pack",
@@ -235,7 +270,7 @@ fn explicit_scopes_limit_members_and_unavailable_members_remain_visible() {
     let home = fixture.json("pack", &["search", "sym:SharedThing", "ws:home"]);
     assert_eq!(home["hits"][0]["member"], "pack");
     fs::remove_dir_all(fixture.root.path().join("upstream")).unwrap();
-    let partial = fixture.json("engine", &["search", "sym:SharedThing"]);
+    let partial = fixture.json("engine", &["search", "sym:SharedThing", "ws:all"]);
     assert!(
         partial["coverage"]
             .as_array()
@@ -428,7 +463,10 @@ fn selector_only_queries_and_cache_root_boundaries_are_safe() -> anyhow::Result<
 fn lines_format_prefixes_member_and_summarizes_coverage() {
     let fixture = Fixture::new();
     let output = fixture
-        .run("pack", &["--format", "lines", "search", "sym:SharedThing"])
+        .run(
+            "pack",
+            &["--format", "lines", "search", "sym:SharedThing", "ws:all"],
+        )
         .unwrap();
     let lines: Vec<_> = output.lines().collect();
     let hits: Vec<_> = crate::output::lines::emitted_handles(&output).collect();
@@ -505,7 +543,7 @@ fn worktree_substitutes_home_member_root(fixture: &Fixture, worktree: &Path) {
     );
     let shared: Value = serde_json::from_str(
         &fixture
-            .run_at(worktree, &["search", "sym:SharedThing"])
+            .run_at(worktree, &["search", "sym:SharedThing", "ws:all"])
             .unwrap(),
     )
     .unwrap();

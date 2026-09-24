@@ -123,6 +123,7 @@ pub(super) fn read(
             entry,
         }],
         truncated: false,
+        scope: None,
     })?;
     source.handle = format!("{id}:1");
     source::render_owned(source, budget, &metadata)
@@ -198,7 +199,7 @@ pub(super) fn history(
                 entry,
             })
             .collect();
-        let id = workspace_results.save(WorkspaceSet {workspace:config.name.clone(),home:Some(member.name().to_owned()),owners:vec![owner],coverage:vec![json!({"member":member.name(),"state":"searched","generation":set.generation,"detail":set.coverage})],hits:entries,truncated:set.truncated})?;
+        let id = workspace_results.save(WorkspaceSet {workspace:config.name.clone(),home:Some(member.name().to_owned()),owners:vec![owner],coverage:vec![json!({"member":member.name(),"state":"searched","generation":set.generation,"detail":set.coverage})],hits:entries,truncated:set.truncated,scope:None})?;
         rewrite_handles(&mut value, &original, &id);
         if value.get("hunks").is_none() {
             return workspace_results.page(&id, 0, options.limit, budget);

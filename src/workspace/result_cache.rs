@@ -139,6 +139,10 @@ pub struct WorkspaceSet {
     pub coverage: Vec<Value>,
     pub hits: Vec<OwnedEntry>,
     pub truncated: bool,
+    /// How an unselected query was scoped: `home; ws:all adds N members` or
+    /// `all (no home hits)`. Absent when the query named its scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
 }
 pub struct WorkspaceResults {
     pub(super) conn: Connection,
@@ -249,7 +253,10 @@ impl WorkspaceResults {
         );
         let available = set.hits.len() - offset;
         let max_count = available.min(limit).min(budget.limit);
-        let coverage_line = member_coverage_summary(&set.coverage);
+        let coverage_line = match &set.scope {
+            Some(scope) => format!("{}; scope {scope}", member_coverage_summary(&set.coverage)),
+            None => member_coverage_summary(&set.coverage),
+        };
         let render = |count: usize, names: bool| -> Result<String> {
             match budget.format {
                 OutputFormat::Json => budget.encode(&page_value(&set, id, offset, count, names)?),
@@ -317,6 +324,7 @@ fn page_value(
     Ok(json!({
         "workspace": set.workspace,
         "home": set.home,
+        "scope": set.scope,
         "coverage": compact_coverage(&set.coverage),
         "hits": hits,
         "next": next,

@@ -8,6 +8,7 @@ fn empty_set() -> WorkspaceSet {
         coverage: vec![],
         hits: vec![],
         truncated: false,
+        scope: None,
     }
 }
 #[test]
@@ -133,6 +134,7 @@ fn workspace_pages_use_absolute_file_locators_and_compact_coverage() -> Result<(
             entry: ResultEntry::LiveSource(hit),
         }],
         truncated: false,
+        scope: None,
     };
     let id = results.save(set)?;
     let value: Value = serde_json::from_str(&results.page(&id, 0, 1, &OutputBudget::new(600)?)?)?;
