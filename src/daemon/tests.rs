@@ -98,17 +98,34 @@ fn daemon_protocol_bounds_complete_serialized_response() {
 #[test]
 fn daemon_reconciliation_has_debounce_deadline_and_periodic_recovery() {
     let start = Instant::now();
-    let mut schedule = ReconcileSchedule::new(start);
+    let mut schedule = ReconcileSchedule::new(start, RECONCILE_INTERVAL);
     assert!(!schedule.due(start, true));
     assert!(!schedule.due(start + DEBOUNCE / 2, false));
     assert!(schedule.due(start + DEBOUNCE, false));
-    let mut schedule = ReconcileSchedule::new(start);
+    let mut schedule = ReconcileSchedule::new(start, RECONCILE_INTERVAL);
     for millisecond in (0..1000).step_by(20) {
         assert!(!schedule.due(start + Duration::from_millis(millisecond), true));
     }
     assert!(schedule.due(start + MAX_DEBOUNCE, true));
-    let mut schedule = ReconcileSchedule::new(start);
+    let mut schedule = ReconcileSchedule::new(start, RECONCILE_INTERVAL);
     assert!(schedule.due(start + RECONCILE_INTERVAL, false));
+    let mut watched = ReconcileSchedule::new(start, WATCHED_RECONCILE_INTERVAL);
+    assert!(!watched.due(start + RECONCILE_INTERVAL, false));
+    assert!(watched.due(start + WATCHED_RECONCILE_INTERVAL, false));
+}
+
+#[test]
+fn watcher_ignores_churn_in_pruned_build_and_vcs_trees() {
+    let root = Path::new("/repo");
+    assert!(indexed_path(root, Path::new("/repo/src/lib.rs")));
+    assert!(indexed_path(root, Path::new("/elsewhere/x")));
+    for pruned in [
+        "/repo/target/debug/x.o",
+        "/repo/.git/index",
+        "/repo/web/node_modules/a/b.js",
+    ] {
+        assert!(!indexed_path(root, Path::new(pruned)), "{pruned}");
+    }
 }
 
 #[test]

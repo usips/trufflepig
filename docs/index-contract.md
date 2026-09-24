@@ -106,9 +106,11 @@ same JSON request and reply bodies through atomically renamed files and is serve
 from the router's idle tick. The frame protocol and its limits apply unchanged
 per hop.
 
-The daemon reconciles at startup and every 30 seconds. Watch events are hints that
-accelerate reconciliation; overflow, watch exhaustion, and missed events trigger
-recovery. Events use a 75 ms quiet period with a one-second maximum debounce; no
+The daemon reconciles at startup, then every five minutes while a watcher is
+active or every 30 seconds without one. Watch events are hints that accelerate
+reconciliation; events only inside `.git`, `target`, `node_modules`, or
+`.trufflepig` are ignored, and overflow, watch exhaustion, and missed events
+trigger recovery. Watching daemons run at nice 10 with idle I/O priority. Events use a 75 ms quiet period with a one-second maximum debounce; no
 sub-debounce visibility promise applies. The recursive watcher covers the root
 and filters cache events, while the indexing walk prunes ignored/build
 directories. Ignored trees may still consume operating-system watches.

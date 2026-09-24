@@ -20,7 +20,13 @@ use std::time::{Duration, Instant};
 use protocol::{DaemonReply, DaemonRequest};
 
 const SOCKET_NAME: &str = "daemon.sock";
+/// Periodic recovery reconcile without a watcher (polling mode).
 const RECONCILE_INTERVAL: Duration = Duration::from_secs(30);
+/// Periodic recovery reconcile while a watcher delivers change hints. Walking a
+/// large unchanged tree every 30 s kept idle daemons at a fifth of a core each.
+const WATCHED_RECONCILE_INTERVAL: Duration = Duration::from_secs(300);
+/// Build and VCS directories the index walk prunes; their churn is not a change.
+const UNINDEXED_DIRECTORIES: [&str; 4] = [".git", "target", "node_modules", ".trufflepig"];
 const DEBOUNCE: Duration = Duration::from_millis(75);
 const MAX_DEBOUNCE: Duration = Duration::from_secs(1);
 
@@ -133,14 +139,16 @@ impl Drop for DaemonSocket {
 }
 
 struct ReconcileSchedule {
+    interval: Duration,
     last_reconcile: Instant,
     first_event: Option<Instant>,
     latest_event: Option<Instant>,
 }
 
 impl ReconcileSchedule {
-    fn new(now: Instant) -> Self {
+    fn new(now: Instant, interval: Duration) -> Self {
         Self {
+            interval,
             last_reconcile: now,
             first_event: None,
             latest_event: None,
@@ -152,7 +160,7 @@ impl ReconcileSchedule {
             self.first_event.get_or_insert(now);
             self.latest_event = Some(now);
         }
-        now.duration_since(self.last_reconcile) >= RECONCILE_INTERVAL
+        now.duration_since(self.last_reconcile) >= self.interval
             || self
                 .latest_event
                 .is_some_and(|time| now.duration_since(time) >= DEBOUNCE)
@@ -168,8 +176,30 @@ impl ReconcileSchedule {
     }
 }
 
+/// Whether a watched path may affect the index: outside pruned build/VCS trees.
+fn indexed_path(root: &Path, path: &Path) -> bool {
+    path.strip_prefix(root).map_or(true, |relative| {
+        !relative.components().any(|part| {
+            UNINDEXED_DIRECTORIES
+                .iter()
+                .any(|name| part.as_os_str() == *name)
+        })
+    })
+}
+
+/// Watching (indexing) daemons yield CPU and disk to interactive work and builds.
+fn lower_priority() {
+    // SAFETY: plain syscalls on the calling process with constant arguments.
+    unsafe {
+        libc::setpriority(libc::PRIO_PROCESS, 0, 10);
+        // IOPRIO_WHO_PROCESS = 1; IOPRIO_CLASS_IDLE = 3 in the top three bits.
+        libc::syscall(libc::SYS_ioprio_set, 1, 0, 3 << 13);
+    }
+}
+
 fn watch(root: &Path, cache: &Path, dirty: Arc<AtomicBool>) -> Option<notify::RecommendedWatcher> {
     let cache = cache.to_owned();
+    let watched_root = root.to_owned();
     let watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
         let changed = match event {
             Ok(event) => {
@@ -179,7 +209,9 @@ fn watch(root: &Path, cache: &Path, dirty: Arc<AtomicBool>) -> Option<notify::Re
                 event.need_rescan()
                     || (!matches!(event.kind, EventKind::Access(_))
                         && (event.paths.is_empty()
-                            || event.paths.iter().any(|path| !path.starts_with(&cache))))
+                            || event.paths.iter().any(|path| {
+                                !path.starts_with(&cache) && indexed_path(&watched_root, path)
+                            })))
             }
             Err(error) => {
                 eprintln!("trufflepig: watcher failed; scheduling reconciliation: {error}");
@@ -242,13 +274,19 @@ fn serve_inner(
     let cache = cache.canonicalize()?;
     let socket = DaemonSocket::bind(&cache)?;
     let dirty = Arc::new(AtomicBool::new(false));
-    let _watcher = if watching {
+    let watcher = if watching {
+        lower_priority();
         watch(&root, &cache, Arc::clone(&dirty))
     } else {
         None
     };
     handler(DaemonEvent::Reconcile).context("initial repository reconciliation")?;
-    let mut schedule = ReconcileSchedule::new(Instant::now());
+    let interval = if watcher.is_some() {
+        WATCHED_RECONCILE_INTERVAL
+    } else {
+        RECONCILE_INTERVAL
+    };
+    let mut schedule = ReconcileSchedule::new(Instant::now(), interval);
     loop {
         if schedule.due(Instant::now(), dirty.swap(false, Ordering::AcqRel)) {
             // Returning drops the socket and releases `daemon.lock` for the router sweep.
