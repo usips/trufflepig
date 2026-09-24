@@ -20,44 +20,35 @@ fn emission_handles_help_version_usage_and_zero_budget() {
     let scratch = tempfile::tempdir().unwrap();
     std::fs::create_dir(scratch.path().join("root")).unwrap();
     let cache = scratch.path().join("cache");
-    for (extra, expected_code, key) in [
-        (vec!["--help", "-b", "2000"], 0, "help"),
-        (vec!["--version"], 0, "version"),
-        (vec!["--unknown-option"], 2, "error"),
-        (vec!["show"], 2, "error"),
-    ] {
+    for (extra, expected_code) in [(vec!["--unknown-option"], 2), (vec!["show"], 2)] {
         let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
         assert_eq!(
             execute(&args(&cache, &extra), &mut stdout, &mut stderr),
             expected_code
         );
         let response: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
-        assert!(response.get(key).is_some());
-        if key == "help" {
-            let help = response["help"].as_str().unwrap();
-            assert!(help.contains("Maximum serialized output budget"));
-            assert!(help.contains("Run locally without starting or using a daemon"));
-            assert!(help.contains("search TEXT"));
-            assert!(response.get("truncated").is_none());
-        }
+        assert!(response.get("error").is_some());
         assert!(stdout.ends_with(b"\n"));
     }
+    // Help is complete plain text at the default budget, including the query summary.
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     assert_eq!(
         execute(&args(&cache, &["--help"]), &mut stdout, &mut stderr),
         0
     );
-    let help: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
-    if help["truncated"] == true {
-        assert!(help["details"].as_str().unwrap().contains("-b 2000"));
-    } else {
-        assert!(
-            help["help"]
-                .as_str()
-                .unwrap()
-                .contains("Maximum serialized output budget")
-        );
-    }
+    let help = String::from_utf8(stdout).unwrap();
+    assert!(!help.starts_with('{'));
+    assert!(help.contains("Maximum serialized output budget"));
+    assert!(help.contains("Run locally without starting or using a daemon"));
+    assert!(help.contains("sym:NAME"));
+    assert!(help.contains("show HANDLE"));
+    assert!(help.ends_with('\n'));
+    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+    assert_eq!(
+        execute(&args(&cache, &["--version"]), &mut stdout, &mut stderr),
+        0
+    );
+    assert!(String::from_utf8(stdout).unwrap().starts_with("trufflepig "));
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     execute(
         &args(&cache, &["--budget", "0", "show"]),

@@ -185,7 +185,7 @@ fn filename_basename_match_ranks_before_partial_path_match() {
 fn exact_and_regex_queries_retain_same_file_occurrences() {
     let (_root, cache, store) = fixture(&[
         ("defs.rs", b"fn target() {}\nfn target() {}\n"),
-        ("matches.txt", b"target target\n"),
+        ("matches.txt", b"target target\nleading target\ntarget\n"),
     ]);
     let exact = search(
         &store,
@@ -203,21 +203,19 @@ fn exact_and_regex_queries_retain_same_file_occurrences() {
         2
     );
 
-    let regex = search(
-        &store,
-        &Query::parse("re:target").unwrap(),
-        false,
-        cache.path(),
-    )
-    .unwrap();
-    assert_eq!(
-        regex
+    // Regex hits are one per matching line, and anchors match at each line.
+    let lines = |text: &str| -> Vec<usize> {
+        search(&store, &Query::parse(text).unwrap(), false, cache.path())
+            .unwrap()
             .hits
             .iter()
             .filter(|hit| hit.path == "matches.txt")
-            .count(),
-        2
-    );
+            .map(|hit| hit.start_line)
+            .collect()
+    };
+    assert_eq!(lines("re:target"), [1, 2, 3]);
+    assert_eq!(lines("re:^target"), [1, 3]);
+    assert_eq!(lines("re:target$"), [1, 2, 3]);
 }
 
 #[test]

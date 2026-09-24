@@ -19,7 +19,8 @@ trufflepig semantic worker status
 
 Use an explicit `search` verb for all queries; unknown commands exit 2 with an
 error. No command means `status`. `sym:` selects exact, case-sensitive symbol
-occurrences; `re:` scans live bytes and returns matching occurrences. `file:` is
+occurrences; `re:` scans live bytes and returns one occurrence per matching
+line, with `^` and `$` matching at line boundaries as in grep. `file:` is
 a root-relative path-prefix filter; `lang:` and `kind:` filter recorded
 classifications. Language names are `rust`, `typescript`, `javascript`, `luau`,
 `dreammaker`, and `text`; `rs`, `ts`, `js`, `lua`, and `dm` are aliases. Docs/config use `text`.
@@ -37,7 +38,8 @@ per file before the `-n/--limit` page cap (20 files by default); the budget may
 fit fewer. Each hit includes a `file` URI, line span, and immutable handle.
 Increase the budget when a hit or source line cannot fit.
 Budget failures include a retry hint on stderr even when no JSON error fits.
-Help is also budgeted; use `--help -b 2000` for full flag descriptions.
+`--help` and `--version` print plain, unbudgeted text; help ends with a query
+and navigation summary.
 
 ## Workspace search
 

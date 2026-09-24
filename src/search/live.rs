@@ -8,7 +8,9 @@ pub(super) fn live_regex(
     coverage: &mut serde_json::Value,
     truncated: &mut bool,
 ) -> Result<()> {
+    // Line anchors match at every line, as in grep.
     let regex = regex::bytes::RegexBuilder::new(&query.text)
+        .multi_line(true)
         .size_limit(8 * 1024 * 1024)
         .build()?;
     let mut failures = 0usize;
@@ -66,7 +68,13 @@ pub(super) fn live_regex(
         } else {
             None
         };
+        // One hit per matching line: later matches on the same line add nothing.
+        let mut previous_line = None;
         for matched in regex.find_iter(&source) {
+            let (start_line, end_line) = source::line_span(&source, matched.start(), matched.end());
+            if previous_line == Some(start_line) {
+                continue;
+            }
             let definition = extraction.as_ref().and_then(|e| {
                 e.definitions
                     .iter()
@@ -84,7 +92,7 @@ pub(super) fn live_regex(
                 *truncated = true;
                 break;
             }
-            let (start_line, end_line) = source::line_span(&source, matched.start(), matched.end());
+            previous_line = Some(start_line);
             hits.push(Hit {
                 handle: String::new(),
                 path: path.clone(),

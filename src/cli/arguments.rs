@@ -7,6 +7,24 @@ use std::path::{Path, PathBuf};
 /// Largest serialized response budget in `o200k_base` tokens.
 pub const MAX_BUDGET: usize = 1_000_000;
 
+/// Query and navigation summary printed after the option list by `--help`.
+const QUERY_HELP: &str = "\
+Queries (search TEXT):
+  words            identifier, lexical, and filename evidence (semantic when enabled)
+  sym:NAME         exact, case-sensitive definition
+  re:REGEX         regex over current file bytes
+  file:PREFIX      path prefix (not a glob)
+  lang:L           rust, ts, js, luau, dm, text
+  kind:K           function, struct, file, ...
+  ws:home|ws:all   workspace scope; in:MEMBER selects one member
+
+Navigation:
+  show HANDLE | show path:FILE:START-END   numbered, verified source
+  ctx HANDLE      relationships around a hit
+  refs NAME       occurrences and resolved targets
+  map PREFIX      module and type outline
+  more CURSOR     next page of a search";
+
 const KNOWN_COMMANDS: &[&str] = &[
     "search",
     "show",
@@ -42,7 +60,8 @@ const KNOWN_COMMANDS: &[&str] = &[
 #[derive(Parser, Debug, Clone)]
 #[command(
     version,
-    about = "Repository source search with immutable handles and verified reads"
+    about = "Repository source search with immutable handles and verified reads",
+    after_help = QUERY_HELP
 )]
 /// Parsed command-line options for local and daemon-routed requests.
 pub struct Arguments {
