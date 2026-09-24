@@ -263,6 +263,17 @@ fn rerank_gate_excludes_exact_and_regex_queries() {
 }
 
 #[test]
+fn exact_search_lists_declarations_before_imports_of_the_name() {
+    let (_root, cache, store) = fixture(&[
+        ("a.rs", b"use crate::z::Coord;\nfn f(_: Coord) {}\n"),
+        ("z.rs", b"pub struct Coord;\n"),
+    ]);
+    let set = search(&store, &Query::parse("sym:Coord").unwrap(), false, cache.path()).unwrap();
+    assert_eq!(set.hits[0].path, "z.rs", "{:?}", set.hits);
+    assert_eq!(set.hits[0].kind, "struct");
+}
+
+#[test]
 fn show_symbol_reads_the_best_declaration_and_lists_the_rest() {
     let (_root, _cache, store) = fixture(&[
         ("a.rs", b"mod refill {}\nfn caller(refill: u8) {}\n"),

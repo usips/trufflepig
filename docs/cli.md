@@ -19,7 +19,7 @@ trufflepig semantic worker status
 
 Use an explicit `search` verb for all queries; unknown commands exit 2 with an
 error. No command means `status`. `sym:` selects exact, case-sensitive symbol
-occurrences; `re:` scans live bytes and returns one occurrence per matching
+occurrences, declarations before modules, members, locals, and imports; `re:` scans live bytes and returns one occurrence per matching
 line, with `^` and `$` matching at line boundaries as in grep. `file:` is
 a root-relative path-prefix filter; `lang:` and `kind:` filter recorded
 classifications. Language names are `rust`, `typescript`, `javascript`, `luau`,

@@ -291,6 +291,10 @@ pub fn search_prepared(
         } else {
             truncated |= exact.truncated;
             hits = exact.hits;
+            if query.exact {
+                // `sym:` pages lead with declarations, not imports that share the name.
+                hits.sort_by_key(|hit| declaration_rank(&hit.kind));
+            }
         }
     }
     if !query.exact
