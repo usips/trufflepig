@@ -14,7 +14,7 @@ import sys
 PLUGIN = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PLUGIN / "bin"))
 from trufflepig_runtime import runtime_config_path
-from claude_install import claude_home, prepare_settings, write_settings
+from claude_install import claude_home, plugin_enabled, prepare_settings, write_settings
 
 
 def check_link(source: Path, destination: Path) -> None:
@@ -46,7 +46,7 @@ def service_text(binary: str, spool: Path | None) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bin", type=Path, default=Path.home() / ".local/bin")
-    for flag in ("codex", "claude", "grok", "kimi", "muse", "kimi-hooks", "systemd"):
+    for flag in ("codex", "claude", "grok", "kimi", "muse", "kimi-hooks", "systemd", "commands"):
         parser.add_argument(f"--{flag}", action="store_true")
     parser.add_argument("--project", type=Path, action="append", default=[])
     parser.add_argument("--runtime-dir", type=Path, help="disk-backed, sandbox-writable agent runtime")
@@ -54,7 +54,8 @@ def main() -> int:
                         help="search steering mode recorded for the selected harnesses")
     parser.add_argument("--check", type=Path, metavar="ROOT", help="search and read a file through the installed wrapper")
     args = parser.parse_args()
-    if not any((args.codex, args.claude, args.grok, args.kimi, args.muse, args.kimi_hooks, args.systemd, args.project, args.check)):
+    if not any((args.codex, args.claude, args.grok, args.kimi, args.muse, args.kimi_hooks, args.systemd,
+                args.commands, args.project, args.check)):
         args.kimi = args.muse = True
     if args.runtime_dir and not (args.codex or args.claude or args.grok):
         parser.error("--runtime-dir requires --codex, --claude, or --grok")
@@ -75,7 +76,9 @@ def main() -> int:
     if args.grok:
         grok_home = Path(os.environ.get("GROK_HOME") or Path.home() / ".grok").expanduser().absolute()
         links.append((skill, grok_home / "skills/trufflepig-code-search"))
-    if args.claude:
+    # An enabled Claude plugin already provides the skill and hooks.
+    claude_plugin = args.claude and plugin_enabled(claude_home() / "settings.json")
+    if args.claude and not claude_plugin:
         links.append((skill, claude_home() / "skills/trufflepig-code-search"))
         links.append((PLUGIN / "hooks/claude-session.py", args.bin / "trufflepig-claude-session"))
     links.extend((skill, root.absolute() / ".agents/skills/trufflepig-code-search") for root in args.project)
@@ -104,8 +107,10 @@ def main() -> int:
 
     if args.claude:
         claude_settings_path = claude_home() / "settings.json"
-        claude_settings = prepare_settings(claude_settings_path, args.bin / "trufflepig-claude-session",
-                                           runtime, args.bin / "trufflepig-agent-steer")
+        claude_settings = prepare_settings(
+            claude_settings_path,
+            None if claude_plugin else args.bin / "trufflepig-claude-session",
+            runtime, None if claude_plugin else args.bin / "trufflepig-agent-steer")
     for source, destination in links:
         link(source, destination)
     if args.codex or args.claude or args.grok:
@@ -120,7 +125,8 @@ def main() -> int:
         print(f"search steering {args.steer}: {', '.join(steer_harnesses)}")
     if args.claude:
         write_settings(claude_settings_path, claude_settings)
-        print(f"Claude session and search-steering hooks, wrapper permission, runtime access: "
+        owner = "plugin trufflepig-agent (enabled)" if claude_plugin else "settings"
+        print(f"Claude skill and hooks via {owner}; wrapper permission and runtime access: "
               f"{claude_settings_path}")
     if not binary:
         print("warning: trufflepig missing from PATH; cargo install --path . --locked", file=sys.stderr)

@@ -73,6 +73,29 @@ class ClaudeIntegrationTests(unittest.TestCase):
                                 env=self.env, text=True, capture_output=True)
         self.assertEqual(result.returncode, 2)
 
+    def test_enabled_plugin_owns_skill_and_hooks(self):
+        config = self.root / ".claude"
+        config.mkdir()
+        (config / "settings.json").write_text(json.dumps({"enabledPlugins": {"trufflepig-agent@trufflepig": True}}))
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        settings = json.loads((config / "settings.json").read_text())
+        self.assertEqual(settings["hooks"], {})
+        self.assertEqual(settings["permissions"]["allow"], ["Bash(trufflepig-agent *)"])
+        self.assertFalse((config / "skills/trufflepig-code-search").exists())
+        self.assertTrue((self.root / ".local/bin/trufflepig-agent").is_symlink())
+
+    def test_plugin_hooks_run_executable_hook_scripts(self):
+        manifest = json.loads((PLUGIN / "hooks/hooks.json").read_text())
+        commands = [hook["command"] for groups in manifest["hooks"].values()
+                    for group in groups for hook in group["hooks"]]
+        self.assertEqual(len(commands), 3)
+        for command in commands:
+            script = shlex.split(command.replace("${CLAUDE_PLUGIN_ROOT}", str(PLUGIN)))[0]
+            self.assertTrue(os.access(script, os.X_OK), script)
+        plugin = json.loads((PLUGIN / ".claude-plugin/plugin.json").read_text())
+        self.assertEqual(plugin["name"], "trufflepig-agent")
+
     def test_invalid_settings_fail_before_installing_files(self):
         config = self.root / ".claude"
         config.mkdir()

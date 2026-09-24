@@ -1,0 +1,15 @@
+{
+  "name": "trufflepig",
+  "description": "Trufflepig local code search integrations for Claude Code.",
+  "owner": {
+    "name": "Joshua Moon",
+    "email": "jcmoon@pm.me"
+  },
+  "plugins": [
+    {
+      "name": "trufflepig-agent",
+      "source": "./plugins/trufflepig-agent",
+      "description": "Trufflepig code search skill with session guidance and Bash search steering."
+    }
+  ]
+}

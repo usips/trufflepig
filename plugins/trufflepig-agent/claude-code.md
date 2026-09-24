@@ -6,6 +6,21 @@
 plugins/trufflepig-agent/install.sh --claude --check "$PWD"
 ```
 
+Alternatively, install the Claude plugin from this repository's marketplace
+(`.claude-plugin/marketplace.json`); it carries the skill and the hooks in
+`hooks/hooks.json`, run from `${CLAUDE_PLUGIN_ROOT}`:
+
+```sh
+claude plugin marketplace add ~/Source/trufflepig
+claude plugin install trufflepig-agent@trufflepig
+plugins/trufflepig-agent/install.sh --commands --claude   # wrapper commands, permission
+```
+
+With the plugin enabled, `install.sh --claude` links neither the personal skill
+nor the hooks, so nothing runs twice; it still adds the wrapper permission and
+runtime access. `claude --plugin-dir plugins/trufflepig-agent` loads a checkout
+for a single session. `claude plugin validate --strict` checks both manifests.
+
 `--claude` installs the shared skill at
 `$CLAUDE_CONFIG_DIR/skills/trufflepig-code-search`, defaulting to
 `~/.claude/skills/trufflepig-code-search`. Claude follows the symlink to this

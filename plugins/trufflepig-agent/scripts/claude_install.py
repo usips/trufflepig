@@ -15,6 +15,19 @@ def claude_home() -> Path:
 
 
 PERMISSION = "Bash(trufflepig-agent *)"
+PLUGIN_PREFIX = "trufflepig-agent@"
+
+
+def plugin_enabled(path: Path) -> bool:
+    """Whether Claude settings enable the trufflepig-agent plugin, which then owns
+    the skill and hooks; the installer must not register them a second time."""
+    try:
+        settings = json.loads(path.read_text()) if path.exists() else {}
+    except ValueError:
+        return False
+    enabled = settings.get("enabledPlugins") if isinstance(settings, dict) else None
+    return isinstance(enabled, dict) and any(
+        name.startswith(PLUGIN_PREFIX) and value for name, value in enabled.items())
 
 
 def merge_command(hooks: dict, event: str, matcher: str | None, command: str, timeout: int) -> None:
@@ -31,9 +44,9 @@ def merge_command(hooks: dict, event: str, matcher: str | None, command: str, ti
         groups.append(group)
 
 
-def prepare_settings(path: Path, hook: Path, runtime: Path, steer: Path | None = None) -> dict:
-    """Merge session attribution, optional Bash search steering, the wrapper's Bash
-    permission, and runtime write access into Claude user settings."""
+def prepare_settings(path: Path, hook: Path | None, runtime: Path, steer: Path | None = None) -> dict:
+    """Merge session attribution (unless `hook` is None), optional Bash search steering,
+    the wrapper's Bash permission, and runtime write access into Claude user settings."""
     settings = json.loads(path.read_text()) if path.exists() else {}
     if not isinstance(settings, dict):
         raise ValueError(f"expected a settings object in {path}")
@@ -43,7 +56,8 @@ def prepare_settings(path: Path, hook: Path, runtime: Path, steer: Path | None =
     hooks = settings.setdefault("hooks", {})
     if not isinstance(hooks, dict):
         raise ValueError("Claude hooks must be an object")
-    merge_command(hooks, "SessionStart", None, shlex.quote(str(hook.absolute())), 5)
+    if hook is not None:
+        merge_command(hooks, "SessionStart", None, shlex.quote(str(hook.absolute())), 5)
     if steer is not None:
         command = f"{shlex.quote(str(steer.absolute()))} claude"
         merge_command(hooks, "PreToolUse", "Bash", command, 5)

@@ -1,0 +1,10 @@
+{
+  "name": "trufflepig-agent",
+  "version": "0.1.0",
+  "description": "Trufflepig code search for Claude Code: the search skill, search guidance at session start in indexed checkouts, and Bash hooks that steer grep/rg/find toward trufflepig-agent.",
+  "author": {
+    "name": "Joshua Moon",
+    "email": "jcmoon@pm.me"
+  },
+  "keywords": ["search", "code-navigation", "grep"]
+}

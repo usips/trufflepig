@@ -22,7 +22,7 @@ plugins/trufflepig-agent/install.sh --kimi --muse --kimi-hooks --systemd
 
 `--claude` installs the personal skill, session hook, Bash search-steering hooks,
 a `Bash(trufflepig-agent *)` permission, and narrow sandbox runtime access while
-preserving existing settings. See [Claude integration](claude.md)
+preserving existing settings. See [Claude integration](claude-code.md)
 for discovery, session lifecycle, permissions, verification, and removal.
 
 `--grok` installs the shared skill into `$GROK_HOME/skills` (default
@@ -114,7 +114,7 @@ diagnostics unless explicitly supplied. Codex markers identify the harness;
 `CODEX_SESSION_ID` as a fallback. Explicit CLI `--client`/`--session` win over
 `TRUFFLEPIG_AGENT_HARNESS`/`TRUFFLEPIG_SESSION`, which win over detection.
 Claude attribution uses its session environment hook as described in
-[Claude integration](claude.md). Kimi/Muse retain their own session variables and session-start markers; a marker
+[Claude integration](claude-code.md). Kimi/Muse retain their own session variables and session-start markers; a marker
 older than twelve hours is ignored. Without session information, attribution
 falls back to a harness/directory/day identifier.
 
