@@ -11,7 +11,7 @@ use rusqlite::OptionalExtension;
 mod arguments;
 pub(crate) use arguments::normalized_args;
 use arguments::validate;
-pub use arguments::{Arguments, MAX_BUDGET, parse};
+pub use arguments::{Arguments, MAX_BUDGET, SHOW_BUDGET, parse};
 #[cfg(test)]
 mod emission_tests;
 #[cfg(test)]

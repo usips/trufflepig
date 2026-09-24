@@ -174,7 +174,20 @@ pub fn parse(args: &[String]) -> Result<Arguments> {
     options.explicit_budget = args.iter().any(|arg| {
         arg == "--budget" || arg.starts_with("--budget=") || arg == "-b" || arg.starts_with("-b")
     });
+    if !options.explicit_budget && options.is_show() {
+        options.budget = SHOW_BUDGET;
+    }
     Ok(options)
+}
+
+/// Default `show` budget: enough for a typical definition body in one read.
+pub const SHOW_BUDGET: usize = 1_500;
+
+impl Arguments {
+    /// Whether the command reads source, which defaults to `SHOW_BUDGET`.
+    pub fn is_show(&self) -> bool {
+        self.words.first().map(String::as_str) == Some("show")
+    }
 }
 
 pub(super) fn validate(options: &Arguments) -> Result<()> {

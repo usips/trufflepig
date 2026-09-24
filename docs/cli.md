@@ -29,9 +29,11 @@ format. `--format lines` renders `search`, `refs`, `map`, `more`, and `show` as
 tab-separated lines for agents that read output directly: one
 `HANDLE<TAB>[MEMBER/]PATH:START-END[<TAB>NAME]` line per hit, each followed by
 an indented `  LINE: TEXT` snippet, then a one-line `coverage:` summary, then `next: CURSOR` and `truncated: true` when present;
-`show` prints a `PATH [(MEMBER)] REVISION START-END` header, `LINE<TAB>text`
-rows, and a `verified:` footer that flags `encoding: byte-escaped` once. Errors
-and every other verb stay JSON. `-b/--budget` defaults to 600 `o200k_base`
+`show` prints a `PATH [(MEMBER)] lines FIRST-LAST` header, `LINE<TAB>text`
+rows, and a `verified:` footer (`verified: current file` for explicit path reads,
+which JSON marks `"source": "current_file"`) that flags `encoding: byte-escaped`
+once. Errors and every other verb stay JSON. `show` defaults to a 1500-token
+budget, never below a workspace's `[output].budget`; `-b/--budget` otherwise defaults to 600 `o200k_base`
 tokens for the serialized stdout response, measured on the rendered text of the
 selected format, or to the workspace's `[output].budget` when one is set. Search ranks files first and emits one compact representative
 per file before the `-n/--limit` page cap (20 files by default); the budget may

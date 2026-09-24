@@ -1,5 +1,5 @@
-//! `lines` rendering of a `show` response: a one-line locator header, then
-//! `LINE<TAB>text` rows, then the footer. Row text is the JSON `text` field,
+//! `lines` rendering of a `show` response: a `PATH [(MEMBER)] lines FIRST-LAST`
+//! header, then `LINE<TAB>text` rows, then the footer. Row text is the JSON `text` field,
 //! so byte-escaped lines keep their `\xNN` escapes and are flagged once.
 
 use crate::output::lines::footer;
@@ -13,13 +13,13 @@ pub(crate) fn show_text(value: &Value) -> String {
     if let Some(member) = value["member"].as_str() {
         let _ = write!(out, " ({member})");
     }
-    let _ = writeln!(
-        out,
-        " {} {}-{}",
-        value["revision"].as_str().unwrap_or_default(),
-        value["start"].as_u64().unwrap_or(0),
-        value["end"].as_u64().unwrap_or(0)
-    );
+    let line = |row: Option<&Value>| row.and_then(|row| row["line"].as_u64());
+    match (line(rows.first()), line(rows.last())) {
+        (Some(first), Some(last)) => {
+            let _ = writeln!(out, " lines {first}-{last}");
+        }
+        _ => out.push_str(" (empty)\n"),
+    }
     let mut byte_escaped = false;
     for row in rows {
         let escaped = row["encoding"].as_str() == Some("byte-escaped");
@@ -37,8 +37,12 @@ pub(crate) fn show_text(value: &Value) -> String {
         value["truncated"].as_bool().unwrap_or(false),
         &mut out,
     );
-    if let Some(verified) = value["verified"].as_bool() {
-        let _ = writeln!(out, "verified: {verified}");
+    match (value["verified"].as_bool(), value["source"].as_str()) {
+        (Some(false), Some("current_file")) => out.push_str("verified: current file\n"),
+        (Some(verified), _) => {
+            let _ = writeln!(out, "verified: {verified}");
+        }
+        _ => {}
     }
     if byte_escaped {
         out.push_str("encoding: byte-escaped\n");
@@ -61,7 +65,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn show_text_strips_offsets_and_flags_byte_escaped_once() {
+    fn show_text_prints_line_range_and_flags_byte_escaped_once() {
         let value = json!({
             "path": "src/a.rs", "member": "lunatic", "revision": "r1",
             "start": 0, "end": 14, "verified": true, "truncated": true,
@@ -73,7 +77,7 @@ mod tests {
         });
         assert_eq!(
             show_text(&value),
-            "src/a.rs (lunatic) r1 0-14\n1\tfn a()\n2\t\\xff ok\nnext: read:abc:1@14\ntruncated: true\nverified: true\nencoding: byte-escaped\n"
+            "src/a.rs (lunatic) lines 1-2\n1\tfn a()\n2\t\\xff ok\nnext: read:abc:1@14\ntruncated: true\nverified: true\nencoding: byte-escaped\n"
         );
     }
 
@@ -83,6 +87,12 @@ mod tests {
             "path": "b.txt", "revision": "r2", "start": 3, "end": 3, "verified": false,
             "truncated": false, "next": null, "lines": []
         });
-        assert_eq!(show_text(&value), "b.txt r2 3-3\nverified: false\n");
+        assert_eq!(show_text(&value), "b.txt (empty)\nverified: false\n");
+        let current = json!({"path": "c.rs", "verified": false, "source": "current_file",
+                             "lines": [{"line": 4, "text": "x\n", "encoding": "utf8"}]});
+        assert_eq!(
+            show_text(&current),
+            "c.rs lines 4-4\n4\tx\nverified: current file\n"
+        );
     }
 }

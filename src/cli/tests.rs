@@ -219,6 +219,11 @@ fn explicit_budget_is_recorded_only_when_passed() {
     let joined = parse(&["-b900".into(), "search".into(), "query".into()]).unwrap();
     assert!(joined.explicit_budget);
     assert_eq!(joined.budget, 900);
+    // Source reads default to a larger budget unless one is given.
+    let show = parse(&["show".into(), "path:a.rs".into()]).unwrap();
+    assert_eq!(show.budget, super::SHOW_BUDGET);
+    let small = parse(&["-b".into(), "300".into(), "show".into(), "x".into()]).unwrap();
+    assert_eq!(small.budget, 300);
 }
 
 #[test]

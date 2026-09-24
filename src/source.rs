@@ -161,6 +161,10 @@ pub(crate) fn render_owned(
         if let Some(identity) = &historical {
             value["historical"] = serde_json::to_value(identity)?;
         }
+        if !verified && historical.is_none() {
+            // An explicit path read returns the current file, not an indexed revision.
+            value["source"] = "current_file".into();
+        }
         if let Some((total, also)) = &definitions {
             value["definitions"] = (*total).into();
             value["also"] = also.clone().into();

@@ -24,7 +24,12 @@ pub(crate) fn apply_config(config: &WorkspaceConfig, options: &Arguments) -> Res
     if !options.explicit_budget
         && let Some(budget) = config.output.budget
     {
-        options.budget = budget;
+        // A workspace page budget never shrinks the larger default source read.
+        options.budget = if options.is_show() {
+            budget.max(crate::cli::SHOW_BUDGET)
+        } else {
+            budget
+        };
     }
     options.root = options.root.canonicalize()?;
     options.workspace = Some(config.path.clone());
