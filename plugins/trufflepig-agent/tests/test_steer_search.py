@@ -17,8 +17,8 @@ import trufflepig_classify as classifier  # noqa: E402
 # Drawn from real agent transcripts; `None` means the hook must stay silent.
 CASES = [
     ('grep -rn "fn content_policy_required" crates/', "definition", "sym:content_policy_required file:crates/"),
-    ('grep -n "pub struct SiteVerifyResponse" -B3 -A25 src/handlers.rs', "body", "sym:SiteVerifyResponse file:src/handlers.rs"),
-    ('grep -n "fn route_table" -B3 -A12 src/http.rs', "body", "show HANDLE"),
+    ('grep -n "pub struct SiteVerifyResponse" -B3 -A25 src/handlers.rs', "body", "show 'sym:SiteVerifyResponse file:src/handlers.rs'"),
+    ('grep -n "fn route_table" -B3 -A12 src/http.rs', "body", "trufflepig-agent show 'sym:route_table"),
     ('grep -rn "pub fn roster\\|pub(crate) fn roster" ledger/streams/', "definition", "sym:roster"),
     ("grep -rn 'fn step' crates/ 2>&1 | head -40", "definition", "sym:step"),
     ('git grep -n "write_integrity_atomic"', "references", "refs write_integrity_atomic"),
@@ -227,7 +227,7 @@ class HookTests(unittest.TestCase):
                                 env=dict(self.env, CLAUDE_ENV_FILE=str(env_file)), capture_output=True, text=True)
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
         self.assertIn("lunatic", context)
-        self.assertIn("trufflepig-agent search 'sym:Name'", context)
+        self.assertIn("trufflepig-agent show 'sym:Name'", context)
         payload["cwd"] = self.scratch.name
         result = subprocess.run([sys.executable, str(PLUGIN / "hooks/claude-session.py")], input=json.dumps(payload),
                                 env=dict(self.env, CLAUDE_ENV_FILE=str(env_file)), capture_output=True, text=True)

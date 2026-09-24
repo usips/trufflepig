@@ -174,8 +174,12 @@ def classify_grep(call: GrepCall, cwd: Path, checkout: Path, piped: bool) -> Sea
         else:
             hint = f"trufflepig-agent search {quote(regex_query)}"
         if call.after >= 5:
-            return Search("body", call.program, pattern,
-                          f"{hint}, then `trufflepig-agent show HANDLE` for the whole definition body", paths)
+            if structured:
+                # One call returns the verified definition body.
+                hint = f"trufflepig-agent show {quote(query)}"
+            else:
+                hint += ", then `trufflepig-agent show HANDLE` for the surrounding lines"
+            return Search("body", call.program, pattern, hint, paths)
         return Search("definition", call.program, pattern, hint, paths)
     only_files = bool(single_files) and len(single_files) == len(prefixes)
     if not literal and only_files and structured and all(is_structural(a) for a in alternatives):

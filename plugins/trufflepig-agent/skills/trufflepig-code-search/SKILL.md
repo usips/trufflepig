@@ -14,13 +14,15 @@ ordinary search tools remain available for a specific unsupported need or failur
 | Instead of | Run |
 | --- | --- |
 | `grep -rn "fn refill"` / `"struct TokenBucket"` | `trufflepig-agent search 'sym:refill'` |
-| `grep -n "fn refill" -A30 FILE` | `search 'sym:refill'`, then `show HANDLE` |
+| `grep -n "fn refill" -A30 FILE` (a body) | `trufflepig-agent show 'sym:refill'` |
 | `grep -rn refill_tokens` (uses of an identifier) | `trufflepig-agent refs refill_tokens` |
-| `grep -n "pub fn\|struct" FILE` (outline) | `trufflepig-agent map FILE` |
+| `grep -n "pub fn\|struct" FILE` (outline) | `trufflepig-agent map FILE` (lists functions too) |
 | `grep -rn 'Bucket::new(' src/` | `trufflepig-agent search 're:Bucket::new\( file:src/'` |
 | `find src -name '*bucket*'` | `trufflepig-agent search 'bucket kind:file'` |
 
-Run each `trufflepig-agent` command as its own shell call, without `; echo`,
+Each hit line is followed by an indented `  LINE: TEXT` snippet of its best
+matching line, so a search answers what `grep -n` would. Run each
+`trufflepig-agent` command as its own shell call, without `; echo`,
 `&&` chains, or pipes: its exit status and footer are the result. Symbols,
 bodies, references, and outlines cover Rust, TypeScript, JavaScript, Luau, and
 DreamMaker; other files are searchable as text with `re:` and plain queries.
@@ -31,6 +33,7 @@ DreamMaker; other files are searchable as text with `re:` and plain queries.
 | --- | --- |
 | Concept or implementation | `trufflepig-agent search 'token refill'` |
 | Exact, case-sensitive definition | `trufflepig-agent search 'sym:TokenBucket'` |
+| A definition's full body | `trufflepig-agent show 'sym:TokenBucket file:src/'` |
 | Text/regex in current bytes | `trufflepig-agent search 're:refill.*tokens'` |
 | Files under a prefix | `trufflepig-agent search 'file:src/auth/'` |
 | Symbol occurrences and targets | `trufflepig-agent --json refs refill_tokens` |
@@ -46,8 +49,9 @@ A ranked match alone does not establish a dependency or prove relevance.
 
 Combine `file:`, `lang:rust|ts|js|luau|dm|text`, and `kind:function|struct|file|...`
 filters. `file:` is a prefix, not a glob. Docs and configuration use `text`.
-Workspace search defaults to all members: add `ws:home` for the current checkout
-or `in:MEMBER` for a named dependency; widen only when the task crosses projects.
+Workspace search covers the current checkout (home member) first and widens to
+all members only when home has no hits; the coverage line's `scope` says which.
+Use `ws:all` to search every member or `in:MEMBER` for a named dependency.
 Outside a workspace, run from the project root so a subdirectory does not become
 an accidental separate index. Retain that scope for follow-up calls.
 
@@ -76,16 +80,20 @@ Stop expanding when the source needed for the task is verified.
 ## Read bounded responses
 
 Search, refs, map, and more return `HANDLE<TAB>[MEMBER/]PATH:START-END`, with a
-name for symbol results, followed by coverage and any `next:`/`truncated:` lines.
+name for symbol results and an indented snippet line, followed by coverage and
+any `next:`/`truncated:` lines. Snippets locate evidence; `show` verifies it.
 Read these directly; do not discard the footer with `head` or another pipeline.
 Use `--json` when relationship fields or machine-readable coverage are needed.
 
-- `show` returns numbered source, revision, and `verified:`. Cite path and line.
+- `show` returns a `PATH lines A-B` header, numbered source, and `verified:`
+  (`current file` for explicit path reads). Cite path and line.
 - Follow search pagination with `more CURSOR`; follow a show continuation with
   `show CURSOR`. Pass the returned value unchanged.
 - Partial coverage or candidate truncation prevents a claim of exhaustive absence.
-  Semantic/rerank unavailability does not itself invalidate lexical results.
-- Keep the configured token budget (600 by default, workspace override when set).
+  `partial (N unsearched)` names files a search could not read. Semantic/rerank
+  unavailability does not itself invalidate lexical results.
+- Keep the configured token budget (600 by default, workspace override when set;
+  `show` defaults to 1500).
   A short page with `next:` is budget-limited, not necessarily the last match.
   Page deliberately or use `--budget 3000` when required evidence cannot fit.
 - A budget error permits one larger-budget retry. `stale_result`, `stale_source`,

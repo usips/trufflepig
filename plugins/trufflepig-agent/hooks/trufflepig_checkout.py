@@ -120,10 +120,11 @@ def session_context(found: IndexedRoot) -> str:
     return (
         f"This checkout ({found.member}, trufflepig workspace `{found.workspace}`) is indexed by "
         "trufflepig. For code search use `trufflepig-agent` via Bash instead of grep/rg/find:\n"
-        "- definition: `trufflepig-agent search 'sym:Name'`, then `trufflepig-agent show HANDLE` for its body\n"
+        "- definition body in one call: `trufflepig-agent show 'sym:Name'`; locations: `search 'sym:Name'`\n"
         "- references: `trufflepig-agent refs name`; regex: `trufflepig-agent search 're:a|b lang:rust'`\n"
-        "- file outline: `trufflepig-agent map path/to/file.rs`; files: `trufflepig-agent search 'file:src/net/'`\n"
+        "- file outline with functions: `trufflepig-agent map path/to/file.rs`; files: `search 'name kind:file'`\n"
         "- concepts: `trufflepig-agent search 'few discriminating words'`\n"
+        "Hits show a matching line; searches cover this checkout first and widen when it has no hits. "
         "Run it as its own Bash call (no `; echo`, no `| head`) so its exit code and footer are authoritative. "
         "grep is still right for logs, command output, and files outside this checkout. "
         "When briefing subagents, tell them to search with trufflepig-agent, not grep."
