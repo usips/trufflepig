@@ -28,7 +28,8 @@ def config_dir() -> Path:
 
 
 def cwd_key(cwd: str) -> str:
-    return hashlib.blake2s(cwd.encode(), digest_size=6).hexdigest()
+    # Key contract: cwd_key() in bin/trufflepig-agent, whose agent-recent files this reads.
+    return hashlib.sha256(cwd.encode()).hexdigest()[:12]
 
 
 def load_toml(path: Path) -> dict:

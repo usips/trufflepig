@@ -17,7 +17,7 @@ class ClaudeIntegrationTests(unittest.TestCase):
         self.addCleanup(self.scratch.cleanup)
         self.root = Path(self.scratch.name)
         self.env = {k: v for k, v in os.environ.items()
-                    if not k.startswith(("TRUFFLEPIG", "CLAUDE", "CODEX", "KIMI", "MUSE"))}
+                    if not k.startswith(("TRUFFLEPIG", "CLAUDE", "CODEX", "KIMI", "MUSE", "OMP", "PI_"))}
         self.env.update(HOME=str(self.root), XDG_CONFIG_HOME=str(self.root / "config"),
                         XDG_STATE_HOME=str(self.root / "state"), TMPDIR=str(self.root))
 
@@ -62,6 +62,9 @@ class ClaudeIntegrationTests(unittest.TestCase):
         self.assertEqual((config / "skills/trufflepig-code-search").resolve(),
                          PLUGIN / "skills/trufflepig-code-search")
         self.assertFalse((self.root / ".agents/skills").exists())
+        # The SessionStart hook command must resolve to an installed executable.
+        hook = self.root / ".local/bin/trufflepig-claude-session"
+        self.assertEqual(hook.resolve(), PLUGIN / "hooks/claude-session.py")
 
     def test_steer_mode_is_recorded_per_harness(self):
         result = subprocess.run([str(PLUGIN / "install.sh"), "--claude", "--steer", "strict"],

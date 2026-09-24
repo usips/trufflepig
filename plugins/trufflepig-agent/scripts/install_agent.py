@@ -14,6 +14,7 @@ import sys
 PLUGIN = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PLUGIN / "bin"))
 from trufflepig_runtime import runtime_config_path
+from omp_install import omp_agent_dir
 from claude_install import claude_home, plugin_enabled, prepare_settings, write_settings
 
 
@@ -46,17 +47,20 @@ def service_text(binary: str, spool: Path | None) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bin", type=Path, default=Path.home() / ".local/bin")
-    for flag in ("codex", "claude", "grok", "kimi", "muse", "kimi-hooks", "systemd", "commands"):
+    for flag in ("codex", "claude", "grok", "kimi", "muse", "kimi-hooks", "omp", "systemd", "commands"):
         parser.add_argument(f"--{flag}", action="store_true")
+    parser.add_argument("--omp-agent-dir", type=Path, help="explicit omp agent directory")
     parser.add_argument("--project", type=Path, action="append", default=[])
     parser.add_argument("--runtime-dir", type=Path, help="disk-backed, sandbox-writable agent runtime")
     parser.add_argument("--steer", choices=("off", "nudge", "block", "strict"),
                         help="search steering mode recorded for the selected harnesses")
     parser.add_argument("--check", type=Path, metavar="ROOT", help="search and read a file through the installed wrapper")
     args = parser.parse_args()
-    if not any((args.codex, args.claude, args.grok, args.kimi, args.muse, args.kimi_hooks, args.systemd,
+    if not any((args.codex, args.claude, args.grok, args.kimi, args.muse, args.kimi_hooks, args.omp, args.systemd,
                 args.commands, args.project, args.check)):
         args.kimi = args.muse = True
+    if args.omp_agent_dir and not args.omp:
+        parser.error("--omp-agent-dir requires --omp")
     if args.runtime_dir and not (args.codex or args.claude or args.grok):
         parser.error("--runtime-dir requires --codex, --claude, or --grok")
     steer_harnesses = [name for name in ("claude", "kimi", "muse") if getattr(args, name)]
@@ -81,6 +85,10 @@ def main() -> int:
     if args.claude and not claude_plugin:
         links.append((skill, claude_home() / "skills/trufflepig-code-search"))
         links.append((PLUGIN / "hooks/claude-session.py", args.bin / "trufflepig-claude-session"))
+    if args.omp:
+        agent_dir = omp_agent_dir(args.omp_agent_dir)
+        links.append((skill, agent_dir / "skills/trufflepig-code-search"))
+        links.append((PLUGIN / "omp/session.ts", agent_dir / "extensions/trufflepig-session.ts"))
     links.extend((skill, root.absolute() / ".agents/skills/trufflepig-code-search") for root in args.project)
     for source, destination in links:
         check_link(source, destination)

@@ -11,7 +11,8 @@ payload="$(cat)"
 session="$(printf '%s' "$payload" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("session_id") or d.get("sessionId") or "")' 2>/dev/null || true)"
 cwd="$(printf '%s' "$payload" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("cwd") or "")' 2>/dev/null || true)"
 [ -n "$cwd" ] || cwd="$PWD"
-key="$(printf '%s' "$cwd" | python3 -c 'import hashlib,sys; print(hashlib.blake2s(sys.stdin.read().encode(), digest_size=6).hexdigest())')"
+# Key contract: cwd_key() in bin/trufflepig-agent.
+key="$(printf '%s' "$cwd" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.read().encode()).hexdigest()[:12])')"
 mkdir -p "$state"
 if [ "$phase" = "end" ]; then
     rm -f "$state/$key"

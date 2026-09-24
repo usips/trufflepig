@@ -42,6 +42,10 @@ def detect_harness() -> str:
         return explicit
     if os.environ.get("GROK_SESSION_ID"):
         return "grok"
+    # omp's shell tool exports CLAUDECODE=1 alongside OMPCODE=1, so omp must be
+    # tested before Claude or every omp call would be attributed to Claude.
+    if os.environ.get("OMPCODE") == "1":
+        return "omp"
     if os.environ.get("CLAUDECODE") == "1" or os.environ.get("CLAUDE_CODE_CHILD_SESSION") == "1":
         return "claude"
     if any(os.environ.get(key) for key in ("CODEX_THREAD_ID", "CODEX_SESSION_ID", "CODEX_VERSION")):
@@ -67,6 +71,8 @@ def detect_harness() -> str:
             return "claude"
         if lowered == "codex" or lowered.startswith("codex-"):
             return "codex"
+        if lowered == "omp":
+            return "omp"
         if lowered.startswith("kimi"):
             return "kimi"
         if lowered.startswith("muse"):
@@ -81,22 +87,31 @@ def detect_harness() -> str:
 
 
 def cwd_key(cwd: str) -> str:
-    return hashlib.blake2s(cwd.encode(), digest_size=6).hexdigest()
+    """Per-directory marker name shared with hooks/session-start.sh (Kimi, Muse).
+
+    SHA-256 truncated to 12 hex digits; the hook computes the same digest.
+    """
+    return hashlib.sha256(cwd.encode()).hexdigest()[:12]
 
 
 def resolve_session(harness: str, cwd: str) -> str:
     explicit = os.environ.get("TRUFFLEPIG_SESSION")
     if explicit:
         return explicit
-    keys = {"grok": ("GROK_SESSION_ID",), "claude": ("TRUFFLEPIG_CLAUDE_SESSION",), "codex": ("CODEX_THREAD_ID", "CODEX_SESSION_ID"),
+    keys = {"grok": ("GROK_SESSION_ID",), "omp": ("TRUFFLEPIG_OMP_SESSION",), "claude": ("TRUFFLEPIG_CLAUDE_SESSION",),
+            "codex": ("CODEX_THREAD_ID", "CODEX_SESSION_ID"),
             "kimi": ("KIMI_SESSION_ID",), "muse": ("MUSE_SESSION_ID",)}
     for key in (*keys.get(harness, ()), "AGENT_SESSION_ID"):
         if os.environ.get(key):
             return os.environ[key]
-    # Session files are written by the harness SessionStart hook, one per cwd.
+    # Kimi and Muse session hooks write one marker per cwd; Claude and omp
+    # arrive through their environment variables above and never read one.
     # A marker older than the age limit is a leftover from a harness that no
     # longer runs its SessionEnd hook, so it is ignored rather than reused.
-    marker = state_dir() / "agent-sessions" / harness / cwd_key(cwd)
+    key = cwd_key(cwd)
+    if harness == "omp":
+        return f"{harness}-{key}-{time.strftime('%Y%m%d')}"
+    marker = state_dir() / "agent-sessions" / harness / key
     try:
         fresh = time.time() - marker.stat().st_mtime < SESSION_MARKER_MAX_AGE
         session = marker.read_text().strip() if fresh else ""
@@ -104,7 +119,7 @@ def resolve_session(harness: str, cwd: str) -> str:
             return session
     except OSError:
         pass
-    return f"{harness}-{cwd_key(cwd)}-{time.strftime('%Y%m%d')}"
+    return f"{harness}-{key}-{time.strftime('%Y%m%d')}"
 
 
 def split_args(argv: list[str]) -> tuple[list[str], str, list[str], dict[str, str]]:

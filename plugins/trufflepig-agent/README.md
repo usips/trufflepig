@@ -1,6 +1,6 @@
 # Trufflepig agent integration
 
-Shared search skill and audited CLI wrapper for Codex, Claude Code, Grok Build, Kimi Code, and Muse Code.
+Shared search skill and audited CLI wrapper for Codex, Claude Code, Grok Build, Kimi Code, Muse Code, and omp.
 The skill makes Trufflepig the default for project discovery, with targeted
 fallbacks for unavailable or unsupported operations. Optional hooks steer shell
 searches toward it (see [Other harness hooks](#other-harness-hooks)); no MCP
@@ -17,6 +17,7 @@ plugins/trufflepig-agent/install.sh --codex --systemd --check "$PWD"
 plugins/trufflepig-agent/install.sh --claude --check "$PWD"
 plugins/trufflepig-agent/install.sh --grok --check "$PWD"
 plugins/trufflepig-agent/install.sh --project ~/Source/lunatic
+plugins/trufflepig-agent/install.sh --omp --check "$PWD"
 plugins/trufflepig-agent/install.sh --kimi --muse --kimi-hooks --systemd
 ```
 
@@ -34,6 +35,12 @@ installing the same skill at both scopes for Codex. Existing links to this
 checkout are reusable; conflicting unmanaged destinations fail without replacement.
 `--bin DIR` changes the default `~/.local/bin` wrapper destination. With no
 selectors, the installer attempts Kimi and Muse installation.
+
+`--omp` links the shared skill and a session-attribution extension under
+omp's active agent directory (default `~/.omp/agent`), honoring its environment
+overrides and profiles; `--omp-agent-dir DIR` selects an explicit destination.
+See [omp integration](omp.md) for discovery, session lifecycle, verification,
+and removal.
 
 Codex discovers skills by their description and also supports explicit
 `$trufflepig-code-search` invocation. Start a fresh session if discovery does not
@@ -114,9 +121,10 @@ diagnostics unless explicitly supplied. Codex markers identify the harness;
 `CODEX_SESSION_ID` as a fallback. Explicit CLI `--client`/`--session` win over
 `TRUFFLEPIG_AGENT_HARNESS`/`TRUFFLEPIG_SESSION`, which win over detection.
 Claude attribution uses its session environment hook as described in
-[Claude integration](claude-code.md). Kimi/Muse retain their own session variables and session-start markers; a marker
-older than twelve hours is ignored. Without session information, attribution
-falls back to a harness/directory/day identifier.
+[Claude integration](claude-code.md). [omp integration](omp.md) supplies session
+identity in each shell invocation. Kimi/Muse retain their own session variables
+and session-start markers; a marker older than twelve hours is ignored. Without
+session information, attribution falls back to a harness/directory/day identifier.
 
 Each call logs arguments, exit code, latency, byte count, coverage, truncation,
 and struggle signals under `$TRUFFLEPIG_AGENT_LOG_DIR`, otherwise
