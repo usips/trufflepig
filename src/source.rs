@@ -132,6 +132,7 @@ pub(crate) fn render_owned(
         handle,
         side,
         historical,
+        definitions,
     } = source;
     let (start, end) = (span.start, span.end);
     let (first, last) = line_span(&bytes, start, end);
@@ -159,6 +160,10 @@ pub(crate) fn render_owned(
         let mut value = json!({"path":path,"revision":revision,"verified":verified,"start":start,"end":end,"lines":rows,"truncated":truncated,"next":next,"tokenizer":"o200k_base"});
         if let Some(identity) = &historical {
             value["historical"] = serde_json::to_value(identity)?;
+        }
+        if let Some((total, also)) = &definitions {
+            value["definitions"] = (*total).into();
+            value["also"] = also.clone().into();
         }
         let object = value.as_object_mut().expect("source response object");
         ensure!(

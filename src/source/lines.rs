@@ -46,6 +46,12 @@ pub(crate) fn show_text(value: &Value) -> String {
     if let Some(commit) = value["historical"]["commit"].as_str() {
         let _ = writeln!(out, "commit: {commit}");
     }
+    if let Some(total) = value["definitions"].as_u64() {
+        let _ = writeln!(out, "definitions: {total}");
+    }
+    for locator in value["also"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
+        let _ = writeln!(out, "also: {}", locator.as_str().unwrap_or_default());
+    }
     out
 }
 

@@ -20,9 +20,10 @@ Queries (search TEXT):
 
 Navigation:
   show HANDLE | show path:FILE:START-END   numbered, verified source
+  show 'sym:NAME'  a definition's full body in one call
   ctx HANDLE      relationships around a hit
   refs NAME       occurrences and resolved targets
-  map PREFIX      module and type outline
+  map PREFIX      module and type outline (a single file adds its functions)
   more CURSOR     next page of a search";
 
 const KNOWN_COMMANDS: &[&str] = &[

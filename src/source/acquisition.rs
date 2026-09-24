@@ -38,7 +38,13 @@ pub(crate) struct AcquiredSource {
     pub handle: String,
     pub side: Option<SourceSide>,
     pub historical: Option<HistoricalSource>,
+    /// For a `sym:` read: the number of same-named definitions and `PATH:START-END
+    /// KIND` locators for up to `SYMBOL_ALTERNATIVES` of those not shown.
+    pub definitions: Option<(usize, Vec<String>)>,
 }
+
+/// Other same-named definitions listed after a `sym:` read.
+const SYMBOL_ALTERNATIVES: usize = 5;
 
 pub(crate) fn acquire(
     store: &Store,
@@ -81,7 +87,51 @@ pub(crate) fn acquire(
         side.is_none(),
         "invalid_side: side requires a historical change handle"
     );
+    if target.starts_with("sym:") {
+        return acquire_symbol(store, target);
+    }
     acquire_path(store, target)
+}
+
+/// Read the best-ranked definition named by `sym:NAME [file:P] [lang:L] [kind:K]`
+/// as a verified handle read, listing the other candidates as path locators.
+fn acquire_symbol(store: &Store, target: &str) -> Result<AcquiredSource> {
+    let query = crate::search::Query::parse(target)?;
+    let found = crate::search::definitions(store, &query)?;
+    ensure!(
+        !found.hits.is_empty(),
+        "no_definition: no indexed definition named `{}`; try `refs {}` or `search '{}'`",
+        query.text,
+        query.text,
+        query.text
+    );
+    let total = found.hits.len();
+    let alternatives = found.hits[1..]
+        .iter()
+        .take(SYMBOL_ALTERNATIVES)
+        .map(|hit| {
+            format!(
+                "{}:{}-{} {}",
+                hit.path, hit.start_line, hit.end_line, hit.kind
+            )
+        })
+        .collect();
+    let first = ResultEntry::LiveSource(found.hits[0].clone());
+    let set = results::save_entries(
+        store,
+        found.generation,
+        found.coverage,
+        found
+            .hits
+            .into_iter()
+            .map(ResultEntry::LiveSource)
+            .collect(),
+        found.truncated,
+    )?;
+    let handle = format!("{set}:1");
+    let mut source = acquire_entry(store, &handle, first, None)?;
+    source.definitions = Some((total, alternatives));
+    Ok(source)
 }
 
 fn acquire_handle(store: &Store, handle: &str, side: Option<SourceSide>) -> Result<AcquiredSource> {
@@ -131,6 +181,7 @@ pub(crate) fn acquire_entry(
                 handle: handle.into(),
                 side: None,
                 historical: None,
+                definitions: None,
             })
         }
         ResultEntry::Change(change) => {
@@ -198,6 +249,7 @@ fn acquire_historical(
         handle: handle.into(),
         side: Some(side),
         historical: Some(identity),
+        definitions: None,
     })
 }
 
@@ -251,6 +303,7 @@ fn acquire_path(store: &Store, target: &str) -> Result<AcquiredSource> {
         handle: format!("{set}:1"),
         side: None,
         historical: None,
+        definitions: None,
     })
 }
 

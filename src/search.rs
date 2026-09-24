@@ -328,6 +328,46 @@ pub fn search_prepared(
     })
 }
 
+/// Every indexed definition named exactly `query.text` (honoring `file:`, `lang:`,
+/// and `kind:`), declarations before members and locals, then in path order.
+pub fn definitions(store: &Store, query: &Query) -> Result<ResultSet> {
+    let snapshot = store.conn.unchecked_transaction()?;
+    let generation = store.generation()?;
+    let coverage = serde_json::to_value(store.coverage()?)?;
+    let exact = Query {
+        text: query.text.clone(),
+        path: query.path.clone(),
+        language: query.language.clone(),
+        kind: query.kind.clone(),
+        exact: true,
+        regex: false,
+    };
+    let LaneHits {
+        mut hits,
+        truncated,
+    } = exact_hits(store, &exact)?;
+    hits.sort_by_key(|hit| declaration_rank(&hit.kind));
+    snippets::attach(store, &snippets::preview_terms(&exact.text), &mut hits)?;
+    snapshot.commit()?;
+    Ok(ResultSet {
+        generation,
+        coverage,
+        truncated,
+        hits,
+    })
+}
+
+/// Declarations a reader usually means by a name rank before modules, modules
+/// before members, and members before locals and imports that merely share it.
+fn declaration_rank(kind: &str) -> u8 {
+    match kind {
+        "module" => 1,
+        "variant" | "field" => 2,
+        "variable" | "parameter" | "import" => 3,
+        _ => 0,
+    }
+}
+
 #[derive(Debug)]
 struct LaneHits {
     hits: Vec<Hit>,

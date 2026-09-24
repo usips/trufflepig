@@ -261,3 +261,47 @@ fn rerank_gate_excludes_exact_and_regex_queries() {
         );
     }
 }
+
+#[test]
+fn show_symbol_reads_the_best_declaration_and_lists_the_rest() {
+    let (_root, _cache, store) = fixture(&[
+        ("a.rs", b"mod refill {}\nfn caller(refill: u8) {}\n"),
+        (
+            "b.rs",
+            b"/// Refills.\npub fn refill() {\n    let tokens = 1;\n}\n",
+        ),
+    ]);
+    let budget = crate::output::OutputBudget::new(4000)
+        .unwrap()
+        .with_format(crate::output::OutputFormat::Lines);
+    let text = crate::source::show(&store, "sym:refill", &budget).unwrap();
+    assert!(text.starts_with("b.rs "), "{text}");
+    assert!(text.contains("pub fn refill() {") && text.contains("let tokens = 1;"));
+    assert!(text.contains("verified: true"));
+    assert!(text.contains("definitions: 3"), "{text}");
+    assert!(text.contains("also: a.rs:1-1 module"), "{text}");
+    let scoped = crate::source::show(&store, "sym:refill file:a.rs kind:module", &budget).unwrap();
+    assert!(
+        scoped.starts_with("a.rs ") && scoped.contains("definitions: 1"),
+        "{scoped}"
+    );
+    let missing = crate::source::show(&store, "sym:absent", &budget).unwrap_err();
+    assert!(missing.to_string().starts_with("no_definition:"));
+}
+
+#[test]
+fn map_of_one_file_lists_its_functions_but_a_prefix_lists_types_only() {
+    let (_root, _cache, store) =
+        fixture(&[("src/lib.rs", b"pub struct Bucket;\nfn refill() {}\n")]);
+    let names = |path: &str| -> Vec<String> {
+        map(&store, path)
+            .unwrap()
+            .hits
+            .into_iter()
+            .map(|hit| hit.name)
+            .collect()
+    };
+    assert!(names("src/lib.rs").contains(&"refill".to_owned()));
+    assert!(!names("src/").contains(&"refill".to_owned()));
+    assert!(names("src/").contains(&"Bucket".to_owned()));
+}

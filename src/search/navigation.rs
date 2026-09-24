@@ -136,11 +136,13 @@ pub(crate) fn context_entry(
     }
 }
 
+/// Outline of modules and types under a path prefix; a prefix naming exactly one
+/// file also lists its functions, methods, constants, and macros.
 pub fn map(store: &Store, path: &str) -> Result<ResultSet> {
     let snapshot = store.conn.unchecked_transaction()?;
     let generation = store.generation()?;
     let coverage = serde_json::to_value(store.coverage()?)?;
-    let mut stmt=store.conn.prepare("SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container,'structural_map',c.bytes FROM definitions d JOIN files f ON f.id=d.file_id JOIN contents c ON c.revision=f.revision WHERE substr(f.path,1,length(?1))=?1 AND d.kind IN ('module','struct','class','trait','type','enum','impl') ORDER BY f.path,CASE d.kind WHEN 'module' THEN 0 ELSE 1 END,d.start,d.id LIMIT ?2")?;
+    let mut stmt=store.conn.prepare("SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container,'structural_map',c.bytes FROM definitions d JOIN files f ON f.id=d.file_id JOIN contents c ON c.revision=f.revision WHERE substr(f.path,1,length(?1))=?1 AND (d.kind IN ('module','struct','class','trait','type','enum','impl','interface') OR (f.path=?1 AND d.kind IN ('function','method','constant','macro'))) ORDER BY f.path,CASE d.kind WHEN 'module' THEN 0 ELSE 1 END,d.start,d.id LIMIT ?2")?;
     let mut hits = stmt
         .query_map(params![path, (MAX_HITS + 1) as i64], hit_row)?
         .collect::<rusqlite::Result<Vec<_>>>()?;
