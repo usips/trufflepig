@@ -1,165 +1,66 @@
 #!/usr/bin/env python3
-"""PreToolUse hook: steer Grep/Glob/shell searches toward trufflepig-agent.
+"""PreToolUse/PostToolUse hook: steer shell searches toward trufflepig-agent.
 
-Usage: steer-search.py <kimi|muse>   (hook JSON payload on stdin)
+Usage: steer-search.py <claude|kimi|muse>   (hook JSON payload on stdin)
 
-Applies only inside repositories that are members of a registered trufflepig
-workspace (`~/.config/trufflepig/*.toml`) or under a `trufflepig.workspace.toml`.
-Modes via TRUFFLEPIG_AGENT_STEER:
-  block  (default) exit 2 with a reason until trufflepig-agent has been used
-         in this session for this directory, then allow;
-  nudge  exit 0 and print a one-line reminder that is appended to context;
-  off    exit 0 silently.
-Every decision is appended to the agent audit log as verb "hook:steer".
+Applies only inside checkouts of registered trufflepig workspace members
+(`~/.config/trufflepig/workspaces.toml`, linked worktrees included) or under a
+`trufflepig.workspace.toml`. Each shell search is classified (definition, body,
+outline, references, regex, concept, files); pipe filters, log/output files,
+other revisions, filesystem `find` actions, and paths outside the checkout are
+never steered. Modes (TRUFFLEPIG_AGENT_STEER, else `steer.<harness>` in
+agent-runtime.json, else claude=nudge, others=block):
+  off     do nothing;
+  nudge   allow, then add the equivalent trufflepig-agent command as context
+          (Claude: PostToolUse additionalContext; others: stdout);
+  block   deny until any trufflepig-agent call from this directory in the last
+          45 minutes, then allow (the original Kimi/Muse behavior);
+  strict  deny definition/body/outline/references searches with the equivalent
+          command unless a trufflepig call from this checkout returned no hits
+          or failed in the last 10 minutes, or the command carries
+          `# tp-fallback: reason`; nudge the remaining classes.
+PreToolUse decisions are appended to the agent audit log as verb "hook:steer".
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
-import subprocess
 import sys
 import time
 from pathlib import Path
 
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python < 3.11
-    tomllib = None
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import trufflepig_checkout as checkout  # noqa: E402
+import trufflepig_classify as classifier  # noqa: E402
+import trufflepig_shell as shell  # noqa: E402
+import trufflepig_steer as policy  # noqa: E402
 
 SEARCH_TOOLS = re.compile(r"^(grep|glob|ripgrep|rg|find_files|search_files|list_files)$", re.I)
 SHELL_TOOLS = re.compile(r"^(bash|shell|run_command|execute|terminal)$", re.I)
-SHELL_SEARCH = re.compile(r"(^|[\s;&|(])(rg|grep|egrep|fgrep|ag|ack|find)\s")
-GRACE_SECONDS = 45 * 60
 
 
-def state_dir() -> Path:
-    base = os.environ.get("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state")
-    return Path(base) / "trufflepig"
+def claude_output(event: str, **fields) -> None:
+    sys.stdout.write(json.dumps({"hookSpecificOutput": {"hookEventName": event, **fields}}) + "\n")
 
 
-def cwd_key(cwd: str) -> str:
-    return hashlib.blake2s(cwd.encode(), digest_size=6).hexdigest()
-
-
-def load_toml(path: Path) -> dict:
-    try:
-        document = tomllib.loads(path.read_text())
-    except (OSError, ValueError):
-        return {}
-    return document if isinstance(document, dict) else {}
-
-
-def member_roots_of(config_path: Path) -> list[Path]:
-    """Member roots declared by one workspace config, relative to its directory."""
-    roots: list[Path] = []
-    for member in (load_toml(config_path).get("members") or {}).values():
-        raw = member.get("path") if isinstance(member, dict) else None
-        if raw:
-            roots.append((config_path.parent / Path(os.path.expanduser(raw))).resolve())
-    return roots
-
-
-def workspace_roots() -> list[Path]:
-    """Member roots of every workspace listed in the registry `workspaces.toml`."""
-    if tomllib is None:
-        return []
-    config_dir = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "trufflepig"
-    registry = config_dir / "workspaces.toml"
-    entries = load_toml(registry).get("workspaces") or []
-    roots: list[Path] = []
-    for entry in entries:
-        if isinstance(entry, str):
-            roots.extend(member_roots_of((config_dir / Path(os.path.expanduser(entry))).resolve()))
-    return roots
-
-
-def git_common_dir(directory: Path) -> Path | None:
-    """Canonical Git common directory of `directory`, or None outside a repository."""
-    try:
-        completed = subprocess.run(
-            ["git", "-C", str(directory), "rev-parse", "--path-format=absolute", "--git-common-dir"],
-            capture_output=True, text=True, timeout=2, check=False,
-            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if completed.returncode != 0 or not completed.stdout.strip():
-        return None
-    return Path(completed.stdout.strip()).resolve()
-
-
-def member_common_dir(root: Path) -> Path | None:
-    dot_git = root / ".git"
-    if dot_git.is_dir():
-        return dot_git.resolve()
-    return git_common_dir(root) if dot_git.is_file() else None
-
-
-def indexed_root(cwd: Path) -> Path | None:
-    """The member root that owns `cwd`: by path, then by Git common directory so a
-    linked worktree anywhere on disk maps to its member."""
-    roots = workspace_roots()
-    for root in roots:
-        if cwd == root or root in cwd.parents:
-            return root
-    for ancestor in (cwd, *cwd.parents):
-        if (ancestor / "trufflepig.workspace.toml").is_file():
-            return ancestor
-    if not any((ancestor / ".git").is_file() for ancestor in (cwd, *cwd.parents)):
-        return None
-    common = git_common_dir(cwd)
-    if common is None:
-        return None
-    for root in roots:
-        if member_common_dir(root) == common:
-            return root
-    return None
-
-
-def session_used_tool(harness: str, cwd: str, session: str) -> bool:
-    recent = state_dir() / "agent-recent" / harness
-    if not recent.is_dir():
-        return False
-    key = cwd_key(cwd)
-    now = time.time()
-    # Any session's recent call for this directory counts within the grace window.
-    del session
-    for path in recent.glob(f"{key}-*"):
-        try:
-            if now - path.stat().st_mtime <= GRACE_SECONDS:
-                return True
-        except OSError:
-            continue
-    return False
-
-
-def wants_search(tool: str, tool_input: dict) -> str | None:
-    if SEARCH_TOOLS.match(tool or ""):
-        return tool
-    if SHELL_TOOLS.match(tool or ""):
-        command = tool_input.get("command") or tool_input.get("cmd") or ""
-        if isinstance(command, list):
-            command = " ".join(map(str, command))
-        if SHELL_SEARCH.search(str(command)):
-            return f"{tool}:{str(command).split()[0] if str(command).split() else ''}"
-    return None
-
-
-def log(record: dict) -> None:
-    try:
-        target = Path(os.environ.get("TRUFFLEPIG_AGENT_LOG_DIR") or state_dir() / "agent-audit")
-        target.mkdir(parents=True, exist_ok=True)
-        with (target / f"{record['harness']}.jsonl").open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, separators=(",", ":")) + "\n")
-    except OSError:
-        pass
+def message_for(searches: list[classifier.Search], owner: checkout.IndexedRoot, blocked: bool,
+                mode: str = "strict") -> str:
+    lines = [f"{owner.member} is indexed by trufflepig; "
+             + ("run the equivalent instead:" if blocked else "next time use the one-call equivalent:")]
+    for search in searches[:3]:
+        lines.append(f"- {search.kind} search `{search.pattern[:80]}` -> {search.hint}")
+    if blocked and mode == "block":
+        lines.append("Ordinary search is allowed again after one trufflepig-agent call from this directory.")
+    elif blocked:
+        lines.append("If trufflepig returns nothing useful, retry the grep with a trailing "
+                     "`# tp-fallback: <reason>` comment.")
+    return "\n".join(lines)
 
 
 def main() -> int:
     harness = sys.argv[1] if len(sys.argv) > 1 else "unknown"
-    mode = os.environ.get("TRUFFLEPIG_AGENT_STEER", "block").lower()
+    mode = policy.mode_for(harness)
     if mode == "off":
         return 0
     try:
@@ -168,39 +69,64 @@ def main() -> int:
         return 0
     if not isinstance(payload, dict):
         return 0
-    tool = payload.get("tool_name") or payload.get("tool") or payload.get("name") or ""
+    event = str(payload.get("hook_event_name") or "PreToolUse")
+    tool = str(payload.get("tool_name") or payload.get("tool") or payload.get("name") or "")
     tool_input = payload.get("tool_input") or payload.get("input") or payload.get("arguments") or {}
     if not isinstance(tool_input, dict):
         tool_input = {}
-    matched = wants_search(str(tool), tool_input)
-    if not matched:
+    cwd = Path(payload.get("cwd") or os.getcwd()).resolve()
+
+    if SEARCH_TOOLS.match(tool):
+        pattern = str(tool_input.get("pattern") or tool_input.get("query") or "")
+        command = f"rg -n {classifier.quote(pattern)} {classifier.quote(str(tool_input.get('path') or '.'))}"
+    elif SHELL_TOOLS.match(tool):
+        command = tool_input.get("command") or tool_input.get("cmd") or ""
+        command = " ".join(map(str, command)) if isinstance(command, list) else str(command)
+    else:
         return 0
-    cwd = str(Path(payload.get("cwd") or os.getcwd()).resolve())
-    root = indexed_root(Path(cwd))
-    if root is None:
+    if not classifier.MAYBE_SEARCH.search(command):
         return 0
+    owner = checkout.indexed_checkout(shell.final_directory(command, cwd))
+    if owner is None:
+        return 0
+    searches = classifier.classify(command, cwd, owner.checkout)
+    if not searches:
+        return 0
+
     session = str(payload.get("session_id") or payload.get("sessionId") or "")
-    used = session_used_tool(harness, cwd, session)
-    decision = "allow" if used or mode != "block" else "block"
-    if mode == "nudge" and not used:
+    agent = str(payload.get("agent_id") or payload.get("agentId") or "")
+    strong = [s for s in searches if s.kind in policy.STRONG_CLASSES]
+    fallback = None
+    if policy.FALLBACK_MARKER.search(command):
+        fallback = "explicit tp-fallback"
+    if mode == "block":
+        decision = "allow" if fallback or policy.used_recently(harness, str(cwd)) else "block"
+    elif mode == "strict" and strong:
+        fallback = fallback or policy.recent_fallback_reason(harness, owner.checkout)
+        decision = "allow" if fallback else "block"
+    else:
         decision = "nudge"
-    pattern = tool_input.get("pattern") or tool_input.get("query") or ""
-    if not pattern and tool_input.get("command"):
-        command = tool_input["command"]
-        words = command.split() if isinstance(command, str) else [str(w) for w in command]
-        # First non-flag word after the search program is the pattern.
-        positional = [w for w in words[1:] if not w.startswith("-")]
-        pattern = positional[0] if positional else ""
-    pattern = str(pattern).strip("'\"")
-    hint = f"trufflepig-agent search '{pattern[:60]}'" if pattern else "trufflepig-agent search 'terms'"
-    log({
+
+    if event == "PostToolUse":
+        # Nudges are delivered after the search ran, where Claude accepts added context.
+        if harness == "claude" and decision == "nudge" and not fallback and \
+                policy.should_nudge(f"{session}:{agent}:{cwd}", searches[0].kind):
+            claude_output("PostToolUse", additionalContext=message_for(searches, owner, False))
+        return 0
+
+    policy.log({
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "harness": harness,
-        "session": session or f"{harness}-{cwd_key(cwd)}-{time.strftime('%Y%m%d')}",
-        "cwd": cwd,
+        "session": session or f"{harness}-{checkout.cwd_key(str(cwd))}-{time.strftime('%Y%m%d')}",
+        "agent": agent,
+        "agent_type": str(payload.get("agent_type") or ""),
+        "cwd": str(cwd),
         "verb": "hook:steer",
-        "args": [matched, str(pattern)[:120]],
+        "args": [searches[0].program, searches[0].pattern[:120]],
         "options": {"mode": mode},
+        "classes": [s.kind for s in searches],
+        "hint": searches[0].hint[:200],
+        "fallback": fallback or "",
         "exit_code": 2 if decision == "block" else 0,
         "elapsed_ms": 0,
         "status": decision,
@@ -214,16 +140,16 @@ def main() -> int:
         "repeat_count": 0,
         "signals": ["steer_block"] if decision == "block" else (["steer_nudge"] if decision == "nudge" else []),
     })
-    message = (
-        f"This repository ({root.name}) is indexed by trufflepig. Run `{hint}` first "
-        "(ranked, reranked, with handles for `show` and `ctx`); Grep/Glob/rg are allowed "
-        "again after one trufflepig-agent call in this session. Use `re:pattern` for regex."
-    )
     if decision == "block":
+        blocked = strong if mode == "strict" else searches
+        message = message_for(blocked, owner, True, mode)
+        if harness == "claude":
+            claude_output("PreToolUse", permissionDecision="deny", permissionDecisionReason=message)
+            return 0
         sys.stderr.write(message + "\n")
         return 2
-    if decision == "nudge":
-        sys.stdout.write(message + "\n")
+    if decision == "nudge" and harness != "claude":
+        sys.stdout.write(message_for(searches, owner, False) + "\n")
     return 0
 
 

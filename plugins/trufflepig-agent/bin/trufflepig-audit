@@ -2,7 +2,7 @@
 """Summarize trufflepig-agent audit logs and flag sessions where the tool struggled.
 
 Usage: trufflepig-audit [--harness NAME] [--session ID] [--since HOURS]
-                        [--json] [--calls] [LOG_DIR]
+                        [--json] [--calls] [--adoption] [LOG_DIR]
 
 Reads <LOG_DIR>/<harness>.jsonl written by `trufflepig-agent` (default
 $XDG_STATE_HOME/trufflepig/agent-audit plus the sandbox fallback
@@ -145,6 +145,61 @@ def summarize(records: list[dict]) -> list[dict]:
     return rows
 
 
+NAVIGATION_VERBS = {"search", "refs", "map", "show", "ctx", "more"}
+
+
+def adoption(records: list[dict]) -> list[dict]:
+    """Per harness and agent scope: trufflepig navigation calls against ordinary searches
+    the steering hook saw. Blocked searches are excluded from the denominator because
+    the agent had to retry them some other way."""
+    groups: dict[tuple[str, str], dict] = {}
+    for record in records:
+        if record.get("malformed"):
+            continue
+        harness = record.get("harness", "?")
+        verb = str(record.get("verb", ""))
+        if verb == "hook:steer":
+            scope = "subagent" if record.get("agent") else "main"
+        elif verb in NAVIGATION_VERBS:
+            scope = "all"
+        else:
+            continue
+        row = groups.setdefault((harness, scope), {
+            "harness": harness, "scope": scope, "trufflepig": 0, "escaped": 0, "blocked": 0,
+            "fallback": 0, "classes": defaultdict(int)})
+        if verb in NAVIGATION_VERBS:
+            row["trufflepig"] += 1
+        elif record.get("status") == "block":
+            row["blocked"] += 1
+        else:
+            row["escaped"] += 1
+            row["fallback"] += bool(record.get("fallback"))
+            for kind in record.get("classes") or ["unclassified"]:
+                row["classes"][kind] += 1
+    rows = []
+    for harness in sorted({h for h, _ in groups}):
+        used = groups.get((harness, "all"), {}).get("trufflepig", 0)
+        escaped = sum(r["escaped"] for (h, s), r in groups.items() if h == harness and s != "all")
+        for (h, scope), row in sorted(groups.items()):
+            if h != harness:
+                continue
+            row["classes"] = dict(sorted(row["classes"].items(), key=lambda item: -item[1]))
+            rows.append(row)
+        rows.append({"harness": harness, "scope": "total", "trufflepig": used, "escaped": escaped,
+                     "adoption": round(used / (used + escaped), 3) if used + escaped else None})
+    return rows
+
+
+def print_adoption(rows: list[dict]) -> None:
+    print("harness\tscope\ttrufflepig\tescaped\tblocked\tfallback\tadoption\tescaped classes")
+    for row in rows:
+        classes = ", ".join(f"{k}={v}" for k, v in (row.get("classes") or {}).items())
+        adoption_rate = "" if row.get("adoption") is None else f"{row['adoption']:.0%}"
+        print("\t".join(str(v) for v in (row["harness"], row["scope"], row["trufflepig"], row["escaped"],
+                                         row.get("blocked", ""), row.get("fallback", ""),
+                                         adoption_rate, classes)))
+
+
 def print_table(rows: list[dict]) -> None:
     header = ("harness", "session", "calls", "srch", "show", "ctx", "err", "empty", "trunc",
               "rept", "steer", "p50s", "p95s", "follow", "flag")
@@ -166,6 +221,8 @@ def main() -> int:
     parser.add_argument("--since", type=float, help="only calls from the last N hours")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--calls", action="store_true", help="list calls carrying signals")
+    parser.add_argument("--adoption", action="store_true",
+                        help="trufflepig calls versus ordinary searches seen by the steering hook")
     args = parser.parse_args()
     directories = [args.log_dir] if args.log_dir else [default_dir(), fallback_dir()]
     directories = list(dict.fromkeys(directory.resolve() for directory in directories if directory.is_dir()))
@@ -175,6 +232,13 @@ def main() -> int:
     records = load(directories, args.harness, args.since)
     if args.session:
         records = [r for r in records if r.get("session") == args.session]
+    if args.adoption:
+        rows = adoption(records)
+        if args.json:
+            print(json.dumps({"adoption": rows}, indent=1))
+        else:
+            print_adoption(rows)
+        return 0
     rows = summarize(records)
     if args.json:
         print(json.dumps({"sessions": rows, "records": len(records)}, indent=1))

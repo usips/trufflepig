@@ -50,12 +50,17 @@ def main() -> int:
         parser.add_argument(f"--{flag}", action="store_true")
     parser.add_argument("--project", type=Path, action="append", default=[])
     parser.add_argument("--runtime-dir", type=Path, help="disk-backed, sandbox-writable agent runtime")
+    parser.add_argument("--steer", choices=("off", "nudge", "block", "strict"),
+                        help="search steering mode recorded for the selected harnesses")
     parser.add_argument("--check", type=Path, metavar="ROOT", help="search and read a file through the installed wrapper")
     args = parser.parse_args()
     if not any((args.codex, args.claude, args.grok, args.kimi, args.muse, args.kimi_hooks, args.systemd, args.project, args.check)):
         args.kimi = args.muse = True
     if args.runtime_dir and not (args.codex or args.claude or args.grok):
         parser.error("--runtime-dir requires --codex, --claude, or --grok")
+    steer_harnesses = [name for name in ("claude", "kimi", "muse") if getattr(args, name)]
+    if args.steer and not steer_harnesses:
+        parser.error("--steer requires --claude, --kimi, or --muse")
 
     skill = PLUGIN / "skills/trufflepig-code-search"
     links = [(PLUGIN / "bin" / name, args.bin / name)
@@ -89,6 +94,9 @@ def main() -> int:
         if runtime == Path("/tmp") or Path("/tmp") in runtime.parents:
             raise ValueError("--runtime-dir must use disk-backed storage outside /tmp")
         settings.update(runtime_dir=str(runtime), spool_dir=str(runtime / "spool"))
+    if args.steer:
+        steer = settings.get("steer") if isinstance(settings.get("steer"), dict) else {}
+        settings["steer"] = {**steer, **{name: args.steer for name in steer_harnesses}}
     spool = Path(settings["spool_dir"]) if settings.get("spool_dir") else None
     binary = shutil.which("trufflepig")
     if args.systemd and (not binary or not shutil.which("systemctl")):
@@ -96,20 +104,24 @@ def main() -> int:
 
     if args.claude:
         claude_settings_path = claude_home() / "settings.json"
-        claude_settings = prepare_settings(claude_settings_path,
-                                           args.bin / "trufflepig-claude-session", runtime)
+        claude_settings = prepare_settings(claude_settings_path, args.bin / "trufflepig-claude-session",
+                                           runtime, args.bin / "trufflepig-agent-steer")
     for source, destination in links:
         link(source, destination)
     if args.codex or args.claude or args.grok:
         runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(json.dumps(settings, indent=2) + "\n")
         print(f"agent runtime: {runtime}")
         if not args.systemd:
             print(f"router must use spool: {spool} (--systemd configures it)")
+    if args.codex or args.claude or args.grok or args.steer:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(json.dumps(settings, indent=2) + "\n")
+    if args.steer:
+        print(f"search steering {args.steer}: {', '.join(steer_harnesses)}")
     if args.claude:
         write_settings(claude_settings_path, claude_settings)
-        print(f"Claude SessionStart hook and runtime access: {claude_settings_path}")
+        print(f"Claude session and search-steering hooks, wrapper permission, runtime access: "
+              f"{claude_settings_path}")
     if not binary:
         print("warning: trufflepig missing from PATH; cargo install --path . --locked", file=sys.stderr)
 

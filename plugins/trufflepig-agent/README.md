@@ -2,8 +2,9 @@
 
 Shared search skill and audited CLI wrapper for Codex, Claude Code, Grok Build, Kimi Code, and Muse Code.
 The skill makes Trufflepig the default for project discovery, with targeted
-fallbacks for unavailable or unsupported operations. It does not block shell
-commands or require a Codex hook or MCP server.
+fallbacks for unavailable or unsupported operations. Optional hooks steer shell
+searches toward it (see [Other harness hooks](#other-harness-hooks)); no MCP
+server is required.
 
 ## Install
 
@@ -19,8 +20,9 @@ plugins/trufflepig-agent/install.sh --project ~/Source/lunatic
 plugins/trufflepig-agent/install.sh --kimi --muse --kimi-hooks --systemd
 ```
 
-`--claude` installs the personal skill, session hook, and narrow sandbox runtime
-access while preserving existing settings. See [Claude integration](claude.md)
+`--claude` installs the personal skill, session hook, Bash search-steering hooks,
+a `Bash(trufflepig-agent *)` permission, and narrow sandbox runtime access while
+preserving existing settings. See [Claude integration](claude.md)
 for discovery, session lifecycle, permissions, verification, and removal.
 
 `--grok` installs the shared skill into `$GROK_HOME/skills` (default
@@ -140,10 +142,31 @@ of task success or measured token savings.
 ## Other harness hooks
 
 Kimi's optional `--kimi-hooks` and the Muse manifest use `hooks/session-start.sh`
-for attribution and best-effort daemon startup. `hooks/steer-search.py` blocks
-ordinary search until the first Trufflepig call only in registered workspaces
-where that hook is installed; `TRUFFLEPIG_AGENT_STEER=nudge|off` changes this.
-Codex and Claude installation do not install those steering hooks.
+for attribution and best-effort daemon startup.
+
+`hooks/steer-search.py` steers ordinary search in checkouts of registered
+workspace members, including linked worktrees. It classifies each shell search
+(`definition`, `body`, `outline`, `references`, `regex`, `concept`, `files`) and
+names the equivalent Trufflepig command. Pipe filters, logs and command output,
+other revisions, filesystem `find` actions, shell variables, and paths outside
+the checkout are never steered. Modes:
+
+| Mode | Behavior |
+| --- | --- |
+| `off` | Nothing. |
+| `nudge` | Allow; add the equivalent command as context after the search (Claude default). |
+| `block` | Deny until one Trufflepig call from this directory in 45 minutes (Kimi/Muse default). |
+| `strict` | Deny `definition`, `body`, `outline`, `references` with the equivalent command unless a Trufflepig call from this checkout returned no hits or failed in the last 10 minutes, or the command ends with `# tp-fallback: reason`; nudge the rest. |
+
+`TRUFFLEPIG_AGENT_STEER` overrides `steer.<harness>` in `agent-runtime.json`,
+which `install.sh --steer MODE` records for the selected Claude, Kimi, or Muse
+installation. Symbol, body, and outline commands are suggested only for Rust,
+TypeScript, JavaScript, Luau, and DreamMaker; other files get `re:` equivalents.
+Codex installation does not install steering hooks.
+
+`trufflepig-audit --adoption` compares Trufflepig navigation calls with the
+ordinary searches the hook observed, split into main agent and subagents, with
+the classes that escaped. Blocked searches are reported separately.
 
 ## Verification
 

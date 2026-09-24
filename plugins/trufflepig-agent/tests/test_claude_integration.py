@@ -47,8 +47,12 @@ class ClaudeIntegrationTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
         settings = json.loads(path.read_text())
         self.assertEqual(settings["model"], original["model"])
-        self.assertEqual(settings["permissions"], original["permissions"])
+        self.assertEqual(settings["permissions"], dict(original["permissions"], allow=["Bash(trufflepig-agent *)"]))
         self.assertEqual(settings["hooks"]["Stop"], original["hooks"]["Stop"])
+        steer = shlex.quote(str(self.root / ".local/bin/trufflepig-agent-steer")) + " claude"
+        for event in ("PreToolUse", "PostToolUse"):
+            self.assertEqual(settings["hooks"][event], [{"matcher": "Bash", "hooks": [
+                {"type": "command", "command": steer, "timeout": 5}]}])
         self.assertEqual(settings["hooks"]["SessionStart"][0], original["hooks"]["SessionStart"][0])
         self.assertEqual(len(settings["hooks"]["SessionStart"]), 2)
         self.assertNotIn("matcher", settings["hooks"]["SessionStart"][1])
@@ -58,6 +62,16 @@ class ClaudeIntegrationTests(unittest.TestCase):
         self.assertEqual((config / "skills/trufflepig-code-search").resolve(),
                          PLUGIN / "skills/trufflepig-code-search")
         self.assertFalse((self.root / ".agents/skills").exists())
+
+    def test_steer_mode_is_recorded_per_harness(self):
+        result = subprocess.run([str(PLUGIN / "install.sh"), "--claude", "--steer", "strict"],
+                                env=self.env, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        config = json.loads((self.root / "config/trufflepig/agent-runtime.json").read_text())
+        self.assertEqual(config["steer"], {"claude": "strict"})
+        result = subprocess.run([str(PLUGIN / "install.sh"), "--codex", "--steer", "nudge"],
+                                env=self.env, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 2)
 
     def test_invalid_settings_fail_before_installing_files(self):
         config = self.root / ".claude"

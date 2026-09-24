@@ -46,15 +46,40 @@ precedence. Without the session hook, attribution falls back to a visibly
 synthetic harness/directory/day identifier; it does not pretend to be a Claude
 conversation ID. Missing environment files or hook I/O errors do not block startup.
 
+## Search guidance and steering
+
+Claude Code on this platform has no Grep or Glob tools: it runs `grep` and `find`
+through Bash (shadowed by bundled ugrep/bfs). Guidance therefore targets shell
+searches, not tool names.
+
+When a session starts inside a checkout of a registered workspace member, the
+`SessionStart` hook also returns `additionalContext`: the member and workspace,
+the five commands that replace definition, body, reference, outline, and file
+greps, and a reminder to brief subagents the same way. Outside indexed checkouts
+it prints nothing.
+
+The installer merges `PreToolUse` and `PostToolUse` hooks with matcher `Bash`
+that run `trufflepig-agent-steer claude`. Tool hooks fire inside subagents too, so
+Explore and custom agents receive the same guidance as the main conversation;
+their payloads carry `agent_id` and `agent_type`, which the audit records keep.
+Deny reasons and `PostToolUse`/`SessionStart` `additionalContext` reach the model;
+plain `PreToolUse` stdout does not, so nudges wait for `PostToolUse`.
+In the default `nudge` mode, `PreToolUse` records the classified search and
+allows it; `PostToolUse` then adds the equivalent Trufflepig command as context,
+rate limited to one tip per class per agent every 90 seconds. In `strict` mode
+`PreToolUse` returns `permissionDecision: "deny"` with the equivalent command for
+definition, body, outline, and reference searches. See
+[Other harness hooks](README.md#other-harness-hooks) for classes, fallbacks, and
+`install.sh --steer MODE`.
+
 ## Execution and sandbox
 
 Claude invokes `trufflepig-agent` through Bash. The wrapper uses the same
-[shared runtime and router](README.md#install) as Codex. The installer appends only
-that runtime directory to `sandbox.filesystem.allowWrite`. It neither enables nor
-disables sandboxing, changes permission modes, excludes commands from isolation,
-nor grants blanket Unix socket access. Ordinary permission prompts still apply.
-The skill's fallback rules cover unavailable services and unsupported searches;
-there is no Grep/Glob blocking hook.
+[shared runtime and router](README.md#install) as Codex. The installer adds
+`Bash(trufflepig-agent *)` to `permissions.allow` so wrapper calls never prompt, and
+appends only the runtime directory to `sandbox.filesystem.allowWrite`. It neither
+enables nor disables sandboxing, changes permission modes, excludes commands from
+isolation, nor grants blanket Unix socket access.
 
 Claude documents [specific sandbox write paths](https://code.claude.com/docs/en/sandboxing#configuration)
 for tools that need state outside the project. When socket access is unavailable,
@@ -68,6 +93,7 @@ runtime does not require restarting the service.
 ```sh
 python3 -m unittest discover -s plugins/trufflepig-agent/tests -p 'test_*.py'
 trufflepig-audit --harness claude --since 1 --json
+trufflepig-audit --harness claude --since 72 --adoption
 ```
 
 In a fresh session, ask Claude to locate an implementation, then inspect the
@@ -78,7 +104,10 @@ interface; neither proves that a model will choose the skill on every prompt.
 Compare the audit session with Claude's actual session ID, including separate
 sessions in the same working directory and a resumed session.
 
-To remove the integration, remove only the personal skill symlink and the
-`SessionStart` entry invoking `trufflepig-claude-session`. Remove the runtime
+To remove the integration, remove only the personal skill symlink, the
+`SessionStart` entry invoking `trufflepig-claude-session`, the `PreToolUse` and
+`PostToolUse` entries invoking `trufflepig-agent-steer claude`, and the
+`Bash(trufflepig-agent *)` permission. `install.sh --claude --steer off` disables
+steering without editing settings. Remove the runtime
 allowWrite entry if no other Claude integration needs it. Shared wrapper commands,
 runtime configuration, and the service may still be used by other harnesses.

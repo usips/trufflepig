@@ -2,9 +2,10 @@
 # `install.sh --kimi-hooks` does this for you between marker comments.
 # The session hooks let trufflepig-agent tag every call with Kimi's session id
 # so `trufflepig-audit` can group calls per session. The PreToolUse hook steers
-# Grep/Glob and shell rg/grep/find toward trufflepig-agent inside indexed
-# repositories: it blocks (exit 2) until trufflepig-agent has been used in the
-# session, then allows. Set TRUFFLEPIG_AGENT_STEER=nudge or =off to soften it.
+# Grep/Glob and shell rg/grep/find searches toward trufflepig-agent inside indexed
+# checkouts (pipe filters and log reads are ignored): it blocks (exit 2) until
+# trufflepig-agent has been used from the directory, then allows. Set
+# TRUFFLEPIG_AGENT_STEER=strict|nudge|off (or `install.sh --kimi --steer MODE`).
 
 [[hooks]]
 event = "PreToolUse"
