@@ -6,6 +6,7 @@ use crate::{
 };
 use anyhow::{Context, Result, bail, ensure};
 use rusqlite::{OptionalExtension, params};
+use std::collections::HashSet;
 
 pub fn references(store: &Store, name: &str) -> Result<ResultSet> {
     let snapshot = store.conn.unchecked_transaction()?;
@@ -90,6 +91,7 @@ pub(crate) fn context_entry(
     if current_revision != hit.revision || current_revision.is_none() {
         bail!("stale_result: result source is outside current graph revision; search again");
     }
+    let inheritance = super::inheritance_context::collect(store, &hit)?;
     let mut stmt=store.conn.prepare("SELECT r.kind,r.provenance,f.path,r.start,r.end,r.source,r.target FROM relationships r JOIN files f ON f.id=r.file_id WHERE r.source IN (SELECT d.id FROM definitions d JOIN files f ON f.id=d.file_id WHERE f.path=?1 AND d.start<=?2 AND d.end>=?3) OR r.target IN (SELECT d.id FROM definitions d JOIN files f ON f.id=d.file_id WHERE f.path=?1 AND d.start<=?2 AND d.end>=?3) ORDER BY f.path,r.start,r.kind,r.source,r.target LIMIT 101")?;
     let rows = stmt.query_map(params![hit.path, hit.start as i64, hit.end as i64], |r| {
         Ok((
@@ -102,22 +104,47 @@ pub(crate) fn context_entry(
             r.get::<_, Option<i64>>(6)?,
         ))
     })?;
-    let mut edges = Vec::with_capacity(101);
+    let mut direct_edges = Vec::with_capacity(101);
     for row in rows {
         let (kind, provenance, path, start, end, source, target) = row?;
-        let resolution = if kind.ends_with("_candidate") {
+        let resolution = if kind == "inheritance_issue" {
+            "unresolved"
+        } else if kind.ends_with("_candidate") {
             "candidate"
         } else if target.is_some() {
             "resolved"
         } else {
             "unresolved"
         };
-        edges.push(serde_json::json!({"kind":kind,"resolution":resolution,"provenance":provenance,"path":path,"start":start,"end":end,"source":definition_target(store,source)?,"target":target.map(|id|definition_target(store,id)).transpose()?}));
+        direct_edges.push(serde_json::json!({"kind":kind,"resolution":resolution,"provenance":provenance,"path":path,"start":start,"end":end,"source":definition_target(store,source)?,"target":target.map(|id|definition_target(store,id)).transpose()?}));
+    }
+    let mut edges = Vec::with_capacity(
+        inheritance
+            .relationships
+            .len()
+            .saturating_add(direct_edges.len()),
+    );
+    let mut seen = HashSet::with_capacity(
+        inheritance
+            .relationships
+            .len()
+            .saturating_add(direct_edges.len()),
+    );
+    for edge in inheritance
+        .relationships
+        .into_iter()
+        .chain(direct_edges.iter().cloned())
+    {
+        if seen.insert(serde_json::to_string(&edge)?) {
+            edges.push(edge);
+        }
     }
     let total = edges.len();
+    let mut truncated = inheritance.truncated || direct_edges.len() > 100;
     edges.truncate(100);
+    truncated |= edges.len() < total;
     loop {
-        let mut response = serde_json::json!({"generation":generation,"hit":hit,"relationships":edges,"truncated":edges.len()<total,"tokenizer":"o200k_base"});
+        let mut response = serde_json::json!({"generation":generation,"hit":hit,"relationships":edges,"truncated":truncated,"tokenizer":"o200k_base"});
         let object = response.as_object_mut().expect("context response object");
         ensure!(
             metadata.keys().all(|key| !object.contains_key(key)),
@@ -133,6 +160,7 @@ pub(crate) fn context_entry(
         if edges.pop().is_none() {
             bail!("budget_too_small: context envelope does not fit");
         }
+        truncated = true;
     }
 }
 
@@ -158,7 +186,7 @@ pub fn map(store: &Store, path: &str) -> Result<ResultSet> {
     })
 }
 
-fn definition_target(store: &Store, id: i64) -> Result<DefinitionTarget> {
+pub(super) fn definition_target(store: &Store, id: i64) -> Result<DefinitionTarget> {
     Ok(store.conn.query_row("SELECT f.path,f.revision,d.start,d.end,d.name FROM definitions d JOIN files f ON f.id=d.file_id WHERE d.id=?1",[id],|r|Ok(DefinitionTarget{path:r.get(0)?,revision:r.get(1)?,start:r.get::<_,i64>(2)? as usize,end:r.get::<_,i64>(3)? as usize,name:r.get(4)?}))?)
 }
 
@@ -207,3 +235,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod xfcp_tests;

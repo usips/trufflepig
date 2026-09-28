@@ -12,10 +12,14 @@ pub(super) fn create(conn: &Connection) -> Result<()> {
          CREATE TABLE IF NOT EXISTS definitions(id INTEGER PRIMARY KEY,file_id INTEGER NOT NULL REFERENCES files(id),name TEXT NOT NULL,kind TEXT NOT NULL,start INTEGER NOT NULL,end INTEGER NOT NULL,container TEXT);
          CREATE INDEX IF NOT EXISTS definition_name ON definitions(name);
          CREATE INDEX IF NOT EXISTS definition_file ON definitions(file_id);
+         CREATE INDEX IF NOT EXISTS definition_file_kind_span ON definitions(file_id,kind,start,end);
          CREATE TABLE IF NOT EXISTS occurrences(id INTEGER PRIMARY KEY,file_id INTEGER NOT NULL REFERENCES files(id),name TEXT NOT NULL,start INTEGER NOT NULL,end INTEGER NOT NULL,role TEXT NOT NULL,target INTEGER REFERENCES definitions(id),candidates TEXT NOT NULL,provenance TEXT NOT NULL);
          CREATE INDEX IF NOT EXISTS occurrence_name ON occurrences(name);
          CREATE INDEX IF NOT EXISTS occurrence_target ON occurrences(target);
+         CREATE INDEX IF NOT EXISTS occurrence_file_span_role ON occurrences(file_id,start,end,role);
          CREATE TABLE IF NOT EXISTS relationships(source INTEGER NOT NULL REFERENCES definitions(id),target INTEGER REFERENCES definitions(id),kind TEXT NOT NULL,file_id INTEGER NOT NULL REFERENCES files(id),start INTEGER NOT NULL,end INTEGER NOT NULL,provenance TEXT NOT NULL);
+         CREATE INDEX IF NOT EXISTS relationship_kind_source ON relationships(kind,source);
+         CREATE INDEX IF NOT EXISTS relationship_kind_target ON relationships(kind,target);
          CREATE TABLE IF NOT EXISTS regions(id INTEGER PRIMARY KEY,file_id INTEGER NOT NULL REFERENCES files(id),start INTEGER NOT NULL,end INTEGER NOT NULL,name TEXT NOT NULL,kind TEXT NOT NULL,body TEXT NOT NULL);
          CREATE INDEX IF NOT EXISTS region_file ON regions(file_id);
          CREATE VIRTUAL TABLE IF NOT EXISTS documents USING fts5(name,expanded,body,path,tokenize='unicode61');"

@@ -1,5 +1,6 @@
 //! Deterministic exact, lexical and live-regex retrieval from one index snapshot.
 mod file_ranking;
+mod inheritance_context;
 mod live;
 mod navigation;
 mod rerank_window;

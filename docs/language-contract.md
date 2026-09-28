@@ -66,8 +66,11 @@ subset does not provide compiler-equivalent binding resolution.
 `.php` and `.phtml` map to `php` and use pinned `tree-sitter-php` 0.24.2.
 Extraction records namespaces, classes, interfaces, traits, enums, functions,
 methods, properties, constants, enum cases, parameters, variables, imports, and
-identifier occurrences with original-byte spans. See the [PHP and XenForo
-contract](php-contract.md) for name normalization and candidate relationship limits.
+identifier occurrences with original-byte spans. Inheritance and trait-use
+references remain candidate or unresolved evidence. The bounded PHP/XenForo
+resolver adds source-derived inheritance and literal `parent::method()`
+candidates without proving live XFCP state or general member dispatch. See the
+[PHP and XenForo contract](php-contract.md) for exact limits and relationships.
 
 ## TypeScript and JavaScript
 

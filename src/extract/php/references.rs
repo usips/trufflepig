@@ -1,5 +1,7 @@
 use tree_sitter::Node;
 
+use crate::extract::php_markers::{Marker, encode};
+
 use super::declarations::Catalog;
 use super::names::{canonical, final_segment, terminal_name, text};
 use super::scopes::{ancestor, class_node, namespace_at};
@@ -69,10 +71,13 @@ fn observe_type(node: Node<'_>, source: &[u8], catalog: &Catalog, result: &mut E
     let namespace = namespace_at(&catalog.regions, node.start_byte());
     let (canonical_name, resolved) =
         canonical(raw, namespace, &catalog.imports, "class", node.start_byte());
-    let placeholder = final_segment(raw)
-        .get(..5)
-        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("XFCP_"));
-    let name = if placeholder {
+    let raw_placeholder = is_xfcp_placeholder(raw);
+    let placeholder = raw_placeholder || (resolved && is_xfcp_placeholder(&canonical_name));
+    let imported_placeholder_alias = raw_placeholder
+        && !raw.contains('\\')
+        && resolved
+        && canonical_name != super::names::join(namespace, raw);
+    let name = if raw_placeholder && !imported_placeholder_alias {
         raw.to_owned()
     } else {
         canonical_name
@@ -117,6 +122,12 @@ fn observe_type(node: Node<'_>, source: &[u8], catalog: &Catalog, result: &mut E
             provenance: "unresolved_trait_use".into(),
         });
     }
+}
+
+fn is_xfcp_placeholder(name: &str) -> bool {
+    final_segment(name)
+        .get(..5)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("XFCP_"))
 }
 
 fn observe_call(
@@ -181,6 +192,16 @@ fn observe_call(
 }
 
 fn observe_scoped_call(node: Node<'_>, source: &[u8], catalog: &Catalog, result: &mut Extraction) {
+    if node.kind() == "scoped_call_expression"
+        && let Some(scope) = node.child_by_field_name("scope")
+        && is_parent_scope(scope, source)
+    {
+        if let Some(name) = node.child_by_field_name("name") {
+            observe_parent_call(name, node, source, catalog, result);
+        }
+        return;
+    }
+
     let Some(name) = node.child_by_field_name("name") else {
         return;
     };
@@ -193,6 +214,72 @@ fn observe_scoped_call(node: Node<'_>, source: &[u8], catalog: &Catalog, result:
     {
         observe_type(scope, source, catalog, result);
     }
+}
+
+fn observe_parent_call(
+    name: Node<'_>,
+    expression: Node<'_>,
+    source: &[u8],
+    catalog: &Catalog,
+    result: &mut Extraction,
+) {
+    if name.kind() == "name"
+        && let Some((caller_method, owner_class)) = parent_call_owner(expression, catalog)
+    {
+        result.occurrences.push(Occurrence {
+            name: text(name, source).to_owned(),
+            start: name.start_byte(),
+            end: name.end_byte(),
+            role: "call".into(),
+            target: None,
+            candidates: Vec::new(),
+            provenance: "php_parent_call".into(),
+        });
+        result.relationships.push(encode(
+            caller_method,
+            Some(owner_class),
+            name.start_byte()..name.end_byte(),
+            Marker::ParentCall,
+        ));
+        return;
+    }
+
+    result.occurrences.push(Occurrence {
+        name: text(name, source).to_owned(),
+        start: name.start_byte(),
+        end: name.end_byte(),
+        role: "call".into(),
+        target: None,
+        candidates: Vec::new(),
+        provenance: "php_parent_call_unresolved".into(),
+    });
+}
+
+fn is_parent_scope(scope: Node<'_>, source: &[u8]) -> bool {
+    (scope.kind() == "relative_scope" || is_name_node(scope))
+        && text(scope, source).eq_ignore_ascii_case("parent")
+}
+
+fn parent_call_owner(expression: Node<'_>, catalog: &Catalog) -> Option<(usize, usize)> {
+    let mut current = Some(expression);
+    let method = loop {
+        let node = current?;
+        match node.kind() {
+            "method_declaration" => break node,
+            "function_definition" | "anonymous_function" | "arrow_function" => return None,
+            _ => current = node.parent(),
+        }
+    };
+
+    let class = class_node(method)?;
+    if class.kind() != "class_declaration" {
+        return None;
+    }
+
+    Some((
+        *catalog.owners.get(&method.start_byte())?,
+        *catalog.class_definitions.get(&class.start_byte())?,
+    ))
 }
 
 fn observe_object_creation(

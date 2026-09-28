@@ -3,6 +3,7 @@
 
 mod declarations;
 mod imports;
+mod inheritance_facts;
 mod names;
 mod references;
 mod scopes;
@@ -57,6 +58,7 @@ fn extract_with_deadline(source: &[u8], budget: Duration) -> Extraction {
     }
 
     let catalog = declarations::collect(tree.root_node(), source, &mut result);
+    inheritance_facts::collect(tree.root_node(), source, &catalog, &mut result);
     references::collect(tree.root_node(), source, &catalog, &mut result);
     result
         .occurrences

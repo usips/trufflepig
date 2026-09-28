@@ -170,8 +170,8 @@ fn parse_extension_element(
     let active = values
         .get("active")
         .map(|value| match value.as_str() {
-            "1" | "true" => Some(true),
-            "0" | "false" => Some(false),
+            "1" => Some(true),
+            "0" => Some(false),
             _ => None,
         })
         .unwrap_or(None);
@@ -267,4 +267,28 @@ fn valid_class_name(name: &str) -> bool {
                     .first()
                     .is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_')
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse;
+
+    #[test]
+    fn active_metadata_accepts_only_literal_numeric_values() {
+        let xml = br#"<class_extensions>
+            <extension from_class="A\Base" to_class="B\One" active="1" execute_order="1"/>
+            <extension from_class="A\Base" to_class="B\Two" active="0" execute_order="2"/>
+            <extension from_class="A\Base" to_class="B\Three" active="false" execute_order="3"/>
+            <extension from_class="A\Base" to_class="B\Four" active="true" execute_order="4"/>
+        </class_extensions>"#;
+
+        let extensions = parse(xml).unwrap();
+        assert_eq!(
+            extensions
+                .iter()
+                .map(|extension| extension.active)
+                .collect::<Vec<_>>(),
+            vec![Some(true), Some(false), None, None]
+        );
+    }
 }

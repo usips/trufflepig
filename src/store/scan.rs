@@ -6,7 +6,7 @@ use std::path::Path;
 
 const MAX_SOURCE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_FACTS: usize = 50_000;
-const EXTRACTION_CONTRACT_REVISION: u32 = 4;
+const EXTRACTION_CONTRACT_REVISION: u32 = 5;
 
 pub(super) fn stage(
     conn: &mut Connection,
@@ -142,6 +142,14 @@ pub(crate) fn extraction_cache_version() -> i64 {
             .try_into()
             .expect("eight hash bytes"),
     )
+}
+
+pub(crate) fn resolved_fingerprint(scan_fingerprint: &str, resolver_revision: &str) -> String {
+    let mut fingerprint = blake3::Hasher::new();
+    fingerprint.update(b"trufflepig-resolved-index-v1");
+    fingerprint.update(scan_fingerprint.as_bytes());
+    fingerprint.update(resolver_revision.as_bytes());
+    fingerprint.finalize().to_hex().to_string()
 }
 
 fn cached_extraction(

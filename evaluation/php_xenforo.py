@@ -28,6 +28,108 @@ XFCP_NAME = "XFCP_MediaItem"
 BASE_CLASS = r"XFMG\Finder\MediaItem"
 EXTENSION_CLASS = r"USIPS\NCMEC\XFMG\Finder\MediaItem"
 
+PERMISSION_BASE_PHP = "src/XF/Permission/Builder.php"
+PERMISSION_SEARCH_PHP = "src/addons/USIPS/EphyraSearch/XF/Permission/Builder.php"
+PERMISSION_CHAT_PHP = "src/addons/USIPS/EphyraChat/XF/Permission/Builder.php"
+FORUM_BASE_PHP = "src/XF/Pub/Controller/ForumController.php"
+FORUM_XFES_PHP = "src/addons/XFES/XF/Pub/Controller/Forum.php"
+FORUM_MULTISITE_PHP = "src/addons/XenCentral/MultiSite/Pub/Controller/XF/Forum.php"
+USER_BASE_PHP = "src/XF/Entity/User.php"
+USER_SIROPU_PHP = "src/addons/Siropu/ReferralContests/XF/Entity/User.php"
+USER_UIX_PHP = "src/addons/ThemeHouse/UIX/XF/Entity/User.php"
+USER_NCMEC_PHP = "src/addons/USIPS/NCMEC/XF/Entity/User.php"
+USER_XFMG_PHP = "src/addons/XFMG/XF/Entity/User.php"
+USER_XFRM_PHP = "src/addons/XFRM/XF/Entity/User.php"
+
+XFCP_REFERENCE_FIXTURES = {
+    "XFCP_MediaItem": {EXTENSION_PHP: 1},
+    "XFCP_Builder": {PERMISSION_SEARCH_PHP: 1, PERMISSION_CHAT_PHP: 1},
+    "XFCP_Forum": {FORUM_XFES_PHP: 1, FORUM_MULTISITE_PHP: 1},
+    "XFCP_User": {
+        USER_SIROPU_PHP: 1,
+        USER_UIX_PHP: 1,
+        USER_NCMEC_PHP: 1,
+        USER_XFMG_PHP: 1,
+        USER_XFRM_PHP: 1,
+    },
+}
+
+PARENT_CALL_FIXTURES = {
+    "rebuildCombination": {PERMISSION_SEARCH_PHP: 1, PERMISSION_CHAT_PHP: 1},
+    "rebuildCombinationContent": {PERMISSION_SEARCH_PHP: 1, PERMISSION_CHAT_PHP: 1},
+    "actionIndex": {FORUM_MULTISITE_PHP: 2},
+    "getStructure": {USER_XFMG_PHP: 1, USER_XFRM_PHP: 1},
+}
+
+XFCP_EXTENSION_METADATA = (
+    ("permission_search", "src/addons/USIPS/EphyraSearch/_data/class_extensions.xml",
+     r"XF\Permission\Builder", r"USIPS\EphyraSearch\XF\Permission\Builder", "10"),
+    ("permission_chat", "src/addons/USIPS/EphyraChat/_data/class_extensions.xml",
+     r"XF\Permission\Builder", r"USIPS\EphyraChat\XF\Permission\Builder", "20"),
+    ("forum_xfes", "src/addons/XFES/_data/class_extensions.xml",
+     r"XF\Pub\Controller\Forum", r"XFES\XF\Pub\Controller\Forum", "10"),
+    ("forum_multisite", "src/addons/XenCentral/MultiSite/_data/class_extensions.xml",
+     r"XF\Pub\Controller\Forum", r"XenCentral\MultiSite\Pub\Controller\XF\Forum", "10"),
+    ("user_siropu", "src/addons/Siropu/ReferralContests/_data/class_extensions.xml",
+     r"XF\Entity\User", r"Siropu\ReferralContests\XF\Entity\User", "10"),
+    ("user_uix", "src/addons/ThemeHouse/UIX/_data/class_extensions.xml",
+     r"XF\Entity\User", r"ThemeHouse\UIX\XF\Entity\User", "10"),
+    ("user_ncmec", "src/addons/USIPS/NCMEC/_data/class_extensions.xml",
+     r"XF\Entity\User", r"USIPS\NCMEC\XF\Entity\User", "10"),
+    ("user_xfmg", "src/addons/XFMG/_data/class_extensions.xml",
+     r"XF\Entity\User", r"XFMG\XF\Entity\User", "10"),
+    ("user_xfrm", "src/addons/XFRM/_data/class_extensions.xml",
+     r"XF\Entity\User", r"XFRM\XF\Entity\User", "10"),
+)
+
+XFCP_EXTENSION_SOURCES = {
+    PERMISSION_SEARCH_PHP: (
+        "class Builder extends XFCP_Builder",
+        "parent::rebuildCombination(",
+        "parent::rebuildCombinationContent(",
+    ),
+    PERMISSION_CHAT_PHP: (
+        "class Builder extends XFCP_Builder",
+        "parent::rebuildCombination(",
+        "parent::rebuildCombinationContent(",
+    ),
+    FORUM_XFES_PHP: ("class Forum extends XFCP_Forum",),
+    FORUM_MULTISITE_PHP: (
+        "class Forum extends XFCP_Forum",
+        "parent::actionIndex(",
+    ),
+    USER_SIROPU_PHP: ("class User extends XFCP_User",),
+    USER_UIX_PHP: ("class User extends XFCP_User",),
+    USER_NCMEC_PHP: ("class User extends XFCP_User",),
+    USER_XFMG_PHP: ("class User extends XFCP_User", "parent::getStructure("),
+    USER_XFRM_PHP: ("class User extends XFCP_User", "parent::getStructure("),
+}
+
+XENFORO_FIXTURE_PHP_FILES = (
+    PERMISSION_BASE_PHP,
+    PERMISSION_SEARCH_PHP,
+    PERMISSION_CHAT_PHP,
+    FORUM_BASE_PHP,
+    FORUM_XFES_PHP,
+    FORUM_MULTISITE_PHP,
+    USER_BASE_PHP,
+    USER_SIROPU_PHP,
+    USER_UIX_PHP,
+    USER_NCMEC_PHP,
+    USER_XFMG_PHP,
+    USER_XFRM_PHP,
+)
+
+XFCP_RELATIONSHIP_KINDS = (
+    "framework_parent_candidate",
+    "php_extends_candidate",
+    "php_parent_call_candidate",
+    "inheritance_issue",
+)
+
+XFCP_OCCURRENCE_PROVENANCE_PREFIX = "xenforo_generated_placeholder"
+PARENT_CALL_OCCURRENCE_PROVENANCE_PREFIX = "php_parent_call_candidate"
+
 
 class Acceptance:
     def __init__(self, args: argparse.Namespace) -> None:
@@ -38,6 +140,7 @@ class Acceptance:
         self.errors: list[str] = []
         self.root = args.xf_root.resolve()
         self.cache = args.cache_root.resolve()
+        self.source_lines: dict[str, list[str]] = {}
         self.system_dir = self.cache / "system"
         self.spool_dir = self.cache / "spool"
         self.processes: dict[str, subprocess.Popen[bytes]] = {}
@@ -234,9 +337,285 @@ class Acceptance:
         self.check("active_class_extension_metadata", len(mappings) == 1)
         self.check("implicit_addon_requirement_fixture", manifest.get("require") in ([], {}))
         self.check("xfcp_trampoline_fixture", f"extends {XFCP_NAME}" in source)
-        return len(mappings) == 1
+        return len(mappings) == 1 and self.source_xfcp_fixtures()
+
+    def source_xfcp_fixtures(self) -> bool:
+        metadata_paths = {entry[1] for entry in XFCP_EXTENSION_METADATA}
+        required = set(XENFORO_FIXTURE_PHP_FILES) | metadata_paths
+        present = all((self.root / relative).is_file() for relative in required)
+        if not self.check("xfcp_chain_fixtures_present", present):
+            return False
+
+        metadata: dict[str, ET.Element] = {}
+        try:
+            for relative in metadata_paths:
+                metadata[relative] = ET.parse(self.root / relative).getroot()
+            sources = {
+                relative: (self.root / relative).read_text()
+                for relative in XFCP_EXTENSION_SOURCES
+            }
+            permission_base = (self.root / PERMISSION_BASE_PHP).read_text()
+            forum_base = (self.root / FORUM_BASE_PHP).read_text()
+            user_base = (self.root / USER_BASE_PHP).read_text()
+        except (OSError, ET.ParseError, UnicodeDecodeError):
+            return self.check("xfcp_chain_fixtures_readable", False)
+        self.check("xfcp_chain_fixtures_readable", True)
+
+        metadata_checks = []
+        for label, xml_path, from_class, to_class, execute_order in XFCP_EXTENSION_METADATA:
+            tree = metadata[xml_path]
+            matches = [node for node in tree.iter("extension")
+                       if node.get("from_class") == from_class
+                       and node.get("to_class") == to_class
+                       and node.get("active") == "1"
+                       and node.get("execute_order") == execute_order]
+            metadata_checks.append(len(matches) == 1)
+            self.check(f"xfcp_metadata_{label}", len(matches) == 1)
+        forum_orders = [order for label, _, _, _, order in XFCP_EXTENSION_METADATA
+                        if label.startswith("forum_")]
+        user_orders = [order for label, _, _, _, order in XFCP_EXTENSION_METADATA
+                       if label.startswith("user_")]
+        self.check("xfcp_forum_order_tie", forum_orders == ["10", "10"])
+        self.check("xfcp_user_order_tie", user_orders == ["10"] * 5)
+
+        source_checks = []
+        for relative, markers in XFCP_EXTENSION_SOURCES.items():
+            source = sources[relative]
+            matches = all(marker in source for marker in markers)
+            source_checks.append(matches)
+            label = relative.removeprefix("src/addons/").replace("/", "_") \
+                .removesuffix(".php").lower()
+            self.check(f"xfcp_source_{label}", matches)
+
+        forum_base_ok = "class ForumController extends" in forum_base
+        self.check("forum_legacy_alias_base_fixture", forum_base_ok)
+        self.check("permission_builder_base_fixture", "class Builder" in permission_base)
+        self.check("user_entity_base_fixture", "class User" in user_base)
+        return (all(metadata_checks) and all(source_checks) and forum_base_ok
+                and "class Builder" in permission_base and "class User" in user_base)
+
+    def reference_hits_for_fixture(
+        self,
+        label: str,
+        symbol: str,
+        expected: dict[str, int],
+        snippet_marker: str,
+    ) -> list[dict[str, Any]]:
+        expected_paths = tuple(expected)
+        matches: list[dict[str, Any]] = []
+        observed: dict[str, int] = {}
+        cursors: set[str] = set()
+        page = self.invoke(f"refs_{label}", "refs", symbol)
+        page_number = 0
+        while page and page_number < 100:
+            for hit in self.hits(page):
+                relative = next(
+                    (path for path in expected_paths if self.hit_path(hit).endswith(path)),
+                    None,
+                )
+                if relative is not None and self.hit_contains_source_marker(
+                    hit, relative, snippet_marker,
+                ):
+                    matches.append(hit)
+                    observed[relative] = observed.get(relative, 0) + 1
+            if all(observed.get(path, 0) >= count for path, count in expected.items()):
+                break
+            cursor = page.get("next")
+            if not isinstance(cursor, str) or cursor in cursors:
+                break
+            cursors.add(cursor)
+            page_number += 1
+            page = self.invoke(f"refs_{label}_page_{page_number}", "more", cursor)
+        if page_number == 100 and page and isinstance(page.get("next"), str):
+            self.failures.append(f"refs_{label}_pagination_cap")
+        self.counts[f"{label}_reference_hits"] = len(matches)
+        self.check(f"refs_{label}_source_occurrences", observed == expected)
+
+        candidate_hits = [hit for hit in matches
+                          if hit.get("target") is None
+                          and isinstance(hit.get("candidates"), list)
+                          and bool(hit["candidates"])]
+        self.counts[f"{label}_candidate_hits"] = len(candidate_hits)
+        self.counts[f"{label}_candidate_ids"] = sum(
+            len(hit["candidates"]) for hit in candidate_hits
+        )
+        self.check(f"refs_{label}_candidate_shape",
+                   len(candidate_hits) == len(matches) and bool(matches)
+                   and all(hit.get("resolution") == "candidate" for hit in matches))
+        return matches
+
+    def hit_contains_source_marker(
+        self,
+        hit: dict[str, Any],
+        relative_path: str,
+        marker: str,
+    ) -> bool:
+        try:
+            line = int(hit.get("start_line", 0))
+            if relative_path not in self.source_lines:
+                self.source_lines[relative_path] = (self.root / relative_path).read_text(
+                    encoding="utf-8", errors="replace",
+                ).splitlines()
+            source_lines = self.source_lines[relative_path]
+            return 1 <= line <= len(source_lines) and marker in source_lines[line - 1]
+        except (OSError, TypeError, ValueError):
+            return False
+
+    def symbol_context_for_fixture(
+        self,
+        label: str,
+        symbol: str,
+        relative_path: str,
+        contexts: list[tuple[str, list[dict[str, Any]]]],
+    ) -> None:
+        search = self.invoke(
+            f"search_{label}",
+            "search",
+            f"sym:{symbol}",
+            f"file:{relative_path}",
+            "lang:php",
+        )
+        hit = next((candidate for candidate in self.hits(search)
+                    if self.hit_path(candidate).endswith(relative_path)
+                    and candidate.get("name") == symbol), None) if search else None
+        if not hit or not isinstance(hit.get("handle"), str):
+            self.failures.append(f"ctx_{label}")
+            return
+        context = self.invoke(f"ctx_{label}", "ctx", hit["handle"])
+        relationships = context.get("relationships", []) if context else []
+        if not isinstance(relationships, list):
+            self.failures.append(f"ctx_{label}_relationships")
+            return
+        contexts.append((self.hit_path(hit), [relationship for relationship in relationships
+                                             if isinstance(relationship, dict)]))
+
+    @staticmethod
+    def relationship_target_path(relationship: dict[str, Any]) -> str:
+        target = relationship.get("target")
+        return Acceptance.hit_path(target) if isinstance(target, dict) else ""
+
+    @staticmethod
+    def relationship_source_path(relationship: dict[str, Any]) -> str:
+        source = relationship.get("source")
+        return Acceptance.hit_path(source) if isinstance(source, dict) else ""
+
+    def check_xfcp_context_relationships(
+        self,
+        contexts: list[tuple[str, list[dict[str, Any]]]],
+    ) -> None:
+        unique_relationships = {
+            json.dumps(relationship, sort_keys=True): relationship
+            for _, relationships in contexts
+            for relationship in relationships
+        }
+        relationships = list(unique_relationships.values())
+        for kind in XFCP_RELATIONSHIP_KINDS:
+            matches = [relationship for relationship in relationships
+                       if relationship.get("kind") == kind]
+            self.counts[f"{kind}_relationships"] = len(matches)
+            self.check(f"ctx_{kind}", bool(matches))
+
+        candidate_kinds = XFCP_RELATIONSHIP_KINDS[:-1]
+        for kind in candidate_kinds:
+            self.check(f"ctx_{kind}_resolution",
+                       any(relationship.get("kind") == kind
+                           and relationship.get("resolution") == "candidate"
+                           for relationship in relationships))
+
+        framework_edges = [relationship for relationship in relationships
+                           if relationship.get("kind") == "framework_parent_candidate"]
+        self.check("ctx_forum_framework_parent_candidate", any(
+            "ForumController" in json.dumps(relationship)
+            and any(path in json.dumps(relationship) for path in
+                    (FORUM_XFES_PHP, FORUM_MULTISITE_PHP))
+            for relationship in framework_edges))
+
+        permission_parent_edges = [relationship for relationship in relationships
+                                   if relationship.get("kind") == "php_parent_call_candidate"
+                                   and self.relationship_source_path(relationship).endswith(
+                                       PERMISSION_SEARCH_PHP)]
+        self.check("ctx_search_parent_calls_reach_base", all(
+            any(self.relationship_target_path(relationship).endswith(PERMISSION_BASE_PHP)
+                and method in json.dumps(relationship)
+                for relationship in permission_parent_edges)
+            for method in ("rebuildCombination", "rebuildCombinationContent")))
+
+        chat_parent_edges = [relationship for relationship in relationships
+                             if relationship.get("kind") == "php_parent_call_candidate"
+                             and self.relationship_source_path(relationship).endswith(
+                                 PERMISSION_CHAT_PHP)]
+        self.check("ctx_chat_parent_calls_reach_search", all(
+            any(self.relationship_target_path(relationship).endswith(PERMISSION_SEARCH_PHP)
+                and method in json.dumps(relationship)
+                for relationship in chat_parent_edges)
+            for method in ("rebuildCombination", "rebuildCombinationContent")))
+
+        forum_tie_contexts = [relationships for path, relationships in contexts
+                              if path.endswith(FORUM_XFES_PHP)
+                              or path.endswith(FORUM_MULTISITE_PHP)]
+        user_tie_contexts = [relationships for path, relationships in contexts
+                             if any(path.endswith(expected)
+                                    for expected in XFCP_REFERENCE_FIXTURES["XFCP_User"])]
+        forum_tie_edges = [relationship for context in forum_tie_contexts
+                           for relationship in context
+                           if relationship.get("kind") == "framework_parent_candidate"
+                           and relationship.get("resolution") == "candidate"
+                           and "priority_tie=10" in str(relationship.get("provenance", ""))]
+        user_tie_edges = [relationship for context in user_tie_contexts
+                          for relationship in context
+                          if relationship.get("kind") == "framework_parent_candidate"
+                          and relationship.get("resolution") == "candidate"
+                          and "priority_tie=10" in str(relationship.get("provenance", ""))]
+        forum_paths = (FORUM_XFES_PHP, FORUM_MULTISITE_PHP)
+        forum_targets = (FORUM_BASE_PHP, *forum_paths)
+        expected_forum_pairs = {
+            (source, target)
+            for source in forum_paths
+            for target in forum_targets
+            if target != source
+        } | {(source, FORUM_BASE_PHP) for source in forum_paths}
+        user_paths = tuple(XFCP_REFERENCE_FIXTURES["XFCP_User"])
+        expected_user_pairs = {
+            (source, target)
+            for source in user_paths
+            for target in (USER_BASE_PHP, *user_paths)
+            if target != source
+        } | {(source, USER_BASE_PHP) for source in user_paths}
+
+        def tie_pairs(edges: list[dict[str, Any]], source_paths: tuple[str, ...],
+                      target_paths: tuple[str, ...]) -> set[tuple[str, str]]:
+            pairs: set[tuple[str, str]] = set()
+            for edge in edges:
+                source = self.relationship_source_path(edge)
+                target = self.relationship_target_path(edge)
+                source_fixture = next((path for path in source_paths
+                                       if source.endswith(path)), None)
+                target_fixture = next((path for path in target_paths
+                                       if target.endswith(path)), None)
+                if source_fixture and target_fixture:
+                    pairs.add((source_fixture, target_fixture))
+            return pairs
+
+        observed_forum_pairs = tie_pairs(
+            forum_tie_edges, forum_paths, (FORUM_BASE_PHP, *forum_paths),
+        )
+        observed_user_pairs = tie_pairs(
+            user_tie_edges, user_paths, (USER_BASE_PHP, *user_paths),
+        )
+        self.counts["ctx_forum_tie_candidate_edges"] = len(observed_forum_pairs)
+        self.counts["ctx_user_tie_candidate_edges"] = len(observed_user_pairs)
+        self.check("ctx_forum_tied_candidate_group",
+                   expected_forum_pairs <= observed_forum_pairs)
+        self.check("ctx_user_tied_candidate_group",
+                   expected_user_pairs <= observed_user_pairs)
+        self.check("ctx_inheritance_issue_explanation", any(
+            relationship.get("kind") == "inheritance_issue"
+            and relationship.get("resolution") == "unresolved"
+            and bool(relationship.get("provenance"))
+            for relationship in relationships))
 
     def run_navigation(self) -> None:
+        context_records: list[tuple[str, list[dict[str, Any]]]] = []
         post_search = self.invoke(
             "search_core_post",
             "search",
@@ -262,17 +641,75 @@ class Acceptance:
         self.counts["outline_entries"] = len(outline_hits)
         self.check("map_core_post_methods", "canView" in outline_text and "getContentUrl" in outline_text)
 
-        references = self.invoke("refs_xfcp_trampoline", "refs", XFCP_NAME)
-        reference_hits = self.hits(references) if references else []
-        self.counts["xfcp_reference_hits"] = len(reference_hits)
-        placeholder_refs = [hit for hit in reference_hits
-                            if self.hit_path(hit).endswith(EXTENSION_PHP)
-                            and f"extends {XFCP_NAME}" in json.dumps(hit.get("snippet", {}))]
+        placeholder_refs = self.reference_hits_for_fixture(
+            "xfcp_trampoline",
+            XFCP_NAME,
+            XFCP_REFERENCE_FIXTURES[XFCP_NAME],
+            f"extends {XFCP_NAME}",
+        )
+        self.counts["xfcp_reference_hits"] = len(placeholder_refs)
         self.check("refs_xfcp_trampoline", bool(placeholder_refs)
-                   and XFCP_NAME in json.dumps(references)
-                   and all(hit.get("target") is None and not hit.get("candidates")
-                           and hit.get("resolution") == "unresolved"
+                   and all(hit.get("target") is None
+                           and isinstance(hit.get("candidates"), list)
+                           and bool(hit["candidates"])
+                           and hit.get("resolution") == "candidate"
                            for hit in placeholder_refs))
+
+        for name, expected in XFCP_REFERENCE_FIXTURES.items():
+            if name == XFCP_NAME:
+                continue
+            self.reference_hits_for_fixture(
+                f"{name.lower()}_trampoline",
+                name,
+                expected,
+                f"extends {name}",
+            )
+
+        for method, expected in PARENT_CALL_FIXTURES.items():
+            self.reference_hits_for_fixture(
+                f"parent_{method.lower()}",
+                method,
+                expected,
+                f"parent::{method}(",
+            )
+
+        class_context_fixtures = (
+            ("permission_search_class", "Builder", PERMISSION_SEARCH_PHP),
+            ("permission_chat_class", "Builder", PERMISSION_CHAT_PHP),
+            ("forum_xfes_class", "Forum", FORUM_XFES_PHP),
+            ("forum_multisite_class", "Forum", FORUM_MULTISITE_PHP),
+            ("user_siropu_class", "User", USER_SIROPU_PHP),
+            ("user_uix_class", "User", USER_UIX_PHP),
+            ("user_ncmec_class", "User", USER_NCMEC_PHP),
+            ("user_xfmg_class", "User", USER_XFMG_PHP),
+            ("user_xfrm_class", "User", USER_XFRM_PHP),
+        )
+        for label, symbol, path in class_context_fixtures:
+            self.symbol_context_for_fixture(label, symbol, path, context_records)
+        for method, paths in PARENT_CALL_FIXTURES.items():
+            for index, path in enumerate(paths, start=1):
+                self.symbol_context_for_fixture(
+                    f"parent_{method.lower()}_{index}", method, path, context_records
+                )
+
+        self.symbol_context_for_fixture(
+            "forum_controller_base",
+            "ForumController",
+            FORUM_BASE_PHP,
+            context_records,
+        )
+        self.symbol_context_for_fixture(
+            "permission_builder_base",
+            "Builder",
+            PERMISSION_BASE_PHP,
+            context_records,
+        )
+        self.symbol_context_for_fixture(
+            "user_entity_base",
+            "User",
+            USER_BASE_PHP,
+            context_records,
+        )
 
         extension_search = self.invoke("search_extension_class", "search", "sym:MediaItem",
                                        f"file:{Path(EXTENSION_PHP).parent}", "lang:php")
@@ -298,6 +735,10 @@ class Acceptance:
         )
         if not isinstance(extension_relations, list):
             extension_relations = []
+        elif extension_hit:
+            context_records.append((self.hit_path(extension_hit), [
+                relation for relation in extension_relations if isinstance(relation, dict)
+            ]))
         class_edges = [rel for rel in extension_relations if isinstance(rel, dict)
                        and rel.get("kind") == "xenforo_class_extension_candidate"
                        and rel.get("resolution") == "candidate"]
@@ -340,23 +781,39 @@ class Acceptance:
         self.counts["addon_extension_dependency_candidates"] = len(addon_edges)
         self.check("ctx_addon_extension_dependency_candidate", bool(addon_edges))
 
+        self.check_xfcp_context_relationships(context_records)
+
     def index_metrics(self) -> dict[str, Any]:
         database = self.cache / "index.sqlite3"
+        fixture_paths = tuple(dict.fromkeys((
+            CORE_POST,
+            EXTENSION_PHP,
+            BASE_PHP,
+            *XENFORO_FIXTURE_PHP_FILES,
+        )))
+        occurrence_names = tuple(dict.fromkeys((
+            *XFCP_REFERENCE_FIXTURES.keys(),
+            *PARENT_CALL_FIXTURES.keys(),
+        )))
         try:
             connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
             rows = connection.execute(
                 "SELECT status, COUNT(*) FROM files WHERE language='php' GROUP BY status"
             ).fetchall()
+            fixture_placeholders = ",".join("?" for _ in fixture_paths)
             fixture_rows = connection.execute(
-                "SELECT path, status FROM files WHERE path IN (?, ?, ?)",
-                (CORE_POST, EXTENSION_PHP, BASE_PHP),
+                f"SELECT path, status FROM files WHERE path IN ({fixture_placeholders})",
+                fixture_paths,
             ).fetchall()
-            placeholder_rows = connection.execute(
-                "SELECT o.role, o.provenance, o.target, o.candidates FROM occurrences o "
-                "JOIN files f ON f.id=o.file_id WHERE f.path=? AND o.name=?",
-                (EXTENSION_PHP, XFCP_NAME),
+            occurrence_placeholders = ",".join("?" for _ in fixture_paths)
+            name_placeholders = ",".join("?" for _ in occurrence_names)
+            occurrence_rows = connection.execute(
+                "SELECT f.path, o.name, o.role, o.provenance, o.target, o.candidates "
+                "FROM occurrences o JOIN files f ON f.id=o.file_id "
+                f"WHERE f.path IN ({occurrence_placeholders}) "
+                f"AND o.name IN ({name_placeholders})",
+                (*fixture_paths, *occurrence_names),
             ).fetchall()
-            connection.close()
         except sqlite3.Error:
             self.failures.append("php_index_metrics")
             return {"files": 0, "statuses": {}, "complete_percent": 0.0}
@@ -370,13 +827,97 @@ class Acceptance:
         self.check("php_complete_index_floor", total > 0 and complete_percent >= 95.0)
         fixture_statuses = {path: status for path, status in fixture_rows}
         self.check("core_and_addon_php_complete", all(
-            fixture_statuses.get(path) == "complete" for path in (CORE_POST, EXTENSION_PHP, BASE_PHP)))
-        placeholder_uses = [row for row in placeholder_rows
-                            if row[0] != "declaration" and row[1] == "xenforo_generated_placeholder"]
+            fixture_statuses.get(path) == "complete"
+            for path in (CORE_POST, EXTENSION_PHP, BASE_PHP)))
+        self.check("xfcp_chain_php_complete", all(
+            fixture_statuses.get(path) == "complete" for path in XENFORO_FIXTURE_PHP_FILES))
+
+        expected_occurrences: dict[tuple[str, str], tuple[int, str, str | None]] = {}
+        for name, files in XFCP_REFERENCE_FIXTURES.items():
+            for path, count in files.items():
+                expected_occurrences[(path, name)] = (
+                    count, XFCP_OCCURRENCE_PROVENANCE_PREFIX, None,
+                )
+        for name, files in PARENT_CALL_FIXTURES.items():
+            for path, count in files.items():
+                expected_occurrences[(path, name)] = (
+                    count, PARENT_CALL_OCCURRENCE_PROVENANCE_PREFIX, "call",
+                )
+
+        observed_occurrences: dict[tuple[str, str], list[tuple[Any, ...]]] = {}
+        for row in occurrence_rows:
+            path, name, role, provenance = row[:4]
+            key = (str(path), str(name))
+            expected = expected_occurrences.get(key)
+            if (expected is not None
+                    and (expected[2] is None or role == expected[2])
+                    and role != "declaration"
+                    and str(provenance).startswith(expected[1])):
+                observed_occurrences.setdefault(key, []).append(row)
+
+        occurrence_counts_match = all(
+            len(observed_occurrences.get(key, [])) == expected[0]
+            for key, expected in expected_occurrences.items()
+        )
+        self.check("xfcp_occurrence_facts_present", occurrence_counts_match)
+        selected_occurrences = [row for facts in observed_occurrences.values() for row in facts]
+        candidate_occurrences = []
+        candidate_ids: set[int] = set()
+        for _, _, _, _, target, encoded_candidates in selected_occurrences:
+            try:
+                candidates = json.loads(encoded_candidates)
+            except (json.JSONDecodeError, TypeError):
+                candidates = None
+            if target is None and isinstance(candidates, list) and candidates:
+                candidate_occurrences.append((target, candidates))
+                candidate_ids.update(candidate for candidate in candidates
+                                     if isinstance(candidate, int) and not isinstance(candidate, bool))
+
+        self.counts["xfcp_source_occurrences"] = sum(
+            len(observed_occurrences.get((path, name), []))
+            for name, files in XFCP_REFERENCE_FIXTURES.items()
+            for path in files
+        )
+        self.counts["php_parent_call_occurrences"] = sum(
+            len(observed_occurrences.get((path, name), []))
+            for name, files in PARENT_CALL_FIXTURES.items()
+            for path in files
+        )
+        self.counts["candidate_occurrences"] = len(candidate_occurrences)
+        self.counts["candidate_ids"] = sum(len(candidates)
+                                            for _, candidates in candidate_occurrences)
+        self.counts["unique_candidate_ids"] = len(candidate_ids)
+        self.check("xfcp_occurrence_targets_unresolved",
+                   len(candidate_occurrences) == len(selected_occurrences)
+                   and bool(selected_occurrences))
+        self.check("xfcp_occurrence_candidate_ids",
+                   len(candidate_ids) > 0
+                   and all(isinstance(candidate, int) and not isinstance(candidate, bool)
+                           for _, candidates in candidate_occurrences for candidate in candidates))
+
+        if candidate_ids:
+            candidate_placeholders = ",".join("?" for _ in candidate_ids)
+            indexed_candidate_ids = {int(row[0]) for row in connection.execute(
+                f"SELECT id FROM definitions WHERE id IN ({candidate_placeholders})",
+                tuple(candidate_ids),
+            ).fetchall()}
+        else:
+            indexed_candidate_ids = set()
+        self.check("xfcp_candidate_ids_indexed", candidate_ids == indexed_candidate_ids)
+        connection.close()
+
+        placeholder_uses = [row for row in selected_occurrences
+                            if row[0] == EXTENSION_PHP and row[1] == XFCP_NAME
+                            and row[2] != "declaration"
+                            and str(row[3]).startswith(XFCP_OCCURRENCE_PROVENANCE_PREFIX)]
         self.counts["xfcp_placeholder_use_facts"] = len(placeholder_uses)
-        self.check("xfcp_placeholder_index_provenance", any(
-            target is None and json.loads(candidates) == []
-            for _, _, target, candidates in placeholder_uses))
+        placeholder_candidate_use = False
+        for row in placeholder_uses:
+            try:
+                placeholder_candidate_use |= row[4] is None and bool(json.loads(row[5]))
+            except (json.JSONDecodeError, TypeError):
+                continue
+        self.check("xfcp_placeholder_index_provenance", placeholder_candidate_use)
         return {
             "files": total,
             "statuses": statuses,

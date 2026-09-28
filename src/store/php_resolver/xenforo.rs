@@ -1,10 +1,18 @@
+mod alias_names;
+mod alias_source;
+mod chain_adapter;
+mod chain_projection;
 mod class_extensions;
 mod manifest;
 
+use super::hierarchy_index::{PhpHierarchyIndex, PhpParentCandidate};
 use super::php_names::{PhpClassCandidate, PhpClassIndex};
+use crate::store::inheritance::DerivedBudget;
+pub(super) use alias_names::canonicalize_class_name;
+pub(super) use alias_source::AliasSource;
 use anyhow::{Result, bail, ensure};
-use rusqlite::{Connection, Transaction, params};
-use std::collections::HashMap;
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 
 const MAX_METADATA_FILES: usize = 10_000;
@@ -34,6 +42,13 @@ struct ExtensionFile {
     extensions: Vec<ClassExtension>,
 }
 
+struct ExtensionFileIssue {
+    file_id: i64,
+    directory: String,
+    byte_len: usize,
+    code: &'static str,
+}
+
 struct ClassExtension {
     from_class: String,
     from_span: Range<usize>,
@@ -46,7 +61,13 @@ struct ClassExtension {
 }
 
 /// Adds XenForo add-on and class-extension evidence from stored source bytes.
-pub(super) fn resolve(conn: &mut Connection, classes: &PhpClassIndex) -> Result<()> {
+pub(super) fn resolve(
+    conn: &mut Connection,
+    classes: &PhpClassIndex,
+    hierarchy: &mut PhpHierarchyIndex,
+    aliases: &AliasSource,
+    budget: &mut DerivedBudget,
+) -> Result<()> {
     let transaction = conn.transaction()?;
     let baseline = transaction.total_changes();
     ensure!(
@@ -54,7 +75,7 @@ pub(super) fn resolve(conn: &mut Connection, classes: &PhpClassIndex) -> Result<
         "XenForo metadata file limit exceeded"
     );
     let mut manifests = load_manifests(&transaction)?;
-    let extensions = load_extension_files(&transaction)?;
+    let (extensions, extension_issues) = load_extension_files(&transaction)?;
     let parsed_facts = manifests
         .iter()
         .map(|manifest| manifest.requirements.len())
@@ -106,8 +127,42 @@ pub(super) fn resolve(conn: &mut Connection, classes: &PhpClassIndex) -> Result<
         &addon_directories,
         baseline,
     )?;
+    publish_extension_file_issues(
+        &transaction,
+        &extension_issues,
+        &addon_directories,
+        baseline,
+    )?;
+
+    let prepared = chain_adapter::prepare(&transaction, &extensions, hierarchy, aliases, budget)?;
+    let mut parents_by_evidence = BTreeMap::<(i64, i64, i64), Vec<PhpParentCandidate>>::new();
+    for parent in prepared.hierarchy_edges.iter().cloned() {
+        parents_by_evidence
+            .entry((
+                parent.child_class_id,
+                parent.evidence_start,
+                parent.evidence_end,
+            ))
+            .or_default()
+            .push(parent);
+    }
+    for ((child, start, end), replacements) in parents_by_evidence {
+        hierarchy.replace_proxy_parent_candidates(child, start, end, replacements);
+    }
+    chain_projection::project(&transaction, &prepared)?;
     transaction.commit()?;
     Ok(())
+}
+
+pub(super) fn load_alias_source(conn: &Connection) -> Result<AliasSource> {
+    let source: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT c.bytes FROM files f JOIN contents c ON c.revision=f.revision WHERE f.path='src/XF.php' AND f.language='php'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(AliasSource::parse(source.as_deref().unwrap_or_default()))
 }
 
 struct AddonOwner {
@@ -167,12 +222,15 @@ fn load_manifests(transaction: &Transaction<'_>) -> Result<Vec<AddonManifest>> {
     Ok(manifests)
 }
 
-fn load_extension_files(transaction: &Transaction<'_>) -> Result<Vec<ExtensionFile>> {
+fn load_extension_files(
+    transaction: &Transaction<'_>,
+) -> Result<(Vec<ExtensionFile>, Vec<ExtensionFileIssue>)> {
     let mut statement = transaction.prepare(
         "SELECT f.id,f.path,length(c.bytes),c.bytes FROM files f JOIN contents c ON c.revision=f.revision WHERE f.path LIKE 'src/addons/%/!_data/class_extensions.xml' ESCAPE '!' ORDER BY f.path",
     )?;
     let mut rows = statement.query([])?;
     let mut files = Vec::new();
+    let mut issues = Vec::new();
     let mut total_extensions = 0_usize;
     let mut scanned_files = 0_usize;
     while let Some(row) = rows.next()? {
@@ -183,16 +241,28 @@ fn load_extension_files(transaction: &Transaction<'_>) -> Result<Vec<ExtensionFi
         let file_id = row.get(0)?;
         let path: String = row.get(1)?;
         let source_len: i64 = row.get(2)?;
-        if source_len > MAX_METADATA_SOURCE_BYTES as i64 {
-            continue;
-        }
         let source: Vec<u8> = row.get(3)?;
         let Some((addon_id, directory)) = addon_location(&path, "/_data/class_extensions.xml")
         else {
             continue;
         };
+        if source_len > MAX_METADATA_SOURCE_BYTES as i64 {
+            issues.push(ExtensionFileIssue {
+                file_id,
+                directory,
+                byte_len: usize::try_from(source_len)?,
+                code: "extension_metadata_too_large",
+            });
+            continue;
+        }
         let Ok(extensions) = class_extensions::parse(&source) else {
             // A malformed tail invalidates the file's earlier declarations too.
+            issues.push(ExtensionFileIssue {
+                file_id,
+                directory,
+                byte_len: source.len(),
+                code: "malformed_extension_metadata",
+            });
             continue;
         };
         total_extensions = total_extensions.saturating_add(extensions.len());
@@ -207,7 +277,31 @@ fn load_extension_files(transaction: &Transaction<'_>) -> Result<Vec<ExtensionFi
             extensions,
         });
     }
-    Ok(files)
+    Ok((files, issues))
+}
+
+fn publish_extension_file_issues(
+    transaction: &Transaction<'_>,
+    issues: &[ExtensionFileIssue],
+    addon_directories: &HashMap<String, AddonOwner>,
+    baseline: u64,
+) -> Result<()> {
+    for issue in issues {
+        let Some(owner) = addon_directories.get(&issue.directory) else {
+            continue;
+        };
+        insert_relationship(
+            transaction,
+            owner.definition_id,
+            None,
+            "inheritance_issue",
+            issue.file_id,
+            0..issue.byte_len,
+            &format!("xenforo_class_extensions_xml;{}", issue.code),
+        )?;
+        ensure_fact_budget(transaction, baseline)?;
+    }
+    Ok(())
 }
 
 fn addon_location(path: &str, suffix: &str) -> Option<(String, String)> {

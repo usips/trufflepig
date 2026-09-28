@@ -1,7 +1,8 @@
 use std::time::Duration;
 
-use super::super::{Definition, Extraction, Occurrence};
+use super::super::{Definition, Extraction, Occurrence, Relationship};
 use super::extract;
+use crate::extract::php_markers::{self, ClassRole, Marker, ParentKind, Visibility};
 
 fn definition<'a>(extraction: &'a Extraction, name: &str, kind: &str) -> &'a Definition {
     extraction
@@ -33,6 +34,53 @@ fn source_span(source: &[u8], start: usize, end: usize) -> &[u8] {
     source
         .get(start..end)
         .expect("span must point into source bytes")
+}
+
+fn definition_index(
+    extraction: &Extraction,
+    name: &str,
+    kind: &str,
+    container: Option<&str>,
+) -> usize {
+    extraction
+        .definitions
+        .iter()
+        .position(|definition| {
+            definition.name == name
+                && definition.kind == kind
+                && definition.container.as_deref() == container
+        })
+        .unwrap_or_else(|| panic!("missing {kind} definition {name} in {container:?}"))
+}
+
+fn marker_relationship<'a>(
+    extraction: &'a Extraction,
+    source: &[u8],
+    source_definition: usize,
+    target_definition: Option<usize>,
+    evidence: &[u8],
+    expected: Marker,
+) -> &'a Relationship {
+    extraction
+        .relationships
+        .iter()
+        .find(|relationship| {
+            relationship.source == source_definition
+                && relationship.target == target_definition
+                && source_span(
+                    source,
+                    relationship.evidence_start,
+                    relationship.evidence_end,
+                ) == evidence
+                && php_markers::decode(relationship).as_ref() == Some(&expected)
+        })
+        .unwrap_or_else(|| panic!("missing {expected:?} marker for {evidence:?}"))
+}
+
+fn decoded_markers(extraction: &Extraction) -> impl Iterator<Item = (&Relationship, Marker)> {
+    extraction.relationships.iter().filter_map(|relationship| {
+        php_markers::decode(relationship).map(|marker| (relationship, marker))
+    })
 }
 
 #[test]
@@ -345,6 +393,414 @@ class Child extends Base implements Contract {
         .expect("method call occurrence");
     assert_eq!(call.provenance, "php_call");
     assert_eq!(call.target, None);
+}
+
+#[test]
+fn hierarchy_markers_keep_exact_evidence_and_method_facts() {
+    let source = br#"<?php
+namespace Acme;
+abstract class Base {}
+trait Shared {}
+abstract class Child extends Base {
+    use Shared;
+    function defaultVisibility() {}
+    public function publicMethod() {}
+    protected function protectedMethod() {}
+    private function privateMethod() {}
+    abstract public function abstractMethod();
+    public static function staticMethod() {}
+}
+"#;
+
+    let extracted = extract(source);
+    assert_eq!(extracted.status, "complete");
+
+    let child_index = definition_index(&extracted, "Child", "class", Some("Acme"));
+    let class_marker = extracted
+        .relationships
+        .iter()
+        .find(|relationship| {
+            relationship.source == child_index
+                && relationship.target.is_none()
+                && php_markers::decode(relationship)
+                    == Some(Marker::Class {
+                        role: ClassRole::Ordinary,
+                        conditional: false,
+                    })
+        })
+        .expect("Child class marker");
+    let class_start = source
+        .windows(b"abstract class Child extends Base {".len())
+        .position(|window| window == b"abstract class Child extends Base {")
+        .expect("Child declaration prefix");
+    let class_end = source.iter().rposition(|byte| *byte == b'}').unwrap() + 1;
+    assert_eq!(class_marker.evidence_start, class_start);
+    assert_eq!(class_marker.evidence_end, class_end);
+    assert!(
+        source_span(
+            source,
+            class_marker.evidence_start,
+            class_marker.evidence_end
+        )
+        .starts_with(b"abstract class Child extends Base {")
+    );
+
+    marker_relationship(
+        &extracted,
+        source,
+        child_index,
+        None,
+        b"Base",
+        Marker::Parent {
+            kind: ParentKind::Ordinary,
+            conditional: false,
+            resolved_name: Some("Acme\\Base".to_owned()),
+        },
+    );
+    marker_relationship(
+        &extracted,
+        source,
+        child_index,
+        None,
+        b"Shared",
+        Marker::TraitUse { conditional: false },
+    );
+
+    for (method_name, declaration, visibility, abstract_method) in [
+        (
+            "defaultVisibility",
+            b"function defaultVisibility() {}".as_slice(),
+            Visibility::Public,
+            false,
+        ),
+        (
+            "publicMethod",
+            b"public function publicMethod() {}".as_slice(),
+            Visibility::Public,
+            false,
+        ),
+        (
+            "protectedMethod",
+            b"protected function protectedMethod() {}".as_slice(),
+            Visibility::Protected,
+            false,
+        ),
+        (
+            "privateMethod",
+            b"private function privateMethod() {}".as_slice(),
+            Visibility::Private,
+            false,
+        ),
+        (
+            "abstractMethod",
+            b"abstract public function abstractMethod();".as_slice(),
+            Visibility::Public,
+            true,
+        ),
+        (
+            "staticMethod",
+            b"public static function staticMethod() {}".as_slice(),
+            Visibility::Public,
+            false,
+        ),
+    ] {
+        let method_index = definition_index(&extracted, method_name, "method", Some("Acme\\Child"));
+        let marker = marker_relationship(
+            &extracted,
+            source,
+            method_index,
+            Some(child_index),
+            declaration,
+            Marker::Method {
+                visibility,
+                abstract_method,
+                conditional: false,
+            },
+        );
+        assert_eq!(
+            source_span(source, marker.evidence_start, marker.evidence_end),
+            declaration
+        );
+    }
+}
+
+#[test]
+fn hierarchy_markers_flag_conditionally_declared_facts() {
+    let source = br#"<?php
+namespace Acme;
+class Base {}
+trait Shared {}
+if ($enabled) {
+    class Conditional extends Base {
+        use Shared;
+        protected function maybe() {}
+    }
+}
+"#;
+
+    let extracted = extract(source);
+    assert_eq!(extracted.status, "complete");
+    let class_index = definition_index(&extracted, "Conditional", "class", Some("Acme"));
+    let class_marker = Marker::Class {
+        role: ClassRole::Ordinary,
+        conditional: true,
+    };
+    assert!(decoded_markers(&extracted).any(|(relationship, marker)| {
+        relationship.source == class_index && marker == class_marker
+    }));
+    assert!(decoded_markers(&extracted).any(|(relationship, marker)| {
+        relationship.source == class_index
+            && source_span(
+                source,
+                relationship.evidence_start,
+                relationship.evidence_end,
+            ) == b"Base"
+            && marker
+                == Marker::Parent {
+                    kind: ParentKind::Ordinary,
+                    conditional: true,
+                    resolved_name: Some("Acme\\Base".to_owned()),
+                }
+    }));
+    assert!(decoded_markers(&extracted).any(|(relationship, marker)| {
+        relationship.source == class_index
+            && source_span(
+                source,
+                relationship.evidence_start,
+                relationship.evidence_end,
+            ) == b"Shared"
+            && marker == Marker::TraitUse { conditional: true }
+    }));
+
+    let method_index = definition_index(&extracted, "maybe", "method", Some("Acme\\Conditional"));
+    assert!(decoded_markers(&extracted).any(|(relationship, marker)| {
+        relationship.source == method_index
+            && relationship.target == Some(class_index)
+            && source_span(
+                source,
+                relationship.evidence_start,
+                relationship.evidence_end,
+            ) == b"protected function maybe() {}"
+            && marker
+                == Marker::Method {
+                    visibility: Visibility::Protected,
+                    abstract_method: false,
+                    conditional: true,
+                }
+    }));
+}
+
+#[test]
+fn parent_markers_preserve_import_scope_and_qualified_xfcp_spelling() {
+    let source = br#"<?php
+namespace First {
+    use Vendor\One\XFCP_Base as ParentClass;
+    class Child extends ParentClass {}
+}
+namespace Second {
+    use Vendor\Two\Base as ParentClass;
+    class Child extends ParentClass {}
+}
+namespace Third {
+    class XFCP_Local {}
+    class Qualified extends \Vendor\XFCP_Core {}
+}
+namespace Same {
+    class XFCP_Bar {}
+}
+namespace Extension {
+    use Same\XFCP_Bar as ParentClass;
+    class Bar extends ParentClass {}
+}
+"#;
+
+    let extracted = extract(source);
+    assert_eq!(extracted.status, "complete");
+    let first_index = definition_index(&extracted, "Child", "class", Some("First"));
+    let second_index = definition_index(&extracted, "Child", "class", Some("Second"));
+    let proxy_index = definition_index(&extracted, "XFCP_Local", "class", Some("Third"));
+    let qualified_index = definition_index(&extracted, "Qualified", "class", Some("Third"));
+    let local_proxy_index = definition_index(&extracted, "XFCP_Bar", "class", Some("Same"));
+    let imported_proxy_index = definition_index(&extracted, "Bar", "class", Some("Extension"));
+
+    for (class_index, parent_kind, resolved_name) in [
+        (first_index, ParentKind::Proxy, "Vendor\\One\\XFCP_Base"),
+        (second_index, ParentKind::Ordinary, "Vendor\\Two\\Base"),
+    ] {
+        assert!(extracted.relationships.iter().any(|relationship| {
+            relationship.source == class_index
+                && relationship.target.is_none()
+                && source_span(
+                    source,
+                    relationship.evidence_start,
+                    relationship.evidence_end,
+                ) == b"ParentClass"
+                && php_markers::decode(relationship)
+                    == Some(Marker::Parent {
+                        kind: parent_kind,
+                        conditional: false,
+                        resolved_name: Some(resolved_name.into()),
+                    })
+        }));
+    }
+    marker_relationship(
+        &extracted,
+        source,
+        proxy_index,
+        None,
+        b"class XFCP_Local {}",
+        Marker::Class {
+            role: ClassRole::Proxy,
+            conditional: false,
+        },
+    );
+    marker_relationship(
+        &extracted,
+        source,
+        local_proxy_index,
+        None,
+        b"class XFCP_Bar {}",
+        Marker::Class {
+            role: ClassRole::Proxy,
+            conditional: false,
+        },
+    );
+    marker_relationship(
+        &extracted,
+        source,
+        qualified_index,
+        None,
+        b"\\Vendor\\XFCP_Core",
+        Marker::Parent {
+            kind: ParentKind::Proxy,
+            conditional: false,
+            resolved_name: Some("\\Vendor\\XFCP_Core".into()),
+        },
+    );
+    marker_relationship(
+        &extracted,
+        source,
+        imported_proxy_index,
+        None,
+        b"ParentClass",
+        Marker::Parent {
+            kind: ParentKind::Proxy,
+            conditional: false,
+            resolved_name: Some("Same\\XFCP_Bar".into()),
+        },
+    );
+
+    let first_parent = occurrence(
+        &extracted,
+        source,
+        b"ParentClass",
+        "type",
+        "Vendor\\One\\XFCP_Base",
+    );
+    let second_parent = occurrence(
+        &extracted,
+        source,
+        b"ParentClass",
+        "type",
+        "Vendor\\Two\\Base",
+    );
+    assert_eq!(
+        source_span(source, first_parent.start, first_parent.end),
+        b"ParentClass"
+    );
+    assert_eq!(
+        source_span(source, second_parent.start, second_parent.end),
+        b"ParentClass"
+    );
+    let imported_parent = occurrence(&extracted, source, b"ParentClass", "type", "Same\\XFCP_Bar");
+    assert_eq!(imported_parent.provenance, "xenforo_generated_placeholder");
+    assert_eq!(imported_parent.target, None);
+    assert!(imported_parent.candidates.is_empty());
+    assert_eq!(
+        source_span(source, imported_parent.start, imported_parent.end),
+        b"ParentClass"
+    );
+}
+
+#[test]
+fn literal_parent_calls_keep_the_caller_and_exact_method_evidence() {
+    let source = br#"<?php
+namespace Acme;
+class Base { public function persist() {} }
+class Unrelated { public function persist() {} }
+class Child extends Base {
+    public static function invoke() { return parent::persist(); }
+}
+"#;
+
+    let extracted = extract(source);
+    assert_eq!(extracted.status, "complete");
+    let class_index = definition_index(&extracted, "Child", "class", Some("Acme"));
+    let method_index = definition_index(&extracted, "invoke", "method", Some("Acme\\Child"));
+    let marker = marker_relationship(
+        &extracted,
+        source,
+        method_index,
+        Some(class_index),
+        b"persist",
+        Marker::ParentCall,
+    );
+    assert_eq!(
+        source_span(source, marker.evidence_start, marker.evidence_end),
+        b"persist"
+    );
+
+    let call = occurrence(&extracted, source, b"persist", "call", "persist");
+    assert_eq!(call.provenance, "php_parent_call");
+    assert_eq!(call.target, None);
+    assert!(call.candidates.is_empty());
+    assert!(!extracted.occurrences.iter().any(|occurrence| {
+        occurrence.role == "type"
+            && source_span(source, occurrence.start, occurrence.end) == b"parent"
+    }));
+}
+
+#[test]
+fn unsupported_parent_calls_do_not_bind_to_an_outer_method() {
+    let source = br#"<?php
+namespace Acme;
+class Base {}
+class Child extends Base {
+    public function outer() {
+        $closure = function () { return parent::dispatch(); };
+        $arrow = fn () => parent::dispatch();
+        $anonymous = new class {
+            public function inner() { return parent::dispatch(); }
+        };
+        return parent::$dynamic();
+    }
+}
+"#;
+
+    let extracted = extract(source);
+    assert!(matches!(
+        extracted.status.as_str(),
+        "complete" | "parse_error"
+    ));
+    let outer_index = definition_index(&extracted, "outer", "method", Some("Acme\\Child"));
+    assert!(!decoded_markers(&extracted).any(|(relationship, marker)| {
+        relationship.source == outer_index && marker == Marker::ParentCall
+    }));
+    assert!(!decoded_markers(&extracted).any(|(_, marker)| marker == Marker::ParentCall));
+
+    let unresolved: Vec<_> = extracted
+        .occurrences
+        .iter()
+        .filter(|occurrence| occurrence.provenance == "php_parent_call_unresolved")
+        .collect();
+    assert_eq!(unresolved.len(), 4);
+    assert!(unresolved.iter().all(|occurrence| {
+        occurrence.role == "call" && occurrence.target.is_none() && occurrence.candidates.is_empty()
+    }));
+    assert!(!extracted.occurrences.iter().any(|occurrence| {
+        occurrence.role == "type"
+            && source_span(source, occurrence.start, occurrence.end) == b"parent"
+    }));
 }
 
 #[test]

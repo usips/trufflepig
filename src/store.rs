@@ -1,5 +1,8 @@
 //! A per-root WAL index published atomically from an on-disk staging database.
 
+mod inheritance;
+#[cfg(test)]
+mod inheritance_cache_tests;
 mod module_config;
 mod module_resolver;
 mod paths;
@@ -212,6 +215,17 @@ impl Store {
     }
 
     pub fn index(&mut self) -> Result<Coverage> {
+        self.index_with_resolver(|staged| {
+            resolve::references(staged)?;
+            php_resolver::resolve(staged)?;
+            module_resolver::resolve(staged)
+        })
+    }
+
+    fn index_with_resolver(
+        &mut self,
+        resolve_staged: impl FnOnce(&mut Connection) -> Result<()>,
+    ) -> Result<Coverage> {
         let writer_lock = std::fs::OpenOptions::new()
             .create(true)
             .truncate(false)
@@ -241,8 +255,10 @@ impl Store {
         )?;
         schema::create(&staged)?;
         let capture_started_ms = publish::timestamp_ms()?;
-        let (coverage, fingerprint) =
+        let (coverage, scan_fingerprint) =
             scan::stage(&mut staged, &self.conn, &self.root, &self.cache)?;
+        let fingerprint =
+            scan::resolved_fingerprint(&scan_fingerprint, php_resolver::SHARED_RESOLVER_REVISION);
         let capture_completed_ms = publish::timestamp_ms()?.max(capture_started_ms);
         let previous: Option<String> = self
             .conn
@@ -258,9 +274,7 @@ impl Store {
         {
             return Ok(coverage);
         }
-        resolve::references(&mut staged)?;
-        php_resolver::resolve(&mut staged)?;
-        module_resolver::resolve(&mut staged)?;
+        resolve_staged(&mut staged)?;
         drop(staged);
         let publication = Publication {
             index_epoch: self.conn.query_row(
