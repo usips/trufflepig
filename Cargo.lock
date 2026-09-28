@@ -1056,6 +1056,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "quick-xml"
+version = "0.38.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42a232e7487fc2ef313d96dde7948e7a3c05101870d8985e4fd8d26aedd27b89"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1585,6 +1594,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tree-sitter-php"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d8c17c3ab69052c5eeaa7ff5cd972dd1bc25d1b97ee779fec391ad3b5df5592"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
 name = "tree-sitter-rust"
 version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1618,6 +1637,7 @@ dependencies = [
  "libc",
  "notify",
  "ort",
+ "quick-xml",
  "regex",
  "rusqlite",
  "serde",
@@ -1631,6 +1651,7 @@ dependencies = [
  "tree-sitter-c-sharp",
  "tree-sitter-javascript",
  "tree-sitter-luau",
+ "tree-sitter-php",
  "tree-sitter-rust",
  "tree-sitter-typescript",
  "uuid",

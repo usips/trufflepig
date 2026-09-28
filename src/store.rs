@@ -3,6 +3,7 @@
 mod module_config;
 mod module_resolver;
 mod paths;
+mod php_resolver;
 #[cfg(test)]
 mod publication_tests;
 mod publish;
@@ -258,6 +259,7 @@ impl Store {
             return Ok(coverage);
         }
         resolve::references(&mut staged)?;
+        php_resolver::resolve(&mut staged)?;
         module_resolver::resolve(&mut staged)?;
         drop(staged);
         let publication = Publication {

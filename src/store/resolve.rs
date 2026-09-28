@@ -15,7 +15,8 @@ pub(super) fn references(conn: &mut Connection) -> Result<()> {
                  (definition_file.language IN ('typescript','javascript') AND occurrence_file.language IN ('typescript','javascript')))
              ORDER BY definition.id LIMIT 64)),
              provenance=provenance || ';global_name_candidates'
-         WHERE target IS NULL AND candidates='[]' AND role IN ('call','read','type');"
+         WHERE target IS NULL AND candidates='[]' AND role IN ('call','read','type')
+           AND occurrence.file_id IN (SELECT id FROM files WHERE language!='php');"
     )?;
     transaction.commit()?;
     Ok(())

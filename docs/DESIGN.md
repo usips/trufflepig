@@ -5,7 +5,7 @@ identifiers, lexical search, structural navigation, and verified follow-up reads
 are the core. Correct source identity takes priority over compact output.
 
 The required scope is a Linux CLI operating locally on CPU, with Rust,
-TypeScript/JavaScript, C#, Luau, and DreamMaker extraction. Tests, documentation,
+TypeScript/JavaScript, C#, PHP, Luau, and DreamMaker extraction. Tests, documentation,
 configuration, and uncovered regions of source files remain searchable. Optional
 semantic retrieval requires an explicit `--sem` request.
 
@@ -19,6 +19,7 @@ semantic retrieval requires an explicit `--sem` request.
 - [Historical navigation and local Git objects](history-contract.md)
 - [Diagnostic retention, sessions, and delivery evidence](diagnostics-contract.md)
 - [Language extraction and relationship evidence](language-contract.md)
+- [PHP extraction and XenForo metadata candidates](php-contract.md)
 - [Semantic inference gate and resource limits](semantic-contract.md)
 - [Evaluation and acceptance](evaluation-contract.md)
 - [Retained licensing declarations for Josh](licensing-notes.md)

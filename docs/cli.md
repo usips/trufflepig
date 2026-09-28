@@ -10,6 +10,7 @@ does not walk up to Git metadata; use the same root and cache for follow-up read
 trufflepig --help -b 2000
 trufflepig --root . --no-daemon index
 trufflepig --root . search 'sym:TokenBucket'
+trufflepig --root . search 'sym:User lang:php file:src/'
 trufflepig --root . search 're:fn .*helper lang:rust'
 trufflepig --root . --no-daemon search 'file:src/ kind:function'
 trufflepig --root . semantic prepare --wait
@@ -23,8 +24,9 @@ occurrences, declarations before modules, members, locals, and imports; `re:` sc
 line, with `^` and `$` matching at line boundaries as in grep. `file:` is
 a root-relative path-prefix filter; `lang:` and `kind:` filter recorded
 classifications. Language names are `rust`, `typescript`, `javascript`, `csharp`,
-`luau`, `dreammaker`, and `text`; `rs`, `ts`, `js`, `cs`, `c#`, `lua`, and `dm`
-are aliases. Quote queries containing `c#` in shell commands. Docs/config use `text`.
+`php`, `luau`, `dreammaker`, and `text`; `rs`, `ts`, `js`, `cs`, `c#`, `lua`, and `dm`
+are aliases. `.php` and `.phtml` map to `php`. Quote queries containing `c#` in
+shell commands. Docs/config use `text`.
 One JSON object plus newline is the default output; `--json` accepts the same
 format. `--format lines` renders `search`, `refs`, `map`, `more`, and `show` as
 tab-separated lines for agents that read output directly: one

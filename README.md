@@ -18,7 +18,7 @@ Linux only.
   ([retrieval contract](docs/retrieval-contract.md))
 - **Structure, not just text.** Symbols, definitions, references, and
   resolved-versus-candidate relationships for Rust, TypeScript/JavaScript, C#,
-  Luau, and DreamMaker. Everything else stays text-searchable.
+  PHP, Luau, and DreamMaker. Everything else stays text-searchable.
   ([language contract](docs/language-contract.md))
 - **History without a checkout.** `hist`, `since`, `diff`, and `blame` over
   local Git objects with exact before/after reads. Needs Git 2.55 or newer.

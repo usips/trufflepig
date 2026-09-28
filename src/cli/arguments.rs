@@ -14,7 +14,7 @@ Queries (search TEXT):
   sym:NAME         exact, case-sensitive definition
   re:REGEX         regex over current file bytes
   file:PREFIX      path prefix (not a glob)
-  lang:L           rust, ts, js, csharp (cs, c#), luau, dm, text
+  lang:L           rust, ts, js, csharp (cs, c#), php, luau, dm, text
   kind:K           function, struct, file, ...
   ws:home|ws:all   workspace scope; in:MEMBER selects one member
 

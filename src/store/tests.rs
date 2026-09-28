@@ -28,12 +28,17 @@ fn identical_index_preserves_generation_and_prunes_content() {
 }
 
 #[test]
-fn extraction_contract_revision_rebuilds_unchanged_javascript_and_csharp_facts() {
+fn extraction_contract_revision_rebuilds_unchanged_language_facts() {
     let (_directory, mut store) = fixture();
     let javascript = b"function refreshWallet(id) { return findWallet(id); }\nfunction findWallet(id) { return id; }\n";
     let csharp = b"namespace Shop;\npublic record Wallet(string Id);\npublic interface IWalletStore { Wallet Load(); }\n";
+    let php = b"<?php\nnamespace XenForo\\AddOn\\Fixture;\nclass ForumBridge { public function refreshDelegation(): void {} }\n";
+    let phtml =
+        b"<?php namespace XenForo\\Template; class AccountPanel { public function render() {} }\n";
     std::fs::write(store.root.join("wallet.js"), javascript).unwrap();
     std::fs::write(store.root.join("Wallet.cs"), csharp).unwrap();
+    std::fs::write(store.root.join("ForumBridge.php"), php).unwrap();
+    std::fs::write(store.root.join("account.phtml"), phtml).unwrap();
     store.index().unwrap();
 
     // A prior release keyed facts by Cargo.lock alone. Poison those rows with
@@ -55,9 +60,16 @@ fn extraction_contract_revision_rebuilds_unchanged_javascript_and_csharp_facts()
         }],
         ..crate::extract::Extraction::default()
     };
-    for (path, bytes) in [
-        ("wallet.js", javascript.as_slice()),
-        ("Wallet.cs", csharp.as_slice()),
+    let old_php_lexical_only = crate::extract::Extraction {
+        language: "text".into(),
+        status: "lexical_only".into(),
+        ..crate::extract::Extraction::default()
+    };
+    for (path, bytes, facts) in [
+        ("wallet.js", javascript.as_slice(), &stale),
+        ("Wallet.cs", csharp.as_slice(), &stale),
+        ("ForumBridge.php", php.as_slice(), &old_php_lexical_only),
+        ("account.phtml", phtml.as_slice(), &old_php_lexical_only),
     ] {
         let revision = blake3::hash(bytes).to_hex().to_string();
         let grammar = path.rsplit('.').next().unwrap();
@@ -76,7 +88,7 @@ fn extraction_contract_revision_rebuilds_unchanged_javascript_and_csharp_facts()
                     revision,
                     grammar,
                     old_version,
-                    serde_json::to_string(&stale).unwrap()
+                    serde_json::to_string(facts).unwrap()
                 ],
             )
             .unwrap();
@@ -93,7 +105,16 @@ fn extraction_contract_revision_rebuilds_unchanged_javascript_and_csharp_facts()
     store.index().unwrap();
     assert_eq!(store.generation().unwrap(), old_generation + 1);
 
-    for (path, expected_name) in [("wallet.js", "refreshWallet"), ("Wallet.cs", "Wallet")] {
+    for (path, expected_name) in [
+        ("wallet.js", "refreshWallet"),
+        ("Wallet.cs", "Wallet"),
+        ("ForumBridge.php", "XenForo\\AddOn\\Fixture"),
+        ("ForumBridge.php", "ForumBridge"),
+        ("ForumBridge.php", "refreshDelegation"),
+        ("account.phtml", "XenForo\\Template"),
+        ("account.phtml", "AccountPanel"),
+        ("account.phtml", "render"),
+    ] {
         let has_definition: bool = store
             .conn
             .query_row(
@@ -104,6 +125,57 @@ fn extraction_contract_revision_rebuilds_unchanged_javascript_and_csharp_facts()
             .unwrap();
         assert!(has_definition, "{path} did not reextract {expected_name}");
     }
+    for path in ["ForumBridge.php", "account.phtml"] {
+        let is_php: bool = store
+            .conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM files WHERE path=?1 AND language='php')",
+                [path],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(is_php, "{path} was not indexed as PHP");
+    }
+    for (path, namespace) in [
+        ("ForumBridge.php", "XenForo\\AddOn\\Fixture"),
+        ("account.phtml", "XenForo\\Template"),
+    ] {
+        let is_namespace: bool = store
+            .conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM definitions d JOIN files f ON f.id=d.file_id WHERE f.path=?1 AND d.name=?2 AND d.kind='namespace')",
+                rusqlite::params![path, namespace],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            is_namespace,
+            "{path} did not reextract namespace {namespace}"
+        );
+    }
+    for (path, name, container) in [
+        ("ForumBridge.php", "ForumBridge", "XenForo\\AddOn\\Fixture"),
+        (
+            "ForumBridge.php",
+            "refreshDelegation",
+            "XenForo\\AddOn\\Fixture\\ForumBridge",
+        ),
+        ("account.phtml", "AccountPanel", "XenForo\\Template"),
+        ("account.phtml", "render", "XenForo\\Template\\AccountPanel"),
+    ] {
+        let has_container: bool = store
+            .conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM definitions d JOIN files f ON f.id=d.file_id WHERE f.path=?1 AND d.name=?2 AND d.container=?3)",
+                rusqlite::params![path, name, container],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            has_container,
+            "{path} did not restore {name} under {container}"
+        );
+    }
     let stale_count: i64 = store
         .conn
         .query_row(
@@ -113,6 +185,14 @@ fn extraction_contract_revision_rebuilds_unchanged_javascript_and_csharp_facts()
         )
         .unwrap();
     assert_eq!(stale_count, 0);
+
+    let reextracted_generation = store.generation().unwrap();
+    store.index().unwrap();
+    assert_eq!(
+        store.generation().unwrap(),
+        reextracted_generation,
+        "a second index of unchanged PHP sources should not publish a generation"
+    );
 }
 
 #[test]

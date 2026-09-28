@@ -49,6 +49,7 @@ impl Query {
                     "ts" => "typescript",
                     "js" => "javascript",
                     "cs" | "c#" => "csharp",
+                    "phtml" => "php",
                     "lua" => "luau",
                     "dm" => "dreammaker",
                     other => other,

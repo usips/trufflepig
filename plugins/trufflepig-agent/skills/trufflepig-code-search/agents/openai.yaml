@@ -1,6 +1,6 @@
 interface:
   display_name: "Trufflepig code search"
-  short_description: "Find source and inspect Rust APIs and trait implementations"
-  default_prompt: "Use $trufflepig-code-search to locate and verify implementation evidence, adding rustdoc enrichment when Rust API documentation or trait relationships help."
+  short_description: "Navigate source, Rust APIs, and PHP/XenForo metadata"
+  default_prompt: "Use $trufflepig-code-search to locate and verify implementation evidence, adding rustdoc enrichment for Rust APIs and following PHP/XenForo dependency candidates conservatively."
 policy:
   allow_implicit_invocation: true

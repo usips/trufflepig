@@ -24,8 +24,8 @@ Each hit line is followed by an indented `  LINE: TEXT` snippet of its best
 matching line, so a search answers what `grep -n` would. Run each
 `trufflepig-agent` command as its own shell call, without `; echo`,
 `&&` chains, or pipes: its exit status and footer are the result. Symbols,
-bodies, references, and outlines cover Rust, TypeScript, JavaScript, C#, Luau,
-and DreamMaker; other files are searchable as text with `re:` and plain queries.
+bodies, references, and outlines cover Rust, TypeScript, JavaScript, C#, PHP,
+Luau, and DreamMaker; other files are searchable as text with `re:` and plain queries.
 
 ## Choose the evidence you need
 
@@ -46,8 +46,10 @@ Prefer a few discriminating terms for concept searches. Plain searches combine
 identifier, lexical, and filename evidence; semantic retrieval and reranking
 also contribute when enabled by workspace settings or explicit options.
 A ranked match alone does not establish a dependency or prove relevance.
+For PHP and XenForo metadata edge semantics, see the
+[PHP contract](../../../../docs/php-contract.md).
 
-Combine `file:`, `lang:rust|ts|js|csharp|luau|dm|text`, and
+Combine `file:`, `lang:rust|ts|js|csharp|php|luau|dm|text`, and
 `kind:function|struct|file|...` filters. `cs` and `c#` alias `csharp`; quote a
 query containing `c#` in shell commands. `file:` is a prefix, not a glob. Docs
 and configuration use `text`.

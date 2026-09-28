@@ -111,7 +111,7 @@ the implementation. This reuses existing evidence; it does not automatically
 attach a complete dependency neighborhood to each search result. The
 [language contract](../../docs/language-contract.md) distinguishes resolved,
 candidate, and unresolved relationships across Rust, TypeScript/JavaScript, C#,
-Luau, and DreamMaker. Docs/config remain text-searchable.
+PHP, Luau, and DreamMaker. Docs/config remain text-searchable.
 
 For example, DreamMaker `special_bucket` records explicit inheritance but its
 context may have `target: null`. Read the declaration and search the named parent.
@@ -175,7 +175,7 @@ the checkout are never steered. Modes:
 `TRUFFLEPIG_AGENT_STEER` overrides `steer.<harness>` in `agent-runtime.json`,
 which `install.sh --steer MODE` records for the selected Claude, Kimi, or Muse
 installation. Symbol, body, and outline commands are suggested only for Rust,
-TypeScript, JavaScript, C#, Luau, and DreamMaker; other files get `re:` equivalents.
+TypeScript, JavaScript, C#, PHP, Luau, and DreamMaker; other files get `re:` equivalents.
 Codex installation does not install steering hooks.
 
 `trufflepig-audit --adoption` compares Trufflepig navigation calls with the

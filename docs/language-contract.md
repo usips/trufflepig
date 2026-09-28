@@ -14,9 +14,10 @@ configuration preserve ambiguity. Tests cover successful local resolutions and
 false-resolution rejection; this is a local subset, not compiler-equivalent
 resolution across any of the supported languages.
 
-Rust, TypeScript/JavaScript, and Luau use pinned Tree-sitter grammars with compiled
-reference queries. C# uses the pinned `tree-sitter-c-sharp` grammar. Parsing has a
-500 ms cancellation budget; syntax-tree depth is bounded at 256. Invalid UTF-8
+Rust, TypeScript/JavaScript, and Luau use pinned Tree-sitter grammars with
+compiled reference queries. C# and PHP use pinned `tree-sitter-c-sharp` and
+`tree-sitter-php` grammars. Parsing has a 500 ms cancellation budget;
+syntax-tree depth is bounded at 256. Invalid UTF-8
 leaves lexical indexing available but no structural facts, with
 `invalid_encoding` status. Parse errors retain recognized syntax observations
 with unresolved references rather than proving new targets.
@@ -59,6 +60,14 @@ Lexical local and parameter references may resolve only when one visible binding
 is unique. Overloads, members, partial type merges, inheritance, qualified names,
 and receiver-dependent or method calls remain candidates or unresolved. The
 subset does not provide compiler-equivalent binding resolution.
+
+## PHP
+
+`.php` and `.phtml` map to `php` and use pinned `tree-sitter-php` 0.24.2.
+Extraction records namespaces, classes, interfaces, traits, enums, functions,
+methods, properties, constants, enum cases, parameters, variables, imports, and
+identifier occurrences with original-byte spans. See the [PHP and XenForo
+contract](php-contract.md) for name normalization and candidate relationship limits.
 
 ## TypeScript and JavaScript
 

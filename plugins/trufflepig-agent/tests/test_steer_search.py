@@ -29,7 +29,7 @@ CASES = [
     ('grep -n "pub fn\\|pub async fn\\|fn \\|struct" src/fetcher.rs', "outline", "map src/fetcher.rs"),
     ('grep -n "^fn \\|#\\[test\\]" src/fetcher.rs', "outline", "map src/fetcher.rs"),
     ('grep -rn "fn parse\\|sha256\\|Bearer" crates/', "regex", "re:fn parse|sha256|Bearer"),
-    ('grep -n "function logDecision" -A12 src/AbstractChecker.php', "body", "re:function logDecision file:src/AbstractChecker.php"),
+    ('grep -n "function logDecision" -A12 src/AbstractChecker.php', "body", "show 'sym:logDecision file:src/AbstractChecker.php'"),
     ("grep -rniw -e room -e rooms crates/", "concept", "room rooms file:crates/"),
     ("grep -rnF -e 'a.b' -e 'c(d' crates/", "regex", "re:a\\.b|c\\(d file:crates/"),
     ("find . -path ./target -prune -o -name '*navigation*' -print", "files", "navigation kind:file"),
@@ -45,6 +45,7 @@ CASES = [
     ("rg -n 'function createInvoice' -g '*.cjs' src", "definition", "sym:createInvoice file:src/ lang:js"),
     ("rg -n 'function createInvoice' -g '*.mjs' src", "definition", "sym:createInvoice file:src/ lang:js"),
     ("rg -n 'function createInvoice' -g '*.cts' src", "definition", "sym:createInvoice file:src/ lang:ts"),
+    ("rg -n 'class RefreshDelegation' -g '*.php' src", "definition", "sym:RefreshDelegation file:src/ lang:php"),
     ("find crates -name 'staff*.rs'", "files", "staff file:crates/ lang:rust kind:file"),
     ("rg --files -g '*.luau' crates", "files", "file:crates/ lang:luau kind:file"),
     ("cd sub && grep -rn 'fn step' .", "definition", "file:sub/"),
@@ -110,6 +111,17 @@ class ClassifierTests(unittest.TestCase):
                 type_arg = "'c#'" if language == "c#" else language
                 found = classifier.classify(f"rg -n 'class InvoiceService' --type {type_arg} src", self.root, self.root)
                 self.assertEqual(found[0].hint, "trufflepig-agent search 'sym:InvoiceService file:src/ lang:csharp'")
+
+    def test_php_extension_aliases_are_canonicalized(self):
+        for suffix in ("php", "phtml"):
+            with self.subTest(suffix=suffix):
+                found = classifier.classify(
+                    f"rg -n 'function refreshDelegation' -g '*.{suffix}' src", self.root, self.root
+                )
+                self.assertEqual(
+                    found[0].hint,
+                    "trufflepig-agent search 'sym:refreshDelegation file:src/ lang:php'",
+                )
 
 
 class HookTests(unittest.TestCase):

@@ -29,15 +29,18 @@ IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*$"
 NON_CODE_PATH = re.compile(r"(^|/)(target|node_modules|\.git|logs?)(/|$)|\.(log|jsonl|out|txt|csv)$|^/(tmp|proc|sys|dev)(/|$)")
 EXTENSION_LANGUAGES = {"rs": "rust", "ts": "ts", "tsx": "ts", "mts": "ts", "cts": "ts",
                        "js": "js", "jsx": "js", "mjs": "js", "cjs": "js", "cs": "csharp",
+                       "php": "php", "phtml": "php",
                        "luau": "luau", "lua": "luau", "dm": "dm", "dme": "dm",
                        "md": "text", "toml": "text", "txt": "text", "json": "text", "yaml": "text",
                        "yml": "text"}
 TYPE_LANGUAGES = {"rust": "rust", "ts": "ts", "typescript": "ts", "js": "js", "javascript": "js",
                   "cs": "csharp", "c#": "csharp", "csharp": "csharp",
+                  "php": "php", "phtml": "php",
                   "lua": "luau", "luau": "luau", "md": "text", "markdown": "text", "toml": "text",
                   "json": "text", "yaml": "text"}
 STRUCTURED = {"rs", "rust", "ts", "tsx", "mts", "cts", "typescript", "js", "jsx", "mjs", "cjs", "javascript",
               "cs", "c#", "csharp",
+              "php", "phtml",
               "luau", "lua", "dm", "dme", "dmf"}
 MODIFIERS = {"pub", "crate", "super", "self", "async", "export", "local", "unsafe", "extern", "default",
              "test", "derive", "abstract", "public", "private", "protected", "internal", "final",

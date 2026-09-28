@@ -70,6 +70,65 @@ fn lexical_search_covers_symbol_middles_gaps_docs_and_config() {
 }
 
 #[test]
+fn php_addon_symbols_support_search_map_and_show() {
+    let php = br#"<?php
+namespace XenForo\AddOn\Kiwifarms\Job;
+
+class RefreshDelegation
+{
+    public function run(): bool
+    {
+        return $this->refreshQueuedJobs();
+    }
+
+    private function refreshQueuedJobs(): bool
+    {
+        return true;
+    }
+}
+"#;
+    let (_root, cache, store) = fixture(&[("src/Job/RefreshDelegation.php", php)]);
+
+    let class = search(
+        &store,
+        &Query::parse("sym:RefreshDelegation lang:php").unwrap(),
+        false,
+        cache.path(),
+    )
+    .unwrap();
+    assert_eq!(class.hits.len(), 1, "{:?}", class.hits);
+    assert_eq!(class.hits[0].path, "src/Job/RefreshDelegation.php");
+    assert_eq!(class.hits[0].kind, "class");
+
+    let method = search(
+        &store,
+        &Query::parse("sym:refreshQueuedJobs lang:phtml").unwrap(),
+        false,
+        cache.path(),
+    )
+    .unwrap();
+    assert_eq!(method.hits.len(), 1, "{:?}", method.hits);
+    assert_eq!(method.hits[0].kind, "method");
+
+    let outline = map(&store, "src/Job/RefreshDelegation.php").unwrap();
+    for name in ["RefreshDelegation", "run", "refreshQueuedJobs"] {
+        assert!(
+            outline.hits.iter().any(|hit| hit.name == name),
+            "{name}: {:?}",
+            outline.hits
+        );
+    }
+
+    let shown = source::show(
+        &store,
+        "sym:RefreshDelegation lang:php",
+        &OutputBudget::new(4000).unwrap(),
+    )
+    .unwrap();
+    assert!(shown.contains("class RefreshDelegation"), "{shown}");
+}
+
+#[test]
 fn csharp_and_javascript_index_search_and_navigation_contracts() {
     let (_root, cache, store) = fixture(&[
         (

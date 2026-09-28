@@ -9,6 +9,18 @@ fn pinned_queries_compile() {
 }
 
 #[test]
+fn php_extensions_route_to_the_php_extractor() {
+    assert_eq!(super::language("src/XF.php"), "php");
+    assert_eq!(super::language("src/Widget.phtml"), "php");
+
+    let extracted = extract("src/XF.php", b"<?php function refreshDelegation() {}\n");
+    assert_eq!(extracted.language, "php");
+    assert!(extracted.definitions.iter().any(|definition| {
+        definition.name == "refreshDelegation" && definition.kind == "function"
+    }));
+}
+
+#[test]
 fn rust_definitions_and_direct_calls_preserve_original_bytes() {
     let source = b"\xef\xbb\xbffn helper(value: i32) -> i32 { value }\r\nfn caller() { let value = helper(3); value; }";
     let extracted = extract("a.rs", source);

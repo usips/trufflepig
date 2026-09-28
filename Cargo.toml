@@ -11,6 +11,7 @@ clap = { version = "4", features = ["derive"] }
 fs2 = "0.4"
 ignore = "0.4"
 imara-diff = "=0.2.0"
+quick-xml = "=0.38.3"
 libc = "0.2"
 notify = "8"
 regex = "1"
@@ -28,6 +29,7 @@ tree-sitter-typescript = "=0.23.2"
 tree-sitter-javascript = "=0.25.0"
 tree-sitter-luau = "=1.2.0"
 tree-sitter-c-sharp = "=0.23.5"
+tree-sitter-php = "=0.24.2"
 uuid = { version = "1", features = ["v4"] }
 fastembed = { version = "=6.1.0", default-features = false, features = ["ort-load-dynamic"], optional = true }
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic"], optional = true }
