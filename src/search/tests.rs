@@ -70,6 +70,110 @@ fn lexical_search_covers_symbol_middles_gaps_docs_and_config() {
 }
 
 #[test]
+fn csharp_and_javascript_index_search_and_navigation_contracts() {
+    let (_root, cache, store) = fixture(&[
+        (
+            "wallet.js",
+            b"function Wallet() { return null; }\nfunction refreshWallet(id) { return findWallet(id); }\nfunction findWallet(id) { return id; }\nwindow.copyToClipboard = async function (e, data) { return data; };\n",
+        ),
+        (
+            "Wallet.cs",
+            b"namespace Shop;\npublic record Wallet(string Id);\npublic interface IWalletStore { Wallet Load(); }\npublic sealed class WalletStore : IWalletStore { public Wallet Load() { return new Wallet(\"x\"); } }\npublic sealed class WalletFactory { public event System.Action Changed; public WalletFactory() {} }\n",
+        ),
+    ]);
+
+    for alias in ["js", "javascript"] {
+        let set = search(
+            &store,
+            &Query::parse(&format!("sym:Wallet lang:{alias}")).unwrap(),
+            false,
+            cache.path(),
+        )
+        .unwrap();
+        assert_eq!(set.hits.len(), 1, "lang:{alias}: {:?}", set.hits);
+        assert_eq!(set.hits[0].path, "wallet.js");
+        assert_eq!(set.hits[0].kind, "function");
+    }
+
+    for alias in ["cs", "c#", "csharp"] {
+        let set = search(
+            &store,
+            &Query::parse(&format!("sym:Wallet lang:{alias}")).unwrap(),
+            false,
+            cache.path(),
+        )
+        .unwrap();
+        assert!(
+            !set.hits.is_empty(),
+            "lang:{alias} returned no Wallet definitions"
+        );
+        assert!(set.hits.iter().all(|hit| hit.path == "Wallet.cs"));
+        assert_eq!(set.hits[0].kind, "record", "lang:{alias}: {:?}", set.hits);
+    }
+
+    let csharp_map = map(&store, "Wallet.cs").unwrap();
+    for (name, kind) in [
+        ("Shop", "namespace"),
+        ("Wallet", "record"),
+        ("IWalletStore", "interface"),
+        ("WalletStore", "class"),
+        ("WalletFactory", "class"),
+        ("Load", "method"),
+        ("Changed", "event"),
+    ] {
+        assert!(
+            csharp_map
+                .hits
+                .iter()
+                .any(|hit| hit.name == name && hit.kind == kind),
+            "missing {kind} {name} from map: {:?}",
+            csharp_map.hits
+        );
+    }
+    let js_map = map(&store, "wallet.js").unwrap();
+    assert!(js_map.hits.iter().any(|hit| hit.name == "refreshWallet"));
+    assert!(js_map.hits.iter().any(|hit| hit.name == "copyToClipboard"));
+
+    let budget = OutputBudget::new(4000).unwrap();
+    let shown = source::show(&store, "sym:Wallet lang:c#", &budget).unwrap();
+    assert!(shown.contains("public record Wallet"), "{shown}");
+    let factory = search(
+        &store,
+        &Query::parse("sym:WalletFactory lang:c#").unwrap(),
+        false,
+        cache.path(),
+    )
+    .unwrap();
+    assert_eq!(factory.hits[0].kind, "class", "{:?}", factory.hits);
+    assert!(factory.hits.iter().any(|hit| hit.kind == "constructor"));
+    let shown = source::show(&store, "sym:copyToClipboard lang:js", &budget).unwrap();
+    assert!(
+        shown.contains("window.copyToClipboard = async function"),
+        "{shown}"
+    );
+    let shown = source::show(&store, "sym:WalletFactory lang:c#", &budget).unwrap();
+    assert!(
+        shown.contains("public sealed class WalletFactory"),
+        "{shown}"
+    );
+
+    let js_references = references(&store, "findWallet").unwrap();
+    assert!(
+        js_references
+            .hits
+            .iter()
+            .any(|hit| { hit.path == "wallet.js" && hit.kind == "call" && hit.target.is_some() })
+    );
+    let csharp_references = references(&store, "Wallet").unwrap();
+    assert!(
+        csharp_references
+            .hits
+            .iter()
+            .any(|hit| hit.path == "Wallet.cs")
+    );
+}
+
+#[test]
 fn live_regex_finds_new_files_and_refuses_old_graph() {
     let (root, cache, mut store) = fixture(&[("lib.rs", b"fn alpha() {}")]);
     std::fs::write(root.path().join("new.rs"), "fn live_needle() {}\n").unwrap();
@@ -268,7 +372,13 @@ fn exact_search_lists_declarations_before_imports_of_the_name() {
         ("a.rs", b"use crate::z::Coord;\nfn f(_: Coord) {}\n"),
         ("z.rs", b"pub struct Coord;\n"),
     ]);
-    let set = search(&store, &Query::parse("sym:Coord").unwrap(), false, cache.path()).unwrap();
+    let set = search(
+        &store,
+        &Query::parse("sym:Coord").unwrap(),
+        false,
+        cache.path(),
+    )
+    .unwrap();
     assert_eq!(set.hits[0].path, "z.rs", "{:?}", set.hits);
     assert_eq!(set.hits[0].kind, "struct");
 }

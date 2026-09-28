@@ -1,6 +1,6 @@
 ---
 name: trufflepig-code-search
-description: Use instead of grep, rg, or find to search code in indexed local projects. Finds a symbol's definition (sym:), a definition's full body (show), identifier references (refs), a file's outline (map), regex and file-name matches, and implementations of vague concepts, with ranked, budgeted hits and verified source reads. Use during code investigation and before edits; not for command output, logs, files outside the project, other git revisions, editing, or builds.
+description: Use instead of grep, rg, or find to search code in indexed local projects. Finds definitions, bodies, references, outlines, text, files, and implementations of concepts with verified source reads. Includes optional Rust API documentation and trait navigation through rustdoc in Codex. Use during code investigation and before edits; not for command output, logs, files outside the project, other git revisions, or editing.
 ---
 
 # Trufflepig code search
@@ -24,8 +24,8 @@ Each hit line is followed by an indented `  LINE: TEXT` snippet of its best
 matching line, so a search answers what `grep -n` would. Run each
 `trufflepig-agent` command as its own shell call, without `; echo`,
 `&&` chains, or pipes: its exit status and footer are the result. Symbols,
-bodies, references, and outlines cover Rust, TypeScript, JavaScript, Luau, and
-DreamMaker; other files are searchable as text with `re:` and plain queries.
+bodies, references, and outlines cover Rust, TypeScript, JavaScript, C#, Luau,
+and DreamMaker; other files are searchable as text with `re:` and plain queries.
 
 ## Choose the evidence you need
 
@@ -47,8 +47,10 @@ identifier, lexical, and filename evidence; semantic retrieval and reranking
 also contribute when enabled by workspace settings or explicit options.
 A ranked match alone does not establish a dependency or prove relevance.
 
-Combine `file:`, `lang:rust|ts|js|luau|dm|text`, and `kind:function|struct|file|...`
-filters. `file:` is a prefix, not a glob. Docs and configuration use `text`.
+Combine `file:`, `lang:rust|ts|js|csharp|luau|dm|text`, and
+`kind:function|struct|file|...` filters. `cs` and `c#` alias `csharp`; quote a
+query containing `c#` in shell commands. `file:` is a prefix, not a glob. Docs
+and configuration use `text`.
 Workspace search covers the current checkout (home member) first and widens to
 all members only when home has no hits; the coverage line's `scope` says which.
 Use `ws:all` to search every member or `in:MEMBER` for a named dependency.
@@ -76,6 +78,15 @@ expansion. Text-only files have no structural relationships.
 `ctx` can be truncated by many unresolved relationships. Narrow to a symbol or
 search a known target instead of repeatedly requesting larger context envelopes.
 Stop expanding when the source needed for the task is verified.
+
+## Rust API enrichment in Codex
+
+For Rust documentation, signatures, or trait/implementation questions that source
+search leaves unresolved, read [the rustdoc workflow](references/rustdoc.md).
+Its bundled helper builds and queries rustdoc JSON for one Cargo target. It is
+optional: ordinary discovery and source verification still use the commands above.
+Use it when compiler-derived item information would help; do not build docs for
+routine text searches. This workflow is integrated for Codex first.
 
 ## Read bounded responses
 

@@ -5,7 +5,7 @@ identifiers, lexical search, structural navigation, and verified follow-up reads
 are the core. Correct source identity takes priority over compact output.
 
 The required scope is a Linux CLI operating locally on CPU, with Rust,
-TypeScript/JavaScript, Luau, and DreamMaker extraction. Tests, documentation,
+TypeScript/JavaScript, C#, Luau, and DreamMaker extraction. Tests, documentation,
 configuration, and uncovered regions of source files remain searchable. Optional
 semantic retrieval requires an explicit `--sem` request.
 

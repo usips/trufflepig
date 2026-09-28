@@ -48,6 +48,7 @@ impl Query {
                     "rs" => "rust",
                     "ts" => "typescript",
                     "js" => "javascript",
+                    "cs" | "c#" => "csharp",
                     "lua" => "luau",
                     "dm" => "dreammaker",
                     other => other,
@@ -366,7 +367,7 @@ pub fn definitions(store: &Store, query: &Query) -> Result<ResultSet> {
 fn declaration_rank(kind: &str) -> u8 {
     match kind {
         "module" => 1,
-        "variant" | "field" => 2,
+        "variant" | "field" | "constructor" => 2,
         "variable" | "parameter" | "import" => 3,
         _ => 0,
     }

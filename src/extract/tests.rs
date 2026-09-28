@@ -235,3 +235,45 @@ fn luau_static_instance_requires_retain_provenance() {
                 && o.target.is_none())
     );
 }
+
+#[test]
+fn javascript_member_function_assignments_are_symbols_not_lexical_bindings() {
+    let source = b"window.copyToClipboard = async function (event) { copyToClipboard(event); };\nwindow.setColorMode = mode => mode;";
+    let extracted = extract("a.js", source);
+
+    let copy = extracted
+        .definitions
+        .iter()
+        .position(|definition| definition.name == "copyToClipboard")
+        .unwrap();
+    assert_eq!(extracted.definitions[copy].kind, "function");
+    assert!(
+        source[extracted.definitions[copy].start..extracted.definitions[copy].end]
+            .starts_with(b"window.copyToClipboard")
+    );
+    let declaration = extracted
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.name == "copyToClipboard" && occurrence.role == "declaration")
+        .unwrap();
+    assert_eq!(
+        &source[declaration.start..declaration.end],
+        b"copyToClipboard"
+    );
+    assert_eq!(declaration.target, Some(copy));
+
+    let recursive_call = extracted
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.name == "copyToClipboard" && occurrence.role == "call")
+        .unwrap();
+    assert_eq!(recursive_call.target, None);
+    assert_eq!(recursive_call.candidates, vec![copy]);
+
+    let arrow = extracted
+        .definitions
+        .iter()
+        .find(|definition| definition.name == "setColorMode")
+        .unwrap();
+    assert_eq!(arrow.kind, "function");
+}

@@ -6,6 +6,7 @@ use std::path::Path;
 
 const MAX_SOURCE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_FACTS: usize = 50_000;
+const EXTRACTION_CONTRACT_REVISION: u32 = 3;
 
 pub(super) fn stage(
     conn: &mut Connection,
@@ -15,12 +16,9 @@ pub(super) fn stage(
 ) -> Result<(Coverage, String)> {
     let mut coverage = Coverage::default();
     let mut fingerprint = blake3::Hasher::new();
-    fingerprint.update(b"trufflepig-schema-1-extraction-2");
-    let cache_version = i64::from_le_bytes(
-        blake3::hash(include_bytes!("../../Cargo.lock")).as_bytes()[..8]
-            .try_into()
-            .expect("eight hash bytes"),
-    );
+    fingerprint.update(b"trufflepig-schema-1-extraction");
+    fingerprint.update(&EXTRACTION_CONTRACT_REVISION.to_le_bytes());
+    let cache_version = extraction_cache_version();
     fingerprint.update(&cache_version.to_le_bytes());
     let excluded_cache = cache.to_path_buf();
     let mut walker = ignore::WalkBuilder::new(root);
@@ -132,6 +130,18 @@ pub(super) fn stage(
     fingerprint.update(&coverage.walk_failures.to_le_bytes());
     transaction.commit()?;
     Ok((coverage, fingerprint.finalize().to_hex().to_string()))
+}
+
+pub(crate) fn extraction_cache_version() -> i64 {
+    let mut version = blake3::Hasher::new();
+    version.update(b"trufflepig-extraction-cache-v1");
+    version.update(&EXTRACTION_CONTRACT_REVISION.to_le_bytes());
+    version.update(include_bytes!("../../Cargo.lock"));
+    i64::from_le_bytes(
+        version.finalize().as_bytes()[..8]
+            .try_into()
+            .expect("eight hash bytes"),
+    )
 }
 
 fn cached_extraction(

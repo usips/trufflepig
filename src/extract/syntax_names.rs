@@ -30,6 +30,17 @@ pub(super) fn declaration(node: Node<'_>) -> Option<(&str, Node<'_>)> {
         }
         "let_declaration" => "variable",
         "parameter" | "required_parameter" | "optional_parameter" => "parameter",
+        "assignment_expression" => {
+            let left = node.child_by_field_name("left")?;
+            let value = node.child_by_field_name("right")?;
+            if left.kind() != "member_expression"
+                || !matches!(value.kind(), "arrow_function" | "function_expression")
+            {
+                return None;
+            }
+            let property = left.child_by_field_name("property")?;
+            return (property.kind() == "property_identifier").then_some(("function", property));
+        }
         _ => return None,
     };
     if kind == "function"

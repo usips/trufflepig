@@ -3,6 +3,7 @@
 
 mod binding_index;
 mod bindings;
+mod csharp;
 mod dreammaker;
 #[cfg(test)]
 mod resolution_tests;
@@ -58,6 +59,7 @@ pub fn language(path: &str) -> &str {
         "rs" => "rust",
         "ts" | "tsx" | "mts" | "cts" => "typescript",
         "js" | "jsx" | "mjs" | "cjs" => "javascript",
+        "cs" => "csharp",
         "luau" | "lua" => "luau",
         "dm" | "dme" | "dmf" => "dreammaker",
         _ => "text",
@@ -66,6 +68,7 @@ pub fn language(path: &str) -> &str {
 
 pub fn extract(path: &str, source: &[u8]) -> Extraction {
     match language(path) {
+        "csharp" => csharp::extract(source),
         "dreammaker" => dreammaker::extract(source),
         "text" => Extraction {
             language: "text".into(),

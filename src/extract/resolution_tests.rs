@@ -62,6 +62,26 @@ fn locally_shadowed_require_is_visible_as_uncertain() {
 }
 
 #[test]
+fn member_function_assignments_do_not_block_hoisted_lexical_functions() {
+    let source =
+        b"function refreshWallet() {} refreshWallet(); window.refreshWallet = function () {};";
+    for path in ["a.js", "a.ts"] {
+        let extracted = extract(path, source);
+        let lexical = extracted
+            .definitions
+            .iter()
+            .position(|definition| definition.name == "refreshWallet" && definition.start == 0)
+            .unwrap();
+        let call = extracted
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.name == "refreshWallet" && occurrence.role == "call")
+            .unwrap();
+        assert_eq!(call.target, Some(lexical), "{path}");
+    }
+}
+
+#[test]
 fn type_and_macro_namespaces_do_not_resolve_to_values() {
     for (path, source, name) in [
         (

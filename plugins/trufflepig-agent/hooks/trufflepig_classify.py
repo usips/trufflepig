@@ -17,23 +17,32 @@ from trufflepig_shell import GrepCall, parse_grep, segments, strip_prefix
 MAYBE_SEARCH = re.compile(r"\b(rg|grep|egrep|fgrep|ugrep|ag|ack|find|fd|bfs|git\s+grep)\b")
 PROGRAMS = {"grep", "egrep", "fgrep", "ugrep", "rg", "ag", "ack", "find", "bfs", "fd", "git"}
 DEFINITION_KEYWORDS = ("fn", "struct", "enum", "trait", "impl", "type", "mod", "class", "def",
-                       "const", "static", "interface", "function", "proc", "union", "macro_rules!")
+                       "const", "static", "interface", "function", "proc", "union", "macro_rules!",
+                       "record", "namespace")
 KEYWORD_ALTERNATIVES = "|".join(re.escape(k) for k in DEFINITION_KEYWORDS)
 # Applied to `normalized()` patterns: a definition keyword followed by a concrete name.
 DEFINITION = re.compile(rf"(?:^|[^A-Za-z0-9_!])(?:{KEYWORD_ALTERNATIVES})\s+([A-Za-z_][A-Za-z0-9_]*)")
+CSHARP_RECORD = re.compile(r"(?:^|[^A-Za-z0-9_])record\s+(?:(?:class|struct)\s+)?([A-Za-z_][A-Za-z0-9_]*)")
+CSHARP_DELEGATE = re.compile(
+    r"(?:^|[^A-Za-z0-9_])delegate\s+[A-Za-z_][A-Za-z0-9_.$<>?,\[\]]*\s+([A-Za-z_][A-Za-z0-9_]*)")
 IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*$")
 NON_CODE_PATH = re.compile(r"(^|/)(target|node_modules|\.git|logs?)(/|$)|\.(log|jsonl|out|txt|csv)$|^/(tmp|proc|sys|dev)(/|$)")
-EXTENSION_LANGUAGES = {"rs": "rust", "ts": "ts", "tsx": "ts", "mts": "ts", "js": "js", "jsx": "js",
-                       "mjs": "js", "cjs": "js", "luau": "luau", "lua": "luau", "dm": "dm", "dme": "dm",
+EXTENSION_LANGUAGES = {"rs": "rust", "ts": "ts", "tsx": "ts", "mts": "ts", "cts": "ts",
+                       "js": "js", "jsx": "js", "mjs": "js", "cjs": "js", "cs": "csharp",
+                       "luau": "luau", "lua": "luau", "dm": "dm", "dme": "dm",
                        "md": "text", "toml": "text", "txt": "text", "json": "text", "yaml": "text",
                        "yml": "text"}
 TYPE_LANGUAGES = {"rust": "rust", "ts": "ts", "typescript": "ts", "js": "js", "javascript": "js",
+                  "cs": "csharp", "c#": "csharp", "csharp": "csharp",
                   "lua": "luau", "luau": "luau", "md": "text", "markdown": "text", "toml": "text",
                   "json": "text", "yaml": "text"}
 STRUCTURED = {"rs", "rust", "ts", "tsx", "mts", "cts", "typescript", "js", "jsx", "mjs", "cjs", "javascript",
+              "cs", "c#", "csharp",
               "luau", "lua", "dm", "dme", "dmf"}
 MODIFIERS = {"pub", "crate", "super", "self", "async", "export", "local", "unsafe", "extern", "default",
-             "test", "derive", "abstract", "public", "private", "protected", "final"}
+             "test", "derive", "abstract", "public", "private", "protected", "internal", "final",
+             "partial", "readonly", "required", "sealed", "virtual", "override", "new", "ref", "out",
+             "params", "volatile", "using", "file"}
 SHELL_VARIABLE = re.compile(r"\$[A-Za-z_{(]")
 
 
@@ -105,6 +114,10 @@ def definition_names(pattern: str) -> list[str]:
     for name in DEFINITION.findall(normalized(pattern)):
         if name not in DEFINITION_KEYWORDS and name not in ("pub", "async", "unsafe", "crate", "self", "super") \
                 and name not in names:
+            names.append(name)
+    # C# delegates put the return type between the declaration keyword and name.
+    for name in [*CSHARP_RECORD.findall(normalized(pattern)), *CSHARP_DELEGATE.findall(normalized(pattern))]:
+        if name not in names:
             names.append(name)
     return names
 

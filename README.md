@@ -17,7 +17,7 @@ Linux only.
   Handles survive restarts and never drift to a newer query.
   ([retrieval contract](docs/retrieval-contract.md))
 - **Structure, not just text.** Symbols, definitions, references, and
-  resolved-versus-candidate relationships for Rust, TypeScript/JavaScript,
+  resolved-versus-candidate relationships for Rust, TypeScript/JavaScript, C#,
   Luau, and DreamMaker. Everything else stays text-searchable.
   ([language contract](docs/language-contract.md))
 - **History without a checkout.** `hist`, `since`, `diff`, and `blame` over

@@ -1,7 +1,7 @@
 use super::{ProbeName, ProbeOutcome, ProbeResult};
 use crate::{
     extract, source,
-    store::{Store, decode_path},
+    store::{Store, decode_path, extraction_cache_version},
 };
 use anyhow::Result;
 use rusqlite::OptionalExtension;
@@ -35,11 +35,7 @@ fn samples(store: &Store, cache: &Path, report: &mut ProbeResult, started: Insta
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    let cache_version = i64::from_le_bytes(
-        blake3::hash(include_bytes!("../../Cargo.lock")).as_bytes()[..8]
-            .try_into()
-            .expect("eight hash bytes"),
-    );
+    let cache_version = extraction_cache_version();
     for (path, revision) in files {
         if started.elapsed() >= Duration::from_millis(250) {
             if !matches!(report.outcome, ProbeOutcome::Failed) {

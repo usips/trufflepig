@@ -47,6 +47,12 @@ Codex discovers skills by their description and also supports explicit
 refresh. See [Codex skill discovery](https://learn.chatgpt.com/docs/build-skills).
 Skill availability does not guarantee automatic selection on every prompt.
 
+For Rust API documentation and trait navigation in Codex, the skill includes an
+optional [rustdoc helper](skills/trufflepig-code-search/references/rustdoc.md).
+It builds one Cargo target with an installed nightly and returns bounded JSON
+with compilation provenance and source spans. The symlink installation includes
+the helper and its reference; no additional wrapper or daemon setup is needed.
+
 The Codex, Claude, and Grok installers configure a data-only `agent-runtime.json` under
 `$XDG_CONFIG_HOME/trufflepig` (default `~/.config/trufflepig`). Its `runtime_dir`
 is `~/.cache/codex-tmp/trufflepig-agent` by default; `--runtime-dir DIR` selects
@@ -104,7 +110,7 @@ The skill uses `search → show` and adds `ctx`/`refs` when relationships help l
 the implementation. This reuses existing evidence; it does not automatically
 attach a complete dependency neighborhood to each search result. The
 [language contract](../../docs/language-contract.md) distinguishes resolved,
-candidate, and unresolved relationships across Rust, TypeScript/JavaScript,
+candidate, and unresolved relationships across Rust, TypeScript/JavaScript, C#,
 Luau, and DreamMaker. Docs/config remain text-searchable.
 
 For example, DreamMaker `special_bucket` records explicit inheritance but its
@@ -169,7 +175,7 @@ the checkout are never steered. Modes:
 `TRUFFLEPIG_AGENT_STEER` overrides `steer.<harness>` in `agent-runtime.json`,
 which `install.sh --steer MODE` records for the selected Claude, Kimi, or Muse
 installation. Symbol, body, and outline commands are suggested only for Rust,
-TypeScript, JavaScript, Luau, and DreamMaker; other files get `re:` equivalents.
+TypeScript, JavaScript, C#, Luau, and DreamMaker; other files get `re:` equivalents.
 Codex installation does not install steering hooks.
 
 `trufflepig-audit --adoption` compares Trufflepig navigation calls with the

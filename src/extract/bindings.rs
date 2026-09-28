@@ -105,11 +105,15 @@ fn add_binding(
     } else {
         scope(node)
     };
+    let member_property = name.parent().is_some_and(|parent| {
+        matches!(
+            parent.kind(),
+            "dot_index_expression" | "method_index_expression"
+        ) || parent.kind() == "member_expression"
+            && parent.child_by_field_name("property") == Some(name)
+    });
     let resolvable = !matches!(kind, "method" | "field" | "variant")
-        && !matches!(
-            name.parent().map(|p| p.kind()),
-            Some("dot_index_expression" | "method_index_expression")
-        )
+        && !member_property
         && !conditional(node, source);
     bindings.push(Binding {
         definition: result.definitions.len(),
@@ -123,7 +127,8 @@ fn add_binding(
         },
         scope,
         resolvable,
-        blocks_before: matches!(result.language.as_str(), "javascript" | "typescript"),
+        blocks_before: matches!(result.language.as_str(), "javascript" | "typescript")
+            && !member_property,
         function_boundary: (result.language == "rust" && matches!(kind, "variable" | "parameter"))
             .then(|| function_scope(node).start),
         namespaces: match kind {

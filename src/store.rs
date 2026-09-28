@@ -21,6 +21,7 @@ use crate::identity::ContentRevision;
 use anyhow::{Context, Result};
 pub use paths::{decode_path, encode_path};
 use rusqlite::Connection;
+pub(crate) use scan::extraction_cache_version;
 pub use seed::{SeedOutcome, ensure_seeded};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};

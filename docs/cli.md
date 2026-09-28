@@ -22,8 +22,9 @@ error. No command means `status`. `sym:` selects exact, case-sensitive symbol
 occurrences, declarations before modules, members, locals, and imports; `re:` scans live bytes and returns one occurrence per matching
 line, with `^` and `$` matching at line boundaries as in grep. `file:` is
 a root-relative path-prefix filter; `lang:` and `kind:` filter recorded
-classifications. Language names are `rust`, `typescript`, `javascript`, `luau`,
-`dreammaker`, and `text`; `rs`, `ts`, `js`, `lua`, and `dm` are aliases. Docs/config use `text`.
+classifications. Language names are `rust`, `typescript`, `javascript`, `csharp`,
+`luau`, `dreammaker`, and `text`; `rs`, `ts`, `js`, `cs`, `c#`, `lua`, and `dm`
+are aliases. Quote queries containing `c#` in shell commands. Docs/config use `text`.
 One JSON object plus newline is the default output; `--json` accepts the same
 format. `--format lines` renders `search`, `refs`, `map`, `more`, and `show` as
 tab-separated lines for agents that read output directly: one

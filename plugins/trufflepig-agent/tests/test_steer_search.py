@@ -38,6 +38,13 @@ CASES = [
     ("rg -n 'struct \\w+(Id|Key|Idx)\\b' crates --type rust", "regex", "re:struct \\w+(Id|Key|Idx)"),
     ('grep -rn "EquipmentSlot {\\|Vec<EquipmentSlot>" crates', "regex", "re:EquipmentSlot {|Vec<EquipmentSlot>"),
     ("grep -rln -i 'combust\\|hotspot\\|flame' crates/", "concept", "combust hotspot flame file:crates/"),
+    ("rg -n 'public record struct Wallet' -g '*.cs' src", "definition", "sym:Wallet file:src/ lang:csharp"),
+    ("rg -n 'public record class Wallet' -g '*.cs' src", "definition", "sym:Wallet file:src/ lang:csharp"),
+    ("rg -n 'namespace BTCPayServer' --glob '*.cs' src", "definition", "sym:BTCPayServer file:src/ lang:csharp"),
+    ("rg -n 'public delegate void InvoiceChangedHandler' -g '*.cs' src", "definition", "sym:InvoiceChangedHandler file:src/ lang:csharp"),
+    ("rg -n 'function createInvoice' -g '*.cjs' src", "definition", "sym:createInvoice file:src/ lang:js"),
+    ("rg -n 'function createInvoice' -g '*.mjs' src", "definition", "sym:createInvoice file:src/ lang:js"),
+    ("rg -n 'function createInvoice' -g '*.cts' src", "definition", "sym:createInvoice file:src/ lang:ts"),
     ("find crates -name 'staff*.rs'", "files", "staff file:crates/ lang:rust kind:file"),
     ("rg --files -g '*.luau' crates", "files", "file:crates/ lang:luau kind:file"),
     ("cd sub && grep -rn 'fn step' .", "definition", "file:sub/"),
@@ -96,6 +103,13 @@ class ClassifierTests(unittest.TestCase):
         self.assertEqual(classifier.definition_names(r"struct \w+Id"), [])
         self.assertEqual(classifier.definition_names(r"^\s*pub(crate)? fn\s+spawn_body"), ["spawn_body"])
         self.assertEqual(classifier.definition_names("impl.*Display for"), [])
+
+    def test_csharp_language_aliases_are_canonicalized(self):
+        for language in ("csharp", "cs", "c#"):
+            with self.subTest(language=language):
+                type_arg = "'c#'" if language == "c#" else language
+                found = classifier.classify(f"rg -n 'class InvoiceService' --type {type_arg} src", self.root, self.root)
+                self.assertEqual(found[0].hint, "trufflepig-agent search 'sym:InvoiceService file:src/ lang:csharp'")
 
 
 class HookTests(unittest.TestCase):

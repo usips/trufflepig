@@ -15,9 +15,11 @@ false-resolution rejection; this is a local subset, not compiler-equivalent
 resolution across any of the supported languages.
 
 Rust, TypeScript/JavaScript, and Luau use pinned Tree-sitter grammars with compiled
-reference queries. Parsing has a 500 ms cancellation budget; syntax-tree depth is
-bounded at 256. Invalid UTF-8 in these languages is lexical-only. Parse errors
-retain observed facts with unresolved references rather than proving new targets.
+reference queries. C# uses the pinned `tree-sitter-c-sharp` grammar. Parsing has a
+500 ms cancellation budget; syntax-tree depth is bounded at 256. Invalid UTF-8
+leaves lexical indexing available but no structural facts, with
+`invalid_encoding` status. Parse errors retain recognized syntax observations
+with unresolved references rather than proving new targets.
 
 Tree-sitter ABI compatibility is a supported range. `Parser` implements `Sync`,
 but parsing mutates it exclusively. Cancellation yields `None`, not an available
@@ -35,11 +37,37 @@ targets, and receiver-dependent calls remain candidates or unresolved.
 Rust module/import syntax does not constitute full workspace resolution. Macro
 expansion, trait selection, and type inference are outside this subset.
 
+The Codex skill's optional [rustdoc workflow](../plugins/trufflepig-agent/skills/trufflepig-code-search/references/rustdoc.md)
+provides compiled item documentation and explicit trait/implementation links for
+one Cargo target and feature configuration. This evidence remains outside the
+search index and does not upgrade body occurrences to resolved relationships.
+Current source is verified separately before relying on generated spans.
+
+## C#
+
+The `.cs` extension maps to `csharp`; `cs` and `c#` are query aliases. Extraction
+records namespaces, classes, interfaces, structs, records, enums, delegates,
+methods, constructors, properties, fields, locals, parameters, and identifier
+occurrences with original-byte spans. Razor `.cshtml` files remain text-searchable
+without C# structural extraction.
+
+The pinned `tree-sitter-c-sharp` 0.23.5 grammar reports `parse_error` on BTCPayServer
+list/slice property patterns such as `[.. { } multis]`; recognized facts remain
+partial and references at those sites remain unresolved.
+
+Lexical local and parameter references may resolve only when one visible binding
+is unique. Overloads, members, partial type merges, inheritance, qualified names,
+and receiver-dependent or method calls remain candidates or unresolved. The
+subset does not provide compiler-equivalent binding resolution.
+
 ## TypeScript and JavaScript
 
 Extraction includes functions, classes, fields, named arrow functions, overloads,
-imports, and local bindings, including JavaScript and JSX. Local resolution
-preserves shadowing and type/value distinctions where represented by the grammar.
+imports, and local bindings. TypeScript covers `.ts`, `.tsx`, `.mts`, and `.cts`;
+JavaScript covers `.js`, `.jsx`, `.mjs`, and `.cjs`. Local resolution preserves
+shadowing and type/value distinctions where represented by the grammar. Functions
+assigned to static member properties are recorded; calls through those properties
+remain candidates because receiver binding is not inferred.
 
 Only a unique explicit relative static ES source path, such as `./util.ts`, can
 establish an imported module target. Extensionless paths and `.js` to `.ts`

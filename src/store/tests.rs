@@ -28,6 +28,94 @@ fn identical_index_preserves_generation_and_prunes_content() {
 }
 
 #[test]
+fn extraction_contract_revision_rebuilds_unchanged_javascript_and_csharp_facts() {
+    let (_directory, mut store) = fixture();
+    let javascript = b"function refreshWallet(id) { return findWallet(id); }\nfunction findWallet(id) { return id; }\n";
+    let csharp = b"namespace Shop;\npublic record Wallet(string Id);\npublic interface IWalletStore { Wallet Load(); }\n";
+    std::fs::write(store.root.join("wallet.js"), javascript).unwrap();
+    std::fs::write(store.root.join("Wallet.cs"), csharp).unwrap();
+    store.index().unwrap();
+
+    // A prior release keyed facts by Cargo.lock alone. Poison those rows with
+    // valid but stale facts so this scan must miss them using the new contract key.
+    let old_version = i64::from_le_bytes(
+        blake3::hash(include_bytes!("../../Cargo.lock")).as_bytes()[..8]
+            .try_into()
+            .unwrap(),
+    );
+    let stale = crate::extract::Extraction {
+        language: "text".into(),
+        status: "complete".into(),
+        definitions: vec![crate::extract::Definition {
+            name: "StaleFact".into(),
+            kind: "class".into(),
+            start: 0,
+            end: 1,
+            container: None,
+        }],
+        ..crate::extract::Extraction::default()
+    };
+    for (path, bytes) in [
+        ("wallet.js", javascript.as_slice()),
+        ("Wallet.cs", csharp.as_slice()),
+    ] {
+        let revision = blake3::hash(bytes).to_hex().to_string();
+        let grammar = path.rsplit('.').next().unwrap();
+        store
+            .conn
+            .execute(
+                "DELETE FROM extraction_cache WHERE revision=?1 AND grammar=?2",
+                rusqlite::params![revision, grammar],
+            )
+            .unwrap();
+        store
+            .conn
+            .execute(
+                "INSERT INTO extraction_cache(revision,grammar,version,facts) VALUES(?1,?2,?3,?4)",
+                rusqlite::params![
+                    revision,
+                    grammar,
+                    old_version,
+                    serde_json::to_string(&stale).unwrap()
+                ],
+            )
+            .unwrap();
+    }
+    let old_generation = store.generation().unwrap();
+    store
+        .conn
+        .execute(
+            "UPDATE meta SET value='legacy-extraction-contract' WHERE key='fingerprint'",
+            [],
+        )
+        .unwrap();
+
+    store.index().unwrap();
+    assert_eq!(store.generation().unwrap(), old_generation + 1);
+
+    for (path, expected_name) in [("wallet.js", "refreshWallet"), ("Wallet.cs", "Wallet")] {
+        let has_definition: bool = store
+            .conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM definitions d JOIN files f ON f.id=d.file_id WHERE f.path=?1 AND d.name=?2)",
+                rusqlite::params![path, expected_name],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(has_definition, "{path} did not reextract {expected_name}");
+    }
+    let stale_count: i64 = store
+        .conn
+        .query_row(
+            "SELECT count(*) FROM definitions WHERE name='StaleFact'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(stale_count, 0);
+}
+
+#[test]
 fn failed_publication_keeps_complete_previous_snapshot() {
     let (_directory, mut store) = fixture();
     std::fs::write(store.root.join("README.md"), "original").unwrap();
