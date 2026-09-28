@@ -287,6 +287,7 @@ fn workspace_ancestor_does_not_redirect_explicit_subtree_diagnostics() {
         "search".into(),
         "sym:SubtreeThing".into(),
     ];
+    DiagnosticStore::open(fixture.cache.path(), DiagnosticsMode::Metadata).unwrap();
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     assert_eq!(execute(&args, &mut stdout, &mut stderr), 0);
     let value: Value = serde_json::from_slice(&stdout).unwrap();
