@@ -52,8 +52,8 @@ A page keeps snippets while at least eight hits (or all remaining hits) fit,
 otherwise it drops them for more locators. Snippets locate evidence; `show`
 remains the verified read. Increase the budget when a hit or source line cannot fit.
 Budget failures include a retry hint on stderr even when no JSON error fits.
-`--help`, `--version`, and option parsing errors print plain, unbudgeted text;
-help ends with a query, navigation, and page-option summary.
+`--help`, `--version`, and option parsing errors print plain, unbudgeted text
+(parsing errors also on stderr); help ends with a query, navigation, and page summary.
 
 ## Workspace search
 

@@ -14,7 +14,7 @@ mod tests;
 pub(crate) use file_ranking::fuse_search_file_lanes as fuse_file_lanes;
 pub(crate) use navigation::context_entry;
 pub use navigation::{context, map, references};
-pub use path_filter::PathFilter;
+pub use path_filter::{BoundPathFilter, PathFilter};
 pub use rerank_window::RerankScorer;
 
 use crate::{
@@ -183,6 +183,7 @@ pub fn search_prepared(
     let generation = store.generation()?;
     let mut coverage = serde_json::to_value(store.coverage()?)?;
     trace.snapshot(generation, &coverage);
+    let paths = query.path.bind(&store.conn)?;
     let mut hits = Vec::with_capacity(128);
     let mut truncated = false;
     if query.regex {
@@ -190,6 +191,7 @@ pub fn search_prepared(
         let outcome = live::live_regex(
             store,
             query,
+            &paths,
             cache,
             &mut hits,
             &mut coverage,
@@ -210,7 +212,7 @@ pub fn search_prepared(
         outcome?;
     } else {
         let started = Instant::now();
-        let outcome = exact_hits(store, query);
+        let outcome = exact_hits(store, query, &paths);
         let exact = outcome
             .as_ref()
             .map(|lane| lane.hits.as_slice())
@@ -227,7 +229,7 @@ pub fn search_prepared(
             let terms = fts_terms(&query.text);
             if !terms.is_empty() {
                 let started = Instant::now();
-                let outcome = lexical_hits(store, query, &terms);
+                let outcome = lexical_hits(store, query, &paths, &terms);
                 let lexical = outcome
                     .as_ref()
                     .map(|lane| lane.hits.as_slice())
@@ -242,7 +244,7 @@ pub fn search_prepared(
                 let lexical = outcome?;
                 if !query.exact && (query.kind.is_empty() || query.kind == "file") {
                     let started = Instant::now();
-                    let outcome = file_hits(store, query);
+                    let outcome = file_hits(store, query, &paths);
                     let files = outcome
                         .as_ref()
                         .map(|lane| lane.hits.as_slice())
@@ -271,7 +273,7 @@ pub fn search_prepared(
             }
         } else if !query.exact && (query.kind.is_empty() || query.kind == "file") {
             let started = Instant::now();
-            let outcome = file_hits(store, query);
+            let outcome = file_hits(store, query, &paths);
             let files = outcome
                 .as_ref()
                 .map(|lane| lane.hits.as_slice())
@@ -299,8 +301,16 @@ pub fn search_prepared(
         && !query.regex
         && let Some(vector) = semantic_query.as_ref()
     {
-        truncated |=
-            semantic_lane::append(store, query, cache, vector, &mut hits, &mut coverage, trace)?;
+        truncated |= semantic_lane::append(
+            store,
+            query,
+            &paths,
+            cache,
+            vector,
+            &mut hits,
+            &mut coverage,
+            trace,
+        )?;
     }
     if let Some(scorer) = reranker {
         rerank_window::apply(
@@ -323,7 +333,7 @@ pub fn search_prepared(
     snippets::attach(store, &snippets::preview_terms(&query.text), &mut hits)?;
     if hits.is_empty()
         && let Some(diagnosis) =
-            path_filter::diagnose_empty_filters(&store.conn, &query.path, &query.language)?
+            path_filter::diagnose_empty_filters(&store.conn, &paths, &query.language)?
     {
         coverage["filter_diagnosis"] = diagnosis.into();
     }
@@ -353,7 +363,7 @@ pub fn definitions(store: &Store, query: &Query) -> Result<ResultSet> {
     let LaneHits {
         mut hits,
         truncated,
-    } = exact_hits(store, &exact)?;
+    } = exact_hits(store, &exact, &query.path.bind(&store.conn)?)?;
     hits.sort_by_key(|hit| declaration_rank(&hit.kind));
     snippets::attach(store, &snippets::preview_terms(&exact.text), &mut hits)?;
     snapshot.commit()?;
@@ -395,7 +405,7 @@ fn cap_hits(hits: &mut Vec<Hit>, limit: usize) -> LaneHits {
     }
 }
 
-fn exact_hits(store: &Store, query: &Query) -> Result<LaneHits> {
+fn exact_hits(store: &Store, query: &Query, paths: &BoundPathFilter) -> Result<LaneHits> {
     if query.exact {
         let mut statement = store.conn.prepare(&format!(
             "SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container,
@@ -403,19 +413,17 @@ fn exact_hits(store: &Store, query: &Query) -> Result<LaneHits> {
              FROM definitions d
              JOIN files f ON f.id=d.file_id
              JOIN contents c ON c.revision=f.revision
-             WHERE d.name=?1
-               AND {}
-               AND (?3='' OR f.language=?3)
-               AND (?4='' OR d.kind=?4)
+             WHERE d.name=?1{}
+               AND (?2='' OR f.language=?2)
+               AND (?3='' OR d.kind=?3)
              ORDER BY f.path,d.start,d.end,d.id
-             LIMIT ?5",
-            path_filter::path_filter_sql("f.path", 2)
+             LIMIT ?4",
+            paths.sql_clause("f.path")
         ))?;
         let mut hits = statement
             .query_map(
                 params![
                     query.text,
-                    query.path.bind(&store.conn)?.sql_parameter(),
                     query.language,
                     query.kind,
                     (MAX_HITS + 1) as i64
@@ -435,23 +443,21 @@ fn exact_hits(store: &Store, query: &Query) -> Result<LaneHits> {
              FROM definitions d
              JOIN files f ON f.id=d.file_id
              JOIN contents c ON c.revision=f.revision
-             WHERE (?1='' OR d.name=?1)
-               AND {}
-               AND (?3='' OR f.language=?3)
-               AND (?4='' OR d.kind=?4)
+             WHERE (?1='' OR d.name=?1){}
+               AND (?2='' OR f.language=?2)
+               AND (?3='' OR d.kind=?3)
          )
          SELECT path,revision,start,end,name,kind,container,provenance,bytes
          FROM ranked
          WHERE file_rank=1
          ORDER BY path,start,end,id
-         LIMIT ?5",
-        path_filter::path_filter_sql("f.path", 2)
+         LIMIT ?4",
+        paths.sql_clause("f.path")
     ))?;
     let hits = statement
         .query_map(
             params![
                 query.text,
-                query.path.bind(&store.conn)?.sql_parameter(),
                 query.language,
                 query.kind,
                 (file_ranking::FILE_CANDIDATE_LIMIT + 1) as i64
@@ -462,7 +468,12 @@ fn exact_hits(store: &Store, query: &Query) -> Result<LaneHits> {
     Ok(cap_lane(hits))
 }
 
-fn lexical_hits(store: &Store, query: &Query, terms: &str) -> Result<LaneHits> {
+fn lexical_hits(
+    store: &Store,
+    query: &Query,
+    paths: &BoundPathFilter,
+    terms: &str,
+) -> Result<LaneHits> {
     let mut statement = store.conn.prepare(&format!(
         "WITH ranked AS MATERIALIZED (
              SELECT f.path,f.revision,r.start,r.end,r.name,r.kind,NULL AS container,
@@ -472,10 +483,9 @@ fn lexical_hits(store: &Store, query: &Query, terms: &str) -> Result<LaneHits> {
              JOIN regions r ON r.id=documents.rowid
              JOIN files f ON f.id=r.file_id
              JOIN contents c ON c.revision=f.revision
-             WHERE documents MATCH ?1
-               AND {}
-               AND (?3='' OR f.language=?3)
-               AND (?4='' OR r.kind=?4)
+             WHERE documents MATCH ?1{}
+               AND (?2='' OR f.language=?2)
+               AND (?3='' OR r.kind=?3)
          )
          ,numbered AS (
              SELECT ranked.*,
@@ -488,14 +498,13 @@ fn lexical_hits(store: &Store, query: &Query, terms: &str) -> Result<LaneHits> {
          FROM numbered
          WHERE file_rank=1
          ORDER BY relevance,path,start,end,id
-         LIMIT ?5",
-        path_filter::path_filter_sql("f.path", 2)
+         LIMIT ?4",
+        paths.sql_clause("f.path")
     ))?;
     let hits = statement
         .query_map(
             params![
                 terms,
-                query.path.bind(&store.conn)?.sql_parameter(),
                 query.language,
                 query.kind,
                 (file_ranking::FILE_CANDIDATE_LIMIT + 1) as i64
@@ -514,7 +523,7 @@ fn fts_terms(text: &str) -> String {
         .join(" OR ")
 }
 
-fn file_hits(store: &Store, query: &Query) -> Result<LaneHits> {
+fn file_hits(store: &Store, query: &Query, paths: &BoundPathFilter) -> Result<LaneHits> {
     if !query.kind.is_empty() && query.kind != "file" {
         return Ok(LaneHits {
             hits: Vec::new(),
@@ -524,13 +533,11 @@ fn file_hits(store: &Store, query: &Query) -> Result<LaneHits> {
     let mut stmt = store.conn.prepare(&format!(
         "SELECT f.path,f.revision
          FROM files f
-         WHERE {}
-           AND (?2='' OR f.language=?2)
+         WHERE (?1='' OR f.language=?1){}
          ORDER BY f.path",
-        path_filter::path_filter_sql("f.path", 1)
+        paths.sql_clause("f.path")
     ))?;
-    let path_filter = query.path.bind(&store.conn)?.sql_parameter();
-    let rows = stmt.query_map(params![path_filter, query.language], |r| {
+    let rows = stmt.query_map(params![query.language], |r| {
         Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
     })?;
     let terms = query_terms(&query.text);

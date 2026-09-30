@@ -14,8 +14,12 @@ pub const INDEXED_LANGUAGES: [&str; 8] = [
     "text",
 ];
 
-/// The recorded language a `lang:` value names, case-insensitively.
+/// The recorded language a `lang:` value names, case-insensitively; an empty
+/// value names none and filters nothing.
 pub fn canonical_language(value: &str) -> Result<&'static str> {
+    if value.is_empty() {
+        return Ok("");
+    }
     let lower = value.to_ascii_lowercase();
     if let Some(known) = INDEXED_LANGUAGES.iter().find(|known| **known == lower) {
         return Ok(known);

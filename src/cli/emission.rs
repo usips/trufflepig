@@ -74,6 +74,10 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
                     "tip: page with `more CURSOR`, the footer's `next: more CURSOR` line\n",
                 );
             }
+            // Usage errors also go to stderr, where wrappers classify them.
+            if code != 0 {
+                let _ = write!(stderr, "{message}");
+            }
             (
                 // Help, version, and usage errors are plain text and never
                 // budgeted: a truncated usage summary is worse than a long one.

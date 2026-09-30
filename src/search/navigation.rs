@@ -169,13 +169,12 @@ pub fn map(store: &Store, path: &str) -> Result<ResultSet> {
     let snapshot = store.conn.unchecked_transaction()?;
     let generation = store.generation()?;
     let coverage = serde_json::to_value(store.coverage()?)?;
-    let path_filter = super::PathFilter::prefix(path).bind(&store.conn)?;
-    let mut stmt=store.conn.prepare(&format!("SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container,'structural_map',c.bytes FROM definitions d JOIN files f ON f.id=d.file_id JOIN contents c ON c.revision=f.revision WHERE {} AND (d.kind IN ('addon','module','namespace','struct','class','trait','type','enum','impl','interface','record','delegate','xenforo_class_extension') OR (f.path=?1 AND d.kind IN ('function','method','constructor','property','field','event','constant','enum_case','macro'))) ORDER BY f.path,CASE d.kind WHEN 'addon' THEN 0 WHEN 'module' THEN 1 WHEN 'namespace' THEN 2 ELSE 3 END,d.start,d.id LIMIT ?2", super::path_filter::path_filter_sql("f.path", 3)))?;
+    let filter = super::PathFilter::prefix(path);
+    // A prefix naming exactly one indexed file lists that file's members.
+    let single_file = filter.resolve_single_file(&store.conn)?.unwrap_or_default();
+    let mut stmt=store.conn.prepare(&format!("SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container,'structural_map',c.bytes FROM definitions d JOIN files f ON f.id=d.file_id JOIN contents c ON c.revision=f.revision WHERE 1{} AND (d.kind IN ('addon','module','namespace','struct','class','trait','type','enum','impl','interface','record','delegate','xenforo_class_extension') OR (f.path=?1 AND d.kind IN ('function','method','constructor','property','field','event','constant','enum_case','macro'))) ORDER BY f.path,CASE d.kind WHEN 'addon' THEN 0 WHEN 'module' THEN 1 WHEN 'namespace' THEN 2 ELSE 3 END,d.start,d.id LIMIT ?2", filter.bind(&store.conn)?.sql_clause("f.path")))?;
     let mut hits = stmt
-        .query_map(
-            params![path, (MAX_HITS + 1) as i64, path_filter.sql_parameter()],
-            hit_row,
-        )?
+        .query_map(params![single_file, (MAX_HITS + 1) as i64], hit_row)?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     let truncated = hits.len() > MAX_HITS;
     hits.truncate(MAX_HITS);

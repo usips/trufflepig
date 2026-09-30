@@ -54,6 +54,79 @@ fn root_prefix_wins_over_component_matches() {
 }
 
 #[test]
+fn root_prefix_anchors_only_at_component_or_stem_boundaries() {
+    let files: &[(&str, &[u8])] = &[
+        ("src-tauri/main.rs", b"fn needle_tauri() {}\n"),
+        ("crates/a/src/lib.rs", b"fn needle_member() {}\n"),
+    ];
+    // `src` only begins `src-tauri`, so it matches at component starts.
+    assert_eq!(
+        paths("re:needle file:src", files),
+        ["crates/a/src/lib.rs", "src-tauri/main.rs"]
+    );
+}
+
+#[test]
+fn file_values_are_encoded_like_indexed_paths() {
+    let files: &[(&str, &[u8])] = &[
+        ("caf\u{e9}/menu.rs", b"fn needle_menu() {}\n"),
+        ("a b/c.rs", b"fn needle_space() {}\n"),
+        ("other.rs", b"fn needle_other() {}\n"),
+    ];
+    assert_eq!(
+        paths("re:needle file:caf\u{e9}/", files),
+        ["caf%C3%A9/menu.rs"]
+    );
+    // Already-encoded values, as copied from results, pass through.
+    assert_eq!(
+        paths("re:needle file:caf%C3%A9/", files),
+        ["caf%C3%A9/menu.rs"]
+    );
+    assert_eq!(paths("re:needle file:a%20b/", files), ["a%20b/c.rs"]);
+}
+
+#[test]
+fn single_file_resolution_names_exactly_one_indexed_path() {
+    let (_root, _cache, store) = fixture(&[
+        (
+            "crates/server/src/script/host.rs",
+            b"pub struct Host;\nfn serve() {}\n",
+        ),
+        (
+            "crates/server/src/net.rs",
+            b"pub struct Net;\nfn listen() {}\n",
+        ),
+        ("src/lib.rs", b"fn root() {}\n"),
+        ("src/lib.rs.orig", b"old\n"),
+    ]);
+    let resolve = |value: &str| {
+        super::PathFilter::prefix(value)
+            .resolve_single_file(&store.conn)
+            .unwrap()
+    };
+    assert_eq!(resolve("./src/lib.rs").as_deref(), Some("src/lib.rs"));
+    assert_eq!(
+        resolve("host.rs").as_deref(),
+        Some("crates/server/src/script/host.rs")
+    );
+    assert_eq!(
+        resolve("script/host").as_deref(),
+        Some("crates/server/src/script/host.rs")
+    );
+    assert_eq!(resolve("crates/server/src/"), None);
+    // One file under a directory prefix is still a directory listing.
+    assert_eq!(resolve("crates/server/src/script/"), None);
+    for value in ["./crates/server/src/script/host.rs", "script/host.rs"] {
+        let set = crate::search::map(&store, value).unwrap();
+        assert!(
+            set.hits.iter().any(|hit| hit.name == "serve"),
+            "{value}: {:?}",
+            set.hits
+        );
+    }
+}
+
+#[test]
 fn repeated_file_values_or_and_negated_values_exclude() {
     assert_eq!(
         paths("re:needle file:web/ file:tools/", LAYOUT),
@@ -104,6 +177,8 @@ fn sql_predicate_agrees_with_rust_matcher() {
         "file:web/ file:tools/",
         "-file:needle.ts",
         "file:ost.rs",
+        "file:crates/server/src/script/boundary",
+        "file:it's/",
         "",
     ] {
         let query = Query::parse(query).unwrap();
@@ -111,12 +186,12 @@ fn sql_predicate_agrees_with_rust_matcher() {
         let mut statement = store
             .conn
             .prepare(&format!(
-                "SELECT path FROM files f WHERE {} ORDER BY path",
-                super::path_filter_sql("f.path", 1)
+                "SELECT path FROM files f WHERE 1{} ORDER BY path",
+                bound.sql_clause("f.path")
             ))
             .unwrap();
         let from_sql: Vec<String> = statement
-            .query_map([bound.sql_parameter()], |row| row.get(0))
+            .query_map([], |row| row.get(0))
             .unwrap()
             .collect::<Result<_, _>>()
             .unwrap();
@@ -144,6 +219,15 @@ fn empty_filtered_results_explain_which_filter_matched_nothing() {
         "file:script/hosts matched 0 indexed paths (nearest: crates/server/src/script/host.rs)"
     );
     assert_eq!(
+        diagnosis("re:needle file:crates/sever/testz/").unwrap(),
+        "file:crates/sever/testz/ matched 0 indexed paths (nearest: crates/server/tests/)"
+    );
+    // Typos past the shared prefix rank by edit distance.
+    assert_eq!(
+        diagnosis("re:needle file:crates/server/scripz/").unwrap(),
+        "file:crates/server/scripz/ matched 0 indexed paths (nearest: crates/server/tests/script.rs, crates/server/src/script/)"
+    );
+    assert_eq!(
         diagnosis("re:absent file:script/").unwrap(),
         "file:script/ matched 2 indexed paths"
     );
@@ -168,4 +252,5 @@ fn unknown_languages_fail_and_aliases_resolve() {
     assert!(error.starts_with("unknown_language: python; known: rust,"));
     assert_eq!(Query::parse("x lang:markdown").unwrap().language, "text");
     assert_eq!(Query::parse("x lang:RS").unwrap().language, "rust");
+    assert_eq!(Query::parse("x lang:").unwrap().language, "");
 }

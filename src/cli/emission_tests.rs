@@ -72,7 +72,8 @@ fn emission_usage_errors_are_complete_plain_text_under_any_budget() {
         assert!(text.starts_with("error: unexpected argument"), "{text}");
         assert!(text.contains("Usage: trufflepig"));
         assert!(!text.contains("budget_too_small"));
-        assert!(stderr.is_empty());
+        // Wrappers classify usage failures from the stderr copy.
+        assert_eq!(String::from_utf8(stderr).unwrap(), text);
     }
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     execute(&args(&cache, &["--page", "2"]), &mut stdout, &mut stderr);

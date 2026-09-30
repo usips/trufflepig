@@ -12,11 +12,16 @@ determinism claim for a fixed model and provider.
 
 `re:<pattern>` searches live files. Path, language, and kind filters apply before
 result limits, and every lane and live walk shares one path matcher
-([`PathFilter`](../src/search/path_filter.rs)). A `file:` value matches the
-root-relative paths it prefixes; when no indexed path has that prefix, it matches
-where it starts a path component instead (`file:script/host` matches
-`crates/a/src/script/host.rs`, never `ghost.rs`). Repeated `file:` values OR
-together; `-file:` values exclude paths they match at any component start.
+([`PathFilter`](../src/search/path_filter.rs)). Values are percent-encoded like
+indexed paths (`file:café/` and `file:caf%C3%A9/` agree). A `file:` value matches
+the root-relative paths it prefixes when some indexed path continues it at `/`,
+`.`, or its end; otherwise it matches where it starts a path component
+(`file:script/host` matches `crates/a/src/script/host.rs`, never `ghost.rs`, and
+`file:src` beside only `src-tauri/` also reaches `crates/a/src/`). Repeated
+`file:` values OR together; `-file:` values exclude paths they match at any
+component start. `map` lists a file's members when its prefix names exactly one
+indexed file (`map ./src/x.rs`, `map host.rs`), never for a directory prefix.
+An empty `lang:` filters nothing; otherwise
 `lang:` names a recorded language, case-insensitively: `rust`, `typescript`,
 `javascript`, `csharp`, `php`, `luau`, `dreammaker`, or `text`. `rs`, `ts`, `js`,
 `cs`, `c#`, `lua`, and `dm` are aliases; `md`, `markdown`, `toml`, and `json`
