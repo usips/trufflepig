@@ -98,7 +98,7 @@ mod lines;
 mod reextraction;
 pub(crate) use acquisition::AcquiredSource;
 pub use acquisition::SourceSide;
-pub use reextraction::{ReextractedDefinition, reextract_definition};
+pub use reextraction::{ReextractedDefinition, reextract_definition, usable_extraction};
 
 pub fn show(store: &Store, target: &str, budget: &OutputBudget) -> Result<String> {
     show_with_side(store, target, None, budget)
@@ -163,8 +163,9 @@ pub(crate) fn render_owned(
         if let Some(identity) = &historical {
             value["historical"] = serde_json::to_value(identity)?;
         }
-        if !verified && historical.is_none() {
-            // An explicit path read returns the current file, not an indexed revision.
+        if !verified && historical.is_none() && !metadata.contains_key("source") {
+            // An explicit path read returns the current file, not an indexed revision;
+            // a caller serving other unverified bytes names them in metadata.
             value["source"] = "current_file".into();
         }
         if let Some((total, also)) = &definitions {

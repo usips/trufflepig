@@ -3,6 +3,7 @@
 //! index reading the worktree's current bytes ([`Store::reading_from`]). Paths
 //! are root-relative, so they address the same files; hits in files that may
 //! differ are flagged, and changed definitions are re-extracted from worktree bytes.
+mod parent_show;
 #[cfg(test)]
 mod tests;
 mod worktree_divergence;
@@ -14,10 +15,10 @@ use crate::{
     store::{Store, is_index_warming},
 };
 use anyhow::Result;
+pub(super) use parent_show::{acquire_home_read, reextracted_entry};
 use serde_json::Value;
 use std::{path::Path, time::Duration};
 pub(super) use worktree_divergence::WorktreeDivergence;
-pub(super) use worktree_reads::{acquire_home_read, reextracted_entry, reextracted_from};
 
 /// How long a daemon-backed query waits for the home member's first publication
 /// when no parent index can answer for it.

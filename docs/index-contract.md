@@ -73,7 +73,10 @@ Only a worktree sharing the member's Git common directory reads this way. Files
 that may differ are worktree changes against the parent's `HEAD` (committed,
 staged, unstaged, untracked) plus the parent's uncommitted and untracked files;
 each Git probe is bounded to 2 s and a result is reused for 5 s
-(`src/workspace/home_index/worktree_divergence.rs`). File changes between
+(`src/workspace/home_index/worktree_divergence.rs`). A definition in such a file
+is re-extracted from worktree bytes; when they cannot be extracted (binary, or
+failed extraction), `show` serves the parent index's stored bytes with
+`verified: false` and `source: parent_index`. File changes between
 extraction and publication may leave an indexed revision behind disk; `show`'s buffer check
 prevents applying it to current bytes. Reconciliation eventually catches up.
 

@@ -322,3 +322,28 @@ fn parent_view_requires_a_linked_worktree_of_the_member() {
         "an unrelated checkout must not read through the member's index"
     );
 }
+
+#[test]
+fn unextractable_worktree_file_falls_back_to_unverified_parent_bytes() {
+    let seeded = SeededWorktree::new();
+    let handle = seeded.search_json(&["search", "sym:SharedThing"])["hits"][0]["handle"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    fs::write(
+        seeded.worktree.join("lib.rs"),
+        b"pub struct SharedThing;\0binary",
+    )
+    .unwrap();
+    for target in [handle.as_str(), "sym:SharedThing"] {
+        let shown: Value = serde_json::from_str(&seeded.show(&["show", target]).unwrap()).unwrap();
+        assert_eq!(shown["verified"], false, "{shown}");
+        assert_eq!(shown["source"], "parent_index");
+        assert_eq!(
+            shown["served_from"],
+            "engine index; worktree file not extractable"
+        );
+        let text = shown["lines"][0]["text"].as_str().unwrap();
+        assert!(text.contains("engine_marker"), "{shown}");
+    }
+}

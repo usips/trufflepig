@@ -1,7 +1,7 @@
 //! Owner routing verifies recorded roots and source identities before every follow-up.
 use super::{
     WorkspaceConfig,
-    home_index::{acquire_home_read, reextracted_entry, reextracted_from},
+    home_index::{acquire_home_read, reextracted_entry},
     member_cache, member_options,
     result_cache::{MemberSnapshot, OwnedEntry, WorkspaceResults, WorkspaceSet},
     selected_member,
@@ -112,8 +112,9 @@ fn read_within(
                 if owner.parent_index.is_some()
                     && error.to_string().starts_with("stale_source") =>
             {
-                let current = reextracted_entry(&store, &handle, &hit.entry)?.ok_or(error)?;
-                metadata["served_from"] = reextracted_from(&owner.name).into();
+                let (current, read) =
+                    reextracted_entry(&store, &handle, &hit.entry)?.ok_or(error)?;
+                read.annotate(&owner.name, &mut metadata);
                 current
             }
             acquired => acquired?,
@@ -134,7 +135,7 @@ fn read_within(
     let member = selected_member(config, options)?;
     member.verify_identity()?;
     let cache = member_cache(&member, options.cache.as_deref())?;
-    let (store, mut source, reextracted) = acquire_home_read(
+    let (store, mut source, parent_read) = acquire_home_read(
         &member,
         &cache,
         options.cache.as_deref(),
@@ -146,8 +147,8 @@ fn read_within(
     let (_, entry) = results::entry(&store, &source.handle)?;
     let owner = MemberSnapshot::capture(&member, &store, &cache, store.generation()?)?;
     let mut metadata = owner.metadata(&config.name);
-    if reextracted {
-        metadata["served_from"] = reextracted_from(&owner.name).into();
+    if let Some(read) = parent_read {
+        read.annotate(&owner.name, &mut metadata);
     }
     let id = results.save(WorkspaceSet {
         workspace: config.name.clone(),
@@ -158,7 +159,7 @@ fn read_within(
             owner: 0,
             member_rank: 1,
             entry,
-            worktree_differs: reextracted,
+            worktree_differs: parent_read.is_some(),
         }],
         truncated: false,
         scope: None,
