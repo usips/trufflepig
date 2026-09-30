@@ -11,8 +11,9 @@ use super::{
 
 /// Multiplier on each lane contribution of a demoted path. In reciprocal-rank
 /// terms a demoted file at lane rank `r` scores like an undemoted one at rank
-/// `2r + 61`: its best rank ties an undemoted file's rank 61.
-const DEMOTED_PATH_WEIGHT: f64 = 0.5;
+/// `(61 + r) / 0.7 - 61`, about `1.43r + 26`. Measured against 0.5, which
+/// pushed test labels of the development tasks off the first page.
+const DEMOTED_PATH_WEIGHT: f64 = 0.7;
 const TEST_TERMS: [&str; 6] = ["test", "tests", "testing", "spec", "fixture", "fixtures"];
 const DOC_TERMS: [&str; 9] = [
     "doc",
@@ -105,11 +106,14 @@ mod tests {
     }
 
     #[test]
-    fn prior_halves_tests_and_docs_unless_the_query_targets_them() {
+    fn prior_demotes_tests_and_docs_unless_the_query_targets_them() {
         let plain = prior("unknown item slot");
         assert_eq!(plain.weight("src/sim/item_slots.rs"), 1.0);
-        assert_eq!(plain.weight("src/sim/tests/item_slots.rs"), 0.5);
-        assert_eq!(plain.weight("CLAUDE.md"), 0.5);
+        assert_eq!(
+            plain.weight("src/sim/tests/item_slots.rs"),
+            DEMOTED_PATH_WEIGHT
+        );
+        assert_eq!(plain.weight("CLAUDE.md"), DEMOTED_PATH_WEIGHT);
 
         assert_eq!(prior("sentence_tests").weight("src/tests.rs"), 1.0);
         assert_eq!(
@@ -121,7 +125,10 @@ mod tests {
             prior("permissions lang:text").weight("docs/scripting.md"),
             1.0
         );
-        assert_eq!(prior("permissions lang:text").weight("src/tests.rs"), 0.5);
+        assert_eq!(
+            prior("permissions lang:text").weight("src/tests.rs"),
+            DEMOTED_PATH_WEIGHT
+        );
         assert_eq!(prior("permissions file:docs/").weight("docs/a.md"), 1.0);
         assert_eq!(
             prior("scripting kind:file").weight("docs/scripting.md"),
@@ -133,16 +140,25 @@ mod tests {
     fn a_named_file_is_never_demoted_and_filters_match_components() {
         assert_eq!(prior("AGENTS.md").weight("crates/a/AGENTS.md"), 1.0);
         assert_eq!(prior("dev-http").weight("docs/dev-http.md"), 1.0);
-        assert_eq!(prior("dev http server").weight("docs/dev-http.md"), 0.5);
+        assert_eq!(
+            prior("dev http server").weight("docs/dev-http.md"),
+            DEMOTED_PATH_WEIGHT
+        );
         // `latest` and `document_ops` merely contain the words.
-        assert_eq!(prior("tick file:src/latest/").weight("src/tests.rs"), 0.5);
+        assert_eq!(
+            prior("tick file:src/latest/").weight("src/tests.rs"),
+            DEMOTED_PATH_WEIGHT
+        );
         assert_eq!(
             prior("tick file:src/document_ops/").weight("src/document_ops/a.md"),
-            0.5
+            DEMOTED_PATH_WEIGHT
         );
         assert!(prior("tick_rate").names_exactly("crates/core/src/tick_rate.rs"));
         // An identifier query tiers named files instead; tests among them count less.
-        assert_eq!(prior("tick_rate").weight("src/tests/tick_rate.rs"), 0.5);
+        assert_eq!(
+            prior("tick_rate").weight("src/tests/tick_rate.rs"),
+            DEMOTED_PATH_WEIGHT
+        );
         assert!(!prior("tick_rate").names_exactly("crates/core/src/tick.rs"));
     }
 }

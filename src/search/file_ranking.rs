@@ -226,7 +226,7 @@ mod tests {
     }
 
     #[test]
-    fn path_prior_halves_test_and_doc_files_without_dropping_them() {
+    fn path_prior_demotes_test_and_doc_files_without_dropping_them() {
         let lexical = [
             hit("src/sim/tests.rs", 0, "lexical"),
             hit("AGENTS.md", 0, "lexical"),
@@ -253,7 +253,7 @@ mod tests {
                 ..policy
             },
         );
-        // tests.rs: 1/62 + 0.5/61 beats item_slots.rs: 1/61.
+        // tests.rs: 1/62 + 0.7/61 beats item_slots.rs: 1/61.
         assert_eq!(refused[0].path, "src/sim/tests.rs");
     }
 

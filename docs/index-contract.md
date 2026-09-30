@@ -39,10 +39,10 @@ in tiers before score: a file whose stem is the token (`tick_rate.rs`), then
 files declaring it, then files using, binding or importing it, then the rest.
 A text quoted as one `"…"` literal (no inner quotes) runs the phrase lane alone.
 
-A path prior halves each lane contribution of test paths and Markdown files,
-including `AGENTS.md` and `CLAUDE.md`, as classified by
+A path prior multiplies each lane contribution of test paths and Markdown
+files, including `AGENTS.md` and `CLAUDE.md`, by 0.7, as classified by
 [`path_class`](../src/search/path_class.rs); a demoted file at lane rank `r`
-thus scores like an undemoted one at rank `2r + 61`. Tests keep full weight when
+thus scores like an undemoted one at rank `1.43r + 26`. Tests keep full weight when
 the query names tests (`test`, `tests`, `testing`, `spec`, `fixture`) or a
 `file:` component is a test directory; docs keep it when the query names docs
 (`doc`, `docs`, `documentation`, `readme`, `markdown`, `md`, `agents`,
