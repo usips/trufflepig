@@ -63,7 +63,8 @@ candidate retrieval and graph joins. Readers are query-only
 (`src/store/read_access.rs:open_read`): they open the index read-only, run no
 schema or metadata writes, wait at most 2 s on a lock, and are interrupted when
 the request's 20 s query deadline (`src/daemon/deadline.rs`) expires, answering
-`timed_out`. A missing index or generation 0 answers `index_warming`. Only
+`timed_out`; in-request reconciliation (`--no-daemon`, an unpublished index)
+pauses that clock. A missing index or generation 0 answers `index_warming`. Only
 indexing, sessions, and the reconciler open the writer (`Store::open`). A reader
 may read a linked worktree's current bytes through its parent member's index
 (root-relative paths address the same files); its result sets are saved in the

@@ -50,12 +50,22 @@ pub(super) fn read(
     options: &Arguments,
     budget: &OutputBudget,
 ) -> Result<String> {
+    let deadline = QueryDeadline::start();
+    read_within(config, results, options, budget, deadline)
+        .map_err(|error| deadline.classify(error))
+}
+fn read_within(
+    config: &WorkspaceConfig,
+    results: &WorkspaceResults,
+    options: &Arguments,
+    budget: &OutputBudget,
+    deadline: QueryDeadline,
+) -> Result<String> {
     let target = options
         .words
         .get(1)
         .context("usage: show TARGET | ctx HANDLE")?;
     let side = options.side.as_deref().map(SourceSide::parse).transpose()?;
-    let deadline = QueryDeadline::start();
     let is_context = options.words[0] == "ctx";
     let addressed = target.starts_with("read:")
         || target.parse::<ResultHandle>().is_ok()
@@ -152,7 +162,10 @@ pub(super) fn history(
     let member = if let Some((set, index)) = &retained {
         let owner = &set.owners[set.hits[*index].owner];
         verify_selection(owner, options)?;
-        let _ = owner.open(config, QueryDeadline::start())?;
+        let deadline = QueryDeadline::start();
+        owner
+            .open(config, deadline)
+            .map_err(|error| deadline.classify(error))?;
         owner.member_root(config)?
     } else {
         selected_member(config, options)?

@@ -1,11 +1,12 @@
 //! Current-bytes definition lookup for files whose published revision is behind
 //! disk: extracts one file in memory without touching any index.
-use super::{MAX_READ_BYTES, line_span, read_contained};
+use super::{line_span, read_contained};
 use crate::{
+    extract::Extraction,
     identity::{ByteSpan, ContentRevision},
     results::Hit,
 };
-use anyhow::Result;
+use anyhow::{Result, bail, ensure};
 use std::path::Path;
 
 /// One definition located in a file's current bytes; unpublished, so unverified
@@ -48,7 +49,8 @@ impl ReextractedDefinition {
 
 /// Reads root-relative `path` under `root`, extracts it, and returns the
 /// definition named `name` (of `kind`, any kind when empty) whose first line
-/// is nearest `near_line`; earlier definitions win ties.
+/// is nearest `near_line`; earlier definitions win ties. Files the index
+/// excludes and extractions that yield no facts are errors, not `None`.
 pub fn reextract_definition(
     root: &Path,
     path: &str,
@@ -56,8 +58,16 @@ pub fn reextract_definition(
     kind: &str,
     near_line: usize,
 ) -> Result<Option<ReextractedDefinition>> {
-    let bytes = read_contained(root, &crate::store::decode_path(path)?, MAX_READ_BYTES)?;
-    let extraction = crate::extract::extract(path, &bytes);
+    let bytes = read_contained(
+        root,
+        &crate::store::decode_path(path)?,
+        crate::store::MAX_SOURCE_BYTES as usize,
+    )?;
+    ensure!(
+        !bytes.contains(&0),
+        "source_excluded: {path} is binary; the index does not extract it"
+    );
+    let extraction = usable_extraction(path, crate::extract::extract(path, &bytes))?;
     let Some(definition) = extraction
         .definitions
         .into_iter()
@@ -92,6 +102,20 @@ pub fn reextract_definition(
     }))
 }
 
+/// A cancelled extraction, or one that failed without any facts, leaves the
+/// file's definitions unknown rather than absent.
+fn usable_extraction(path: &str, extraction: Extraction) -> Result<Extraction> {
+    let factless_failure = extraction.definitions.is_empty()
+        && !matches!(extraction.status.as_str(), "complete" | "lexical_only");
+    if extraction.status == "cancelled" || factless_failure {
+        bail!(
+            "extraction_unavailable: {path} extraction {}; its definitions are unknown",
+            extraction.status
+        );
+    }
+    Ok(extraction)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,6 +147,23 @@ mod tests {
             reextract_definition(root.path(), "lib.rs", "missing", "", 1)
                 .unwrap()
                 .is_none()
+        );
+        std::fs::write(root.path().join("blob.rs"), b"fn helper() {}\0").unwrap();
+        let binary = reextract_definition(root.path(), "blob.rs", "helper", "", 1)
+            .err()
+            .unwrap();
+        assert!(
+            binary.to_string().starts_with("source_excluded"),
+            "{binary:#}"
+        );
+        let cancelled = Extraction {
+            status: "cancelled".into(),
+            ..Extraction::default()
+        };
+        let error = usable_extraction("lib.rs", cancelled).err().unwrap();
+        assert!(
+            error.to_string().contains("extraction cancelled"),
+            "{error:#}"
         );
         let hit = found.hit();
         assert_eq!(hit.provenance.as_deref(), Some("reextracted"));

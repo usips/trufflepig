@@ -4,7 +4,7 @@ use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use std::path::Path;
 
-const MAX_SOURCE_BYTES: u64 = 2 * 1024 * 1024;
+pub(crate) const MAX_SOURCE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_FACTS: usize = 50_000;
 const EXTRACTION_CONTRACT_REVISION: u32 = 5;
 

@@ -294,10 +294,11 @@ fn explicit_scopes_limit_members_and_unavailable_members_remain_visible() {
     );
 }
 
-#[test]
-fn expired_query_deadline_answers_timed_out() {
-    let fixture = Fixture::new();
-    fixture.json("engine", &["search", "sym:SharedThing", "ws:all"]);
+/// Runs `search sym:SharedThing ws:all` (`--no-daemon`) from `engine` under `deadline`.
+fn search_all_with_deadline(
+    fixture: &Fixture,
+    deadline: crate::daemon::deadline::QueryDeadline,
+) -> Result<String> {
     let args: Vec<String> = [
         "--workspace",
         fixture.config.to_str().unwrap(),
@@ -317,17 +318,59 @@ fn expired_query_deadline_answers_timed_out() {
     let options = cli::parse(&args).unwrap();
     let config = WorkspaceConfig::load(&fixture.config).unwrap();
     let cache = cache_path(&config, Some(fixture.cache.path())).unwrap();
-    let error = retrieval::search(
+    retrieval::search(
         &config,
         &cache,
         &WorkspaceResults::open(&cache).unwrap(),
         &options,
         &cli::request_context(&options),
         &mut crate::semantic::SemanticSession::default(),
+        deadline,
+    )
+}
+
+#[test]
+fn expired_query_deadline_answers_timed_out() {
+    let fixture = Fixture::new();
+    fixture.json("engine", &["search", "sym:SharedThing", "ws:all"]);
+    let error = search_all_with_deadline(
+        &fixture,
         crate::daemon::deadline::QueryDeadline::after(std::time::Duration::ZERO),
     )
     .unwrap_err();
     assert!(crate::daemon::deadline::is_timed_out(&error), "{error:#}");
+}
+
+#[test]
+fn member_reconciles_do_not_spend_the_query_deadline() {
+    let fixture = Fixture::new();
+    for member in ["engine", "pack", "upstream"] {
+        crate::daemon::deadline::write_slow_reconcile_fixture(
+            &fixture.root.path().join(member),
+            "unrelated",
+        );
+    }
+    // Three members' reconciles together outlast the budget; their queries do not.
+    let budget = std::time::Duration::from_millis(750);
+    let started = std::time::Instant::now();
+    let output = search_all_with_deadline(
+        &fixture,
+        crate::daemon::deadline::QueryDeadline::after(budget),
+    )
+    .unwrap();
+    assert!(
+        started.elapsed() > budget,
+        "reconciles finished within the budget"
+    );
+    let page: Value = serde_json::from_str(&output).unwrap();
+    let states: Vec<_> = page["coverage"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|member| member["state"].as_str().unwrap())
+        .collect();
+    assert_eq!(states, ["searched"; 3]);
+    assert_eq!(page["hits"].as_array().unwrap().len(), 3);
 }
 
 #[test]

@@ -34,6 +34,16 @@ impl QueryDeadline {
         self.expires.saturating_duration_since(Instant::now())
     }
 
+    /// Runs `work` off the query clock: the deadline moves later by the time it
+    /// took. In-request reconciliation uses this so indexing never spends a
+    /// query's budget; stores opened earlier keep their old deadline.
+    pub fn pause_during<T>(&mut self, work: impl FnOnce() -> T) -> T {
+        let started = Instant::now();
+        let result = work();
+        self.expires += started.elapsed();
+        result
+    }
+
     /// `wait`, shortened so it never outlives this deadline.
     pub fn cap(&self, wait: Duration) -> Duration {
         wait.min(self.remaining())
@@ -65,6 +75,22 @@ pub fn is_timed_out(error: &anyhow::Error) -> bool {
         .is_some_and(|rest| rest.starts_with(':'))
 }
 
+/// Writes enough Rust sources under `root` that reconciling them outlasts a
+/// 100 ms query budget, plus one file defining `pub fn NAME`.
+#[cfg(test)]
+pub(crate) fn write_slow_reconcile_fixture(root: &std::path::Path, name: &str) {
+    let mut body = String::with_capacity(64 * 48);
+    for item in 0..64 {
+        body.push_str(&format!(
+            "pub fn filler_{item}(value: u8) -> u8 {{ value + {item} }}\n"
+        ));
+    }
+    for file in 0..48 {
+        std::fs::write(root.join(format!("filler_{file}.rs")), &body).unwrap();
+    }
+    std::fs::write(root.join("target.rs"), format!("pub fn {name}() {{}}\n")).unwrap();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,6 +107,14 @@ mod tests {
             fresh.cap(Duration::from_millis(5)),
             Duration::from_millis(5)
         );
+    }
+
+    #[test]
+    fn paused_work_does_not_spend_the_budget() {
+        let mut deadline = QueryDeadline::after(Duration::from_millis(100));
+        deadline.pause_during(|| std::thread::sleep(Duration::from_millis(200)));
+        assert!(!deadline.expired());
+        assert!(deadline.remaining() > Duration::from_millis(50));
     }
 
     #[test]
