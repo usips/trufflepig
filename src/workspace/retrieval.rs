@@ -179,24 +179,29 @@ pub(super) fn search(
             let mut found = if verb == "refs" || text.starts_with("refs:") {
                 search::references(&store, &search::reference_query(&text)?)?
             } else if verb == "map" {
-                let found = search::map(&store, words.get(1).map(String::as_str).unwrap_or(""));
-                if let Err(error) = &found
-                    && error.to_string().starts_with("no_indexed_path:")
-                {
-                    map_miss.get_or_insert_with(|| error.to_string());
+                let found = search::map(&store, words.get(1).map(String::as_str).unwrap_or(""))?;
+                if let Some(miss) = search::map_miss(&found) {
+                    map_miss.get_or_insert_with(|| miss.to_owned());
                 }
-                found?
+                found
             } else {
                 let semantic_query = prepared.clone();
                 let reranker = rerank.then_some(&*session as &dyn search::RerankScorer);
-                search::search_prepared(
+                let mut found = search::search_prepared(
                     &store,
                     &query,
                     &member_cache,
                     semantic_query,
                     reranker,
                     &mut trace,
-                )?
+                )?;
+                if query.exact {
+                    // `sym:` namesakes nearest the invocation directory come first.
+                    let invocation = options.root.canonicalize()?;
+                    let origin = search::InvocationDirectory::within(&member.root, &invocation);
+                    search::rank_declarations(&mut found.hits, &origin);
+                }
+                found
             };
             if let Some(error) = &semantic_error {
                 found.coverage["semantic_status"] = "unavailable".into();
@@ -297,7 +302,7 @@ pub(super) fn search(
             });
         }
     }
-    if set.owners.is_empty()
+    if lists.iter().all(|list| list.len() == 0)
         && let Some(miss) = map_miss
     {
         anyhow::bail!(miss);

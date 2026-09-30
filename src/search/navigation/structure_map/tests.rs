@@ -29,6 +29,29 @@ fn file_map_lists_code_first_and_folds_fields_modules_and_ffi() {
 }
 
 #[test]
+fn map_omits_exactly_the_items_of_extern_blocks() {
+    let (_root, _cache, store) = fixture(&[
+        (
+            "src/ffi.rs",
+            b"mod externals {\n    pub struct Kept;\n}\nunsafe extern \"C\" {\n    fn c_open();\n}\nextern {\n    static ERRNO: i32;\n}\npub fn wrap() {}\n",
+        ),
+        (
+            "web/api.ts",
+            b"class ExternalApi {\n  run() {}\n}\n",
+        ),
+    ]);
+    assert_eq!(
+        outline(&store, "src/ffi.rs"),
+        ["struct Kept", "function wrap", "module externals"]
+    );
+    assert_eq!(
+        outline(&store, "web/api.ts"),
+        ["class ExternalApi", "method run"]
+    );
+    assert_eq!(outline(&store, "src/"), ["file Kept, wrap, externals"]);
+}
+
+#[test]
 fn directory_map_gives_each_file_one_row_of_top_level_names() {
     let many: String = (0..30)
         .map(|i| format!("pub fn function_number_{i}() {{}}\n"))
@@ -60,16 +83,13 @@ fn missing_map_path_names_the_nearest_indexed_paths() {
         ("crates/core/src/luau/payload_heap.rs", b"fn heap() {}\n"),
         ("crates/core/src/script/host.rs", b"fn host() {}\n"),
     ]);
-    let error = map(&store, "crates/core/src/script/contract/payload_heap.rs")
-        .unwrap_err()
-        .to_string();
+    let miss = |path: &str| map_miss(&map(&store, path).unwrap()).unwrap().to_owned();
+    let error = miss("crates/core/src/script/contract/payload_heap.rs");
     assert_eq!(
         error,
         "no_indexed_path: no indexed file under `crates/core/src/script/contract/payload_heap.rs`; nearest: crates/core/src/luau/payload_heap.rs"
     );
-    let error = map(&store, "crates/core/src/scripts/")
-        .unwrap_err()
-        .to_string();
+    let error = miss("crates/core/src/scripts/");
     assert!(
         error.ends_with("nearest: crates/core/src/script/, crates/core/src/luau/"),
         "{error}"

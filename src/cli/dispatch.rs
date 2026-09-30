@@ -241,7 +241,7 @@ fn local_dispatch(
             if !daemon_running || store.generation()?==0 {store.index()?;}
             let set=match verb {
                 "refs"=>search::references(&store,&search::reference_query(&options.words[1..].join(" "))?)?,
-                "map"=>search::map(&store,options.words.get(1).map(String::as_str).unwrap_or(""))?,
+                "map"=>{let set=search::map(&store,options.words.get(1).map(String::as_str).unwrap_or(""))?;if let Some(miss)=search::map_miss(&set){bail!("{miss}")}set},
                 "search"=>{
                     let text=options.words[1..].join(" ");
                     if text.starts_with("refs:"){search::references(&store,&search::reference_query(&text)?)?}

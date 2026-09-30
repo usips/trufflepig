@@ -1,16 +1,13 @@
 //! Exact-name declaration lookup behind `sym:` and `show 'sym:'`. Rows rank by
 //! kind tier, then non-test before test sites, then nearest to the invocation
 //! directory, then path; `A::b` names are filtered by [`QualifiedName`].
-use super::{
-    LaneHits, Query, cap_hits, hit_row,
-    qualified_name::{QualifiedName, import_spelling},
-};
+use super::{LaneHits, Query, hit_row, qualified_name::QualifiedName};
 use crate::{
     results::{Hit, MAX_HITS},
     store::Store,
 };
 use anyhow::Result;
-use rusqlite::{OptionalExtension, params};
+use rusqlite::params;
 use std::{cmp::Reverse, path::Path};
 
 /// Root-relative directory a command was invoked from (empty at the root).
@@ -22,13 +19,19 @@ impl InvocationDirectory {
         Self::default()
     }
 
-    /// `invocation` relative to `root`; a directory outside `root` counts as the root.
+    /// `invocation` relative to `root`, percent-encoded like indexed paths; a
+    /// directory outside `root` counts as the root.
     pub fn within(root: &Path, invocation: &Path) -> Self {
         invocation
             .strip_prefix(root)
             .ok()
-            .and_then(Path::to_str)
-            .map(|relative| Self(relative.trim_matches('/').to_owned()))
+            .map(|relative| {
+                Self(
+                    crate::store::encode_path(relative)
+                        .trim_matches('/')
+                        .to_owned(),
+                )
+            })
             .unwrap_or_default()
     }
 
@@ -75,31 +78,47 @@ pub(crate) fn is_test_path(path: &str) -> bool {
         || file.contains(".test.")
 }
 
-/// Whether a definition sits in a test file or an inline `mod tests`.
+/// Whether a definition sits in a test file or inside any `mod tests` scope.
 fn is_test_site(hit: &Hit) -> bool {
     is_test_path(&hit.path)
-        || hit
-            .container
-            .as_deref()
-            .is_some_and(|container| container == "tests" || container.starts_with("tests::"))
+        || hit.container.as_deref().is_some_and(|container| {
+            container
+                .split("::")
+                .any(|segment| matches!(segment, "tests" | "test"))
+        })
 }
 
-/// Stable ranking: kind tier, non-test first, nearest directory, then SQL path order.
-pub(crate) fn rank_declarations(hits: &mut [Hit], origin: &InvocationDirectory) {
-    hits.sort_by_key(|hit| {
-        (
-            declaration_rank(&hit.kind),
-            is_test_site(hit),
-            Reverse(origin.shared_depth(&hit.path)),
-        )
-    });
+/// Ordering key of one declaration: kind tier, test site, nearness (smaller first).
+pub(super) fn rank_key(hit: &Hit, origin: &InvocationDirectory) -> (u8, bool, Reverse<usize>) {
+    (
+        declaration_rank(&hit.kind),
+        is_test_site(hit),
+        Reverse(origin.shared_depth(&hit.path)),
+    )
+}
+
+/// Stable ranking by [`rank_key`], so ties keep SQL path order.
+pub fn rank_declarations(hits: &mut [Hit], origin: &InvocationDirectory) {
+    hits.sort_by_key(|hit| rank_key(hit, origin));
 }
 
 /// Definitions named by `query.text` (`name` or `Qualifier::name`) under the
-/// query's filters, in path order. Qualified names keep only the closest tier.
+/// query's filters, in path order.
 pub(super) fn declaration_hits(store: &Store, query: &Query) -> Result<LaneHits> {
     let name = QualifiedName::parse(&query.text);
-    let owner_hint = name.qualifier.last().map_or("", String::as_str);
+    qualified_hits(store, &name, &query.path, &query.language, &query.kind)
+}
+
+/// Definitions of `name` under path/language/kind filters, in path order.
+/// Qualified names keep only the closest match tier; `truncated` reflects the
+/// row cap before that filter, so a capped lookup never reads as complete.
+pub(super) fn qualified_hits(
+    store: &Store,
+    name: &QualifiedName,
+    path: &str,
+    language: &str,
+    kind: &str,
+) -> Result<LaneHits> {
     let mut statement = store.conn.prepare(
         "SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container,
                 'exact_identifier',c.bytes
@@ -118,15 +137,17 @@ pub(super) fn declaration_hits(store: &Store, query: &Query) -> Result<LaneHits>
         .query_map(
             params![
                 name.name,
-                query.path,
-                query.language,
-                query.kind,
+                path,
+                language,
+                kind,
                 (MAX_HITS + 1) as i64,
-                owner_hint
+                name.owner_hint()
             ],
             hit_row,
         )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
+    let truncated = hits.len() > MAX_HITS;
+    hits.truncate(MAX_HITS);
     if name.is_qualified() {
         let tiers: Vec<_> = hits
             .iter()
@@ -140,72 +161,7 @@ pub(super) fn declaration_hits(store: &Store, query: &Query) -> Result<LaneHits>
                 .is_some_and(|found| Some(found) == best)
         });
     }
-    Ok(cap_hits(&mut hits, MAX_HITS))
-}
-
-/// Where an import row leads: its spelled path, whether it is a `pub` re-export,
-/// and the declaration of the original name when one is indexed.
-#[derive(Debug)]
-pub struct ImportTrail {
-    pub site: String,
-    pub path: String,
-    pub reexport: bool,
-    pub declaration: Option<Hit>,
-}
-
-/// Follows an import row (`use a::b as c`, `pub use a::b`) to the declaration
-/// its path names, ignoring the path filter that selected the import.
-pub fn trace_import(
-    store: &Store,
-    import: &Hit,
-    query: &Query,
-    origin: &InvocationDirectory,
-) -> Result<Option<ImportTrail>> {
-    let Some(revision) = import.revision.as_deref() else {
-        return Ok(None);
-    };
-    let bytes: Option<Vec<u8>> = store
-        .conn
-        .query_row(
-            "SELECT bytes FROM contents WHERE revision=?1",
-            [revision],
-            |row| row.get(0),
-        )
-        .optional()?;
-    let Some(bytes) = bytes.filter(|bytes| import.end <= bytes.len()) else {
-        return Ok(None);
-    };
-    let text = String::from_utf8_lossy(&bytes[import.start..import.end]);
-    let Some((path, _alias)) = import_spelling(&text) else {
-        return Ok(None);
-    };
-    let original = Query {
-        text: path.clone(),
-        language: query.language.clone(),
-        exact: true,
-        ..Query::default()
-    };
-    let mut hits = declaration_hits(store, &original)?.hits;
-    hits.retain(|hit| hit.kind != "import");
-    rank_declarations(&mut hits, origin);
-    Ok(Some(ImportTrail {
-        site: format!("{}:{}", import.path, import.start_line),
-        reexport: is_reexport(&bytes[..import.start]),
-        path,
-        declaration: hits.into_iter().next(),
-    }))
-}
-
-/// Whether the `use` statement enclosing an import starts with `pub`.
-fn is_reexport(before: &[u8]) -> bool {
-    let before = String::from_utf8_lossy(before);
-    let Some(keyword) = before.rfind("use ") else {
-        return false;
-    };
-    let statement = before[..keyword]
-        .rfind([';', '}', '{', '\n'])
-        .map_or(0, |boundary| boundary + 1);
-    before[statement..keyword].trim_start().starts_with("pub")
+    Ok(LaneHits { hits, truncated })
 }
 
 #[cfg(test)]

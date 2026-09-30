@@ -17,6 +17,10 @@ mod tests;
 
 use serde::{Deserialize, Serialize};
 
+/// Container of every item declared in a Rust `extern` block; no identifier
+/// or impl header can spell it, so filters can match it exactly.
+pub const FOREIGN_ITEM_CONTAINER: &str = "extern block";
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Extraction {
     pub language: String,

@@ -54,6 +54,10 @@ pub struct Hit {
     /// Preview of the most relevant line inside the span, captured at search time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snippet: Option<Snippet>,
+    /// Sites collapsed into this row (at least 2) when `refs` merges one line's
+    /// identical occurrences; absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeats: Option<usize>,
 }
 
 /// One trimmed source line (at most 120 characters) previewing a hit. It locates
@@ -113,6 +117,9 @@ pub(crate) fn compact_hit(
     }
     if let Some(resolution) = &hit.resolution {
         value.insert("resolution".into(), resolution.clone().into());
+    }
+    if let Some(repeats) = hit.repeats {
+        value.insert("repeats".into(), repeats.into());
     }
     if let Some(target) = &hit.target {
         value.insert("target".into(), compact_target(target, root, names)?);

@@ -51,17 +51,34 @@ pub(crate) fn show_text(value: &Value) -> String {
         let _ = writeln!(out, "commit: {commit}");
     }
     let import = &value["import"];
-    if let Some(path) = import["path"].as_str() {
-        let what = if import["reexport"] == true {
-            "re-export"
-        } else {
-            "import"
-        };
-        let site = import["site"].as_str().unwrap_or_default();
+    if let Some(hops) = import["via"].as_array().filter(|hops| !hops.is_empty()) {
+        let trail = hops
+            .iter()
+            .map(|hop| {
+                let what = if hop["reexport"] == true {
+                    "re-export"
+                } else {
+                    "import"
+                };
+                format!(
+                    "{what} of {} at {}",
+                    hop["path"].as_str().unwrap_or_default(),
+                    hop["site"].as_str().unwrap_or_default()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" -> ");
         if import["followed"] == true {
-            let _ = writeln!(out, "via: {what} of {path} at {site}");
+            match import["candidates"].as_u64() {
+                Some(count) if count > 1 => {
+                    let _ = writeln!(out, "via: {trail} (1 of {count})");
+                }
+                _ => {
+                    let _ = writeln!(out, "via: {trail}");
+                }
+            }
         } else {
-            let _ = writeln!(out, "{what} of {path} at {site} (declaration not indexed)");
+            let _ = writeln!(out, "{trail} (declaration not indexed)");
         }
     }
     if let Some(total) = value["definitions"].as_u64() {
@@ -107,15 +124,18 @@ mod tests {
         let value = json!({
             "path": "src/z.rs", "verified": true, "definitions": 1, "imports": 3,
             "also": ["src/y.rs:4-9 function"],
-            "import": {"site": "src/lib.rs:2", "path": "z::Coord", "reexport": true, "followed": true},
+            "import": {"via": [{"site": "src/lib.rs:2", "path": "z::Coord", "reexport": true},
+                               {"site": "src/z.rs:1", "path": "inner::Coord", "reexport": false}],
+                       "followed": true, "candidates": 2},
             "lines": [{"line": 1, "text": "pub struct Coord;\n", "encoding": "utf8"}]
         });
         assert_eq!(
             show_text(&value),
-            "src/z.rs lines 1-1\n1\tpub struct Coord;\nverified: true\nvia: re-export of z::Coord at src/lib.rs:2\ndefinitions: 1 (+3 imports)\nalso: src/y.rs:4-9 function\n"
+            "src/z.rs lines 1-1\n1\tpub struct Coord;\nverified: true\nvia: re-export of z::Coord at src/lib.rs:2 -> import of inner::Coord at src/z.rs:1 (1 of 2)\ndefinitions: 1 (+3 imports)\nalso: src/y.rs:4-9 function\n"
         );
         let unfollowed = json!({"path": "a.rs", "definitions": 0, "imports": 1,
-            "import": {"site": "a.rs:1", "path": "serde::Serialize", "reexport": false, "followed": false},
+            "import": {"via": [{"site": "a.rs:1", "path": "serde::Serialize", "reexport": false}],
+                       "followed": false, "candidates": 1},
             "lines": []});
         assert!(
             show_text(&unfollowed)

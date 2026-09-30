@@ -488,6 +488,7 @@ mod tests {
                 resolution: None,
                 candidates: Vec::new(),
                 target: None,
+                repeats: None,
                 snippet: None,
             })],
             false,

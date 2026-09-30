@@ -46,6 +46,10 @@ pub fn references(store: &Store, query: &Query) -> Result<ResultSet> {
                 SELECT 1 FROM definitions t
                 WHERE t.kind=?4
                   AND (t.id=o.target OR t.id IN (SELECT value FROM json_each(o.candidates)))))
+           AND (?6='' OR EXISTS(
+                SELECT 1 FROM definitions t JOIN files tf ON tf.id=t.file_id
+                WHERE (t.id=o.target OR t.id IN (SELECT value FROM json_each(o.candidates)))
+                  AND instr(coalesce(t.container,'')||'/'||replace(tf.path,'-','_'),?6)>0))
          ORDER BY f.path,o.start,o.id
          LIMIT ?5",
     )?;
@@ -55,7 +59,8 @@ pub fn references(store: &Store, query: &Query) -> Result<ResultSet> {
             query.path,
             query.language,
             query.kind,
-            (MAX_HITS + 1) as i64
+            (MAX_HITS + 1) as i64,
+            name.owner_hint()
         ],
         |r| {
             Ok(Site {
@@ -95,14 +100,21 @@ pub fn references(store: &Store, query: &Query) -> Result<ResultSet> {
         coverage["reference_sites_truncated"] = true.into();
     }
     sites.sort_by_key(Site::tier);
-    let mut hits = Vec::with_capacity(sites.len().min(128));
-    let mut lines: HashMap<(String, usize), usize> = HashMap::with_capacity(sites.len());
-    let mut repeats = Vec::with_capacity(sites.len().min(128));
+    let mut hits: Vec<crate::results::Hit> = Vec::with_capacity(sites.len().min(128));
+    let mut rows: HashMap<SiteKey, usize> = HashMap::with_capacity(sites.len());
     let mut bytes = 0usize;
-    for site in sites {
-        let key = (site.hit.path.clone(), site.hit.start_line);
-        if let Some(&index) = lines.get(&key) {
-            repeats[index] += 1;
+    for mut site in sites {
+        site.candidate_ids.sort_unstable();
+        let key = SiteKey {
+            path: site.hit.path.clone(),
+            line: site.hit.start_line,
+            role: site.hit.kind.clone(),
+            target: site.target,
+            candidates: site.candidate_ids.clone(),
+        };
+        if let Some(&index) = rows.get(&key) {
+            let row = &mut hits[index];
+            row.repeats = Some(row.repeats.unwrap_or(1) + 1);
             continue;
         }
         let mut hit = site.hit;
@@ -132,16 +144,8 @@ pub fn references(store: &Store, query: &Query) -> Result<ResultSet> {
             truncated = true;
             break;
         }
-        lines.insert(key, hits.len());
-        repeats.push(1usize);
+        rows.insert(key, hits.len());
         hits.push(hit);
-    }
-    for (hit, count) in hits.iter_mut().zip(repeats) {
-        if count > 1
-            && let Some(resolution) = &mut hit.resolution
-        {
-            resolution.push_str(&format!(" ×{count}"));
-        }
     }
     snippets::attach(store, &snippets::preview_terms(&name.name), &mut hits)?;
     snapshot.commit()?;
@@ -178,6 +182,16 @@ pub fn reference_summary(coverage: &serde_json::Value) -> Option<String> {
     ))
 }
 
+/// Occurrences on one line collapse only when role and resolution agree.
+#[derive(Eq, Hash, PartialEq)]
+struct SiteKey {
+    path: String,
+    line: usize,
+    role: String,
+    target: Option<i64>,
+    candidates: Vec<i64>,
+}
+
 struct Site {
     hit: crate::results::Hit,
     target: Option<i64>,
@@ -188,16 +202,16 @@ struct Site {
 }
 
 impl Site {
-    /// 0 declaration, 1 other non-test site, 2 import, 3 test site. A `use`
-    /// binding's declaration site counts as an import.
+    /// 0 declaration, 1 other code, 2 import, 3 any test site (tests go last
+    /// whatever their role). A `use` binding's declaration counts as an import.
     fn tier(&self) -> u8 {
         let declaration = self.hit.kind == "declaration";
         let imports = self.hit.kind == "import"
             || declaration && self.target_kind.as_deref() == Some("import");
-        if declaration && !imports {
-            0
-        } else if self.in_test_module || is_test_path(&self.hit.path) {
+        if self.in_test_module || is_test_path(&self.hit.path) {
             3
+        } else if declaration && !imports {
+            0
         } else if imports {
             2
         } else {

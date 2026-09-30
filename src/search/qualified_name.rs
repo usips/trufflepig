@@ -20,20 +20,48 @@ pub(crate) enum QualifierMatch {
 
 impl QualifiedName {
     /// Splits `crate::a::B::c` into `[a, B]` and `c`; `crate`, `self`, `super`
-    /// and empty segments carry no location and are dropped.
+    /// and empty segments carry no location here and are dropped.
     pub(crate) fn parse(text: &str) -> Self {
-        let mut segments: Vec<String> = text
+        Self::parse_in(text, &[], &[])
+    }
+
+    /// Like [`Self::parse`], but a leading `crate::` resolves to `crate_root` and
+    /// `self::`/`super::` to `module` (the importing module's path segments).
+    pub(crate) fn parse_in(text: &str, module: &[String], crate_root: &[String]) -> Self {
+        let mut segments: Vec<&str> = text
             .split("::")
             .map(str::trim)
             .filter(|segment| !segment.is_empty())
-            .map(str::to_owned)
             .collect();
-        let name = segments.pop().unwrap_or_default();
-        segments.retain(|segment| !matches!(segment.as_str(), "crate" | "self" | "super"));
-        Self {
-            qualifier: segments,
-            name,
+        let name = segments.pop().unwrap_or_default().to_owned();
+        let mut qualifier = Vec::with_capacity(module.len() + segments.len());
+        let mut rest = segments.as_slice();
+        match rest.first() {
+            Some(&"crate") => {
+                qualifier.extend_from_slice(crate_root);
+                rest = &rest[1..];
+            }
+            Some(&("self" | "super")) => {
+                qualifier.extend_from_slice(module);
+                rest = rest.strip_prefix(&["self"]).unwrap_or(rest);
+                while let Some(tail) = rest.strip_prefix(&["super"]) {
+                    qualifier.pop();
+                    rest = tail;
+                }
+            }
+            _ => {}
         }
+        qualifier.extend(
+            rest.iter()
+                .filter(|segment| !matches!(**segment, "crate" | "self" | "super"))
+                .map(|segment| (*segment).to_owned()),
+        );
+        Self { qualifier, name }
+    }
+
+    /// The last qualifier segment, which SQL uses to pre-filter owners (`""` if none).
+    pub(crate) fn owner_hint(&self) -> &str {
+        self.qualifier.last().map_or("", String::as_str)
     }
 
     pub(crate) fn is_qualified(&self) -> bool {
@@ -72,6 +100,17 @@ fn is_subsequence(needle: &[String], haystack: &[String]) -> bool {
     needle
         .iter()
         .all(|segment| remaining.any(|candidate| candidate == segment))
+}
+
+/// Module segments of the crate containing `path`: the components before its
+/// last `src` directory (empty when there is none).
+pub(crate) fn crate_root_segments(path: &str) -> Vec<String> {
+    match path.rfind("src/") {
+        Some(index) if index == 0 || path.as_bytes()[index - 1] == b'/' => {
+            module_segments(path[..index].trim_end_matches('/'))
+        }
+        _ => Vec::new(),
+    }
 }
 
 /// Module-like path components: directories and file stem, without `src`,
@@ -200,60 +239,4 @@ pub(crate) fn import_spelling(text: &str) -> Option<(String, String)> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn qualifier_names_impl_types_traits_and_module_paths() {
-        let name = QualifiedName::parse("crate::Store::open");
-        assert_eq!(name.qualifier, ["Store"]);
-        assert_eq!(name.name, "open");
-        let suffix = Some(QualifierMatch::Suffix);
-        assert_eq!(name.matches("src/store.rs", Some("impl Store")), suffix);
-        assert_eq!(
-            name.matches(
-                "src/a.rs",
-                Some("impl<'a, T: Into<u8>> fmt::Display for Store<'a, T> where T: Copy")
-            ),
-            suffix
-        );
-        assert_eq!(name.matches("src/a.rs", Some("impl Other")), None);
-        let display = QualifiedName::parse("Display::fmt");
-        assert_eq!(
-            display.matches("src/a.rs", Some("impl fmt::Display for Store")),
-            suffix
-        );
-        let module = QualifiedName::parse("harvest::record");
-        assert_eq!(
-            module.matches("crates/lunatic-server/src/sim/harvest.rs", None),
-            suffix
-        );
-        assert_eq!(
-            module.matches("src/harvest/mod.rs", Some("impl Ledger")),
-            Some(QualifierMatch::Subsequence)
-        );
-        assert_eq!(module.matches("src/sim/other.rs", None), None);
-        assert_eq!(module.matches("src/other.rs", Some("harvest")), suffix);
-        let crate_path = QualifiedName::parse("lunatic_server::sim::record");
-        assert_eq!(
-            crate_path.matches("crates/lunatic-server/src/sim/harvest.rs", None),
-            Some(QualifierMatch::Subsequence)
-        );
-    }
-
-    #[test]
-    fn import_spelling_reads_aliases_and_paths() {
-        assert_eq!(
-            import_spelling("file_ranking::fuse_search_file_lanes as fuse_file_lanes"),
-            Some((
-                "file_ranking::fuse_search_file_lanes".into(),
-                "fuse_file_lanes".into()
-            ))
-        );
-        assert_eq!(
-            import_spelling("store::Store"),
-            Some(("store::Store".into(), "Store".into()))
-        );
-        assert_eq!(import_spelling("{ a, b }"), None);
-    }
-}
+mod tests;

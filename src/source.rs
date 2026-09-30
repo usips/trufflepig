@@ -173,8 +173,13 @@ pub(crate) fn render_owned(
             }
             value["also"] = selection.also.clone().into();
             if let Some(import) = &selection.import {
-                value["import"] = json!({"site":import.site,"path":import.path,
-                    "reexport":import.reexport,"followed":import.followed});
+                let via: Vec<_> = import
+                    .hops
+                    .iter()
+                    .map(|hop| json!({"site":hop.site,"path":hop.path,"reexport":hop.reexport}))
+                    .collect();
+                value["import"] = json!({"via":via,"followed":import.followed,
+                    "candidates":import.candidates});
             }
         }
         let object = value.as_object_mut().expect("source response object");

@@ -1,6 +1,7 @@
 //! Deterministic exact, lexical and live-regex retrieval from one index snapshot.
 mod declarations;
 mod file_ranking;
+mod import_trail;
 mod inheritance_context;
 mod live;
 mod navigation;
@@ -11,11 +12,12 @@ mod snippets;
 pub mod telemetry;
 #[cfg(test)]
 mod tests;
-pub use declarations::{ImportTrail, InvocationDirectory, trace_import};
+pub use declarations::{InvocationDirectory, rank_declarations};
 pub(crate) use file_ranking::fuse_search_file_lanes as fuse_file_lanes;
+pub use import_trail::{ImportHop, ImportTrail, trace_import};
 pub(crate) use navigation::context_entry;
 pub use navigation::{
-    REFERENCE_COVERAGE_KEYS, context, map, reference_query, reference_summary, references,
+    REFERENCE_COVERAGE_KEYS, context, map, map_miss, reference_query, reference_summary, references,
 };
 pub use rerank_window::RerankScorer;
 
@@ -103,6 +105,7 @@ pub(super) fn hit_row(row: &Row<'_>) -> rusqlite::Result<Hit> {
         resolution: None,
         candidates: Vec::new(),
         target: None,
+        repeats: None,
         snippet: None,
     })
 }
@@ -525,6 +528,7 @@ fn file_hits(store: &Store, query: &Query) -> Result<LaneHits> {
                 resolution: None,
                 candidates: Vec::new(),
                 target: None,
+                repeats: None,
                 snippet: None,
             },
         };

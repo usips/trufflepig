@@ -45,14 +45,6 @@ fn test_paths_and_invocation_depth_follow_conventions() {
 }
 
 #[test]
-fn reexport_detection_reads_the_enclosing_use_statement() {
-    assert!(is_reexport(b"pub use crate::a::"));
-    assert!(is_reexport(b"x();\npub(crate) use a::{\n    b,\n    "));
-    assert!(!is_reexport(b"use a::"));
-    assert!(!is_reexport(b"fn pubby() {}\nuse a::"));
-}
-
-#[test]
 fn show_prefers_implementations_over_test_helpers() {
     let (_root, _cache, store) = fixture(&[
         (
@@ -194,4 +186,72 @@ fn show_filters_from_separate_words_and_no_definition_names_them() {
         ),
         "{error}"
     );
+}
+
+#[test]
+fn import_trails_follow_chains_stop_on_cycles_and_report_ties() {
+    let (_root, _cache, store) = fixture(&[
+        ("src/lib.rs", b"pub use crate::a::Alias as Top;\n"),
+        ("src/a.rs", b"pub use crate::b::Thing as Alias;\n"),
+        ("src/b.rs", b"pub struct Thing;\n"),
+        ("src/x.rs", b"pub use crate::y::P as Q;\n"),
+        ("src/y.rs", b"pub use crate::x::Q as P;\n"),
+        ("src/sim/step.rs", b"use super::ledger::Ledger as L;\n"),
+        ("src/sim/ledger.rs", b"pub struct Ledger;\n"),
+        ("src/aa/ledger.rs", b"pub struct Ledger;\n"),
+        ("src/p/thing.rs", b"pub struct Point;\n"),
+        ("src/q/thing.rs", b"pub struct Point;\n"),
+        ("src/user.rs", b"use thing::Point as Pt;\n"),
+    ]);
+    let chained = show(&store, "sym:Top").unwrap();
+    assert!(chained.starts_with("src/b.rs "), "{chained}");
+    assert!(
+        chained.contains(
+            "via: re-export of crate::a::Alias at src/lib.rs:1 -> re-export of crate::b::Thing at src/a.rs:1\n"
+        ),
+        "{chained}"
+    );
+    let cycle = show(&store, "sym:Q").unwrap();
+    assert!(cycle.starts_with("src/x.rs "), "{cycle}");
+    assert!(cycle.contains("(declaration not indexed)"), "{cycle}");
+    let relative = show(&store, "sym:L").unwrap();
+    assert!(relative.starts_with("src/sim/ledger.rs "), "{relative}");
+    let tied = show(&store, "sym:Pt").unwrap();
+    assert!(tied.starts_with("src/p/thing.rs "), "{tied}");
+    assert!(tied.contains("at src/user.rs:1 (1 of 2)\n"), "{tied}");
+    assert!(tied.contains("also: src/q/thing.rs:1-1 struct\n"), "{tied}");
+}
+
+#[test]
+fn nested_test_modules_rank_after_code_and_encoded_directories_compare() {
+    let (_root, _cache, store) = fixture(&[
+        (
+            "src/a.rs",
+            b"mod inner {\n    mod tests {\n        fn build() {}\n    }\n}\n",
+        ),
+        ("src/zeta.rs", b"pub fn build() {}\n"),
+    ]);
+    assert_eq!(
+        locations(&store, "sym:build", &InvocationDirectory::root())[0],
+        "src/zeta.rs:function"
+    );
+    let spaced = InvocationDirectory::within(Path::new("/r"), Path::new("/r/my dir"));
+    assert_eq!(spaced.shared_depth("my%20dir/a.rs"), 1);
+}
+
+#[test]
+fn qualified_lookups_past_the_row_cap_report_truncation() {
+    let decoys: String = "impl Tyrant { fn new() {} }\n".repeat(MAX_HITS / 2 + 1);
+    let (_root, _cache, store) = fixture(&[
+        ("src/a.rs", decoys.as_bytes()),
+        ("src/b.rs", decoys.as_bytes()),
+        ("src/z.rs", b"struct Ty;\nimpl Ty { fn new() {} }\n"),
+    ]);
+    let found = crate::search::definitions(
+        &store,
+        &Query::parse("sym:Ty::new").unwrap(),
+        &InvocationDirectory::root(),
+    )
+    .unwrap();
+    assert!(found.hits.is_empty() && found.truncated);
 }

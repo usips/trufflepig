@@ -66,6 +66,7 @@ pub(super) fn resolve(store: &Store, value: &str) -> Result<Selection> {
                 resolution: None,
                 candidates: Vec::new(),
                 target: None,
+                repeats: None,
                 snippet: None,
             })
         })?;

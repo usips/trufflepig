@@ -699,6 +699,20 @@ fn member_navigation_reads_every_word_and_ranks_from_the_invocation_directory() 
         )
         .unwrap();
     assert!(near_b.starts_with("b/run.rs (engine) "), "{near_b}");
+    let searched = fixture
+        .run_at(
+            &engine.join("b"),
+            &[
+                "--implicit-root",
+                "--format",
+                "lines",
+                "search",
+                "sym:run_here",
+            ],
+        )
+        .unwrap();
+    let first = searched.lines().next().unwrap_or_default();
+    assert!(first.contains("\tengine/b/run.rs:1-1"), "{searched}");
     let filtered = fixture
         .run(
             "engine",
@@ -711,4 +725,15 @@ fn member_navigation_reads_every_word_and_ranks_from_the_invocation_directory() 
         missing.to_string(),
         "no_indexed_path: no indexed file under `nope/run.rs`; nearest: a/run.rs, b/run.rs"
     );
+    fs::write(
+        fixture.root.path().join("pack/only_pack.rs"),
+        "pub fn packed() {}\n",
+    )
+    .unwrap();
+    let widened = fixture
+        .run("engine", &["--format", "lines", "map", "only_pack.rs"])
+        .unwrap();
+    assert!(widened.contains("\tpack/only_pack.rs:1-1"), "{widened}");
+    assert!(widened.contains("engine complete"), "{widened}");
+    assert!(widened.contains("no home hits"), "{widened}");
 }

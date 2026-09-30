@@ -96,15 +96,10 @@ trufflepig show path:src/main.rs:1-20
 trufflepig show 'sym:refill_tokens file:src/'
 ```
 
-`show 'sym:NAME'` (optional `file:`, `lang:`, `kind:`; later words need no
-quotes) reads the best-ranked definition with that name as a verified handle
-read: declarations before modules, members, then locals and imports; within a
-tier non-test before test sites, then nearest the invocation directory, then path.
-`sym:A::b` matches `b` owned by type `A` or under module path `A`. The footer adds
-`definitions: N (+M imports)` and up to five `also: PATH:START-END KIND` locators.
-An import that outranks every declaration is followed (`via: re-export of a::b at
-PATH:LINE`) or reported unindexed. A missing name fails with `no_definition`,
-naming active filters and the best match without them.
+`show 'sym:NAME'` (optional `file:`, `lang:`, `kind:`, quoted or not) reads the
+best-ranked definition as a verified handle read. `refs` lists occurrence sites and
+`map` outlines a file or prefix; ranking, filters, and JSON fields are in the
+[navigation contract](navigation-contract.md).
 
 A handle is a 32-character result-set ID plus a one-based ordinal. A pagination
 cursor uses the same set ID and a zero-based next offset. Handles survive restart
@@ -114,14 +109,6 @@ or configuration changes cannot retarget a handle. `show` continuations retain
 source identity and remaining bytes; pass their `next` value unchanged to `show`.
 `stale_source` requires a fresh search or an explicitly current path read.
 `stale_result` means the graph generation changed and `ctx` needs a fresh handle.
-`refs NAME [file:] [lang:] [kind:]` reports occurrences as resolved, candidate,
-or unresolved sites; `kind:` matches the role (`call`, `import`, ...) or target
-kind. Rows run declaration, other code, imports, then tests; one `path:line`
-collapses into a `×N` row; coverage states `refs T sites in F files`. `map FILE`
-lists types, functions, and constants before fields, variants, and `mod` rows,
-omitting the whole-file module and `extern` signatures; `map PREFIX` gives one
-`file` row per file naming its top-level items. An unknown path fails with
-`no_indexed_path` and nearest paths. See [language limits](language-contract.md).
 
 Paths in responses percent-encode raw filename bytes. Paste the encoded path
 unchanged into `show`, including `%20` for a space, `%25` for `%`, and `%3A` for

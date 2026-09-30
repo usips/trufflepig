@@ -36,6 +36,9 @@ pub(crate) fn entry_line(entry: &ResultEntry, member: Option<&str>, detail: HitD
             if let Some(resolution) = &hit.resolution {
                 let _ = write!(line, "\tresolution={resolution}");
             }
+            if let Some(repeats) = hit.repeats {
+                let _ = write!(line, "\t×{repeats}");
+            }
             if detail.snippets
                 && let Some(snippet) = &hit.snippet
             {
@@ -161,6 +164,7 @@ mod tests {
             resolution: None,
             candidates: vec![],
             target: None,
+            repeats: None,
             snippet: Some(crate::results::Snippet {
                 line: 4,
                 text: "fn run() {".into(),

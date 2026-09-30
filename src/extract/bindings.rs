@@ -162,9 +162,11 @@ pub(super) fn collect(
         return;
     }
     let mut next_container = container.clone();
-    // `impl` and `extern` headers name their items' container (`impl Trait for A`,
-    // `extern "C"`), which `sym:A::b` and `map` read.
-    if matches!(node.kind(), "impl_item" | "foreign_mod_item") {
+    // An `impl` header names its items' container (`impl Trait for A`), which
+    // `sym:A::b` reads; `extern` block items carry the foreign-item marker `map` omits.
+    if node.kind() == "foreign_mod_item" || is_unsafe_extern_block(node) {
+        next_container = Some(super::FOREIGN_ITEM_CONTAINER.into());
+    } else if node.kind() == "impl_item" {
         let header_end = node
             .child_by_field_name("body")
             .map_or(node.end_byte(), |n| n.start_byte());
@@ -252,6 +254,18 @@ pub(super) fn collect(
     for child in node.named_children(&mut cursor) {
         collect(child, source, next_container.clone(), result, bindings);
     }
+}
+
+/// Rust 2024 `unsafe extern "C" { .. }` parses in the pinned grammar as an
+/// ERROR ending in `extern_modifier`, followed by a block statement.
+fn is_unsafe_extern_block(node: Node<'_>) -> bool {
+    node.kind() == "expression_statement"
+        && node.prev_named_sibling().is_some_and(|error| {
+            error.is_error()
+                && error
+                    .named_child(error.named_child_count().saturating_sub(1))
+                    .is_some_and(|last| last.kind() == "extern_modifier")
+        })
 }
 
 fn conditional(node: Node<'_>, source: &[u8]) -> bool {
