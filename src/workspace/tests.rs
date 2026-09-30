@@ -655,3 +655,60 @@ fn worktree_handles_reopen_until_worktree_is_removed() {
         .to_string();
     assert!(error.contains("member_unavailable"), "{error}");
 }
+
+#[test]
+fn member_navigation_reads_every_word_and_ranks_from_the_invocation_directory() {
+    let fixture = Fixture::new();
+    let engine = fixture.root.path().join("engine");
+    for directory in ["a", "b"] {
+        fs::create_dir(engine.join(directory)).unwrap();
+    }
+    fs::write(engine.join("a/run.rs"), "pub fn run_here() {}\n").unwrap();
+    fs::write(
+        engine.join("b/run.rs"),
+        "pub fn run_here() {}\nfn call() { run_here(); }\n",
+    )
+    .unwrap();
+    // `--no-daemon` `show` reads the published index, which `refs` builds first.
+    let refs = fixture
+        .run(
+            "engine",
+            &["--format", "lines", "refs", "run_here", "file:b/"],
+        )
+        .unwrap();
+    assert_eq!(
+        crate::output::lines::emitted_handles(&refs).count(),
+        2,
+        "{refs}"
+    );
+    assert!(!refs.contains("a/run.rs"), "{refs}");
+    assert!(
+        refs.contains("engine complete (refs 2 sites in 1 file)"),
+        "{refs}"
+    );
+    let near_b = fixture
+        .run_at(
+            &engine.join("b"),
+            &[
+                "--implicit-root",
+                "--format",
+                "lines",
+                "show",
+                "sym:run_here",
+            ],
+        )
+        .unwrap();
+    assert!(near_b.starts_with("b/run.rs (engine) "), "{near_b}");
+    let filtered = fixture
+        .run(
+            "engine",
+            &["--format", "lines", "show", "sym:run_here", "file:a/"],
+        )
+        .unwrap();
+    assert!(filtered.starts_with("a/run.rs (engine) "), "{filtered}");
+    let missing = fixture.run("engine", &["map", "nope/run.rs"]).unwrap_err();
+    assert_eq!(
+        missing.to_string(),
+        "no_indexed_path: no indexed file under `nope/run.rs`; nearest: a/run.rs, b/run.rs"
+    );
+}

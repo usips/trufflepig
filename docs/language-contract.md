@@ -38,6 +38,17 @@ targets, and receiver-dependent calls remain candidates or unresolved.
 Rust module/import syntax does not constitute full workspace resolution. Macro
 expansion, trait selection, and type inference are outside this subset.
 
+Items inside `impl` and `extern` blocks record the block header as their
+container. `sym:A::b` qualification is textual: `A` must name the `impl` type or
+trait, a lexical container, or trailing module-path components derived from the
+file path (`src`, `mod`, `lib`, `main` dropped; `-` read as `_`). Qualifiers that
+only occur in order within that path match when no trailing match exists, which
+covers `pub use` re-exports. Import following reads the `use` clause spelling
+(`a::b as c`); glob imports and paths through type aliases are not followed.
+`show` and `refs` rank test sites last by path convention (`tests/`, `tests.rs`,
+`*_test.*`, `test_*`, `*.spec.*`, `*.test.*`, `fixtures/`) or an enclosing
+`mod tests`; `#[cfg(test)]` on other items is not consulted.
+
 The Codex skill's optional [rustdoc workflow](../plugins/trufflepig-agent/skills/trufflepig-code-search/references/rustdoc.md)
 provides compiled item documentation and explicit trait/implementation links for
 one Cargo target and feature configuration. This evidence remains outside the

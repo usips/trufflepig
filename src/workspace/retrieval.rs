@@ -134,6 +134,7 @@ pub(super) fn search(
         scope: None,
     };
     let mut lists = Vec::with_capacity(roots.len());
+    let mut map_miss = None;
     let mut position = 0;
     while position < queue.len() {
         let index = queue[position];
@@ -176,16 +177,15 @@ pub(super) fn search(
                 None
             };
             let mut found = if verb == "refs" || text.starts_with("refs:") {
-                search::references(
-                    &store,
-                    if verb == "refs" {
-                        words.get(1).context("usage: refs NAME")?
-                    } else {
-                        text.strip_prefix("refs:").expect("prefix")
-                    },
-                )?
+                search::references(&store, &search::reference_query(&text)?)?
             } else if verb == "map" {
-                search::map(&store, words.get(1).map(String::as_str).unwrap_or(""))?
+                let found = search::map(&store, words.get(1).map(String::as_str).unwrap_or(""));
+                if let Err(error) = &found
+                    && error.to_string().starts_with("no_indexed_path:")
+                {
+                    map_miss.get_or_insert_with(|| error.to_string());
+                }
+                found?
             } else {
                 let semantic_query = prepared.clone();
                 let reranker = rerank.then_some(&*session as &dyn search::RerankScorer);
@@ -252,6 +252,11 @@ pub(super) fn search(
                     coverage["root"] = crate::store::encode_path(&member.root).into();
                     coverage["worktree"] = label.clone().into();
                 }
+                for key in search::REFERENCE_COVERAGE_KEYS {
+                    if let Some(value) = found.coverage.get(key) {
+                        coverage[key] = value.clone();
+                    }
+                }
                 set.coverage.push(coverage);
                 set.truncated |= truncated;
                 set.owners.push(owner);
@@ -291,6 +296,11 @@ pub(super) fn search(
                 )
             });
         }
+    }
+    if set.owners.is_empty()
+        && let Some(miss) = map_miss
+    {
+        anyhow::bail!(miss);
     }
     ensure!(
         !set.owners.is_empty(),

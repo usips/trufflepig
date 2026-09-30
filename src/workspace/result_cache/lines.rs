@@ -40,6 +40,9 @@ pub(crate) fn member_coverage_summary(values: &[Value]) -> String {
         if value["truncated"].as_bool().unwrap_or(false) {
             part.push_str(" truncated");
         }
+        if let Some(refs) = crate::search::reference_summary(value) {
+            part.push_str(&format!(" ({refs})"));
+        }
         parts.push(part);
         let issues = &value["issues"];
         if let Some(status) = issues["semantic_status"].as_str()
@@ -93,7 +96,10 @@ pub(crate) fn compact_coverage(values: &[Value]) -> Vec<Value> {
                 "partial",
                 "unsearched",
                 "issues",
-            ] {
+            ]
+            .into_iter()
+            .chain(crate::search::REFERENCE_COVERAGE_KEYS)
+            {
                 if let Some(value) = object.get(key) {
                     compact.insert(key.into(), value.clone());
                 }

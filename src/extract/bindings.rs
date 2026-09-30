@@ -162,7 +162,9 @@ pub(super) fn collect(
         return;
     }
     let mut next_container = container.clone();
-    if node.kind() == "impl_item" {
+    // `impl` and `extern` headers name their items' container (`impl Trait for A`,
+    // `extern "C"`), which `sym:A::b` and `map` read.
+    if matches!(node.kind(), "impl_item" | "foreign_mod_item") {
         let header_end = node
             .child_by_field_name("body")
             .map_or(node.end_byte(), |n| n.start_byte());

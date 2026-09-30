@@ -229,7 +229,7 @@ fn context_follows_framework_and_php_parents_from_class_method_metadata_and_plac
     let metadata_context = context_json(&store, generation, metadata_hit, 6000);
     assert!(mentions_path(&metadata_context, INNER_PHP));
 
-    let placeholders = references(&store, "XFCP_Builder").unwrap();
+    let placeholders = references(&store, &reference_query("XFCP_Builder").unwrap()).unwrap();
     let placeholder = placeholders
         .hits
         .into_iter()
@@ -268,7 +268,11 @@ fn context_follows_framework_and_php_parents_from_class_method_metadata_and_plac
     assert!(mentions_path(&base_context, OUTER_PHP));
     assert!(mentions_path(&base_context, INNER_PHP));
 
-    let unresolved = references(&store, "Fixture\\Orphan\\MissingBase").unwrap();
+    let unresolved = references(
+        &store,
+        &reference_query("Fixture\\Orphan\\MissingBase").unwrap(),
+    )
+    .unwrap();
     let unresolved = unresolved
         .hits
         .into_iter()

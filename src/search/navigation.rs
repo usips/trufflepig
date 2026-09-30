@@ -1,64 +1,20 @@
-use super::hit_row;
+//! Follow-up navigation over one snapshot: `refs`, `map`, and `ctx` relationships.
+mod reference_sites;
+mod structure_map;
+
+pub use reference_sites::{
+    REFERENCE_COVERAGE_KEYS, reference_query, reference_summary, references,
+};
+pub use structure_map::map;
+
 use crate::{
     output::OutputBudget,
-    results::{self, DefinitionTarget, Hit, MAX_HITS, ResultSet},
+    results::{self, DefinitionTarget, Hit},
     store::Store,
 };
 use anyhow::{Context, Result, bail, ensure};
 use rusqlite::{OptionalExtension, params};
 use std::collections::HashSet;
-
-pub fn references(store: &Store, name: &str) -> Result<ResultSet> {
-    let snapshot = store.conn.unchecked_transaction()?;
-    let generation = store.generation()?;
-    let coverage = serde_json::to_value(store.coverage()?)?;
-    let mut stmt=store.conn.prepare("SELECT f.path,f.revision,o.start,o.end,o.name,o.role,NULL,o.provenance,c.bytes,o.target,o.candidates FROM occurrences o JOIN files f ON f.id=o.file_id JOIN contents c ON c.revision=f.revision WHERE o.name=?1 ORDER BY f.path,o.start,o.id LIMIT ?2")?;
-    let rows = stmt.query_map(params![name, (MAX_HITS + 1) as i64], |r| {
-        Ok((
-            hit_row(r)?,
-            r.get::<_, Option<i64>>(9)?,
-            r.get::<_, String>(10)?,
-        ))
-    })?;
-    let mut hits = Vec::with_capacity(128);
-    let mut bytes = 0usize;
-    let mut truncated = false;
-    for row in rows {
-        let (mut hit, target, candidates) = row?;
-        let candidates: Vec<i64> = serde_json::from_str(&candidates)?;
-        hit.resolution = Some(
-            if target.is_some() {
-                "resolved"
-            } else if !candidates.is_empty() {
-                "candidate"
-            } else {
-                "unresolved"
-            }
-            .into(),
-        );
-        hit.target = target.map(|id| definition_target(store, id)).transpose()?;
-        for id in candidates.into_iter().filter(|id| Some(*id) != target) {
-            hit.candidates.push(definition_target(store, id)?);
-        }
-        bytes += serde_json::to_vec(&hit)?.len();
-        if bytes > results::MAX_BYTES {
-            truncated = true;
-            break;
-        }
-        hits.push(hit);
-    }
-    truncated |= hits.len() > MAX_HITS;
-    hits.truncate(MAX_HITS);
-    drop(stmt);
-    super::snippets::attach(store, &super::snippets::preview_terms(name), &mut hits)?;
-    snapshot.commit()?;
-    Ok(ResultSet {
-        generation,
-        coverage,
-        truncated,
-        hits,
-    })
-}
 
 pub fn context(store: &Store, handle: &str, budget: &OutputBudget) -> Result<String> {
     let (generation, hit) = results::handle(store, handle)?;
@@ -162,28 +118,6 @@ pub(crate) fn context_entry(
         }
         truncated = true;
     }
-}
-
-/// Outline modules, types, and add-on metadata under a path prefix; one file lists its members.
-pub fn map(store: &Store, path: &str) -> Result<ResultSet> {
-    let snapshot = store.conn.unchecked_transaction()?;
-    let generation = store.generation()?;
-    let coverage = serde_json::to_value(store.coverage()?)?;
-    let mut stmt=store.conn.prepare("SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container,'structural_map',c.bytes FROM definitions d JOIN files f ON f.id=d.file_id JOIN contents c ON c.revision=f.revision WHERE substr(f.path,1,length(?1))=?1 AND (d.kind IN ('addon','module','namespace','struct','class','trait','type','enum','impl','interface','record','delegate','xenforo_class_extension') OR (f.path=?1 AND d.kind IN ('function','method','constructor','property','field','event','constant','enum_case','macro'))) ORDER BY f.path,CASE d.kind WHEN 'addon' THEN 0 WHEN 'module' THEN 1 WHEN 'namespace' THEN 2 ELSE 3 END,d.start,d.id LIMIT ?2")?;
-    let mut hits = stmt
-        .query_map(params![path, (MAX_HITS + 1) as i64], hit_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    let truncated = hits.len() > MAX_HITS;
-    hits.truncate(MAX_HITS);
-    drop(stmt);
-    super::snippets::attach(store, &[], &mut hits)?;
-    snapshot.commit()?;
-    Ok(ResultSet {
-        generation,
-        coverage,
-        truncated,
-        hits,
-    })
 }
 
 pub(super) fn definition_target(store: &Store, id: i64) -> Result<DefinitionTarget> {

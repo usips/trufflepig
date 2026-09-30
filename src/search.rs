@@ -1,17 +1,22 @@
 //! Deterministic exact, lexical and live-regex retrieval from one index snapshot.
+mod declarations;
 mod file_ranking;
 mod inheritance_context;
 mod live;
 mod navigation;
+mod qualified_name;
 mod rerank_window;
 mod semantic_lane;
 mod snippets;
 pub mod telemetry;
 #[cfg(test)]
 mod tests;
+pub use declarations::{ImportTrail, InvocationDirectory, trace_import};
 pub(crate) use file_ranking::fuse_search_file_lanes as fuse_file_lanes;
 pub(crate) use navigation::context_entry;
-pub use navigation::{context, map, references};
+pub use navigation::{
+    REFERENCE_COVERAGE_KEYS, context, map, reference_query, reference_summary, references,
+};
 pub use rerank_window::RerankScorer;
 
 use crate::{
@@ -296,7 +301,7 @@ pub fn search_prepared(
             hits = exact.hits;
             if query.exact {
                 // `sym:` pages lead with declarations, not imports that share the name.
-                hits.sort_by_key(|hit| declaration_rank(&hit.kind));
+                declarations::rank_declarations(&mut hits, &InvocationDirectory::root());
             }
         }
     }
@@ -335,26 +340,22 @@ pub fn search_prepared(
     })
 }
 
-/// Every indexed definition named exactly `query.text` (honoring `file:`, `lang:`,
-/// and `kind:`), declarations before members and locals, then in path order.
-pub fn definitions(store: &Store, query: &Query) -> Result<ResultSet> {
+/// Every indexed definition named exactly `query.text` (or `Qualifier::name`),
+/// honoring `file:`, `lang:`, and `kind:`, ranked nearest `origin` (see `declarations`).
+pub fn definitions(
+    store: &Store,
+    query: &Query,
+    origin: &InvocationDirectory,
+) -> Result<ResultSet> {
     let snapshot = store.conn.unchecked_transaction()?;
     let generation = store.generation()?;
     let coverage = serde_json::to_value(store.coverage()?)?;
-    let exact = Query {
-        text: query.text.clone(),
-        path: query.path.clone(),
-        language: query.language.clone(),
-        kind: query.kind.clone(),
-        exact: true,
-        regex: false,
-    };
     let LaneHits {
         mut hits,
         truncated,
-    } = exact_hits(store, &exact)?;
-    hits.sort_by_key(|hit| declaration_rank(&hit.kind));
-    snippets::attach(store, &snippets::preview_terms(&exact.text), &mut hits)?;
+    } = declarations::declaration_hits(store, query)?;
+    declarations::rank_declarations(&mut hits, origin);
+    snippets::attach(store, &snippets::preview_terms(&query.text), &mut hits)?;
     snapshot.commit()?;
     Ok(ResultSet {
         generation,
@@ -362,17 +363,6 @@ pub fn definitions(store: &Store, query: &Query) -> Result<ResultSet> {
         truncated,
         hits,
     })
-}
-
-/// Declarations a reader usually means by a name rank before modules, modules
-/// before members, and members before locals and imports that merely share it.
-fn declaration_rank(kind: &str) -> u8 {
-    match kind {
-        "module" => 1,
-        "variant" | "field" | "constructor" => 2,
-        "variable" | "parameter" | "import" => 3,
-        _ => 0,
-    }
 }
 
 #[derive(Debug)]
@@ -396,32 +386,7 @@ fn cap_hits(hits: &mut Vec<Hit>, limit: usize) -> LaneHits {
 
 fn exact_hits(store: &Store, query: &Query) -> Result<LaneHits> {
     if query.exact {
-        let mut statement = store.conn.prepare(
-            "SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container,
-                    'exact_identifier',c.bytes
-             FROM definitions d
-             JOIN files f ON f.id=d.file_id
-             JOIN contents c ON c.revision=f.revision
-             WHERE d.name=?1
-               AND substr(f.path,1,length(?2))=?2
-               AND (?3='' OR f.language=?3)
-               AND (?4='' OR d.kind=?4)
-             ORDER BY f.path,d.start,d.end,d.id
-             LIMIT ?5",
-        )?;
-        let mut hits = statement
-            .query_map(
-                params![
-                    query.text,
-                    query.path,
-                    query.language,
-                    query.kind,
-                    (MAX_HITS + 1) as i64
-                ],
-                hit_row,
-            )?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        return Ok(cap_hits(&mut hits, MAX_HITS));
+        return declarations::declaration_hits(store, query);
     }
     let mut statement = store.conn.prepare(
         "WITH ranked AS (

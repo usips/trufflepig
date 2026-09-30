@@ -3,6 +3,7 @@ use super::{MAX_READ_BYTES, current_span, read_contained};
 use crate::{
     identity::{ByteSpan, ContentRevision, ResultHandle},
     results::{self, HistoricalSource, Hit, ResultEntry},
+    search::{InvocationDirectory, Query},
     store::Store,
 };
 use anyhow::{Context, Result, bail, ensure};
@@ -38,18 +39,51 @@ pub(crate) struct AcquiredSource {
     pub handle: String,
     pub side: Option<SourceSide>,
     pub historical: Option<HistoricalSource>,
-    /// For a `sym:` read: the number of same-named definitions and `PATH:START-END
-    /// KIND` locators for up to `SYMBOL_ALTERNATIVES` of those not shown.
-    pub definitions: Option<(usize, Vec<String>)>,
+    /// For a `sym:` read: how the shown definition was chosen among its namesakes.
+    pub definitions: Option<SymbolSelection>,
 }
 
 /// Other same-named definitions listed after a `sym:` read.
 const SYMBOL_ALTERNATIVES: usize = 5;
 
+/// The candidates behind a `sym:` read: declaration and import counts,
+/// `PATH:START-END KIND` locators for up to `SYMBOL_ALTERNATIVES` others
+/// (declarations first), and the import trail when the best row was an import.
+#[derive(Debug)]
+pub(crate) struct SymbolSelection {
+    pub declarations: usize,
+    pub imports: usize,
+    pub also: Vec<String>,
+    pub import: Option<ImportNote>,
+}
+
+/// An import row a `sym:` read passed through: `site` is `PATH:LINE`, `path` the
+/// spelled import path, and `followed` whether its declaration is what is shown.
+#[derive(Debug)]
+pub(crate) struct ImportNote {
+    pub site: String,
+    pub path: String,
+    pub reexport: bool,
+    pub followed: bool,
+}
+
+/// The `show` target in command words: a `sym:` target takes every following
+/// word as part of its query (`show sym:X file:src/`); others take one word.
+pub(crate) fn show_target(words: &[String]) -> Option<String> {
+    let first = words.get(1)?;
+    Some(if first.starts_with("sym:") {
+        words[1..].join(" ")
+    } else {
+        first.clone()
+    })
+}
+
+/// Acquires `target`; a `sym:` read ranks namesakes nearest to `origin` first.
 pub(crate) fn acquire(
     store: &Store,
     target: &str,
     side: Option<SourceSide>,
+    origin: &InvocationDirectory,
 ) -> Result<AcquiredSource> {
     if let Some(cursor) = target.strip_prefix("read:") {
         let (identity, offset) = cursor
@@ -88,24 +122,31 @@ pub(crate) fn acquire(
         "invalid_side: side requires a historical change handle"
     );
     if target.starts_with("sym:") {
-        return acquire_symbol(store, target);
+        return acquire_symbol(store, target, origin);
     }
     acquire_path(store, target)
 }
 
 /// Read the best-ranked definition named by `sym:NAME [file:P] [lang:L] [kind:K]`
-/// as a verified handle read, listing the other candidates as path locators.
-fn acquire_symbol(store: &Store, target: &str) -> Result<AcquiredSource> {
-    let query = crate::search::Query::parse(target)?;
-    let found = crate::search::definitions(store, &query)?;
-    ensure!(
-        !found.hits.is_empty(),
-        "no_definition: no indexed definition named `{}`; try `refs {}` or `search '{}'`",
-        query.text,
-        query.text,
-        query.text
-    );
-    let total = found.hits.len();
+/// as a verified handle read, listing the other candidates as path locators. An
+/// import that outranks every declaration is followed to its original.
+fn acquire_symbol(
+    store: &Store,
+    target: &str,
+    origin: &InvocationDirectory,
+) -> Result<AcquiredSource> {
+    let query = Query::parse(target)?;
+    let found = crate::search::definitions(store, &query, origin)?;
+    if found.hits.is_empty() {
+        bail!(no_definition(store, &query, origin)?);
+    }
+    let imports = found.hits.iter().filter(|hit| hit.kind == "import").count();
+    let declarations = found.hits.len() - imports;
+    let trail = if found.hits[0].kind == "import" {
+        crate::search::trace_import(store, &found.hits[0], &query, origin)?
+    } else {
+        None
+    };
     let alternatives = found.hits[1..]
         .iter()
         .take(SYMBOL_ALTERNATIVES)
@@ -116,22 +157,77 @@ fn acquire_symbol(store: &Store, target: &str) -> Result<AcquiredSource> {
             )
         })
         .collect();
-    let first = ResultEntry::LiveSource(found.hits[0].clone());
+    let mut entries: Vec<_> = found
+        .hits
+        .into_iter()
+        .map(ResultEntry::LiveSource)
+        .collect();
+    let import = trail.map(|trail| {
+        let followed = trail.declaration.is_some();
+        if let Some(declaration) = trail.declaration {
+            entries.insert(0, ResultEntry::LiveSource(declaration));
+        }
+        ImportNote {
+            site: trail.site,
+            path: trail.path,
+            reexport: trail.reexport,
+            followed,
+        }
+    });
+    let first = entries[0].clone();
     let set = results::save_entries(
         store,
         found.generation,
         found.coverage,
-        found
-            .hits
-            .into_iter()
-            .map(ResultEntry::LiveSource)
-            .collect(),
+        entries,
         found.truncated,
     )?;
     let handle = format!("{set}:1");
     let mut source = acquire_entry(store, &handle, first, None)?;
-    source.definitions = Some((total, alternatives));
+    source.definitions = Some(SymbolSelection {
+        declarations,
+        imports,
+        also: alternatives,
+        import,
+    });
     Ok(source)
+}
+
+/// `no_definition` naming the active filters and, when they excluded every
+/// namesake, how many exist without them and where the best one is.
+fn no_definition(store: &Store, query: &Query, origin: &InvocationDirectory) -> Result<String> {
+    let name = &query.text;
+    let filters: Vec<String> = [
+        ("file:", &query.path),
+        ("lang:", &query.language),
+        ("kind:", &query.kind),
+    ]
+    .into_iter()
+    .filter(|(_, value)| !value.is_empty())
+    .map(|(key, value)| format!("{key}{value}"))
+    .collect();
+    let mut message = format!("no_definition: no indexed definition named `{name}`");
+    if !filters.is_empty() {
+        message.push_str(&format!(" matching {}", filters.join(" ")));
+        let unfiltered = Query {
+            text: name.clone(),
+            exact: true,
+            ..Query::default()
+        };
+        let others = crate::search::definitions(store, &unfiltered, origin)?.hits;
+        if let Some(best) = others.first() {
+            message.push_str(&format!(
+                "; {} without filters, best {}:{}-{} {}",
+                others.len(),
+                best.path,
+                best.start_line,
+                best.end_line,
+                best.kind
+            ));
+        }
+    }
+    message.push_str(&format!("; try `refs {name}` or `search '{name}'`"));
+    Ok(message)
 }
 
 fn acquire_handle(store: &Store, handle: &str, side: Option<SourceSide>) -> Result<AcquiredSource> {
@@ -319,7 +415,7 @@ mod tests {
         let bytes = "// immutable source line\n".repeat(220);
         std::fs::write(root.path().join("lib.rs"), &bytes).unwrap();
         let store = Store::open(root.path(), cache.path()).unwrap();
-        let original = acquire(&store, "path:lib.rs", None).unwrap();
+        let original = acquire(&store, "path:lib.rs", None, &InvocationDirectory::root()).unwrap();
         let (_, entry) = results::entry(&store, &original.handle).unwrap();
         store.conn.execute("DELETE FROM result_sets", []).unwrap();
 
@@ -365,7 +461,7 @@ mod tests {
         let cache = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("lib.rs"), "fn original() {}\n").unwrap();
         let store = Store::open(root.path(), cache.path()).unwrap();
-        let source = acquire(&store, "path:lib.rs", None).unwrap();
+        let source = acquire(&store, "path:lib.rs", None, &InvocationDirectory::root()).unwrap();
         let error = crate::source::render_owned(
             source,
             &OutputBudget::new(600).unwrap(),

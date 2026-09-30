@@ -110,6 +110,7 @@ pub(crate) fn single_repo_coverage(coverage: &Value) -> String {
     if let Some(endpoint) = coverage["endpoint"].as_str() {
         parts.push(format!("endpoint {endpoint}"));
     }
+    parts.extend(crate::search::reference_summary(coverage));
     parts.join("; ")
 }
 
