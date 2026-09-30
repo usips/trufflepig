@@ -34,7 +34,8 @@ pub(super) fn publish(
              DELETE FROM extraction_cache;
              INSERT INTO extraction_cache SELECT * FROM staged.extraction_cache;
              DELETE FROM contents WHERE revision NOT IN (SELECT revision FROM files WHERE revision IS NOT NULL);
-             UPDATE meta SET value=CAST(value AS INTEGER)+1 WHERE key='generation';"
+             UPDATE meta SET value=CAST(value AS INTEGER)+1 WHERE key='generation';
+             DROP TABLE IF EXISTS result_sets;"
         )?;
         transaction.execute(
             "UPDATE meta SET value=?1 WHERE key='coverage'",

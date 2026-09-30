@@ -34,6 +34,8 @@ pub(crate) fn member_coverage_summary(values: &[Value]) -> String {
                 Some(count) if count > 0 => format!("{name} partial ({count} unsearched)"),
                 _ => format!("{name} partial"),
             }
+        } else if state == "timed_out" {
+            format!("{name} timed out")
         } else {
             format!("{name} {state}")
         };
@@ -172,6 +174,18 @@ mod tests {
         assert_eq!(
             member_coverage_summary(&coverage),
             "lunatic@feature-x complete; tg warming"
+        );
+    }
+
+    #[test]
+    fn member_summary_names_timed_out_members() {
+        let coverage = [
+            json!({"member":"a","state":"searched","partial":false}),
+            json!({"member":"b","state":"timed_out"}),
+        ];
+        assert_eq!(
+            member_coverage_summary(&coverage),
+            "a complete; b timed out"
         );
     }
 }

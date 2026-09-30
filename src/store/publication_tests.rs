@@ -1,4 +1,5 @@
 use super::*;
+use crate::daemon::deadline::QueryDeadline;
 
 fn fixture() -> (tempfile::TempDir, Store) {
     let directory = tempfile::tempdir().unwrap();
@@ -132,4 +133,154 @@ fn publication_observations_distinguish_ignore_delete_and_net_revert() {
         )
         .unwrap();
     assert!(!store.observations_since(baseline).unwrap().complete);
+}
+
+fn published_fixture() -> (tempfile::TempDir, Store) {
+    let (directory, mut store) = fixture();
+    std::fs::write(store.root.join("lib.rs"), "fn alpha() {}\n").unwrap();
+    store.index().unwrap();
+    (directory, store)
+}
+
+#[test]
+fn open_read_rejects_writes() {
+    let (_directory, store) = published_fixture();
+    let mut reader = Store::open_read(&store.root, &store.cache, QueryDeadline::start()).unwrap();
+    assert!(
+        reader
+            .index()
+            .unwrap_err()
+            .to_string()
+            .contains("read_only_store")
+    );
+    assert!(
+        reader
+            .conn
+            .execute("INSERT INTO meta VALUES('extra','x')", [])
+            .is_err()
+    );
+    assert!(reader.conn.execute_batch("CREATE TABLE extra(x)").is_err());
+    let id =
+        crate::results::save_entries(&reader, 1, serde_json::json!({}), vec![], false).unwrap();
+    assert!(crate::results::load_entries(&store, &id).is_ok());
+    assert!(store.cache.join(crate::results::RESULTS_DATABASE).is_file());
+}
+
+#[test]
+fn open_read_reports_unpublished_or_foreign_index() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("root");
+    std::fs::create_dir(&root).unwrap();
+    let cache = directory.path().join("cache");
+    let missing = Store::open_read(&root, &cache, QueryDeadline::start())
+        .err()
+        .unwrap();
+    assert!(is_index_warming(&missing), "{missing:#}");
+    let mut writer = Store::open(&root, &cache).unwrap();
+    let unpublished = Store::open_read(&root, &cache, QueryDeadline::start())
+        .err()
+        .unwrap();
+    assert!(is_index_warming(&unpublished), "{unpublished:#}");
+    std::fs::write(root.join("lib.rs"), "fn alpha() {}\n").unwrap();
+    writer.index().unwrap();
+    let foreign = Store::open_read(directory.path(), &cache, QueryDeadline::start())
+        .err()
+        .unwrap();
+    assert!(foreign.to_string().contains("another repository root"));
+}
+
+#[test]
+fn open_read_interrupts_statements_after_its_deadline() {
+    let (_directory, store) = published_fixture();
+    let deadline = QueryDeadline::after(std::time::Duration::from_millis(200));
+    let reader = Store::open_read(&store.root, &store.cache, deadline).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(250));
+    let error = reader
+        .conn
+        .query_row(
+            "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c LIMIT 10000000) SELECT count(*) FROM c",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(anyhow::Error::from)
+        .unwrap_err();
+    assert!(crate::daemon::deadline::is_timed_out(
+        &deadline.classify(error)
+    ));
+}
+
+#[test]
+fn parent_view_reads_worktree_bytes() {
+    let directory = tempfile::tempdir().unwrap();
+    let parent = directory.path().join("parent");
+    let worktree = directory.path().join("worktree");
+    let (parent_cache, worktree_cache) = (directory.path().join("pc"), directory.path().join("wc"));
+    for root in [&parent, &worktree] {
+        std::fs::create_dir(root).unwrap();
+    }
+    std::fs::write(parent.join("lib.rs"), "fn alpha() {}\n").unwrap();
+    std::fs::write(
+        worktree.join("lib.rs"),
+        "// edited in worktree\nfn alpha() {}\n",
+    )
+    .unwrap();
+    Store::open(&parent, &parent_cache)
+        .unwrap()
+        .index()
+        .unwrap();
+    let view = Store::open_read(&parent, &parent_cache, QueryDeadline::start())
+        .unwrap()
+        .reading_from(&worktree, &worktree_cache)
+        .unwrap();
+    assert_eq!(view.index_root(), parent.canonicalize().unwrap());
+    assert_eq!(view.root, worktree.canonicalize().unwrap());
+    let query = crate::search::Query::parse("re:edited in worktree").unwrap();
+    let live = crate::search::search(&view, &query, false, &parent_cache).unwrap();
+    assert_eq!(live.hits.len(), 1);
+    assert_eq!(live.hits[0].path, "lib.rs");
+    let budget = crate::output::OutputBudget::new(600).unwrap();
+    let read = crate::source::show(&view, "path:lib.rs:1-1", &budget).unwrap();
+    assert!(read.contains("edited in worktree"), "{read}");
+    let indexed =
+        crate::search::definitions(&view, &crate::search::Query::parse("sym:alpha").unwrap())
+            .unwrap();
+    let id = crate::results::save(&view, indexed).unwrap();
+    let stale = crate::source::show(&view, &format!("{id}:1"), &budget).unwrap_err();
+    assert!(stale.to_string().contains("stale_source"), "{stale:#}");
+    assert!(
+        worktree_cache
+            .join(crate::results::RESULTS_DATABASE)
+            .is_file()
+    );
+    assert!(!parent_cache.join(crate::results::RESULTS_DATABASE).exists());
+}
+
+#[test]
+fn publish_while_query_never_locks() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let (_directory, mut writer) = published_fixture();
+    let (root, cache) = (writer.root.clone(), writer.cache.clone());
+    let stop = std::sync::Arc::new(AtomicBool::new(false));
+    let publishing = std::thread::spawn({
+        let stop = stop.clone();
+        move || {
+            let mut publications = 0;
+            while !stop.load(Ordering::Relaxed) {
+                publications += 1;
+                let body = format!("fn alpha() {{}}\nfn beta_{publications}() {{}}\n");
+                std::fs::write(writer.root.join("lib.rs"), body).unwrap();
+                writer.index().unwrap();
+            }
+            publications
+        }
+    });
+    let query = crate::search::Query::parse("sym:alpha").unwrap();
+    for _ in 0..60 {
+        let reader = Store::open_read(&root, &cache, QueryDeadline::start()).unwrap();
+        let found = crate::search::search(&reader, &query, false, &cache).unwrap();
+        assert!(!found.hits.is_empty());
+        crate::results::save(&reader, found).unwrap();
+    }
+    stop.store(true, Ordering::Relaxed);
+    assert!(publishing.join().unwrap() > 1);
 }

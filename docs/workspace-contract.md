@@ -108,8 +108,10 @@ status remain in `issues`. The lines summary reads `MEMBER complete` or
 `MEMBER partial (N unsearched)` and omits lanes whose reason says they were
 never configured. Each member receives an equal share of the retained
 candidate/byte ceiling; omissions are explicit rather than exhaustive counts.
-Missing or not-yet-published members produce partial coverage. If no selected
-member is available, the command returns an explicit unavailable outcome.
+Missing or not-yet-published members produce partial coverage. Members not
+searched before the request's 20 s query deadline expires report state
+`timed_out` (`MEMBER timed out`). If no selected member is available, the command
+returns an explicit unavailable outcome, or `timed_out` when the deadline expired.
 
 The normal 600-token `o200k_base` budget applies once to the complete
 response in the selected format, including provenance and coverage. Compact

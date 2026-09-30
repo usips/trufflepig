@@ -2,8 +2,10 @@
 
 ## Storage and identity
 
-SQLite WAL with FTS5 holds source revisions, definitions, occurrences,
-relationships, lexical documents, and immutable result sets. Source occurrence
+SQLite WAL with FTS5 (`<cache>/index.sqlite3`) holds source revisions,
+definitions, occurrences, relationships, and lexical documents. Immutable result
+sets live in a separate `<cache>/results.sqlite3` (`src/results/result_set_store.rs`),
+so saving a query's results never waits behind a publication. Source occurrence
 identity includes root, path, revision, and span; content identity is separate
 and supports reuse without merging distinct definitions or overrides.
 
@@ -57,7 +59,15 @@ before a different input. Partially recovered facts from a completed parse are
 separately labeled and cannot strengthen resolver certainty.
 
 Only committed generations are queryable. A reader holds one snapshot through
-candidate retrieval and graph joins. File changes between extraction and
+candidate retrieval and graph joins. Readers are query-only
+(`src/store/read_access.rs:open_read`): they open the index read-only, run no
+schema or metadata writes, wait at most 2 s on a lock, and are interrupted when
+the request's 20 s query deadline (`src/daemon/deadline.rs`) expires, answering
+`timed_out`. A missing index or generation 0 answers `index_warming`. Only
+indexing, sessions, and the reconciler open the writer (`Store::open`). A reader
+may read a linked worktree's current bytes through its parent member's index
+(root-relative paths address the same files); its result sets are saved in the
+worktree's own cache, and `show` verifies those bytes against indexed revisions. File changes between extraction and
 publication may leave an indexed revision behind disk; `show`'s buffer check
 prevents applying it to current bytes. Reconciliation eventually catches up.
 
@@ -127,7 +137,8 @@ to graph nodes reused by a replacement generation.
 
 ## Resource lifecycle
 
-The authoritative SQLite page cache is 8 MiB and staging uses 4 MiB. Indexing
+The authoritative SQLite page cache is 8 MiB for the writer and 2 MiB per
+reader; staging uses 4 MiB. Indexing
 reads at most 2 MiB per source file, retains at most 50,000 extracted facts per
 file, and divides lexical coverage into regions of at most 4,096 raw bytes.
 Sources containing NUL or exceeding the read cap remain file records with an

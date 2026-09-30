@@ -2,8 +2,8 @@
 use crate::diagnostics::{Outcome, RequestEvent};
 use crate::{
     identity::ResultHandle,
-    results::{self, HistoricalSource, ResultEntry},
-    store::{Store, encode_path},
+    results::{self, HistoricalSource, RESULTS_DATABASE, ResultEntry, ResultSetStore},
+    store::encode_path,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
@@ -12,16 +12,16 @@ use std::path::{Path, PathBuf};
 /// Immutable result lookup used by the final emission boundary.
 pub(super) struct SavedEntries {
     root: PathBuf,
-    singleton: Option<Store>,
+    singleton: Option<ResultSetStore>,
     workspace: Option<Connection>,
 }
 
 impl SavedEntries {
     pub(super) fn singleton(root: &Path, cache: &Path) -> Self {
         let singleton = cache
-            .join("index.sqlite3")
+            .join(RESULTS_DATABASE)
             .is_file()
-            .then(|| Store::open(root, cache).ok())
+            .then(|| ResultSetStore::open(cache).ok())
             .flatten();
         Self {
             root: root.to_owned(),
@@ -50,8 +50,12 @@ impl SavedEntries {
                 return Some(resolved);
             }
         }
-        let store = self.singleton.as_ref()?;
-        let (_, entry) = results::entry(store, handle).ok()?;
+        let set = self
+            .singleton
+            .as_ref()?
+            .load(&parsed.set.simple().to_string())
+            .ok()?;
+        let entry = set.hits.get(parsed.ordinal.checked_sub(1)?)?.clone();
         Some(ResolvedEntry {
             owner_root: encode_path(&self.root),
             member: None,

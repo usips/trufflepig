@@ -95,8 +95,10 @@ fn current_span(bytes: &[u8], first: usize, last: usize) -> Result<(usize, usize
 
 pub(crate) mod acquisition;
 mod lines;
+mod reextraction;
 pub(crate) use acquisition::AcquiredSource;
 pub use acquisition::SourceSide;
+pub use reextraction::{ReextractedDefinition, reextract_definition};
 
 pub fn show(store: &Store, target: &str, budget: &OutputBudget) -> Result<String> {
     show_with_side(store, target, None, budget)

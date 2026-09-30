@@ -1,5 +1,5 @@
 use super::*;
-use crate::{cli, output::OutputBudget, results, store::Store};
+use crate::{cli, output::OutputBudget, store::Store};
 use std::{fs, process::Command};
 
 fn git(root: &Path, args: &[&str]) {
@@ -295,6 +295,42 @@ fn explicit_scopes_limit_members_and_unavailable_members_remain_visible() {
 }
 
 #[test]
+fn expired_query_deadline_answers_timed_out() {
+    let fixture = Fixture::new();
+    fixture.json("engine", &["search", "sym:SharedThing", "ws:all"]);
+    let args: Vec<String> = [
+        "--workspace",
+        fixture.config.to_str().unwrap(),
+        "--root",
+        fixture.root.path().join("engine").to_str().unwrap(),
+        "--cache",
+        fixture.cache.path().to_str().unwrap(),
+        "--no-daemon",
+        "--diagnostics",
+        "off",
+        "search",
+        "sym:SharedThing",
+        "ws:all",
+    ]
+    .map(str::to_owned)
+    .into();
+    let options = cli::parse(&args).unwrap();
+    let config = WorkspaceConfig::load(&fixture.config).unwrap();
+    let cache = cache_path(&config, Some(fixture.cache.path())).unwrap();
+    let error = retrieval::search(
+        &config,
+        &cache,
+        &WorkspaceResults::open(&cache).unwrap(),
+        &options,
+        &cli::request_context(&options),
+        &mut crate::semantic::SemanticSession::default(),
+        crate::daemon::deadline::QueryDeadline::after(std::time::Duration::ZERO),
+    )
+    .unwrap_err();
+    assert!(crate::daemon::deadline::is_timed_out(&error), "{error:#}");
+}
+
+#[test]
 fn removed_and_replaced_members_cannot_retarget_retained_handles() {
     let fixture = Fixture::new();
     let handle = fixture.handle("pack");
@@ -364,8 +400,12 @@ fn explicit_read_continuations_survive_member_cache_eviction_and_pin_range() {
         &fixture.member_cache("pack"),
     )
     .unwrap();
-    results::initialize(&store).unwrap();
-    store.conn.execute("DELETE FROM result_sets", []).unwrap();
+    store
+        .result_sets()
+        .unwrap()
+        .conn
+        .execute("DELETE FROM result_sets", [])
+        .unwrap();
     drop(store);
     let second = fixture.json("upstream", &["show", cursor]);
     assert_eq!(second["member"], "pack");
