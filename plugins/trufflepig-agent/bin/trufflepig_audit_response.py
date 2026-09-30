@@ -3,6 +3,14 @@ import re
 
 LANE_KEYS = {"semantic": "semantic_status", "rerank": "rerank_status"}
 SINGLE_REPO_KEYS = {"indexed", "excluded", "parse_failures", "walk_failures", "truncated", "endpoint"}
+# `next: SET@N`, `next: more SET@N (-n N raises the page size)`, `next: show read:H@B`.
+NEXT_FOOTER = re.compile(r"^next: (?:(?:more|show) )?(\S+)")
+
+
+def next_cursor(line: str) -> str | None:
+    """The bare cursor of a `next:` footer line, without its runnable verb or hint."""
+    match = NEXT_FOOTER.match(line)
+    return match.group(1) if match else None
 
 
 def parse_lines_response(stdout: bytes) -> dict:
@@ -15,7 +23,7 @@ def parse_lines_response(stdout: bytes) -> dict:
     seen_coverage = False
     for line in text.splitlines():
         if line.startswith("next: "):
-            response["next"] = line[len("next: "):]
+            response["next"] = next_cursor(line)
         elif line == "truncated: true":
             response["truncated"] = True
         if not seen_coverage:

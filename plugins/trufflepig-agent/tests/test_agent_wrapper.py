@@ -3,10 +3,30 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
 PLUGIN = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PLUGIN / "bin"))
+from trufflepig_audit_response import parse_lines_response  # noqa: E402
+
+
+class NextFooterTests(unittest.TestCase):
+    def test_bare_cursor_from_every_footer_shape(self):
+        handle = "0" * 32
+        shapes = {
+            "next: 4f2a@20": "4f2a@20",
+            "next: more 4f2a@20 (-n N raises the page size)": "4f2a@20",
+            "next: more 4f2a@20 (-b N raises the token budget)": "4f2a@20",
+            "next: more 4f2a@20": "4f2a@20",
+            "next: show read:9c1e@4096": "read:9c1e@4096",
+            "next: read:9c1e@4096": "read:9c1e@4096",
+        }
+        for footer, cursor in shapes.items():
+            with self.subTest(footer=footer):
+                page = f"{handle}:1\tsrc/a.rs:3-9\trun\n  4: fn run() {{\ncoverage: indexed 3/3\n{footer}\n"
+                self.assertEqual(parse_lines_response(page.encode())["next"], cursor)
 
 
 class AgentWrapperTests(unittest.TestCase):
