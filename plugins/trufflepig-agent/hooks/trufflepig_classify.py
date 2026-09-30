@@ -349,7 +349,10 @@ def classify(command: str, cwd: Path, checkout: Path) -> list[Search]:
             after = strip_prefix(following.words) or None if following and following.piped else None
             # `cat F > out` and `cat F | sed -n A,Bp > out` copy source; they do not read it.
             copied = segment.redirected or after is not None and following.redirected
-            search = None if piped or copied else classify_read(program, words[1:], after, directory, checkout)
+            read_pipeline_continues = after is not None and position + 2 < len(parsed) and \
+                parsed[position + 2].piped
+            search = None if piped or copied or read_pipeline_continues else classify_read(
+                program, words[1:], after, directory, checkout)
         elif program in ("find", "bfs", "fd"):
             search = classify_find(program, words[1:], directory, checkout)
         elif program == "rg" and "--files" in words:

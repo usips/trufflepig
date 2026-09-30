@@ -24,6 +24,7 @@ VALUE_LONG = {"--regexp", "--file", "--after-context", "--before-context", "--co
               "--max-count", "--include", "--exclude", "--exclude-dir", "--glob", "--iglob",
               "--type", "--type-not", "--max-depth", "--color", "--colour", "--binary-files",
               "--devices", "--directories", "--threads", "--encoding", "--sort", "--sortr"}
+SEARCH_PROGRAMS = {"grep", "egrep", "fgrep", "ugrep", "rg", "ag", "ack", "find", "bfs", "fd", "sed", "cat"}
 
 
 def tokenize(command: str) -> list[str] | None:
@@ -224,8 +225,8 @@ def git_subcommand(args: list[str], directory: Path) -> tuple[list[str], Path] |
 
 
 def search_directory(command: str, cwd: Path) -> Path:
-    """Directory of the command's first program other than `cd`, after preceding
-    `cd DIR` and its own `git -C DIR`; decides which indexed checkout owns the command."""
+    """Directory of the first searchable command, after preceding `cd DIR` and its own
+    `git -C DIR`; unrelated shell commands do not choose the indexed checkout."""
     directory = cwd
     for segment in segments(command) or []:
         words = strip_prefix(segment.words)
@@ -237,8 +238,11 @@ def search_directory(command: str, cwd: Path) -> Path:
             continue
         if program == "git":
             found = git_subcommand(words[1:], directory)
-            return found[1] if found else directory
-        return directory
+            if found and found[0] and found[0][0] == "grep":
+                return found[1]
+            continue
+        if program in SEARCH_PROGRAMS:
+            return directory
     return directory
 
 

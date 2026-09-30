@@ -52,27 +52,41 @@ identifier, lexical, and filename evidence; semantic retrieval and reranking
 also contribute when enabled by workspace settings or explicit options.
 A ranked match alone does not establish a dependency or prove relevance.
 For PHP and XenForo metadata edge semantics, see the
-[PHP contract](../../../../docs/php-contract.md).
+[PHP contract](https://github.com/usips/trufflepig/blob/master/docs/php-contract.md).
 
 Combine `file:`, `lang:rust|ts|js|csharp|php|luau|dm|text`, and
 `kind:function|struct|file|...` filters. `cs` and `c#` alias `csharp`; quote a
-query containing `c#` in shell commands. `file:` matches a root-relative path
-prefix, else a path-component substring (`file:script/host`); it is not a glob.
-Repeat `file:` to accept any of several paths; `-file:tests/` excludes one. Docs
-and configuration use `text`.
+query containing `c#` in shell commands. `file:` matches root-relative paths it
+prefixes when some indexed path continues the value at `/`, `.`, or its end;
+otherwise it matches a substring starting at a path-component boundary
+(`file:script/host` matches `script/host.rs`, never `ghost.rs`). It never uses
+glob syntax. Repeat `file:` to accept multiple paths; quote a negative-filter
+query as a whole, for example `trufflepig-agent search 'name -file:tests/'`.
+Docs and configuration use `text`.
 Workspace search covers the current checkout (home member) first and widens to
-all members only when home has no hits; the coverage line's `scope` says which.
+all members only after complete, readable home coverage with no hits. Incomplete,
+unavailable, or otherwise unreadable home coverage never widens; the coverage
+line's `scope` says which members were searched.
 Use `ws:all` to search every member or `in:MEMBER` for a named dependency.
 Outside a workspace, run from the project root so a subdirectory does not become
 an accidental separate index. Retain that scope for follow-up calls.
 
 A linked worktree is its own checkout: run from it (`cd DIR && trufflepig-agent
-...` or `--root DIR`). While its index warms, it answers from its parent
-member's index; the footer reads like `lunatic@wt warming → served from lunatic
-index (3 files differ)`, and hits in files the worktree changed are marked
-`differs` (`show` reads the worktree's bytes). These answers are valid: keep
-using trufflepig. Only `unavailable` or `warming (no parent index)` justify an
-ordinary search.
+...` or `--root DIR`). Only workspace queries from an unpublished linked-worktree
+home can fall back to the member's published parent index while its own index
+warms. The footer reads like `lunatic@wt warming → served from lunatic index
+(3 files differ)`. A `differs` hit can retain coordinates from the parent index.
+`show` re-extracts a changed file from current worktree bytes when possible; if
+re-extraction fails, it can retain parent-index bytes marked unverified. Check
+`verified` and `source` before claiming that shown bytes are current. An exact
+`sym:` miss with no parent-index candidate refreshes divergence and checks at
+most 64 changed files. If more than 64 paths changed, Git probing fails, or a
+changed file remains unchecked, coverage is partial and truncated, so absence
+is not exhaustive and home does not widen.
+Other fallback reads can reuse cached divergence for up to five seconds. Without
+a published parent index, the footer says `warming (no parent index)`. See the
+[workspace contract](https://github.com/usips/trufflepig/blob/master/docs/workspace-contract.md) and
+[index contract](https://github.com/usips/trufflepig/blob/master/docs/index-contract.md).
 
 ## Follow implementation dependencies
 
@@ -115,13 +129,20 @@ Use `--json` when relationship fields or machine-readable coverage are needed.
 
 - `show` returns a `PATH lines A-B` header, numbered source, and `verified:`
   (`current file` for explicit path reads). Cite path and line.
-- A `next:` line is the runnable follow-up: `next: more SET@OFFSET` pages a
-  search, refs, or map; `next: show read:H@B` continues a `show`. Run it verbatim.
+- `next:` is a display label, not part of the command or cursor. For
+  `next: more SET@OFFSET`, run `trufflepig-agent more SET@OFFSET`; for
+  `next: show read:H@B`, run `trufflepig-agent show read:H@B`. An adjacent
+  `hint: -n N raises the page size` is optional advice, separate from the
+  cursor. For example, widen `next: more abc@4` with
+  `trufflepig-agent -n 100 more abc@4`.
 - For an exhaustive list, raise the page size once (`trufflepig-agent -n 100 refs
   NAME`) instead of paging repeatedly; `refs` ends with `refs: T sites in F files`.
 - Partial coverage or candidate truncation prevents a claim of exhaustive absence.
   `partial (N unsearched)` names files a search could not read. Semantic/rerank
   unavailability does not itself invalidate lexical results.
+- See the [retrieval contract](https://github.com/usips/trufflepig/blob/master/docs/retrieval-contract.md) for query
+  matching, file filters, coverage, and pagination details, and the
+  [CLI contract](https://github.com/usips/trufflepig/blob/master/docs/cli.md) for command and option syntax.
 - Keep the configured token budget (600 by default, workspace override when set;
   `show` defaults to 1500).
   A short page with `next:` is budget-limited, not necessarily the last match.

@@ -17,6 +17,7 @@ class NextFooterTests(unittest.TestCase):
         handle = "0" * 32
         shapes = {
             "next: 4f2a@20": "4f2a@20",
+            "next: more 4f2a@20\nhint: -n 100 raises the page size": "4f2a@20",
             "next: more 4f2a@20 (-n N raises the page size)": "4f2a@20",
             "next: more 4f2a@20 (-b N raises the token budget)": "4f2a@20",
             "next: more 4f2a@20": "4f2a@20",

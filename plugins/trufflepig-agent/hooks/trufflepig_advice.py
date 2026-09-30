@@ -51,7 +51,10 @@ def call_shape_tip(shape: str, full: bool) -> str:
     if shape == "piped":
         return ("trufflepig: piping `trufflepig-agent` output (`| head`, `| grep`, `2>&1 | ...`) drops its "
                 "coverage and `next:` footer and hides its exit status. Run it as its own Bash call; "
-                "`-n N` sets how many hits a page holds, and each `next:` line is the runnable follow-up.")
+                "`next:` is a display label: `next: more SET@OFFSET` continues with "
+                "`trufflepig-agent more SET@OFFSET`, while `next: show read:H@B` inspects with "
+                "`trufflepig-agent show read:H@B`. A separate `hint: -n N...` is optional and is not "
+                "part of the cursor; for example, `trufflepig-agent -n 100 more SET@OFFSET`.")
     return ("trufflepig: run `trufflepig-agent` as its own Bash call, without `;`, `&&`, or `echo` "
             "separators; its exit status and footer are the result. `cd DIR && trufflepig-agent ...` is fine.")
 

@@ -101,10 +101,11 @@ fallbacks, or spool traffic on RAM-backed `/tmp`.
 
 ## Search and relationship limits
 
-The [CLI contract](../../docs/cli.md) defines query syntax, budgets, coverage,
-handles, and source verification. Plain search uses semantic/rerank lanes only
-when requested or enabled in workspace settings. Empty results remain possible;
-lexical-only search works without GPU support.
+The shared [search skill](skills/trufflepig-code-search/SKILL.md) explains filter use,
+pagination, and linked-worktree fallback; the [CLI contract](../../docs/cli.md)
+defines query syntax, budgets, coverage, handles, and source verification. Plain
+search uses semantic/rerank lanes only when requested or enabled in workspace
+settings. Empty results remain possible; lexical-only search works without GPU support.
 
 The skill uses `search → show` and adds `ctx`/`refs` when relationships help locate
 the implementation. This reuses existing evidence; it does not automatically

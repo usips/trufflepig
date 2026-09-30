@@ -101,6 +101,7 @@ CASES = [
     ("sed -n 1,20p docs/notes.md", None, ""),
     ("sed -n 1,20p target/debug/build.rs", None, ""),
     ("sed -n 1,20p src/lib.rs | grep fn", None, ""),
+    ("cat src/lib.rs | sed -n 1,20p | grep fn", None, ""),
     ("git log -p | sed -n 1,40p", None, ""),
     ("cat Cargo.toml", None, ""),
     ("cat src/lib.rs | wc -l", None, ""),
@@ -148,6 +149,10 @@ class ClassifierTests(unittest.TestCase):
                          self.root / "ledger")
         self.assertEqual(shell.search_directory("git --git-dir=/x grep x", self.root), self.root)
         self.assertEqual(shell.search_directory("grep -rn x . ; cd sub", self.root), self.root)
+        self.assertEqual(shell.search_directory(f"echo prep && cd {self.root} && grep -rn x src", Path("/")),
+                         self.root)
+        self.assertEqual(shell.search_directory(f"git -C {self.root}/sub status && grep -rn x src", self.root),
+                         self.root)
 
     def test_existence_checks_use_the_command_directory(self):
         # The hook process runs elsewhere; `streams` exists only under the `cd` target.
@@ -361,6 +366,13 @@ class HookTests(unittest.TestCase):
                                          cwd=outside))
         self.assertIn(f"-> cd {self.repo} && trufflepig-agent search", tip)
 
+    def test_unrelated_commands_do_not_choose_the_search_checkout(self):
+        outside = Path(self.scratch.name) / "elsewhere"
+        outside.mkdir()
+        tip = self.context(self.run_hook(f"echo prep && cd {self.repo} && grep -rn 'fn tick' crates",
+                                         event="PostToolUse", cwd=outside, agent="echo-cd-search"))
+        self.assertIn(f"-> cd {self.repo} && trufflepig-agent search 'sym:tick file:crates/'", tip)
+
     def test_malformed_payloads_never_fail_the_tool_call(self):
         for payload in ('{"cwd": 123, "tool_name": "Bash", "tool_input": {"command": "grep -rn x ."}}',
                         '{"tool_name": "Bash", "tool_input": {"command": ["grep", 5]}, "cwd": {}}', "[]", "{"):
@@ -406,7 +418,8 @@ class HookTests(unittest.TestCase):
         output = json.loads(result.stdout)["hookSpecificOutput"]
         self.assertEqual(output["hookEventName"], "SubagentStart")
         self.assertIn("trufflepig-agent show 'sym:Name'", output["additionalContext"])
-        self.assertIn("served from", output["additionalContext"])
+        self.assertIn("Only an unpublished linked-worktree home in a workspace can serve from its member's parent index",
+                      output["additionalContext"])
         self.assertNotIn("briefing subagents", output["additionalContext"])
         self.assertFalse(env_file.exists(), "subagents must not rewrite the session environment")
         payload["cwd"] = self.scratch.name
