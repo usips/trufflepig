@@ -326,6 +326,12 @@ class RetrievalRunner:
                                no_daemon=no_daemon, semantic=semantic)
         environment = os.environ.copy()
         environment["TRUFFLEPIG_INFERENCE_CONFIG"] = str(self.inference_config)
+        # A private router keeps an installed per-user router from serving the
+        # request with its own binary; daemons then start from ``self.binary``.
+        router = self.cache / "router"
+        router.mkdir(parents=True, exist_ok=True)
+        environment["TRUFFLEPIG_SYSTEM_DIR"] = str(router)
+        environment["TRUFFLEPIG_SPOOL_DIR"] = str(router / "spool")
         started = time.monotonic()
         timed_out = False
         try:
@@ -514,6 +520,8 @@ def run_arm(manifest: dict, arm: str, roots: dict[str, Path], *, binary: Path,
     records = []
     if not index or all(event.get("status") in ("ok", "success") for event in index):
         for task in manifest["tasks"]:
+            # Each task searches from its own corpus, the workspace home for that query.
+            runner.root = roots[task["corpus"]].expanduser().resolve()
             records.append(run_task(task, roots, runner))
     else:
         for task in manifest["tasks"]:

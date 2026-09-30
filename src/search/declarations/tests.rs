@@ -28,11 +28,16 @@ fn test_paths_and_invocation_depth_follow_conventions() {
         "src/a_test.go",
         "pkg/test_util.py",
         "web/a.spec.ts",
-        "evaluation/fixtures/x.dm",
     ] {
         assert!(is_test_path(path), "{path}");
     }
-    for path in ["src/testing.rs", "src/attest.rs", "src/contest/mod.rs"] {
+    // Content packs keep production code under `fixtures/` (see `path_class`).
+    for path in [
+        "src/testing.rs",
+        "src/attest.rs",
+        "src/contest/mod.rs",
+        "evaluation/fixtures/x.dm",
+    ] {
         assert!(!is_test_path(path), "{path}");
     }
     let origin = InvocationDirectory::within(Path::new("/r"), Path::new("/r/crates/a/src"));

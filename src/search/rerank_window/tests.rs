@@ -1,6 +1,15 @@
 use super::*;
+use crate::search::path_prior::PathPrior;
 use crate::search::{Query, search_prepared, tests::fixture};
 use anyhow::bail;
+
+const NEUTRAL: &PathPrior = &PathPrior::neutral();
+const UNTIERED: FusionPolicy = FusionPolicy {
+    lane_weights: true,
+    identifier_tier: false,
+    prior: NEUTRAL,
+    prior_from_lane: 0,
+};
 
 enum FakeScorer {
     Scores(Vec<f32>),
@@ -188,6 +197,7 @@ fn rerank_scores_a_filename_hit_from_the_file_head() {
     apply(
         &store,
         "marker",
+        &UNTIERED,
         cache.path(),
         &scorer,
         &mut hits,
@@ -211,6 +221,7 @@ fn rerank_leaves_a_hit_without_a_content_row_unscored_below_scored_hits() {
     apply(
         &store,
         "marker",
+        &UNTIERED,
         cache.path(),
         &scorer,
         &mut hits,
@@ -221,4 +232,74 @@ fn rerank_leaves_a_hit_without_a_content_row_unscored_below_scored_hits() {
     assert_eq!(paths, ["a.md", "excluded.bin"]);
     assert_eq!(coverage["rerank_status"], "ready");
     assert_eq!(coverage["rerank_window"], 1);
+}
+
+#[test]
+fn rerank_orders_within_tiers_and_keeps_phrase_hits_first() {
+    let (_root, cache, store) = fixture(&[
+        ("a.md", b"route default\n"),
+        ("b.md", b"default route\n"),
+        ("c.md", b"route\n"),
+    ]);
+    let query = Query::parse("route default").unwrap();
+    let mut trace = RetrievalTrace::disabled();
+    let fused = search_prepared(&store, &query, cache.path(), None, None, &mut trace).unwrap();
+    let fused: Vec<_> = fused.hits.iter().map(|hit| hit.path.as_str()).collect();
+    assert_eq!(fused[0], "a.md");
+    // The scorer prefers every non-phrase hit; only `a.md` holds the phrase.
+    let scores = fused
+        .iter()
+        .map(|path| {
+            if *path == "a.md" {
+                0.0
+            } else {
+                1.0 + path.len() as f32
+            }
+        })
+        .collect();
+    let scorer = FakeScorer::Scores(scores);
+    let result = search_prepared(
+        &store,
+        &query,
+        cache.path(),
+        None,
+        Some(&scorer),
+        &mut trace,
+    )
+    .unwrap();
+    assert_eq!(result.hits[0].path, "a.md");
+    assert_eq!(result.hits[0].provenance.as_deref(), Some("phrase"));
+    assert_eq!(result.coverage["rerank_window"], 3);
+}
+
+#[test]
+fn a_plain_word_definition_is_not_pinned_above_better_scored_hits() {
+    let (_root, cache, store) = fixture(&[
+        ("src/spawn.rs", b"pub fn spawn() {}\n"),
+        ("src/queue.rs", b"// spawn a worker for each queued job\n"),
+    ]);
+    let query = Query::parse("spawn").unwrap();
+    let mut trace = RetrievalTrace::disabled();
+    let fused = search_prepared(&store, &query, cache.path(), None, None, &mut trace).unwrap();
+    assert_eq!(fused.hits[0].path, "src/spawn.rs");
+    assert_eq!(
+        fused.hits[0].provenance.as_deref(),
+        Some("exact_identifier")
+    );
+    let scores = fused
+        .hits
+        .iter()
+        .map(|hit| if hit.path == "src/queue.rs" { 1.0 } else { 0.0 })
+        .collect();
+    let scorer = FakeScorer::Scores(scores);
+    let result = search_prepared(
+        &store,
+        &query,
+        cache.path(),
+        None,
+        Some(&scorer),
+        &mut trace,
+    )
+    .unwrap();
+    assert_eq!(result.hits[0].path, "src/queue.rs");
 }

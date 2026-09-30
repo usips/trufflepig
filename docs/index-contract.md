@@ -17,15 +17,11 @@ containing symbol attached. File records expose resource exclusions.
 
 ## File ranking
 
-Ordinary queries collapse each retrieval lane to its best region per file
-before a 1,000-file lane cap. Exact, lexical, and filename ranks combine with
-reciprocal rank fusion (`k = 60`), with stable path ties. Filename evidence has
-weight 2 for an exact normalized stem, 1 for all query tokens in the basename,
-and 0.5 for partial path matches. Available semantic file ranks then fuse with
-the combined source ranking at equal weight. An opt-in rerank stage then
-reorders the top 32 fused files; see the [semantic contract](semantic-contract.md).
-`sym:` and `re:` retain occurrences.
-Pages maximize file references before adding optional symbol names.
+Ordinary queries collapse each retrieval lane to its best region per file and
+fuse lanes by weighted reciprocal rank; the
+[ranking contract](ranking-contract.md) defines lanes, weights, evidence tiers
+and the path prior. `sym:` and `re:` retain occurrences. Pages maximize file
+references before adding optional symbol names.
 
 ## Coherent publication
 

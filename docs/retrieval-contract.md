@@ -27,7 +27,10 @@ An empty `lang:` filters nothing; otherwise
 `cs`, `c#`, `lua`, and `dm` are aliases; `md`, `markdown`, `toml`, and `json`
 mean `text`, which covers docs, configuration, and every other extension.
 `.php` and `.phtml` files are `php`. Other names fail with `unknown_language`.
-Tests, docs, and configuration remain eligible. Hits can identify
+Tests, docs, and configuration remain eligible; free-text ranking demotes tests
+and docs unless a query targets them, favors phrase matches, and ranks an
+identifier's definitions and uses first (see
+[file ranking](ranking-contract.md)). Hits can identify
 a symbol, a source region, or a file. Searchable source regions cover the entire
 eligible file, including long-symbol middles and gaps between definitions.
 Resource-excluded files remain discoverable by path with their exclusion reason.

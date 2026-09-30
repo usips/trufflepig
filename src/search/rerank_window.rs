@@ -1,12 +1,17 @@
 //! Cross-encoder reranking narrows fused hit order within a bounded window.
+//! Phrase hits, and an identifier query's evidence hits, stay ahead of other
+//! hits; scores order each tier.
 //! Bodies are read from the current snapshot; a missing body, an unreadable
-//! snapshot, or a non-finite score sinks that hit below the window's scored
-//! hits without dropping it or aborting the surrounding search.
-use super::telemetry::{Lane, LaneOutcome, RetrievalTrace};
+//! snapshot, or a non-finite score sinks that hit below its tier's scored hits
+//! without dropping it or aborting the surrounding search.
+use super::{
+    file_ranking::{FusionPolicy, IdentifierEvidence},
+    telemetry::{Lane, LaneOutcome, RetrievalTrace},
+};
 use crate::{results::Hit, store::Store};
 use anyhow::Result;
 use rusqlite::OptionalExtension;
-use std::{collections::HashSet, path::Path, time::Instant};
+use std::{path::Path, time::Instant};
 
 #[cfg(test)]
 mod tests;
@@ -28,9 +33,27 @@ impl RerankScorer for crate::semantic::SemanticSession {
 
 const BODY_CLAMP_BYTES: usize = crate::semantic::RERANK_MAX_DOCUMENT_BYTES;
 
+/// 0 for phrase hits and an identifier query's named files and definitions, 1 for its uses,
+/// 2 for every other hit: the fusion tiers, kept through reranking.
+fn evidence_tier(hit: &Hit, policy: &FusionPolicy) -> u8 {
+    if hit.provenance.as_deref() == Some("phrase") {
+        return 0;
+    }
+    if !policy.identifier_tier {
+        return 2;
+    }
+    match IdentifierEvidence::of(hit, policy.prior) {
+        IdentifierEvidence::Named | IdentifierEvidence::Defined => 0,
+        IdentifierEvidence::Used => 1,
+        IdentifierEvidence::Absent => 2,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(super) fn apply(
     store: &Store,
     query_text: &str,
+    policy: &FusionPolicy,
     cache: &Path,
     scorer: &dyn RerankScorer,
     hits: &mut [Hit],
@@ -70,16 +93,21 @@ pub(super) fn apply(
             trace.record(Lane::Rerank, started, &[], LaneOutcome::Failed, false);
         }
         Ok(scores) => {
-            let mut scored: Vec<(usize, f32)> = scored_positions
-                .iter()
-                .zip(scores.iter())
-                .filter(|(_, score)| score.is_finite())
-                .map(|(&position, &score)| (position, score))
-                .collect();
-            scored.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-            let kept: HashSet<usize> = scored.iter().map(|(position, _)| *position).collect();
-            let mut sources: Vec<usize> = scored.iter().map(|(position, _)| *position).collect();
-            sources.extend((0..window).filter(|position| !kept.contains(position)));
+            let mut window_scores: Vec<Option<f32>> = vec![None; window];
+            for (&position, &score) in scored_positions.iter().zip(scores.iter()) {
+                window_scores[position] = score.is_finite().then_some(score);
+            }
+            let mut sources: Vec<usize> = (0..window).collect();
+            sources.sort_by(|&left, &right| {
+                evidence_tier(&hits[left], policy)
+                    .cmp(&evidence_tier(&hits[right], policy))
+                    .then_with(|| match (window_scores[left], window_scores[right]) {
+                        (Some(left), Some(right)) => right.total_cmp(&left),
+                        (left, right) => right.is_some().cmp(&left.is_some()),
+                    })
+                    .then_with(|| left.cmp(&right))
+            });
+            let scored = window_scores.iter().flatten().count();
             // `sources[target]` is the window position that belongs at `target`;
             // invert it into a swap-destination map before applying in place.
             let mut destinations = vec![0; window];
@@ -88,7 +116,7 @@ pub(super) fn apply(
             }
             permute_in_place(&mut hits[..window], &mut destinations);
             coverage["rerank_status"] = "ready".into();
-            coverage["rerank_window"] = scored.len().into();
+            coverage["rerank_window"] = scored.into();
             trace.record(
                 Lane::Rerank,
                 started,

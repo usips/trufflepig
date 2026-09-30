@@ -10,6 +10,9 @@ const MAX_IDENTITY_BYTES: usize = 24 * 1024;
 #[serde(rename_all = "snake_case")]
 pub enum Lane {
     ExactIdentifier,
+    IdentifierOccurrence,
+    Phrase,
+    AllTerms,
     Lexical,
     File,
     LiveRegex,

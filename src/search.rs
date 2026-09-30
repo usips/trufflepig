@@ -1,4 +1,5 @@
 //! Deterministic exact, lexical and live-regex retrieval from one index snapshot.
+mod concept_query;
 mod declarations;
 mod file_ranking;
 mod import_trail;
@@ -6,7 +7,9 @@ mod inheritance_context;
 pub mod language_filter;
 mod live;
 mod navigation;
+mod path_class;
 pub mod path_filter;
+mod path_prior;
 mod qualified_name;
 mod rerank_window;
 mod semantic_lane;
@@ -23,6 +26,10 @@ pub use navigation::{
 };
 pub use path_filter::{BoundPathFilter, PathFilter};
 pub use rerank_window::RerankScorer;
+
+use concept_query::ConceptQuery;
+use file_ranking::FusionPolicy;
+use path_prior::PathPrior;
 
 use crate::{
     results::{Hit, MAX_HITS, ResultSet},
@@ -194,6 +201,14 @@ pub fn search_prepared(
     let paths = query.path.bind(&store.conn)?;
     let mut hits = Vec::with_capacity(128);
     let mut truncated = false;
+    let concept = ConceptQuery::parse(&query.text);
+    let prior = PathPrior::for_query(query);
+    let policy = FusionPolicy {
+        lane_weights: true,
+        identifier_tier: concept.identifier.is_some(),
+        prior: &prior,
+        prior_from_lane: 0,
+    };
     if query.regex {
         let started = Instant::now();
         let outcome = live::live_regex(
@@ -219,83 +234,19 @@ pub fn search_prepared(
         trace.snapshot(generation, &coverage);
         outcome?;
     } else {
-        let started = Instant::now();
-        let outcome = exact_hits(store, query, &paths);
-        let exact = outcome
-            .as_ref()
-            .map(|lane| lane.hits.as_slice())
-            .unwrap_or(&[]);
-        trace.record(
-            Lane::ExactIdentifier,
-            started,
-            exact,
-            LaneOutcome::from_result(&outcome, false),
-            outcome.as_ref().is_ok_and(|lane| lane.truncated),
-        );
-        let exact = outcome?;
+        let exact = concept_query::recorded(trace, Lane::ExactIdentifier, || {
+            exact_hits(store, query, &paths)
+        })?;
         if !query.exact && !query.text.is_empty() {
-            let terms = fts_terms(&query.text);
-            if !terms.is_empty() {
-                let started = Instant::now();
-                let outcome = lexical_hits(store, query, &paths, &terms);
-                let lexical = outcome
-                    .as_ref()
-                    .map(|lane| lane.hits.as_slice())
-                    .unwrap_or(&[]);
-                trace.record(
-                    Lane::Lexical,
-                    started,
-                    lexical,
-                    LaneOutcome::from_result(&outcome, false),
-                    outcome.as_ref().is_ok_and(|lane| lane.truncated),
-                );
-                let lexical = outcome?;
-                if !query.exact && (query.kind.is_empty() || query.kind == "file") {
-                    let started = Instant::now();
-                    let outcome = file_hits(store, query, &paths);
-                    let files = outcome
-                        .as_ref()
-                        .map(|lane| lane.hits.as_slice())
-                        .unwrap_or(&[]);
-                    trace.record(
-                        Lane::File,
-                        started,
-                        files,
-                        LaneOutcome::from_result(&outcome, false),
-                        outcome.as_ref().is_ok_and(|lane| lane.truncated),
-                    );
-                    let files = outcome?;
-                    truncated |= exact.truncated || lexical.truncated || files.truncated;
-                    hits = fuse_file_lanes([
-                        exact.hits.as_slice(),
-                        lexical.hits.as_slice(),
-                        files.hits.as_slice(),
-                    ]);
-                } else {
-                    truncated |= exact.truncated || lexical.truncated;
-                    hits = fuse_file_lanes([exact.hits.as_slice(), lexical.hits.as_slice()]);
-                }
-            } else {
-                truncated |= exact.truncated;
-                hits = exact.hits;
-            }
+            let (lanes, lanes_truncated) =
+                concept_query::concept_lanes(store, query, &paths, &concept, exact, trace)?;
+            truncated |= lanes_truncated;
+            hits = fuse_file_lanes(lanes, &policy);
         } else if !query.exact && (query.kind.is_empty() || query.kind == "file") {
-            let started = Instant::now();
-            let outcome = file_hits(store, query, &paths);
-            let files = outcome
-                .as_ref()
-                .map(|lane| lane.hits.as_slice())
-                .unwrap_or(&[]);
-            trace.record(
-                Lane::File,
-                started,
-                files,
-                LaneOutcome::from_result(&outcome, false),
-                outcome.as_ref().is_ok_and(|lane| lane.truncated),
-            );
-            let files = outcome?;
+            let files =
+                concept_query::recorded(trace, Lane::File, || file_hits(store, query, &paths))?;
             truncated |= exact.truncated || files.truncated;
-            hits = fuse_file_lanes([exact.hits.as_slice(), files.hits.as_slice()]);
+            hits = fuse_file_lanes([exact.hits, files.hits], &policy);
         } else {
             truncated |= exact.truncated;
             hits = exact.hits;
@@ -307,14 +258,21 @@ pub fn search_prepared(
     }
     if !query.exact
         && !query.regex
+        && !concept.literal
         && let Some(vector) = semantic_query.as_ref()
     {
+        let refusion = FusionPolicy {
+            lane_weights: false,
+            prior_from_lane: 1,
+            ..policy
+        };
         truncated |= semantic_lane::append(
             store,
             query,
             &paths,
             cache,
             vector,
+            &refusion,
             &mut hits,
             &mut coverage,
             trace,
@@ -324,6 +282,7 @@ pub fn search_prepared(
         rerank_window::apply(
             store,
             &query.text,
+            &policy,
             cache,
             scorer,
             &mut hits,

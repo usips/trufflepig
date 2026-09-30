@@ -4,7 +4,7 @@
 use super::definition_target;
 use crate::{
     results::{self, MAX_HITS, ResultSet},
-    search::{Query, declarations::is_test_path, hit_row, qualified_name::QualifiedName, snippets},
+    search::{Query, hit_row, path_class::is_test_path, qualified_name::QualifiedName, snippets},
     store::Store,
 };
 use anyhow::{Result, ensure};

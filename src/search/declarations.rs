@@ -1,7 +1,10 @@
 //! Exact-name declaration lookup behind `sym:` and `show 'sym:'`. Rows rank by
 //! kind tier, then non-test before test sites, then nearest to the invocation
 //! directory, then path; `A::b` names are filtered by [`QualifiedName`].
-use super::{BoundPathFilter, LaneHits, Query, hit_row, qualified_name::QualifiedName};
+use super::{
+    BoundPathFilter, LaneHits, Query, hit_row, path_class::is_test_path,
+    qualified_name::QualifiedName,
+};
 use crate::{
     results::{Hit, MAX_HITS},
     store::Store,
@@ -58,24 +61,6 @@ pub(super) fn declaration_rank(kind: &str) -> u8 {
         "variable" | "parameter" | "import" => 3,
         _ => 0,
     }
-}
-
-/// Test files and fixtures by path convention (`tests/`, `tests.rs`, `*_test.*`,
-/// `test_*`, `*.spec.*`, `*.test.*`, `fixtures/`).
-pub(crate) fn is_test_path(path: &str) -> bool {
-    let (directories, file) = path.rsplit_once('/').unwrap_or(("", path));
-    let stem = file.split('.').next().unwrap_or(file);
-    directories.split('/').any(|directory| {
-        matches!(
-            directory,
-            "tests" | "test" | "__tests__" | "fixtures" | "testdata"
-        )
-    }) || matches!(stem, "tests" | "test")
-        || stem.starts_with("test_")
-        || stem.ends_with("_test")
-        || stem.ends_with("_tests")
-        || file.contains(".spec.")
-        || file.contains(".test.")
 }
 
 /// Whether a definition sits in a test file or inside any `mod tests` scope.
