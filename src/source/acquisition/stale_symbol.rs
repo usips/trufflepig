@@ -63,9 +63,7 @@ fn is_stale_source(error: &anyhow::Error) -> bool {
 /// Waits while a daemon serves this index for a generation after `seen`. A
 /// worktree read through a parent's index is never fixed by a republish.
 fn await_republish(store: &Store, seen: i64) -> bool {
-    if store.root != store.index_root()
-        || !crate::daemon::running(store.index_cache()).unwrap_or(false)
-    {
+    if store.root != store.index_root() || !crate::daemon::running(store.index_cache()) {
         return false;
     }
     let started = Instant::now();

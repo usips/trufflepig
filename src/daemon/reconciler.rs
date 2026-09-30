@@ -4,6 +4,7 @@ use super::pool::RequestPool;
 use super::server::{DaemonHandler, ServerState};
 use super::spool::SpoolServer;
 use notify::{EventKind, RecursiveMode, Watcher};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -142,7 +143,10 @@ pub(super) fn run<H: DaemonHandler>(
     };
     // The initial scan runs at normal priority: it is what a fresh root's first
     // queries wait for. Later reconciles yield to interactive work.
-    if let Err(error) = handler.reconcile() {
+    let Some(initial) = survive(state, || handler.reconcile()) else {
+        return;
+    };
+    if let Err(error) = initial {
         state.fail(error.context("initial repository reconciliation"));
         return;
     }
@@ -165,7 +169,10 @@ pub(super) fn run<H: DaemonHandler>(
                 state.stop();
                 return;
             }
-            if let Err(error) = handler.reconcile() {
+            let Some(reconciled) = survive(state, || handler.reconcile()) else {
+                return;
+            };
+            if let Err(error) = reconciled {
                 eprintln!(
                     "trufflepig: reconciliation failed; periodic retry remains active: {error:#}"
                 );
@@ -175,7 +182,24 @@ pub(super) fn run<H: DaemonHandler>(
         if let Some(spool) = &mut maintenance.spool {
             super::server::dispatch_spooled(spool, handler, pool);
         }
-        handler.idle();
+        if survive(state, || handler.idle()).is_none() {
+            return;
+        }
         std::thread::sleep(MAINTENANCE_TICK);
+    }
+}
+
+/// Runs maintenance work; a panic stops the server with an `internal_error`
+/// (the next client starts a fresh daemon) instead of leaving it unmaintained.
+fn survive<T>(state: &ServerState, work: impl FnOnce() -> T) -> Option<T> {
+    match catch_unwind(AssertUnwindSafe(work)) {
+        Ok(value) => Some(value),
+        Err(panic) => {
+            state.fail(anyhow::anyhow!(
+                "internal_error: daemon maintenance panicked: {}",
+                super::server::panic_message(panic.as_ref())
+            ));
+            None
+        }
     }
 }

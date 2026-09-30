@@ -249,3 +249,33 @@ fn spool_reports_handler_failure_and_ignores_foreign_files() {
     assert!(error.to_string().contains("boom"), "{error:#}");
     assert!(dir.join("notes.txt").exists());
 }
+
+#[test]
+fn spool_client_gives_up_when_the_claiming_router_dies() {
+    let scratch = scratch();
+    let dir = scratch.path().join("spool");
+    let mut server = spool::SpoolServer::open(&dir).unwrap();
+    let context = crate::diagnostics::RequestContext::new(None, None);
+    let client = {
+        let (dir, context) = (dir.clone(), context.clone());
+        std::thread::spawn(move || spool::request(&dir, &["refs".to_owned()], &context))
+    };
+    let request = dir.join(format!("{}.request", context.request_id));
+    while !request.exists() {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(server.claim().len(), 1);
+    // The router dies with the claim in hand: its heartbeat goes stale.
+    File::open(dir.join("heartbeat"))
+        .unwrap()
+        .set_modified(SystemTime::now() - Duration::from_secs(60))
+        .unwrap();
+    let started = Instant::now();
+    let error = client.join().unwrap().unwrap_err();
+    assert!(
+        error.to_string().contains("daemon_unavailable"),
+        "{error:#}"
+    );
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert!(!dir.join(format!("{}.claimed", context.request_id)).exists());
+}

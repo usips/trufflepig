@@ -1,6 +1,8 @@
 //! Concurrent daemon serving: the calling thread only accepts, a [`RequestPool`]
 //! reads, dispatches, and answers each connection, and the maintenance thread
-//! (`reconciler.rs`) reconciles beside them. A full pool answers `daemon_busy`.
+//! (`reconciler.rs`) reconciles beside them. A full pool answers `daemon_busy`;
+//! a panicking request answers `internal_error` and a panicking reconcile stops
+//! the daemon, so a panic never leaves a socket nobody serves.
 use super::DaemonSocket;
 use super::deadline::QueryDeadline;
 use super::pool::{PoolSize, PooledJob, RequestPool};
@@ -9,8 +11,10 @@ use super::reconciler::{self, Maintenance};
 use super::spool::{ClaimedSpoolRequest, SpoolServer};
 use crate::diagnostics::RequestContext;
 use anyhow::{Context, Result};
+use std::any::Any;
 use std::io::ErrorKind;
 use std::os::unix::net::UnixStream;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
@@ -24,6 +28,12 @@ const ACCEPT_POLL: Duration = Duration::from_millis(10);
 const FRAME_TIMEOUT: Duration = Duration::from_secs(5);
 /// How long a stopping server waits for a reconcile in progress before returning.
 const MAINTENANCE_STOP_WAIT: Duration = Duration::from_secs(1);
+/// How long a stopping server lets accepted requests finish; their clients wait
+/// no longer than this for a forwarded reply anyway.
+const STOP_DRAIN: Duration = super::PROXY_REPLY_WAIT;
+/// How long a refusal waits for the request frame it discards, so the client
+/// finishes writing before reading `daemon_busy`.
+const REFUSAL_READ: Duration = Duration::from_millis(200);
 
 /// One accepted request; `deadline` starts when the connection is accepted.
 pub struct AcceptedRequest {
@@ -110,7 +120,9 @@ pub(super) fn serve<H: DaemonHandler>(
     // A reconcile in progress may outlive the server; its writer lease keeps the
     // index coherent and the process exit ends it.
     let _ = maintenance_done.recv_timeout(MAINTENANCE_STOP_WAIT);
+    // A successor may bind now; requests already accepted still get replies.
     drop(socket);
+    pool.drain(STOP_DRAIN);
     accepted?;
     match state
         .failure
@@ -160,14 +172,40 @@ fn configure(stream: &UnixStream) -> std::io::Result<()> {
     stream.set_write_timeout(Some(FRAME_TIMEOUT))
 }
 
-/// Answers without reading: the client's request frame is already buffered.
+/// Reads (and discards) the request briefly, then answers `daemon_busy`;
+/// replying first would close the socket under a client still writing.
 fn refuse_busy(mut stream: UnixStream) {
     let reply = DaemonReply::Failure {
         message: DAEMON_BUSY.to_owned(),
     };
-    if configure(&stream).is_ok() {
+    if configure(&stream).is_ok() && stream.set_read_timeout(Some(REFUSAL_READ)).is_ok() {
+        let _ = protocol::read_request(&mut stream);
         let _ = protocol::write_reply(&mut stream, &reply);
     }
+}
+
+/// Runs one request, turning a panic into an `internal_error` reply.
+fn guarded_request(handler: &impl DaemonHandler, request: AcceptedRequest) -> Result<String> {
+    catch_unwind(AssertUnwindSafe(|| handler.request(request)))
+        .unwrap_or_else(|panic| anyhow::bail!("internal_error: {}", panic_message(panic.as_ref())))
+}
+
+/// The text a panic was raised with.
+pub(super) fn panic_message(panic: &(dyn Any + Send)) -> String {
+    panic
+        .downcast_ref::<&str>()
+        .map(|message| (*message).to_owned())
+        .or_else(|| panic.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "panic without a message".to_owned())
+}
+
+/// A peer that closed before sending a request (a liveness probe) gets no reply.
+fn closed_before_request(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|error| error.kind() == ErrorKind::UnexpectedEof)
+    })
 }
 
 fn answer_connection(
@@ -180,15 +218,19 @@ fn answer_connection(
         .map_err(anyhow::Error::from)
         .and_then(|()| protocol::read_request(&mut stream));
     let result = match request {
-        Ok(DaemonRequest::Arguments { context, args }) => handler.request(AcceptedRequest {
-            context,
-            args,
-            deadline,
-        }),
+        Ok(DaemonRequest::Arguments { context, args }) => guarded_request(
+            handler,
+            AcceptedRequest {
+                context,
+                args,
+                deadline,
+            },
+        ),
         Ok(DaemonRequest::Stop) => {
             state.stop();
             Ok("{\"status\":\"stopped\"}".to_owned())
         }
+        Err(error) if closed_before_request(&error) => return,
         Err(error) => Err(error),
     };
     if let Err(error) = protocol::write_reply(&mut stream, &DaemonReply::from_result(result)) {
@@ -210,11 +252,14 @@ pub(super) fn dispatch_spooled<H: DaemonHandler>(
                 if let Some(claimed) = take_claim(&claimed) {
                     let deadline = QueryDeadline::start();
                     claimed.answer(|context, args| {
-                        handler.request(AcceptedRequest {
-                            context,
-                            args,
-                            deadline,
-                        })
+                        guarded_request(
+                            &*handler,
+                            AcceptedRequest {
+                                context,
+                                args,
+                                deadline,
+                            },
+                        )
                     });
                 }
             })

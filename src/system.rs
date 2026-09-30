@@ -8,7 +8,7 @@ mod tests;
 use crate::{
     background_process::{BackgroundChild, spawn_background},
     cli::normalized_args,
-    daemon::{self, AcceptedRequest, DaemonHandler},
+    daemon::{self, AcceptedRequest, DaemonHandler, deadline::QueryDeadline},
     diagnostics::RequestContext,
 };
 use anyhow::{Context, Result, bail, ensure};
@@ -145,6 +145,8 @@ impl DaemonHandler for SystemRouter {
 }
 
 fn route(args: Vec<String>, context: RequestContext) -> Result<String> {
+    // Every forwarded wait ends before the client's own reply wait does.
+    let forwarding = QueryDeadline::after(daemon::PROXY_REPLY_WAIT);
     let options = crate::cli::parse(&args)?;
     let verb = options.words.first().map(String::as_str);
     if verb == Some("system") {
@@ -156,7 +158,7 @@ fn route(args: Vec<String>, context: RequestContext) -> Result<String> {
             refuse_router_stop(&cache)?;
             return daemon::stop(&cache);
         }
-        if let Some(reply) = daemon::proxy(&cache, &args, &context)? {
+        if let Some(reply) = daemon::request_by(&cache, &args, &context, forwarding)? {
             return Ok(reply);
         }
         let mut server = options.clone();
@@ -165,7 +167,7 @@ fn route(args: Vec<String>, context: RequestContext) -> Result<String> {
         let mut command = Command::new(std::env::current_exe()?);
         command.args(normalized_args(&server, &server.root));
         let child = spawn_background(&mut command)?;
-        return forward_spawned(&cache, &args, &context, &child);
+        return forward_spawned(&cache, &args, &context, &child, forwarding);
     }
     let root = options
         .root
@@ -176,7 +178,7 @@ fn route(args: Vec<String>, context: RequestContext) -> Result<String> {
         refuse_router_stop(&cache)?;
         return daemon::stop(&cache);
     }
-    if let Some(reply) = daemon::proxy(&cache, &args, &context)? {
+    if let Some(reply) = daemon::request_by(&cache, &args, &context, forwarding)? {
         return Ok(reply);
     }
     fs::create_dir_all(&cache)?;
@@ -204,7 +206,7 @@ fn route(args: Vec<String>, context: RequestContext) -> Result<String> {
             .arg(&cache)
             .arg("serve"),
     )?;
-    forward_spawned(&cache, &args, &context, &child)
+    forward_spawned(&cache, &args, &context, &child, forwarding)
 }
 
 /// Refuses a stop aimed at this router's own socket directory.
@@ -221,10 +223,11 @@ fn forward_spawned(
     args: &[String],
     context: &RequestContext,
     child: &BackgroundChild,
+    forwarding: QueryDeadline,
 ) -> Result<String> {
-    let deadline = Instant::now() + Duration::from_secs(3);
+    let deadline = Instant::now() + forwarding.cap(Duration::from_secs(3));
     while Instant::now() < deadline {
-        if let Some(reply) = daemon::proxy(cache, args, context)? {
+        if let Some(reply) = daemon::request_by(cache, args, context, forwarding)? {
             return Ok(reply);
         }
         if daemon::spawn_failed(child, cache) {

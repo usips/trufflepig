@@ -12,9 +12,7 @@ use crate::{
     semantic::SemanticSession,
 };
 use anyhow::{Context, Result, ensure};
-use fs2::FileExt;
 use std::{
-    fs::OpenOptions,
     path::{Path, PathBuf},
     process::Command,
     time::{Duration, Instant},
@@ -197,20 +195,11 @@ pub(super) fn ensure_member(member: &MemberRoot, options: &Arguments) -> Result<
         return Ok(());
     }
     let cache = member_cache(member, options.cache.as_deref())?;
-    std::fs::create_dir_all(&cache)?;
-    let lock = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .read(true)
-        .write(true)
-        .open(cache.join("daemon.lock"))?;
-    match lock.try_lock_exclusive() {
-        Ok(()) => {
-            FileExt::unlock(&lock)?;
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => return Ok(()),
-        Err(error) => return Err(error.into()),
+    // Probing the startup lock instead could make a starting daemon exit.
+    if daemon::running(&cache) {
+        return Ok(());
     }
+    std::fs::create_dir_all(&cache)?;
     let mut local = super::member_options(options, member)?;
     // Resolve from the original override: default worktree history stays shared.
     local.resolved_history_cache = crate::history::worker::resolve_cache(

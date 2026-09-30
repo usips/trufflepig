@@ -10,7 +10,7 @@ pub mod spool;
 #[cfg(test)]
 mod tests;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use fs2::FileExt;
 use std::fs::{self, File, OpenOptions};
 use std::io::ErrorKind;
@@ -19,6 +19,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use deadline::QueryDeadline;
 use protocol::{DaemonReply, DaemonRequest};
 pub use server::{AcceptedRequest, DAEMON_BUSY, DaemonHandler};
 
@@ -35,16 +36,23 @@ pub fn request(
     args: &[String],
     context: &crate::diagnostics::RequestContext,
 ) -> Result<Option<String>> {
-    exchange(cache, &arguments(args, context), CLIENT_REPLY_WAIT)
+    request_by(
+        cache,
+        args,
+        context,
+        QueryDeadline::after(CLIENT_REPLY_WAIT),
+    )
 }
 
-/// [`request`] from inside a daemon, bounded by [`PROXY_REPLY_WAIT`].
-pub fn proxy(
+/// [`request`] waiting for the reply only until `deadline`, so a daemon that
+/// forwards never waits longer than the client in front of it.
+pub fn request_by(
     cache: &Path,
     args: &[String],
     context: &crate::diagnostics::RequestContext,
+    deadline: QueryDeadline,
 ) -> Result<Option<String>> {
-    exchange(cache, &arguments(args, context), PROXY_REPLY_WAIT)
+    exchange(cache, &arguments(args, context), deadline.remaining())
 }
 
 fn arguments(args: &[String], context: &crate::diagnostics::RequestContext) -> DaemonRequest {
@@ -60,21 +68,11 @@ pub fn stop(cache: &Path) -> Result<String> {
         .unwrap_or_else(|| "{\"status\":\"not_running\"}".to_owned()))
 }
 
-/// Whether a daemon holds `cache`'s startup lock.
-pub fn running(cache: &Path) -> Result<bool> {
-    let file = match File::open(cache.join("daemon.lock")) {
-        Ok(file) => file,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(error.into()),
-    };
-    match file.try_lock_exclusive() {
-        Ok(()) => {
-            FileExt::unlock(&file)?;
-            Ok(false)
-        }
-        Err(error) if error.kind() == ErrorKind::WouldBlock => Ok(true),
-        Err(error) => Err(error.into()),
-    }
+/// Whether a daemon listens on `cache`'s socket. A connect probe never
+/// contends for the startup lock, so it cannot make a starting daemon exit;
+/// the daemon drops the connection unanswered.
+pub fn running(cache: &Path) -> bool {
+    UnixStream::connect(cache.join(SOCKET_NAME)).is_ok()
 }
 
 /// Whether a daemon spawned for `cache` is gone with no other owner: a racing
@@ -83,7 +81,7 @@ pub(crate) fn spawn_failed(
     child: &crate::background_process::BackgroundChild,
     cache: &Path,
 ) -> bool {
-    child.exited() && !running(cache).unwrap_or(false)
+    child.exited() && !running(cache)
 }
 
 /// Serves a per-root index daemon: watches `root`, reconciles on the
@@ -131,6 +129,11 @@ fn unreachable(kind: ErrorKind) -> bool {
 
 fn exchange(cache: &Path, request: &DaemonRequest, wait: Duration) -> Result<Option<String>> {
     request.validate()?;
+    ensure!(
+        !wait.is_zero(),
+        "{}: no time left to wait for a daemon reply",
+        deadline::TIMED_OUT
+    );
     let mut stream = match UnixStream::connect(cache.join(SOCKET_NAME)) {
         Ok(stream) => stream,
         Err(error) if unreachable(error.kind()) => {

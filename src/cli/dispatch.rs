@@ -305,8 +305,7 @@ fn read_store(
     deadline: &mut QueryDeadline,
 ) -> Result<Store> {
     let verb = options.words.first().map_or("status", String::as_str);
-    let reconciles =
-        !daemon_running && (options.no_daemon || !crate::daemon::running(cache).unwrap_or(false));
+    let reconciles = !daemon_running && (options.no_daemon || !crate::daemon::running(cache));
     let reconcile = || Store::open(root, cache)?.index().map(drop);
     if reconciles && matches!(verb, "search" | "refs" | "map") {
         deadline.pause_during(reconcile)?;

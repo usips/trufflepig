@@ -1,7 +1,11 @@
 //! Fixed worker threads draining a bounded request queue: a full queue refuses
-//! work instead of letting accepted connections wait unread.
+//! work instead of letting accepted connections wait unread. A panicking job
+//! never takes its worker down.
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 /// One unit of daemon work: read a request, dispatch it, write its reply.
 pub(crate) type PooledJob = Box<dyn FnOnce() + Send + 'static>;
@@ -34,15 +38,18 @@ pub(crate) const ROOT_POOL: PoolSize = PoolSize {
 pub(crate) struct RequestPool {
     sender: Option<mpsc::SyncSender<PooledJob>>,
     workers: Vec<JoinHandle<()>>,
+    /// Jobs queued or running.
+    pending: Arc<AtomicUsize>,
 }
 
 impl RequestPool {
     pub fn new(name: &str, size: PoolSize) -> std::io::Result<Self> {
         let (sender, receiver) = mpsc::sync_channel::<PooledJob>(size.queue);
         let receiver = Arc::new(Mutex::new(receiver));
+        let pending = Arc::new(AtomicUsize::new(0));
         let mut workers = Vec::with_capacity(size.workers);
         for index in 0..size.workers.max(1) {
-            let receiver = Arc::clone(&receiver);
+            let (receiver, pending) = (Arc::clone(&receiver), Arc::clone(&pending));
             workers.push(
                 std::thread::Builder::new()
                     .name(format!("{name}-{index}"))
@@ -51,10 +58,12 @@ impl RequestPool {
                             // The guard drops at the end of this statement, so
                             // jobs run without holding the queue lock.
                             let job = receiver.lock().map(|queue| queue.recv());
-                            match job {
-                                Ok(Ok(job)) => job(),
-                                _ => return,
-                            }
+                            let Ok(Ok(job)) = job else {
+                                return;
+                            };
+                            // Jobs answer their own panics; this keeps the worker.
+                            let _ = catch_unwind(AssertUnwindSafe(job));
+                            pending.fetch_sub(1, Ordering::AcqRel);
                         }
                     })?,
             );
@@ -62,6 +71,7 @@ impl RequestPool {
         Ok(Self {
             sender: Some(sender),
             workers,
+            pending,
         })
     }
 
@@ -71,10 +81,26 @@ impl RequestPool {
             .sender
             .as_ref()
             .expect("pool accepts work until dropped");
+        self.pending.fetch_add(1, Ordering::AcqRel);
         match sender.try_send(job) {
             Ok(()) => Ok(()),
-            Err(mpsc::TrySendError::Full(job) | mpsc::TrySendError::Disconnected(job)) => Err(job),
+            Err(mpsc::TrySendError::Full(job) | mpsc::TrySendError::Disconnected(job)) => {
+                self.pending.fetch_sub(1, Ordering::AcqRel);
+                Err(job)
+            }
         }
+    }
+
+    /// Waits up to `limit` for every queued and running job to finish.
+    pub fn drain(&self, limit: Duration) -> bool {
+        let started = Instant::now();
+        while self.pending.load(Ordering::Acquire) > 0 {
+            if started.elapsed() >= limit {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        true
     }
 }
 

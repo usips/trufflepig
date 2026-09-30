@@ -63,8 +63,13 @@ pub fn request(
             Err(error) if error.kind() == ErrorKind::NotFound => {}
             Err(error) => return Err(error).context("read spooled daemon reply"),
         }
-        if !heartbeat_alive(spool) && fs::remove_file(&request_path).is_ok() {
-            return Ok(None);
+        if !heartbeat_alive(spool) {
+            if fs::remove_file(&request_path).is_ok() {
+                return Ok(None);
+            }
+            // Claimed by a router that stopped beating: no reply is coming.
+            let _ = fs::remove_file(spool.join(format!("{id}.claimed")));
+            bail!("daemon_unavailable: router stopped while answering a spooled request");
         }
         std::thread::sleep(REPLY_POLL);
     }

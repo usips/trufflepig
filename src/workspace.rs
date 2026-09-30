@@ -166,7 +166,7 @@ pub(crate) fn local(
         .unwrap_or("status");
     let budget = OutputBudget::new(options.budget)?;
     if verb == "semantic" {
-        return crate::cli::semantic::workspace(config, options, context);
+        return crate::cli::semantic::workspace(config, options, context, deadline.remaining());
     }
     if verb == "ws" {
         return inspect(config, options, &budget);
@@ -195,7 +195,11 @@ pub(crate) fn local(
                 args.push("--wait".into());
             }
             // Direct: the router may be the caller still proxying this request.
-            let mut value: Value = serde_json::from_str(&crate::cli::run_direct(&args, context)?)?;
+            let mut value: Value = serde_json::from_str(&crate::cli::run_direct(
+                &args,
+                context,
+                deadline.remaining(),
+            )?)?;
             // Owner commands budget their payload again after adding mandatory provenance.
             value["member"] = member.name().into();
             value["repository"] = encode_path(&member.root).into();

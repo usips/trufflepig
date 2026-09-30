@@ -20,11 +20,13 @@ socket is `daemon.sock` in `$TRUFFLEPIG_SYSTEM_DIR` verbatim, else
 `$XDG_CACHE_HOME/trufflepig/system`, else `$HOME/.cache/trufflepig/system`.
 The router forwards each request to the owning workspace coordinator or per-root
 daemon, starting a missing target and proxying the reply within 28 s
-(`src/daemon.rs:PROXY_REPLY_WAIT`). A router reply, including an error, is the
-answer; only an unreachable router falls back to the per-root/coordinator path,
-then local dispatch. Daemons issue their own sub-requests (workspace owner verbs,
-member `semantic` commands) directly (`src/cli.rs:run_direct`), never through the
-router that may still be proxying the request. `stop`,
+(`src/daemon.rs:PROXY_REPLY_WAIT`), spawn wait included. A router reply,
+including an error, is the answer; an unreachable router, or a
+`daemon_unavailable` reply (the owner could not be reached or started), falls
+back to the per-root/coordinator path, then local dispatch. Daemons issue their
+own sub-requests (workspace owner verbs, member `semantic` commands) directly
+(`src/cli.rs:run_direct`), never through the router that may still be proxying
+the request, and wait for them only within the request's query deadline. `stop`,
 `index`, `init`, `ws`, `semantic status`, `semantic-check`, the `*-serve` verbs, and
 `--no-daemon` requests never touch it. `system ensure` starts the router, `system
 stop` shuts it down, `system status` reports if it runs, `system prune` evicts
@@ -63,16 +65,23 @@ status` reports shared-worker residency.
 Every daemon answers requests concurrently: its accept thread hands each
 connection to a bounded worker pool (`src/daemon/pool.rs`: router 16 workers,
 coordinator 8, root 4, each queueing 64), and a full queue answers
-`daemon_busy: retry`. One maintenance thread (`src/daemon/reconciler.rs`) watches,
+`daemon_busy: retry` after reading the request. A panicking request answers
+`internal_error: MESSAGE` and its worker keeps serving. One maintenance thread (`src/daemon/reconciler.rs`) watches,
 reconciles on watch events and periodically, drains the spool, and runs idle
-probes. A root daemon binds and serves at once, before any database work; its
+probes; if it panics, the daemon exits (releasing its socket) so the next client
+starts a fresh one. A root daemon binds and serves at once, before any database work; its
 initial reconcile creates the schema, and until the first publication reads
 answer `index_warming` (`more`, `ctx`, handle, and path reads still work). The maintenance thread lowers itself to nice 10 and idle I/O
 after that initial reconcile; request workers keep normal priority. Each request's
-20 s query deadline starts when it is accepted. Clients wait at most 30 s for any
-reply (`src/daemon.rs:CLIENT_REPLY_WAIT`, socket and spool alike) and retry a read
-verb once, with a fresh request id, on a timed-out read, `daemon_busy`,
-`database is locked`, or, after 2 s, `index_warming` (`src/cli/retry.rs`).
+20 s query deadline starts when it is accepted. `stop` lets accepted requests
+finish (up to 28 s) after releasing the socket. Liveness checks connect to the
+socket (`src/daemon.rs:running`) and never touch the startup lock. Clients wait
+at most 30 s for any reply (`src/daemon.rs:CLIENT_REPLY_WAIT`, socket and spool
+alike; a spooled request whose claiming router stops beating fails at once with
+`daemon_unavailable`). A read verb retries once, with a fresh request id, on
+`daemon_busy`, `database is locked`, a dropped connection, a socket timeout that
+struck within 5 s, or, after 2 s, `index_warming`; a timeout after a full reply
+wait is final (`src/cli/retry.rs`).
 Workspace `index` and `init` run in the client, never on a coordinator worker.
 Daemons have no build-version negotiation. Stop them before changing binaries. Very long cache
 paths can exceed Unix socket limits; use a shorter `--cache` path. Watcher fallback
