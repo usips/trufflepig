@@ -29,6 +29,48 @@ class NextFooterTests(unittest.TestCase):
                 self.assertEqual(parse_lines_response(page.encode())["next"], cursor)
 
 
+class CoverageLineTests(unittest.TestCase):
+    def coverage(self, line):
+        response = parse_lines_response(f"coverage: {line}\n".encode())
+        members = {row["member"]: (row["state"], row["partial"], row["truncated"])
+                   for row in response.get("coverage", [])} if isinstance(response.get("coverage"), list) else {}
+        return members, response.get("annotations", []), response.get("scope")
+
+    def test_member_states(self):
+        shapes = {
+            "lunatic complete": ("lunatic", ("searched", False, False)),
+            "lunatic partial (20 unsearched: fact_limit) truncated": ("lunatic", ("searched", True, True)),
+            "lunatic@lunatic-w3-L1 warming \u2192 served from lunatic index (3 files differ)":
+                ("lunatic@lunatic-w3-L1", ("parent_fallback", False, False)),
+            "lunatic@L1 warming (no parent index)": ("lunatic@L1", ("warming", False, False)),
+            "lunatic@L1 unavailable (database is locked)": ("lunatic@L1", ("unavailable", False, False)),
+            "tgstation timed out": ("tgstation", ("timed_out", False, False)),
+        }
+        for line, (name, fields) in shapes.items():
+            with self.subTest(line=line):
+                self.assertEqual(self.coverage(line)[0], {name: fields})
+
+    def test_diagnosis_parts_are_annotations_not_members(self):
+        annotations = [
+            "file:web/ matched 0 indexed paths (nearest: crates/web/src/lib.rs)",
+            "-file:tests/ matched 0 indexed paths",
+            "lang:markdown matched 0 files",
+            "filters file:web/ lang:rust matched 0 files",
+            "refs 14 sites in 5 files",
+        ]
+        for annotation in annotations:
+            with self.subTest(annotation=annotation):
+                members, found, scope = self.coverage(f"lunatic complete; {annotation}; scope home")
+                self.assertEqual(members, {"lunatic": ("searched", False, False)})
+                self.assertEqual((found, scope), ([annotation], "home"))
+        members, found, scope = self.coverage(
+            "lunatic@L1 warming \u2192 served from lunatic index (no files differ); refs 3 sites in 1 files; "
+            "semantic partial; scope home (warming; ws:all searches 3 members)")
+        self.assertEqual(list(members), ["lunatic@L1"])
+        self.assertEqual(found, ["refs 3 sites in 1 files"])
+        self.assertEqual(scope, "home (warming; ws:all searches 3 members)")
+
+
 class AgentWrapperTests(unittest.TestCase):
     def setUp(self):
         self.scratch = tempfile.TemporaryDirectory(prefix="trufflepig-wrapper-")

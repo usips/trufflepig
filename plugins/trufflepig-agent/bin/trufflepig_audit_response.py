@@ -7,6 +7,40 @@ SINGLE_REPO_KEYS = {"indexed", "excluded", "parse_failures", "walk_failures", "t
 NEXT_FOOTER = re.compile(r"^next: (?:(?:more|show) )?(\S+)")
 
 
+# `NAME[@WORKTREE] STATE[ (detail)][ → served from M index (…)][ truncated]`; any other
+# coverage part (`file:X matched 0 …`, `lang:`, `filters`, `refs T sites …`) annotates.
+MEMBER_PART = re.compile(
+    r"^(?P<name>[A-Za-z0-9_.+-]+(?:@[^\s;]+)?) "
+    r"(?P<state>complete|partial|warming|unavailable|timed[ _]out|unknown|parent_fallback)(?P<rest>(?: .*)?)$")
+ANNOTATION_PREFIXES = ("file:", "-file:", "lang:", "filters", "refs ", "scope ")
+
+
+def member_part(part: str) -> dict | None:
+    """Audit fields of one member's coverage part, or None for an annotation."""
+    match = MEMBER_PART.match(part)
+    if not match or part.startswith(ANNOTATION_PREFIXES):
+        return None
+    state, rest = match.group("state"), match.group("rest")
+    if state in ("complete", "partial"):
+        state = "searched"
+    elif state == "warming" and "served from" in rest:
+        state = "parent_fallback"
+    return {"name": match.group("name"), "state": state.replace(" ", "_"),
+            "partial": match.group("state") == "partial", "truncated": rest.endswith(" truncated")}
+
+
+def coverage_parts(summary: str) -> list[str]:
+    """`; `-separated parts of a coverage line; separators inside parentheses, as in
+    `scope home (warming; ws:all searches 3 members)`, stay within their part."""
+    parts, depth, start = [], 0, 0
+    for index, char in enumerate(summary):
+        depth += (char == "(") - (char == ")")
+        if depth == 0 and summary.startswith("; ", index):
+            parts.append(summary[start:index])
+            start = index + 2
+    return [*parts, summary[start:]]
+
+
 def next_cursor(line: str) -> str | None:
     """The bare cursor of a `next:` footer line, without its runnable verb or hint."""
     match = NEXT_FOOTER.match(line)
@@ -29,8 +63,9 @@ def parse_lines_response(stdout: bytes) -> dict:
         if not seen_coverage:
             if line.startswith("coverage: "):
                 seen_coverage = True
-                for part in line[len("coverage: "):].split("; "):
+                for part in coverage_parts(line[len("coverage: "):]):
                     words = part.split()
+                    member = member_part(part)
                     if not words:
                         continue
                     if words[0] == "scope":
@@ -39,12 +74,10 @@ def parse_lines_response(stdout: bytes) -> dict:
                         lanes[LANE_KEYS[words[0]]] = words[1]
                     elif words[0] in SINGLE_REPO_KEYS:
                         single[words[0]] = words[1] if len(words) > 1 else True
+                    elif member is not None:
+                        members[member.pop("name")] = member
                     else:
-                        members[words[0]] = {
-                            "state": "searched" if words[1:2] in (["complete"], ["partial"]) else (words[1] if len(words) > 1 else None),
-                            "partial": words[1:2] == ["partial"],
-                            "truncated": "truncated" in words[2:],
-                        }
+                        response.setdefault("annotations", []).append(part)
             elif re.match(r"^[0-9a-f]{32}:\d+\t", line):
                 response["hits"].append({"handle": line.split("\t", 1)[0]})
             continue
