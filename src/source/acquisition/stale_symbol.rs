@@ -5,7 +5,7 @@ use crate::{
     results::{self, Hit, ResultEntry},
     store::Store,
 };
-use anyhow::Result;
+use anyhow::{Result, bail};
 use rusqlite::OptionalExtension;
 use std::time::{Duration, Instant};
 
@@ -32,7 +32,12 @@ pub(super) fn acquire_symbol_entry(
         read => return read,
     };
     let republished = await_republish(store, seen);
-    let mut source = acquire_reextracted(store, &hit)?.ok_or(error)?;
+    // Binary or unextractable current bytes leave the stale answer standing.
+    let mut source = match acquire_reextracted(store, &hit) {
+        Ok(Some(source)) => source,
+        Ok(None) => return Err(error),
+        Err(unavailable) => bail!("{error}; current bytes: {unavailable:#}"),
+    };
     if republished && published_revision(store, &hit.path)? == Some(source.revision.to_string()) {
         source.verified = true;
         source.freshness = None;
@@ -149,6 +154,17 @@ mod tests {
         let error = acquire(&store, &published.handle, None).err().unwrap();
         assert!(error.to_string().starts_with("stale_source:"), "{error:#}");
 
+        std::fs::write(root.path().join("lib.rs"), b"fn target() {}\0").unwrap();
+        let binary = acquire(&store, "sym:target", None).err().unwrap();
+        let message = format!("{binary:#}");
+        assert!(message.starts_with("stale_source:"), "{message}");
+        assert!(message.contains("source_excluded"), "{message}");
+
+        std::fs::write(
+            root.path().join("lib.rs"),
+            "// moved down\n\nfn target() -> u8 { 1 }\n",
+        )
+        .unwrap();
         store.index().unwrap();
         let republished = acquire(&store, "sym:target", None).unwrap();
         assert!(republished.verified);

@@ -67,7 +67,7 @@ coordinator 8, root 4, each queueing 64), and a full queue answers
 reconciles on watch events and periodically, drains the spool, and runs idle
 probes. A root daemon binds and serves at once, before any database work; its
 initial reconcile creates the schema, and until the first publication reads
-answer `index_warming` (explicit path reads still serve the current file). The maintenance thread lowers itself to nice 10 and idle I/O
+answer `index_warming` (`more`, `ctx`, handle, and path reads still work). The maintenance thread lowers itself to nice 10 and idle I/O
 after that initial reconcile; request workers keep normal priority. Each request's
 20 s query deadline starts when it is accepted. Clients wait at most 30 s for any
 reply (`src/daemon.rs:CLIENT_REPLY_WAIT`, socket and spool alike) and retry a read

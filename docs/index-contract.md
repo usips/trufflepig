@@ -74,9 +74,11 @@ prevents applying it to current bytes. Reconciliation eventually catches up. A
 `sym:` read of a changed file waits up to 3 s for a serving daemon to republish,
 then locates the definition in the current bytes (`source::reextract_definition`)
 and answers `verified: false` with `freshness: unpublished`; handle reads keep
-answering `stale_source` (`src/source/acquisition/stale_symbol.rs`). Inside a root
-daemon, an unpublished index answers `index_warming` instead of indexing in the
-request.
+answering `stale_source`, as does a changed file that is now binary or cannot be
+extracted (`src/source/acquisition/stale_symbol.rs`). Only a client that no
+daemon serves (or `--no-daemon`) reconciles an unpublished index in the request
+(`src/cli/dispatch.rs:read_store`); otherwise searches and `sym:` reads answer
+`index_warming`, while `more`, `ctx`, handle, and path reads need no publication.
 
 ## Semantic preparation
 

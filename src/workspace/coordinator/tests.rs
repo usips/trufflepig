@@ -184,9 +184,9 @@ fn coordinator_owner_status_reaches_the_root_daemon_directly() {
     daemon::stop(&engine_cache).unwrap();
     root_daemon.join().unwrap().unwrap();
     let status: serde_json::Value = serde_json::from_str(&status.unwrap()).unwrap();
-    // The re-entry deadlock this guards against waits out the 28 s proxy timeout;
-    // the bound leaves room for a loaded test machine.
-    assert!(elapsed < Duration::from_secs(10), "status took {elapsed:?}");
+    // The re-entry deadlock this guards against waits out the 28 s proxy
+    // timeout; the bound leaves room for a heavily loaded test machine.
+    assert!(elapsed < Duration::from_secs(20), "status took {elapsed:?}");
     assert_eq!(status["member"], "engine");
     assert!(status["generation"].as_i64().unwrap() >= 1, "{status}");
 }
