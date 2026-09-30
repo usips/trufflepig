@@ -136,6 +136,7 @@ pub(crate) fn render_owned(
         side,
         historical,
         definitions,
+        freshness,
     } = source;
     let (start, end) = (span.start, span.end);
     let (first, last) = line_span(&bytes, start, end);
@@ -168,6 +169,9 @@ pub(crate) fn render_owned(
             // An explicit path read returns the current file, not an indexed revision;
             // a caller serving other unverified bytes names them in metadata.
             value["source"] = "current_file".into();
+        }
+        if let Some(freshness) = freshness {
+            value["freshness"] = freshness.into();
         }
         if let Some(selection) = &definitions {
             value["definitions"] = selection.declarations.into();

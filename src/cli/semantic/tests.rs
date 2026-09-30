@@ -18,13 +18,11 @@ fn preparation_wait_terminates_when_root_daemon_dies() -> Result<()> {
 }
 
 #[test]
-fn preparation_wait_checks_actual_lock_ownership() -> Result<()> {
-    use fs2::FileExt;
+fn preparation_wait_checks_for_a_listening_daemon() -> Result<()> {
     let cache = tempfile::tempdir()?;
-    let lock = std::fs::File::create(cache.path().join("daemon.lock"))?;
-    lock.try_lock_exclusive()?;
-    assert!(root_daemon_running(cache.path())?);
-    FileExt::unlock(&lock)?;
-    assert!(!root_daemon_running(cache.path())?);
+    let listener = std::os::unix::net::UnixListener::bind(cache.path().join("daemon.sock"))?;
+    assert!(crate::daemon::running(cache.path()));
+    drop(listener);
+    assert!(!crate::daemon::running(cache.path()));
     Ok(())
 }

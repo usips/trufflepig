@@ -82,6 +82,12 @@ failed extraction), `show` serves the parent index's stored bytes with
 `verified: false` and `source: parent_index`. File changes between
 extraction and publication may leave an indexed revision behind disk; `show`'s buffer check
 prevents applying it to current bytes. Reconciliation eventually catches up.
+Through a root's own index, a stale `sym:` read waits up to 3 s for a daemon
+republish, then answers from current bytes with `freshness: unpublished`
+(`src/source/acquisition/stale_symbol.rs`). Only a client no daemon serves (or
+`--no-daemon`) reconciles an unpublished index in the request, never waiting for
+the writer lease without `--no-daemon` (`src/cli/dispatch.rs:read_store`); else
+searches and `sym:` answer `index_warming`, other reads use `Store::unpublished`.
 
 ## Semantic preparation
 
@@ -128,14 +134,15 @@ directory (`src/system.rs:dir`). Clients treat connect errors `NotFound`,
 (`src/daemon.rs:unreachable`), first to the router's file spool
 (`src/daemon/spool.rs`, directory `src/system.rs:spool_dir`), which carries the
 same JSON request and reply bodies through atomically renamed files and is served
-from the router's idle tick. The frame protocol and its limits apply unchanged
-per hop.
+by the router's workers. The frame protocol and its limits apply unchanged per
+hop; concurrency is in the [runtime contract](runtime-contract.md).
 
 The daemon reconciles at startup, then every five minutes while a watcher is
 active or every 30 seconds without one. Watch events are hints that accelerate
 reconciliation; events only inside `.git`, `target`, `node_modules`, or
 `.trufflepig` are ignored, and overflow, watch exhaustion, and missed events
-trigger recovery. Watching daemons run at nice 10 with idle I/O priority. Events use a 75 ms quiet period with a one-second maximum debounce; no
+trigger recovery. After the initial reconcile, a watching daemon's maintenance
+thread runs at nice 10 with idle I/O priority; its request workers do not. Events use a 75 ms quiet period with a one-second maximum debounce; no
 sub-debounce visibility promise applies. The recursive watcher covers the root
 and filters cache events, while the indexing walk prunes ignored/build
 directories. Ignored trees may still consume operating-system watches.
@@ -165,8 +172,8 @@ specified in the [retrieval](retrieval-contract.md) and
 changing storage architecture.
 
 The socket is `daemon.sock` inside the per-root cache; a short explicit cache
-path avoids Unix socket path-length limits. Requests are serialized with a
-64 KiB/256-argument cap and 4 MiB reply cap. There is no protocol version or build
+path avoids Unix socket path-length limits. Requests carry a
+64 KiB/256-argument cap and a 4 MiB reply cap. There is no protocol version or build
 handshake yet; stop the daemon before replacing its binary. Automatic startup
 spawns a child process and falls back to coherent local access if needed; it does
 not establish detached service lifecycle guarantees.

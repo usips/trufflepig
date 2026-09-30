@@ -14,6 +14,7 @@ fn empty_set() -> WorkspaceSet {
 #[test]
 fn workspace_result_retention_expiry_and_corrupt_ownership_are_explicit() -> Result<()> {
     let dir = tempfile::tempdir()?;
+    WorkspaceResults::create(dir.path())?;
     let results = WorkspaceResults::open(dir.path())?;
     let first = results.save(empty_set())?;
     results.conn.execute(
@@ -66,6 +67,7 @@ fn workspace_result_retention_expiry_and_corrupt_ownership_are_explicit() -> Res
 #[test]
 fn workspace_result_metadata_never_exceeds_retention_capacity() -> Result<()> {
     let dir = tempfile::tempdir()?;
+    WorkspaceResults::create(dir.path())?;
     let results = WorkspaceResults::open(dir.path())?;
     let mut oversized = empty_set();
     oversized.coverage = vec![json!({"detail":"x".repeat(results::MAX_BYTES)})];
@@ -90,6 +92,7 @@ fn workspace_pages_use_absolute_file_locators_and_compact_coverage() -> Result<(
     let directory = tempfile::tempdir()?;
     let root = directory.path().join("member");
     std::fs::create_dir(&root)?;
+    WorkspaceResults::create(&directory.path().join("cache"))?;
     let results = WorkspaceResults::open(directory.path().join("cache").as_path())?;
     let hit = crate::results::Hit {
         handle: String::new(),
@@ -170,6 +173,7 @@ fn workspace_pages_use_absolute_file_locators_and_compact_coverage() -> Result<(
 #[test]
 fn empty_workspace_lines_page_groups_member_filter_diagnoses() -> Result<()> {
     let directory = tempfile::tempdir()?;
+    WorkspaceResults::create(&directory.path().join("cache"))?;
     let results = WorkspaceResults::open(directory.path().join("cache").as_path())?;
     let owner = |name: &str, diagnosis: &str| MemberSnapshot {
         name: name.into(),

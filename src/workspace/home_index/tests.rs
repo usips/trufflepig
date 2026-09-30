@@ -91,6 +91,7 @@ fn search_without_waiting(fixture: &Fixture, root: &Path, words: &[&str]) -> Str
     let options = cli::parse(&args).unwrap();
     let config = WorkspaceConfig::load(&fixture.config).unwrap();
     let cache = cache_path(&config, Some(fixture.cache.path())).unwrap();
+    WorkspaceResults::create(&cache).unwrap();
     retrieval::search_with_policy(
         &config,
         &cache,

@@ -23,7 +23,10 @@ impl OutputFormat {
 }
 
 pub struct OutputBudget {
-    tokenizer: tiktoken_rs::CoreBPE,
+    /// The process-wide o200k_base tokenizer, built once on first use and owned
+    /// by `tiktoken_rs` for the life of the process (an interner-style static:
+    /// immutable, shared by every budget and request thread).
+    tokenizer: &'static tiktoken_rs::CoreBPE,
     pub limit: usize,
     pub format: OutputFormat,
 }
@@ -31,7 +34,7 @@ pub struct OutputBudget {
 impl OutputBudget {
     pub fn new(limit: usize) -> Result<Self> {
         Ok(Self {
-            tokenizer: tiktoken_rs::o200k_base()?,
+            tokenizer: tiktoken_rs::o200k_base_singleton(),
             limit,
             format: OutputFormat::Json,
         })

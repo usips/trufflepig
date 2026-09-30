@@ -14,6 +14,7 @@ mod symbol;
 mod tests;
 
 pub(crate) use symbol::{SymbolSelection, read_symbol, show_target};
+mod stale_symbol;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SourceSide {
@@ -47,6 +48,9 @@ pub(crate) struct AcquiredSource {
     pub historical: Option<HistoricalSource>,
     /// For a `sym:` read: how the shown definition was chosen among its namesakes.
     pub definitions: Option<SymbolSelection>,
+    /// `unpublished` when a `sym:` read was re-extracted from bytes newer than
+    /// the published index.
+    pub freshness: Option<&'static str>,
 }
 
 /// Acquires `target`; a `sym:` read ranks namesakes nearest to `origin` first.
@@ -146,6 +150,7 @@ pub(crate) fn acquire_entry(
                 side: None,
                 historical: None,
                 definitions: None,
+                freshness: None,
             })
         }
         ResultEntry::Change(change) => {
@@ -214,6 +219,7 @@ fn acquire_historical(
         side: Some(side),
         historical: Some(identity),
         definitions: None,
+        freshness: None,
     })
 }
 
@@ -269,5 +275,6 @@ fn acquire_path(store: &Store, target: &str) -> Result<AcquiredSource> {
         side: None,
         historical: None,
         definitions: None,
+        freshness: None,
     })
 }

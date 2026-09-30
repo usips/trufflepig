@@ -1,9 +1,13 @@
+use super::reconciler::{
+    DEBOUNCE, MAX_DEBOUNCE, RECONCILE_INTERVAL, ReconcileSchedule, WATCHED_RECONCILE_INTERVAL,
+    indexed_path,
+};
 use super::*;
-use std::io::{Cursor, Write};
-use std::sync::{Barrier, mpsc};
-use std::time::SystemTime;
+use std::io::Cursor;
+use std::sync::{Arc, Barrier};
+use std::time::{Instant, SystemTime};
 
-fn scratch() -> tempfile::TempDir {
+pub(super) fn scratch() -> tempfile::TempDir {
     tempfile::Builder::new()
         .prefix("trufflepig-daemon-")
         .tempdir_in(std::env::var_os("TMPDIR").expect("TMPDIR must name disk-backed scratch space"))
@@ -129,91 +133,6 @@ fn watcher_ignores_churn_in_pruned_build_and_vcs_trees() {
 }
 
 #[test]
-fn daemon_serves_recovers_protocol_errors_watches_and_stops() {
-    let scratch = scratch();
-    let root = scratch.path().join("repo");
-    let cache = scratch.path().join("cache");
-    fs::create_dir(&root).unwrap();
-    let (sender, receiver) = mpsc::channel();
-    let serve_root = root.clone();
-    let serve_cache = cache.clone();
-    let daemon = std::thread::spawn(move || {
-        serve(&serve_root, &serve_cache, |args| match args {
-            DaemonEvent::Request { args, .. } => Ok(args.join("|")),
-            DaemonEvent::Idle => Ok(String::new()),
-            DaemonEvent::Reconcile => {
-                let _ = sender.send(());
-                Ok(String::new())
-            }
-        })
-    });
-    receiver.recv_timeout(Duration::from_secs(5)).unwrap();
-    let mut bad_client = UnixStream::connect(cache.join(SOCKET_NAME)).unwrap();
-    bad_client
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .unwrap();
-    bad_client
-        .write_all(&((protocol::REQUEST_LIMIT + 1) as u32).to_be_bytes())
-        .unwrap();
-    let bad_reply = protocol::read_reply(&mut bad_client);
-    let reply = request(
-        &cache,
-        &["search".to_owned(), "a\nb".to_owned()],
-        &crate::diagnostics::RequestContext::new(None, None),
-    );
-    fs::write(root.join("changed.rs"), "fn changed() {}\n").unwrap();
-    let watched = receiver.recv_timeout(Duration::from_secs(5));
-    let stopped = stop(&cache);
-    daemon.join().unwrap().unwrap();
-    assert!(matches!(bad_reply.unwrap(), DaemonReply::Failure { .. }));
-    assert_eq!(reply.unwrap().as_deref(), Some("search|a\nb"));
-    assert!(watched.is_ok(), "watcher did not trigger reconciliation");
-    assert!(stopped.unwrap().contains("stopped"));
-    assert_eq!(
-        request(
-            &cache,
-            &[],
-            &crate::diagnostics::RequestContext::new(None, None)
-        )
-        .unwrap(),
-        None
-    );
-}
-
-#[test]
-fn daemon_exits_when_root_is_removed() {
-    let scratch = scratch();
-    let root = scratch.path().join("repo");
-    let cache = scratch.path().join("cache");
-    fs::create_dir(&root).unwrap();
-    fs::write(root.join("lib.rs"), "fn present() {}\n").unwrap();
-    let (reconciled, reconciles) = mpsc::channel();
-    let (finished, finishes) = mpsc::channel();
-    let serve_root = root.clone();
-    let serve_cache = cache.clone();
-    let daemon = std::thread::spawn(move || {
-        let result = serve(&serve_root, &serve_cache, |event| match event {
-            DaemonEvent::Reconcile => {
-                let _ = reconciled.send(());
-                Ok(String::new())
-            }
-            _ => Ok(String::new()),
-        });
-        let _ = finished.send(());
-        result
-    });
-    reconciles.recv_timeout(Duration::from_secs(5)).unwrap();
-    assert!(cache.join(SOCKET_NAME).exists());
-    fs::remove_dir_all(&root).unwrap();
-    finishes
-        .recv_timeout(Duration::from_secs(5))
-        .expect("daemon did not exit after its root was removed");
-    daemon.join().unwrap().unwrap();
-    assert!(!cache.join(SOCKET_NAME).exists());
-    assert!(DaemonSocket::bind(&cache).is_ok(), "daemon.lock still held");
-}
-
-#[test]
 fn daemon_connect_unreachability_includes_sandbox_permission_denial() {
     assert!(unreachable(ErrorKind::NotFound));
     assert!(unreachable(ErrorKind::ConnectionRefused));
@@ -238,7 +157,7 @@ fn spool_round_trip_answers_request_and_cleans_up() {
     let scratch = scratch();
     let dir = scratch.path().join("spool");
     let mut server = spool::SpoolServer::open(&dir).unwrap();
-    server.drain(|_, _| unreachable!("no request pending"));
+    assert!(server.claim().is_empty());
     let context = crate::diagnostics::RequestContext::new(None, None);
     let args = vec!["status".to_owned()];
     let client = {
@@ -249,7 +168,9 @@ fn spool_round_trip_answers_request_and_cleans_up() {
     while !request.exists() {
         std::thread::sleep(Duration::from_millis(5));
     }
-    server.drain(|context, args| Ok(format!("{}:{}", context.request_id, args.join(" "))));
+    for claimed in server.claim() {
+        claimed.answer(|context, args| Ok(format!("{}:{}", context.request_id, args.join(" "))));
+    }
     let reply = client.join().unwrap().unwrap();
     assert_eq!(reply, Some(format!("{}:status", context.request_id)));
     let leftovers: Vec<_> = fs::read_dir(&dir)
@@ -257,6 +178,30 @@ fn spool_round_trip_answers_request_and_cleans_up() {
         .map(|entry| entry.unwrap().file_name())
         .collect();
     assert_eq!(leftovers, vec![std::ffi::OsString::from("heartbeat")]);
+}
+
+#[test]
+fn spool_claims_each_request_once_until_answered() {
+    let scratch = scratch();
+    let dir = scratch.path().join("spool");
+    let mut server = spool::SpoolServer::open(&dir).unwrap();
+    let context = crate::diagnostics::RequestContext::new(None, None);
+    let client = {
+        let (dir, context) = (dir.clone(), context.clone());
+        std::thread::spawn(move || spool::request(&dir, &["refs".to_owned()], &context))
+    };
+    let request = dir.join(format!("{}.request", context.request_id));
+    while !request.exists() {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let mut claimed = server.claim();
+    assert_eq!(claimed.len(), 1);
+    // A later maintenance tick sees the claim, not a second pending request.
+    assert!(server.claim().is_empty());
+    assert!(dir.join(format!("{}.claimed", context.request_id)).exists());
+    claimed.pop().unwrap().refuse(DAEMON_BUSY);
+    let error = client.join().unwrap().unwrap_err();
+    assert!(error.to_string().contains(DAEMON_BUSY), "{error:#}");
 }
 
 #[test]
@@ -297,8 +242,40 @@ fn spool_reports_handler_failure_and_ignores_foreign_files() {
     while !request.exists() {
         std::thread::sleep(Duration::from_millis(5));
     }
-    server.drain(|_, _| anyhow::bail!("boom"));
+    for claimed in server.claim() {
+        claimed.answer(|_, _| anyhow::bail!("boom"));
+    }
     let error = client.join().unwrap().unwrap_err();
     assert!(error.to_string().contains("boom"), "{error:#}");
     assert!(dir.join("notes.txt").exists());
+}
+
+#[test]
+fn spool_client_gives_up_when_the_claiming_router_dies() {
+    let scratch = scratch();
+    let dir = scratch.path().join("spool");
+    let mut server = spool::SpoolServer::open(&dir).unwrap();
+    let context = crate::diagnostics::RequestContext::new(None, None);
+    let client = {
+        let (dir, context) = (dir.clone(), context.clone());
+        std::thread::spawn(move || spool::request(&dir, &["refs".to_owned()], &context))
+    };
+    let request = dir.join(format!("{}.request", context.request_id));
+    while !request.exists() {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(server.claim().len(), 1);
+    // The router dies with the claim in hand: its heartbeat goes stale.
+    File::open(dir.join("heartbeat"))
+        .unwrap()
+        .set_modified(SystemTime::now() - Duration::from_secs(60))
+        .unwrap();
+    let started = Instant::now();
+    let error = client.join().unwrap().unwrap_err();
+    assert!(
+        error.to_string().contains("daemon_unavailable"),
+        "{error:#}"
+    );
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert!(!dir.join(format!("{}.claimed", context.request_id)).exists());
 }

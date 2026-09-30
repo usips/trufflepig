@@ -175,7 +175,7 @@ fn wait_until_terminal(
         if waited.status.error.as_deref() != Some("preparation_wait_timeout") {
             return Ok(waited);
         }
-        if !root_daemon_running(cache)? || started.elapsed() >= Duration::from_secs(3600) {
+        if !crate::daemon::running(cache) || started.elapsed() >= Duration::from_secs(3600) {
             waited.state = preparation::PreparationState::Failed;
             waited.status.state = preparation::PreparationState::Failed;
             waited.status.error = Some(
@@ -191,23 +191,6 @@ fn wait_until_terminal(
     }
 }
 
-fn root_daemon_running(cache: &Path) -> Result<bool> {
-    use fs2::FileExt;
-    let file = match std::fs::File::open(cache.join("daemon.lock")) {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(error.into()),
-    };
-    match file.try_lock_exclusive() {
-        Ok(()) => {
-            FileExt::unlock(&file)?;
-            Ok(false)
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => Ok(true),
-        Err(error) => Err(error.into()),
-    }
-}
-
 #[cfg(test)]
 mod tests;
 
@@ -216,7 +199,9 @@ pub(crate) fn workspace(
     config: &WorkspaceConfig,
     options: &Arguments,
     context: &crate::diagnostics::RequestContext,
+    reply_wait: Duration,
 ) -> Result<String> {
+    let replying = crate::daemon::deadline::QueryDeadline::after(reply_wait);
     let command = options
         .words
         .get(1)
@@ -246,9 +231,10 @@ pub(crate) fn workspace(
         local.words = vec!["semantic".into(), command.into()];
         // Member roots use their own daemon and cache. A workspace coordinator
         // never embeds source itself.
-        let output = crate::cli::run_with_context(
+        let output = crate::cli::run_direct(
             &crate::cli::normalized_args(&local, &local.root),
             context,
+            replying.remaining(),
         )?;
         let mut value: Value = serde_json::from_str(&output)?;
         value["member"] = member.name().into();

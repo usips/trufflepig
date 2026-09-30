@@ -177,6 +177,7 @@ pub(in crate::workspace) fn reextracted_entry(
         side: None,
         historical: None,
         definitions: None,
+        freshness: None,
     };
     Ok(Some((source, ParentRead::Reextracted)))
 }
@@ -203,5 +204,6 @@ fn indexed_source(store: &Store, handle: &str, hit: &Hit) -> Result<AcquiredSour
         side: None,
         historical: None,
         definitions: None,
+        freshness: None,
     })
 }

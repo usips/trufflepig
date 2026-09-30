@@ -1,13 +1,14 @@
 //! Per-user system daemon routing CLI requests to owning workspace or root daemons.
+//! Each request is proxied on its own worker, bounded by `daemon::PROXY_REPLY_WAIT`.
 
 pub mod sweep;
 #[cfg(test)]
 mod tests;
 
 use crate::{
-    background_process::spawn_background,
+    background_process::{BackgroundChild, spawn_background},
     cli::normalized_args,
-    daemon::{self, DaemonEvent, spool::SpoolServer},
+    daemon::{self, AcceptedRequest, DaemonHandler, deadline::QueryDeadline},
     diagnostics::RequestContext,
 };
 use anyhow::{Context, Result, bail, ensure};
@@ -15,7 +16,8 @@ use std::{
     ffi::OsString,
     fs,
     path::{Path, PathBuf},
-    process::{Child, Command},
+    process::Command,
+    sync::Mutex,
     thread::JoinHandle,
     time::{Duration, Instant, SystemTime},
 };
@@ -89,43 +91,62 @@ pub fn ensure() -> Result<()> {
 }
 
 /// Serves the system daemon, proxying socket and spooled requests to their
-/// owners and sweeping the default cache base at startup and every
+/// owners concurrently and sweeping the default cache base at startup and every
 /// `SWEEP_INTERVAL` on a background thread, so a slow daemon stop never
 /// blocks the request path.
 pub fn serve() -> Result<()> {
-    let mut spool = SpoolServer::open(&spool_dir())?;
-    let cache_base = crate::cli::cache_base().ok();
-    let mut last_sweep: Option<Instant> = None;
-    let mut running: Option<JoinHandle<()>> = None;
-    daemon::serve_coordinator(
-        Path::new("/"),
+    let router = SystemRouter {
+        cache_base: crate::cli::cache_base().ok(),
+        sweeps: Mutex::new(SweepClock::default()),
+    };
+    daemon::serve_router(
         &dir().context("system_unavailable: no runtime dir")?,
-        |event| match event {
-            DaemonEvent::Request { context, args } => route(args, context),
-            DaemonEvent::Reconcile => Ok(String::new()),
-            DaemonEvent::Idle => {
-                spool.drain(|context, args| route(args, context));
-                crate::background_process::reap_children();
-                if let Some(base) = &cache_base
-                    && running.as_ref().is_none_or(JoinHandle::is_finished)
-                    && last_sweep.is_none_or(|started| started.elapsed() >= SWEEP_INTERVAL)
-                {
-                    if let Some(finished) = running.take() {
-                        let _ = finished.join();
-                    }
-                    let base = base.clone();
-                    running = Some(std::thread::spawn(move || {
-                        sweep(&base, SystemTime::now(), SWEEP_GRACE);
-                    }));
-                    last_sweep = Some(Instant::now());
-                }
-                Ok(String::new())
-            }
-        },
+        &spool_dir(),
+        router,
     )
 }
 
+/// The router's request handler; each request is routed independently.
+struct SystemRouter {
+    cache_base: Option<PathBuf>,
+    sweeps: Mutex<SweepClock>,
+}
+
+#[derive(Default)]
+struct SweepClock {
+    last_sweep: Option<Instant>,
+    running: Option<JoinHandle<()>>,
+}
+
+impl DaemonHandler for SystemRouter {
+    fn request(&self, request: AcceptedRequest) -> Result<String> {
+        route(request.args, request.context)
+    }
+
+    fn idle(&self) {
+        let (Some(base), Ok(mut clock)) = (&self.cache_base, self.sweeps.lock()) else {
+            return;
+        };
+        if clock.running.as_ref().is_none_or(JoinHandle::is_finished)
+            && clock
+                .last_sweep
+                .is_none_or(|started| started.elapsed() >= SWEEP_INTERVAL)
+        {
+            if let Some(finished) = clock.running.take() {
+                let _ = finished.join();
+            }
+            let base = base.clone();
+            clock.running = Some(std::thread::spawn(move || {
+                sweep(&base, SystemTime::now(), SWEEP_GRACE);
+            }));
+            clock.last_sweep = Some(Instant::now());
+        }
+    }
+}
+
 fn route(args: Vec<String>, context: RequestContext) -> Result<String> {
+    // Every forwarded wait ends before the client's own reply wait does.
+    let forwarding = QueryDeadline::after(daemon::PROXY_REPLY_WAIT);
     let options = crate::cli::parse(&args)?;
     let verb = options.words.first().map(String::as_str);
     if verb == Some("system") {
@@ -137,7 +158,7 @@ fn route(args: Vec<String>, context: RequestContext) -> Result<String> {
             refuse_router_stop(&cache)?;
             return daemon::stop(&cache);
         }
-        if let Some(reply) = daemon::request(&cache, &args, &context)? {
+        if let Some(reply) = daemon::request_by(&cache, &args, &context, forwarding)? {
             return Ok(reply);
         }
         let mut server = options.clone();
@@ -145,8 +166,8 @@ fn route(args: Vec<String>, context: RequestContext) -> Result<String> {
         server.member = None;
         let mut command = Command::new(std::env::current_exe()?);
         command.args(normalized_args(&server, &server.root));
-        let mut child = spawn_background(&mut command)?;
-        return forward_spawned(&cache, &args, &context, &mut child);
+        let child = spawn_background(&mut command)?;
+        return forward_spawned(&cache, &args, &context, &child, forwarding);
     }
     let root = options
         .root
@@ -157,7 +178,7 @@ fn route(args: Vec<String>, context: RequestContext) -> Result<String> {
         refuse_router_stop(&cache)?;
         return daemon::stop(&cache);
     }
-    if let Some(reply) = daemon::request(&cache, &args, &context)? {
+    if let Some(reply) = daemon::request_by(&cache, &args, &context, forwarding)? {
         return Ok(reply);
     }
     fs::create_dir_all(&cache)?;
@@ -177,7 +198,7 @@ fn route(args: Vec<String>, context: RequestContext) -> Result<String> {
         .arg("--no-workspace")
         .arg("--diagnostics")
         .arg(&options.diagnostics);
-    let mut child = spawn_background(
+    let child = spawn_background(
         command
             .arg("--root")
             .arg(&root)
@@ -185,7 +206,7 @@ fn route(args: Vec<String>, context: RequestContext) -> Result<String> {
             .arg(&cache)
             .arg("serve"),
     )?;
-    forward_spawned(&cache, &args, &context, &mut child)
+    forward_spawned(&cache, &args, &context, &child, forwarding)
 }
 
 /// Refuses a stop aimed at this router's own socket directory.
@@ -201,14 +222,15 @@ fn forward_spawned(
     cache: &Path,
     args: &[String],
     context: &RequestContext,
-    child: &mut Child,
+    child: &BackgroundChild,
+    forwarding: QueryDeadline,
 ) -> Result<String> {
-    let deadline = Instant::now() + Duration::from_secs(3);
+    let deadline = Instant::now() + forwarding.cap(Duration::from_secs(3));
     while Instant::now() < deadline {
-        if let Some(reply) = daemon::request(cache, args, context)? {
+        if let Some(reply) = daemon::request_by(cache, args, context, forwarding)? {
             return Ok(reply);
         }
-        if child.try_wait()?.is_some() {
+        if daemon::spawn_failed(child, cache) {
             break;
         }
         std::thread::sleep(Duration::from_millis(25));

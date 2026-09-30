@@ -191,6 +191,7 @@ fn search_all_with_deadline(
     let options = cli::parse(&args).unwrap();
     let config = WorkspaceConfig::load(&fixture.config).unwrap();
     let cache = cache_path(&config, Some(fixture.cache.path())).unwrap();
+    WorkspaceResults::create(&cache).unwrap();
     retrieval::search(
         &config,
         &cache,

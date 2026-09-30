@@ -1,7 +1,8 @@
 //! `show 'sym:NAME [file:P] [lang:L] [kind:K]'`: reads the best-ranked
 //! definition as a verified handle read and lists its namesakes. An import that
 //! outranks every declaration is followed to the declaration it names.
-use super::{AcquiredSource, acquire_entry};
+use super::AcquiredSource;
+use super::stale_symbol::acquire_symbol_entry;
 use crate::{
     results::{self, Hit, ResultEntry, ResultSet},
     search::{ImportHop, InvocationDirectory, Query},
@@ -52,7 +53,7 @@ pub(super) fn acquire_symbol(
     let query = Query::parse(target)?;
     let found = crate::search::definitions(store, &query, origin)?;
     read_symbol(store, &query, found, origin, |handle, hit| {
-        acquire_entry(store, handle, ResultEntry::LiveSource(hit), None)
+        acquire_symbol_entry(store, handle, ResultEntry::LiveSource(hit))
     })
 }
 

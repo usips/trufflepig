@@ -1,10 +1,11 @@
 //! File-spool transport for clients whose sandbox denies unix-socket connects.
 //!
 //! A client drops `<request_id>.request` into the spool directory and polls for
-//! `<request_id>.reply`; the serving daemon drains requests on its idle tick and
-//! answers by atomic rename. Both files carry the socket protocol's JSON bodies.
-//! A `heartbeat` file, refreshed while the daemon serves, tells clients whether
-//! anyone is draining the spool before they wait.
+//! `<request_id>.reply`; the serving daemon claims each request by renaming it to
+//! `<request_id>.claimed`, answers it on a worker, and publishes the reply by
+//! atomic rename. Files carry the socket protocol's JSON bodies. A `heartbeat`
+//! file, refreshed while the daemon serves, tells clients whether anyone is
+//! draining the spool before they wait.
 
 use super::protocol::{DaemonReply, DaemonRequest};
 use anyhow::{Context, Result, bail};
@@ -17,7 +18,7 @@ use std::time::{Duration, Instant, SystemTime};
 const HEARTBEAT: &str = "heartbeat";
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
 const HEARTBEAT_STALE: Duration = Duration::from_secs(5);
-const REPLY_WAIT: Duration = Duration::from_secs(120);
+const REPLY_WAIT: Duration = super::CLIENT_REPLY_WAIT;
 const REPLY_POLL: Duration = Duration::from_millis(20);
 const ORPHAN_AGE: Duration = Duration::from_secs(300);
 
@@ -62,8 +63,13 @@ pub fn request(
             Err(error) if error.kind() == ErrorKind::NotFound => {}
             Err(error) => return Err(error).context("read spooled daemon reply"),
         }
-        if !heartbeat_alive(spool) && fs::remove_file(&request_path).is_ok() {
-            return Ok(None);
+        if !heartbeat_alive(spool) {
+            if fs::remove_file(&request_path).is_ok() {
+                return Ok(None);
+            }
+            // Claimed by a router that stopped beating: no reply is coming.
+            let _ = fs::remove_file(spool.join(format!("{id}.claimed")));
+            bail!("daemon_unavailable: router stopped while answering a spooled request");
         }
         std::thread::sleep(REPLY_POLL);
     }
@@ -71,7 +77,7 @@ pub fn request(
     bail!("daemon_unavailable: spooled request timed out")
 }
 
-/// Serves one spool directory from a daemon's idle ticks.
+/// Serves one spool directory from a daemon's maintenance ticks.
 pub struct SpoolServer {
     dir: PathBuf,
     heartbeat_at: Option<Instant>,
@@ -97,18 +103,16 @@ impl SpoolServer {
         Ok(server)
     }
 
-    /// Refreshes the heartbeat and answers every pending request in order.
-    pub fn drain(
-        &mut self,
-        mut handler: impl FnMut(crate::diagnostics::RequestContext, Vec<String>) -> Result<String>,
-    ) {
+    /// Refreshes the heartbeat and claims every pending request in id order; a
+    /// claimed request is never returned again, even before it is answered.
+    pub fn claim(&mut self) -> Vec<ClaimedSpoolRequest> {
         if let Err(error) = self.beat() {
             eprintln!("trufflepig: spool heartbeat failed: {error:#}");
         }
-        let mut pending = Vec::new();
         let Ok(entries) = fs::read_dir(&self.dir) else {
-            return;
+            return Vec::new();
         };
+        let mut pending = Vec::new();
         for entry in entries.flatten() {
             let path = entry.path();
             match request_id(&path, "request") {
@@ -117,35 +121,18 @@ impl SpoolServer {
             }
         }
         pending.sort();
+        let mut claimed = Vec::with_capacity(pending.len());
         for (id, path) in pending {
-            let result = fs::read(&path)
-                .context("read spooled daemon request")
-                .and_then(|bytes| {
-                    serde_json::from_slice::<DaemonRequest>(&bytes)
-                        .context("decode spooled request")
-                })
-                .and_then(|request| {
-                    request.validate()?;
-                    match request {
-                        DaemonRequest::Arguments { context, args } => handler(context, args),
-                        DaemonRequest::Stop => bail!("spooled requests cannot stop a daemon"),
-                    }
+            let claim = self.dir.join(format!("{id}.claimed"));
+            // A request the client withdrew (timeout, dead heartbeat) is gone.
+            if fs::rename(&path, &claim).is_ok() {
+                claimed.push(ClaimedSpoolRequest {
+                    reply: self.dir.join(format!("{id}.reply")),
+                    claim,
                 });
-            let _ = fs::remove_file(&path);
-            let reply = match result {
-                Ok(output) => DaemonReply::Success { output },
-                Err(error) => DaemonReply::Failure {
-                    message: format!("{error:#}"),
-                },
-            };
-            let reply_path = self.dir.join(format!("{id}.reply"));
-            let written = serde_json::to_vec(&reply)
-                .map_err(anyhow::Error::from)
-                .and_then(|bytes| write_atomic(&reply_path, &bytes).map_err(Into::into));
-            if let Err(error) = written {
-                eprintln!("trufflepig: spooled reply failed: {error:#}");
             }
         }
+        claimed
     }
 
     fn beat(&mut self) -> Result<()> {
@@ -164,6 +151,51 @@ impl SpoolServer {
         file.set_modified(SystemTime::now())?;
         self.heartbeat_at = Some(Instant::now());
         Ok(())
+    }
+}
+
+/// A request this server claimed; answering or refusing it publishes its reply.
+pub struct ClaimedSpoolRequest {
+    claim: PathBuf,
+    reply: PathBuf,
+}
+
+impl ClaimedSpoolRequest {
+    /// Decodes and validates the request, runs `handler`, and publishes its reply.
+    pub fn answer(
+        self,
+        handler: impl FnOnce(crate::diagnostics::RequestContext, Vec<String>) -> Result<String>,
+    ) {
+        let result = fs::read(&self.claim)
+            .context("read spooled daemon request")
+            .and_then(|bytes| {
+                serde_json::from_slice::<DaemonRequest>(&bytes).context("decode spooled request")
+            })
+            .and_then(|request| {
+                request.validate()?;
+                match request {
+                    DaemonRequest::Arguments { context, args } => handler(context, args),
+                    DaemonRequest::Stop => bail!("spooled requests cannot stop a daemon"),
+                }
+            });
+        self.publish(DaemonReply::from_result(result));
+    }
+
+    /// Publishes a failure without running the request.
+    pub fn refuse(self, message: &str) {
+        self.publish(DaemonReply::Failure {
+            message: message.to_owned(),
+        });
+    }
+
+    fn publish(self, reply: DaemonReply) {
+        let _ = fs::remove_file(&self.claim);
+        let written = serde_json::to_vec(&reply)
+            .map_err(anyhow::Error::from)
+            .and_then(|bytes| write_atomic(&self.reply, &bytes).map_err(Into::into));
+        if let Err(error) = written {
+            eprintln!("trufflepig: spooled reply failed: {error:#}");
+        }
     }
 }
 

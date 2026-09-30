@@ -32,7 +32,7 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
             let help = Arguments::command().render_long_help().to_string();
             (help, Outcome::Success, 0)
         }
-        Ok(_) => match super::run_with_context(args, &context) {
+        Ok(_) => match super::retry::run_with_retry(args, options, &context) {
             Ok(text) => (text, Outcome::Success, 0),
             Err(error) => {
                 let message = format!("{error:#}");
