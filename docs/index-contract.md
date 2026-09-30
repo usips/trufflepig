@@ -77,8 +77,11 @@ and answers `verified: false` with `freshness: unpublished`; handle reads keep
 answering `stale_source`, as does a changed file that is now binary or cannot be
 extracted (`src/source/acquisition/stale_symbol.rs`). Only a client that no
 daemon serves (or `--no-daemon`) reconciles an unpublished index in the request
-(`src/cli/dispatch.rs:read_store`); otherwise searches and `sym:` reads answer
-`index_warming`, while `more`, `ctx`, handle, and path reads need no publication.
+(`src/cli/dispatch.rs:read_store`); without `--no-daemon` it never waits for
+the writer lease (`Store::index_unless_leased`), so a daemon scan that started
+meanwhile leaves the index warming. Otherwise searches and `sym:` reads answer
+`index_warming`, while `more`, `ctx`, handle, and path reads use an empty
+in-memory view (`Store::unpublished`) that writes nothing to the index.
 
 ## Semantic preparation
 

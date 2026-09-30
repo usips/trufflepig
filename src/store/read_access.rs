@@ -51,6 +51,30 @@ impl Store {
         })
     }
 
+    /// An empty view of an index that has no publication yet: an in-memory
+    /// schema at generation 0, so handle, `more`, and path reads work (saving
+    /// result sets in `cache`) without touching `index.sqlite3` or waiting on
+    /// its writer.
+    pub fn unpublished(root: &Path, cache: &Path) -> Result<Self> {
+        let root = root
+            .canonicalize()
+            .context("canonicalize repository root")?;
+        ensure!(root.is_dir(), "repository root is not a directory");
+        let cache = cache.canonicalize().context("canonicalize cache")?;
+        let conn = Connection::open_in_memory()?;
+        super::schema::create(&conn)?;
+        super::publish::create_journal(&conn)?;
+        Ok(Self {
+            conn,
+            index_root: root.clone(),
+            root,
+            results_cache: cache.clone(),
+            cache,
+            result_sets: std::cell::OnceCell::new(),
+            access: StoreAccess::Reader,
+        })
+    }
+
     /// Reads current bytes from `read_root` (a linked worktree) through this
     /// index; stored paths are root-relative, so they address the same files.
     /// Result sets are saved in `results_cache`, the read root's own cache.

@@ -293,10 +293,11 @@ fn local_dispatch(
 
 /// The query-only store for a read verb. Only a client that no daemon serves
 /// (or `--no-daemon`) reconciles in the request: searches first, and any read
-/// of an unpublished index. Reconciliation is paused off `deadline`, so only
-/// the query spends its budget. Otherwise an unpublished index answers
-/// `index_warming` for searches and `sym:` reads, while `more`, `ctx`, handles,
-/// and path reads open it as it is: they need no published index.
+/// of an unpublished index, paused off `deadline` so only the query spends its
+/// budget. Without `--no-daemon` it never waits for the writer lease: a daemon
+/// that started scanning meanwhile leaves the index warming. An unpublished
+/// index answers `index_warming` for searches and `sym:` reads; `more`, `ctx`,
+/// handle, and path reads use an empty unpublished view that writes nothing.
 fn read_store(
     root: &Path,
     cache: &Path,
@@ -306,15 +307,26 @@ fn read_store(
 ) -> Result<Store> {
     let verb = options.words.first().map_or("status", String::as_str);
     let reconciles = !daemon_running && (options.no_daemon || !crate::daemon::running(cache));
-    let reconcile = || Store::open(root, cache)?.index().map(drop);
+    let reconcile = || -> Result<()> {
+        let mut store = Store::open(root, cache)?;
+        if options.no_daemon {
+            store.index()?;
+        } else {
+            store.index_unless_leased()?;
+        }
+        Ok(())
+    };
     if reconciles && matches!(verb, "search" | "refs" | "map") {
         deadline.pause_during(reconcile)?;
     }
-    match Store::open_read(root, cache, *deadline) {
+    let opened = match Store::open_read(root, cache, *deadline) {
         Err(error) if is_index_warming(&error) && reconciles => {
             deadline.pause_during(reconcile)?;
             Store::open_read(root, cache, *deadline)
         }
+        opened => opened,
+    };
+    match opened {
         Err(error)
             if is_index_warming(&error)
                 && !matches!(verb, "search" | "refs" | "map")
@@ -323,7 +335,8 @@ fn read_store(
                     .get(1)
                     .is_some_and(|target| target.starts_with("sym:")) =>
         {
-            Store::open(root, cache)
+            std::fs::create_dir_all(cache)?;
+            Store::unpublished(root, cache)
         }
         opened => opened,
     }
@@ -383,5 +396,61 @@ mod tests {
             .map_err(|error| deadline.classify(error))
             .unwrap();
         assert!(!found.hits.is_empty());
+    }
+
+    fn words(words: &[&str]) -> Arguments {
+        super::super::parse(
+            &words
+                .iter()
+                .map(|word| (*word).to_owned())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap()
+    }
+
+    /// A daemon that took the writer lease after the client's liveness check
+    /// leaves the client answering `index_warming`, never waiting on the lease.
+    #[test]
+    fn client_reconcile_never_waits_behind_a_daemon_scan() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("lib.rs"), "pub fn leased() {}\n").unwrap();
+        let lease = std::fs::File::create(cache.path().join("index.lock")).unwrap();
+        fs2::FileExt::lock_exclusive(&lease).unwrap();
+        let (root_path, cache_path) = (root.path().to_owned(), cache.path().to_owned());
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut deadline = QueryDeadline::start();
+            let options = words(&["search", "sym:leased"]);
+            let opened = read_store(&root_path, &cache_path, &options, false, &mut deadline);
+            let _ = sender.send(opened.err().map(|error| is_index_warming(&error)));
+        });
+        let answered = receiver.recv_timeout(Duration::from_secs(10));
+        drop(lease);
+        assert_eq!(answered, Ok(Some(true)));
+    }
+
+    /// Inside a daemon, non-search reads of an unpublished index write nothing.
+    #[test]
+    fn warming_path_reads_leave_the_index_untouched() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("lib.rs"), "pub fn early() {}\n").unwrap();
+        let mut deadline = QueryDeadline::start();
+        let options = words(&["show", "lib.rs"]);
+        let store = read_store(root.path(), cache.path(), &options, true, &mut deadline).unwrap();
+        let shown = source::show(&store, "lib.rs", &OutputBudget::new(2_000).unwrap()).unwrap();
+        assert!(shown.contains("pub fn early()"), "{shown}");
+        assert!(!cache.path().join("index.sqlite3").exists());
+        let error = read_store(
+            root.path(),
+            cache.path(),
+            &words(&["show", "sym:early"]),
+            true,
+            &mut deadline,
+        )
+        .err()
+        .unwrap();
+        assert!(is_index_warming(&error), "{error:#}");
     }
 }

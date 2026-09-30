@@ -265,24 +265,48 @@ impl Store {
             self.access == StoreAccess::Writer,
             "read_only_store: indexing requires Store::open"
         );
-        self.index_with_resolver(|staged| {
-            resolve::references(staged)?;
-            php_resolver::resolve(staged)?;
-            module_resolver::resolve(staged)
-        })
+        self.index_with_resolver(resolve_all)
+    }
+
+    /// [`Store::index`], or `None` at once when another writer (a daemon's scan)
+    /// holds the writer lease, instead of waiting for it.
+    pub fn index_unless_leased(&mut self) -> Result<Option<Coverage>> {
+        anyhow::ensure!(
+            self.access == StoreAccess::Writer,
+            "read_only_store: indexing requires Store::open"
+        );
+        let writer_lock = self.writer_lease_file()?;
+        match fs2::FileExt::try_lock_exclusive(&writer_lock) {
+            Ok(()) => self.index_leased(writer_lock, resolve_all).map(Some),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    fn writer_lease_file(&self) -> Result<std::fs::File> {
+        Ok(std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(self.cache.join("index.lock"))?)
     }
 
     fn index_with_resolver(
         &mut self,
         resolve_staged: impl FnOnce(&mut Connection) -> Result<()>,
     ) -> Result<Coverage> {
-        let writer_lock = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(self.cache.join("index.lock"))?;
+        let writer_lock = self.writer_lease_file()?;
         fs2::FileExt::lock_exclusive(&writer_lock)?;
+        self.index_leased(writer_lock, resolve_staged)
+    }
+
+    /// Stages and publishes while `_writer_lock` holds the writer lease.
+    fn index_leased(
+        &mut self,
+        _writer_lock: std::fs::File,
+        resolve_staged: impl FnOnce(&mut Connection) -> Result<()>,
+    ) -> Result<Coverage> {
         // The writer lease makes any previous staging directory an interrupted scan.
         for entry in std::fs::read_dir(&self.cache)? {
             let entry = entry?;
@@ -346,6 +370,13 @@ impl Store {
         )?;
         Ok(coverage)
     }
+}
+
+/// The full resolver pass over a staged index.
+fn resolve_all(staged: &mut Connection) -> Result<()> {
+    resolve::references(staged)?;
+    php_resolver::resolve(staged)?;
+    module_resolver::resolve(staged)
 }
 
 use rusqlite::OptionalExtension;
