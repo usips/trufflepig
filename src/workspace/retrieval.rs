@@ -115,7 +115,7 @@ pub(super) fn search(
     options: &Arguments,
     context: &RequestContext,
     session: &mut SemanticSession,
-    deadline: QueryDeadline,
+    mut deadline: QueryDeadline,
 ) -> Result<String> {
     let roots = config.member_roots(&options.root.canonicalize()?)?;
     let Scope {
@@ -185,7 +185,7 @@ pub(super) fn search(
             member.verify_identity()?;
             coordinator::ensure_member(member, options)?;
             if options.no_daemon {
-                Store::open(&member.root, &member_cache)?.index()?;
+                deadline.pause_during(|| Store::open(&member.root, &member_cache)?.index())?;
             }
             let store = open_member_read(member, &member_cache, !options.no_daemon, deadline)?;
             let preparation_error = if semantic && !options.no_daemon {
@@ -314,7 +314,11 @@ pub(super) fn search(
         }
     }
     ensure!(
-        !set.owners.is_empty() || !deadline.expired(),
+        !set.owners.is_empty()
+            || !set
+                .coverage
+                .iter()
+                .any(|member| member["state"] == "timed_out"),
         "{TIMED_OUT}: query deadline expired before any member answered"
     );
     ensure!(
