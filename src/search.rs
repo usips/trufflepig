@@ -198,10 +198,12 @@ pub fn search_prepared(
     let mut hits = Vec::with_capacity(128);
     let mut truncated = false;
     let concept = ConceptQuery::parse(&query.text);
+    let prior = PathPrior::for_query(query);
     let policy = FusionPolicy {
         lane_weights: true,
         identifier_tier: concept.identifier.is_some(),
-        prior: PathPrior::for_query(query),
+        prior: &prior,
+        prior_from_lane: 0,
     };
     if query.regex {
         let started = Instant::now();
@@ -254,6 +256,7 @@ pub fn search_prepared(
     {
         let refusion = FusionPolicy {
             lane_weights: false,
+            prior_from_lane: 1,
             ..policy
         };
         truncated |= semantic_lane::append(
@@ -271,6 +274,7 @@ pub fn search_prepared(
         rerank_window::apply(
             store,
             &query.text,
+            &policy,
             cache,
             scorer,
             &mut hits,

@@ -1,9 +1,13 @@
 //! Cross-encoder reranking narrows fused hit order within a bounded window.
-//! Phrase and identifier hits stay ahead of other hits; scores order each tier.
+//! Phrase hits, and an identifier query's evidence hits, stay ahead of other
+//! hits; scores order each tier.
 //! Bodies are read from the current snapshot; a missing body, an unreadable
 //! snapshot, or a non-finite score sinks that hit below its tier's scored hits
 //! without dropping it or aborting the surrounding search.
-use super::telemetry::{Lane, LaneOutcome, RetrievalTrace};
+use super::{
+    file_ranking::{FusionPolicy, IdentifierEvidence},
+    telemetry::{Lane, LaneOutcome, RetrievalTrace},
+};
 use crate::{results::Hit, store::Store};
 use anyhow::Result;
 use rusqlite::OptionalExtension;
@@ -29,17 +33,27 @@ impl RerankScorer for crate::semantic::SemanticSession {
 
 const BODY_CLAMP_BYTES: usize = crate::semantic::RERANK_MAX_DOCUMENT_BYTES;
 
-/// 0 for hits represented by phrase or identifier lanes, else 1.
-fn evidence_tier(hit: &Hit) -> u8 {
-    u8::from(!matches!(
-        hit.provenance.as_deref(),
-        Some("phrase" | "exact_identifier" | "identifier_occurrence")
-    ))
+/// 0 for phrase hits and an identifier query's named files and definitions, 1 for its uses,
+/// 2 for every other hit: the fusion tiers, kept through reranking.
+fn evidence_tier(hit: &Hit, policy: &FusionPolicy) -> u8 {
+    if hit.provenance.as_deref() == Some("phrase") {
+        return 0;
+    }
+    if !policy.identifier_tier {
+        return 2;
+    }
+    match IdentifierEvidence::of(hit, policy.prior) {
+        IdentifierEvidence::Named | IdentifierEvidence::Defined => 0,
+        IdentifierEvidence::Used => 1,
+        IdentifierEvidence::Absent => 2,
+    }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn apply(
     store: &Store,
     query_text: &str,
+    policy: &FusionPolicy,
     cache: &Path,
     scorer: &dyn RerankScorer,
     hits: &mut [Hit],
@@ -85,8 +99,8 @@ pub(super) fn apply(
             }
             let mut sources: Vec<usize> = (0..window).collect();
             sources.sort_by(|&left, &right| {
-                evidence_tier(&hits[left])
-                    .cmp(&evidence_tier(&hits[right]))
+                evidence_tier(&hits[left], policy)
+                    .cmp(&evidence_tier(&hits[right], policy))
                     .then_with(|| match (window_scores[left], window_scores[right]) {
                         (Some(left), Some(right)) => right.total_cmp(&left),
                         (left, right) => right.is_some().cmp(&left.is_some()),

@@ -1,9 +1,10 @@
 //! Path classes shared by ranking: tests and fixtures, and Markdown docs
 //! (including agent pointer files). Matching is ASCII case-insensitive.
 
-/// Test sources and fixtures by convention: a `tests/`, `test/`, `__tests__/`,
-/// `fixtures/` or `testdata/` directory; a `tests`/`test` stem (`tests.rs`);
-/// `test_*`, `*_test.*`, `*_tests.*`, `*.test.*` or `*.spec.*` files.
+/// Test sources by convention: a `tests/`, `test/`, `__tests__/`, `spec/` or
+/// `testdata/` directory; a `tests`/`test` stem (`tests.rs`, `tests.py`);
+/// `test_*`, `*_test.*`, `*_tests.*`, `*_spec.*`, `*.test.*` or `*.spec.*`
+/// files. `fixtures/` alone is not a test directory: content packs use it.
 pub(crate) fn is_test_path(path: &str) -> bool {
     let path = path.to_ascii_lowercase();
     let (directories, file) = path.rsplit_once('/').unwrap_or(("", &path));
@@ -11,13 +12,14 @@ pub(crate) fn is_test_path(path: &str) -> bool {
     directories.split('/').any(|directory| {
         matches!(
             directory,
-            "tests" | "test" | "__tests__" | "fixtures" | "testdata"
+            "tests" | "test" | "__tests__" | "spec" | "testdata"
         )
     }) || matches!(stem, "tests" | "test")
         || stem.starts_with("test_")
         || stem.ends_with("_test")
         || stem.ends_with("_tests")
-        || [".spec.", ".test.", "_test.", "_tests."]
+        || stem.ends_with("_spec")
+        || [".spec.", ".test.", "_test.", "_tests.", "_spec."]
             .iter()
             .any(|marker| file.contains(marker))
 }
@@ -44,8 +46,9 @@ mod tests {
             "go/parse_test.go",
             "src/Tests/Motion.cs",
             "crates/server/tests/fixtures/pack/bodies/felled.luau",
-            "src/fixtures/world.ron",
             "internal/testdata/a.json",
+            "spec/models/user_spec.rb",
+            "app/tests.py",
             "src/sim/tests/",
         ] {
             assert!(is_test_path(path), "{path}");
@@ -55,6 +58,7 @@ mod tests {
             "src/latest.rs",
             "src/contest/mod.rs",
             "src/attest.rs",
+            "content/fixtures/airlock.luau",
         ] {
             assert!(!is_test_path(path), "{path}");
         }

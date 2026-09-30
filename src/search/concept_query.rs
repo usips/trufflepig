@@ -1,7 +1,8 @@
 //! Free-text query shapes and the lexical lanes they run. A literal `"…"`
 //! query runs only the phrase lane. Other text runs, in fusion order: exact
-//! definitions, identifier occurrences (one identifier-shaped token), phrase
-//! and all-terms lanes (two or more terms), the any-term lane, and filenames.
+//! definitions (for `A::b`, definitions of `b` owned by `A`), identifier
+//! occurrences (one identifier-shaped token), phrase and all-terms lanes (two
+//! or more terms), the any-term lane, and filenames.
 use super::{
     LaneHits, Query, file_hits, file_ranking, hit_row, lexical_hits,
     telemetry::{Lane, LaneOutcome, RetrievalTrace},
@@ -38,7 +39,10 @@ pub(super) struct IdentifierToken {
 impl ConceptQuery {
     pub(super) fn parse(text: &str) -> Self {
         let text = text.trim();
-        let literal = text.len() >= 2 && text.starts_with('"') && text.ends_with('"');
+        let literal = text.len() >= 2
+            && text.starts_with('"')
+            && text.ends_with('"')
+            && !text[1..text.len() - 1].contains('"');
         let body = if literal {
             &text[1..text.len() - 1]
         } else {
@@ -116,6 +120,11 @@ pub(super) fn concept_lanes(
         Ok(())
     };
     if let Some(identifier) = &concept.identifier {
+        if let Some(qualifier) = &identifier.qualifier {
+            add(recorded(trace, Lane::ExactIdentifier, || {
+                qualified_definition_hits(store, query, &identifier.name, qualifier)
+            }))?;
+        }
         add(recorded(trace, Lane::IdentifierOccurrence, || {
             occurrence_hits(store, query, identifier)
         }))?;
@@ -189,8 +198,7 @@ fn occurrence_hits(store: &Store, query: &Query, identifier: &IdentifierToken) -
              WHERE o.name=?1
                AND substr(f.path,1,length(?2))=?2
                AND (?3='' OR f.language=?3)
-               AND (?5 IS NULL OR EXISTS(
-                   SELECT 1 FROM occurrences q WHERE q.file_id=o.file_id AND q.name=?5))
+               AND (?5 IS NULL OR o.file_id IN (SELECT file_id FROM occurrences WHERE name=?5))
          )
          SELECT f.path,f.revision,r.start,r.end,r.name,r.kind,NULL,
                 'identifier_occurrence',c.bytes
@@ -219,4 +227,76 @@ fn occurrence_hits(store: &Store, query: &Query, identifier: &IdentifierToken) -
         &mut hits,
         file_ranking::FILE_CANDIDATE_LIMIT,
     ))
+}
+
+/// Definitions named `name` whose container (`impl A`, `impl T for A`, `mod
+/// a`) or module path names `qualifier`, first per file in path order.
+fn qualified_definition_hits(
+    store: &Store,
+    query: &Query,
+    name: &str,
+    qualifier: &str,
+) -> Result<LaneHits> {
+    // Owners are chosen before reading any source bytes: a common name like
+    // `new` has thousands of candidate definitions.
+    let mut candidates = store.conn.prepare(
+        "SELECT d.id,f.path,d.container
+         FROM definitions d
+         JOIN files f ON f.id=d.file_id
+         WHERE d.name=?1
+           AND substr(f.path,1,length(?2))=?2
+           AND (?3='' OR f.language=?3)
+           AND (?4='' OR d.kind=?4)
+         ORDER BY f.path,d.start,d.end,d.id",
+    )?;
+    let mut rows = candidates.query(params![name, query.path, query.language, query.kind])?;
+    let mut owned: Vec<(i64, String)> = Vec::with_capacity(16);
+    while let Some(row) = rows.next()? {
+        let path: String = row.get(1)?;
+        let container: Option<String> = row.get(2)?;
+        if owned.last().is_some_and(|(_, last)| *last == path)
+            || !qualifier_owns(qualifier, container.as_deref(), &path)
+        {
+            continue;
+        }
+        owned.push((row.get(0)?, path));
+        if owned.len() > file_ranking::FILE_CANDIDATE_LIMIT {
+            break;
+        }
+    }
+    let mut statement = store.conn.prepare_cached(
+        "SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container,
+                'exact_identifier',c.bytes
+         FROM definitions d
+         JOIN files f ON f.id=d.file_id
+         JOIN contents c ON c.revision=f.revision
+         WHERE d.id=?1",
+    )?;
+    let mut hits = Vec::with_capacity(owned.len());
+    for (id, _) in owned {
+        hits.push(statement.query_row([id], hit_row)?);
+    }
+    Ok(super::cap_hits(
+        &mut hits,
+        file_ranking::FILE_CANDIDATE_LIMIT,
+    ))
+}
+
+/// Ignoring case and `_`/`-`, `qualifier` is a word of the definition's
+/// container or a component of its path (`RecordStore` owns `record_store.rs`).
+fn qualifier_owns(qualifier: &str, container: Option<&str>, path: &str) -> bool {
+    let fold = |text: &str| -> String {
+        text.chars()
+            .filter(|ch| !matches!(ch, '_' | '-'))
+            .flat_map(char::to_lowercase)
+            .collect()
+    };
+    let folded = fold(qualifier);
+    let words = container
+        .unwrap_or_default()
+        .split(|ch: char| !ch.is_alphanumeric() && ch != '_');
+    let components = path
+        .split('/')
+        .map(|component| component.split('.').next().unwrap_or(component));
+    components.chain(words).any(|part| fold(part) == folded)
 }

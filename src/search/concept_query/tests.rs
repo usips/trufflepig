@@ -59,7 +59,7 @@ fn identifier_query_ranks_definition_and_uses_before_files_lacking_the_token() {
     let found = paths(
         "molar_mass",
         &[
-            ("src/molar_mass.ron", b"molar mass: 12\nmolar mass: 14\n"),
+            ("src/molar_mass_notes.ron", b"molar mass: 12\nmolar mass: 14\n"),
             (
                 "src/substances.rs",
                 b"pub struct Substance { mass: f32 }\nimpl Substance {\n    pub fn molar_mass(&self) -> f32 { self.mass }\n}\n",
@@ -80,7 +80,7 @@ fn identifier_query_ranks_definition_and_uses_before_files_lacking_the_token() {
             "src/substances.rs",
             "src/reader.rs",
             "src/tests.rs",
-            "src/molar_mass.ron"
+            "src/molar_mass_notes.ron"
         ]
     );
 }
@@ -142,4 +142,64 @@ fn test_files_lead_when_the_query_asks_for_tests() {
     ];
     assert_eq!(paths("refill slot", &files)[0], "src/sim/refill.rs");
     assert_eq!(paths("refill slot test", &files)[0], "src/sim/tests.rs");
+}
+
+#[test]
+fn separately_quoted_words_are_not_one_literal() {
+    let query = ConceptQuery::parse("\"a\" b \"c\"");
+    assert!(!query.literal);
+    assert_eq!(query.phrase.as_deref(), Some("\"a b c\""));
+}
+
+#[test]
+fn qualified_query_ranks_the_owner_definition_before_callers() {
+    let callers =
+        "fn a() { let s = RecordStore::new(); let v = Vec::new(); let w = Vec::new(); }\n";
+    let found = paths(
+        "RecordStore::new",
+        &[
+            ("src/callers.rs", callers.as_bytes()),
+            (
+                "src/other.rs",
+                b"pub struct Other;\nimpl Other {\n    pub fn new() -> Self { Other }\n}\n",
+            ),
+            (
+                "src/record_store.rs",
+                b"pub struct RecordStore;\nimpl RecordStore {\n    pub fn new() -> Self { RecordStore }\n}\n",
+            ),
+        ],
+    );
+    assert_eq!(found[0], "src/record_store.rs");
+    assert!(found.iter().position(|path| path == "src/other.rs") > Some(1));
+}
+
+#[test]
+fn a_file_named_by_the_query_leads_identifier_and_doc_queries() {
+    let mut files: Vec<(String, Vec<u8>)> = (0..12)
+        .map(|index| {
+            (
+                format!("src/user_{index}.rs"),
+                b"struct S { tick_rate: u32 }\nfn f(s: S) { use_it(s.tick_rate, s.tick_rate); }\n"
+                    .to_vec(),
+            )
+        })
+        .collect();
+    files.push((
+        "src/tick_rate.rs".into(),
+        b"pub struct TickRate(pub u32);\n".to_vec(),
+    ));
+    files.push((
+        "AGENTS.md".into(),
+        b"# Agent guide\nFollow the rules.\n".to_vec(),
+    ));
+    files.push((
+        "src/agents.rs".into(),
+        b"// AGENTS md agents md agents md\nfn agents() {}\n".to_vec(),
+    ));
+    let files: Vec<(&str, &[u8])> = files
+        .iter()
+        .map(|(path, bytes)| (path.as_str(), bytes.as_slice()))
+        .collect();
+    assert_eq!(paths("tick_rate", &files)[0], "src/tick_rate.rs");
+    assert_eq!(paths("AGENTS.md", &files)[0], "AGENTS.md");
 }

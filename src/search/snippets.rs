@@ -1,6 +1,6 @@
 //! One-line hit previews: the line inside a hit's span that mentions the most
-//! distinct query terms (earliest on ties), else one naming the hit, else its
-//! first non-blank line. Previews locate evidence; `show` remains the verified read.
+//! distinct query terms (code beats a comment with one more term; earliest on
+//! ties), else one naming the hit, else its first non-blank line. Previews locate evidence; `show` remains the verified read.
 use crate::{
     results::{Hit, Snippet},
     store::Store,
@@ -57,7 +57,7 @@ pub(super) fn attach(store: &Store, terms: &[String], hits: &mut [Hit]) -> Resul
     Ok(())
 }
 
-/// Distinct terms matched (more first), then the line class (lower first).
+/// Term evidence (more first), then the line class (lower first).
 type PreviewRank = (Reverse<usize>, u8);
 
 /// Preview of the span `start..end` (whose first line is `first_line`) in `bytes`.
@@ -76,8 +76,9 @@ pub(crate) fn preview(
         .map_or(0, |index| index + 1);
     let stop = end.clamp(start, bytes.len());
     let name = name.to_lowercase();
-    // More distinct terms win, then the line class; ties keep the earliest
-    // line. Comment and attribute lines rank below code with the same terms.
+    // Evidence is two points per distinct term plus three for a code line
+    // with a term, so code beats a comment with one more term. Then the line
+    // class decides; ties keep the earliest line.
     let mut best: Option<(PreviewRank, usize, &[u8])> = None;
     let mut position = begin;
     for (offset, line) in bytes[begin..]
@@ -111,7 +112,8 @@ pub(crate) fn preview(
             (false, false, false) => 4,
             (false, false, true) => 5,
         };
-        let rank = (Reverse(matched), class);
+        let evidence = 2 * matched + if matched > 0 && !comment { 3 } else { 0 };
+        let rank = (Reverse(evidence), class);
         if best.is_none_or(|(old, _, _)| rank < old) {
             best = Some((rank, first_line + offset, line));
             if matched == terms.len() && class == 0 {
@@ -193,5 +195,16 @@ mod tests {
         // Equal counts keep the earliest code line.
         let hit = preview(source, 0, source.len(), 1, &preview_terms("item"), "").unwrap();
         assert_eq!(hit.line, 1);
+    }
+
+    #[test]
+    fn preview_prefers_code_unless_a_comment_has_two_more_terms() {
+        let source = b"// unknown item slot faults\nlet x = item;\n";
+        let terms = preview_terms("unknown item slot");
+        let hit = preview(source, 0, source.len(), 1, &terms, "").unwrap();
+        assert_eq!(hit.line, 1);
+        let source = b"// unknown item slot\nlet slot = item.slot();\n";
+        let hit = preview(source, 0, source.len(), 1, &terms, "").unwrap();
+        assert_eq!(hit.line, 2);
     }
 }

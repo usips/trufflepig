@@ -20,33 +20,40 @@ before a 1,000-file lane cap. Lanes run in this order, and a file's hit from
 the earliest lane represents it
 ([`concept_query`](../src/search/concept_query.rs)):
 
-- exact definitions of the whole text, weight 3 for an identifier query, else 1;
-- identifier occurrences, weight 1: for a single identifier-shaped token (with
-  `_`, `::`, a lower-to-upper case change, or letters and digits), files with an
-  occurrence of that name (`a::b` names `b` in files that also use `a`), most
+- exact definitions of the whole text; for `A::b`, definitions of `b` whose
+  container or module path names `A` (ignoring case, `_` and `-`);
+- identifier occurrences: for a single identifier-shaped token (with `_`,
+  `::`, a lower-to-upper case change, or letters and digits), files with an
+  occurrence of that name (for `A::b`, of `b` in files that also use `A`), most
   uses first, represented by the region of the first declaration or use;
-- a phrase lane (all terms adjacent and in order), weight 2, and an all-terms
-  lane (every term in one region), weight 1, for two or more terms;
+- a phrase lane (all terms adjacent and in order) and an all-terms lane (every
+  term in one region), for two or more terms;
 - the any-term lane and filenames, as for every free-text query.
 
 Ranks combine with reciprocal rank fusion (`k = 60`), with stable path ties.
-Filename evidence has weight 2 for an exact normalized stem, 1 for all query
-tokens in the basename, and 0.5 for partial path matches. For an identifier
-query, files with a definition or occurrence of the token rank ahead of every
-file lacking it. A text quoted as one `"…"` literal runs the phrase lane alone.
+Lane weights are 3 for an identifier query's exact declarations (not locals,
+parameters or imports), 2 for phrase matches, and 1 otherwise. Filename
+evidence has weight 2 for an exact normalized stem, 1 for all query tokens in
+the basename, and 0.5 for partial path matches. An identifier query ranks files
+in tiers before score: a file whose stem is the token (`tick_rate.rs`), then
+files declaring it, then files using, binding or importing it, then the rest.
+A text quoted as one `"…"` literal (no inner quotes) runs the phrase lane alone.
 
-A path prior halves the fused score of test paths and Markdown files,
+A path prior halves each lane contribution of test paths and Markdown files,
 including `AGENTS.md` and `CLAUDE.md`, as classified by
-[`path_class`](../src/search/path_class.rs). Tests
-keep full weight when the query names tests (`test`, `tests`, `testing`,
-`spec`, `fixture`) or its `file:` filter selects a test path; docs keep it when
-the query names docs (`doc`, `docs`, `documentation`, `readme`, `markdown`),
-sets `lang:text`, or its `file:` filter selects a doc path
-([`path_prior`](../src/search/path_prior.rs)). Demoted files remain eligible.
-Available semantic file ranks then fuse with the combined source ranking at
-equal weight under the same prior and identifier tier; literal queries skip
-them. An opt-in rerank stage then reorders the top 32 fused files; see the
-[semantic contract](semantic-contract.md).
+[`path_class`](../src/search/path_class.rs); a demoted file at lane rank `r`
+thus scores like an undemoted one at rank `2r + 61`. Tests keep full weight when
+the query names tests (`test`, `tests`, `testing`, `spec`, `fixture`) or a
+`file:` component is a test directory; docs keep it when the query names docs
+(`doc`, `docs`, `documentation`, `readme`, `markdown`, `md`, `agents`,
+`claude`, `guide`), sets `lang:text`, or `file:` selects a doc path or `docs/`.
+`kind:file` queries and, outside identifier queries, files whose basename holds
+every query term are never demoted ([`path_prior`](../src/search/path_prior.rs)).
+Demoted files remain eligible. Available semantic file ranks then fuse with the
+combined source ranking at equal weight; the prior applies once, to the
+semantic ranks only, and the identifier tiers hold. Literal queries skip
+semantic ranks. An opt-in rerank stage then reorders the top 32 fused files;
+see the [semantic contract](semantic-contract.md).
 `sym:` and `re:` retain occurrences.
 Pages maximize file references before adding optional symbol names.
 
