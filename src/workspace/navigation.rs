@@ -6,11 +6,12 @@ use super::{
 };
 use crate::{
     cli::Arguments,
+    daemon::deadline::QueryDeadline,
     identity::ResultHandle,
     output::OutputBudget,
     results::{self, ResultEntry},
     source::{self, SourceSide, acquisition},
-    store::Store,
+    store::{Store, is_index_warming},
 };
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
@@ -49,6 +50,17 @@ pub(super) fn read(
     options: &Arguments,
     budget: &OutputBudget,
 ) -> Result<String> {
+    let deadline = QueryDeadline::start();
+    read_within(config, results, options, budget, deadline)
+        .map_err(|error| deadline.classify(error))
+}
+fn read_within(
+    config: &WorkspaceConfig,
+    results: &WorkspaceResults,
+    options: &Arguments,
+    budget: &OutputBudget,
+    deadline: QueryDeadline,
+) -> Result<String> {
     let target = options
         .words
         .get(1)
@@ -71,7 +83,7 @@ pub(super) fn read(
         let hit = &set.hits[index];
         let owner = &set.owners[hit.owner];
         verify_selection(owner, options)?;
-        let store = owner.open(config)?;
+        let store = owner.open(config, deadline)?;
         let metadata = owner.metadata(&set.workspace);
         if is_context {
             ensure!(
@@ -107,7 +119,11 @@ pub(super) fn read(
     let member = selected_member(config, options)?;
     member.verify_identity()?;
     let cache = member_cache(&member, options.cache.as_deref())?;
-    let store = Store::open(&member.root, &cache)?;
+    // A member without a published index still serves explicit path reads.
+    let store = match Store::open_read(&member.root, &cache, deadline) {
+        Err(error) if is_index_warming(&error) => Store::open(&member.root, &cache)?,
+        opened => opened?,
+    };
     let mut source = acquisition::acquire(&store, target, side)?;
     let (_, entry) = results::entry(&store, &source.handle)?;
     let owner = MemberSnapshot::capture(&member, &store, &cache, store.generation()?)?;
@@ -146,7 +162,10 @@ pub(super) fn history(
     let member = if let Some((set, index)) = &retained {
         let owner = &set.owners[set.hits[*index].owner];
         verify_selection(owner, options)?;
-        let _ = owner.open(config)?;
+        let deadline = QueryDeadline::start();
+        owner
+            .open(config, deadline)
+            .map_err(|error| deadline.classify(error))?;
         owner.member_root(config)?
     } else {
         selected_member(config, options)?

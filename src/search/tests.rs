@@ -16,8 +16,7 @@ pub(super) fn fixture(files: &[(&str, &[u8])]) -> (tempfile::TempDir, tempfile::
 
 #[test]
 fn excluded_files_remain_visible_and_do_not_break_search() {
-    let (_root, cache, mut store) =
-        fixture(&[("lib.rs", b"fn hello() {}"), ("data.bin", b"\0binary")]);
+    let (_root, cache, store) = fixture(&[("lib.rs", b"fn hello() {}"), ("data.bin", b"\0binary")]);
     let set = search(&store, &Query::parse("hello").unwrap(), false, cache.path()).unwrap();
     assert!(set.hits.iter().any(|h| h.name == "hello"));
     let set = search(
@@ -29,7 +28,7 @@ fn excluded_files_remain_visible_and_do_not_break_search() {
     .unwrap();
     assert_eq!(set.hits.len(), 1);
     assert_eq!(set.hits[0].revision, None);
-    let id = results::save(&mut store, set).unwrap();
+    let id = results::save(&store, set).unwrap();
     assert!(
         source::show(&store, &format!("{id}:1"), &OutputBudget::new(600).unwrap())
             .unwrap_err()
@@ -234,7 +233,7 @@ fn csharp_and_javascript_index_search_and_navigation_contracts() {
 
 #[test]
 fn live_regex_finds_new_files_and_refuses_old_graph() {
-    let (root, cache, mut store) = fixture(&[("lib.rs", b"fn alpha() {}")]);
+    let (root, cache, store) = fixture(&[("lib.rs", b"fn alpha() {}")]);
     std::fs::write(root.path().join("new.rs"), "fn live_needle() {}\n").unwrap();
     let set = search(
         &store,
@@ -244,7 +243,7 @@ fn live_regex_finds_new_files_and_refuses_old_graph() {
     )
     .unwrap();
     assert_eq!(set.hits[0].path, "new.rs");
-    let id = results::save(&mut store, set).unwrap();
+    let id = results::save(&store, set).unwrap();
     assert!(
         context(&store, &format!("{id}:1"), &OutputBudget::new(600).unwrap())
             .unwrap_err()
@@ -263,7 +262,7 @@ fn live_regex_finds_new_files_and_refuses_old_graph() {
 
 #[test]
 fn escaped_file_handles_read_current_contents() {
-    let (_root, cache, mut store) = fixture(&[("odd:1-2\n%.md", b"unique file content\n")]);
+    let (_root, cache, store) = fixture(&[("odd:1-2\n%.md", b"unique file content\n")]);
     let set = search(&store, &Query::parse("odd").unwrap(), false, cache.path()).unwrap();
     let path = set
         .hits
@@ -274,7 +273,7 @@ fn escaped_file_handles_read_current_contents() {
         .clone();
     assert!(path.contains("%3A"));
     assert!(path.contains("%0A"));
-    let id = results::save(&mut store, set).unwrap();
+    let id = results::save(&store, set).unwrap();
     let set = results::load(&store, &id).unwrap();
     let hit = set.hits.iter().find(|h| h.kind == "file").unwrap();
     let budget = OutputBudget::new(600).unwrap();

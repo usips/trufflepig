@@ -5,10 +5,11 @@ use super::{
     member_root::{MemberRoot, linked_root_of_member},
 };
 use crate::{
+    daemon::deadline::QueryDeadline,
     identity::{ResultCursor, ResultHandle},
     output::{OutputBudget, OutputFormat},
     results::{self, HitDetail, ResultEntry},
-    store::{Store, decode_path, encode_path},
+    store::{Store, decode_path, encode_path, is_index_warming},
 };
 use anyhow::{Context, Result, bail, ensure};
 use lines::{compact_coverage, member_coverage_summary};
@@ -86,7 +87,8 @@ impl MemberSnapshot {
         owner.is_home = true;
         Ok(owner)
     }
-    pub fn open(&self, config: &WorkspaceConfig) -> Result<Store> {
+    /// Reopens the owner's index query-only; it must be the same index database.
+    pub fn open(&self, config: &WorkspaceConfig, deadline: QueryDeadline) -> Result<Store> {
         let member = self.member_root(config)?;
         let metadata = member
             .root
@@ -103,7 +105,13 @@ impl MemberSnapshot {
             cache.join("index.sqlite3").is_file(),
             "member_unavailable: owning index was removed"
         );
-        let store = Store::open(&member.root, &cache)?;
+        // An explicit path read captured before the first publication reopens as it was served.
+        let store = match Store::open_read(&member.root, &cache, deadline) {
+            Err(error) if self.generation == 0 && is_index_warming(&error) => {
+                Store::open(&member.root, &cache)?
+            }
+            opened => opened?,
+        };
         let current: Option<String> = store
             .conn
             .query_row("SELECT value FROM meta WHERE key='index_epoch'", [], |r| {

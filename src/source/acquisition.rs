@@ -321,7 +321,12 @@ mod tests {
         let store = Store::open(root.path(), cache.path()).unwrap();
         let original = acquire(&store, "path:lib.rs", None).unwrap();
         let (_, entry) = results::entry(&store, &original.handle).unwrap();
-        store.conn.execute("DELETE FROM result_sets", []).unwrap();
+        store
+            .result_sets()
+            .unwrap()
+            .conn
+            .execute("DELETE FROM result_sets", [])
+            .unwrap();
 
         let handle = format!("{}:1", uuid::Uuid::new_v4());
         let source = acquire_entry(&store, &handle, entry.clone(), None).unwrap();

@@ -206,7 +206,8 @@ pub(crate) fn local(
             bail!("invalid_command: internal server command")
         }
         "search" | "refs" | "map" => {
-            retrieval::search(config, cache, &results, options, context, session)
+            let deadline = crate::daemon::deadline::QueryDeadline::start();
+            retrieval::search(config, cache, &results, options, context, session, deadline)
         }
         _ => bail!("invalid_command: unknown command {verb}; use search for queries"),
     }

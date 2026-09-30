@@ -10,6 +10,7 @@ mod php_resolver;
 #[cfg(test)]
 mod publication_tests;
 mod publish;
+mod read_access;
 mod regions;
 mod resolve;
 mod scan;
@@ -21,11 +22,12 @@ mod seed_tests;
 mod tests;
 mod worktree_seed_source;
 
-use crate::identity::ContentRevision;
+use crate::{identity::ContentRevision, results::ResultSetStore};
 use anyhow::{Context, Result};
 pub use paths::{decode_path, encode_path};
+pub use read_access::is_index_warming;
 use rusqlite::Connection;
-pub(crate) use scan::extraction_cache_version;
+pub(crate) use scan::{MAX_SOURCE_BYTES, extraction_cache_version};
 pub use seed::{SeedOutcome, ensure_seeded};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -88,10 +90,26 @@ pub struct PublicationObservations {
     pub changes: Vec<PublicationChange>,
 }
 
+/// A per-root index connection. [`Store::open`] is the writer (index, init,
+/// sessions, reconciler); [`Store::open_read`] is the query-only reader, which
+/// may read bytes from another checkout via [`Store::reading_from`].
 pub struct Store {
     pub conn: Connection,
+    /// Root whose current bytes reads verify and render.
     pub root: PathBuf,
+    /// Root the published index describes; equals `root` unless reading from a worktree.
+    index_root: PathBuf,
     cache: PathBuf,
+    /// Cache holding this store's `results.sqlite3`.
+    results_cache: PathBuf,
+    result_sets: std::cell::OnceCell<ResultSetStore>,
+    access: StoreAccess,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StoreAccess {
+    Writer,
+    Reader,
 }
 
 impl Store {
@@ -131,7 +149,35 @@ impl Store {
             "INSERT OR IGNORE INTO meta(key,value) VALUES('root',?1)",
             [&encoded_root],
         )?;
-        Ok(Self { conn, root, cache })
+        Ok(Self {
+            conn,
+            index_root: root.clone(),
+            root,
+            results_cache: cache.clone(),
+            cache,
+            result_sets: std::cell::OnceCell::new(),
+            access: StoreAccess::Writer,
+        })
+    }
+
+    /// The root this index describes; differs from `root` for a worktree view.
+    pub fn index_root(&self) -> &Path {
+        &self.index_root
+    }
+
+    /// The cache holding `index.sqlite3`.
+    pub fn index_cache(&self) -> &Path {
+        &self.cache
+    }
+
+    /// Result sets live in `<results cache>/results.sqlite3`, never in the index,
+    /// so saving them never waits behind a publication.
+    pub fn result_sets(&self) -> Result<&ResultSetStore> {
+        if let Some(opened) = self.result_sets.get() {
+            return Ok(opened);
+        }
+        let opened = ResultSetStore::open(&self.results_cache)?;
+        Ok(self.result_sets.get_or_init(|| opened))
     }
 
     pub fn generation(&self) -> Result<i64> {
@@ -215,6 +261,10 @@ impl Store {
     }
 
     pub fn index(&mut self) -> Result<Coverage> {
+        anyhow::ensure!(
+            self.access == StoreAccess::Writer,
+            "read_only_store: indexing requires Store::open"
+        );
         self.index_with_resolver(|staged| {
             resolve::references(staged)?;
             php_resolver::resolve(staged)?;
@@ -256,7 +306,7 @@ impl Store {
         schema::create(&staged)?;
         let capture_started_ms = publish::timestamp_ms()?;
         let (coverage, scan_fingerprint) =
-            scan::stage(&mut staged, &self.conn, &self.root, &self.cache)?;
+            scan::stage(&mut staged, &self.conn, &self.index_root, &self.cache)?;
         let fingerprint =
             scan::resolved_fingerprint(&scan_fingerprint, php_resolver::SHARED_RESOLVER_REVISION);
         let capture_completed_ms = publish::timestamp_ms()?.max(capture_started_ms);
@@ -283,7 +333,7 @@ impl Store {
                 |row| row.get(0),
             )?,
             generation: self.generation()? + 1,
-            root: encode_path(&self.root),
+            root: encode_path(&self.index_root),
             capture_started_ms,
             capture_completed_ms,
         };

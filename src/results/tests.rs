@@ -27,11 +27,11 @@ fn query(store: &Store, text: &str) -> ResultSet {
 
 #[test]
 fn handles_survive_interleaving_and_reopening() {
-    let (root, cache, mut store) = fixture();
+    let (root, cache, store) = fixture();
     let a = query(&store, "sym:alpha");
-    let id = save(&mut store, a).unwrap();
+    let id = save(&store, a).unwrap();
     let b = query(&store, "sym:beta");
-    save(&mut store, b).unwrap();
+    save(&store, b).unwrap();
     drop(store);
     let store = Store::open(root.path(), cache.path()).unwrap();
     let (_, hit) = handle(&store, &format!("{id}:1")).unwrap();
@@ -45,10 +45,12 @@ fn handles_survive_interleaving_and_reopening() {
 
 #[test]
 fn expired_evicted_and_invalid_handles_never_redirect() {
-    let (_root, _cache, mut store) = fixture();
+    let (_root, _cache, store) = fixture();
     let set = query(&store, "sym:alpha");
-    let id = save(&mut store, set).unwrap();
+    let id = save(&store, set).unwrap();
     store
+        .result_sets()
+        .unwrap()
         .conn
         .execute("UPDATE result_sets SET expires=0 WHERE id=?1", [&id])
         .unwrap();
@@ -61,10 +63,12 @@ fn expired_evicted_and_invalid_handles_never_redirect() {
     assert!(handle(&store, &format!("{id}:0")).is_err());
     for _ in 0..51 {
         let set = query(&store, "sym:beta");
-        save(&mut store, set).unwrap();
+        save(&store, set).unwrap();
     }
     assert!(handle(&store, &format!("{id}:1")).is_err());
     let count: i64 = store
+        .result_sets()
+        .unwrap()
         .conn
         .query_row("SELECT count(*) FROM result_sets", [], |r| r.get(0))
         .unwrap();
@@ -75,7 +79,7 @@ fn expired_evicted_and_invalid_handles_never_redirect() {
 fn stale_source_and_graph_are_explicit() {
     let (root, _cache, mut store) = fixture();
     let set = query(&store, "sym:alpha");
-    let id = save(&mut store, set).unwrap();
+    let id = save(&store, set).unwrap();
     let budget = OutputBudget::new(600).unwrap();
     std::fs::write(root.path().join("lib.rs"), "// moved\nfn alpha() {}\n").unwrap();
     assert!(
@@ -102,9 +106,9 @@ fn stale_source_and_graph_are_explicit() {
 
 #[test]
 fn pagination_respects_full_budget_and_advances_explicitly() {
-    let (_root, _cache, mut store) = fixture();
+    let (_root, _cache, store) = fixture();
     let set = query(&store, "");
-    let id = save(&mut store, set).unwrap();
+    let id = save(&store, set).unwrap();
     let budget = OutputBudget::new(600).unwrap();
     let first = page(&store, &id, 0, 1, &budget).unwrap();
     assert!(budget.fits(&first));
@@ -119,9 +123,9 @@ fn pagination_respects_full_budget_and_advances_explicitly() {
 
 #[test]
 fn pages_are_file_first_while_saved_entries_keep_full_identity() {
-    let (root, _cache, mut store) = fixture();
+    let (root, _cache, store) = fixture();
     let result = query(&store, "sym:alpha");
-    let id = save(&mut store, result).unwrap();
+    let id = save(&store, result).unwrap();
     let response: Value =
         serde_json::from_str(&page(&store, &id, 0, 1, &OutputBudget::new(600).unwrap()).unwrap())
             .unwrap();
@@ -150,10 +154,10 @@ fn pages_are_file_first_while_saved_entries_keep_full_identity() {
 
 #[test]
 fn published_working_tree_pages_keep_detailed_source_identity() {
-    let (root, _cache, mut store) = fixture();
+    let (root, _cache, store) = fixture();
     let mut result = query(&store, "sym:alpha");
     result.coverage = serde_json::json!({"endpoint":"published_working_tree"});
-    let id = save(&mut store, result).unwrap();
+    let id = save(&store, result).unwrap();
     let response: Value =
         serde_json::from_str(&page(&store, &id, 0, 1, &OutputBudget::new(600).unwrap()).unwrap())
             .unwrap();
@@ -169,11 +173,11 @@ fn published_working_tree_pages_keep_detailed_source_identity() {
 
 #[test]
 fn cache_bytes_and_hit_count_are_bounded() {
-    let (_root, _cache, mut store) = fixture();
+    let (_root, _cache, store) = fixture();
     let mut set = query(&store, "sym:alpha");
     let hit = set.hits[0].clone();
     set.hits = vec![hit; MAX_HITS + 1];
-    let id = save(&mut store, set).unwrap();
+    let id = save(&store, set).unwrap();
     let set = load(&store, &id).unwrap();
     assert_eq!(set.hits.len(), MAX_HITS);
     assert!(set.truncated);
@@ -183,7 +187,7 @@ fn cache_bytes_and_hit_count_are_bounded() {
 
 #[test]
 fn candidate_pages_report_omissions_and_allow_larger_replay() {
-    let (_root, _cache, mut store) = fixture();
+    let (_root, _cache, store) = fixture();
     let mut set = query(&store, "sym:alpha");
     let candidate = DefinitionTarget {
         path: "lib.rs".into(),
@@ -194,7 +198,7 @@ fn candidate_pages_report_omissions_and_allow_larger_replay() {
     };
     set.hits[0].candidates = vec![candidate; 64];
     set.hits[0].resolution = Some("candidate".into());
-    let id = save(&mut store, set).unwrap();
+    let id = save(&store, set).unwrap();
     let response = page(&store, &id, 0, 1, &OutputBudget::new(600).unwrap()).unwrap();
     let value: Value = serde_json::from_str(&response).unwrap();
     assert_eq!(value["hits"][0]["candidates_truncated"], true);
@@ -312,13 +316,15 @@ fn live_handle_continuation_expires_with_original_set() {
     std::fs::write(root.path().join("lib.rs"), source).unwrap();
     store.index().unwrap();
     let set = query(&store, "sym:alpha");
-    let id = save(&mut store, set).unwrap();
+    let id = save(&store, set).unwrap();
     let budget = OutputBudget::new(600).unwrap();
     let page: Value =
         serde_json::from_str(&source::show(&store, &format!("{id}:1"), &budget).unwrap()).unwrap();
     let cursor = page["next"].as_str().unwrap();
     assert!(cursor.starts_with(&format!("read:{id}:1@")));
     store
+        .result_sets()
+        .unwrap()
         .conn
         .execute("UPDATE result_sets SET expires=0 WHERE id=?1", [&id])
         .unwrap();
@@ -348,7 +354,7 @@ fn lines_page_fits_more_hits_than_json_for_same_budget() {
     }
     store.index().unwrap();
     let set = query(&store, "gamma");
-    let id = save(&mut store, set).unwrap();
+    let id = save(&store, set).unwrap();
     let json: Value =
         serde_json::from_str(&page(&store, &id, 0, 40, &OutputBudget::new(300).unwrap()).unwrap())
             .unwrap();

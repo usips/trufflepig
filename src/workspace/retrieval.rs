@@ -9,12 +9,13 @@ use super::{
 };
 use crate::{
     cli::Arguments,
+    daemon::deadline::{QueryDeadline, TIMED_OUT, is_timed_out},
     diagnostics::{DiagnosticsMode, EventStage, Operation, Outcome, RequestContext, RequestEvent},
     output::OutputBudget,
     results::ResultEntry,
     search::{self, Query, telemetry::RetrievalTrace},
     semantic::SemanticSession,
-    store::Store,
+    store::{Store, is_index_warming},
 };
 use anyhow::{Context, Result, ensure};
 use serde_json::json;
@@ -22,6 +23,30 @@ use serde_json::json;
 /// How long a query waits for the home member's first publication, typically a
 /// freshly seeded worktree, before answering from the rest of the workspace.
 const HOME_PUBLICATION_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
+
+/// Opens a member's published index for one query; the home member waits up to
+/// [`HOME_PUBLICATION_WAIT`] (capped by `deadline`) for its first publication.
+fn open_member_read(
+    member: &MemberRoot,
+    member_cache: &std::path::Path,
+    await_home: bool,
+    deadline: QueryDeadline,
+) -> Result<Store> {
+    let wait = std::time::Instant::now() + deadline.cap(HOME_PUBLICATION_WAIT);
+    loop {
+        match Store::open_read(&member.root, member_cache, deadline) {
+            Err(error)
+                if await_home
+                    && member.is_home
+                    && is_index_warming(&error)
+                    && std::time::Instant::now() < wait =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            opened => return opened,
+        }
+    }
+}
 
 /// Members to search. Without a selector, only the home member is searched when
 /// one exists (`implicit_home`); `search` widens to all members when home has no
@@ -90,6 +115,7 @@ pub(super) fn search(
     options: &Arguments,
     context: &RequestContext,
     session: &mut SemanticSession,
+    mut deadline: QueryDeadline,
 ) -> Result<String> {
     let roots = config.member_roots(&options.root.canonicalize()?)?;
     let Scope {
@@ -155,21 +181,13 @@ pub(super) fn search(
         };
         let started = std::time::Instant::now();
         let found = (|| {
+            ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
             member.verify_identity()?;
             coordinator::ensure_member(member, options)?;
-            let mut store = Store::open(&member.root, &member_cache)?;
             if options.no_daemon {
-                store.index()?;
-            } else if member.is_home {
-                let deadline = std::time::Instant::now() + HOME_PUBLICATION_WAIT;
-                while store.generation()? == 0 && std::time::Instant::now() < deadline {
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                }
+                deadline.pause_during(|| Store::open(&member.root, &member_cache)?.index())?;
             }
-            ensure!(
-                store.generation()? > 0,
-                "member_warming: initial index is not published"
-            );
+            let store = open_member_read(member, &member_cache, !options.no_daemon, deadline)?;
             let preparation_error = if semantic && !options.no_daemon {
                 crate::semantic::preparation::schedule(&member.root, &member_cache).err()
             } else {
@@ -207,7 +225,8 @@ pub(super) fn search(
             }
             let owner = MemberSnapshot::capture(member, &store, &member_cache, found.generation)?;
             Ok::<_, anyhow::Error>((owner, found))
-        })();
+        })()
+        .map_err(|error| deadline.classify(error));
         if semantic && !preparation_recorded {
             trace.query_preparation_us = Some(preparation_us);
             preparation_recorded = true;
@@ -258,8 +277,10 @@ pub(super) fn search(
                 lists.push(entries.into_iter());
             }
             Err(error) => {
-                let state = if error.to_string().starts_with("member_warming:") {
+                let state = if is_index_warming(&error) {
                     "warming"
+                } else if is_timed_out(&error) {
+                    "timed_out"
                 } else {
                     "unavailable"
                 };
@@ -292,6 +313,14 @@ pub(super) fn search(
             });
         }
     }
+    ensure!(
+        !set.owners.is_empty()
+            || !set
+                .coverage
+                .iter()
+                .any(|member| member["state"] == "timed_out"),
+        "{TIMED_OUT}: query deadline expired before any member answered"
+    );
     ensure!(
         !set.owners.is_empty(),
         "workspace_unavailable: no selected member has an available published index; inspect ws status or use --no-daemon"

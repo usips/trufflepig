@@ -1,6 +1,11 @@
 //! Local dispatch against published live and captured historical identities.
 use super::{Arguments, emission, request_context, validate};
-use crate::{output::OutputBudget, results, search, source, store::Store};
+use crate::{
+    daemon::deadline::QueryDeadline,
+    output::OutputBudget,
+    results, search, source,
+    store::{Store, is_index_warming},
+};
 use anyhow::{Context, Result, bail, ensure};
 use std::path::Path;
 
@@ -138,7 +143,12 @@ fn local_dispatch(
             ),
         };
     }
-    let mut store = Store::open(root, cache)?;
+    let mut deadline = QueryDeadline::start();
+    let mut store = if matches!(verb, "show" | "more" | "ctx" | "search" | "refs" | "map") {
+        read_store(root, cache, verb, daemon_running, &mut deadline)?
+    } else {
+        Store::open(root, cache)?
+    };
     let argument = || {
         options
             .words
@@ -230,7 +240,7 @@ fn local_dispatch(
             _ => unreachable!(),
         };
     }
-    match verb {
+    let response = match verb {
         "index"|"init"=>{let coverage=store.index()?;budget.render(&serde_json::json!({"generation":store.generation()?,"coverage":coverage}))},
         "doctor"=>budget.render(&crate::probes::doctor(&store, cache, session)?),
         "status"=>budget.render(&serde_json::json!({"generation":store.generation()?,"coverage":store.coverage()?,"semantic_feature":cfg!(feature="semantic"),"tokenizer":"o200k_base"})),
@@ -238,7 +248,6 @@ fn local_dispatch(
         "more"=>results::more(&store,argument()?,options.limit,&page_budget),
         "ctx"=>search::context(&store,argument()?,&budget),
         "search" | "refs" | "map" => {
-            if !daemon_running || store.generation()?==0 {store.index()?;}
             let set=match verb {
                 "refs"=>search::references(&store,argument()?)?,
                 "map"=>search::map(&store,options.words.get(1).map(String::as_str).unwrap_or(""))?,
@@ -267,10 +276,34 @@ fn local_dispatch(
                 }
                 _=>unreachable!(),
             };
-            let id=results::save(&mut store,set)?;
+            let id=results::save(&store,set)?;
             results::page(&store,&id,0,options.limit,&page_budget)
         }
         _ => bail!("invalid_command: unknown command {verb}; use search for queries"),
+    };
+    response.map_err(|error| deadline.classify(error))
+}
+
+/// The query-only store for a read verb. `--no-daemon` searches reconcile
+/// first; an unpublished index is reconciled in the request. Reconciliation
+/// is paused off `deadline`, so only the query spends its budget.
+fn read_store(
+    root: &Path,
+    cache: &Path,
+    verb: &str,
+    daemon_running: bool,
+    deadline: &mut QueryDeadline,
+) -> Result<Store> {
+    let reconcile = || Store::open(root, cache)?.index().map(drop);
+    if !daemon_running && matches!(verb, "search" | "refs" | "map") {
+        deadline.pause_during(reconcile)?;
+    }
+    match Store::open_read(root, cache, *deadline) {
+        Err(error) if is_index_warming(&error) => {
+            deadline.pause_during(reconcile)?;
+            Store::open_read(root, cache, *deadline)
+        }
+        opened => opened,
     }
 }
 
@@ -280,4 +313,30 @@ fn ensure_semantic_check_arity(options: &Arguments) -> Result<()> {
         "usage: semantic-check MODEL_DIRECTORY cuda DEVICE_ORDINAL"
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn slow_in_request_reconcile_leaves_the_query_budget_intact() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        crate::daemon::deadline::write_slow_reconcile_fixture(root.path(), "alpha");
+        let budget = Duration::from_millis(100);
+        let mut deadline = QueryDeadline::after(budget);
+        let started = Instant::now();
+        let store = read_store(root.path(), cache.path(), "search", false, &mut deadline).unwrap();
+        assert!(
+            started.elapsed() > budget,
+            "reconcile finished within the budget"
+        );
+        let query = search::Query::parse("sym:alpha").unwrap();
+        let found = search::search(&store, &query, false, cache.path())
+            .map_err(|error| deadline.classify(error))
+            .unwrap();
+        assert!(!found.hits.is_empty());
+    }
 }
