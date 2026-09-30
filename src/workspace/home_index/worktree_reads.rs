@@ -1,8 +1,8 @@
 //! Worktree-current answers where a parent index is behind: definitions and file
 //! maps re-extracted from the worktree's bytes, never written to any index. A
 //! file is changed when Git divergence lists it or its bytes no longer hash to
-//! the indexed revision ([`worktree_matches`]).
-use super::{ParentFallback, hit_verification::worktree_matches};
+//! the indexed revision ([`WorktreeHashes`]).
+use super::{ParentFallback, hit_verification::WorktreeHashes};
 use crate::{
     extract::Definition,
     identity::ContentRevision,
@@ -31,6 +31,8 @@ pub(super) struct WorktreeSymbols {
     /// Changed files whose definitions are unknown (binary or failed
     /// extraction); their parent hits stay, unverified.
     pub unextractable: HashSet<String>,
+    /// Every changed file found: re-extracted, gone, or unextractable.
+    pub changed: HashSet<String>,
 }
 
 /// Worktree bytes exist but their definitions cannot be known.
@@ -41,47 +43,48 @@ pub(super) fn unextractable(error: &anyhow::Error) -> bool {
 
 impl ParentFallback {
     /// Completes a parent-index answer from worktree bytes: `sym:` re-extracts
-    /// changed files, and `map` of a changed file re-extracts it.
+    /// changed files, and `map` of a changed file re-extracts it. Returns the
+    /// changed files it found, for the answer's differing count.
     pub(in crate::workspace) fn complete_answer(
         &self,
         store: &Store,
-        verb: &str,
-        words: &[String],
-        query: &Query,
+        request: (&str, &[String], &Query),
         found: &mut ResultSet,
-    ) {
+        hashes: &mut WorktreeHashes,
+    ) -> HashSet<String> {
+        let (verb, words, query) = request;
         if verb == "map" {
-            let changed = |path: &str| {
-                self.divergence.contains(path)
-                    || found
-                        .hits
-                        .iter()
-                        .find(|hit| hit.path == path)
-                        .is_some_and(|hit| {
-                            !worktree_matches(&store.root, path, hit.revision.as_deref())
-                        })
+            let Some(path) = words.get(1) else {
+                return HashSet::new();
             };
-            if let Some(path) = words.get(1)
-                && changed(path)
-                && let Some(hits) = reextracted_map(store, path)
-            {
+            let indexed = found.hits.iter().find(|hit| &hit.path == path);
+            let changed = self.divergence.contains(path)
+                || indexed.is_some_and(|hit| {
+                    hashes.check(&store.root, path, hit.revision.as_deref()) == Some(false)
+                });
+            if changed && let Some(hits) = reextracted_map(store, path) {
                 found.hits = hits;
+                return HashSet::from([path.clone()]);
             }
         } else if verb == "search" && query.exact {
-            found.hits = self
-                .worktree_symbols(store, query, std::mem::take(&mut found.hits))
-                .hits;
+            let parent = std::mem::take(&mut found.hits);
+            let symbols = self.worktree_symbols(store, query, parent, hashes);
+            found.hits = symbols.hits;
+            return symbols.changed;
         }
+        HashSet::new()
     }
 
     /// Replaces `parent` hits in changed files with the definitions those files
     /// hold now, and adds definitions that exist only in divergent files. At most
-    /// [`MAX_REEXTRACTED_FILES`] files are re-extracted, divergent files first.
+    /// [`MAX_REEXTRACTED_FILES`] files are re-extracted, divergent files first,
+    /// then parent-hit files in rank order while the hash budget lasts.
     pub(super) fn worktree_symbols(
         &self,
         store: &Store,
         query: &Query,
         parent: Vec<Hit>,
+        hashes: &mut WorktreeHashes,
     ) -> WorktreeSymbols {
         let root = &store.root;
         let mut changed: Vec<&str> = self
@@ -92,16 +95,18 @@ impl ParentFallback {
             .take(MAX_REEXTRACTED_FILES)
             .map(String::as_str)
             .collect();
-        let mut checked = HashSet::with_capacity(parent.len());
         for hit in &parent {
             if changed.len() >= MAX_REEXTRACTED_FILES {
                 break;
             }
-            if !changed.contains(&hit.path.as_str())
-                && checked.insert(hit.path.as_str())
-                && !worktree_matches(root, &hit.path, hit.revision.as_deref())
-            {
-                changed.push(&hit.path);
+            if changed.contains(&hit.path.as_str()) {
+                continue;
+            }
+            match hashes.check(root, &hit.path, hit.revision.as_deref()) {
+                Some(false) => changed.push(&hit.path),
+                Some(true) => {}
+                // Later hits stay unverified; the answer's check flags them.
+                None => break,
             }
         }
         let mut replaced = HashSet::with_capacity(changed.len());
@@ -125,9 +130,11 @@ impl ParentFallback {
             .chain(current)
             .collect();
         crate::search::rank_definitions(&mut hits);
+        replaced.extend(unextractable_paths.iter().cloned());
         WorktreeSymbols {
             hits,
             unextractable: unextractable_paths,
+            changed: replaced,
         }
     }
 }

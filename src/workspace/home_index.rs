@@ -16,7 +16,7 @@ use crate::{
     store::{Store, is_index_warming},
 };
 use anyhow::Result;
-pub(super) use hit_verification::DifferingFiles;
+pub(super) use hit_verification::{DifferingFiles, WorktreeHashes};
 pub(super) use parent_show::{acquire_home_read, reextracted_entry};
 use serde_json::Value;
 use std::{path::Path, time::Duration};

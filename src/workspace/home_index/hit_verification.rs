@@ -18,9 +18,37 @@ use std::{
 /// Git divergence (and count as differing when it is incomplete).
 const MAX_VERIFIED_FILES: usize = 128;
 
+/// One query's worktree hash checks: each file is hashed at most once, and at
+/// most [`MAX_VERIFIED_FILES`] files are hashed in all.
+#[derive(Debug, Default)]
+pub(in crate::workspace) struct WorktreeHashes {
+    matched: HashMap<String, bool>,
+}
+
+impl WorktreeHashes {
+    /// Whether `path` still has `revision`; `None` once the budget is spent
+    /// on other files, leaving it unverified.
+    pub(super) fn check(
+        &mut self,
+        root: &Path,
+        path: &str,
+        revision: Option<&str>,
+    ) -> Option<bool> {
+        if let Some(&matches) = self.matched.get(path) {
+            return Some(matches);
+        }
+        if self.matched.len() >= MAX_VERIFIED_FILES {
+            return None;
+        }
+        let matches = worktree_matches(root, path, revision);
+        self.matched.insert(path.to_owned(), matches);
+        Some(matches)
+    }
+}
+
 /// Whether the worktree file at `path` still has the indexed `revision`.
 /// Unreadable files and hits without a revision do not match.
-pub(super) fn worktree_matches(root: &Path, path: &str, revision: Option<&str>) -> bool {
+fn worktree_matches(root: &Path, path: &str, revision: Option<&str>) -> bool {
     let Some(expected) = revision.and_then(|revision| ContentRevision::parse(revision).ok()) else {
         return false;
     };
@@ -52,28 +80,30 @@ impl DifferingFiles {
 }
 
 impl ParentFallback {
-    /// Checks each distinct file among `hits` (first [`MAX_VERIFIED_FILES`] by
-    /// hash, then by divergence), hashing each file once.
-    pub(in crate::workspace) fn check_hits(&self, root: &Path, hits: &[Hit]) -> DifferingFiles {
-        let mut checked: HashMap<&str, bool> = HashMap::with_capacity(hits.len().min(256));
+    /// Files among `hits` whose worktree bytes differ, plus `changed` files an
+    /// answer already re-read. Files beyond the hash budget fall back to the
+    /// Git divergence and count as differing when it is incomplete.
+    pub(in crate::workspace) fn check_hits(
+        &self,
+        root: &Path,
+        hits: &[Hit],
+        hashes: &mut WorktreeHashes,
+        changed: HashSet<String>,
+    ) -> DifferingFiles {
+        let mut paths = changed;
         for hit in hits.iter().filter(|hit| !reads_current_bytes(hit)) {
-            if checked.contains_key(hit.path.as_str()) {
+            if paths.contains(&hit.path) {
                 continue;
             }
-            let differs = if checked.len() < MAX_VERIFIED_FILES {
-                !worktree_matches(root, &hit.path, hit.revision.as_deref())
-            } else {
-                self.divergence.contains(&hit.path) || !self.divergence.complete
+            let differs = match hashes.check(root, &hit.path, hit.revision.as_deref()) {
+                Some(matches) => !matches,
+                None => self.divergence.contains(&hit.path) || !self.divergence.complete,
             };
-            checked.insert(&hit.path, differs);
+            if differs {
+                paths.insert(hit.path.clone());
+            }
         }
-        DifferingFiles {
-            paths: checked
-                .into_iter()
-                .filter(|(_, differs)| *differs)
-                .map(|(path, _)| path.to_owned())
-                .collect(),
-        }
+        DifferingFiles { paths }
     }
 
     /// Files known to differ: the Git divergence plus files whose hits failed

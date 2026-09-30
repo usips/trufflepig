@@ -197,6 +197,11 @@ fn parent_answer_reads_worktree_bytes_and_worktree_only_symbols() {
         })
         .collect();
     assert_eq!(files, ["only.rs", "other.rs"], "{both}");
+    // `show` agrees with search even though the parent's definition verifies.
+    let shown: Value =
+        serde_json::from_str(&seeded.show(&["show", "sym:untouched_helper"]).unwrap()).unwrap();
+    assert_eq!(shown["path"], "only.rs", "{shown}");
+    assert_eq!(shown["definitions"], 2);
 }
 
 #[test]
@@ -417,6 +422,10 @@ fn hash_check_catches_changes_git_divergence_misses() {
         &["--format", "lines", "search", "sym:SharedThing"],
     );
     assert!(symbol.contains("\tengine/lib.rs:4-4"), "{symbol}");
+    assert!(
+        coverage_line(&symbol).contains("(1 file differs)"),
+        "re-extracted files count as differing: {symbol}"
+    );
     let shown: Value = serde_json::from_str(
         &fixture
             .run_at(&worktree, &["show", "sym:SharedThing"])
@@ -429,4 +438,30 @@ fn hash_check_catches_changes_git_divergence_misses() {
     let edited = search_without_waiting(&fixture, &worktree, &["search", "sym:SharedThing"]);
     let edited: Value = serde_json::from_str(&edited).unwrap();
     assert_eq!(edited["hits"][0]["start_line"], 2, "{edited}");
+}
+
+#[test]
+fn worktree_hashes_are_bounded_and_cached_per_query() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("a.rs"), "fn a() {}\n").unwrap();
+    let revision = crate::identity::ContentRevision::of(b"fn a() {}\n").to_string();
+    let mut hashes = super::WorktreeHashes::default();
+    assert_eq!(
+        hashes.check(root.path(), "a.rs", Some(&revision)),
+        Some(true)
+    );
+    let mut hashed = 1;
+    while hashes
+        .check(root.path(), &format!("missing{hashed}.rs"), None)
+        .is_some()
+    {
+        hashed += 1;
+    }
+    assert_eq!(hashed, 128, "the budget caps distinct files hashed");
+    fs::write(root.path().join("a.rs"), "changed\n").unwrap();
+    assert_eq!(
+        hashes.check(root.path(), "a.rs", Some(&revision)),
+        Some(true),
+        "a file is hashed once per query"
+    );
 }

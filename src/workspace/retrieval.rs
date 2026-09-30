@@ -7,7 +7,8 @@ mod tests;
 use super::{
     WorkspaceConfig, coordinator,
     home_index::{
-        DifferingFiles, HomeIndexPolicy, HomeIndexSource, ParentFallback, resolve_home_index,
+        DifferingFiles, HomeIndexPolicy, HomeIndexSource, ParentFallback, WorktreeHashes,
+        resolve_home_index,
     },
     member_cache,
     result_cache::{MemberSnapshot, OwnedEntry, WorkspaceResults, WorkspaceSet},
@@ -181,8 +182,10 @@ pub(super) fn search_with_policy(
                 found.coverage["semantic_preparation_error"] = error.to_string().into();
             }
             let fallback = fallback.map(|fallback| {
-                fallback.complete_answer(&store, verb, &words, &query, &mut found);
-                let differing = fallback.check_hits(&store.root, &found.hits);
+                let mut hashes = WorktreeHashes::default();
+                let request = (verb, words.as_slice(), &query);
+                let changed = fallback.complete_answer(&store, request, &mut found, &mut hashes);
+                let differing = fallback.check_hits(&store.root, &found.hits, &mut hashes, changed);
                 (fallback, differing)
             });
             if found.coverage["truncated_files"].as_u64().unwrap_or(0) > 0 {

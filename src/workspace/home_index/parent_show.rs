@@ -3,7 +3,7 @@
 //! bytes cannot be extracted falls back to the parent index's stored bytes,
 //! marked unverified. Reads never create or write an index.
 use super::{
-    HomeIndexPolicy, HomeIndexSource, ParentIndexView, resolve_home_index,
+    HomeIndexPolicy, HomeIndexSource, ParentIndexView, WorktreeHashes, resolve_home_index,
     worktree_reads::unextractable,
 };
 use crate::{
@@ -96,24 +96,34 @@ fn acquire_through_parent(
     target: &str,
     side: Option<SourceSide>,
 ) -> Result<(AcquiredSource, Option<ParentRead>)> {
-    let error = match acquisition::acquire(&view.store, target, side) {
-        Ok(source) => return Ok((source, None)),
-        Err(error) => error,
-    };
-    let message = error.to_string();
-    if !target.starts_with("sym:")
-        || !(message.starts_with("stale_source") || message.starts_with("no_definition"))
-    {
-        return Err(error);
+    let divergence = &view.fallback.divergence;
+    // With divergent files a `sym:` read always consults the worktree, so it
+    // agrees with `sym:` search even when the parent's definition verifies.
+    let consult_worktree =
+        target.starts_with("sym:") && (!divergence.paths.is_empty() || !divergence.complete);
+    if !consult_worktree {
+        let error = match acquisition::acquire(&view.store, target, side) {
+            Ok(source) => return Ok((source, None)),
+            Err(error) => error,
+        };
+        let message = error.to_string();
+        if !target.starts_with("sym:")
+            || !(message.starts_with("stale_source") || message.starts_with("no_definition"))
+        {
+            return Err(error);
+        }
     }
     let query = Query::parse(target)?;
     let found = crate::search::definitions(&view.store, &query)?;
+    let mut hashes = WorktreeHashes::default();
     let symbols = view
         .fallback
-        .worktree_symbols(&view.store, &query, found.hits);
+        .worktree_symbols(&view.store, &query, found.hits, &mut hashes);
     let hits = symbols.hits;
     let Some(first) = hits.first().cloned() else {
-        return Err(error);
+        // Neither index nor worktree defines it: the index's own answer says so.
+        let source = acquisition::acquire(&view.store, target, side)?;
+        return Ok((source, None));
     };
     let total = hits.len();
     let alternatives = hits[1..]
