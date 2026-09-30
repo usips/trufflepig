@@ -80,12 +80,12 @@ Each rerank request scores at most 32 documents against one query, with a
 4,096-byte bound per document and per query, truncating tokenized pairs at
 1,024 tokens, in batches of 8, under a 1,500 ms query deadline. The stage
 reorders only the top 32 files from the fused lexical/semantic ranking.
-It keeps the fusion's evidence tiers
-([file ranking](ranking-contract.md)): phrase hits and, for an
-identifier query, named and declaring files first, then files using the token,
-then the rest. Within each tier, scored hits sort by descending rerank score, with ties
-breaking by fused rank; hits the reranker could not score keep their fused
-order below their tier's scored hits.
+It uses the representative hit's evidence tiers from
+[file ranking](ranking-contract.md): phrase hits and, for identifier queries,
+named and declaring files share the first tier; identifier-use hits follow,
+then other hits. Within each tier, scored hits sort by descending rerank score,
+with ties breaking by fused rank; hits the reranker could not score keep their
+fused order below their tier's scored hits.
 
 A timeout, missing model, or provider failure keeps the fused order
 unchanged and reports `rerank_status` (`ready`, `unavailable`, or `skipped`)

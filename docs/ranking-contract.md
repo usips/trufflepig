@@ -5,9 +5,8 @@ query and options determine the order ([retrieval contract](retrieval-contract.m
 
 ## Lanes and fusion
 
-Ordinary queries collapse each retrieval lane to its best region per file
-before a 1,000-file lane cap. Lanes run in this order, and a file's hit from
-the earliest lane represents it
+Ordinary queries collapse each retrieval lane to its first region per file
+before a 1,000-file lane cap. Lanes run in this order
 ([`concept_query`](../src/search/concept_query.rs)):
 
 - exact definitions of the whole text; for `A::b`, the definitions of `b`
@@ -26,7 +25,17 @@ evidence has weight 2 for an exact normalized stem, 1 for all query tokens in
 the basename, and 0.5 for partial path matches. An identifier query ranks files
 in tiers before score: a file whose stem is the token (`tick_rate.rs`), then
 files declaring it, then files using, binding or importing it, then the rest.
-A text quoted as one `"…"` literal (no inner quotes) runs the phrase lane alone.
+Phrase evidence keeps its lane weight in reciprocal-rank fusion and does not
+change these identifier ordering tiers.
+
+The returned hit for each file comes from its strongest evidence across lanes.
+Phrase evidence shares the top representative tier with named and declared
+evidence when identifier tiers apply; identifier uses follow, then absent
+evidence. For other queries, phrase hits precede hits without phrase evidence.
+Equal-tier evidence keeps the earlier lane, then the earlier rank within that
+lane. This representative hit supplies the file's region and the evidence used
+by reranking. A text quoted as one `"…"` literal (no inner quotes) runs the
+phrase lane alone.
 
 ## Path prior
 

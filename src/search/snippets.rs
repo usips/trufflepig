@@ -1,6 +1,7 @@
-//! One-line hit previews: the line inside a hit's span that mentions the most
-//! distinct query terms (code beats a comment with one more term; earliest on
-//! ties), else one naming the hit, else its first non-blank line. Previews locate evidence; `show` remains the verified read.
+//! One-line hit previews choose the best line among at most 2,000 scanned
+//! lines in a hit's span (distinct query terms first; code beats a comment
+//! with one more term; earliest on ties), then fall back to a naming line or
+//! the first non-blank scanned line. `show` remains the verified read.
 use crate::{
     results::{Hit, Snippet},
     store::Store,
@@ -13,7 +14,7 @@ use std::{cmp::Reverse, collections::HashMap};
 const SNIPPET_HITS: usize = 200;
 /// Characters kept from a previewed line before an ellipsis.
 const SNIPPET_CHARS: usize = 120;
-/// Lines scanned inside one span before falling back to its first line.
+/// Maximum lines scanned inside one span when choosing its best preview line.
 const SCAN_LINES: usize = 2_000;
 
 /// Distinct lowercased query words worth locating in a preview line.
@@ -60,7 +61,8 @@ pub(super) fn attach(store: &Store, terms: &[String], hits: &mut [Hit]) -> Resul
 /// Term evidence (more first), then the line class (lower first).
 type PreviewRank = (Reverse<usize>, u8);
 
-/// Preview of the span `start..end` (whose first line is `first_line`) in `bytes`.
+/// Best preview line in the scanned portion of `start..end`, falling back to
+/// its first non-blank scanned line; `first_line` is the line number of `start`.
 pub(crate) fn preview(
     bytes: &[u8],
     start: usize,

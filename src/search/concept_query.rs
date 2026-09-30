@@ -195,7 +195,7 @@ fn occurrence_hits(
 ) -> Result<LaneHits> {
     let mut statement = store.conn.prepare(&format!(
         "WITH matched AS (
-             SELECT o.file_id,o.start,o.end,
+             SELECT o.file_id,r.start,r.end,r.name,r.kind,
                     ROW_NUMBER() OVER (
                         PARTITION BY o.file_id
                         ORDER BY CASE WHEN o.role='declaration' THEN 0
@@ -205,18 +205,20 @@ fn occurrence_hits(
                     COUNT(*) OVER (PARTITION BY o.file_id) AS uses
              FROM occurrences o
              JOIN files f ON f.id=o.file_id
+             JOIN regions r
+               ON r.file_id=o.file_id AND r.start<=o.start AND o.end<=r.end
              WHERE o.name=?1{}
                AND (?2='' OR f.language=?2)
+               AND (?3='' OR r.kind=?3)
                AND (?4 IS NULL OR o.file_id IN (SELECT file_id FROM occurrences WHERE name=?4))
          )
-         SELECT f.path,f.revision,r.start,r.end,r.name,r.kind,NULL,
+         SELECT f.path,f.revision,m.start,m.end,m.name,m.kind,NULL,
                 'identifier_occurrence',c.bytes
          FROM matched m
          JOIN files f ON f.id=m.file_id
          JOIN contents c ON c.revision=f.revision
-         JOIN regions r ON r.file_id=m.file_id AND r.start<=m.start AND m.end<=r.end
-         WHERE m.file_rank=1 AND (?3='' OR r.kind=?3)
-         ORDER BY m.uses DESC,f.path,r.start
+         WHERE m.file_rank=1
+         ORDER BY m.uses DESC,f.path,m.start
          LIMIT ?5",
         paths.sql_clause("f.path")
     ))?;

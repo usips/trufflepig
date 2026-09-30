@@ -1,6 +1,6 @@
 use super::*;
-use crate::search::path_prior::PathPrior;
 use crate::search::{Query, search_prepared, tests::fixture};
+use crate::search::{file_ranking::fuse_search_file_lanes, path_prior::PathPrior};
 use anyhow::bail;
 
 const NEUTRAL: &PathPrior = &PathPrior::neutral();
@@ -270,6 +270,58 @@ fn rerank_orders_within_tiers_and_keeps_phrase_hits_first() {
     assert_eq!(result.hits[0].path, "a.md");
     assert_eq!(result.hits[0].provenance.as_deref(), Some("phrase"));
     assert_eq!(result.coverage["rerank_window"], 3);
+}
+
+#[test]
+fn fusion_preserves_phrase_evidence_for_a_qualified_caller_during_reranking() {
+    let caller_body = b"api::connect();\n";
+    let phrase_body = b"api connect\n";
+    let (_root, cache, store) = fixture(&[
+        ("src/caller.rs", caller_body),
+        ("docs/phrase.md", phrase_body),
+    ]);
+    let mut occurrence = bare_hit("src/caller.rs", "call", 0, caller_body.len());
+    occurrence.provenance = Some("identifier_occurrence".to_owned());
+    let mut caller_phrase = bare_hit("src/caller.rs", "call", 0, caller_body.len());
+    caller_phrase.provenance = Some("phrase".to_owned());
+    let mut phrase_only = bare_hit("docs/phrase.md", "region", 0, phrase_body.len());
+    phrase_only.provenance = Some("phrase".to_owned());
+
+    let prior = PathPrior::neutral();
+    let policy = FusionPolicy {
+        lane_weights: true,
+        identifier_tier: true,
+        prior: &prior,
+        prior_from_lane: 0,
+    };
+    let mut hits = fuse_search_file_lanes(
+        [
+            &[][..],
+            std::slice::from_ref(&occurrence),
+            [caller_phrase, phrase_only].as_slice(),
+        ],
+        &policy,
+    );
+    assert_eq!(hits[0].path, "src/caller.rs");
+    assert_eq!(hits[0].provenance.as_deref(), Some("phrase"));
+    assert_eq!(hits[1].provenance.as_deref(), Some("phrase"));
+
+    let mut coverage = serde_json::json!({});
+    let mut trace = RetrievalTrace::disabled();
+    let scorer = FakeScorer::Scores(vec![10.0, 0.0]);
+    apply(
+        &store,
+        "api::connect",
+        &policy,
+        cache.path(),
+        &scorer,
+        &mut hits,
+        &mut coverage,
+        &mut trace,
+    );
+    assert_eq!(hits[0].path, "src/caller.rs");
+    assert_eq!(hits[0].provenance.as_deref(), Some("phrase"));
+    assert_eq!(coverage["rerank_status"], "ready");
 }
 
 #[test]

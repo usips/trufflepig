@@ -32,13 +32,47 @@ pub(crate) enum IdentifierEvidence {
     Named,
 }
 
-impl IdentifierEvidence {
-    pub(crate) fn of(hit: &Hit, prior: &PathPrior) -> Self {
+/// The strongest rerank evidence carried by an actual lane hit.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum FileEvidence {
+    #[default]
+    Absent,
+    Used,
+    Defined,
+    Named,
+    /// The query terms appear together in order in the file.
+    Phrase,
+}
+
+impl FileEvidence {
+    /// Classifies the strongest rerank evidence carried by one actual lane hit.
+    pub(crate) fn of(hit: &Hit, policy: &FusionPolicy) -> Self {
         match hit.provenance.as_deref() {
-            _ if prior.names_exactly(&hit.path) => Self::Named,
+            _ if policy.identifier_tier && policy.prior.names_exactly(&hit.path) => Self::Named,
+            Some("phrase") => Self::Phrase,
+            _ if !policy.identifier_tier => Self::Absent,
             Some("exact_identifier") if !is_local_kind(&hit.kind) => Self::Defined,
             Some("exact_identifier" | "identifier_occurrence") => Self::Used,
             _ => Self::Absent,
+        }
+    }
+
+    /// Identifier-only evidence retains its finer fusion rank; phrases do not alter it.
+    pub(crate) const fn identifier_evidence(self) -> IdentifierEvidence {
+        match self {
+            Self::Used => IdentifierEvidence::Used,
+            Self::Defined => IdentifierEvidence::Defined,
+            Self::Named => IdentifierEvidence::Named,
+            Self::Absent | Self::Phrase => IdentifierEvidence::Absent,
+        }
+    }
+
+    /// Tiers shared by representative selection and reranker ordering.
+    pub(crate) const fn tier(self) -> u8 {
+        match self {
+            Self::Named | Self::Defined | Self::Phrase => 0,
+            Self::Used => 1,
+            Self::Absent => 2,
         }
     }
 }
@@ -50,10 +84,10 @@ fn is_local_kind(kind: &str) -> bool {
 
 /// Fuses ranked hit lanes after collapsing each lane to one hit per file.
 ///
-/// A lane's first hit for a path is its strongest representative. The lane is
-/// then capped at 1,000 distinct paths before weighted reciprocal-rank fusion.
-/// Results use the first lane's representative on a path tie and sort equal
-/// scores by their encoded source path.
+/// Each lane contributes its first hit per path, then is capped at 1,000
+/// distinct paths before weighted reciprocal-rank fusion. A file keeps the
+/// hit with strongest rerank evidence; lane and rank break evidence ties.
+/// Equal file scores sort by encoded source path.
 pub(crate) fn fuse_search_file_lanes<I, L>(lanes: I, policy: &FusionPolicy) -> Vec<Hit>
 where
     I: IntoIterator<Item = L>,
@@ -80,7 +114,8 @@ where
         for (file_rank, (_, hit)) in representatives.into_iter().enumerate() {
             let score = files.entry(hit.path.clone()).or_insert_with(|| FileScore {
                 score: 0.0,
-                evidence: IdentifierEvidence::Absent,
+                identifier_evidence: IdentifierEvidence::Absent,
+                representative_evidence: FileEvidence::Absent,
                 representative: hit.clone(),
                 representative_lane: lane_index,
                 representative_rank: file_rank,
@@ -96,12 +131,16 @@ where
                 1.0
             };
             score.score += weight * prior / (RRF_K + file_rank as f64 + 1.0);
-            if policy.identifier_tier {
-                score.evidence = score
-                    .evidence
-                    .max(IdentifierEvidence::of(hit, policy.prior));
-            }
-            if (lane_index, file_rank) < (score.representative_lane, score.representative_rank) {
+            let evidence = FileEvidence::of(hit, policy);
+            score.identifier_evidence = score
+                .identifier_evidence
+                .max(evidence.identifier_evidence());
+            let better_evidence = evidence.tier() < score.representative_evidence.tier();
+            let tied_evidence = evidence.tier() == score.representative_evidence.tier();
+            let earlier_hit =
+                (lane_index, file_rank) < (score.representative_lane, score.representative_rank);
+            if better_evidence || (tied_evidence && earlier_hit) {
+                score.representative_evidence = evidence;
                 score.representative = hit.clone();
                 score.representative_lane = lane_index;
                 score.representative_rank = file_rank;
@@ -112,8 +151,8 @@ where
     let mut files: Vec<_> = files.into_values().collect();
     files.sort_by(|left, right| {
         right
-            .evidence
-            .cmp(&left.evidence)
+            .identifier_evidence
+            .cmp(&left.identifier_evidence)
             .then_with(|| right.score.total_cmp(&left.score))
             .then_with(|| left.representative.path.cmp(&right.representative.path))
             .then_with(|| left.representative.start.cmp(&right.representative.start))
@@ -136,7 +175,8 @@ fn lane_weight(hit: &Hit, policy: &FusionPolicy) -> f64 {
 
 struct FileScore {
     score: f64,
-    evidence: IdentifierEvidence,
+    identifier_evidence: IdentifierEvidence,
+    representative_evidence: FileEvidence,
     representative: Hit,
     representative_lane: usize,
     representative_rank: usize,

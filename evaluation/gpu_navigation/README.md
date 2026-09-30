@@ -98,21 +98,27 @@ router.
 
 ## Measured readiness
 
-These readiness figures come from the earlier runner, which searched every
-task from the first workspace member (Lunatic), so Tales from Space and
-tgstation tasks could only miss, and which let an installed per-user router
-serve the searches. The twelve development tasks give first-page Recall@10 of
-0.25 for the old lexical response, 0.4583 for file-first lexical, and 0.3333 for CUDA fusion.
-CUDA improves Recall@5 to 0.3333 but demotes useful lexical implementation
-files. These results keep semantic retrieval opt-in.
+The checked-in [result.json](result.json) contains historical, preliminary
+captures at measured commit `3835a69`. That runner queried every task from the
+first workspace member (Lunatic) and could use an installed per-user router,
+so Tales from Space and tgstation tasks could only miss. Its Recall@5 /
+Recall@10 means are 0.25 / 0.25 for old lexical, 0.2917 / 0.4583 for
+file-first lexical, and 0.3333 / 0.3333 for CUDA fusion. They are not results
+from the corrected runner, and corrected-root results for these twelve tasks
+are not checked in.
 
-The `cuda_rerank` arm, re-measured in one session against same-day baselines
-(file-first lexical Recall@5 0.2917 and Recall@10 0.5417; CUDA fusion 0.3333
-and 0.3333), gives Recall@5 0.5417 and Recall@10 0.625 with four misses
-instead of five and eight. Each workspace search reranks three members
-sequentially, so mean search latency rises from about 1.1 s to about 2.7 s at
-the 600-token page. Per-arm records live under `rerank_measurement` in
-[result.json](result.json).
+The checked-in runner selects each task's corpus root, computes per-task file
+Recall@5 and Recall@10 from first-page hits, and averages those recalls across
+valid tasks. Its per-arm output artifacts retain raw task events and `show`
+byte validation and record the measured binary SHA-256. The separate
+`cuda_rerank` figures under `rerank_measurement` in [result.json](result.json)
+are also historical: the artifact identifies an uncommitted rerank tree based
+on `6c50a74` and records hashes for the measured binaries. In that session,
+file-first lexical scored 0.2917 / 0.5417 and CUDA fusion 0.3333 / 0.3333 for
+Recall@5 / Recall@10; reranking scored 0.5417 / 0.625, with four Recall@10
+misses versus five and eight. Workspace reranking processes three members
+sequentially; that session reports mean search latency rising from about 1.1 s
+to about 2.7 s at the 600-token page.
 
 Prepared search p95 is 1.49 seconds across 100 serial requests, with six
 responses reporting incomplete semantic readiness. Six concurrent clients over
@@ -144,20 +150,12 @@ are absent: neither exists at the frozen revision. It is development data with
 the same schema; pass it with `--manifest`. Its snapshot hashes match Lunatic
 `29709d66`, so run it against a checkout or `git archive` of that revision.
 
-File-first lexical results from the current runner, old ranking against the
-path prior, evidence tiers and phrase lanes
-([file ranking](../../docs/ranking-contract.md)):
-
-| Manifest | Recall@5 | Recall@10 | MRR | Top-1 |
-| --- | --- | --- | --- | --- |
-| concept-audit, old | 0.8529 | 0.8529 | 0.695 | 12/20 |
-| concept-audit, new | 0.9618 | 0.9647 | 0.935 | 18/20 |
-| twelve-task, old | 0.75 | 0.9167 | 0.521 | 3/12 |
-| twelve-task, new | 0.9167 | 0.9167 | 0.757 | 7/12 |
-
-No task's first label rank or recall falls. A 0.5 path prior instead pushed
-the test-file label of `tfs-airlock-rebuild-fixture` off the first page. The
-CUDA and rerank arms were not measured for this change.
+An earlier, separate one-session ranking comparison on this manifest recorded
+top-1 hits of 12/20 for the old ranking and 18/20 for the updated ranking.
+Treat those counts as session-local evidence: no per-task artifact for that
+comparison is checked in, and the retrieval runner reports first-page file
+Recall@5/10 rather than MRR or top-1. CUDA and rerank were not measured for
+that comparison.
 
 ## Real-agent trials
 

@@ -86,6 +86,39 @@ fn identifier_query_ranks_definition_and_uses_before_files_lacking_the_token() {
 }
 
 #[test]
+fn identifier_kind_filter_ranks_eligible_occurrences_per_file() {
+    let mut first_source = String::from("const needle_name: usize = 1;\n");
+    while first_source.len() < 3900 {
+        first_source.push_str("// padding\n");
+    }
+    first_source.push_str("fn later() {\n");
+    first_source.push_str(&"    // padding\n".repeat(32));
+    first_source.push_str("    let _ = needle_name;\n}");
+
+    let mut more_uses_source =
+        String::from("fn twice() {\n    let _ = needle_name; let _ = needle_name;\n");
+    more_uses_source.push_str(&"    // padding\n".repeat(300));
+    more_uses_source.push('}');
+
+    let (_root, _cache, store) = fixture(&[
+        ("src/first.rs", first_source.as_bytes()),
+        ("src/more_uses.rs", more_uses_source.as_bytes()),
+    ]);
+    let query = Query::parse("needle_name kind:function").unwrap();
+    let path_filter = query.path.bind(&store.conn).unwrap();
+    let identifier = ConceptQuery::parse(&query.text).identifier.unwrap();
+    let hits = occurrence_hits(&store, &query, &path_filter, &identifier)
+        .unwrap()
+        .hits;
+
+    assert_eq!(
+        hits.iter().map(|hit| hit.path.as_str()).collect::<Vec<_>>(),
+        ["src/more_uses.rs", "src/first.rs"]
+    );
+    assert!(hits.iter().all(|hit| hit.kind == "function"));
+}
+
+#[test]
 fn phrase_match_leads_scattered_terms_and_its_line_is_the_snippet() {
     let scattered = "// unknown slot: an item may be unknown; each slot holds one item\n".repeat(8);
     let files: [(&str, &[u8]); 3] = [

@@ -5,7 +5,7 @@
 //! snapshot, or a non-finite score sinks that hit below its tier's scored hits
 //! without dropping it or aborting the surrounding search.
 use super::{
-    file_ranking::{FusionPolicy, IdentifierEvidence},
+    file_ranking::{FileEvidence, FusionPolicy},
     telemetry::{Lane, LaneOutcome, RetrievalTrace},
 };
 use crate::{results::Hit, store::Store};
@@ -32,22 +32,6 @@ impl RerankScorer for crate::semantic::SemanticSession {
 }
 
 const BODY_CLAMP_BYTES: usize = crate::semantic::RERANK_MAX_DOCUMENT_BYTES;
-
-/// 0 for phrase hits and an identifier query's named files and definitions, 1 for its uses,
-/// 2 for every other hit: the fusion tiers, kept through reranking.
-fn evidence_tier(hit: &Hit, policy: &FusionPolicy) -> u8 {
-    if hit.provenance.as_deref() == Some("phrase") {
-        return 0;
-    }
-    if !policy.identifier_tier {
-        return 2;
-    }
-    match IdentifierEvidence::of(hit, policy.prior) {
-        IdentifierEvidence::Named | IdentifierEvidence::Defined => 0,
-        IdentifierEvidence::Used => 1,
-        IdentifierEvidence::Absent => 2,
-    }
-}
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn apply(
@@ -99,8 +83,9 @@ pub(super) fn apply(
             }
             let mut sources: Vec<usize> = (0..window).collect();
             sources.sort_by(|&left, &right| {
-                evidence_tier(&hits[left], policy)
-                    .cmp(&evidence_tier(&hits[right], policy))
+                FileEvidence::of(&hits[left], policy)
+                    .tier()
+                    .cmp(&FileEvidence::of(&hits[right], policy).tier())
                     .then_with(|| match (window_scores[left], window_scores[right]) {
                         (Some(left), Some(right)) => right.total_cmp(&left),
                         (left, right) => right.is_some().cmp(&left.is_some()),
