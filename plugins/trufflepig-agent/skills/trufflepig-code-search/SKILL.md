@@ -19,11 +19,15 @@ ordinary search tools remain available for a specific unsupported need or failur
 | `grep -n "pub fn\|struct" FILE` (outline) | `trufflepig-agent map FILE` (lists functions too) |
 | `grep -rn 'Bucket::new(' src/` | `trufflepig-agent search 're:Bucket::new\( file:src/'` |
 | `find src -name '*bucket*'` | `trufflepig-agent search 'bucket kind:file'` |
+| `sed -n 120,200p FILE` (known lines) | `trufflepig-agent show path:FILE:120-200` |
+| `cat FILE` (to orient) | `trufflepig-agent map FILE`, then `show` what you need |
+| `grep -rn refill_tokens \| head -100` (every use) | `trufflepig-agent -n 100 refs refill_tokens` |
 
 Each hit line is followed by an indented `  LINE: TEXT` snippet of its best
 matching line, so a search answers what `grep -n` would. Run each
 `trufflepig-agent` command as its own shell call, without `; echo`,
-`&&` chains, or pipes: its exit status and footer are the result. Symbols,
+`&&` chains, or pipes: its exit status and footer are the result
+(`cd DIR && trufflepig-agent ...` is fine). Symbols,
 bodies, references, and outlines cover Rust, TypeScript, JavaScript, C#, PHP,
 Luau, and DreamMaker; other files are searchable as text with `re:` and plain queries.
 
@@ -34,6 +38,7 @@ Luau, and DreamMaker; other files are searchable as text with `re:` and plain qu
 | Concept or implementation | `trufflepig-agent search 'token refill'` |
 | Exact, case-sensitive definition | `trufflepig-agent search 'sym:TokenBucket'` |
 | A definition's full body | `trufflepig-agent show 'sym:TokenBucket file:src/'` |
+| A method of one type | `trufflepig-agent show 'sym:TokenBucket::refill'` |
 | Text/regex in current bytes | `trufflepig-agent search 're:refill.*tokens'` |
 | Files under a prefix | `trufflepig-agent search 'file:src/auth/'` |
 | Symbol occurrences and targets | `trufflepig-agent --json refs refill_tokens` |
@@ -51,13 +56,23 @@ For PHP and XenForo metadata edge semantics, see the
 
 Combine `file:`, `lang:rust|ts|js|csharp|php|luau|dm|text`, and
 `kind:function|struct|file|...` filters. `cs` and `c#` alias `csharp`; quote a
-query containing `c#` in shell commands. `file:` is a prefix, not a glob. Docs
+query containing `c#` in shell commands. `file:` matches a root-relative path
+prefix, else a path-component substring (`file:script/host`); it is not a glob.
+Repeat `file:` to accept any of several paths; `-file:tests/` excludes one. Docs
 and configuration use `text`.
 Workspace search covers the current checkout (home member) first and widens to
 all members only when home has no hits; the coverage line's `scope` says which.
 Use `ws:all` to search every member or `in:MEMBER` for a named dependency.
 Outside a workspace, run from the project root so a subdirectory does not become
 an accidental separate index. Retain that scope for follow-up calls.
+
+A linked worktree is its own checkout: run from it (`cd DIR && trufflepig-agent
+...` or `--root DIR`). While its index warms, it answers from its parent
+member's index; the footer reads like `lunatic@wt warming → served from lunatic
+index (3 files differ)`, and hits in files the worktree changed are marked
+`differs` (`show` reads the worktree's bytes). These answers are valid: keep
+using trufflepig. Only `unavailable` or `warming (no parent index)` justify an
+ordinary search.
 
 ## Follow implementation dependencies
 
@@ -100,8 +115,10 @@ Use `--json` when relationship fields or machine-readable coverage are needed.
 
 - `show` returns a `PATH lines A-B` header, numbered source, and `verified:`
   (`current file` for explicit path reads). Cite path and line.
-- Follow search pagination with `more CURSOR`; follow a show continuation with
-  `show CURSOR`. Pass the returned value unchanged.
+- A `next:` line is the runnable follow-up: `next: more SET@OFFSET` pages a
+  search, refs, or map; `next: show read:H@B` continues a `show`. Run it verbatim.
+- For an exhaustive list, raise the page size once (`trufflepig-agent -n 100 refs
+  NAME`) instead of paging repeatedly; `refs` ends with `refs: T sites in F files`.
 - Partial coverage or candidate truncation prevents a claim of exhaustive absence.
   `partial (N unsearched)` names files a search could not read. Semantic/rerank
   unavailability does not itself invalidate lexical results.
@@ -117,7 +134,8 @@ Use `--json` when relationship fields or machine-readable coverage are needed.
 ## Recovery and boundaries
 
 For an empty complete search, refine terms or use exact/regex search once before
-falling back to a targeted ordinary tool. Use fallback immediately for an
+falling back to a targeted ordinary tool. `warming` with a `served from` footer is
+an answer, not a failure. Use fallback immediately for an
 unavailable service, inaccessible cache, or unsupported search requirement;
 state the limitation briefly. Do not loop on the same failing query or silently
 change workspace/cache identity to make it succeed.

@@ -116,17 +116,24 @@ def indexed_checkout(cwd: Path) -> IndexedRoot | None:
     return None
 
 
-def session_context(found: IndexedRoot) -> str:
-    """SessionStart guidance for a checkout that trufflepig indexes."""
+def session_context(found: IndexedRoot, subagent: bool = False) -> str:
+    """SessionStart/SubagentStart guidance for a checkout that trufflepig indexes; only
+    the main conversation is told how to brief subagents."""
     return (
         f"This checkout ({found.member}, trufflepig workspace `{found.workspace}`) is indexed by "
-        "trufflepig. For code search use `trufflepig-agent` via Bash instead of grep/rg/find:\n"
+        "trufflepig. Search and read code with `trufflepig-agent` via Bash instead of grep/rg/find/sed/cat:\n"
         "- definition body in one call: `trufflepig-agent show 'sym:Name'`; locations: `search 'sym:Name'`\n"
-        "- references: `trufflepig-agent refs name`; regex: `trufflepig-agent search 're:a|b lang:rust'`\n"
-        "- file outline with functions: `trufflepig-agent map path/to/file.rs`; files: `search 'name kind:file'`\n"
-        "- concepts: `trufflepig-agent search 'few discriminating words'`\n"
+        "- references: `trufflepig-agent refs name`; regex: `trufflepig-agent search 're:a|b lang:rust file:src/'`\n"
+        "- file outline with functions: `trufflepig-agent map path/to/file.rs`; known lines instead of "
+        "`sed -n 120,200p`: `trufflepig-agent show path:path/to/file.rs:120-200`\n"
+        "- files: `search 'name kind:file'`; concepts: `trufflepig-agent search 'few discriminating words'`\n"
         "Hits show a matching line; searches cover this checkout first and widen when it has no hits. "
+        "A footer `next:` line is the runnable follow-up command; `-n N` (e.g. `trufflepig-agent -n 100 refs name`) "
+        "returns longer lists when you need every hit. In a fresh worktree the footer may say "
+        "`warming → served from <member> index`: those results are valid (hits in files the worktree changed "
+        "are marked `differs`), so keep using trufflepig from the worktree (`cd DIR && trufflepig-agent ...` "
+        "or `--root DIR`). "
         "Run it as its own Bash call (no `; echo`, no `| head`) so its exit code and footer are authoritative. "
-        "grep is still right for logs, command output, and files outside this checkout. "
-        "When briefing subagents, tell them to search with trufflepig-agent, not grep."
+        "grep is still right for logs, command output, and files outside this checkout."
+        + ("" if subagent else " When briefing subagents, tell them to search with trufflepig-agent, not grep.")
     )

@@ -2,6 +2,7 @@
 
 `classify(command, cwd, checkout)` is a pure function of the command text and the
 file system under `checkout`; it returns nothing for searches the hook must not steer.
+Line-range reads of indexed source (`sed -n A,Bp`, `cat`) are the `read` class.
 """
 from __future__ import annotations
 
@@ -11,11 +12,12 @@ import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from trufflepig_shell import GrepCall, parse_grep, segments, strip_prefix
+from trufflepig_shell import GrepCall, cat_files, git_subcommand, parse_grep, sed_line_range, segments, \
+    strip_prefix
 
 # Cheap prefilter: skip parsing commands that cannot contain a search program.
-MAYBE_SEARCH = re.compile(r"\b(rg|grep|egrep|fgrep|ugrep|ag|ack|find|fd|bfs|git\s+grep)\b")
-PROGRAMS = {"grep", "egrep", "fgrep", "ugrep", "rg", "ag", "ack", "find", "bfs", "fd", "git"}
+MAYBE_SEARCH = re.compile(r"\b(rg|grep|egrep|fgrep|ugrep|ag|ack|find|fd|bfs|sed|cat)\b")
+PROGRAMS = {"grep", "egrep", "fgrep", "ugrep", "rg", "ag", "ack", "find", "bfs", "fd", "git", "sed", "cat"}
 DEFINITION_KEYWORDS = ("fn", "struct", "enum", "trait", "impl", "type", "mod", "class", "def",
                        "const", "static", "interface", "function", "proc", "union", "macro_rules!",
                        "record", "namespace")
@@ -161,7 +163,7 @@ def classify_grep(call: GrepCall, cwd: Path, checkout: Path, piped: bool) -> Sea
     paths = call.paths or ["."]
     prefixes = []
     for path in paths:
-        if any(ch in path for ch in "*?[") and not os.path.exists(path):
+        if any(ch in path for ch in "*?[") and not (cwd / os.path.expanduser(path)).exists():
             prefix = relative_prefix(path.split("*")[0].rsplit("/", 1)[0] or ".", cwd, checkout)
         else:
             prefix = relative_prefix(path, cwd, checkout)
@@ -275,17 +277,56 @@ def files_search(program: str, names: list[str], roots: list[str], cwd: Path, ch
     return Search("files", program, name, f"trufflepig-agent search {quote(query)}", roots)
 
 
+def source_prefix(path: str, cwd: Path, checkout: Path) -> str | None:
+    """Checkout-relative path of a structurally parsed source file, else None."""
+    prefix = relative_prefix(path, cwd, checkout)
+    extension = path.rsplit(".", 1)[-1].lower() if "." in os.path.basename(path) else ""
+    if not prefix or prefix.endswith("/") or NON_CODE_PATH.search(path) or extension not in STRUCTURED:
+        return None
+    return prefix
+
+
+def classify_read(program: str, args: list[str], after: list[str] | None, cwd: Path,
+                  checkout: Path) -> Search | None:
+    """A line-range read of indexed source: `sed -n A,Bp FILE` (or `cat FILE | sed -n
+    A,Bp`) becomes `show path:F:A-B`; a whole-file `cat` becomes `map F`. `after` is the
+    command the output is piped into, if any."""
+    if any(SHELL_VARIABLE.search(arg) or any(ch in arg for ch in "*?[") for arg in args):
+        return None
+    if program == "sed":
+        lines = sed_line_range(args)
+        files = lines[2] if lines else []
+    else:
+        files = cat_files(args) or []
+        piped_lines = sed_line_range(after[1:]) if after and os.path.basename(after[0]) == "sed" else None
+        if after is not None and (piped_lines is None or piped_lines[2] or len(files) != 1):
+            return None  # cat feeding another filter is not a source read
+        lines = (*piped_lines[:2], files) if piped_lines else None
+    prefixes = [source_prefix(path, cwd, checkout) for path in files]
+    if not prefixes or None in prefixes or after is not None and program == "sed":
+        return None
+    if lines is not None:
+        if len(prefixes) != 1:
+            return None  # sed numbers lines across the concatenated files
+        target = f"{prefixes[0]}:{lines[0]}-{lines[1]}"
+        return Search("read", program, target, f"trufflepig-agent show {quote('path:' + target)}", files)
+    return Search("read", program, " ".join(prefixes[:2]),
+                  " and ".join(f"trufflepig-agent map {quote(p)}" for p in prefixes[:2])
+                  + " (outline), then `show 'sym:NAME'` or `show path:F:A-B`", files)
+
+
 def classify(command: str, cwd: Path, checkout: Path) -> list[Search]:
     """Steerable searches inside `command`, run from `cwd` within indexed `checkout`."""
-    if not MAYBE_SEARCH.search(command) or "trufflepig" in command:
+    if not MAYBE_SEARCH.search(command):
         return []
     parsed = segments(command)
-    if parsed is None:
-        return []
+    if parsed is None or any(words and os.path.basename(words[0]).startswith("trufflepig")
+                             for words in (strip_prefix(segment.words) for segment in parsed)):
+        return []  # a command that already runs trufflepig is advised, not steered
     found: list[Search] = []
     directory = cwd
-    for words, piped in parsed:
-        words = strip_prefix(words)
+    for position, segment in enumerate(parsed):
+        words, piped = strip_prefix(segment.words), segment.piped
         if not words:
             continue
         program = os.path.basename(words[0])
@@ -298,18 +339,25 @@ def classify(command: str, cwd: Path, checkout: Path) -> list[Search]:
             continue
         search = None
         if program == "git":
-            if len(words) < 2 or words[1] != "grep":
+            subcommand = git_subcommand(words[1:], directory)
+            if subcommand is None or subcommand[0][0] != "grep":
                 continue
-            call = parse_grep("git", words[2:])
-            search = classify_grep(call, directory, checkout, piped)
+            call = parse_grep("git", subcommand[0][1:], subcommand[1])
+            search = classify_grep(call, subcommand[1], checkout, piped)
+        elif program in ("sed", "cat"):
+            following = parsed[position + 1] if position + 1 < len(parsed) else None
+            after = strip_prefix(following.words) or None if following and following.piped else None
+            # `cat F > out` and `cat F | sed -n A,Bp > out` copy source; they do not read it.
+            copied = segment.redirected or after is not None and following.redirected
+            search = None if piped or copied else classify_read(program, words[1:], after, directory, checkout)
         elif program in ("find", "bfs", "fd"):
             search = classify_find(program, words[1:], directory, checkout)
         elif program == "rg" and "--files" in words:
-            call = parse_grep("rg", [w for w in words[1:] if w != "--files"])
+            call = parse_grep("rg", [w for w in words[1:] if w != "--files"], directory)
             roots = ([call.pattern] if call.pattern else []) + call.paths
             search = None if piped else files_search("rg", call.includes, roots or ["."], directory, checkout)
         else:
-            call = parse_grep(program, words[1:])
+            call = parse_grep(program, words[1:], directory)
             search = classify_grep(call, directory, checkout, piped)
         if search is not None:
             found.append(search)

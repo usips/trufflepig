@@ -1,4 +1,5 @@
-"""Merge the Claude session hook and narrow runtime access into user settings."""
+"""Merge the Claude session, subagent, and steering hooks and narrow runtime access
+into user settings."""
 from __future__ import annotations
 
 import copy
@@ -45,8 +46,9 @@ def merge_command(hooks: dict, event: str, matcher: str | None, command: str, ti
 
 
 def prepare_settings(path: Path, hook: Path | None, runtime: Path, steer: Path | None = None) -> dict:
-    """Merge session attribution (unless `hook` is None), optional Bash search steering,
-    the wrapper's Bash permission, and runtime write access into Claude user settings."""
+    """Merge session attribution and session/subagent guidance (unless `hook` is None),
+    optional Bash search steering and Agent brief checks, the wrapper's Bash permission,
+    and runtime write access into Claude user settings."""
     settings = json.loads(path.read_text()) if path.exists() else {}
     if not isinstance(settings, dict):
         raise ValueError(f"expected a settings object in {path}")
@@ -58,9 +60,11 @@ def prepare_settings(path: Path, hook: Path | None, runtime: Path, steer: Path |
         raise ValueError("Claude hooks must be an object")
     if hook is not None:
         merge_command(hooks, "SessionStart", None, shlex.quote(str(hook.absolute())), 5)
+        merge_command(hooks, "SubagentStart", None, shlex.quote(str(hook.absolute())), 5)
     if steer is not None:
         command = f"{shlex.quote(str(steer.absolute()))} claude"
         merge_command(hooks, "PreToolUse", "Bash", command, 5)
+        merge_command(hooks, "PreToolUse", "Agent", command, 5)
         merge_command(hooks, "PostToolUse", "Bash", command, 5)
     permissions = settings.setdefault("permissions", {})
     if not isinstance(permissions, dict):

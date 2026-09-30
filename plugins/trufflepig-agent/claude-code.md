@@ -69,19 +69,31 @@ searches, not tool names.
 
 When a session starts inside a checkout of a registered workspace member, the
 `SessionStart` hook also returns `additionalContext`: the member and workspace,
-the five commands that replace definition, body, reference, outline, and file
-greps, and a reminder to brief subagents the same way. Outside indexed checkouts
-it prints nothing.
+the commands that replace definition, body, reference, outline, file, and
+line-range (`sed -n`) reads, how `next:` lines, `-n N`, and worktree
+`served from` answers work, and a reminder to brief subagents the same way.
+`SessionStart` context does not reach subagents, so the same script, registered
+for `SubagentStart`, returns that guidance (without the briefing reminder) as the
+subagent's `additionalContext`.
+Outside indexed checkouts, or with steering `off`, both print nothing.
 
 The installer merges `PreToolUse` and `PostToolUse` hooks with matcher `Bash`
-that run `trufflepig-agent-steer claude`. Tool hooks fire inside subagents too, so
-Explore and custom agents receive the same guidance as the main conversation;
-their payloads carry `agent_id` and `agent_type`, which the audit records keep.
-Deny reasons and `PostToolUse`/`SessionStart` `additionalContext` reach the model;
-plain `PreToolUse` stdout does not, so nudges wait for `PostToolUse`.
+and a `PreToolUse` hook with matcher `Agent`, all running
+`trufflepig-agent-steer claude`. Tool hooks fire inside subagents too; their
+payloads carry `agent_id` and `agent_type`, which the audit records keep.
+Deny reasons and `PostToolUse`/`SessionStart` `additionalContext` reach the
+model; plain `PreToolUse` stdout does not, so nudges wait for `PostToolUse`.
+Claude Code documents `SubagentStart` and `PreToolUse` `additionalContext` as
+model context too; the `Agent` brief check and subagent guidance rely on that.
 In the default `nudge` mode, `PreToolUse` records the classified search and
-allows it; `PostToolUse` then adds the equivalent Trufflepig command as context,
-rate limited to one tip per class per agent every 90 seconds. In `strict` mode
+allows it; `PostToolUse` then adds the equivalent Trufflepig command as context:
+in full for the first search of each class per agent, as one line for every
+later one. A `trufflepig-agent` call piped into another program (`| head`) or
+chained with others (`;`, `&&`; a leading `cd DIR &&` is fine) gets a
+`PostToolUse` tip that the footer and exit status were lost. An `Agent` call
+whose brief tells the subagent to grep code (`just grep for`, `use rg`; quoted,
+negated, and log-search mentions are ignored) gets lead-facing `PreToolUse` `additionalContext`; the brief itself is
+never rewritten. In `strict` mode
 `PreToolUse` returns `permissionDecision: "deny"` with the equivalent command for
 definition, body, outline, and reference searches. See
 [Other harness hooks](README.md#other-harness-hooks) for classes, fallbacks, and
@@ -120,8 +132,8 @@ Compare the audit session with Claude's actual session ID, including separate
 sessions in the same working directory and a resumed session.
 
 To remove the integration, remove only the personal skill symlink, the
-`SessionStart` entry invoking `trufflepig-claude-session`, the `PreToolUse` and
-`PostToolUse` entries invoking `trufflepig-agent-steer claude`, and the
+`SessionStart` and `SubagentStart` entries invoking `trufflepig-claude-session`,
+the `PreToolUse` and `PostToolUse` entries invoking `trufflepig-agent-steer claude`, and the
 `Bash(trufflepig-agent *)` permission. `install.sh --claude --steer off` disables
 steering without editing settings. Remove the runtime
 allowWrite entry if no other Claude integration needs it. Shared wrapper commands,

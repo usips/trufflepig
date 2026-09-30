@@ -50,9 +50,13 @@ class ClaudeIntegrationTests(unittest.TestCase):
         self.assertEqual(settings["permissions"], dict(original["permissions"], allow=["Bash(trufflepig-agent *)"]))
         self.assertEqual(settings["hooks"]["Stop"], original["hooks"]["Stop"])
         steer = shlex.quote(str(self.root / ".local/bin/trufflepig-agent-steer")) + " claude"
-        for event in ("PreToolUse", "PostToolUse"):
-            self.assertEqual(settings["hooks"][event], [{"matcher": "Bash", "hooks": [
-                {"type": "command", "command": steer, "timeout": 5}]}])
+        steer_hooks = [{"type": "command", "command": steer, "timeout": 5}]
+        self.assertEqual(settings["hooks"]["PreToolUse"], [{"matcher": "Bash", "hooks": steer_hooks},
+                                                           {"matcher": "Agent", "hooks": steer_hooks}])
+        self.assertEqual(settings["hooks"]["PostToolUse"], [{"matcher": "Bash", "hooks": steer_hooks}])
+        session = shlex.quote(str(self.root / ".local/bin/trufflepig-claude-session"))
+        self.assertEqual(settings["hooks"]["SubagentStart"], [{"hooks": [
+            {"type": "command", "command": session, "timeout": 5}]}])
         self.assertEqual(settings["hooks"]["SessionStart"][0], original["hooks"]["SessionStart"][0])
         self.assertEqual(len(settings["hooks"]["SessionStart"]), 2)
         self.assertNotIn("matcher", settings["hooks"]["SessionStart"][1])
@@ -92,7 +96,9 @@ class ClaudeIntegrationTests(unittest.TestCase):
         manifest = json.loads((PLUGIN / "hooks/hooks.json").read_text())
         commands = [hook["command"] for groups in manifest["hooks"].values()
                     for group in groups for hook in group["hooks"]]
-        self.assertEqual(len(commands), 3)
+        self.assertEqual(len(commands), 5)
+        self.assertEqual(set(manifest["hooks"]), {"SessionStart", "SubagentStart", "PreToolUse", "PostToolUse"})
+        self.assertEqual([g["matcher"] for g in manifest["hooks"]["PreToolUse"]], ["Bash", "Agent"])
         for command in commands:
             script = shlex.split(command.replace("${CLAUDE_PLUGIN_ROOT}", str(PLUGIN)))[0]
             self.assertTrue(os.access(script, os.X_OK), script)
