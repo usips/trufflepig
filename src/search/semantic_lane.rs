@@ -1,6 +1,6 @@
 //! Cached vectors join current source bodies; retrieval never embeds source regions.
 use super::{
-    Query,
+    BoundPathFilter, Query,
     telemetry::{Lane, LaneOutcome, RetrievalTrace},
 };
 use crate::{results::Hit, semantic::Embedding, store::Store};
@@ -10,9 +10,11 @@ use std::path::Path;
 #[cfg(test)]
 mod tests;
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn append(
     store: &Store,
     query: &Query,
+    paths: &BoundPathFilter,
     cache: &Path,
     vector: &Embedding,
     hits: &mut Vec<Hit>,
@@ -27,6 +29,7 @@ pub(super) fn append(
     let outcome = retrieve(
         store,
         query,
+        paths,
         cache,
         vector,
         &mut semantic_hits,
@@ -71,6 +74,7 @@ pub(super) fn append(
 fn retrieve(
     store: &Store,
     query: &Query,
+    paths: &BoundPathFilter,
     directory: &Path,
     vector: &Embedding,
     hits: &mut Vec<Hit>,
@@ -84,12 +88,13 @@ fn retrieve(
     const FILE_LIMIT: usize = 1000;
     let cache = EmbeddingCache::open_query(directory)?;
     let vectors = cache.begin_snapshot()?;
-    let mut statement = store.conn.prepare(
+    let mut statement = store.conn.prepare(&format!(
         "SELECT r.id,r.body,r.file_id FROM regions r JOIN files f ON f.id=r.file_id
-         WHERE f.revision IS NOT NULL AND substr(f.path,1,length(?1))=?1
-         AND (?2='' OR f.language=?2) AND (?3='' OR r.kind=?3) ORDER BY r.file_id,r.id",
-    )?;
-    let mut rows = statement.query(rusqlite::params![query.path, query.language, query.kind])?;
+         WHERE f.revision IS NOT NULL{}
+         AND (?1='' OR f.language=?1) AND (?2='' OR r.kind=?2) ORDER BY r.file_id,r.id",
+        paths.sql_clause("f.path")
+    ))?;
+    let mut rows = statement.query(rusqlite::params![query.language, query.kind])?;
     let mut heap = BinaryHeap::with_capacity(FILE_LIMIT + 1);
     let mut previous_file = None;
     let mut best: Option<SemanticHit> = None;
@@ -165,6 +170,7 @@ fn retrieve(
 fn retrieve(
     _: &Store,
     _: &Query,
+    _: &BoundPathFilter,
     _: &Path,
     _: &Embedding,
     _: &mut Vec<Hit>,

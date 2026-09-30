@@ -8,11 +8,29 @@ pub const COVERAGE_KEY: &str = "coverage: ";
 pub const NEXT_KEY: &str = "next: ";
 pub const TRUNCATED_LINE: &str = "truncated: true";
 
+/// Page-widening hints; a first page that continues carries the one that applies.
+pub const PAGE_SIZE_HINT: &str = "(-n N raises the page size)";
+pub const PAGE_BUDGET_HINT: &str = "(-b N raises the token budget)";
+
+/// The command that continues a page, printed as `next: VERB CURSOR[ HINT]`.
+#[derive(Clone, Copy, Debug)]
+pub struct NextCommand<'a> {
+    pub verb: &'a str,
+    pub cursor: &'a str,
+    pub hint: Option<&'a str>,
+}
+
 /// Appends the paging footer shared by hit pages and `show`.
-pub fn footer(next: Option<&str>, truncated: bool, out: &mut String) {
+pub fn footer(next: Option<NextCommand<'_>>, truncated: bool, out: &mut String) {
     if let Some(next) = next {
         out.push_str(NEXT_KEY);
-        out.push_str(next);
+        out.push_str(next.verb);
+        out.push(' ');
+        out.push_str(next.cursor);
+        if let Some(hint) = next.hint {
+            out.push(' ');
+            out.push_str(hint);
+        }
         out.push('\n');
     }
     if truncated {
@@ -50,7 +68,15 @@ mod tests {
         let mut out = String::new();
         footer(None, false, &mut out);
         assert!(out.is_empty());
-        footer(Some("abc@4"), true, &mut out);
-        assert_eq!(out, "next: abc@4\ntruncated: true\n");
+        let next = NextCommand {
+            verb: "more",
+            cursor: "abc@4",
+            hint: Some(PAGE_SIZE_HINT),
+        };
+        footer(Some(next), true, &mut out);
+        assert_eq!(
+            out,
+            "next: more abc@4 (-n N raises the page size)\ntruncated: true\n"
+        );
     }
 }

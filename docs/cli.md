@@ -11,6 +11,7 @@ trufflepig --help -b 2000
 trufflepig --root . --no-daemon index
 trufflepig --root . search 'sym:TokenBucket'
 trufflepig --root . search 'sym:User lang:php file:src/'
+trufflepig --root . search 're:quarantine file:script/host -file:tests'
 trufflepig --root . search 're:fn .*helper lang:rust'
 trufflepig --root . --no-daemon search 'file:src/ kind:function'
 trufflepig --root . semantic prepare --wait
@@ -19,26 +20,30 @@ trufflepig semantic worker status
 ```
 
 Use an explicit `search` verb for all queries; unknown commands exit 2 with an
-error. No command means `status`. `sym:` selects exact, case-sensitive symbol
-occurrences, declarations before modules, members, locals, and imports; `re:` scans live bytes and returns one occurrence per matching
-line, with `^` and `$` matching at line boundaries as in grep. `file:` is
-a root-relative path-prefix filter; `lang:` and `kind:` filter recorded
-classifications. Language names are `rust`, `typescript`, `javascript`, `csharp`,
-`php`, `luau`, `dreammaker`, and `text`; `rs`, `ts`, `js`, `cs`, `c#`, `lua`, and `dm`
-are aliases. `.php` and `.phtml` map to `php`. Quote queries containing `c#` in
-shell commands. Docs/config use `text`.
+error naming the likely command (`next` and `page` point to `more CURSOR`). No
+command means `status`; `help` prints the `--help` text. `sym:` selects exact,
+case-sensitive symbol occurrences, declarations before modules, members, locals,
+and imports; `re:` scans live bytes and returns one occurrence per matching line,
+with `^` and `$` matching at line boundaries as in grep. `file:` (repeatable),
+`-file:`, `lang:`, and `kind:` filter as the
+[retrieval contract](retrieval-contract.md#retrieval) defines; an empty filtered
+search explains its filters on the coverage line. Quote `c#` in shell commands.
 One JSON object plus newline is the default output; `--json` accepts the same
 format. `--format lines` renders `search`, `refs`, `map`, `more`, and `show` as
 tab-separated lines for agents that read output directly: one
 `HANDLE<TAB>[MEMBER/]PATH:START-END[<TAB>NAME]` line per hit, each followed by
-an indented `  LINE: TEXT` snippet, then a one-line `coverage:` summary, then `next: CURSOR` and `truncated: true` when present;
-`show` prints a `PATH [(MEMBER)] lines FIRST-LAST` header, `LINE<TAB>text`
-rows, and a `verified:` footer (`verified: current file` for explicit path reads,
-which JSON marks `"source": "current_file"`) that flags `encoding: byte-escaped`
-once. Errors and every other verb stay JSON. `show` defaults to a 1500-token
-budget, never below a workspace's `[output].budget`; `-b/--budget` otherwise defaults to 600 `o200k_base`
-tokens for the serialized stdout response, measured on the rendered text of the
-selected format, or to the workspace's `[output].budget` when one is set. Search ranks files first and emits one compact representative
+an indented `  LINE: TEXT` snippet, then a one-line `coverage:` summary, then
+`next: more CURSOR` and `truncated: true` when present. A continuing first page
+appends `(-n N raises the page size)`, or `(-b N raises the token budget)` when
+the budget cut it. `show` prints a `PATH [(MEMBER)] lines FIRST-LAST` header,
+`LINE<TAB>text` rows, `next: show CURSOR` when the budget cut the read, and a
+`verified:` footer (`verified: current file` for explicit path reads, which JSON
+marks `"source": "current_file"`) that flags `encoding: byte-escaped` once.
+Errors and every other verb stay JSON. `show` defaults to a 1500-token budget,
+never below a workspace's `[output].budget`; `-b/--budget` otherwise defaults to
+600 `o200k_base` tokens for the serialized stdout response, measured on the
+rendered text of the selected format, or to the workspace's `[output].budget`
+when one is set. Search ranks files first and emits one compact representative
 per file before the `-n/--limit` page cap (20 files by default); the budget may
 fit fewer. Each hit includes a `file` URI, line span, and immutable handle, and
 a `snippet` (`line`, `text` of at most 120 characters): the first line in the
@@ -47,8 +52,8 @@ A page keeps snippets while at least eight hits (or all remaining hits) fit,
 otherwise it drops them for more locators. Snippets locate evidence; `show`
 remains the verified read. Increase the budget when a hit or source line cannot fit.
 Budget failures include a retry hint on stderr even when no JSON error fits.
-`--help` and `--version` print plain, unbudgeted text; help ends with a query
-and navigation summary.
+`--help`, `--version`, and option parsing errors print plain, unbudgeted text
+(parsing errors also on stderr); help ends with a query, navigation, and page summary.
 
 ## Workspace search
 
@@ -82,9 +87,11 @@ for schema, cache behavior, routing guarantees, and current limits.
 
 ## Follow-up reads and navigation
 
-Copy `hits[].handle` (the first column in lines format) or `next` into the
-appropriate command. Search pages use compact file-first entries, whose `name`
-appears only for symbol hits; `show` supplies source lines for a selected handle.
+Copy `hits[].handle` (the first column in lines format) into `show` or `ctx`.
+Lines footers print the whole continuation command (`next: more CURSOR`, `next:
+show CURSOR`); JSON `next` is the bare cursor. Search pages use compact
+file-first entries, whose `name` appears only for symbol hits; `show` supplies
+source lines for a selected handle.
 
 ```text
 trufflepig show SET:ORDINAL

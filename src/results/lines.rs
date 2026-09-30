@@ -3,7 +3,7 @@
 //! text, so a lines page carries more hits than the JSON page for the same limit.
 
 use super::{HitDetail, ResultEntry, concise_name};
-use crate::output::lines::{COVERAGE_KEY, footer};
+use crate::output::lines::{COVERAGE_KEY, NextCommand, PAGE_BUDGET_HINT, PAGE_SIZE_HINT, footer};
 use serde_json::Value;
 use std::fmt::Write;
 
@@ -110,6 +110,9 @@ pub(crate) fn single_repo_coverage(coverage: &Value) -> String {
     if let Some(endpoint) = coverage["endpoint"].as_str() {
         parts.push(format!("endpoint {endpoint}"));
     }
+    if let Some(diagnosis) = coverage["filter_diagnosis"].as_str() {
+        parts.push(diagnosis.to_owned());
+    }
     parts.join("; ")
 }
 
@@ -118,7 +121,7 @@ pub(crate) fn page_text<'a>(
     entries: impl ExactSizeIterator<Item = (Option<&'a str>, &'a ResultEntry)>,
     detail: HitDetail,
     coverage: &str,
-    next: Option<&str>,
+    next: Option<NextCommand<'_>>,
     truncated: bool,
 ) -> String {
     let mut out = String::with_capacity(entries.len() * 160 + coverage.len() + 64);
@@ -136,6 +139,25 @@ pub(crate) fn page_text<'a>(
 /// Cursor for the entries after this page, `SET@OFFSET`.
 pub(crate) fn next_cursor(id: &str, offset: usize, count: usize, total: usize) -> Option<String> {
     (offset + count < total).then(|| format!("{id}@{}", offset + count))
+}
+
+/// `more CURSOR` for a page of `count` hits under a `limit`-hit cap. The first
+/// page names the option that widens it: `-n` when the cap cut it, else `-b`.
+pub(crate) fn more_command(
+    cursor: &str,
+    offset: usize,
+    count: usize,
+    limit: usize,
+) -> NextCommand<'_> {
+    NextCommand {
+        verb: "more",
+        cursor,
+        hint: (offset == 0).then_some(if count >= limit {
+            PAGE_SIZE_HINT
+        } else {
+            PAGE_BUDGET_HINT
+        }),
+    }
 }
 
 #[cfg(test)]
@@ -222,18 +244,24 @@ mod tests {
     #[test]
     fn page_text_ends_with_coverage_and_footer() {
         let entries = [hit("a"), hit("b")];
-        let next = next_cursor("00000000000000000000000000000000", 0, 2, 5);
+        let next = next_cursor("00000000000000000000000000000000", 0, 2, 5).unwrap();
         let text = page_text(
             entries.iter().map(|entry| (None, entry)),
             named(true),
             "indexed 1/1",
-            next.as_deref(),
+            Some(more_command(&next, 0, 2, 2)),
             true,
         );
         let lines: Vec<_> = text.lines().collect();
         assert_eq!(lines.len(), 5);
         assert_eq!(lines[2], "coverage: indexed 1/1");
-        assert_eq!(lines[3], "next: 00000000000000000000000000000000@2");
+        assert_eq!(
+            lines[3],
+            "next: more 00000000000000000000000000000000@2 (-n N raises the page size)"
+        );
         assert_eq!(lines[4], "truncated: true");
+        // Later pages and budget-cut pages.
+        assert_eq!(more_command(&next, 2, 2, 20).hint, None);
+        assert_eq!(more_command(&next, 0, 2, 20).hint, Some(PAGE_BUDGET_HINT));
     }
 }

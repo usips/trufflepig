@@ -13,18 +13,24 @@ Queries (search TEXT):
   words            identifier, lexical, and filename evidence (semantic when enabled)
   sym:NAME         exact, case-sensitive definition
   re:REGEX         regex over current file bytes
-  file:PREFIX      path prefix (not a glob)
-  lang:L           rust, ts, js, csharp (cs, c#), php, luau, dm, text
+  file:PATH        root-relative path prefix, else a match at any path component
+                   (file:script/host finds crates/a/src/script/host.rs); repeats OR
+  -file:PATH       exclude paths matching at any component (-file:tests)
+  lang:L           rust, ts, js, csharp (cs, c#), php, luau, dm, text (md, toml, json)
   kind:K           function, struct, file, ...
   ws:home|ws:all   workspace scope; in:MEMBER selects one member
 
 Navigation:
   show HANDLE | show path:FILE:START-END   numbered, verified source
   show 'sym:NAME'  a definition's full body in one call
-  ctx HANDLE      relationships around a hit
-  refs NAME       occurrences and resolved targets
-  map PREFIX      module and type outline (a single file adds its functions)
-  more CURSOR     next page of a search";
+  ctx HANDLE       relationships around a hit
+  refs NAME        occurrences and resolved targets
+  map PREFIX       module and type outline (a single file adds its functions)
+  more CURSOR      next page; run the footer's `next: more CURSOR` line as printed
+
+Pages:
+  -n N             hits per page (default 20)
+  -b N             output token budget (default 600; show 1500)";
 
 const KNOWN_COMMANDS: &[&str] = &[
     "search",
@@ -194,7 +200,10 @@ pub(super) fn validate(options: &Arguments) -> Result<()> {
     if let Some(command) = options.words.first().map(String::as_str)
         && !KNOWN_COMMANDS.contains(&command)
     {
-        bail!("unknown_command: {command}; use `search {command}` for a free-form query");
+        bail!(
+            "unknown_command: {command}; {}",
+            unknown_command_hint(command)
+        );
     }
     if options.no_daemon
         && options.words.first().is_some_and(|verb| {
@@ -216,6 +225,19 @@ pub(super) fn validate(options: &Arguments) -> Result<()> {
         bail!("invalid_budget: maximum is {MAX_BUDGET} tokens");
     }
     Ok(())
+}
+
+/// What an unknown first word most likely meant.
+fn unknown_command_hint(command: &str) -> String {
+    if matches!(command, "next" | "page" | "cursor" | "continue") {
+        "page with `more CURSOR`, the footer's `next: more CURSOR` line".to_owned()
+    } else if command.parse::<crate::identity::ResultCursor>().is_ok() {
+        format!("use `more {command}` to page")
+    } else if command.parse::<crate::identity::ResultHandle>().is_ok() {
+        format!("use `show {command}` to read a hit")
+    } else {
+        format!("use `search {command}` for a free-form query")
+    }
 }
 
 pub(crate) fn normalized_args(options: &Arguments, root: &Path) -> Vec<String> {

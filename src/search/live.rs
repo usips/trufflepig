@@ -3,6 +3,7 @@ use super::*;
 pub(super) fn live_regex(
     store: &Store,
     query: &Query,
+    paths: &BoundPathFilter,
     cache: &std::path::Path,
     hits: &mut Vec<Hit>,
     coverage: &mut serde_json::Value,
@@ -45,9 +46,7 @@ pub(super) fn live_regex(
         let relative = entry.path().strip_prefix(&store.root)?;
         let path = crate::store::encode_path(relative);
         let language = crate::extract::language(&path);
-        if !path.starts_with(&query.path)
-            || (!query.language.is_empty() && query.language != language)
-        {
+        if !paths.matches(&path) || (!query.language.is_empty() && query.language != language) {
             continue;
         }
         let source = match source::read_contained(&store.root, relative, source::MAX_READ_BYTES) {

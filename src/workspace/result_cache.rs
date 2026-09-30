@@ -261,22 +261,30 @@ impl WorkspaceResults {
         );
         let available = set.hits.len() - offset;
         let max_count = available.min(limit).min(budget.limit);
-        let coverage_line = match &set.scope {
+        let mut coverage_line = match &set.scope {
             Some(scope) => format!("{}; scope {scope}", member_coverage_summary(&set.coverage)),
             None => member_coverage_summary(&set.coverage),
         };
+        if set.hits.is_empty() {
+            coverage_line.push_str(&filter_diagnoses(&set.owners));
+        }
         let render_detail = |count: usize, detail: HitDetail| -> Result<String> {
             match budget.format {
                 OutputFormat::Json => budget.encode(&page_value(&set, id, offset, count, detail)?),
-                OutputFormat::Lines => Ok(results::lines::page_text(
-                    set.hits[offset..offset + count]
-                        .iter()
-                        .map(|owned| (Some(set.owners[owned.owner].name.as_str()), &owned.entry)),
-                    detail,
-                    &coverage_line,
-                    results::lines::next_cursor(id, offset, count, set.hits.len()).as_deref(),
-                    set.truncated,
-                )),
+                OutputFormat::Lines => {
+                    let cursor = results::lines::next_cursor(id, offset, count, set.hits.len());
+                    Ok(results::lines::page_text(
+                        set.hits[offset..offset + count].iter().map(|owned| {
+                            (Some(set.owners[owned.owner].name.as_str()), &owned.entry)
+                        }),
+                        detail,
+                        &coverage_line,
+                        cursor.as_deref().map(|cursor| {
+                            results::lines::more_command(cursor, offset, count, limit)
+                        }),
+                        set.truncated,
+                    ))
+                }
             }
         };
         if let Some(text) = results::snippet_page(max_count, budget, render_detail)? {
@@ -342,6 +350,25 @@ fn page_value(
         "truncated": set.truncated,
         "tokenizer": "o200k_base"
     }))
+}
+
+/// `; MEMBER[, MEMBER]: DIAGNOSIS` for each distinct zero-hit filter explanation.
+fn filter_diagnoses(owners: &[MemberSnapshot]) -> String {
+    let mut grouped: Vec<(&str, Vec<&str>)> = Vec::with_capacity(owners.len());
+    for owner in owners {
+        let Some(diagnosis) = owner.coverage["filter_diagnosis"].as_str() else {
+            continue;
+        };
+        match grouped.iter_mut().find(|(known, _)| *known == diagnosis) {
+            Some((_, members)) => members.push(&owner.name),
+            None => grouped.push((diagnosis, vec![&owner.name])),
+        }
+    }
+    let mut text = String::new();
+    for (diagnosis, members) in grouped {
+        text.push_str(&format!("; {}: {diagnosis}", members.join(", ")));
+    }
+    text
 }
 
 fn refresh_retained_counts(set: &mut WorkspaceSet) {
