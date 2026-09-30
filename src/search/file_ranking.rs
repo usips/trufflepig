@@ -112,10 +112,11 @@ where
         representatives.truncate(FILE_CANDIDATE_LIMIT);
 
         for (file_rank, (_, hit)) in representatives.into_iter().enumerate() {
+            let evidence = FileEvidence::of(hit, policy);
             let score = files.entry(hit.path.clone()).or_insert_with(|| FileScore {
                 score: 0.0,
                 identifier_evidence: IdentifierEvidence::Absent,
-                representative_evidence: FileEvidence::Absent,
+                representative_evidence: evidence,
                 representative: hit.clone(),
                 representative_lane: lane_index,
                 representative_rank: file_rank,
@@ -131,7 +132,6 @@ where
                 1.0
             };
             score.score += weight * prior / (RRF_K + file_rank as f64 + 1.0);
-            let evidence = FileEvidence::of(hit, policy);
             score.identifier_evidence = score
                 .identifier_evidence
                 .max(evidence.identifier_evidence());
