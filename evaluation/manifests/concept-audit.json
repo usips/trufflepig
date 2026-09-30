@@ -452,6 +452,312 @@
           }
         ]
       }
+    },
+    {
+      "id": "concept-tick-rate-file",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "identifier",
+      "query": "tick_rate",
+      "prompt": "Find the module that defines the simulation tick rate and how it is validated.",
+      "labels": [
+        {
+          "path": "crates/lunatic-core/src/tick_rate.rs",
+          "start": 0,
+          "end": 69,
+          "sha256": "e1f20e720b3562e57b1dc705514a799db3448b719502e49bf87cb60d88790a35",
+          "provenance": "read-evidence-parent-snapshot"
+        }
+      ],
+      "snapshot": {
+        "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+        "files": [
+          {
+            "path": "crates/lunatic-core/src/tick_rate.rs",
+            "sha256": "e1f20e720b3562e57b1dc705514a799db3448b719502e49bf87cb60d88790a35"
+          }
+        ]
+      }
+    },
+    {
+      "id": "concept-agents-guide",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "doc-by-name",
+      "query": "AGENTS.md",
+      "prompt": "Find the repository's top-level agent guide.",
+      "labels": [
+        {
+          "path": "AGENTS.md",
+          "start": 0,
+          "end": 26,
+          "sha256": "625e725403be54beb78393f45f43b550bb7aac39b3a6be89586104b9f132857a",
+          "provenance": "read-evidence-parent-snapshot"
+        }
+      ],
+      "snapshot": {
+        "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+        "files": [
+          {
+            "path": "AGENTS.md",
+            "sha256": "625e725403be54beb78393f45f43b550bb7aac39b3a6be89586104b9f132857a"
+          }
+        ]
+      }
+    },
+    {
+      "id": "concept-dev-http-doc",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "doc-by-name",
+      "query": "dev-http.md",
+      "prompt": "Find the documentation for the HTTP development launcher.",
+      "labels": [
+        {
+          "path": "docs/dev-http.md",
+          "start": 0,
+          "end": 19,
+          "sha256": "7da0dafb2793a673a68fd924ddea216b1551d81dfd3f59d285a343062c38dc3f",
+          "provenance": "read-evidence-parent-snapshot"
+        }
+      ],
+      "snapshot": {
+        "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+        "files": [
+          {
+            "path": "docs/dev-http.md",
+            "sha256": "7da0dafb2793a673a68fd924ddea216b1551d81dfd3f59d285a343062c38dc3f"
+          }
+        ]
+      }
+    },
+    {
+      "id": "concept-record-store-new",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "qualified",
+      "query": "RecordStore::new",
+      "prompt": "Find the constructor of the staff record store.",
+      "labels": [
+        {
+          "path": "crates/lunatic-server/src/sim/staff_records/record_store.rs",
+          "start": 1888,
+          "end": 1904,
+          "sha256": "dbc50904121dab6fff32f36a06edcf42006fa46a12c32e2e05b0d1127fc96894",
+          "provenance": "read-evidence-parent-snapshot"
+        }
+      ],
+      "snapshot": {
+        "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+        "files": [
+          {
+            "path": "crates/lunatic-server/src/sim/staff_records/record_store.rs",
+            "sha256": "dbc50904121dab6fff32f36a06edcf42006fa46a12c32e2e05b0d1127fc96894"
+          }
+        ]
+      }
+    },
+    {
+      "id": "concept-outside-occurrence",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "phrase",
+      "query": "outside an occurrence",
+      "prompt": "Find where script calls made outside an occurrence are refused, and list the refusal messages.",
+      "labels": [
+        {
+          "path": "crates/lunatic-server/src/script/commands_aimed_attack.rs",
+          "start": 4077,
+          "end": 4153,
+          "sha256": "7ca873f6d937a6fd3e952e9076e75b66200fc3636db65f6b89ac18d1c4d9f791",
+          "provenance": "read-evidence-parent-snapshot"
+        },
+        {
+          "path": "crates/lunatic-server/src/script/commands_custody.rs",
+          "start": 10285,
+          "end": 10380,
+          "sha256": "830fc40a8485c4a4939acf1a6d64472070f9f18407d148df0b0303d80e359770",
+          "provenance": "read-evidence-parent-snapshot"
+        },
+        {
+          "path": "crates/lunatic-server/src/script/commands_exchange.rs",
+          "start": 4654,
+          "end": 4749,
+          "sha256": "0380e989ef437a8b61b222d8688cb56acf4290b6d1928c5d0c31c695f5c435f1",
+          "provenance": "read-evidence-parent-snapshot"
+        },
+        {
+          "path": "crates/lunatic-server/src/script/commands_ledger.rs",
+          "start": 2535,
+          "end": 2622,
+          "sha256": "fae6de79f5b79e48a8c77d2ef9cb04800f772b768ed7a0d9fa6ae0602f760e74",
+          "provenance": "read-evidence-parent-snapshot"
+        },
+        {
+          "path": "crates/lunatic-server/src/script/commands_ledger_replay.rs",
+          "start": 6408,
+          "end": 6503,
+          "sha256": "edd1a6b9cba6fcbe06b7f799e98b6b72abddc76753cd538e0abce72e3ed7013b",
+          "provenance": "read-evidence-parent-snapshot"
+        },
+        {
+          "path": "crates/lunatic-server/src/script/commands_world/script_var_set.rs",
+          "start": 5006,
+          "end": 5104,
+          "sha256": "312026dffef32831b729e47d1c52ed090648002307ab98aa137cc0052d07b25e",
+          "provenance": "read-evidence-parent-snapshot"
+        },
+        {
+          "path": "crates/lunatic-server/src/script/disl/host_ops/disl_call.rs",
+          "start": 1716,
+          "end": 1793,
+          "sha256": "1fc4f9bede95aa6fcd28ff3ff399f06699a657b71d68531c15d9c6a8cc6d42d3",
+          "provenance": "read-evidence-parent-snapshot"
+        },
+        {
+          "path": "crates/lunatic-server/src/script/globals/decision_dispatch/emit_decision_admission.rs",
+          "start": 2109,
+          "end": 2209,
+          "sha256": "02d41fdd5aa9f46c00e7c69e72878152cfc1949104dae1a7869d35ffd41e2918",
+          "provenance": "read-evidence-parent-snapshot"
+        },
+        {
+          "path": "crates/lunatic-server/src/script/globals/emit_admission.rs",
+          "start": 2014,
+          "end": 2105,
+          "sha256": "3f66d727494a48bb8b01f7f057b35ff219f39e5d45dd471b86faceb7101944c8",
+          "provenance": "read-evidence-parent-snapshot"
+        },
+        {
+          "path": "crates/lunatic-server/src/script/globals/spawn_task.rs",
+          "start": 2728,
+          "end": 2826,
+          "sha256": "ba14027ee6ebceeb414eda096e3c974145b4f9d9fcf2ca97f683c4edf28657f1",
+          "provenance": "read-evidence-parent-snapshot"
+        },
+        {
+          "path": "crates/lunatic-server/src/script/globals/task_cancel.rs",
+          "start": 949,
+          "end": 1043,
+          "sha256": "50d04f0a97bc49160847dd04f4266737900fe9a2390cc78f4d3be25824884620",
+          "provenance": "read-evidence-parent-snapshot"
+        },
+        {
+          "path": "crates/lunatic-server/src/script/script_var_values.rs",
+          "start": 27412,
+          "end": 27504,
+          "sha256": "d653afee23562cb1d410cc481dca4f68bedde4fd9e0add3d97293cff67bbf609",
+          "provenance": "read-evidence-parent-snapshot"
+        },
+        {
+          "path": "crates/lunatic-server/src/script/services/database_service/database_admission.rs",
+          "start": 9246,
+          "end": 9341,
+          "sha256": "6f7dee8d32c40bd241c1ed4b8660de715f5d167e5d71c3b8a78136121bfb7c93",
+          "provenance": "read-evidence-parent-snapshot"
+        },
+        {
+          "path": "crates/lunatic-server/src/script/services/interfaces.rs",
+          "start": 4309,
+          "end": 4401,
+          "sha256": "562ef0af1bffcec3278862da2dc1f524944a88a032c2a25caaa9856343636644",
+          "provenance": "read-evidence-parent-snapshot"
+        },
+        {
+          "path": "crates/lunatic-server/src/script/services.rs",
+          "start": 18583,
+          "end": 18678,
+          "sha256": "19209187e14b82043dc510f99e48f405412c543b70946326ac30d49627704193",
+          "provenance": "read-evidence-parent-snapshot"
+        },
+        {
+          "path": "crates/lunatic-server/src/script/watch_service.rs",
+          "start": 4073,
+          "end": 4165,
+          "sha256": "f96df69e4d4831eaa672c9d5bcaca6cc0f1be4f1f495c51dd0639ce32d60feaa",
+          "provenance": "read-evidence-parent-snapshot"
+        },
+        {
+          "path": "crates/lunatic-server/src/sim/scripts/effects.rs",
+          "start": 2549,
+          "end": 2620,
+          "sha256": "601cfe3b39f969fd96b3278978fcfb324d37ec146f0b481c8bdb110086917fe7",
+          "provenance": "read-evidence-parent-snapshot"
+        }
+      ],
+      "snapshot": {
+        "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+        "files": [
+          {
+            "path": "crates/lunatic-server/src/script/commands_aimed_attack.rs",
+            "sha256": "7ca873f6d937a6fd3e952e9076e75b66200fc3636db65f6b89ac18d1c4d9f791"
+          },
+          {
+            "path": "crates/lunatic-server/src/script/commands_custody.rs",
+            "sha256": "830fc40a8485c4a4939acf1a6d64472070f9f18407d148df0b0303d80e359770"
+          },
+          {
+            "path": "crates/lunatic-server/src/script/commands_exchange.rs",
+            "sha256": "0380e989ef437a8b61b222d8688cb56acf4290b6d1928c5d0c31c695f5c435f1"
+          },
+          {
+            "path": "crates/lunatic-server/src/script/commands_ledger.rs",
+            "sha256": "fae6de79f5b79e48a8c77d2ef9cb04800f772b768ed7a0d9fa6ae0602f760e74"
+          },
+          {
+            "path": "crates/lunatic-server/src/script/commands_ledger_replay.rs",
+            "sha256": "edd1a6b9cba6fcbe06b7f799e98b6b72abddc76753cd538e0abce72e3ed7013b"
+          },
+          {
+            "path": "crates/lunatic-server/src/script/commands_world/script_var_set.rs",
+            "sha256": "312026dffef32831b729e47d1c52ed090648002307ab98aa137cc0052d07b25e"
+          },
+          {
+            "path": "crates/lunatic-server/src/script/disl/host_ops/disl_call.rs",
+            "sha256": "1fc4f9bede95aa6fcd28ff3ff399f06699a657b71d68531c15d9c6a8cc6d42d3"
+          },
+          {
+            "path": "crates/lunatic-server/src/script/globals/decision_dispatch/emit_decision_admission.rs",
+            "sha256": "02d41fdd5aa9f46c00e7c69e72878152cfc1949104dae1a7869d35ffd41e2918"
+          },
+          {
+            "path": "crates/lunatic-server/src/script/globals/emit_admission.rs",
+            "sha256": "3f66d727494a48bb8b01f7f057b35ff219f39e5d45dd471b86faceb7101944c8"
+          },
+          {
+            "path": "crates/lunatic-server/src/script/globals/spawn_task.rs",
+            "sha256": "ba14027ee6ebceeb414eda096e3c974145b4f9d9fcf2ca97f683c4edf28657f1"
+          },
+          {
+            "path": "crates/lunatic-server/src/script/globals/task_cancel.rs",
+            "sha256": "50d04f0a97bc49160847dd04f4266737900fe9a2390cc78f4d3be25824884620"
+          },
+          {
+            "path": "crates/lunatic-server/src/script/script_var_values.rs",
+            "sha256": "d653afee23562cb1d410cc481dca4f68bedde4fd9e0add3d97293cff67bbf609"
+          },
+          {
+            "path": "crates/lunatic-server/src/script/services/database_service/database_admission.rs",
+            "sha256": "6f7dee8d32c40bd241c1ed4b8660de715f5d167e5d71c3b8a78136121bfb7c93"
+          },
+          {
+            "path": "crates/lunatic-server/src/script/services/interfaces.rs",
+            "sha256": "562ef0af1bffcec3278862da2dc1f524944a88a032c2a25caaa9856343636644"
+          },
+          {
+            "path": "crates/lunatic-server/src/script/services.rs",
+            "sha256": "19209187e14b82043dc510f99e48f405412c543b70946326ac30d49627704193"
+          },
+          {
+            "path": "crates/lunatic-server/src/script/watch_service.rs",
+            "sha256": "f96df69e4d4831eaa672c9d5bcaca6cc0f1be4f1f495c51dd0639ce32d60feaa"
+          },
+          {
+            "path": "crates/lunatic-server/src/sim/scripts/effects.rs",
+            "sha256": "601cfe3b39f969fd96b3278978fcfb324d37ec146f0b481c8bdb110086917fe7"
+          }
+        ]
+      }
     }
   ]
 }

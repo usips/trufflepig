@@ -98,8 +98,11 @@ router.
 
 ## Measured readiness
 
-The twelve development tasks give first-page Recall@10 of 0.25 for the old
-lexical response, 0.4583 for file-first lexical, and 0.3333 for CUDA fusion.
+These readiness figures come from the earlier runner, which searched every
+task from the first workspace member (Lunatic), so Tales from Space and
+tgstation tasks could only miss, and which let an installed per-user router
+serve the searches. The twelve development tasks give first-page Recall@10 of
+0.25 for the old lexical response, 0.4583 for file-first lexical, and 0.3333 for CUDA fusion.
 CUDA improves Recall@5 to 0.3333 but demotes useful lexical implementation
 files. These results keep semantic retrieval opt-in.
 
@@ -130,27 +133,31 @@ and output accounting. A latency threshold alone cannot pass a readiness gate.
 ## Concept-audit manifest
 
 [`../manifests/concept-audit.json`](../manifests/concept-audit.json) freezes
-fifteen Lunatic tasks drawn from agent-transcript concept-search misses:
-bare identifiers (`molar_mass`, `InteractionRefused`, `awake_only`), a plain
-and a quoted literal message (`unknown item slot`), and multi-word concept
-queries, with controls that already ranked well. It is development data with
-the same schema; pass it with `--manifest`. Its snapshot hashes match
-Lunatic `29709d66`, so run it against a checkout or `git archive` of that
-revision.
+twenty Lunatic tasks drawn from agent-transcript concept-search misses and
+their review: bare identifiers (`molar_mass`, `InteractionRefused`,
+`awake_only`, `tick_rate`), a plain and a quoted literal message (`unknown item
+slot`), `outside an occurrence` labelled with its seventeen production refusal
+sites, docs named by file (`AGENTS.md`, `dev-http.md`), a qualified
+`RecordStore::new`, and multi-word concept queries, with controls that
+already ranked well. Audit misses for `ModOwner` and the handler-route default
+are absent: neither exists at the frozen revision. It is development data with
+the same schema; pass it with `--manifest`. Its snapshot hashes match Lunatic
+`29709d66`, so run it against a checkout or `git archive` of that revision.
 
-File-first lexical results, old ranking against the path prior, identifier
-lanes and phrase lanes ([file ranking](../../docs/index-contract.md#file-ranking)):
+File-first lexical results from the current runner, old ranking against the
+path prior, evidence tiers and phrase lanes
+([file ranking](../../docs/index-contract.md#file-ranking)):
 
 | Manifest | Recall@5 | Recall@10 | MRR | Top-1 |
 | --- | --- | --- | --- | --- |
-| concept-audit, old | 0.8667 | 0.8667 | 0.682 | 9/15 |
-| concept-audit, new | 1.0 | 1.0 | 0.913 | 13/15 |
+| concept-audit, old | 0.8529 | 0.8529 | 0.695 | 12/20 |
+| concept-audit, new | 0.9618 | 0.9647 | 0.935 | 18/20 |
 | twelve-task, old | 0.75 | 0.9167 | 0.521 | 3/12 |
-| twelve-task, new | 0.8333 | 0.9167 | 0.701 | 6/12 |
+| twelve-task, new | 0.9167 | 0.9167 | 0.757 | 7/12 |
 
-The twelve-task rows search from each task's corpus. One task,
-`tfs-airlock-rebuild-fixture`, falls from rank 4 to rank 6 because its label
-is a test file. The CUDA and rerank arms were not measured for this change.
+No task's first label rank or recall falls. A 0.5 path prior instead pushed
+the test-file label of `tfs-airlock-rebuild-fixture` off the first page. The
+CUDA and rerank arms were not measured for this change.
 
 ## Real-agent trials
 
