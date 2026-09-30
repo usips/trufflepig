@@ -72,25 +72,27 @@ When a session starts inside a checkout of a registered workspace member, the
 the commands that replace definition, body, reference, outline, file, and
 line-range (`sed -n`) reads, how `next:` lines, `-n N`, and worktree
 `served from` answers work, and a reminder to brief subagents the same way.
-Subagents (Explore, Plan, general-purpose, forks) never see that context or
-CLAUDE.md, so the same script, registered for `SubagentStart`, returns the same
-guidance (without the briefing reminder) as the subagent's `additionalContext`.
+`SessionStart` context does not reach subagents, so the same script, registered
+for `SubagentStart`, returns that guidance (without the briefing reminder) as the
+subagent's `additionalContext`.
 Outside indexed checkouts, or with steering `off`, both print nothing.
 
 The installer merges `PreToolUse` and `PostToolUse` hooks with matcher `Bash`
 and a `PreToolUse` hook with matcher `Agent`, all running
 `trufflepig-agent-steer claude`. Tool hooks fire inside subagents too; their
 payloads carry `agent_id` and `agent_type`, which the audit records keep.
-Deny reasons and `PostToolUse`/`SessionStart`/`SubagentStart` `additionalContext`
-reach the model; plain `PreToolUse` stdout does not, so nudges wait for `PostToolUse`.
+Deny reasons and `PostToolUse`/`SessionStart` `additionalContext` reach the
+model; plain `PreToolUse` stdout does not, so nudges wait for `PostToolUse`.
+Claude Code documents `SubagentStart` and `PreToolUse` `additionalContext` as
+model context too; the `Agent` brief check and subagent guidance rely on that.
 In the default `nudge` mode, `PreToolUse` records the classified search and
 allows it; `PostToolUse` then adds the equivalent Trufflepig command as context:
 in full for the first search of each class per agent, as one line for every
 later one. A `trufflepig-agent` call piped into another program (`| head`) or
 chained with others (`;`, `&&`; a leading `cd DIR &&` is fine) gets a
 `PostToolUse` tip that the footer and exit status were lost. An `Agent` call
-whose brief tells the subagent to grep (`just grep for`, `use rg`, not negated
-mentions) gets lead-facing `PreToolUse` `additionalContext`; the brief itself is
+whose brief tells the subagent to grep code (`just grep for`, `use rg`; quoted,
+negated, and log-search mentions are ignored) gets lead-facing `PreToolUse` `additionalContext`; the brief itself is
 never rewritten. In `strict` mode
 `PreToolUse` returns `permissionDecision: "deny"` with the equivalent command for
 definition, body, outline, and reference searches. See

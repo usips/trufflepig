@@ -11,7 +11,6 @@ import unittest
 PLUGIN = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PLUGIN / "hooks"))
 import trufflepig_checkout as checkout  # noqa: E402
-import trufflepig_advice as advice  # noqa: E402
 import trufflepig_classify as classifier  # noqa: E402
 import trufflepig_shell as shell  # noqa: E402
 
@@ -73,6 +72,8 @@ CASES = [
     ("git -c color.ui=never grep -n -E 'SearchQueue' -- '*.rs'", "references", "lang:rust"),
     ("cd {root}/ledger && git grep -n write_integrity_atomic streams", "references", "file:ledger/streams/"),
     ("find . -name dispatch_order.rs", "files", "dispatch_order kind:file"),
+    ("sed -n 1,40p src/lib.rs 2>/dev/null", "read", "show path:src/lib.rs:1-40"),
+    ("cat src/lib.rs 2>&1", "read", "map src/lib.rs"),
     # Never steered.
     ("cargo test 2>&1 | grep FAILED", None, ""),
     ("ls -la | grep -v total", None, ""),
@@ -108,6 +109,12 @@ CASES = [
     ("git -C /somewhere/else grep -n write_integrity_atomic", None, ""),
     ("git --git-dir=/x/.git grep -n write_integrity_atomic", None, ""),
     ("git --no-pager log --oneline | grep fix", None, ""),
+    # Copies, not reads.
+    ("cat src/lib.rs > /tmp/copy.rs", None, ""),
+    ("sed -n 1,40p src/lib.rs > out.rs", None, ""),
+    ("sed -n 1,40p src/lib.rs >> out.rs", None, ""),
+    ("cat -n src/lib.rs | sed -n 1,5p > out.txt", None, ""),
+    ("cat src/lib.rs &> out.txt", None, ""),
 ]
 
 
@@ -144,6 +151,7 @@ class ClassifierTests(unittest.TestCase):
 
     def test_existence_checks_use_the_command_directory(self):
         # The hook process runs elsewhere; `streams` exists only under the `cd` target.
+        self.addCleanup(os.chdir, os.getcwd())
         os.chdir("/")
         found = classifier.classify("cd ledger && git grep -n write_integrity_atomic streams", self.root, self.root)
         self.assertEqual(found[0].hint, "trufflepig-agent refs write_integrity_atomic  "
@@ -333,6 +341,36 @@ class HookTests(unittest.TestCase):
         self.assertEqual((rows["main"]["reads"], rows["total"]["reads"]), (1, 1))
         self.assertEqual(rows["subagent"]["classes"], {"references": 1})
         self.assertEqual((rows["total"]["trufflepig"], rows["total"]["escaped"], rows["total"]["adoption"]), (1, 2, 0.333))
+
+    def test_suggestions_move_into_the_checkout_the_search_ran_in(self):
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "-c", "user.name=t", "-c", "user.email=t@t",
+                        "commit", "-q", "--allow-empty", "-m", "init"], check=True)
+        worktree = Path(self.scratch.name) / "worktrees/lunatic-w4-COL"
+        subprocess.run(["git", "-C", str(self.repo), "worktree", "add", "-q", str(worktree)], check=True)
+        (worktree / "crates").mkdir()
+        for command in (f"cd {worktree} && grep -rn 'fn tick' crates", f"git -C {worktree} grep -n 'fn tick' crates"):
+            tip = self.context(self.run_hook(command, event="PostToolUse", agent=command))
+            self.assertIn(f"-> cd {worktree} && trufflepig-agent search 'sym:tick file:crates/'", tip)
+        # The same checkout needs no `cd`; a session outside any checkout does.
+        same = self.context(self.run_hook("cd crates && grep -rn 'fn tick' .", event="PostToolUse", agent="s"))
+        self.assertIn("-> trufflepig-agent search 'sym:tick file:crates/'", same)
+        outside = Path(self.scratch.name) / "elsewhere"
+        outside.mkdir()
+        tip = self.context(self.run_hook(f"cd {self.repo} && grep -rn 'fn tick' crates", event="PostToolUse",
+                                         cwd=outside))
+        self.assertIn(f"-> cd {self.repo} && trufflepig-agent search", tip)
+
+    def test_malformed_payloads_never_fail_the_tool_call(self):
+        for payload in ('{"cwd": 123, "tool_name": "Bash", "tool_input": {"command": "grep -rn x ."}}',
+                        '{"tool_name": "Bash", "tool_input": {"command": ["grep", 5]}, "cwd": {}}', "[]", "{"):
+            result = subprocess.run([sys.executable, str(PLUGIN / "hooks/steer-search.py"), "claude"],
+                                    input=payload, env=self.env, capture_output=True, text=True)
+            self.assertEqual((result.returncode, result.stdout), (0, ""), payload)
+        self.assertIn("steering unavailable", subprocess.run(
+            [sys.executable, str(PLUGIN / "hooks/steer-search.py"), "claude"],
+            input='{"cwd": 123, "tool_name": "Bash", "tool_input": {"command": "grep -rn x ."}}',
+            env=self.env, capture_output=True, text=True).stderr)
 
     def test_nested_linked_worktree_is_its_own_checkout(self):
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)

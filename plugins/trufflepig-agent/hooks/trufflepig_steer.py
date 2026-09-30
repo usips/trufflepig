@@ -17,6 +17,7 @@ STRONG_CLASSES = {"definition", "body", "outline", "references"}
 FALLBACK_MARKER = re.compile(r"#\s*tp-fallback\b")
 FALLBACK_WINDOW_SECONDS = 10 * 60
 UNLOCK_WINDOW_SECONDS = 45 * 60
+TIP_MARKER_SECONDS = 24 * 60 * 60
 MODES = ("off", "nudge", "block", "strict")
 DEFAULT_MODES = {"claude": "nudge"}
 
@@ -104,16 +105,41 @@ def used_recently(harness: str, cwd: str) -> bool:
 
 def first_tip(key: str, kind: str) -> bool:
     """Whether this agent (`key`: session, agent, cwd) gets its first tip of `kind`; the
-    full tip comes once, later ones use the one-line form."""
-    marker = state_dir() / "steer-nudge" / f"{cwd_key(key)}-{kind}"
-    if marker.exists():
-        return False
+    full tip comes once, later ones use the one-line form. Creating the marker is the
+    atomic claim, so concurrent hooks agree on which one is first."""
+    markers = state_dir() / "steer-nudge"
     try:
-        marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.touch()
+        markers.mkdir(parents=True, exist_ok=True)
+        with open(markers / f"{cwd_key(key)}-{kind}", "x"):
+            pass
+    except FileExistsError:
+        return False
+    except OSError:
+        return True
+    prune_tip_markers(markers)
+    return True
+
+
+def prune_tip_markers(markers: Path) -> None:
+    """At most once per `TIP_MARKER_SECONDS`, remove markers older than that."""
+    stamp = markers / ".pruned"
+    now = time.time()
+    try:
+        if now - stamp.stat().st_mtime < TIP_MARKER_SECONDS:
+            return
     except OSError:
         pass
-    return True
+    try:
+        stamp.touch()
+        candidates = list(markers.iterdir())
+    except OSError:
+        return
+    for marker in candidates:
+        try:
+            if marker != stamp and now - marker.stat().st_mtime > TIP_MARKER_SECONDS:
+                marker.unlink()
+        except OSError:
+            continue  # a concurrent hook pruned it first
 
 
 def log(record: dict) -> None:

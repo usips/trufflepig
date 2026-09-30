@@ -10,6 +10,7 @@ import re
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 SEPARATORS = {";", "&&", "||", "|", "&", "|&", "\n", "(", ")", "{", "}"}
 WRAPPERS = {"command", "builtin", "exec", "nice", "time", "timeout", "env", "noglob"}
@@ -39,34 +40,44 @@ def tokenize(command: str) -> list[str] | None:
         return None
 
 
-def segments(command: str) -> list[tuple[list[str], bool]] | None:
-    """Simple commands as (words, piped) where `piped` means stdin comes from a pipe.
-    Redirections (`2>&1`, `> out`, `< in`) and their targets are dropped."""
+class ShellSegment(NamedTuple):
+    """One simple command: `piped` means stdin comes from a pipe, `redirected` that
+    stdout goes to a file (`> out`, `>> out`, `&> out`), not to the caller."""
+    words: list[str]
+    piped: bool
+    redirected: bool
+
+
+def segments(command: str) -> list[ShellSegment] | None:
+    """Simple commands of `command`. Redirections (`2>&1`, `> out`, `< in`) and their
+    targets are dropped from the words."""
     tokens = tokenize(command)
     if tokens is None:
         return None
-    result: list[tuple[list[str], bool]] = []
+    result: list[ShellSegment] = []
     words: list[str] = []
-    piped = False
+    piped = redirected = False
     index = 0
     while index < len(tokens):
         token = tokens[index]
         index += 1
         if token and set(token) <= set("<>&"):
             if "<" in token or ">" in token:
-                if words and words[-1].isdigit():
-                    words.pop()  # file descriptor of `2>`
+                descriptor = words.pop() if words and words[-1].isdigit() else "1"  # `2>`
+                # `>&N` duplicates a descriptor; only a file target takes stdout away.
+                redirected |= ">" in token and descriptor == "1" and not token.endswith("&")
                 index += 1  # the redirection target
                 continue
         if token in SEPARATORS or token and set(token) <= set(";&|(){}"):
             if words:
-                result.append((words, piped))
+                result.append(ShellSegment(words, piped, redirected))
             words = []
             piped = token in ("|", "|&")
+            redirected = False
             continue
         words.append(token)
     if words:
-        result.append((words, piped))
+        result.append(ShellSegment(words, piped, redirected))
     return result
 
 
@@ -216,8 +227,8 @@ def search_directory(command: str, cwd: Path) -> Path:
     """Directory of the command's first program other than `cd`, after preceding
     `cd DIR` and its own `git -C DIR`; decides which indexed checkout owns the command."""
     directory = cwd
-    for words, _ in segments(command) or []:
-        words = strip_prefix(words)
+    for segment in segments(command) or []:
+        words = strip_prefix(segment.words)
         if not words:
             continue
         program = os.path.basename(words[0])

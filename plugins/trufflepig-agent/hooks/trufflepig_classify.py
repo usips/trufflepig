@@ -321,12 +321,12 @@ def classify(command: str, cwd: Path, checkout: Path) -> list[Search]:
         return []
     parsed = segments(command)
     if parsed is None or any(words and os.path.basename(words[0]).startswith("trufflepig")
-                             for words in (strip_prefix(w) for w, _ in parsed)):
+                             for words in (strip_prefix(segment.words) for segment in parsed)):
         return []  # a command that already runs trufflepig is advised, not steered
     found: list[Search] = []
     directory = cwd
-    for position, (words, piped) in enumerate(parsed):
-        words = strip_prefix(words)
+    for position, segment in enumerate(parsed):
+        words, piped = strip_prefix(segment.words), segment.piped
         if not words:
             continue
         program = os.path.basename(words[0])
@@ -346,8 +346,10 @@ def classify(command: str, cwd: Path, checkout: Path) -> list[Search]:
             search = classify_grep(call, subcommand[1], checkout, piped)
         elif program in ("sed", "cat"):
             following = parsed[position + 1] if position + 1 < len(parsed) else None
-            after = strip_prefix(following[0]) or None if following and following[1] else None
-            search = None if piped else classify_read(program, words[1:], after, directory, checkout)
+            after = strip_prefix(following.words) or None if following and following.piped else None
+            # `cat F > out` and `cat F | sed -n A,Bp > out` copy source; they do not read it.
+            copied = segment.redirected or after is not None and following.redirected
+            search = None if piped or copied else classify_read(program, words[1:], after, directory, checkout)
         elif program in ("find", "bfs", "fd"):
             search = classify_find(program, words[1:], directory, checkout)
         elif program == "rg" and "--files" in words:

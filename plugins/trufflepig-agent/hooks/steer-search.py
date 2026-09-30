@@ -83,7 +83,7 @@ def advise(harness: str, event: str, key: str, kind: str, tip) -> None:
         sys.stdout.write(tip(full) + "\n")
 
 
-def main() -> int:
+def steer() -> int:
     harness = sys.argv[1] if len(sys.argv) > 1 else "unknown"
     mode = policy.mode_for(harness)
     if mode == "off":
@@ -126,12 +126,19 @@ def main() -> int:
         return 0
     if not classifier.MAYBE_SEARCH.search(command):
         return 0
-    owner = checkout.indexed_checkout(shell.search_directory(command, cwd))
+    directory = shell.search_directory(command, cwd)
+    owner = checkout.indexed_checkout(directory)
     if owner is None:
         return 0
     searches = classifier.classify(command, cwd, owner.checkout)
     if not searches:
         return 0
+    home = checkout.indexed_checkout(cwd) if directory != cwd else owner
+    if home is None or home.checkout != owner.checkout:
+        # The search ran in another checkout (`cd WT &&`, `git -C WT`), and each Bash
+        # call starts in the session cwd again: the suggestion must move there too.
+        for search in searches:
+            search.hint = f"cd {classifier.quote(str(owner.checkout))} && {search.hint}"
 
     strong = [s for s in searches if s.kind in policy.STRONG_CLASSES]
     fallback = None
@@ -190,6 +197,15 @@ def main() -> int:
         advise(harness, event, key, searches[0].kind,
                lambda full: message_for(searches, owner, False) if full else short_message(searches[0]))
     return 0
+
+
+def main() -> int:
+    """Steering must never fail the tool call: errors go to stderr with exit 0."""
+    try:
+        return steer()
+    except Exception as error:
+        sys.stderr.write(f"trufflepig search steering unavailable: {error}\n")
+        return 0
 
 
 if __name__ == "__main__":

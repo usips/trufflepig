@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Claude SessionStart/SubagentStart hook. SessionStart persists the hook-provided
 session identity in the Bash environment file; both tell the (sub)agent how to
-search when it starts inside an indexed checkout. Subagents never see SessionStart
-context or CLAUDE.md, so SubagentStart repeats the guidance for them."""
+search when it starts inside an indexed checkout. SessionStart context does not
+reach subagents, so SubagentStart supplies the guidance to them."""
 import json
 import os
 from pathlib import Path

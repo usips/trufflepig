@@ -16,7 +16,11 @@ GREP_BRIEF = re.compile(
     r"\b(?:use|using|just|run|via|with|try)\s+`?(?:git\s+grep|grep|rg|ripgrep)\b(?:`?\s+for\b)?"
     r"|\b(?:git\s+grep|grep|rg)\s+(?:for|across|through|counts?|is\s+fine|-[A-Za-z]*[rRnlw])\b"
     r"|\bgrep(?:ping)?\s+(?:the\s+)?(?:code|codebase|repo|source|crates?)\b", re.I)
-NEGATION = re.compile(r"\b(?:not|never|don'?t|no|avoid|instead\s+of|rather\s+than|than|without)\W*\w*\W*$", re.I)
+# Quoted and backticked text is cited, not instructed; its span is blanked before matching.
+QUOTED = re.compile(r"`[^`\n]*`|\"[^\"\n]*\"|\u201c[^\u201d\n]*\u201d|(?<!\w)'[^'\n]*'(?!\w)")
+SENTENCE_END = re.compile(r"[.!?;:](?=\s|$)|\n")
+NEGATION = re.compile(r"\b(?:not|never|don'?t|avoid|instead\s+of|rather\s+than|without)\b", re.I)
+LOG_TARGET = re.compile(r"\b(?:logs?|output|stdout|stderr|journal(?:ctl)?|transcripts?)\b|\.(?:log|jsonl|txt)\b", re.I)
 
 
 def call_shape(command: str) -> str | None:
@@ -28,9 +32,9 @@ def call_shape(command: str) -> str | None:
     if not parsed:
         return None
     programs = []
-    for words, piped in parsed:
-        words = strip_prefix(words)
-        programs.append((os.path.basename(words[0]) if words else "", piped))
+    for segment in parsed:
+        words = strip_prefix(segment.words)
+        programs.append((os.path.basename(words[0]) if words else "", segment.piped))
     calls = [index for index, (program, _) in enumerate(programs) if program == "trufflepig-agent"]
     if not calls:
         return None
@@ -53,18 +57,23 @@ def call_shape_tip(shape: str, full: bool) -> str:
 
 
 def grep_brief(prompt: str) -> str | None:
-    """The phrase in a subagent brief that tells it to grep, if any; negated mentions
-    ("never use grep", "instead of grep for") do not count."""
-    for match in GREP_BRIEF.finditer(prompt):
-        if not NEGATION.search(prompt[max(0, match.start() - 24):match.start()]):
-            return match.group(0).strip("` ")
+    """The phrase in a subagent brief that tells it to grep code, if any. Quoted or
+    backticked mentions, a negation earlier in the same sentence ("never use grep"),
+    and searches of logs or command output later in it do not count."""
+    text = QUOTED.sub(lambda quoted: " " * len(quoted.group(0)), prompt)
+    for match in GREP_BRIEF.finditer(text):
+        start = max((end.end() for end in SENTENCE_END.finditer(text, 0, match.start())), default=0)
+        following = SENTENCE_END.search(text, match.end())
+        stop = following.start() if following else len(text)
+        if NEGATION.search(text, start, match.start()) or LOG_TARGET.search(prompt, match.end(), stop):
+            continue
+        return match.group(0).strip("` ")
     return None
 
 
 def grep_brief_tip(phrase: str, member: str, full: bool) -> str:
     if not full:
         return f"trufflepig: this brief says `{phrase}`; ask subagents for `trufflepig-agent` searches instead."
-    return (f"trufflepig: this subagent brief says `{phrase}`. {member} is indexed by trufflepig; the subagent "
-            "starts with trufflepig search guidance, but an explicit grep instruction in its brief overrides "
-            "it. In future briefs ask for `trufflepig-agent` (`search 'sym:X'`, `show 'sym:X'`, `refs X`, "
+    return (f"trufflepig: this subagent brief says `{phrase}`. {member} is indexed by trufflepig, and an "
+            "explicit grep instruction in a brief tends to outweigh general search guidance. In future briefs ask for `trufflepig-agent` (`search 'sym:X'`, `show 'sym:X'`, `refs X`, "
             "`search 'few words'`) for code, and keep grep for logs and command output.")

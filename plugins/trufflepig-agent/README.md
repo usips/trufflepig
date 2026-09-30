@@ -162,9 +162,10 @@ for attribution and best-effort daemon startup.
 workspace members, including linked worktrees. It classifies each shell search
 (`definition`, `body`, `outline`, `references`, `regex`, `concept`, `files`) and
 source read (`read`: `sed -n A,Bp F` → `show path:F:A-B`, `cat F` → `map F`),
-resolving paths against `cd DIR`/`git -C DIR`, and names the equivalent command.
-Pipe filters, logs and command output, other revisions, filesystem `find`
-actions, shell variables, and paths outside the checkout are never steered.
+resolving paths against `cd DIR`/`git -C DIR`, and names the equivalent command
+(prefixed with `cd CHECKOUT &&` when that is another checkout). Pipe filters,
+copies (`cat F > out`), logs and command output, other revisions, filesystem
+`find` actions, shell variables, and paths outside the checkout are never steered.
 Nudges are full for an agent's first search of a class, one line after; piped or
 chained `trufflepig-agent` calls get a tip that the footer was lost. Modes:
 
