@@ -24,6 +24,12 @@ pub fn reference_query(text: &str) -> Result<Query> {
 /// Occurrences named by `query.text`; `kind:` matches the occurrence role
 /// (`call`, `import`, ...) or the kind of its resolved or candidate target.
 pub fn references(store: &Store, query: &Query) -> Result<ResultSet> {
+    references_with_limit(store, query, MAX_HITS)
+}
+
+/// Returns sites ordered by declaration/code/import/test priority, applying
+/// ownership and priority before the result cap.
+fn references_with_limit(store: &Store, query: &Query, max_sites: usize) -> Result<ResultSet> {
     let name = QualifiedName::parse(&query.text);
     ensure!(!name.name.is_empty(), "usage: refs NAME");
     let snapshot = store.conn.unchecked_transaction()?;
@@ -59,7 +65,7 @@ pub fn references(store: &Store, query: &Query) -> Result<ResultSet> {
             name.name,
             query.language,
             query.kind,
-            (MAX_HITS + 1) as i64,
+            i64::MAX,
             name.owner_hint()
         ],
         |r| {
@@ -73,22 +79,44 @@ pub fn references(store: &Store, query: &Query) -> Result<ResultSet> {
             })
         },
     )?;
-    let mut sites = rows.collect::<rusqlite::Result<Vec<_>>>()?;
-    drop(stmt);
-    let mut truncated = sites.len() > MAX_HITS;
-    sites.truncate(MAX_HITS);
-    for site in &mut sites {
+    let result_cap = max_sites.saturating_add(1);
+    let mut priority_sites: [Vec<Site>; 4] = std::array::from_fn(|_| Vec::new());
+    let mut retained = 0usize;
+    let mut truncated = false;
+    for row in rows {
+        let mut site = row?;
         site.candidate_ids = serde_json::from_str(&site.candidates)?;
-    }
-    if name.is_qualified() {
-        let mut kept = Vec::with_capacity(sites.len());
-        for site in sites {
-            if site_matches_qualifier(store, &name, &site)? {
-                kept.push(site);
+        if name.is_qualified() && !site_matches_qualifier(store, &name, &site)? {
+            continue;
+        }
+        let priority = site.tier() as usize;
+        if retained < result_cap {
+            priority_sites[priority].push(site);
+            retained += 1;
+        } else {
+            truncated = true;
+            let worst = (0..priority_sites.len())
+                .rev()
+                .find(|tier| !priority_sites[*tier].is_empty())
+                .expect("full reference site buffer has a worst tier");
+            if priority < worst {
+                priority_sites[worst].pop();
+                priority_sites[priority].push(site);
+            } else if priority == 0 && worst == 0 {
+                // The buffer already contains cap+1 declarations, the best
+                // possible tier, in path order; later rows cannot improve it.
+                break;
             }
         }
-        sites = kept;
+        if retained == result_cap && priority_sites[0].len() == result_cap {
+            truncated = true;
+            break;
+        }
     }
+    drop(stmt);
+    let mut sites: Vec<Site> = priority_sites.into_iter().flatten().collect();
+    truncated |= sites.len() > max_sites;
+    sites.truncate(max_sites);
     let files = sites
         .iter()
         .map(|site| site.hit.path.as_str())

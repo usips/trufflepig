@@ -101,6 +101,47 @@ impl WorktreeDivergence {
         divergence
     }
 
+    /// Recomputes divergence from Git so exact misses can discover recent
+    /// worktree-only paths that a short-lived cached snapshot cannot contain.
+    pub fn refresh(
+        parent_root: &Path,
+        worktree_root: &Path,
+        worktree_cache: &Path,
+        parent_generation: i64,
+    ) -> Self {
+        let (parent, worktree) = std::thread::scope(|scope| {
+            let parent = scope.spawn(|| head_and_index(parent_root));
+            (parent.join().ok().flatten(), head_and_index(worktree_root))
+        });
+        let key = match (parent, worktree) {
+            (Some((parent_head, parent_git_index)), Some((worktree_head, worktree_git_index))) => {
+                DivergenceKey {
+                    parent_head,
+                    worktree_head,
+                    parent_git_index,
+                    worktree_git_index,
+                    parent_generation,
+                }
+            }
+            (parent, _) => {
+                let parent_head = parent.map(|(head, _)| head);
+                let mut divergence = compute(parent_root, worktree_root, parent_head.as_deref());
+                divergence.complete = false;
+                return divergence;
+            }
+        };
+        let divergence = compute(parent_root, worktree_root, Some(&key.parent_head));
+        store(
+            worktree_cache,
+            &StoredDivergence {
+                key,
+                computed_ms: now_ms(),
+                divergence: divergence.clone(),
+            },
+        );
+        divergence
+    }
+
     pub fn contains(&self, path: &str) -> bool {
         self.paths.contains(path)
     }

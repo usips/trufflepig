@@ -186,13 +186,15 @@ pub(super) fn search_with_policy(
             if let Some(error) = preparation_error {
                 found.coverage["semantic_preparation_error"] = error.to_string().into();
             }
-            let fallback = fallback.map(|fallback| {
+            let fallback = if let Some(mut fallback) = fallback {
                 let mut hashes = WorktreeHashes::default();
                 let request = (verb, words.as_slice(), &query, &origin);
-                let changed = fallback.complete_answer(&store, request, &mut found, &mut hashes);
+                let changed = fallback.complete_answer(&store, request, &mut found, &mut hashes)?;
                 let differing = fallback.check_hits(&store.root, &found.hits, &mut hashes, changed);
-                (fallback, differing)
-            });
+                Some((fallback, differing))
+            } else {
+                None
+            };
             if found.coverage["truncated_files"].as_u64().unwrap_or(0) > 0 {
                 found.coverage["unsearched_paths"] = fact_limit_paths(&store)?.into();
             }
@@ -256,6 +258,28 @@ pub(super) fn search_with_policy(
                     truncated,
                     &found.coverage,
                 );
+                if let Some(detail) = found.coverage.get("worktree_reextraction") {
+                    coverage["partial"] = true.into();
+                    coverage["truncated"] = true.into();
+                    if let Some(unsearched) = detail["unsearched_paths"].as_u64()
+                        && detail["unsearched_paths_exact"] == true
+                    {
+                        let known = coverage["unsearched"].as_u64().unwrap_or(0);
+                        coverage["unsearched"] = known.saturating_add(unsearched).into();
+                        if unsearched > 0 {
+                            if !coverage["unsearched_kinds"].is_array() {
+                                coverage["unsearched_kinds"] = serde_json::Value::Array(Vec::new());
+                            }
+                            let kinds = coverage["unsearched_kinds"]
+                                .as_array_mut()
+                                .expect("array initialized above");
+                            if !kinds.iter().any(|kind| kind == "worktree_reextraction") {
+                                kinds.push("worktree_reextraction".into());
+                            }
+                        }
+                    }
+                    coverage["issues"]["worktree_reextraction"] = detail.clone();
+                }
                 if let Some((fallback, differing_files)) = &fallback {
                     let differing = entries.iter().filter(|e| e.worktree_differs).count();
                     fallback.describe(&mut coverage, differing_files, differing);
@@ -295,8 +319,17 @@ pub(super) fn search_with_policy(
         }
         if implicit_home && position == 1 {
             let home_hits = lists.first().is_some_and(|list| list.len() > 0);
+            let incomplete_fallback = set.coverage.last().is_some_and(|row| {
+                row["issues"]["worktree_reextraction"]["status"] == "incomplete"
+            });
+            let home_answered = !lists.is_empty() && !incomplete_fallback;
+            let home_state = if incomplete_fallback {
+                "incomplete"
+            } else {
+                member_state
+            };
             let (scope, widen) =
-                implicit_home_scope(roots.len() - 1, !lists.is_empty(), home_hits, member_state);
+                implicit_home_scope(roots.len() - 1, home_answered, home_hits, home_state);
             if widen {
                 queue.extend((0..roots.len()).filter(|&i| i != index));
             }

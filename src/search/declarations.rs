@@ -100,14 +100,26 @@ pub(super) fn declaration_hits(
 }
 
 /// Definitions of `name` under path/language/kind filters, in path order.
-/// Qualified names keep only the closest match tier; `truncated` reflects the
-/// row cap before that filter, so a capped lookup never reads as complete.
+/// Qualified names keep only the closest match tier before the result cap.
 pub(super) fn qualified_hits(
     store: &Store,
     name: &QualifiedName,
     paths: &BoundPathFilter,
     language: &str,
     kind: &str,
+) -> Result<LaneHits> {
+    qualified_hits_with_limit(store, name, paths, language, kind, MAX_HITS)
+}
+
+/// Looks up qualified declarations before applying the result cap, so broad
+/// owner-hint matches cannot crowd out a later exact owner.
+fn qualified_hits_with_limit(
+    store: &Store,
+    name: &QualifiedName,
+    paths: &BoundPathFilter,
+    language: &str,
+    kind: &str,
+    max_hits: usize,
 ) -> Result<LaneHits> {
     let mut statement = store.conn.prepare(&format!(
         "SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container,
@@ -123,33 +135,47 @@ pub(super) fn qualified_hits(
          LIMIT ?4",
         paths.sql_clause("f.path")
     ))?;
-    let mut hits = statement
-        .query_map(
-            params![
-                name.name,
-                language,
-                kind,
-                (MAX_HITS + 1) as i64,
-                name.owner_hint()
-            ],
-            hit_row,
-        )?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    let truncated = hits.len() > MAX_HITS;
-    hits.truncate(MAX_HITS);
-    if name.is_qualified() {
-        let tiers: Vec<_> = hits
-            .iter()
-            .map(|hit| name.matches(&hit.path, hit.container.as_deref()))
-            .collect();
-        let best = tiers.iter().flatten().min().copied();
-        let mut tier = tiers.into_iter();
-        hits.retain(|_| {
-            tier.next()
-                .flatten()
-                .is_some_and(|found| Some(found) == best)
-        });
+    let mut rows = statement.query(params![
+        name.name,
+        language,
+        kind,
+        if name.is_qualified() {
+            i64::MAX
+        } else {
+            max_hits.saturating_add(1).min(i64::MAX as usize) as i64
+        },
+        name.owner_hint()
+    ])?;
+    let mut hits = Vec::with_capacity(max_hits.min(128));
+    let mut best = None;
+    let mut truncated = false;
+    let result_cap = max_hits.saturating_add(1);
+    while let Some(row) = rows.next()? {
+        let hit = hit_row(row)?;
+        let Some(tier) = name.matches(&hit.path, hit.container.as_deref()) else {
+            continue;
+        };
+        match best {
+            Some(previous) if tier > previous => continue,
+            Some(previous) if tier < previous => {
+                hits.clear();
+                truncated = false;
+                best = Some(tier);
+            }
+            None => best = Some(tier),
+            _ => {}
+        }
+        if hits.len() == result_cap {
+            truncated = true;
+            if !name.is_qualified() || tier == super::qualified_name::QualifierMatch::Suffix {
+                break;
+            }
+        } else {
+            hits.push(hit);
+        }
     }
+    truncated |= hits.len() > max_hits;
+    hits.truncate(max_hits);
     Ok(LaneHits { hits, truncated })
 }
 

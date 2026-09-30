@@ -48,37 +48,34 @@ impl ReextractedDefinition {
     }
 }
 
-/// Reads root-relative `path` under `root`, extracts it, and returns the
-/// definition named `name` (of `kind`, any kind when empty) whose first line
-/// is nearest `near_line`; earlier definitions win ties. Files the index
-/// excludes and extractions that yield no facts are errors, not `None`.
-pub fn reextract_definition(
-    root: &Path,
-    path: &str,
-    name: &str,
-    kind: &str,
-    near_line: usize,
-) -> Result<Option<ReextractedDefinition>> {
+/// Re-reads `hit`'s root-relative path and finds the same named definition in
+/// the same container nearest its recorded line. Earlier definitions win ties.
+/// Files the index excludes and factless failed extractions are errors, not
+/// `None`.
+pub fn reextract_definition(root: &Path, hit: &Hit) -> Result<Option<ReextractedDefinition>> {
     let bytes = read_contained(
         root,
-        &crate::store::decode_path(path)?,
+        &crate::store::decode_path(&hit.path)?,
         crate::store::MAX_SOURCE_BYTES as usize,
     )?;
     ensure!(
         !bytes.contains(&0),
-        "source_excluded: {path} is binary; the index does not extract it"
+        "source_excluded: {} is binary; the index does not extract it",
+        hit.path
     );
-    let extraction = usable_extraction(path, crate::extract::extract(path, &bytes))?;
+    let extraction = usable_extraction(&hit.path, crate::extract::extract(&hit.path, &bytes))?;
     let Some(definition) = extraction
         .definitions
         .into_iter()
         .filter(|definition| {
-            definition.name == name && (kind.is_empty() || definition.kind == kind)
+            definition.name == hit.name
+                && (hit.kind.is_empty() || definition.kind == hit.kind)
+                && definition.container.as_deref() == hit.container.as_deref()
         })
         .map(|definition| {
             let lines = line_span(&bytes, definition.start, definition.end);
             (
-                lines.0.abs_diff(near_line),
+                lines.0.abs_diff(hit.start_line),
                 definition.start,
                 lines,
                 definition,
@@ -91,7 +88,7 @@ pub fn reextract_definition(
     };
     let ((start_line, end_line), definition) = definition;
     Ok(Some(ReextractedDefinition {
-        path: path.to_owned(),
+        path: hit.path.clone(),
         span: ByteSpan::new(definition.start, definition.end)?.validate(bytes.len())?,
         name: definition.name,
         kind: definition.kind,
@@ -121,36 +118,61 @@ pub fn usable_extraction(path: &str, extraction: Extraction) -> Result<Extractio
 mod tests {
     use super::*;
 
+    fn hit(name: &str, kind: &str, container: Option<&str>, start_line: usize) -> Hit {
+        Hit {
+            handle: String::new(),
+            path: "lib.rs".into(),
+            revision: None,
+            start: 0,
+            end: 0,
+            start_line,
+            end_line: start_line,
+            name: name.into(),
+            kind: kind.into(),
+            container: container.map(str::to_owned),
+            provenance: None,
+            resolution: None,
+            candidates: Vec::new(),
+            target: None,
+            repeats: None,
+            snippet: None,
+        }
+    }
+
     #[test]
-    fn reextract_picks_nearest_same_name_and_kind_definition() {
+    fn reextract_picks_nearest_definition_in_the_original_container() {
         let root = tempfile::tempdir().unwrap();
         let source = "fn helper() {}\n\nstruct helper;\n\nmod inner {\n    fn helper() {}\n}\n\nfn other() {}\n";
         std::fs::write(root.path().join("lib.rs"), source).unwrap();
-        let found = reextract_definition(root.path(), "lib.rs", "helper", "function", 5)
+        let selected = hit("helper", "function", Some("inner"), 5);
+        let found = reextract_definition(root.path(), &selected)
             .unwrap()
             .unwrap();
         assert_eq!((found.start_line, found.end_line), (6, 6));
         assert_eq!(found.kind, "function");
+        assert_eq!(found.container.as_deref(), Some("inner"));
         assert_eq!(
             &found.bytes[found.span.start..found.span.end],
             b"fn helper() {}"
         );
         assert_eq!(found.revision, ContentRevision::of(source.as_bytes()));
-        let first = reextract_definition(root.path(), "lib.rs", "helper", "function", 1)
+        let first = reextract_definition(root.path(), &hit("helper", "function", None, 1))
             .unwrap()
             .unwrap();
         assert_eq!(first.start_line, 1);
-        let any_kind = reextract_definition(root.path(), "lib.rs", "helper", "", 3)
+        let any_kind = reextract_definition(root.path(), &hit("helper", "", None, 3))
             .unwrap()
             .unwrap();
         assert_eq!(any_kind.start_line, 3);
         assert!(
-            reextract_definition(root.path(), "lib.rs", "missing", "", 1)
+            reextract_definition(root.path(), &hit("missing", "", None, 1))
                 .unwrap()
                 .is_none()
         );
         std::fs::write(root.path().join("blob.rs"), b"fn helper() {}\0").unwrap();
-        let binary = reextract_definition(root.path(), "blob.rs", "helper", "", 1)
+        let mut binary_hit = hit("helper", "", None, 1);
+        binary_hit.path = "blob.rs".into();
+        let binary = reextract_definition(root.path(), &binary_hit)
             .err()
             .unwrap();
         assert!(

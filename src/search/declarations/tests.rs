@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     output::{OutputBudget, OutputFormat},
-    search::{search, tests::fixture},
+    search::{PathFilter, search, tests::fixture},
 };
 
 fn show(store: &Store, target: &str) -> Result<String> {
@@ -168,6 +168,21 @@ fn qualified_names_select_impl_owners_and_module_paths() {
 }
 
 #[test]
+fn qualified_declarations_apply_the_owner_filter_before_the_result_cap() {
+    let (_root, _cache, store) = fixture(&[(
+        "src/a.rs",
+        b"impl A0 { fn open() {} }\nimpl A1 { fn open() {} }\nimpl A { fn open() {} }\n",
+    )]);
+    let paths = PathFilter::default().bind(&store.conn).unwrap();
+    let found =
+        qualified_hits_with_limit(&store, &QualifiedName::parse("A::open"), &paths, "", "", 1)
+            .unwrap();
+    assert_eq!(found.hits.len(), 1, "{found:?}");
+    assert_eq!(found.hits[0].container.as_deref(), Some("impl A"));
+    assert!(!found.truncated);
+}
+
+#[test]
 fn show_filters_from_separate_words_and_no_definition_names_them() {
     let words: Vec<String> = ["show", "sym:refill", "file:a.rs", "kind:module"]
         .map(str::to_owned)
@@ -245,7 +260,7 @@ fn nested_test_modules_rank_after_code_and_encoded_directories_compare() {
 }
 
 #[test]
-fn qualified_lookups_past_the_row_cap_report_truncation() {
+fn qualified_lookups_keep_exact_owners_past_broad_candidate_cap() {
     let decoys: String = "impl Tyrant { fn new() {} }\n".repeat(MAX_HITS / 2 + 1);
     let (_root, _cache, store) = fixture(&[
         ("src/a.rs", decoys.as_bytes()),
@@ -258,5 +273,22 @@ fn qualified_lookups_past_the_row_cap_report_truncation() {
         &InvocationDirectory::root(),
     )
     .unwrap();
-    assert!(found.hits.is_empty() && found.truncated);
+    assert_eq!(found.hits.len(), 1, "{found:?}");
+    assert_eq!(found.hits[0].container.as_deref(), Some("impl Ty"));
+    assert!(!found.truncated);
+}
+
+#[test]
+fn qualified_lookups_truncate_when_exact_owners_exceed_the_result_cap() {
+    let (_root, _cache, store) = fixture(&[(
+        "src/a.rs",
+        b"impl Tyrant { fn new() {} }\nimpl Ty { fn new() {} }\nimpl Ty { fn new() {} }\n",
+    )]);
+    let paths = PathFilter::default().bind(&store.conn).unwrap();
+    let found =
+        qualified_hits_with_limit(&store, &QualifiedName::parse("Ty::new"), &paths, "", "", 1)
+            .unwrap();
+    assert_eq!(found.hits.len(), 1, "{found:?}");
+    assert_eq!(found.hits[0].container.as_deref(), Some("impl Ty"));
+    assert!(found.truncated);
 }

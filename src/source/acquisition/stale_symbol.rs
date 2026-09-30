@@ -76,17 +76,10 @@ fn await_republish(store: &Store, seen: i64) -> bool {
     false
 }
 
-/// `hit`'s definition located in the file's current bytes, saved as its own
-/// result so continuations address those bytes.
+/// `hit`'s definition in its original container, located in the file's current
+/// bytes and saved as its own result so continuations address those bytes.
 fn acquire_reextracted(store: &Store, hit: &Hit) -> Result<Option<AcquiredSource>> {
-    let Some(definition) = crate::source::reextract_definition(
-        &store.root,
-        &hit.path,
-        &hit.name,
-        &hit.kind,
-        hit.start_line,
-    )?
-    else {
+    let Some(definition) = crate::source::reextract_definition(&store.root, hit)? else {
         return Ok(None);
     };
     let set = results::save_entries(
@@ -114,6 +107,7 @@ fn acquire_reextracted(store: &Store, hit: &Hit) -> Result<Option<AcquiredSource
 mod tests {
     use super::super::acquire;
     use crate::search::InvocationDirectory;
+    use crate::source::line_span;
     use crate::{output::OutputBudget, store::Store};
 
     #[test]
@@ -181,5 +175,42 @@ mod tests {
             acquire(&store, "sym:target", None, &InvocationDirectory::root()).unwrap();
         assert!(republished.verified);
         assert_eq!(republished.freshness, None);
+    }
+
+    #[test]
+    fn stale_qualified_symbol_stays_in_the_selected_method_container() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("lib.rs"),
+            "struct A;\nimpl A {\n    fn open() { 10 }\n}\nstruct B;\nimpl B {\n    fn open() { 20 }\n}\n",
+        )
+        .unwrap();
+        let mut store = Store::open(root.path(), cache.path()).unwrap();
+        store.index().unwrap();
+        let original = acquire(&store, "sym:A::open", None, &InvocationDirectory::root()).unwrap();
+        assert!(original.verified);
+        assert_eq!(
+            &original.bytes[original.span.start..original.span.end],
+            b"fn open() { 10 }"
+        );
+
+        // Put B's same-named method at A's old line; nearest-name lookup alone
+        // would return this body for the still-qualified `sym:A::open` query.
+        std::fs::write(
+            root.path().join("lib.rs"),
+            "struct B;\nimpl B {\n    fn open() { 99 }\n}\nstruct A;\nimpl A {\n    fn open() { 11 }\n}\n",
+        )
+        .unwrap();
+        let current = acquire(&store, "sym:A::open", None, &InvocationDirectory::root()).unwrap();
+        assert!(!current.verified);
+        assert_eq!(current.freshness, Some("unpublished"));
+        let body = &current.bytes[current.span.start..current.span.end];
+        assert_eq!(body, b"fn open() { 11 }");
+        assert!(!body.windows(2).any(|window| window == b"99"));
+        assert_eq!(
+            line_span(&current.bytes, current.span.start, current.span.end).0,
+            7
+        );
     }
 }

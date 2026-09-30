@@ -2,7 +2,7 @@
 //! maps re-extracted from the worktree's bytes, never written to any index. A
 //! file is changed when Git divergence lists it or its bytes no longer hash to
 //! the indexed revision ([`WorktreeHashes`]).
-use super::{ParentFallback, hit_verification::WorktreeHashes};
+use super::{ParentFallback, WorktreeDivergence, hit_verification::WorktreeHashes};
 use crate::{
     extract::Definition,
     identity::ContentRevision,
@@ -24,6 +24,12 @@ pub(super) struct WorktreeSymbols {
     /// Every changed file found: re-extracted, gone, or unextractable (whose
     /// parent hits stay, unverified).
     pub changed: HashSet<String>,
+    /// False only when every changed path and parent candidate was examined.
+    pub incomplete: bool,
+    /// Count of known paths that could not be re-extracted; the count is a
+    /// lower bound when discovery or hashing was incomplete.
+    pub unsearched_paths: usize,
+    pub unsearched_paths_exact: bool,
 }
 
 /// Worktree bytes exist but their definitions cannot be known.
@@ -37,16 +43,16 @@ impl ParentFallback {
     /// changed files, and `map` of a changed file re-extracts it. Returns the
     /// changed files it found, for the answer's differing count.
     pub(in crate::workspace) fn complete_answer(
-        &self,
+        &mut self,
         store: &Store,
         request: (&str, &[String], &Query, &InvocationDirectory),
         found: &mut ResultSet,
         hashes: &mut WorktreeHashes,
-    ) -> HashSet<String> {
+    ) -> Result<HashSet<String>> {
         let (verb, words, query, origin) = request;
         if verb == "map" {
             let Some(path) = words.get(1) else {
-                return HashSet::new();
+                return Ok(HashSet::new());
             };
             let indexed = found.hits.iter().find(|hit| &hit.path == path);
             let changed = self.divergence.contains(path)
@@ -55,15 +61,23 @@ impl ParentFallback {
                 });
             if changed && let Some(hits) = reextracted_map(store, path) {
                 found.hits = hits;
-                return HashSet::from([path.clone()]);
+                return Ok(HashSet::from([path.clone()]));
             }
         } else if verb == "search" && query.exact {
             let parent = std::mem::take(&mut found.hits);
-            let symbols = self.worktree_symbols(store, query, parent, origin, hashes);
+            let symbols = self.worktree_symbols(store, query, parent, origin, hashes)?;
             found.hits = symbols.hits;
-            return symbols.changed;
+            if symbols.incomplete {
+                found.truncated = true;
+                found.coverage["worktree_reextraction"] = serde_json::json!({
+                    "status": "incomplete",
+                    "unsearched_paths": symbols.unsearched_paths,
+                    "unsearched_paths_exact": symbols.unsearched_paths_exact,
+                });
+            }
+            return Ok(symbols.changed);
         }
-        HashSet::new()
+        Ok(HashSet::new())
     }
 
     /// Replaces `parent` hits in changed files with the definitions those files
@@ -71,35 +85,68 @@ impl ParentFallback {
     /// [`MAX_REEXTRACTED_FILES`] files are re-extracted, divergent files first,
     /// then parent-hit files in rank order while the hash budget lasts.
     pub(super) fn worktree_symbols(
-        &self,
+        &mut self,
         store: &Store,
         query: &Query,
         parent: Vec<Hit>,
         origin: &InvocationDirectory,
         hashes: &mut WorktreeHashes,
-    ) -> WorktreeSymbols {
+    ) -> Result<WorktreeSymbols> {
         let root = &store.root;
+        // A cached Git diff cannot see an edit or new file made since it was
+        // recorded. Exact misses have no parent hit whose revision can reveal
+        // that change, so refresh discovery only on that path.
+        if query.exact && parent.is_empty() {
+            self.divergence = WorktreeDivergence::refresh(
+                store.index_root(),
+                root,
+                store.results_cache(),
+                store.generation()?,
+            );
+        }
         let paths = query.path.bind(&store.conn).ok();
-        let mut changed: Vec<&str> = self
+        let divergent: Vec<&str> = self
             .divergence
             .paths
             .iter()
             .filter(|path| query_admits_path(query, paths.as_ref(), path))
-            .take(MAX_REEXTRACTED_FILES)
             .map(String::as_str)
             .collect();
+        let mut changed: Vec<&str> = divergent
+            .iter()
+            .copied()
+            .take(MAX_REEXTRACTED_FILES)
+            .collect();
+        let mut selected: HashSet<String> = changed.iter().map(|path| (*path).to_owned()).collect();
+        let mut incomplete = !self.divergence.complete || divergent.len() > changed.len();
+        let mut unsearched_paths = divergent.len().saturating_sub(changed.len());
+        let mut unsearched_paths_exact = self.divergence.complete;
+        let mut unsearched_changed_paths: HashSet<String> = divergent
+            .iter()
+            .skip(MAX_REEXTRACTED_FILES)
+            .map(|path| (*path).to_owned())
+            .collect();
         for hit in &parent {
-            if changed.len() >= MAX_REEXTRACTED_FILES {
-                break;
-            }
-            if changed.contains(&hit.path.as_str()) {
+            if selected.contains(&hit.path) {
                 continue;
             }
             match hashes.check(root, &hit.path, hit.revision.as_deref()) {
-                Some(false) => changed.push(&hit.path),
+                Some(false) if changed.len() < MAX_REEXTRACTED_FILES => {
+                    selected.insert(hit.path.clone());
+                    changed.push(&hit.path);
+                }
+                Some(false) => {
+                    incomplete = true;
+                    if unsearched_changed_paths.insert(hit.path.clone()) {
+                        unsearched_paths += 1;
+                    }
+                }
                 Some(true) => {}
-                // Later hits stay unverified; the answer's check flags them.
-                None => break,
+                None => {
+                    incomplete = true;
+                    unsearched_paths_exact = false;
+                    break;
+                }
             }
         }
         let mut replaced = HashSet::with_capacity(changed.len());
@@ -110,10 +157,17 @@ impl ParentFallback {
                 Ok(hits) => current.extend(hits),
                 Err(error) if unextractable(&error) => {
                     unextractable_paths.insert(path.to_owned());
+                    incomplete = true;
+                    unsearched_paths += 1;
                     continue;
                 }
-                // A missing or unreadable file no longer defines anything.
-                Err(_) => {}
+                Err(error) if path_missing(&error) => {}
+                Err(_) => {
+                    unextractable_paths.insert(path.to_owned());
+                    incomplete = true;
+                    unsearched_paths += 1;
+                    continue;
+                }
             }
             replaced.insert(path.to_owned());
         }
@@ -124,11 +178,23 @@ impl ParentFallback {
             .collect();
         crate::search::rank_definitions(&mut hits, origin);
         replaced.extend(unextractable_paths);
-        WorktreeSymbols {
+        Ok(WorktreeSymbols {
             hits,
             changed: replaced,
-        }
+            incomplete,
+            unsearched_paths,
+            unsearched_paths_exact,
+        })
     }
+}
+
+/// Whether a failed read means that the path no longer exists.
+fn path_missing(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+    })
 }
 
 /// Every definition named by `query` in the worktree file at `path`.

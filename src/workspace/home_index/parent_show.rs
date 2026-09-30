@@ -69,8 +69,8 @@ pub(in crate::workspace) fn acquire_home_read(
             let source = acquisition::acquire(&store, target, side, origin)?;
             Ok((store, source, None))
         }
-        HomeIndexSource::Parent(view) => {
-            let (source, read) = acquire_through_parent(&view, target, side, origin)?;
+        HomeIndexSource::Parent(mut view) => {
+            let (source, read) = acquire_through_parent(&mut view, target, side, origin)?;
             Ok((view.store, source, read))
         }
         HomeIndexSource::Warming { reason } => anyhow::bail!(
@@ -89,16 +89,15 @@ pub(in crate::workspace) fn acquire_home_read(
 /// and shows the best as `acquisition::read_symbol` does; a shown row whose
 /// file changed is re-read from worktree bytes ([`reextracted_entry`]).
 fn acquire_through_parent(
-    view: &ParentIndexView,
+    view: &mut ParentIndexView,
     target: &str,
     side: Option<SourceSide>,
     origin: &InvocationDirectory,
 ) -> Result<(AcquiredSource, Option<ParentRead>)> {
-    let divergence = &view.fallback.divergence;
     // With divergent files a `sym:` read always consults the worktree, so it
     // agrees with `sym:` search even when the parent's definition verifies.
-    let consult_worktree =
-        target.starts_with("sym:") && (!divergence.paths.is_empty() || !divergence.complete);
+    let consult_worktree = target.starts_with("sym:")
+        && (!view.fallback.divergence.paths.is_empty() || !view.fallback.divergence.complete);
     if !consult_worktree {
         let error = match acquisition::acquire(&view.store, target, side, origin) {
             Ok(source) => return Ok((source, None)),
@@ -116,10 +115,14 @@ fn acquire_through_parent(
     let mut found = crate::search::definitions(store, &query, origin)?;
     let mut hashes = WorktreeHashes::default();
     let parent = std::mem::take(&mut found.hits);
-    found.hits = view
+    let symbols = view
         .fallback
-        .worktree_symbols(store, &query, parent, origin, &mut hashes)
-        .hits;
+        .worktree_symbols(store, &query, parent, origin, &mut hashes)?;
+    anyhow::ensure!(
+        !symbols.incomplete || !symbols.hits.is_empty(),
+        "worktree_search_incomplete: exact symbol lookup could not inspect every changed file"
+    );
+    found.hits = symbols.hits;
     let read = std::cell::Cell::new(None);
     let source = acquisition::read_symbol(store, &query, found, origin, |handle, hit| {
         let reextracted = hit.provenance.as_deref() == Some("reextracted");
@@ -156,17 +159,16 @@ pub(in crate::workspace) fn reextracted_entry(
         return Ok(None);
     }
     let root = &store.root;
-    let current =
-        match source::reextract_definition(root, &hit.path, &hit.name, &hit.kind, hit.start_line) {
-            Ok(Some(current)) => current,
-            Ok(None) => return Ok(None),
-            // Only a hit carrying an indexed revision has index bytes to fall back to.
-            Err(error) if unextractable(&error) => {
-                let indexed = indexed_source(store, handle, hit).ok();
-                return Ok(indexed.map(|source| (source, ParentRead::Indexed)));
-            }
-            Err(error) => return Err(error),
-        };
+    let current = match source::reextract_definition(root, hit) {
+        Ok(Some(current)) => current,
+        Ok(None) => return Ok(None),
+        // Only a hit carrying an indexed revision has index bytes to fall back to.
+        Err(error) if unextractable(&error) => {
+            let indexed = indexed_source(store, handle, hit).ok();
+            return Ok(indexed.map(|source| (source, ParentRead::Indexed)));
+        }
+        Err(error) => return Err(error),
+    };
     let source = AcquiredSource {
         bytes: current.bytes,
         path: current.path,

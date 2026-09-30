@@ -213,6 +213,91 @@ fn parent_answer_reads_worktree_bytes_and_worktree_only_symbols() {
 }
 
 #[test]
+fn exact_parent_miss_refreshes_cached_worktree_discovery() {
+    let seeded = SeededWorktree::new();
+    let warm = seeded.search_json(&["search", "sym:SharedThing"]);
+    assert_eq!(warm["coverage"][0]["state"], "parent_fallback");
+    assert!(seeded.worktree_cache().join("divergence.json").is_file());
+
+    fs::write(
+        seeded.worktree.join("fresh.rs"),
+        "pub struct FreshWorktreeOnly;\n",
+    )
+    .unwrap();
+    let shown: Value =
+        serde_json::from_str(&seeded.show(&["show", "sym:FreshWorktreeOnly"]).unwrap()).unwrap();
+    assert_eq!(shown["path"], "fresh.rs", "{shown}");
+    assert_eq!(
+        shown["served_from"],
+        "engine index; re-extracted in worktree"
+    );
+
+    let page = seeded.search_json(&["search", "sym:FreshWorktreeOnly", "in:engine"]);
+    let hits = page["hits"].as_array().unwrap();
+    assert_eq!(hits.len(), 1, "{page}");
+    assert!(hits[0]["file"].as_str().unwrap().ends_with("/fresh.rs"));
+    assert_eq!(page["coverage"][0]["state"], "parent_fallback");
+    assert_eq!(page["coverage"][0]["partial"], false);
+}
+
+#[test]
+fn exact_symbol_reextraction_cap_reports_incomplete_coverage() {
+    let seeded = SeededWorktree::new();
+    for index in 0..62 {
+        fs::write(
+            seeded.worktree.join(format!("a{index:03}.rs")),
+            "// no definitions\n",
+        )
+        .unwrap();
+    }
+    fs::write(
+        seeded.worktree.join("z-target.rs"),
+        "pub struct OnlyAtEnd;\n",
+    )
+    .unwrap();
+
+    let page = seeded.search_json(&["search", "sym:OnlyAtEnd", "in:engine"]);
+    assert!(page["hits"].as_array().unwrap().is_empty(), "{page}");
+    assert_eq!(page["truncated"], true, "{page}");
+    let coverage = &page["coverage"][0];
+    assert_eq!(coverage["state"], "parent_fallback");
+    assert_eq!(coverage["partial"], true);
+    assert_eq!(coverage["truncated"], true);
+    assert_eq!(coverage["unsearched"], 1);
+    assert_eq!(
+        coverage["issues"]["worktree_reextraction"]["status"],
+        "incomplete"
+    );
+    assert_eq!(
+        coverage["issues"]["worktree_reextraction"]["unsearched_paths_exact"],
+        true
+    );
+    fs::write(
+        seeded.fixture.root.path().join("pack/lib.rs"),
+        "pub struct OnlyAtEnd;\n",
+    )
+    .unwrap();
+    let sibling = seeded
+        .fixture
+        .json("engine", &["search", "sym:OnlyAtEnd", "in:pack"]);
+    assert_eq!(sibling["hits"][0]["member"], "pack", "{sibling}");
+    let unselected = seeded.search_json(&["search", "sym:OnlyAtEnd"]);
+    assert!(
+        unselected["hits"].as_array().unwrap().is_empty(),
+        "{unselected}"
+    );
+    assert_eq!(
+        unselected["scope"], "home (incomplete; ws:all searches 2 members)",
+        "an incomplete home fallback must not widen into a sibling result: {unselected}"
+    );
+    let lines = seeded.search(&["--format", "lines", "search", "sym:OnlyAtEnd", "in:engine"]);
+    assert!(
+        coverage_line(&lines).contains("partial (1 unsearched: worktree_reextraction) truncated"),
+        "{lines}"
+    );
+}
+
+#[test]
 fn show_symbol_in_changed_file_returns_worktree_span() {
     let seeded = SeededWorktree::new();
     let text = seeded

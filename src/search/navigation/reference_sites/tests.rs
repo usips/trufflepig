@@ -85,6 +85,37 @@ fn qualified_refs_keep_sites_owned_by_the_named_type() {
 }
 
 #[test]
+fn qualified_refs_apply_the_owner_filter_before_the_result_cap() {
+    let (_root, _cache, store) = fixture(&[(
+        "src/a.rs",
+        b"impl A0 { fn open() {} }\nimpl A1 { fn open() {} }\nimpl A { fn open() {} }\n",
+    )]);
+    let found = references_with_limit(&store, &reference_query("A::open").unwrap(), 1).unwrap();
+    assert_eq!(found.hits.len(), 1, "{found:?}");
+    assert_eq!(found.hits[0].start_line, 3);
+    assert_eq!(found.coverage["reference_sites"], 1);
+    assert!(!found.truncated);
+}
+
+#[test]
+fn refs_prioritize_declarations_before_the_site_cap() {
+    let (_root, _cache, store) =
+        fixture(&[("src/a.rs", b"fn caller() { open(); }\nfn open() {}\n")]);
+    let found = references_with_limit(&store, &reference_query("open").unwrap(), 1).unwrap();
+    assert_eq!(found.hits.len(), 1);
+    assert_eq!(found.hits[0].kind, "declaration");
+    assert_eq!(found.hits[0].start_line, 2);
+    assert!(found.truncated);
+    assert_eq!(found.coverage["reference_sites"], 1);
+    assert_eq!(found.coverage["reference_files"], 1);
+    assert_eq!(found.coverage["reference_sites_truncated"], true);
+    assert_eq!(
+        reference_summary(&found.coverage).as_deref(),
+        Some("refs 1+ site in 1 file")
+    );
+}
+
+#[test]
 fn same_line_sites_collapse_only_with_equal_role_and_resolution() {
     let (_root, _cache, store) = fixture(&[(
         "src/a.rs",
