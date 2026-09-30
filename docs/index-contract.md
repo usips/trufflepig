@@ -35,9 +35,9 @@ tokens in the basename, and 0.5 for partial path matches. For an identifier
 query, files with a definition or occurrence of the token rank ahead of every
 file lacking it. A text quoted as one `"…"` literal runs the phrase lane alone.
 
-A path prior halves the fused score of test paths (`tests.rs`, a `tests/` or
-`fixtures/` directory, `test_*`, `*_test.*`, `*_tests.*`, `*.test.*`,
-`*.spec.*`) and Markdown files, including `AGENTS.md` and `CLAUDE.md`. Tests
+A path prior halves the fused score of test paths and Markdown files,
+including `AGENTS.md` and `CLAUDE.md`, as classified by
+[`path_class`](../src/search/path_class.rs). Tests
 keep full weight when the query names tests (`test`, `tests`, `testing`,
 `spec`, `fixture`) or its `file:` filter selects a test path; docs keep it when
 the query names docs (`doc`, `docs`, `documentation`, `readme`, `markdown`),

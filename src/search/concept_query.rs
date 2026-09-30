@@ -64,7 +64,7 @@ impl ConceptQuery {
             };
         }
         Self {
-            any_terms: Some(quoted.join(" OR ")),
+            any_terms: Some(super::fts_terms(body)),
             all_terms: (terms.len() > 1).then(|| quoted.join(" AND ")),
             phrase,
             identifier: IdentifierToken::parse(text),
@@ -122,23 +122,32 @@ pub(super) fn concept_lanes(
     }
     if let Some(phrase) = &concept.phrase {
         add(recorded(trace, Lane::Phrase, || {
-            lexical_hits(store, query, phrase, "phrase")
+            relabeled(lexical_hits(store, query, phrase), "phrase")
         }))?;
     }
     if let Some(all_terms) = &concept.all_terms {
         add(recorded(trace, Lane::AllTerms, || {
-            lexical_hits(store, query, all_terms, "all_terms")
+            relabeled(lexical_hits(store, query, all_terms), "all_terms")
         }))?;
     }
     if let Some(any_terms) = &concept.any_terms {
         add(recorded(trace, Lane::Lexical, || {
-            lexical_hits(store, query, any_terms, "lexical")
+            lexical_hits(store, query, any_terms)
         }))?;
         if query.kind.is_empty() || query.kind == "file" {
             add(recorded(trace, Lane::File, || file_hits(store, query)))?;
         }
     }
     Ok((lanes, truncated))
+}
+
+/// Tags an FTS5 lane's hits with the lane that found them.
+fn relabeled(lane: Result<LaneHits>, provenance: &str) -> Result<LaneHits> {
+    let mut lane = lane?;
+    for hit in &mut lane.hits {
+        hit.provenance = Some(provenance.to_owned());
+    }
+    Ok(lane)
 }
 
 /// Records one lane's outcome and candidates in `trace`.

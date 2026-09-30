@@ -54,7 +54,7 @@ pub(super) fn append(
                 trace.snapshot(generation, coverage);
             }
             let lexical = std::mem::take(hits);
-            *hits = super::file_ranking::fuse_file_lanes([lexical, semantic_hits], policy);
+            *hits = super::file_ranking::fuse_search_file_lanes([lexical, semantic_hits], policy);
             Ok(truncated)
         }
         Err(error) => {

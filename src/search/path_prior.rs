@@ -1,7 +1,10 @@
 //! Deterministic path prior for fused search: test and documentation paths
 //! count half unless the query targets them. Demoted paths stay eligible; see
 //! `docs/retrieval-contract.md` (Retrieval).
-use super::Query;
+use super::{
+    Query,
+    path_class::{is_doc_pointer_path, is_test_path},
+};
 
 /// Score multiplier applied to a demoted path's fused contributions.
 const DEMOTED_PATH_WEIGHT: f64 = 0.5;
@@ -39,40 +42,20 @@ impl PathPrior {
                 && !(is_test_path(&filter) || filter.contains("test")),
             demote_docs: !names(&DOC_TERMS)
                 && query.language != "text"
-                && !(is_doc_path(&filter) || filter.contains("doc")),
+                && !(is_doc_pointer_path(&filter) || filter.contains("doc")),
         }
     }
 
     /// Multiplier for one fused file score.
     pub(crate) fn weight(&self, path: &str) -> f64 {
-        if (self.demote_tests && is_test_path(path)) || (self.demote_docs && is_doc_path(path)) {
+        if (self.demote_tests && is_test_path(path))
+            || (self.demote_docs && is_doc_pointer_path(path))
+        {
             DEMOTED_PATH_WEIGHT
         } else {
             1.0
         }
     }
-}
-
-/// Test sources and fixtures by common naming conventions.
-pub(crate) fn is_test_path(path: &str) -> bool {
-    let path = path.to_lowercase();
-    let basename = path.rsplit('/').next().unwrap_or(&path);
-    basename == "tests.rs"
-        || basename.starts_with("test_")
-        || [".spec.", ".test.", "_test.", "_tests."]
-            .iter()
-            .any(|marker| basename.contains(marker))
-        || path
-            .split('/')
-            .rev()
-            .skip(1)
-            .any(|component| matches!(component, "tests" | "fixtures"))
-}
-
-/// Markdown documentation, including agent pointer files such as `AGENTS.md`.
-pub(crate) fn is_doc_path(path: &str) -> bool {
-    let path = path.to_lowercase();
-    path.ends_with(".md") || path.ends_with(".markdown")
 }
 
 #[cfg(test)]
@@ -81,30 +64,6 @@ mod tests {
 
     fn prior(input: &str) -> PathPrior {
         PathPrior::for_query(&Query::parse(input).unwrap())
-    }
-
-    #[test]
-    fn test_and_doc_paths_are_classified_by_convention() {
-        for path in [
-            "src/sim/tests.rs",
-            "crates/core/tests/motion.rs",
-            "tests/bodies/organ_threshold_test.luau",
-            "web/pack-ui.spec.mjs",
-            "py/test_steer.py",
-            "crates/server/tests/fixtures/pack/bodies/felled.luau",
-            "src/fixtures/world.ron",
-        ] {
-            assert!(is_test_path(path), "{path}");
-        }
-        for path in [
-            "src/sim/testing_support.rs",
-            "src/latest.rs",
-            "src/contest/mod.rs",
-        ] {
-            assert!(!is_test_path(path), "{path}");
-        }
-        assert!(is_doc_path("AGENTS.md") && is_doc_path("docs/assets/flat-profile.md"));
-        assert!(!is_doc_path("src/markdown.rs"));
     }
 
     #[test]

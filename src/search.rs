@@ -4,6 +4,7 @@ mod file_ranking;
 mod inheritance_context;
 mod live;
 mod navigation;
+mod path_class;
 mod path_prior;
 mod rerank_window;
 mod semantic_lane;
@@ -11,12 +12,13 @@ mod snippets;
 pub mod telemetry;
 #[cfg(test)]
 mod tests;
+pub(crate) use file_ranking::fuse_search_file_lanes as fuse_file_lanes;
 pub(crate) use navigation::context_entry;
 pub use navigation::{context, map, references};
 pub use rerank_window::RerankScorer;
 
 use concept_query::ConceptQuery;
-use file_ranking::{FusionPolicy, fuse_file_lanes};
+use file_ranking::FusionPolicy;
 use path_prior::PathPrior;
 
 use crate::{
@@ -417,12 +419,11 @@ fn exact_hits(store: &Store, query: &Query) -> Result<LaneHits> {
     Ok(cap_lane(hits))
 }
 
-/// Regions matching the FTS5 expression `terms`, best region per file, tagged `provenance`.
-fn lexical_hits(store: &Store, query: &Query, terms: &str, provenance: &str) -> Result<LaneHits> {
+fn lexical_hits(store: &Store, query: &Query, terms: &str) -> Result<LaneHits> {
     let mut statement = store.conn.prepare(
         "WITH ranked AS MATERIALIZED (
              SELECT f.path,f.revision,r.start,r.end,r.name,r.kind,NULL AS container,
-                    ?6 AS provenance,c.bytes,
+                    'lexical' AS provenance,c.bytes,
                     bm25(documents,8.0,2.0,1.0,0.5) AS relevance,r.id
              FROM documents
              JOIN regions r ON r.id=documents.rowid
@@ -453,13 +454,20 @@ fn lexical_hits(store: &Store, query: &Query, terms: &str, provenance: &str) -> 
                 query.path,
                 query.language,
                 query.kind,
-                (file_ranking::FILE_CANDIDATE_LIMIT + 1) as i64,
-                provenance
+                (file_ranking::FILE_CANDIDATE_LIMIT + 1) as i64
             ],
             hit_row,
         )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(cap_lane(hits))
+}
+
+fn fts_terms(text: &str) -> String {
+    text.split(|ch: char| !ch.is_alphanumeric() && ch != '_')
+        .filter(|s| !s.is_empty())
+        .map(|term| format!("\"{}\"", term.replace('"', "\"\"")))
+        .collect::<Vec<_>>()
+        .join(" OR ")
 }
 
 fn file_hits(store: &Store, query: &Query) -> Result<LaneHits> {
