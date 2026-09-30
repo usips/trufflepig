@@ -64,15 +64,15 @@ def validate_manifest(manifest: dict) -> None:
             or {item.get("id") for item in arms} != set(ARMS)):
         raise ManifestError("gpu manifest must declare all four retrieval arms")
     corpora = manifest.get("corpora")
-    if not isinstance(corpora, dict) or set(corpora) != set(CORPORA):
-        raise ManifestError("gpu manifest must declare the three development corpora")
+    if not isinstance(corpora, dict) or not corpora or not set(corpora) <= set(CORPORA):
+        raise ManifestError("gpu manifest must declare development corpora")
     for name, corpus in corpora.items():
         if not isinstance(corpus, dict) or not corpus.get("root") \
                 or not corpus.get("parent_revision") or not corpus.get("language"):
             raise ManifestError(f"invalid corpus declaration: {name}")
     tasks = manifest.get("tasks")
-    if not isinstance(tasks, list) or len(tasks) != 12:
-        raise ManifestError("gpu manifest requires exactly twelve frozen tasks")
+    if not isinstance(tasks, list) or not tasks:
+        raise ManifestError("gpu manifest requires frozen tasks")
     task_ids = set()
     for task in tasks:
         _validate_task(task, corpora, task_ids)

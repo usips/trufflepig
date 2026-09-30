@@ -90,7 +90,11 @@ PYTHONPATH=evaluation python3 -m gpu_navigation.run_retrieval \
 
 Prepare the CUDA cache, and the reranker for `cuda_rerank`, before capturing
 those arms. The runner records first-page file recall separately from
-original bytes delivered by subsequent `show` calls.
+original bytes delivered by subsequent `show` calls. Each task searches with its
+own corpus as `--root`, so a workspace home never hides another corpus's
+files. Every call sets `TRUFFLEPIG_SYSTEM_DIR` to `<cache>/router`, so
+daemons start from the measured binary rather than an installed per-user
+router.
 
 ## Measured readiness
 
@@ -122,6 +126,31 @@ PYTHONPATH=evaluation python3 -m gpu_navigation.measure_latency \
 The helper selects the workspace, cache, runtime configuration, and semantic
 opt-in. Twelve warmup requests are excluded; raw responses retain readiness
 and output accounting. A latency threshold alone cannot pass a readiness gate.
+
+## Concept-audit manifest
+
+[`../manifests/concept-audit.json`](../manifests/concept-audit.json) freezes
+fifteen Lunatic tasks drawn from agent-transcript concept-search misses:
+bare identifiers (`molar_mass`, `InteractionRefused`, `awake_only`), a plain
+and a quoted literal message (`unknown item slot`), and multi-word concept
+queries, with controls that already ranked well. It is development data with
+the same schema; pass it with `--manifest`. Its snapshot hashes match
+Lunatic `29709d66`, so run it against a checkout or `git archive` of that
+revision.
+
+File-first lexical results, old ranking against the path prior, identifier
+lanes and phrase lanes ([file ranking](../../docs/index-contract.md#file-ranking)):
+
+| Manifest | Recall@5 | Recall@10 | MRR | Top-1 |
+| --- | --- | --- | --- | --- |
+| concept-audit, old | 0.8667 | 0.8667 | 0.682 | 9/15 |
+| concept-audit, new | 1.0 | 1.0 | 0.913 | 13/15 |
+| twelve-task, old | 0.75 | 0.9167 | 0.521 | 3/12 |
+| twelve-task, new | 0.8333 | 0.9167 | 0.701 | 6/12 |
+
+The twelve-task rows search from each task's corpus. One task,
+`tfs-airlock-rebuild-fixture`, falls from rank 4 to rank 6 because its label
+is a test file. The CUDA and rerank arms were not measured for this change.
 
 ## Real-agent trials
 

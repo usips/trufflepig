@@ -138,7 +138,8 @@ class RetrievalRunnerTests(unittest.TestCase):
         binary.write_text("#!/usr/bin/env python3\n"
                           "import json, os, sys\n"
                           "print(json.dumps({'hits': []}))\n"
-                          "print(os.environ['TRUFFLEPIG_INFERENCE_CONFIG'], file=sys.stderr)\n")
+                          "print(os.environ['TRUFFLEPIG_INFERENCE_CONFIG'], file=sys.stderr)\n"
+                          "print(os.environ['TRUFFLEPIG_SYSTEM_DIR'], file=sys.stderr)\n")
         binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
         runner = RetrievalRunner(binary, self.base / "workspace", self.root,
                                  self.base / "cache", "oldlexical",
@@ -146,6 +147,8 @@ class RetrievalRunnerTests(unittest.TestCase):
         event = runner("search", "query", budget=PAGE_BUDGET)
         self.assertEqual(json.loads(event["raw_stdout"]), {"hits": []})
         self.assertIn("inference.toml", event["raw_stderr"])
+        # The measured binary never reaches an installed per-user router.
+        self.assertIn(str(self.base / "cache" / "router"), event["raw_stderr"])
         self.assertEqual(event["emitted_tokens"],
                          len(event["raw_stdout"]) + len(event["raw_stderr"]))
         self.assertEqual(base64.b64decode(event["raw_stdout_b64"]).decode(),

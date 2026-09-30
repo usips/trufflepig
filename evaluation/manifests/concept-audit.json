@@ -1,0 +1,457 @@
+{
+  "schema_version": 2,
+  "workflow_version": "gpu-navigation-v1",
+  "split": "development",
+  "held_out_claim": false,
+  "limits": {
+    "maximum_tool_calls": 12,
+    "maximum_emitted_tokens": 12000,
+    "maximum_output_tokens_per_call": 900,
+    "task_timeout_seconds": 600
+  },
+  "solver_arms": [
+    "ordinarytools",
+    "ordinarytools+trufflepig"
+  ],
+  "arms": [
+    {
+      "id": "oldlexical",
+      "kind": "trufflepig",
+      "binary": "~/.cargo/bin/trufflepig",
+      "lane": "lexical",
+      "status": "baseline executable supplied by operator"
+    },
+    {
+      "id": "newfilefirstlexical",
+      "kind": "trufflepig",
+      "binary": "target/debug/trufflepig",
+      "lane": "file-first-lexical",
+      "status": "run after ranking implementation is frozen"
+    },
+    {
+      "id": "cuda",
+      "kind": "trufflepig",
+      "binary": "target/debug/trufflepig",
+      "lane": "cuda",
+      "status": "run only when the CUDA lane is available"
+    },
+    {
+      "id": "cuda_rerank",
+      "kind": "trufflepig",
+      "binary": "target/debug/trufflepig",
+      "lane": "cuda-rerank",
+      "status": "run only when the CUDA lane and reranker are available"
+    }
+  ],
+  "label": "concept-audit ranking benchmark",
+  "corpora": {
+    "lunatic": {
+      "root": "~/Source/lunatic",
+      "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+      "language": "rust"
+    }
+  },
+  "tasks": [
+    {
+      "id": "concept-molar-mass",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "identifier",
+      "query": "molar_mass",
+      "prompt": "Find where a substance's molar mass is read from its content table and explain the validation it applies.",
+      "labels": [
+        {
+          "path": "crates/lunatic-server/src/substances/substance_fields.rs",
+          "start": 2646,
+          "end": 2711,
+          "sha256": "63a90d0c758d117bf87a4ca6d3fe1d5ca2129749d56e31bb78ef850d53a221b9",
+          "provenance": "read-evidence-parent-snapshot"
+        }
+      ],
+      "snapshot": {
+        "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+        "files": [
+          {
+            "path": "crates/lunatic-server/src/substances/substance_fields.rs",
+            "sha256": "63a90d0c758d117bf87a4ca6d3fe1d5ca2129749d56e31bb78ef850d53a221b9"
+          }
+        ]
+      }
+    },
+    {
+      "id": "concept-interaction-refused",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "identifier",
+      "query": "InteractionRefused",
+      "prompt": "Find the ledger event variant recorded when an interaction is refused and list the fields it carries.",
+      "labels": [
+        {
+          "path": "crates/lunatic-server/src/ledger/events/shift.rs",
+          "start": 4339,
+          "end": 4364,
+          "sha256": "a01cf98fc88ebc4a9a04987f6fdb0cde194c26ad6fbe2566ef4be547801216f6",
+          "provenance": "read-evidence-parent-snapshot"
+        }
+      ],
+      "snapshot": {
+        "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+        "files": [
+          {
+            "path": "crates/lunatic-server/src/ledger/events/shift.rs",
+            "sha256": "a01cf98fc88ebc4a9a04987f6fdb0cde194c26ad6fbe2566ef4be547801216f6"
+          }
+        ]
+      }
+    },
+    {
+      "id": "concept-awake-only",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "identifier",
+      "query": "awake_only",
+      "prompt": "Find the body content field that restricts an action to awake bodies and explain its default.",
+      "labels": [
+        {
+          "path": "crates/lunatic-server/src/content/bodies.rs",
+          "start": 4183,
+          "end": 4209,
+          "sha256": "b1efe998bf5b646f28b54ded5821e7317e2d89f9b0aeb5ad7130ac0a7deaf348",
+          "provenance": "read-evidence-parent-snapshot"
+        }
+      ],
+      "snapshot": {
+        "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+        "files": [
+          {
+            "path": "crates/lunatic-server/src/content/bodies.rs",
+            "sha256": "b1efe998bf5b646f28b54ded5821e7317e2d89f9b0aeb5ad7130ac0a7deaf348"
+          }
+        ]
+      }
+    },
+    {
+      "id": "concept-drop-on-incapacitation",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "identifier",
+      "query": "drop_on_incapacitation lang:rust",
+      "prompt": "Explain how a body's plan decides whether held items drop when the body is incapacitated.",
+      "labels": [
+        {
+          "path": "crates/lunatic-server/src/content/bodies.rs",
+          "start": 7398,
+          "end": 7436,
+          "sha256": "b1efe998bf5b646f28b54ded5821e7317e2d89f9b0aeb5ad7130ac0a7deaf348",
+          "provenance": "read-evidence-parent-snapshot"
+        },
+        {
+          "path": "crates/lunatic-server/src/sim/body/body_life.rs",
+          "start": 19994,
+          "end": 20036,
+          "sha256": "3f391250d975b1d1a0bc0cb5300458e6f363c85a2292f2f58c323ad38d418998",
+          "provenance": "read-evidence-parent-snapshot"
+        }
+      ],
+      "snapshot": {
+        "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+        "files": [
+          {
+            "path": "crates/lunatic-server/src/content/bodies.rs",
+            "sha256": "b1efe998bf5b646f28b54ded5821e7317e2d89f9b0aeb5ad7130ac0a7deaf348"
+          },
+          {
+            "path": "crates/lunatic-server/src/sim/body/body_life.rs",
+            "sha256": "3f391250d975b1d1a0bc0cb5300458e6f363c85a2292f2f58c323ad38d418998"
+          }
+        ]
+      }
+    },
+    {
+      "id": "concept-speed-mm-tick",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "identifier",
+      "query": "speed_mm_tick",
+      "prompt": "Find the world schema field that stores movement speed in millimetres per tick.",
+      "labels": [
+        {
+          "path": "crates/lunatic-core/src/world/schema.rs",
+          "start": 2108,
+          "end": 2136,
+          "sha256": "8cf4ed0d961e9cf0f998e06ab8b99e6591ffa7bc8cde6f8c8674a7406bd8ad81",
+          "provenance": "read-evidence-parent-snapshot"
+        }
+      ],
+      "snapshot": {
+        "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+        "files": [
+          {
+            "path": "crates/lunatic-core/src/world/schema.rs",
+            "sha256": "8cf4ed0d961e9cf0f998e06ab8b99e6591ffa7bc8cde6f8c8674a7406bd8ad81"
+          }
+        ]
+      }
+    },
+    {
+      "id": "concept-hover-members",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "identifier",
+      "query": "hover_members",
+      "prompt": "Find where the client stores the entities under the pointer and where that list is cleared.",
+      "labels": [
+        {
+          "path": "crates/lunatic-client/src/app.rs",
+          "start": 28691,
+          "end": 28728,
+          "sha256": "de9891f0ccdb86eeb7652b13126a93427f35c2bdc453530f1c880b25d03aaa7e",
+          "provenance": "read-evidence-parent-snapshot"
+        }
+      ],
+      "snapshot": {
+        "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+        "files": [
+          {
+            "path": "crates/lunatic-client/src/app.rs",
+            "sha256": "de9891f0ccdb86eeb7652b13126a93427f35c2bdc453530f1c880b25d03aaa7e"
+          }
+        ]
+      }
+    },
+    {
+      "id": "concept-ppm-scale",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "identifier",
+      "query": "ppm_scale",
+      "prompt": "Explain how the client scales sprites for a zoom level and a sprite pixels-per-metre value.",
+      "labels": [
+        {
+          "path": "crates/lunatic-client/src/world_residency.rs",
+          "start": 932,
+          "end": 985,
+          "sha256": "40fcf19928c90c829b3903dbd586f3b9452ec4aefba59984ebeb74adff631646",
+          "provenance": "read-evidence-parent-snapshot"
+        }
+      ],
+      "snapshot": {
+        "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+        "files": [
+          {
+            "path": "crates/lunatic-client/src/world_residency.rs",
+            "sha256": "40fcf19928c90c829b3903dbd586f3b9452ec4aefba59984ebeb74adff631646"
+          }
+        ]
+      }
+    },
+    {
+      "id": "concept-compose-world-label",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "identifier",
+      "query": "compose_world_label",
+      "prompt": "Find the function that composes an entity's world label text.",
+      "labels": [
+        {
+          "path": "crates/lunatic-client/src/display.rs",
+          "start": 5841,
+          "end": 5876,
+          "sha256": "17ee84e38862f5610cb61941d3a0a207a7e492470642a1897025168416bae2d4",
+          "provenance": "read-evidence-parent-snapshot"
+        }
+      ],
+      "snapshot": {
+        "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+        "files": [
+          {
+            "path": "crates/lunatic-client/src/display.rs",
+            "sha256": "17ee84e38862f5610cb61941d3a0a207a7e492470642a1897025168416bae2d4"
+          }
+        ]
+      }
+    },
+    {
+      "id": "concept-unknown-item-slot",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "phrase",
+      "query": "unknown item slot",
+      "prompt": "Find where the 'unknown item slot' fault message is produced.",
+      "labels": [
+        {
+          "path": "crates/lunatic-server/src/sim/item_slots.rs",
+          "start": 1938,
+          "end": 2005,
+          "sha256": "82045612493fe61317e6dee2427c670d55166d06e6cf8988e58586b556ec2259",
+          "provenance": "read-evidence-parent-snapshot"
+        }
+      ],
+      "snapshot": {
+        "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+        "files": [
+          {
+            "path": "crates/lunatic-server/src/sim/item_slots.rs",
+            "sha256": "82045612493fe61317e6dee2427c670d55166d06e6cf8988e58586b556ec2259"
+          }
+        ]
+      }
+    },
+    {
+      "id": "concept-unknown-item-slot-quoted",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "literal",
+      "query": "\"unknown item slot\"",
+      "prompt": "Find where the quoted 'unknown item slot' fault message is produced.",
+      "labels": [
+        {
+          "path": "crates/lunatic-server/src/sim/item_slots.rs",
+          "start": 1938,
+          "end": 2005,
+          "sha256": "82045612493fe61317e6dee2427c670d55166d06e6cf8988e58586b556ec2259",
+          "provenance": "read-evidence-parent-snapshot"
+        }
+      ],
+      "snapshot": {
+        "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+        "files": [
+          {
+            "path": "crates/lunatic-server/src/sim/item_slots.rs",
+            "sha256": "82045612493fe61317e6dee2427c670d55166d06e6cf8988e58586b556ec2259"
+          }
+        ]
+      }
+    },
+    {
+      "id": "concept-egress-rate",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "concept",
+      "query": "egress admission one request per second per mod",
+      "prompt": "Explain the limit that lets a mod open only one egress request per second.",
+      "labels": [
+        {
+          "path": "crates/lunatic-server/src/script/io_limits.rs",
+          "start": 1515,
+          "end": 1580,
+          "sha256": "1fb4c86e0d8df4c8246152ae3cca3db6b258f39e34285d86b8643c6b4ddd8b48",
+          "provenance": "read-evidence-parent-snapshot"
+        }
+      ],
+      "snapshot": {
+        "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+        "files": [
+          {
+            "path": "crates/lunatic-server/src/script/io_limits.rs",
+            "sha256": "1fb4c86e0d8df4c8246152ae3cca3db6b258f39e34285d86b8643c6b4ddd8b48"
+          }
+        ]
+      }
+    },
+    {
+      "id": "concept-replay-watermark",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "concept",
+      "query": "ledger replay watermark through after position owner",
+      "prompt": "Explain how ledger replay pages stay stable by pinning the owner's watermark.",
+      "labels": [
+        {
+          "path": "crates/lunatic-server/src/persistence/stream_index/stream_index_pack_replay.rs",
+          "start": 1304,
+          "end": 1370,
+          "sha256": "7e6c5a70233b0a32184d70dcb39d322c372e27c4ef1145ea0549effeb531ad2c",
+          "provenance": "read-evidence-parent-snapshot"
+        }
+      ],
+      "snapshot": {
+        "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+        "files": [
+          {
+            "path": "crates/lunatic-server/src/persistence/stream_index/stream_index_pack_replay.rs",
+            "sha256": "7e6c5a70233b0a32184d70dcb39d322c372e27c4ef1145ea0549effeb531ad2c"
+          }
+        ]
+      }
+    },
+    {
+      "id": "concept-exchange-guard-reach",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "concept",
+      "query": "exchange guard actor near reach conscious check",
+      "prompt": "Explain how a durable exchange checks that the guarding actor is within reach.",
+      "labels": [
+        {
+          "path": "crates/lunatic-server/src/sim/durable_exchange/exchange_plan/admission.rs",
+          "start": 10841,
+          "end": 10906,
+          "sha256": "78171a3bea50433286574e5d68421da923d6666e1a2ec7f3d77984a029d88435",
+          "provenance": "read-evidence-parent-snapshot"
+        }
+      ],
+      "snapshot": {
+        "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+        "files": [
+          {
+            "path": "crates/lunatic-server/src/sim/durable_exchange/exchange_plan/admission.rs",
+            "sha256": "78171a3bea50433286574e5d68421da923d6666e1a2ec7f3d77984a029d88435"
+          }
+        ]
+      }
+    },
+    {
+      "id": "concept-bare-mint",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "concept",
+      "query": "bare mint item without initializer event",
+      "prompt": "Find how an item is minted without running its initializer event.",
+      "labels": [
+        {
+          "path": "crates/lunatic-server/src/sim/mint.rs",
+          "start": 7235,
+          "end": 7274,
+          "sha256": "b85de9f70298165d140ba2d93cc644f7d7bed381a80808a4dd579a0620e1a3e6",
+          "provenance": "read-evidence-parent-snapshot"
+        }
+      ],
+      "snapshot": {
+        "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+        "files": [
+          {
+            "path": "crates/lunatic-server/src/sim/mint.rs",
+            "sha256": "b85de9f70298165d140ba2d93cc644f7d7bed381a80808a4dd579a0620e1a3e6"
+          }
+        ]
+      }
+    },
+    {
+      "id": "concept-self-custody",
+      "corpus": "lunatic",
+      "language": "rust",
+      "intent": "concept",
+      "query": "own scoped code",
+      "prompt": "Explain how code running as an entity operates that entity's own item slots.",
+      "labels": [
+        {
+          "path": "crates/lunatic-server/src/sim/item_slots/self_custody.rs",
+          "start": 0,
+          "end": 71,
+          "sha256": "6faae18fb05f4016655a44db1d4ef788fa42803b00b1635cf4f2d8dfd3859397",
+          "provenance": "read-evidence-parent-snapshot"
+        }
+      ],
+      "snapshot": {
+        "parent_revision": "29709d66c1096358d2f985c29af918c2ec0f92ae",
+        "files": [
+          {
+            "path": "crates/lunatic-server/src/sim/item_slots/self_custody.rs",
+            "sha256": "6faae18fb05f4016655a44db1d4ef788fa42803b00b1635cf4f2d8dfd3859397"
+          }
+        ]
+      }
+    }
+  ]
+}
