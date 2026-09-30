@@ -6,13 +6,14 @@ use crate::identity::ResultHandle;
 /// Footer keys that end the hit section of a lines page.
 pub const COVERAGE_KEY: &str = "coverage: ";
 pub const NEXT_KEY: &str = "next: ";
+pub const HINT_KEY: &str = "hint: ";
 pub const TRUNCATED_LINE: &str = "truncated: true";
 
 /// Page-widening hints; a first page that continues carries the one that applies.
-pub const PAGE_SIZE_HINT: &str = "(-n N raises the page size)";
-pub const PAGE_BUDGET_HINT: &str = "(-b N raises the token budget)";
+pub const PAGE_SIZE_HINT: &str = "-n N raises the page size";
+pub const PAGE_BUDGET_HINT: &str = "-b N raises the token budget";
 
-/// The command that continues a page, printed as `next: VERB CURSOR[ HINT]`.
+/// The command that continues a page, printed as `next: VERB CURSOR`.
 #[derive(Clone, Copy, Debug)]
 pub struct NextCommand<'a> {
     pub verb: &'a str,
@@ -20,18 +21,19 @@ pub struct NextCommand<'a> {
     pub hint: Option<&'a str>,
 }
 
-/// Appends the paging footer shared by hit pages and `show`.
+/// Appends the continuation command, optional hint, and truncation marker.
 pub fn footer(next: Option<NextCommand<'_>>, truncated: bool, out: &mut String) {
     if let Some(next) = next {
         out.push_str(NEXT_KEY);
         out.push_str(next.verb);
         out.push(' ');
         out.push_str(next.cursor);
-        if let Some(hint) = next.hint {
-            out.push(' ');
-            out.push_str(hint);
-        }
         out.push('\n');
+        if let Some(hint) = next.hint {
+            out.push_str(HINT_KEY);
+            out.push_str(hint);
+            out.push('\n');
+        }
     }
     if truncated {
         out.push_str(TRUNCATED_LINE);
@@ -76,7 +78,7 @@ mod tests {
         footer(Some(next), true, &mut out);
         assert_eq!(
             out,
-            "next: more abc@4 (-n N raises the page size)\ntruncated: true\n"
+            "next: more abc@4\nhint: -n N raises the page size\ntruncated: true\n"
         );
     }
 }

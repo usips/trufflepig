@@ -15,7 +15,8 @@ Queries (search TEXT):
   re:REGEX         regex over current file bytes
   file:PATH        root-relative path prefix, else a match at any path component
                    (file:script/host finds crates/a/src/script/host.rs); repeats OR
-  -file:PATH       exclude paths matching at any component (-file:tests)
+  -file:PATH       exclude paths matching at any component
+                   (quote the query: search 'needle -file:tests')
   lang:L           rust, ts, js, csharp (cs, c#), php, luau, dm, text (md, toml, json)
   kind:K           function, struct, file, ...
   ws:home|ws:all   workspace scope; in:MEMBER selects one member
@@ -26,7 +27,8 @@ Navigation:
   ctx HANDLE       relationships around a hit
   refs NAME        occurrences and resolved targets
   map PREFIX       module and type outline (a single file adds its functions)
-  more CURSOR      next page; run the footer's `next: more CURSOR` line as printed
+  more CURSOR      continue with `trufflepig more CURSOR` using the cursor after `next:`
+  show CURSOR      continue with `trufflepig show CURSOR` using the cursor after `next:`
 
 Pages:
   -n N             hits per page (default 20)

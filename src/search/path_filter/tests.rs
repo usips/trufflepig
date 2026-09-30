@@ -86,6 +86,25 @@ fn file_values_are_encoded_like_indexed_paths() {
 }
 
 #[test]
+fn literal_percent_and_case_insensitive_escapes_match_indexed_paths() {
+    let files: &[(&str, &[u8])] = &[
+        ("100%/needle.rs", b"fn needle_percent() {}\n"),
+        ("100%2f/needle.rs", b"fn needle_escape_text() {}\n"),
+        ("caf\u{e9}/needle.rs", b"fn needle_unicode() {}\n"),
+    ];
+    assert_eq!(paths("re:needle file:100%/", files), ["100%25/needle.rs"]);
+    assert_eq!(paths("re:needle file:100%25/", files), ["100%25/needle.rs"]);
+    assert_eq!(
+        paths("re:needle file:100%252f/", files),
+        ["100%252f/needle.rs"]
+    );
+    assert_eq!(
+        paths("re:needle file:caf%c3%a9/", files),
+        ["caf%C3%A9/needle.rs"]
+    );
+}
+
+#[test]
 fn single_file_resolution_names_exactly_one_indexed_path() {
     let (_root, _cache, store) = fixture(&[
         (

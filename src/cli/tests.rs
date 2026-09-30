@@ -162,6 +162,21 @@ fn explicit_search_accepts_command_words() {
 }
 
 #[test]
+fn negative_path_filter_is_quoted_inside_the_query_argument() {
+    let options = parse(&["search".into(), "needle -file:tests".into()]).unwrap();
+    let query = search::Query::parse(&options.words[1..].join(" ")).unwrap();
+    assert_eq!(query.text, "needle");
+    assert_eq!(query.path.excludes(), ["tests"]);
+
+    let forwarded = parse(&normalized_args(&options, Path::new("/example"))).unwrap();
+    let query = search::Query::parse(&forwarded.words[1..].join(" ")).unwrap();
+    assert_eq!(query.path.excludes(), ["tests"]);
+
+    assert!(parse(&["search".into(), "needle".into(), "-file:tests".into()]).is_err());
+    assert!(parse(&["search".into(), "needle".into(), "--bogus".into()]).is_err());
+}
+
+#[test]
 fn client_normalization_preserves_regex_spaces() {
     let options = parse(&[
         "search".into(),

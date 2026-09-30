@@ -422,12 +422,13 @@ fn lines_more_renders_commit_and_change_entries() {
         .lines()
         .find_map(|line| line.strip_prefix("next: more "))
         .unwrap();
-    // The first page says how to widen it; the cursor is the next word.
-    assert_eq!(
-        next.split_once(' ').unwrap().1,
-        "(-n N raises the page size)"
+    // The first page keeps the runnable cursor separate from its widening hint.
+    assert_eq!(next, format!("{id}@1"));
+    assert!(
+        text.lines()
+            .any(|line| line == "hint: -n N raises the page size")
     );
-    let cursor = next.split_once(' ').unwrap().0;
+    let cursor = next;
     let text = more(&store, cursor, 1, &lines_budget(600)).unwrap();
     assert_eq!(
         text.lines().next().unwrap(),

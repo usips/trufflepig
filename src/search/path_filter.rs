@@ -123,8 +123,8 @@ fn names_file(path: &str, values: &[String]) -> bool {
     })
 }
 
-/// Strips `./` and percent-encodes bytes as [`crate::store::encode_path`] does,
-/// keeping `%` so already-encoded values pass through.
+/// Strips `./` and percent-encodes raw bytes as [`crate::store::encode_path`]
+/// does; valid `%HH` escapes pass through with uppercase hexadecimal digits.
 fn encoded_value(value: &str) -> Option<String> {
     let mut value = value;
     while let Some(rest) = value.strip_prefix("./") {
@@ -133,13 +133,29 @@ fn encoded_value(value: &str) -> Option<String> {
     if value.is_empty() {
         return None;
     }
+    let bytes = value.as_bytes();
     let mut encoded = String::with_capacity(value.len());
-    for &byte in value.as_bytes() {
-        if byte == b'%' || ((0x21..=0x7e).contains(&byte) && !matches!(byte, b':' | b'@')) {
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        let byte = bytes[cursor];
+        if byte == b'%' {
+            if let Some((&high, &low)) = bytes.get(cursor + 1).zip(bytes.get(cursor + 2))
+                && high.is_ascii_hexdigit()
+                && low.is_ascii_hexdigit()
+            {
+                encoded.push('%');
+                encoded.push(char::from(high.to_ascii_uppercase()));
+                encoded.push(char::from(low.to_ascii_uppercase()));
+                cursor += 3;
+                continue;
+            }
+            let _ = write!(encoded, "%{byte:02X}");
+        } else if (0x21..=0x7e).contains(&byte) && !matches!(byte, b':' | b'@') {
             encoded.push(char::from(byte));
         } else {
             let _ = write!(encoded, "%{byte:02X}");
         }
+        cursor += 1;
     }
     Some(encoded)
 }

@@ -258,13 +258,11 @@ mod tests {
             true,
         );
         let lines: Vec<_> = text.lines().collect();
-        assert_eq!(lines.len(), 5);
+        assert_eq!(lines.len(), 6);
         assert_eq!(lines[2], "coverage: indexed 1/1");
-        assert_eq!(
-            lines[3],
-            "next: more 00000000000000000000000000000000@2 (-n N raises the page size)"
-        );
-        assert_eq!(lines[4], "truncated: true");
+        assert_eq!(lines[3], "next: more 00000000000000000000000000000000@2");
+        assert_eq!(lines[4], "hint: -n N raises the page size");
+        assert_eq!(lines[5], "truncated: true");
         // Later pages and budget-cut pages.
         assert_eq!(more_command(&next, 2, 2, 20).hint, None);
         assert_eq!(more_command(&next, 0, 2, 20).hint, Some(PAGE_BUDGET_HINT));

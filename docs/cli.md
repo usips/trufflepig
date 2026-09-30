@@ -27,15 +27,16 @@ and imports; `re:` scans live bytes and returns one occurrence per matching line
 with `^` and `$` matching at line boundaries as in grep. `file:` (repeatable),
 `-file:`, `lang:`, and `kind:` filter as the
 [retrieval contract](retrieval-contract.md#retrieval) defines; an empty filtered
-search explains its filters on the coverage line. Quote `c#` in shell commands.
+search explains empty filters on coverage. Quote the whole query containing
+`-file:`, such as `trufflepig search 'needle -file:tests'`; a standalone `-file:`
+is parsed as an option. Quote `c#` in shell commands.
 One JSON object plus newline is the default output; `--json` accepts the same
 format. `--format lines` renders `search`, `refs`, `map`, `more`, and `show` as
 tab-separated lines for agents that read output directly: one
 `HANDLE<TAB>[MEMBER/]PATH:START-END[<TAB>NAME]` line per hit, each followed by
-an indented `  LINE: TEXT` snippet, then a one-line `coverage:` summary, then
-`next: more CURSOR` and `truncated: true` when present. A continuing first page
-appends `(-n N raises the page size)`, or `(-b N raises the token budget)` when
-the budget cut it. `show` prints a `PATH [(MEMBER)] lines FIRST-LAST` header,
+an indented `LINE: TEXT` snippet, then `coverage:`. Continuing pages print
+`next: more CURSOR`; the first adds a `hint:` line for `-n N` or `-b N`.
+`truncated: true` appears when present. `show` prints a `PATH [(MEMBER)] lines FIRST-LAST` header,
 `LINE<TAB>text` rows, `next: show CURSOR` when the budget cut the read, and a
 `verified:` footer (`verified: current file` for explicit path reads, which JSON
 marks `"source": "current_file"`) that flags `encoding: byte-escaped` once.
@@ -89,8 +90,9 @@ for schema, cache behavior, routing guarantees, and current limits.
 ## Follow-up reads and navigation
 
 Copy `hits[].handle` (the first column in lines format) into `show` or `ctx`.
-Lines footers print the whole continuation command (`next: more CURSOR`, `next:
-show CURSOR`); JSON `next` is the bare cursor. Search pages use compact
+The `next:` label introduces `more CURSOR` or `show CURSOR`; invoke as
+`trufflepig more CURSOR` or `trufflepig show CURSOR`. Widening advice is separate. JSON
+`next` is the bare cursor. Search pages use compact
 file-first entries, whose `name` appears only for symbol hits; `show` supplies
 source lines for a selected handle.
 
