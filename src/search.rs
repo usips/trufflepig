@@ -1,18 +1,23 @@
 //! Deterministic exact, lexical and live-regex retrieval from one index snapshot.
+mod concept_query;
 mod file_ranking;
 mod inheritance_context;
 mod live;
 mod navigation;
+mod path_prior;
 mod rerank_window;
 mod semantic_lane;
 mod snippets;
 pub mod telemetry;
 #[cfg(test)]
 mod tests;
-pub(crate) use file_ranking::fuse_search_file_lanes as fuse_file_lanes;
 pub(crate) use navigation::context_entry;
 pub use navigation::{context, map, references};
 pub use rerank_window::RerankScorer;
+
+use concept_query::ConceptQuery;
+use file_ranking::{FusionPolicy, fuse_file_lanes};
+use path_prior::PathPrior;
 
 use crate::{
     results::{Hit, MAX_HITS, ResultSet},
@@ -190,6 +195,12 @@ pub fn search_prepared(
     trace.snapshot(generation, &coverage);
     let mut hits = Vec::with_capacity(128);
     let mut truncated = false;
+    let concept = ConceptQuery::parse(&query.text);
+    let policy = FusionPolicy {
+        lane_weights: true,
+        identifier_tier: concept.identifier.is_some(),
+        prior: PathPrior::for_query(query),
+    };
     if query.regex {
         let started = Instant::now();
         let outcome = live::live_regex(
@@ -214,83 +225,17 @@ pub fn search_prepared(
         trace.snapshot(generation, &coverage);
         outcome?;
     } else {
-        let started = Instant::now();
-        let outcome = exact_hits(store, query);
-        let exact = outcome
-            .as_ref()
-            .map(|lane| lane.hits.as_slice())
-            .unwrap_or(&[]);
-        trace.record(
-            Lane::ExactIdentifier,
-            started,
-            exact,
-            LaneOutcome::from_result(&outcome, false),
-            outcome.as_ref().is_ok_and(|lane| lane.truncated),
-        );
-        let exact = outcome?;
+        let exact =
+            concept_query::recorded(trace, Lane::ExactIdentifier, || exact_hits(store, query))?;
         if !query.exact && !query.text.is_empty() {
-            let terms = fts_terms(&query.text);
-            if !terms.is_empty() {
-                let started = Instant::now();
-                let outcome = lexical_hits(store, query, &terms);
-                let lexical = outcome
-                    .as_ref()
-                    .map(|lane| lane.hits.as_slice())
-                    .unwrap_or(&[]);
-                trace.record(
-                    Lane::Lexical,
-                    started,
-                    lexical,
-                    LaneOutcome::from_result(&outcome, false),
-                    outcome.as_ref().is_ok_and(|lane| lane.truncated),
-                );
-                let lexical = outcome?;
-                if !query.exact && (query.kind.is_empty() || query.kind == "file") {
-                    let started = Instant::now();
-                    let outcome = file_hits(store, query);
-                    let files = outcome
-                        .as_ref()
-                        .map(|lane| lane.hits.as_slice())
-                        .unwrap_or(&[]);
-                    trace.record(
-                        Lane::File,
-                        started,
-                        files,
-                        LaneOutcome::from_result(&outcome, false),
-                        outcome.as_ref().is_ok_and(|lane| lane.truncated),
-                    );
-                    let files = outcome?;
-                    truncated |= exact.truncated || lexical.truncated || files.truncated;
-                    hits = fuse_file_lanes([
-                        exact.hits.as_slice(),
-                        lexical.hits.as_slice(),
-                        files.hits.as_slice(),
-                    ]);
-                } else {
-                    truncated |= exact.truncated || lexical.truncated;
-                    hits = fuse_file_lanes([exact.hits.as_slice(), lexical.hits.as_slice()]);
-                }
-            } else {
-                truncated |= exact.truncated;
-                hits = exact.hits;
-            }
+            let (lanes, lanes_truncated) =
+                concept_query::concept_lanes(store, query, &concept, exact, trace)?;
+            truncated |= lanes_truncated;
+            hits = fuse_file_lanes(lanes, &policy);
         } else if !query.exact && (query.kind.is_empty() || query.kind == "file") {
-            let started = Instant::now();
-            let outcome = file_hits(store, query);
-            let files = outcome
-                .as_ref()
-                .map(|lane| lane.hits.as_slice())
-                .unwrap_or(&[]);
-            trace.record(
-                Lane::File,
-                started,
-                files,
-                LaneOutcome::from_result(&outcome, false),
-                outcome.as_ref().is_ok_and(|lane| lane.truncated),
-            );
-            let files = outcome?;
+            let files = concept_query::recorded(trace, Lane::File, || file_hits(store, query))?;
             truncated |= exact.truncated || files.truncated;
-            hits = fuse_file_lanes([exact.hits.as_slice(), files.hits.as_slice()]);
+            hits = fuse_file_lanes([exact.hits, files.hits], &policy);
         } else {
             truncated |= exact.truncated;
             hits = exact.hits;
@@ -302,10 +247,23 @@ pub fn search_prepared(
     }
     if !query.exact
         && !query.regex
+        && !concept.literal
         && let Some(vector) = semantic_query.as_ref()
     {
-        truncated |=
-            semantic_lane::append(store, query, cache, vector, &mut hits, &mut coverage, trace)?;
+        let refusion = FusionPolicy {
+            lane_weights: false,
+            ..policy
+        };
+        truncated |= semantic_lane::append(
+            store,
+            query,
+            cache,
+            vector,
+            &refusion,
+            &mut hits,
+            &mut coverage,
+            trace,
+        )?;
     }
     if let Some(scorer) = reranker {
         rerank_window::apply(
@@ -459,11 +417,12 @@ fn exact_hits(store: &Store, query: &Query) -> Result<LaneHits> {
     Ok(cap_lane(hits))
 }
 
-fn lexical_hits(store: &Store, query: &Query, terms: &str) -> Result<LaneHits> {
+/// Regions matching the FTS5 expression `terms`, best region per file, tagged `provenance`.
+fn lexical_hits(store: &Store, query: &Query, terms: &str, provenance: &str) -> Result<LaneHits> {
     let mut statement = store.conn.prepare(
         "WITH ranked AS MATERIALIZED (
              SELECT f.path,f.revision,r.start,r.end,r.name,r.kind,NULL AS container,
-                    'lexical' AS provenance,c.bytes,
+                    ?6 AS provenance,c.bytes,
                     bm25(documents,8.0,2.0,1.0,0.5) AS relevance,r.id
              FROM documents
              JOIN regions r ON r.id=documents.rowid
@@ -494,20 +453,13 @@ fn lexical_hits(store: &Store, query: &Query, terms: &str) -> Result<LaneHits> {
                 query.path,
                 query.language,
                 query.kind,
-                (file_ranking::FILE_CANDIDATE_LIMIT + 1) as i64
+                (file_ranking::FILE_CANDIDATE_LIMIT + 1) as i64,
+                provenance
             ],
             hit_row,
         )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(cap_lane(hits))
-}
-
-fn fts_terms(text: &str) -> String {
-    text.split(|ch: char| !ch.is_alphanumeric() && ch != '_')
-        .filter(|s| !s.is_empty())
-        .map(|term| format!("\"{}\"", term.replace('"', "\"\"")))
-        .collect::<Vec<_>>()
-        .join(" OR ")
 }
 
 fn file_hits(store: &Store, query: &Query) -> Result<LaneHits> {

@@ -1,3 +1,4 @@
+use super::path_prior::PathPrior;
 use crate::results::Hit;
 use std::collections::BTreeMap;
 
@@ -5,29 +6,32 @@ use std::collections::BTreeMap;
 pub(crate) const FILE_CANDIDATE_LIMIT: usize = 1_000;
 const RRF_K: f64 = 60.0;
 
+/// Fusion-time weights: per-lane provenance weights, the identifier evidence
+/// tier and the [path prior](super::path_prior).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FusionPolicy {
+    /// Weighs hits by lane provenance; a re-fusion of already fused lanes leaves it off.
+    pub lane_weights: bool,
+    /// Ranks files with identifier evidence ahead of every other file.
+    pub identifier_tier: bool,
+    pub prior: PathPrior,
+}
+
+/// Provenance of hits that prove an identifier query's token occurs in a file.
+pub(crate) fn identifier_evidence(provenance: Option<&str>) -> bool {
+    matches!(
+        provenance,
+        Some("exact_identifier" | "identifier_occurrence")
+    )
+}
+
 /// Fuses ranked hit lanes after collapsing each lane to one hit per file.
 ///
 /// A lane's first hit for a path is its strongest representative. The lane is
-/// then capped at 1,000 distinct paths before reciprocal-rank fusion. Results
-/// use the first lane's representative on a path tie and sort equal scores by
-/// their encoded source path.
-pub(crate) fn fuse_file_lanes<I, L>(lanes: I) -> Vec<Hit>
-where
-    I: IntoIterator<Item = L>,
-    L: AsRef<[Hit]>,
-{
-    fuse(lanes, false)
-}
-
-pub(crate) fn fuse_search_file_lanes<I, L>(lanes: I) -> Vec<Hit>
-where
-    I: IntoIterator<Item = L>,
-    L: AsRef<[Hit]>,
-{
-    fuse(lanes, true)
-}
-
-fn fuse<I, L>(lanes: I, filename_weights: bool) -> Vec<Hit>
+/// then capped at 1,000 distinct paths before weighted reciprocal-rank fusion.
+/// Results use the first lane's representative on a path tie and sort equal
+/// scores by their encoded source path.
+pub(crate) fn fuse_file_lanes<I, L>(lanes: I, policy: &FusionPolicy) -> Vec<Hit>
 where
     I: IntoIterator<Item = L>,
     L: AsRef<[Hit]>,
@@ -53,20 +57,18 @@ where
         for (file_rank, (_, hit)) in representatives.into_iter().enumerate() {
             let score = files.entry(hit.path.clone()).or_insert_with(|| FileScore {
                 score: 0.0,
+                evidence: false,
                 representative: hit.clone(),
                 representative_lane: lane_index,
                 representative_rank: file_rank,
             });
-            let weight = if filename_weights {
-                match hit.provenance.as_deref() {
-                    Some("filename_exact") => 2.0,
-                    Some("filename_partial") => 0.5,
-                    _ => 1.0,
-                }
+            let weight = if policy.lane_weights {
+                lane_weight(hit.provenance.as_deref(), policy)
             } else {
                 1.0
             };
             score.score += weight / (RRF_K + file_rank as f64 + 1.0);
+            score.evidence |= identifier_evidence(hit.provenance.as_deref());
             if (lane_index, file_rank) < (score.representative_lane, score.representative_rank) {
                 score.representative = hit.clone();
                 score.representative_lane = lane_index;
@@ -76,10 +78,15 @@ where
     }
 
     let mut files: Vec<_> = files.into_values().collect();
+    for file in &mut files {
+        file.score *= policy.prior.weight(&file.representative.path);
+        file.evidence &= policy.identifier_tier;
+    }
     files.sort_by(|left, right| {
         right
-            .score
-            .total_cmp(&left.score)
+            .evidence
+            .cmp(&left.evidence)
+            .then_with(|| right.score.total_cmp(&left.score))
             .then_with(|| left.representative.path.cmp(&right.representative.path))
             .then_with(|| left.representative.start.cmp(&right.representative.start))
             .then_with(|| left.representative.end.cmp(&right.representative.end))
@@ -88,8 +95,20 @@ where
     files.into_iter().map(|file| file.representative).collect()
 }
 
+/// Lane weights: an identifier query's exact definitions ×3, phrase matches
+/// and exact filenames ×2, partial filenames ×0.5, every other lane ×1.
+fn lane_weight(provenance: Option<&str>, policy: &FusionPolicy) -> f64 {
+    match provenance {
+        Some("exact_identifier") if policy.identifier_tier => 3.0,
+        Some("phrase" | "filename_exact") => 2.0,
+        Some("filename_partial") => 0.5,
+        _ => 1.0,
+    }
+}
+
 struct FileScore {
     score: f64,
+    evidence: bool,
     representative: Hit,
     representative_lane: usize,
     representative_rank: usize,
@@ -98,6 +117,17 @@ struct FileScore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const UNWEIGHTED: FusionPolicy = FusionPolicy {
+        lane_weights: false,
+        identifier_tier: false,
+        prior: PathPrior::NEUTRAL,
+    };
+    const WEIGHTED: FusionPolicy = FusionPolicy {
+        lane_weights: true,
+        identifier_tier: false,
+        prior: PathPrior::NEUTRAL,
+    };
 
     fn hit(path: &str, start: usize, provenance: &str) -> Hit {
         Hit {
@@ -131,7 +161,7 @@ mod tests {
             hit("content/control.luau", 0, "filename_exact"),
             hit("assets/programmable_control.ron", 0, "filename_tokens"),
         ];
-        let fused = fuse_search_file_lanes([lexical, filenames]);
+        let fused = fuse_file_lanes([lexical, filenames], &WEIGHTED);
         assert_eq!(fused[0].path, "content/control.luau");
         assert_eq!(fused[0].provenance.as_deref(), Some("lexical"));
     }
@@ -142,7 +172,7 @@ mod tests {
             .map(|start| hit("a.rs", start, "lexical"))
             .collect::<Vec<_>>();
         duplicate.push(hit("b.rs", 7, "lexical"));
-        let fused = fuse_file_lanes([duplicate.as_slice()]);
+        let fused = fuse_file_lanes([duplicate.as_slice()], &UNWEIGHTED);
         assert_eq!(fused.len(), 2);
         assert_eq!(fused[0].path, "a.rs");
         assert_eq!(fused[1].path, "b.rs");
@@ -152,7 +182,7 @@ mod tests {
     fn path_tie_is_stable_and_first_lane_is_representative() {
         let first = [hit("a.rs", 4, "exact")];
         let second = [hit("a.rs", 2, "lexical"), hit("b.rs", 0, "lexical")];
-        let fused = fuse_file_lanes([first.as_slice(), second.as_slice()]);
+        let fused = fuse_file_lanes([first.as_slice(), second.as_slice()], &UNWEIGHTED);
         assert_eq!(
             fused
                 .iter()
@@ -161,5 +191,75 @@ mod tests {
             ["a.rs", "b.rs"]
         );
         assert_eq!(fused[0].provenance.as_deref(), Some("exact"));
+    }
+
+    #[test]
+    fn path_prior_halves_test_and_doc_files_without_dropping_them() {
+        let lexical = [
+            hit("src/sim/tests.rs", 0, "lexical"),
+            hit("AGENTS.md", 0, "lexical"),
+            hit("src/sim/item_slots.rs", 0, "lexical"),
+        ];
+        let policy = FusionPolicy {
+            prior: PathPrior::for_query(&super::super::Query::parse("item slot").unwrap()),
+            ..WEIGHTED
+        };
+        let fused = fuse_file_lanes([lexical.as_slice()], &policy);
+        let paths: Vec<_> = fused.iter().map(|hit| hit.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            ["src/sim/item_slots.rs", "src/sim/tests.rs", "AGENTS.md"]
+        );
+    }
+
+    #[test]
+    fn identifier_evidence_outranks_files_lacking_the_token() {
+        let exact = [hit("src/defs.rs", 0, "exact_identifier")];
+        let occurrences = [hit("src/uses.rs", 0, "identifier_occurrence")];
+        let lexical = [
+            hit("src/other.rs", 0, "lexical"),
+            hit("src/defs.rs", 0, "lexical"),
+        ];
+        let filenames = [hit("src/other.rs", 0, "filename_exact")];
+        let semantic = [hit("src/other.rs", 0, "semantic")];
+        let policy = FusionPolicy {
+            identifier_tier: true,
+            ..WEIGHTED
+        };
+        let fused = fuse_file_lanes(
+            [
+                exact.as_slice(),
+                occurrences.as_slice(),
+                lexical.as_slice(),
+                filenames.as_slice(),
+            ],
+            &policy,
+        );
+        let paths: Vec<_> = fused.iter().map(|hit| hit.path.as_str()).collect();
+        assert_eq!(paths, ["src/defs.rs", "src/uses.rs", "src/other.rs"]);
+        // Re-fusing with semantic hits keeps the tier through representative provenance.
+        let refused = fuse_file_lanes(
+            [fused, semantic.to_vec()],
+            &FusionPolicy {
+                lane_weights: false,
+                ..policy
+            },
+        );
+        assert_eq!(refused[2].path, "src/other.rs");
+        // Without the identifier tier, the same lanes let the filename match lead.
+        let untiered = fuse_file_lanes(
+            [exact.as_slice(), lexical.as_slice(), filenames.as_slice()],
+            &WEIGHTED,
+        );
+        assert_eq!(untiered[0].path, "src/other.rs");
+    }
+
+    #[test]
+    fn phrase_lane_outweighs_an_or_lane_rank() {
+        let phrase = [hit("b.rs", 0, "phrase")];
+        let lexical = [hit("a.rs", 0, "lexical"), hit("b.rs", 0, "lexical")];
+        let fused = fuse_file_lanes([phrase.as_slice(), lexical.as_slice()], &WEIGHTED);
+        assert_eq!(fused[0].path, "b.rs");
+        assert_eq!(fused[0].provenance.as_deref(), Some("phrase"));
     }
 }

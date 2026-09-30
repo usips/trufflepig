@@ -163,7 +163,7 @@ fn semantic_cache_failure_preserves_lexical_hits() {
         result
             .hits
             .iter()
-            .any(|hit| { hit.path == "source.rs" && hit.provenance.as_deref() == Some("lexical") })
+            .any(|hit| { hit.path == "source.rs" && hit.provenance.as_deref() == Some("phrase") })
     );
     assert_eq!(result.coverage["semantic_status"], "partial");
     assert_eq!(result.coverage["semantic_failures"], 1);
@@ -301,7 +301,7 @@ fn semantic_disabled_falls_back_to_lexical_search() -> anyhow::Result<()> {
         result
             .hits
             .iter()
-            .any(|hit| { hit.path == "source.rs" && hit.provenance.as_deref() == Some("lexical") })
+            .any(|hit| { hit.path == "source.rs" && hit.provenance.as_deref() == Some("phrase") })
     );
     assert_eq!(result.coverage["semantic_status"], "unavailable");
     Ok(())

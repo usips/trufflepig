@@ -16,12 +16,37 @@ containing symbol attached. File records expose resource exclusions.
 ## File ranking
 
 Ordinary queries collapse each retrieval lane to its best region per file
-before a 1,000-file lane cap. Exact, lexical, and filename ranks combine with
-reciprocal rank fusion (`k = 60`), with stable path ties. Filename evidence has
-weight 2 for an exact normalized stem, 1 for all query tokens in the basename,
-and 0.5 for partial path matches. Available semantic file ranks then fuse with
-the combined source ranking at equal weight. An opt-in rerank stage then
-reorders the top 32 fused files; see the [semantic contract](semantic-contract.md).
+before a 1,000-file lane cap. Lanes run in this order, and a file's hit from
+the earliest lane represents it
+([`concept_query`](../src/search/concept_query.rs)):
+
+- exact definitions of the whole text, weight 3 for an identifier query, else 1;
+- identifier occurrences, weight 1: for a single identifier-shaped token (with
+  `_`, `::`, a lower-to-upper case change, or letters and digits), files with an
+  occurrence of that name (`a::b` names `b` in files that also use `a`), most
+  uses first, represented by the region of the first declaration or use;
+- a phrase lane (all terms adjacent and in order), weight 2, and an all-terms
+  lane (every term in one region), weight 1, for two or more terms;
+- the any-term lane and filenames, as for every free-text query.
+
+Ranks combine with reciprocal rank fusion (`k = 60`), with stable path ties.
+Filename evidence has weight 2 for an exact normalized stem, 1 for all query
+tokens in the basename, and 0.5 for partial path matches. For an identifier
+query, files with a definition or occurrence of the token rank ahead of every
+file lacking it. A text quoted as one `"…"` literal runs the phrase lane alone.
+
+A path prior halves the fused score of test paths (`tests.rs`, a `tests/` or
+`fixtures/` directory, `test_*`, `*_test.*`, `*_tests.*`, `*.test.*`,
+`*.spec.*`) and Markdown files, including `AGENTS.md` and `CLAUDE.md`. Tests
+keep full weight when the query names tests (`test`, `tests`, `testing`,
+`spec`, `fixture`) or its `file:` filter selects a test path; docs keep it when
+the query names docs (`doc`, `docs`, `documentation`, `readme`, `markdown`),
+sets `lang:text`, or its `file:` filter selects a doc path
+([`path_prior`](../src/search/path_prior.rs)). Demoted files remain eligible.
+Available semantic file ranks then fuse with the combined source ranking at
+equal weight under the same prior and identifier tier; literal queries skip
+them. An opt-in rerank stage then reorders the top 32 fused files; see the
+[semantic contract](semantic-contract.md).
 `sym:` and `re:` retain occurrences.
 Pages maximize file references before adding optional symbol names.
 

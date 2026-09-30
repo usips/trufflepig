@@ -1,12 +1,13 @@
 //! Cross-encoder reranking narrows fused hit order within a bounded window.
+//! Phrase and identifier hits stay ahead of other hits; scores order each tier.
 //! Bodies are read from the current snapshot; a missing body, an unreadable
-//! snapshot, or a non-finite score sinks that hit below the window's scored
-//! hits without dropping it or aborting the surrounding search.
+//! snapshot, or a non-finite score sinks that hit below its tier's scored hits
+//! without dropping it or aborting the surrounding search.
 use super::telemetry::{Lane, LaneOutcome, RetrievalTrace};
 use crate::{results::Hit, store::Store};
 use anyhow::Result;
 use rusqlite::OptionalExtension;
-use std::{collections::HashSet, path::Path, time::Instant};
+use std::{path::Path, time::Instant};
 
 #[cfg(test)]
 mod tests;
@@ -27,6 +28,14 @@ impl RerankScorer for crate::semantic::SemanticSession {
 }
 
 const BODY_CLAMP_BYTES: usize = crate::semantic::RERANK_MAX_DOCUMENT_BYTES;
+
+/// 0 for hits represented by phrase or identifier lanes, else 1.
+fn evidence_tier(hit: &Hit) -> u8 {
+    u8::from(!matches!(
+        hit.provenance.as_deref(),
+        Some("phrase" | "exact_identifier" | "identifier_occurrence")
+    ))
+}
 
 pub(super) fn apply(
     store: &Store,
@@ -70,16 +79,21 @@ pub(super) fn apply(
             trace.record(Lane::Rerank, started, &[], LaneOutcome::Failed, false);
         }
         Ok(scores) => {
-            let mut scored: Vec<(usize, f32)> = scored_positions
-                .iter()
-                .zip(scores.iter())
-                .filter(|(_, score)| score.is_finite())
-                .map(|(&position, &score)| (position, score))
-                .collect();
-            scored.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-            let kept: HashSet<usize> = scored.iter().map(|(position, _)| *position).collect();
-            let mut sources: Vec<usize> = scored.iter().map(|(position, _)| *position).collect();
-            sources.extend((0..window).filter(|position| !kept.contains(position)));
+            let mut window_scores: Vec<Option<f32>> = vec![None; window];
+            for (&position, &score) in scored_positions.iter().zip(scores.iter()) {
+                window_scores[position] = score.is_finite().then_some(score);
+            }
+            let mut sources: Vec<usize> = (0..window).collect();
+            sources.sort_by(|&left, &right| {
+                evidence_tier(&hits[left])
+                    .cmp(&evidence_tier(&hits[right]))
+                    .then_with(|| match (window_scores[left], window_scores[right]) {
+                        (Some(left), Some(right)) => right.total_cmp(&left),
+                        (left, right) => right.is_some().cmp(&left.is_some()),
+                    })
+                    .then_with(|| left.cmp(&right))
+            });
+            let scored = window_scores.iter().flatten().count();
             // `sources[target]` is the window position that belongs at `target`;
             // invert it into a swap-destination map before applying in place.
             let mut destinations = vec![0; window];
@@ -88,7 +102,7 @@ pub(super) fn apply(
             }
             permute_in_place(&mut hits[..window], &mut destinations);
             coverage["rerank_status"] = "ready".into();
-            coverage["rerank_window"] = scored.len().into();
+            coverage["rerank_window"] = scored.into();
             trace.record(
                 Lane::Rerank,
                 started,

@@ -41,8 +41,9 @@ tokens for the serialized stdout response, measured on the rendered text of the
 selected format, or to the workspace's `[output].budget` when one is set. Search ranks files first and emits one compact representative
 per file before the `-n/--limit` page cap (20 files by default); the budget may
 fit fewer. Each hit includes a `file` URI, line span, and immutable handle, and
-a `snippet` (`line`, `text` of at most 120 characters): the first line in the
-span that mentions a query term or the hit's name, preferring code over comments.
+a `snippet` (`line`, `text` of at most 120 characters): the line in the span
+that mentions the most distinct query terms (the earliest on ties), else the
+hit's name, preferring code over comments.
 A page keeps snippets while at least eight hits (or all remaining hits) fit,
 otherwise it drops them for more locators. Snippets locate evidence; `show`
 remains the verified read. Increase the budget when a hit or source line cannot fit.

@@ -11,7 +11,10 @@ optional [rerank stage](semantic-contract.md#optional-reranking) keeps this
 determinism claim for a fixed model and provider.
 
 `re:<pattern>` searches live files. Path, language, and kind filters apply before
-result limits. Tests, docs, and configuration remain eligible. Hits can identify
+result limits. Tests, docs, and configuration remain eligible; free-text ranking
+demotes tests and docs unless a query targets them, favors phrase matches, and
+ranks an identifier's definitions and uses first (see
+[file ranking](index-contract.md#file-ranking)). Hits can identify
 a symbol, a source region, or a file. Searchable source regions cover the entire
 eligible file, including long-symbol middles and gaps between definitions.
 Resource-excluded files remain discoverable by path with their exclusion reason.

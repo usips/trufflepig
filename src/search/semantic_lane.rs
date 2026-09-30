@@ -1,6 +1,7 @@
 //! Cached vectors join current source bodies; retrieval never embeds source regions.
 use super::{
     Query,
+    file_ranking::FusionPolicy,
     telemetry::{Lane, LaneOutcome, RetrievalTrace},
 };
 use crate::{results::Hit, semantic::Embedding, store::Store};
@@ -10,11 +11,14 @@ use std::path::Path;
 #[cfg(test)]
 mod tests;
 
+/// Fuses cached-vector hits after the lexical order under `policy`.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn append(
     store: &Store,
     query: &Query,
     cache: &Path,
     vector: &Embedding,
+    policy: &FusionPolicy,
     hits: &mut Vec<Hit>,
     coverage: &mut serde_json::Value,
     trace: &mut RetrievalTrace,
@@ -50,7 +54,7 @@ pub(super) fn append(
                 trace.snapshot(generation, coverage);
             }
             let lexical = std::mem::take(hits);
-            *hits = super::file_ranking::fuse_file_lanes(vec![lexical, semantic_hits]);
+            *hits = super::file_ranking::fuse_file_lanes([lexical, semantic_hits], policy);
             Ok(truncated)
         }
         Err(error) => {

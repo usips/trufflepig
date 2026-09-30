@@ -1,13 +1,13 @@
-//! One-line hit previews: the first line inside a hit's span that mentions a query
-//! term (or the hit's name), else its first non-blank line. Previews locate
-//! evidence; `show` remains the verified read.
+//! One-line hit previews: the line inside a hit's span that mentions the most
+//! distinct query terms (earliest on ties), else one naming the hit, else its
+//! first non-blank line. Previews locate evidence; `show` remains the verified read.
 use crate::{
     results::{Hit, Snippet},
     store::Store,
 };
 use anyhow::Result;
 use rusqlite::OptionalExtension;
-use std::collections::HashMap;
+use std::{cmp::Reverse, collections::HashMap};
 
 /// Hits beyond this rank keep coordinates only; pages rarely reach them.
 const SNIPPET_HITS: usize = 200;
@@ -16,12 +16,19 @@ const SNIPPET_CHARS: usize = 120;
 /// Lines scanned inside one span before falling back to its first line.
 const SCAN_LINES: usize = 2_000;
 
-/// Lowercased query words worth locating in a preview line.
+/// Distinct lowercased query words worth locating in a preview line.
 pub(super) fn preview_terms(text: &str) -> Vec<String> {
-    text.split(|ch: char| !ch.is_alphanumeric() && ch != '_')
+    let mut terms: Vec<String> = Vec::with_capacity(8);
+    for term in text
+        .split(|ch: char| !ch.is_alphanumeric() && ch != '_')
         .filter(|term| term.len() >= 2)
         .map(str::to_lowercase)
-        .collect()
+    {
+        if !terms.contains(&term) {
+            terms.push(term);
+        }
+    }
+    terms
 }
 
 /// Attaches previews to the leading hits that lack one, reading each revision once.
@@ -50,6 +57,9 @@ pub(super) fn attach(store: &Store, terms: &[String], hits: &mut [Hit]) -> Resul
     Ok(())
 }
 
+/// Distinct terms matched (more first), then the line class (lower first).
+type PreviewRank = (Reverse<usize>, u8);
+
 /// Preview of the span `start..end` (whose first line is `first_line`) in `bytes`.
 pub(crate) fn preview(
     bytes: &[u8],
@@ -66,9 +76,9 @@ pub(crate) fn preview(
         .map_or(0, |index| index + 1);
     let stop = end.clamp(start, bytes.len());
     let name = name.to_lowercase();
-    // Lower rank wins; ties keep the earliest line. Comment and attribute lines
-    // rank below code that mentions the same term.
-    let mut best: Option<(u8, usize, &[u8])> = None;
+    // More distinct terms win, then the line class; ties keep the earliest
+    // line. Comment and attribute lines rank below code with the same terms.
+    let mut best: Option<(PreviewRank, usize, &[u8])> = None;
     let mut position = begin;
     for (offset, line) in bytes[begin..]
         .split(|&byte| byte == b'\n')
@@ -85,12 +95,15 @@ pub(crate) fn preview(
             continue;
         }
         let lowered = text.to_lowercase();
-        let term = terms.iter().any(|term| lowered.contains(term.as_str()));
+        let matched = terms
+            .iter()
+            .filter(|term| lowered.contains(term.as_str()))
+            .count();
         let named = !name.is_empty() && lowered.contains(&name);
         let comment = ["//", "/*", "*", "#", "--", ";"]
             .iter()
             .any(|marker| trimmed.starts_with(marker));
-        let rank = match (term, named, comment) {
+        let class = match (matched > 0, named, comment) {
             (true, _, false) => 0,
             (false, true, false) => 1,
             (true, _, true) => 2,
@@ -98,9 +111,10 @@ pub(crate) fn preview(
             (false, false, false) => 4,
             (false, false, true) => 5,
         };
+        let rank = (Reverse(matched), class);
         if best.is_none_or(|(old, _, _)| rank < old) {
             best = Some((rank, first_line + offset, line));
-            if rank == 0 {
+            if matched == terms.len() && class == 0 {
                 break;
             }
         }
@@ -164,5 +178,20 @@ mod tests {
         assert_eq!(hit.line, 1);
         assert!(hit.text.starts_with("a b "));
         assert_eq!(hit.text.chars().count(), SNIPPET_CHARS + 1);
+    }
+
+    #[test]
+    fn preview_picks_the_line_with_the_most_distinct_terms() {
+        let source = b"fn slot(item: Item) -> Result<()> {\n    // unknown item\n    let slot = find(item)?;\n    Err(fault(\"unknown item slot\"))\n}\n";
+        let terms = preview_terms("unknown item slot item");
+        assert_eq!(terms, ["unknown", "item", "slot"]);
+        let hit = preview(source, 0, source.len(), 1, &terms, "slot").unwrap();
+        assert_eq!(
+            (hit.line, hit.text.as_str()),
+            (4, "Err(fault(\"unknown item slot\"))")
+        );
+        // Equal counts keep the earliest code line.
+        let hit = preview(source, 0, source.len(), 1, &preview_terms("item"), "").unwrap();
+        assert_eq!(hit.line, 1);
     }
 }
