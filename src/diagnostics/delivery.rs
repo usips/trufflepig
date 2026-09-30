@@ -27,7 +27,9 @@ pub struct DeliveryReceipt {
 pub fn emit_response(writer: &mut impl Write, response: &str) -> Result<DeliveryReceipt> {
     let mut receipt = DeliveryReceipt {
         tokenizer: "o200k_base".into(),
-        prepared_tokens: tiktoken_rs::o200k_base()?.encode_ordinary(response).len(),
+        prepared_tokens: tiktoken_rs::o200k_base_singleton()
+            .encode_ordinary(response)
+            .len(),
         prepared_bytes: response.len(),
         accepted_bytes: 0,
         complete: false,

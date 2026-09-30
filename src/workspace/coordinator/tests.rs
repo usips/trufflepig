@@ -173,20 +173,13 @@ fn coordinator_owner_status_reaches_the_root_daemon_directly() {
         );
         std::thread::sleep(Duration::from_millis(2));
     }
-    // The tokenizer's one-time load is not part of the request path under test.
-    crate::output::OutputBudget::new(100)
-        .unwrap()
-        .render(&serde_json::json!({}))
-        .unwrap();
     let started = Instant::now();
     let status = workspace.ask(&[], &["status"]);
     let elapsed = started.elapsed();
     daemon::stop(&engine_cache).unwrap();
     root_daemon.join().unwrap().unwrap();
     let status: serde_json::Value = serde_json::from_str(&status.unwrap()).unwrap();
-    // The re-entry deadlock this guards against waits out the 28 s proxy
-    // timeout; the bound leaves room for a heavily loaded test machine.
-    assert!(elapsed < Duration::from_secs(20), "status took {elapsed:?}");
+    assert!(elapsed < Duration::from_secs(5), "status took {elapsed:?}");
     assert_eq!(status["member"], "engine");
     assert!(status["generation"].as_i64().unwrap() >= 1, "{status}");
 }
