@@ -1,11 +1,14 @@
 //! Explicit multi-root retrieval with persisted ownership and one final output budget.
 pub mod config;
 mod coordinator;
+mod home_index;
 pub mod member_root;
 mod navigation;
 mod owned_response;
 mod result_cache;
 mod retrieval;
+#[cfg(test)]
+mod test_fixture;
 mod worktree_cache;
 use crate::{
     cli::Arguments, diagnostics::RequestContext, output::OutputBudget, store::encode_path,
@@ -226,6 +229,11 @@ fn inspect(config: &WorkspaceConfig, options: &Arguments, budget: &OutputBudget)
         let mut value = json!({"member":member.name(),"root":encode_path(&member.root),"available":member.verify_identity().is_ok()});
         if let Some(label) = &member.worktree {
             value["worktree"] = label.clone().into();
+            if command == "status"
+                && let Some(seed) = crate::store::read_seed_outcome(&cache)
+            {
+                value["seed"] = seed;
+            }
         }
         if command == "status"
             && member.verify_identity().is_ok()

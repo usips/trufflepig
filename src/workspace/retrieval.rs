@@ -1,10 +1,13 @@
 //! Fair rank merging of independent published member snapshots.
+mod member_coverage;
+mod member_scope;
 #[cfg(test)]
 mod tests;
 
 use super::{
-    WorkspaceConfig, coordinator, member_cache,
-    member_root::MemberRoot,
+    WorkspaceConfig, coordinator,
+    home_index::{HomeIndexPolicy, HomeIndexSource, ParentFallback, resolve_home_index},
+    member_cache,
     result_cache::{MemberSnapshot, OwnedEntry, WorkspaceResults, WorkspaceSet},
 };
 use crate::{
@@ -12,102 +15,27 @@ use crate::{
     daemon::deadline::{QueryDeadline, TIMED_OUT, is_timed_out},
     diagnostics::{DiagnosticsMode, EventStage, Operation, Outcome, RequestContext, RequestEvent},
     output::OutputBudget,
-    results::ResultEntry,
+    results::{ResultEntry, ResultSet},
     search::{self, Query, telemetry::RetrievalTrace},
     semantic::SemanticSession,
-    store::{Store, is_index_warming},
+    store::is_index_warming,
 };
 use anyhow::{Context, Result, ensure};
-use serde_json::json;
+use member_coverage::{fact_limit_paths, member_row, searched_row, short_reason};
+use member_scope::{Scope, implicit_home_scope, scope};
 
-/// How long a query waits for the home member's first publication, typically a
-/// freshly seeded worktree, before answering from the rest of the workspace.
-const HOME_PUBLICATION_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
-
-/// Opens a member's published index for one query; the home member waits up to
-/// [`HOME_PUBLICATION_WAIT`] (capped by `deadline`) for its first publication.
-fn open_member_read(
-    member: &MemberRoot,
-    member_cache: &std::path::Path,
-    await_home: bool,
-    deadline: QueryDeadline,
-) -> Result<Store> {
-    let wait = std::time::Instant::now() + deadline.cap(HOME_PUBLICATION_WAIT);
-    loop {
-        match Store::open_read(&member.root, member_cache, deadline) {
-            Err(error)
-                if await_home
-                    && member.is_home
-                    && is_index_warming(&error)
-                    && std::time::Instant::now() < wait =>
-            {
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            opened => return opened,
-        }
-    }
+/// One member's answer: its hits, or warming without a published index.
+enum MemberAnswer {
+    Found {
+        owner: Box<MemberSnapshot>,
+        found: ResultSet,
+        fallback: Option<ParentFallback>,
+    },
+    Warming(Option<&'static str>),
 }
 
-/// Members to search. Without a selector, only the home member is searched when
-/// one exists (`implicit_home`); `search` widens to all members when home has no
-/// hits or no published index.
-struct Scope {
-    members: Vec<usize>,
-    words: Vec<String>,
-    implicit_home: bool,
-}
-
-fn scope(roots: &[MemberRoot], options: &Arguments) -> Result<Scope> {
-    let mut selection = options.member.clone().map(|m| format!("in:{m}"));
-    let mut words = Vec::with_capacity(options.words.len());
-    for argument in &options.words {
-        let mut remaining = String::new();
-        for chunk in argument.split_inclusive(char::is_whitespace) {
-            let word = chunk.trim_end();
-            if word.starts_with("in:") || matches!(word, "ws:home" | "ws:all") {
-                ensure!(
-                    selection.as_ref().is_none_or(|old| old == word),
-                    "invalid_scope: conflicting workspace selectors"
-                );
-                selection = Some(word.to_owned());
-            } else {
-                remaining.push_str(chunk);
-            }
-        }
-        if !remaining.trim().is_empty() {
-            words.push(remaining.trim_end().to_owned());
-        }
-    }
-    let home = roots
-        .iter()
-        .find(|root| root.is_home)
-        .map(|root| root.name());
-    let implicit_home = selection.is_none() && home.is_some();
-    let selected = match selection.as_deref() {
-        Some("ws:home") => Some(home.context("member_required: ws:home has no home member")?),
-        Some("ws:all") => None,
-        None => home,
-        Some(s) => Some(s.strip_prefix("in:").expect("validated selector")),
-    };
-    if let Some(name) = selected {
-        ensure!(
-            roots.iter().any(|m| m.name() == name),
-            "invalid_member: member is not configured"
-        );
-    }
-    let mut members: Vec<_> = roots
-        .iter()
-        .enumerate()
-        .filter(|(_, m)| selected.is_none_or(|n| m.name() == n))
-        .map(|(i, _)| i)
-        .collect();
-    members.sort_by_key(|&i| (Some(roots[i].name()) != home, roots[i].name()));
-    Ok(Scope {
-        members,
-        words,
-        implicit_home,
-    })
-}
+/// Runs a workspace query: `--no-daemon` indexes members inline; otherwise
+/// members answer from published indexes ([`HomeIndexPolicy::for_search`]).
 pub(super) fn search(
     config: &WorkspaceConfig,
     cache: &std::path::Path,
@@ -116,6 +44,23 @@ pub(super) fn search(
     context: &RequestContext,
     session: &mut SemanticSession,
     deadline: QueryDeadline,
+) -> Result<String> {
+    let policy = HomeIndexPolicy::for_search(options.no_daemon);
+    search_with_policy(
+        config, cache, results, options, context, session, deadline, policy,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn search_with_policy(
+    config: &WorkspaceConfig,
+    cache: &std::path::Path,
+    results: &WorkspaceResults,
+    options: &Arguments,
+    context: &RequestContext,
+    session: &mut SemanticSession,
+    deadline: QueryDeadline,
+    policy: HomeIndexPolicy,
 ) -> Result<String> {
     let roots = config.member_roots(&options.root.canonicalize()?)?;
     let Scope {
@@ -184,10 +129,16 @@ pub(super) fn search(
             ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
             member.verify_identity()?;
             coordinator::ensure_member(member, options)?;
-            if options.no_daemon {
-                Store::open(&member.root, &member_cache)?.index()?;
-            }
-            let store = open_member_read(member, &member_cache, !options.no_daemon, deadline)?;
+            let explicit_cache = options.cache.as_deref();
+            let (store, fallback) =
+                match resolve_home_index(member, &member_cache, explicit_cache, policy, deadline) {
+                    HomeIndexSource::Own(store) => (store, None),
+                    HomeIndexSource::Parent(view) => (view.store, Some(view.fallback)),
+                    HomeIndexSource::Warming { reason } => {
+                        return Ok(MemberAnswer::Warming(reason));
+                    }
+                    HomeIndexSource::Unavailable { reason } => anyhow::bail!(reason),
+                };
             let preparation_error = if semantic && !options.no_daemon {
                 crate::semantic::preparation::schedule(&member.root, &member_cache).err()
             } else {
@@ -223,8 +174,18 @@ pub(super) fn search(
             if let Some(error) = preparation_error {
                 found.coverage["semantic_preparation_error"] = error.to_string().into();
             }
+            if let Some(fallback) = &fallback {
+                fallback.complete_answer(&store, verb, &words, &query, &mut found);
+            }
+            if found.coverage["truncated_files"].as_u64().unwrap_or(0) > 0 {
+                found.coverage["unsearched_paths"] = fact_limit_paths(&store)?.into();
+            }
             let owner = MemberSnapshot::capture(member, &store, &member_cache, found.generation)?;
-            Ok::<_, anyhow::Error>((owner, found))
+            Ok::<_, anyhow::Error>(MemberAnswer::Found {
+                owner: Box::new(owner),
+                found,
+                fallback,
+            })
         })()
         .map_err(|error| deadline.classify(error));
         if semantic && !preparation_recorded {
@@ -234,7 +195,7 @@ pub(super) fn search(
         let mut event = RequestEvent::new(
             context.clone(),
             Operation::Search,
-            if found.is_ok() {
+            if matches!(found, Ok(MemberAnswer::Found { .. })) {
                 Outcome::Success
             } else {
                 Outcome::Unavailable
@@ -246,8 +207,13 @@ pub(super) fn search(
         event.workspace = Some(config.id.clone());
         event.member = Some(member.name().to_owned());
         crate::diagnostics::best_effort_record(&log_cache, mode, event);
+        let mut member_state = "searched";
         match found {
-            Ok((mut owner, found)) => {
+            Ok(MemberAnswer::Found {
+                mut owner,
+                found,
+                fallback,
+            }) => {
                 owner.coverage = found.coverage.clone();
                 let owner_index = set.owners.len();
                 let mut bytes = 0;
@@ -257,6 +223,7 @@ pub(super) fn search(
                     let entry = OwnedEntry {
                         owner: owner_index,
                         member_rank: rank + 1,
+                        worktree_differs: fallback.as_ref().is_some_and(|f| f.differs(&hit.path)),
                         entry: ResultEntry::LiveSource(hit),
                     };
                     bytes += serde_json::to_vec(&entry)?.len();
@@ -266,59 +233,62 @@ pub(super) fn search(
                     entries.push(entry);
                 }
                 let truncated = found.truncated || entries.len() < total;
-                let mut coverage = json!({"member":member.name(),"state":"searched","generation":owner.generation,"retained":entries.len(),"truncated":truncated,"partial":partial_coverage(&found.coverage),"unsearched":unsearched_files(&found.coverage),"issues":coverage_issues(&found.coverage)});
-                if let Some(label) = &member.worktree {
-                    coverage["root"] = crate::store::encode_path(&member.root).into();
-                    coverage["worktree"] = label.clone().into();
+                let mut coverage = searched_row(
+                    member,
+                    owner.generation,
+                    entries.len(),
+                    truncated,
+                    &found.coverage,
+                );
+                if let Some(fallback) = &fallback {
+                    let differing = entries.iter().filter(|e| e.worktree_differs).count();
+                    fallback.describe(&mut coverage, differing);
                 }
                 set.coverage.push(coverage);
                 set.truncated |= truncated;
-                set.owners.push(owner);
+                set.owners.push(*owner);
                 lists.push(entries.into_iter());
             }
+            Ok(MemberAnswer::Warming(reason)) => {
+                member_state = "warming";
+                let mut coverage = member_row(member, member_state);
+                if let Some(reason) = reason {
+                    coverage["reason"] = reason.into();
+                }
+                set.coverage.push(coverage);
+            }
             Err(error) => {
-                let state = if is_index_warming(&error) {
+                member_state = if is_index_warming(&error) {
                     "warming"
                 } else if is_timed_out(&error) {
                     "timed_out"
                 } else {
                     "unavailable"
                 };
-                let mut coverage = json!({"member":member.name(),"state":state});
-                if let Some(label) = &member.worktree {
-                    coverage["root"] = crate::store::encode_path(&member.root).into();
-                    coverage["worktree"] = label.clone().into();
+                let mut coverage = member_row(member, member_state);
+                if member_state == "unavailable" {
+                    coverage["reason"] = short_reason(&error).into();
                 }
                 set.coverage.push(coverage);
             }
         }
         if implicit_home && position == 1 {
-            let others = roots.len() - 1;
-            let home_empty = lists.first().is_none_or(|list| list.len() == 0);
-            set.scope = Some(if others == 0 {
-                "home".to_owned()
-            } else if home_empty {
+            let home_hits = lists.first().is_some_and(|list| list.len() > 0);
+            let (scope, widen) =
+                implicit_home_scope(roots.len() - 1, !lists.is_empty(), home_hits, member_state);
+            if widen {
                 queue.extend((0..roots.len()).filter(|&i| i != index));
-                let reason = if lists.is_empty() {
-                    "home unavailable"
-                } else {
-                    "no home hits"
-                };
-                format!("all ({reason})")
-            } else {
-                format!(
-                    "home (ws:all adds {others} member{})",
-                    if others == 1 { "" } else { "s" }
-                )
-            });
+            }
+            set.scope = Some(scope);
         }
     }
     ensure!(
         !set.owners.is_empty() || !deadline.expired(),
         "{TIMED_OUT}: query deadline expired before any member answered"
     );
+    // An unselected query whose home is not answering reports that on an empty page.
     ensure!(
-        !set.owners.is_empty(),
+        !set.owners.is_empty() || implicit_home,
         "workspace_unavailable: no selected member has an available published index; inspect ws status or use --no-daemon"
     );
     set.hits.reserve(lists.iter().map(|list| list.len()).sum());
@@ -334,67 +304,4 @@ pub(super) fn search(
     let id = results.save(set)?;
     let budget = OutputBudget::new(options.budget)?.with_format(options.output_format());
     results.page(&id, 0, options.limit, &budget)
-}
-
-/// Counters of files whose bytes a search could not examine. Excluded (binary,
-/// oversized) files, parse failures (still lexically searchable), and semantic
-/// lane status do not make lexical coverage partial; they stay in `issues`.
-const UNSEARCHED_KEYS: [&str; 4] = [
-    "walk_failures",
-    "truncated_files",
-    "live_read_failures",
-    "live_walk_failures",
-];
-
-fn partial_coverage(coverage: &serde_json::Value) -> bool {
-    UNSEARCHED_KEYS
-        .iter()
-        .any(|key| coverage[key].as_u64().unwrap_or(0) > 0)
-}
-
-/// Files a search could not examine, for the `partial (N unsearched)` summary.
-fn unsearched_files(coverage: &serde_json::Value) -> u64 {
-    UNSEARCHED_KEYS
-        .iter()
-        .map(|key| coverage[key].as_u64().unwrap_or(0))
-        .sum()
-}
-
-fn coverage_issues(coverage: &serde_json::Value) -> serde_json::Value {
-    let mut issues = serde_json::Map::new();
-    for key in [
-        "parse_failures",
-        "excluded_files",
-        "walk_failures",
-        "truncated_files",
-        "live_read_failures",
-        "live_walk_failures",
-        "semantic_failures",
-        "semantic_pending",
-    ] {
-        if coverage[key].as_u64().unwrap_or(0) > 0 {
-            issues.insert(key.into(), coverage[key].clone());
-        }
-    }
-    for key in [
-        "semantic_status",
-        "semantic_reason",
-        "semantic_preparation_error",
-        "rerank_status",
-        "rerank_reason",
-    ] {
-        if let Some(value) = coverage.get(key) {
-            issues.insert(key.into(), value.clone());
-        }
-    }
-    if coverage.get("semantic_total_regions").is_some() {
-        for key in [
-            "semantic_total_regions",
-            "semantic_regions",
-            "semantic_scope",
-        ] {
-            issues.insert(key.into(), coverage[key].clone());
-        }
-    }
-    serde_json::Value::Object(issues)
 }

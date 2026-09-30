@@ -1,6 +1,8 @@
 //! Owner routing verifies recorded roots and source identities before every follow-up.
 use super::{
-    WorkspaceConfig, member_cache, member_options,
+    WorkspaceConfig,
+    home_index::{acquire_home_read, reextracted_entry, reextracted_from},
+    member_cache, member_options,
     result_cache::{MemberSnapshot, OwnedEntry, WorkspaceResults, WorkspaceSet},
     selected_member,
 };
@@ -11,7 +13,7 @@ use crate::{
     output::OutputBudget,
     results::{self, ResultEntry},
     source::{self, SourceSide, acquisition},
-    store::{Store, is_index_warming},
+    store::Store,
 };
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
@@ -91,8 +93,21 @@ pub(super) fn read(
                 &metadata,
             );
         }
-        let mut source =
-            acquisition::acquire_entry(&store, &handle, hit.entry.clone(), side.or(recorded_side))?;
+        let mut metadata = metadata;
+        let side = side.or(recorded_side);
+        let mut source = match acquisition::acquire_entry(&store, &handle, hit.entry.clone(), side)
+        {
+            // A parent-index definition whose worktree file changed re-reads current bytes.
+            Err(error)
+                if owner.parent_index.is_some()
+                    && error.to_string().starts_with("stale_source") =>
+            {
+                let current = reextracted_entry(&store, &handle, &hit.entry)?.ok_or(error)?;
+                metadata["served_from"] = reextracted_from(&owner.name).into();
+                current
+            }
+            acquired => acquired?,
+        };
         if let Some(offset) = offset {
             ensure!(
                 offset >= source.span.start && offset <= source.span.end,
@@ -109,15 +124,20 @@ pub(super) fn read(
     let member = selected_member(config, options)?;
     member.verify_identity()?;
     let cache = member_cache(&member, options.cache.as_deref())?;
-    // A member without a published index still serves explicit path reads.
-    let store = match Store::open_read(&member.root, &cache, deadline) {
-        Err(error) if is_index_warming(&error) => Store::open(&member.root, &cache)?,
-        opened => opened?,
-    };
-    let mut source = acquisition::acquire(&store, target, side)?;
+    let (store, mut source, reextracted) = acquire_home_read(
+        &member,
+        &cache,
+        options.cache.as_deref(),
+        target,
+        side,
+        deadline,
+    )?;
     let (_, entry) = results::entry(&store, &source.handle)?;
     let owner = MemberSnapshot::capture(&member, &store, &cache, store.generation()?)?;
-    let metadata = owner.metadata(&config.name);
+    let mut metadata = owner.metadata(&config.name);
+    if reextracted {
+        metadata["served_from"] = reextracted_from(&owner.name).into();
+    }
     let id = results.save(WorkspaceSet {
         workspace: config.name.clone(),
         home: Some(member.name().to_owned()),
@@ -127,6 +147,7 @@ pub(super) fn read(
             owner: 0,
             member_rank: 1,
             entry,
+            worktree_differs: reextracted,
         }],
         truncated: false,
         scope: None,
@@ -203,6 +224,7 @@ pub(super) fn history(
                 owner: 0,
                 member_rank: rank + 1,
                 entry,
+                worktree_differs: false,
             })
             .collect();
         let id = workspace_results.save(WorkspaceSet {workspace:config.name.clone(),home:Some(member.name().to_owned()),owners:vec![owner],coverage:vec![json!({"member":member.name(),"state":"searched","generation":set.generation,"detail":set.coverage})],hits:entries,truncated:set.truncated,scope:None})?;

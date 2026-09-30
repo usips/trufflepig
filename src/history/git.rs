@@ -35,6 +35,12 @@ pub fn common_dir(directory: &Path) -> Result<PathBuf> {
     .context("canonicalize Git common directory")
 }
 
+/// Runs one read-only plumbing command in `directory`, killed after `timeout`.
+pub fn run_bounded(directory: &Path, args: &[&str], timeout: Duration) -> Result<Vec<u8>> {
+    let arguments: Vec<_> = args.iter().map(OsStr::new).collect();
+    execute_bounded(directory, &arguments, None, timeout)
+}
+
 impl GitRepository {
     pub fn discover(root: &Path) -> Result<Self> {
         let root = root.canonicalize().context("canonicalize history root")?;
@@ -191,6 +197,15 @@ fn execute(directory: &Path, args: &[&str], input: Option<&[u8]>) -> Result<Vec<
 }
 
 fn execute_os(directory: &Path, args: &[&OsStr], input: Option<&[u8]>) -> Result<Vec<u8>> {
+    execute_bounded(directory, args, input, COMMAND_TIMEOUT)
+}
+
+fn execute_bounded(
+    directory: &Path,
+    args: &[&OsStr],
+    input: Option<&[u8]>,
+    timeout: Duration,
+) -> Result<Vec<u8>> {
     let name = args.first().and_then(|name| name.to_str()).unwrap_or("");
     ensure!(
         matches!(
@@ -290,7 +305,7 @@ fn execute_os(directory: &Path, args: &[&OsStr], input: Option<&[u8]>) -> Result
         command.arg("--no-textconv");
     }
     command.args(&args[1..]);
-    collect_process(command, input, COMMAND_TIMEOUT, MAX_OUTPUT_BYTES)
+    collect_process(command, input, timeout, MAX_OUTPUT_BYTES)
 }
 
 // Git's supplied-buffer blame calls convert_to_git even with --no-textconv.

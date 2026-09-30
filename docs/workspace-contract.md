@@ -69,28 +69,40 @@ including under the member's own tree. Worktree membership is decided by
 canonical Git common directory (`src/workspace/member_root.rs`), never by path
 prefix alone, so a nested unrelated repository stays part of its enclosing
 member. The worktree stands in for the member's configured root: its files are
-searched and read under the member's name with a separate index cache, `ws:home`
-selects it, other members keep their configured roots, and coverage reports the
-substitution as `member@worktree` in lines format and as `root` plus `worktree`
-fields in JSON. Hits carry the plain member name.
+searched and read under the member's name with a separate index cache (seeded
+from the member's), `ws:home` selects it, other members keep their configured
+roots, and coverage reports the substitution as `member@worktree` in lines and
+as `root` plus `worktree` fields in JSON. Hits carry the plain member name.
 
 `ws show` reports configuration, home, roots, and availability. `ws status` adds
-available publication generations and coverage. `ws discover PATH...` validates
-the supplied directories and returns a proposed TOML configuration in JSON. It
-does not apply the proposal, fetch repositories, or discover unrelated siblings.
+available publication generations, coverage, and a worktree's last `seed`
+outcome. `ws discover PATH...` validates the supplied directories and returns a
+proposed TOML configuration in JSON. It does not apply the proposal, fetch
+repositories, or discover unrelated siblings.
 
 ## Retrieval and output
 
 A query without a selector searches the home member when the invocation is
-inside one, waiting up to eight seconds for a home index that is not yet
-published (for example a freshly seeded worktree). When home yields no hits or
-no published index, the query widens to all members. The page's `scope` records
-which happened (`home (ws:all adds N members)`, `all (no home hits)`, or
-`all (home unavailable)`) and lines output appends it to the coverage line.
+inside one. An unpublished linked-worktree home answers at once from its
+member's published index (`src/workspace/home_index.rs`, below); otherwise a
+daemon-backed query waits up to eight seconds. Home without hits widens to all
+members; a warming or unavailable home never widens. The page's `scope` records
+which (`home (ws:all adds N members)`, `all (no home hits)`, `home (warming;
+ws:all searches N members)`); lines output appends it to the coverage line.
 Outside any member, queries search all members. `in:NAME` and `--member NAME`
 select a member; `ws:home` selects home and `ws:all` selects the whole
 workspace, and explicit selectors never widen. Selectors do not establish
 dependency, import, or compiler-resolution relationships.
+
+A parent-index answer reads worktree bytes through the member's index; its row
+has `state: parent_fallback`, `home_state`, `served_from`, `differs` (`null`
+when unknown), and `differing_hits`. Lines read `MEMBER@WT warming → served from
+MEMBER index (N files differ)`, `(no files differ)`, or `(differences unknown)`;
+hits in differing files (worktree changes against the parent's `HEAD` plus the
+parent's own uncommitted files, `home_index/worktree_divergence.rs`) end in
+`differs`. `sym:` without a hit, `map FILE`, and `show` re-extract differing
+files (`served_from: MEMBER index; re-extracted in worktree`). Without a
+published parent, home reads `MEMBER@WT warming (no parent index)`.
 
 Each member produces its existing ranked candidate list. Retrieval collapses
 each lane to one representative occurrence per file, then fuses file ranks with
@@ -98,31 +110,30 @@ stable path and span tie breaks. The coordinator combines member file lanes with
 member provenance; raw scores from separate indexes are not compared. There is
 no elapsed-time lane omission.
 
-Every emitted hit includes its member name. The page's `members` mapping resolves
-represented names to percent-encoded canonical roots. Coverage distinguishes
-unavailable members and retained candidate counts from exhaustive match counts.
-A member is `partial` only when files could not be examined (walk, live-read,
-or truncation failures), counted as `unsearched`; excluded binary or oversized
-files, parse failures (still lexically searchable), and semantic or rerank
-status remain in `issues`. The lines summary reads `MEMBER complete` or
-`MEMBER partial (N unsearched)` and omits lanes whose reason says they were
-never configured. Each member receives an equal share of the retained
-candidate/byte ceiling; omissions are explicit rather than exhaustive counts.
-Missing or not-yet-published members produce partial coverage. Members not
-searched before the request's 20 s query deadline expires report state
-`timed_out` (`MEMBER timed out`). If no selected member is available, the command
-returns an explicit unavailable outcome, or `timed_out` when the deadline expired.
+Every emitted hit includes its member name. The page's `members` mapping
+resolves represented names to percent-encoded canonical roots. Coverage
+distinguishes unavailable members and retained candidate counts from exhaustive
+match counts. A member is `partial` only when files could not be examined,
+counted as `unsearched` by kind (`walk_error`, `read_error`, `fact_limit`; up to
+five fact-limited paths in `issues.unsearched_paths`); excluded binary or
+oversized files, parse failures, and semantic or rerank status remain in
+`issues`. Lines read `MEMBER complete` or `MEMBER partial (N unsearched: KIND)`
+and omit lanes never configured. Each member receives an equal share of the
+retained candidate/byte ceiling; omissions are explicit rather than exhaustive
+counts. Unpublished members report `warming`, unavailable ones a 120-character
+`reason` (`MEMBER unavailable (REASON)`), and members reached after the 20 s
+query deadline `timed_out` (`MEMBER timed out`). With no explicitly selected
+member available, the command fails `workspace_unavailable` (or `timed_out`).
 
-The normal 600-token `o200k_base` budget applies once to the complete
-response in the selected format, including provenance and coverage. Compact
-entries carry a percent-encoded `file` URI, line span, and owner-qualified
-handle; lines format prefixes each path with its member and reduces coverage to
-one line that still names every member's `partial` and `truncated` state
+The normal 600-token `o200k_base` budget applies once to the complete response
+in the selected format, including provenance and coverage. Compact entries carry
+a percent-encoded `file` URI, line span, and owner-qualified handle; lines
+format prefixes each path with its member and reduces coverage to one line that
+still names every member's `partial` and `truncated` state
 (`src/workspace/result_cache/lines.rs`). Labels cannot be removed to squeeze in
-additional hits. Tiny budgets retain explicit
-insufficient-budget behavior. Pages capture each member's publication generation
-separately and freeze those owners for follow-up reads; they are not atomic
-snapshots spanning repositories.
+additional hits. Tiny budgets retain explicit insufficient-budget behavior.
+Pages capture each member's publication generation separately and freeze those
+owners for follow-up reads; they are not atomic snapshots spanning repositories.
 
 ## Immutable navigation
 
@@ -131,7 +142,8 @@ and `SET@OFFSET` retain the existing ten-minute expiry and result-cache limits.
 Each persisted entry captures its owning root (the worktree when one stands in
 for the member), filesystem identity, cache, generation, source revision, and
 original-byte coordinates. A worktree owner reopens only while that worktree is
-still a linked worktree of its member. Pagination preserves
+still a linked worktree of its member; a parent-index owner (`parent_index`)
+reopens that same view even after the worktree publishes. Pagination preserves
 the captured file-first order across repositories even when later searches or
 configuration changes produce different ranks.
 

@@ -14,6 +14,7 @@ pub(super) fn live_regex(
         .size_limit(8 * 1024 * 1024)
         .build()?;
     let mut failures = 0usize;
+    let mut excluded = 0usize;
     let mut walk_failures = 0usize;
     let mut checked = 0usize;
     let cache = cache.canonicalize().unwrap_or_else(|_| cache.to_owned());
@@ -50,15 +51,20 @@ pub(super) fn live_regex(
         {
             continue;
         }
+        // Oversized and binary files are excluded by contract, not unsearched.
         let source = match source::read_contained(&store.root, relative, source::MAX_READ_BYTES) {
             Ok(bytes) => bytes,
+            Err(error) if error.to_string().starts_with("source_excluded") => {
+                excluded += 1;
+                continue;
+            }
             Err(_) => {
                 failures += 1;
                 continue;
             }
         };
         if source.contains(&0) {
-            failures += 1;
+            excluded += 1;
             continue;
         }
         checked += 1;
@@ -126,6 +132,27 @@ pub(super) fn live_regex(
     }
     coverage["live_checked_files"] = checked.into();
     coverage["live_read_failures"] = failures.into();
+    coverage["live_excluded_files"] = excluded.into();
     coverage["live_walk_failures"] = walk_failures.into();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{search::Query, store::Store};
+
+    #[test]
+    fn binary_files_are_excluded_not_unsearched() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("lib.rs"), "fn needle() {}\n").unwrap();
+        std::fs::write(root.path().join("blob.bin"), b"needle\0\x01").unwrap();
+        let mut store = Store::open(root.path(), cache.path()).unwrap();
+        store.index().unwrap();
+        let query = Query::parse("re:needle").unwrap();
+        let found = crate::search::search(&store, &query, false, cache.path()).unwrap();
+        assert_eq!(found.hits.len(), 1);
+        assert_eq!(found.coverage["live_read_failures"], 0);
+        assert_eq!(found.coverage["live_excluded_files"], 1);
+    }
 }

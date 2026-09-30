@@ -28,7 +28,7 @@ pub use paths::{decode_path, encode_path};
 pub use read_access::is_index_warming;
 use rusqlite::Connection;
 pub(crate) use scan::extraction_cache_version;
-pub use seed::{SeedOutcome, ensure_seeded};
+pub use seed::{SeedOutcome, ensure_seeded, read_seed_outcome};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 pub(crate) use worktree_seed_source::linked_worktree_main_checkout;

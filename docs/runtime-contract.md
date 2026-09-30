@@ -4,8 +4,8 @@ The cache defaults to `$XDG_CACHE_HOME/trufflepig/<root-hash>`, or
 `$HOME/.cache/trufflepig/<root-hash>`. `--cache DIRECTORY` overrides it. Each cache
 belongs to one canonical root; use disk-backed storage for the index and staging
 database and avoid RAM-backed `/tmp`. A linked Git worktree owns its own cache,
-seeded from its main checkout's default cache when that cache holds an index
-(`src/store/seed.rs`). The router evicts a default-base cache whose recorded
+seeded silently from its main checkout's default cache when that cache holds an
+index (`src/store/seed.rs`, outcome in `seed-outcome.json`). The router evicts a default-base cache whose recorded
 root no longer exists, on startup and every ten minutes, after a one-minute grace
 period and only when the root's parent directory still exists (`src/system/sweep.rs`);
 `system prune` runs that sweep now. Explicit `--cache` bases are never swept.

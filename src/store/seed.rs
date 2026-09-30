@@ -2,10 +2,13 @@
 //! facts and embeddings so the first reconcile skips parsing unchanged files.
 //! A seeded store has generation 0 and no publication, so the worktree always
 //! publishes its own generation 1; `preparation.sqlite3` is never copied.
+//! Seeding never writes to stdout or stderr: each attempt that does work is
+//! recorded in `<worktree cache>/seed-outcome.json` ([`read_seed_outcome`]).
 
 use super::{encode_path, publish, schema};
 use anyhow::{Context, Result};
 use rusqlite::Connection;
+use serde_json::{Value, json};
 use std::{
     fs::{self, File, OpenOptions},
     os::unix::fs::PermissionsExt,
@@ -18,6 +21,7 @@ pub const MAX_SEED_SOURCE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const INDEX_NAME: &str = "index.sqlite3";
 const EMBEDDINGS_NAME: &str = "embeddings.sqlite";
 const SEED_SUFFIX: &str = ".seed";
+const OUTCOME_NAME: &str = "seed-outcome.json";
 
 /// Result of seeding a worktree cache; `Skipped` names the reason for diagnostics.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,7 +34,7 @@ pub enum SeedOutcome {
     Skipped(&'static str),
 }
 
-/// Never fails: any error removes partial files, logs once to stderr, and yields `Skipped`.
+/// Never fails: any error removes partial files and yields `Skipped`.
 pub fn ensure_seeded(
     member_cache: &Path,
     worktree_root: &Path,
@@ -51,33 +55,52 @@ pub fn ensure_seeded_with_limit(
     worktree_cache: &Path,
     max_source_bytes: u64,
 ) -> SeedOutcome {
-    match seed(
+    let mut record = json!({"source": encode_path(member_cache), "recorded_ms": now_ms()});
+    let outcome = match seed(
         member_cache,
         worktree_root,
         worktree_cache,
         max_source_bytes,
+        &mut record,
     ) {
-        Ok(outcome) => {
-            if let SeedOutcome::Seeded {
-                extraction_rows,
-                embeddings,
-            } = outcome
-            {
-                eprintln!(
-                    "trufflepig: seeded {} from {} ({extraction_rows} extraction rows, embeddings: {})",
-                    worktree_cache.display(),
-                    member_cache.display(),
-                    if embeddings { "yes" } else { "no" }
-                );
-            }
-            outcome
-        }
+        Ok(outcome) => outcome,
         Err(error) => {
             remove_partial_files(worktree_cache);
-            eprintln!("trufflepig: seed skipped: {error:#}");
+            record["error"] = format!("{error:#}").into();
             SeedOutcome::Skipped("seed failed")
         }
+    };
+    match &outcome {
+        SeedOutcome::Present => return outcome,
+        SeedOutcome::Seeded {
+            extraction_rows,
+            embeddings,
+        } => {
+            record["outcome"] = "seeded".into();
+            record["extraction_rows"] = (*extraction_rows).into();
+            record["embeddings"] = (*embeddings).into();
+        }
+        SeedOutcome::Skipped(reason) => {
+            record["outcome"] = "skipped".into();
+            record["reason"] = (*reason).into();
+        }
     }
+    // Best effort: the record is diagnostic, and a missing one only hides detail.
+    let _ = fs::write(worktree_cache.join(OUTCOME_NAME), record.to_string());
+    outcome
+}
+
+/// The last recorded seeding attempt for `worktree_cache`, if any.
+pub fn read_seed_outcome(worktree_cache: &Path) -> Option<Value> {
+    let bytes = fs::read(worktree_cache.join(OUTCOME_NAME)).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 fn seed(
@@ -85,6 +108,7 @@ fn seed(
     worktree_root: &Path,
     worktree_cache: &Path,
     max_source_bytes: u64,
+    record: &mut Value,
 ) -> Result<SeedOutcome> {
     fs::create_dir_all(worktree_cache)?;
     fs::set_permissions(worktree_cache, fs::Permissions::from_mode(0o700))?;
@@ -115,7 +139,7 @@ fn seed(
         Ok(copied) => copied,
         Err(error) => {
             let _ = fs::remove_file(seed_path(worktree_cache, EMBEDDINGS_NAME));
-            eprintln!("trufflepig: seed embeddings skipped: {error:#}");
+            record["embeddings_error"] = format!("{error:#}").into();
             false
         }
     };

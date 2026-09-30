@@ -12,7 +12,7 @@ use crate::{
     store::{Store, decode_path, encode_path, is_index_warming},
 };
 use anyhow::{Context, Result, bail, ensure};
-use lines::{compact_coverage, member_coverage_summary};
+use lines::{compact_coverage, mark_worktree_differs, member_coverage_summary};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -34,6 +34,17 @@ pub struct MemberSnapshot {
     /// Worktree label when the owning root is a linked worktree of the member.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree: Option<String>,
+    /// The parent member index that answered for a warming worktree; follow-ups
+    /// reopen that same view even after the worktree publishes its own index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_index: Option<ParentIndexRecord>,
+}
+
+/// Root and cache of the parent member index a worktree result was served from.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ParentIndexRecord {
+    pub root: String,
+    pub cache: String,
 }
 impl MemberSnapshot {
     pub fn capture(
@@ -63,6 +74,10 @@ impl MemberSnapshot {
             generation,
             coverage: serde_json::to_value(store.coverage()?)?,
             worktree: member.worktree.clone(),
+            parent_index: (store.index_root() != store.root).then(|| ParentIndexRecord {
+                root: encode_path(store.index_root()),
+                cache: encode_path(store.index_cache()),
+            }),
         })
     }
     /// The owning member with the recorded root; a worktree owner must still be
@@ -101,16 +116,30 @@ impl MemberSnapshot {
             "member_unavailable: result owner was replaced"
         );
         let cache = decode_path(&self.cache)?;
-        ensure!(
-            cache.join("index.sqlite3").is_file(),
-            "member_unavailable: owning index was removed"
-        );
-        // An explicit path read captured before the first publication reopens as it was served.
-        let store = match Store::open_read(&member.root, &cache, deadline) {
-            Err(error) if self.generation == 0 && is_index_warming(&error) => {
-                Store::open(&member.root, &cache)?
+        let store = if let Some(parent) = &self.parent_index {
+            ensure!(
+                encode_path(&member.member.root) == parent.root,
+                "member_unavailable: parent index owner changed"
+            );
+            let parent_cache = decode_path(&parent.cache)?;
+            ensure!(
+                parent_cache.join("index.sqlite3").is_file(),
+                "member_unavailable: owning index was removed"
+            );
+            Store::open_read(&member.member.root, &parent_cache, deadline)?
+                .reading_from(&member.root, &cache)?
+        } else {
+            ensure!(
+                cache.join("index.sqlite3").is_file(),
+                "member_unavailable: owning index was removed"
+            );
+            // An explicit path read captured before the first publication reopens as it was served.
+            match Store::open_read(&member.root, &cache, deadline) {
+                Err(error) if self.generation == 0 && is_index_warming(&error) => {
+                    Store::open(&member.root, &cache)?
+                }
+                opened => opened?,
             }
-            opened => opened?,
         };
         let current: Option<String> = store
             .conn
@@ -129,6 +158,9 @@ impl MemberSnapshot {
         if let Some(label) = &self.worktree {
             value["worktree"] = label.clone().into();
         }
+        if self.parent_index.is_some() {
+            value["served_from"] = format!("{} index", self.name).into();
+        }
         value
     }
 }
@@ -138,6 +170,9 @@ pub struct OwnedEntry {
     pub owner: usize,
     pub member_rank: usize,
     pub entry: ResultEntry,
+    /// The hit's file may differ between the worktree and the parent index that answered.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub worktree_differs: bool,
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WorkspaceSet {
@@ -268,14 +303,17 @@ impl WorkspaceResults {
         let render_detail = |count: usize, detail: HitDetail| -> Result<String> {
             match budget.format {
                 OutputFormat::Json => budget.encode(&page_value(&set, id, offset, count, detail)?),
-                OutputFormat::Lines => Ok(results::lines::page_text(
-                    set.hits[offset..offset + count]
-                        .iter()
-                        .map(|owned| (Some(set.owners[owned.owner].name.as_str()), &owned.entry)),
-                    detail,
-                    &coverage_line,
-                    results::lines::next_cursor(id, offset, count, set.hits.len()).as_deref(),
-                    set.truncated,
+                OutputFormat::Lines => Ok(mark_worktree_differs(
+                    results::lines::page_text(
+                        set.hits[offset..offset + count].iter().map(|owned| {
+                            (Some(set.owners[owned.owner].name.as_str()), &owned.entry)
+                        }),
+                        detail,
+                        &coverage_line,
+                        results::lines::next_cursor(id, offset, count, set.hits.len()).as_deref(),
+                        set.truncated,
+                    ),
+                    &set.hits[offset..offset + count],
                 )),
             }
         };
@@ -327,6 +365,9 @@ fn page_value(
             entry["member"] = owner.name.clone().into();
             if !matches!(&owned.entry, ResultEntry::LiveSource(_)) {
                 entry["member_rank"] = owned.member_rank.into();
+            }
+            if owned.worktree_differs {
+                entry["differs"] = true.into();
             }
         }
         hits.push(entry);

@@ -47,6 +47,9 @@ pub(crate) fn show_text(value: &Value) -> String {
     if byte_escaped {
         out.push_str("encoding: byte-escaped\n");
     }
+    if let Some(served_from) = value["served_from"].as_str() {
+        let _ = writeln!(out, "served_from: {served_from}");
+    }
     if let Some(commit) = value["historical"]["commit"].as_str() {
         let _ = writeln!(out, "commit: {commit}");
     }
