@@ -17,12 +17,13 @@ mod snippets;
 pub mod telemetry;
 #[cfg(test)]
 mod tests;
-pub use declarations::{InvocationDirectory, rank_declarations};
+pub use declarations::InvocationDirectory;
 pub(crate) use file_ranking::fuse_search_file_lanes as fuse_file_lanes;
 pub use import_trail::{ImportHop, ImportTrail, trace_import};
 pub(crate) use navigation::context_entry;
 pub use navigation::{
-    REFERENCE_COVERAGE_KEYS, context, map, map_miss, reference_query, reference_summary, references,
+    REFERENCE_COVERAGE_KEYS, context, map, map_miss, outline_extracted, reference_query,
+    reference_summary, references,
 };
 pub use path_filter::{BoundPathFilter, PathFilter};
 pub use rerank_window::RerankScorer;
@@ -252,7 +253,7 @@ pub fn search_prepared(
             hits = exact.hits;
             if query.exact {
                 // `sym:` pages lead with declarations, not imports that share the name.
-                declarations::rank_declarations(&mut hits, &InvocationDirectory::root());
+                rank_definitions(&mut hits, &InvocationDirectory::root());
             }
         }
     }
@@ -327,7 +328,7 @@ pub fn definitions(
         mut hits,
         truncated,
     } = declarations::declaration_hits(store, query, &query.path.bind(&store.conn)?)?;
-    declarations::rank_declarations(&mut hits, origin);
+    rank_definitions(&mut hits, origin);
     snippets::attach(store, &snippets::preview_terms(&query.text), &mut hits)?;
     snapshot.commit()?;
     Ok(ResultSet {
@@ -336,6 +337,30 @@ pub fn definitions(
         truncated,
         hits,
     })
+}
+
+/// Whether an extracted definition answers `query`'s `sym:` name: `name` or
+/// `Qualifier::name` (qualifier matched against `path` and `container`), and `kind:`.
+pub fn names_definition(
+    query: &Query,
+    path: &str,
+    definition: &crate::extract::Definition,
+) -> bool {
+    let name = qualified_name::QualifiedName::parse(&query.text);
+    definition.name == name.name
+        && (query.kind.is_empty() || definition.kind == query.kind)
+        && (!name.is_qualified()
+            || name
+                .matches(path, definition.container.as_deref())
+                .is_some())
+}
+
+/// The one ordering for definition hits from any source (index rows, worktree
+/// re-extraction): path order, then [`declarations::rank_declarations`] (kind
+/// tier, non-test before test, nearest `origin`), stable.
+pub fn rank_definitions(hits: &mut [Hit], origin: &InvocationDirectory) {
+    hits.sort_by(|a, b| (a.path.as_str(), a.start, a.end).cmp(&(b.path.as_str(), b.start, b.end)));
+    declarations::rank_declarations(hits, origin);
 }
 
 #[derive(Debug)]

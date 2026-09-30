@@ -122,6 +122,7 @@ fn workspace_pages_use_absolute_file_locators_and_compact_coverage() -> Result<(
             generation: 4,
             coverage: json!({}),
             worktree: None,
+            parent_index: None,
         }],
         coverage: vec![json!({
             "member":"member",
@@ -134,6 +135,7 @@ fn workspace_pages_use_absolute_file_locators_and_compact_coverage() -> Result<(
             owner: 0,
             member_rank: 1,
             entry: ResultEntry::LiveSource(hit),
+            worktree_differs: false,
         }],
         truncated: false,
         scope: None,
@@ -179,6 +181,7 @@ fn empty_workspace_lines_page_groups_member_filter_diagnoses() -> Result<()> {
         generation: 1,
         coverage: json!({"filter_diagnosis": diagnosis}),
         worktree: None,
+        parent_index: None,
     };
     let mut set = empty_set();
     set.owners = vec![

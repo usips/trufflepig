@@ -82,8 +82,9 @@ pub(super) fn rank_key(hit: &Hit, origin: &InvocationDirectory) -> (u8, bool, Re
     )
 }
 
-/// Stable ranking by [`rank_key`], so ties keep SQL path order.
-pub fn rank_declarations(hits: &mut [Hit], origin: &InvocationDirectory) {
+/// Stable ranking by [`rank_key`], so ties keep path order; callers outside
+/// this module use [`super::rank_definitions`].
+pub(super) fn rank_declarations(hits: &mut [Hit], origin: &InvocationDirectory) {
     hits.sort_by_key(|hit| rank_key(hit, origin));
 }
 

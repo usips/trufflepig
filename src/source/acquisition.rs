@@ -13,7 +13,7 @@ mod symbol;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use symbol::{SymbolSelection, show_target};
+pub(crate) use symbol::{SymbolSelection, read_symbol, show_target};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SourceSide {

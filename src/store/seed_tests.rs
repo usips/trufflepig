@@ -1,4 +1,4 @@
-use super::seed::{SeedOutcome, ensure_seeded, ensure_seeded_with_limit};
+use super::seed::{SeedOutcome, ensure_seeded, ensure_seeded_with_limit, read_seed_outcome};
 use super::{Store, encode_path};
 use crate::extract::{Definition, Extraction};
 use rusqlite::{Connection, params};
@@ -130,6 +130,23 @@ fn seeded_store_has_no_publication_until_indexed() {
     assert!(
         !fixture.worktree_cache.join("preparation.sqlite3").exists()
             && seed_leftovers(&fixture.worktree_cache).is_empty()
+    );
+    let recorded = read_seed_outcome(&fixture.worktree_cache).unwrap();
+    assert_eq!(recorded["outcome"], "seeded");
+    assert_eq!(recorded["extraction_rows"], source_rows);
+    assert_eq!(recorded["source"], encode_path(&fixture.member_cache));
+    drop(store);
+    assert_eq!(
+        ensure_seeded(
+            &fixture.member_cache,
+            &fixture.worktree_root,
+            &fixture.worktree_cache
+        ),
+        SeedOutcome::Present
+    );
+    assert_eq!(
+        read_seed_outcome(&fixture.worktree_cache).unwrap(),
+        recorded
     );
 }
 

@@ -1,4 +1,4 @@
-use super::*;
+use super::member_coverage::*;
 use serde_json::json;
 
 #[test]
@@ -22,6 +22,20 @@ fn unsearched_files_mark_partial_coverage_with_a_count() {
     let coverage = json!({"walk_failures": 1, "live_read_failures": 2});
     assert!(partial_coverage(&coverage));
     assert_eq!(unsearched_files(&coverage), 3);
+    assert_eq!(unsearched_kinds(&coverage), ["walk_error", "read_error"]);
+    let limited = json!({"truncated_files": 20, "unsearched_paths": ["big.rs"]});
+    assert_eq!(unsearched_kinds(&limited), ["fact_limit"]);
+    assert_eq!(
+        coverage_issues(&limited)["unsearched_paths"],
+        json!(["big.rs"])
+    );
+}
+
+#[test]
+fn excluded_live_files_are_issues_not_partial() {
+    let coverage = json!({"live_excluded_files": 4, "live_read_failures": 0});
+    assert!(!partial_coverage(&coverage));
+    assert_eq!(coverage_issues(&coverage)["live_excluded_files"], 4);
 }
 
 #[test]

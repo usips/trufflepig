@@ -105,7 +105,7 @@ pub fn reextract_definition(
 
 /// A cancelled extraction, or one that failed without any facts, leaves the
 /// file's definitions unknown rather than absent.
-fn usable_extraction(path: &str, extraction: Extraction) -> Result<Extraction> {
+pub fn usable_extraction(path: &str, extraction: Extraction) -> Result<Extraction> {
     let factless_failure = extraction.definitions.is_empty()
         && !matches!(extraction.status.as_str(), "complete" | "lexical_only");
     if extraction.status == "cancelled" || factless_failure {

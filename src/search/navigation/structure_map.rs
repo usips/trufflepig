@@ -4,6 +4,7 @@
 //! prefix lists one row per file naming its top-level items. A path with no
 //! indexed file fails with `no_indexed_path` and up to three nearest paths.
 use crate::{
+    extract::Definition,
     results::{Hit, MAX_HITS, ResultSet},
     search::{BoundPathFilter, PathFilter, hit_row, snippets},
     store::Store,
@@ -58,24 +59,62 @@ pub fn map_miss(set: &ResultSet) -> Option<&str> {
     set.coverage[MAP_MISS_KEY].as_str()
 }
 
+/// Kinds a file outline lists.
+#[rustfmt::skip]
+const OUTLINE_KINDS: [&str; 23] = [
+    "addon", "module", "namespace", "struct", "class", "trait", "type", "enum", "impl",
+    "interface", "record", "delegate", "xenforo_class_extension", "function", "method",
+    "constructor", "property", "field", "event", "constant", "enum_case", "variant", "macro",
+];
+/// Outline kinds folded after the rest (members and `mod x;` rows).
+const FOLDED_KINDS: [&str; 6] = [
+    "field",
+    "enum_case",
+    "variant",
+    "property",
+    "event",
+    "module",
+];
+
+fn sql_kinds(kinds: &[&str]) -> String {
+    kinds
+        .iter()
+        .map(|kind| format!("'{kind}'"))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// A file outline of definitions extracted outside the index (a worktree's
+/// current bytes), selected and ordered as [`map`] orders a file's rows.
+pub fn outline_extracted(definitions: &mut Vec<Definition>) {
+    definitions.retain(|definition| {
+        OUTLINE_KINDS.contains(&definition.kind.as_str())
+            && definition.container.as_deref() != Some(crate::extract::FOREIGN_ITEM_CONTAINER)
+    });
+    definitions.sort_by_key(|definition| {
+        (
+            FOLDED_KINDS.contains(&definition.kind.as_str()),
+            definition.start,
+        )
+    });
+}
+
 fn file_outline(store: &Store, path: &str) -> Result<Vec<Hit>> {
-    let mut stmt = store.conn.prepare(
+    let mut stmt = store.conn.prepare(&format!(
         "SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container,'structural_map',c.bytes
          FROM definitions d
          JOIN files f ON f.id=d.file_id
          JOIN contents c ON c.revision=f.revision
          WHERE f.path=?1
-           AND d.kind IN ('addon','module','namespace','struct','class','trait','type','enum',
-                          'impl','interface','record','delegate','xenforo_class_extension',
-                          'function','method','constructor','property','field','event',
-                          'constant','enum_case','variant','macro')
+           AND d.kind IN ({})
            AND NOT (d.kind='module' AND d.start=0 AND d.name=f.path AND d.container IS NULL)
            AND coalesce(d.container,'')<>?3
-         ORDER BY CASE WHEN d.kind IN ('field','enum_case','variant','property','event','module')
-                       THEN 1 ELSE 0 END,
+         ORDER BY CASE WHEN d.kind IN ({}) THEN 1 ELSE 0 END,
                   d.start,d.id
          LIMIT ?2",
-    )?;
+        sql_kinds(&OUTLINE_KINDS),
+        sql_kinds(&FOLDED_KINDS)
+    ))?;
     let hits = stmt
         .query_map(
             params![

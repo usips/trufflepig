@@ -3,7 +3,7 @@
 //! outranks every declaration is followed to the declaration it names.
 use super::{AcquiredSource, acquire_entry};
 use crate::{
-    results::{self, Hit, ResultEntry},
+    results::{self, Hit, ResultEntry, ResultSet},
     search::{ImportHop, InvocationDirectory, Query},
     store::Store,
 };
@@ -51,13 +51,28 @@ pub(super) fn acquire_symbol(
 ) -> Result<AcquiredSource> {
     let query = Query::parse(target)?;
     let found = crate::search::definitions(store, &query, origin)?;
+    read_symbol(store, &query, found, origin, |handle, hit| {
+        acquire_entry(store, handle, ResultEntry::LiveSource(hit), None)
+    })
+}
+
+/// Shows the best of `found` (definitions of `query` in rank order, from the
+/// index or brought up to a worktree): follows a leading import, saves the
+/// candidates, and reads the shown row with `read_first(handle, hit)`.
+pub(crate) fn read_symbol(
+    store: &Store,
+    query: &Query,
+    found: ResultSet,
+    origin: &InvocationDirectory,
+    read_first: impl FnOnce(&str, Hit) -> Result<AcquiredSource>,
+) -> Result<AcquiredSource> {
     if found.hits.is_empty() {
-        bail!(no_definition(store, &query, origin)?);
+        bail!(no_definition(store, query, origin)?);
     }
     let imports = found.hits.iter().filter(|hit| hit.kind == "import").count();
     let declarations = found.hits.len() - imports;
     let trail = if found.hits[0].kind == "import" {
-        crate::search::trace_import(store, &found.hits[0], &query, origin)?
+        crate::search::trace_import(store, &found.hits[0], query, origin)?
     } else {
         None
     };
@@ -89,7 +104,7 @@ pub(super) fn acquire_symbol(
             )
         })
         .collect();
-    let first = ResultEntry::LiveSource(shown[0].clone());
+    let first = shown[0].clone();
     let set = results::save_entries(
         store,
         found.generation,
@@ -98,7 +113,7 @@ pub(super) fn acquire_symbol(
         found.truncated,
     )?;
     let handle = format!("{set}:1");
-    let mut source = acquire_entry(store, &handle, first, None)?;
+    let mut source = read_first(&handle, first)?;
     source.definitions = Some(SymbolSelection {
         declarations,
         imports,

@@ -28,7 +28,7 @@ pub use paths::{decode_path, encode_path};
 pub use read_access::is_index_warming;
 use rusqlite::Connection;
 pub(crate) use scan::{MAX_SOURCE_BYTES, extraction_cache_version};
-pub use seed::{SeedOutcome, ensure_seeded};
+pub use seed::{SeedOutcome, ensure_seeded, read_seed_outcome};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 pub(crate) use worktree_seed_source::linked_worktree_main_checkout;
@@ -168,6 +168,12 @@ impl Store {
     /// The cache holding `index.sqlite3`.
     pub fn index_cache(&self) -> &Path {
         &self.cache
+    }
+
+    /// The cache holding `results.sqlite3`; the read root's own cache in a
+    /// worktree view, otherwise [`Store::index_cache`].
+    pub fn results_cache(&self) -> &Path {
+        &self.results_cache
     }
 
     /// Result sets live in `<results cache>/results.sqlite3`, never in the index,

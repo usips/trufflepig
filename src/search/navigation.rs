@@ -5,7 +5,7 @@ mod structure_map;
 pub use reference_sites::{
     REFERENCE_COVERAGE_KEYS, reference_query, reference_summary, references,
 };
-pub use structure_map::{map, map_miss};
+pub use structure_map::{map, map_miss, outline_extracted};
 
 use crate::{
     output::OutputBudget,

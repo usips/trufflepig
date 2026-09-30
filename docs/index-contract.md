@@ -64,8 +64,23 @@ pauses that clock. A missing index or generation 0 answers `index_warming`. Only
 indexing, sessions, and the reconciler open the writer (`Store::open`). A reader
 may read a linked worktree's current bytes through its parent member's index
 (root-relative paths address the same files); its result sets are saved in the
-worktree's own cache, and `show` verifies those bytes against indexed revisions. File changes between extraction and
-publication may leave an indexed revision behind disk; `show`'s buffer check
+worktree's own cache, and `show` verifies those bytes against indexed revisions.
+Only a worktree sharing the member's Git common directory reads this way. Files
+that may differ are worktree changes against the parent's `HEAD` (committed,
+staged, unstaged, untracked) plus the parent's uncommitted and untracked files;
+each Git probe is bounded to 2 s and a result is reused for 5 s
+(`src/workspace/home_index/worktree_divergence.rs`). A hit's file also differs
+when its worktree bytes no longer hash to the indexed revision; one query
+hashes each file once and at most 128 files, and files beyond that fall back to
+the divergence (`home_index/hit_verification.rs`). Hits read from current bytes
+(`re:`, re-extraction) never differ; re-read files count as differing. A
+definition in such a file is re-extracted from worktree bytes (up to 64 files
+per `sym:` answer, which also adds definitions found only in divergent files;
+`show sym:` does the same whenever any file diverges, so it agrees with
+search); when they cannot be extracted (binary, or
+failed extraction), `show` serves the parent index's stored bytes with
+`verified: false` and `source: parent_index`. File changes between
+extraction and publication may leave an indexed revision behind disk; `show`'s buffer check
 prevents applying it to current bytes. Reconciliation eventually catches up.
 
 ## Semantic preparation
@@ -90,7 +105,10 @@ a length-prefixed JSON Unix socket protocol. Worktrees keep separate databases,
 seeded from the member's (or main checkout's) cache as a warm start
 (`src/store/seed.rs`): the seed copies content-addressed extraction facts and
 embeddings but never a publication, so the first reconcile publishes generation 1
-for the worktree root. A linked worktree's `.git` file is never indexed as
+for the worktree root. Until then, workspace queries answer from the member's
+index ([workspace](workspace-contract.md#retrieval-and-output)). Seeding writes
+nothing to stdout or stderr; an attempt that does work is recorded in the
+worktree cache's `seed-outcome.json`, which `ws status` reports. A linked worktree's `.git` file is never indexed as
 source. A per-root daemon exits on its own when its root
 disappears, and the router evicts the cache (see [cli](cli.md#cache-and-daemon)).
 A stale socket does not permit a second writer while the startup lock is held.
