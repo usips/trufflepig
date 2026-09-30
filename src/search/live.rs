@@ -17,7 +17,9 @@ pub(super) fn live_regex(
     let mut excluded = 0usize;
     let mut walk_failures = 0usize;
     let mut checked = 0usize;
-    let cache = cache.canonicalize().unwrap_or_else(|_| cache.to_owned());
+    // Neither the index cache nor a worktree view's own cache is source.
+    let caches = [cache, store.results_cache()]
+        .map(|cache| cache.canonicalize().unwrap_or_else(|_| cache.to_owned()));
     let mut walker = ignore::WalkBuilder::new(&store.root);
     walker
         .hidden(false)
@@ -25,7 +27,7 @@ pub(super) fn live_regex(
         .follow_links(false)
         .sort_by_file_path(|a, b| a.cmp(b));
     walker.filter_entry(move |entry| {
-        !entry.path().starts_with(&cache)
+        !caches.iter().any(|cache| entry.path().starts_with(cache))
             && (!entry.file_type().is_some_and(|kind| kind.is_dir())
                 || !matches!(
                     entry.file_name().to_str(),

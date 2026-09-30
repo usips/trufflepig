@@ -104,11 +104,6 @@ impl WorktreeDivergence {
     pub fn contains(&self, path: &str) -> bool {
         self.paths.contains(path)
     }
-
-    /// Number of differing files, or `None` when the set is incomplete.
-    pub fn known_count(&self) -> Option<usize> {
-        self.complete.then_some(self.paths.len())
-    }
 }
 
 /// Runs the four probes concurrently; `parent_head` is required for the first.

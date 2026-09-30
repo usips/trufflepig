@@ -364,6 +364,12 @@ pub fn definitions(store: &Store, query: &Query) -> Result<ResultSet> {
     })
 }
 
+/// Orders definition hits from several sources as [`definitions`] orders them.
+pub(crate) fn rank_definitions(hits: &mut [Hit]) {
+    hits.sort_by(|a, b| (a.path.as_str(), a.start, a.end).cmp(&(b.path.as_str(), b.start, b.end)));
+    hits.sort_by_key(|hit| declaration_rank(&hit.kind));
+}
+
 /// Declarations a reader usually means by a name rank before modules, modules
 /// before members, and members before locals and imports that merely share it.
 fn declaration_rank(kind: &str) -> u8 {

@@ -3,6 +3,7 @@
 //! index reading the worktree's current bytes ([`Store::reading_from`]). Paths
 //! are root-relative, so they address the same files; hits in files that may
 //! differ are flagged, and changed definitions are re-extracted from worktree bytes.
+mod hit_verification;
 mod parent_show;
 #[cfg(test)]
 mod tests;
@@ -11,10 +12,11 @@ mod worktree_reads;
 
 use super::member_root::{MemberRoot, linked_root_of_member};
 use crate::{
-    daemon::deadline::QueryDeadline,
+    daemon::deadline::{QueryDeadline, TIMED_OUT},
     store::{Store, is_index_warming},
 };
 use anyhow::Result;
+pub(super) use hit_verification::DifferingFiles;
 pub(super) use parent_show::{acquire_home_read, reextracted_entry};
 use serde_json::Value;
 use std::{path::Path, time::Duration};
@@ -78,8 +80,21 @@ pub(super) fn resolve_home_index(
 ) -> HomeIndexSource {
     match resolve(member, member_cache, explicit_cache, policy, deadline) {
         Ok(source) => source,
+        // A deadline interrupt stays recognizable however much context wraps it.
         Err(error) => HomeIndexSource::Unavailable {
-            reason: format!("{error:#}"),
+            reason: match deadline.classify(error) {
+                error
+                    if error.chain().any(|cause| {
+                        cause
+                            .to_string()
+                            .strip_prefix(TIMED_OUT)
+                            .is_some_and(|rest| rest.starts_with(':'))
+                    }) =>
+                {
+                    format!("{TIMED_OUT}: query deadline expired")
+                }
+                error => format!("{error:#}"),
+            },
         },
     }
 }
@@ -149,18 +164,13 @@ fn parent_view(
 }
 
 impl ParentFallback {
-    /// Whether `path` may differ between the worktree and the answering index.
-    pub(super) fn differs(&self, path: &str) -> bool {
-        self.divergence.contains(path)
-    }
-
     /// Records the fallback on a member's coverage row: `state: parent_fallback`,
     /// the home's own state, the answering index, and what differs.
-    pub(super) fn describe(&self, row: &mut Value, differing_hits: usize) {
+    pub(super) fn describe(&self, row: &mut Value, differing: &DifferingFiles, hits: usize) {
         row["state"] = "parent_fallback".into();
         row["home_state"] = "warming".into();
         row["served_from"] = self.served_from.clone().into();
-        row["differs"] = self.divergence.known_count().into();
-        row["differing_hits"] = differing_hits.into();
+        row["differs"] = self.known_differing(differing).into();
+        row["differing_hits"] = hits.into();
     }
 }

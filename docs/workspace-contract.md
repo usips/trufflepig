@@ -97,12 +97,12 @@ dependency, import, or compiler-resolution relationships.
 A parent-index answer reads worktree bytes; its row has `state:
 parent_fallback`, `home_state`, `served_from`, `differs` (`null` when unknown),
 and `differing_hits`. Lines read `MEMBER@WT warming → served from MEMBER index
-(N files differ)`, `(no files differ)`, or `(differences unknown)`; hits in
-files that may differ ([index](index-contract.md)) end in `differs`. `sym:`
-without a hit, `map FILE`, and `show` re-extract differing files (`served_from:
-MEMBER index; re-extracted in worktree`). Without a published parent, home reads
-`MEMBER@WT warming (no parent index)`. Reads never write an index; `show` with
-none published answers `index_warming` unless `--no-daemon` indexes first.
+(N files differ)`, `(1 file differs)`, `(no files differ)`, or `(differences
+unknown)`; hits in changed files ([index](index-contract.md)) end in `differs`.
+`sym:`, `map FILE`, and `show` re-extract changed files (`served_from: MEMBER
+index; re-extracted in worktree`). Without a published parent, home reads
+`MEMBER@WT warming (no parent index)`. With no index published, reads (`show
+path:` too) answer `index_warming` unless `--no-daemon` indexes first.
 
 Each member produces its existing ranked candidate list. Retrieval collapses
 each lane to one representative occurrence per file, then fuses file ranks with

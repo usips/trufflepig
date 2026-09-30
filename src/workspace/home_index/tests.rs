@@ -113,18 +113,20 @@ fn coverage_line(text: &str) -> &str {
 #[test]
 fn warming_worktree_answers_from_parent_index_with_exact_footer() {
     let seeded = SeededWorktree::new();
-    let text = seeded.search(&["--format", "lines", "search", "sym:SharedThing"]);
+    let text = seeded.search(&["--format", "lines", "search", "SharedThing"]);
     assert_eq!(
         coverage_line(&text),
         "engine@wt-l1 warming → served from engine index (2 files differ); scope home (ws:all adds 2 members)"
     );
     let hit = text.lines().next().unwrap();
-    assert!(hit.contains("\tengine/lib.rs:"), "{text}");
+    assert!(hit.contains("\tengine/lib.rs:1-1"), "{text}");
     assert!(hit.ends_with("\tdiffers"), "{text}");
-    let page = seeded.search_json(&["search", "sym:SharedThing"]);
+    let page = seeded.search_json(&["search", "SharedThing"]);
     let hits = page["hits"].as_array().unwrap();
-    assert_eq!(hits.len(), 1, "no sibling-member hits: {page}");
-    assert_eq!(hits[0]["member"], "engine");
+    assert!(
+        hits.iter().all(|hit| hit["member"] == "engine"),
+        "no sibling-member hits: {page}"
+    );
     assert_eq!(hits[0]["differs"], true);
     let coverage = &page["coverage"][0];
     assert_eq!(coverage["state"], "parent_fallback");
@@ -132,6 +134,11 @@ fn warming_worktree_answers_from_parent_index_with_exact_footer() {
     assert_eq!(coverage["served_from"], "engine index");
     assert_eq!(coverage["differs"], 2);
     assert_eq!(coverage["differing_hits"], 1);
+    // `sym:` re-extracts the changed file, so its hit is current and unflagged.
+    let current = seeded.search(&["--format", "lines", "search", "sym:SharedThing"]);
+    let hit = current.lines().next().unwrap();
+    assert!(hit.contains("\tengine/lib.rs:3-3"), "{current}");
+    assert!(!hit.ends_with("\tdiffers"), "{current}");
     let unchanged = seeded.search_json(&["search", "sym:untouched_helper"]);
     assert!(unchanged["hits"][0].get("differs").is_none(), "{unchanged}");
     let status: Value = serde_json::from_str(&seeded.show(&["ws", "status"]).unwrap()).unwrap();
@@ -161,7 +168,35 @@ fn parent_answer_reads_worktree_bytes_and_worktree_only_symbols() {
     );
     assert_eq!(shown["lines"][0]["text"], "pub struct WorktreeOnlySymbol;");
     let map = seeded.search(&["--format", "lines", "map", "lib.rs"]);
-    assert!(map.contains("\tadded_in_worktree\tdiffers"), "{map}");
+    let added = map.lines().find(|line| line.contains("added_in_worktree"));
+    assert!(
+        added.is_some_and(|line| !line.ends_with("\tdiffers")),
+        "{map}"
+    );
+    let live = seeded.search(&["--format", "lines", "search", "re:worktree_marker"]);
+    assert!(!live.contains("\tdiffers"), "{live}");
+    // A worktree-only redefinition joins the parent's definition of the name.
+    fs::write(
+        seeded.worktree.join("only.rs"),
+        "pub struct WorktreeOnlySymbol;\npub fn untouched_helper() {}\n",
+    )
+    .unwrap();
+    let both = seeded.search_json(&["search", "sym:untouched_helper"]);
+    let files: Vec<_> = both["hits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|hit| {
+            hit["file"]
+                .as_str()
+                .unwrap()
+                .rsplit('/')
+                .next()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(files, ["only.rs", "other.rs"], "{both}");
 }
 
 #[test]
@@ -196,7 +231,7 @@ fn parent_view_handles_survive_worktree_publication() {
             .unwrap()
             .to_owned()
     };
-    let changed = handle("sym:SharedThing");
+    let changed = handle("SharedThing");
     let unchanged = handle("sym:untouched_helper");
     Store::open(&seeded.worktree, &seeded.worktree_cache())
         .unwrap()
@@ -326,7 +361,7 @@ fn parent_view_requires_a_linked_worktree_of_the_member() {
 #[test]
 fn unextractable_worktree_file_falls_back_to_unverified_parent_bytes() {
     let seeded = SeededWorktree::new();
-    let handle = seeded.search_json(&["search", "sym:SharedThing"])["hits"][0]["handle"]
+    let handle = seeded.search_json(&["search", "SharedThing"])["hits"][0]["handle"]
         .as_str()
         .unwrap()
         .to_owned();
@@ -346,4 +381,52 @@ fn unextractable_worktree_file_falls_back_to_unverified_parent_bytes() {
         let text = shown["lines"][0]["text"].as_str().unwrap();
         assert!(text.contains("engine_marker"), "{shown}");
     }
+}
+
+#[test]
+fn hash_check_catches_changes_git_divergence_misses() {
+    let fixture = Fixture::git_backed();
+    fixture.json("engine", &["search", "sym:SharedThing", "ws:all"]);
+    // The parent index lags its HEAD: lines move in a commit it has not indexed.
+    let engine = fixture.root.path().join("engine");
+    fs::write(
+        engine.join("lib.rs"),
+        "// moved\n\n\npub struct SharedThing { pub engine_marker: u8 }\n",
+    )
+    .unwrap();
+    git(&engine, &["commit", "-q", "-am", "move"]);
+    let elsewhere = tempfile::tempdir().unwrap();
+    let worktree = fixture.worktree("engine", &elsewhere.path().join("wt-l3"));
+    let text = search_without_waiting(
+        &fixture,
+        &worktree,
+        &["--format", "lines", "search", "SharedThing"],
+    );
+    assert!(
+        coverage_line(&text)
+            .starts_with("engine@wt-l3 warming → served from engine index (1 file differs)"),
+        "{text}"
+    );
+    assert!(
+        text.lines().next().unwrap().ends_with("\tdiffers"),
+        "{text}"
+    );
+    let symbol = search_without_waiting(
+        &fixture,
+        &worktree,
+        &["--format", "lines", "search", "sym:SharedThing"],
+    );
+    assert!(symbol.contains("\tengine/lib.rs:4-4"), "{symbol}");
+    let shown: Value = serde_json::from_str(
+        &fixture
+            .run_at(&worktree, &["show", "sym:SharedThing"])
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(shown["lines"][0]["line"], 4, "{shown}");
+    // An unstaged edit inside the divergence reuse window is caught by hash too.
+    fs::write(worktree.join("lib.rs"), "\npub struct SharedThing;\n").unwrap();
+    let edited = search_without_waiting(&fixture, &worktree, &["search", "sym:SharedThing"]);
+    let edited: Value = serde_json::from_str(&edited).unwrap();
+    assert_eq!(edited["hits"][0]["start_line"], 2, "{edited}");
 }

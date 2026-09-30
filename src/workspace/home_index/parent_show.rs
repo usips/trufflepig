@@ -4,7 +4,7 @@
 //! marked unverified. Reads never create or write an index.
 use super::{
     HomeIndexPolicy, HomeIndexSource, ParentIndexView, resolve_home_index,
-    worktree_reads::MAX_REEXTRACTED_FILES,
+    worktree_reads::unextractable,
 };
 use crate::{
     daemon::deadline::QueryDeadline,
@@ -44,12 +44,6 @@ impl ParentRead {
         }
         .into();
     }
-}
-
-/// Worktree bytes exist but their definitions cannot be known.
-fn unextractable(error: &anyhow::Error) -> bool {
-    let message = error.to_string();
-    message.starts_with("source_excluded") || message.starts_with("extraction_unavailable")
 }
 
 /// `show TARGET` on a member without a result handle: through its own index or,
@@ -93,10 +87,10 @@ pub(in crate::workspace) fn acquire_home_read(
     }
 }
 
-/// `show TARGET` through a parent index. A `sym:` read whose definition lives in
-/// a changed file is re-extracted from worktree bytes (or read from the index,
+/// `show TARGET` through a parent index. A `sym:` read whose definition lives
+/// in a changed file is re-extracted from worktree bytes (or read from the index,
 /// unverified, when they cannot be extracted); one that exists only in the
-/// worktree is found in changed files.
+/// worktree is found in divergent files ([`ParentFallback::worktree_symbols`]).
 fn acquire_through_parent(
     view: &ParentIndexView,
     target: &str,
@@ -114,34 +108,13 @@ fn acquire_through_parent(
     }
     let query = Query::parse(target)?;
     let found = crate::search::definitions(&view.store, &query)?;
-    let fallback = &view.fallback;
-    let mut hits = Vec::with_capacity(found.hits.len());
-    let mut first_unverified = false;
-    for (rank, hit) in found.hits.into_iter().enumerate() {
-        // An incomplete divergence cannot clear a file, so leading hits re-extract.
-        let changed = fallback.differs(&hit.path)
-            || (!fallback.divergence.complete && rank < MAX_REEXTRACTED_FILES);
-        if !changed {
-            hits.push(hit);
-            continue;
-        }
-        let root = &view.store.root;
-        match source::reextract_definition(root, &hit.path, &hit.name, &hit.kind, hit.start_line) {
-            Ok(Some(current)) => hits.push(current.hit()),
-            Ok(None) => {}
-            Err(error) if unextractable(&error) => {
-                first_unverified |= hits.is_empty();
-                hits.push(hit);
-            }
-            Err(_) => {}
-        }
-    }
-    if hits.is_empty() {
-        hits = fallback.worktree_definitions(&view.store, &query);
-    }
-    if hits.is_empty() {
+    let symbols = view
+        .fallback
+        .worktree_symbols(&view.store, &query, found.hits);
+    let hits = symbols.hits;
+    let Some(first) = hits.first().cloned() else {
         return Err(error);
-    }
+    };
     let total = hits.len();
     let alternatives = hits[1..]
         .iter()
@@ -153,7 +126,6 @@ fn acquire_through_parent(
             )
         })
         .collect();
-    let first = hits[0].clone();
     let set = results::save_entries(
         &view.store,
         found.generation,
@@ -162,12 +134,12 @@ fn acquire_through_parent(
         found.truncated,
     )?;
     let handle = format!("{set}:1");
-    let (mut source, read) = if first_unverified {
+    let reextracted = first.provenance.as_deref() == Some("reextracted");
+    let (mut source, read) = if !reextracted && symbols.unextractable.contains(&first.path) {
         let source = indexed_source(&view.store, &handle, &first)?;
         (source, Some(ParentRead::Indexed))
     } else {
-        let read =
-            (first.provenance.as_deref() == Some("reextracted")).then_some(ParentRead::Reextracted);
+        let read = reextracted.then_some(ParentRead::Reextracted);
         let entry = ResultEntry::LiveSource(first);
         (
             acquisition::acquire_entry(&view.store, &handle, entry, None)?,
@@ -198,11 +170,10 @@ pub(in crate::workspace) fn reextracted_entry(
         match source::reextract_definition(root, &hit.path, &hit.name, &hit.kind, hit.start_line) {
             Ok(Some(current)) => current,
             Ok(None) => return Ok(None),
+            // Only a hit carrying an indexed revision has index bytes to fall back to.
             Err(error) if unextractable(&error) => {
-                return Ok(Some((
-                    indexed_source(store, handle, hit)?,
-                    ParentRead::Indexed,
-                )));
+                let indexed = indexed_source(store, handle, hit).ok();
+                return Ok(indexed.map(|source| (source, ParentRead::Indexed)));
             }
             Err(error) => return Err(error),
         };

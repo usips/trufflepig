@@ -170,6 +170,12 @@ impl Store {
         &self.cache
     }
 
+    /// The cache holding `results.sqlite3`; the read root's own cache in a
+    /// worktree view, otherwise [`Store::index_cache`].
+    pub fn results_cache(&self) -> &Path {
+        &self.results_cache
+    }
+
     /// Result sets live in `<results cache>/results.sqlite3`, never in the index,
     /// so saving them never waits behind a publication.
     pub fn result_sets(&self) -> Result<&ResultSetStore> {

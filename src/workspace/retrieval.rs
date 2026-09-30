@@ -6,7 +6,9 @@ mod tests;
 
 use super::{
     WorkspaceConfig, coordinator,
-    home_index::{HomeIndexPolicy, HomeIndexSource, ParentFallback, resolve_home_index},
+    home_index::{
+        DifferingFiles, HomeIndexPolicy, HomeIndexSource, ParentFallback, resolve_home_index,
+    },
     member_cache,
     result_cache::{MemberSnapshot, OwnedEntry, WorkspaceResults, WorkspaceSet},
 };
@@ -29,7 +31,8 @@ enum MemberAnswer {
     Found {
         owner: Box<MemberSnapshot>,
         found: ResultSet,
-        fallback: Option<ParentFallback>,
+        /// A parent-index answer and the files among its hits that differ.
+        fallback: Option<(ParentFallback, DifferingFiles)>,
     },
     Warming(Option<&'static str>),
 }
@@ -177,9 +180,11 @@ pub(super) fn search_with_policy(
             if let Some(error) = preparation_error {
                 found.coverage["semantic_preparation_error"] = error.to_string().into();
             }
-            if let Some(fallback) = &fallback {
+            let fallback = fallback.map(|fallback| {
                 fallback.complete_answer(&store, verb, &words, &query, &mut found);
-            }
+                let differing = fallback.check_hits(&store.root, &found.hits);
+                (fallback, differing)
+            });
             if found.coverage["truncated_files"].as_u64().unwrap_or(0) > 0 {
                 found.coverage["unsearched_paths"] = fact_limit_paths(&store)?.into();
             }
@@ -226,7 +231,7 @@ pub(super) fn search_with_policy(
                     let entry = OwnedEntry {
                         owner: owner_index,
                         member_rank: rank + 1,
-                        worktree_differs: fallback.as_ref().is_some_and(|f| f.differs(&hit.path)),
+                        worktree_differs: fallback.as_ref().is_some_and(|(_, d)| d.flags(&hit)),
                         entry: ResultEntry::LiveSource(hit),
                     };
                     bytes += serde_json::to_vec(&entry)?.len();
@@ -243,9 +248,9 @@ pub(super) fn search_with_policy(
                     truncated,
                     &found.coverage,
                 );
-                if let Some(fallback) = &fallback {
+                if let Some((fallback, differing_files)) = &fallback {
                     let differing = entries.iter().filter(|e| e.worktree_differs).count();
-                    fallback.describe(&mut coverage, differing);
+                    fallback.describe(&mut coverage, differing_files, differing);
                 }
                 set.coverage.push(coverage);
                 set.truncated |= truncated;
