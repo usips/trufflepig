@@ -163,3 +163,36 @@ fn workspace_pages_use_absolute_file_locators_and_compact_coverage() -> Result<(
     );
     Ok(())
 }
+
+#[test]
+fn empty_workspace_lines_page_groups_member_filter_diagnoses() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let results = WorkspaceResults::open(directory.path().join("cache").as_path())?;
+    let owner = |name: &str, diagnosis: &str| MemberSnapshot {
+        name: name.into(),
+        root: encode_path(directory.path()),
+        cache: encode_path(directory.path()),
+        device: 0,
+        inode: 0,
+        index_identity: "epoch".into(),
+        generation: 1,
+        coverage: json!({"filter_diagnosis": diagnosis}),
+        worktree: None,
+    };
+    let mut set = empty_set();
+    set.owners = vec![
+        owner("lunatic", "lang:php matched 0 files"),
+        owner("tgstation", "file:web/ matched 0 indexed paths"),
+        owner("tales", "lang:php matched 0 files"),
+    ];
+    let id = results.save(set)?;
+    let budget = OutputBudget::new(600)?.with_format(OutputFormat::Lines);
+    let text = results.page(&id, 0, 20, &budget)?;
+    assert!(
+        text.contains(
+            "; lunatic, tales: lang:php matched 0 files; tgstation: file:web/ matched 0 indexed paths\n"
+        ),
+        "{text}"
+    );
+    Ok(())
+}

@@ -11,7 +11,18 @@ optional [rerank stage](semantic-contract.md#optional-reranking) keeps this
 determinism claim for a fixed model and provider.
 
 `re:<pattern>` searches live files. Path, language, and kind filters apply before
-result limits. Tests, docs, and configuration remain eligible. Hits can identify
+result limits, and every lane and live walk shares one path matcher
+([`PathFilter`](../src/search/path_filter.rs)). A `file:` value matches the
+root-relative paths it prefixes; when no indexed path has that prefix, it matches
+where it starts a path component instead (`file:script/host` matches
+`crates/a/src/script/host.rs`, never `ghost.rs`). Repeated `file:` values OR
+together; `-file:` values exclude paths they match at any component start.
+`lang:` names a recorded language, case-insensitively: `rust`, `typescript`,
+`javascript`, `csharp`, `php`, `luau`, `dreammaker`, or `text`. `rs`, `ts`, `js`,
+`cs`, `c#`, `lua`, and `dm` are aliases; `md`, `markdown`, `toml`, and `json`
+mean `text`, which covers docs, configuration, and every other extension.
+`.php` and `.phtml` files are `php`. Other names fail with `unknown_language`.
+Tests, docs, and configuration remain eligible. Hits can identify
 a symbol, a source region, or a file. Searchable source regions cover the entire
 eligible file, including long-symbol middles and gaps between definitions.
 Resource-excluded files remain discoverable by path with their exclusion reason.
@@ -19,7 +30,12 @@ Resource-excluded files remain discoverable by path with their exclusion reason.
 Coverage describes indexed files, parser failures, semantic coverage, and result
 truncation separately. An interrupted or incomplete search cannot claim an
 exhaustive absence of hits. An empty complete search is successful; unavailable
-lanes and stale source are explicit responses.
+lanes and stale source are explicit responses. An empty filtered search adds
+`filter_diagnosis` to coverage: how many indexed paths each `file:` value
+matched, with up to three nearest paths by name when it matched none,
+`lang:X matched 0 files`, and whether the filters only fail together or
+`-file:` excluded every match. Workspace lines pages name the members sharing
+each explanation.
 
 ## Immutable handles and pagination
 
@@ -28,7 +44,8 @@ contains an immutable result-set identifier and an ordinal within that set.
 `show <handle>` never resolves against a client's latest search. Concurrent and
 consecutive queries cannot redirect an existing handle.
 
-`more <cursor>` names its result set and next ordinal explicitly. Pagination
+`more <cursor>` names its result set and next ordinal explicitly; JSON pages
+carry the bare cursor as `next`. Pagination
 preserves original ranking and source revisions. Persisted sets survive daemon
 restart until their ten-minute expiry. Expiration and eviction produce explicit
 errors, never an alias to a newer set. Retention is bounded by 32 MiB total,

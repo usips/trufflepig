@@ -3,7 +3,7 @@ use super::emitted_evidence::{SavedEntries, capture_emitted};
 use super::{Arguments, request_context};
 use crate::diagnostics::{DiagnosticsMode, Operation, Outcome, RequestEvent};
 use crate::output::OutputBudget;
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use serde_json::{Value, json};
 use std::{io::Write, time::Instant};
 
@@ -27,6 +27,11 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
     let diagnostic_location = crate::workspace::diagnostic_location(options);
     let mut operation = operation(options);
     let (response, outcome, mut exit_code) = match &parsed {
+        Ok(options) if options.words.len() == 1 && options.words[0] == "help" => {
+            operation = Operation::Help;
+            let help = Arguments::command().render_long_help().to_string();
+            (help, Outcome::Success, 0)
+        }
         Ok(_) => match super::run_with_context(args, &context) {
             Ok(text) => (text, Outcome::Success, 0),
             Err(error) => {
@@ -47,32 +52,32 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
             }
         },
         Err(error) => {
-            let (key, code) = match error.kind() {
+            let code = match error.kind() {
                 clap::error::ErrorKind::DisplayHelp => {
                     operation = Operation::Help;
-                    ("help", 0)
+                    0
                 }
                 clap::error::ErrorKind::DisplayVersion => {
                     operation = Operation::Version;
-                    ("version", 0)
+                    0
                 }
                 _ => {
                     operation = Operation::Usage;
-                    ("error", 2)
+                    2
                 }
             };
-            let message = error.to_string();
-            if code != 0 {
-                let _ = write!(stderr, "{message}");
+            let mut message = error.to_string();
+            if error.kind() == clap::error::ErrorKind::UnknownArgument
+                && args.iter().any(|arg| paging_flag(arg))
+            {
+                message.push_str(
+                    "tip: page with `more CURSOR`, the footer's `next: more CURSOR` line\n",
+                );
             }
             (
-                // Help and version are plain text and never budgeted: a truncated
-                // usage summary is worse than a long one.
-                if code == 0 {
-                    message
-                } else {
-                    render(options.budget, &json!({key:message}))
-                },
+                // Help, version, and usage errors are plain text and never
+                // budgeted: a truncated usage summary is worse than a long one.
+                message,
                 if code == 0 {
                     Outcome::Success
                 } else {
@@ -178,6 +183,12 @@ pub(super) fn operation(options: &Arguments) -> Operation {
         | "system-serve" | "semantic-check" => Operation::Other,
         _ => Operation::Usage,
     }
+}
+
+/// Flags agents guess for pagination, which `more CURSOR` provides.
+fn paging_flag(arg: &str) -> bool {
+    let flag = arg.split_once('=').map_or(arg, |(flag, _)| flag);
+    matches!(flag, "--page" | "--next" | "--cursor" | "--offset")
 }
 
 fn error_outcome(message: &str) -> Outcome {

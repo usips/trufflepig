@@ -2,7 +2,7 @@
 //! header, then `LINE<TAB>text` rows, then the footer. Row text is the JSON `text` field,
 //! so byte-escaped lines keep their `\xNN` escapes and are flagged once.
 
-use crate::output::lines::footer;
+use crate::output::lines::{NextCommand, footer};
 use serde_json::Value;
 use std::fmt::Write;
 
@@ -32,8 +32,13 @@ pub(crate) fn show_text(value: &Value) -> String {
         };
         let _ = writeln!(out, "{}\t{text}", row["line"].as_u64().unwrap_or(0));
     }
+    let next = value["next"].as_str().map(|cursor| NextCommand {
+        verb: "show",
+        cursor,
+        hint: None,
+    });
     footer(
-        value["next"].as_str(),
+        next,
         value["truncated"].as_bool().unwrap_or(false),
         &mut out,
     );
@@ -77,7 +82,7 @@ mod tests {
         });
         assert_eq!(
             show_text(&value),
-            "src/a.rs (lunatic) lines 1-2\n1\tfn a()\n2\t\\xff ok\nnext: read:abc:1@14\ntruncated: true\nverified: true\nencoding: byte-escaped\n"
+            "src/a.rs (lunatic) lines 1-2\n1\tfn a()\n2\t\\xff ok\nnext: show read:abc:1@14\ntruncated: true\nverified: true\nencoding: byte-escaped\n"
         );
     }
 

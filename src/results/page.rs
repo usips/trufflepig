@@ -84,15 +84,20 @@ pub fn page(
                     candidate_limit,
                     compact_live,
                 )?),
-                OutputFormat::Lines => Ok(lines::page_text(
-                    set.hits[offset..offset + count]
-                        .iter()
-                        .map(|entry| (None, entry)),
-                    detail,
-                    &coverage_line,
-                    lines::next_cursor(id, offset, count, set.hits.len()).as_deref(),
-                    set.truncated,
-                )),
+                OutputFormat::Lines => {
+                    let cursor = lines::next_cursor(id, offset, count, set.hits.len());
+                    Ok(lines::page_text(
+                        set.hits[offset..offset + count]
+                            .iter()
+                            .map(|entry| (None, entry)),
+                        detail,
+                        &coverage_line,
+                        cursor
+                            .as_deref()
+                            .map(|cursor| lines::more_command(cursor, offset, count, limit)),
+                        set.truncated,
+                    ))
+                }
             }
         };
     if let Some(text) = snippet_page(max_count, budget, |count, detail| {

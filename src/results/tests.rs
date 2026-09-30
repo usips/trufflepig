@@ -412,10 +412,16 @@ fn lines_more_renders_commit_and_change_entries() {
         text.lines().next().unwrap(),
         format!("{id}:1\tcommit:{}\tfirst line", "b".repeat(40))
     );
-    let cursor = text
+    let next = text
         .lines()
-        .find_map(|line| line.strip_prefix("next: "))
+        .find_map(|line| line.strip_prefix("next: more "))
         .unwrap();
+    // The first page says how to widen it; the cursor is the next word.
+    assert_eq!(
+        next.split_once(' ').unwrap().1,
+        "(-n N raises the page size)"
+    );
+    let cursor = next.split_once(' ').unwrap().0;
     let text = more(&store, cursor, 1, &lines_budget(600)).unwrap();
     assert_eq!(
         text.lines().next().unwrap(),
@@ -436,7 +442,10 @@ fn lines_show_prints_numbered_lines_and_cursor_footer() {
     let mut lines = text.lines();
     assert!(lines.next().unwrap().starts_with("large.rs "));
     assert_eq!(lines.next().unwrap(), "3\t// line 2");
-    assert!(text.lines().any(|line| line.starts_with("next: read:")));
+    assert!(
+        text.lines()
+            .any(|line| line.starts_with("next: show read:"))
+    );
     assert!(text.lines().any(|line| line == "truncated: true"));
     assert!(text.lines().any(|line| line.starts_with("verified: ")));
     assert!(!text.contains("encoding:"));

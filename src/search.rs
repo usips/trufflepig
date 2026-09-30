@@ -1,8 +1,10 @@
 //! Deterministic exact, lexical and live-regex retrieval from one index snapshot.
 mod file_ranking;
 mod inheritance_context;
+pub mod language_filter;
 mod live;
 mod navigation;
+pub mod path_filter;
 mod rerank_window;
 mod semantic_lane;
 mod snippets;
@@ -12,6 +14,7 @@ mod tests;
 pub(crate) use file_ranking::fuse_search_file_lanes as fuse_file_lanes;
 pub(crate) use navigation::context_entry;
 pub use navigation::{context, map, references};
+pub use path_filter::PathFilter;
 pub use rerank_window::RerankScorer;
 
 use crate::{
@@ -29,7 +32,7 @@ use std::{
 #[derive(Default, Debug)]
 pub struct Query {
     pub text: String,
-    pub path: String,
+    pub path: PathFilter,
     pub language: String,
     pub kind: String,
     pub exact: bool,
@@ -43,19 +46,11 @@ impl Query {
         for chunk in input.split_inclusive(char::is_whitespace) {
             let word = chunk.trim_end();
             if let Some(value) = word.strip_prefix("file:") {
-                query.path = value.to_owned();
+                query.path.include(value);
+            } else if let Some(value) = word.strip_prefix("-file:") {
+                query.path.exclude(value);
             } else if let Some(value) = word.strip_prefix("lang:") {
-                query.language = match value {
-                    "rs" => "rust",
-                    "ts" => "typescript",
-                    "js" => "javascript",
-                    "cs" | "c#" => "csharp",
-                    "phtml" => "php",
-                    "lua" => "luau",
-                    "dm" => "dreammaker",
-                    other => other,
-                }
-                .to_owned();
+                query.language = language_filter::canonical_language(value)?.to_owned();
             } else if let Some(value) = word.strip_prefix("kind:") {
                 query.kind = value.to_owned();
             } else {
@@ -326,6 +321,12 @@ pub fn search_prepared(
         truncated = true;
     }
     snippets::attach(store, &snippets::preview_terms(&query.text), &mut hits)?;
+    if hits.is_empty()
+        && let Some(diagnosis) =
+            path_filter::diagnose_empty_filters(&store.conn, &query.path, &query.language)?
+    {
+        coverage["filter_diagnosis"] = diagnosis.into();
+    }
     snapshot.commit()?;
     Ok(ResultSet {
         generation,
@@ -396,24 +397,25 @@ fn cap_hits(hits: &mut Vec<Hit>, limit: usize) -> LaneHits {
 
 fn exact_hits(store: &Store, query: &Query) -> Result<LaneHits> {
     if query.exact {
-        let mut statement = store.conn.prepare(
+        let mut statement = store.conn.prepare(&format!(
             "SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container,
                     'exact_identifier',c.bytes
              FROM definitions d
              JOIN files f ON f.id=d.file_id
              JOIN contents c ON c.revision=f.revision
              WHERE d.name=?1
-               AND substr(f.path,1,length(?2))=?2
+               AND {}
                AND (?3='' OR f.language=?3)
                AND (?4='' OR d.kind=?4)
              ORDER BY f.path,d.start,d.end,d.id
              LIMIT ?5",
-        )?;
+            path_filter::path_filter_sql("f.path", 2)
+        ))?;
         let mut hits = statement
             .query_map(
                 params![
                     query.text,
-                    query.path,
+                    query.path.bind(&store.conn)?.sql_parameter(),
                     query.language,
                     query.kind,
                     (MAX_HITS + 1) as i64
@@ -423,7 +425,7 @@ fn exact_hits(store: &Store, query: &Query) -> Result<LaneHits> {
             .collect::<rusqlite::Result<Vec<_>>>()?;
         return Ok(cap_hits(&mut hits, MAX_HITS));
     }
-    let mut statement = store.conn.prepare(
+    let mut statement = store.conn.prepare(&format!(
         "WITH ranked AS (
              SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container,
                     'exact_identifier' AS provenance,c.bytes,d.id,
@@ -434,7 +436,7 @@ fn exact_hits(store: &Store, query: &Query) -> Result<LaneHits> {
              JOIN files f ON f.id=d.file_id
              JOIN contents c ON c.revision=f.revision
              WHERE (?1='' OR d.name=?1)
-               AND substr(f.path,1,length(?2))=?2
+               AND {}
                AND (?3='' OR f.language=?3)
                AND (?4='' OR d.kind=?4)
          )
@@ -443,12 +445,13 @@ fn exact_hits(store: &Store, query: &Query) -> Result<LaneHits> {
          WHERE file_rank=1
          ORDER BY path,start,end,id
          LIMIT ?5",
-    )?;
+        path_filter::path_filter_sql("f.path", 2)
+    ))?;
     let hits = statement
         .query_map(
             params![
                 query.text,
-                query.path,
+                query.path.bind(&store.conn)?.sql_parameter(),
                 query.language,
                 query.kind,
                 (file_ranking::FILE_CANDIDATE_LIMIT + 1) as i64
@@ -460,7 +463,7 @@ fn exact_hits(store: &Store, query: &Query) -> Result<LaneHits> {
 }
 
 fn lexical_hits(store: &Store, query: &Query, terms: &str) -> Result<LaneHits> {
-    let mut statement = store.conn.prepare(
+    let mut statement = store.conn.prepare(&format!(
         "WITH ranked AS MATERIALIZED (
              SELECT f.path,f.revision,r.start,r.end,r.name,r.kind,NULL AS container,
                     'lexical' AS provenance,c.bytes,
@@ -470,7 +473,7 @@ fn lexical_hits(store: &Store, query: &Query, terms: &str) -> Result<LaneHits> {
              JOIN files f ON f.id=r.file_id
              JOIN contents c ON c.revision=f.revision
              WHERE documents MATCH ?1
-               AND substr(f.path,1,length(?2))=?2
+               AND {}
                AND (?3='' OR f.language=?3)
                AND (?4='' OR r.kind=?4)
          )
@@ -486,12 +489,13 @@ fn lexical_hits(store: &Store, query: &Query, terms: &str) -> Result<LaneHits> {
          WHERE file_rank=1
          ORDER BY relevance,path,start,end,id
          LIMIT ?5",
-    )?;
+        path_filter::path_filter_sql("f.path", 2)
+    ))?;
     let hits = statement
         .query_map(
             params![
                 terms,
-                query.path,
+                query.path.bind(&store.conn)?.sql_parameter(),
                 query.language,
                 query.kind,
                 (file_ranking::FILE_CANDIDATE_LIMIT + 1) as i64
@@ -517,14 +521,16 @@ fn file_hits(store: &Store, query: &Query) -> Result<LaneHits> {
             truncated: false,
         });
     }
-    let mut stmt = store.conn.prepare(
+    let mut stmt = store.conn.prepare(&format!(
         "SELECT f.path,f.revision
          FROM files f
-         WHERE substr(f.path,1,length(?1))=?1
+         WHERE {}
            AND (?2='' OR f.language=?2)
          ORDER BY f.path",
-    )?;
-    let rows = stmt.query_map(params![query.path, query.language], |r| {
+        path_filter::path_filter_sql("f.path", 1)
+    ))?;
+    let path_filter = query.path.bind(&store.conn)?.sql_parameter();
+    let rows = stmt.query_map(params![path_filter, query.language], |r| {
         Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
     })?;
     let terms = query_terms(&query.text);
