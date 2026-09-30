@@ -241,9 +241,12 @@ fn parent_view_reads_worktree_bytes() {
     let budget = crate::output::OutputBudget::new(600).unwrap();
     let read = crate::source::show(&view, "path:lib.rs:1-1", &budget).unwrap();
     assert!(read.contains("edited in worktree"), "{read}");
-    let indexed =
-        crate::search::definitions(&view, &crate::search::Query::parse("sym:alpha").unwrap())
-            .unwrap();
+    let indexed = crate::search::definitions(
+        &view,
+        &crate::search::Query::parse("sym:alpha").unwrap(),
+        &crate::search::InvocationDirectory::root(),
+    )
+    .unwrap();
     let id = crate::results::save(&view, indexed).unwrap();
     let stale = crate::source::show(&view, &format!("{id}:1"), &budget).unwrap_err();
     assert!(stale.to_string().contains("stale_source"), "{stale:#}");

@@ -6,7 +6,7 @@ use std::path::Path;
 
 pub(crate) const MAX_SOURCE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_FACTS: usize = 50_000;
-const EXTRACTION_CONTRACT_REVISION: u32 = 5;
+const EXTRACTION_CONTRACT_REVISION: u32 = 6;
 
 pub(super) fn stage(
     conn: &mut Connection,

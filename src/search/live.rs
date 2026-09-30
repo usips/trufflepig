@@ -112,6 +112,7 @@ pub(super) fn live_regex(
                 resolution: None,
                 candidates: Vec::new(),
                 target: None,
+                repeats: None,
                 snippet: super::snippets::preview(
                     &source,
                     matched.start(),

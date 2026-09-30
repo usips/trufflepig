@@ -160,6 +160,7 @@ pub(super) fn search(
         scope: None,
     };
     let mut lists = Vec::with_capacity(roots.len());
+    let mut map_miss = None;
     let mut position = 0;
     while position < queue.len() {
         let index = queue[position];
@@ -194,27 +195,31 @@ pub(super) fn search(
                 None
             };
             let mut found = if verb == "refs" || text.starts_with("refs:") {
-                search::references(
-                    &store,
-                    if verb == "refs" {
-                        words.get(1).context("usage: refs NAME")?
-                    } else {
-                        text.strip_prefix("refs:").expect("prefix")
-                    },
-                )?
+                search::references(&store, &search::reference_query(&text)?)?
             } else if verb == "map" {
-                search::map(&store, words.get(1).map(String::as_str).unwrap_or(""))?
+                let found = search::map(&store, words.get(1).map(String::as_str).unwrap_or(""))?;
+                if let Some(miss) = search::map_miss(&found) {
+                    map_miss.get_or_insert_with(|| miss.to_owned());
+                }
+                found
             } else {
                 let semantic_query = prepared.clone();
                 let reranker = rerank.then_some(&*session as &dyn search::RerankScorer);
-                search::search_prepared(
+                let mut found = search::search_prepared(
                     &store,
                     &query,
                     &member_cache,
                     semantic_query,
                     reranker,
                     &mut trace,
-                )?
+                )?;
+                if query.exact {
+                    // `sym:` namesakes nearest the invocation directory come first.
+                    let invocation = options.root.canonicalize()?;
+                    let origin = search::InvocationDirectory::within(&member.root, &invocation);
+                    search::rank_declarations(&mut found.hits, &origin);
+                }
+                found
             };
             if let Some(error) = &semantic_error {
                 found.coverage["semantic_status"] = "unavailable".into();
@@ -271,6 +276,11 @@ pub(super) fn search(
                     coverage["root"] = crate::store::encode_path(&member.root).into();
                     coverage["worktree"] = label.clone().into();
                 }
+                for key in search::REFERENCE_COVERAGE_KEYS {
+                    if let Some(value) = found.coverage.get(key) {
+                        coverage[key] = value.clone();
+                    }
+                }
                 set.coverage.push(coverage);
                 set.truncated |= truncated;
                 set.owners.push(owner);
@@ -312,6 +322,11 @@ pub(super) fn search(
                 )
             });
         }
+    }
+    if lists.iter().all(|list| list.len() == 0)
+        && let Some(miss) = map_miss
+    {
+        anyhow::bail!(miss);
     }
     ensure!(
         !set.owners.is_empty()

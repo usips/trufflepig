@@ -103,11 +103,10 @@ trufflepig show path:src/main.rs:1-20
 trufflepig show 'sym:refill_tokens file:src/'
 ```
 
-`show 'sym:NAME'` (with optional `file:`, `lang:`, `kind:`) reads the best-ranked
-definition with that exact name as a verified handle read: declarations before
-modules, members, then locals and imports. The footer adds `definitions: N` and
-up to five `also: PATH:START-END KIND` locators for the others; a missing name
-fails with `no_definition`.
+`show 'sym:NAME'` (optional `file:`, `lang:`, `kind:`, quoted or not) reads the
+best-ranked definition as a verified handle read. `refs` lists occurrence sites and
+`map` outlines a file or prefix; ranking, filters, and JSON fields are in the
+[navigation contract](navigation-contract.md).
 
 A handle is a 32-character result-set ID plus a one-based ordinal. A pagination
 cursor uses the same set ID and a zero-based next offset. Handles survive restart
@@ -117,11 +116,6 @@ or configuration changes cannot retarget a handle. `show` continuations retain
 source identity and remaining bytes; pass their `next` value unchanged to `show`.
 `stale_source` requires a fresh search or an explicitly current path read.
 `stale_result` means the graph generation changed and `ctx` needs a fresh handle.
-`refs` reports symbol occurrences and distinguishes observations, resolved targets,
-candidates, and unresolved sites. `map` shows structural module facts: modules and
-types under a prefix, plus functions, methods, constants, and macros when the
-prefix names exactly one file. These are
-conservative navigation features; see [language limits](language-contract.md).
 
 Paths in responses percent-encode raw filename bytes. Paste the encoded path
 unchanged into `show`, including `%20` for a space, `%25` for `%`, and `%3A` for

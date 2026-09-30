@@ -42,6 +42,7 @@ impl ReextractedDefinition {
             resolution: None,
             candidates: Vec::new(),
             target: None,
+            repeats: None,
             snippet: None,
         }
     }

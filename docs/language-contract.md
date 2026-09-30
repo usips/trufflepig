@@ -38,6 +38,21 @@ targets, and receiver-dependent calls remain candidates or unresolved.
 Rust module/import syntax does not constitute full workspace resolution. Macro
 expansion, trait selection, and type inference are outside this subset.
 
+Items inside an `impl` block record its header as their container; items in
+an `extern` block record `extern block`. An `impl` container replaces enclosing
+inline-module containers, so `sym:inner::Deep::go` for `mod inner { impl Deep {
+fn go() } }` matches only when `inner` is also a file-path module component;
+`sym:Deep::go` always matches. `sym:A::b` qualification is textual: `A` must name
+the `impl` type or trait, a lexical container, or trailing module-path components
+derived from the file path (`src`, `mod`, `lib`, `main` dropped; `-` read as `_`).
+Qualifiers that only occur in order within that path match when no trailing
+match exists, which covers `pub use` re-exports. Import following reads the `use`
+clause spelling (`a::b as c`) and resolves `crate::` to the path before the last
+`src/`; glob imports and paths through type aliases are not followed. Test-site
+ranking is by path convention and `mod tests` scopes
+([navigation contract](navigation-contract.md)); `#[cfg(test)]` on other items is
+not consulted.
+
 The Codex skill's optional [rustdoc workflow](../plugins/trufflepig-agent/skills/trufflepig-code-search/references/rustdoc.md)
 provides compiled item documentation and explicit trait/implementation links for
 one Cargo target and feature configuration. This evidence remains outside the

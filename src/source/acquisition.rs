@@ -3,10 +3,17 @@ use super::{MAX_READ_BYTES, current_span, read_contained};
 use crate::{
     identity::{ByteSpan, ContentRevision, ResultHandle},
     results::{self, HistoricalSource, Hit, ResultEntry},
+    search::InvocationDirectory,
     store::Store,
 };
 use anyhow::{Context, Result, bail, ensure};
 use std::path::Component;
+
+mod symbol;
+#[cfg(test)]
+mod tests;
+
+pub(crate) use symbol::{SymbolSelection, show_target};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SourceSide {
@@ -38,18 +45,16 @@ pub(crate) struct AcquiredSource {
     pub handle: String,
     pub side: Option<SourceSide>,
     pub historical: Option<HistoricalSource>,
-    /// For a `sym:` read: the number of same-named definitions and `PATH:START-END
-    /// KIND` locators for up to `SYMBOL_ALTERNATIVES` of those not shown.
-    pub definitions: Option<(usize, Vec<String>)>,
+    /// For a `sym:` read: how the shown definition was chosen among its namesakes.
+    pub definitions: Option<SymbolSelection>,
 }
 
-/// Other same-named definitions listed after a `sym:` read.
-const SYMBOL_ALTERNATIVES: usize = 5;
-
+/// Acquires `target`; a `sym:` read ranks namesakes nearest to `origin` first.
 pub(crate) fn acquire(
     store: &Store,
     target: &str,
     side: Option<SourceSide>,
+    origin: &InvocationDirectory,
 ) -> Result<AcquiredSource> {
     if let Some(cursor) = target.strip_prefix("read:") {
         let (identity, offset) = cursor
@@ -88,50 +93,9 @@ pub(crate) fn acquire(
         "invalid_side: side requires a historical change handle"
     );
     if target.starts_with("sym:") {
-        return acquire_symbol(store, target);
+        return symbol::acquire_symbol(store, target, origin);
     }
     acquire_path(store, target)
-}
-
-/// Read the best-ranked definition named by `sym:NAME [file:P] [lang:L] [kind:K]`
-/// as a verified handle read, listing the other candidates as path locators.
-fn acquire_symbol(store: &Store, target: &str) -> Result<AcquiredSource> {
-    let query = crate::search::Query::parse(target)?;
-    let found = crate::search::definitions(store, &query)?;
-    ensure!(
-        !found.hits.is_empty(),
-        "no_definition: no indexed definition named `{}`; try `refs {}` or `search '{}'`",
-        query.text,
-        query.text,
-        query.text
-    );
-    let total = found.hits.len();
-    let alternatives = found.hits[1..]
-        .iter()
-        .take(SYMBOL_ALTERNATIVES)
-        .map(|hit| {
-            format!(
-                "{}:{}-{} {}",
-                hit.path, hit.start_line, hit.end_line, hit.kind
-            )
-        })
-        .collect();
-    let first = ResultEntry::LiveSource(found.hits[0].clone());
-    let set = results::save_entries(
-        store,
-        found.generation,
-        found.coverage,
-        found
-            .hits
-            .into_iter()
-            .map(ResultEntry::LiveSource)
-            .collect(),
-        found.truncated,
-    )?;
-    let handle = format!("{set}:1");
-    let mut source = acquire_entry(store, &handle, first, None)?;
-    source.definitions = Some((total, alternatives));
-    Ok(source)
 }
 
 fn acquire_handle(store: &Store, handle: &str, side: Option<SourceSide>) -> Result<AcquiredSource> {
@@ -285,6 +249,7 @@ fn acquire_path(store: &Store, target: &str) -> Result<AcquiredSource> {
         resolution: None,
         candidates: Vec::new(),
         target: None,
+        repeats: None,
         snippet: None,
     };
     let set = results::save_entries(
@@ -305,78 +270,4 @@ fn acquire_path(store: &Store, target: &str) -> Result<AcquiredSource> {
         historical: None,
         definitions: None,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::output::OutputBudget;
-
-    #[test]
-    fn owned_read_survives_member_result_eviction_and_keeps_provenance() {
-        let root = tempfile::tempdir().unwrap();
-        let cache = tempfile::tempdir().unwrap();
-        let bytes = "// immutable source line\n".repeat(220);
-        std::fs::write(root.path().join("lib.rs"), &bytes).unwrap();
-        let store = Store::open(root.path(), cache.path()).unwrap();
-        let original = acquire(&store, "path:lib.rs", None).unwrap();
-        let (_, entry) = results::entry(&store, &original.handle).unwrap();
-        store
-            .result_sets()
-            .unwrap()
-            .conn
-            .execute("DELETE FROM result_sets", [])
-            .unwrap();
-
-        let handle = format!("{}:1", uuid::Uuid::new_v4());
-        let source = acquire_entry(&store, &handle, entry.clone(), None).unwrap();
-        let metadata =
-            serde_json::json!({"member":"engine","members":[{"name":"engine","root":root.path()}]});
-        let budget = OutputBudget::new(600).unwrap();
-        let output = crate::source::render_owned(source, &budget, &metadata).unwrap();
-        assert!(budget.fits(&output));
-        let response: serde_json::Value = serde_json::from_str(&output).unwrap();
-        assert_eq!(response["member"], metadata["member"]);
-        assert_eq!(response["members"], metadata["members"]);
-        assert!(
-            response["next"]
-                .as_str()
-                .unwrap()
-                .starts_with(&format!("read:{handle}@"))
-        );
-
-        let source = acquire_entry(&store, &handle, entry.clone(), None).unwrap();
-        let oversized = serde_json::json!({"member":"engine ".repeat(1000)});
-        assert!(
-            crate::source::render_owned(source, &budget, &oversized)
-                .unwrap_err()
-                .to_string()
-                .contains("budget_too_small")
-        );
-
-        std::fs::write(root.path().join("lib.rs"), "// replacement\n").unwrap();
-        assert!(
-            acquire_entry(&store, &handle, entry, None)
-                .err()
-                .unwrap()
-                .to_string()
-                .contains("stale_source")
-        );
-    }
-
-    #[test]
-    fn owned_source_metadata_cannot_replace_verified_identity() {
-        let root = tempfile::tempdir().unwrap();
-        let cache = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("lib.rs"), "fn original() {}\n").unwrap();
-        let store = Store::open(root.path(), cache.path()).unwrap();
-        let source = acquire(&store, "path:lib.rs", None).unwrap();
-        let error = crate::source::render_owned(
-            source,
-            &OutputBudget::new(600).unwrap(),
-            &serde_json::json!({"path":"other.rs"}),
-        )
-        .unwrap_err();
-        assert!(error.to_string().contains("invalid_metadata"));
-    }
 }

@@ -61,10 +61,8 @@ fn read_within(
     budget: &OutputBudget,
     deadline: QueryDeadline,
 ) -> Result<String> {
-    let target = options
-        .words
-        .get(1)
-        .context("usage: show TARGET | ctx HANDLE")?;
+    let target =
+        &acquisition::show_target(&options.words).context("usage: show TARGET | ctx HANDLE")?;
     let side = options.side.as_deref().map(SourceSide::parse).transpose()?;
     let is_context = options.words[0] == "ctx";
     let addressed = target.starts_with("read:")
@@ -124,7 +122,9 @@ fn read_within(
         Err(error) if is_index_warming(&error) => Store::open(&member.root, &cache)?,
         opened => opened?,
     };
-    let mut source = acquisition::acquire(&store, target, side)?;
+    let origin =
+        crate::search::InvocationDirectory::within(&member.root, &options.root.canonicalize()?);
+    let mut source = acquisition::acquire(&store, target, side, &origin)?;
     let (_, entry) = results::entry(&store, &source.handle)?;
     let owner = MemberSnapshot::capture(&member, &store, &cache, store.generation()?)?;
     let metadata = owner.metadata(&config.name);

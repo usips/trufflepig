@@ -55,8 +55,46 @@ pub(crate) fn show_text(value: &Value) -> String {
     if let Some(commit) = value["historical"]["commit"].as_str() {
         let _ = writeln!(out, "commit: {commit}");
     }
+    let import = &value["import"];
+    if let Some(hops) = import["via"].as_array().filter(|hops| !hops.is_empty()) {
+        let trail = hops
+            .iter()
+            .map(|hop| {
+                let what = if hop["reexport"] == true {
+                    "re-export"
+                } else {
+                    "import"
+                };
+                format!(
+                    "{what} of {} at {}",
+                    hop["path"].as_str().unwrap_or_default(),
+                    hop["site"].as_str().unwrap_or_default()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" -> ");
+        if import["followed"] == true {
+            match import["candidates"].as_u64() {
+                Some(count) if count > 1 => {
+                    let _ = writeln!(out, "via: {trail} (1 of {count})");
+                }
+                _ => {
+                    let _ = writeln!(out, "via: {trail}");
+                }
+            }
+        } else {
+            let _ = writeln!(out, "{trail} (declaration not indexed)");
+        }
+    }
     if let Some(total) = value["definitions"].as_u64() {
-        let _ = writeln!(out, "definitions: {total}");
+        match value["imports"].as_u64() {
+            Some(imports) => {
+                let _ = writeln!(out, "definitions: {total} (+{imports} imports)");
+            }
+            None => {
+                let _ = writeln!(out, "definitions: {total}");
+            }
+        }
     }
     for locator in value["also"].as_array().map(Vec::as_slice).unwrap_or(&[]) {
         let _ = writeln!(out, "also: {}", locator.as_str().unwrap_or_default());
@@ -83,6 +121,30 @@ mod tests {
         assert_eq!(
             show_text(&value),
             "src/a.rs (lunatic) lines 1-2\n1\tfn a()\n2\t\\xff ok\nnext: show read:abc:1@14\ntruncated: true\nverified: true\nencoding: byte-escaped\n"
+        );
+    }
+
+    #[test]
+    fn show_text_counts_imports_apart_and_names_the_import_trail() {
+        let value = json!({
+            "path": "src/z.rs", "verified": true, "definitions": 1, "imports": 3,
+            "also": ["src/y.rs:4-9 function"],
+            "import": {"via": [{"site": "src/lib.rs:2", "path": "z::Coord", "reexport": true},
+                               {"site": "src/z.rs:1", "path": "inner::Coord", "reexport": false}],
+                       "followed": true, "candidates": 2},
+            "lines": [{"line": 1, "text": "pub struct Coord;\n", "encoding": "utf8"}]
+        });
+        assert_eq!(
+            show_text(&value),
+            "src/z.rs lines 1-1\n1\tpub struct Coord;\nverified: true\nvia: re-export of z::Coord at src/lib.rs:2 -> import of inner::Coord at src/z.rs:1 (1 of 2)\ndefinitions: 1 (+3 imports)\nalso: src/y.rs:4-9 function\n"
+        );
+        let unfollowed = json!({"path": "a.rs", "definitions": 0, "imports": 1,
+            "import": {"via": [{"site": "a.rs:1", "path": "serde::Serialize", "reexport": false}],
+                       "followed": false, "candidates": 1},
+            "lines": []});
+        assert!(
+            show_text(&unfollowed)
+                .contains("import of serde::Serialize at a.rs:1 (declaration not indexed)\ndefinitions: 0 (+1 imports)\n")
         );
     }
 

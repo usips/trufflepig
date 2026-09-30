@@ -110,7 +110,8 @@ pub fn show_with_side(
     side: Option<SourceSide>,
     budget: &OutputBudget,
 ) -> Result<String> {
-    render(acquisition::acquire(store, target, side)?, budget)
+    let origin = crate::search::InvocationDirectory::root();
+    render(acquisition::acquire(store, target, side, &origin)?, budget)
 }
 
 fn render(source: AcquiredSource, budget: &OutputBudget) -> Result<String> {
@@ -167,9 +168,21 @@ pub(crate) fn render_owned(
             // An explicit path read returns the current file, not an indexed revision.
             value["source"] = "current_file".into();
         }
-        if let Some((total, also)) = &definitions {
-            value["definitions"] = (*total).into();
-            value["also"] = also.clone().into();
+        if let Some(selection) = &definitions {
+            value["definitions"] = selection.declarations.into();
+            if selection.imports > 0 {
+                value["imports"] = selection.imports.into();
+            }
+            value["also"] = selection.also.clone().into();
+            if let Some(import) = &selection.import {
+                let via: Vec<_> = import
+                    .hops
+                    .iter()
+                    .map(|hop| json!({"site":hop.site,"path":hop.path,"reexport":hop.reexport}))
+                    .collect();
+                value["import"] = json!({"via":via,"followed":import.followed,
+                    "candidates":import.candidates});
+            }
         }
         let object = value.as_object_mut().expect("source response object");
         ensure!(

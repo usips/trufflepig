@@ -244,16 +244,16 @@ fn local_dispatch(
         "index"|"init"=>{let coverage=store.index()?;budget.render(&serde_json::json!({"generation":store.generation()?,"coverage":coverage}))},
         "doctor"=>budget.render(&crate::probes::doctor(&store, cache, session)?),
         "status"=>budget.render(&serde_json::json!({"generation":store.generation()?,"coverage":store.coverage()?,"semantic_feature":cfg!(feature="semantic"),"tokenizer":"o200k_base"})),
-        "show"=>source::show_with_side(&store,argument()?,options.side.as_deref().map(source::SourceSide::parse).transpose()?,&page_budget),
+        "show"=>source::show_with_side(&store,&source::acquisition::show_target(&options.words).context("usage: command requires an explicit argument")?,options.side.as_deref().map(source::SourceSide::parse).transpose()?,&page_budget),
         "more"=>results::more(&store,argument()?,options.limit,&page_budget),
         "ctx"=>search::context(&store,argument()?,&budget),
         "search" | "refs" | "map" => {
             let set=match verb {
-                "refs"=>search::references(&store,argument()?)?,
-                "map"=>search::map(&store,options.words.get(1).map(String::as_str).unwrap_or(""))?,
+                "refs"=>search::references(&store,&search::reference_query(&options.words[1..].join(" "))?)?,
+                "map"=>{let set=search::map(&store,options.words.get(1).map(String::as_str).unwrap_or(""))?;if let Some(miss)=search::map_miss(&set){bail!("{miss}")}set},
                 "search"=>{
                     let text=options.words[1..].join(" ");
-                    if let Some(name)=text.strip_prefix("refs:"){search::references(&store,name)?}
+                    if text.starts_with("refs:"){search::references(&store,&search::reference_query(&text)?)?}
                     else{{
                         let mut trace = if options.diagnostics == "off" { search::telemetry::RetrievalTrace::disabled() } else { search::telemetry::RetrievalTrace::default() };
                         let query = search::Query::parse(&text)?;

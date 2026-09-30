@@ -215,14 +215,14 @@ fn csharp_and_javascript_index_search_and_navigation_contracts() {
         "{shown}"
     );
 
-    let js_references = references(&store, "findWallet").unwrap();
+    let js_references = references(&store, &reference_query("findWallet").unwrap()).unwrap();
     assert!(
         js_references
             .hits
             .iter()
             .any(|hit| { hit.path == "wallet.js" && hit.kind == "call" && hit.target.is_some() })
     );
-    let csharp_references = references(&store, "Wallet").unwrap();
+    let csharp_references = references(&store, &reference_query("Wallet").unwrap()).unwrap();
     assert!(
         csharp_references
             .hits
@@ -392,7 +392,7 @@ fn filter_only_queries_and_reference_identities_are_useful() {
     )
     .unwrap();
     assert!(set.hits.iter().any(|h| h.name == "alpha"));
-    let set = references(&store, "alpha").unwrap();
+    let set = references(&store, &reference_query("alpha").unwrap()).unwrap();
     let call = set.hits.iter().find(|h| h.kind == "call").unwrap();
     assert_eq!(call.resolution.as_deref(), Some("resolved"));
     assert_eq!(call.target.as_ref().unwrap().path, "lib.rs");
@@ -469,7 +469,7 @@ fn show_symbol_reads_the_best_declaration_and_lists_the_rest() {
 }
 
 #[test]
-fn map_of_one_file_lists_its_functions_but_a_prefix_lists_types_only() {
+fn map_of_one_file_lists_its_functions_and_a_prefix_lists_one_row_per_file() {
     let (_root, _cache, store) =
         fixture(&[("src/lib.rs", b"pub struct Bucket;\nfn refill() {}\n")]);
     let names = |path: &str| -> Vec<String> {
@@ -480,7 +480,6 @@ fn map_of_one_file_lists_its_functions_but_a_prefix_lists_types_only() {
             .map(|hit| hit.name)
             .collect()
     };
-    assert!(names("src/lib.rs").contains(&"refill".to_owned()));
-    assert!(!names("src/").contains(&"refill".to_owned()));
-    assert!(names("src/").contains(&"Bucket".to_owned()));
+    assert_eq!(names("src/lib.rs"), ["Bucket", "refill"]);
+    assert_eq!(names("src/"), ["Bucket, refill"]);
 }
