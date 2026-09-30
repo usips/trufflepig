@@ -7,8 +7,10 @@ SINGLE_REPO_KEYS = {"indexed", "excluded", "parse_failures", "walk_failures", "t
 NEXT_FOOTER = re.compile(r"^next: (?:(?:more|show) )?(\S+)")
 
 
-# `NAME[@WORKTREE] STATE[ (detail)][ → served from M index (…)][ truncated]`; any other
-# coverage part (`file:X matched 0 …`, `lang:`, `filters`, `refs T sites …`) annotates.
+# `NAME[@WORKTREE] STATE[ (detail)][ → served from M index (…)][ truncated]`, where the
+# fallback detail is free-form (`1 file differs`, `N files differ`, `no files differ`,
+# `differences unknown`); any other coverage part (`file:X matched 0 …`, `lang:`,
+# `filters`, `refs T sites …`) annotates.
 MEMBER_PART = re.compile(
     r"^(?P<name>[A-Za-z0-9_.+-]+(?:@[^\s;]+)?) "
     r"(?P<state>complete|partial|warming|unavailable|timed[ _]out|unknown|parent_fallback)(?P<rest>(?: .*)?)$")

@@ -42,6 +42,12 @@ class CoverageLineTests(unittest.TestCase):
             "lunatic partial (20 unsearched: fact_limit) truncated": ("lunatic", ("searched", True, True)),
             "lunatic@lunatic-w3-L1 warming \u2192 served from lunatic index (3 files differ)":
                 ("lunatic@lunatic-w3-L1", ("parent_fallback", False, False)),
+            "lunatic@L1 warming \u2192 served from lunatic index (1 file differs)":
+                ("lunatic@L1", ("parent_fallback", False, False)),
+            "lunatic@L1 warming \u2192 served from lunatic index (no files differ)":
+                ("lunatic@L1", ("parent_fallback", False, False)),
+            "lunatic@L1 warming \u2192 served from lunatic index (differences unknown) truncated":
+                ("lunatic@L1", ("parent_fallback", False, True)),
             "lunatic@L1 warming (no parent index)": ("lunatic@L1", ("warming", False, False)),
             "lunatic@L1 unavailable (database is locked)": ("lunatic@L1", ("unavailable", False, False)),
             "tgstation timed out": ("tgstation", ("timed_out", False, False)),
