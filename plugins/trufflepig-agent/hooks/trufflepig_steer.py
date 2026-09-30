@@ -1,4 +1,4 @@
-"""Steering policy: per-harness mode, fallback evidence, nudge rate limits, audit records.
+"""Steering policy: per-harness mode, fallback evidence, tip cadence, audit records.
 
 Shared by `steer-search.py` (PreToolUse/PostToolUse) and `claude-session.py`.
 """
@@ -17,7 +17,6 @@ STRONG_CLASSES = {"definition", "body", "outline", "references"}
 FALLBACK_MARKER = re.compile(r"#\s*tp-fallback\b")
 FALLBACK_WINDOW_SECONDS = 10 * 60
 UNLOCK_WINDOW_SECONDS = 45 * 60
-NUDGE_INTERVAL_SECONDS = 90
 MODES = ("off", "nudge", "block", "strict")
 DEFAULT_MODES = {"claude": "nudge"}
 
@@ -103,14 +102,12 @@ def used_recently(harness: str, cwd: str) -> bool:
     return False
 
 
-def should_nudge(key: str, kind: str) -> bool:
-    """Rate-limit repeated tips of the same class to one per interval per agent."""
+def first_tip(key: str, kind: str) -> bool:
+    """Whether this agent (`key`: session, agent, cwd) gets its first tip of `kind`; the
+    full tip comes once, later ones use the one-line form."""
     marker = state_dir() / "steer-nudge" / f"{cwd_key(key)}-{kind}"
-    try:
-        if time.time() - marker.stat().st_mtime < NUDGE_INTERVAL_SECONDS:
-            return False
-    except OSError:
-        pass
+    if marker.exists():
+        return False
     try:
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.touch()

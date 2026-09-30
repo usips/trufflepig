@@ -8,18 +8,23 @@ Applies only inside checkouts of registered trufflepig workspace members
 `trufflepig.workspace.toml`. Each shell search is classified (definition, body,
 outline, references, regex, concept, files); pipe filters, log/output files,
 other revisions, filesystem `find` actions, and paths outside the checkout are
-never steered. Modes (TRUFFLEPIG_AGENT_STEER, else `steer.<harness>` in
-agent-runtime.json, else claude=nudge, others=block):
+never steered; `sed -n A,Bp`/`cat` of indexed source is the `read` class. Modes
+(TRUFFLEPIG_AGENT_STEER, else `steer.<harness>` in agent-runtime.json, else
+claude=nudge, others=block):
   off     do nothing;
   nudge   allow, then add the equivalent trufflepig-agent command as context
-          (Claude: PostToolUse additionalContext; others: stdout);
+          (Claude: PostToolUse additionalContext; others: stdout), in full the
+          first time per class and agent, as one line after that;
   block   deny until any trufflepig-agent call from this directory in the last
           45 minutes, then allow (the original Kimi/Muse behavior);
   strict  deny definition/body/outline/references searches with the equivalent
           command unless a trufflepig call from this checkout returned no hits
           or failed in the last 10 minutes, or the command carries
           `# tp-fallback: reason`; nudge the remaining classes.
-PreToolUse decisions are appended to the agent audit log as verb "hook:steer".
+Outside `off`, a trufflepig-agent call piped or chained with other programs gets a
+tip, and (Claude) a PreToolUse `Agent` call whose brief tells the subagent to grep
+gets lead-facing context. PreToolUse search decisions are appended to the agent
+audit log as verb "hook:steer".
 """
 from __future__ import annotations
 
@@ -31,6 +36,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import trufflepig_advice as advice  # noqa: E402
 import trufflepig_checkout as checkout  # noqa: E402
 import trufflepig_classify as classifier  # noqa: E402
 import trufflepig_shell as shell  # noqa: E402
@@ -38,10 +44,15 @@ import trufflepig_steer as policy  # noqa: E402
 
 SEARCH_TOOLS = re.compile(r"^(grep|glob|ripgrep|rg|find_files|search_files|list_files)$", re.I)
 SHELL_TOOLS = re.compile(r"^(bash|shell|run_command|execute|terminal)$", re.I)
+AGENT_TOOLS = re.compile(r"^(agent|task)$", re.I)
 
 
 def claude_output(event: str, **fields) -> None:
     sys.stdout.write(json.dumps({"hookSpecificOutput": {"hookEventName": event, **fields}}) + "\n")
+
+
+def label(search: classifier.Search) -> str:
+    return "read" if search.kind == "read" else f"{search.kind} search"
 
 
 def message_for(searches: list[classifier.Search], owner: checkout.IndexedRoot, blocked: bool,
@@ -49,13 +60,27 @@ def message_for(searches: list[classifier.Search], owner: checkout.IndexedRoot, 
     lines = [f"{owner.member} is indexed by trufflepig; "
              + ("run the equivalent instead:" if blocked else "next time use the one-call equivalent:")]
     for search in searches[:3]:
-        lines.append(f"- {search.kind} search `{search.pattern[:80]}` -> {search.hint}")
+        lines.append(f"- {label(search)} `{search.pattern[:80]}` -> {search.hint}")
     if blocked and mode == "block":
         lines.append("Ordinary search is allowed again after one trufflepig-agent call from this directory.")
     elif blocked:
         lines.append("If trufflepig returns nothing useful, retry the grep with a trailing "
                      "`# tp-fallback: <reason>` comment.")
     return "\n".join(lines)
+
+
+def short_message(search: classifier.Search) -> str:
+    return f"trufflepig: {label(search)} `{search.pattern[:60]}` -> {search.hint}"
+
+
+def advise(harness: str, event: str, key: str, kind: str, tip) -> None:
+    """Deliver a tip in full the first time per `kind` for this agent, then in one line:
+    Claude gets PostToolUse (or, for Agent briefs, PreToolUse) context, others stdout."""
+    full = policy.first_tip(key, kind)
+    if harness == "claude":
+        claude_output(event, additionalContext=tip(full))
+    else:
+        sys.stdout.write(tip(full) + "\n")
 
 
 def main() -> int:
@@ -75,7 +100,17 @@ def main() -> int:
     if not isinstance(tool_input, dict):
         tool_input = {}
     cwd = Path(payload.get("cwd") or os.getcwd()).resolve()
+    session = str(payload.get("session_id") or payload.get("sessionId") or "")
+    agent = str(payload.get("agent_id") or payload.get("agentId") or "")
+    key = f"{session}:{agent}:{cwd}"
 
+    if AGENT_TOOLS.match(tool):
+        phrase = advice.grep_brief(str(tool_input.get("prompt") or ""))
+        owner = checkout.indexed_checkout(cwd) if phrase and harness == "claude" and event == "PreToolUse" else None
+        if owner is not None:
+            advise(harness, "PreToolUse", key, "brief",
+                   lambda full: advice.grep_brief_tip(phrase, owner.member, full))
+        return 0
     if SEARCH_TOOLS.match(tool):
         pattern = str(tool_input.get("pattern") or tool_input.get("query") or "")
         command = f"rg -n {classifier.quote(pattern)} {classifier.quote(str(tool_input.get('path') or '.'))}"
@@ -84,22 +119,25 @@ def main() -> int:
         command = " ".join(map(str, command)) if isinstance(command, list) else str(command)
     else:
         return 0
+    shape = advice.call_shape(command)
+    if shape is not None:
+        if event == ("PostToolUse" if harness == "claude" else "PreToolUse"):
+            advise(harness, event, key, "call-shape", lambda full: advice.call_shape_tip(shape, full))
+        return 0
     if not classifier.MAYBE_SEARCH.search(command):
         return 0
-    owner = checkout.indexed_checkout(shell.final_directory(command, cwd))
+    owner = checkout.indexed_checkout(shell.search_directory(command, cwd))
     if owner is None:
         return 0
     searches = classifier.classify(command, cwd, owner.checkout)
     if not searches:
         return 0
 
-    session = str(payload.get("session_id") or payload.get("sessionId") or "")
-    agent = str(payload.get("agent_id") or payload.get("agentId") or "")
     strong = [s for s in searches if s.kind in policy.STRONG_CLASSES]
     fallback = None
     if policy.FALLBACK_MARKER.search(command):
         fallback = "explicit tp-fallback"
-    if mode == "block":
+    if mode == "block" and any(s.kind != "read" for s in searches):  # reads are never blocked
         decision = "allow" if fallback or policy.used_recently(harness, str(cwd)) else "block"
     elif mode == "strict" and strong:
         fallback = fallback or policy.recent_fallback_reason(harness, owner.checkout)
@@ -109,9 +147,9 @@ def main() -> int:
 
     if event == "PostToolUse":
         # Nudges are delivered after the search ran, where Claude accepts added context.
-        if harness == "claude" and decision == "nudge" and not fallback and \
-                policy.should_nudge(f"{session}:{agent}:{cwd}", searches[0].kind):
-            claude_output("PostToolUse", additionalContext=message_for(searches, owner, False))
+        if harness == "claude" and decision == "nudge" and not fallback:
+            advise(harness, event, key, searches[0].kind,
+                   lambda full: message_for(searches, owner, False) if full else short_message(searches[0]))
         return 0
 
     policy.log({
@@ -149,7 +187,8 @@ def main() -> int:
         sys.stderr.write(message + "\n")
         return 2
     if decision == "nudge" and harness != "claude":
-        sys.stdout.write(message_for(searches, owner, False) + "\n")
+        advise(harness, event, key, searches[0].kind,
+               lambda full: message_for(searches, owner, False) if full else short_message(searches[0]))
     return 0
 
 

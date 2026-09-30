@@ -151,7 +151,8 @@ NAVIGATION_VERBS = {"search", "refs", "map", "show", "ctx", "more"}
 def adoption(records: list[dict]) -> list[dict]:
     """Per harness and agent scope: trufflepig navigation calls against ordinary searches
     the steering hook saw. Blocked searches are excluded from the denominator because
-    the agent had to retry them some other way."""
+    the agent had to retry them some other way; `read`-only records (`sed -n`, `cat` of
+    indexed source) are counted as `reads`, not escaped searches."""
     groups: dict[tuple[str, str], dict] = {}
     for record in records:
         if record.get("malformed"):
@@ -165,38 +166,40 @@ def adoption(records: list[dict]) -> list[dict]:
         else:
             continue
         row = groups.setdefault((harness, scope), {
-            "harness": harness, "scope": scope, "trufflepig": 0, "escaped": 0, "blocked": 0,
+            "harness": harness, "scope": scope, "trufflepig": 0, "escaped": 0, "reads": 0, "blocked": 0,
             "fallback": 0, "classes": defaultdict(int)})
+        classes = record.get("classes") or ["unclassified"]
         if verb in NAVIGATION_VERBS:
             row["trufflepig"] += 1
         elif record.get("status") == "block":
             row["blocked"] += 1
         else:
-            row["escaped"] += 1
+            row["reads" if set(classes) == {"read"} else "escaped"] += 1
             row["fallback"] += bool(record.get("fallback"))
-            for kind in record.get("classes") or ["unclassified"]:
+            for kind in classes:
                 row["classes"][kind] += 1
     rows = []
     for harness in sorted({h for h, _ in groups}):
         used = groups.get((harness, "all"), {}).get("trufflepig", 0)
         escaped = sum(r["escaped"] for (h, s), r in groups.items() if h == harness and s != "all")
+        reads = sum(r["reads"] for (h, s), r in groups.items() if h == harness and s != "all")
         for (h, scope), row in sorted(groups.items()):
             if h != harness:
                 continue
             row["classes"] = dict(sorted(row["classes"].items(), key=lambda item: -item[1]))
             rows.append(row)
-        rows.append({"harness": harness, "scope": "total", "trufflepig": used, "escaped": escaped,
+        rows.append({"harness": harness, "scope": "total", "trufflepig": used, "escaped": escaped, "reads": reads,
                      "adoption": round(used / (used + escaped), 3) if used + escaped else None})
     return rows
 
 
 def print_adoption(rows: list[dict]) -> None:
-    print("harness\tscope\ttrufflepig\tescaped\tblocked\tfallback\tadoption\tescaped classes")
+    print("harness\tscope\ttrufflepig\tescaped\treads\tblocked\tfallback\tadoption\tclasses")
     for row in rows:
         classes = ", ".join(f"{k}={v}" for k, v in (row.get("classes") or {}).items())
         adoption_rate = "" if row.get("adoption") is None else f"{row['adoption']:.0%}"
         print("\t".join(str(v) for v in (row["harness"], row["scope"], row["trufflepig"], row["escaped"],
-                                         row.get("blocked", ""), row.get("fallback", ""),
+                                         row.get("reads", ""), row.get("blocked", ""), row.get("fallback", ""),
                                          adoption_rate, classes)))
 
 

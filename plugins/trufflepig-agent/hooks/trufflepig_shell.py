@@ -1,4 +1,5 @@
-"""Shell command parsing for search steering: simple commands, pipes, and grep options.
+"""Shell command parsing for search steering: simple commands, pipes, grep options,
+and line-range reads (`sed -n A,Bp`, `cat`).
 
 Parsing is conservative: heredocs and command substitution yield no commands.
 """
@@ -99,7 +100,8 @@ class GrepCall:
     revisions: bool = False
 
 
-def parse_grep(program: str, args: list[str]) -> GrepCall:
+def parse_grep(program: str, args: list[str], directory: Path) -> GrepCall:
+    """Options of one grep-like call; `git grep` trees are checked under `directory`."""
     value_short = VALUE_SHORT.get(program, set())
     flags: set[str] = set()
     patterns: list[str] = []
@@ -181,14 +183,92 @@ def parse_grep(program: str, args: list[str]) -> GrepCall:
     revisions = False
     if program == "git":
         trees = positional if double_dash_at is None else positional[:max(double_dash_at, 0)]
-        revisions = any(not os.path.exists(tree) for tree in trees) if double_dash_at is None else bool(trees)
+        revisions = any(not (directory / tree).exists() for tree in trees) if double_dash_at is None \
+            else bool(trees)
     return GrepCall(program, pattern, positional, flags, after, includes, types, revisions)
 
 
-def final_directory(command: str, cwd: Path) -> Path:
-    """The directory a leading `cd DIR &&` moves the command into, for root detection."""
-    match = re.match(r"^\s*cd\s+(\"[^\"]+\"|'[^']+'|\S+)\s*(&&|;)", command)
-    if not match:
-        return cwd
-    target = match.group(1).strip("'\"")
-    return Path(os.path.normpath(cwd / os.path.expanduser(target)))
+def changed_directory(directory: Path, target: str) -> Path:
+    return Path(os.path.normpath(directory / os.path.expanduser(target)))
+
+
+def git_subcommand(args: list[str], directory: Path) -> tuple[list[str], Path] | None:
+    """`git` global options before the subcommand: (subcommand words, directory after
+    `-C DIR`), or None when `--git-dir`/`--work-tree` make the tree unknowable."""
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "-C" and index + 1 < len(args):
+            directory = changed_directory(directory, args[index + 1])
+            index += 2
+        elif arg == "-c" and index + 1 < len(args):
+            index += 2
+        elif arg.startswith(("--git-dir", "--work-tree")):
+            return None
+        elif arg.startswith("-"):
+            index += 1  # --no-pager, -P, --paginate, --literal-pathspecs, ...
+        else:
+            return args[index:], directory
+    return None
+
+
+def search_directory(command: str, cwd: Path) -> Path:
+    """Directory of the command's first program other than `cd`, after preceding
+    `cd DIR` and its own `git -C DIR`; decides which indexed checkout owns the command."""
+    directory = cwd
+    for words, _ in segments(command) or []:
+        words = strip_prefix(words)
+        if not words:
+            continue
+        program = os.path.basename(words[0])
+        if program == "cd" and len(words) > 1:
+            directory = changed_directory(directory, words[1])
+            continue
+        if program == "git":
+            found = git_subcommand(words[1:], directory)
+            return found[1] if found else directory
+        return directory
+    return directory
+
+
+SED_LINES = re.compile(r"^(\d+)(?:,(\d+))?p$")
+
+
+def sed_line_range(args: list[str]) -> tuple[int, int, list[str]] | None:
+    """(first, last, files) of `sed -n 'A,Bp[;C,Dp]' FILE...` (the first range); None for
+    any other sed program, including in-place edits."""
+    quiet = False
+    scripts: list[str] = []
+    operands: list[str] = []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg in ("--quiet", "--silent"):
+            quiet = True
+        elif arg.startswith("--") or arg.startswith("-") and len(arg) > 1 and "i" in arg:
+            return None  # --in-place, --expression=..., -i, and other programs
+        elif arg.startswith("-") and len(arg) > 1:
+            quiet |= "n" in arg
+            if arg.endswith("e") and index + 1 < len(args):
+                index += 1
+                scripts.append(args[index])
+            elif not set(arg[1:]) <= set("nEr"):
+                return None
+        else:
+            operands.append(arg)
+        index += 1
+    if not scripts and operands:
+        scripts.append(operands.pop(0))
+    ranges = [SED_LINES.match(part.strip()) for script in scripts for part in script.split(";") if part.strip()]
+    if not quiet or not ranges or not all(ranges):
+        return None
+    first = int(ranges[0].group(1))
+    return first, int(ranges[0].group(2) or first), operands
+
+
+def cat_files(args: list[str]) -> list[str] | None:
+    """Files `cat [-n|-b|-A|...] FILE...` prints; None when it reads stdin."""
+    if any(arg.startswith("-") and not re.fullmatch(r"-[nbAesTtuv]+", arg) for arg in args):
+        return None  # `-` (stdin) or long options
+    files = [arg for arg in args if not arg.startswith("-")]
+    return files or None

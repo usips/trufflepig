@@ -161,16 +161,19 @@ for attribution and best-effort daemon startup.
 `hooks/steer-search.py` steers ordinary search in checkouts of registered
 workspace members, including linked worktrees. It classifies each shell search
 (`definition`, `body`, `outline`, `references`, `regex`, `concept`, `files`) and
-names the equivalent Trufflepig command. Pipe filters, logs and command output,
-other revisions, filesystem `find` actions, shell variables, and paths outside
-the checkout are never steered. Modes:
+source read (`read`: `sed -n A,Bp F` → `show path:F:A-B`, `cat F` → `map F`),
+resolving paths against `cd DIR`/`git -C DIR`, and names the equivalent command.
+Pipe filters, logs and command output, other revisions, filesystem `find`
+actions, shell variables, and paths outside the checkout are never steered.
+Nudges are full for an agent's first search of a class, one line after; piped or
+chained `trufflepig-agent` calls get a tip that the footer was lost. Modes:
 
 | Mode | Behavior |
 | --- | --- |
 | `off` | Nothing. |
 | `nudge` | Allow; add the equivalent command as context after the search (Claude default). |
 | `block` | Deny until one Trufflepig call from this directory in 45 minutes (Kimi/Muse default). |
-| `strict` | Deny `definition`, `body`, `outline`, `references` with the equivalent command unless a Trufflepig call from this checkout returned no hits or failed in the last 10 minutes, or the command ends with `# tp-fallback: reason`; nudge the rest. |
+| `strict` | Deny `definition`, `body`, `outline`, `references` with the equivalent command unless a Trufflepig call from this checkout returned no hits or failed in the last 10 minutes, or the command ends with `# tp-fallback: reason`; nudge the rest, including `read`. |
 
 `TRUFFLEPIG_AGENT_STEER` overrides `steer.<harness>` in `agent-runtime.json`,
 which `install.sh --steer MODE` records for the selected Claude, Kimi, or Muse
@@ -180,7 +183,7 @@ Codex installation does not install steering hooks.
 
 `trufflepig-audit --adoption` compares Trufflepig navigation calls with the
 ordinary searches the hook observed, split into main agent and subagents, with
-the classes that escaped. Blocked searches are reported separately.
+the classes that escaped. Blocked searches and `read`s are reported separately.
 
 ## Verification
 
