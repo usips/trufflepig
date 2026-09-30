@@ -120,7 +120,7 @@ struct SweepClock {
 
 impl DaemonHandler for SystemRouter {
     fn request(&self, request: AcceptedRequest) -> Result<String> {
-        route(request.args, request.context)
+        route(request.args, request.context, request.deadline)
     }
 
     fn idle(&self) {
@@ -144,9 +144,9 @@ impl DaemonHandler for SystemRouter {
     }
 }
 
-fn route(args: Vec<String>, context: RequestContext) -> Result<String> {
-    // Every forwarded wait ends before the client's own reply wait does.
-    let forwarding = QueryDeadline::after(daemon::PROXY_REPLY_WAIT);
+fn route(args: Vec<String>, context: RequestContext, deadline: QueryDeadline) -> Result<String> {
+    // Preserve time spent queued at this router, and cap every forwarded wait.
+    let forwarding = deadline.capped(daemon::PROXY_REPLY_WAIT);
     let options = crate::cli::parse(&args)?;
     let verb = options.words.first().map(String::as_str);
     if verb == Some("system") {
@@ -207,6 +207,42 @@ fn route(args: Vec<String>, context: RequestContext) -> Result<String> {
             .arg("serve"),
     )?;
     forward_spawned(&cache, &args, &context, &child, forwarding)
+}
+
+#[cfg(test)]
+mod deadline_tests {
+    use super::*;
+
+    #[test]
+    fn router_does_not_reset_an_expired_accepted_deadline() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap().path().join("cache");
+        let router = SystemRouter {
+            cache_base: None,
+            sweeps: Mutex::new(SweepClock::default()),
+        };
+        let args: Vec<String> = [
+            "--no-workspace",
+            "--root",
+            root.path().to_str().unwrap(),
+            "--cache",
+            cache.to_str().unwrap(),
+            "search",
+            "bounded",
+        ]
+        .map(str::to_owned)
+        .into();
+
+        let error = router
+            .request(AcceptedRequest {
+                context: RequestContext::new(None, None),
+                args,
+                deadline: QueryDeadline::after(Duration::ZERO),
+            })
+            .unwrap_err();
+        assert!(crate::daemon::deadline::is_timed_out(&error), "{error:#}");
+        assert!(!cache.exists(), "expired request spawned an owner daemon");
+    }
 }
 
 /// Refuses a stop aimed at this router's own socket directory.

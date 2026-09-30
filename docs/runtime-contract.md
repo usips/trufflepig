@@ -73,9 +73,13 @@ probes; if it panics, the daemon exits (releasing its socket) so the next client
 starts a fresh one. A root daemon binds and serves at once, before any database work; its
 initial reconcile creates the schema, and until the first publication reads
 answer `index_warming` (`more`, `ctx`, handle, and path reads still work). The maintenance thread lowers itself to nice 10 and idle I/O
-after that initial reconcile; request workers keep normal priority. Each request's
-20 s query deadline starts when it is accepted. `stop` lets accepted requests
-finish (up to 28 s) after releasing the socket. Liveness checks connect to the
+after that initial reconcile; request workers keep normal priority. Each read
+request carries its 20 s query deadline from socket accept through local dispatch
+and router forwarding. Query-only index reads cap lock waits and interrupt long
+SQL statements at expiry. Spool requests start their deadline before entering
+the worker queue. `stop` releases the socket, drains accepted work for up to
+28 s, then rejects queued work and returns so the daemon process exits; requests
+still running at that point may lose their reply. Liveness checks connect to the
 socket (`src/daemon.rs:running`) and never touch the startup lock. Clients wait
 at most 30 s for any reply (`src/daemon.rs:CLIENT_REPLY_WAIT`, socket and spool
 alike; a spooled request whose claiming router stops beating fails at once with

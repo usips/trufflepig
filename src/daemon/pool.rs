@@ -2,7 +2,7 @@
 //! work instead of letting accepted connections wait unread. A panicking job
 //! never takes its worker down.
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -33,13 +33,15 @@ pub(crate) const ROOT_POOL: PoolSize = PoolSize {
     queue: 64,
 };
 
-/// Threads sharing one bounded queue; dropping the pool finishes queued work
-/// and joins every worker.
+/// Threads sharing one bounded queue. Shutdown rejects queued work after the
+/// drain window and detaches any worker whose active request has not finished.
 pub(crate) struct RequestPool {
-    sender: Option<mpsc::SyncSender<PooledJob>>,
+    sender: Mutex<Option<mpsc::SyncSender<PooledJob>>>,
+    receiver: Arc<Mutex<mpsc::Receiver<PooledJob>>>,
     workers: Vec<JoinHandle<()>>,
     /// Jobs queued or running.
     pending: Arc<AtomicUsize>,
+    shutting_down: Arc<AtomicBool>,
 }
 
 impl RequestPool {
@@ -47,20 +49,33 @@ impl RequestPool {
         let (sender, receiver) = mpsc::sync_channel::<PooledJob>(size.queue);
         let receiver = Arc::new(Mutex::new(receiver));
         let pending = Arc::new(AtomicUsize::new(0));
+        let shutting_down = Arc::new(AtomicBool::new(false));
         let mut workers = Vec::with_capacity(size.workers);
         for index in 0..size.workers.max(1) {
-            let (receiver, pending) = (Arc::clone(&receiver), Arc::clone(&pending));
+            let (receiver, pending, shutting_down) = (
+                Arc::clone(&receiver),
+                Arc::clone(&pending),
+                Arc::clone(&shutting_down),
+            );
             workers.push(
                 std::thread::Builder::new()
                     .name(format!("{name}-{index}"))
                     .spawn(move || {
                         loop {
+                            if shutting_down.load(Ordering::Acquire) {
+                                return;
+                            }
                             // The guard drops at the end of this statement, so
                             // jobs run without holding the queue lock.
                             let job = receiver.lock().map(|queue| queue.recv());
                             let Ok(Ok(job)) = job else {
                                 return;
                             };
+                            if shutting_down.load(Ordering::Acquire) {
+                                drop(job);
+                                pending.fetch_sub(1, Ordering::AcqRel);
+                                return;
+                            }
                             // Jobs answer their own panics; this keeps the worker.
                             let _ = catch_unwind(AssertUnwindSafe(job));
                             pending.fetch_sub(1, Ordering::AcqRel);
@@ -69,9 +84,11 @@ impl RequestPool {
             );
         }
         Ok(Self {
-            sender: Some(sender),
+            sender: Mutex::new(Some(sender)),
+            receiver,
             workers,
             pending,
+            shutting_down,
         })
     }
 
@@ -79,8 +96,14 @@ impl RequestPool {
     pub fn submit(&self, job: PooledJob) -> Result<(), PooledJob> {
         let sender = self
             .sender
-            .as_ref()
-            .expect("pool accepts work until dropped");
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        if self.shutting_down.load(Ordering::Acquire) {
+            return Err(job);
+        }
+        let Some(sender) = sender.as_ref() else {
+            return Err(job);
+        };
         self.pending.fetch_add(1, Ordering::AcqRel);
         match sender.try_send(job) {
             Ok(()) => Ok(()),
@@ -102,13 +125,36 @@ impl RequestPool {
         }
         true
     }
+
+    /// Refuses new work and lets idle workers exit before the process shuts down.
+    pub fn shutdown(&self) {
+        self.shutting_down.store(true, Ordering::Release);
+        let mut sender = self
+            .sender
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        sender.take();
+        drop(sender);
+        let receiver = self
+            .receiver
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        while let Ok(job) = receiver.try_recv() {
+            drop(job);
+            self.pending.fetch_sub(1, Ordering::AcqRel);
+        }
+    }
 }
 
 impl Drop for RequestPool {
     fn drop(&mut self) {
-        self.sender.take();
+        self.shutdown();
         for worker in self.workers.drain(..) {
-            let _ = worker.join();
+            // A request that outlives the daemon drain must not hold shutdown
+            // open. Its worker is detached and the daemon process exits next.
+            if worker.is_finished() {
+                let _ = worker.join();
+            }
         }
     }
 }
@@ -148,10 +194,69 @@ mod tests {
         assert!(pool.submit(Box::new(move || ran.send(()).unwrap())).is_ok());
         assert!(pool.submit(Box::new(|| {})).is_err());
         release.wait();
+        assert!(pool.drain(Duration::from_secs(1)));
         drop(pool);
         assert!(
             runs.try_recv().is_ok(),
             "queued job ran before the pool joined"
         );
+    }
+
+    #[test]
+    fn dropping_pool_does_not_join_a_blocked_request() {
+        let pool = RequestPool::new(
+            "blocked-pool",
+            PoolSize {
+                workers: 1,
+                queue: 1,
+            },
+        )
+        .unwrap();
+        let (started, started_rx) = mpsc::channel();
+        let (release, release_rx) = mpsc::channel();
+        let (finished, finished_rx) = mpsc::channel();
+        assert!(
+            pool.submit(Box::new(move || {
+                let _ = started.send(());
+                let _ = release_rx.recv();
+                let _ = finished.send(());
+            }))
+            .is_ok()
+        );
+        started_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+
+        let (queued_ran, queued_ran_rx) = mpsc::channel();
+        let (queued_dropped, queued_dropped_rx) = mpsc::channel();
+        struct DropSignal(mpsc::Sender<()>);
+        impl Drop for DropSignal {
+            fn drop(&mut self) {
+                let _ = self.0.send(());
+            }
+        }
+        let signal = DropSignal(queued_dropped);
+        assert!(
+            pool.submit(Box::new(move || {
+                let _signal = signal;
+                let _ = queued_ran.send(());
+            }))
+            .is_ok()
+        );
+
+        let (dropped, dropped_rx) = mpsc::channel();
+        let dropping = std::thread::spawn(move || {
+            drop(pool);
+            let _ = dropped.send(());
+        });
+        dropped_rx
+            .recv_timeout(Duration::from_millis(100))
+            .expect("pool drop joined a request that had not finished");
+        queued_dropped_rx
+            .recv_timeout(Duration::from_millis(100))
+            .expect("pool shutdown retained a queued request");
+        assert!(queued_ran_rx.try_recv().is_err());
+
+        release.send(()).unwrap();
+        finished_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        dropping.join().unwrap();
     }
 }

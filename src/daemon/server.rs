@@ -118,11 +118,17 @@ pub(super) fn serve<H: DaemonHandler>(
     }
     let accepted = accept_until_stopped(&socket, &handler, &pool, &state);
     // A reconcile in progress may outlive the server; its writer lease keeps the
-    // index coherent and the process exit ends it.
+    // index coherent until the daemon process exits.
     let _ = maintenance_done.recv_timeout(MAINTENANCE_STOP_WAIT);
     // A successor may bind now; requests already accepted still get replies.
     drop(socket);
-    pool.drain(STOP_DRAIN);
+    let drained = pool.drain(STOP_DRAIN);
+    pool.shutdown();
+    if !drained {
+        eprintln!(
+            "trufflepig: daemon request drain exceeded {STOP_DRAIN:?}; stopping with unfinished requests"
+        );
+    }
     accepted?;
     match state
         .failure
@@ -245,12 +251,13 @@ pub(super) fn dispatch_spooled<H: DaemonHandler>(
     pool: &Arc<RequestPool>,
 ) {
     for claimed in spool.claim() {
+        // Time queued behind busy workers belongs to this request's budget.
+        let deadline = QueryDeadline::start();
         let claimed = Arc::new(Mutex::new(Some(claimed)));
         let job: PooledJob = {
             let (handler, claimed) = (Arc::clone(handler), Arc::clone(&claimed));
             Box::new(move || {
                 if let Some(claimed) = take_claim(&claimed) {
-                    let deadline = QueryDeadline::start();
                     claimed.answer(|context, args| {
                         guarded_request(
                             &*handler,

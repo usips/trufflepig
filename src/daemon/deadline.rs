@@ -49,6 +49,14 @@ impl QueryDeadline {
         wait.min(self.remaining())
     }
 
+    /// Keeps this caller's expiry, capped by `maximum` from now.
+    pub fn capped(&self, maximum: Duration) -> Self {
+        let cap = Instant::now() + maximum;
+        Self {
+            expires: self.expires.min(cap),
+        }
+    }
+
     /// Relabels a SQLite interrupt raised by this deadline's progress handler as
     /// `timed_out:`; other errors pass through unchanged.
     pub fn classify(&self, error: anyhow::Error) -> anyhow::Error {
@@ -115,6 +123,15 @@ mod tests {
         deadline.pause_during(|| std::thread::sleep(Duration::from_millis(200)));
         assert!(!deadline.expired());
         assert!(deadline.remaining() > Duration::from_millis(50));
+    }
+
+    #[test]
+    fn capping_a_deadline_never_extends_its_expiry() {
+        let expired = QueryDeadline::after(Duration::ZERO).capped(Duration::from_secs(10));
+        assert!(expired.expired());
+
+        let deadline = QueryDeadline::start().capped(Duration::from_millis(5));
+        assert!(deadline.remaining() <= Duration::from_millis(5));
     }
 
     #[test]

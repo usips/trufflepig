@@ -1,7 +1,21 @@
 use super::*;
-use crate::{daemon::deadline::QueryDeadline, diagnostics::RequestContext};
+use crate::{
+    daemon::deadline::{QueryDeadline, is_timed_out},
+    diagnostics::RequestContext,
+    store::Store,
+};
 
 fn ask(daemon: &RootDaemon, root: &Path, cache: &Path, words: &[&str]) -> Result<String> {
+    ask_by(daemon, root, cache, words, QueryDeadline::start())
+}
+
+fn ask_by(
+    daemon: &RootDaemon,
+    root: &Path,
+    cache: &Path,
+    words: &[&str],
+    deadline: QueryDeadline,
+) -> Result<String> {
     let mut args: Vec<String> = [
         "--no-workspace",
         "--diagnostics",
@@ -17,7 +31,7 @@ fn ask(daemon: &RootDaemon, root: &Path, cache: &Path, words: &[&str]) -> Result
     daemon.request(AcceptedRequest {
         context: RequestContext::new(None, None),
         args,
-        deadline: QueryDeadline::start(),
+        deadline,
     })
 }
 
@@ -51,4 +65,31 @@ fn root_daemon_answers_index_warming_until_the_first_publication() {
         serde_json::from_str(&ask(&daemon, &root, &cache, &["search", "sym:warmed"]).unwrap())
             .unwrap();
     assert_eq!(found["hits"][0]["name"], "warmed", "{found}");
+}
+
+#[test]
+fn root_daemon_honors_an_expired_accept_time_deadline() {
+    let root = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("lib.rs"), "pub fn bounded() {}\n").unwrap();
+    Store::open(root.path(), cache.path())
+        .unwrap()
+        .index()
+        .unwrap();
+    let options = parse(&["--diagnostics".to_owned(), "off".to_owned()]).unwrap();
+    let daemon = RootDaemon::open(root.path(), cache.path(), &options);
+    let root = root.path().canonicalize().unwrap();
+    let cache = cache.path().canonicalize().unwrap();
+
+    for words in [&["search", "sym:bounded"][..], &["doctor"][..]] {
+        let error = ask_by(
+            &daemon,
+            &root,
+            &cache,
+            words,
+            QueryDeadline::after(Duration::ZERO),
+        )
+        .unwrap_err();
+        assert!(is_timed_out(&error), "{words:?}: {error:#}");
+    }
 }

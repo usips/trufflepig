@@ -24,6 +24,7 @@ pub fn local(
         &request_context(options),
         None,
         None,
+        QueryDeadline::start(),
     )
 }
 
@@ -36,6 +37,7 @@ pub(super) fn local_with_session(
     context: &crate::diagnostics::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
     preparation_manager: Option<&crate::semantic::preparation::PreparationManager>,
+    deadline: QueryDeadline,
 ) -> Result<String> {
     let initializations = crate::semantic::model_initializations();
     let started = std::time::Instant::now();
@@ -48,6 +50,7 @@ pub(super) fn local_with_session(
         context,
         log_queue,
         preparation_manager,
+        deadline,
     );
     let unexpected = crate::semantic::model_initializations().saturating_sub(initializations);
     if unexpected > 0
@@ -94,6 +97,7 @@ fn local_dispatch(
     context: &crate::diagnostics::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
     preparation_manager: Option<&crate::semantic::preparation::PreparationManager>,
+    mut deadline: QueryDeadline,
 ) -> Result<String> {
     validate(options)?;
     session.set_no_daemon(options.no_daemon);
@@ -107,6 +111,16 @@ fn local_dispatch(
         .first()
         .map(String::as_str)
         .unwrap_or("status");
+    let bounded_read = matches!(
+        verb,
+        "search" | "refs" | "map" | "show" | "more" | "ctx" | "status" | "doctor"
+    );
+    if bounded_read && deadline.expired() {
+        bail!(
+            "{}: query deadline expired",
+            crate::daemon::deadline::TIMED_OUT
+        );
+    }
     if verb == "semantic" {
         return super::semantic::local(root, cache, options, preparation_manager);
     }
@@ -143,12 +157,17 @@ fn local_dispatch(
             ),
         };
     }
-    let mut deadline = QueryDeadline::start();
     let mut store = if matches!(verb, "show" | "more" | "ctx" | "search" | "refs" | "map") {
         read_store(root, cache, options, daemon_running, &mut deadline)?
     } else if verb == "status" {
         match Store::open_read(root, cache, deadline) {
             Err(error) if is_index_warming(&error) => {
+                if deadline.expired() {
+                    bail!(
+                        "{}: query deadline expired",
+                        crate::daemon::deadline::TIMED_OUT
+                    );
+                }
                 return warming_status(root, cache, daemon_running, &budget);
             }
             opened => opened?,
@@ -288,7 +307,14 @@ fn local_dispatch(
         }
         _ => bail!("invalid_command: unknown command {verb}; use search for queries"),
     };
-    response.map_err(|error| deadline.classify(error))
+    let response = response.map_err(|error| deadline.classify(error))?;
+    if bounded_read && deadline.expired() {
+        bail!(
+            "{}: query deadline expired",
+            crate::daemon::deadline::TIMED_OUT
+        );
+    }
+    Ok(response)
 }
 
 /// The query-only store for a read verb. Only a client that no daemon serves

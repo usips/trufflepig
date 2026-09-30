@@ -7,7 +7,10 @@ mod root_daemon;
 pub(crate) mod semantic;
 use crate::{
     background_process::spawn_background,
-    daemon::{self, CLIENT_REPLY_WAIT, deadline::QueryDeadline},
+    daemon::{
+        self, CLIENT_REPLY_WAIT,
+        deadline::{QUERY_DEADLINE, QueryDeadline},
+    },
     output::OutputBudget,
     store::Store,
 };
@@ -226,6 +229,7 @@ fn direct(
         context,
         None,
         None,
+        replying.capped(QUERY_DEADLINE),
     )
 }
 

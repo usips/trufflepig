@@ -130,6 +130,7 @@ impl DaemonHandler for RootDaemon {
             &request.context,
             self.log_queue().as_deref(),
             Some(&self.preparation),
+            request.deadline,
         );
         if output.is_ok()
             && options
