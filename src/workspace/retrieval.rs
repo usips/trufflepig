@@ -18,7 +18,7 @@ use crate::{
     results::{ResultEntry, ResultSet},
     search::{self, Query, telemetry::RetrievalTrace},
     semantic::SemanticSession,
-    store::is_index_warming,
+    store::{Store, is_index_warming},
 };
 use anyhow::{Context, Result, ensure};
 use member_coverage::{fact_limit_paths, member_row, searched_row, short_reason};
@@ -59,7 +59,7 @@ pub(super) fn search_with_policy(
     options: &Arguments,
     context: &RequestContext,
     session: &mut SemanticSession,
-    deadline: QueryDeadline,
+    mut deadline: QueryDeadline,
     policy: HomeIndexPolicy,
 ) -> Result<String> {
     let roots = config.member_roots(&options.root.canonicalize()?)?;
@@ -129,6 +129,9 @@ pub(super) fn search_with_policy(
             ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
             member.verify_identity()?;
             coordinator::ensure_member(member, options)?;
+            if matches!(policy, HomeIndexPolicy::IndexInline) {
+                deadline.pause_during(|| Store::open(&member.root, &member_cache)?.index())?;
+            }
             let explicit_cache = options.cache.as_deref();
             let (store, fallback) =
                 match resolve_home_index(member, &member_cache, explicit_cache, policy, deadline) {
@@ -161,7 +164,7 @@ pub(super) fn search_with_policy(
                 search::search_prepared(
                     &store,
                     &query,
-                    &member_cache,
+                    store.index_cache(),
                     semantic_query,
                     reranker,
                     &mut trace,
@@ -283,7 +286,11 @@ pub(super) fn search_with_policy(
         }
     }
     ensure!(
-        !set.owners.is_empty() || !deadline.expired(),
+        !set.owners.is_empty()
+            || !set
+                .coverage
+                .iter()
+                .any(|member| member["state"] == "timed_out"),
         "{TIMED_OUT}: query deadline expired before any member answered"
     );
     // An unselected query whose home is not answering reports that on an empty page.

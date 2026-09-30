@@ -13,7 +13,7 @@ use crate::{
     store::{Store, decode_path},
     workspace::member_root::MemberRoot,
 };
-use anyhow::{Result, ensure};
+use anyhow::Result;
 use std::path::Path;
 
 /// Most changed files searched for a `sym:` name the parent index lacks.
@@ -140,20 +140,28 @@ pub(in crate::workspace) fn reextracted_from(member: &str) -> String {
     format!("{member} index; re-extracted in worktree")
 }
 
-/// `show TARGET` on a member without a result handle: through its own index,
-/// through its parent's while a worktree warms ([`acquire_through_parent`]), or,
-/// with neither published, from current bytes for explicit path reads. The flag
-/// reports a re-extracted definition.
+/// `show TARGET` on a member without a result handle: through its own index or,
+/// while a worktree warms, its parent's ([`acquire_through_parent`]). With
+/// neither published, `--no-daemon` indexes the member first; otherwise the read
+/// answers `index_warming`. The flag reports a re-extracted definition.
 pub(in crate::workspace) fn acquire_home_read(
     member: &MemberRoot,
     cache: &Path,
     explicit_cache: Option<&Path>,
     target: &str,
     side: Option<SourceSide>,
-    deadline: QueryDeadline,
+    no_daemon: bool,
+    deadline: &mut QueryDeadline,
 ) -> Result<(Store, AcquiredSource, bool)> {
     let policy = HomeIndexPolicy::AwaitDaemon(std::time::Duration::ZERO);
-    match resolve_home_index(member, cache, explicit_cache, policy, deadline) {
+    let mut resolved = resolve_home_index(member, cache, explicit_cache, policy, *deadline);
+    if no_daemon && matches!(resolved, HomeIndexSource::Warming { .. }) {
+        // `--no-daemon` indexes in the foreground, outside the query deadline.
+        deadline.pause_during(|| Store::open(&member.root, cache)?.index())?;
+        let policy = HomeIndexPolicy::IndexInline;
+        resolved = resolve_home_index(member, cache, explicit_cache, policy, *deadline);
+    }
+    match resolved {
         HomeIndexSource::Own(store) => {
             let source = acquisition::acquire(&store, target, side)?;
             Ok((store, source, false))
@@ -162,19 +170,14 @@ pub(in crate::workspace) fn acquire_home_read(
             let (source, reextracted) = acquire_through_parent(&view, target, side)?;
             Ok((view.store, source, reextracted))
         }
-        HomeIndexSource::Warming { reason } => {
-            ensure!(
-                !target.starts_with("sym:"),
-                "index_warming: {} has no published index yet{}; `show path:FILE:A-B` reads current bytes",
-                member.display_name(),
-                reason
-                    .map(|reason| format!(" ({reason})"))
-                    .unwrap_or_default()
-            );
-            let store = Store::open(&member.root, cache)?;
-            let source = acquisition::acquire(&store, target, side)?;
-            Ok((store, source, false))
-        }
+        // Reads never create or write an index; a warming member says so.
+        HomeIndexSource::Warming { reason } => anyhow::bail!(
+            "index_warming: {} has no published index yet{}; retry shortly",
+            member.display_name(),
+            reason
+                .map(|reason| format!(" ({reason})"))
+                .unwrap_or_default()
+        ),
         HomeIndexSource::Unavailable { reason } => anyhow::bail!(reason),
     }
 }

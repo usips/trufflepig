@@ -9,7 +9,7 @@ use crate::{
     identity::{ResultCursor, ResultHandle},
     output::{OutputBudget, OutputFormat},
     results::{self, HitDetail, ResultEntry},
-    store::{Store, decode_path, encode_path, is_index_warming},
+    store::{Store, decode_path, encode_path},
 };
 use anyhow::{Context, Result, bail, ensure};
 use lines::{compact_coverage, mark_worktree_differs, member_coverage_summary};
@@ -133,13 +133,7 @@ impl MemberSnapshot {
                 cache.join("index.sqlite3").is_file(),
                 "member_unavailable: owning index was removed"
             );
-            // An explicit path read captured before the first publication reopens as it was served.
-            match Store::open_read(&member.root, &cache, deadline) {
-                Err(error) if self.generation == 0 && is_index_warming(&error) => {
-                    Store::open(&member.root, &cache)?
-                }
-                opened => opened?,
-            }
+            Store::open_read(&member.root, &cache, deadline)?
         };
         let current: Option<String> = store
             .conn

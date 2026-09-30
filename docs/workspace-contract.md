@@ -75,10 +75,10 @@ roots, and coverage reports the substitution as `member@worktree` in lines and
 as `root` plus `worktree` fields in JSON. Hits carry the plain member name.
 
 `ws show` reports configuration, home, roots, and availability. `ws status` adds
-available publication generations, coverage, and a worktree's last `seed`
-outcome. `ws discover PATH...` validates the supplied directories and returns a
-proposed TOML configuration in JSON. It does not apply the proposal, fetch
-repositories, or discover unrelated siblings.
+available publication generations, coverage, and a worktree's `seed` outcome.
+`ws discover PATH...` validates the supplied directories and returns a proposed
+TOML configuration in JSON. It does not apply the proposal, fetch repositories,
+or discover unrelated siblings.
 
 ## Retrieval and output
 
@@ -94,15 +94,15 @@ select a member; `ws:home` selects home and `ws:all` selects the whole
 workspace, and explicit selectors never widen. Selectors do not establish
 dependency, import, or compiler-resolution relationships.
 
-A parent-index answer reads worktree bytes through the member's index; its row
-has `state: parent_fallback`, `home_state`, `served_from`, `differs` (`null`
-when unknown), and `differing_hits`. Lines read `MEMBER@WT warming → served from
-MEMBER index (N files differ)`, `(no files differ)`, or `(differences unknown)`;
-hits in differing files (worktree changes against the parent's `HEAD` plus the
-parent's own uncommitted files, `home_index/worktree_divergence.rs`) end in
-`differs`. `sym:` without a hit, `map FILE`, and `show` re-extract differing
-files (`served_from: MEMBER index; re-extracted in worktree`). Without a
-published parent, home reads `MEMBER@WT warming (no parent index)`.
+A parent-index answer reads worktree bytes; its row has `state:
+parent_fallback`, `home_state`, `served_from`, `differs` (`null` when unknown),
+and `differing_hits`. Lines read `MEMBER@WT warming → served from MEMBER index
+(N files differ)`, `(no files differ)`, or `(differences unknown)`; hits in
+files that may differ ([index](index-contract.md)) end in `differs`. `sym:`
+without a hit, `map FILE`, and `show` re-extract differing files (`served_from:
+MEMBER index; re-extracted in worktree`). Without a published parent, home reads
+`MEMBER@WT warming (no parent index)`. Reads never write an index; `show` with
+none published answers `index_warming` unless `--no-daemon` indexes first.
 
 Each member produces its existing ranked candidate list. Retrieval collapses
 each lane to one representative occurrence per file, then fuses file ranks with

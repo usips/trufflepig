@@ -8,7 +8,7 @@ mod tests;
 mod worktree_divergence;
 mod worktree_reads;
 
-use super::member_root::MemberRoot;
+use super::member_root::{MemberRoot, linked_root_of_member};
 use crate::{
     daemon::deadline::QueryDeadline,
     store::{Store, is_index_warming},
@@ -28,7 +28,8 @@ pub(super) const NO_PARENT_INDEX: &str = "no parent index";
 /// How a query obtains a member's index.
 #[derive(Clone, Copy, Debug)]
 pub(super) enum HomeIndexPolicy {
-    /// `--no-daemon`: index the member in-process, then read it.
+    /// `--no-daemon`: the caller indexed the member in-process (outside the
+    /// query deadline), so its own index is read without waiting.
     IndexInline,
     /// Read what daemons have published; the home member waits up to this long.
     AwaitDaemon(Duration),
@@ -91,7 +92,6 @@ fn resolve(
 ) -> Result<HomeIndexSource> {
     let wait = match policy {
         HomeIndexPolicy::IndexInline => {
-            Store::open(&member.root, member_cache)?.index()?;
             let store = Store::open_read(&member.root, member_cache, deadline)?;
             return Ok(HomeIndexSource::Own(store));
         }
@@ -128,10 +128,10 @@ fn parent_view(
 ) -> Option<ParentIndexView> {
     let parent_root = &member.member.root;
     let parent_cache = super::hashed_member_cache(parent_root, explicit_cache).ok()?;
-    let store = Store::open_read(parent_root, &parent_cache, deadline)
-        .ok()?
-        .reading_from(&member.root, member_cache)
-        .ok()?;
+    let parent = Store::open_read(parent_root, &parent_cache, deadline).ok()?;
+    // Only a linked worktree sharing the parent's Git common directory may read through it.
+    linked_root_of_member(&member.member, &member.root)?;
+    let store = parent.reading_from(&member.root, member_cache).ok()?;
     let divergence = WorktreeDivergence::load_or_compute(
         parent_root,
         &store.root,

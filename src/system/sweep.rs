@@ -1,7 +1,7 @@
 //! Evicts default-base root caches whose recorded root no longer exists.
-//! Only directories holding `index.sqlite3` are candidates, a grace period
-//! protects caches being created or written, and a root whose parent is also
-//! gone is left alone because it may be an unmounted volume.
+//! Only directories holding `index.sqlite3` or a [`CACHE_ROOT_MARKER`] are
+//! candidates, a grace period protects caches being created or written, and a
+//! root whose parent is also gone is left alone because it may be an unmounted volume.
 
 use fs2::FileExt;
 use rusqlite::Connection;
@@ -17,6 +17,17 @@ pub const SWEEP_INTERVAL: Duration = Duration::from_secs(600);
 /// Caches modified within this window are never evicted.
 pub const SWEEP_GRACE: Duration = Duration::from_secs(60);
 const LOCK_WAIT: Duration = Duration::from_secs(3);
+/// Names the root of a cache that may hold no index yet (a worktree cache whose
+/// queries were answered through its parent's index); holds the encoded root.
+pub const CACHE_ROOT_MARKER: &str = "cache-root";
+
+/// Records `root` in `cache` so the sweep can evict it before any index exists.
+pub fn record_cache_root(cache: &Path, root: &Path) {
+    let marker = cache.join(CACHE_ROOT_MARKER);
+    if !marker.exists() {
+        let _ = fs::write(marker, crate::store::encode_path(root));
+    }
+}
 
 /// One removed cache directory and the root it served.
 #[derive(Clone, Debug, Serialize)]
@@ -40,11 +51,19 @@ pub fn sweep(base: &Path, now: SystemTime, grace: Duration) -> Vec<Evicted> {
 fn sweep_entry(cache: &Path, now: SystemTime, grace: Duration) -> Option<Evicted> {
     let directory = fs::metadata(cache).ok().filter(Metadata::is_dir)?;
     let index_path = cache.join("index.sqlite3");
-    let index = fs::metadata(&index_path).ok().filter(Metadata::is_file)?;
-    if modified_within(&directory, now, grace) || modified_within(&index, now, grace) {
+    let marker_path = cache.join(CACHE_ROOT_MARKER);
+    let indexed = fs::metadata(&index_path).ok().filter(Metadata::is_file);
+    let record = match &indexed {
+        Some(index) => index.clone(),
+        None => fs::metadata(&marker_path).ok().filter(Metadata::is_file)?,
+    };
+    if modified_within(&directory, now, grace) || modified_within(&record, now, grace) {
         return None;
     }
-    let root = recorded_root(&index_path)?;
+    let root = match indexed {
+        Some(_) => recorded_root(&index_path)?,
+        None => crate::store::decode_path(fs::read_to_string(&marker_path).ok()?.trim()).ok()?,
+    };
     if root.is_dir() || !root.parent().is_some_and(Path::is_dir) {
         return None;
     }
@@ -195,6 +214,25 @@ mod tests {
             )
             .is_empty()
         );
+    }
+
+    #[test]
+    fn sweep_evicts_marked_cache_without_index() {
+        let scratch = scratch();
+        let base = scratch.path().join("base");
+        let root = scratch.path().join("roots").join("worktree");
+        fs::create_dir_all(&root).unwrap();
+        let cache = base.join("worktree-cache");
+        fs::create_dir_all(&cache).unwrap();
+        fs::write(cache.join("results.sqlite3"), b"results").unwrap();
+        record_cache_root(&cache, &root.canonicalize().unwrap());
+        age(&cache.join(CACHE_ROOT_MARKER), 2 * SWEEP_GRACE);
+        age(&cache, 2 * SWEEP_GRACE);
+        assert!(sweep(&base, SystemTime::now(), SWEEP_GRACE).is_empty());
+        fs::remove_dir_all(&root).unwrap();
+        let evicted = sweep(&base, SystemTime::now(), SWEEP_GRACE);
+        assert_eq!(evicted.len(), 1, "{evicted:?}");
+        assert!(!cache.exists());
     }
 
     #[test]

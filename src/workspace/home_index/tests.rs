@@ -298,3 +298,27 @@ fn divergence_covers_edited_untracked_parent_advanced_and_parent_dirty() {
     fs::create_dir(&not_git).unwrap();
     assert!(!WorktreeDivergence::load_or_compute(&parent, &not_git, &cache, 1).complete);
 }
+
+#[test]
+fn parent_view_requires_a_linked_worktree_of_the_member() {
+    let seeded = SeededWorktree::new();
+    let config = WorkspaceConfig::load(&seeded.fixture.config).unwrap();
+    let engine = config.members.iter().find(|m| m.name == "engine").unwrap();
+    let unrelated = tempfile::tempdir().unwrap();
+    git(unrelated.path(), &["init", "-q", "-b", "main"]);
+    let mut impostor =
+        MemberRoot::linked(engine, unrelated.path().canonicalize().unwrap()).unwrap();
+    impostor.is_home = true;
+    let cache = member_cache(&impostor, Some(seeded.fixture.cache.path())).unwrap();
+    let resolved = super::resolve_home_index(
+        &impostor,
+        &cache,
+        Some(seeded.fixture.cache.path()),
+        HomeIndexPolicy::AwaitDaemon(Duration::ZERO),
+        QueryDeadline::start(),
+    );
+    assert!(
+        matches!(resolved, super::HomeIndexSource::Warming { .. }),
+        "an unrelated checkout must not read through the member's index"
+    );
+}

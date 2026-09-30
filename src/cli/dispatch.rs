@@ -143,9 +143,9 @@ fn local_dispatch(
             ),
         };
     }
-    let deadline = QueryDeadline::start();
+    let mut deadline = QueryDeadline::start();
     let mut store = if matches!(verb, "show" | "more" | "ctx" | "search" | "refs" | "map") {
-        read_store(root, cache, verb, daemon_running, deadline)?
+        read_store(root, cache, verb, daemon_running, &mut deadline)?
     } else {
         Store::open(root, cache)?
     };
@@ -285,21 +285,23 @@ fn local_dispatch(
 }
 
 /// The query-only store for a read verb. `--no-daemon` searches reconcile
-/// first; an unpublished index is reconciled in the request.
+/// first; an unpublished index is reconciled in the request. Reconciliation
+/// is paused off `deadline`, so only the query spends its budget.
 fn read_store(
     root: &Path,
     cache: &Path,
     verb: &str,
     daemon_running: bool,
-    deadline: QueryDeadline,
+    deadline: &mut QueryDeadline,
 ) -> Result<Store> {
+    let reconcile = || Store::open(root, cache)?.index().map(drop);
     if !daemon_running && matches!(verb, "search" | "refs" | "map") {
-        Store::open(root, cache)?.index()?;
+        deadline.pause_during(reconcile)?;
     }
-    match Store::open_read(root, cache, deadline) {
+    match Store::open_read(root, cache, *deadline) {
         Err(error) if is_index_warming(&error) => {
-            Store::open(root, cache)?.index()?;
-            Store::open_read(root, cache, deadline)
+            deadline.pause_during(reconcile)?;
+            Store::open_read(root, cache, *deadline)
         }
         opened => opened,
     }
@@ -311,4 +313,30 @@ fn ensure_semantic_check_arity(options: &Arguments) -> Result<()> {
         "usage: semantic-check MODEL_DIRECTORY cuda DEVICE_ORDINAL"
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn slow_in_request_reconcile_leaves_the_query_budget_intact() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        crate::daemon::deadline::write_slow_reconcile_fixture(root.path(), "alpha");
+        let budget = Duration::from_millis(100);
+        let mut deadline = QueryDeadline::after(budget);
+        let started = Instant::now();
+        let store = read_store(root.path(), cache.path(), "search", false, &mut deadline).unwrap();
+        assert!(
+            started.elapsed() > budget,
+            "reconcile finished within the budget"
+        );
+        let query = search::Query::parse("sym:alpha").unwrap();
+        let found = search::search(&store, &query, false, cache.path())
+            .map_err(|error| deadline.classify(error))
+            .unwrap();
+        assert!(!found.hits.is_empty());
+    }
 }

@@ -14,6 +14,8 @@ pub(crate) fn ensure(
     let member_cache = super::hashed_member_cache(configured, explicit)?;
     let worktree_cache = super::hashed_member_cache(effective, explicit)?;
     std::fs::create_dir_all(&worktree_cache)?;
+    // Parent-index reads leave results here before any index exists.
+    crate::system::sweep::record_cache_root(&worktree_cache, effective);
     seed(&member_cache, effective, &worktree_cache);
     Ok(worktree_cache)
 }
