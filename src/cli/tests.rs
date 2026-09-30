@@ -24,7 +24,7 @@ fn reconciliation_resumes_preparation_and_new_generations() -> anyhow::Result<()
                 .collect())
         },
     ));
-    schedule_pending_preparation(&manager, root.path(), cache.path())?;
+    root_daemon::schedule_pending_preparation(&manager, root.path(), cache.path())?;
     let done = preparation::wait_timeout(
         root.path(),
         cache.path(),
@@ -34,7 +34,7 @@ fn reconciliation_resumes_preparation_and_new_generations() -> anyhow::Result<()
     assert_eq!(done.state, preparation::PreparationState::Completed);
     std::fs::write(root.path().join("source.rs"), "fn changed() {}")?;
     store.index()?;
-    schedule_pending_preparation(&manager, root.path(), cache.path())?;
+    root_daemon::schedule_pending_preparation(&manager, root.path(), cache.path())?;
     let done = preparation::wait_timeout(
         root.path(),
         cache.path(),

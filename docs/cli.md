@@ -108,7 +108,10 @@ within their retention limits; they never name the latest unrelated query. In a
 workspace, the result set freezes each member owner and generation, so later ranking
 or configuration changes cannot retarget a handle. `show` continuations retain
 source identity and remaining bytes; pass their `next` value unchanged to `show`.
-`stale_source` requires a fresh search or an explicitly current path read.
+A handle whose file changed answers `stale_source`: run a fresh search or an
+explicitly current path read. `show 'sym:NAME'` on a changed file instead returns
+the definition from the current bytes, marked `verified: false` and
+`freshness: unpublished`, once a serving daemon has had 3 s to republish.
 `stale_result` means the graph generation changed and `ctx` needs a fresh handle.
 `refs` reports symbol occurrences and distinguishes observations, resolved targets,
 candidates, and unresolved sites. `map` shows structural module facts: modules and

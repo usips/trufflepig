@@ -44,6 +44,9 @@ pub(crate) fn show_text(value: &Value) -> String {
         }
         _ => {}
     }
+    if let Some(freshness) = value["freshness"].as_str() {
+        let _ = writeln!(out, "freshness: {freshness}");
+    }
     if byte_escaped {
         out.push_str("encoding: byte-escaped\n");
     }

@@ -2,19 +2,20 @@ use super::{DiagnosticStore, DiagnosticsMode, RecordStatus, RequestEvent, record
 use anyhow::Result;
 use std::path::Path;
 use std::sync::{
-    Arc,
+    Arc, Mutex,
     atomic::{AtomicU64, Ordering},
     mpsc,
 };
 use std::time::Duration;
 
 /// A bounded best-effort append worker; drops are observable on this handle.
+/// `Sync`, so concurrent daemon requests share one queue.
 pub struct DiagnosticQueue {
     sender: Option<mpsc::SyncSender<RequestEvent>>,
     drops: Arc<AtomicU64>,
     pending_drops: Arc<AtomicU64>,
     mode: DiagnosticsMode,
-    completed: mpsc::Receiver<()>,
+    completed: Mutex<mpsc::Receiver<()>>,
 }
 
 impl DiagnosticQueue {
@@ -52,7 +53,7 @@ impl DiagnosticQueue {
             drops,
             pending_drops,
             mode,
-            completed,
+            completed: Mutex::new(completed),
         })
     }
 
@@ -82,7 +83,9 @@ impl DiagnosticQueue {
 impl Drop for DiagnosticQueue {
     fn drop(&mut self) {
         self.sender.take();
-        let _ = self.completed.recv_timeout(Duration::from_millis(20));
+        if let Ok(completed) = self.completed.get_mut() {
+            let _ = completed.recv_timeout(Duration::from_millis(20));
+        }
     }
 }
 

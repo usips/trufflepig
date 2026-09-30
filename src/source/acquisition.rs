@@ -6,7 +6,10 @@ use crate::{
     store::Store,
 };
 use anyhow::{Context, Result, bail, ensure};
+use stale_symbol::acquire_symbol_entry;
 use std::path::Component;
+
+mod stale_symbol;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SourceSide {
@@ -41,6 +44,9 @@ pub(crate) struct AcquiredSource {
     /// For a `sym:` read: the number of same-named definitions and `PATH:START-END
     /// KIND` locators for up to `SYMBOL_ALTERNATIVES` of those not shown.
     pub definitions: Option<(usize, Vec<String>)>,
+    /// `unpublished` when a `sym:` read was re-extracted from bytes newer than
+    /// the published index.
+    pub freshness: Option<&'static str>,
 }
 
 /// Other same-named definitions listed after a `sym:` read.
@@ -129,7 +135,7 @@ fn acquire_symbol(store: &Store, target: &str) -> Result<AcquiredSource> {
         found.truncated,
     )?;
     let handle = format!("{set}:1");
-    let mut source = acquire_entry(store, &handle, first, None)?;
+    let mut source = acquire_symbol_entry(store, &handle, first)?;
     source.definitions = Some((total, alternatives));
     Ok(source)
 }
@@ -182,6 +188,7 @@ pub(crate) fn acquire_entry(
                 side: None,
                 historical: None,
                 definitions: None,
+                freshness: None,
             })
         }
         ResultEntry::Change(change) => {
@@ -250,6 +257,7 @@ fn acquire_historical(
         side: Some(side),
         historical: Some(identity),
         definitions: None,
+        freshness: None,
     })
 }
 
@@ -304,6 +312,7 @@ fn acquire_path(store: &Store, target: &str) -> Result<AcquiredSource> {
         side: None,
         historical: None,
         definitions: None,
+        freshness: None,
     })
 }
 

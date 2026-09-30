@@ -19,8 +19,12 @@ socket is `daemon.sock` in `$TRUFFLEPIG_SYSTEM_DIR` verbatim, else
 `$XDG_RUNTIME_DIR/trufflepig/system` (the allowlist target), else
 `$XDG_CACHE_HOME/trufflepig/system`, else `$HOME/.cache/trufflepig/system`.
 The router forwards each request to the owning workspace coordinator or per-root
-daemon, starting a missing target and proxying the reply; failure or an unreachable
-socket falls back to the per-root/coordinator path, then local dispatch. `stop`,
+daemon, starting a missing target and proxying the reply within 28 s
+(`src/daemon.rs:PROXY_REPLY_WAIT`). A router reply, including an error, is the
+answer; only an unreachable router falls back to the per-root/coordinator path,
+then local dispatch. Daemons issue their own sub-requests (workspace owner verbs,
+member `semantic` commands) directly (`src/cli.rs:run_direct`), never through the
+router that may still be proxying the request. `stop`,
 `index`, `init`, `ws`, `semantic status`, `semantic-check`, the `*-serve` verbs, and
 `--no-daemon` requests never touch it. `system ensure` starts the router, `system
 stop` shuts it down, `system status` reports if it runs, `system prune` evicts
@@ -31,9 +35,9 @@ includes its child daemons so binary upgrades do not retain old processes; its
 session-start hook starts that service, or straps a detached router when the unit is
 absent. A sandbox whose seccomp filter denies unix-socket connects (Muse's does) cannot
 reach any socket, and its read-only cache also blocks `--no-daemon`; such clients reach
-the router through its file spool instead. The router drains `<request>.request` files
-from `$TRUFFLEPIG_SPOOL_DIR`, else `/tmp/trufflepig-<uid>/spool`, answers each
-with `<request>.reply`, and refreshes a `heartbeat`
+the router through its file spool instead. The router claims each `<request>.request`
+file in `$TRUFFLEPIG_SPOOL_DIR`, else `/tmp/trufflepig-<uid>/spool`, by renaming it
+to `<request>.claimed`, answers it on a worker with `<request>.reply`, and refreshes a `heartbeat`
 file every second; a client whose socket connect fails spools its request only while
 that heartbeat is under five seconds old, and otherwise reports `workspace_unavailable`.
 The [Codex integration](../plugins/trufflepig-agent/README.md) configures a shared,
@@ -56,7 +60,20 @@ continues history batches until completion or explicit failure. `doctor` runs bo
 integrity/provenance probes without starting inference. The index daemon attempts
 probes while idle. `semantic status` reports root preparation state; `semantic worker
 status` reports shared-worker residency.
-The daemon serializes requests and reconciles on watch events and periodically; it
-has no build-version negotiation. Stop it before changing binaries. Very long cache
+Every daemon answers requests concurrently: its accept thread hands each
+connection to a bounded worker pool (`src/daemon/pool.rs`: router 16 workers,
+coordinator 8, root 4, each queueing 64), and a full queue answers
+`daemon_busy: retry`. One maintenance thread (`src/daemon/reconciler.rs`) watches,
+reconciles on watch events and periodically, drains the spool, and runs idle
+probes. A root daemon binds and serves at once, before any database work; its
+initial reconcile creates the schema, and until the first publication reads
+answer `index_warming` (explicit path reads still serve the current file). The maintenance thread lowers itself to nice 10 and idle I/O
+after that initial reconcile; request workers keep normal priority. Each request's
+20 s query deadline starts when it is accepted. Clients wait at most 30 s for any
+reply (`src/daemon.rs:CLIENT_REPLY_WAIT`, socket and spool alike) and retry a read
+verb once, with a fresh request id, on a timed-out read, `daemon_busy`,
+`database is locked`, or, after 2 s, `index_warming` (`src/cli/retry.rs`).
+Workspace `index` and `init` run in the client, never on a coordinator worker.
+Daemons have no build-version negotiation. Stop them before changing binaries. Very long cache
 paths can exceed Unix socket limits; use a shorter `--cache` path. Watcher fallback
 and resource limits are documented in the [index contract](index-contract.md).

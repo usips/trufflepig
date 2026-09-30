@@ -148,12 +148,15 @@ fn selected_member(config: &WorkspaceConfig, options: &Arguments) -> Result<Memb
         .home_root(&start)?
         .context("member_required: select --member for an owner-scoped command")
 }
+/// Runs one workspace command against an existing coordinator cache.
+/// `deadline` bounds query work from the moment the request was accepted.
 pub(crate) fn local(
     config: &WorkspaceConfig,
     cache: &Path,
     options: &Arguments,
     context: &RequestContext,
     session: &mut crate::semantic::SemanticSession,
+    deadline: crate::daemon::deadline::QueryDeadline,
 ) -> Result<String> {
     session.set_no_daemon(options.no_daemon);
     let verb = options
@@ -191,8 +194,8 @@ pub(crate) fn local(
             if options.wait {
                 args.push("--wait".into());
             }
-            let mut value: Value =
-                serde_json::from_str(&crate::cli::run_with_context(&args, context)?)?;
+            // Direct: the router may be the caller still proxying this request.
+            let mut value: Value = serde_json::from_str(&crate::cli::run_direct(&args, context)?)?;
             // Owner commands budget their payload again after adding mandatory provenance.
             value["member"] = member.name().into();
             value["repository"] = encode_path(&member.root).into();
@@ -206,7 +209,6 @@ pub(crate) fn local(
             bail!("invalid_command: internal server command")
         }
         "search" | "refs" | "map" => {
-            let deadline = crate::daemon::deadline::QueryDeadline::start();
             retrieval::search(config, cache, &results, options, context, session, deadline)
         }
         _ => bail!("invalid_command: unknown command {verb}; use search for queries"),
@@ -231,10 +233,15 @@ fn inspect(config: &WorkspaceConfig, options: &Arguments, budget: &OutputBudget)
             && member.verify_identity().is_ok()
             && cache.join("index.sqlite3").exists()
         {
-            match crate::store::Store::open(&member.root, &cache) {
+            let deadline = crate::daemon::deadline::QueryDeadline::start();
+            match crate::store::Store::open_read(&member.root, &cache, deadline) {
                 Ok(store) => {
                     value["generation"] = store.generation()?.into();
                     value["coverage"] = serde_json::to_value(store.coverage()?)?;
+                }
+                Err(error) if crate::store::is_index_warming(&error) => {
+                    value["generation"] = 0.into();
+                    value["state"] = "warming".into();
                 }
                 Err(_) => value["available"] = false.into(),
             }

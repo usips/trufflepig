@@ -145,7 +145,14 @@ fn local_dispatch(
     }
     let deadline = QueryDeadline::start();
     let mut store = if matches!(verb, "show" | "more" | "ctx" | "search" | "refs" | "map") {
-        read_store(root, cache, verb, daemon_running, deadline)?
+        read_store(root, cache, options, daemon_running, deadline)?
+    } else if verb == "status" {
+        match Store::open_read(root, cache, deadline) {
+            Err(error) if is_index_warming(&error) => {
+                return warming_status(root, cache, daemon_running, &budget);
+            }
+            opened => opened?,
+        }
     } else {
         Store::open(root, cache)?
     };
@@ -285,24 +292,68 @@ fn local_dispatch(
 }
 
 /// The query-only store for a read verb. `--no-daemon` searches reconcile
-/// first; an unpublished index is reconciled in the request.
+/// first and an unpublished index is reconciled in the request. Inside the
+/// daemon an unpublished index answers `index_warming` while the maintenance
+/// thread scans, except that explicit path reads need no index.
 fn read_store(
     root: &Path,
     cache: &Path,
-    verb: &str,
+    options: &Arguments,
     daemon_running: bool,
     deadline: QueryDeadline,
 ) -> Result<Store> {
+    let verb = options.words.first().map_or("status", String::as_str);
     if !daemon_running && matches!(verb, "search" | "refs" | "map") {
         Store::open(root, cache)?.index()?;
     }
     match Store::open_read(root, cache, deadline) {
-        Err(error) if is_index_warming(&error) => {
+        Err(error) if is_index_warming(&error) && !daemon_running => {
             Store::open(root, cache)?.index()?;
             Store::open_read(root, cache, deadline)
         }
+        Err(error)
+            if is_index_warming(&error)
+                && verb == "show"
+                && options
+                    .words
+                    .get(1)
+                    .is_some_and(|target| explicit_path_read(target)) =>
+        {
+            Store::open(root, cache)
+        }
         opened => opened,
     }
+}
+
+/// `show PATH[:A-B]`: not a symbol, handle, or continuation.
+fn explicit_path_read(target: &str) -> bool {
+    !target.starts_with("sym:")
+        && !target.starts_with("read:")
+        && target.parse::<crate::identity::ResultHandle>().is_err()
+        && !target
+            .rsplit_once(':')
+            .is_some_and(|(id, _)| uuid::Uuid::parse_str(id).is_ok())
+}
+
+/// `status` of an unpublished index: generation 0, empty coverage, and
+/// `state: warming`, without writing to a daemon's index.
+fn warming_status(
+    root: &Path,
+    cache: &Path,
+    daemon_running: bool,
+    budget: &OutputBudget,
+) -> Result<String> {
+    if !daemon_running {
+        // Local status keeps creating the cache it reports on.
+        Store::open(root, cache)?;
+    }
+    budget.render(&serde_json::json!({
+        "generation": 0,
+        "coverage": crate::store::Coverage::default(),
+        "state": "warming",
+        "semantic_feature": cfg!(feature = "semantic"),
+        "tokenizer": "o200k_base",
+    }))
 }
 
 fn ensure_semantic_check_arity(options: &Arguments) -> Result<()> {

@@ -23,8 +23,8 @@ fn preparation_wait_checks_actual_lock_ownership() -> Result<()> {
     let cache = tempfile::tempdir()?;
     let lock = std::fs::File::create(cache.path().join("daemon.lock"))?;
     lock.try_lock_exclusive()?;
-    assert!(root_daemon_running(cache.path())?);
+    assert!(crate::daemon::running(cache.path())?);
     FileExt::unlock(&lock)?;
-    assert!(!root_daemon_running(cache.path())?);
+    assert!(!crate::daemon::running(cache.path())?);
     Ok(())
 }

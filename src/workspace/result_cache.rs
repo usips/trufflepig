@@ -156,12 +156,25 @@ pub struct WorkspaceResults {
     pub(super) conn: Connection,
 }
 impl WorkspaceResults {
-    pub fn open(cache: &Path) -> Result<Self> {
+    /// Creates the private cache and its schema; runs once per coordinator start
+    /// (or local command), never per request.
+    pub fn create(cache: &Path) -> Result<()> {
         std::fs::create_dir_all(cache)?;
         std::fs::set_permissions(cache, std::fs::Permissions::from_mode(0o700))?;
         let conn = Connection::open(cache.join("workspace.sqlite3"))?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA journal_size_limit=4194304; CREATE TABLE IF NOT EXISTS workspace_results(id TEXT PRIMARY KEY, expires INTEGER NOT NULL, payload TEXT NOT NULL)")?;
+        conn.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS workspace_results(id TEXT PRIMARY KEY, expires INTEGER NOT NULL, payload TEXT NOT NULL)")?;
+        Ok(())
+    }
+    /// Opens the store [`Self::create`] made, running no DDL.
+    pub fn open(cache: &Path) -> Result<Self> {
+        let conn = Connection::open_with_flags(
+            cache.join("workspace.sqlite3"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .context("workspace_unavailable: workspace result store is missing")?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        conn.execute_batch("PRAGMA synchronous=FULL; PRAGMA journal_size_limit=4194304;")?;
         Ok(Self { conn })
     }
     pub fn save(&self, mut set: WorkspaceSet) -> Result<String> {

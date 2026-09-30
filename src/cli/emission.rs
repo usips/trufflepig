@@ -27,7 +27,7 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
     let diagnostic_location = crate::workspace::diagnostic_location(options);
     let mut operation = operation(options);
     let (response, outcome, mut exit_code) = match &parsed {
-        Ok(_) => match super::run_with_context(args, &context) {
+        Ok(_) => match super::retry::run_with_retry(args, options, &context) {
             Ok(text) => (text, Outcome::Success, 0),
             Err(error) => {
                 let message = format!("{error:#}");

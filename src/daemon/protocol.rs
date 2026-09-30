@@ -40,6 +40,17 @@ pub(super) enum DaemonReply {
     Failure { message: String },
 }
 
+impl DaemonReply {
+    pub(super) fn from_result(result: Result<String>) -> Self {
+        match result {
+            Ok(output) => Self::Success { output },
+            Err(error) => Self::Failure {
+                message: format!("{error:#}"),
+            },
+        }
+    }
+}
+
 fn read_frame(reader: &mut impl Read, limit: usize) -> Result<Vec<u8>> {
     let mut header = [0_u8; 4];
     reader

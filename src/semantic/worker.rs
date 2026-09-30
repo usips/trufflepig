@@ -134,10 +134,7 @@ fn start_worker(cache_identity: &Path, config: &InferenceConfig, cache: &Path) -
     if let Some(runtime) = config.runtime_library.as_deref() {
         command.env("ORT_DYLIB_PATH", runtime);
     }
-    let mut child = spawn_background(&mut command).context("start semantic inference worker")?;
-    thread::spawn(move || {
-        let _ = child.wait();
-    });
+    spawn_background(&mut command).context("start semantic inference worker")?;
     Ok(())
 }
 

@@ -1,9 +1,13 @@
 //! Workspace coordination shares inference while existing root daemons own reconciliation.
-use super::{WorkspaceConfig, cache_path, local, member_cache, member_root::MemberRoot};
+//! The coordinator answers requests concurrently; each builds its own session.
+use super::{
+    WorkspaceConfig, cache_path, local, member_cache, member_root::MemberRoot,
+    result_cache::WorkspaceResults,
+};
 use crate::{
     background_process::spawn_background,
     cli::{Arguments, normalized_args},
-    daemon,
+    daemon::{self, AcceptedRequest, DaemonHandler, deadline::QueryDeadline},
     diagnostics::RequestContext,
     semantic::SemanticSession,
 };
@@ -11,7 +15,7 @@ use anyhow::{Context, Result, ensure};
 use fs2::FileExt;
 use std::{
     fs::OpenOptions,
-    path::Path,
+    path::{Path, PathBuf},
     process::Command,
     time::{Duration, Instant},
 };
@@ -72,13 +76,18 @@ pub fn run(
             .words
             .get(1)
             .is_some_and(|command| command == "status");
-    if options.no_daemon || verb == "ws" || metadata_only {
+    // Indexing is long foreground work; it never occupies a coordinator worker.
+    if options.no_daemon || matches!(verb, "ws" | "index" | "init") || metadata_only {
+        if !(verb == "ws" || metadata_only) {
+            WorkspaceResults::create(&cache)?;
+        }
         return local(
             &config,
             &cache,
             &options,
             context,
             &mut SemanticSession::new(),
+            QueryDeadline::start(),
         );
     }
     let mut args = normalized_args(&options, &options.root);
@@ -100,13 +109,13 @@ pub fn run(
     server.member = None;
     let mut command = Command::new(std::env::current_exe()?);
     command.args(normalized_args(&server, &server.root));
-    let mut child = spawn_background(&mut command)?;
+    let child = spawn_background(&mut command)?;
     let started = Instant::now();
     while started.elapsed() < Duration::from_secs(3) {
         if let Some(reply) = daemon::request(&cache, &args, context)? {
             return wait_if_semantic_prepare(&config, &options, reply);
         }
-        if child.try_wait()?.is_some() {
+        if daemon::spawn_failed(&child, &cache) {
             break;
         }
         std::thread::sleep(Duration::from_millis(25));
@@ -137,39 +146,50 @@ fn wait_if_semantic_prepare(
     }
 }
 fn serve(config: &WorkspaceConfig, cache: &Path) -> Result<()> {
-    let mut session = SemanticSession::new();
-    let config_path = config.path.clone();
-    let config_id = config.id.clone();
+    WorkspaceResults::create(cache)?;
     daemon::serve_coordinator(
         config
             .path
             .parent()
             .context("invalid workspace configuration path")?,
         cache,
-        |event| match event {
-            daemon::DaemonEvent::Request { args, context } => {
-                let options = crate::cli::parse(&args)?;
-                let current = super::resolve(&options)?.context(
-                    "workspace_unavailable: configuration no longer selects this workspace",
-                )?;
-                ensure!(
-                    current.id == config_id && current.path == config_path,
-                    "invalid_workspace: coordinator belongs to a different configuration"
-                );
-                ensure!(
-                    cache_path(&current, options.cache.as_deref())? == cache,
-                    "invalid_cache: coordinator cache mismatch"
-                );
-                let output = local(&current, cache, &options, &context, &mut session);
-                output
-            }
-            daemon::DaemonEvent::Idle => {
-                crate::background_process::reap_children();
-                Ok(String::new())
-            }
-            daemon::DaemonEvent::Reconcile => Ok(String::new()),
+        WorkspaceCoordinator {
+            config_path: config.path.clone(),
+            config_id: config.id.clone(),
+            cache: cache.to_owned(),
         },
     )
+}
+
+/// Serves one workspace configuration from its coordinator cache.
+pub(super) struct WorkspaceCoordinator {
+    pub(super) config_path: PathBuf,
+    pub(super) config_id: String,
+    pub(super) cache: PathBuf,
+}
+
+impl DaemonHandler for WorkspaceCoordinator {
+    fn request(&self, request: AcceptedRequest) -> Result<String> {
+        let options = crate::cli::parse(&request.args)?;
+        let current = super::resolve(&options)?
+            .context("workspace_unavailable: configuration no longer selects this workspace")?;
+        ensure!(
+            current.id == self.config_id && current.path == self.config_path,
+            "invalid_workspace: coordinator belongs to a different configuration"
+        );
+        ensure!(
+            cache_path(&current, options.cache.as_deref())? == self.cache,
+            "invalid_cache: coordinator cache mismatch"
+        );
+        local(
+            &current,
+            &self.cache,
+            &options,
+            &request.context,
+            &mut SemanticSession::new(),
+            request.deadline,
+        )
+    }
 }
 /// Starts an unowned root asynchronously. Existing root ownership is left intact.
 pub(super) fn ensure_member(member: &MemberRoot, options: &Arguments) -> Result<()> {
@@ -208,3 +228,6 @@ pub(super) fn ensure_member(member: &MemberRoot, options: &Arguments) -> Result<
     spawn_background(&mut command)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
