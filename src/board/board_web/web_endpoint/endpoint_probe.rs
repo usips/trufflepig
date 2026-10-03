@@ -1,0 +1,125 @@
+use super::*;
+use std::{io, net::TcpStream, time::Duration};
+
+pub(super) fn probe(
+    address: SocketAddr,
+    guard: &WebGuard,
+    token: &BoardWebToken,
+    expires: Instant,
+) -> Result<()> {
+    let mut socket = TcpStream::connect_timeout(&address, remaining(expires)?)?;
+    let body = serde_json::to_vec(&serde_json::json!({"api":BOARD_API,"op":{
+        "op":"feed","plan":null,"after":null,"through":null,"limit":1,
+    }}))?;
+    let headers = format!(
+        "POST /api/v1/board HTTP/1.1\r\nHost: {}\r\nOrigin: {}\r\nX-Board-Token: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        guard.authority(),
+        guard.origin(),
+        token.expose(),
+        body.len(),
+    );
+    write_before(&mut socket, headers.as_bytes(), expires)?;
+    write_before(&mut socket, &body, expires)?;
+    let reply = read_response(&mut socket, expires)?;
+    let value: serde_json::Value = serde_json::from_slice(&reply)?;
+    ensure!(
+        value["api"].as_u64() == Some(u64::from(BOARD_API))
+            && value["result"]["result"].as_str() == Some("feed"),
+        "board_unavailable: web listener returned an incompatible authenticated reply"
+    );
+    Ok(())
+}
+
+fn remaining(expires: Instant) -> io::Result<Duration> {
+    let duration = expires.saturating_duration_since(Instant::now());
+    if duration.is_zero() {
+        return Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "web listener probe timed out",
+        ));
+    }
+    Ok(duration)
+}
+
+fn write_before(socket: &mut TcpStream, mut bytes: &[u8], expires: Instant) -> io::Result<()> {
+    while !bytes.is_empty() {
+        socket.set_write_timeout(Some(remaining(expires)?))?;
+        let count = socket.write(bytes)?;
+        if count == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::WriteZero,
+                "web listener closed",
+            ));
+        }
+        bytes = &bytes[count..];
+    }
+    Ok(())
+}
+
+fn read_response(socket: &mut TcpStream, expires: Instant) -> Result<Vec<u8>> {
+    let mut buffered = Vec::with_capacity(4096);
+    let header_end = loop {
+        if let Some(start) = buffered.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
+            break start + 4;
+        }
+        ensure!(
+            buffered.len() < http_wire::HEADER_LIMIT,
+            "web response headers too large"
+        );
+        read_chunk(socket, &mut buffered, expires)?;
+    };
+    ensure!(
+        header_end <= http_wire::HEADER_LIMIT,
+        "web response headers too large"
+    );
+    let headers = std::str::from_utf8(&buffered[..header_end])?;
+    let mut lines = headers.split("\r\n");
+    ensure!(
+        lines
+            .next()
+            .is_some_and(|line| line.starts_with("HTTP/1.1 200 ")),
+        "web listener rejected authenticated readiness probe"
+    );
+    let mut length = None;
+    for line in lines.filter(|line| !line.is_empty()) {
+        let (name, value) = line
+            .split_once(':')
+            .context("invalid web response header")?;
+        ensure!(
+            !name.eq_ignore_ascii_case("transfer-encoding"),
+            "unexpected streaming web response"
+        );
+        if name.eq_ignore_ascii_case("content-length") {
+            ensure!(length.is_none(), "duplicate web response length");
+            let value = value.trim();
+            ensure!(
+                !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()),
+                "invalid web response length"
+            );
+            length = Some(value.parse::<usize>()?);
+        }
+    }
+    let length = length.context("web response length required")?;
+    ensure!(
+        length <= http_wire::BODY_LIMIT,
+        "web response body too large"
+    );
+    let end = header_end + length;
+    while buffered.len() < end {
+        read_chunk(socket, &mut buffered, expires)?;
+    }
+    ensure!(
+        buffered.len() == end,
+        "unexpected trailing web response bytes"
+    );
+    Ok(buffered[header_end..].to_vec())
+}
+
+fn read_chunk(socket: &mut TcpStream, buffered: &mut Vec<u8>, expires: Instant) -> Result<()> {
+    socket.set_read_timeout(Some(remaining(expires)?))?;
+    let mut chunk = [0; 4096];
+    let count = socket.read(&mut chunk)?;
+    ensure!(count > 0, "web listener closed before readiness reply");
+    buffered.extend_from_slice(&chunk[..count]);
+    Ok(())
+}

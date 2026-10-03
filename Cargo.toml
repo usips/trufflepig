@@ -14,6 +14,7 @@ imara-diff = "=0.2.0"
 quick-xml = "=0.38.3"
 libc = "0.2"
 notify = "8"
+pulldown-cmark = { version = "=0.13.4", default-features = false, features = ["html"] }
 regex = "1"
 rusqlite = { version = "0.38", features = ["bundled", "hooks"] }
 serde = { version = "1", features = ["derive"] }

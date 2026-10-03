@@ -2,6 +2,7 @@ mod entry_permission_tests;
 mod proposal_entry_view_tests;
 mod repository_evidence_tests;
 mod review_window_tests;
+mod shared_section_tests;
 
 use super::*;
 use crate::board::board_actor::BoardActor;

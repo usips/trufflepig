@@ -31,9 +31,12 @@ impl BoardHost {
         deadline: QueryDeadline,
     ) -> Result<String> {
         check_deadline(deadline)?;
+        let command = board_grammar::parse(options, None)?;
+        if matches!(&command, BoardCommand::Web { .. }) {
+            bail!("invalid_options: board web must run on the client");
+        }
         let config = self.config()?;
         let actor = config.actor(context.client.as_deref(), context.session.as_deref())?;
-        let command = board_grammar::parse(options, None)?;
         let budget = OutputBudget::new(options.budget)?.with_format(options.output_format());
         let BoardCommand::Op(mut op) = command else {
             let (targets, report) = self.ingest(

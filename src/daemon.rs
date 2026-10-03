@@ -2,7 +2,7 @@
 //! beside one maintenance thread that reconciles filesystem updates.
 
 pub mod deadline;
-mod pool;
+pub(crate) mod pool;
 mod protocol;
 mod reconciler;
 mod server;
@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use deadline::QueryDeadline;
+pub(crate) use pool::{PoolSize, RequestPool};
 use protocol::{DaemonReply, DaemonRequest};
 pub use server::{AcceptedRequest, DAEMON_BUSY, DaemonHandler};
 

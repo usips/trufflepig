@@ -120,3 +120,25 @@ fn idle_maintenance_does_not_wait_for_configuration_lock() {
     assert!(started.elapsed() < Duration::from_millis(100));
     drop(held);
 }
+
+#[test]
+fn backend_rejects_client_only_web_before_opening_board_database() {
+    let directory = crate::board::board_test_support::scratch("board-web-client-only-");
+    let database = directory.path().join("absent.sqlite3");
+    let host = BoardHost::with_config(BoardConfig::for_database(&database));
+    let options = crate::cli::parse(&["board".into(), "web".into(), "P1".into()]).unwrap();
+    let error = host
+        .run(
+            &options,
+            &RequestContext::new(None, None),
+            QueryDeadline::start(),
+        )
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .starts_with("invalid_options: board web must run on the client")
+    );
+    assert!(!database.exists());
+    assert!(host.inner.backend.lock().unwrap().is_none());
+}

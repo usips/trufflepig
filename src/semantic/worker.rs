@@ -122,7 +122,7 @@ fn start_worker(cache_identity: &Path, config: &InferenceConfig, cache: &Path) -
         .map(PathBuf::from)
         .unwrap_or(env::current_exe()?);
     let mut command = Command::new(executable);
-    command.args(["--no-daemon", WORKER_COMMAND]);
+    command.arg(WORKER_COMMAND);
     command.env("TRUFFLEPIG_WORKER_CACHE", &cache);
     command.env("TRUFFLEPIG_WORKER_ROOT", cache_identity);
     if let Some(visible) = config.cuda_visible_devices() {

@@ -200,7 +200,7 @@ pub(super) fn operation(options: &Arguments) -> Operation {
         "session" => Operation::SessionEnd,
         "audit" => Operation::Audit,
         "forget-logs" => Operation::ForgetLogs,
-        "board" => Operation::Board,
+        "board" | "board-serve" => Operation::Board,
         "feedback" => Operation::Feedback,
         "search" => Operation::Search,
         "serve" | "history-serve" | "stop" | "ws" | "workspace-serve" | "system"

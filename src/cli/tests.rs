@@ -574,6 +574,7 @@ fn board_grammar_accepts_every_m1_command_and_skill_example() {
             board_parse(&options, *body).unwrap_or_else(|error| panic!("{words:?}: {error}"));
         let actual = match command {
             BoardCommand::Ingest => "ingest".into(),
+            BoardCommand::Web { .. } => "web".into(),
             BoardCommand::Op(BoardOp::Feedback { import_key, .. }) => {
                 uuid::Uuid::parse_str(&import_key.unwrap().to_string()).unwrap();
                 "feedback".into()
@@ -874,4 +875,47 @@ fn body_preflight_rejects_bad_grammar_before_client_reads() {
         body_limit(&plan),
         crate::board::board_vocabulary::PLAN_TEXT_LIMIT
     );
+}
+
+#[test]
+fn board_web_and_foreground_server_validate_without_workspace_dispatch() {
+    use crate::board::board_grammar::{BoardCommand, parse as board_parse};
+    for target in ["P7", "P7@12", "E512"] {
+        let options = parse(&["board".into(), "web".into(), target.into()]).unwrap();
+        assert!(matches!(
+            board_parse(&options, None).unwrap(),
+            BoardCommand::Web { target: Some(_) }
+        ));
+    }
+    for target in [
+        "P7.3",
+        "P7@1..2",
+        "0123456789abcdef0123456789abcdef01234567",
+    ] {
+        let options = parse(&["board".into(), "web".into(), target.into()]).unwrap();
+        assert!(board_parse(&options, None).is_err(), "{target}");
+    }
+    for address in ["127.0.0.1:0", "[::1]:0"] {
+        let options = parse(&["board-serve".into(), format!("--listen={address}")]).unwrap();
+        validate(&options).unwrap();
+        assert_eq!(options.listen.unwrap().port(), 0);
+    }
+    let defaults = parse(&["board-serve".into()]).unwrap();
+    validate(&defaults).unwrap();
+    assert_eq!(
+        defaults.board_listen_address(),
+        "127.0.0.1:7341".parse().unwrap()
+    );
+    for words in [
+        vec!["board-serve", "--listen=0.0.0.0:7341"],
+        vec!["board-serve", "--listen=[::]:7341"],
+        vec!["board-serve", "--no-daemon"],
+        vec!["board-serve", "--sem"],
+        vec!["board-serve", "extra"],
+        vec!["board", "show", "--listen=127.0.0.1:7341"],
+        vec!["semantic-worker-serve", "--no-daemon"],
+    ] {
+        let options = parse(&words.iter().map(|word| (*word).into()).collect::<Vec<_>>()).unwrap();
+        assert!(validate(&options).is_err(), "{words:?}");
+    }
 }

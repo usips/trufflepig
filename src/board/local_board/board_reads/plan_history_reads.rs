@@ -155,45 +155,18 @@ pub(super) fn plan_view(
 }
 
 fn uncovered_sections(body: &str, tasks: &[TaskRecord]) -> Vec<String> {
-    let mut sections = Vec::new();
-    let mut fence: Option<(u8, usize)> = None;
-    for line in body.lines() {
-        let line = line.trim_start();
-        let marker = line.as_bytes().first().copied();
-        if matches!(marker, Some(b'`' | b'~')) {
-            let marker = marker.unwrap_or_default();
-            let width = line.bytes().take_while(|byte| *byte == marker).count();
-            if width >= 3 {
-                match fence {
-                    None => fence = Some((marker, width)),
-                    Some((open, size)) if open == marker && width >= size => fence = None,
-                    Some(_) => {}
-                }
-                continue;
-            }
-        }
-        if fence.is_some() {
-            continue;
-        }
-        let width = line.bytes().take_while(|byte| *byte == b'#').count();
-        if !(1..=6).contains(&width)
-            || !line
-                .as_bytes()
-                .get(width)
-                .is_some_and(u8::is_ascii_whitespace)
-        {
-            continue;
-        }
-        let heading = line[width..].trim().trim_end_matches('#').trim_end();
-        if heading.is_empty()
+    let headings = crate::board::board_markup::headings(body);
+    let mut sections = Vec::with_capacity(headings.len());
+    for heading in headings {
+        if heading.title.is_empty()
             || tasks
                 .iter()
-                .any(|task| task.section.as_deref() == Some(heading))
-            || sections.iter().any(|section| section == heading)
+                .any(|task| task.section.as_deref() == Some(heading.title.as_str()))
+            || sections.iter().any(|section| section == &heading.title)
         {
             continue;
         }
-        sections.push(heading.to_owned());
+        sections.push(heading.title);
     }
     sections
 }

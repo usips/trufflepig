@@ -22,6 +22,24 @@ pub(super) fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Re
         return Ok(BoardCommand::Op(op));
     }
     let op = match verb {
+        "web" => {
+            check_flags(options, &[])?;
+            fixed_words(options, 2, 3, "board web [P7|P7@12|E512]")?;
+            let target = words
+                .get(2)
+                .map(|value| value.parse::<BoardRef>())
+                .transpose()?;
+            if let Some(target) = &target {
+                target.validate()?;
+                if !matches!(
+                    target,
+                    BoardRef::Plan(_) | BoardRef::Revision(_) | BoardRef::Entry(_)
+                ) {
+                    bail!("invalid_reference: web requires a plan, revision, or entry");
+                }
+            }
+            return Ok(BoardCommand::Web { target });
+        }
         "hello" => {
             check_flags(options, &[])?;
             fixed_words(options, 3, 4, "board hello MODEL [EFFORT]")?;
@@ -132,7 +150,7 @@ pub(super) fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Re
         }
         value if value.parse::<u64>().is_ok() => return parse_inbox(options, 1),
         _ => bail!(
-            "usage: board hello|inbox|show|feed|attention|history|search|claim|post|task|propose|review|accept|reject|edit|new|ingest"
+            "usage: board hello|inbox|show|feed|attention|history|search|web|claim|post|task|propose|review|accept|reject|edit|new|ingest"
         ),
     };
     Ok(BoardCommand::Op(op))

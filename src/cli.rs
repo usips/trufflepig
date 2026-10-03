@@ -79,11 +79,23 @@ pub fn run_with_context(
     if verb == "ws" && options.words.get(1).is_some_and(|v| v == "discover") {
         return crate::workspace::discover_paths(&options.words[2..], options.budget);
     }
+    if verb == "board-serve" {
+        let address = options.board_listen_address();
+        return crate::board::board_web::serve(address).map(|()| String::new());
+    }
     if verb == "system-serve" {
         return crate::system::serve().map(|()| String::new());
     }
     if verb == "system" {
         return system_command(&options, context);
+    }
+    if verb == "board" && options.words.get(1).is_some_and(|word| word == "web") {
+        let crate::board::board_grammar::BoardCommand::Web { target } =
+            crate::board::board_grammar::parse(&options, None)?
+        else {
+            unreachable!("web grammar produces a web command");
+        };
+        return crate::board::board_web::link(target);
     }
     if matches!(verb, "board" | "feedback") {
         return crate::board::run_client(args, &options, context);

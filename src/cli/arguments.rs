@@ -42,6 +42,8 @@ Plans:
   board attention [--all]   pending work for this actor
   board history P7 [SEQ]    immutable plan revision history
   board search TEXT... [--plan P7]  board full-text search
+  board web [TARGET]        print the running console URL
+  board-serve [--listen 127.0.0.1:7341]  serve the board console
   board claim P7.3 SCOPE...  claim a task before working
   board post P7 KIND TEXT...  post progress or ask a question
   board task P7.3 COLUMN    move a task and release its claim
@@ -76,6 +78,7 @@ const KNOWN_COMMANDS: &[&str] = &[
     "ws",
     "system",
     "board",
+    "board-serve",
     "feedback",
     "serve",
     "history-serve",
@@ -116,6 +119,9 @@ pub struct Arguments {
     /// Internal marker preserving an implicitly selected root when forwarding.
     #[arg(long, hide = true)]
     pub implicit_root: bool,
+    /// Loopback HTTP address for the foreground board server.
+    #[arg(long)]
+    pub listen: Option<std::net::SocketAddr>,
     /// Override the cache directory.
     #[arg(long)]
     pub cache: Option<PathBuf>,
@@ -270,6 +276,12 @@ impl Arguments {
         self.words.first().map(String::as_str) == Some("show")
     }
 
+    /// Foreground board HTTP binding; loopback is enforced before serving.
+    pub fn board_listen_address(&self) -> std::net::SocketAddr {
+        self.listen
+            .unwrap_or_else(|| std::net::SocketAddr::from(([127, 0, 0, 1], 7341)))
+    }
+
     /// Whether the request uses the plan board edge.
     pub fn is_board(&self) -> bool {
         matches!(
@@ -291,15 +303,26 @@ pub(super) fn validate(options: &Arguments) -> Result<()> {
             unknown_command_hint(command)
         );
     }
-    if options.no_daemon
-        && options.words.first().is_some_and(|verb| {
-            matches!(
-                verb.as_str(),
-                "serve" | "history-serve" | "workspace-serve" | "system-serve"
-            )
-        })
-    {
+    let verb = options
+        .words
+        .first()
+        .map(String::as_str)
+        .unwrap_or("status");
+    if options.no_daemon && (verb == "serve" || verb.ends_with("-serve")) {
         bail!("invalid_options: --no-daemon cannot start a server");
+    }
+    if options.listen.is_some() && verb != "board-serve" {
+        bail!("invalid_options: --listen requires board-serve");
+    }
+    if verb == "board-serve" {
+        crate::board::board_grammar::validate_board_surface(options)?;
+        if options.words.len() != 1 {
+            bail!("usage: board-serve [--listen 127.0.0.1:7341]");
+        }
+        let address = options.board_listen_address();
+        if !address.ip().is_loopback() {
+            bail!("invalid_options: board-serve must listen on a loopback address");
+        }
     }
     if options.json && options.format != "json" {
         bail!("invalid_options: --json conflicts with --format lines");

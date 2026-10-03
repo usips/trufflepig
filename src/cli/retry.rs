@@ -30,7 +30,8 @@ impl RetryScope {
         match verb {
             "board" => match options.words.get(1).map(String::as_str) {
                 Some(
-                    "show" | "review" | "ingest" | "feed" | "attention" | "history" | "search",
+                    "show" | "review" | "ingest" | "feed" | "attention" | "history" | "search"
+                    | "web",
                 ) => Self::Read,
                 Some("inbox") if options.words.get(2).is_some() => Self::Read,
                 Some(word) if word.parse::<u64>().is_ok() => Self::Read,
@@ -106,7 +107,9 @@ pub(super) fn run_with_retry(
     // Capture client-owned body/stdin once. Replaying normalized arguments keeps
     // content and feedback import identity unchanged after explicit contention.
     let prepared;
-    let args = if options.is_board() {
+    let is_web = options.words.first().map(String::as_str) == Some("board")
+        && options.words.get(1).is_some_and(|word| word == "web");
+    let args = if options.is_board() && !is_web {
         let parsed = super::parse(args)?;
         prepared = crate::board::prepare_client(args, &parsed)?;
         prepared.as_slice()
