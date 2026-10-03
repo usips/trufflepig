@@ -26,10 +26,15 @@ pub struct GitRepository {
 /// Canonical Git common directory of `directory`'s repository or worktree.
 /// Runs only `rev-parse`, without the history version gate.
 pub fn common_dir(directory: &Path) -> Result<PathBuf> {
-    output_path(execute(
+    common_dir_bounded(directory, COMMAND_TIMEOUT)
+}
+
+/// Common-directory discovery sharing the caller's Git subprocess budget.
+pub fn common_dir_bounded(directory: &Path, timeout: Duration) -> Result<PathBuf> {
+    output_path(run_bounded(
         directory,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-        None,
+        timeout,
     )?)?
     .canonicalize()
     .context("canonicalize Git common directory")
@@ -38,7 +43,19 @@ pub fn common_dir(directory: &Path) -> Result<PathBuf> {
 /// Runs one read-only plumbing command in `directory`, killed after `timeout`.
 pub fn run_bounded(directory: &Path, args: &[&str], timeout: Duration) -> Result<Vec<u8>> {
     let arguments: Vec<_> = args.iter().map(OsStr::new).collect();
-    execute_bounded(directory, &arguments, None, timeout)
+    execute_bounded(directory, &arguments, None, timeout, GitPolicy::Bounded)
+}
+
+/// A complete scan refuses Git warnings that may describe skipped objects.
+pub fn run_bounded_strict(directory: &Path, args: &[&str], timeout: Duration) -> Result<Vec<u8>> {
+    let arguments: Vec<_> = args.iter().map(OsStr::new).collect();
+    execute_bounded(
+        directory,
+        &arguments,
+        None,
+        timeout,
+        GitPolicy::CompleteScan,
+    )
 }
 
 impl GitRepository {
@@ -197,7 +214,14 @@ fn execute(directory: &Path, args: &[&str], input: Option<&[u8]>) -> Result<Vec<
 }
 
 fn execute_os(directory: &Path, args: &[&OsStr], input: Option<&[u8]>) -> Result<Vec<u8>> {
-    execute_bounded(directory, args, input, COMMAND_TIMEOUT)
+    execute_bounded(directory, args, input, COMMAND_TIMEOUT, GitPolicy::History)
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum GitPolicy {
+    History,
+    Bounded,
+    CompleteScan,
 }
 
 fn execute_bounded(
@@ -205,6 +229,18 @@ fn execute_bounded(
     args: &[&OsStr],
     input: Option<&[u8]>,
     timeout: Duration,
+    policy: GitPolicy,
+) -> Result<Vec<u8>> {
+    execute_with_program(directory, args, input, timeout, policy, OsStr::new("git"))
+}
+
+fn execute_with_program(
+    directory: &Path,
+    args: &[&OsStr],
+    input: Option<&[u8]>,
+    timeout: Duration,
+    policy: GitPolicy,
+    program: &OsStr,
 ) -> Result<Vec<u8>> {
     let name = args.first().and_then(|name| name.to_str()).unwrap_or("");
     ensure!(
@@ -241,6 +277,13 @@ fn execute_bounded(
                     OsStr::new("--null"),
                     OsStr::new("--name-only"),
                     OsStr::new("--list")
+                ]
+            || args
+                == [
+                    OsStr::new("config"),
+                    OsStr::new("--null"),
+                    OsStr::new("--get-regexp"),
+                    OsStr::new("^(remote\\.origin\\.url|core\\.repositoryformatversion)$"),
                 ],
         "only read-only Git configuration enumeration is permitted"
     );
@@ -249,17 +292,21 @@ fn execute_bounded(
     } else {
         Vec::new()
     };
-    let mut command = Command::new("git");
+    let mut command = Command::new(program);
     for (key, _) in std::env::vars_os() {
         if key.to_string_lossy().starts_with("GIT_") {
             command.env_remove(key);
         }
     }
+    command.current_dir(directory);
+    // Git 2.43 lacks the global switch. Protocol denial prevents a compatible
+    // bounded probe from fetching objects; version-gated history keeps it.
+    if policy == GitPolicy::History {
+        command.arg("--no-lazy-fetch");
+    }
     command
-        .current_dir(directory)
         .args([
             "--no-pager",
-            "--no-lazy-fetch",
             "--no-optional-locks",
             "--no-replace-objects",
             "--literal-pathspecs",
@@ -287,6 +334,7 @@ fn execute_bounded(
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_ALLOW_PROTOCOL", "")
         .env("GIT_NO_LAZY_FETCH", "1")
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_PAGER", "cat")
@@ -305,7 +353,13 @@ fn execute_bounded(
         command.arg("--no-textconv");
     }
     command.args(&args[1..]);
-    collect_process(command, input, timeout, MAX_OUTPUT_BYTES)
+    collect_process(
+        command,
+        input,
+        timeout,
+        MAX_OUTPUT_BYTES,
+        policy == GitPolicy::CompleteScan,
+    )
 }
 
 // Git's supplied-buffer blame calls convert_to_git even with --no-textconv.
@@ -372,6 +426,7 @@ fn collect_process(
     input: Option<&[u8]>,
     timeout: Duration,
     limit: usize,
+    strict: bool,
 ) -> Result<Vec<u8>> {
     command
         .stdin(if input.is_some() {
@@ -430,6 +485,11 @@ fn collect_process(
                         String::from_utf8_lossy(&errors[..errors.len().min(2048)])
                     );
                 }
+                ensure!(
+                    !strict || errors.is_empty(),
+                    "Git plumbing warning prevents a complete scan: {}",
+                    String::from_utf8_lossy(&errors[..errors.len().min(2048)])
+                );
                 return Ok(output);
             }
         }
@@ -610,7 +670,7 @@ mod tests {
         let mut flood = Command::new("sh");
         flood.args(["-c", "while :; do printf '0123456789abcdef'; done"]);
         assert!(
-            collect_process(flood, None, Duration::from_secs(2), 1024)
+            collect_process(flood, None, Duration::from_secs(2), 1024, false)
                 .unwrap_err()
                 .to_string()
                 .contains("resource limit")
@@ -619,12 +679,85 @@ mod tests {
         retained_pipe.args(["-c", "sleep 10 & exit 0"]);
         let started = Instant::now();
         assert!(
-            collect_process(retained_pipe, None, Duration::from_millis(100), 1024)
+            collect_process(retained_pipe, None, Duration::from_millis(100), 1024, false)
                 .unwrap_err()
                 .to_string()
                 .contains("timed out")
         );
         assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn bounded_board_git_uses_243_compatible_no_fetch_policy() {
+        use std::os::unix::fs::PermissionsExt;
+        let scratch = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/board-git-tests");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let directory = tempfile::Builder::new()
+            .prefix("git-243-")
+            .tempdir_in(scratch)
+            .unwrap();
+        let program = directory.path().join("git243");
+        std::fs::write(&program, "#!/bin/sh\nprotocol=no\nfor arg do\n case \"$arg\" in\n --no-lazy-fetch) exit 129;;\n protocol.allow=never) protocol=yes;;\n esac\ndone\n[ \"$protocol\" = yes ] || exit 2\n[ \"$GIT_NO_LAZY_FETCH\" = 1 ] || exit 3\n[ \"${GIT_ALLOW_PROTOCOL+x}\" = x ] && [ -z \"$GIT_ALLOW_PROTOCOL\" ] || exit 4\nprintf 'compatible\\n'\n").unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+        for policy in [GitPolicy::Bounded, GitPolicy::CompleteScan] {
+            let output = execute_with_program(
+                directory.path(),
+                &[OsStr::new("rev-list"), OsStr::new("HEAD")],
+                None,
+                Duration::from_secs(2),
+                policy,
+                program.as_os_str(),
+            )
+            .unwrap();
+            assert_eq!(output, b"compatible\n");
+        }
+        assert!(
+            execute_with_program(
+                directory.path(),
+                &[OsStr::new("rev-list"), OsStr::new("HEAD")],
+                None,
+                Duration::from_secs(2),
+                GitPolicy::History,
+                program.as_os_str()
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn bounded_board_git_does_not_fetch_missing_promisor_objects() {
+        use crate::board::repo_identity::tests::GitFixture;
+        let fixture = GitFixture::new();
+        let oid = fixture.commit("root");
+        let clone = fixture.directory.path().join("promisor");
+        fixture.git(&[
+            "clone",
+            "--quiet",
+            "--no-hardlinks",
+            fixture.root.to_str().unwrap(),
+            clone.to_str().unwrap(),
+        ]);
+        fixture.git_in(&clone, &["config", "extensions.partialClone", "origin"]);
+        fixture.git_in(&clone, &["config", "remote.origin.promisor", "true"]);
+        fixture.git_in(&clone, &["config", "protocol.file.allow", "always"]);
+        let missing = clone
+            .join(".git/objects")
+            .join(&oid.as_str()[..2])
+            .join(&oid.as_str()[2..]);
+        assert!(missing.is_file());
+        std::fs::remove_file(&missing).unwrap();
+        assert!(
+            run_bounded_strict(
+                &clone,
+                &["rev-list", "--max-parents=0", "HEAD"],
+                Duration::from_secs(2)
+            )
+            .is_err()
+        );
+        assert!(
+            !missing.exists(),
+            "the bounded read must not replenish a missing object"
+        );
     }
 
     #[test]
@@ -714,6 +847,7 @@ mod tests {
                 Some(contents),
                 Duration::from_millis(500),
                 MAX_OUTPUT_BYTES,
+                false,
             );
             let marker = directory.path().join("filter-helper.ran");
             assert!(
