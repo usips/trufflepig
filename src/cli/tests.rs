@@ -595,7 +595,6 @@ fn board_grammar_rejects_cross_verb_flags_and_invalid_domain_references() {
         &["board", "task", "P7.3", "doing", "--section", "Grammar"][..],
         &["board", "post", "P7@12", "note", "text"][..],
         &["board", "post", "P7", "claim", "text"][..],
-        &["board", "show", "P7.3"][..],
         &["board", "review", "P7"][..],
         &["board", "propose", "P7@12", "summary"][..],
         &["board", "show", "--wait"][..],
@@ -611,6 +610,8 @@ fn board_grammar_rejects_cross_verb_flags_and_invalid_domain_references() {
         let options = parse(&words.iter().map(|word| (*word).into()).collect::<Vec<_>>()).unwrap();
         assert!(board_parse(&options, None).is_err(), "accepted {words:?}");
     }
+    let task = parse(&["board".into(), "show".into(), "P7.3".into()]).unwrap();
+    assert!(board_parse(&task, None).is_ok());
 }
 
 #[test]

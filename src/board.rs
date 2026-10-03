@@ -1,23 +1,17 @@
 //! Durable plan coordination through the per-machine router and a typed backend.
 //! The client reads bodies and normalizes text before socket or spool transport.
 //! Only an absent router permits local fallback; ambiguous replies never replay writes.
-pub mod board_actor;
-pub mod board_backend;
-mod board_client_transport;
-pub mod board_config;
-pub mod board_grammar;
-pub mod board_ids;
-pub mod board_protocol;
+pub mod board_domain;
+pub use board_domain::{board_actor, board_ids, board_protocol, board_vocabulary};
+pub mod board_transport;
+use board_transport::board_client_transport;
+pub use board_transport::{board_backend, board_config, board_grammar, feedback_outbox};
+pub mod board_git;
+pub use board_git::{commit_ingest, commit_trailers, repo_identity, review_packet};
 pub mod board_render;
 #[cfg(test)]
 pub(crate) mod board_test_support;
-pub mod board_vocabulary;
-pub mod commit_ingest;
-pub mod commit_trailers;
-pub mod feedback_outbox;
 pub mod local_board;
-pub mod repo_identity;
-pub mod review_packet;
 #[cfg(test)]
 mod tests;
 
@@ -151,118 +145,6 @@ pub(crate) fn enrich_feedback_cwd(
                     relative.to_string_lossy().into_owned()
                 };
             }
-        }
-    }
-}
-
-#[cfg(test)]
-mod client_tests {
-    use super::*;
-
-    #[test]
-    fn captured_body_survives_file_changes_between_retries() {
-        let directory = crate::board::board_test_support::scratch("board-transport-");
-        let body_path = directory.path().join("plan.md");
-        std::fs::write(&body_path, "- captured plan\n").unwrap();
-        let args = vec![
-            "--body".into(),
-            body_path.to_string_lossy().into_owned(),
-            "board".into(),
-            "new".into(),
-            "Trial".into(),
-        ];
-        let options = crate::cli::parse(&args).unwrap();
-        let prepared = prepare_client(&args, &options).unwrap();
-        std::fs::write(&body_path, "changed before replay").unwrap();
-        let prepared_options = crate::cli::parse(&prepared).unwrap();
-        let replay = prepare_client(&prepared, &prepared_options).unwrap();
-        let replay_options = crate::cli::parse(&replay).unwrap();
-        let BoardCommand::Op(BoardOp::New { body, .. }) =
-            board_grammar::parse(&replay_options, None).unwrap()
-        else {
-            panic!("expected a new plan");
-        };
-        assert_eq!(body.as_str(), "- captured plan\n");
-        assert!(replay_options.board.body.is_none());
-    }
-
-    #[test]
-    fn body_preflight_precedes_file_reads_and_byte_limits_precede_utf8() {
-        let args: Vec<String> = [
-            "--body",
-            "missing-body-file",
-            "board",
-            "propose",
-            "P0@1",
-            "summary",
-        ]
-        .map(str::to_owned)
-        .into();
-        let options = crate::cli::parse(&args).unwrap();
-        let error = prepare_client(&args, &options).unwrap_err();
-        assert!(
-            error.to_string().starts_with("invalid_reference:"),
-            "{error:#}"
-        );
-        let directory = crate::board::board_test_support::scratch("board-runtime-");
-        let path = directory.path().join("oversized-feedback");
-        std::fs::write(&path, vec![0xff; 4097]).unwrap();
-        let args = vec![
-            "--body".into(),
-            path.to_string_lossy().into_owned(),
-            "feedback".into(),
-            "blocked".into(),
-            "summary".into(),
-        ];
-        let options = crate::cli::parse(&args).unwrap();
-        let error = prepare_client(&args, &options).unwrap_err();
-        assert!(
-            error.to_string().contains("body exceeds 4096 bytes"),
-            "{error:#}"
-        );
-    }
-
-    #[test]
-    fn typed_transient_cause_wins_over_domain_looking_context() {
-        let error = anyhow::Error::new(board_protocol::BoardError::new(
-            board_protocol::BoardErrorCode::BoardUnavailable,
-            "temporarily offline",
-        ))
-        .context("invalid_body: context is diagnostic prose");
-        assert!(!domain_error(&error));
-        assert!(!domain_error(
-            &anyhow::Error::new(std::io::Error::from(std::io::ErrorKind::BrokenPipe))
-                .context("budget_too_small: diagnostic context")
-        ));
-    }
-
-    #[test]
-    fn feedback_domain_answers_are_not_queued() {
-        for code in [
-            "board_remote_unsupported",
-            "board_api_mismatch",
-            "invalid_reference",
-            "usage",
-            "stale_revision",
-            "claim_conflict",
-            "budget_too_small",
-        ] {
-            for prefix in ["", "daemon: ", "daemon: daemon: "] {
-                assert!(domain_answer(&format!("{prefix}{code}: failure")));
-            }
-        }
-        for message in [
-            "read frame failed: invalid_body: incidental prose",
-            "write failed: invalid_options: diagnostic mention",
-            "unknown_code: stale_revision: detail",
-            "read frame failed: invalid_body: incidental prose",
-            "write failed: invalid_options: diagnostic mention",
-            "unknown_code: stale_revision: detail",
-            "board_unavailable: permission denied",
-            "daemon: read frame: broken pipe",
-            "database is locked",
-        ] {
-            assert!(!domain_answer(message));
         }
     }
 }

@@ -1,10 +1,16 @@
 //! Feedback evidence, terminal triage, and permanent outbox replay identities.
 
+mod feedback_imports;
+mod feedback_transitions;
+
+pub(super) use feedback_imports::{imported_reply, remember_import};
+pub(super) use feedback_transitions::close_feedback;
+
 use super::{
     EntryDraft, WriteContext, can_accept, insert_entry, insert_event, invalid, read_entry,
     require_plan, sql_error, sqlite_id, sqlite_u64,
 };
-use crate::board::board_actor::BoardActor;
+use crate::board::board_actor::{BoardActor, BoardRecipient};
 use crate::board::board_ids::EntryId;
 use crate::board::board_protocol::{
     BoardChange, BoardError, BoardOp, BoardReply, BoardResult, EntryRecord, FeedbackMetadata,
@@ -84,22 +90,12 @@ pub(super) fn write_feedback(
         tx,
         ctx,
         *plan,
-        EntryKind::Feedback.as_str(),
+        EntryKind::Feedback,
         &entry.to_string(),
         None,
         summary.as_str(),
     )?;
-    Ok(BoardReply::new(
-        "local",
-        BoardResult::Change(BoardChange {
-            entry,
-            seq: ctx.seq,
-            plan: *plan,
-            revision: None,
-            task: None,
-            deduplicated: false,
-        }),
-    ))
+    Ok(ctx.change_reply(entry, *plan, None, None))
 }
 
 pub(super) fn list_feedback(conn: &Connection, open_only: bool) -> Result<BoardReply, BoardError> {
@@ -155,153 +151,6 @@ pub(super) fn can_manage_feedback(
         Some(plan) => can_accept(conn, actor, plan),
         None => Ok(actor.user == report.actor.user && actor.harness.is_human()),
     }
-}
-
-pub(super) fn close_feedback(
-    tx: &Transaction<'_>,
-    ctx: &WriteContext,
-    op: &BoardOp,
-) -> Result<BoardReply, BoardError> {
-    let (entry, state, note) = match op {
-        BoardOp::FeedbackClose { entry, state, note } => (entry, *state, note),
-        BoardOp::FeedbackTriage { entry, note } => (entry, FeedbackState::Triaged, note),
-        _ => {
-            return Err(invalid(
-                "invalid_options",
-                "expected feedback triage or close operation",
-            ));
-        }
-    };
-    op.validate().map_err(BoardError::from)?;
-    let report = read_entry(tx, *entry)?;
-    if report.kind != EntryKind::Feedback {
-        return Err(invalid(
-            "invalid_reference",
-            format!("{entry} is not feedback"),
-        ));
-    }
-    if !can_manage_feedback(tx, &ctx.actor, &report)? {
-        return Err(invalid(
-            "invalid_actor",
-            "feedback triage requires the owner human or plan steward",
-        ));
-    }
-    let current: String = tx
-        .query_row(
-            "SELECT state FROM entries WHERE id=?1",
-            [sqlite_id(entry.get())?],
-            |row| row.get(0),
-        )
-        .map_err(sql_error)?;
-    let current = FeedbackState::parse(&current).map_err(BoardError::from)?;
-    if current.is_closed() {
-        return Err(invalid(
-            "invalid_state",
-            format!("{entry} is already closed {current}"),
-        ));
-    }
-    if state == FeedbackState::Triaged && current == FeedbackState::Triaged {
-        return Err(invalid(
-            "invalid_state",
-            format!("{entry} is already triaged"),
-        ));
-    }
-    let mut summary = if state == FeedbackState::Triaged {
-        "triaged".to_owned()
-    } else {
-        format!("closed {state}")
-    };
-    if let Some(note) = note {
-        summary.push_str(&format!(" ({})", note.as_str()));
-    }
-    truncate_entry_summary(&mut summary);
-    let recipient = report.actor.identity();
-    let closure = insert_entry(
-        tx,
-        ctx,
-        &EntryDraft {
-            plan_id: report.plan,
-            kind: EntryKind::Decision,
-            body: note
-                .as_ref()
-                .map_or_else(|| summary.clone(), |note| note.as_str().to_owned()),
-            to_whom: Some(recipient.clone()),
-            supersedes: Some(*entry),
-            repo_key: report.repo_key,
-            state: None,
-        },
-    )?;
-    tx.execute(
-        "UPDATE entries SET state=?1 WHERE id=?2",
-        params![state.as_str(), sqlite_id(entry.get())?],
-    )
-    .map_err(sql_error)?;
-    insert_event(
-        tx,
-        ctx,
-        report.plan,
-        EntryKind::Feedback.as_str(),
-        &entry.to_string(),
-        Some(&recipient),
-        &summary,
-    )?;
-    Ok(BoardReply::new(
-        "local",
-        BoardResult::Change(BoardChange {
-            entry: closure,
-            seq: ctx.seq,
-            plan: report.plan,
-            revision: None,
-            task: None,
-            deduplicated: false,
-        }),
-    ))
-}
-
-/// Aliases include content-deduped requests, so their UUIDs never expire.
-pub(super) fn remember_import(
-    tx: &Transaction<'_>,
-    key: &FeedbackImportKey,
-    entry: EntryId,
-) -> Result<(), BoardError> {
-    tx.execute(
-        "INSERT OR IGNORE INTO feedback_imports(import_key,entry_id) VALUES(?1,?2)",
-        params![key.to_string(), sqlite_id(entry.get())?],
-    )
-    .map_err(sql_error)?;
-    Ok(())
-}
-
-pub(super) fn imported_reply(
-    conn: &Connection,
-    key: &FeedbackImportKey,
-) -> Result<Option<BoardReply>, BoardError> {
-    let id: Option<i64> = conn
-        .query_row(
-            "SELECT entry_id FROM feedback_imports WHERE import_key=?1",
-            [key.to_string()],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(sql_error)?;
-    id.map(|id| {
-        let entry = read_entry(
-            conn,
-            EntryId::new(sqlite_u64(id)?).map_err(BoardError::from)?,
-        )?;
-        Ok(BoardReply::new(
-            "local",
-            BoardResult::Change(BoardChange {
-                entry: entry.id,
-                seq: entry.seq,
-                plan: entry.plan,
-                revision: None,
-                task: None,
-                deduplicated: true,
-            }),
-        ))
-    })
-    .transpose()
 }
 
 fn truncate_entry_summary(text: &mut String) {

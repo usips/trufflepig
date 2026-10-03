@@ -1,5 +1,5 @@
-use super::{dir_from, spool_dir_from};
-use std::{ffi::OsString, path::PathBuf};
+use super::board_runtime::{BoardDatabaseMarker, board_database_marker_matches};
+use super::*;
 
 fn lookup<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<OsString> + 'a {
     move |name| {
@@ -88,7 +88,7 @@ fn unchanged_private_database_marker_preserves_inode_and_mtime() {
     super::record_board_database(directory.path(), &second_database).unwrap();
     let updated = marker.metadata().unwrap();
     assert_ne!(updated.ino(), before.ino());
-    let marker: super::BoardDatabaseMarker =
+    let marker: BoardDatabaseMarker =
         serde_json::from_slice(&std::fs::read(&marker).unwrap()).unwrap();
     assert_eq!(marker.database, second_database);
     assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
@@ -119,14 +119,140 @@ fn database_marker_rejects_symlinks_nonprivate_files_and_other_owners() {
     );
     std::fs::set_permissions(&marker, std::fs::Permissions::from_mode(0o600)).unwrap();
     let actual_owner = marker.metadata().unwrap().uid();
-    assert!(
-        super::board_database_marker_matches(&marker, &bytes, actual_owner.wrapping_add(1))
-            .is_err()
-    );
+    assert!(board_database_marker_matches(&marker, &bytes, actual_owner.wrapping_add(1)).is_err());
     assert_eq!(std::fs::read(&marker).unwrap(), bytes);
 
     std::fs::remove_file(&marker).unwrap();
     std::fs::create_dir(&marker).unwrap();
     assert!(super::record_board_database(directory.path(), &database).is_err());
     assert!(marker.is_dir());
+}
+
+#[test]
+fn losing_router_start_cannot_replace_the_live_database_marker() {
+    let directory = crate::board::board_test_support::scratch("board-runtime-");
+    let runtime = directory.path().join("runtime");
+    let spool = directory.path().join("spool");
+    let live_database = directory.path().join("live.sqlite3");
+    let loser_database = directory.path().join("loser.sqlite3");
+    let router = |database: &Path| SystemRouter {
+        runtime: Some(runtime.clone()),
+        cache_base: None,
+        sweeps: Mutex::new(SweepClock::default()),
+        board: crate::board::BoardHost::with_config(crate::board::BoardConfig::for_database(
+            database,
+        )),
+    };
+    let live = router(&live_database);
+    let live_runtime = runtime.clone();
+    let live_spool = spool.clone();
+    let worker = std::thread::spawn(move || daemon::serve_router(&live_runtime, &live_spool, live));
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let ping = ["system".into(), "status".into()];
+    let context = RequestContext::new(None, None);
+    loop {
+        if daemon::request(&runtime, &ping, &context)
+            .unwrap()
+            .is_some()
+        {
+            break;
+        }
+        assert!(Instant::now() < deadline, "live router failed to start");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let rejected = daemon::serve_router(&runtime, &spool, router(&loser_database));
+    assert!(rejected.is_err());
+    let accepted = validate_board_database(&runtime, &live_database);
+    let refused = validate_board_database(&runtime, &loser_database);
+    daemon::stop(&runtime).unwrap();
+    worker.join().unwrap().unwrap();
+    accepted.unwrap();
+    assert!(refused.is_err());
+    assert!(!loser_database.exists());
+}
+
+#[test]
+fn router_database_marker_refuses_split_local_fallback() {
+    let directory = crate::board::board_test_support::scratch("board-runtime-");
+    let pinned = directory.path().join("router.sqlite3");
+    record_board_database(directory.path(), &pinned).unwrap();
+    validate_board_database(directory.path(), &pinned).unwrap();
+    let other = directory.path().join("client.sqlite3");
+    let error = validate_board_database(directory.path(), &other).unwrap_err();
+    assert!(error.to_string().contains("differs from router database"));
+    assert!(!other.exists());
+}
+
+#[test]
+fn board_routes_without_workspace_or_owner_daemon() {
+    let directory = crate::board::board_test_support::scratch("board-transport-");
+    let cache = directory.path().join("owner-cache");
+    let database = directory.path().join("data/board.sqlite3");
+    let router = SystemRouter {
+        runtime: None,
+        cache_base: None,
+        sweeps: Mutex::new(SweepClock::default()),
+        board: crate::board::BoardHost::with_config(crate::board::BoardConfig::for_database(
+            &database,
+        )),
+    };
+    let args: Vec<String> = [
+        "--root",
+        directory.path().join("missing-root").to_str().unwrap(),
+        "--workspace",
+        directory
+            .path()
+            .join("missing-workspace.toml")
+            .to_str()
+            .unwrap(),
+        "board",
+        "show",
+    ]
+    .map(str::to_owned)
+    .into();
+    let reply = router
+        .request(AcceptedRequest {
+            args,
+            context: RequestContext::new(None, None),
+            deadline: QueryDeadline::start(),
+        })
+        .unwrap();
+    let reply: serde_json::Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(reply["result"]["result"], "plans");
+    assert!(database.exists());
+    assert!(!cache.exists(), "board routing spawned an owner daemon");
+}
+
+#[test]
+fn router_does_not_reset_an_expired_accepted_deadline() {
+    let root = crate::board::board_test_support::scratch("router-deadline-");
+    let cache_directory = crate::board::board_test_support::scratch("router-cache-");
+    let cache = cache_directory.path().join("cache");
+    let router = SystemRouter {
+        runtime: None,
+        cache_base: None,
+        sweeps: Mutex::new(SweepClock::default()),
+        board: crate::board::BoardHost::default(),
+    };
+    let args: Vec<String> = [
+        "--no-workspace",
+        "--root",
+        root.path().to_str().unwrap(),
+        "--cache",
+        cache.to_str().unwrap(),
+        "search",
+        "bounded",
+    ]
+    .map(str::to_owned)
+    .into();
+
+    let error = router
+        .request(AcceptedRequest {
+            context: RequestContext::new(None, None),
+            args,
+            deadline: QueryDeadline::after(Duration::ZERO),
+        })
+        .unwrap_err();
+    assert!(crate::daemon::deadline::is_timed_out(&error), "{error:#}");
+    assert!(!cache.exists(), "expired request spawned an owner daemon");
 }

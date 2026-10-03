@@ -3,6 +3,12 @@
 #[cfg(test)]
 mod tests;
 
+mod claim_activity;
+mod claim_history;
+
+pub(super) use claim_activity::{refresh_commit_claims, refresh_inbox_claims, refresh_plan_claims};
+pub(super) use claim_history::{active_claim, read_claims, read_claims_window, read_tasks};
+
 use rusqlite::{Connection, Row, Transaction, params};
 
 use super::task_writes::{allocate_task, require_assignee, require_task};
@@ -15,7 +21,7 @@ use super::{
 use crate::board::board_actor::{BoardRecipient, claim_vendor};
 use crate::board::board_ids::{EntryId, EventSeq, PlanId, TaskId};
 use crate::board::board_protocol::{
-    BoardChange, BoardReply, BoardResult, ClaimEndReason, ClaimRecord, CommitCoauthor, TaskRecord,
+    BoardReply, ClaimEndReason, ClaimRecord, CommitCoauthor, TaskRecord,
 };
 use crate::board::board_vocabulary::{EntryKind, EntryText, PlanTitle, TaskColumn};
 
@@ -168,12 +174,12 @@ pub(super) fn claim_task(
         tx,
         ctx,
         Some(task.plan),
-        "claim",
+        EntryKind::Claim,
         &entry.to_string(),
-        recipient.as_ref().map(BoardRecipient::as_str),
+        recipient.as_ref(),
         &summary,
     )?;
-    change(ctx, entry, task)
+    Ok(ctx.change_reply(entry, Some(task.plan), None, Some(task)))
 }
 
 pub(super) fn end_claim(
@@ -187,194 +193,4 @@ pub(super) fn end_claim(
         params![sql_number(task.plan.get()), sql_number(task.ordinal), now, reason.as_str()],
     ).map_err(sql_error)?;
     Ok(())
-}
-
-pub(super) fn change(
-    ctx: &WriteContext,
-    entry: EntryId,
-    task: TaskId,
-) -> Result<BoardReply, BoardError> {
-    Ok(BoardReply::new(
-        "local",
-        BoardResult::Change(BoardChange {
-            entry,
-            seq: ctx.seq,
-            plan: Some(task.plan),
-            revision: None,
-            task: Some(task),
-            deduplicated: false,
-        }),
-    ))
-}
-
-pub(super) fn refresh_plan_claims(
-    tx: &Transaction<'_>,
-    actor_id: i64,
-    plan: PlanId,
-    now: i64,
-) -> Result<(), BoardError> {
-    tx.execute(
-        "UPDATE claims SET last_active=max(last_active,?3) WHERE actor_id=?1 AND plan_id=?2 AND ended_at IS NULL",
-        params![actor_id, sql_number(plan.get()), now],
-    ).map_err(sql_error)?;
-    Ok(())
-}
-
-pub(super) fn refresh_inbox_claims(
-    tx: &Transaction<'_>,
-    actor_id: i64,
-    now: i64,
-) -> Result<(), BoardError> {
-    tx.execute(
-        "UPDATE claims SET last_active=max(last_active,?2) WHERE actor_id=?1 AND ended_at IS NULL",
-        params![actor_id, now],
-    )
-    .map_err(sql_error)?;
-    Ok(())
-}
-
-pub(super) fn refresh_commit_claims(
-    tx: &Transaction<'_>,
-    plan: PlanId,
-    ordinal: u64,
-    coauthors: &[CommitCoauthor],
-    committed_at: i64,
-    now: i64,
-) -> Result<(), BoardError> {
-    if committed_at > now {
-        return Ok(());
-    }
-    let task = TaskId::new(plan, ordinal).map_err(BoardError::from)?;
-    let Some(holder) = active_claim(tx, task, now, 0)? else {
-        return Ok(());
-    };
-    let vendor = claim_vendor(&holder.record.actor.harness, holder.record.model.as_deref());
-    let matches = if coauthors.is_empty() {
-        vendor.is_human()
-    } else {
-        coauthors.iter().any(|coauthor| coauthor.harness == vendor)
-    };
-    if matches && committed_at >= holder.record.claimed_at {
-        tx.execute(
-            "UPDATE claims SET last_active=max(last_active,?3) WHERE entry_id=?1 AND actor_id=?2 AND ended_at IS NULL",
-            params![sql_number(holder.record.entry.get()), holder.actor_id, committed_at],
-        ).map_err(sql_error)?;
-    }
-    Ok(())
-}
-
-pub(super) fn read_tasks(conn: &Connection, plan: PlanId) -> Result<Vec<TaskRecord>, BoardError> {
-    let mut statement = conn.prepare("SELECT ordinal,title,column_name,assignee,section,seq FROM tasks WHERE plan_id=?1 ORDER BY ordinal").map_err(sql_error)?;
-    let mut rows = statement
-        .query([sql_number(plan.get())])
-        .map_err(sql_error)?;
-    let mut tasks = Vec::new();
-    while let Some(row) = rows.next().map_err(sql_error)? {
-        let title: String = row.get(1).map_err(sql_error)?;
-        let column: String = row.get(2).map_err(sql_error)?;
-        let assignee: Option<String> = row.get(3).map_err(sql_error)?;
-        tasks.push(TaskRecord {
-            id: TaskId::new(plan, row_number(row, 0).map_err(sql_error)?)
-                .map_err(BoardError::from)?,
-            title: PlanTitle::new(title).map_err(BoardError::from)?,
-            column: column.parse().map_err(BoardError::from)?,
-            assignee: assignee
-                .as_deref()
-                .map(BoardRecipient::parse)
-                .transpose()
-                .map_err(BoardError::from)?,
-            section: row.get(4).map_err(sql_error)?,
-            seq: EventSeq::new(row_number(row, 5).map_err(sql_error)?),
-        });
-    }
-    Ok(tasks)
-}
-
-const CLAIM_SELECT: &str = "SELECT c.actor_id,c.task_ordinal,a.user,a.host,a.harness,a.session,c.entry_id,c.scope,c.claimed_at,c.last_active,c.ended_at,c.end_reason,e.model,e.effort FROM claims c JOIN actors a ON a.id=c.actor_id JOIN entries e ON e.id=c.entry_id";
-
-pub(super) fn active_claim(
-    conn: &Connection,
-    task: TaskId,
-    now: i64,
-    ttl: i64,
-) -> Result<Option<StoredClaim>, BoardError> {
-    let sql =
-        format!("{CLAIM_SELECT} WHERE c.plan_id=?1 AND c.task_ordinal=?2 AND c.ended_at IS NULL");
-    let mut statement = conn.prepare(&sql).map_err(sql_error)?;
-    let mut rows = statement
-        .query(params![
-            sql_number(task.plan.get()),
-            sql_number(task.ordinal)
-        ])
-        .map_err(sql_error)?;
-    rows.next()
-        .map_err(sql_error)?
-        .map(|row| claim_from_row(row, task.plan, now, ttl))
-        .transpose()
-}
-
-pub(super) fn read_claims(
-    conn: &Connection,
-    plan: PlanId,
-    now: i64,
-    ttl: i64,
-) -> Result<Vec<ClaimRecord>, BoardError> {
-    read_claims_window(conn, plan, i64::MIN, i64::MAX, now, ttl)
-}
-
-pub(super) fn read_claims_window(
-    conn: &Connection,
-    plan: PlanId,
-    start: i64,
-    end: i64,
-    now: i64,
-    ttl: i64,
-) -> Result<Vec<ClaimRecord>, BoardError> {
-    let sql = format!(
-        "{CLAIM_SELECT} WHERE c.plan_id=?1 AND c.claimed_at<=?3 AND (c.ended_at IS NULL OR c.ended_at>=?2) ORDER BY c.claimed_at,c.id"
-    );
-    let mut statement = conn.prepare(&sql).map_err(sql_error)?;
-    let mut rows = statement
-        .query(params![sql_number(plan.get()), start, end])
-        .map_err(sql_error)?;
-    let mut claims = Vec::new();
-    while let Some(row) = rows.next().map_err(sql_error)? {
-        claims.push(claim_from_row(row, plan, now, ttl)?.record);
-    }
-    Ok(claims)
-}
-
-fn claim_from_row(
-    row: &Row<'_>,
-    plan: PlanId,
-    now: i64,
-    ttl: i64,
-) -> Result<StoredClaim, BoardError> {
-    let scope: String = row.get(7).map_err(sql_error)?;
-    let last_active: i64 = row.get(9).map_err(sql_error)?;
-    let ended_at: Option<i64> = row.get(10).map_err(sql_error)?;
-    let reason: Option<String> = row.get(11).map_err(sql_error)?;
-    let end_reason = reason
-        .as_deref()
-        .map(ClaimEndReason::parse)
-        .transpose()
-        .map_err(|error| invalid("board_unavailable", error.to_string()))?;
-    Ok(StoredClaim {
-        actor_id: row.get(0).map_err(sql_error)?,
-        record: ClaimRecord {
-            task: TaskId::new(plan, row_number(row, 1).map_err(sql_error)?)
-                .map_err(BoardError::from)?,
-            actor: actor_from_row(row, 2).map_err(sql_error)?,
-            entry: EntryId::new(row_number(row, 6).map_err(sql_error)?)
-                .map_err(BoardError::from)?,
-            scope: EntryText::new(scope).map_err(BoardError::from)?,
-            claimed_at: row.get(8).map_err(sql_error)?,
-            last_active,
-            ended_at,
-            end_reason,
-            stale: ended_at.is_none() && last_active < now.saturating_sub(ttl.max(0)),
-            model: row.get(12).map_err(sql_error)?,
-            effort: row.get(13).map_err(sql_error)?,
-        },
-    })
 }

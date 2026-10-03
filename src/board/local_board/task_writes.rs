@@ -2,7 +2,7 @@
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
-use super::task_claims::{active_claim, change, claim_task, end_claim};
+use super::task_claims::{active_claim, claim_task, end_claim};
 use super::{
     BoardError, EntryDraft, WriteContext, can_accept, insert_entry, insert_event, invalid,
     require_plan, row_number, sql_error, sql_number,
@@ -75,12 +75,12 @@ pub(super) fn create_task(
         tx,
         ctx,
         Some(plan),
-        "task",
+        EntryKind::Task,
         &task.to_string(),
-        to.map(BoardRecipient::as_str),
+        to,
         &summary,
     )?;
-    change(ctx, entry, task)
+    Ok(ctx.change_reply(entry, Some(task.plan), None, Some(task)))
 }
 
 pub(super) fn allocate_task(
@@ -195,12 +195,12 @@ pub(super) fn move_task(
         tx,
         ctx,
         Some(task.plan),
-        "task",
+        EntryKind::Task,
         &task.to_string(),
-        recipient.as_ref().map(BoardRecipient::as_str),
+        recipient.as_ref(),
         &summary,
     )?;
-    change(ctx, entry, task)
+    Ok(ctx.change_reply(entry, Some(task.plan), None, Some(task)))
 }
 
 fn task_entry(
@@ -217,7 +217,7 @@ fn task_entry(
             plan_id: Some(task.plan),
             kind: EntryKind::Task,
             body,
-            to_whom: to.map(|to| to.as_str().to_owned()),
+            to_whom: to.cloned(),
             supersedes: None,
             repo_key: None,
             state: None,

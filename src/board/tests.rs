@@ -1,5 +1,7 @@
 //! Acceptance fixtures exercise the edge and durable backend together.
 
+mod client_tests;
+
 mod cursor_acceptance;
 mod git_acceptance;
 mod transport_acceptance;
