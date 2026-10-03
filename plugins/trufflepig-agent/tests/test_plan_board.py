@@ -134,18 +134,34 @@ sys.exit(int(os.environ.get("EXIT", "0")))
     def test_feedback_captures_effective_caller_steering(self):
         config = self.root / "config/trufflepig/agent-runtime.json"
         config.parent.mkdir(parents=True)
-        config.write_text(json.dumps({"steer": {"codex": "strict", "default": "off"}}))
+        config.write_text(json.dumps({"steer": {"claude": "strict", "default": "off"}}))
         self.run_wrapper("feedback", "blocked", "unavailable")
-        self.assertEqual(json.loads((self.root / "capture.steer").read_text()), "strict")
+        self.assertEqual(json.loads((self.root / "capture.steer").read_text()), "off")
         self.env["TRUFFLEPIG_AGENT_STEER"] = "NUDGE"
-        self.run_wrapper("feedback", "blocked", "unavailable")
+        self.run_wrapper("--client", "claude", "feedback", "blocked", "unavailable")
         self.assertEqual(json.loads((self.root / "capture.steer").read_text()), "nudge")
         del self.env["TRUFFLEPIG_AGENT_STEER"]
+        self.run_wrapper("--client", "claude", "feedback", "missing", "feature")
+        self.assertEqual(json.loads((self.root / "capture.steer").read_text()), "strict")
+        config.write_text(json.dumps({"steer": {"default": "off"}}))
         self.run_wrapper("--client", "claude", "feedback", "missing", "feature")
         self.assertEqual(json.loads((self.root / "capture.steer").read_text()), "off")
         config.write_text("{}")
         self.run_wrapper("--client", "claude", "feedback", "missing", "feature")
         self.assertEqual(json.loads((self.root / "capture.steer").read_text()), "nudge")
+
+    def test_feedback_reports_off_for_harnesses_without_steering_hooks(self):
+        config = self.root / "config/trufflepig/agent-runtime.json"
+        config.parent.mkdir(parents=True)
+        config.write_text(json.dumps({"steer": {"codex": "strict", "default": "block"}}))
+        for explicit in (None, "BLOCK"):
+            if explicit:
+                self.env["TRUFFLEPIG_AGENT_STEER"] = explicit
+            for harness in ("codex", "grok", "omp", "unknown"):
+                with self.subTest(harness=harness, explicit=explicit):
+                    result = self.run_wrapper("--client", harness, "feedback", "blocked", "unavailable")
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(json.loads((self.root / "capture.steer").read_text()), "off")
 
     def test_legacy_board_audit_is_sanitized_before_feedback_attachment(self):
         root = self.root / "audit"

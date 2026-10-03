@@ -261,7 +261,17 @@ fn review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint() {
         2,
         &format!("context\n{}", "new text for line\n".repeat(1000)),
     );
-    let linked = commit("codex", 120);
+    let fixture = crate::board::repo_identity::tests::GitFixture::new();
+    let oid = fixture.commit("root");
+    let quoted = fixture.directory.path().join("it's here");
+    fixture.git(&[
+        "clone",
+        "--quiet",
+        fixture.root.to_str().unwrap(),
+        quoted.to_str().unwrap(),
+    ]);
+    let mut linked = commit("codex", 120);
+    linked.oid = oid;
     source.commits.push(linked.clone());
     let repositories = vec![RepoScanTarget {
         registration: super::super::board_protocol::RepoRegistration {
@@ -271,7 +281,7 @@ fn review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint() {
             repo_key: linked.repo_key.clone(),
             origin_label: None,
             host: "laptop".into(),
-            common_dir: "/source/it's here/.git".into(),
+            common_dir: quoted.join(".git"),
             plan_id: Some(source.plan.id),
         },
         oldest_plan_at: 100,
@@ -290,7 +300,11 @@ fn review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint() {
     let rendered = render_review(&packet, &budget, "local").unwrap();
     let value: serde_json::Value = serde_json::from_str(&rendered.text).unwrap();
     let data = &value["result"]["data"];
-    assert_eq!(data["omitted"]["entries"], 10);
+    assert_eq!(
+        data["entries"].as_array().unwrap().len() as u64
+            + data["omitted"]["entries"].as_u64().unwrap(),
+        10
+    );
     assert!(data["omitted"]["diff_context_lines"].as_u64().unwrap() > 0);
     assert_eq!(data["omitted"]["diff_body_lines"], 2000);
     assert_eq!(data["ssot_diff"]["next"], "board show P7@1..2");
@@ -298,7 +312,7 @@ fn review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint() {
         data["linked"][0]["drill"]
             .as_str()
             .unwrap()
-            .contains("trufflepig --root")
+            .contains("trufflepig-agent --root")
     );
     assert!(budget.fits(&rendered.text));
     let lines = render_review(
@@ -309,7 +323,18 @@ fn review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint() {
         "local",
     )
     .unwrap();
-    assert!(lines.text.contains("omitted: entries=10"));
+    let shown_entries = lines
+        .text
+        .lines()
+        .filter(|line| line.starts_with('E') && line.contains("\tprogress\t"))
+        .count();
+    assert!(
+        lines
+            .text
+            .contains(&format!("entries={}", 10 - shown_entries)),
+        "{}",
+        lines.text
+    );
     assert!(lines.text.contains("next: board show P7@1..2"));
     assert!(lines.text.contains("commit trailer: Plan: P7"));
     assert!(

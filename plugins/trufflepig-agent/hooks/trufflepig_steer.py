@@ -7,9 +7,12 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bin"))
+from trufflepig_runtime import steering_mode
 from trufflepig_checkout import config_dir, cwd_key, state_dir
 
 # Classes where the translated command answers the same question in one call.
@@ -18,21 +21,6 @@ FALLBACK_MARKER = re.compile(r"#\s*tp-fallback\b")
 FALLBACK_WINDOW_SECONDS = 10 * 60
 UNLOCK_WINDOW_SECONDS = 45 * 60
 TIP_MARKER_SECONDS = 24 * 60 * 60
-MODES = ("off", "nudge", "block", "strict")
-DEFAULT_MODES = {"claude": "nudge"}
-
-
-def mode_for(harness: str) -> str:
-    explicit = os.environ.get("TRUFFLEPIG_AGENT_STEER", "").lower()
-    if explicit in MODES:
-        return explicit
-    try:
-        configured = json.loads((config_dir() / "agent-runtime.json").read_text()).get("steer") or {}
-    except (OSError, ValueError, AttributeError):
-        configured = {}
-    value = str(configured.get(harness) or configured.get("default") or "").lower() \
-        if isinstance(configured, dict) else ""
-    return value if value in MODES else DEFAULT_MODES.get(harness, "block")
 
 
 def audit_dirs() -> list[Path]:

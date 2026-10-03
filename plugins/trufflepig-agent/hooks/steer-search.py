@@ -10,7 +10,7 @@ outline, references, regex, concept, files); pipe filters, log/output files,
 other revisions, filesystem `find` actions, and paths outside the checkout are
 never steered; `sed -n A,Bp`/`cat` of indexed source is the `read` class. Modes
 (TRUFFLEPIG_AGENT_STEER, else `steer.<harness>` in agent-runtime.json, else
-claude=nudge, others=block):
+claude=nudge, kimi/muse=block, unhooked harnesses=off):
   off     do nothing;
   nudge   allow, then add the equivalent trufflepig-agent command as context
           (Claude: PostToolUse additionalContext; others: stdout), in full the
@@ -85,7 +85,7 @@ def advise(harness: str, event: str, key: str, kind: str, tip) -> None:
 
 def steer() -> int:
     harness = sys.argv[1] if len(sys.argv) > 1 else "unknown"
-    mode = policy.mode_for(harness)
+    mode = policy.steering_mode(harness)
     if mode == "off":
         return 0
     try:

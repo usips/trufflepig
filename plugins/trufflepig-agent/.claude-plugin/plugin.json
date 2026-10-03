@@ -1,10 +1,10 @@
 {
   "name": "trufflepig-agent",
-  "version": "0.2.0",
-  "description": "Trufflepig code search for Claude Code: the search skill, search guidance for sessions and subagents in indexed checkouts, Bash hooks that steer grep/rg/find/sed toward trufflepig-agent, and a check on subagent briefs that say grep.",
+  "version": "0.3.0",
+  "description": "Trufflepig code search and shared plan coordination for Claude Code: search and plan board skills, structured tool feedback, session and subagent guidance, and Bash search-steering hooks.",
   "author": {
     "name": "Joshua Moon",
     "email": "jcmoon@pm.me"
   },
-  "keywords": ["search", "code-navigation", "grep"]
+  "keywords": ["search", "code-navigation", "plan-board", "feedback"]
 }

@@ -43,7 +43,7 @@ board hello MODEL [EFFORT]
 board [inbox] [SEQ] [--wait]
 board show [P7 | P7@12 | P7@10.. | P7@10..14]
 board new TITLE… [--steward HARNESS] [--body FILE|-]
-board claim P7.3 SCOPE…
+board claim P7.3 [SCOPE…] [--resume]
 board claim P7 TITLE… --scope SCOPE [--section HEADING]
 board post P7[.3] KIND TEXT… [--to WHO] [--supersedes E480]
 board task P7 TITLE… [--to HARNESS]
@@ -83,19 +83,19 @@ Task ordinals are allocated atomically per plan; columns are `todo`, `doing`, `r
 `blocked`. Claiming sets `doing`, assignee, and scope; carve-and-claim is atomic. `--section` links
 the task to an SSOT heading without another lock.
 
-At most one unended claim exists per task, enforced by a partial unique index. A competing active
-claim fails `claim_conflict` with holder identity, model, effort, claimed time, and last activity.
-Claimants may move/release their own task; moving another holder's task requires owner human or
-steward authority. `task P7.3 doing --to HARNESS` always requires that authority, ends the old lease
-as reassigned, and records an event; the assignee must claim its own scope. Moving to another column
-ends the claim. Post a hand-off note before moving a task back to `todo`.
-
-Any claimant write on the plan, its inbox calls, or an ingested matching `Plan-Task` commit
-co-author refreshes `last_active`; a commit qualifies only when `committed_at >= claimed_at`. No
-ping is required. Staleness is computed on reads after `claim_ttl_minutes` of silence, default 120.
-Anyone can take over a stale claim atomically; the event identifies the previous holder and reaches
-that holder's inbox. `show` separates active/stale claims, claimable tasks, and SSOT headings
-without tasks.
+At most one unended claim exists per task. Active competing claims fail `claim_conflict` with holder
+identity, model, effort, and activity. Normal claims require scope. `--resume` replaces only the same
+user/host/harness lease across sessions, inherits omitted scope, and records the prior actor as `resumed`.
+Stale claims remain claimable. Carve retries dedupe only while their current lease remains owned;
+after release or takeover, another carve creates a fresh task. Claiming a `done` task is denied.
+Moving `done` to `doing` is denied; owner human/steward may explicitly correct `done` to `todo`.
+`task P7.3 doing` without `--to` claims the caller using prior scope or title. An assigned `doing`
+card without a lease reserves nonprivileged claims/moves for its assignee. Owner human/steward may
+redirect/cancel assignments or move another holder's task; a holder may move its own card.
+Moving out of `doing` ends the claim; post a hand-off note before returning to `todo`. Claimant writes on the plan and inbox calls refresh activity. Matching commit co-authors refresh only
+current leases with `claimed_at <= committed_at <= ingest time`, using the maximum activity timestamp.
+Staleness follows reloadable `claim_ttl_minutes` (120 by default); stale takeover names/notifies the
+prior holder. `show` separates active/stale claims, claimable cards, and headings without cards.
 
 Each recorded mutation has one global event sequence. Inbox reads `seq > cursor`, excludes the
 caller's own writes, and advances the stored session cursor only to the last rendered event.

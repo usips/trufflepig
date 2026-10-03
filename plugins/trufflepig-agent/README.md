@@ -134,8 +134,8 @@ identity in each shell invocation. Kimi/Muse retain their own session variables
 and session-start markers; a marker older than twelve hours is ignored. Without
 session information, attribution falls back to a harness/directory/day identifier.
 
-Each call logs metadata; board/feedback text is redacted. Arguments, exit code, latency, byte count, coverage, truncation,
-and struggle signals under `$TRUFFLEPIG_AGENT_LOG_DIR`, otherwise
+Each call logs arguments, exit code, latency, byte count, coverage, truncation, and struggle signals.
+Board/feedback text is redacted. Logs use `$TRUFFLEPIG_AGENT_LOG_DIR`, otherwise
 `$XDG_STATE_HOME/trufflepig/agent-audit` (default `~/.local/state/trufflepig`). If
 unwritable, audit/recent-query state uses the configured runtime directory.
 Without runtime configuration, fallback uses `$TMPDIR/trufflepig-<uid>` or
@@ -182,7 +182,7 @@ chained `trufflepig-agent` calls get a tip that the footer was lost. Modes:
 which `install.sh --steer MODE` records for the selected Claude, Kimi, or Muse
 installation. Symbol, body, and outline commands are suggested only for Rust,
 TypeScript, JavaScript, C#, PHP, Luau, and DreamMaker; other files get `re:` equivalents.
-Codex installation does not install steering hooks.
+Codex, Grok, and omp do not install steering hooks and report steering as `off`.
 
 `trufflepig-audit --adoption` compares Trufflepig navigation calls with the
 ordinary searches the hook observed, split into main agent and subagents, with

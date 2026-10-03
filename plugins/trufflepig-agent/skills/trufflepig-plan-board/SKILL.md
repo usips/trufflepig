@@ -22,18 +22,24 @@ trufflepig-agent board show P7@12..
 ```
 
 Replace the example model and effort with your exact model ID and effort.
-Codex and Grok poll `board inbox` at each turn's start and after each commit;
-use `trufflepig-agent board inbox --wait` when blocked. Do not loop on
+Every harness polls `board inbox` at each turn's start and after each commit
+until board hooks provide those checks automatically. Use
+`trufflepig-agent board inbox --wait` when blocked. Do not loop on
 `board_unavailable`; report it.
 
 Claim before starting work. For an existing task, or to carve a new one:
 
 ```sh
 trufflepig-agent board claim P7.3 "parser + tests; excludes review packet"
+trufflepig-agent board claim P7.3 --resume
 trufflepig-agent board claim P7 "Parser" --scope "grammar + tests" --section "CLI"
 trufflepig-agent board post P7.3 progress "Parser accepts P7@12; tests pass"
 trufflepig-agent board task P7.3 review
 ```
+
+Use `--resume` only for your own interrupted session under the same user, host,
+and harness; omitting scope inherits the current lease scope. It ends the prior
+session lease as `resumed` and records that actor.
 
 On `claim_conflict`, choose another open task or address the holder using
 `board post P7 question "..." --to codex`. Never work on another session's
@@ -41,22 +47,40 @@ active claim. Normal board activity keeps claims alive; a stale claim is
 claimable. Moving a task to `review`, `done`, `blocked`, or `todo` releases it.
 Before a handoff, post progress, then move the task to `todo`.
 
-Each commit carries `Plan: P7` and `Plan-Task: P7.3` beside `Co-authored-by`.
+Each commit carries `Plan: P7` and one `Plan-Task: P7.3` per plan beside
+`Co-authored-by`; keep distinct plan tasks in separate commits.
 Post one progress fact at a time, citing E#, task IDs, immutable revisions,
 and full oids. Answers cite the question entry; corrections use `--supersedes E482`.
-Never edit the plan directly. Propose a full new body from a file:
+Never edit the plan directly. Propose a full new body through stdin:
 
 ```sh
-trufflepig-agent board propose P7@12 --body plan.md "Clarify parser scope"
+trufflepig-agent board propose P7@12 --body - "Clarify parser scope" <<'EOF'
+# Parser plan
+## CLI
+Accept the new grammar and cover malformed input with focused tests.
+EOF
 trufflepig-agent board review P7@12 codex
 ```
 
 On `stale_revision`, read `board show P7@12..`, rebase the proposal, and
 re-propose. Review the packet and drill into linked commits with
-`trufflepig diff <full-oid>`; post `review` or `divergence` entries and proposals.
+`trufflepig-agent diff <full-oid>` when Git 2.55+ and local objects are available;
+use `--target path:src/parser.rs` for source hunks. If history is unavailable,
+use a targeted Git read and state that limitation. Post `review` or `divergence`
+entries and proposals.
 
-Before a workaround with grep, find, or cat, file
-`trufflepig-agent feedback blocked "Router unavailable" --body feedback.md`.
+File feedback only when a Trufflepig failure, confusing or wrong result, or
+missing capability forces a workaround with another tool, before continuing:
+
+```sh
+trufflepig-agent feedback blocked "Router unavailable" --body - <<'EOF'
+Tried: trufflepig-agent board inbox
+Observed: board_unavailable; no inbox delivered.
+Fallback: coordinated the assigned work through the harness.
+Needed: a reachable board service or an actionable recovery hint.
+EOF
+```
+
 Use `blocked`, `confused`, `wrong`, or `missing`, and optionally `--plan P7`.
 Keep the body within 4 KiB: what you tried (exact commands), what happened
 (error or brief excerpt), what you did instead, and what would have helped.

@@ -243,6 +243,16 @@ class HookTests(unittest.TestCase):
         self.assertIn("is indexed by trufflepig", other)
         self.assertEqual(len(self.audit()), 1, "PostToolUse must not log a second record")
 
+    def test_hook_uses_configured_mode_and_environment_override(self):
+        config = Path(self.env["XDG_CONFIG_HOME"]) / "trufflepig/agent-runtime.json"
+        config.write_text(json.dumps({"steer": {"claude": "strict", "default": "off"}}))
+        result = self.run_hook("grep -rn 'fn step' crates/")
+        self.assertEqual(json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertEqual(self.audit()[-1]["options"]["mode"], "strict")
+        override = self.run_hook("grep -rn 'fn step' crates/", mode="NUDGE")
+        self.assertEqual(override.stdout, "")
+        self.assertEqual(self.audit()[-1]["options"]["mode"], "nudge")
+
     def context(self, result, event="PostToolUse"):
         output = json.loads(result.stdout)["hookSpecificOutput"]
         self.assertEqual(output["hookEventName"], event)

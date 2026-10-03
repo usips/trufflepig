@@ -154,8 +154,18 @@ Use `--json` when relationship fields or machine-readable coverage are needed.
 
 ## Recovery and boundaries
 
-Before falling back to grep, find, or cat, file feedback:
-`trufflepig-agent feedback blocked "Router unavailable" --body feedback.md`.
+File feedback only when a Trufflepig failure, confusing or wrong result, or
+missing capability forces fallback to another tool, before continuing:
+
+```sh
+trufflepig-agent feedback blocked "Router unavailable" --body - <<'EOF'
+Tried: trufflepig-agent search 'sym:Parser'
+Observed: router unavailable; no search results delivered.
+Fallback: targeted rg search in src/parser.rs.
+Needed: a reachable router or an actionable recovery hint.
+EOF
+```
+
 Choose `blocked`, `confused`, `wrong`, or `missing`. Keep the body at most
 4 KiB: what you tried (exact commands), what happened (error or brief excerpt),
 what you did instead, and what would have helped. Add `--plan P7` when relevant.
@@ -178,5 +188,5 @@ in the integration setup, not ordinary repository tasks.
 
 Read a whole file only when the task needs it after locating that file. This
 skill does not replace editing tools, builds, tests, Git operations, or reads of
-known instruction files. History investigation can use `hist`, `since`, `diff`,
-and `blame` when local history is available; it is not required for live search.
+known instruction files. History investigation uses `trufflepig-agent hist`,
+`since`, `diff`, or `blame` with Git 2.55+ and local objects; live search does not require history.

@@ -36,7 +36,10 @@ def client_environment() -> dict[str, str]:
 
 
 def steering_mode(harness: str) -> str:
-    """Resolve the caller's steering setting with the hook's precedence."""
+    """Resolve hook steering; harnesses without a steering hook report off."""
+    defaults = {"claude": "nudge", "kimi": "block", "muse": "block"}
+    if harness not in defaults:
+        return "off"
     modes = {"off", "nudge", "block", "strict"}
     explicit = os.environ.get("TRUFFLEPIG_AGENT_STEER", "").lower()
     if explicit in modes:
@@ -44,4 +47,4 @@ def steering_mode(harness: str) -> str:
     configured = runtime_settings().get("steer")
     value = str(configured.get(harness) or configured.get("default") or "").lower() \
         if isinstance(configured, dict) else ""
-    return value if value in modes else "nudge" if harness == "claude" else "block"
+    return value if value in modes else defaults[harness]

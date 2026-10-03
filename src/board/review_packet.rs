@@ -1,7 +1,9 @@
 //! Deterministic review evidence assembly and ordered, explicit budget trimming.
 
+mod history_drills;
 #[cfg(test)]
 mod tests;
+use history_drills::HistoryDrillGate;
 
 use super::board_actor::{HarnessLabel, claim_vendor};
 use super::board_ids::PlanRevision;
@@ -135,9 +137,10 @@ pub fn assemble_review(
             }
         }
     }
+    let mut drill_gate = HistoryDrillGate::default();
     let linked = commits
         .into_iter()
-        .map(|commit| drill_commit(commit, repositories))
+        .map(|commit| drill_commit(commit, repositories, &mut drill_gate))
         .collect();
     let mut unlinked = unlinked
         .into_iter()
@@ -170,7 +173,7 @@ pub fn assemble_review(
         linked,
         unlinked: unlinked
             .into_iter()
-            .map(|commit| drill_commit(commit, repositories))
+            .map(|commit| drill_commit(commit, repositories, &mut drill_gate))
             .collect(),
         crossed,
         open_proposals: evidence.open_proposals.clone(),
@@ -191,19 +194,29 @@ fn attributed_to(commit: &LinkedCommit, agent: &HarnessLabel) -> bool {
         .any(|coauthor| &coauthor.harness == agent)
 }
 
-fn drill_commit(commit: LinkedCommit, repositories: &[RepoScanTarget]) -> ReviewCommit {
-    let root = repositories
+fn drill_commit(
+    commit: LinkedCommit,
+    repositories: &[RepoScanTarget],
+    gate: &mut HistoryDrillGate,
+) -> ReviewCommit {
+    let candidates = repositories
         .iter()
         .filter(|target| target.registration.repo_key == commit.repo_key)
         .map(|target| &target.registration.common_dir)
-        .min();
-    let drill = root.map(|root| {
-        let root = if root.file_name().is_some_and(|name| name == ".git") {
-            root.parent().unwrap_or(root.as_path())
+        .collect::<std::collections::BTreeSet<_>>();
+    let drill = candidates.into_iter().find_map(|common| {
+        let root = if common.file_name().is_some_and(|name| name == ".git") {
+            common.parent().unwrap_or(common.as_path())
         } else {
-            root.as_path()
+            common.as_path()
         };
-        format!("trufflepig --root {} diff {}", shell_path(root), commit.oid)
+        gate.available(root, common, commit.oid).then(|| {
+            format!(
+                "trufflepig-agent --root {} diff {}",
+                shell_path(root),
+                commit.oid
+            )
+        })
     });
     ReviewCommit { commit, drill }
 }

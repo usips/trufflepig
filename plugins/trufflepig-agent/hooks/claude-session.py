@@ -17,7 +17,7 @@ def search_context(cwd: str, subagent: bool) -> str | None:
     try:
         import trufflepig_checkout as checkout
         import trufflepig_steer as policy
-        if policy.mode_for("claude") == "off":
+        if policy.steering_mode("claude") == "off":
             return None
         found = checkout.indexed_checkout(Path(cwd).resolve())
         return checkout.session_context(found, subagent) if found else None

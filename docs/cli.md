@@ -133,7 +133,7 @@ absolute paths, and symlinks are rejected.
 ```text
 trufflepig hist-index --wait
 trufflepig hist-status
-trufflepig hist path:src/main.rs
+trufflepig --member NAME hist path:src/main.rs
 trufflepig hist sym:TokenBucket
 trufflepig since HEAD~3 path:src/main.rs
 trufflepig since HEAD --uncommitted
