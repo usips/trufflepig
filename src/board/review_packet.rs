@@ -36,7 +36,6 @@ pub struct ReviewPacket {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ReviewOmitted {
     pub entries: usize,
-    pub file_stats: usize,
     pub diff_context_lines: usize,
     pub diff_body_lines: usize,
 }
@@ -268,13 +267,6 @@ pub fn build_ssot_diff(
 }
 
 impl ReviewPacket {
-    pub(crate) fn trim_file_stats(&mut self) {
-        for commit in self.linked.iter_mut().chain(&mut self.unlinked) {
-            self.omitted.file_stats += commit.commit.file_stats.len();
-            commit.commit.file_stats.clear();
-        }
-    }
-
     pub(crate) fn trim_diff_context(&mut self) {
         for hunk in &mut self.ssot_diff.hunks {
             self.omitted.diff_context_lines += hunk.context_before.len() + hunk.context_after.len();

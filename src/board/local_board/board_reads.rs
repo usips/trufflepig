@@ -458,7 +458,7 @@ fn linked_commits(
     start: i64,
     end: i64,
 ) -> Result<Vec<LinkedCommit>, BoardError> {
-    let mut statement = conn.prepare("SELECT c.repo_key,c.oid,c.subject,c.committed_at,c.author,c.coauthors,c.files,c.insertions,c.deletions,c.file_stats FROM commits c JOIN commit_plans p ON p.repo_key=c.repo_key AND p.oid=c.oid WHERE p.plan_id=?1 AND c.committed_at>=?2 AND c.committed_at<=?3 ORDER BY c.committed_at,c.repo_key,c.oid").map_err(sql_error)?;
+    let mut statement = conn.prepare("SELECT DISTINCT c.repo_key,c.oid,c.subject,c.committed_at,c.author,c.coauthors,c.files,c.insertions,c.deletions FROM commits c JOIN commit_plans p ON p.repo_key=c.repo_key AND p.oid=c.oid WHERE p.plan_id=?1 AND c.committed_at>=?2 AND c.committed_at<=?3 ORDER BY c.committed_at,c.repo_key,c.oid").map_err(sql_error)?;
     let mut rows = statement
         .query(params![sql_number(plan.get()), start, end])
         .map_err(sql_error)?;
@@ -474,7 +474,7 @@ fn linked_commits(
             .map_err(sql_error)?
             .parse()
             .map_err(BoardError::from)?;
-        let mut links = conn.prepare("SELECT plan_id,task_ordinal FROM commit_plans WHERE repo_key=?1 AND oid=?2 ORDER BY plan_id").map_err(sql_error)?;
+        let mut links = conn.prepare("SELECT p.plan_id,t.task_ordinal FROM commit_plans p LEFT JOIN commit_tasks t ON t.repo_key=p.repo_key AND t.oid=p.oid AND t.plan_id=p.plan_id WHERE p.repo_key=?1 AND p.oid=?2 ORDER BY p.plan_id,t.task_ordinal").map_err(sql_error)?;
         let plans = links
             .query_map(params![repo_key.as_str(), oid.to_string()], |row| {
                 Ok((row_number(row, 0)?, row.get::<_, Option<i64>>(1)?))
@@ -498,7 +498,6 @@ fn linked_commits(
             files: row_number(row, 6).map_err(sql_error)?,
             insertions: row_number(row, 7).map_err(sql_error)?,
             deletions: row_number(row, 8).map_err(sql_error)?,
-            file_stats: decode_json(row.get(9).map_err(sql_error)?)?,
             plans,
         });
     }

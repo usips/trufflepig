@@ -5,7 +5,8 @@ use super::{
     board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision},
     board_protocol::{BoardOp, FeedbackMetadata, RecentCall},
     board_vocabulary::{
-        EntryKind, EntryText, FeedbackImportKey, FeedbackKind, FeedbackState, PlanText, PlanTitle, TaskColumn,
+        EntryKind, EntryText, FeedbackImportKey, FeedbackKind, FeedbackState, PlanText, PlanTitle,
+        TaskColumn,
     },
 };
 use crate::cli::Arguments;

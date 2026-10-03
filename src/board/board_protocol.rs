@@ -2,15 +2,15 @@
 use super::board_actor::{BoardActor, BoardRecipient, HarnessLabel, validate_actor_component};
 use super::board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId};
 use super::board_vocabulary::{
-    EntryKind, EntryText, FeedbackImportKey, FeedbackKind, FeedbackState, PlanText, PlanTitle, ProposalState,
-    TaskColumn,
+    EntryKind, EntryText, FeedbackImportKey, FeedbackKind, FeedbackState, PlanText, PlanTitle,
+    ProposalState, TaskColumn,
 };
 use crate::identity::GitOid;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-pub const BOARD_API: u32 = 1;
+pub const BOARD_API: u32 = 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -355,10 +355,7 @@ impl BoardOp {
                 for commit in commits {
                     bounded_metadata(&commit.subject, 1024, "commit subject")?;
                     bounded_metadata(&commit.author, 1024, "commit author")?;
-                    if commit.coauthors.len() > 64
-                        || commit.plans.len() > 256
-                        || commit.file_stats.len() > 2000
-                    {
+                    if commit.coauthors.len() > 64 || commit.plans.len() > 256 {
                         bail!("invalid_options: commit metadata exceeds collection limits");
                     }
                     for number in [commit.files, commit.insertions, commit.deletions] {
@@ -369,16 +366,6 @@ impl BoardOp {
                     for author in &commit.coauthors {
                         bounded_metadata(&author.model, 256, "co-author model")?;
                         bounded_metadata(&author.email, 256, "co-author email")?;
-                    }
-                    for file in &commit.file_stats {
-                        bounded_metadata(&file.path, 4096, "commit path")?;
-                        for number in [file.insertions, file.deletions].into_iter().flatten() {
-                            if number > super::board_ids::MAX_BOARD_NUMBER {
-                                bail!(
-                                    "invalid_options: file statistics exceed SQLite integer range"
-                                );
-                            }
-                        }
                     }
                     for link in &commit.plans {
                         if let Some(ordinal) = link.task_ordinal {
@@ -696,13 +683,6 @@ pub struct CommitPlanLink {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct CommitFileStat {
-    pub path: String,
-    pub insertions: Option<u64>,
-    pub deletions: Option<u64>,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LinkedCommit {
     pub repo_key: RepoKey,
     pub oid: GitOid,
@@ -713,7 +693,6 @@ pub struct LinkedCommit {
     pub files: u64,
     pub insertions: u64,
     pub deletions: u64,
-    pub file_stats: Vec<CommitFileStat>,
     pub plans: Vec<CommitPlanLink>,
 }
 
@@ -721,6 +700,7 @@ pub struct LinkedCommit {
 pub struct CommitLinkResult {
     pub inserted: u64,
     pub unknown_plans: Vec<PlanId>,
+    pub unknown_tasks: Vec<TaskId>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

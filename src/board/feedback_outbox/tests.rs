@@ -218,17 +218,31 @@ impl BoardBackend for RejectedImport {
 
 #[test]
 fn semantic_import_rejections_quarantine_and_transient_rejections_remain_pending() {
-    for code in [BoardErrorCode::InvalidReference, BoardErrorCode::BoardApiMismatch,
-        BoardErrorCode::InvalidState, BoardErrorCode::BoardUnavailable,
-        BoardErrorCode::DatabaseLocked] {
+    for code in [
+        BoardErrorCode::InvalidReference,
+        BoardErrorCode::BoardApiMismatch,
+        BoardErrorCode::InvalidState,
+        BoardErrorCode::BoardUnavailable,
+        BoardErrorCode::DatabaseLocked,
+    ] {
         let directory = scratch();
         queue(directory.path(), &report()).unwrap();
         let summary = import_pending(directory.path(), &mut RejectedImport(code)).unwrap();
-        let transient = matches!(code,
-            BoardErrorCode::BoardUnavailable | BoardErrorCode::DatabaseLocked);
+        let transient = matches!(
+            code,
+            BoardErrorCode::BoardUnavailable | BoardErrorCode::DatabaseLocked
+        );
         assert_eq!(summary.pending, usize::from(transient), "{code:?}");
         assert_eq!(summary.quarantined, usize::from(!transient), "{code:?}");
-        let path = fs::read_dir(directory.path()).unwrap().next().unwrap().unwrap().path();
-        assert_eq!(path.extension().unwrap(), if transient { "feedback" } else { "quarantine" });
+        let path = fs::read_dir(directory.path())
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        assert_eq!(
+            path.extension().unwrap(),
+            if transient { "feedback" } else { "quarantine" }
+        );
     }
 }

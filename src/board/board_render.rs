@@ -427,10 +427,16 @@ fn lines_result(result: &BoardResult) -> String {
             for plan in &result.unknown_plans {
                 writeln!(text, "unknown plan: {plan}").unwrap();
             }
+            for task in &result.unknown_tasks {
+                writeln!(text, "unknown task: {task}; commit linked to its plan").unwrap();
+            }
         }
-        BoardResult::Queued { import_key } => {
-            writeln!(text, "queued: pending import ({})", cell(&import_key.to_string())).unwrap()
-        }
+        BoardResult::Queued { import_key } => writeln!(
+            text,
+            "queued: pending import ({})",
+            cell(&import_key.to_string())
+        )
+        .unwrap(),
         BoardResult::ScanRecorded => text.push_str("scan recorded\n"),
         BoardResult::Diff(_) | BoardResult::Review(_) => {
             unreachable!("diffs and reviews have dedicated renderers")
@@ -598,14 +604,6 @@ pub fn render_review(
             rendered_seq: None,
         });
     }
-    visible.trim_file_stats();
-    let text = render(&visible)?;
-    if budget.fits(&text) {
-        return Ok(RenderedBoard {
-            text,
-            rendered_seq: None,
-        });
-    }
     visible.trim_diff_context();
     let text = render(&visible)?;
     if budget.fits(&text) {
@@ -692,17 +690,6 @@ fn review_text(packet: &ReviewPacket, budget: &OutputBudget, backend: &str) -> R
                         ))
                 )?;
             }
-            for stat in &commit.commit.file_stats {
-                writeln!(
-                    text,
-                    "  {} +{} -{}",
-                    cell(&stat.path),
-                    stat.insertions
-                        .map_or_else(|| "binary".into(), |n| n.to_string()),
-                    stat.deletions
-                        .map_or_else(|| "binary".into(), |n| n.to_string())
-                )?;
-            }
             if let Some(drill) = &commit.drill {
                 writeln!(text, "drill: {}", cell(drill))?;
             }
@@ -744,11 +731,8 @@ fn review_text(packet: &ReviewPacket, budget: &OutputBudget, backend: &str) -> R
     }
     writeln!(
         text,
-        "omitted: entries={} file_stats={} diff_context_lines={} diff_body_lines={}",
-        packet.omitted.entries,
-        packet.omitted.file_stats,
-        packet.omitted.diff_context_lines,
-        packet.omitted.diff_body_lines
+        "omitted: entries={} diff_context_lines={} diff_body_lines={}",
+        packet.omitted.entries, packet.omitted.diff_context_lines, packet.omitted.diff_body_lines
     )?;
     footer(&mut text, backend, Some(packet.plan.id));
     Ok(text)

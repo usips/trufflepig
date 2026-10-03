@@ -1,7 +1,7 @@
 //! Local Git scans; only accepted complete scans advance edge-local digests.
 use super::board_actor::{BoardActor, HarnessLabel};
 use super::board_backend::BoardBackend;
-use super::board_ids::{PlanId, RepoKey};
+use super::board_ids::{PlanId, RepoKey, TaskId};
 use super::board_protocol::{
     BoardOp, BoardRequest, BoardResult, LinkedCommit, RepoRegistration, RepoScanTarget,
 };
@@ -23,6 +23,7 @@ pub struct IngestReport {
     pub skipped: u64,
     pub inserted: u64,
     pub unknown_plans: Vec<PlanId>,
+    pub unknown_tasks: Vec<TaskId>,
     pub completed: Vec<RepoRegistration>,
     pub errors: Vec<String>,
 }
@@ -36,7 +37,14 @@ pub struct UnlinkedScan {
 
 #[derive(Default)]
 pub struct RepoIngestor {
-    completed: HashMap<(RepoKey, PathBuf), ScanStamp>,
+    completed: HashMap<(RepoKey, PathBuf), CompletedScan>,
+}
+
+struct CompletedScan {
+    stamp: ScanStamp,
+    unknown_plans: Vec<PlanId>,
+    unknown_tasks: Vec<TaskId>,
+    warnings: Vec<String>,
 }
 
 #[derive(PartialEq)]
@@ -57,7 +65,7 @@ impl RepoIngestor {
         let deadline = Instant::now() + timeout;
         let mut report = IngestReport::default();
         for target in targets {
-            if target.registration.host != actor.host {
+            if target.registration.host != actor.host || target.plans.is_empty() {
                 report.skipped += 1;
                 continue;
             }
@@ -73,6 +81,8 @@ impl RepoIngestor {
         }
         report.unknown_plans.sort_unstable();
         report.unknown_plans.dedup();
+        report.unknown_tasks.sort_unstable();
+        report.unknown_tasks.dedup();
         Ok(report)
     }
 
@@ -99,7 +109,18 @@ impl RepoIngestor {
             registration.repo_key.clone(),
             registration.common_dir.clone(),
         );
-        if self.completed.get(&key) == Some(&stamp) && target.scan_error.is_none() {
+        if let Some(completed) = self
+            .completed
+            .get(&key)
+            .filter(|completed| completed.stamp == stamp && target.scan_error.is_none())
+        {
+            report
+                .unknown_plans
+                .extend_from_slice(&completed.unknown_plans);
+            report
+                .unknown_tasks
+                .extend_from_slice(&completed.unknown_tasks);
+            report.errors.extend_from_slice(&completed.warnings);
             report.skipped += 1;
             report.completed.push(registration.clone());
             return Ok(());
@@ -120,8 +141,13 @@ impl RepoIngestor {
             anyhow::bail!("board_scan: unexpected commit-link reply");
         };
         report.inserted += result.inserted;
-        let has_unknown = !result.unknown_plans.is_empty();
-        report.unknown_plans.extend(result.unknown_plans);
+        report
+            .unknown_plans
+            .extend_from_slice(&result.unknown_plans);
+        report
+            .unknown_tasks
+            .extend_from_slice(&result.unknown_tasks);
+        report.errors.extend_from_slice(&scan.warnings);
         ensure!(
             scan.complete,
             "board_scan: commit scan exceeds {COMMIT_LIMIT} records"
@@ -132,9 +158,15 @@ impl RepoIngestor {
         );
         record_scan(backend, actor, registration, None)?;
         report.completed.push(registration.clone());
-        if !has_unknown {
-            self.completed.insert(key, stamp);
-        }
+        self.completed.insert(
+            key,
+            CompletedScan {
+                stamp,
+                unknown_plans: result.unknown_plans,
+                unknown_tasks: result.unknown_tasks,
+                warnings: scan.warnings,
+            },
+        );
         Ok(())
     }
 }
@@ -186,7 +218,8 @@ pub fn find_unlinked(
     Ok(UnlinkedScan {
         commits,
         complete,
-        scan_error,
+        scan_error: scan_error
+            .or_else(|| (!scan.warnings.is_empty()).then(|| scan.warnings.join("; "))),
     })
 }
 
@@ -263,6 +296,7 @@ fn add_detached(path: &std::path::Path, tips: &mut BTreeSet<GitOid>) -> Result<(
 struct LogScan {
     records: Vec<ParsedCommit>,
     complete: bool,
+    warnings: Vec<String>,
 }
 
 fn scan_log(
@@ -276,6 +310,7 @@ fn scan_log(
         return Ok(LogScan {
             records: Vec::new(),
             complete: true,
+            warnings: Vec::new(),
         });
     }
     let since = format!("--since=@{since}");
@@ -287,18 +322,54 @@ fn scan_log(
         "--no-decorate",
         "--no-color",
         "--no-notes",
+        "--no-renames",
     ]);
     args.extend(tips.detached.iter().map(GitOid::as_str));
-    args.extend([since.as_str(), cap.as_str(), "--shortstat", LOG_FORMAT]);
+    args.extend([since.as_str(), cap.as_str(), LOG_FORMAT]);
     if linked_only {
         args.extend(["-E", "-i", "--grep=^Plan(-Task)?[[:space:]]*:"]);
     }
     args.push("--");
     let bytes = run_bounded(&registration.common_dir, &args, remaining(deadline)?)?;
-    let mut records = parse_log(&bytes, &registration.repo_key)?;
-    let complete = records.len() <= COMMIT_LIMIT;
+    let parsed = parse_log(&bytes, &registration.repo_key)?;
+    let complete = parsed.record_count <= COMMIT_LIMIT;
+    let mut records = parsed.records;
     records.truncate(COMMIT_LIMIT);
-    Ok(LogScan { records, complete })
+    let mut warnings = parsed.warnings;
+    let stats_budget = deadline
+        .saturating_duration_since(Instant::now())
+        .saturating_sub(Duration::from_millis(500))
+        .min(Duration::from_secs(1));
+    if !records.is_empty() && !stats_budget.is_zero() {
+        let mut stats_args = args.clone();
+        stats_args.insert(1, "--shortstat");
+        match run_bounded(&registration.common_dir, &stats_args, stats_budget)
+            .and_then(|bytes| parse_log(&bytes, &registration.repo_key))
+        {
+            Ok(stats) => {
+                let statistics = stats
+                    .records
+                    .into_iter()
+                    .map(|record| (record.commit.oid, record.commit))
+                    .collect::<HashMap<_, _>>();
+                for record in &mut records {
+                    if let Some(stats) = statistics.get(&record.commit.oid) {
+                        record.commit.files = stats.files;
+                        record.commit.insertions = stats.insertions;
+                        record.commit.deletions = stats.deletions;
+                    }
+                }
+            }
+            Err(error) => warnings.push(format!(
+                "board_scan: commit statistics unavailable: {error:#}"
+            )),
+        }
+    }
+    Ok(LogScan {
+        records,
+        complete,
+        warnings,
+    })
 }
 
 #[cfg(test)]
@@ -336,6 +407,7 @@ mod tests {
                     BoardResult::CommitsLinked(CommitLinkResult {
                         inserted: commits.len() as u64,
                         unknown_plans: self.unknown_plans.clone(),
+                        unknown_tasks: Vec::new(),
                     })
                 }
                 BoardOp::RecordScan { error, .. } => {
@@ -492,10 +564,10 @@ mod tests {
     }
 
     #[test]
-    fn unknown_plan_keeps_same_tip_scan_retryable_until_resolved() {
+    fn unknown_plan_advances_stamp_until_plan_set_changes() {
         let fixture = GitFixture::new();
         fixture.commit("future plan\n\nPlan: P99");
-        let target = target(&fixture);
+        let mut target = target(&fixture);
         let unknown = PlanId::new(99).unwrap();
         let mut backend = TestBackend {
             unknown_plans: vec![unknown],
@@ -511,8 +583,6 @@ mod tests {
             )
             .unwrap();
         assert_eq!(first.unknown_plans, vec![unknown]);
-        assert!(ingestor.completed.is_empty());
-        backend.unknown_plans.clear();
         let second = ingestor
             .ingest(
                 &mut backend,
@@ -521,14 +591,137 @@ mod tests {
                 Duration::from_secs(5),
             )
             .unwrap();
-        assert!(second.unknown_plans.is_empty());
-        assert!(second.errors.is_empty());
-        assert_eq!(backend.requests, 2);
+        assert_eq!(second.skipped, 1);
+        assert_eq!(backend.requests, 1);
+        assert_eq!(second.unknown_plans, vec![unknown]);
+        backend.unknown_plans.clear();
+        target.plans.push(unknown);
         let third = ingestor
             .ingest(&mut backend, &actor(), &[target], Duration::from_secs(5))
             .unwrap();
-        assert_eq!(third.skipped, 1);
+        assert_eq!(third.scanned, 1);
         assert_eq!(backend.requests, 2);
+    }
+
+    #[test]
+    fn malformed_commit_is_isolated_and_valid_metadata_is_bounded() {
+        let fixture = GitFixture::new();
+        fixture.commit("root");
+        fixture.commit("bad author\n\nPlan: P7\nCo-authored-by: broken");
+        fixture.commit("bad task\n\nPlan: P7\nPlan-Task: invalid");
+        let subject = "é".repeat(900);
+        fixture.git(&["config", "user.name", &"é".repeat(900)]);
+        let good = fixture.commit(&format!(
+            "{subject}\n\nPlan: P7\nPlan-Task: P7.3\nPlan-Task: P7.4"
+        ));
+        let target = target(&fixture);
+        let mut ingestor = RepoIngestor::default();
+        let mut backend = TestBackend::default();
+        let first = ingestor
+            .ingest(
+                &mut backend,
+                &actor(),
+                &[target.clone()],
+                Duration::from_secs(5),
+            )
+            .unwrap();
+        assert_eq!(first.completed.len(), 1);
+        assert_eq!(first.errors.len(), 2);
+        assert_eq!(backend.linked.len(), 1);
+        let commit = &backend.linked[0];
+        assert_eq!(commit.oid, good);
+        assert!(commit.subject.len() <= 1024);
+        assert!(commit.author.len() <= 1024);
+        assert_eq!(
+            commit
+                .plans
+                .iter()
+                .map(|link| link.task_ordinal)
+                .collect::<Vec<_>>(),
+            vec![Some(3), Some(4)]
+        );
+        BoardRequest::new(
+            actor(),
+            BoardOp::LinkCommits {
+                commits: backend.linked.clone(),
+            },
+        )
+        .validate()
+        .unwrap();
+        assert_eq!(
+            ingestor
+                .ingest(&mut backend, &actor(), &[target], Duration::from_secs(5))
+                .unwrap()
+                .skipped,
+            1
+        );
+    }
+
+    #[test]
+    fn missing_blob_statistics_do_not_block_commit_links_or_stamp() {
+        let fixture = GitFixture::new();
+        fixture.commit("root");
+        std::fs::write(
+            fixture.root.join("unavailable.txt"),
+            "missing object contents\n",
+        )
+        .unwrap();
+        fixture.git(&["add", "unavailable.txt"]);
+        let blob = fixture.git(&["rev-parse", ":unavailable.txt"]);
+        let blob = blob.trim();
+        let linked = fixture.commit(&linked_message("missing blob"));
+        std::fs::remove_file(
+            fixture
+                .root
+                .join(".git/objects")
+                .join(&blob[..2])
+                .join(&blob[2..]),
+        )
+        .unwrap();
+        let target = target(&fixture);
+        let mut backend = TestBackend::default();
+        let mut ingestor = RepoIngestor::default();
+        let first = ingestor
+            .ingest(
+                &mut backend,
+                &actor(),
+                &[target.clone()],
+                Duration::from_secs(5),
+            )
+            .unwrap();
+        assert_eq!(first.completed.len(), 1);
+        assert_eq!(backend.linked.len(), 1);
+        assert_eq!(backend.linked[0].oid, linked);
+        assert_eq!(backend.linked[0].files, 0);
+        assert!(
+            first
+                .errors
+                .iter()
+                .any(|warning| warning.contains("statistics"))
+        );
+        assert_eq!(
+            ingestor
+                .ingest(&mut backend, &actor(), &[target], Duration::from_secs(5))
+                .unwrap()
+                .skipped,
+            1
+        );
+    }
+
+    #[test]
+    fn planless_targets_are_skipped_without_reading_git() {
+        let fixture = GitFixture::new();
+        fixture.commit("root");
+        let mut target = target(&fixture);
+        target.plans.clear();
+        target.registration.common_dir = fixture.root.join("missing");
+        let mut backend = TestBackend::default();
+        let report = RepoIngestor::default()
+            .ingest(&mut backend, &actor(), &[target], Duration::from_secs(5))
+            .unwrap();
+        assert_eq!(report.skipped, 1);
+        assert!(report.errors.is_empty());
+        assert_eq!(backend.requests, 0);
     }
 
     #[test]

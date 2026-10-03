@@ -110,8 +110,12 @@ pub fn import_pending(
                 }
                 summary.imported += 1;
             }
-            Err(error) if matches!(error.code,
-                BoardErrorCode::BoardUnavailable | BoardErrorCode::DatabaseLocked) => {
+            Err(error)
+                if matches!(
+                    error.code,
+                    BoardErrorCode::BoardUnavailable | BoardErrorCode::DatabaseLocked
+                ) =>
+            {
                 summary.pending += 1;
                 summary.retry_error.get_or_insert(error.code);
             }

@@ -160,7 +160,7 @@ fn local_board_dedupe_distinguishes_target_and_snapshots_claims() {
 #[test]
 fn local_board_refuses_newer_schema_without_changing_journal() {
     let (board, path) = database();
-    board.conn.pragma_update(None, "user_version", 2).unwrap();
+    board.conn.pragma_update(None, "user_version", 99).unwrap();
     board
         .conn
         .pragma_update(None, "journal_mode", "DELETE")
@@ -289,11 +289,6 @@ fn local_board_commit_batch_is_atomic_idempotent_and_emits_one_event() {
         files: 1,
         insertions: 2,
         deletions: 1,
-        file_stats: vec![CommitFileStat {
-            path: "src/a.rs".to_owned(),
-            insertions: Some(2),
-            deletions: Some(1),
-        }],
         plans: vec![CommitPlanLink {
             plan_id: plan,
             task_ordinal: None,

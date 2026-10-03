@@ -204,7 +204,6 @@ fn mutation_entry(
             supersedes,
             repo_key: None,
             state: state.map(str::to_owned),
-            dedupe_key: None,
         },
     )
 }

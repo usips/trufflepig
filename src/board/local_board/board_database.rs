@@ -1,13 +1,16 @@
 //! Secure durable database creation and forward-only schema migrations.
 
+#[cfg(test)]
+mod tests;
+
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OpenFlags};
 
 use super::{BoardError, invalid, sql_error};
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 #[cfg(test)]
 pub(super) fn open(path: &Path) -> Result<(Connection, PathBuf), BoardError> {
@@ -23,7 +26,6 @@ pub(super) fn open_with_timeout(
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
-    let created_parent = !parent.exists();
     #[cfg(unix)]
     {
         use std::os::unix::fs::DirBuilderExt;
@@ -50,8 +52,10 @@ pub(super) fn open_with_timeout(
         if mode & 0o200 == 0 {
             return Err(unavailable("database directory is not writable"));
         }
-        if created_parent && mode & 0o077 != 0 {
-            return Err(unavailable("new database directory is not private"));
+        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o700))
+            .map_err(io_error)?;
+        if parent.metadata().map_err(io_error)?.permissions().mode() & 0o777 != 0o700 {
+            return Err(unavailable("database directory permissions must be 0700"));
         }
     }
     let name = path
@@ -117,15 +121,53 @@ pub(super) fn open_with_timeout(
     if locked_version > SCHEMA_VERSION {
         return Err(unavailable("database schema became newer than supported"));
     }
-    if locked_version < SCHEMA_VERSION {
-        tx.execute_batch(SCHEMA).map_err(sql_error)?;
-        tx.pragma_update(None, "user_version", SCHEMA_VERSION)
+    for version in locked_version..SCHEMA_VERSION {
+        let migration = match version {
+            0 => SCHEMA_V1,
+            1 => SCHEMA_V2,
+            _ => {
+                return Err(unavailable(format!(
+                    "missing schema migration from version {version}"
+                )));
+            }
+        };
+        tx.execute_batch(migration).map_err(sql_error)?;
+        tx.pragma_update(None, "user_version", version + 1)
             .map_err(sql_error)?;
     }
     tx.execute("INSERT INTO board_meta(key,value) VALUES('resolved_path',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [resolved.to_string_lossy().as_ref()]).map_err(sql_error)?;
     tx.commit().map_err(sql_error)?;
     conn.busy_timeout(timeout.min(Duration::from_secs(5)))
         .map_err(sql_error)?;
+    Ok((conn, resolved))
+}
+
+/// A query-only connection refuses absent or unmigrated storage and never creates it.
+pub(super) fn open_read_with_timeout(
+    path: &Path,
+    timeout: Duration,
+) -> Result<(Connection, PathBuf), BoardError> {
+    if path
+        .symlink_metadata()
+        .is_ok_and(|metadata| metadata.file_type().is_symlink())
+    {
+        return Err(unavailable("database path is a symbolic link"));
+    }
+    let resolved = path.canonicalize().map_err(io_error)?;
+    let conn = Connection::open_with_flags(&resolved, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(sql_error)?;
+    conn.busy_timeout(timeout.min(Duration::from_secs(5)))
+        .map_err(sql_error)?;
+    conn.execute_batch("PRAGMA query_only=ON; PRAGMA foreign_keys=ON;")
+        .map_err(sql_error)?;
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(sql_error)?;
+    if version != SCHEMA_VERSION {
+        return Err(unavailable(format!(
+            "schema version {version} requires writable initialization for supported {SCHEMA_VERSION}"
+        )));
+    }
     Ok((conn, resolved))
 }
 
@@ -160,7 +202,7 @@ fn unavailable(message: impl Into<String>) -> BoardError {
     invalid("board_unavailable", message)
 }
 
-const SCHEMA: &str = r#"
+const SCHEMA_V1: &str = r#"
 CREATE TABLE board_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE actors(
  id INTEGER PRIMARY KEY, user TEXT NOT NULL, host TEXT NOT NULL,
@@ -257,4 +299,74 @@ CREATE INDEX events_recipient_sequence ON events(to_whom,seq);
 CREATE TABLE operation_dedupes(
  dedupe_key TEXT PRIMARY KEY, reply_json TEXT NOT NULL, created_at INTEGER NOT NULL
 );
+"#;
+
+const SCHEMA_V2: &str = r#"
+UPDATE operation_dedupes SET reply_json=json_set(reply_json,'$.api',2) WHERE json_valid(reply_json) AND json_extract(reply_json,'$.api')=1;
+ALTER TABLE agent_sessions DROP COLUMN bound_plan;
+DROP INDEX entries_dedupe;
+ALTER TABLE entries DROP COLUMN dedupe_key;
+ALTER TABLE entries ADD COLUMN via TEXT CHECK(via IS NULL OR via='outbox');
+UPDATE entries SET via='outbox' WHERE id IN (
+ SELECT entry_id FROM board_feedback WHERE import_key IS NOT NULL
+ UNION SELECT entry_id FROM feedback_imports
+);
+INSERT OR IGNORE INTO plan_repos(plan_id,repo_key)
+ SELECT linked.plan_id,canonical.repo_key FROM repo_paths alias
+ JOIN plan_repos linked ON linked.repo_key=alias.repo_key
+ JOIN repo_paths canonical ON canonical.rowid=(
+  SELECT min(first.rowid) FROM repo_paths first WHERE first.host=alias.host AND first.common_dir=alias.common_dir
+ );
+DELETE FROM repo_paths WHERE rowid NOT IN (SELECT min(rowid) FROM repo_paths GROUP BY host,common_dir);
+CREATE UNIQUE INDEX repo_paths_host_common ON repo_paths(host,common_dir);
+ALTER TABLE repo_paths DROP COLUMN tips_digest;
+ALTER TABLE repo_paths ADD COLUMN registration_error TEXT;
+ALTER TABLE repo_paths ADD COLUMN root_commits_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE events ADD COLUMN model TEXT;
+ALTER TABLE events ADD COLUMN effort TEXT;
+UPDATE events SET model=(SELECT model FROM entries WHERE seq=events.seq AND actor_id=events.actor_id ORDER BY id LIMIT 1),
+ effort=(SELECT effort FROM entries WHERE seq=events.seq AND actor_id=events.actor_id ORDER BY id LIMIT 1);
+DROP INDEX events_recipient_sequence;
+CREATE INDEX entries_supersedes ON entries(supersedes);
+CREATE INDEX entries_sequence ON entries(seq,id);
+CREATE INDEX entries_kind_state ON entries(kind,state,seq);
+CREATE TABLE proposals_v2(
+ entry_id INTEGER PRIMARY KEY REFERENCES entries(id), plan_id INTEGER NOT NULL REFERENCES plans(id),
+ base_revision INTEGER NOT NULL, text_hash TEXT NOT NULL REFERENCES texts(hash),
+ state TEXT NOT NULL CHECK(state IN ('open','accepted','rejected','superseded')),
+ decision_entry INTEGER REFERENCES entries(id), result_revision INTEGER,
+ FOREIGN KEY(plan_id,base_revision) REFERENCES revisions(plan_id,number)
+);
+INSERT INTO proposals_v2 SELECT * FROM proposals;
+DROP TABLE proposals;
+ALTER TABLE proposals_v2 RENAME TO proposals;
+ALTER TABLE commits DROP COLUMN file_stats;
+CREATE TABLE commit_tasks(
+ repo_key TEXT NOT NULL, oid TEXT NOT NULL, plan_id INTEGER NOT NULL, task_ordinal INTEGER NOT NULL,
+ PRIMARY KEY(repo_key,oid,plan_id,task_ordinal),
+ FOREIGN KEY(repo_key,oid) REFERENCES commits(repo_key,oid),
+ FOREIGN KEY(plan_id,task_ordinal) REFERENCES tasks(plan_id,ordinal)
+);
+INSERT INTO commit_tasks SELECT repo_key,oid,plan_id,task_ordinal FROM commit_plans WHERE task_ordinal IS NOT NULL;
+CREATE TABLE commit_plans_v2(
+ repo_key TEXT NOT NULL, oid TEXT NOT NULL, plan_id INTEGER NOT NULL REFERENCES plans(id),
+ entry_id INTEGER NOT NULL REFERENCES entries(id), PRIMARY KEY(repo_key,oid,plan_id),
+ FOREIGN KEY(repo_key,oid) REFERENCES commits(repo_key,oid)
+);
+INSERT INTO commit_plans_v2 SELECT repo_key,oid,plan_id,entry_id FROM commit_plans;
+DROP TABLE commit_plans;
+ALTER TABLE commit_plans_v2 RENAME TO commit_plans;
+CREATE INDEX commit_plans_plan ON commit_plans(plan_id);
+CREATE TABLE claims_v2(
+ id INTEGER PRIMARY KEY, plan_id INTEGER NOT NULL, task_ordinal INTEGER NOT NULL,
+ actor_id INTEGER NOT NULL REFERENCES actors(id), entry_id INTEGER NOT NULL REFERENCES entries(id),
+ scope TEXT NOT NULL, claimed_at INTEGER NOT NULL, last_active INTEGER NOT NULL,
+ ended_at INTEGER, end_reason TEXT CHECK(end_reason IN ('released','taken_over','reassigned','resumed')),
+ FOREIGN KEY(plan_id,task_ordinal) REFERENCES tasks(plan_id,ordinal)
+);
+INSERT INTO claims_v2 SELECT * FROM claims;
+DROP TABLE claims;
+ALTER TABLE claims_v2 RENAME TO claims;
+CREATE UNIQUE INDEX claims_one_active ON claims(plan_id,task_ordinal) WHERE ended_at IS NULL;
+CREATE INDEX claims_actor_active ON claims(actor_id,ended_at);
 "#;

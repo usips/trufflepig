@@ -123,7 +123,6 @@ pub(super) fn claim_task(
             supersedes: None,
             repo_key: None,
             state: None,
-            dedupe_key: None,
         },
     )?;
     tx.execute(
@@ -284,7 +283,6 @@ fn task_entry(
             supersedes: None,
             repo_key: None,
             state: None,
-            dedupe_key: None,
         },
     )
 }

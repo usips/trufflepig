@@ -135,7 +135,6 @@ impl LocalBoard {
             now,
             seq: EventSeq::new(seq),
             claim_ttl_secs: self.claim_ttl_secs,
-            dedupe_key: key.clone(),
         };
         let dedupable = is_dedupable(&request.op);
         let import_key = match &request.op {
@@ -326,7 +325,6 @@ pub(super) struct WriteContext {
     pub now: i64,
     pub seq: EventSeq,
     pub claim_ttl_secs: i64,
-    pub dedupe_key: String,
 }
 
 pub(super) struct EntryDraft {
@@ -337,7 +335,6 @@ pub(super) struct EntryDraft {
     pub supersedes: Option<EntryId>,
     pub repo_key: Option<RepoKey>,
     pub state: Option<String>,
-    pub dedupe_key: Option<String>,
 }
 
 pub(super) fn insert_entry(
@@ -346,7 +343,7 @@ pub(super) fn insert_entry(
     entry: &EntryDraft,
 ) -> Result<EntryId, BoardError> {
     crate::board::board_vocabulary::EntryText::new(entry.body.clone()).map_err(BoardError::from)?;
-    let id: u64 = tx.query_row("INSERT INTO entries(plan_id,kind,body,to_whom,supersedes,actor_id,model,effort,repo_key,state,dedupe_key,seq,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) RETURNING id", params![entry.plan_id.map(|id|sql_number(id.get())), entry.kind.as_str(), entry.body, entry.to_whom, entry.supersedes.map(|id|sql_number(id.get())), ctx.actor_id, ctx.model, ctx.effort, entry.repo_key.as_ref().map(RepoKey::as_str), entry.state, entry.dedupe_key.as_deref().unwrap_or(&ctx.dedupe_key), sql_number(ctx.seq.get()), ctx.now], |r| row_number(r,0)).map_err(sql_error)?;
+    let id: u64 = tx.query_row("INSERT INTO entries(plan_id,kind,body,to_whom,supersedes,actor_id,model,effort,repo_key,state,seq,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) RETURNING id", params![entry.plan_id.map(|id|sql_number(id.get())), entry.kind.as_str(), entry.body, entry.to_whom, entry.supersedes.map(|id|sql_number(id.get())), ctx.actor_id, ctx.model, ctx.effort, entry.repo_key.as_ref().map(RepoKey::as_str), entry.state, sql_number(ctx.seq.get()), ctx.now], |r| row_number(r,0)).map_err(sql_error)?;
     let id = EntryId::new(id).map_err(BoardError::from)?;
     for reference in extract_refs(&entry.body)
         .into_iter()

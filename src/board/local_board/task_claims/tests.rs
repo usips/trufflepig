@@ -63,7 +63,6 @@ fn write(
         now,
         seq: EventSeq::new(super::super::max_seq(&tx).unwrap().get() + 1),
         claim_ttl_secs: 120,
-        dedupe_key: "test-operation".into(),
     };
     let reply = operation(&tx, &ctx)?;
     tx.commit().unwrap();

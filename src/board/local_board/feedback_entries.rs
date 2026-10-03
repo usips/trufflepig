@@ -8,7 +8,9 @@ use crate::board::board_ids::EntryId;
 use crate::board::board_protocol::{
     BoardChange, BoardError, BoardOp, BoardReply, BoardResult, FeedbackMetadata, FeedbackRecord,
 };
-use crate::board::board_vocabulary::{ENTRY_TEXT_LIMIT, EntryKind, FeedbackImportKey, FeedbackKind, FeedbackState};
+use crate::board::board_vocabulary::{
+    ENTRY_TEXT_LIMIT, EntryKind, FeedbackImportKey, FeedbackKind, FeedbackState,
+};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 pub(super) fn write_feedback(
@@ -58,7 +60,6 @@ pub(super) fn write_feedback(
             supersedes: None,
             repo_key: metadata.repo_key.clone(),
             state: Some(FeedbackState::Open.as_str().to_owned()),
-            dedupe_key: Some(ctx.dedupe_key.clone()),
         },
     )?;
     let recent_calls = serde_json::to_string(&metadata.recent_calls)
@@ -185,7 +186,6 @@ pub(super) fn close_feedback(
             supersedes: Some(*entry),
             repo_key: report.repo_key,
             state: None,
-            dedupe_key: Some(ctx.dedupe_key.clone()),
         },
     )?;
     tx.execute(

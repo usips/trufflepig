@@ -2,9 +2,7 @@ use super::*;
 use crate::board::{
     board_actor::BoardActor,
     board_ids::{EntryId, EventSeq, PlanId, RepoKey, TaskId},
-    board_protocol::{
-        CommitCoauthor, CommitFileStat, CommitPlanLink, RevisionRecord, RevisionSource,
-    },
+    board_protocol::{CommitCoauthor, CommitPlanLink, RevisionRecord, RevisionSource},
     board_render::render_review,
     board_vocabulary::{EntryKind, EntryText, PlanText, PlanTitle},
 };
@@ -75,7 +73,6 @@ fn commit(harness: &str, time: i64) -> LinkedCommit {
         files: 1,
         insertions: 5,
         deletions: 2,
-        file_stats: Vec::new(),
         plans: vec![CommitPlanLink {
             plan_id: PlanId::new(7).unwrap(),
             task_ordinal: Some(1),
@@ -223,14 +220,7 @@ fn review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint() {
         2,
         &format!("context\n{}", "new text for line\n".repeat(1000)),
     );
-    let mut linked = commit("codex", 120);
-    linked.file_stats = (0..150)
-        .map(|n| CommitFileStat {
-            path: format!("source/path/with/long/component/file{n}.rs"),
-            insertions: Some(5),
-            deletions: Some(2),
-        })
-        .collect();
+    let linked = commit("codex", 120);
     source.commits.push(linked.clone());
     let repositories = vec![RepoScanTarget {
         registration: super::super::board_protocol::RepoRegistration {
@@ -257,7 +247,6 @@ fn review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint() {
     let value: serde_json::Value = serde_json::from_str(&rendered.text).unwrap();
     let data = &value["result"]["data"];
     assert_eq!(data["omitted"]["entries"], 10);
-    assert_eq!(data["omitted"]["file_stats"], 150);
     assert!(data["omitted"]["diff_context_lines"].as_u64().unwrap() > 0);
     assert_eq!(data["omitted"]["diff_body_lines"], 2000);
     assert_eq!(data["ssot_diff"]["next"], "board show P7@1..2");
@@ -276,7 +265,7 @@ fn review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint() {
         "local",
     )
     .unwrap();
-    assert!(lines.text.contains("omitted: entries=10 file_stats=150"));
+    assert!(lines.text.contains("omitted: entries=10"));
     assert!(lines.text.contains("next: board show P7@1..2"));
     assert!(lines.text.contains("commit trailer: Plan: P7"));
     assert!(

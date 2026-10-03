@@ -57,7 +57,9 @@ struct HostState {
 #[derive(Default)]
 struct IngestClock {
     last_started: Option<Instant>,
-    running: Option<JoinHandle<std::result::Result<Option<super::feedback_outbox::ImportSummary>, BoardError>>>,
+    running: Option<
+        JoinHandle<std::result::Result<Option<super::feedback_outbox::ImportSummary>, BoardError>>,
+    >,
     running_import: bool,
     last_checked: Option<Instant>,
     import_retry_at: Option<Instant>,
@@ -67,7 +69,10 @@ struct IngestClock {
 
 impl IngestClock {
     fn check_due(&mut self, now: Instant) -> bool {
-        if self.last_checked.is_some_and(|checked| now.duration_since(checked) < IDLE_CHECK_INTERVAL) {
+        if self
+            .last_checked
+            .is_some_and(|checked| now.duration_since(checked) < IDLE_CHECK_INTERVAL)
+        {
             return false;
         }
         self.last_checked = Some(now);
@@ -112,14 +117,10 @@ impl BoardHost {
     }
 
     fn config(&self) -> Result<BoardConfig> {
-        let mut config = self
-            .inner
-            .config
-            .lock()
-            .unwrap_or_else(|poisoned| {
-                self.inner.config.clear_poison();
-                poisoned.into_inner()
-            });
+        let mut config = self.inner.config.lock().unwrap_or_else(|poisoned| {
+            self.inner.config.clear_poison();
+            poisoned.into_inner()
+        });
         if config.is_none() {
             *config = Some(BoardConfig::load()?);
         }
@@ -154,6 +155,7 @@ impl BoardHost {
                 BoardResult::CommitsLinked(CommitLinkResult {
                     inserted: report.inserted,
                     unknown_plans: report.unknown_plans,
+                    unknown_tasks: report.unknown_tasks,
                 }),
             );
             reply.warnings = report.errors;
@@ -226,6 +228,18 @@ impl BoardHost {
                 self.ingest(&actor, Some(base.plan), scan_budget)?
             };
             warnings.extend(report.errors);
+            warnings.extend(
+                report
+                    .unknown_plans
+                    .iter()
+                    .map(|plan| format!("unknown plan {plan}; commit trailer ignored")),
+            );
+            warnings.extend(
+                report
+                    .unknown_tasks
+                    .iter()
+                    .map(|task| format!("unknown task {task}; commit linked to its plan")),
+            );
             let reply = self.handle_by(&request, deadline)?;
             let BoardResult::Review(evidence) = &reply.result else {
                 bail!("board_api_mismatch: review backend returned an unexpected result");
@@ -460,8 +474,16 @@ impl BoardHost {
             }
         };
         let now = Instant::now();
-        if !clock.check_due(now) { return; }
-        if clock.running.as_ref().is_some_and(|worker| !worker.is_finished()) { return; }
+        if !clock.check_due(now) {
+            return;
+        }
+        if clock
+            .running
+            .as_ref()
+            .is_some_and(|worker| !worker.is_finished())
+        {
+            return;
+        }
         if let Some(finished) = clock.running.take() {
             match finished.join() {
                 Ok(Ok(Some(summary))) => {
@@ -470,18 +492,24 @@ impl BoardHost {
                         clock.report_once(code.as_str(), "feedback import deferred");
                     }
                 }
-                Ok(Ok(None)) => {},
+                Ok(Ok(None)) => {}
                 outcome => {
                     let error = match outcome {
                         Ok(Err(error)) => error,
-                        _ => BoardError::new(super::board_protocol::BoardErrorCode::BoardUnavailable,
-                            "maintenance worker panicked"),
+                        _ => BoardError::new(
+                            super::board_protocol::BoardErrorCode::BoardUnavailable,
+                            "maintenance worker panicked",
+                        ),
                     };
                     clock.report_once(error.code.as_str(), &error.message);
                     if clock.running_import {
-                        clock.import_finished(now, &super::feedback_outbox::ImportSummary {
-                            pending: 1, ..Default::default()
-                        });
+                        clock.import_finished(
+                            now,
+                            &super::feedback_outbox::ImportSummary {
+                                pending: 1,
+                                ..Default::default()
+                            },
+                        );
                     }
                 }
             }
@@ -497,32 +525,53 @@ impl BoardHost {
         let pending = clock.import_ready(now)
             && std::fs::read_dir(crate::system::spool_dir()).is_ok_and(|entries| {
                 entries.filter_map(std::result::Result::ok).any(|entry| {
-                    entry.path().extension().is_some_and(|ext| ext == "feedback")
+                    entry
+                        .path()
+                        .extension()
+                        .is_some_and(|ext| ext == "feedback")
                 })
             });
         let ingest_due = config.db_path.is_file()
-            && clock.last_started.is_none_or(|started| started.elapsed() >= MAINTENANCE_INTERVAL);
-        if !pending && !ingest_due { return; }
+            && clock
+                .last_started
+                .is_none_or(|started| started.elapsed() >= MAINTENANCE_INTERVAL);
+        if !pending && !ingest_due {
+            return;
+        }
         let host = self.clone();
-        match std::thread::Builder::new().name("board-maintenance".to_owned()).spawn(move || {
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| host.maintain(ingest_due, pending)))
-                .unwrap_or_else(|_| Err(BoardError::new(
-                    super::board_protocol::BoardErrorCode::BoardUnavailable,
-                    "maintenance worker panicked")))
-        }) {
+        match std::thread::Builder::new()
+            .name("board-maintenance".to_owned())
+            .spawn(move || {
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    host.maintain(ingest_due, pending)
+                }))
+                .unwrap_or_else(|_| {
+                    Err(BoardError::new(
+                        super::board_protocol::BoardErrorCode::BoardUnavailable,
+                        "maintenance worker panicked",
+                    ))
+                })
+            }) {
             Ok(worker) => {
                 clock.running = Some(worker);
                 clock.running_import = pending;
-                if ingest_due { clock.last_started = Some(now); }
+                if ingest_due {
+                    clock.last_started = Some(now);
+                }
             }
             Err(error) => clock.report_once("board_unavailable", &format!("spawn: {error}")),
         }
     }
 
-    fn maintain(&self, ingest_due: bool, import_due: bool)
-        -> std::result::Result<Option<super::feedback_outbox::ImportSummary>, BoardError> {
+    fn maintain(
+        &self,
+        ingest_due: bool,
+        import_due: bool,
+    ) -> std::result::Result<Option<super::feedback_outbox::ImportSummary>, BoardError> {
         let config = self.config().map_err(BoardError::from)?;
-        let actor = config.actor(None, Some("maintenance")).map_err(BoardError::from)?;
+        let actor = config
+            .actor(None, Some("maintenance"))
+            .map_err(BoardError::from)?;
         let summary = if import_due {
             Some(super::feedback_outbox::import_pending(
                 &crate::system::spool_dir(),
@@ -532,11 +581,11 @@ impl BoardHost {
             None
         };
         if ingest_due && config.db_path.is_file() {
-            self.ingest(&actor, None, Duration::from_secs(15)).map_err(BoardError::from)?;
+            self.ingest(&actor, None, Duration::from_secs(15))
+                .map_err(BoardError::from)?;
         }
         Ok(summary)
     }
-
 }
 
 struct HostAccess<'a>(&'a BoardHost, QueryDeadline);
@@ -622,35 +671,63 @@ mod tests {
 
     #[test]
     fn panicked_board_write_rolls_back_then_reopens_for_durable_writes() {
-        let scratch = std::env::var_os("TMPDIR").map(std::path::PathBuf::from)
+        let scratch = std::env::var_os("TMPDIR")
+            .map(std::path::PathBuf::from)
             .unwrap_or_else(|| std::path::PathBuf::from("/home/josh/.cache/codex-tmp"));
         std::fs::create_dir_all(&scratch).unwrap();
         let directory = tempfile::Builder::new().tempdir_in(scratch).unwrap();
         let database = directory.path().join("board.sqlite3");
         let host = BoardHost::with_config(BoardConfig::for_database(&database));
-        let actor = host.config().unwrap().actor(None, Some("panic-test")).unwrap();
-        let create = |title: &str| BoardRequest::new(actor.clone(), BoardOp::New {
-            title: super::super::board_vocabulary::PlanTitle::new(title).unwrap(),
-            body: super::super::board_vocabulary::PlanText::new("").unwrap(),
-            steward: None,
-        });
-        host.handle_by(&create("Before panic"), QueryDeadline::start()).unwrap();
-        host.inner.backend.lock().unwrap().as_mut().unwrap().inject_panic_after_write();
+        let actor = host
+            .config()
+            .unwrap()
+            .actor(None, Some("panic-test"))
+            .unwrap();
+        let create = |title: &str| {
+            BoardRequest::new(
+                actor.clone(),
+                BoardOp::New {
+                    title: super::super::board_vocabulary::PlanTitle::new(title).unwrap(),
+                    body: super::super::board_vocabulary::PlanText::new("").unwrap(),
+                    steward: None,
+                },
+            )
+        };
+        host.handle_by(&create("Before panic"), QueryDeadline::start())
+            .unwrap();
+        host.inner
+            .backend
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .inject_panic_after_write();
         let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            host.handle_by(&create("Rolled back"), QueryDeadline::start()).unwrap();
+            host.handle_by(&create("Rolled back"), QueryDeadline::start())
+                .unwrap();
         }));
         assert!(panic.is_err());
         assert!(host.inner.backend.is_poisoned());
-        host.handle_by(&create("After recovery"), QueryDeadline::start()).unwrap();
+        host.handle_by(&create("After recovery"), QueryDeadline::start())
+            .unwrap();
         assert!(!host.inner.backend.is_poisoned());
         let durable = rusqlite::Connection::open(database).unwrap();
-        let titles = durable.prepare("SELECT title FROM plans ORDER BY id").unwrap()
-            .query_map([], |row| row.get::<_, String>(0)).unwrap()
-            .collect::<std::result::Result<Vec<_>, _>>().unwrap();
+        let titles = durable
+            .prepare("SELECT title FROM plans ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .unwrap();
         assert_eq!(titles, ["Before panic", "After recovery"]);
-        assert_eq!(durable.query_row("SELECT COUNT(*) FROM events", [], |row| row.get::<_, i64>(0)).unwrap(), 2);
+        assert_eq!(
+            durable
+                .query_row("SELECT COUNT(*) FROM events", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            2
+        );
     }
-
 
     fn poison<T>(mutex: &Mutex<T>) {
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -667,9 +744,8 @@ mod tests {
             directory.path().join("board.sqlite3"),
         ));
         let context = RequestContext::new(None, None);
-        let create = crate::cli::parse(&[
-            "board".into(), "new".into(), "Survives panic".into(),
-        ]).unwrap();
+        let create =
+            crate::cli::parse(&["board".into(), "new".into(), "Survives panic".into()]).unwrap();
         host.run(&create, &context, QueryDeadline::start()).unwrap();
         poison(&host.inner.backend);
         poison(&host.inner.config);
@@ -678,7 +754,7 @@ mod tests {
         let show = crate::cli::parse(&["board".into(), "show".into()]).unwrap();
         let reply = host.run(&show, &context, QueryDeadline::start()).unwrap();
         assert!(reply.contains("Survives panic"));
-        lock_before(&host.inner.ingestor, QueryDeadline::start(), "ingest").unwrap();
+        drop(lock_before(&host.inner.ingestor, QueryDeadline::start(), "ingest").unwrap());
         assert!(!host.inner.backend.is_poisoned());
         assert!(!host.inner.config.is_poisoned());
         assert!(!host.inner.sequence.is_poisoned());
@@ -699,7 +775,9 @@ mod tests {
         clock.import_finished(now, &pending);
         assert!(!clock.import_ready(now + Duration::from_secs(1)));
         assert!(clock.import_ready(now + Duration::from_secs(2)));
-        for _ in 0..10 { clock.import_finished(now, &pending); }
+        for _ in 0..10 {
+            clock.import_finished(now, &pending);
+        }
         assert!(!clock.import_ready(now + Duration::from_secs(59)));
         assert!(clock.import_ready(now + Duration::from_secs(60)));
         clock.import_finished(now, &Default::default());

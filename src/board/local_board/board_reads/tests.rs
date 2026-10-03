@@ -368,7 +368,7 @@ fn repositories_keep_all_plan_links_each_path_and_the_oldest_plan_boundary() {
 }
 
 #[test]
-fn review_commits_keep_file_stats_coauthors_and_links_to_other_plans() {
+fn review_commits_keep_coauthors_and_links_to_other_plans() {
     let (directory, mut board) = database();
     let first = new_plan(&mut board);
     let BoardResult::Change(second) = call(
@@ -412,11 +412,6 @@ fn review_commits_keep_file_stats_coauthors_and_links_to_other_plans() {
         files: 1,
         insertions: 3,
         deletions: 2,
-        file_stats: vec![CommitFileStat {
-            path: "src/example.rs".to_owned(),
-            insertions: Some(3),
-            deletions: Some(2),
-        }],
         plans: vec![
             CommitPlanLink {
                 plan_id: first,
