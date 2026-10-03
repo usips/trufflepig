@@ -91,7 +91,7 @@ impl LocalBoard {
     fn dispatch(&mut self, request: &BoardRequest) -> Result<BoardReply, BoardError> {
         request.validate().map_err(BoardError::from)?;
         #[cfg(unix)]
-        if !request.op.is_read() {
+        if !request.op.is_read_only() {
             use std::os::unix::fs::PermissionsExt;
             let parent = self
                 .path
@@ -259,6 +259,11 @@ impl LocalBoard {
                 common_dir,
                 error,
             } => entry_writes::record_scan(&tx, repo_key, host, common_dir, error.as_deref())?,
+            BoardOp::ForgetRepoPath {
+                repo_key,
+                host,
+                common_dir,
+            } => entry_writes::forget_repo_path(&tx, &ctx, repo_key, host, common_dir)?,
             BoardOp::LinkCommits { commits } => entry_writes::link_commits(&tx, &ctx, commits)?,
         };
         #[cfg(test)]

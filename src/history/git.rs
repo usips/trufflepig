@@ -242,12 +242,15 @@ fn execute_with_program(
     policy: GitPolicy,
     program: &OsStr,
 ) -> Result<Vec<u8>> {
+    let explicit_git_dir = args.first() == Some(&OsStr::new("--git-dir=."));
+    let args = if explicit_git_dir { &args[1..] } else { args };
     let name = args.first().and_then(|name| name.to_str()).unwrap_or("");
     ensure!(
         matches!(
             name,
             "version"
                 | "rev-parse"
+                | "symbolic-ref"
                 | "rev-list"
                 | "for-each-ref"
                 | "cat-file"
@@ -286,6 +289,10 @@ fn execute_with_program(
                     OsStr::new("^(remote\\.origin\\.url|core\\.repositoryformatversion)$"),
                 ],
         "only read-only Git configuration enumeration is permitted"
+    );
+    ensure!(
+        name != "symbolic-ref" || args == [OsStr::new("symbolic-ref"), OsStr::new("HEAD")],
+        "only read-only symbolic HEAD resolution is permitted"
     );
     let filter_overrides = if name == "blame" {
         filter_overrides(directory)?
@@ -338,8 +345,11 @@ fn execute_with_program(
         .env("GIT_NO_LAZY_FETCH", "1")
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_PAGER", "cat")
-        .env("LC_ALL", "C")
-        .arg(name);
+        .env("LC_ALL", "C");
+    if explicit_git_dir {
+        command.arg("--git-dir=.");
+    }
+    command.arg(name);
     command.env("GIT_CONFIG_COUNT", filter_overrides.len().to_string());
     for (index, (key, value)) in filter_overrides.iter().enumerate() {
         command
@@ -530,6 +540,25 @@ fn drain_pipe(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bounded_git_rejects_symbolic_ref_writes_and_arbitrary_git_dirs() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let write = run_bounded(
+            root,
+            &["symbolic-ref", "HEAD", "refs/heads/unwanted"],
+            Duration::from_secs(1),
+        )
+        .unwrap_err();
+        assert!(write.to_string().contains("read-only symbolic HEAD"));
+        let directory = run_bounded(
+            root,
+            &["--git-dir=/unwanted", "rev-parse", "HEAD"],
+            Duration::from_secs(1),
+        )
+        .unwrap_err();
+        assert!(directory.to_string().contains("unsupported Git plumbing"));
+    }
 
     fn git(root: &Path, arguments: &[&str]) -> String {
         let output = Command::new("git")

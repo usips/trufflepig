@@ -332,6 +332,9 @@ fn repositories_keep_all_plan_links_each_path_and_the_oldest_plan_boundary() {
             "codex",
             BoardOp::RegisterRepo {
                 registration: RepoRegistration {
+                    root_commits: Vec::new(),
+                    registration_error: None,
+                    origin_override: None,
                     repo_key: repo_key.clone(),
                     origin_label: Some("origin".to_owned()),
                     host: "laptop".to_owned(),
@@ -393,6 +396,9 @@ fn review_commits_keep_coauthors_and_links_to_other_plans() {
         "codex",
         BoardOp::RegisterRepo {
             registration: RepoRegistration {
+                root_commits: Vec::new(),
+                registration_error: None,
+                origin_override: None,
                 repo_key: repo_key.clone(),
                 origin_label: None,
                 host: "laptop".to_owned(),

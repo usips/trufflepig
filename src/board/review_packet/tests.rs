@@ -265,6 +265,9 @@ fn review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint() {
     source.commits.push(linked.clone());
     let repositories = vec![RepoScanTarget {
         registration: super::super::board_protocol::RepoRegistration {
+            root_commits: Vec::new(),
+            registration_error: None,
+            origin_override: None,
             repo_key: linked.repo_key.clone(),
             origin_label: None,
             host: "laptop".into(),

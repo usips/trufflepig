@@ -623,7 +623,7 @@ pub(super) fn repositories(
     if let Some(plan) = plan {
         require_plan(conn, plan)?;
     }
-    let mut statement = conn.prepare("SELECT r.repo_key,r.origin_label,p.host,p.common_dir,p.scan_error FROM repos r JOIN repo_paths p ON p.repo_key=r.repo_key WHERE (?1 IS NULL OR EXISTS(SELECT 1 FROM plan_repos pr WHERE pr.repo_key=r.repo_key AND pr.plan_id=?1)) ORDER BY r.repo_key,p.host,p.common_dir").map_err(sql_error)?;
+    let mut statement = conn.prepare("SELECT r.repo_key,r.origin_label,p.host,p.common_dir,p.scan_error,p.root_commits_json,p.registration_error FROM repos r JOIN repo_paths p ON p.repo_key=r.repo_key WHERE (?1 IS NULL OR EXISTS(SELECT 1 FROM plan_repos pr WHERE pr.repo_key=r.repo_key AND pr.plan_id=?1)) ORDER BY r.repo_key,p.host,p.common_dir").map_err(sql_error)?;
     let mut rows = statement
         .query([plan.map(|plan| sql_number(plan.get()))])
         .map_err(sql_error)?;
@@ -658,6 +658,9 @@ pub(super) fn repositories(
                 host: row.get(2).map_err(sql_error)?,
                 common_dir: PathBuf::from(row.get::<_, String>(3).map_err(sql_error)?),
                 plan_id: plan,
+                root_commits: decode_json(row.get::<_, String>(5).map_err(sql_error)?)?,
+                registration_error: row.get(6).map_err(sql_error)?,
+                origin_override: None,
             },
             oldest_plan_at,
             plans,

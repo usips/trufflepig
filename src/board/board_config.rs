@@ -1,8 +1,10 @@
 //! Strict board configuration with passwd-derived identity and durable data paths.
 use super::board_actor::{BoardActor, HarnessLabel, validate_actor_component};
+use super::board_ids::RepoKey;
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use std::{
+    collections::BTreeMap,
     env, fs,
     path::{Path, PathBuf},
 };
@@ -26,6 +28,7 @@ pub struct BoardConfig {
     pub url: Option<String>,
     pub token_file: Option<PathBuf>,
     pub claim_ttl_minutes: u64,
+    pub repos: BTreeMap<String, RepoKey>,
 }
 
 #[derive(Default, Deserialize)]
@@ -37,6 +40,8 @@ struct BoardConfigFile {
     url: Option<String>,
     token_file: Option<PathBuf>,
     claim_ttl_minutes: Option<u64>,
+    #[serde(default)]
+    repos: BTreeMap<String, RepoKey>,
 }
 
 impl BoardConfig {
@@ -66,6 +71,18 @@ impl BoardConfig {
         }
         defaults.url = file.url;
         defaults.token_file = file.token_file;
+        let mut repos = BTreeMap::new();
+        for (origin, key) in file.repos {
+            let origin = super::repo_identity::normalize_origin_label(&origin)?;
+            if let Some(previous) = repos.insert(origin.clone(), key.clone()) {
+                if previous != key {
+                    bail!(
+                        "invalid_options: repository origin {origin} has conflicting identity overrides {previous} and {key}"
+                    );
+                }
+            }
+        }
+        defaults.repos = repos;
         defaults.validate()?;
         Ok(defaults)
     }
@@ -80,6 +97,7 @@ impl BoardConfig {
             url: None,
             token_file: None,
             claim_ttl_minutes: DEFAULT_CLAIM_TTL_MINUTES,
+            repos: BTreeMap::new(),
         }
     }
 
@@ -114,6 +132,11 @@ impl BoardConfig {
         if !self.db_path.is_absolute() {
             bail!("invalid_options: board database path must be absolute");
         }
+        for origin in self.repos.keys() {
+            if origin.is_empty() || origin.len() > 4096 || origin.chars().any(char::is_control) {
+                bail!("invalid_options: repository override origin must be bounded and nonempty");
+            }
+        }
         if let Some(url) = &self.url {
             if url.is_empty() || url.len() > 2048 || url.chars().any(char::is_control) {
                 bail!("invalid_options: invalid board URL");
@@ -146,6 +169,7 @@ impl BoardConfigSource {
             url: None,
             token_file: None,
             claim_ttl_minutes: DEFAULT_CLAIM_TTL_MINUTES,
+            repos: BTreeMap::new(),
         };
         defaults.validate()?;
         Ok(Self {
@@ -264,6 +288,44 @@ fn machine_hostname() -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repository_identity_overrides_use_strict_typed_repo_keys() {
+        let defaults = || {
+            BoardConfig::for_database(
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("target/overrides.sqlite3"),
+            )
+        };
+        let key = "a".repeat(40);
+        let input = format!("[repos]\n'https://example.test/repo' = '{key}'");
+        let config = BoardConfig::from_toml(&input, defaults()).unwrap();
+        assert_eq!(config.repos["https://example.test/repo"].as_str(), key);
+        assert!(BoardConfig::from_toml("[repos]\n'origin' = 'not-an-oid'", defaults()).is_err());
+    }
+
+    #[test]
+    fn repository_overrides_normalize_detected_origins_and_reject_conflicting_aliases() {
+        let defaults = || {
+            BoardConfig::for_database(
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("target/normalized-overrides.sqlite3"),
+            )
+        };
+        let first = "a".repeat(40);
+        let second = "b".repeat(40);
+        let input = format!(
+            "[repos]\n'https://user:secret@example.test/repo' = '{first}'\n'https://example.test/repo' = '{first}'"
+        );
+        let config = BoardConfig::from_toml(&input, defaults()).unwrap();
+        assert_eq!(config.repos.len(), 1);
+        assert_eq!(config.repos["https://example.test/repo"].as_str(), first);
+        let conflict = format!(
+            "[repos]\n'https://user:secret@example.test/repo' = '{first}'\n'https://example.test/repo' = '{second}'"
+        );
+        let error = BoardConfig::from_toml(&conflict, defaults()).unwrap_err();
+        assert!(error.to_string().starts_with("invalid_options:"));
+        assert!(error.to_string().contains(&first));
+        assert!(error.to_string().contains(&second));
+    }
 
     #[test]
     fn relative_board_database_configuration_is_rejected() {

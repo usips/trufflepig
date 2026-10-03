@@ -11,6 +11,7 @@ use super::{
     board_render::render_reply,
     commit_ingest::RepoIngestor,
     local_board::LocalBoard,
+    repo_identity::RepoIdentityCache,
 };
 use crate::{
     cli::Arguments, daemon::deadline::QueryDeadline, diagnostics::RequestContext,
@@ -48,6 +49,7 @@ struct HostState {
     config: Mutex<BoardConfigCache>,
     backend: Mutex<Option<LocalBoard>>,
     ingestor: Mutex<RepoIngestor>,
+    registrations: Mutex<RepoIdentityCache>,
     sequence: Mutex<EventSeq>,
     changed: Condvar,
     waiters: AtomicUsize,
@@ -179,42 +181,92 @@ impl BoardHost {
             return Ok(render_reply(&reply, &budget)?.text);
         };
         let mut warnings = Vec::new();
-        let registration = if !op.is_read() && !matches!(op, BoardOp::Inbox { .. }) {
-            match super::repo_identity::register_repository(
-                &options.root,
-                &actor.host,
-                op.plan_id(),
-                deadline.cap(Duration::from_secs(5)),
-            ) {
-                Ok(registration) => registration,
-                Err(error) => {
-                    warnings.push(format!("repository registration: {error:#}"));
-                    None
+        let register_write = !op.is_read_only() && !matches!(op, BoardOp::Inbox { .. });
+        let probe = lock_before(&self.inner.registrations, deadline, "repository identity")
+            .and_then(|mut cache| {
+                cache.register(
+                    &options.root,
+                    &actor.host,
+                    op.plan_id(),
+                    &config.repos,
+                    deadline.cap(Duration::from_secs(5)),
+                )
+            });
+        let mut registration = match probe {
+            Ok(probe) => {
+                let diagnostic = if matches!(&op, BoardOp::Show { .. } | BoardOp::Review { .. }) {
+                    probe.status
+                } else {
+                    probe.warning
+                };
+                if let Some(diagnostic) = diagnostic {
+                    warnings.push(diagnostic);
+                }
+                probe.registration
+            }
+            Err(error) => {
+                warnings.push(format!("repository registration: {error:#}"));
+                None
+            }
+        };
+        if let Some(proposed) = registration.clone() {
+            if register_write {
+                match self.handle_by(
+                    &BoardRequest::new(
+                        actor.clone(),
+                        BoardOp::RegisterRepo {
+                            registration: proposed,
+                        },
+                    ),
+                    deadline,
+                ) {
+                    Ok(reply) => match reply.result {
+                        BoardResult::Registered(effective) => registration = Some(effective),
+                        _ => warnings.push(
+                            "board_api_mismatch: unexpected repository registration reply".into(),
+                        ),
+                    },
+                    Err(error)
+                        if error.downcast_ref::<BoardError>().map(|error| error.code)
+                            == Some(super::board_protocol::BoardErrorCode::InvalidOptions) =>
+                    {
+                        return Err(error);
+                    }
+                    Err(error) => warnings.push(format!("repository registration: {error:#}")),
+                }
+            } else {
+                // Reads use the durable identity without modifying registration rows.
+                match self.repositories(&actor, None, deadline) {
+                    Ok(targets) => {
+                        if let Some(target) = targets.iter().find(|target| {
+                            target.registration.common_dir == proposed.common_dir
+                                && target.registration.host == proposed.host
+                        }) {
+                            if let Some(configured) = &proposed.origin_override {
+                                if configured != &target.registration.repo_key {
+                                    return Err(BoardError::new(super::board_protocol::BoardErrorCode::InvalidOptions,
+                                        format!("origin override {configured} conflicts with registered repository identity {}",
+                                            target.registration.repo_key)).into());
+                                }
+                            }
+                            if let Some(current) = &mut registration {
+                                current.repo_key = target.registration.repo_key.clone();
+                            }
+                        }
+                    }
+                    Err(error) => warnings.push(format!("repository identity lookup: {error:#}")),
                 }
             }
-        } else {
-            None
-        };
-        if let Some(registration) = &registration {
-            if let Err(error) = self.handle_by(
-                &BoardRequest::new(
-                    actor.clone(),
-                    BoardOp::RegisterRepo {
-                        registration: registration.clone(),
-                    },
-                ),
-                deadline,
-            ) {
-                warnings.push(format!("repository registration: {error:#}"));
-            }
-            if let BoardOp::Feedback { metadata, .. } = &mut op {
+        }
+        if let BoardOp::Feedback { metadata, .. } = &mut op {
+            if let Some(registration) = &registration {
                 metadata.repo_key = Some(registration.repo_key.clone());
-                super::enrich_feedback_cwd(
-                    metadata,
-                    &options.root,
-                    deadline.cap(Duration::from_secs(2)),
-                );
             }
+            super::enrich_feedback_cwd(
+                metadata,
+                &options.root,
+                deadline.cap(Duration::from_secs(2)),
+            );
         }
         let mut request = BoardRequest::new(actor.clone(), op);
         if options.board.agent_model.is_some() || options.board.agent_effort.is_some() {
@@ -299,7 +351,7 @@ impl BoardHost {
         } else {
             self.handle_by(&request, deadline)?
         };
-        if let Some(mut registration) = registration {
+        if let Some(mut registration) = registration.filter(|_| register_write) {
             // New/proposal decisions reveal their plan only after the transaction.
             if registration.plan_id.is_none() {
                 if let BoardResult::Change(change) = &reply.result {
@@ -806,6 +858,102 @@ mod tests {
         assert!(clock.import_ready(now));
         clock.import_finished(now, &pending);
         assert!(clock.import_ready(now + Duration::from_secs(2)));
+    }
+
+    #[test]
+    fn configured_repository_identity_conflicts_block_reads_and_writes_before_mutation() {
+        let fixture = super::super::repo_identity::tests::GitFixture::new();
+        fixture.commit("portable root");
+        fixture.git(&["config", "remote.origin.url", "https://example.test/repo"]);
+        let database = fixture.directory.path().join("board.sqlite3");
+        let mut config = BoardConfig::for_database(&database);
+        let host = BoardHost::with_config(config.clone());
+        let run = |words: &[&str]| {
+            let mut args = vec![
+                "--root".to_owned(),
+                fixture.root.to_string_lossy().into_owned(),
+            ];
+            args.extend(words.iter().map(|word| (*word).to_owned()));
+            host.run(
+                &crate::cli::parse(&args).unwrap(),
+                &RequestContext::new(None, None),
+                QueryDeadline::start(),
+            )
+        };
+        run(&["board", "new", "First identity"]).unwrap();
+        let external = rusqlite::Connection::open(&database).unwrap();
+        let existing: String = external
+            .query_row("SELECT repo_key FROM repo_paths LIMIT 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let conflicting = super::super::board_ids::RepoKey::parse(&"f".repeat(40)).unwrap();
+        assert_ne!(existing, conflicting.as_str());
+        config
+            .repos
+            .insert("https://example.test/repo".into(), conflicting.clone());
+        *host.inner.config.lock().unwrap() = BoardConfigCache::with_config(config);
+        for words in [
+            vec!["board", "new", "Must not mutate"],
+            vec!["board", "show"],
+            vec!["board", "review", "P1@1"],
+            vec!["board", "inbox", "0"],
+        ] {
+            let error = run(&words).unwrap_err();
+            assert_eq!(
+                error.downcast_ref::<BoardError>().map(|error| error.code),
+                Some(super::super::board_protocol::BoardErrorCode::InvalidOptions)
+            );
+            assert!(error.to_string().contains(&existing));
+            assert!(error.to_string().contains(conflicting.as_str()));
+        }
+        assert_eq!(
+            external
+                .query_row("SELECT COUNT(*) FROM plans", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            external
+                .query_row("SELECT repo_key FROM repo_paths LIMIT 1", [], |row| row
+                    .get::<_, String>(
+                    0
+                ))
+                .unwrap(),
+            existing
+        );
+    }
+
+    #[test]
+    fn repository_failures_warn_once_for_writes_and_remain_visible_on_reads() {
+        let fixture = super::super::repo_identity::tests::GitFixture::new();
+        fixture.commit("valid repository root");
+        std::fs::write(
+            fixture.root.join(".git/refs/heads/main"),
+            "not-an-object-id\n",
+        )
+        .unwrap();
+        let host = BoardHost::with_config(BoardConfig::for_database(
+            fixture.directory.path().join("board.sqlite3"),
+        ));
+        let run = |words: &[&str]| {
+            let mut args = vec![
+                "--root".to_owned(),
+                fixture.root.to_string_lossy().into_owned(),
+            ];
+            args.extend(words.iter().map(|word| (*word).to_owned()));
+            let options = crate::cli::parse(&args).unwrap();
+            host.run(
+                &options,
+                &RequestContext::new(None, None),
+                QueryDeadline::start(),
+            )
+            .unwrap()
+        };
+        assert!(run(&["board", "new", "First write"]).contains("repository registration"));
+        assert!(!run(&["board", "new", "Second write"]).contains("repository registration"));
+        assert!(run(&["board", "show"]).contains("repository registration"));
+        assert!(run(&["board", "review", "P1@1"]).contains("repository registration"));
     }
 
     #[test]

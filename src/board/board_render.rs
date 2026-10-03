@@ -138,6 +138,7 @@ fn committed_receipt(result: &BoardResult) -> Option<String> {
         BoardResult::CommitsLinked(result) => format!("ingest inserted={}", result.inserted),
         BoardResult::Queued { .. } => "queued for import".into(),
         BoardResult::ScanRecorded => "scan recorded".into(),
+        BoardResult::RepoPathForgotten => "repository path removed".into(),
         _ => return None,
     })
 }
@@ -596,6 +597,7 @@ fn lines_result(result: &BoardResult) -> String {
         )
         .unwrap(),
         BoardResult::ScanRecorded => text.push_str("scan recorded\n"),
+        BoardResult::RepoPathForgotten => text.push_str("repository path removed\n"),
         BoardResult::Diff(_) | BoardResult::Review(_) => {
             unreachable!("diffs and reviews have dedicated renderers")
         }

@@ -259,6 +259,11 @@ pub enum BoardOp {
     Repositories {
         plan: Option<PlanId>,
     },
+    ForgetRepoPath {
+        repo_key: RepoKey,
+        host: String,
+        common_dir: PathBuf,
+    },
     RecordScan {
         repo_key: RepoKey,
         host: String,
@@ -268,7 +273,7 @@ pub enum BoardOp {
 }
 
 impl BoardOp {
-    pub fn is_read(&self) -> bool {
+    pub fn is_read_only(&self) -> bool {
         matches!(
             self,
             Self::Inbox { after: Some(_), .. }
@@ -386,12 +391,26 @@ impl BoardOp {
                 }
             }
             Self::RegisterRepo { registration } => {
+                if registration.root_commits.len() > 4096 {
+                    bail!("invalid_options: repository roots exceed resource limit");
+                }
+                if let Some(error) = &registration.registration_error {
+                    bounded_metadata(error, 4096, "registration error")?;
+                }
                 validate_actor_component(&registration.host, "repository host")?;
                 if !registration.common_dir.is_absolute() {
                     bail!("invalid_options: repository common_dir must be absolute");
                 }
                 if let Some(origin) = &registration.origin_label {
                     bounded_metadata(origin, 4096, "origin label")?;
+                }
+            }
+            Self::ForgetRepoPath {
+                host, common_dir, ..
+            } => {
+                validate_actor_component(host, "repository host")?;
+                if !common_dir.is_absolute() {
+                    bail!("invalid_options: repository common_dir must be absolute");
                 }
             }
             Self::RecordScan {
@@ -477,6 +496,7 @@ pub enum BoardResult {
     CommitsLinked(CommitLinkResult),
     Queued { import_key: FeedbackImportKey },
     ScanRecorded,
+    RepoPathForgotten,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -710,6 +730,12 @@ pub struct RepoRegistration {
     pub host: String,
     pub common_dir: PathBuf,
     pub plan_id: Option<PlanId>,
+    #[serde(default)]
+    pub root_commits: Vec<GitOid>,
+    #[serde(default)]
+    pub registration_error: Option<String>,
+    #[serde(default)]
+    pub origin_override: Option<RepoKey>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

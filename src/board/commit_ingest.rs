@@ -6,7 +6,7 @@ use super::board_protocol::{
     BoardOp, BoardRequest, BoardResult, LinkedCommit, RepoRegistration, RepoScanTarget,
 };
 use super::commit_trailers::{LOG_FORMAT, ParsedCommit, attributed_to, parse_log};
-use super::repo_identity::{read_head, remaining};
+use super::repo_identity::{detached_head, remaining};
 use crate::history::git::run_bounded_strict as run_bounded;
 use crate::identity::GitOid;
 use anyhow::{Context, Result, ensure};
@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 
 const COMMIT_LIMIT: usize = 2000;
 const TIP_LIMIT: usize = 4096;
+const MISSING_REPOSITORY_GRACE: Duration = Duration::from_secs(300);
 
 #[derive(Clone, Debug, Default)]
 pub struct IngestReport {
@@ -38,6 +39,7 @@ pub struct UnlinkedScan {
 #[derive(Default)]
 pub struct RepoIngestor {
     completed: HashMap<(RepoKey, PathBuf), CompletedScan>,
+    missing: HashMap<(RepoKey, PathBuf), Instant>,
 }
 
 struct CompletedScan {
@@ -65,7 +67,47 @@ impl RepoIngestor {
         let deadline = Instant::now() + timeout;
         let mut report = IngestReport::default();
         for target in targets {
-            if target.registration.host != actor.host || target.plans.is_empty() {
+            if target.registration.host != actor.host {
+                report.skipped += 1;
+                continue;
+            }
+            let key = (
+                target.registration.repo_key.clone(),
+                target.registration.common_dir.clone(),
+            );
+            if std::fs::metadata(&target.registration.common_dir)
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+            {
+                let first_missing = self.missing.entry(key.clone()).or_insert_with(Instant::now);
+                if first_missing.elapsed() >= MISSING_REPOSITORY_GRACE {
+                    match backend.handle(&BoardRequest::new(
+                        actor.clone(),
+                        BoardOp::ForgetRepoPath {
+                            repo_key: target.registration.repo_key.clone(),
+                            host: actor.host.clone(),
+                            common_dir: target.registration.common_dir.clone(),
+                        },
+                    )) {
+                        Ok(reply) if matches!(reply.result, BoardResult::RepoPathForgotten) => {
+                            self.completed.remove(&key);
+                            self.missing.remove(&key);
+                        }
+                        Ok(_) => report
+                            .errors
+                            .push("board_scan: unexpected repository cleanup reply".into()),
+                        Err(error) => report.errors.push(format!(
+                            "{}: repository cleanup failed: {error}",
+                            target.registration.common_dir.display()
+                        )),
+                    }
+                } else if !target.plans.is_empty() {
+                    report.errors.push(format!("{}: repository common directory is missing; cleanup waits for grace period", target.registration.common_dir.display()));
+                }
+                report.skipped += 1;
+                continue;
+            }
+            self.missing.remove(&key);
+            if target.plans.is_empty() {
                 report.skipped += 1;
                 continue;
             }
@@ -245,7 +287,7 @@ fn collect_tips(registration: &RepoRegistration, deadline: Instant) -> Result<Gi
         "board_scan: branch tips exceed resource limit"
     );
     let mut detached = BTreeSet::new();
-    add_detached(&common.join("HEAD"), &mut detached)?;
+    add_detached(common, &mut detached, deadline)?;
     let worktrees = match std::fs::read_dir(common.join("worktrees")) {
         Ok(entries) => Some(entries),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
@@ -260,11 +302,10 @@ fn collect_tips(registration: &RepoRegistration, deadline: Instant) -> Result<Gi
             "board_scan: linked worktrees exceed resource limit"
         );
         let entry = entry?;
-        ensure!(
-            entry.file_type()?.is_dir(),
-            "board_scan: invalid linked-worktree metadata"
-        );
-        add_detached(&entry.path().join("HEAD"), &mut detached)?;
+        if !entry.file_type()?.is_dir() || !entry.path().join("HEAD").is_file() {
+            continue;
+        }
+        add_detached(&entry.path(), &mut detached, deadline)?;
     }
     all.extend(detached.iter().copied());
     ensure!(
@@ -283,13 +324,14 @@ fn collect_tips(registration: &RepoRegistration, deadline: Instant) -> Result<Gi
     })
 }
 
-fn add_detached(path: &std::path::Path, tips: &mut BTreeSet<GitOid>) -> Result<()> {
-    let head = read_head(path)?;
-    let head = head.trim();
-    if head.starts_with("ref: refs/") {
-        return Ok(());
+fn add_detached(
+    path: &std::path::Path,
+    tips: &mut BTreeSet<GitOid>,
+    deadline: Instant,
+) -> Result<()> {
+    if let Some(head) = detached_head(path, deadline)? {
+        tips.insert(head);
     }
-    tips.insert(GitOid::parse(head)?);
     Ok(())
 }
 
@@ -388,6 +430,8 @@ mod tests {
         fail_next_link: bool,
         unknown_plans: Vec<PlanId>,
         scan_errors: Vec<Option<String>>,
+        forgotten: usize,
+        fail_forget: bool,
     }
     impl BoardBackend for TestBackend {
         fn handle(
@@ -409,6 +453,13 @@ mod tests {
                         unknown_plans: self.unknown_plans.clone(),
                         unknown_tasks: Vec::new(),
                     })
+                }
+                BoardOp::ForgetRepoPath { .. } => {
+                    if self.fail_forget {
+                        return Err(anyhow::anyhow!("database is locked: cleanup fixture").into());
+                    }
+                    self.forgotten += 1;
+                    BoardResult::RepoPathForgotten
                 }
                 BoardOp::RecordScan { error, .. } => {
                     self.scan_errors.push(error.clone());
@@ -532,6 +583,94 @@ mod tests {
             .unwrap();
         assert_eq!(report.skipped, 1);
         assert_eq!(backend.requests, 1);
+    }
+
+    #[test]
+    fn missing_common_directory_is_removed_only_after_grace() {
+        let fixture = GitFixture::new();
+        fixture.commit(&linked_message("linked root"));
+        let target = target(&fixture);
+        let mut backend = TestBackend::default();
+        let mut ingestor = RepoIngestor::default();
+        std::fs::remove_dir_all(&target.registration.common_dir).unwrap();
+        let first = ingestor
+            .ingest(
+                &mut backend,
+                &actor(),
+                &[target.clone()],
+                Duration::from_secs(5),
+            )
+            .unwrap();
+        assert_eq!(first.skipped, 1);
+        assert_eq!(backend.forgotten, 0);
+        let key = (
+            target.registration.repo_key.clone(),
+            target.registration.common_dir.clone(),
+        );
+        ingestor
+            .missing
+            .insert(key, Instant::now() - MISSING_REPOSITORY_GRACE);
+        let second = ingestor
+            .ingest(&mut backend, &actor(), &[target], Duration::from_secs(5))
+            .unwrap();
+        assert_eq!(second.skipped, 1);
+        assert_eq!(backend.forgotten, 1);
+        assert!(ingestor.missing.is_empty());
+    }
+
+    #[test]
+    fn failed_missing_path_cleanup_does_not_block_healthy_repositories() {
+        let missing = GitFixture::new();
+        missing.commit(&linked_message("missing root"));
+        let missing_target = target(&missing);
+        std::fs::remove_dir_all(&missing_target.registration.common_dir).unwrap();
+        let healthy = GitFixture::new();
+        healthy.commit(&linked_message("healthy root"));
+        let mut backend = TestBackend {
+            fail_forget: true,
+            ..TestBackend::default()
+        };
+        let mut ingestor = RepoIngestor::default();
+        let key = (
+            missing_target.registration.repo_key.clone(),
+            missing_target.registration.common_dir.clone(),
+        );
+        ingestor
+            .missing
+            .insert(key.clone(), Instant::now() - MISSING_REPOSITORY_GRACE);
+        let report = ingestor
+            .ingest(
+                &mut backend,
+                &actor(),
+                &[missing_target, target(&healthy)],
+                Duration::from_secs(5),
+            )
+            .unwrap();
+        assert_eq!(report.errors.len(), 1);
+        assert_eq!(report.completed.len(), 1);
+        assert_eq!(backend.linked.len(), 1);
+        assert!(ingestor.missing.contains_key(&key));
+    }
+
+    #[test]
+    fn stray_linked_worktree_files_do_not_abort_scans() {
+        let fixture = GitFixture::new();
+        fixture.commit(&linked_message("linked root"));
+        std::fs::create_dir_all(fixture.root.join(".git/worktrees")).unwrap();
+        std::fs::write(fixture.root.join(".git/worktrees/stray"), "unrelated").unwrap();
+        std::fs::create_dir(fixture.root.join(".git/worktrees/empty-stray")).unwrap();
+        let mut backend = TestBackend::default();
+        let report = RepoIngestor::default()
+            .ingest(
+                &mut backend,
+                &actor(),
+                &[target(&fixture)],
+                Duration::from_secs(5),
+            )
+            .unwrap();
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+        assert_eq!(report.completed.len(), 1);
+        assert_eq!(backend.linked.len(), 1);
     }
 
     #[test]
