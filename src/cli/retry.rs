@@ -2,6 +2,7 @@
 //! Board writes retry only explicit pre-dispatch contention; a lost reply may
 //! already represent a committed transaction. Each retry has a fresh request id.
 use super::Arguments;
+use crate::board::board_protocol::{BoardErrorCode, leading_error_code};
 use crate::diagnostics::RequestContext;
 use anyhow::Result;
 use std::io::ErrorKind;
@@ -56,11 +57,10 @@ impl RetryPolicy {
             return Self::Fail;
         }
         let message = format!("{error:#}");
-        if error
-            .chain()
-            .any(|cause| daemon_busy_code(&cause.to_string()))
-            || message.contains("database is locked")
-        {
+        if matches!(
+            BoardErrorCode::from_error(error),
+            Some(BoardErrorCode::DaemonBusy | BoardErrorCode::DatabaseLocked)
+        ) {
             return Self::Retry(CONTENTION_RETRY_DELAY);
         }
         if scope == RetryScope::ContentionOnly {
@@ -81,7 +81,9 @@ impl RetryPolicy {
         let timed_out = io_kind(&[ErrorKind::WouldBlock, ErrorKind::TimedOut])
             || message.contains("(os error 11)")
             || message.contains("(os error 110)");
-        if message.contains("index_warming") {
+        if error.chain().any(|cause| {
+            leading_error_code(&cause.to_string()).is_some_and(|(code, _)| code == "index_warming")
+        }) {
             Self::Retry(WARMING_RETRY_DELAY)
         } else if dropped {
             Self::Retry(CONTENTION_RETRY_DELAY)
@@ -89,20 +91,6 @@ impl RetryPolicy {
             Self::Retry(Duration::ZERO)
         } else {
             Self::Fail
-        }
-    }
-}
-
-/// Socket relays prepend `daemon:`; explanations after the code are free text.
-fn daemon_busy_code(mut message: &str) -> bool {
-    loop {
-        let Some((code, rest)) = message.trim_start().split_once(':') else {
-            return false;
-        };
-        match code {
-            "daemon" => message = rest,
-            "daemon_busy" => return true,
-            _ => return false,
         }
     }
 }
@@ -266,6 +254,33 @@ mod tests {
                 "{message}"
             );
         }
+    }
+
+    #[test]
+    fn diagnostic_lock_mentions_never_replay_board_writes() {
+        for message in [
+            "invalid_body: submitted text says database is locked",
+            "daemon: invalid_options: database is locked: quoted diagnostic",
+            "read reply: database is locked might explain it",
+        ] {
+            assert_eq!(
+                RetryPolicy::classify(RetryScope::ContentionOnly, &anyhow::anyhow!(message), QUICK),
+                RetryPolicy::Fail,
+                "{message}"
+            );
+        }
+        let sqlite = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+            Some("custom sqlite contention message".into()),
+        );
+        assert_eq!(
+            RetryPolicy::classify(
+                RetryScope::ContentionOnly,
+                &anyhow::Error::new(sqlite).context("write board"),
+                QUICK,
+            ),
+            RetryPolicy::Retry(CONTENTION_RETRY_DELAY),
+        );
     }
 
     #[test]

@@ -52,6 +52,56 @@ impl BoardErrorCode {
             Self::DaemonBusy => "daemon_busy",
         }
     }
+
+    /// Reads only a leading code after recognized transport wrappers.
+    pub fn leading(message: &str) -> Option<(Self, &str)> {
+        let (label, detail) = leading_error_code(message)?;
+        let code = match label {
+            "stale_revision" => Self::StaleRevision,
+            "claim_conflict" => Self::ClaimConflict,
+            "board_unavailable" => Self::BoardUnavailable,
+            "board_initialization_required" => Self::BoardInitializationRequired,
+            "invalid_reference" => Self::InvalidReference,
+            "invalid_kind" => Self::InvalidKind,
+            "invalid_body" => Self::InvalidBody,
+            "invalid_actor" => Self::InvalidActor,
+            "invalid_state" => Self::InvalidState,
+            "invalid_options" => Self::InvalidOptions,
+            "usage" => Self::Usage,
+            "board_api_mismatch" => Self::BoardApiMismatch,
+            "board_remote_unsupported" => Self::BoardRemoteUnsupported,
+            "database is locked" => Self::DatabaseLocked,
+            "daemon_busy" => Self::DaemonBusy,
+            _ => return None,
+        };
+        Some((code, detail))
+    }
+
+    /// Preserves typed errors and inspects each actual error-chain cause.
+    pub fn from_error(error: &anyhow::Error) -> Option<Self> {
+        if let Some(typed) = error
+            .chain()
+            .find_map(|cause| cause.downcast_ref::<BoardError>())
+        {
+            return Some(typed.code);
+        }
+        if let Some(sqlite) = error
+            .chain()
+            .find_map(|cause| cause.downcast_ref::<rusqlite::Error>())
+        {
+            return Some(sqlite_board_code(sqlite));
+        }
+        error
+            .chain()
+            .find_map(|cause| Self::leading(&cause.to_string()).map(|(code, _)| code))
+    }
+
+    pub fn is_domain_answer(self) -> bool {
+        !matches!(
+            self,
+            Self::BoardUnavailable | Self::DatabaseLocked | Self::DaemonBusy
+        )
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -75,44 +125,53 @@ impl std::fmt::Display for BoardError {
     }
 }
 impl std::error::Error for BoardError {}
+/// Explanations remain free text; only repeated `daemon:` wrappers are removed.
+pub fn leading_error_code(mut message: &str) -> Option<(&str, &str)> {
+    loop {
+        message = message.trim_start();
+        if message.trim_end() == BoardErrorCode::DatabaseLocked.as_str() {
+            return Some((BoardErrorCode::DatabaseLocked.as_str(), ""));
+        }
+        let (code, detail) = message.split_once(':')?;
+        if code == "daemon" {
+            message = detail;
+        } else {
+            return Some((code, detail.trim_start()));
+        }
+    }
+}
+
+fn sqlite_board_code(error: &rusqlite::Error) -> BoardErrorCode {
+    if matches!(
+        error.sqlite_error_code(),
+        Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+    ) {
+        BoardErrorCode::DatabaseLocked
+    } else {
+        BoardErrorCode::BoardUnavailable
+    }
+}
+
 impl From<anyhow::Error> for BoardError {
     fn from(error: anyhow::Error) -> Self {
-        if let Some(typed) = error.downcast_ref::<BoardError>() {
+        if let Some(typed) = error
+            .chain()
+            .find_map(|cause| cause.downcast_ref::<BoardError>())
+        {
             return typed.clone();
         }
-        let message = format!("{error:#}");
-        let codes = [
-            BoardErrorCode::StaleRevision,
-            BoardErrorCode::ClaimConflict,
-            BoardErrorCode::BoardUnavailable,
-            BoardErrorCode::BoardInitializationRequired,
-            BoardErrorCode::InvalidReference,
-            BoardErrorCode::InvalidKind,
-            BoardErrorCode::InvalidBody,
-            BoardErrorCode::InvalidActor,
-            BoardErrorCode::InvalidState,
-            BoardErrorCode::InvalidOptions,
-            BoardErrorCode::Usage,
-            BoardErrorCode::BoardApiMismatch,
-            BoardErrorCode::BoardRemoteUnsupported,
-            BoardErrorCode::DatabaseLocked,
-            BoardErrorCode::DaemonBusy,
-        ];
+        if let Some(sqlite) = error
+            .chain()
+            .find_map(|cause| cause.downcast_ref::<rusqlite::Error>())
+        {
+            return Self::new(sqlite_board_code(sqlite), format!("{error:#}"));
+        }
         for cause in error.chain() {
-            let cause = cause.to_string();
-            for code in codes {
-                if let Some(detail) = cause
-                    .strip_prefix(code.as_str())
-                    .and_then(|tail| tail.strip_prefix(':'))
-                {
-                    return Self::new(code, detail.trim_start());
-                }
+            if let Some((code, detail)) = BoardErrorCode::leading(&cause.to_string()) {
+                return Self::new(code, detail);
             }
         }
-        if message.contains("database is locked") {
-            return Self::new(BoardErrorCode::DatabaseLocked, message);
-        }
-        Self::new(BoardErrorCode::BoardUnavailable, message)
+        Self::new(BoardErrorCode::BoardUnavailable, format!("{error:#}"))
     }
 }
 
@@ -960,6 +1019,70 @@ mod tests {
         metadata.build_id = None;
         metadata.recent_calls[0].args = vec!["x".repeat(2048)];
         assert!(metadata.validate().is_err());
+    }
+
+    #[test]
+    fn leading_error_codes_ignore_untrusted_diagnostic_segments() {
+        for message in [
+            "daemon: daemon: invalid_body: text mentions : invalid_actor: nope",
+            "invalid_body: text mentions : database is locked: nope",
+        ] {
+            let error = anyhow::anyhow!(message).context("route request");
+            assert_eq!(
+                BoardErrorCode::from_error(&error),
+                Some(BoardErrorCode::InvalidBody)
+            );
+        }
+        for message in [
+            "failed transport: text mentions : invalid_body: nope",
+            "board_unavailable_note: invalid_actor: nope",
+            "daemon: failure mentions database is locked",
+        ] {
+            assert_eq!(BoardErrorCode::from_error(&anyhow::anyhow!(message)), None);
+        }
+        let typed = BoardError::new(BoardErrorCode::ClaimConflict, "invalid_body: quoted text");
+        let error = anyhow::Error::new(typed).context("dispatch board");
+        assert_eq!(
+            BoardErrorCode::from_error(&error),
+            Some(BoardErrorCode::ClaimConflict)
+        );
+        let sqlite = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_LOCKED),
+            Some("unexpected contention wording".into()),
+        );
+        assert_eq!(
+            BoardErrorCode::from_error(&anyhow::Error::new(sqlite).context("store entry")),
+            Some(BoardErrorCode::DatabaseLocked),
+        );
+    }
+
+    #[test]
+    fn typed_errors_win_over_conflicting_textual_contexts() {
+        let error = anyhow::Error::new(BoardError::new(BoardErrorCode::ClaimConflict, "claimed"))
+            .context("database is locked: while dispatching");
+        assert_eq!(
+            BoardErrorCode::from_error(&error),
+            Some(BoardErrorCode::ClaimConflict)
+        );
+        assert_eq!(BoardError::from(error).code, BoardErrorCode::ClaimConflict);
+        let sqlite = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+            Some("database is locked: quoted diagnostic".into()),
+        );
+        assert_eq!(
+            BoardErrorCode::from_error(&anyhow::Error::new(sqlite)),
+            Some(BoardErrorCode::BoardUnavailable)
+        );
+        for message in [
+            "database is locked",
+            "daemon: database is locked",
+            "daemon: daemon: database is locked",
+        ] {
+            assert_eq!(
+                BoardErrorCode::from_error(&anyhow::anyhow!(message)),
+                Some(BoardErrorCode::DatabaseLocked)
+            );
+        }
     }
 
     #[test]
