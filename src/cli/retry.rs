@@ -56,7 +56,11 @@ impl RetryPolicy {
             return Self::Fail;
         }
         let message = format!("{error:#}");
-        if message.contains(crate::daemon::DAEMON_BUSY) || message.contains("database is locked") {
+        if error
+            .chain()
+            .any(|cause| daemon_busy_code(&cause.to_string()))
+            || message.contains("database is locked")
+        {
             return Self::Retry(CONTENTION_RETRY_DELAY);
         }
         if scope == RetryScope::ContentionOnly {
@@ -85,6 +89,20 @@ impl RetryPolicy {
             Self::Retry(Duration::ZERO)
         } else {
             Self::Fail
+        }
+    }
+}
+
+/// Socket relays prepend `daemon:`; explanations after the code are free text.
+fn daemon_busy_code(mut message: &str) -> bool {
+    loop {
+        let Some((code, rest)) = message.trim_start().split_once(':') else {
+            return false;
+        };
+        match code {
+            "daemon" => message = rest,
+            "daemon_busy" => return true,
+            _ => return false,
         }
     }
 }
@@ -208,6 +226,44 @@ mod tests {
             assert_eq!(
                 RetryPolicy::classify(RetryScope::ContentionOnly, &anyhow::anyhow!(message), QUICK),
                 RetryPolicy::Retry(CONTENTION_RETRY_DELAY)
+            );
+        }
+    }
+
+    #[test]
+    fn busy_replies_retry_by_code_independent_of_explanation() {
+        for message in [
+            "daemon_busy: isolated injected queue refusal",
+            "daemon: daemon_busy: worker pool is full",
+            "daemon: daemon: daemon_busy: try another request later",
+        ] {
+            let error = anyhow::anyhow!(message).context("route request through system router");
+            for scope in [RetryScope::Read, RetryScope::ContentionOnly] {
+                assert_eq!(
+                    RetryPolicy::classify(scope, &error, crate::daemon::PROXY_REPLY_WAIT),
+                    RetryPolicy::Retry(CONTENTION_RETRY_DELAY),
+                    "{message}"
+                );
+            }
+            assert_eq!(
+                RetryPolicy::classify(RetryScope::Never, &error, QUICK),
+                RetryPolicy::Fail
+            );
+        }
+    }
+
+    #[test]
+    fn diagnostic_mentions_of_busy_do_not_replay_writes() {
+        for message in [
+            "invalid_reference: body mentions daemon_busy: retry",
+            "daemon: invalid_body: daemon_busy: isolated injected queue refusal",
+            "read daemon frame: broken pipe; possible daemon_busy: retry",
+            "daemon_busy_note: this is not a busy reply",
+        ] {
+            assert_eq!(
+                RetryPolicy::classify(RetryScope::ContentionOnly, &anyhow::anyhow!(message), QUICK),
+                RetryPolicy::Fail,
+                "{message}"
             );
         }
     }
