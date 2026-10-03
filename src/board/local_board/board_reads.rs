@@ -354,7 +354,7 @@ pub(super) fn entry_view(
     };
     let (replies, replies_omitted) = read_backrefs(true)?;
     let (backrefs, backrefs_omitted) = read_backrefs(false)?;
-    let mut statement = conn.prepare("SELECT p.plan_id,p.base_revision,t.body,p.state,p.decision_entry,p.result_revision FROM proposals p JOIN texts t ON t.hash=p.text_hash WHERE p.entry_id=?1").map_err(sql_error)?;
+    let mut statement = conn.prepare("SELECT p.plan_id,p.base_revision,t.body,p.state,p.decision_entry,p.result_revision,p.base_revision<plan.head_revision FROM proposals p JOIN texts t ON t.hash=p.text_hash JOIN plans plan ON plan.id=p.plan_id WHERE p.entry_id=?1").map_err(sql_error)?;
     let mut rows = statement.query([sql_number(id.get())]).map_err(sql_error)?;
     let proposal = if let Some(row) = rows.next().map_err(sql_error)? {
         Some(ProposalRecord {
@@ -381,6 +381,7 @@ pub(super) fn entry_view(
                 .map_err(sql_error)?
                 .map(sqlite_u64)
                 .transpose()?,
+            stale_base: row.get(6).map_err(sql_error)?,
         })
     } else {
         None
@@ -504,7 +505,7 @@ fn entries_for_open_questions(
 }
 
 fn open_proposals(conn: &Connection, plan: PlanId) -> Result<Vec<ProposalRecord>, BoardError> {
-    let mut statement = conn.prepare("SELECT p.entry_id,p.base_revision,t.body,p.state,p.decision_entry,p.result_revision FROM proposals p JOIN texts t ON t.hash=p.text_hash WHERE p.plan_id=?1 AND p.state='open' ORDER BY p.entry_id").map_err(sql_error)?;
+    let mut statement = conn.prepare("SELECT p.entry_id,p.base_revision,t.body,p.state,p.decision_entry,p.result_revision,p.base_revision<plan.head_revision FROM proposals p JOIN texts t ON t.hash=p.text_hash JOIN plans plan ON plan.id=p.plan_id WHERE p.plan_id=?1 AND p.state='open' ORDER BY p.entry_id").map_err(sql_error)?;
     let mut rows = statement
         .query([sql_number(plan.get())])
         .map_err(sql_error)?;
@@ -535,6 +536,7 @@ fn open_proposals(conn: &Connection, plan: PlanId) -> Result<Vec<ProposalRecord>
                 .map_err(sql_error)?
                 .map(sqlite_u64)
                 .transpose()?,
+            stale_base: row.get(6).map_err(sql_error)?,
         });
     }
     Ok(result)

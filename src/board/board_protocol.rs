@@ -215,6 +215,7 @@ pub enum BoardOp {
         base: PlanRevision,
         body: PlanText,
         summary: EntryText,
+        supersedes: Option<EntryId>,
     },
     Edit {
         base: PlanRevision,
@@ -620,6 +621,7 @@ pub struct ProposalRecord {
     pub base_revision: u64,
     pub body: PlanText,
     pub state: ProposalState,
+    pub stale_base: bool,
     pub decision_entry: Option<EntryId>,
     pub result_revision: Option<u64>,
 }

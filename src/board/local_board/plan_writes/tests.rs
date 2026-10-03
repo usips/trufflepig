@@ -4,6 +4,7 @@ use crate::board::board_ids::PlanRevision;
 use std::time::Duration;
 
 mod decision_events;
+mod proposal_lifecycle;
 
 fn actor(user: &str, harness: &str, session: &str) -> BoardActor {
     BoardActor::new(
@@ -63,6 +64,7 @@ fn snapshot(board: &LocalBoard, plan: PlanId) -> (u64, Vec<i64>) {
         "events",
         "revisions",
         "operation_dedupes",
+        "proposals",
     ]
     .map(|table| {
         board

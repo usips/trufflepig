@@ -368,6 +368,7 @@ fn default_review_budget_bounds_proposals_commits_tasks_and_claims() {
         state: ProposalState::Open,
         decision_entry: None,
         result_revision: None,
+        stale_base: true,
     });
     for ordinal in 1..=40 {
         let task = TaskId::new(packet.plan.id, ordinal).unwrap();
@@ -594,6 +595,7 @@ fn entry_drill_keeps_large_proposal_before_long_reverse_references() {
             state: ProposalState::Open,
             decision_entry: None,
             result_revision: None,
+            stale_base: false,
         }),
         can_decide: true,
         can_supersede: true,

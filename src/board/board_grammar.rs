@@ -24,7 +24,7 @@ pub struct BoardOptions {
     /// Address a user or harness.
     #[arg(long)]
     pub to: Option<String>,
-    /// Entry corrected by this post.
+    /// Entry corrected by this post or replaced by this proposal.
     #[arg(long)]
     pub supersedes: Option<String>,
     /// Harness entrusted with accepting plan proposals.
@@ -330,7 +330,11 @@ fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Result<BoardC
         "task" => parse_task(options, payload)?,
         "claim" => parse_claim(options, payload)?,
         "propose" | "edit" => {
-            check_flags(options, &["body", "text"])?;
+            if verb == "propose" {
+                check_flags(options, &["body", "text", "supersedes"])?;
+            } else {
+                check_flags(options, &["body", "text"])?;
+            }
             let base = word(options, 2, "board propose|edit P7@12 --body FILE SUMMARY")?
                 .parse::<PlanRevision>()?;
             let body = PlanText::new(
@@ -345,6 +349,12 @@ fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Result<BoardC
                     base,
                     body,
                     summary,
+                    supersedes: options
+                        .board
+                        .supersedes
+                        .as_deref()
+                        .map(str::parse::<EntryId>)
+                        .transpose()?,
                 }
             } else {
                 BoardOp::Edit {

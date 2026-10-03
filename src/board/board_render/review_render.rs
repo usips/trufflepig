@@ -196,8 +196,7 @@ fn review_text(
                     let mut summary =
                         serde_json::to_value(proposal).expect("proposal serialization cannot fail");
                     summary.as_object_mut().unwrap().remove("body");
-                    summary["stale_base"] =
-                        serde_json::json!(proposal.base_revision < packet.head.revision);
+                    summary["stale_base"] = serde_json::json!(proposal.stale_base);
                     summary["body_lines"] =
                         serde_json::json!(proposal.body.as_str().lines().count());
                     summary["drill"] =
@@ -301,7 +300,7 @@ fn review_text(
             proposal.base_revision,
             proposal.body.as_str().lines().count(),
             proposal.entry,
-            if proposal.base_revision < packet.head.revision {
+            if proposal.stale_base {
                 " stale base; rebase before acceptance"
             } else {
                 ""

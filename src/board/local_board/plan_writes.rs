@@ -37,8 +37,12 @@ pub(super) fn propose(
     base: crate::board::board_ids::PlanRevision,
     body: &PlanText,
     summary: &EntryText,
+    supersedes: Option<EntryId>,
 ) -> Result<BoardReply, BoardError> {
     require_base(tx, base)?;
+    if let Some(previous) = supersedes {
+        require_superseded_proposal(tx, ctx, base.plan, previous)?;
+    }
     let hash = store_text(tx, body)?;
     let entry = mutation_entry(
         tx,
@@ -47,9 +51,21 @@ pub(super) fn propose(
         EntryKind::Proposal,
         summary.as_str(),
         Some("open"),
-        None,
+        supersedes,
     )?;
     tx.execute("INSERT INTO proposals(entry_id,plan_id,base_revision,text_hash,state) VALUES(?1,?2,?3,?4,'open')", params![sql_number(entry.get()),sql_number(base.plan.get()),sql_number(base.revision),hash]).map_err(sql_error)?;
+    if let Some(previous) = supersedes {
+        tx.execute(
+            "UPDATE proposals SET state='superseded' WHERE entry_id=?1",
+            [sql_number(previous.get())],
+        )
+        .map_err(sql_error)?;
+        tx.execute(
+            "UPDATE entries SET state='superseded' WHERE id=?1",
+            [sql_number(previous.get())],
+        )
+        .map_err(sql_error)?;
+    }
     insert_event(
         tx,
         ctx,
@@ -256,6 +272,43 @@ fn insert_revision(
 ) -> Result<(), BoardError> {
     let hash = store_text(tx, body)?;
     tx.execute("INSERT INTO revisions(plan_id,number,text_hash,source,entry_id,actor_id,seq) VALUES(?1,?2,?3,?4,?5,?6,?7)", params![sql_number(plan.get()),sql_number(number),hash,source,sql_number(entry.get()),ctx.actor_id,sql_number(ctx.seq.get())]).map_err(sql_error)?;
+    Ok(())
+}
+
+fn require_superseded_proposal(
+    tx: &Transaction<'_>,
+    ctx: &WriteContext,
+    plan: PlanId,
+    previous: EntryId,
+) -> Result<(), BoardError> {
+    let prior: Option<(u64, String, i64)> = tx
+        .query_row(
+            "SELECT p.plan_id,p.state,e.actor_id FROM proposals p JOIN entries e ON e.id=p.entry_id WHERE p.entry_id=?1",
+            [sql_number(previous.get())],
+            |row| Ok((row_number(row, 0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(sql_error)?;
+    let (prior_plan, state, author) = prior
+        .ok_or_else(|| invalid("invalid_reference", format!("unknown proposal {previous}")))?;
+    if prior_plan != plan.get() {
+        return Err(invalid(
+            "invalid_reference",
+            "superseded proposal belongs to a different plan",
+        ));
+    }
+    if author != ctx.actor_id {
+        return Err(invalid(
+            "invalid_actor",
+            "only the proposal author can supersede it",
+        ));
+    }
+    if state != "open" {
+        return Err(invalid(
+            "invalid_state",
+            format!("proposal {previous} is {state}"),
+        ));
+    }
     Ok(())
 }
 

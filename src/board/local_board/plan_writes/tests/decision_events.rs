@@ -10,6 +10,7 @@ fn proposal_decisions_broadcast_to_author_and_other_participants() {
         &mut board,
         proposer.clone(),
         BoardOp::Propose {
+            supersedes: None,
             base: PlanRevision::new(plan, 1).unwrap(),
             body: PlanText::new("accepted replacement").unwrap(),
             summary: EntryText::new("replacement proposal").unwrap(),
@@ -27,6 +28,7 @@ fn proposal_decisions_broadcast_to_author_and_other_participants() {
         &mut board,
         proposer.clone(),
         BoardOp::Propose {
+            supersedes: None,
             base: PlanRevision::new(plan, 2).unwrap(),
             body: PlanText::new("rejected replacement").unwrap(),
             summary: EntryText::new("second replacement proposal").unwrap(),
@@ -99,6 +101,7 @@ fn proposal_decisions_preserve_maximum_bodies_and_bound_broadcast_summaries() {
                 &mut board,
                 proposer.clone(),
                 BoardOp::Propose {
+                    supersedes: None,
                     base: PlanRevision::new(plan, 1).unwrap(),
                     body: PlanText::new("replacement").unwrap(),
                     summary: EntryText::new("proposal").unwrap(),

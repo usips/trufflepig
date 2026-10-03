@@ -240,7 +240,8 @@ impl LocalBoard {
                 base,
                 body,
                 summary,
-            } => plan_writes::propose(&tx, &ctx, *base, body, summary)?,
+                supersedes,
+            } => plan_writes::propose(&tx, &ctx, *base, body, summary, *supersedes)?,
             BoardOp::Edit {
                 base,
                 body,

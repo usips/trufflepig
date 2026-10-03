@@ -86,7 +86,9 @@ impl EntryKind {
 vocabulary!(TaskColumn, "invalid_state", {
     Todo => "todo", Doing => "doing", Review => "review", Done => "done", Blocked => "blocked",
 });
-vocabulary!(ProposalState, "invalid_state", { Open => "open", Accepted => "accepted", Rejected => "rejected" });
+vocabulary!(ProposalState, "invalid_state", {
+    Open => "open", Accepted => "accepted", Rejected => "rejected", Superseded => "superseded",
+});
 vocabulary!(FeedbackKind, "invalid_kind", { Blocked => "blocked", Confused => "confused", Wrong => "wrong", Missing => "missing" });
 vocabulary!(FeedbackState, "invalid_state", { Open => "open", Triaged => "triaged", Fixed => "fixed", Wontfix => "wontfix", Duplicate => "duplicate" });
 impl FeedbackState {

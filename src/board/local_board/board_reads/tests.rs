@@ -141,6 +141,7 @@ fn show_revisions_and_ranges_preserves_ssot_and_proposal_state() {
         &mut board,
         "codex",
         BoardOp::Propose {
+            supersedes: None,
             base,
             body: PlanText::new("# Updated").unwrap(),
             summary: EntryText::new("Clarify scope").unwrap(),
@@ -255,6 +256,7 @@ fn review_preserves_overlapping_ended_claims_and_other_agents_open_work() {
         &mut board,
         "claude",
         BoardOp::Propose {
+            supersedes: None,
             base: PlanRevision::new(plan, 1).unwrap(),
             body: PlanText::new("proposal").unwrap(),
             summary: EntryText::new("proposal summary").unwrap(),
@@ -454,6 +456,7 @@ fn show_entry_recovers_full_large_proposal_and_keeps_decided_evidence() {
         &mut board,
         "codex",
         BoardOp::Propose {
+            supersedes: None,
             base: PlanRevision::new(plan, 1).unwrap(),
             body: PlanText::new(body.clone()).unwrap(),
             summary: EntryText::new("compact proposal summary").unwrap(),

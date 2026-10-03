@@ -50,6 +50,7 @@ fn local_board_immutable_revisions_cas_and_owner_authority() {
         .handle(&BoardRequest::new(
             actor("codex", "c1"),
             BoardOp::Propose {
+                supersedes: None,
                 base,
                 body: PlanText::new("accepted body").unwrap(),
                 summary: EntryText::new("proposed").unwrap(),
