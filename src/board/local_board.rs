@@ -77,6 +77,10 @@ impl LocalBoard {
         &self.path
     }
 
+    pub(crate) fn set_claim_ttl_seconds(&mut self, claim_ttl_secs: i64) {
+        self.claim_ttl_secs = claim_ttl_secs;
+    }
+
     pub fn set_busy_timeout(&self, timeout: Duration) -> Result<(), BoardError> {
         self.conn
             .busy_timeout(timeout.min(Duration::from_secs(5)))

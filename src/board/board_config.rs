@@ -41,39 +41,11 @@ struct BoardConfigFile {
 
 impl BoardConfig {
     pub fn load() -> Result<Self> {
-        let account = passwd_account()?;
-        let config_home = xdg_home("XDG_CONFIG_HOME", account.home.join(".config"));
-        let data_home = xdg_home("XDG_DATA_HOME", account.home.join(".local/share"));
-        let mut config = Self {
-            mode: BoardMode::Local,
-            user: account.user,
-            host: machine_hostname()?,
-            db_path: data_home.join("trufflepig/board.sqlite3"),
-            url: None,
-            token_file: None,
-            claim_ttl_minutes: DEFAULT_CLAIM_TTL_MINUTES,
-        };
-        let config_path = config_home.join("trufflepig/board.toml");
-        match fs::read_to_string(&config_path) {
-            Ok(input) => config = Self::from_toml(&input, config)?,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => {
-                return Err(error)
-                    .with_context(|| format!("invalid_options: read {}", config_path.display()));
-            }
-        }
-        if let Some(path) = env::var_os("TRUFFLEPIG_BOARD_DB") {
-            if path.is_empty() {
-                bail!("invalid_options: TRUFFLEPIG_BOARD_DB must not be empty");
-            }
-            config.db_path = PathBuf::from(path);
-        }
-        if !config.db_path.is_absolute() {
-            config.db_path = env::current_dir()?.join(&config.db_path);
-        }
-        config.validate()?;
-        config.ensure_local()?;
-        Ok(config)
+        BoardConfigSource::from_environment()?.load()
+    }
+
+    pub(crate) fn database_path() -> Result<PathBuf> {
+        Ok(BoardConfigSource::from_environment()?.defaults.db_path)
     }
 
     /// Resolve a strict TOML document against supplied defaults without reading env.
@@ -139,8 +111,8 @@ impl BoardConfig {
         if self.claim_ttl_minutes == 0 || self.claim_ttl_minutes > (i64::MAX as u64) / 60 {
             bail!("invalid_options: claim_ttl_minutes must be positive and fit Unix seconds");
         }
-        if self.db_path.as_os_str().is_empty() {
-            bail!("invalid_options: board database path must not be empty");
+        if !self.db_path.is_absolute() {
+            bail!("invalid_options: board database path must be absolute");
         }
         if let Some(url) = &self.url {
             if url.is_empty() || url.len() > 2048 || url.chars().any(char::is_control) {
@@ -148,6 +120,52 @@ impl BoardConfig {
             }
         }
         Ok(())
+    }
+}
+
+mod board_config_cache;
+pub(crate) use board_config_cache::BoardConfigCache;
+
+struct BoardConfigSource {
+    path: PathBuf,
+    defaults: BoardConfig,
+}
+
+impl BoardConfigSource {
+    fn from_environment() -> Result<Self> {
+        let account = passwd_account()?;
+        let config_home = xdg_home("XDG_CONFIG_HOME", account.home.join(".config"));
+        let data_home = xdg_home("XDG_DATA_HOME", account.home.join(".local/share"));
+        let defaults = BoardConfig {
+            mode: BoardMode::Local,
+            user: account.user,
+            host: machine_hostname()?,
+            db_path: env::var_os("TRUFFLEPIG_BOARD_DB")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| data_home.join("trufflepig/board.sqlite3")),
+            url: None,
+            token_file: None,
+            claim_ttl_minutes: DEFAULT_CLAIM_TTL_MINUTES,
+        };
+        defaults.validate()?;
+        Ok(Self {
+            path: config_home.join("trufflepig/board.toml"),
+            defaults,
+        })
+    }
+
+    fn load(&self) -> Result<BoardConfig> {
+        let config = match fs::read_to_string(&self.path) {
+            Ok(input) => BoardConfig::from_toml(&input, self.defaults.clone())?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => self.defaults.clone(),
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("invalid_options: read {}", self.path.display()));
+            }
+        };
+        config.validate()?;
+        config.ensure_local()?;
+        Ok(config)
     }
 }
 
@@ -248,8 +266,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn relative_board_database_configuration_is_rejected() {
+        let error = BoardConfig::for_database("relative/board.sqlite3")
+            .validate()
+            .unwrap_err();
+        assert!(error.to_string().starts_with("invalid_options:"));
+    }
+
+    #[test]
     fn strict_config_rejects_unknown_fields_and_invalid_ttl() {
-        let defaults = || BoardConfig::for_database("target/board-config-test.sqlite3");
+        let defaults = || {
+            BoardConfig::for_database(
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("target/board-config-test.sqlite3"),
+            )
+        };
         assert!(BoardConfig::from_toml("usre = 'josh'", defaults()).is_err());
         assert!(BoardConfig::from_toml("claim_ttl_minutes = 0", defaults()).is_err());
         let config = BoardConfig::from_toml(
@@ -269,7 +299,9 @@ mod tests {
     fn remote_mode_is_preserved_but_explicitly_unsupported() {
         let config = BoardConfig::from_toml(
             "mode = 'remote'\nurl = 'https://board.example'",
-            BoardConfig::for_database("target/board.sqlite3"),
+            BoardConfig::for_database(
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("target/board.sqlite3"),
+            ),
         )
         .unwrap();
         assert_eq!(config.mode, BoardMode::Remote);

@@ -68,6 +68,64 @@ pub fn request(args: &[String], context: &RequestContext) -> Result<Option<Strin
     daemon::spool::request(&spool_dir(), args, context)
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BoardDatabaseMarker {
+    database: PathBuf,
+}
+
+pub(crate) fn record_board_database(runtime: &Path, database: &Path) -> Result<()> {
+    use std::{io::Write, os::unix::fs::OpenOptionsExt};
+    ensure!(
+        database.is_absolute(),
+        "invalid_options: board database path must be absolute"
+    );
+    fs::create_dir_all(runtime)?;
+    let temporary = runtime.join(format!("board-backend-{}.pending", uuid::Uuid::new_v4()));
+    let result = (|| {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&temporary)?;
+        let bytes = serde_json::to_vec(&BoardDatabaseMarker {
+            database: database.to_owned(),
+        })?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        fs::rename(&temporary, runtime.join("board-backend.json"))?;
+        fs::File::open(runtime)?.sync_all()?;
+        Ok(())
+    })();
+    let _ = fs::remove_file(temporary);
+    result
+}
+
+pub(crate) fn validate_board_database(runtime: &Path, database: &Path) -> Result<()> {
+    let bytes = match fs::read(runtime.join("board-backend.json")) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error).context("board_unavailable: read database pin"),
+    };
+    let marker: BoardDatabaseMarker =
+        serde_json::from_slice(&bytes).context("board_unavailable: invalid database pin")?;
+    let equal = marker.database == database
+        || marker
+            .database
+            .canonicalize()
+            .ok()
+            .zip(database.canonicalize().ok())
+            .is_some_and(|(router, local)| router == local);
+    ensure!(
+        marker.database.is_absolute() && equal,
+        "board_unavailable: local database {} differs from router database {}; restore the router database configuration",
+        database.display(),
+        marker.database.display()
+    );
+    Ok(())
+}
+
 /// Starts the system daemon when no router answers its status ping.
 pub fn ensure() -> Result<()> {
     let ping = vec!["system".to_owned(), "status".to_owned()];
@@ -78,6 +136,10 @@ pub fn ensure() -> Result<()> {
     let dir = dir().context("system_unavailable: no runtime dir")?;
     fs::create_dir_all(&dir)?;
     let mut command = Command::new(std::env::current_exe()?);
+    command.env(
+        "TRUFFLEPIG_BOARD_DB",
+        crate::board::BoardConfig::database_path()?,
+    );
     spawn_background(command.arg("system-serve"))?;
     let deadline = Instant::now() + Duration::from_secs(3);
     while Instant::now() < deadline {
@@ -95,20 +157,19 @@ pub fn ensure() -> Result<()> {
 /// `SWEEP_INTERVAL` on a background thread, so a slow daemon stop never
 /// blocks the request path.
 pub fn serve() -> Result<()> {
+    let runtime = dir().context("system_unavailable: no runtime dir")?;
     let router = SystemRouter {
+        runtime: Some(runtime.clone()),
         cache_base: crate::cli::cache_base().ok(),
         sweeps: Mutex::new(SweepClock::default()),
         board: crate::board::BoardHost::default(),
     };
-    daemon::serve_router(
-        &dir().context("system_unavailable: no runtime dir")?,
-        &spool_dir(),
-        router,
-    )
+    daemon::serve_router(&runtime, &spool_dir(), router)
 }
 
 /// The router's request handler; each request is routed independently.
 struct SystemRouter {
+    runtime: Option<PathBuf>,
     cache_base: Option<PathBuf>,
     sweeps: Mutex<SweepClock>,
     board: crate::board::BoardHost,
@@ -122,7 +183,13 @@ struct SweepClock {
 
 impl DaemonHandler for SystemRouter {
     fn request(&self, request: AcceptedRequest) -> Result<String> {
-        route(&self.board, request.args, request.context, request.deadline)
+        route(
+            &self.board,
+            self.runtime.as_deref(),
+            request.args,
+            request.context,
+            request.deadline,
+        )
     }
 
     fn idle(&self) {
@@ -149,6 +216,7 @@ impl DaemonHandler for SystemRouter {
 
 fn route(
     board: &crate::board::BoardHost,
+    runtime: Option<&Path>,
     args: Vec<String>,
     context: RequestContext,
     deadline: QueryDeadline,
@@ -158,7 +226,13 @@ fn route(
     let options = crate::cli::parse(&args)?;
     let verb = options.words.first().map(String::as_str);
     if verb == Some("system") {
-        return Ok("{\"status\":\"ok\"}".to_owned());
+        let database = board.database_path()?;
+        if let Some(runtime) = runtime {
+            record_board_database(runtime, &database)?;
+        }
+        return Ok(serde_json::to_string(&serde_json::json!({
+            "status": "ok", "board_api": crate::board::BOARD_API, "board_db": database,
+        }))?);
     }
     if matches!(verb, Some("board" | "feedback")) {
         return board.run(&options, &context, deadline);
@@ -225,6 +299,70 @@ mod deadline_tests {
     use super::*;
 
     #[test]
+    fn losing_router_start_cannot_replace_the_live_database_marker() {
+        let scratch = std::env::var_os("TMPDIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/home/josh/.cache/codex-tmp"));
+        fs::create_dir_all(&scratch).unwrap();
+        let directory = tempfile::Builder::new().tempdir_in(scratch).unwrap();
+        let runtime = directory.path().join("runtime");
+        let spool = directory.path().join("spool");
+        let live_database = directory.path().join("live.sqlite3");
+        let loser_database = directory.path().join("loser.sqlite3");
+        let router = |database: &Path| SystemRouter {
+            runtime: Some(runtime.clone()),
+            cache_base: None,
+            sweeps: Mutex::new(SweepClock::default()),
+            board: crate::board::BoardHost::with_config(crate::board::BoardConfig::for_database(
+                database,
+            )),
+        };
+        let live = router(&live_database);
+        let live_runtime = runtime.clone();
+        let live_spool = spool.clone();
+        let worker =
+            std::thread::spawn(move || daemon::serve_router(&live_runtime, &live_spool, live));
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let ping = ["system".into(), "status".into()];
+        let context = RequestContext::new(None, None);
+        loop {
+            if daemon::request(&runtime, &ping, &context)
+                .unwrap()
+                .is_some()
+            {
+                break;
+            }
+            assert!(Instant::now() < deadline, "live router failed to start");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let rejected = daemon::serve_router(&runtime, &spool, router(&loser_database));
+        assert!(rejected.is_err());
+        let accepted = validate_board_database(&runtime, &live_database);
+        let refused = validate_board_database(&runtime, &loser_database);
+        daemon::stop(&runtime).unwrap();
+        worker.join().unwrap().unwrap();
+        accepted.unwrap();
+        assert!(refused.is_err());
+        assert!(!loser_database.exists());
+    }
+
+    #[test]
+    fn router_database_marker_refuses_split_local_fallback() {
+        let scratch = std::env::var_os("TMPDIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/home/josh/.cache/codex-tmp"));
+        fs::create_dir_all(&scratch).unwrap();
+        let directory = tempfile::Builder::new().tempdir_in(scratch).unwrap();
+        let pinned = directory.path().join("router.sqlite3");
+        record_board_database(directory.path(), &pinned).unwrap();
+        validate_board_database(directory.path(), &pinned).unwrap();
+        let other = directory.path().join("client.sqlite3");
+        let error = validate_board_database(directory.path(), &other).unwrap_err();
+        assert!(error.to_string().contains("differs from router database"));
+        assert!(!other.exists());
+    }
+
+    #[test]
     fn board_routes_without_workspace_or_owner_daemon() {
         let scratch = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/board-router-tests");
         fs::create_dir_all(&scratch).unwrap();
@@ -235,6 +373,7 @@ mod deadline_tests {
         let cache = directory.path().join("owner-cache");
         let database = directory.path().join("data/board.sqlite3");
         let router = SystemRouter {
+            runtime: None,
             cache_base: None,
             sweeps: Mutex::new(SweepClock::default()),
             board: crate::board::BoardHost::with_config(crate::board::BoardConfig::for_database(
@@ -275,6 +414,7 @@ mod deadline_tests {
         let root = tempfile::tempdir().unwrap();
         let cache = tempfile::tempdir().unwrap().path().join("cache");
         let router = SystemRouter {
+            runtime: None,
             cache_base: None,
             sweeps: Mutex::new(SweepClock::default()),
             board: crate::board::BoardHost::default(),

@@ -1,7 +1,7 @@
 //! Lazy local writer, bounded inbox waiting, and edge maintenance for the router.
 use super::{
     board_actor::BoardActor,
-    board_config::BoardConfig,
+    board_config::{BoardConfig, BoardConfigCache},
     board_grammar::{self, BoardCommand},
     board_ids::EventSeq,
     board_protocol::{
@@ -45,7 +45,7 @@ pub struct BoardHost {
 
 #[derive(Default)]
 struct HostState {
-    config: Mutex<Option<BoardConfig>>,
+    config: Mutex<BoardConfigCache>,
     backend: Mutex<Option<LocalBoard>>,
     ingestor: Mutex<RepoIngestor>,
     sequence: Mutex<EventSeq>,
@@ -110,7 +110,7 @@ impl BoardHost {
     pub fn with_config(config: BoardConfig) -> Self {
         Self {
             inner: Arc::new(HostState {
-                config: Mutex::new(Some(config)),
+                config: Mutex::new(BoardConfigCache::with_config(config)),
                 ..HostState::default()
             }),
         }
@@ -121,15 +121,31 @@ impl BoardHost {
             self.inner.config.clear_poison();
             poisoned.into_inner()
         });
-        if config.is_none() {
-            *config = Some(BoardConfig::load()?);
-        }
-        let config = config
-            .as_ref()
-            .expect("configuration just initialized")
-            .clone();
-        config.ensure_local()?;
-        Ok(config)
+        config.get(Instant::now()).map_err(Into::into)
+    }
+
+    pub(crate) fn database_path(&self) -> Result<std::path::PathBuf> {
+        let mut config = self.inner.config.lock().unwrap_or_else(|poisoned| {
+            self.inner.config.clear_poison();
+            poisoned.into_inner()
+        });
+        let _ = config.get(Instant::now());
+        config
+            .database_path()
+            .map(std::path::Path::to_path_buf)
+            .ok_or_else(|| anyhow::anyhow!("board_unavailable: database path is unavailable"))
+    }
+
+    fn idle_config(&self) -> Option<(Option<std::result::Result<BoardConfig, BoardError>>, bool)> {
+        let config = match self.inner.config.try_lock() {
+            Ok(config) => config,
+            Err(TryLockError::WouldBlock) => return None,
+            Err(TryLockError::Poisoned(poisoned)) => {
+                self.inner.config.clear_poison();
+                poisoned.into_inner()
+            }
+        };
+        Some((config.snapshot(), config.needs_refresh(Instant::now())))
     }
 
     /// Dispatches without workspace resolution, holding the writer only for backend work.
@@ -325,6 +341,7 @@ impl BoardHost {
             let backend = backend.as_mut().expect("backend just initialized");
             check_deadline(deadline)?;
             backend.set_busy_timeout(deadline.cap(Duration::from_secs(5)))?;
+            backend.set_claim_ttl_seconds(config.claim_ttl_seconds());
             let reply = backend.handle(request)?;
             reply.validate()?;
             let seq = if deadline.expired() {
@@ -514,13 +531,16 @@ impl BoardHost {
                 }
             }
         }
-        let config = match self.config() {
-            Ok(config) => config,
-            Err(error) => {
-                let error = BoardError::from(error);
+        let Some((snapshot, refresh_due)) = self.idle_config() else {
+            return;
+        };
+        let config = match snapshot {
+            Some(Ok(config)) => Some(config),
+            Some(Err(error)) => {
                 clock.report_once(error.code.as_str(), &error.message);
-                return;
+                None
             }
+            None => None,
         };
         let pending = clock.import_ready(now)
             && std::fs::read_dir(crate::system::spool_dir()).is_ok_and(|entries| {
@@ -531,11 +551,13 @@ impl BoardHost {
                         .is_some_and(|ext| ext == "feedback")
                 })
             });
-        let ingest_due = config.db_path.is_file()
+        let ingest_due = config
+            .as_ref()
+            .is_some_and(|config| config.db_path.is_file())
             && clock
                 .last_started
                 .is_none_or(|started| started.elapsed() >= MAINTENANCE_INTERVAL);
-        if !pending && !ingest_due {
+        if !pending && !ingest_due && !refresh_due {
             return;
         }
         let host = self.clone();
@@ -784,6 +806,111 @@ mod tests {
         assert!(clock.import_ready(now));
         clock.import_finished(now, &pending);
         assert!(clock.import_ready(now + Duration::from_secs(2)));
+    }
+
+    #[test]
+    fn configuration_ttl_refresh_changes_existing_writer_claim_policy() {
+        let scratch = std::env::var_os("TMPDIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from("/home/josh/.cache/codex-tmp"));
+        std::fs::create_dir_all(&scratch).unwrap();
+        let directory = tempfile::Builder::new().tempdir_in(scratch).unwrap();
+        let database = directory.path().join("board.sqlite3");
+        let mut config = BoardConfig::for_database(&database);
+        let host = BoardHost::with_config(config.clone());
+        let actor = config.actor(None, Some("claim-owner")).unwrap();
+        let create = BoardRequest::new(
+            actor.clone(),
+            BoardOp::New {
+                title: super::super::board_vocabulary::PlanTitle::new("TTL test").unwrap(),
+                body: super::super::board_vocabulary::PlanText::new("").unwrap(),
+                steward: None,
+            },
+        );
+        let reply = host.handle_by(&create, QueryDeadline::start()).unwrap();
+        let BoardResult::Change(change) = reply.result else {
+            panic!("expected plan");
+        };
+        let plan = change.plan.unwrap();
+        let reply = host
+            .handle_by(
+                &BoardRequest::new(
+                    actor.clone(),
+                    BoardOp::CarveClaim {
+                        plan,
+                        title: super::super::board_vocabulary::PlanTitle::new("Owned task")
+                            .unwrap(),
+                        scope: super::super::board_vocabulary::EntryText::new("ttl policy")
+                            .unwrap(),
+                        section: None,
+                    },
+                ),
+                QueryDeadline::start(),
+            )
+            .unwrap();
+        let BoardResult::Change(change) = reply.result else {
+            panic!("expected task");
+        };
+        let task = change.task.unwrap();
+        let external = rusqlite::Connection::open(&database).unwrap();
+        external
+            .execute("UPDATE claims SET last_active=last_active-120", [])
+            .unwrap();
+        config.claim_ttl_minutes = 1;
+        *host.inner.config.lock().unwrap() = BoardConfigCache::with_config(config.clone());
+        let takeover = config.actor(None, Some("claim-takeover")).unwrap();
+        let request = BoardRequest::new(
+            takeover,
+            BoardOp::ClaimTask {
+                task,
+                scope: super::super::board_vocabulary::EntryText::new("new owner").unwrap(),
+            },
+        );
+        host.handle_by(&request, QueryDeadline::start()).unwrap();
+    }
+
+    #[test]
+    fn idle_maintenance_schedules_a_blocked_loader_without_waiting() {
+        use std::os::unix::ffi::OsStrExt;
+        let scratch = std::env::var_os("TMPDIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from("/home/josh/.cache/codex-tmp"));
+        std::fs::create_dir_all(&scratch).unwrap();
+        let directory = tempfile::Builder::new().tempdir_in(scratch).unwrap();
+        let source = directory.path().join("blocked-board.toml");
+        let name = std::ffi::CString::new(source.as_os_str().as_bytes()).unwrap();
+        // SAFETY: CString is NUL terminated and mkfifo only creates this test path.
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        let host = BoardHost::default();
+        *host.inner.config.lock().unwrap() = BoardConfigCache::with_source(
+            source.clone(),
+            BoardConfig::for_database(directory.path().join("absent.sqlite3")),
+        );
+        let started = Instant::now();
+        host.idle();
+        assert!(started.elapsed() < Duration::from_millis(100));
+        let worker = host
+            .inner
+            .maintenance
+            .lock()
+            .unwrap()
+            .running
+            .take()
+            .unwrap();
+        std::fs::write(source, "claim_ttl_minutes = 1").unwrap();
+        worker.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn idle_maintenance_does_not_wait_for_configuration_lock() {
+        let host = BoardHost::with_config(BoardConfig::for_database(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/absent-board.sqlite3"),
+        ));
+        let held = host.inner.config.lock().unwrap();
+        let started = Instant::now();
+        host.idle();
+        assert!(started.elapsed() < Duration::from_millis(100));
+        drop(held);
     }
 
     #[test]
