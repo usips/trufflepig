@@ -7,6 +7,7 @@ use super::*;
 use crate::board::board_actor::{BoardActor, HarnessLabel};
 use crate::board::board_backend::BoardBackend;
 use crate::board::board_protocol::{BoardOp, BoardRequest};
+use crate::board::board_vocabulary::TaskColumn;
 use crate::board::local_board::LocalBoard;
 
 struct ClaimDatabase {
@@ -553,7 +554,7 @@ fn cached_claim_or_move_cannot_bypass_a_new_holder() {
 }
 
 #[test]
-fn retried_carve_targets_original_task_after_handoff() {
+fn retried_carve_creates_fresh_task_after_handoff() {
     let database = ClaimDatabase::new();
     let mut backend =
         LocalBoard::open_path(&database.path, std::time::Duration::from_secs(120)).unwrap();
@@ -589,14 +590,31 @@ fn retried_carve_targets_original_task_after_handoff() {
             },
         ))
         .unwrap();
-    assert!(
-        backend
-            .handle(&request)
-            .unwrap_err()
-            .to_string()
-            .starts_with("claim_conflict:")
+    let reply = backend.handle(&request).unwrap();
+    let BoardResult::Change(change) = reply.result else {
+        panic!("expected change")
+    };
+    assert_eq!(change.task.unwrap().ordinal, 2);
+    assert!(!change.deduplicated);
+    assert_eq!(read_tasks(&database.connect(), task.plan).unwrap().len(), 2);
+    let claims = read_claims(&database.connect(), task.plan, i64::MAX, 120).unwrap();
+    assert_eq!(
+        claims
+            .iter()
+            .filter(|claim| claim.ended_at.is_none())
+            .count(),
+        2
     );
-    assert_eq!(read_tasks(&database.connect(), task.plan).unwrap().len(), 1);
+    assert_eq!(
+        claims
+            .iter()
+            .find(|claim| claim.task == task && claim.ended_at.is_none())
+            .unwrap()
+            .actor
+            .harness
+            .as_str(),
+        "muse"
+    );
 }
 
 #[test]
@@ -684,6 +702,272 @@ fn commit_activity_uses_claimed_model_vendor_and_harness_fallback() {
                 .last_active,
             1050,
             "{harness} / {model:?}"
+        );
+    }
+}
+
+#[test]
+fn carve_retry_deduplicates_current_lease_but_creates_fresh_after_done() {
+    let database = ClaimDatabase::new();
+    let mut backend =
+        LocalBoard::open_path(&database.path, std::time::Duration::from_secs(120)).unwrap();
+    let holder = actor("josh", "codex", "one");
+    let request = BoardRequest::new(
+        holder.clone(),
+        BoardOp::CarveClaim {
+            plan: PlanId::new(1).unwrap(),
+            title: PlanTitle::new("Carve retry").unwrap(),
+            scope: EntryText::new("scope").unwrap(),
+            section: None,
+        },
+    );
+    let first = backend.handle(&request).unwrap();
+    let BoardResult::Change(first) = first.result else {
+        panic!("expected change")
+    };
+    let replay = backend.handle(&request).unwrap();
+    let BoardResult::Change(replay) = replay.result else {
+        panic!("expected change")
+    };
+    assert!(replay.deduplicated);
+    assert_eq!(first.task, replay.task);
+    backend
+        .handle(&BoardRequest::new(
+            holder,
+            BoardOp::TaskMove {
+                task: first.task.unwrap(),
+                column: TaskColumn::Done,
+                to: None,
+            },
+        ))
+        .unwrap();
+    let retried = backend.handle(&request).unwrap();
+    let BoardResult::Change(retried) = retried.result else {
+        panic!("expected change")
+    };
+    assert_ne!(first.task, retried.task);
+    assert!(!retried.deduplicated);
+    let tasks = read_tasks(&database.connect(), first.plan.unwrap()).unwrap();
+    assert_eq!(tasks[0].column, TaskColumn::Done);
+    assert_eq!(tasks[1].column, TaskColumn::Doing);
+}
+
+#[test]
+fn doing_without_recipient_records_callers_exclusive_claim() {
+    let database = ClaimDatabase::new();
+    let mut conn = database.connect();
+    let holder = actor("josh", "muse", "one");
+    let reply = write(&mut conn, &holder, 1000, |tx, ctx| {
+        create_task(
+            tx,
+            ctx,
+            PlanId::new(1).unwrap(),
+            &PlanTitle::new("Unclaimed card").unwrap(),
+            None,
+            None,
+        )
+    })
+    .unwrap();
+    let BoardResult::Change(change) = reply.result else {
+        panic!("expected change")
+    };
+    let task = change.task.unwrap();
+    write(&mut conn, &holder, 1050, |tx, ctx| {
+        move_task(tx, ctx, task, TaskColumn::Doing, None)
+    })
+    .unwrap();
+    let claims = read_claims(&conn, task.plan, 1050, 120).unwrap();
+    assert_eq!(claims.len(), 1);
+    assert_eq!(claims[0].actor, holder);
+    assert_eq!(claims[0].scope.as_str(), "Unclaimed card");
+    assert_eq!(
+        read_tasks(&conn, task.plan).unwrap()[0].assignee,
+        Some(BoardRecipient::for_actor(&holder))
+    );
+    assert!(
+        claim(
+            &mut conn,
+            &actor("josh", "codex", "other"),
+            1051,
+            task,
+            "steal"
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn reassigned_card_reserves_claim_and_move_for_recipient() {
+    let database = ClaimDatabase::new();
+    let mut conn = database.connect();
+    let original = actor("josh", "codex", "one");
+    let task = carved_task(&mut conn, &original, 1000, "exclusive");
+    let recipient = BoardRecipient::parse("muse").unwrap();
+    let steward = actor("josh", "claude", "steward");
+    write(&mut conn, &steward, 1050, |tx, ctx| {
+        move_task(tx, ctx, task, TaskColumn::Doing, Some(&recipient))
+    })
+    .unwrap();
+    for privileged in [&steward, &actor("josh", "human", "owner")] {
+        assert!(claim(&mut conn, privileged, 1051, task, "steal assignment").is_err());
+    }
+    for unauthorized in [
+        original,
+        actor("other", "human", "owner"),
+        actor("other", "claude", "steward"),
+    ] {
+        assert!(claim(&mut conn, &unauthorized, 1051, task, "steal assignment").is_err());
+        assert!(
+            write(&mut conn, &unauthorized, 1051, |tx, ctx| move_task(
+                tx,
+                ctx,
+                task,
+                TaskColumn::Doing,
+                Some(&recipient)
+            ))
+            .is_err()
+        );
+        for column in [TaskColumn::Doing, TaskColumn::Review, TaskColumn::Done] {
+            let error = write(&mut conn, &unauthorized, 1051, |tx, ctx| {
+                move_task(tx, ctx, task, column, None)
+            })
+            .unwrap_err();
+            assert!(error.to_string().starts_with("invalid_actor:"), "{error}");
+        }
+    }
+    let assignee = actor("josh", "muse", "recipient");
+    claim(&mut conn, &assignee, 1052, task, "recipient scope").unwrap();
+    let history = read_claims(&conn, task.plan, 1052, 120).unwrap();
+    assert_eq!(history.last().unwrap().actor, assignee);
+    assert!(history.last().unwrap().ended_at.is_none());
+    write(&mut conn, &assignee, 1053, |tx, ctx| {
+        move_task(tx, ctx, task, TaskColumn::Review, None)
+    })
+    .unwrap();
+    assert_eq!(
+        read_tasks(&conn, task.plan).unwrap()[0].column,
+        TaskColumn::Review
+    );
+}
+
+#[test]
+fn completed_card_cannot_be_reclaimed_or_reassigned_to_doing() {
+    let database = ClaimDatabase::new();
+    let mut conn = database.connect();
+    let holder = actor("josh", "codex", "one");
+    let task = carved_task(&mut conn, &holder, 1000, "complete");
+    write(&mut conn, &holder, 1050, |tx, ctx| {
+        move_task(tx, ctx, task, TaskColumn::Done, None)
+    })
+    .unwrap();
+    for caller in [holder, actor("josh", "claude", "steward")] {
+        let error = claim(&mut conn, &caller, 1051, task, "reopen").unwrap_err();
+        assert!(error.to_string().starts_with("invalid_state:"), "{error}");
+        for recipient in [None, Some(BoardRecipient::parse("muse").unwrap())] {
+            let error = write(&mut conn, &caller, 1051, |tx, ctx| {
+                move_task(tx, ctx, task, TaskColumn::Doing, recipient.as_ref())
+            })
+            .unwrap_err();
+            assert!(error.to_string().starts_with("invalid_state:"), "{error}");
+        }
+    }
+    assert_eq!(
+        read_tasks(&conn, task.plan).unwrap()[0].column,
+        TaskColumn::Done
+    );
+    assert!(
+        read_claims(&conn, task.plan, 1051, 120)
+            .unwrap()
+            .iter()
+            .all(|claim| claim.ended_at.is_some())
+    );
+}
+
+#[test]
+fn owner_authority_can_redirect_or_cancel_pending_assignment() {
+    let database = ClaimDatabase::new();
+    let mut conn = database.connect();
+    let holder = actor("josh", "codex", "one");
+    let steward = actor("josh", "claude", "steward");
+    for privileged in [&steward, &actor("josh", "human", "owner")] {
+        let task = carved_task(&mut conn, &holder, 1000, "pending assignment");
+        let recipient = BoardRecipient::parse("muse").unwrap();
+        write(&mut conn, &steward, 1050, |tx, ctx| {
+            move_task(tx, ctx, task, TaskColumn::Doing, Some(&recipient))
+        })
+        .unwrap();
+        let redirect = BoardRecipient::parse("kimi").unwrap();
+        write(&mut conn, privileged, 1051, |tx, ctx| {
+            move_task(tx, ctx, task, TaskColumn::Doing, Some(&redirect))
+        })
+        .unwrap();
+        let tasks = read_tasks(&conn, task.plan).unwrap();
+        assert_eq!(
+            tasks.iter().find(|card| card.id == task).unwrap().assignee,
+            Some(redirect)
+        );
+        write(&mut conn, privileged, 1052, |tx, ctx| {
+            move_task(tx, ctx, task, TaskColumn::Todo, None)
+        })
+        .unwrap();
+        assert_eq!(
+            read_tasks(&conn, task.plan)
+                .unwrap()
+                .iter()
+                .find(|card| card.id == task)
+                .unwrap()
+                .column,
+            TaskColumn::Todo
+        );
+        claim(&mut conn, &holder, 1053, task, "after cancellation").unwrap();
+    }
+}
+
+#[test]
+fn explicit_owner_correction_reopens_done_to_todo_before_normal_claim() {
+    let database = ClaimDatabase::new();
+    let mut conn = database.connect();
+    let holder = actor("josh", "codex", "one");
+    for privileged in [
+        actor("josh", "claude", "steward"),
+        actor("josh", "human", "owner"),
+    ] {
+        let task = carved_task(&mut conn, &holder, 1000, "completed");
+        write(&mut conn, &holder, 1050, |tx, ctx| {
+            move_task(tx, ctx, task, TaskColumn::Done, None)
+        })
+        .unwrap();
+        for unauthorized in [
+            &holder,
+            &actor("other", "human", "owner"),
+            &actor("other", "claude", "steward"),
+        ] {
+            assert!(
+                write(&mut conn, unauthorized, 1051, |tx, ctx| move_task(
+                    tx,
+                    ctx,
+                    task,
+                    TaskColumn::Todo,
+                    None
+                ))
+                .is_err()
+            );
+        }
+        assert!(claim(&mut conn, &privileged, 1051, task, "direct reclaim").is_err());
+        write(&mut conn, &privileged, 1052, |tx, ctx| {
+            move_task(tx, ctx, task, TaskColumn::Todo, None)
+        })
+        .unwrap();
+        let next = actor("josh", "muse", "after-correction");
+        claim(&mut conn, &next, 1053, task, "corrected scope").unwrap();
+        assert_eq!(
+            read_claims(&conn, task.plan, 1053, 120)
+                .unwrap()
+                .iter()
+                .find(|claim| claim.task == task && claim.ended_at.is_none())
+                .unwrap()
+                .actor,
+            next
         );
     }
 }

@@ -7,6 +7,7 @@ mod entry_writes;
 mod feedback_entries;
 mod plan_writes;
 mod task_claims;
+mod task_writes;
 #[cfg(test)]
 mod tests;
 
@@ -176,21 +177,6 @@ impl LocalBoard {
                     tx.commit().map_err(sql_error)?;
                     return Ok(reply);
                 }
-                if matches!(request.op, BoardOp::CarveClaim { .. }) {
-                    if let BoardResult::Change(change) = reply.result {
-                        if let Some(task) = change.task {
-                            if let BoardOp::CarveClaim { scope, .. } = &request.op {
-                                let mut reply =
-                                    task_claims::claim_task(&tx, &ctx, task, Some(scope), false)?;
-                                reply.backend = format!("local:{}", self.path.display());
-                                task_claims::refresh_plan_claims(&tx, actor_id, task.plan, now)?;
-                                tx.execute("UPDATE operation_dedupes SET reply_json=?2,created_at=?3 WHERE dedupe_key=?1",params![key,serde_json::to_string(&reply).map_err(|e|invalid("board_unavailable",e.to_string()))?,now]).map_err(sql_error)?;
-                                tx.commit().map_err(sql_error)?;
-                                return Ok(reply);
-                            }
-                        }
-                    }
-                }
             }
         }
         let mut reply = match &request.op {
@@ -220,10 +206,10 @@ impl LocalBoard {
                 to,
                 section,
             } => {
-                task_claims::create_task(&tx, &ctx, *plan, title, to.as_ref(), section.as_deref())?
+                task_writes::create_task(&tx, &ctx, *plan, title, to.as_ref(), section.as_deref())?
             }
             BoardOp::TaskMove { task, column, to } => {
-                task_claims::move_task(&tx, &ctx, *task, *column, to.as_ref())?
+                task_writes::move_task(&tx, &ctx, *task, *column, to.as_ref())?
             }
             BoardOp::ClaimTask {
                 task,
