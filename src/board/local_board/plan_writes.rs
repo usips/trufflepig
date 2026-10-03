@@ -111,6 +111,8 @@ pub(super) fn accept(
     let base = crate::board::board_ids::PlanRevision::new(plan, base).map_err(BoardError::from)?;
     advance_head(tx, base)?;
     let summary = note.map_or_else(|| format!("accepted {proposal}"), |n| n.as_str().to_owned());
+    let event_summary =
+        decision_summary("accepted", proposal, &author, note.map(EntryText::as_str));
     let entry = mutation_entry(
         tx,
         ctx,
@@ -133,8 +135,8 @@ pub(super) fn accept(
         Some(plan),
         "accept",
         &entry.to_string(),
-        Some(&author),
-        &summary,
+        None,
+        &event_summary,
     )?;
     Ok(change(ctx, entry, plan, Some(base.revision + 1)))
 }
@@ -153,6 +155,7 @@ pub(super) fn reject(
             format!("proposal {proposal} is {state}"),
         ));
     }
+    let event_summary = decision_summary("rejected", proposal, &author, Some(reason.as_str()));
     let entry = mutation_entry(
         tx,
         ctx,
@@ -178,10 +181,34 @@ pub(super) fn reject(
         Some(plan),
         "reject",
         &entry.to_string(),
-        Some(&author),
-        reason.as_str(),
+        None,
+        &event_summary,
     )?;
     Ok(change(ctx, entry, plan, None))
+}
+
+fn decision_summary(action: &str, proposal: EntryId, author: &str, detail: Option<&str>) -> String {
+    let prefix = format!("{action} {proposal} by {author}");
+    let Some(detail) = detail else {
+        return prefix;
+    };
+    let limit = crate::board::board_vocabulary::ENTRY_TEXT_LIMIT;
+    let available = limit.saturating_sub(prefix.len() + 2);
+    let truncated = detail.len() > available;
+    let mut end = detail
+        .len()
+        .min(available.saturating_sub(usize::from(truncated) * 3));
+    while !detail.is_char_boundary(end) {
+        end -= 1;
+    }
+    let mut summary = String::with_capacity(prefix.len() + 2 + end + usize::from(truncated) * 3);
+    summary.push_str(&prefix);
+    summary.push_str(": ");
+    summary.push_str(&detail[..end]);
+    if truncated {
+        summary.push_str("...");
+    }
+    summary
 }
 
 fn mutation_entry(

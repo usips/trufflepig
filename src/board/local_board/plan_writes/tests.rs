@@ -3,6 +3,8 @@ use crate::board::board_backend::BoardBackend;
 use crate::board::board_ids::PlanRevision;
 use std::time::Duration;
 
+mod decision_events;
+
 fn actor(user: &str, harness: &str, session: &str) -> BoardActor {
     BoardActor::new(
         user,
