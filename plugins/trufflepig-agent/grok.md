@@ -1,13 +1,13 @@
 # Grok Build integration
 
-Install the shared search skill and wrapper:
+Install the shared search and plan board skills and wrapper:
 
 ```sh
 plugins/trufflepig-agent/install.sh --grok --check "$PWD"
 grok inspect --json
 ```
 
-The installer links `trufflepig-code-search` into `~/.grok/skills`, or
+The installer links `trufflepig-code-search` and `trufflepig-plan-board` into `~/.grok/skills`, or
 `$GROK_HOME/skills` when configured. It preserves unmanaged destinations and
 reuses the shared disk-backed runtime. The router setup and GPU build options
 live in the [installation guide](README.md#install).
@@ -34,8 +34,8 @@ trufflepig-audit --harness grok --since 1 --json
 
 The installer does not change Grok permissions. A restricted sandbox must permit
 the wrapper and the shared runtime directory; see [runtime recovery](README.md#runtime-recovery-and-upgrades).
-Remove the installed skill symlink to uninstall the native discovery entry.
-Shared `.agents` or Claude entries may still expose the skill.
+Remove both installed skill symlinks to uninstall the native discovery entries.
+Shared `.agents` or Claude entries may still expose the skills.
 
 Harness contracts: [skills and compatibility](https://docs.x.ai/build/features/skills-plugins-marketplaces),
 [CLI inspection](https://docs.x.ai/build/cli/reference).

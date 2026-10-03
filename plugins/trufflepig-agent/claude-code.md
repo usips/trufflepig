@@ -7,7 +7,7 @@ plugins/trufflepig-agent/install.sh --claude --check "$PWD"
 ```
 
 Alternatively, install the Claude plugin from this repository's marketplace
-(`.claude-plugin/marketplace.json`); it carries the skill and the hooks in
+(`.claude-plugin/marketplace.json`); it carries both skills and the hooks in
 `hooks/hooks.json`, run from `${CLAUDE_PLUGIN_ROOT}`:
 
 ```sh
@@ -16,17 +16,17 @@ claude plugin install trufflepig-agent@trufflepig
 plugins/trufflepig-agent/install.sh --commands --claude   # wrapper commands, permission
 ```
 
-With the plugin enabled, `install.sh --claude` links neither the personal skill
+With the plugin enabled, `install.sh --claude` links neither the personal skills
 nor the hooks, so nothing runs twice; it still adds the wrapper permission and
 runtime access. `claude --plugin-dir plugins/trufflepig-agent` loads a checkout
 for a single session. `claude plugin validate --strict` checks both manifests.
 
-`--claude` installs the shared skill at
-`$CLAUDE_CONFIG_DIR/skills/trufflepig-code-search`, defaulting to
-`~/.claude/skills/trufflepig-code-search`. Claude follows the symlink to this
+`--claude` installs `trufflepig-code-search` and `trufflepig-plan-board` at
+`$CLAUDE_CONFIG_DIR/skills/`, defaulting to
+`~/.claude/skills/`. Claude follows each symlink to this
 checkout. Personal skills apply across projects; a project-only manual install
 uses `.claude/skills`, not `.agents/skills`. Keep the checkout available because
-both the skill and commands are linked to it.
+the skills and commands are linked to it.
 
 Claude can select this skill automatically from its description. Invoke
 `/trufflepig-code-search` to request it explicitly. The shared frontmatter does
@@ -137,7 +137,7 @@ interface; neither proves that a model will choose the skill on every prompt.
 Compare the audit session with Claude's actual session ID, including separate
 sessions in the same working directory and a resumed session.
 
-To remove the integration, remove only the personal skill symlink, the
+To remove the integration, remove both personal skill symlinks, the
 `SessionStart` and `SubagentStart` entries invoking `trufflepig-claude-session`,
 the `PreToolUse` and `PostToolUse` entries invoking `trufflepig-agent-steer claude`, and the
 `Bash(trufflepig-agent *)` permission. `install.sh --claude --steer off` disables

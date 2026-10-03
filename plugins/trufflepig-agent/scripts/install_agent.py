@@ -6,12 +6,14 @@ import argparse
 import json
 import os
 from pathlib import Path
+import pwd
 import re
 import shutil
 import subprocess
 import sys
 
 PLUGIN = Path(__file__).resolve().parents[1]
+SKILLS = ("trufflepig-code-search", "trufflepig-plan-board")
 sys.path.insert(0, str(PLUGIN / "bin"))
 from trufflepig_runtime import runtime_config_path
 from omp_install import omp_agent_dir
@@ -33,11 +35,25 @@ def link(source: Path, destination: Path) -> None:
     print(f"linked {destination}")
 
 
+def board_database_path() -> Path:
+    override = os.environ.get("TRUFFLEPIG_BOARD_DB")
+    if override is not None:
+        if not override:
+            raise ValueError("TRUFFLEPIG_BOARD_DB must not be empty")
+        return Path(override).absolute()
+    data_home = os.environ.get("XDG_DATA_HOME")
+    base = Path(data_home) if data_home and Path(data_home).is_absolute() \
+        else Path(pwd.getpwuid(os.getuid()).pw_dir) / ".local/share"
+    return (base / "trufflepig/board.sqlite3").absolute()
+
+
 def service_text(binary: str, spool: Path | None) -> str:
     # systemd expands percent specifiers even inside quoted strings.
     quote = lambda value: json.dumps(str(value).replace("%", "%%"), ensure_ascii=False)
     text = (PLUGIN / "systemd/trufflepig-system.service").read_text()
     text = text.replace("@TRUFFLEPIG@", quote(binary))
+    text = text.replace("[Service]\n", "[Service]\nEnvironment=" +
+                        quote(f"TRUFFLEPIG_BOARD_DB={board_database_path()}") + "\n")
     if spool is not None:
         text = text.replace("[Service]\n", "[Service]\nEnvironment=" +
                             quote(f"TRUFFLEPIG_SPOOL_DIR={spool}") + "\n")
@@ -67,29 +83,30 @@ def main() -> int:
     if args.steer and not steer_harnesses:
         parser.error("--steer requires --claude, --kimi, or --muse")
 
-    skill = PLUGIN / "skills/trufflepig-code-search"
+    skills = tuple(PLUGIN / "skills" / name for name in SKILLS)
     links = [(PLUGIN / "bin" / name, args.bin / name)
              for name in ("trufflepig-agent", "trufflepig-audit")]
     links.extend((PLUGIN / "hooks" / source, args.bin / name) for source, name in (
         ("session-start.sh", "trufflepig-agent-session"), ("steer-search.py", "trufflepig-agent-steer")))
     kimi_home = Path(os.environ.get("KIMI_CODE_HOME") or Path.home() / ".kimi-code")
     if args.kimi:
-        links.append((skill, kimi_home / "skills/trufflepig-code-search"))
+        links.extend((skill, kimi_home / "skills" / skill.name) for skill in skills)
     if args.codex:
-        links.append((skill, Path.home() / ".agents/skills/trufflepig-code-search"))
+        links.extend((skill, Path.home() / ".agents/skills" / skill.name) for skill in skills)
     if args.grok:
         grok_home = Path(os.environ.get("GROK_HOME") or Path.home() / ".grok").expanduser().absolute()
-        links.append((skill, grok_home / "skills/trufflepig-code-search"))
+        links.extend((skill, grok_home / "skills" / skill.name) for skill in skills)
     # An enabled Claude plugin already provides the skill and hooks.
     claude_plugin = args.claude and plugin_enabled(claude_home() / "settings.json")
     if args.claude and not claude_plugin:
-        links.append((skill, claude_home() / "skills/trufflepig-code-search"))
+        links.extend((skill, claude_home() / "skills" / skill.name) for skill in skills)
         links.append((PLUGIN / "hooks/claude-session.py", args.bin / "trufflepig-claude-session"))
     if args.omp:
         agent_dir = omp_agent_dir(args.omp_agent_dir)
-        links.append((skill, agent_dir / "skills/trufflepig-code-search"))
+        links.extend((skill, agent_dir / "skills" / skill.name) for skill in skills)
         links.append((PLUGIN / "omp/session.ts", agent_dir / "extensions/trufflepig-session.ts"))
-    links.extend((skill, root.absolute() / ".agents/skills/trufflepig-code-search") for root in args.project)
+    links.extend((skill, root.absolute() / ".agents/skills" / skill.name)
+                 for root in args.project for skill in skills)
     for source, destination in links:
         check_link(source, destination)
 
@@ -112,6 +129,7 @@ def main() -> int:
     binary = shutil.which("trufflepig")
     if args.systemd and (not binary or not shutil.which("systemctl")):
         raise ValueError("--systemd requires trufflepig and systemctl on PATH")
+    unit_text = service_text(binary, spool) if args.systemd else None
 
     if args.claude:
         claude_settings_path = claude_home() / "settings.json"
@@ -150,14 +168,15 @@ def main() -> int:
         config.write_text(text)
     if args.muse:
         if shutil.which("muse"):
-            subprocess.run(["muse", "skills", "install", str(skill), "--scope", "user", "--force", "--json"], check=True)
+            for skill in skills:
+                subprocess.run(["muse", "skills", "install", str(skill), "--scope", "user", "--force", "--json"], check=True)
         else:
             print("muse not found; skipped", file=sys.stderr)
     if args.systemd:
         config_home = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
         unit = config_home / "systemd/user/trufflepig-system.service"
         unit.parent.mkdir(parents=True, exist_ok=True)
-        unit.write_text(service_text(binary, spool))
+        unit.write_text(unit_text)
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
         # Stop uses the newly loaded control-group policy, including old children.
         subprocess.run(["systemctl", "--user", "stop", "trufflepig-system.service"], check=True)

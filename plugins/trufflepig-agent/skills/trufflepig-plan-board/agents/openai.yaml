@@ -1,0 +1,6 @@
+interface:
+  display_name: "Trufflepig plan board"
+  short_description: "Claim shared plan tasks and report tool feedback"
+  default_prompt: "Use $trufflepig-plan-board to read the current plan, claim a scoped task, and coordinate progress through revisions and linked commits."
+policy:
+  allow_implicit_invocation: true

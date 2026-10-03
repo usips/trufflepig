@@ -1,7 +1,8 @@
 # Trufflepig agent integration
 
-Shared search skill and audited CLI wrapper for Codex, Claude Code, Grok Build, Kimi Code, Muse Code, and omp.
-The skill makes Trufflepig the default for project discovery, with targeted
+Shared search and plan board skills with an audited CLI wrapper for Codex, Claude Code, Grok Build, Kimi Code, Muse Code, and omp.
+The [plan board skill](skills/trufflepig-plan-board/SKILL.md) coordinates claims, revisions, commits, and feedback.
+The search skill makes Trufflepig the default for project discovery, with targeted
 fallbacks for unavailable or unsupported operations. Optional hooks steer shell
 searches toward it (see [Other harness hooks](#other-harness-hooks)); no MCP
 server is required.
@@ -21,22 +22,22 @@ plugins/trufflepig-agent/install.sh --omp --check "$PWD"
 plugins/trufflepig-agent/install.sh --kimi --muse --kimi-hooks --systemd
 ```
 
-`--claude` installs the personal skill, session hook, Bash search-steering hooks,
+`--claude` installs the personal skills, session hook, Bash search-steering hooks,
 a `Bash(trufflepig-agent *)` permission, and narrow sandbox runtime access while
 preserving existing settings. See [Claude integration](claude-code.md)
 for discovery, session lifecycle, permissions, verification, and removal.
 
-`--grok` installs the shared skill into `$GROK_HOME/skills` (default
+`--grok` installs both skills into `$GROK_HOME/skills` (default
 `~/.grok/skills`). See [Grok integration](grok.md) for discovery and verification.
 
-`--codex` symlinks the shared skill into `~/.agents/skills`, with automatic
+`--codex` symlinks both skills into `~/.agents/skills`, with automatic
 selection enabled. `--project DIR` installs into `DIR/.agents/skills`; avoid
 installing the same skill at both scopes for Codex. Existing links to this
 checkout are reusable; conflicting unmanaged destinations fail without replacement.
 `--bin DIR` changes the default `~/.local/bin` wrapper destination. With no
 selectors, the installer attempts Kimi and Muse installation.
 
-`--omp` links the shared skill and a session-attribution extension under
+`--omp` links both skills and a session-attribution extension under
 omp's active agent directory (default `~/.omp/agent`), honoring its environment
 overrides and profiles; `--omp-agent-dir DIR` selects an explicit destination.
 See [omp integration](omp.md) for discovery, session lifecycle, verification,
@@ -61,7 +62,7 @@ another disk-backed directory the sandbox permits writing. `spool_dir` is its
 it in the router's environment. Bare CLI callers can set `TRUFFLEPIG_SPOOL_DIR`
 to the same path. Index databases retain their normal cache locations.
 
-`--systemd` installs, enables, and restarts the user service. Stopping/restarting
+`--systemd` pins `TRUFFLEPIG_BOARD_DB` and installs, enables, and restarts the user service. Stopping/restarting
 it includes all service-owned child daemons, so use it at an upgrade checkpoint.
 It does not change Codex sandbox permissions. `--check ROOT` searches ROOT as a singleton and reads
 verified source through the installed wrapper; it fails on missing results or
@@ -133,7 +134,7 @@ identity in each shell invocation. Kimi/Muse retain their own session variables
 and session-start markers; a marker older than twelve hours is ignored. Without
 session information, attribution falls back to a harness/directory/day identifier.
 
-Each call logs arguments, exit code, latency, byte count, coverage, truncation,
+Each call logs metadata; board/feedback text is redacted. Arguments, exit code, latency, byte count, coverage, truncation,
 and struggle signals under `$TRUFFLEPIG_AGENT_LOG_DIR`, otherwise
 `$XDG_STATE_HOME/trufflepig/agent-audit` (default `~/.local/state/trufflepig`). If
 unwritable, audit/recent-query state uses the configured runtime directory.
@@ -148,7 +149,7 @@ trufflepig-audit --session SESSION --json
 trufflepig audit SESSION
 ```
 
-`TRUFFLEPIG_BINARY` selects the executable; `TRUFFLEPIG_AGENT_DIAGNOSTICS` selects
+`TRUFFLEPIG_AGENT_MODEL`/`TRUFFLEPIG_AGENT_EFFORT` supply claims only to board/feedback. `TRUFFLEPIG_BINARY` selects the executable; `TRUFFLEPIG_AGENT_DIAGNOSTICS` selects
 `detailed` (default), `metadata`, or `off`. Explicit `--json` returns fields omitted
 by compact output. Wrapper audit still records query arguments independently of
 the daemon diagnostics setting. Audit follow-through is a heuristic, not evidence
@@ -194,7 +195,6 @@ python3 -m unittest discover -s plugins/trufflepig-agent/tests -p 'test_*.py'
 python3 evaluation/navigation_replay.py --trufflepig target/debug/trufflepig
 ```
 
-Use representative tasks with identical required source evidence to compare
-ordinary tools with Trufflepig. Count captured output tokens with `o200k_base`
+Use tasks with identical required source evidence to compare ordinary tools with Trufflepig. Count output tokens with `o200k_base`
 when available, calls, and completed evidence; do not substitute byte estimates
 for missing tokenizer measurements or infer billed usage from replay results.

@@ -33,3 +33,15 @@ def client_environment() -> dict[str, str]:
     if spool:
         env.setdefault("TRUFFLEPIG_SPOOL_DIR", spool)
     return env
+
+
+def steering_mode(harness: str) -> str:
+    """Resolve the caller's steering setting with the hook's precedence."""
+    modes = {"off", "nudge", "block", "strict"}
+    explicit = os.environ.get("TRUFFLEPIG_AGENT_STEER", "").lower()
+    if explicit in modes:
+        return explicit
+    configured = runtime_settings().get("steer")
+    value = str(configured.get(harness) or configured.get("default") or "").lower() \
+        if isinstance(configured, dict) else ""
+    return value if value in modes else "nudge" if harness == "claude" else "block"

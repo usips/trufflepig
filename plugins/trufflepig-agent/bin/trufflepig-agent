@@ -15,8 +15,9 @@ import sys
 import time
 from pathlib import Path
 
-from trufflepig_runtime import client_environment, fallback_root
+from trufflepig_runtime import client_environment, fallback_root, steering_mode
 from trufflepig_audit_response import coverage_summary, parse_lines_response
+from trufflepig_board_audit import BOARD_VERBS, FEEDBACK_REPORT_KINDS, PRIVATE_OPTIONS, audit_arguments, audit_options, error_prefix, recent_calls
 
 SLOW_SECONDS = 3.0
 RECENT_LIMIT = 8
@@ -26,6 +27,8 @@ FLAGS_WITH_VALUES = {
     "--root", "--workspace", "--member", "--cache", "-b", "--budget", "-n",
     "--limit", "--history-cache", "--target", "--side", "--ignore-revs-file",
     "--diagnostics", "--session", "--client", "--format",
+    "--body", "--plan", "--steward", "--to", "--supersedes", "--scope", "--section",
+    "--agent-model", "--agent-effort", "--recent-calls", "--board-text",
 }
 def state_dir() -> Path:
     base = os.environ.get("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state")
@@ -174,6 +177,7 @@ def main() -> int:
     options, verb, words, values = split_args(argv)
     harness = values.get("--client", harness)
     session = values.get("--session", session)
+    private_audit = verb in BOARD_VERBS or bool(PRIVATE_OPTIONS & values.keys())
     injected: list[str] = []
     if "--json" not in options and "--format" not in values:
         injected.extend(["--format", "lines"])
@@ -183,11 +187,23 @@ def main() -> int:
         injected.extend(["--session", session])
     if "--diagnostics" not in values:
         injected.extend(["--diagnostics", os.environ.get("TRUFFLEPIG_AGENT_DIAGNOSTICS", "detailed")])
+    runtime = fallback_root()
+    if verb in BOARD_VERBS:
+        for flag, key in (("--agent-model", "TRUFFLEPIG_AGENT_MODEL"),
+                          ("--agent-effort", "TRUFFLEPIG_AGENT_EFFORT")):
+            if flag not in values and os.environ.get(key):
+                injected.extend([flag, os.environ[key]])
+    feedback_report = verb == "feedback" and len(words) > 1 and words[1] in FEEDBACK_REPORT_KINDS
+    if feedback_report and "--recent-calls" not in values:
+        injected.extend(["--recent-calls", recent_calls([log_dir(), runtime / "agent-audit"], harness, session)])
     command = [TRUFFLEPIG, *injected, *argv]
+    environment = client_environment()
+    if feedback_report:
+        environment["TRUFFLEPIG_AGENT_STEER"] = steering_mode(harness)
 
     started = time.monotonic()
     try:
-        completed = subprocess.run(command, capture_output=True, check=False, env=client_environment())
+        completed = subprocess.run(command, capture_output=True, check=False, env=environment)
         exit_code = completed.returncode
         stdout, stderr = completed.stdout, completed.stderr
     except FileNotFoundError:
@@ -223,7 +239,6 @@ def main() -> int:
 
     fingerprint = hashlib.blake2s(" ".join([verb, *words[1:]]).encode(), digest_size=8).hexdigest()
     recent_path = state_dir() / "agent-recent" / harness / f"{cwd_key(cwd)}-{session}"
-    runtime = fallback_root()
     audit_fallback = runtime / "agent-audit"
     recent_fallback = runtime / "agent-recent" / recent_path.parent.name / recent_path.name
     try:
@@ -257,17 +272,18 @@ def main() -> int:
 
     record = {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "ts_ns": time.time_ns(),
         "harness": harness,
         "session": session,
         "cwd": cwd,
         "verb": verb,
-        "args": words[1:],
-        "options": {k: v for k, v in values.items() if k not in ("--session", "--client")},
+        "args": audit_arguments(verb, words[1:]),
+        "options": audit_options(verb, values),
         "exit_code": exit_code,
         "elapsed_ms": int(elapsed * 1000),
         "status": status,
-        "error": error_text[:300],
-        "stderr": stderr_head,
+        "error": error_prefix(error_text) if private_audit else error_text[:300],
+        "stderr": error_prefix(stderr_head) if private_audit else stderr_head,
         "hits": hit_count,
         "truncated": response.get("truncated"),
         "has_next": bool(response.get("next")),

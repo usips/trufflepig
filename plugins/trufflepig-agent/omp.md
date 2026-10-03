@@ -6,7 +6,7 @@
 plugins/trufflepig-agent/install.sh --omp --check "$PWD"
 ```
 
-`--omp` installs the skill into `skills/trufflepig-code-search` and the
+`--omp` installs `trufflepig-code-search` and `trufflepig-plan-board` into `skills/` and the
 attribution extension into `extensions/trufflepig-session.ts` under the active
 agent directory. Resolution follows omp's native configuration:
 
@@ -25,7 +25,7 @@ pass its directory explicitly or set the matching profile environment variable
 when installing. See [omp configuration](https://github.com/can1357/oh-my-pi/blob/main/docs/config-usage.md).
 
 omp scans both directories on startup and loads top-level `.ts`/`.js`
-extension files, including symlinks, without a manifest. Both links point into
+extension files, including symlinks, without a manifest. All links point into
 this checkout, so keep the checkout available. Start a new omp session after
 installation so the skill is discovered and the extension loads.
 
@@ -70,5 +70,5 @@ The test suite runs the extension under `bun` when it is on `PATH` and checks
 that searches from the session root, a subdirectory, and a sibling directory
 retain the session identity, including after a switch. In a fresh omp session,
 ask omp to locate an implementation and check its audit session id. To remove
-the integration, delete the two symlinks under the selected agent directory. Shared wrapper commands, runtime configuration,
+the integration, delete both skill symlinks and the extension link under the selected agent directory. Shared wrapper commands, runtime configuration,
 and any user service may still be used by other harnesses.

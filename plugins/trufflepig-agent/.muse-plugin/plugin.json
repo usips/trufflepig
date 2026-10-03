@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "name": "trufflepig-agent",
-  "displayName": "Trufflepig Code Search",
+  "displayName": "Trufflepig Agent",
   "version": "0.1.0",
-  "description": "Ranked, reranked repository search with immutable handles and auditable per-call logs.",
+  "description": "Repository search, shared plan coordination, and structured agent feedback.",
   "compat": {
     "source": "native",
     "manifestDir": ".muse-plugin"
@@ -13,6 +13,11 @@
       {
         "id": "trufflepig-code-search",
         "path": "skills/trufflepig-code-search/SKILL.md",
+        "enabledDefault": true
+      },
+      {
+        "id": "trufflepig-plan-board",
+        "path": "skills/trufflepig-plan-board/SKILL.md",
         "enabledDefault": true
       }
     ],

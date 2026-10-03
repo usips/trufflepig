@@ -154,6 +154,16 @@ Use `--json` when relationship fields or machine-readable coverage are needed.
 
 ## Recovery and boundaries
 
+Before falling back to grep, find, or cat, file feedback:
+`trufflepig-agent feedback blocked "Router unavailable" --body feedback.md`.
+Choose `blocked`, `confused`, `wrong`, or `missing`. Keep the body at most
+4 KiB: what you tried (exact commands), what happened (error or brief excerpt),
+what you did instead, and what would have helped. Add `--plan P7` when relevant.
+The wrapper attaches bounded recent call metadata, never source output; feedback
+can queue for import. If reporting itself fails, report that failure and continue
+the necessary fallback without looping. The [plan board skill](../trufflepig-plan-board/SKILL.md)
+describes plan coordination, claims, revisions, and commit trailers.
+
 For an empty complete search, refine terms or use exact/regex search once before
 falling back to a targeted ordinary tool. `warming` with a `served from` footer is
 an answer, not a failure. Use fallback immediately for an
