@@ -218,7 +218,7 @@ fn board_routes_without_workspace_or_owner_daemon() {
         })
         .unwrap();
     let reply: serde_json::Value = serde_json::from_str(&reply).unwrap();
-    assert_eq!(reply["result"]["result"], "plans");
+    assert_eq!(reply["result"]["result"], "overview");
     assert!(database.exists());
     assert!(!cache.exists(), "board routing spawned an owner daemon");
 }

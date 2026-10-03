@@ -119,6 +119,17 @@ fn encode_headers(headers: ResponseHeaders<'_>, content_length: usize) -> io::Re
     ))
 }
 
+pub(crate) fn begin_event_stream(stream: &mut TcpStream) -> io::Result<()> {
+    let header = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\nConnection: close\r\n{SECURITY_HEADERS}\r\n"
+    );
+    write_event_bytes(stream, header.as_bytes())
+}
+
+pub(crate) fn write_event_bytes(stream: &mut TcpStream, bytes: &[u8]) -> io::Result<()> {
+    write_before(stream, bytes, Instant::now() + WRITE_TIMEOUT)
+}
+
 fn write_before(stream: &mut TcpStream, mut bytes: &[u8], deadline: Instant) -> io::Result<()> {
     while !bytes.is_empty() {
         let remaining = deadline

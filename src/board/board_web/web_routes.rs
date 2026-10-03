@@ -3,6 +3,7 @@
 mod tests;
 use super::{
     WebState,
+    event_stream::StreamRequest,
     http_wire::{self, HttpError, HttpMethod, HttpRequest},
     plan_markup,
     web_ops::{self, WebRequest},
@@ -46,6 +47,16 @@ pub(super) fn handle(mut stream: TcpStream, accepted_at: Instant, state: &WebSta
         return;
     }
     match (request.method, request.path()) {
+        (HttpMethod::Get, "/api/v1/events") => {
+            let prepared = stream_request(&request)
+                .and_then(|request| state.streams.reserve().map(|permit| (request, permit)));
+            match prepared {
+                Ok((request, permit)) => {
+                    let _ = state.streams.spawn(stream, request, permit);
+                }
+                Err(error) => send_board_error(&mut stream, error),
+            }
+        }
         (HttpMethod::Post, "/api/v1/board") => {
             let result = decode::<WebRequest>(&request)
                 .and_then(|request| web_ops::execute(&state.store, request, expires));
@@ -181,6 +192,26 @@ fn proposal_diff(
         serde_json::json!({ "api": BOARD_API, "entry": proposal.entry, "before": before.id,
         "hunks": diff.hunks, "snapshot_seq": snapshot_seq }),
     )
+}
+
+fn stream_request(request: &HttpRequest) -> Result<StreamRequest, BoardError> {
+    let (mut after, mut plan) = (None, None);
+    if let Some((_, query)) = request.target.split_once('?') {
+        for pair in query.split('&') {
+            let (key, value) = pair
+                .split_once('=')
+                .ok_or_else(|| invalid("invalid event query"))?;
+            let slot = match key {
+                "after" => &mut after,
+                "plan" => &mut plan,
+                _ => return Err(invalid("unknown event query field")),
+            };
+            if slot.replace(value).is_some() {
+                return Err(invalid("duplicate event query field"));
+            }
+        }
+    }
+    StreamRequest::parse(request.header("last-event-id"), after, plan)
 }
 
 #[derive(Deserialize)]

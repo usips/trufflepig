@@ -13,7 +13,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub(crate) use response_write::{send_response, send_unavailable, unavailable_response};
+pub(crate) use response_write::{
+    begin_event_stream, send_response, send_unavailable, unavailable_response, write_event_bytes,
+};
 
 pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) const HEADER_LIMIT: usize = 16 * 1024;

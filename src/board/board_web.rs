@@ -1,4 +1,5 @@
 //! Loopback board HTTP service, with bounded workers and independent query readers.
+pub(crate) mod event_stream;
 pub(crate) mod http_wire;
 pub(crate) mod plan_markup;
 mod reader_pool;
@@ -9,15 +10,15 @@ pub(crate) mod web_guard;
 mod web_ops;
 mod web_routes;
 
-#[cfg(test)]
-use super::board_backend::BoardBackend;
 use super::{
+    board_backend::BoardBackend,
     board_config::{BoardConfig, BoardConfigCache},
     board_protocol::{BoardError, BoardErrorCode},
     local_board::LocalBoard,
 };
 use crate::daemon::{PoolSize, RequestPool};
 use anyhow::{Context, Result};
+use event_stream::{EventStreams, ReplayBatch, SequencePoller};
 use reader_pool::ReaderPool;
 use std::{
     io::Write,
@@ -105,22 +106,50 @@ impl WebStore {
 pub(crate) struct BoardWebServer {
     listener: TcpListener,
     state: Arc<WebState>,
+    _poller: SequencePoller,
 }
 
 pub(crate) struct WebState {
     store: Arc<WebStore>,
     guard: WebGuard,
+    streams: EventStreams,
 }
 
 impl BoardWebServer {
     pub(crate) fn bind(address: SocketAddr) -> Result<Self> {
         let (listener, guard) = WebGuard::bind(address)?;
         let store = Arc::new(WebStore::open(BoardConfigCache::default())?);
+        let sequence_store = Arc::clone(&store);
+        let poller = SequencePoller::start(Arc::new(move || {
+            let expires = Instant::now() + http_wire::REQUEST_TIMEOUT;
+            let config = sequence_store.config(expires)?;
+            sequence_store
+                .readers
+                .with_reader(&config, expires, |reader| reader.max_seq())
+        }))?;
+        let feed_store = Arc::clone(&store);
+        let streams = EventStreams::new(
+            Arc::new(move |after, plan, limit| {
+                let expires = Instant::now() + http_wire::REQUEST_TIMEOUT;
+                let config = feed_store.config(expires)?;
+                let (latest, events) =
+                    feed_store.readers.with_reader(&config, expires, |reader| {
+                        reader.read_event_batch(after, plan, limit)
+                    })?;
+                Ok(ReplayBatch { latest, events })
+            }),
+            poller.handle(),
+        );
         let config = store.config(Instant::now() + http_wire::REQUEST_TIMEOUT)?;
         web_endpoint::publish(&store.runtime, listener.local_addr()?, &config.db_path)?;
         Ok(Self {
             listener,
-            state: Arc::new(WebState { store, guard }),
+            state: Arc::new(WebState {
+                store,
+                guard,
+                streams,
+            }),
+            _poller: poller,
         })
     }
 

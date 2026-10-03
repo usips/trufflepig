@@ -128,7 +128,7 @@ fn eof_never_completes_a_partial_request() {
 }
 
 #[test]
-fn private_response_has_safe_framing() {
+fn private_response_and_sse_have_safe_framing() {
     let (mut server, mut client) = tcp_pair();
     send_response(&mut server, 200, "application/json", b"{}", true).unwrap();
     drop(server);
@@ -140,6 +140,19 @@ fn private_response_has_safe_framing() {
     assert!(reply.contains("frame-ancestors 'none'"));
     assert!(!reply.contains("Access-Control-Allow"));
     assert!(reply.ends_with("\r\n\r\n{}"));
+
+    let (mut server, mut client) = tcp_pair();
+    begin_event_stream(&mut server).unwrap();
+    write_event_bytes(&mut server, b": keepalive\n\n").unwrap();
+    drop(server);
+    let mut reply = String::new();
+    client.read_to_string(&mut reply).unwrap();
+    assert!(reply.contains("Content-Type: text/event-stream\r\n"));
+    assert!(reply.contains("Connection: close\r\n"));
+    assert!(reply.contains("Cache-Control: no-store\r\n"));
+    assert!(!reply.contains("Content-Length:"));
+    assert!(!reply.contains("Transfer-Encoding:"));
+    assert!(reply.ends_with(": keepalive\n\n"));
 }
 
 #[test]
