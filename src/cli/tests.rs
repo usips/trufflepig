@@ -296,3 +296,422 @@ fn json_flag_conflicts_with_lines_format() {
     );
     assert!(parse(&["--format".into(), "yaml".into(), "status".into()]).is_err());
 }
+
+#[test]
+fn board_defaults_allocate_review_space_and_preserve_explicit_budgets() {
+    for (words, budget) in [
+        (&["board"][..], 1_500),
+        (&["board", "inbox"][..], 1_500),
+        (&["board", "show", "P7"][..], 4_000),
+        (&["board", "review", "P7@12"][..], 4_000),
+        (&["feedback", "blocked", "missing index"][..], 1_500),
+    ] {
+        let words = words.iter().map(|word| (*word).into()).collect::<Vec<_>>();
+        let options = parse(&words).unwrap();
+        assert_eq!(options.budget, budget);
+        validate(&options).unwrap();
+        let mut explicit = vec!["-b700".into()];
+        explicit.extend(words);
+        assert_eq!(parse(&explicit).unwrap().budget, 700);
+    }
+}
+
+#[test]
+fn board_flags_are_rejected_on_source_search_verbs() {
+    for flag in [
+        "--body=plan.md",
+        "--to=codex",
+        "--supersedes=E480",
+        "--steward=claude",
+        "--plan=P7",
+        "--scope=parser",
+        "--section=Grammar",
+        "--open",
+        "--board-text=- item",
+        "--agent-model=gpt-6",
+        "--agent-effort=xhigh",
+        "--recent-calls=[]",
+    ] {
+        let options = parse(&["search".into(), "query".into(), flag.into()]).unwrap();
+        let error = validate(&options).unwrap_err().to_string();
+        assert!(error.starts_with("invalid_options:"), "{flag}: {error}");
+    }
+}
+
+#[test]
+fn board_grammar_accepts_every_m1_command_and_skill_example() {
+    use crate::board::board_grammar::{BoardCommand, parse as board_parse};
+    use crate::board::board_protocol::BoardOp;
+    let examples: &[(&[&str], Option<&str>, &str)] = &[
+        (&["board", "hello", "gpt-6.1-sol", "xhigh"], None, "hello"),
+        (&["board", "hello", "exact-model-id"], None, "hello"),
+        (&["board"], None, "inbox"),
+        (&["board", "inbox"], None, "inbox"),
+        (&["board", "inbox", "--wait"], None, "inbox"),
+        (&["board", "inbox", "5120", "--wait"], None, "inbox"),
+        (&["board", "5120"], None, "inbox"),
+        (&["board", "show"], None, "show"),
+        (&["board", "show", "P7"], None, "show"),
+        (&["board", "show", "P7@12"], None, "show"),
+        (&["board", "show", "P7@10.."], None, "show"),
+        (&["board", "show", "P7@12.."], None, "show"),
+        (&["board", "show", "P7@10..14"], None, "show"),
+        (
+            &[
+                "board",
+                "claim",
+                "P7.3",
+                "parser + tests; excludes review packet",
+            ],
+            None,
+            "claim_task",
+        ),
+        (
+            &[
+                "board",
+                "claim",
+                "P7",
+                "Parser",
+                "--scope",
+                "grammar + tests",
+                "--section",
+                "CLI",
+            ],
+            None,
+            "carve_claim",
+        ),
+        (
+            &[
+                "board",
+                "post",
+                "P7.3",
+                "progress",
+                "Parser accepts P7@12; tests pass",
+            ],
+            None,
+            "post",
+        ),
+        (
+            &[
+                "board",
+                "post",
+                "P7",
+                "question",
+                "should ingest include tags?",
+                "--to",
+                "josh",
+            ],
+            None,
+            "post",
+        ),
+        (
+            &[
+                "board",
+                "post",
+                "P7",
+                "answer",
+                "E482: yes",
+                "--supersedes",
+                "E482",
+            ],
+            None,
+            "post",
+        ),
+        (
+            &[
+                "board",
+                "task",
+                "P7",
+                "Review packet trimming",
+                "--to",
+                "codex",
+            ],
+            None,
+            "task_create",
+        ),
+        (&["board", "task", "P7.3", "todo"], None, "task_move"),
+        (
+            &["board", "task", "P7.3", "doing", "--to", "claude"],
+            None,
+            "task_move",
+        ),
+        (&["board", "task", "P7.3", "review"], None, "task_move"),
+        (&["board", "task", "P7.3", "done"], None, "task_move"),
+        (&["board", "task", "P7.3", "blocked"], None, "task_move"),
+        (
+            &["board", "post", "P7", "question", "...", "--to", "codex"],
+            None,
+            "post",
+        ),
+        (
+            &["board", "post", "P7", "review", "review evidence"],
+            None,
+            "post",
+        ),
+        (
+            &["board", "post", "P7", "divergence", "crossed lane"],
+            None,
+            "post",
+        ),
+        (
+            &["board", "post", "P7", "decision", "accepted scope"],
+            None,
+            "post",
+        ),
+        (
+            &[
+                "board",
+                "propose",
+                "P7@12",
+                "--body",
+                "plan.md",
+                "Clarify parser scope",
+            ],
+            Some("# Updated plan\n- parser"),
+            "propose",
+        ),
+        (&["board", "review", "P7@12", "codex"], None, "review"),
+        (&["board", "accept", "E485"], None, "accept"),
+        (
+            &["board", "accept", "E485", "accepted after review"],
+            None,
+            "accept",
+        ),
+        (
+            &["board", "reject", "E485", "rebase the scope"],
+            None,
+            "reject",
+        ),
+        (
+            &["board", "edit", "P7@12", "--body", "-", "direct correction"],
+            Some("# Revised plan"),
+            "edit",
+        ),
+        (
+            &[
+                "board",
+                "new",
+                "Parser plan",
+                "--steward",
+                "claude",
+                "--body",
+                "plan.md",
+            ],
+            Some("# Grammar"),
+            "new",
+        ),
+        (&["board", "new", "Empty plan"], None, "new"),
+        (&["board", "ingest"], None, "ingest"),
+        (
+            &[
+                "feedback",
+                "blocked",
+                "Router unavailable",
+                "--body",
+                "feedback.md",
+            ],
+            Some("what I tried\nwhat happened\nworkaround\nwhat would help"),
+            "feedback",
+        ),
+        (
+            &[
+                "feedback",
+                "blocked",
+                "router failed",
+                "--body",
+                "report.md",
+                "--plan",
+                "P7",
+            ],
+            Some("what I tried\nwhat happened\nworkaround\nwhat would help"),
+            "feedback",
+        ),
+        (
+            &["feedback", "confused", "could not choose a scope"],
+            None,
+            "feedback",
+        ),
+        (
+            &["feedback", "wrong", "missing current bytes"],
+            None,
+            "feedback",
+        ),
+        (
+            &["feedback", "missing", "tags are unavailable"],
+            None,
+            "feedback",
+        ),
+        (&["feedback", "ls"], None, "feedback_list"),
+        (&["feedback", "ls", "--open"], None, "feedback_list"),
+        (
+            &[
+                "feedback",
+                "close",
+                "E512",
+                "fixed",
+                "E513 and full commit oid",
+            ],
+            None,
+            "feedback_close",
+        ),
+        (
+            &["feedback", "close", "E512", "wontfix"],
+            None,
+            "feedback_close",
+        ),
+        (
+            &["feedback", "close", "E512", "duplicate", "E500"],
+            None,
+            "feedback_close",
+        ),
+    ];
+    for (words, body, expected) in examples {
+        let words = words.iter().map(|word| (*word).into()).collect::<Vec<_>>();
+        let options = parse(&words).unwrap();
+        let command =
+            board_parse(&options, *body).unwrap_or_else(|error| panic!("{words:?}: {error}"));
+        let actual = match command {
+            BoardCommand::Ingest => "ingest".into(),
+            BoardCommand::Op(BoardOp::Feedback { import_key, .. }) => {
+                uuid::Uuid::parse_str(import_key.as_deref().unwrap()).unwrap();
+                "feedback".into()
+            }
+            BoardCommand::Op(op) => serde_json::to_value(op).unwrap()["op"]
+                .as_str()
+                .unwrap()
+                .to_owned(),
+        };
+        assert_eq!(actual, *expected, "{words:?}");
+    }
+}
+
+#[test]
+fn board_grammar_rejects_cross_verb_flags_and_invalid_domain_references() {
+    use crate::board::board_grammar::parse as board_parse;
+    for words in [
+        &["board", "show", "P7", "--to", "codex"][..],
+        &["board", "claim", "P7.3", "scope", "--scope", "other scope"][..],
+        &["board", "claim", "P7", "title"][..],
+        &["board", "task", "P7.3", "doing", "--section", "Grammar"][..],
+        &["board", "post", "P7@12", "note", "text"][..],
+        &["board", "post", "P7", "claim", "text"][..],
+        &["board", "show", "P7.3"][..],
+        &["board", "review", "P7"][..],
+        &["board", "propose", "P7@12", "summary"][..],
+        &["board", "show", "--wait"][..],
+        &["board", "hello", "model", "effort", "extra"][..],
+        &["board", "inbox", "18446744073709551615"][..],
+        &["board", "inbox", "+1"][..],
+        &["board", "inbox", "00"][..],
+        &["feedback", "close", "E512", "open"][..],
+        &["feedback", "close", "E512", "triaged"][..],
+        &["feedback", "ls", "--plan", "P7"][..],
+        &["feedback", "wrong", "summary", "--open"][..],
+    ] {
+        let options = parse(&words.iter().map(|word| (*word).into()).collect::<Vec<_>>()).unwrap();
+        assert!(board_parse(&options, None).is_err(), "accepted {words:?}");
+    }
+}
+
+#[test]
+fn board_transport_preserves_markdown_body_text_flags_and_feedback_key() {
+    use crate::board::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
+    use crate::board::board_protocol::BoardOp;
+    let args = [
+        "board",
+        "propose",
+        "P7@12",
+        "--body",
+        "plan.md",
+        "--",
+        "- repair parser",
+    ]
+    .map(str::to_owned);
+    let options = parse(&args).unwrap();
+    let body = "- one\n- two\n\"quoted\" \\ body";
+    let original = board_parse(&options, Some(body)).unwrap();
+    let forwarded = normalize_args(&args, &options, Some(body)).unwrap();
+    assert!(
+        !forwarded
+            .iter()
+            .any(|arg| arg == "--" || arg.starts_with("--body"))
+    );
+    assert!(forwarded.iter().any(|arg| arg.starts_with("--board-text=")));
+    let routed = parse(&forwarded).unwrap();
+    assert!(routed.root.is_absolute());
+    assert_eq!(board_parse(&routed, None).unwrap(), original);
+
+    let args = [
+        "feedback",
+        "wrong",
+        "- missing bytes",
+        "--plan=P7",
+        "--agent-model=gpt-6",
+        "--agent-effort=xhigh",
+    ]
+    .map(str::to_owned);
+    // Hidden text supports a leading hyphen without a positional argument.
+    let mut args = args.to_vec();
+    args[2] = "--board-text=- missing bytes".into();
+    let options = parse(&args).unwrap();
+    let forwarded = normalize_args(&args, &options, None).unwrap();
+    let routed = parse(&forwarded).unwrap();
+    assert_eq!(routed.board.agent_model.as_deref(), Some("gpt-6"));
+    assert_eq!(routed.board.agent_effort.as_deref(), Some("xhigh"));
+    let first = board_parse(&routed, None).unwrap();
+    let second = board_parse(&routed, None).unwrap();
+    assert_eq!(first, second);
+    assert!(matches!(
+        first,
+        BoardCommand::Op(BoardOp::Feedback {
+            import_key: Some(_),
+            ..
+        })
+    ));
+}
+
+#[test]
+fn board_transport_rejects_ambiguous_text_and_oversized_feedback_audit() {
+    use crate::board::board_grammar::parse as board_parse;
+    let options = parse(&[
+        "board".into(),
+        "post".into(),
+        "P7".into(),
+        "note".into(),
+        "text".into(),
+        "--board-text=other".into(),
+    ])
+    .unwrap();
+    assert!(
+        board_parse(&options, None)
+            .unwrap_err()
+            .to_string()
+            .starts_with("invalid_options:")
+    );
+    let options = parse(&[
+        "feedback".into(),
+        "wrong".into(),
+        "summary".into(),
+        format!("--recent-calls={}", "x".repeat(2_049)),
+    ])
+    .unwrap();
+    assert!(
+        validate(&options)
+            .unwrap_err()
+            .to_string()
+            .contains("2048 bytes")
+    );
+    let options = parse(&[
+        "feedback".into(),
+        "wrong".into(),
+        "summary".into(),
+        "--recent-calls=not-json".into(),
+    ])
+    .unwrap();
+    assert!(
+        board_parse(&options, None)
+            .unwrap_err()
+            .to_string()
+            .starts_with("invalid_options:")
+    );
+}

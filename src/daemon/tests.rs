@@ -279,3 +279,13 @@ fn spool_client_gives_up_when_the_claiming_router_dies() {
     assert!(started.elapsed() < Duration::from_secs(5));
     assert!(!dir.join(format!("{}.claimed", context.request_id)).exists());
 }
+#[test]
+fn encoded_request_limit_counts_json_escaping() {
+    let context = crate::diagnostics::RequestContext::new(None, None);
+    let args = vec!["board".to_owned(), "\"".repeat(32 * 1024)];
+    let bytes = super::request_encoded_size(&args, &context).unwrap();
+    assert!(args.iter().map(String::len).sum::<usize>() < super::MAX_DAEMON_REQUEST_BYTES);
+    assert!(bytes > super::MAX_DAEMON_REQUEST_BYTES);
+    let request = super::arguments(&args, &context);
+    assert_eq!(bytes, serde_json::to_vec(&request).unwrap().len());
+}

@@ -55,6 +55,8 @@ pub enum Operation {
     SessionEnd,
     Audit,
     ForgetLogs,
+    Board,
+    Feedback,
     Help,
     Version,
     Usage,

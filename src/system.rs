@@ -98,6 +98,7 @@ pub fn serve() -> Result<()> {
     let router = SystemRouter {
         cache_base: crate::cli::cache_base().ok(),
         sweeps: Mutex::new(SweepClock::default()),
+        board: crate::board::BoardHost::default(),
     };
     daemon::serve_router(
         &dir().context("system_unavailable: no runtime dir")?,
@@ -110,6 +111,7 @@ pub fn serve() -> Result<()> {
 struct SystemRouter {
     cache_base: Option<PathBuf>,
     sweeps: Mutex<SweepClock>,
+    board: crate::board::BoardHost,
 }
 
 #[derive(Default)]
@@ -120,10 +122,11 @@ struct SweepClock {
 
 impl DaemonHandler for SystemRouter {
     fn request(&self, request: AcceptedRequest) -> Result<String> {
-        route(request.args, request.context, request.deadline)
+        route(&self.board, request.args, request.context, request.deadline)
     }
 
     fn idle(&self) {
+        self.board.idle();
         let (Some(base), Ok(mut clock)) = (&self.cache_base, self.sweeps.lock()) else {
             return;
         };
@@ -144,13 +147,21 @@ impl DaemonHandler for SystemRouter {
     }
 }
 
-fn route(args: Vec<String>, context: RequestContext, deadline: QueryDeadline) -> Result<String> {
+fn route(
+    board: &crate::board::BoardHost,
+    args: Vec<String>,
+    context: RequestContext,
+    deadline: QueryDeadline,
+) -> Result<String> {
     // Preserve time spent queued at this router, and cap every forwarded wait.
     let forwarding = deadline.capped(daemon::PROXY_REPLY_WAIT);
     let options = crate::cli::parse(&args)?;
     let verb = options.words.first().map(String::as_str);
     if verb == Some("system") {
         return Ok("{\"status\":\"ok\"}".to_owned());
+    }
+    if matches!(verb, Some("board" | "feedback")) {
+        return board.run(&options, &context, deadline);
     }
     if let Some(config) = crate::workspace::resolve(&options)? {
         let cache = crate::workspace::cache_path(&config, options.cache.as_deref())?;
@@ -214,12 +225,59 @@ mod deadline_tests {
     use super::*;
 
     #[test]
+    fn board_routes_without_workspace_or_owner_daemon() {
+        let scratch = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/board-router-tests");
+        fs::create_dir_all(&scratch).unwrap();
+        let directory = tempfile::Builder::new()
+            .prefix("router-")
+            .tempdir_in(scratch)
+            .unwrap();
+        let cache = directory.path().join("owner-cache");
+        let database = directory.path().join("data/board.sqlite3");
+        let router = SystemRouter {
+            cache_base: None,
+            sweeps: Mutex::new(SweepClock::default()),
+            board: crate::board::BoardHost::with_config(crate::board::BoardConfig::for_database(
+                &database,
+            )),
+        };
+        let args: Vec<String> = [
+            "--root",
+            directory.path().join("missing-root").to_str().unwrap(),
+            "--workspace",
+            directory
+                .path()
+                .join("missing-workspace.toml")
+                .to_str()
+                .unwrap(),
+            "--cache",
+            cache.to_str().unwrap(),
+            "board",
+            "show",
+        ]
+        .map(str::to_owned)
+        .into();
+        let reply = router
+            .request(AcceptedRequest {
+                args,
+                context: RequestContext::new(None, None),
+                deadline: QueryDeadline::start(),
+            })
+            .unwrap();
+        let reply: serde_json::Value = serde_json::from_str(&reply).unwrap();
+        assert_eq!(reply["result"]["result"], "plans");
+        assert!(database.exists());
+        assert!(!cache.exists(), "board routing spawned an owner daemon");
+    }
+
+    #[test]
     fn router_does_not_reset_an_expired_accepted_deadline() {
         let root = tempfile::tempdir().unwrap();
         let cache = tempfile::tempdir().unwrap().path().join("cache");
         let router = SystemRouter {
             cache_base: None,
             sweeps: Mutex::new(SweepClock::default()),
+            board: crate::board::BoardHost::default(),
         };
         let args: Vec<String> = [
             "--no-workspace",

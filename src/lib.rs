@@ -1,4 +1,5 @@
 pub(crate) mod background_process;
+pub mod board;
 pub mod cli;
 pub mod daemon;
 pub mod diagnostics;

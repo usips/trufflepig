@@ -78,6 +78,9 @@ pub fn run_with_context(
     if verb == "system" {
         return system_command(&options, context);
     }
+    if matches!(verb, "board" | "feedback") {
+        return crate::board::run_client(args, &options, context);
+    }
     if system_routes(&options, verb)
         && let Ok(root) = options.root.canonicalize()
         && let Ok(config) = crate::workspace::resolve(&options)

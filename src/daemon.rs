@@ -30,6 +30,17 @@ pub const CLIENT_REPLY_WAIT: Duration = Duration::from_secs(30);
 /// [`CLIENT_REPLY_WAIT`] so the client receives the forwarding failure.
 pub const PROXY_REPLY_WAIT: Duration = Duration::from_secs(28);
 
+/// Maximum encoded JSON request size, excluding its length prefix.
+pub(crate) const MAX_DAEMON_REQUEST_BYTES: usize = protocol::REQUEST_LIMIT;
+
+/// Measures the exact wire request before client-side routing or fallback.
+pub(crate) fn request_encoded_size(
+    args: &[String],
+    context: &crate::diagnostics::RequestContext,
+) -> Result<usize> {
+    Ok(serde_json::to_vec(&arguments(args, context))?.len())
+}
+
 /// Returns `None` only when no daemon is listening; protocol errors stay errors.
 pub fn request(
     cache: &Path,

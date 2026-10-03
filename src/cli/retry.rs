@@ -1,8 +1,6 @@
-//! One client retry for read verbs whose failure is transient contention, not an
-//! answer: a busy daemon or SQLite lock, a connection the daemon dropped, an
-//! index still warming, or a socket timeout that struck early. A timeout after
-//! a long wait is final, so a retry never doubles the worst case. The retry
-//! carries a fresh request id.
+//! One retry for transient failures, restricted by the operation’s write safety.
+//! Board writes retry only explicit pre-dispatch contention; a lost reply may
+//! already represent a committed transaction. Each retry has a fresh request id.
 use super::Arguments;
 use crate::diagnostics::RequestContext;
 use anyhow::Result;
@@ -17,6 +15,32 @@ const CONTENTION_RETRY_DELAY: Duration = Duration::from_millis(250);
 /// quicker transport failures are retried.
 const FAST_TRANSPORT_FAILURE: Duration = Duration::from_secs(5);
 
+/// Transport failures are replayable only when the operation cannot mutate state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RetryScope {
+    Read,
+    ContentionOnly,
+    Never,
+}
+
+impl RetryScope {
+    pub(super) fn for_options(options: &Arguments) -> Self {
+        let verb = options.words.first().map_or("status", String::as_str);
+        match verb {
+            "board" => match options.words.get(1).map(String::as_str) {
+                Some("show" | "review" | "ingest") => Self::Read,
+                Some("inbox") if options.words.get(2).is_some() => Self::Read,
+                Some(word) if word.parse::<u64>().is_ok() => Self::Read,
+                _ => Self::ContentionOnly,
+            },
+            "feedback" if options.words.get(1).is_some_and(|word| word == "ls") => Self::Read,
+            "feedback" => Self::ContentionOnly,
+            "search" | "refs" | "map" | "show" | "more" | "ctx" | "status" => Self::Read,
+            _ => Self::Never,
+        }
+    }
+}
+
 /// Whether a failed command runs again, and after how long.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum RetryPolicy {
@@ -25,13 +49,17 @@ pub(super) enum RetryPolicy {
 }
 
 impl RetryPolicy {
-    /// Read verbs retry transient failures; everything else fails as is.
+    /// Restricts transient retries to failures safe for this operation.
     /// `elapsed` is how long the failed attempt took.
-    pub(super) fn classify(verb: &str, error: &anyhow::Error, elapsed: Duration) -> Self {
-        if !matches!(
-            verb,
-            "search" | "refs" | "map" | "show" | "more" | "ctx" | "status"
-        ) {
+    pub(super) fn classify(scope: RetryScope, error: &anyhow::Error, elapsed: Duration) -> Self {
+        if scope == RetryScope::Never {
+            return Self::Fail;
+        }
+        let message = format!("{error:#}");
+        if message.contains(crate::daemon::DAEMON_BUSY) || message.contains("database is locked") {
+            return Self::Retry(CONTENTION_RETRY_DELAY);
+        }
+        if scope == RetryScope::ContentionOnly {
             return Self::Fail;
         }
         let io_kind = |kinds: &[ErrorKind]| {
@@ -43,7 +71,6 @@ impl RetryPolicy {
         };
         // Relayed daemon failures arrive as text; `timed_out:` (the query
         // deadline) is an answer and never matches these.
-        let message = format!("{error:#}");
         let dropped = io_kind(&[ErrorKind::BrokenPipe, ErrorKind::ConnectionReset])
             || message.contains("(os error 32)")
             || message.contains("(os error 104)");
@@ -52,10 +79,7 @@ impl RetryPolicy {
             || message.contains("(os error 110)");
         if message.contains("index_warming") {
             Self::Retry(WARMING_RETRY_DELAY)
-        } else if message.contains(crate::daemon::DAEMON_BUSY)
-            || message.contains("database is locked")
-            || dropped
-        {
+        } else if dropped {
             Self::Retry(CONTENTION_RETRY_DELAY)
         } else if timed_out && elapsed < FAST_TRANSPORT_FAILURE {
             Self::Retry(Duration::ZERO)
@@ -71,10 +95,20 @@ pub(super) fn run_with_retry(
     options: &Arguments,
     context: &RequestContext,
 ) -> Result<String> {
-    let verb = options.words.first().map_or("status", String::as_str);
+    // Capture client-owned body/stdin once. Replaying normalized arguments keeps
+    // content and feedback import identity unchanged after explicit contention.
+    let prepared;
+    let args = if options.is_board() {
+        let parsed = super::parse(args)?;
+        prepared = crate::board::prepare_client(args, &parsed)?;
+        prepared.as_slice()
+    } else {
+        args
+    };
+    let scope = RetryScope::for_options(options);
     let started = Instant::now();
     match super::run_with_context(args, context) {
-        Err(error) => match RetryPolicy::classify(verb, &error, started.elapsed()) {
+        Err(error) => match RetryPolicy::classify(scope, &error, started.elapsed()) {
             RetryPolicy::Retry(delay) => {
                 std::thread::sleep(delay);
                 let fresh = RequestContext::new(context.session.clone(), context.client.clone());
@@ -128,15 +162,15 @@ mod tests {
         for (error, delay) in &retried {
             for verb in ["search", "refs", "map", "show", "more", "ctx", "status"] {
                 assert_eq!(
-                    RetryPolicy::classify(verb, error, QUICK),
+                    RetryPolicy::classify(RetryScope::Read, error, QUICK),
                     RetryPolicy::Retry(*delay),
                     "{verb}: {error:#}"
                 );
             }
         }
-        for verb in ["index", "session", "forget-logs", "stop", "semantic"] {
+        for _ in ["index", "session", "forget-logs", "stop", "semantic"] {
             assert_eq!(
-                RetryPolicy::classify(verb, &retried[0].0, QUICK),
+                RetryPolicy::classify(RetryScope::Never, &retried[0].0, QUICK),
                 RetryPolicy::Fail
             );
         }
@@ -147,9 +181,66 @@ mod tests {
             "invalid_command: unknown command next",
         ] {
             assert_eq!(
-                RetryPolicy::classify("search", &anyhow::anyhow!("daemon: {answer}"), QUICK),
+                RetryPolicy::classify(
+                    RetryScope::Read,
+                    &anyhow::anyhow!("daemon: {answer}"),
+                    QUICK
+                ),
                 RetryPolicy::Fail,
                 "{answer}"
+            );
+        }
+    }
+
+    #[test]
+    fn board_writes_do_not_replay_ambiguous_transport_failures() {
+        for error in [
+            io(ErrorKind::BrokenPipe),
+            io(ErrorKind::TimedOut),
+            anyhow::anyhow!("index_warming: unavailable"),
+        ] {
+            assert_eq!(
+                RetryPolicy::classify(RetryScope::ContentionOnly, &error, QUICK),
+                RetryPolicy::Fail
+            );
+        }
+        for message in [crate::daemon::DAEMON_BUSY, "database is locked"] {
+            assert_eq!(
+                RetryPolicy::classify(RetryScope::ContentionOnly, &anyhow::anyhow!(message), QUICK),
+                RetryPolicy::Retry(CONTENTION_RETRY_DELAY)
+            );
+        }
+    }
+
+    #[test]
+    fn board_scope_preserves_cursor_and_write_safety() {
+        let options = |words: &[&str]| {
+            super::super::parse(
+                &words
+                    .iter()
+                    .map(|word| (*word).to_owned())
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap()
+        };
+        for words in [
+            vec!["board", "show", "P1"],
+            vec!["board", "review", "P1@1"],
+            vec!["board", "ingest"],
+            vec!["board", "inbox", "8"],
+            vec!["feedback", "ls"],
+        ] {
+            assert_eq!(RetryScope::for_options(&options(&words)), RetryScope::Read);
+        }
+        for words in [
+            vec!["board"],
+            vec!["board", "inbox"],
+            vec!["board", "post", "P1", "note", "body"],
+            vec!["feedback", "blocked", "summary"],
+        ] {
+            assert_eq!(
+                RetryScope::for_options(&options(&words)),
+                RetryScope::ContentionOnly
             );
         }
     }
@@ -162,14 +253,14 @@ mod tests {
             anyhow::anyhow!("daemon: Resource temporarily unavailable (os error 11)"),
         ] {
             assert_eq!(
-                RetryPolicy::classify("refs", &error, waited),
+                RetryPolicy::classify(RetryScope::Read, &error, waited),
                 RetryPolicy::Fail
             );
         }
         // An explicit busy reply is retried however long it took to arrive.
         let busy = anyhow::anyhow!("daemon: {}", crate::daemon::DAEMON_BUSY);
         assert_eq!(
-            RetryPolicy::classify("refs", &busy, waited),
+            RetryPolicy::classify(RetryScope::Read, &busy, waited),
             RetryPolicy::Retry(CONTENTION_RETRY_DELAY)
         );
     }

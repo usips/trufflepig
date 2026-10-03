@@ -24,7 +24,12 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
     let fallback = fallback_options(args);
     let options = parsed.as_ref().unwrap_or(&fallback);
     let context = request_context(options);
-    let diagnostic_location = crate::workspace::diagnostic_location(options);
+    let skip_recording = matches!(
+        operation(options),
+        Operation::ForgetLogs | Operation::Board | Operation::Feedback
+    );
+    let diagnostic_location =
+        (!skip_recording).then(|| crate::workspace::diagnostic_location(options));
     let mut operation = operation(options);
     let (response, outcome, mut exit_code) = match &parsed {
         Ok(options) if options.words.len() == 1 && options.words[0] == "help" => {
@@ -109,9 +114,7 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
         Err(_) => exit_code = 2,
     }
     // Logging cannot replace or retry the response, including partial delivery.
-    if !matches!(operation, Operation::ForgetLogs)
-        && let Ok((root, cache, workspace, member)) = diagnostic_location
-    {
+    if !skip_recording && let Some(Ok((root, cache, workspace, member))) = diagnostic_location {
         event.workspace = workspace.clone();
         event.member = member;
         let saved = if workspace.is_some() {
@@ -140,7 +143,7 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
             event.raw_query = Some(options.words[1..].join(" "));
         }
         // Deletion itself must leave no fresh journal or revived session behind.
-        if !matches!(operation, Operation::ForgetLogs) {
+        if !skip_recording {
             let _ =
                 crate::diagnostics::best_effort_record(&cache, diagnostics_mode(options), event);
         }
@@ -182,6 +185,8 @@ pub(super) fn operation(options: &Arguments) -> Operation {
         "session" => Operation::SessionEnd,
         "audit" => Operation::Audit,
         "forget-logs" => Operation::ForgetLogs,
+        "board" => Operation::Board,
+        "feedback" => Operation::Feedback,
         "search" => Operation::Search,
         "serve" | "history-serve" | "stop" | "ws" | "workspace-serve" | "system"
         | "system-serve" | "semantic-check" => Operation::Other,

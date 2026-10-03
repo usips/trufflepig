@@ -1,5 +1,5 @@
 //! Parsed client options and explicit daemon argument forwarding.
-use crate::{output::OutputFormat, results};
+use crate::{board::board_grammar::BoardOptions, output::OutputFormat, results};
 use anyhow::{Result, bail};
 use clap::Parser;
 use std::path::{Path, PathBuf};
@@ -32,7 +32,19 @@ Navigation:
 
 Pages:
   -n N             hits per page (default 20)
-  -b N             output token budget (default 600; show 1500)";
+  -b N             output token budget (default 600; show 1500)
+\n\
+Plans:
+  board hello MODEL [EFFORT]  identify this session
+  board inbox [SEQ] [--wait]  plan events and questions
+  board show [P7|P7@12|P7@10..14]  plans, revisions, and changes
+  board claim P7.3 SCOPE...  claim a task before working
+  board post P7 KIND TEXT...  post progress or ask a question
+  board task P7.3 COLUMN    move a task and release its claim
+  board propose P7@12 --body FILE SUMMARY...  propose a plan revision
+  board review P7@12 [AGENT]  assemble review evidence
+  feedback KIND SUMMARY... [--body FILE]  report a workaround
+  board show/review default to 4000 tokens; other board/feedback to 1500";
 
 const KNOWN_COMMANDS: &[&str] = &[
     "search",
@@ -59,6 +71,8 @@ const KNOWN_COMMANDS: &[&str] = &[
     "semantic-worker-serve",
     "ws",
     "system",
+    "board",
+    "feedback",
     "serve",
     "history-serve",
     "workspace-serve",
@@ -158,6 +172,9 @@ pub struct Arguments {
     /// Label for the diagnostic client making this request.
     #[arg(long)]
     pub client: Option<String>,
+    /// Plan board and feedback command options.
+    #[command(flatten)]
+    pub board: BoardOptions,
     /// Command and arguments; omit them for `status`, or use `search TEXT...` for a query.
     #[arg(num_args=0..)]
     pub words: Vec<String>,
@@ -182,8 +199,20 @@ pub fn parse(args: &[String]) -> Result<Arguments> {
     options.explicit_budget = args.iter().any(|arg| {
         arg == "--budget" || arg.starts_with("--budget=") || arg == "-b" || arg.starts_with("-b")
     });
-    if !options.explicit_budget && options.is_show() {
-        options.budget = SHOW_BUDGET;
+    if !options.explicit_budget {
+        if options.is_board() {
+            options.budget = if options.words.first().map(String::as_str) == Some("board")
+                && matches!(
+                    options.words.get(1).map(String::as_str),
+                    Some("show" | "review")
+                ) {
+                4_000
+            } else {
+                1_500
+            };
+        } else if options.is_show() {
+            options.budget = SHOW_BUDGET;
+        }
     }
     Ok(options)
 }
@@ -196,9 +225,20 @@ impl Arguments {
     pub fn is_show(&self) -> bool {
         self.words.first().map(String::as_str) == Some("show")
     }
+
+    /// Whether the request uses the plan board edge.
+    pub fn is_board(&self) -> bool {
+        matches!(
+            self.words.first().map(String::as_str),
+            Some("board" | "feedback")
+        )
+    }
 }
 
 pub(super) fn validate(options: &Arguments) -> Result<()> {
+    options
+        .board
+        .validate_for_verb(options.words.first().map(String::as_str))?;
     if let Some(command) = options.words.first().map(String::as_str)
         && !KNOWN_COMMANDS.contains(&command)
     {
@@ -305,7 +345,7 @@ pub(crate) fn normalized_args(options: &Arguments, root: &Path) -> Vec<String> {
         }
     }
     for (flag, enabled) in [
-        ("--wait", false),
+        ("--wait", options.is_board() && options.wait),
         ("--uncommitted", options.uncommitted),
         ("--raw", options.raw),
         ("--no-daemon", options.no_daemon),
@@ -323,6 +363,7 @@ pub(crate) fn normalized_args(options: &Arguments, root: &Path) -> Vec<String> {
     if let Some(member) = &options.member {
         args.extend(["--member".into(), member.clone()]);
     }
+    options.board.forward(&mut args);
     args.extend(options.words.iter().cloned());
     args
 }
