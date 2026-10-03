@@ -233,7 +233,8 @@ fn inbox_refreshes_held_leases_without_a_housekeeping_event() {
         "codex",
         BoardOp::ClaimTask {
             task: TaskId::new(plan, 1).unwrap(),
-            scope: EntryText::new("parser and tests").unwrap(),
+            scope: Some(EntryText::new("parser and tests").unwrap()),
+            resume: false,
         },
     );
     board

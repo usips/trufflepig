@@ -113,6 +113,47 @@ fn review_uses_claim_intervals_and_coauthors_to_flag_crossed_lanes() {
 }
 
 #[test]
+fn review_uses_claim_model_vendor_for_muse_omp_and_cli() {
+    for (harness, model, vendor) in [
+        ("muse", Some("claude-opus"), "claude"),
+        ("omp", Some("gpt-6.1"), "codex"),
+        ("cli", None, "human"),
+    ] {
+        let mut source = evidence();
+        source.claims.push(ClaimRecord {
+            task: TaskId::new(source.plan.id, 1).unwrap(),
+            actor: actor(harness),
+            entry: EntryId::new(10).unwrap(),
+            scope: EntryText::new("same vendor").unwrap(),
+            claimed_at: 110,
+            last_active: 120,
+            ended_at: None,
+            end_reason: None,
+            stale: false,
+            model: model.map(str::to_owned),
+            effort: None,
+        });
+        let mut same = commit(vendor, 120);
+        if vendor == "human" {
+            same.coauthors.clear();
+        }
+        source.commits.push(same);
+        let packet = assemble_review(&source, None, &[], Vec::new(), Vec::new());
+        assert!(
+            packet.crossed.is_empty(),
+            "same vendor claim crossed for {harness}"
+        );
+        source.commits = vec![commit("grok", 120)];
+        let packet = assemble_review(&source, None, &[], Vec::new(), Vec::new());
+        assert_eq!(
+            packet.crossed.len(),
+            1,
+            "different vendor claim not crossed for {harness}"
+        );
+    }
+}
+
+#[test]
 fn ssot_diff_retains_original_newline_and_crlf_bytes() {
     let diff = build_ssot_diff(&revision(1, "same\r\nold\r\n"), &revision(2, "same\r\nnew"));
     assert_eq!(diff.hunks.len(), 1);

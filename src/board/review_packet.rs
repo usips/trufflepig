@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests;
 
-use super::board_actor::HarnessLabel;
+use super::board_actor::{HarnessLabel, claim_vendor};
 use super::board_ids::PlanRevision;
 use super::board_protocol::{
     ClaimRecord, EntryRecord, FeedbackRecord, LinkedCommit, PlanRecord, ProposalRecord,
@@ -117,7 +117,10 @@ pub fn assemble_review(
                     || claim.task.plan != link.plan_id
                     || commit.committed_at < claim.claimed_at
                     || claim.ended_at.is_some_and(|end| commit.committed_at >= end)
-                    || attributed_to(commit, &claim.actor.harness)
+                    || attributed_to(
+                        commit,
+                        &claim_vendor(&claim.actor.harness, claim.model.as_deref()),
+                    )
                 {
                     continue;
                 }

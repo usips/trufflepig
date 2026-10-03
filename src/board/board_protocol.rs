@@ -202,7 +202,8 @@ pub enum BoardOp {
     },
     ClaimTask {
         task: TaskId,
-        scope: EntryText,
+        scope: Option<EntryText>,
+        resume: bool,
     },
     CarveClaim {
         plan: PlanId,
@@ -307,6 +308,13 @@ impl BoardOp {
             _ => {}
         }
         match self {
+            Self::ClaimTask {
+                scope: None,
+                resume: false,
+                ..
+            } => {
+                bail!("invalid_options: claiming a task requires scope or resume");
+            }
             Self::Hello { model, effort } => {
                 validate_claim(model, "model")?;
                 if let Some(effort) = effort {
@@ -566,6 +574,28 @@ pub enum ClaimEndReason {
     Released,
     TakenOver,
     Reassigned,
+    Resumed,
+}
+
+impl ClaimEndReason {
+    pub fn parse(value: &str) -> Result<Self> {
+        match value {
+            "released" => Ok(Self::Released),
+            "taken_over" => Ok(Self::TakenOver),
+            "reassigned" => Ok(Self::Reassigned),
+            "resumed" => Ok(Self::Resumed),
+            _ => bail!("invalid_state: unknown claim end reason '{value}'"),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Released => "released",
+            Self::TakenOver => "taken_over",
+            Self::Reassigned => "reassigned",
+            Self::Resumed => "resumed",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -836,6 +866,17 @@ mod tests {
     }
 
     #[test]
+    fn claim_scope_is_required_unless_resuming() {
+        for resume in [false, true] {
+            let op: BoardOp = serde_json::from_value(serde_json::json!({
+                "op": "claim_task", "task": "P1.1", "scope": null, "resume": resume
+            }))
+            .unwrap();
+            assert_eq!(op.validate().is_ok(), resume);
+        }
+    }
+
+    #[test]
     fn public_address_records_are_revalidated_at_the_request_boundary() {
         let plan = PlanId::new(1).unwrap();
         let bad_revision = BoardOp::Review {
@@ -847,7 +888,8 @@ mod tests {
                 plan,
                 ordinal: u64::MAX,
             },
-            scope: EntryText::new("owned scope").unwrap(),
+            scope: Some(EntryText::new("owned scope").unwrap()),
+            resume: false,
         };
         assert!(bad_revision.validate().is_err());
         assert!(bad_task.validate().is_err());

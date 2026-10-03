@@ -715,3 +715,30 @@ fn board_transport_rejects_ambiguous_text_and_oversized_feedback_audit() {
             .starts_with("invalid_options:")
     );
 }
+
+#[test]
+fn claim_resume_without_scope_survives_router_normalization() {
+    use crate::board::board_grammar::{normalize_args, parse as board_parse};
+    let args = ["board", "claim", "P7.3", "--resume"].map(str::to_owned);
+    let options = parse(&args).unwrap();
+    let command = board_parse(&options, None).unwrap();
+    let forwarded = normalize_args(&args, &options, None).unwrap();
+    let routed = parse(&forwarded).unwrap();
+    assert_eq!(board_parse(&routed, None).unwrap(), command);
+    for words in [
+        &[
+            "board", "claim", "P7", "title", "--scope", "scope", "--resume",
+        ][..],
+        &["board", "task", "P7.3", "doing", "--resume"][..],
+        &["board", "hello", "model", "--resume"][..],
+    ] {
+        let options = parse(
+            &words
+                .iter()
+                .map(|word| (*word).to_owned())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        assert!(board_parse(&options, None).is_err());
+    }
+}

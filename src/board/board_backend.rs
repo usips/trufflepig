@@ -863,7 +863,8 @@ mod tests {
             takeover,
             BoardOp::ClaimTask {
                 task,
-                scope: super::super::board_vocabulary::EntryText::new("new owner").unwrap(),
+                scope: Some(super::super::board_vocabulary::EntryText::new("new owner").unwrap()),
+                resume: false,
             },
         );
         host.handle_by(&request, QueryDeadline::start()).unwrap();

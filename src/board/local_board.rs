@@ -180,7 +180,8 @@ impl LocalBoard {
                     if let BoardResult::Change(change) = reply.result {
                         if let Some(task) = change.task {
                             if let BoardOp::CarveClaim { scope, .. } = &request.op {
-                                let mut reply = task_claims::claim_task(&tx, &ctx, task, scope)?;
+                                let mut reply =
+                                    task_claims::claim_task(&tx, &ctx, task, Some(scope), false)?;
                                 reply.backend = format!("local:{}", self.path.display());
                                 task_claims::refresh_plan_claims(&tx, actor_id, task.plan, now)?;
                                 tx.execute("UPDATE operation_dedupes SET reply_json=?2,created_at=?3 WHERE dedupe_key=?1",params![key,serde_json::to_string(&reply).map_err(|e|invalid("board_unavailable",e.to_string()))?,now]).map_err(sql_error)?;
@@ -224,7 +225,11 @@ impl LocalBoard {
             BoardOp::TaskMove { task, column, to } => {
                 task_claims::move_task(&tx, &ctx, *task, *column, to.as_ref())?
             }
-            BoardOp::ClaimTask { task, scope } => task_claims::claim_task(&tx, &ctx, *task, scope)?,
+            BoardOp::ClaimTask {
+                task,
+                scope,
+                resume,
+            } => task_claims::claim_task(&tx, &ctx, *task, scope.as_ref(), *resume)?,
             BoardOp::CarveClaim {
                 plan,
                 title,

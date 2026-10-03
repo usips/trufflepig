@@ -9,7 +9,7 @@ use super::{
     BoardError, EntryDraft, WriteContext, actor_from_row, can_accept, insert_entry, insert_event,
     invalid, require_plan, row_number, sql_error, sql_number,
 };
-use crate::board::board_actor::BoardRecipient;
+use crate::board::board_actor::{BoardRecipient, claim_vendor};
 use crate::board::board_ids::{EntryId, EventSeq, PlanId, TaskId};
 use crate::board::board_protocol::{
     BoardChange, BoardReply, BoardResult, ClaimEndReason, ClaimRecord, CommitCoauthor, TaskRecord,
@@ -55,7 +55,7 @@ pub(super) fn carve_claim(
 ) -> Result<BoardReply, BoardError> {
     require_plan(tx, plan)?;
     let task = allocate_task(tx, ctx, plan, title, None, section)?;
-    claim_task(tx, ctx, task, scope)
+    claim_task(tx, ctx, task, Some(scope), false)
 }
 
 fn allocate_task(
@@ -85,12 +85,40 @@ pub(super) fn claim_task(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     task: TaskId,
-    scope: &EntryText,
+    scope: Option<&EntryText>,
+    resume: bool,
 ) -> Result<BoardReply, BoardError> {
     require_task(tx, task)?;
     let holder = active_claim(tx, task, ctx.now, ctx.claim_ttl_secs)?;
+    if resume {
+        let previous = holder
+            .as_ref()
+            .ok_or_else(|| invalid("invalid_state", format!("{task} has no claim to resume")))?;
+        if previous.record.actor.user != ctx.actor.user
+            || previous.record.actor.host != ctx.actor.host
+            || previous.record.actor.harness != ctx.actor.harness
+        {
+            return Err(invalid(
+                "invalid_actor",
+                "resume requires the same user, host, and harness",
+            ));
+        }
+    }
+    let scope = scope
+        .or_else(|| {
+            holder
+                .as_ref()
+                .filter(|_| resume)
+                .map(|claim| &claim.record.scope)
+        })
+        .ok_or_else(|| {
+            invalid(
+                "invalid_options",
+                "claiming a task requires scope or resume",
+            )
+        })?;
     if let Some(holder) = &holder {
-        if holder.actor_id != ctx.actor_id && !holder.record.stale {
+        if holder.actor_id != ctx.actor_id && !holder.record.stale && !resume {
             let claim = &holder.record;
             return Err(invalid(
                 "claim_conflict",
@@ -105,10 +133,12 @@ pub(super) fn claim_task(
                 ),
             ));
         }
-        let reason = if holder.actor_id == ctx.actor_id {
-            "released"
+        let reason = if resume {
+            ClaimEndReason::Resumed
+        } else if holder.actor_id == ctx.actor_id {
+            ClaimEndReason::Released
         } else {
-            "taken_over"
+            ClaimEndReason::TakenOver
         };
         end_claim(tx, task, ctx.now, reason)?;
     }
@@ -140,7 +170,9 @@ pub(super) fn claim_task(
         ],
     )
     .map_err(sql_error)?;
-    let previous = holder.filter(|claim| claim.actor_id != ctx.actor_id);
+    let previous = holder
+        .as_ref()
+        .filter(|claim| claim.actor_id != ctx.actor_id);
     let recipient = previous
         .as_ref()
         .map(|claim| BoardRecipient::for_actor(&claim.record.actor));
@@ -157,6 +189,10 @@ pub(super) fn claim_task(
         scope.as_str()
     };
     let summary = match previous {
+        Some(claim) if resume => format!(
+            "took {task}: {preview}; resumed claim from {}",
+            claim.record.actor
+        ),
         Some(claim) => format!(
             "took {task}: {preview}; took over stale claim from {}",
             claim.record.actor
@@ -212,7 +248,11 @@ pub(super) fn move_task(
             tx,
             task,
             ctx.now,
-            if reassign { "reassigned" } else { "released" },
+            if reassign {
+                ClaimEndReason::Reassigned
+            } else {
+                ClaimEndReason::Released
+            },
         )?;
     }
     tx.execute(
@@ -257,10 +297,15 @@ fn require_task(conn: &Connection, task: TaskId) -> Result<(), BoardError> {
     }
 }
 
-fn end_claim(tx: &Transaction<'_>, task: TaskId, now: i64, reason: &str) -> Result<(), BoardError> {
+fn end_claim(
+    tx: &Transaction<'_>,
+    task: TaskId,
+    now: i64,
+    reason: ClaimEndReason,
+) -> Result<(), BoardError> {
     tx.execute(
         "UPDATE claims SET ended_at=?3,end_reason=?4 WHERE plan_id=?1 AND task_ordinal=?2 AND ended_at IS NULL",
-        params![sql_number(task.plan.get()), sql_number(task.ordinal), now, reason],
+        params![sql_number(task.plan.get()), sql_number(task.ordinal), now, reason.as_str()],
     ).map_err(sql_error)?;
     Ok(())
 }
@@ -338,10 +383,20 @@ pub(super) fn refresh_commit_claims(
     if committed_at > now {
         return Ok(());
     }
-    for coauthor in coauthors {
+    let task = TaskId::new(plan, ordinal).map_err(BoardError::from)?;
+    let Some(holder) = active_claim(tx, task, now, 0)? else {
+        return Ok(());
+    };
+    let vendor = claim_vendor(&holder.record.actor.harness, holder.record.model.as_deref());
+    let matches = if coauthors.is_empty() {
+        vendor.is_human()
+    } else {
+        coauthors.iter().any(|coauthor| coauthor.harness == vendor)
+    };
+    if matches && committed_at >= holder.record.claimed_at {
         tx.execute(
-            "UPDATE claims SET last_active=max(last_active,?5) WHERE plan_id=?1 AND task_ordinal=?2 AND ended_at IS NULL AND claimed_at<=?4 AND actor_id IN (SELECT id FROM actors WHERE harness=?3)",
-            params![sql_number(plan.get()), sql_number(ordinal), coauthor.harness.as_str(), committed_at, now],
+            "UPDATE claims SET last_active=max(last_active,?3) WHERE entry_id=?1 AND actor_id=?2 AND ended_at IS NULL",
+            params![sql_number(holder.record.entry.get()), holder.actor_id, committed_at],
         ).map_err(sql_error)?;
     }
     Ok(())
@@ -438,18 +493,11 @@ fn claim_from_row(
     let last_active: i64 = row.get(9).map_err(sql_error)?;
     let ended_at: Option<i64> = row.get(10).map_err(sql_error)?;
     let reason: Option<String> = row.get(11).map_err(sql_error)?;
-    let end_reason = match reason.as_deref() {
-        None => None,
-        Some("released") => Some(ClaimEndReason::Released),
-        Some("taken_over") => Some(ClaimEndReason::TakenOver),
-        Some("reassigned") => Some(ClaimEndReason::Reassigned),
-        Some(other) => {
-            return Err(invalid(
-                "board_unavailable",
-                format!("invalid stored claim end reason {other}"),
-            ));
-        }
-    };
+    let end_reason = reason
+        .as_deref()
+        .map(ClaimEndReason::parse)
+        .transpose()
+        .map_err(|error| invalid("board_unavailable", error.to_string()))?;
     Ok(StoredClaim {
         actor_id: row.get(0).map_err(sql_error)?,
         record: ClaimRecord {

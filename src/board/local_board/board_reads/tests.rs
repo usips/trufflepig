@@ -215,7 +215,8 @@ fn review_preserves_overlapping_ended_claims_and_other_agents_open_work() {
             "claude",
             BoardOp::ClaimTask {
                 task,
-                scope: EntryText::new(format!("scope {ordinal}")).unwrap(),
+                scope: Some(EntryText::new(format!("scope {ordinal}")).unwrap()),
+                resume: false,
             },
         );
         call(

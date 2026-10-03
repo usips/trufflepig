@@ -36,6 +36,9 @@ pub struct BoardOptions {
     /// Scope of work covered by a new claimed task.
     #[arg(long)]
     pub scope: Option<String>,
+    /// Resume a prior session's claim for the same user, host, and harness.
+    #[arg(long)]
+    pub resume: bool,
     /// Plan heading covered by a new claimed task.
     #[arg(long)]
     pub section: Option<String>,
@@ -99,6 +102,9 @@ impl BoardOptions {
         if self.open {
             args.push("--open".into());
         }
+        if self.resume {
+            args.push("--resume".into());
+        }
     }
 
     fn has_options(&self) -> bool {
@@ -110,6 +116,7 @@ impl BoardOptions {
             || self.scope.is_some()
             || self.section.is_some()
             || self.open
+            || self.resume
             || self.board_text.is_some()
             || self.agent_model.is_some()
             || self.agent_effort.is_some()
@@ -456,10 +463,15 @@ fn parse_claim(options: &Arguments, payload: &BoardTextPayload) -> Result<BoardO
             })
         }
         BoardRef::Task(task) => {
-            check_flags(options, &["text"])?;
+            check_flags(options, &["resume", "text"])?;
+            let scope = optional_text(&payload.text)?;
+            if scope.is_none() && !options.board.resume {
+                bail!("invalid_options: claiming a task requires scope or --resume");
+            }
             Ok(BoardOp::ClaimTask {
                 task,
-                scope: EntryText::new(payload.text.clone())?,
+                scope,
+                resume: options.board.resume,
             })
         }
         _ => bail!("invalid_reference: claim requires a plan or task"),
@@ -542,6 +554,7 @@ fn check_flags(options: &Arguments, allowed: &[&str]) -> Result<()> {
         ("scope", board.scope.is_some()),
         ("section", board.section.is_some()),
         ("open", board.open),
+        ("resume", board.resume),
         ("text", board.board_text.is_some()),
         ("recent-calls", board.recent_calls.is_some()),
         ("wait", options.wait),

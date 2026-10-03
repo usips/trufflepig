@@ -55,6 +55,31 @@ impl HarnessLabel {
         self.as_str() == "cli"
     }
 }
+/// Vendor attribution follows the claimed model, then the harness fallback.
+pub fn claim_vendor(harness: &HarnessLabel, model: Option<&str>) -> HarnessLabel {
+    if harness.is_cli() || harness.is_human() {
+        return HarnessLabel("human".to_owned());
+    }
+    let model = model.unwrap_or_default().trim().to_ascii_lowercase();
+    let label = if model.starts_with("claude") {
+        "claude"
+    } else if model.starts_with("gpt") || model.starts_with("codex") || model.starts_with("chatgpt")
+    {
+        "codex"
+    } else if model.starts_with("kimi") {
+        "kimi"
+    } else if model.starts_with("grok") {
+        "grok"
+    } else if model.starts_with("gemini") {
+        "gemini"
+    } else if model.starts_with("qwen") {
+        "qwen"
+    } else {
+        return harness.clone();
+    };
+    HarnessLabel(label.to_owned())
+}
+
 impl fmt::Display for HarnessLabel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())

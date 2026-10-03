@@ -1,3 +1,5 @@
+mod claim_resumption;
+
 use std::path::PathBuf;
 use std::sync::{Arc, Barrier};
 
@@ -95,7 +97,7 @@ fn claim(
     scope: &str,
 ) -> Result<BoardReply, BoardError> {
     write(conn, actor, now, |tx, ctx| {
-        claim_task(tx, ctx, task, &EntryText::new(scope).unwrap())
+        claim_task(tx, ctx, task, Some(&EntryText::new(scope).unwrap()), false)
     })
 }
 
@@ -376,7 +378,7 @@ fn commit_activity_requires_current_task_matching_coauthor_and_time() {
     .unwrap();
     assert_eq!(
         read_claims(&conn, task.plan, 1100, 120).unwrap()[0].last_active,
-        1100
+        1050
     );
     write(&mut conn, &holder, 1110, |tx, ctx| {
         move_task(tx, ctx, task, TaskColumn::Done, None)
@@ -389,7 +391,7 @@ fn commit_activity_requires_current_task_matching_coauthor_and_time() {
     .unwrap();
     assert_eq!(
         read_claims(&conn, task.plan, 1150, 120).unwrap()[0].last_active,
-        1100
+        1050
     );
 }
 
@@ -510,7 +512,8 @@ fn cached_claim_or_move_cannot_bypass_a_new_holder() {
         original.clone(),
         BoardOp::ClaimTask {
             task,
-            scope: EntryText::new("my lane").unwrap(),
+            scope: Some(EntryText::new("my lane").unwrap()),
+            resume: false,
         },
     );
     backend.handle(&claim_request).unwrap();
@@ -528,7 +531,8 @@ fn cached_claim_or_move_cannot_bypass_a_new_holder() {
             next.clone(),
             BoardOp::ClaimTask {
                 task,
-                scope: EntryText::new("new holder").unwrap(),
+                scope: Some(EntryText::new("new holder").unwrap()),
+                resume: false,
             },
         ))
         .unwrap();
@@ -580,7 +584,8 @@ fn retried_carve_targets_original_task_after_handoff() {
             actor("josh", "muse", "two"),
             BoardOp::ClaimTask {
                 task,
-                scope: EntryText::new("next scope").unwrap(),
+                scope: Some(EntryText::new("next scope").unwrap()),
+                resume: false,
             },
         ))
         .unwrap();
@@ -592,4 +597,93 @@ fn retried_carve_targets_original_task_after_handoff() {
             .starts_with("claim_conflict:")
     );
     assert_eq!(read_tasks(&database.connect(), task.plan).unwrap().len(), 1);
+}
+
+#[test]
+fn delayed_commit_activity_keeps_silent_claim_stale() {
+    let database = ClaimDatabase::new();
+    let mut conn = database.connect();
+    let holder = actor("josh", "codex", "one");
+    let task = carved_task(&mut conn, &holder, 1000, "current");
+    let coauthor = CommitCoauthor {
+        harness: HarnessLabel::parse("codex").unwrap(),
+        model: "Codex".into(),
+        email: "agent@openai.com".into(),
+    };
+    for committed_at in [1050, 1020] {
+        write(&mut conn, &holder, 2000, |tx, ctx| {
+            refresh_commit_claims(
+                tx,
+                task.plan,
+                task.ordinal,
+                &[coauthor.clone()],
+                committed_at,
+                ctx.now,
+            )?;
+            change(ctx, EntryId::new(1).unwrap(), task)
+        })
+        .unwrap();
+    }
+    let claim = &read_claims(&conn, task.plan, 2000, 120).unwrap()[0];
+    assert_eq!(claim.last_active, 1050);
+    assert!(
+        claim.stale,
+        "late ingestion must not create current activity"
+    );
+}
+
+#[test]
+fn commit_activity_uses_claimed_model_vendor_and_harness_fallback() {
+    let database = ClaimDatabase::new();
+    let mut conn = database.connect();
+    for (index, (harness, model, vendor)) in [
+        ("muse", Some("Claude Sonnet 4.5"), Some("claude")),
+        ("omp", Some("gpt-6.1-sol"), Some("codex")),
+        ("muse", Some("Codex"), Some("codex")),
+        ("muse", Some("Kimi K2"), Some("kimi")),
+        ("muse", Some("Grok 4"), Some("grok")),
+        ("omp", Some("Gemini 3 Pro"), Some("gemini")),
+        ("omp", Some("Qwen3"), Some("qwen")),
+        ("codex", Some("unrecognized"), Some("codex")),
+        ("claude", None, Some("claude")),
+        ("cli", None, None),
+        ("cli", Some("gpt-6.1-sol"), None),
+        ("human", Some("Claude Sonnet 4.5"), None),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let holder = actor("josh", harness, &format!("vendor-{index}"));
+        let task = carved_task(&mut conn, &holder, 1000, "vendor lane");
+        conn.execute("UPDATE entries SET model=?1 WHERE id=(SELECT entry_id FROM claims WHERE plan_id=?2 AND task_ordinal=?3)", params![model, sql_number(task.plan.get()), sql_number(task.ordinal)]).unwrap();
+        conn.execute(
+            "UPDATE agent_sessions SET model='wrong current session model'",
+            [],
+        )
+        .unwrap();
+        let coauthors = vendor
+            .map(|vendor| {
+                vec![CommitCoauthor {
+                    harness: HarnessLabel::parse(vendor).unwrap(),
+                    model: "trailer model".into(),
+                    email: "agent@example.invalid".into(),
+                }]
+            })
+            .unwrap_or_default();
+        write(&mut conn, &holder, 1100, |tx, ctx| {
+            refresh_commit_claims(tx, task.plan, task.ordinal, &coauthors, 1050, ctx.now)?;
+            change(ctx, EntryId::new(1).unwrap(), task)
+        })
+        .unwrap();
+        let history = read_claims(&conn, task.plan, 1100, 120).unwrap();
+        assert_eq!(
+            history
+                .iter()
+                .find(|claim| claim.task == task)
+                .unwrap()
+                .last_active,
+            1050,
+            "{harness} / {model:?}"
+        );
+    }
 }
