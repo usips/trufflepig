@@ -1,5 +1,8 @@
 //! Immutable plan revisions, proposals, and owner or steward decisions.
 
+#[cfg(test)]
+mod tests;
+
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::*;
@@ -66,6 +69,7 @@ pub(super) fn edit(
     body: &PlanText,
     summary: &EntryText,
 ) -> Result<BoardReply, BoardError> {
+    require_authority(tx, ctx, base.plan)?;
     advance_head(tx, base)?;
     let number = base.revision + 1;
     let entry = mutation_entry(
