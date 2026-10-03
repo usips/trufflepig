@@ -18,7 +18,7 @@ use std::fmt::Write;
 #[derive(Debug)]
 pub struct RenderedBoard {
     pub text: String,
-    pub rendered_seq: Option<EventSeq>,
+    pub acknowledge_seq: Option<EventSeq>,
 }
 
 #[derive(Clone, Copy, Default, Serialize)]
@@ -109,7 +109,7 @@ pub fn render_reply(reply: &BoardReply, budget: &OutputBudget) -> Result<Rendere
             };
             Ok(RenderedBoard {
                 text,
-                rendered_seq: None,
+                acknowledge_seq: None,
             })
         }
     }
@@ -161,7 +161,7 @@ fn render_list(
     }
     Ok(RenderedBoard {
         text: require_fits(render(count)?, budget)?,
-        rendered_seq: None,
+        acknowledge_seq: None,
     })
 }
 
@@ -177,19 +177,37 @@ fn render_inbox(
     {
         bail!("board_unavailable: inbox events are not strictly ordered");
     }
+    if inbox
+        .events
+        .last()
+        .is_some_and(|event| event.seq > inbox.scanned_through)
+    {
+        bail!("board_unavailable: inbox scan watermark precedes selected events");
+    }
     let render = |count: usize, open_count: usize| {
         let mut visible = inbox.clone();
         visible.events.truncate(count);
         visible.open.truncate(open_count);
         let rendered = visible.events.last().map(|event| event.seq);
-        let next = if count < inbox.events.len() {
-            format!("board inbox {}", rendered.unwrap_or(inbox.cursor))
+        let scope_flag = if inbox.all { " --all" } else { "" };
+        let next = if count < inbox.events.len() || inbox.query_truncated {
+            if inbox.advancing {
+                format!("board inbox{scope_flag}")
+            } else {
+                format!(
+                    "board inbox {}{scope_flag}",
+                    rendered.unwrap_or(inbox.cursor)
+                )
+            }
         } else {
-            "board inbox --wait".to_owned()
+            format!("board inbox --wait{scope_flag}")
         };
         let mut candidate = reply.clone();
         candidate.result = BoardResult::Inbox(visible);
-        if open_count < inbox.open.len() {
+        let omitted_open = inbox
+            .open_omitted
+            .saturating_add(inbox.open.len() - open_count);
+        if omitted_open > 0 {
             let mut hints = inbox.open[open_count..]
                 .iter()
                 .filter_map(|entry| entry.plan)
@@ -202,6 +220,7 @@ fn render_inbox(
             if inbox.open[open_count..]
                 .iter()
                 .any(|entry| entry.kind == EntryKind::Feedback)
+                || inbox.open_omitted > 0
             {
                 hints.push("feedback ls".into());
             }
@@ -214,7 +233,7 @@ fn render_inbox(
             &candidate,
             BoardOmitted {
                 events: inbox.events.len() - count,
-                open_entries: inbox.open.len() - open_count,
+                open_entries: omitted_open,
                 ..BoardOmitted::default()
             },
             rendered,
@@ -222,21 +241,21 @@ fn render_inbox(
             budget,
         )
     };
+    let count = fit_items(inbox.events.len(), budget, |count| render(count, 0))?;
+    if count == 0 && !inbox.events.is_empty() {
+        bail!("budget_too_small: first inbox event does not fit; raise -b");
+    }
     let open_count = fit_items(inbox.open.len(), budget, |open_count| {
-        render(inbox.events.len().min(1), open_count)
-    })?;
-    let count = fit_items(inbox.events.len(), budget, |count| {
         render(count, open_count)
     })?;
-    if count == 0 && !inbox.events.is_empty() {
-        bail!("budget_too_small: first inbox event and open evidence do not fit; raise -b");
-    }
     Ok(RenderedBoard {
         text: require_fits(render(count, open_count)?, budget)?,
-        rendered_seq: if inbox.advancing && count > 0 {
-            Some(inbox.events[count - 1].seq)
-        } else {
+        acknowledge_seq: if !inbox.advancing {
             None
+        } else if count < inbox.events.len() || inbox.query_truncated {
+            (count > 0).then(|| inbox.events[count - 1].seq)
+        } else {
+            (inbox.scanned_through > inbox.cursor).then_some(inbox.scanned_through)
         },
     })
 }
@@ -305,7 +324,7 @@ fn render_entry(
     })?;
     Ok(RenderedBoard {
         text: require_fits(render(body_count, reply_count, backref_count)?, budget)?,
-        rendered_seq: None,
+        acknowledge_seq: None,
     })
 }
 
@@ -359,13 +378,13 @@ fn render_plan(
     if budget.fits(&full) {
         return Ok(RenderedBoard {
             text: full,
-            rendered_seq: None,
+            acknowledge_seq: None,
         });
     }
     let lines = fit_items(body_lines.len(), budget, |lines| render(0, lines))?;
     Ok(RenderedBoard {
         text: require_fits(render(0, lines)?, budget)?,
-        rendered_seq: None,
+        acknowledge_seq: None,
     })
 }
 
@@ -393,6 +412,13 @@ fn render_complete(
         });
     }
     let mut text = lines_result(&reply.result);
+    if matches!(reply.result, BoardResult::Inbox(_)) {
+        writeln!(
+            text,
+            "rendered through: {}",
+            rendered.map_or_else(|| "-".into(), |seq| seq.to_string())
+        )?;
+    }
     for warning in &reply.warnings {
         writeln!(text, "warning: {}", cell(warning))?;
     }
@@ -451,6 +477,7 @@ fn lines_result(result: &BoardResult) -> String {
                 }
             )
             .unwrap();
+            writeln!(text, "scanned through: {}", inbox.scanned_through).unwrap();
             for event in &inbox.events {
                 writeln!(
                     text,
@@ -798,7 +825,7 @@ fn render_diff(
     if budget.fits(&full) {
         return Ok(RenderedBoard {
             text: full,
-            rendered_seq: None,
+            acknowledge_seq: None,
         });
     }
     let omitted = ssot
@@ -822,7 +849,7 @@ fn render_diff(
             )?,
             budget,
         )?,
-        rendered_seq: None,
+        acknowledge_seq: None,
     })
 }
 

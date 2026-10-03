@@ -45,6 +45,9 @@ pub struct BoardOptions {
     /// List only open feedback reports.
     #[arg(long)]
     pub open: bool,
+    /// Include plans from every registered repository in inbox reads.
+    #[arg(long)]
+    pub all: bool,
     /// Client-normalized free text and optional file body.
     #[arg(long, hide = true, require_equals = true, allow_hyphen_values = true)]
     pub board_text: Option<String>,
@@ -102,6 +105,9 @@ impl BoardOptions {
         if self.open {
             args.push("--open".into());
         }
+        if self.all {
+            args.push("--all".into());
+        }
         if self.resume {
             args.push("--resume".into());
         }
@@ -116,6 +122,7 @@ impl BoardOptions {
             || self.scope.is_some()
             || self.section.is_some()
             || self.open
+            || self.all
             || self.resume
             || self.board_text.is_some()
             || self.agent_model.is_some()
@@ -405,9 +412,14 @@ fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Result<BoardC
 }
 
 fn parse_inbox(options: &Arguments, index: usize) -> Result<BoardCommand> {
-    check_flags(options, &["wait"])?;
+    check_flags(options, &["wait", "all"])?;
     let minimum = if options.words.len() == 1 { 1 } else { index };
-    fixed_words(options, minimum, index + 1, "board [inbox] [SEQ] [--wait]")?;
+    fixed_words(
+        options,
+        minimum,
+        index + 1,
+        "board [inbox] [SEQ] [--wait] [--all]",
+    )?;
     let after = options
         .words
         .get(index)
@@ -416,6 +428,8 @@ fn parse_inbox(options: &Arguments, index: usize) -> Result<BoardCommand> {
     Ok(BoardCommand::Op(BoardOp::Inbox {
         after,
         limit: options.limit,
+        repo_key: None,
+        all: options.board.all,
     }))
 }
 
@@ -564,6 +578,7 @@ fn check_flags(options: &Arguments, allowed: &[&str]) -> Result<()> {
         ("scope", board.scope.is_some()),
         ("section", board.section.is_some()),
         ("open", board.open),
+        ("all", board.all),
         ("resume", board.resume),
         ("text", board.board_text.is_some()),
         ("recent-calls", board.recent_calls.is_some()),

@@ -21,7 +21,7 @@ pub fn render_review(
     if budget.fits(&full) {
         return Ok(RenderedBoard {
             text: full,
-            rendered_seq: None,
+            acknowledge_seq: None,
         });
     }
     let refit = |visible: &mut ReviewPacket, omitted| -> Result<String> {
@@ -46,7 +46,7 @@ pub fn render_review(
         if budget.fits(&text) {
             return Ok(RenderedBoard {
                 text,
-                rendered_seq: None,
+                acknowledge_seq: None,
             });
         }
     }
@@ -100,7 +100,7 @@ pub fn render_review(
             if budget.fits(&text) {
                 return Ok(RenderedBoard {
                     text,
-                    rendered_seq: None,
+                    acknowledge_seq: None,
                 });
             }
         }
@@ -124,7 +124,7 @@ pub fn render_review(
                     if budget.fits(&text) {
                         return Ok(RenderedBoard {
                             text,
-                            rendered_seq: None,
+                            acknowledge_seq: None,
                         });
                     }
                 }

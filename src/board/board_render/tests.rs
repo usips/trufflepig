@@ -55,8 +55,13 @@ fn inbox(advancing: bool) -> InboxReply {
     InboxReply {
         actor: actor(),
         cursor: EventSeq::new(10),
+        scanned_through: EventSeq::new(22),
+        query_truncated: false,
         events,
         open: vec![entry(500)],
+        open_omitted: 0,
+        repo_key: None,
+        all: true,
         latest: EventSeq::new(500),
         advancing,
         wait: InboxWait::None,
@@ -69,7 +74,7 @@ fn budget_truncated_inbox_acknowledges_only_the_visible_prefix() {
         let budget = OutputBudget::new(800).unwrap().with_format(format);
         let reply = BoardReply::new("local:/board", BoardResult::Inbox(inbox(true)));
         let rendered = render_reply(&reply, &budget).unwrap();
-        let last = rendered.rendered_seq.unwrap().get();
+        let last = rendered.acknowledge_seq.unwrap().get();
         assert!((11..22).contains(&last));
         assert!(budget.fits(&rendered.text));
         if format == OutputFormat::Json {
@@ -78,10 +83,11 @@ fn budget_truncated_inbox_acknowledges_only_the_visible_prefix() {
             assert_eq!(events.last().unwrap()["seq"], last);
             assert_eq!(value["omitted"]["events"], 22 - last);
             assert_eq!(value["rendered_through"], last);
-            assert_eq!(value["result"]["data"]["open"][0]["seq"], 500);
+            let shown_open = value["result"]["data"]["open"].as_array().unwrap().len();
+            assert_eq!(value["omitted"]["open_entries"], 1 - shown_open);
         } else {
-            assert!(rendered.text.contains(&format!("next: board inbox {last}")));
-            assert!(rendered.text.contains("--- still open ---"));
+            assert!(rendered.text.contains("next: board inbox --all"));
+            assert!(rendered.text.contains("omitted: events="));
             assert!(!rendered.text.contains(&format!("{}\tP7", last + 1)));
         }
     }
@@ -94,16 +100,17 @@ fn explicit_inbox_reads_and_open_only_reminders_do_not_acknowledge() {
     assert!(
         render_reply(&reread, &budget)
             .unwrap()
-            .rendered_seq
+            .acknowledge_seq
             .is_none()
     );
     let mut reminders = inbox(true);
     reminders.events.clear();
+    reminders.scanned_through = reminders.cursor;
     let reply = BoardReply::new("local", BoardResult::Inbox(reminders));
     assert!(
         render_reply(&reply, &budget)
             .unwrap()
-            .rendered_seq
+            .acknowledge_seq
             .is_none()
     );
 }
@@ -160,6 +167,7 @@ fn fit_items_binary_search_counts_complete_responses() {
 fn open_evidence_truncation_is_disclosed_without_driving_the_cursor() {
     let mut feed = inbox(true);
     feed.events.truncate(1);
+    feed.scanned_through = EventSeq::new(11);
     feed.events[0].summary = EntryText::new("fresh fact").unwrap();
     feed.open = (500..510)
         .map(|seq| {
@@ -173,7 +181,7 @@ fn open_evidence_truncation_is_disclosed_without_driving_the_cursor() {
         &OutputBudget::new(800).unwrap(),
     )
     .unwrap();
-    assert_eq!(rendered.rendered_seq, Some(EventSeq::new(11)));
+    assert_eq!(rendered.acknowledge_seq, Some(EventSeq::new(11)));
     let value: serde_json::Value = serde_json::from_str(&rendered.text).unwrap();
     let shown = value["result"]["data"]["open"].as_array().unwrap().len();
     assert_eq!(value["omitted"]["open_entries"], 10 - shown);
@@ -567,6 +575,75 @@ fn review_commit_trimming_uses_one_chronological_window() {
         .unwrap();
     assert!(oldest > 1);
     assert!(budget.fits(&rendered.text));
+}
+
+#[test]
+fn fresh_events_fit_before_oversized_reminders() {
+    for format in [OutputFormat::Json, OutputFormat::Lines] {
+        let mut feed = inbox(true);
+        feed.events.truncate(2);
+        feed.scanned_through = EventSeq::new(12);
+        for event in &mut feed.events {
+            event.summary = EntryText::new("fresh fact").unwrap();
+        }
+        feed.open[0].body = EntryText::new("large unresolved evidence ".repeat(150)).unwrap();
+        feed.open_omitted = 23;
+        let rendered = render_reply(
+            &BoardReply::new("local", BoardResult::Inbox(feed)),
+            &OutputBudget::new(600).unwrap().with_format(format),
+        )
+        .unwrap();
+        assert_eq!(rendered.acknowledge_seq, Some(EventSeq::new(12)));
+        if format == OutputFormat::Json {
+            let value: serde_json::Value = serde_json::from_str(&rendered.text).unwrap();
+            assert_eq!(value["omitted"]["events"], 0);
+            assert_eq!(value["omitted"]["open_entries"], 24);
+        } else {
+            assert!(rendered.text.contains("open_entries=24"));
+        }
+        assert!(rendered.text.contains("--all"));
+    }
+}
+
+#[test]
+fn complete_empty_inbox_acknowledges_scan_without_claiming_rendered_events() {
+    let mut feed = inbox(true);
+    feed.events.clear();
+    feed.open.clear();
+    feed.scanned_through = EventSeq::new(42);
+    let reply = BoardReply::new("local", BoardResult::Inbox(feed.clone()));
+    let rendered = render_reply(&reply, &OutputBudget::new(600).unwrap()).unwrap();
+    assert_eq!(rendered.acknowledge_seq, Some(EventSeq::new(42)));
+    let value: serde_json::Value = serde_json::from_str(&rendered.text).unwrap();
+    assert!(value["rendered_through"].is_null());
+    assert_eq!(value["result"]["data"]["scanned_through"], 42);
+    feed.advancing = false;
+    let rendered = render_reply(
+        &BoardReply::new("local", BoardResult::Inbox(feed)),
+        &OutputBudget::new(600).unwrap(),
+    )
+    .unwrap();
+    assert!(rendered.acknowledge_seq.is_none());
+}
+
+#[test]
+fn query_truncated_inbox_acknowledges_only_actual_events() {
+    let mut feed = inbox(true);
+    feed.events.truncate(1);
+    feed.events[0].seq = EventSeq::new(3);
+    feed.cursor = EventSeq::new(1);
+    feed.scanned_through = EventSeq::new(5);
+    feed.query_truncated = true;
+    feed.open.clear();
+    let rendered = render_reply(
+        &BoardReply::new("local", BoardResult::Inbox(feed)),
+        &OutputBudget::new(800).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(rendered.acknowledge_seq, Some(EventSeq::new(3)));
+    let value: serde_json::Value = serde_json::from_str(&rendered.text).unwrap();
+    assert_eq!(value["rendered_through"], 3);
+    assert_eq!(value["next"], "board inbox --all");
 }
 
 #[test]

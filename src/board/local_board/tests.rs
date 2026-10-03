@@ -397,6 +397,8 @@ fn readonly_dispatch_leaves_actors_sessions_and_claims_untouched() {
             BoardOp::Inbox {
                 after: Some(EventSeq::new(0)),
                 limit: 20,
+                repo_key: None,
+                all: true,
             },
         ))
         .unwrap();

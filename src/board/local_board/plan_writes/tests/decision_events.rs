@@ -59,6 +59,8 @@ fn proposal_decisions_broadcast_to_author_and_other_participants() {
             .handle(&BoardRequest::new(
                 participant,
                 BoardOp::Inbox {
+                    repo_key: None,
+                    all: true,
                     after: Some(EventSeq::new(0)),
                     limit: 100,
                 },
@@ -130,6 +132,8 @@ fn proposal_decisions_preserve_maximum_bodies_and_bound_broadcast_summaries() {
                 .handle(&BoardRequest::new(
                     actor("other", "muse", "observer"),
                     BoardOp::Inbox {
+                        repo_key: None,
+                        all: true,
                         after: Some(EventSeq::new(0)),
                         limit: 100,
                     },

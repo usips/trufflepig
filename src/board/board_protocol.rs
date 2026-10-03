@@ -173,6 +173,8 @@ pub enum BoardOp {
     Inbox {
         after: Option<EventSeq>,
         limit: usize,
+        repo_key: Option<RepoKey>,
+        all: bool,
     },
     AcknowledgeInbox {
         rendered_through: EventSeq,
@@ -677,8 +679,13 @@ pub enum InboxWait {
 pub struct InboxReply {
     pub actor: BoardActor,
     pub cursor: EventSeq,
+    pub scanned_through: EventSeq,
+    pub query_truncated: bool,
     pub events: Vec<EventRecord>,
     pub open: Vec<EntryRecord>,
+    pub open_omitted: usize,
+    pub repo_key: Option<RepoKey>,
+    pub all: bool,
     pub latest: EventSeq,
     pub advancing: bool,
     pub wait: InboxWait,
@@ -851,6 +858,8 @@ mod tests {
             BoardOp::Inbox {
                 after: Some(EventSeq::new(0)),
                 limit: 20,
+                repo_key: None,
+                all: true,
             },
         );
         let decoded: BoardRequest =

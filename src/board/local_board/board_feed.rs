@@ -10,19 +10,21 @@ use super::{
     sql_number, sqlite_u64, task_claims,
 };
 use crate::board::board_actor::BoardRecipient;
-use crate::board::board_ids::{BoardRef, EventSeq, PlanId};
+use crate::board::board_ids::{BoardRef, EventSeq, PlanId, RepoKey};
 use crate::board::board_protocol::{BoardReply, BoardResult, EventRecord, InboxReply, InboxWait};
 use crate::board::board_vocabulary::EntryText;
 
 const FIRST_FEED_LIMIT: usize = 20;
 const EVENT_SELECT: &str = "SELECT e.seq,e.plan_id,e.kind,e.subject,e.to_whom,a.user,a.host,a.harness,a.session,(SELECT model FROM entries WHERE seq=e.seq AND actor_id=e.actor_id ORDER BY id LIMIT 1),(SELECT effort FROM entries WHERE seq=e.seq AND actor_id=e.actor_id ORDER BY id LIMIT 1),e.summary,e.created_at FROM events e JOIN actors a ON a.id=e.actor_id";
-const RELEVANT_EVENT: &str = "e.actor_id<>?1 AND (e.kind IN ('claim','task') OR e.to_whom IS NULL OR e.to_whom IN (?3,?4,?5))";
+const RELEVANT_EVENT: &str = "e.actor_id<>?1 AND (e.kind IN ('claim','task') OR e.to_whom IS NULL OR e.to_whom IN (?3,?4,?5)) AND (?7 OR e.to_whom IN (?3,?4,?5) OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id AND scope.repo_key=?8) OR EXISTS(SELECT 1 FROM entries evidence JOIN plan_repos scope ON scope.plan_id=evidence.plan_id WHERE evidence.seq=e.seq AND scope.repo_key=?8) OR (e.kind='feedback' AND EXISTS(SELECT 1 FROM entries report WHERE report.kind='feedback' AND report.actor_id=?1 AND 'E'||report.id=e.subject)))";
 
 pub(super) fn inbox(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     after: Option<EventSeq>,
     limit: usize,
+    repo_key: Option<&RepoKey>,
+    all: bool,
 ) -> Result<BoardReply, BoardError> {
     if !(1..=2000).contains(&limit) {
         return Err(invalid("invalid_options", "inbox limit must be 1..2000"));
@@ -59,10 +61,12 @@ pub(super) fn inbox(
             ctx.actor.user,
             ctx.actor.harness.as_str(),
             ctx.actor.identity(),
-            sql_number(count as u64),
+            sql_number(count as u64 + 1),
+            all,
+            repo_key.map(RepoKey::as_str),
         ])
         .map_err(sql_error)?;
-    let mut events = Vec::with_capacity(count);
+    let mut events = Vec::with_capacity(count + 1);
     while let Some(row) = rows.next().map_err(sql_error)? {
         let to: Option<String> = row.get(4).map_err(sql_error)?;
         let plan: Option<i64> = row.get(1).map_err(sql_error)?;
@@ -97,18 +101,35 @@ pub(super) fn inbox(
             created_at: row.get(12).map_err(sql_error)?,
         });
     }
+    let next = if events.len() > count {
+        events.pop()
+    } else {
+        None
+    };
     if first {
         events.reverse();
     }
-    let open = board_reads::open_entries(tx, &ctx.actor)?;
+    let query_truncated = !first && next.is_some();
+    let latest = max_seq(tx)?;
+    let scanned_through = if first {
+        latest
+    } else {
+        next.map_or(latest, |event| EventSeq::new(event.seq.get() - 1))
+    };
+    let (open, open_omitted) = board_reads::open_entries(tx, ctx, repo_key, all, limit.min(20))?;
     Ok(BoardReply::new(
         "local",
         BoardResult::Inbox(InboxReply {
             actor: ctx.actor.clone(),
             cursor,
+            scanned_through,
+            query_truncated,
             events,
             open,
-            latest: max_seq(tx)?,
+            open_omitted,
+            repo_key: repo_key.cloned(),
+            all,
+            latest,
             advancing: after.is_none(),
             wait: InboxWait::None,
         }),

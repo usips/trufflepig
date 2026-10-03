@@ -111,6 +111,8 @@ fn feedback_metadata_is_retained_and_closure_reaches_only_original_session() {
     let inbox = BoardRequest::new(
         actor("original"),
         BoardOp::Inbox {
+            repo_key: None,
+            all: true,
             after: Some(crate::board::board_ids::EventSeq::new(closed.seq.get() - 1)),
             limit: 20,
         },
@@ -128,6 +130,8 @@ fn feedback_metadata_is_retained_and_closure_reaches_only_original_session() {
     let sibling = BoardRequest::new(
         actor("sibling-session"),
         BoardOp::Inbox {
+            repo_key: None,
+            all: true,
             after: Some(crate::board::board_ids::EventSeq::new(closed.seq.get() - 1)),
             limit: 20,
         },

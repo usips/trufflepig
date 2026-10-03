@@ -182,16 +182,25 @@ impl BoardHost {
         };
         let mut warnings = Vec::new();
         let register_write = !op.is_read_only() && !matches!(op, BoardOp::Inbox { .. });
-        let probe = lock_before(&self.inner.registrations, deadline, "repository identity")
-            .and_then(|mut cache| {
-                cache.register(
-                    &options.root,
-                    &actor.host,
-                    op.plan_id(),
-                    &config.repos,
-                    deadline.cap(Duration::from_secs(5)),
-                )
-            });
+        let probe = if matches!(&op, BoardOp::Inbox { all: true, .. }) {
+            Ok(super::repo_identity::RegistrationProbe {
+                registration: None,
+                warning: None,
+                status: None,
+            })
+        } else {
+            lock_before(&self.inner.registrations, deadline, "repository identity").and_then(
+                |mut cache| {
+                    cache.register(
+                        &options.root,
+                        &actor.host,
+                        op.plan_id(),
+                        &config.repos,
+                        deadline.cap(Duration::from_secs(5)),
+                    )
+                },
+            )
+        };
         let mut registration = match probe {
             Ok(probe) => {
                 let diagnostic = if matches!(&op, BoardOp::Show { .. } | BoardOp::Review { .. }) {
@@ -267,6 +276,16 @@ impl BoardHost {
                 &options.root,
                 deadline.cap(Duration::from_secs(2)),
             );
+        }
+        if let BoardOp::Inbox {
+            repo_key,
+            all: false,
+            ..
+        } = &mut op
+        {
+            *repo_key = registration
+                .as_ref()
+                .map(|registration| registration.repo_key.clone());
         }
         let mut request = BoardRequest::new(actor.clone(), op);
         if options.board.agent_model.is_some() || options.board.agent_effort.is_some() {
@@ -377,7 +396,7 @@ impl BoardHost {
         reply.warnings.extend(warnings);
         let rendered = render_reply(&reply, &budget)?;
         if matches!(&request.op, BoardOp::Inbox { after: None, .. }) {
-            if let Some(rendered_through) = rendered.rendered_seq {
+            if let Some(rendered_through) = rendered.acknowledge_seq {
                 self.handle_by(
                     &BoardRequest::new(actor, BoardOp::AcknowledgeInbox { rendered_through }),
                     deadline,

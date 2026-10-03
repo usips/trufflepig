@@ -67,7 +67,16 @@ fn post(
 }
 
 fn feed(board: &mut LocalBoard, after: Option<EventSeq>, limit: usize) -> InboxReply {
-    match call(board, "codex", BoardOp::Inbox { after, limit }) {
+    match call(
+        board,
+        "codex",
+        BoardOp::Inbox {
+            after,
+            limit,
+            repo_key: None,
+            all: true,
+        },
+    ) {
         BoardResult::Inbox(inbox) => inbox,
         other => panic!("unexpected {other:?}"),
     }
@@ -268,4 +277,356 @@ fn inbox_refreshes_held_leases_without_a_housekeeping_event() {
         error.code,
         crate::board::board_protocol::BoardErrorCode::InvalidReference
     );
+}
+
+fn scoped_feed(
+    board: &mut LocalBoard,
+    repo_key: Option<RepoKey>,
+    all: bool,
+    limit: usize,
+) -> InboxReply {
+    match call(
+        board,
+        "codex",
+        BoardOp::Inbox {
+            after: Some(EventSeq::new(0)),
+            limit,
+            repo_key,
+            all,
+        },
+    ) {
+        BoardResult::Inbox(inbox) => inbox,
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[test]
+fn inbox_scope_keeps_repo_news_addressed_messages_and_own_feedback_outcomes() {
+    use crate::board::board_vocabulary::{FeedbackKind, FeedbackState};
+    let (_directory, mut board) = database();
+    let first = plan(&mut board);
+    let BoardResult::Change(second) = call(
+        &mut board,
+        "human",
+        BoardOp::New {
+            title: PlanTitle::new("Another repository").unwrap(),
+            body: PlanText::new("").unwrap(),
+            steward: None,
+        },
+    ) else {
+        panic!("missing plan");
+    };
+    let second = second.plan.unwrap();
+    let repo = RepoKey::from_roots([crate::identity::GitOid::parse(
+        "1111111111111111111111111111111111111111",
+    )
+    .unwrap()])
+    .unwrap();
+    board
+        .conn
+        .execute("INSERT INTO repos(repo_key) VALUES(?1)", [repo.as_str()])
+        .unwrap();
+    board
+        .conn
+        .execute(
+            "INSERT INTO plan_repos(plan_id,repo_key) VALUES(?1,?2)",
+            params![sql_number(first.get()), repo.as_str()],
+        )
+        .unwrap();
+    post(
+        &mut board,
+        "claude",
+        first,
+        EntryKind::Note,
+        "caller repo news",
+        None,
+    );
+    post(
+        &mut board,
+        "claude",
+        second,
+        EntryKind::Note,
+        "foreign repo news",
+        None,
+    );
+    post(
+        &mut board,
+        "claude",
+        second,
+        EntryKind::Note,
+        "foreign direct message",
+        Some("codex"),
+    );
+    post(
+        &mut board,
+        "claude",
+        first,
+        EntryKind::Question,
+        "caller repo reminder",
+        None,
+    );
+    post(
+        &mut board,
+        "claude",
+        second,
+        EntryKind::Question,
+        "foreign reminder",
+        None,
+    );
+    let BoardResult::Change(report) = call(
+        &mut board,
+        "codex",
+        BoardOp::Feedback {
+            kind: FeedbackKind::Wrong,
+            summary: EntryText::new("my report").unwrap(),
+            body: None,
+            plan: None,
+            metadata: crate::board::board_protocol::FeedbackMetadata::default(),
+            import_key: None,
+        },
+    ) else {
+        panic!("missing report");
+    };
+    call(
+        &mut board,
+        "human",
+        BoardOp::FeedbackClose {
+            entry: report.entry,
+            state: FeedbackState::Fixed,
+            note: None,
+        },
+    );
+    let inbox = scoped_feed(&mut board, Some(repo.clone()), false, 100);
+    assert!(
+        inbox
+            .events
+            .iter()
+            .any(|event| event.summary.as_str() == "caller repo news")
+    );
+    assert!(
+        !inbox
+            .events
+            .iter()
+            .any(|event| event.summary.as_str() == "foreign repo news")
+    );
+    assert!(
+        inbox
+            .events
+            .iter()
+            .any(|event| event.summary.as_str() == "foreign direct message")
+    );
+    assert!(
+        inbox
+            .events
+            .iter()
+            .any(|event| event.kind == EntryKind::Feedback
+                && event.subject == BoardRef::Entry(report.entry))
+    );
+    assert_eq!(inbox.open.len(), 1);
+    assert_eq!(inbox.open[0].body.as_str(), "caller repo reminder");
+    let all = scoped_feed(&mut board, Some(repo), true, 100);
+    assert!(
+        all.events
+            .iter()
+            .any(|event| event.summary.as_str() == "foreign repo news")
+    );
+    assert_eq!(all.open.len(), 2);
+    let without_repo = scoped_feed(&mut board, None, false, 100);
+    assert!(
+        !without_repo
+            .events
+            .iter()
+            .any(|event| event.summary.as_str() == "caller repo news")
+    );
+    assert!(
+        without_repo
+            .events
+            .iter()
+            .any(|event| event.summary.as_str() == "foreign direct message")
+    );
+}
+
+#[test]
+fn inbox_reminder_query_caps_materialization_and_reports_omissions() {
+    let (_directory, mut board) = database();
+    let plan = plan(&mut board);
+    for index in 0..30 {
+        post(
+            &mut board,
+            "claude",
+            plan,
+            EntryKind::Question,
+            &format!("question {index}"),
+            None,
+        );
+    }
+    let bounded = scoped_feed(&mut board, None, true, 2);
+    assert_eq!(bounded.open.len(), 2);
+    assert_eq!(bounded.open_omitted, 28);
+    let capped = scoped_feed(&mut board, None, true, 100);
+    assert_eq!(capped.open.len(), 20);
+    assert_eq!(capped.open_omitted, 10);
+}
+
+#[test]
+fn mixed_plan_commit_event_is_visible_via_its_same_sequence_entries() {
+    let (_directory, mut board) = database();
+    let plan = plan(&mut board);
+    let repo = RepoKey::from_roots([crate::identity::GitOid::parse(
+        "2222222222222222222222222222222222222222",
+    )
+    .unwrap()])
+    .unwrap();
+    board
+        .conn
+        .execute("INSERT INTO repos(repo_key) VALUES(?1)", [repo.as_str()])
+        .unwrap();
+    board
+        .conn
+        .execute(
+            "INSERT INTO plan_repos VALUES(?1,?2)",
+            params![sql_number(plan.get()), repo.as_str()],
+        )
+        .unwrap();
+    let seq = board.max_seq().unwrap().get() + 1;
+    let actor_id: i64 = board
+        .conn
+        .query_row("SELECT id FROM actors WHERE harness='human'", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    board.conn.execute("INSERT INTO entries(plan_id,kind,body,actor_id,repo_key,seq,created_at) VALUES(?1,'commit','linked batch',?2,?3,?4,0)",params![sql_number(plan.get()),actor_id,repo.as_str(),sql_number(seq)]).unwrap();
+    board.conn.execute("INSERT INTO events(seq,kind,subject,actor_id,summary,created_at) VALUES(?1,'commit','E1',?2,'linked mixed plans',0)",params![sql_number(seq),actor_id]).unwrap();
+    let inbox = scoped_feed(&mut board, Some(repo), false, 100);
+    assert!(inbox.events.iter().any(|event| event.seq.get() == seq));
+}
+
+#[test]
+fn scan_watermark_skips_own_and_irrelevant_events_but_preserves_next_foreign_event() {
+    let (_directory, mut board) = database();
+    let plan = plan(&mut board);
+    post(
+        &mut board,
+        "codex",
+        plan,
+        EntryKind::Note,
+        "own first",
+        None,
+    );
+    post(
+        &mut board,
+        "claude",
+        plan,
+        EntryKind::Note,
+        "foreign first",
+        None,
+    );
+    post(
+        &mut board,
+        "codex",
+        plan,
+        EntryKind::Note,
+        "own middle",
+        None,
+    );
+    post(
+        &mut board,
+        "claude",
+        plan,
+        EntryKind::Note,
+        "irrelevant recipient",
+        Some("muse"),
+    );
+    post(
+        &mut board,
+        "claude",
+        plan,
+        EntryKind::Note,
+        "foreign next",
+        None,
+    );
+    post(
+        &mut board,
+        "claude",
+        plan,
+        EntryKind::Note,
+        "foreign last",
+        None,
+    );
+    feed(&mut board, None, 100);
+    call(
+        &mut board,
+        "codex",
+        BoardOp::AcknowledgeInbox {
+            rendered_through: EventSeq::new(1),
+        },
+    );
+    let first = feed(&mut board, None, 1);
+    assert_eq!(first.events[0].seq.get(), 3);
+    assert_eq!(first.scanned_through.get(), 5);
+    assert!(first.query_truncated);
+    let rendered = crate::board::board_render::render_reply(
+        &BoardReply::new("local", BoardResult::Inbox(first.clone())),
+        &crate::output::OutputBudget::new(2000).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(rendered.acknowledge_seq, Some(EventSeq::new(3)));
+    call(
+        &mut board,
+        "codex",
+        BoardOp::AcknowledgeInbox {
+            rendered_through: rendered.acknowledge_seq.unwrap(),
+        },
+    );
+    let next = feed(&mut board, None, 100);
+    assert_eq!(next.events[0].seq.get(), 6);
+    assert_eq!(next.scanned_through.get(), 7);
+    let explicit = feed(&mut board, Some(EventSeq::new(7)), 100);
+    assert!(!explicit.advancing);
+    assert!(explicit.events.is_empty());
+    post(
+        &mut board,
+        "codex",
+        plan,
+        EntryKind::Note,
+        "own only tail",
+        None,
+    );
+    call(
+        &mut board,
+        "codex",
+        BoardOp::AcknowledgeInbox {
+            rendered_through: EventSeq::new(7),
+        },
+    );
+    let own_only = feed(&mut board, None, 100);
+    assert!(own_only.events.is_empty());
+    assert_eq!(own_only.scanned_through.get(), 8);
+}
+
+#[test]
+fn first_inbox_limit_selects_a_recent_seed_not_a_forward_page() {
+    let (_directory, mut board) = database();
+    let plan = plan(&mut board);
+    for index in 0..6 {
+        post(
+            &mut board,
+            "claude",
+            plan,
+            EntryKind::Note,
+            &format!("seed fact {index}"),
+            None,
+        );
+    }
+    let seed = feed(&mut board, None, 2);
+    assert_eq!(
+        seed.events
+            .iter()
+            .map(|event| event.seq.get())
+            .collect::<Vec<_>>(),
+        vec![6, 7]
+    );
+    assert!(!seed.query_truncated);
+    assert_eq!(seed.scanned_through.get(), 7);
+    assert_eq!(seed.cursor.get(), 0);
 }

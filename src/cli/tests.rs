@@ -742,3 +742,24 @@ fn claim_resume_without_scope_survives_router_normalization() {
         assert!(board_parse(&options, None).is_err());
     }
 }
+
+#[test]
+fn board_inbox_all_scope_survives_router_normalization() {
+    use crate::board::board_grammar::{normalize_args, parse as board_parse};
+    let args = ["board", "inbox", "42", "--all"].map(str::to_owned);
+    let options = parse(&args).unwrap();
+    let command = board_parse(&options, None).unwrap();
+    let forwarded = normalize_args(&args, &options, None).unwrap();
+    let routed = parse(&forwarded).unwrap();
+    assert_eq!(board_parse(&routed, None).unwrap(), command);
+    assert!(matches!(
+        command,
+        crate::board::board_grammar::BoardCommand::Op(
+            crate::board::board_protocol::BoardOp::Inbox {
+                all: true,
+                repo_key: None,
+                ..
+            }
+        )
+    ));
+}

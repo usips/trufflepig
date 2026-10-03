@@ -432,15 +432,37 @@ pub(super) fn entry_view(
 
 pub(super) fn open_entries(
     conn: &Connection,
-    actor: &BoardActor,
-) -> Result<Vec<EntryRecord>, BoardError> {
-    entries(
+    ctx: &WriteContext,
+    repo_key: Option<&RepoKey>,
+    all: bool,
+    limit: usize,
+) -> Result<(Vec<EntryRecord>, usize), BoardError> {
+    let predicate = format!(
+        "(EXISTS(SELECT 1 FROM proposals p WHERE p.entry_id=e.id AND p.state='open') OR (e.kind='feedback' AND e.state IN ('open','triaged')) OR ({OPEN_QUESTION})) AND (e.to_whom IS NULL OR e.to_whom IN (?1,?2,?3)) AND (?4 OR e.to_whom IN (?1,?2,?3) OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id AND scope.repo_key=?5) OR (e.kind='feedback' AND e.actor_id=?6))"
+    );
+    let identity = ctx.actor.identity();
+    let harness = ctx.actor.harness.as_str();
+    let repo = repo_key.map(RepoKey::as_str);
+    let parameters = params![ctx.actor.user, harness, identity, all, repo, ctx.actor_id];
+    let total: i64 = conn
+        .query_row(
+            &format!("SELECT count(*) FROM entries e WHERE {predicate}"),
+            parameters,
+            |row| row.get(0),
+        )
+        .map_err(sql_error)?;
+    let records = entries(
         conn,
         &format!(
-            "SELECT e.id FROM entries e WHERE EXISTS(SELECT 1 FROM proposals p WHERE p.entry_id=e.id AND p.state='open') OR (e.kind='feedback' AND e.state IN ('open','triaged')) OR (({OPEN_QUESTION}) AND (e.to_whom IS NULL OR e.to_whom IN (?1,?2,?3))) ORDER BY e.seq,e.id"
+            "SELECT e.id FROM entries e WHERE {predicate} ORDER BY e.seq,e.id LIMIT {}",
+            limit.min(20)
         ),
-        params![actor.user, actor.harness.as_str(), actor.identity()],
-    )
+        parameters,
+    )?;
+    let total = usize::try_from(total)
+        .map_err(|_| invalid("board_unavailable", "invalid reminder count"))?;
+    let omitted = total.saturating_sub(records.len());
+    Ok((records, omitted))
 }
 
 pub(super) fn review(

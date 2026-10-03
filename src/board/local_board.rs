@@ -131,7 +131,12 @@ impl LocalBoard {
             claim_ttl_secs: self.claim_ttl_secs,
         };
         let mut reply = match &request.op {
-            BoardOp::Inbox { after, limit } => board_feed::inbox(&tx, &ctx, *after, *limit)?,
+            BoardOp::Inbox {
+                after,
+                limit,
+                repo_key,
+                all,
+            } => board_feed::inbox(&tx, &ctx, *after, *limit, repo_key.as_ref(), *all)?,
             BoardOp::Show { target } => board_reads::show(&tx, &ctx, target.as_ref())?,
             BoardOp::Review { base, agent } => {
                 board_reads::review(&tx, &ctx, *base, agent.as_ref())?
@@ -256,7 +261,12 @@ impl LocalBoard {
             BoardOp::Hello { model, effort } => {
                 entry_writes::hello(&tx, &ctx, model, effort.as_deref())?
             }
-            BoardOp::Inbox { after, limit } => board_feed::inbox(&tx, &ctx, *after, *limit)?,
+            BoardOp::Inbox {
+                after,
+                limit,
+                repo_key,
+                all,
+            } => board_feed::inbox(&tx, &ctx, *after, *limit, repo_key.as_ref(), *all)?,
             BoardOp::AcknowledgeInbox { rendered_through } => {
                 board_feed::acknowledge(&tx, &ctx, *rendered_through)?
             }
