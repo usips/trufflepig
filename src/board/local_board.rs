@@ -25,6 +25,7 @@ use super::board_vocabulary::EntryKind;
 
 pub struct LocalBoard {
     conn: Connection,
+    reader: Option<Connection>,
     path: PathBuf,
     claim_ttl_secs: i64,
     #[cfg(test)]
@@ -60,8 +61,10 @@ impl LocalBoard {
         if claim_ttl_secs == 0 {
             return Err(invalid("invalid_options", "claim TTL must be positive"));
         }
+        let (reader, _) = board_database::open_read_with_timeout(&path, timeout)?;
         Ok(Self {
             conn,
+            reader: Some(reader),
             path,
             claim_ttl_secs,
             #[cfg(test)]
@@ -74,6 +77,27 @@ impl LocalBoard {
         self.panic_after_write = true;
     }
 
+    /// Opens existing storage without creating, migrating, or writing board state.
+    pub fn open_read_with_timeout(
+        config: &BoardConfig,
+        timeout: Duration,
+    ) -> Result<Self, BoardError> {
+        config.ensure_local().map_err(BoardError::from)?;
+        let (conn, path) = board_database::open_read_with_timeout(&config.db_path, timeout)?;
+        Ok(Self {
+            conn,
+            reader: None,
+            path,
+            claim_ttl_secs: config.claim_ttl_seconds(),
+            #[cfg(test)]
+            panic_after_write: false,
+        })
+    }
+
+    pub fn needs_writable_initialization(error: &BoardError) -> bool {
+        error.code == BoardErrorCode::BoardInitializationRequired
+    }
+
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -83,13 +107,62 @@ impl LocalBoard {
     }
 
     pub fn set_busy_timeout(&self, timeout: Duration) -> Result<(), BoardError> {
-        self.conn
-            .busy_timeout(timeout.min(Duration::from_secs(5)))
-            .map_err(sql_error)
+        let timeout = timeout.min(Duration::from_secs(5));
+        self.conn.busy_timeout(timeout).map_err(sql_error)?;
+        if let Some(reader) = &self.reader {
+            reader.busy_timeout(timeout).map_err(sql_error)?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_read(&mut self, request: &BoardRequest) -> Result<BoardReply, BoardError> {
+        let reader = self.reader.as_mut().unwrap_or(&mut self.conn);
+        let tx = reader
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)
+            .map_err(sql_error)?;
+        let actor_id = lookup_actor(&tx, &request.actor)?.unwrap_or(-1);
+        let ctx = WriteContext {
+            actor_id,
+            actor: request.actor.clone(),
+            model: None,
+            effort: None,
+            now: unix_now()?,
+            seq: EventSeq::new(0),
+            claim_ttl_secs: self.claim_ttl_secs,
+        };
+        let mut reply = match &request.op {
+            BoardOp::Inbox { after, limit } => board_feed::inbox(&tx, &ctx, *after, *limit)?,
+            BoardOp::Show { target } => board_reads::show(&tx, &ctx, target.as_ref())?,
+            BoardOp::Review { base, agent } => {
+                board_reads::review(&tx, &ctx, *base, agent.as_ref())?
+            }
+            BoardOp::FeedbackList { open_only } => {
+                feedback_entries::list_feedback(&tx, *open_only)?
+            }
+            BoardOp::Repositories { plan } => board_reads::repositories(&tx, *plan)?,
+            _ => {
+                return Err(invalid(
+                    "invalid_options",
+                    "operation requires writable board storage",
+                ));
+            }
+        };
+        reply.backend = format!("local:{}", self.path.display());
+        tx.commit().map_err(sql_error)?;
+        Ok(reply)
     }
 
     fn dispatch(&mut self, request: &BoardRequest) -> Result<BoardReply, BoardError> {
         request.validate().map_err(BoardError::from)?;
+        if request.op.is_read_only() {
+            return self.dispatch_read(request);
+        }
+        if self.reader.is_none() {
+            return Err(invalid(
+                "invalid_options",
+                "operation requires writable board storage",
+            ));
+        }
         #[cfg(unix)]
         if !request.op.is_read_only() {
             use std::os::unix::fs::PermissionsExt;
@@ -314,7 +387,7 @@ impl BoardBackend for LocalBoard {
         self.dispatch(request)
     }
     fn max_seq(&self) -> Result<EventSeq, BoardError> {
-        max_seq(&self.conn)
+        max_seq(self.reader.as_ref().unwrap_or(&self.conn))
     }
 }
 
@@ -452,6 +525,21 @@ pub(super) fn unix_now() -> Result<i64, BoardError> {
         .map_err(|e| invalid("board_unavailable", e.to_string()))?
         .as_secs();
     i64::try_from(seconds).map_err(|e| invalid("board_unavailable", e.to_string()))
+}
+
+fn lookup_actor(conn: &Connection, actor: &BoardActor) -> Result<Option<i64>, BoardError> {
+    conn.query_row(
+        "SELECT id FROM actors WHERE user=?1 AND host=?2 AND harness=?3 AND session=?4",
+        params![
+            actor.user,
+            actor.host,
+            actor.harness.as_str(),
+            actor.session
+        ],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(sql_error)
 }
 
 fn ensure_actor(tx: &Transaction<'_>, actor: &BoardActor, now: i64) -> Result<i64, BoardError> {

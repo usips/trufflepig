@@ -293,7 +293,16 @@ impl BoardHost {
                     },
                 )
             } else {
-                self.ingest(&actor, Some(base.plan), scan_budget)?
+                match self.ingest(&actor, Some(base.plan), scan_budget) {
+                    Ok(result) => result,
+                    Err(error) => (
+                        self.repositories(&actor, Some(base.plan), deadline)?,
+                        super::commit_ingest::IngestReport {
+                            errors: vec![format!("review git scan unavailable: {error:#}")],
+                            ..Default::default()
+                        },
+                    ),
+                }
             };
             warnings.extend(report.errors);
             warnings.extend(
@@ -382,6 +391,41 @@ impl BoardHost {
         check_deadline(deadline)?;
         request.validate()?;
         let config = self.config()?;
+        if request.op.is_read_only() {
+            let mut reader = match LocalBoard::open_read_with_timeout(
+                &config,
+                deadline.cap(Duration::from_secs(5)),
+            ) {
+                Ok(reader) => reader,
+                Err(error)
+                    if !config.db_path.exists()
+                        || LocalBoard::needs_writable_initialization(&error) =>
+                {
+                    if LocalBoard::needs_writable_initialization(&error)
+                        && !board_storage_owner_writable(&config.db_path)
+                    {
+                        return Err(error.into());
+                    }
+                    let mut writer = lock_before(&self.inner.backend, deadline, "writer")?;
+                    if writer.is_none() {
+                        *writer = Some(LocalBoard::open_with_timeout(
+                            &config,
+                            deadline.cap(Duration::from_secs(5)),
+                        )?);
+                    }
+                    drop(writer);
+                    LocalBoard::open_read_with_timeout(
+                        &config,
+                        deadline.cap(Duration::from_secs(5)),
+                    )?
+                }
+                Err(error) => return Err(error.into()),
+            };
+            check_deadline(deadline)?;
+            let reply = reader.handle(request)?;
+            reply.validate()?;
+            return Ok(reply);
+        }
         let (reply, seq) = {
             let mut backend = lock_before(&self.inner.backend, deadline, "writer")?;
             if backend.is_none() {
@@ -663,16 +707,30 @@ impl BoardHost {
 }
 
 struct HostAccess<'a>(&'a BoardHost, QueryDeadline);
+fn board_storage_owner_writable(database: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    database
+        .metadata()
+        .is_ok_and(|metadata| metadata.permissions().mode() & 0o200 != 0)
+        && database.parent().is_some_and(|parent| {
+            parent
+                .metadata()
+                .is_ok_and(|metadata| metadata.permissions().mode() & 0o200 != 0)
+        })
+}
+
 impl BoardBackend for HostAccess<'_> {
     fn handle(&mut self, request: &BoardRequest) -> std::result::Result<BoardReply, BoardError> {
         self.0.handle_by(request, self.1).map_err(Into::into)
     }
     fn max_seq(&self) -> std::result::Result<EventSeq, BoardError> {
-        let backend =
-            lock_before(&self.0.inner.backend, self.1, "writer").map_err(BoardError::from)?;
-        backend
-            .as_ref()
-            .map_or(Ok(EventSeq::new(0)), BoardBackend::max_seq)
+        let config = self.0.config().map_err(BoardError::from)?;
+        if !config.db_path.exists() {
+            return Ok(EventSeq::new(0));
+        }
+        let reader =
+            LocalBoard::open_read_with_timeout(&config, self.1.cap(Duration::from_secs(5)))?;
+        reader.max_seq()
     }
 }
 
@@ -828,6 +886,9 @@ mod tests {
         let show = crate::cli::parse(&["board".into(), "show".into()]).unwrap();
         let reply = host.run(&show, &context, QueryDeadline::start()).unwrap();
         assert!(reply.contains("Survives panic"));
+        let create =
+            crate::cli::parse(&["board".into(), "new".into(), "Recovered writer".into()]).unwrap();
+        host.run(&create, &context, QueryDeadline::start()).unwrap();
         drop(lock_before(&host.inner.ingestor, QueryDeadline::start(), "ingest").unwrap());
         assert!(!host.inner.backend.is_poisoned());
         assert!(!host.inner.config.is_poisoned());
@@ -858,6 +919,49 @@ mod tests {
         assert!(clock.import_ready(now));
         clock.import_finished(now, &pending);
         assert!(clock.import_ready(now + Duration::from_secs(2)));
+    }
+
+    #[test]
+    fn host_reads_existing_board_without_initializing_or_waiting_for_writer() {
+        use std::os::unix::fs::PermissionsExt;
+        let scratch = std::env::var_os("TMPDIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from("/home/josh/.cache/codex-tmp"));
+        std::fs::create_dir_all(&scratch).unwrap();
+        let directory = tempfile::Builder::new().tempdir_in(scratch).unwrap();
+        let parent = directory.path().join("data");
+        std::fs::create_dir(&parent).unwrap();
+        let config = BoardConfig::for_database(parent.join("board.sqlite3"));
+        let actor = config.actor(None, Some("existing-read")).unwrap();
+        {
+            let mut original = LocalBoard::open(&config).unwrap();
+            original
+                .handle(&BoardRequest::new(
+                    actor.clone(),
+                    BoardOp::New {
+                        title: super::super::board_vocabulary::PlanTitle::new("Readable board")
+                            .unwrap(),
+                        body: super::super::board_vocabulary::PlanText::new("").unwrap(),
+                        steward: None,
+                    },
+                ))
+                .unwrap();
+        }
+        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let host = BoardHost::with_config(config);
+        let held = host.inner.backend.lock().unwrap();
+        let request = BoardRequest::new(actor, BoardOp::Show { target: None });
+        let started = Instant::now();
+        let reply = host.handle_by(&request, QueryDeadline::after(Duration::from_secs(1)));
+        drop(held);
+        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let reply = reply.unwrap();
+        let BoardResult::Plans(plans) = reply.result else {
+            panic!("expected stored plans");
+        };
+        assert_eq!(plans[0].title.as_str(), "Readable board");
+        assert!(host.inner.backend.lock().unwrap().is_none());
+        assert!(started.elapsed() < Duration::from_millis(500));
     }
 
     #[test]
@@ -1111,6 +1215,55 @@ mod tests {
         );
         assert!(crate::daemon::deadline::is_timed_out(&result.unwrap_err()));
         assert!(started.elapsed() < Duration::from_millis(150));
+        drop(held);
+    }
+    #[test]
+    fn host_bootstraps_writable_legacy_storage_but_keeps_readonly_initialization_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::Builder::new()
+            .prefix("legacy-host-")
+            .tempdir_in(
+                std::env::var_os("TMPDIR")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| {
+                        std::path::PathBuf::from(std::env::var_os("HOME").expect("HOME"))
+                            .join(".cache/codex-tmp")
+                    }),
+            )
+            .unwrap();
+        let config = BoardConfig::for_database(directory.path().join("board.sqlite3"));
+        let external = rusqlite::Connection::open(&config.db_path).unwrap();
+        external.pragma_update(None, "user_version", 0).unwrap();
+        std::fs::set_permissions(&config.db_path, std::fs::Permissions::from_mode(0o400)).unwrap();
+        let host = BoardHost::with_config(config.clone());
+        let request = BoardRequest::new(
+            config.actor(None, Some("legacy-reader")).unwrap(),
+            BoardOp::Show { target: None },
+        );
+        let error = host
+            .handle_by(&request, QueryDeadline::start())
+            .unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<BoardError>().map(|error| error.code),
+            Some(super::super::board_protocol::BoardErrorCode::BoardInitializationRequired)
+        );
+        assert!(host.inner.backend.lock().unwrap().is_none());
+        std::fs::set_permissions(&config.db_path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        host.handle_by(&request, QueryDeadline::start()).unwrap();
+        let version: i64 = external
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert!(version >= 2);
+        let held = host.inner.backend.lock().unwrap();
+        host.handle_by(&request, QueryDeadline::after(Duration::from_millis(100)))
+            .unwrap();
+        assert_eq!(
+            external
+                .query_row("SELECT COUNT(*) FROM actors", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
         drop(held);
     }
 }

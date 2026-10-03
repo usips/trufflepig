@@ -163,9 +163,17 @@ pub(super) fn open_read_with_timeout(
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .map_err(sql_error)?;
-    if version != SCHEMA_VERSION {
+    if version < SCHEMA_VERSION {
+        return Err(super::BoardError::new(
+            super::BoardErrorCode::BoardInitializationRequired,
+            format!(
+                "schema version {version} requires writable initialization for supported {SCHEMA_VERSION}"
+            ),
+        ));
+    }
+    if version > SCHEMA_VERSION {
         return Err(unavailable(format!(
-            "schema version {version} requires writable initialization for supported {SCHEMA_VERSION}"
+            "schema version {version} is newer than supported {SCHEMA_VERSION}"
         )));
     }
     Ok((conn, resolved))
@@ -200,6 +208,11 @@ fn io_error(error: std::io::Error) -> BoardError {
 
 fn unavailable(message: impl Into<String>) -> BoardError {
     invalid("board_unavailable", message)
+}
+
+#[cfg(test)]
+pub(super) fn legacy_schema() -> &'static str {
+    SCHEMA_V1
 }
 
 const SCHEMA_V1: &str = r#"

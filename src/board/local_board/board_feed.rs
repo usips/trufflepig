@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests;
 
-use rusqlite::{Connection, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use super::{
     BoardError, WriteContext, actor_from_row, board_reads, invalid, max_seq, row_number, sql_error,
@@ -27,14 +27,18 @@ pub(super) fn inbox(
     if !(1..=2000).contains(&limit) {
         return Err(invalid("invalid_options", "inbox limit must be 1..2000"));
     }
-    task_claims::refresh_inbox_claims(tx, ctx.actor_id, ctx.now)?;
+    if after.is_none() {
+        task_claims::refresh_inbox_claims(tx, ctx.actor_id, ctx.now)?;
+    }
     let stored: Option<i64> = tx
         .query_row(
             "SELECT cursor_seq FROM agent_sessions WHERE actor_id=?1",
             [ctx.actor_id],
             |row| row.get(0),
         )
-        .map_err(sql_error)?;
+        .optional()
+        .map_err(sql_error)?
+        .flatten();
     let cursor = EventSeq::new(stored.map(sqlite_u64).transpose()?.unwrap_or(0));
     let first = after.is_none() && stored.is_none();
     let start = after.unwrap_or(cursor);
