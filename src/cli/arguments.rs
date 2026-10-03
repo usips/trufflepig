@@ -41,6 +41,7 @@ Plans:
   board feed [P7] [SEQ]      frozen event pages
   board attention [--all]   pending work for this actor
   board history P7 [SEQ]    immutable plan revision history
+  board search TEXT... [--plan P7]  board full-text search
   board claim P7.3 SCOPE...  claim a task before working
   board post P7 KIND TEXT...  post progress or ask a question
   board task P7.3 COLUMN    move a task and release its claim
@@ -238,6 +239,7 @@ pub fn parse(args: &[String]) -> Result<Arguments> {
             (Some("board"), Some("feed" | "attention" | "history"))
             | (Some("feedback"), Some("ls")) => options.limit = 200,
             (Some("board"), Some("show")) if options.words.len() == 2 => options.limit = 200,
+            (Some("board"), Some("search")) => options.limit = 50,
             _ => {}
         }
     }

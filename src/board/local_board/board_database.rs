@@ -12,7 +12,7 @@ use super::{BoardError, invalid, sql_error};
 
 mod board_schema;
 
-use board_schema::{SCHEMA_V1, SCHEMA_V2, SCHEMA_VERSION};
+use board_schema::{SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_VERSION};
 
 #[cfg(test)]
 pub(super) fn open(path: &Path) -> Result<(Connection, PathBuf), BoardError> {
@@ -127,6 +127,7 @@ pub(super) fn open_with_timeout(
         let migration = match version {
             0 => SCHEMA_V1,
             1 => SCHEMA_V2,
+            2 => SCHEMA_V3,
             _ => {
                 return Err(unavailable(format!(
                     "missing schema migration from version {version}"

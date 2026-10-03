@@ -8,6 +8,7 @@ mod board_feed;
 mod board_lifecycle;
 mod board_reads;
 mod board_receipts;
+mod board_search;
 mod board_snapshots;
 mod collection_nested;
 mod collection_reads;

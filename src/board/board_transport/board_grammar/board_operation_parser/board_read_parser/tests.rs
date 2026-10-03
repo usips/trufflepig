@@ -92,3 +92,35 @@ fn board_collection_grammar_rejects_wrong_cursor_types_and_cross_command_flags()
         assert!(board_parse(&options, None).is_err(), "{words:?}");
     }
 }
+
+#[test]
+fn board_search_round_trip_preserves_raw_query_and_plan_scope() {
+    use crate::board::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
+    use crate::board::board_protocol::BoardOp;
+    let args = [
+        "board",
+        "search",
+        "--board-text=\"parser scope\" OR feedback",
+        "--plan=P7",
+    ]
+    .map(str::to_owned);
+    let options = parse(&args).unwrap();
+    let forwarded = normalize_args(&args, &options, None).unwrap();
+    let BoardCommand::Op(BoardOp::Search { query, plan, limit }) =
+        board_parse(&parse(&forwarded).unwrap(), None).unwrap()
+    else {
+        panic!("search");
+    };
+    assert_eq!(query, "\"parser scope\" OR feedback");
+    assert_eq!(plan.unwrap().to_string(), "P7");
+    assert_eq!(limit, 50);
+    for words in [
+        vec!["board", "search", "query", "--after=1"],
+        vec!["board", "search", "query", "-n51"],
+        vec!["board", "search", "query", "--plan=E1"],
+        vec!["board", "search"],
+    ] {
+        let options = parse(&words.iter().map(|word| (*word).into()).collect::<Vec<_>>()).unwrap();
+        assert!(board_parse(&options, None).is_err(), "{words:?}");
+    }
+}

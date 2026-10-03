@@ -6,6 +6,7 @@ mod render_entry;
 mod render_inbox;
 mod render_lines;
 mod render_review;
+mod search_render;
 #[cfg(test)]
 mod tests;
 
@@ -41,6 +42,7 @@ pub fn render_reply(reply: &BoardReply, budget: &OutputBudget) -> Result<Rendere
     }
     match &reply.result {
         BoardResult::Inbox(inbox) => render_inbox(reply, inbox, budget),
+        BoardResult::Search(result) => search_render::render(reply, result, budget),
         BoardResult::Entry(view) => render_entry(reply, view, budget),
         BoardResult::Plan(view) => render_plan(reply, view, budget),
         BoardResult::Overview(_)

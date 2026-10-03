@@ -8,11 +8,12 @@ mod tests;
 pub use super::board_collections::*;
 pub use board_errors::{BoardError, BoardErrorCode, leading_error_code};
 pub use board_records::{
-    BoardChange, BoardReply, BoardResult, ClaimEndReason, ClaimRecord, CommitCoauthor,
-    CommitLinkResult, CommitPlanLink, EntryRecord, EntryState, EntryView, EventRecord,
-    FeedbackMetadata, FeedbackRecord, FeedbackVia, InboxReply, InboxWait, LinkedCommit, PlanRecord,
-    PlanView, ProposalRecord, RecentCall, RepoRegistration, RepoScanTarget, ReviewEvidence,
-    RevisionDiff, RevisionRecord, RevisionSource, SessionRecord, TaskRecord,
+    BoardChange, BoardReply, BoardResult, BoardSearchHit, BoardSearchReply, BoardSearchSource,
+    ClaimEndReason, ClaimRecord, CommitCoauthor, CommitLinkResult, CommitPlanLink, EntryRecord,
+    EntryState, EntryView, EventRecord, FeedbackMetadata, FeedbackRecord, FeedbackVia, InboxReply,
+    InboxWait, LinkedCommit, PlanRecord, PlanView, ProposalRecord, RecentCall, RepoRegistration,
+    RepoScanTarget, ReviewEvidence, RevisionDiff, RevisionRecord, RevisionSource, SessionRecord,
+    TaskRecord,
 };
 pub use board_requests::{AgentClaims, BoardOp, BoardRequest};
 

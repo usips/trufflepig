@@ -87,6 +87,11 @@ pub enum BoardOp {
     Show {
         target: BoardRef,
     },
+    Search {
+        query: String,
+        plan: Option<PlanId>,
+        limit: usize,
+    },
     Overview {
         repo_key: Option<RepoKey>,
         after: Option<PlanId>,

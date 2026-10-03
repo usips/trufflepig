@@ -48,7 +48,7 @@ fn populated_v1_migration_preserves_durable_evidence() {
     let version: i64 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 2);
+    assert_eq!(version, SCHEMA_VERSION);
     for (table, count) in [
         ("actors", 1),
         ("agent_sessions", 1),

@@ -38,6 +38,16 @@ impl BoardOp {
             Self::Inbox { limit, .. } if *limit == 0 || *limit > 2000 => {
                 bail!("invalid_options: inbox limit must be 1..2000")
             }
+            Self::Search { query, limit, .. }
+                if query.trim().is_empty()
+                    || query.len() > ENTRY_TEXT_LIMIT
+                    || query.contains('\0')
+                    || !(1..=50).contains(limit) =>
+            {
+                bail!(
+                    "invalid_options: search requires a nonblank query of at most 4096 bytes and a limit of 1..50"
+                )
+            }
             Self::Feed { limit, .. } if !(1..=500).contains(limit) => {
                 bail!("invalid_options: feed limit must be 1..500")
             }

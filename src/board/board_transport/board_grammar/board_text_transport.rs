@@ -59,7 +59,7 @@ fn text_position(options: &Arguments) -> Option<usize> {
         words.first().map(String::as_str),
         words.get(1).map(String::as_str),
     ) {
-        (Some("board"), Some("new")) => Some(2),
+        (Some("board"), Some("new" | "search")) => Some(2),
         (Some("board"), Some("claim" | "propose" | "edit" | "accept" | "reject")) => Some(3),
         (Some("board"), Some("post")) => Some(4),
         (Some("board"), Some("task"))

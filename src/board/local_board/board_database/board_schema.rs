@@ -1,6 +1,9 @@
 //! Durable board schema and forward-only migration SQL.
 
-pub(super) const SCHEMA_VERSION: i64 = 2;
+mod board_search_schema;
+pub(super) use board_search_schema::SCHEMA_V3;
+
+pub(super) const SCHEMA_VERSION: i64 = 3;
 
 pub(super) const SCHEMA_V1: &str = r#"
 CREATE TABLE board_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);

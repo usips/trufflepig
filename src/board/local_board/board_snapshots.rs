@@ -52,6 +52,9 @@ impl LocalBoard {
                 all,
             } => board_feed::inbox(&tx, &ctx, *after, *limit, repo_key.as_ref(), *all)?,
             BoardOp::Show { target } => board_reads::show(&tx, &ctx, target)?,
+            BoardOp::Search { query, plan, limit } => {
+                board_search::search(&tx, query, *plan, *limit)?
+            }
             BoardOp::Review { base, agent } => {
                 board_reads::review(&tx, &ctx, *base, agent.as_ref())?
             }

@@ -8,6 +8,7 @@ impl BoardOp {
             self,
             Self::Inbox { after: Some(_), .. }
                 | Self::Show { .. }
+                | Self::Search { .. }
                 | Self::Review { .. }
                 | Self::FeedbackList { .. }
                 | Self::Repositories { .. }
@@ -30,6 +31,7 @@ impl BoardOp {
                 Some(base.plan)
             }
             Self::Feedback { plan, .. }
+            | Self::Search { plan, .. }
             | Self::Repositories { plan }
             | Self::Feed { plan, .. }
             | Self::Entries { plan, .. }

@@ -29,7 +29,9 @@ impl RetryScope {
         let verb = options.words.first().map_or("status", String::as_str);
         match verb {
             "board" => match options.words.get(1).map(String::as_str) {
-                Some("show" | "review" | "ingest" | "feed" | "attention" | "history") => Self::Read,
+                Some(
+                    "show" | "review" | "ingest" | "feed" | "attention" | "history" | "search",
+                ) => Self::Read,
                 Some("inbox") if options.words.get(2).is_some() => Self::Read,
                 Some(word) if word.parse::<u64>().is_ok() => Self::Read,
                 _ => Self::ContentionOnly,

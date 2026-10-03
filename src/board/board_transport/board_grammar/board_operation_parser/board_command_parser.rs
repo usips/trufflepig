@@ -132,7 +132,7 @@ pub(super) fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Re
         }
         value if value.parse::<u64>().is_ok() => return parse_inbox(options, 1),
         _ => bail!(
-            "usage: board hello|inbox|show|feed|attention|history|claim|post|task|propose|review|accept|reject|edit|new|ingest"
+            "usage: board hello|inbox|show|feed|attention|history|search|claim|post|task|propose|review|accept|reject|edit|new|ingest"
         ),
     };
     Ok(BoardCommand::Op(op))

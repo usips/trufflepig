@@ -12,7 +12,7 @@ use anyhow::{Context, Result, bail, ensure};
 
 pub(super) fn parse_read(
     options: &Arguments,
-    _payload: &BoardTextPayload,
+    payload: &BoardTextPayload,
 ) -> Result<Option<BoardOp>> {
     let verb = options.words.get(1).map(String::as_str).unwrap_or("inbox");
     let op = match verb {
@@ -97,6 +97,19 @@ pub(super) fn parse_read(
                 after: event_after(options, options.words.get(3).map(String::as_str))?,
                 through: through(options)?,
                 limit: bounded_limit(options, 200)?,
+            }
+        }
+        "search" => {
+            check_flags(options, &["plan", "text"])?;
+            BoardOp::Search {
+                query: payload.text.clone(),
+                plan: options
+                    .board
+                    .plan
+                    .as_deref()
+                    .map(str::parse::<PlanId>)
+                    .transpose()?,
+                limit: bounded_limit(options, 50)?,
             }
         }
         _ => return Ok(None),

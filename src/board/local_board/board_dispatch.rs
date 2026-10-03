@@ -180,6 +180,7 @@ impl LocalBoard {
                 entry_writes::register_repo(&tx, &ctx, registration)?
             }
             BoardOp::Show { .. }
+            | BoardOp::Search { .. }
             | BoardOp::Review { .. }
             | BoardOp::FeedbackList { .. }
             | BoardOp::Repositories { .. }

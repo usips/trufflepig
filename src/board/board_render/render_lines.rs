@@ -105,6 +105,19 @@ pub(super) fn lines_result(result: &BoardResult) -> String {
         }
         BoardResult::Plan(view) => plan_lines(&mut text, view),
         BoardResult::Revision(revision) => revision_lines(&mut text, revision),
+        BoardResult::Search(result) => {
+            writeln!(text, "search truncated={}", result.truncated).unwrap();
+            for hit in &result.hits {
+                writeln!(
+                    text,
+                    "{}\t{:?}\t{}",
+                    hit.target,
+                    hit.source,
+                    cell(&hit.snippet)
+                )
+                .unwrap();
+            }
+        }
         BoardResult::Session(session) => writeln!(
             text,
             "hello {} model={} effort={} cursor={}",

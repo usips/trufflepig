@@ -13,6 +13,7 @@ mod board_entry_records;
 mod board_feedback_records;
 mod board_plan_records;
 mod board_repo_records;
+mod board_search_records;
 
 pub use board_entry_records::{
     BoardChange, EntryRecord, EntryState, EntryView, EventRecord, FeedbackVia, InboxReply,
@@ -27,6 +28,7 @@ pub use board_repo_records::{
     CommitCoauthor, CommitLinkResult, CommitPlanLink, LinkedCommit, RepoRegistration,
     RepoScanTarget,
 };
+pub use board_search_records::{BoardSearchHit, BoardSearchReply, BoardSearchSource};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -69,6 +71,7 @@ pub enum BoardResult {
     Cursor(EventSeq),
     Plan(PlanView),
     Entry(EntryView),
+    Search(BoardSearchReply),
     Revision(RevisionRecord),
     Diff(RevisionDiff),
     Change(BoardChange),
