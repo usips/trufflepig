@@ -458,6 +458,8 @@ pub struct BoardReply {
     pub api: u32,
     pub backend: String,
     pub result: BoardResult,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot_seq: Option<EventSeq>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
 }
@@ -468,6 +470,7 @@ impl BoardReply {
             api: BOARD_API,
             backend: backend.into(),
             result,
+            snapshot_seq: None,
             warnings: Vec::new(),
         }
     }

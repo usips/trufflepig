@@ -335,13 +335,13 @@ CREATE UNIQUE INDEX repo_paths_host_common ON repo_paths(host,common_dir);
 ALTER TABLE repo_paths DROP COLUMN tips_digest;
 ALTER TABLE repo_paths ADD COLUMN registration_error TEXT;
 ALTER TABLE repo_paths ADD COLUMN root_commits_json TEXT NOT NULL DEFAULT '[]';
+CREATE INDEX entries_sequence ON entries(seq,id);
 ALTER TABLE events ADD COLUMN model TEXT;
 ALTER TABLE events ADD COLUMN effort TEXT;
 UPDATE events SET model=(SELECT model FROM entries WHERE seq=events.seq AND actor_id=events.actor_id ORDER BY id LIMIT 1),
  effort=(SELECT effort FROM entries WHERE seq=events.seq AND actor_id=events.actor_id ORDER BY id LIMIT 1);
 DROP INDEX events_recipient_sequence;
 CREATE INDEX entries_supersedes ON entries(supersedes);
-CREATE INDEX entries_sequence ON entries(seq,id);
 CREATE INDEX entries_kind_state ON entries(kind,state,seq);
 CREATE TABLE proposals_v2(
  entry_id INTEGER PRIMARY KEY REFERENCES entries(id), plan_id INTEGER NOT NULL REFERENCES plans(id),

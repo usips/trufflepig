@@ -98,12 +98,40 @@ impl LocalBoard {
         error.code == BoardErrorCode::BoardInitializationRequired
     }
 
-    pub fn path(&self) -> &Path {
-        &self.path
+    pub fn set_claim_ttl(&mut self, claim_ttl: Duration) -> Result<(), BoardError> {
+        let seconds = i64::try_from(claim_ttl.as_secs())
+            .map_err(|_| invalid("invalid_options", "claim TTL is too large"))?;
+        if seconds == 0 {
+            return Err(invalid("invalid_options", "claim TTL must be positive"));
+        }
+        self.claim_ttl_secs = seconds;
+        Ok(())
     }
 
-    pub(crate) fn set_claim_ttl_seconds(&mut self, claim_ttl_secs: i64) {
-        self.claim_ttl_secs = claim_ttl_secs;
+    /// Returns one committed event snapshot without retaining a read transaction.
+    pub fn read_event_batch(
+        &mut self,
+        after: EventSeq,
+        plan: Option<PlanId>,
+        limit: usize,
+    ) -> Result<(EventSeq, Vec<EventRecord>), BoardError> {
+        let tx = self
+            .reader
+            .as_mut()
+            .unwrap_or(&mut self.conn)
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)
+            .map_err(sql_error)?;
+        if let Some(plan) = plan {
+            require_plan(&tx, plan)?;
+        }
+        let latest = max_seq(&tx)?;
+        let events = board_feed::read_events(&tx, after, latest, plan, limit)?;
+        tx.commit().map_err(sql_error)?;
+        Ok((latest, events))
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 
     pub fn set_busy_timeout(&self, timeout: Duration) -> Result<(), BoardError> {
@@ -153,6 +181,7 @@ impl LocalBoard {
             }
         };
         reply.backend = format!("local:{}", self.path.display());
+        reply.snapshot_seq = Some(max_seq(&tx)?);
         tx.commit().map_err(sql_error)?;
         Ok(reply)
     }
@@ -387,6 +416,9 @@ impl LocalBoard {
             tx.execute("INSERT INTO operation_dedupes(dedupe_key,reply_json,created_at) VALUES(?1,?2,?3) ON CONFLICT(dedupe_key) DO UPDATE SET reply_json=excluded.reply_json,created_at=excluded.created_at", params![key, encoded, now]).map_err(sql_error)?;
         }
         reply.backend = format!("local:{}", self.path.display());
+        if matches!(request.op, BoardOp::Inbox { .. }) {
+            reply.snapshot_seq = Some(max_seq(&tx)?);
+        }
         tx.commit().map_err(sql_error)?;
         Ok(reply)
     }
@@ -452,7 +484,7 @@ pub(super) fn insert_event(
     summary: &str,
 ) -> Result<(), BoardError> {
     crate::board::board_vocabulary::EntryText::new(summary.to_owned()).map_err(BoardError::from)?;
-    tx.execute("INSERT INTO events(seq,plan_id,kind,subject,to_whom,actor_id,summary,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)", params![sql_number(ctx.seq.get()), plan.map(|id|sql_number(id.get())), kind, subject, to, ctx.actor_id, summary, ctx.now]).map_err(sql_error)?;
+    tx.execute("INSERT INTO events(seq,plan_id,kind,subject,to_whom,actor_id,summary,created_at,model,effort) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)", params![sql_number(ctx.seq.get()), plan.map(|id|sql_number(id.get())), kind, subject, to, ctx.actor_id, summary, ctx.now, ctx.model, ctx.effort]).map_err(sql_error)?;
     Ok(())
 }
 

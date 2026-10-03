@@ -15,7 +15,7 @@ use crate::board::board_protocol::{BoardReply, BoardResult, EventRecord, InboxRe
 use crate::board::board_vocabulary::EntryText;
 
 const FIRST_FEED_LIMIT: usize = 20;
-const EVENT_SELECT: &str = "SELECT e.seq,e.plan_id,e.kind,e.subject,e.to_whom,a.user,a.host,a.harness,a.session,(SELECT model FROM entries WHERE seq=e.seq AND actor_id=e.actor_id ORDER BY id LIMIT 1),(SELECT effort FROM entries WHERE seq=e.seq AND actor_id=e.actor_id ORDER BY id LIMIT 1),e.summary,e.created_at FROM events e JOIN actors a ON a.id=e.actor_id";
+const EVENT_SELECT: &str = "SELECT e.seq,e.plan_id,e.kind,e.subject,e.to_whom,a.user,a.host,a.harness,a.session,e.model,e.effort,e.summary,e.created_at FROM events e JOIN actors a ON a.id=e.actor_id";
 const RELEVANT_EVENT: &str = "e.actor_id<>?1 AND (e.kind IN ('claim','task') OR e.to_whom IS NULL OR e.to_whom IN (?3,?4,?5)) AND (?7 OR e.to_whom IN (?3,?4,?5) OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id AND scope.repo_key=?8) OR EXISTS(SELECT 1 FROM entries evidence JOIN plan_repos scope ON scope.plan_id=evidence.plan_id WHERE evidence.seq=e.seq AND scope.repo_key=?8) OR (e.kind='feedback' AND EXISTS(SELECT 1 FROM entries report WHERE report.kind='feedback' AND report.actor_id=?1 AND 'E'||report.id=e.subject)))";
 
 pub(super) fn inbox(
@@ -68,38 +68,7 @@ pub(super) fn inbox(
         .map_err(sql_error)?;
     let mut events = Vec::with_capacity(count + 1);
     while let Some(row) = rows.next().map_err(sql_error)? {
-        let to: Option<String> = row.get(4).map_err(sql_error)?;
-        let plan: Option<i64> = row.get(1).map_err(sql_error)?;
-        events.push(EventRecord {
-            seq: EventSeq::new(row_number(row, 0).map_err(sql_error)?),
-            plan: plan
-                .map(sqlite_u64)
-                .transpose()?
-                .map(PlanId::new)
-                .transpose()
-                .map_err(BoardError::from)?,
-            kind: row
-                .get::<_, String>(2)
-                .map_err(sql_error)?
-                .parse()
-                .map_err(BoardError::from)?,
-            subject: row
-                .get::<_, String>(3)
-                .map_err(sql_error)?
-                .parse::<BoardRef>()
-                .map_err(BoardError::from)?,
-            to: to
-                .as_deref()
-                .map(BoardRecipient::parse)
-                .transpose()
-                .map_err(BoardError::from)?,
-            actor: actor_from_row(row, 5).map_err(sql_error)?,
-            model: row.get(9).map_err(sql_error)?,
-            effort: row.get(10).map_err(sql_error)?,
-            summary: EntryText::new(row.get::<_, String>(11).map_err(sql_error)?)
-                .map_err(BoardError::from)?,
-            created_at: row.get(12).map_err(sql_error)?,
-        });
+        events.push(event_row(row)?);
     }
     let next = if events.len() > count {
         events.pop()
@@ -134,6 +103,72 @@ pub(super) fn inbox(
             wait: InboxWait::None,
         }),
     ))
+}
+
+fn event_row(row: &rusqlite::Row<'_>) -> Result<EventRecord, BoardError> {
+    let to: Option<String> = row.get(4).map_err(sql_error)?;
+    let plan: Option<i64> = row.get(1).map_err(sql_error)?;
+    Ok(EventRecord {
+        seq: EventSeq::new(row_number(row, 0).map_err(sql_error)?),
+        plan: plan
+            .map(sqlite_u64)
+            .transpose()?
+            .map(PlanId::new)
+            .transpose()
+            .map_err(BoardError::from)?,
+        kind: row
+            .get::<_, String>(2)
+            .map_err(sql_error)?
+            .parse()
+            .map_err(BoardError::from)?,
+        subject: row
+            .get::<_, String>(3)
+            .map_err(sql_error)?
+            .parse::<BoardRef>()
+            .map_err(BoardError::from)?,
+        to: to
+            .as_deref()
+            .map(BoardRecipient::parse)
+            .transpose()
+            .map_err(BoardError::from)?,
+        actor: actor_from_row(row, 5).map_err(sql_error)?,
+        model: row.get(9).map_err(sql_error)?,
+        effort: row.get(10).map_err(sql_error)?,
+        summary: EntryText::new(row.get::<_, String>(11).map_err(sql_error)?)
+            .map_err(BoardError::from)?,
+        created_at: row.get(12).map_err(sql_error)?,
+    })
+}
+
+pub(super) fn read_events(
+    conn: &Connection,
+    after: EventSeq,
+    through: EventSeq,
+    plan: Option<PlanId>,
+    limit: usize,
+) -> Result<Vec<EventRecord>, BoardError> {
+    if !(1..=501).contains(&limit) {
+        return Err(invalid(
+            "invalid_options",
+            "event batch limit must be 1..501",
+        ));
+    }
+    let mut statement = conn.prepare(&format!(
+        "{EVENT_SELECT} WHERE e.seq>?1 AND e.seq<=?2 AND (?3 IS NULL OR e.plan_id=?3 OR EXISTS(SELECT 1 FROM entries evidence WHERE evidence.seq=e.seq AND evidence.plan_id=?3)) ORDER BY e.seq LIMIT ?4"
+    )).map_err(sql_error)?;
+    let mut rows = statement
+        .query(params![
+            sql_number(after.get()),
+            sql_number(through.get()),
+            plan.map(|id| sql_number(id.get())),
+            limit as i64
+        ])
+        .map_err(sql_error)?;
+    let mut events = Vec::with_capacity(limit);
+    while let Some(row) = rows.next().map_err(sql_error)? {
+        events.push(event_row(row)?);
+    }
+    Ok(events)
 }
 
 pub(super) fn acknowledge(

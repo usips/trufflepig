@@ -456,7 +456,7 @@ impl BoardHost {
             let backend = backend.as_mut().expect("backend just initialized");
             check_deadline(deadline)?;
             backend.set_busy_timeout(deadline.cap(Duration::from_secs(5)))?;
-            backend.set_claim_ttl_seconds(config.claim_ttl_seconds());
+            backend.set_claim_ttl(Duration::from_secs(config.claim_ttl_minutes * 60))?;
             let reply = backend.handle(request)?;
             reply.validate()?;
             let seq = if deadline.expired() {
