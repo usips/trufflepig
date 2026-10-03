@@ -1,5 +1,6 @@
 //! Plan revisions, tasks, claims, and review evidence.
 use super::{EntryRecord, FeedbackRecord, LinkedCommit};
+use crate::board::board_domain::board_collections::{ClaimCursor, EntryCursor, TaskCeiling};
 use crate::board::{
     board_actor::{BoardActor, BoardRecipient, HarnessLabel},
     board_ids::{EntryId, EventSeq, PlanId, PlanRevision, TaskId},
@@ -127,8 +128,21 @@ pub struct PlanView {
     pub plan: PlanRecord,
     pub revision: RevisionRecord,
     pub tasks: Vec<TaskRecord>,
+    pub task_ceiling: TaskCeiling,
     pub claims: Vec<ClaimRecord>,
     pub entries: Vec<EntryRecord>,
+    pub commits: Vec<LinkedCommit>,
+    pub tasks_omitted: usize,
+    pub claims_omitted: usize,
+    pub entries_omitted: usize,
+    pub commits_omitted: usize,
+    pub tasks_next_after: Option<TaskId>,
+    pub claims_next_after: Option<ClaimCursor>,
+    pub entries_next_after: Option<EntryCursor>,
+    pub through: EventSeq,
+    pub can_edit: bool,
+    pub server_now: i64,
+    pub claim_ttl_secs: u64,
     pub sections_without_tasks: Vec<String>,
 }
 

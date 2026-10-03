@@ -129,48 +129,5 @@ fn linked_commits(
     start: i64,
     end: i64,
 ) -> Result<Vec<LinkedCommit>, BoardError> {
-    let mut statement = conn.prepare("SELECT DISTINCT c.repo_key,c.oid,c.subject,c.committed_at,c.author,c.coauthors,c.files,c.insertions,c.deletions FROM commits c JOIN commit_plans p ON p.repo_key=c.repo_key AND p.oid=c.oid WHERE p.plan_id=?1 AND c.committed_at>=?2 AND c.committed_at<=?3 ORDER BY c.committed_at,c.repo_key,c.oid").map_err(sql_error)?;
-    let mut rows = statement
-        .query(params![sql_number(plan.get()), start, end])
-        .map_err(sql_error)?;
-    let mut result = Vec::new();
-    while let Some(row) = rows.next().map_err(sql_error)? {
-        let repo_key: RepoKey = row
-            .get::<_, String>(0)
-            .map_err(sql_error)?
-            .parse()
-            .map_err(BoardError::from)?;
-        let oid: crate::identity::GitOid = row
-            .get::<_, String>(1)
-            .map_err(sql_error)?
-            .parse()
-            .map_err(BoardError::from)?;
-        let mut links = conn.prepare("SELECT p.plan_id,t.task_ordinal FROM commit_plans p LEFT JOIN commit_tasks t ON t.repo_key=p.repo_key AND t.oid=p.oid AND t.plan_id=p.plan_id WHERE p.repo_key=?1 AND p.oid=?2 ORDER BY p.plan_id,t.task_ordinal").map_err(sql_error)?;
-        let plans = links
-            .query_map(params![repo_key.as_str(), oid.to_string()], |row| {
-                Ok((row_number(row, 0)?, row.get::<_, Option<i64>>(1)?))
-            })
-            .map_err(sql_error)?
-            .map(|link| {
-                let (id, task_ordinal) = link.map_err(sql_error)?;
-                Ok(CommitPlanLink {
-                    plan_id: PlanId::new(id).map_err(BoardError::from)?,
-                    task_ordinal: task_ordinal.map(sqlite_u64).transpose()?,
-                })
-            })
-            .collect::<Result<Vec<_>, BoardError>>()?;
-        result.push(LinkedCommit {
-            repo_key,
-            oid,
-            subject: row.get(2).map_err(sql_error)?,
-            committed_at: row.get(3).map_err(sql_error)?,
-            author: row.get(4).map_err(sql_error)?,
-            coauthors: decode_json(row.get(5).map_err(sql_error)?)?,
-            files: row_number(row, 6).map_err(sql_error)?,
-            insertions: row_number(row, 7).map_err(sql_error)?,
-            deletions: row_number(row, 8).map_err(sql_error)?,
-            plans,
-        });
-    }
-    Ok(result)
+    crate::board::local_board::board_commits::linked_commits_all(conn, plan, start, end)
 }

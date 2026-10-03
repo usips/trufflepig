@@ -1,5 +1,8 @@
 //! Versioned backend requests and operation addresses.
-use super::{BOARD_API, FeedbackMetadata, LinkedCommit, RepoRegistration, validate_claim};
+use super::{
+    BOARD_API, ClaimCursor, EntryCursor, FeedbackMetadata, LinkedCommit, RepoRegistration,
+    TaskCeiling, validate_claim,
+};
 use crate::board::{
     board_actor::{BoardActor, BoardRecipient, HarnessLabel},
     board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
@@ -12,6 +15,7 @@ use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+mod board_op_addresses;
 mod board_op_validation;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -81,7 +85,60 @@ pub enum BoardOp {
         rendered_through: EventSeq,
     },
     Show {
-        target: Option<BoardRef>,
+        target: BoardRef,
+    },
+    Overview {
+        repo_key: Option<RepoKey>,
+        after: Option<PlanId>,
+        through: Option<EventSeq>,
+        limit: usize,
+    },
+    Attention {
+        repo_key: Option<RepoKey>,
+        all: bool,
+        after: Option<EntryCursor>,
+        through: Option<EventSeq>,
+        limit: usize,
+    },
+    Feed {
+        plan: Option<PlanId>,
+        after: Option<EventSeq>,
+        through: Option<EventSeq>,
+        limit: usize,
+    },
+    History {
+        plan: PlanId,
+        after: Option<EventSeq>,
+        through: Option<EventSeq>,
+        limit: usize,
+    },
+    Entries {
+        plan: Option<PlanId>,
+        kind: Option<EntryKind>,
+        harness: Option<HarnessLabel>,
+        user: Option<String>,
+        host: Option<String>,
+        task: Option<TaskId>,
+        references: Option<EntryId>,
+        after: Option<EntryCursor>,
+        through: Option<EventSeq>,
+        limit: usize,
+    },
+    Tasks {
+        plan: PlanId,
+        after: Option<TaskId>,
+        ceiling: Option<TaskCeiling>,
+        through: Option<EventSeq>,
+        limit: usize,
+    },
+    Claims {
+        plan: Option<PlanId>,
+        own_stale: bool,
+        repo_key: Option<RepoKey>,
+        all: bool,
+        after: Option<ClaimCursor>,
+        through: Option<EventSeq>,
+        limit: usize,
     },
     New {
         title: PlanTitle,
@@ -150,6 +207,9 @@ pub enum BoardOp {
     },
     FeedbackList {
         open_only: bool,
+        after: Option<EntryCursor>,
+        through: Option<EventSeq>,
+        limit: usize,
     },
     FeedbackTriage {
         entry: EntryId,
@@ -180,34 +240,4 @@ pub enum BoardOp {
         common_dir: PathBuf,
         error: Option<String>,
     },
-}
-
-impl BoardOp {
-    pub fn is_read_only(&self) -> bool {
-        matches!(
-            self,
-            Self::Inbox { after: Some(_), .. }
-                | Self::Show { .. }
-                | Self::Review { .. }
-                | Self::FeedbackList { .. }
-                | Self::Repositories { .. }
-        )
-    }
-
-    pub fn plan_id(&self) -> Option<PlanId> {
-        match self {
-            Self::Post { target, .. }
-            | Self::Show {
-                target: Some(target),
-            } => target.plan_id(),
-            Self::TaskCreate { plan, .. } | Self::CarveClaim { plan, .. } => Some(*plan),
-            Self::TaskMove { task, .. } | Self::ClaimTask { task, .. } => Some(task.plan),
-            Self::Propose { base, .. } | Self::Edit { base, .. } | Self::Review { base, .. } => {
-                Some(base.plan)
-            }
-            Self::Feedback { plan, .. } | Self::Repositories { plan } => *plan,
-            Self::RegisterRepo { registration } => registration.plan_id,
-            _ => None,
-        }
-    }
 }

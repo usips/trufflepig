@@ -31,7 +31,7 @@ fn resumed_session_preserves_scope_and_records_previous_session() {
     };
     assert!(replay.deduplicated);
     assert_eq!(first.entry, replay.entry);
-    let history = read_claims(&conn, task.plan, i64::MAX, 120).unwrap();
+    let history = read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, i64::MAX, 120).unwrap();
     assert_eq!(history.len(), 2);
     assert_eq!(history[0].actor, previous);
     assert!(history[0].ended_at.is_some());
@@ -82,7 +82,9 @@ fn resume_requires_same_user_host_and_harness() {
         assert!(error.to_string().starts_with("invalid_actor:"), "{error}");
     }
     assert_eq!(
-        read_claims(&conn, task.plan, i64::MAX, 120).unwrap().len(),
+        read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, i64::MAX, 120)
+            .unwrap()
+            .len(),
         1
     );
 }
@@ -117,7 +119,7 @@ fn simultaneous_resumes_serialize_history_and_leave_one_current_session() {
     for handle in handles {
         handle.join().unwrap().unwrap();
     }
-    let history = read_claims(&setup, task.plan, 1050, 120).unwrap();
+    let history = read_claims_window(&setup, task.plan, i64::MIN, i64::MAX, 1050, 120).unwrap();
     assert_eq!(history.len(), 3);
     assert_eq!(
         history
@@ -183,7 +185,7 @@ fn resume_racing_stale_takeover_cannot_bypass_new_holders_identity() {
         .map(|handle| handle.join().unwrap())
         .collect();
     assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
-    let history = read_claims(&setup, task.plan, 1121, 120).unwrap();
+    let history = read_claims_window(&setup, task.plan, i64::MIN, i64::MAX, 1121, 120).unwrap();
     assert_eq!(history.len(), 2);
     assert_eq!(
         history

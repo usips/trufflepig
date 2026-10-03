@@ -1,5 +1,8 @@
 //! Versioned replies and the records they contain.
-use super::BOARD_API;
+use super::{
+    AttentionReply, BOARD_API, ClaimPage, EntriesPage, EventPage, FeedbackPage, HistoryPage,
+    OverviewReply, TaskPage,
+};
 use crate::board::{
     board_actor::BoardActor, board_ids::EventSeq, board_vocabulary::FeedbackImportKey,
 };
@@ -64,14 +67,20 @@ pub enum BoardResult {
     Session(SessionRecord),
     Inbox(InboxReply),
     Cursor(EventSeq),
-    Plans(Vec<PlanRecord>),
     Plan(PlanView),
     Entry(EntryView),
     Revision(RevisionRecord),
     Diff(RevisionDiff),
     Change(BoardChange),
     Review(ReviewEvidence),
-    Feedback(Vec<FeedbackRecord>),
+    Overview(OverviewReply),
+    Attention(AttentionReply),
+    Feed(EventPage),
+    History(HistoryPage),
+    Entries(EntriesPage),
+    Tasks(TaskPage),
+    Claims(ClaimPage),
+    Feedback(FeedbackPage),
     Repositories(Vec<RepoScanTarget>),
     Registered(RepoRegistration),
     CommitsLinked(CommitLinkResult),

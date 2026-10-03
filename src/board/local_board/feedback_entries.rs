@@ -13,11 +13,14 @@ use super::{
 use crate::board::board_actor::{BoardActor, BoardRecipient};
 use crate::board::board_ids::EntryId;
 use crate::board::board_protocol::{
-    BoardChange, BoardError, BoardOp, BoardReply, BoardResult, EntryRecord, FeedbackMetadata,
-    FeedbackRecord,
+    BoardChange, BoardError, BoardOp, BoardReply, BoardResult, EntryRecord,
 };
+#[cfg(test)]
+use crate::board::board_protocol::{FeedbackMetadata, FeedbackRecord};
+#[cfg(test)]
+use crate::board::board_vocabulary::FeedbackKind;
 use crate::board::board_vocabulary::{
-    ENTRY_TEXT_LIMIT, EntryKind, FeedbackImportKey, FeedbackKind, FeedbackState,
+    ENTRY_TEXT_LIMIT, EntryKind, FeedbackImportKey, FeedbackState,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
@@ -98,17 +101,8 @@ pub(super) fn write_feedback(
     Ok(ctx.change_reply(entry, *plan, None, None))
 }
 
-pub(super) fn list_feedback(conn: &Connection, open_only: bool) -> Result<BoardReply, BoardError> {
-    Ok(BoardReply::new(
-        "local",
-        BoardResult::Feedback(read_feedback(conn, open_only)?),
-    ))
-}
-
-pub(super) fn read_feedback(
-    conn: &Connection,
-    open_only: bool,
-) -> Result<Vec<FeedbackRecord>, BoardError> {
+#[cfg(test)]
+fn read_feedback(conn: &Connection, open_only: bool) -> Result<Vec<FeedbackRecord>, BoardError> {
     let mut statement = conn.prepare(
         "SELECT f.entry_id,f.feedback_kind,f.version,f.build_id,f.cwd,f.steer_mode,f.recent_calls_json,e.state FROM board_feedback f JOIN entries e ON e.id=f.entry_id WHERE (?1=0 OR e.state IN ('open','triaged')) ORDER BY e.seq DESC",
     ).map_err(sql_error)?;

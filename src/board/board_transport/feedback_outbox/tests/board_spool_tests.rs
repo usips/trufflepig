@@ -71,7 +71,12 @@ fn invalid_reports_and_unwritable_spool_never_get_queue_acknowledgements() {
         BoardErrorCode::BoardUnavailable
     );
     let mut request = report();
-    request.op = BoardOp::FeedbackList { open_only: true };
+    request.op = BoardOp::FeedbackList {
+        open_only: true,
+        after: None,
+        through: None,
+        limit: 200,
+    };
     assert_eq!(
         queue(dir.path(), &request).unwrap_err().code,
         BoardErrorCode::InvalidOptions

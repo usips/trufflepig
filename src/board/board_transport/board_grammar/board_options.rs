@@ -33,9 +33,15 @@ pub struct BoardOptions {
     /// List only open feedback reports.
     #[arg(long)]
     pub open: bool,
-    /// Include plans from every registered repository in inbox reads.
+    /// Include plans from every repository in inbox and attention reads.
     #[arg(long)]
     pub all: bool,
+    /// Resume a frozen collection after its returned cursor.
+    #[arg(long)]
+    pub after: Option<String>,
+    /// Highest event sequence included in a frozen collection.
+    #[arg(long)]
+    pub through: Option<String>,
     /// Raw free text, including leading hyphens.
     #[arg(long, hide = true, require_equals = true, allow_hyphen_values = true)]
     pub board_text: Option<String>,
@@ -90,6 +96,8 @@ impl BoardOptions {
             ("--plan", self.plan.clone()),
             ("--scope", self.scope.clone()),
             ("--section", self.section.clone()),
+            ("--after", self.after.clone()),
+            ("--through", self.through.clone()),
             ("--board-text", self.board_text.clone()),
             ("--board-payload", self.board_payload.clone()),
             ("--agent-model", self.agent_model.clone()),
@@ -119,6 +127,8 @@ impl BoardOptions {
             || self.plan.is_some()
             || self.scope.is_some()
             || self.section.is_some()
+            || self.after.is_some()
+            || self.through.is_some()
             || self.open
             || self.all
             || self.resume

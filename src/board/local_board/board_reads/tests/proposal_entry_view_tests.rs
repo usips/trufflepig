@@ -22,7 +22,7 @@ fn show_entry_recovers_full_large_proposal_and_keeps_decided_evidence() {
         &mut board,
         "human",
         BoardOp::Show {
-            target: Some(BoardRef::Entry(proposed.entry)),
+            target: BoardRef::Entry(proposed.entry),
         },
     ) else {
         panic!("missing entry view");
@@ -51,7 +51,7 @@ fn show_entry_recovers_full_large_proposal_and_keeps_decided_evidence() {
         &mut board,
         "codex",
         BoardOp::Show {
-            target: Some(BoardRef::Entry(proposed.entry)),
+            target: BoardRef::Entry(proposed.entry),
         },
     ) else {
         panic!("missing decided proposal");
@@ -81,7 +81,7 @@ fn show_entry_recovers_full_large_proposal_and_keeps_decided_evidence() {
         &mut board,
         "human",
         BoardOp::Show {
-            target: Some(BoardRef::Entry(question)),
+            target: BoardRef::Entry(question),
         },
     ) else {
         panic!("missing question");

@@ -62,7 +62,7 @@ fn event_batches_return_stored_claim_snapshots_without_entry_joins() {
         .handle(&BoardRequest::new(
             reader,
             BoardOp::Show {
-                target: Some(BoardRef::Plan(plan)),
+                target: BoardRef::Plan(plan),
             },
         ))
         .unwrap();

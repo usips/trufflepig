@@ -11,14 +11,14 @@ use anyhow::{Result, bail};
 impl BoardOp {
     pub fn validate(&self) -> Result<()> {
         match self {
-            Self::Post { target, .. }
-            | Self::Show {
-                target: Some(target),
-            } => target.validate()?,
+            Self::Post { target, .. } | Self::Show { target } => target.validate()?,
             Self::TaskMove { task, .. } | Self::ClaimTask { task, .. } => task.validate()?,
             Self::Propose { base, .. } | Self::Edit { base, .. } | Self::Review { base, .. } => {
                 base.validate()?
             }
+            Self::Claims {
+                after: Some(after), ..
+            } => after.validate()?,
             _ => {}
         }
         match self {
@@ -38,6 +38,62 @@ impl BoardOp {
             Self::Inbox { limit, .. } if *limit == 0 || *limit > 2000 => {
                 bail!("invalid_options: inbox limit must be 1..2000")
             }
+            Self::Feed { limit, .. } if !(1..=500).contains(limit) => {
+                bail!("invalid_options: feed limit must be 1..500")
+            }
+            Self::Overview { limit, .. }
+            | Self::Attention { limit, .. }
+            | Self::History { limit, .. }
+            | Self::Entries { limit, .. }
+            | Self::Tasks { limit, .. }
+            | Self::Claims { limit, .. }
+            | Self::FeedbackList { limit, .. }
+                if !(1..=200).contains(limit) =>
+            {
+                bail!("invalid_options: collection limit must be 1..200")
+            }
+            Self::Entries {
+                user, host, task, ..
+            } => {
+                if let Some(user) = user {
+                    validate_actor_component(user, "user")?;
+                }
+                if let Some(host) = host {
+                    validate_actor_component(host, "host")?;
+                }
+                if let Some(task) = task {
+                    task.validate()?;
+                }
+            }
+            Self::Tasks {
+                plan,
+                after,
+                ceiling,
+                through,
+                ..
+            } => {
+                if let Some(after) = after {
+                    after.validate()?;
+                    if after.plan != *plan {
+                        bail!("invalid_reference: task cursor belongs to another plan");
+                    }
+                }
+                if let Some(ceiling) = ceiling {
+                    ceiling.validate()?;
+                    if ceiling.plan != *plan {
+                        bail!("invalid_reference: task ceiling belongs to another plan");
+                    }
+                } else if after.is_some() || through.is_some() {
+                    bail!("invalid_options: task continuation requires its captured ceiling");
+                }
+            }
+            Self::Claims {
+                plan: None,
+                own_stale: false,
+                ..
+            } => {
+                bail!("invalid_options: claims requires a plan or own_stale");
+            }
             Self::Post { target, kind, .. } => {
                 if !matches!(target, BoardRef::Plan(_) | BoardRef::Task(_)) {
                     bail!("invalid_reference: post requires a plan or task");
@@ -47,7 +103,7 @@ impl BoardOp {
                 }
             }
             Self::Show {
-                target: Some(BoardRef::Commit(_)),
+                target: BoardRef::Commit(_),
             } => bail!(
                 "invalid_reference: show requires a plan, task, entry, revision, or revision span"
             ),

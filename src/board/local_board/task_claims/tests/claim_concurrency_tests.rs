@@ -37,9 +37,16 @@ fn simultaneous_carves_allocate_distinct_ordinals_and_sections() {
                 && task.column == TaskColumn::Doing)
     );
     assert_eq!(
-        read_claims(&conn, PlanId::new(1).unwrap(), 1000, 120)
-            .unwrap()
-            .len(),
+        read_claims_window(
+            &conn,
+            PlanId::new(1).unwrap(),
+            i64::MIN,
+            i64::MAX,
+            1000,
+            120
+        )
+        .unwrap()
+        .len(),
         2
     );
 }
@@ -128,8 +135,15 @@ fn failed_carve_rolls_back_task_ordinal_and_claim() {
             .is_empty()
     );
     assert!(
-        read_claims(&conn, PlanId::new(1).unwrap(), 1000, 120)
-            .unwrap()
-            .is_empty()
+        read_claims_window(
+            &conn,
+            PlanId::new(1).unwrap(),
+            i64::MIN,
+            i64::MAX,
+            1000,
+            120
+        )
+        .unwrap()
+        .is_empty()
     );
 }

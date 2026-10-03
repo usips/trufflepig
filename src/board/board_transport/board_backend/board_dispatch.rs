@@ -76,7 +76,10 @@ impl BoardHost {
         };
         let mut registration = match probe {
             Ok(probe) => {
-                let diagnostic = if matches!(&op, BoardOp::Show { .. } | BoardOp::Review { .. }) {
+                let diagnostic = if matches!(
+                    &op,
+                    BoardOp::Show { .. } | BoardOp::Overview { .. } | BoardOp::Review { .. }
+                ) {
                     probe.status
                 } else {
                     probe.warning

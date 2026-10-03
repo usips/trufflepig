@@ -23,7 +23,7 @@ fn other_actor_cannot_release_or_reassign_held_card() {
         }
     }
     assert!(
-        read_claims(&conn, task.plan, 1050, 120).unwrap()[0]
+        read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, 1050, 120).unwrap()[0]
             .ended_at
             .is_none()
     );
@@ -42,7 +42,7 @@ fn owner_steward_reassignment_ends_claim_and_assigns_recipient() {
         |tx, ctx| move_task(tx, ctx, task, TaskColumn::Doing, Some(&recipient)),
     )
     .unwrap();
-    let claims = read_claims(&conn, task.plan, 1050, 120).unwrap();
+    let claims = read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, 1050, 120).unwrap();
     assert_eq!(claims[0].ended_at, Some(1050));
     assert_eq!(claims[0].end_reason, Some(ClaimEndReason::Reassigned));
     assert_eq!(
@@ -99,7 +99,7 @@ fn doing_without_recipient_records_callers_exclusive_claim() {
         move_task(tx, ctx, task, TaskColumn::Doing, None)
     })
     .unwrap();
-    let claims = read_claims(&conn, task.plan, 1050, 120).unwrap();
+    let claims = read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, 1050, 120).unwrap();
     assert_eq!(claims.len(), 1);
     assert_eq!(claims[0].actor, holder);
     assert_eq!(claims[0].scope.as_str(), "Unclaimed card");
@@ -160,7 +160,7 @@ fn reassigned_card_reserves_claim_and_move_for_recipient() {
     }
     let assignee = actor("josh", "muse", "recipient");
     claim(&mut conn, &assignee, 1052, task, "recipient scope").unwrap();
-    let history = read_claims(&conn, task.plan, 1052, 120).unwrap();
+    let history = read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, 1052, 120).unwrap();
     assert_eq!(history.last().unwrap().actor, assignee);
     assert!(history.last().unwrap().ended_at.is_none());
     write(&mut conn, &assignee, 1053, |tx, ctx| {

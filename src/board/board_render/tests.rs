@@ -6,8 +6,11 @@ use crate::board::board_vocabulary::{EntryKind, EntryText, ProposalState};
 use crate::board::review_packet::{ReviewPacket, SsotDiff};
 
 mod budget_render_tests;
+mod collection_boundary_tests;
+mod collection_render_tests;
 mod inbox_render_tests;
 mod review_render_tests;
+mod view_boundary_render_tests;
 mod view_render_tests;
 
 fn actor() -> BoardActor {

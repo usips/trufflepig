@@ -1,5 +1,6 @@
 //! SQLite-backed board state, serialized mutations, and immutable evidence.
 
+mod board_commits;
 mod board_database;
 mod board_dispatch;
 mod board_evidence;
@@ -8,6 +9,8 @@ mod board_lifecycle;
 mod board_reads;
 mod board_receipts;
 mod board_snapshots;
+mod collection_nested;
+mod collection_reads;
 mod entry_writes;
 mod feedback_entries;
 mod plan_writes;

@@ -13,7 +13,7 @@ fn ordinary_activity_refreshes_only_callers_live_claims() {
         Ok(ctx.change_reply(EntryId::new(1).unwrap(), Some(own.plan), None, Some(own)))
     })
     .unwrap();
-    let claims = read_claims(&conn, own.plan, 1050, 120).unwrap();
+    let claims = read_claims_window(&conn, own.plan, i64::MIN, i64::MAX, 1050, 120).unwrap();
     assert_eq!(claims[0].last_active, 1050);
     assert_eq!(claims[1].last_active, 1000);
     write(&mut conn, &holder, 1080, |tx, ctx| {
@@ -22,7 +22,8 @@ fn ordinary_activity_refreshes_only_callers_live_claims() {
     })
     .unwrap();
     assert_eq!(
-        read_claims(&conn, other.plan, 1080, 120).unwrap()[0].last_active,
+        read_claims_window(&conn, other.plan, i64::MIN, i64::MAX, 1080, 120).unwrap()[0]
+            .last_active,
         1080
     );
     write(&mut conn, &holder, 1090, |tx, ctx| {
@@ -35,7 +36,7 @@ fn ordinary_activity_refreshes_only_callers_live_claims() {
     })
     .unwrap();
     assert_eq!(
-        read_claims(&conn, own.plan, 1200, 120).unwrap()[0].last_active,
+        read_claims_window(&conn, own.plan, i64::MIN, i64::MAX, 1200, 120).unwrap()[0].last_active,
         1080
     );
 }
@@ -67,7 +68,7 @@ fn commit_activity_requires_current_task_matching_coauthor_and_time() {
         .unwrap();
     }
     assert_eq!(
-        read_claims(&conn, task.plan, 1100, 120).unwrap()[0].last_active,
+        read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, 1100, 120).unwrap()[0].last_active,
         1000
     );
     write(&mut conn, &holder, 1100, |tx, ctx| {
@@ -76,7 +77,7 @@ fn commit_activity_requires_current_task_matching_coauthor_and_time() {
     })
     .unwrap();
     assert_eq!(
-        read_claims(&conn, task.plan, 1100, 120).unwrap()[0].last_active,
+        read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, 1100, 120).unwrap()[0].last_active,
         1050
     );
     write(&mut conn, &holder, 1110, |tx, ctx| {
@@ -89,7 +90,7 @@ fn commit_activity_requires_current_task_matching_coauthor_and_time() {
     })
     .unwrap();
     assert_eq!(
-        read_claims(&conn, task.plan, 1150, 120).unwrap()[0].last_active,
+        read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, 1150, 120).unwrap()[0].last_active,
         1050
     );
 }
@@ -138,7 +139,7 @@ fn delayed_commit_activity_keeps_silent_claim_stale() {
         })
         .unwrap();
     }
-    let claim = &read_claims(&conn, task.plan, 2000, 120).unwrap()[0];
+    let claim = &read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, 2000, 120).unwrap()[0];
     assert_eq!(claim.last_active, 1050);
     assert!(
         claim.stale,
@@ -189,7 +190,7 @@ fn commit_activity_uses_claimed_model_vendor_and_harness_fallback() {
             Ok(ctx.change_reply(EntryId::new(1).unwrap(), Some(task.plan), None, Some(task)))
         })
         .unwrap();
-        let history = read_claims(&conn, task.plan, 1100, 120).unwrap();
+        let history = read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, 1100, 120).unwrap();
         assert_eq!(
             history
                 .iter()

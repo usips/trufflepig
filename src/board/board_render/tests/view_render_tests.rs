@@ -56,6 +56,7 @@ fn show_preserves_labor_and_uncovered_sections_while_trimming_the_body() {
             task(3, TaskColumn::Todo),
             task(4, TaskColumn::Review),
         ],
+        task_ceiling: TaskCeiling { plan, ordinal: 4 },
         claims: vec![
             claim(1, "codex", false, None, "parser only"),
             claim(2, "muse", true, None, "stale work"),
@@ -68,6 +69,18 @@ fn show_preserves_labor_and_uncovered_sections_while_trimming_the_body() {
             ),
         ],
         entries: vec![recent],
+        commits: Vec::new(),
+        tasks_omitted: 0,
+        claims_omitted: 0,
+        entries_omitted: 0,
+        commits_omitted: 0,
+        tasks_next_after: None,
+        claims_next_after: None,
+        entries_next_after: None,
+        through: EventSeq::new(100),
+        can_edit: true,
+        server_now: 150,
+        claim_ttl_secs: 60,
         sections_without_tasks: vec!["Uncovered heading".into()],
     };
     let budget = OutputBudget::new(800)
@@ -118,6 +131,11 @@ fn entry_drill_keeps_large_proposal_before_long_reverse_references() {
         replies_omitted: 7,
         backrefs: related,
         backrefs_omitted: 9,
+        replies_next_after: None,
+        backrefs_next_after: None,
+        through: EventSeq::new(119),
+        feedback: None,
+        linked_commit: None,
         proposal: Some(ProposalRecord {
             entry: entry.id,
             plan: entry.plan.unwrap(),

@@ -2,7 +2,9 @@
 //! The client reads bodies and normalizes text before socket or spool transport.
 //! Only an absent router permits local fallback; ambiguous replies never replay writes.
 pub mod board_domain;
-pub use board_domain::{board_actor, board_ids, board_protocol, board_vocabulary};
+pub use board_domain::{
+    board_actor, board_collections, board_ids, board_protocol, board_vocabulary,
+};
 pub mod board_transport;
 use board_transport::board_client_transport;
 pub use board_transport::{board_backend, board_config, board_grammar, feedback_outbox};

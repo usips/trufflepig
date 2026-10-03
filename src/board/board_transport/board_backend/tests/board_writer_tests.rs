@@ -116,16 +116,24 @@ fn host_reads_existing_board_without_initializing_or_waiting_for_writer() {
     std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o500)).unwrap();
     let host = BoardHost::with_config(config);
     let held = host.inner.backend.lock().unwrap();
-    let request = BoardRequest::new(actor, BoardOp::Show { target: None });
+    let request = BoardRequest::new(
+        actor,
+        BoardOp::Overview {
+            repo_key: None,
+            after: None,
+            through: None,
+            limit: 200,
+        },
+    );
     let started = Instant::now();
     let reply = host.handle_by(&request, QueryDeadline::after(Duration::from_secs(1)));
     drop(held);
     std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700)).unwrap();
     let reply = reply.unwrap();
-    let BoardResult::Plans(plans) = reply.result else {
+    let BoardResult::Overview(overview) = reply.result else {
         panic!("expected stored plans");
     };
-    assert_eq!(plans[0].title.as_str(), "Readable board");
+    assert_eq!(overview.plans[0].plan.title.as_str(), "Readable board");
     assert!(host.inner.backend.lock().unwrap().is_none());
     assert!(started.elapsed() < Duration::from_millis(500));
 }
@@ -184,7 +192,12 @@ fn host_bootstraps_writable_legacy_storage_but_keeps_readonly_initialization_err
     let host = BoardHost::with_config(config.clone());
     let request = BoardRequest::new(
         config.actor(None, Some("legacy-reader")).unwrap(),
-        BoardOp::Show { target: None },
+        BoardOp::Overview {
+            repo_key: None,
+            after: None,
+            through: None,
+            limit: 200,
+        },
     );
     let error = host
         .handle_by(&request, QueryDeadline::start())

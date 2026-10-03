@@ -83,12 +83,18 @@ fn saved_m1_feedback_import_preserves_content_provenance_and_permanent_replay_ke
     let reply = backend
         .handle(&BoardRequest::new(
             stored.request.actor.clone(),
-            BoardOp::FeedbackList { open_only: false },
+            BoardOp::FeedbackList {
+                open_only: false,
+                after: None,
+                through: None,
+                limit: 200,
+            },
         ))
         .unwrap();
-    let BoardResult::Feedback(feedback) = reply.result else {
+    let BoardResult::Feedback(page) = reply.result else {
         panic!("expected stored feedback");
     };
+    let feedback = page.feedback;
     assert_eq!(feedback.len(), 1);
     let entry = &feedback[0].entry;
     assert_eq!(entry.actor, stored.request.actor);

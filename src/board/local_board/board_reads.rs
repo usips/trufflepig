@@ -22,7 +22,8 @@ mod repository_reads;
 mod review_evidence_reads;
 
 pub(super) use entry_reference_reads::{entries, entry, entry_view, open_entries};
-use plan_history_reads::{plan, plan_view, plans, revision};
+pub(super) use plan_history_reads::plan_row;
+use plan_history_reads::{plan, plan_view, revision};
 pub(super) use repository_reads::repositories;
 pub(super) use review_evidence_reads::review;
 
@@ -33,12 +34,11 @@ const OPEN_QUESTION: &str = "e.kind='question' AND NOT EXISTS(SELECT 1 FROM entr
 pub(super) fn show(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
-    target: Option<&BoardRef>,
+    target: &BoardRef,
 ) -> Result<BoardReply, BoardError> {
     let result = match target {
-        None => BoardResult::Plans(plans(tx)?),
-        Some(BoardRef::Plan(plan)) => BoardResult::Plan(plan_view(tx, ctx, *plan)?),
-        Some(BoardRef::Task(task)) => {
+        BoardRef::Plan(plan) => BoardResult::Plan(plan_view(tx, ctx, *plan)?),
+        BoardRef::Task(task) => {
             let exists: bool = tx
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM tasks WHERE plan_id=?1 AND ordinal=?2)",
@@ -51,9 +51,9 @@ pub(super) fn show(
             }
             BoardResult::Plan(plan_view(tx, ctx, task.plan)?)
         }
-        Some(BoardRef::Entry(id)) => BoardResult::Entry(entry_view(tx, ctx, *id)?),
-        Some(BoardRef::Revision(id)) => BoardResult::Revision(revision(tx, *id)?),
-        Some(BoardRef::Span(span)) => {
+        BoardRef::Entry(id) => BoardResult::Entry(entry_view(tx, ctx, *id)?),
+        BoardRef::Revision(id) => BoardResult::Revision(revision(tx, *id)?),
+        BoardRef::Span(span) => {
             let plan = plan(tx, span.plan)?;
             let end = span.end.unwrap_or(plan.head_revision);
             if end < span.start {
@@ -70,7 +70,7 @@ pub(super) fn show(
                 )?,
             })
         }
-        Some(_) => {
+        _ => {
             return Err(invalid(
                 "invalid_reference",
                 "show requires a plan, task, entry, revision, or revision span",
@@ -82,4 +82,21 @@ pub(super) fn show(
 
 fn decode_json<T: serde::de::DeserializeOwned>(body: String) -> Result<T, BoardError> {
     serde_json::from_str(&body).map_err(|error| invalid("board_unavailable", error.to_string()))
+}
+
+pub(super) fn linked_commits_bounded(
+    conn: &Connection,
+    plan: PlanId,
+    start: i64,
+    end: i64,
+    limit: usize,
+) -> Result<(Vec<LinkedCommit>, usize), BoardError> {
+    super::board_commits::linked_commits_bounded(conn, plan, start, end, limit)
+}
+
+pub(super) fn linked_commit_for_entry(
+    conn: &Connection,
+    entry: EntryId,
+) -> Result<Option<LinkedCommit>, BoardError> {
+    super::board_commits::linked_commit_for_entry(conn, entry)
 }

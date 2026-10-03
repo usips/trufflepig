@@ -1,5 +1,6 @@
 //! Line-format board results use shared escaped cells and record renderers.
 
+mod collection_lines;
 mod diff_lines;
 mod line_cells;
 mod record_lines;
@@ -103,21 +104,6 @@ pub(super) fn lines_result(result: &BoardResult) -> String {
             .unwrap();
         }
         BoardResult::Plan(view) => plan_lines(&mut text, view),
-        BoardResult::Plans(plans) => {
-            text.push_str("plans\n");
-            for plan in plans {
-                writeln!(
-                    text,
-                    "{}@{}\t{}\towner={} steward={}",
-                    plan.id,
-                    plan.head_revision,
-                    cell(plan.title.as_str()),
-                    cell(&plan.owner_user),
-                    plan.steward.as_ref().map_or("-", |h| h.as_str())
-                )
-                .unwrap();
-            }
-        }
         BoardResult::Revision(revision) => revision_lines(&mut text, revision),
         BoardResult::Session(session) => writeln!(
             text,
@@ -144,7 +130,7 @@ pub(super) fn lines_result(result: &BoardResult) -> String {
         .unwrap(),
         BoardResult::Feedback(feedback) => {
             text.push_str("feedback\n");
-            for report in feedback {
+            for report in &feedback.feedback {
                 writeln!(
                     text,
                     "{}\t{}\t{}",
@@ -154,6 +140,13 @@ pub(super) fn lines_result(result: &BoardResult) -> String {
                 entry_line(&mut text, &report.entry);
             }
         }
+        BoardResult::Overview(_)
+        | BoardResult::Attention(_)
+        | BoardResult::Feed(_)
+        | BoardResult::History(_)
+        | BoardResult::Entries(_)
+        | BoardResult::Tasks(_)
+        | BoardResult::Claims(_) => collection_lines::lines(&mut text, result),
         BoardResult::Repositories(repositories) => {
             for repository in repositories {
                 writeln!(

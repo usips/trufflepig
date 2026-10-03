@@ -1,6 +1,6 @@
 //! Parses board commands, including inbox and local commit ingestion.
 use super::{
-    BoardCommand, BoardTextPayload,
+    BoardCommand, BoardTextPayload, board_read_parser,
     board_syntax_validation::{check_flags, fixed_words, optional_text, recipient, word},
     board_task_claim_parser::{parse_claim, parse_task},
 };
@@ -18,6 +18,9 @@ use anyhow::{Context, Result, bail};
 pub(super) fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Result<BoardCommand> {
     let words = &options.words;
     let verb = words.get(1).map(String::as_str).unwrap_or("inbox");
+    if let Some(op) = board_read_parser::parse_read(options, payload)? {
+        return Ok(BoardCommand::Op(op));
+    }
     let op = match verb {
         "hello" => {
             check_flags(options, &[])?;
@@ -28,20 +31,6 @@ pub(super) fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Re
             }
         }
         "inbox" => return parse_inbox(options, 2),
-        "show" => {
-            check_flags(options, &[])?;
-            fixed_words(options, 2, 3, "board show [P7|P7.3|E80|P7@12|P7@10..14]")?;
-            let target = words
-                .get(2)
-                .map(|value| value.parse::<BoardRef>())
-                .transpose()?;
-            if matches!(target, Some(BoardRef::Commit(_))) {
-                bail!(
-                    "invalid_reference: show requires a plan, task, entry, revision, or revision span"
-                );
-            }
-            BoardOp::Show { target }
-        }
         "new" => {
             check_flags(options, &["body", "steward", "text"])?;
             BoardOp::New {
@@ -143,7 +132,7 @@ pub(super) fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Re
         }
         value if value.parse::<u64>().is_ok() => return parse_inbox(options, 1),
         _ => bail!(
-            "usage: board hello|inbox|show|claim|post|task|propose|review|accept|reject|edit|new|ingest"
+            "usage: board hello|inbox|show|feed|attention|history|claim|post|task|propose|review|accept|reject|edit|new|ingest"
         ),
     };
     Ok(BoardCommand::Op(op))

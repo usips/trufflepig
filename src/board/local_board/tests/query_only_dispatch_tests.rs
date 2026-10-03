@@ -11,7 +11,7 @@ fn show_uses_read_connection_while_writer_transaction_is_held() {
         .handle(&BoardRequest::new(
             actor("codex", "new-reader"),
             BoardOp::Show {
-                target: Some(BoardRef::Plan(plan)),
+                target: BoardRef::Plan(plan),
             },
         ))
         .unwrap();
@@ -62,7 +62,7 @@ fn readonly_dispatch_leaves_actors_sessions_and_claims_untouched() {
     let mut request = BoardRequest::new(
         actor("codex", "c1"),
         BoardOp::Show {
-            target: Some(BoardRef::Plan(plan)),
+            target: BoardRef::Plan(plan),
         },
     );
     request.claims = Some(AgentClaims {
@@ -84,7 +84,12 @@ fn readonly_dispatch_leaves_actors_sessions_and_claims_untouched() {
     board
         .handle(&BoardRequest::new(
             actor("new-harness", "never-written"),
-            BoardOp::Show { target: None },
+            BoardOp::Overview {
+                repo_key: None,
+                after: None,
+                through: None,
+                limit: 200,
+            },
         ))
         .unwrap();
     assert_eq!(board.conn.total_changes(), before);
@@ -143,13 +148,18 @@ fn readonly_open_answers_all_read_kinds_without_write_permissions() {
         LocalBoard::open_read_with_timeout(&config, Duration::from_millis(100)).unwrap();
     for op in [
         BoardOp::Show {
-            target: Some(BoardRef::Plan(plan)),
+            target: BoardRef::Plan(plan),
         },
         BoardOp::Review {
             base: crate::board::board_ids::PlanRevision::new(plan, 1).unwrap(),
             agent: None,
         },
-        BoardOp::FeedbackList { open_only: false },
+        BoardOp::FeedbackList {
+            open_only: false,
+            after: None,
+            through: None,
+            limit: 200,
+        },
     ] {
         reader
             .handle(&BoardRequest::new(actor("codex", "unseen-reader"), op))

@@ -8,6 +8,7 @@ use anyhow::{Result, bail};
 
 mod board_command_parser;
 mod board_feedback_parser;
+mod board_read_parser;
 mod board_syntax_validation;
 mod board_task_claim_parser;
 
@@ -18,18 +19,7 @@ use board_feedback_parser::parse_feedback;
 pub fn parse(options: &Arguments, body: Option<&str>) -> Result<BoardCommand> {
     let verb = options.words.first().map(String::as_str);
     options.board.validate_for_verb(verb)?;
-    for (flag, present) in [
-        ("sem", options.sem),
-        ("no-sem", options.no_sem),
-        ("rerank", options.rerank),
-        ("no-rerank", options.no_rerank),
-        ("member", options.member.is_some()),
-        ("cache", options.cache.is_some()),
-    ] {
-        if present {
-            bail!("invalid_options: --{flag} is not valid for board or feedback");
-        }
-    }
+    validate_board_surface(options)?;
     let payload = command_text(options, body)?;
     if options.board.body.is_some() && payload.body.is_none() {
         bail!("invalid_body: --body must be read by the client before parsing");
@@ -66,4 +56,21 @@ pub fn parse(options: &Arguments, body: Option<&str>) -> Result<BoardCommand> {
         op.validate()?;
     }
     Ok(command)
+}
+
+/// Reject source-search options on board command surfaces.
+pub(crate) fn validate_board_surface(options: &Arguments) -> Result<()> {
+    for (flag, present) in [
+        ("sem", options.sem),
+        ("no-sem", options.no_sem),
+        ("rerank", options.rerank),
+        ("no-rerank", options.no_rerank),
+        ("member", options.member.is_some()),
+        ("cache", options.cache.is_some()),
+    ] {
+        if present {
+            bail!("invalid_options: --{flag} is not valid for a board command");
+        }
+    }
+    Ok(())
 }

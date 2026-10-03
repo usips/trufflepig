@@ -51,13 +51,101 @@ impl LocalBoard {
                 repo_key,
                 all,
             } => board_feed::inbox(&tx, &ctx, *after, *limit, repo_key.as_ref(), *all)?,
-            BoardOp::Show { target } => board_reads::show(&tx, &ctx, target.as_ref())?,
+            BoardOp::Show { target } => board_reads::show(&tx, &ctx, target)?,
             BoardOp::Review { base, agent } => {
                 board_reads::review(&tx, &ctx, *base, agent.as_ref())?
             }
-            BoardOp::FeedbackList { open_only } => {
-                feedback_entries::list_feedback(&tx, *open_only)?
+            BoardOp::FeedbackList {
+                open_only,
+                after,
+                through,
+                limit,
+            } => collection_reads::feedback_page(&tx, *open_only, *after, *through, *limit)?,
+            BoardOp::Overview {
+                repo_key,
+                after,
+                through,
+                limit,
+            } => {
+                collection_reads::overview(&tx, &ctx, repo_key.as_ref(), *after, *through, *limit)?
             }
+            BoardOp::Attention {
+                repo_key,
+                all,
+                after,
+                through,
+                limit,
+            } => collection_reads::attention(
+                &tx,
+                &ctx,
+                repo_key.as_ref(),
+                *all,
+                *after,
+                *through,
+                *limit,
+            )?,
+            BoardOp::Feed {
+                plan,
+                after,
+                through,
+                limit,
+            } => collection_reads::feed(&tx, *plan, *after, *through, *limit)?,
+            BoardOp::History {
+                plan,
+                after,
+                through,
+                limit,
+            } => collection_reads::history(&tx, *plan, *after, *through, *limit)?,
+            BoardOp::Entries {
+                plan,
+                kind,
+                harness,
+                user,
+                host,
+                task,
+                references,
+                after,
+                through,
+                limit,
+            } => collection_reads::entries_page(
+                &tx,
+                *plan,
+                *kind,
+                harness.as_ref(),
+                user.as_deref(),
+                host.as_deref(),
+                *task,
+                *references,
+                *after,
+                *through,
+                *limit,
+            )?,
+            BoardOp::Tasks {
+                plan,
+                after,
+                ceiling,
+                through,
+                limit,
+            } => collection_nested::tasks_page(&tx, *plan, *after, *ceiling, *through, *limit)?,
+            BoardOp::Claims {
+                plan,
+                own_stale,
+                repo_key,
+                all,
+                after,
+                through,
+                limit,
+            } => collection_nested::claims_page(
+                &tx,
+                &ctx,
+                *plan,
+                *own_stale,
+                repo_key.as_ref(),
+                *all,
+                *after,
+                *through,
+                *limit,
+            )?,
             BoardOp::Repositories { plan } => board_reads::repositories(&tx, *plan)?,
             _ => {
                 return Err(invalid(

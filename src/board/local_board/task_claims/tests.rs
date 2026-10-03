@@ -135,7 +135,12 @@ fn second_connection_conflict_names_snapshot_and_activity() {
     assert!(error.contains(&holder.identity()));
     assert!(error.contains("test-model/xhigh"));
     assert!(error.contains("since 1000, active 100s ago (last activity 1000)"));
-    assert_eq!(read_claims(&first, task.plan, 1100, 120).unwrap().len(), 1);
+    assert_eq!(
+        read_claims_window(&first, task.plan, i64::MIN, i64::MAX, 1100, 120)
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -146,11 +151,13 @@ fn stale_takeover_preserves_scope_and_targets_previous_holder() {
     let old = actor("josh", "codex", "one");
     let new = actor("josh", "muse", "two");
     let task = carved_task(&mut first, &old, 1000, "old scope");
-    assert!(!read_claims(&first, task.plan, 1120, 120).unwrap()[0].stale);
+    assert!(
+        !read_claims_window(&first, task.plan, i64::MIN, i64::MAX, 1120, 120).unwrap()[0].stale
+    );
     assert!(claim(&mut second, &new, 1120, task, "new scope").is_err());
-    assert!(read_claims(&first, task.plan, 1121, 120).unwrap()[0].stale);
+    assert!(read_claims_window(&first, task.plan, i64::MIN, i64::MAX, 1121, 120).unwrap()[0].stale);
     claim(&mut second, &new, 1121, task, "new scope").unwrap();
-    let claims = read_claims(&first, task.plan, 1121, 120).unwrap();
+    let claims = read_claims_window(&first, task.plan, i64::MIN, i64::MAX, 1121, 120).unwrap();
     assert_eq!(claims.len(), 2);
     assert_eq!(claims[0].scope.as_str(), "old scope");
     assert_eq!(claims[0].ended_at, Some(1121));

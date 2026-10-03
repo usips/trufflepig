@@ -1,3 +1,4 @@
+mod entry_permission_tests;
 mod proposal_entry_view_tests;
 mod repository_evidence_tests;
 mod review_window_tests;
@@ -103,7 +104,7 @@ fn plan_views_keep_old_open_questions_and_resolve_references_to_answers() {
         &mut board,
         "codex",
         BoardOp::Show {
-            target: Some(BoardRef::Plan(plan)),
+            target: BoardRef::Plan(plan),
         },
     ) else {
         panic!("missing plan")
@@ -126,7 +127,7 @@ fn plan_views_keep_old_open_questions_and_resolve_references_to_answers() {
         &mut board,
         "codex",
         BoardOp::Show {
-            target: Some(BoardRef::Plan(plan)),
+            target: BoardRef::Plan(plan),
         },
     ) else {
         panic!("missing plan")
@@ -173,11 +174,11 @@ fn show_revisions_and_ranges_preserves_ssot_and_proposal_state() {
         &mut board,
         "codex",
         BoardOp::Show {
-            target: Some(BoardRef::Span(RevisionSpan {
+            target: BoardRef::Span(RevisionSpan {
                 plan,
                 start: 1,
                 end: None,
-            })),
+            }),
         },
     ) else {
         panic!("missing diff")
@@ -190,7 +191,7 @@ fn show_revisions_and_ranges_preserves_ssot_and_proposal_state() {
         &mut board,
         "codex",
         BoardOp::Show {
-            target: Some(BoardRef::Revision(base)),
+            target: BoardRef::Revision(base),
         },
     ) else {
         panic!("missing revision")

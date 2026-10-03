@@ -16,7 +16,12 @@ fn git_coauthor_actor_round_trips_as_evidence_but_cannot_request() {
     .unwrap();
     let encoded = serde_json::to_string(&actor).unwrap();
     assert_eq!(serde_json::from_str::<BoardActor>(&encoded).unwrap(), actor);
-    let request = BoardRequest::new(actor, BoardOp::Show { target: None });
+    let request = BoardRequest::new(
+        actor,
+        BoardOp::Show {
+            target: BoardRef::Plan(PlanId::new(1).unwrap()),
+        },
+    );
     assert!(
         request
             .validate()
@@ -218,3 +223,5 @@ fn typed_errors_preserve_domain_prefixes_and_database_lock_classification() {
     let unavailable = BoardError::from(anyhow::anyhow!("unable to open database file"));
     assert_eq!(unavailable.code, BoardErrorCode::BoardUnavailable);
 }
+
+mod read_collections_tests;

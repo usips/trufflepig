@@ -37,7 +37,10 @@ Pages:
 Plans:
   board hello MODEL [EFFORT]  identify this session
   board inbox [SEQ] [--wait]  plan events and questions
-  board show [P7|P7@12|P7@10..14]  plans, revisions, and changes
+  board show [P7|P7.3|P7@12|E512]  bounded overview or one plan, task, revision, or entry
+  board feed [P7] [SEQ]      frozen event pages
+  board attention [--all]   pending work for this actor
+  board history P7 [SEQ]    immutable plan revision history
   board claim P7.3 SCOPE...  claim a task before working
   board post P7 KIND TEXT...  post progress or ask a question
   board task P7.3 COLUMN    move a task and release its claim
@@ -192,6 +195,9 @@ impl Arguments {
 
 /// Parse command-line arguments without performing repository validation.
 pub fn parse(args: &[String]) -> Result<Arguments> {
+    if let Some(answer) = super::board_api_probe::probe_board_api(args) {
+        answer?;
+    }
     let mut options = Arguments::try_parse_from(
         std::iter::once("trufflepig".to_owned()).chain(args.iter().cloned()),
     )?;
@@ -212,6 +218,29 @@ pub fn parse(args: &[String]) -> Result<Arguments> {
                     !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
                 })
         });
+    let explicit_limit = args
+        .iter()
+        .take_while(|arg| arg.as_str() != "--")
+        .any(|arg| {
+            arg == "--limit"
+                || arg.starts_with("--limit=")
+                || arg == "-n"
+                || arg.strip_prefix("-n").is_some_and(|value| {
+                    let value = value.strip_prefix('=').unwrap_or(value);
+                    !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+                })
+        });
+    if !explicit_limit {
+        match (
+            options.words.first().map(String::as_str),
+            options.words.get(1).map(String::as_str),
+        ) {
+            (Some("board"), Some("feed" | "attention" | "history"))
+            | (Some("feedback"), Some("ls")) => options.limit = 200,
+            (Some("board"), Some("show")) if options.words.len() == 2 => options.limit = 200,
+            _ => {}
+        }
+    }
     if !options.explicit_budget {
         if options.is_board() {
             options.budget = if options.words.first().map(String::as_str) == Some("board")

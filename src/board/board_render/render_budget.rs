@@ -1,6 +1,10 @@
 //! Complete-response fitting includes metadata and omission notices.
 
-use super::{RenderedBoard, cell, footer, lines_result};
+mod collection_budget;
+
+pub(super) use collection_budget::render_collections;
+
+use super::{cell, footer, lines_result};
 use crate::board::board_ids::{EventSeq, PlanId};
 use crate::board::board_protocol::{BoardReply, BoardResult};
 use crate::output::{OutputBudget, OutputFormat};
@@ -26,28 +30,6 @@ struct RenderEnvelope<'a> {
     rendered_through: Option<EventSeq>,
     next: Option<String>,
     commit_trailer: Option<String>,
-}
-
-pub(super) fn render_list(
-    reply: &BoardReply,
-    max: usize,
-    budget: &OutputBudget,
-    result: impl Fn(usize) -> BoardResult,
-    omitted: impl Fn(usize) -> BoardOmitted,
-) -> Result<RenderedBoard> {
-    let render = |count| {
-        let mut candidate = reply.clone();
-        candidate.result = result(count);
-        render_complete(&candidate, omitted(count), None, None, budget)
-    };
-    let count = fit_items(max, budget, render)?;
-    if count == 0 && max != 0 {
-        bail!("budget_too_small: no board item fits; raise -b");
-    }
-    Ok(RenderedBoard {
-        text: require_fits(render(count)?, budget)?,
-        acknowledge_seq: None,
-    })
 }
 
 pub(super) fn render_complete(
@@ -103,6 +85,11 @@ pub(super) fn reply_plan(reply: &BoardReply) -> Option<PlanId> {
         BoardResult::Diff(diff) => Some(diff.before.id.plan),
         BoardResult::Change(change) => change.plan,
         BoardResult::Review(evidence) => Some(evidence.plan.id),
+        BoardResult::History(page) => Some(page.plan),
+        BoardResult::Tasks(page) => Some(page.plan),
+        BoardResult::Feed(page) => page.plan,
+        BoardResult::Entries(page) => page.plan,
+        BoardResult::Claims(page) => page.plan,
         BoardResult::Registered(registration) => registration.plan_id,
         _ => None,
     }

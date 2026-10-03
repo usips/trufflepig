@@ -196,24 +196,51 @@ pub(in crate::board::local_board) fn entry_view(
             |row| row.get(0),
         )
         .map_err(sql_error)?;
-    let can_triage = matches!(
-        entry.state,
-        Some(EntryState::Feedback(
-            crate::board::board_vocabulary::FeedbackState::Open
-        ))
-    );
-    let can_close = matches!(entry.state, Some(EntryState::Feedback(state)) if !state.is_closed());
+    let feedback_authority =
+        crate::board::local_board::feedback_entries::can_manage_feedback(conn, &ctx.actor, &entry)?;
+    let can_triage = feedback_authority
+        && matches!(
+            entry.state,
+            Some(EntryState::Feedback(
+                crate::board::board_vocabulary::FeedbackState::Open
+            ))
+        );
+    let can_close = feedback_authority
+        && matches!(entry.state, Some(EntryState::Feedback(state)) if !state.is_closed());
     let plan_head_revision = entry
         .plan
         .map(|id| plan(conn, id).map(|record| record.head_revision))
         .transpose()?;
+    let feedback = if entry.kind == EntryKind::Feedback {
+        Some(crate::board::local_board::collection_reads::feedback_record(conn, entry.clone())?)
+    } else {
+        None
+    };
+    let linked_commit = linked_commit_for_entry(conn, id)?;
+    let cursor = |records: &[EntryRecord], omitted: usize| {
+        if omitted == 0 {
+            None
+        } else {
+            records.last().map(|record| EntryCursor {
+                seq: record.seq,
+                entry: record.id,
+            })
+        }
+    };
+    let replies_next_after = cursor(&replies, replies_omitted);
+    let backrefs_next_after = cursor(&backrefs, backrefs_omitted);
     Ok(EntryView {
         entry,
         replies,
         replies_omitted,
         backrefs,
         backrefs_omitted,
+        replies_next_after,
+        backrefs_next_after,
+        through: crate::board::local_board::max_seq(conn)?,
         proposal,
+        feedback,
+        linked_commit,
         can_decide,
         can_supersede,
         can_answer,

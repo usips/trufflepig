@@ -26,7 +26,7 @@ fn completed_card_cannot_be_reclaimed_or_reassigned_to_doing() {
         TaskColumn::Done
     );
     assert!(
-        read_claims(&conn, task.plan, 1051, 120)
+        read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, 1051, 120)
             .unwrap()
             .iter()
             .all(|claim| claim.ended_at.is_some())
@@ -111,7 +111,7 @@ fn explicit_owner_correction_reopens_done_to_todo_before_normal_claim() {
         let next = actor("josh", "muse", "after-correction");
         claim(&mut conn, &next, 1053, task, "corrected scope").unwrap();
         assert_eq!(
-            read_claims(&conn, task.plan, 1053, 120)
+            read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, 1053, 120)
                 .unwrap()
                 .iter()
                 .find(|claim| claim.task == task && claim.ended_at.is_none())

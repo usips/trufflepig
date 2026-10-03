@@ -52,7 +52,7 @@ fn cached_claim_or_move_cannot_bypass_a_new_holder() {
     let move_error = backend.handle(&release_request).unwrap_err();
     assert!(move_error.to_string().starts_with("invalid_actor:"));
     let conn = database.connect();
-    let history = read_claims(&conn, task.plan, i64::MAX, 120).unwrap();
+    let history = read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, i64::MAX, 120).unwrap();
     assert_eq!(
         history
             .iter()
@@ -107,7 +107,15 @@ fn retried_carve_creates_fresh_task_after_handoff() {
     assert_eq!(change.task.unwrap().ordinal, 2);
     assert!(!change.deduplicated);
     assert_eq!(read_tasks(&database.connect(), task.plan).unwrap().len(), 2);
-    let claims = read_claims(&database.connect(), task.plan, i64::MAX, 120).unwrap();
+    let claims = read_claims_window(
+        &database.connect(),
+        task.plan,
+        i64::MIN,
+        i64::MAX,
+        i64::MAX,
+        120,
+    )
+    .unwrap();
     assert_eq!(
         claims
             .iter()

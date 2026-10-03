@@ -7,7 +7,7 @@ mod claim_activity;
 mod claim_history;
 
 pub(super) use claim_activity::{refresh_commit_claims, refresh_inbox_claims, refresh_plan_claims};
-pub(super) use claim_history::{active_claim, read_claims, read_claims_window, read_tasks};
+pub(super) use claim_history::{active_claim, read_claims_window, read_tasks};
 
 use rusqlite::{Connection, Row, Transaction, params};
 

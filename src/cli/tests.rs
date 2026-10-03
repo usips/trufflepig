@@ -331,6 +331,8 @@ fn board_flags_are_rejected_on_source_search_verbs() {
         "--agent-model=gpt-6",
         "--agent-effort=xhigh",
         "--recent-calls=[]",
+        "--after=P7",
+        "--through=90",
     ] {
         let options = parse(&["search".into(), "query".into(), flag.into()]).unwrap();
         let error = validate(&options).unwrap_err().to_string();
@@ -350,7 +352,7 @@ fn board_grammar_accepts_every_m1_command_and_skill_example() {
         (&["board", "inbox", "--wait"], None, "inbox"),
         (&["board", "inbox", "5120", "--wait"], None, "inbox"),
         (&["board", "5120"], None, "inbox"),
-        (&["board", "show"], None, "show"),
+        (&["board", "show"], None, "overview"),
         (&["board", "show", "P7"], None, "show"),
         (&["board", "show", "P7@12"], None, "show"),
         (&["board", "show", "P7@10.."], None, "show"),

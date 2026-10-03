@@ -55,15 +55,6 @@ pub(in crate::board::local_board) fn active_claim(
         .transpose()
 }
 
-pub(in crate::board::local_board) fn read_claims(
-    conn: &Connection,
-    plan: PlanId,
-    now: i64,
-    ttl: i64,
-) -> Result<Vec<ClaimRecord>, BoardError> {
-    read_claims_window(conn, plan, i64::MIN, i64::MAX, now, ttl)
-}
-
 pub(in crate::board::local_board) fn read_claims_window(
     conn: &Connection,
     plan: PlanId,

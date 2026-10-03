@@ -169,7 +169,7 @@ fn unrecognized_git_coauthor_ingests_and_reply_evidence_round_trips() {
         .handle(&BoardRequest::new(
             fixture.config.actor(Some("codex"), Some("reader")).unwrap(),
             BoardOp::Show {
-                target: Some("P1".parse().unwrap()),
+                target: "P1".parse().unwrap(),
             },
         ))
         .unwrap();

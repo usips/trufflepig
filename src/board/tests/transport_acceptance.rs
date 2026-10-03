@@ -88,7 +88,7 @@ fn feedback_forwarding_keeps_audit_body_and_model_claims_with_local_repo_context
         .run_options(options, "codex", "feedback-session", Some(body))
         .unwrap();
     let listed = fixture.run(&["feedback", "ls", "--open"], "codex", "feedback-session");
-    let reports = data(&listed).as_array().unwrap();
+    let reports = data(&listed)["feedback"].as_array().unwrap();
     assert_eq!(reports.len(), 1);
     let report = &reports[0];
     assert!(report["entry"]["body"].as_str().unwrap().contains(body));

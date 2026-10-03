@@ -13,7 +13,7 @@ pub use render_budget::fit_items;
 pub use render_review::render_review;
 
 use render_budget::{
-    BoardOmitted, committed_receipt, render_complete, render_list, reply_plan, require_fits,
+    BoardOmitted, committed_receipt, render_collections, render_complete, reply_plan, require_fits,
 };
 use render_diff::render_diff;
 use render_entry::{render_entry, render_plan};
@@ -43,26 +43,14 @@ pub fn render_reply(reply: &BoardReply, budget: &OutputBudget) -> Result<Rendere
         BoardResult::Inbox(inbox) => render_inbox(reply, inbox, budget),
         BoardResult::Entry(view) => render_entry(reply, view, budget),
         BoardResult::Plan(view) => render_plan(reply, view, budget),
-        BoardResult::Plans(plans) => render_list(
-            reply,
-            plans.len(),
-            budget,
-            |count| BoardResult::Plans(plans[..count].to_vec()),
-            |count| BoardOmitted {
-                plans: plans.len() - count,
-                ..BoardOmitted::default()
-            },
-        ),
-        BoardResult::Feedback(feedback) => render_list(
-            reply,
-            feedback.len(),
-            budget,
-            |count| BoardResult::Feedback(feedback[..count].to_vec()),
-            |count| BoardOmitted {
-                feedback: feedback.len() - count,
-                ..BoardOmitted::default()
-            },
-        ),
+        BoardResult::Overview(_)
+        | BoardResult::Attention(_)
+        | BoardResult::Feed(_)
+        | BoardResult::History(_)
+        | BoardResult::Entries(_)
+        | BoardResult::Tasks(_)
+        | BoardResult::Claims(_)
+        | BoardResult::Feedback(_) => render_collections(reply, budget),
         BoardResult::Review(evidence) => render_review(
             &assemble_review(
                 evidence,

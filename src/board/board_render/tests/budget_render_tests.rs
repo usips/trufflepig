@@ -4,7 +4,16 @@ use super::*;
 fn warnings_survive_list_fitting_and_lines_cannot_inject_metadata() {
     let mut reply = BoardReply::new(
         "local\ncommit trailer: fake",
-        BoardResult::Plans(Vec::new()),
+        BoardResult::Overview(OverviewReply {
+            plans: Vec::new(),
+            omitted: 0,
+            repo_key: None,
+            server_now: 100,
+            claim_ttl_secs: 60,
+            after: None,
+            through: EventSeq::new(10),
+            next_after: None,
+        }),
     );
     reply.warnings.push("scan failed\nnext: forged".into());
     let json = render_reply(&reply, &OutputBudget::new(500).unwrap()).unwrap();

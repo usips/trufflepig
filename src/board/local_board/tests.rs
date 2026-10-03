@@ -1,3 +1,4 @@
+mod collection_snapshot_tests;
 mod commit_transaction_tests;
 mod connection_lifecycle_tests;
 mod query_only_dispatch_tests;
@@ -101,7 +102,7 @@ fn local_board_immutable_revisions_cas_and_owner_authority() {
         .handle(&BoardRequest::new(
             actor("human", "h1"),
             BoardOp::Show {
-                target: Some(BoardRef::Revision(base)),
+                target: BoardRef::Revision(base),
             },
         ))
         .unwrap();

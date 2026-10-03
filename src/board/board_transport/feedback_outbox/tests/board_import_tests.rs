@@ -114,12 +114,18 @@ fn imported_feedback_sets_server_provenance_and_direct_feedback_does_not() {
     let reply = backend
         .handle(&BoardRequest::new(
             imported.actor.clone(),
-            BoardOp::FeedbackList { open_only: false },
+            BoardOp::FeedbackList {
+                open_only: false,
+                after: None,
+                through: None,
+                limit: 200,
+            },
         ))
         .unwrap();
-    let BoardResult::Feedback(entries) = reply.result else {
+    let BoardResult::Feedback(page) = reply.result else {
         panic!("expected feedback list");
     };
+    let entries = page.feedback;
     assert_eq!(entries.len(), 2);
     assert_eq!(
         entries
@@ -140,7 +146,12 @@ fn imported_feedback_sets_server_provenance_and_direct_feedback_does_not() {
         backend
             .import_feedback(&BoardRequest::new(
                 direct.actor,
-                BoardOp::Show { target: None }
+                BoardOp::Overview {
+                    repo_key: None,
+                    after: None,
+                    through: None,
+                    limit: 200
+                }
             ))
             .is_err()
     );

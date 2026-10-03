@@ -1,10 +1,9 @@
-//! Entry and plan views preserve protected evidence while fitting optional detail.
-
+//! Plan and entry views preserve primary bodies while fitting related evidence.
 use super::{BoardOmitted, RenderedBoard, fit_items, render_complete, require_fits};
 use crate::board::board_protocol::{
-    BoardReply, BoardResult, EntryRecord, EntryState, EntryView, PlanView,
+    BoardReply, BoardResult, EntryCursor, EntryRecord, EntryView, PlanView,
 };
-use crate::board::board_vocabulary::{EntryKind, PlanText, ProposalState};
+use crate::board::board_vocabulary::PlanText;
 use crate::output::OutputBudget;
 use anyhow::Result;
 
@@ -34,6 +33,18 @@ pub(super) fn render_entry(
         visible.backrefs_omitted = view
             .backrefs_omitted
             .saturating_add(view.backrefs.len() - backref_count);
+        let cursor = |items: &[EntryRecord]| {
+            items.last().map(|entry| EntryCursor {
+                seq: entry.seq,
+                entry: entry.id,
+            })
+        };
+        if reply_count < view.replies.len() {
+            visible.replies_next_after = cursor(&visible.replies);
+        }
+        if backref_count < view.backrefs.len() {
+            visible.backrefs_next_after = cursor(&visible.backrefs);
+        }
         if let Some(proposal) = &mut visible.proposal {
             proposal.body = PlanText::new(body_lines[..body_count].concat())?;
         }
@@ -80,62 +91,67 @@ pub(super) fn render_plan(
     view: &PlanView,
     budget: &OutputBudget,
 ) -> Result<RenderedBoard> {
-    let protected = view
-        .entries
-        .iter()
-        .filter(|entry| is_open(entry))
-        .cloned()
-        .collect::<Vec<_>>();
-    let recent = view
-        .entries
-        .iter()
-        .filter(|entry| !is_open(entry))
-        .cloned()
-        .collect::<Vec<_>>();
     let body_lines = view
         .revision
         .body
         .as_str()
         .split_inclusive('\n')
         .collect::<Vec<_>>();
-    let render = |entries: usize, lines: usize| {
+    let render = |lines: usize, tasks: usize, claims: usize, entries: usize, commits: usize| {
         let mut visible = view.clone();
-        visible.entries = protected.clone();
-        visible
-            .entries
-            .extend_from_slice(&recent[recent.len() - entries..]);
-        visible.entries.sort_by_key(|entry| entry.seq);
+        visible.tasks.truncate(tasks);
+        visible.claims.truncate(claims);
+        visible.entries.truncate(entries);
+        visible.commits.truncate(commits);
+        visible.tasks_omitted += view.tasks.len() - tasks;
+        visible.claims_omitted += view.claims.len() - claims;
+        visible.entries_omitted += view.entries.len() - entries;
+        visible.commits_omitted += view.commits.len() - commits;
+        if tasks < view.tasks.len() {
+            visible.tasks_next_after = visible.tasks.last().map(|task| task.id);
+        }
+        if claims < view.claims.len() {
+            visible.claims_next_after = None;
+        }
+        if entries < view.entries.len() {
+            visible.entries_next_after = visible.entries.last().map(|entry| EntryCursor {
+                seq: entry.seq,
+                entry: entry.id,
+            });
+        }
         visible.revision.body = PlanText::new(body_lines[..lines].concat())?;
-        let omitted = BoardOmitted {
-            entries: recent.len() - entries,
-            body_lines: body_lines.len() - lines,
-            ..BoardOmitted::default()
-        };
-        let next =
-            (lines < body_lines.len()).then(|| format!("board show {} -b 32768", view.revision.id));
         let mut candidate = reply.clone();
         candidate.result = BoardResult::Plan(visible);
-        render_complete(&candidate, omitted, None, next, budget)
+        let next =
+            (lines < body_lines.len()).then(|| format!("board show {} -b 32768", view.revision.id));
+        render_complete(
+            &candidate,
+            BoardOmitted {
+                entries: view.entries.len() - entries,
+                body_lines: body_lines.len() - lines,
+                ..BoardOmitted::default()
+            },
+            None,
+            next,
+            budget,
+        )
     };
-    let entries = fit_items(recent.len(), budget, |entries| {
-        render(entries, body_lines.len())
+    // Claim and task summaries stay useful before the immutable body is expanded.
+    let claims = fit_items(view.claims.len(), budget, |count| render(0, 0, count, 0, 0))?;
+    let tasks = fit_items(view.tasks.len(), budget, |count| {
+        render(0, count, claims, 0, 0)
     })?;
-    let full = render(entries, body_lines.len())?;
-    if budget.fits(&full) {
-        return Ok(RenderedBoard {
-            text: full,
-            acknowledge_seq: None,
-        });
-    }
-    let lines = fit_items(body_lines.len(), budget, |lines| render(0, lines))?;
+    let lines = fit_items(body_lines.len(), budget, |count| {
+        render(count, tasks, claims, 0, 0)
+    })?;
+    let entries = fit_items(view.entries.len(), budget, |count| {
+        render(lines, tasks, claims, count, 0)
+    })?;
+    let commits = fit_items(view.commits.len(), budget, |count| {
+        render(lines, tasks, claims, entries, count)
+    })?;
     Ok(RenderedBoard {
-        text: require_fits(render(0, lines)?, budget)?,
+        text: require_fits(render(lines, tasks, claims, entries, commits)?, budget)?,
         acknowledge_seq: None,
     })
-}
-
-fn is_open(entry: &EntryRecord) -> bool {
-    entry.kind == EntryKind::Question
-        || matches!(entry.state, Some(EntryState::Proposal(ProposalState::Open)))
-        || matches!(entry.state, Some(EntryState::Feedback(state)) if !state.is_closed())
 }

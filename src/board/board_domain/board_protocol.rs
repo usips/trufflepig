@@ -5,6 +5,7 @@ mod board_requests;
 #[cfg(test)]
 mod tests;
 
+pub use super::board_collections::*;
 pub use board_errors::{BoardError, BoardErrorCode, leading_error_code};
 pub use board_records::{
     BoardChange, BoardReply, BoardResult, ClaimEndReason, ClaimRecord, CommitCoauthor,

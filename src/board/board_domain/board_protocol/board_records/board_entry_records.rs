@@ -1,5 +1,6 @@
 //! Entries, inbox events, and mutation addresses.
-use super::ProposalRecord;
+use super::{FeedbackRecord, LinkedCommit, ProposalRecord};
+use crate::board::board_domain::board_collections::EntryCursor;
 use crate::board::{
     board_actor::{BoardActor, BoardRecipient},
     board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
@@ -58,7 +59,12 @@ pub struct EntryView {
     pub replies_omitted: usize,
     pub backrefs: Vec<EntryRecord>,
     pub backrefs_omitted: usize,
+    pub replies_next_after: Option<EntryCursor>,
+    pub backrefs_next_after: Option<EntryCursor>,
+    pub through: EventSeq,
     pub proposal: Option<ProposalRecord>,
+    pub feedback: Option<FeedbackRecord>,
+    pub linked_commit: Option<LinkedCommit>,
     pub can_decide: bool,
     pub can_supersede: bool,
     pub can_answer: bool,

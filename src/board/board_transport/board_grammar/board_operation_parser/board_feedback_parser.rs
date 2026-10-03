@@ -1,6 +1,6 @@
 //! Parses feedback reports, triage, closure, and wrapper audit metadata.
 use super::{
-    BoardCommand, BoardTextPayload,
+    BoardCommand, BoardTextPayload, board_read_parser,
     board_syntax_validation::{check_flags, fixed_words, optional_text, word},
 };
 use crate::{
@@ -24,10 +24,18 @@ pub(super) fn parse_feedback(
     )?;
     let op = match verb {
         "ls" => {
-            check_flags(options, &["open"])?;
-            fixed_words(options, 2, 2, "feedback ls [--open]")?;
+            check_flags(options, &["open", "after", "through"])?;
+            fixed_words(
+                options,
+                2,
+                2,
+                "feedback ls [--open] [--after SEQ:E#] [--through SEQ]",
+            )?;
             BoardOp::FeedbackList {
                 open_only: options.board.open,
+                after: board_read_parser::entry_after(options)?,
+                through: board_read_parser::through(options)?,
+                limit: board_read_parser::bounded_limit(options, 200)?,
             }
         }
         "triage" => {

@@ -121,7 +121,6 @@ impl LocalBoard {
             BoardOp::AcknowledgeInbox { rendered_through } => {
                 board_feed::acknowledge(&tx, &ctx, *rendered_through)?
             }
-            BoardOp::Show { target } => board_reads::show(&tx, &ctx, target.as_ref())?,
             BoardOp::New {
                 title,
                 body,
@@ -173,20 +172,24 @@ impl LocalBoard {
             BoardOp::Reject { proposal, reason } => {
                 plan_writes::reject(&tx, &ctx, *proposal, reason)?
             }
-            BoardOp::Review { base, agent } => {
-                board_reads::review(&tx, &ctx, *base, agent.as_ref())?
-            }
             BoardOp::Feedback { .. } => feedback_entries::write_feedback(&tx, &ctx, &request.op)?,
-            BoardOp::FeedbackList { open_only } => {
-                feedback_entries::list_feedback(&tx, *open_only)?
-            }
             BoardOp::FeedbackTriage { .. } | BoardOp::FeedbackClose { .. } => {
                 feedback_entries::close_feedback(&tx, &ctx, &request.op)?
             }
             BoardOp::RegisterRepo { registration } => {
                 entry_writes::register_repo(&tx, &ctx, registration)?
             }
-            BoardOp::Repositories { plan } => board_reads::repositories(&tx, *plan)?,
+            BoardOp::Show { .. }
+            | BoardOp::Review { .. }
+            | BoardOp::FeedbackList { .. }
+            | BoardOp::Repositories { .. }
+            | BoardOp::Overview { .. }
+            | BoardOp::Attention { .. }
+            | BoardOp::Feed { .. }
+            | BoardOp::History { .. }
+            | BoardOp::Entries { .. }
+            | BoardOp::Tasks { .. }
+            | BoardOp::Claims { .. } => unreachable!("read operations use query-only dispatch"),
             BoardOp::RecordScan {
                 repo_key,
                 host,

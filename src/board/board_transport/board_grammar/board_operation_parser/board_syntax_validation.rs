@@ -15,6 +15,8 @@ pub(super) fn check_flags(options: &Arguments, allowed: &[&str]) -> Result<()> {
         ("plan", board.plan.is_some()),
         ("scope", board.scope.is_some()),
         ("section", board.section.is_some()),
+        ("after", board.after.is_some()),
+        ("through", board.through.is_some()),
         ("open", board.open),
         ("all", board.all),
         ("resume", board.resume),
