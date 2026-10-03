@@ -3,6 +3,7 @@
 //! Only an absent router permits local fallback; ambiguous replies never replay writes.
 pub mod board_actor;
 pub mod board_backend;
+mod board_client_transport;
 pub mod board_config;
 pub mod board_grammar;
 pub mod board_ids;
@@ -22,7 +23,7 @@ pub use board_backend::{BoardBackend, BoardHost};
 pub use board_config::BoardConfig;
 pub use board_protocol::{BOARD_API, BoardError, BoardOp, BoardReply, BoardRequest};
 
-use crate::{cli::Arguments, daemon::deadline::QueryDeadline, diagnostics::RequestContext};
+use crate::{cli::Arguments, diagnostics::RequestContext};
 use anyhow::{Context, Result, bail, ensure};
 use board_grammar::BoardCommand;
 use std::io::Read;
@@ -33,52 +34,12 @@ pub fn run_client(
     options: &Arguments,
     context: &RequestContext,
 ) -> Result<String> {
-    let forwarded = prepare_client(args, options)?;
-    let forwarded_options = crate::cli::parse(&forwarded)?;
-    let command = board_grammar::parse(&forwarded_options, None)?;
-    let encoded = crate::daemon::request_encoded_size(&forwarded, context)?;
-    ensure!(
-        encoded <= crate::daemon::MAX_DAEMON_REQUEST_BYTES,
-        "invalid_body: encoded board request is {encoded} bytes; maximum is {} bytes; split the plan",
-        crate::daemon::MAX_DAEMON_REQUEST_BYTES
-    );
-    let first = crate::system::request(&forwarded, context);
-    let answered = match first {
-        Ok(None) => {
-            let _ = crate::system::ensure();
-            crate::system::request(&forwarded, context)
-        }
-        answered => answered,
-    };
-    match answered {
-        Ok(Some(reply)) => Ok(reply),
-        Ok(None) => {
-            let host = BoardHost::default();
-            match host.run(&forwarded_options, context, QueryDeadline::start()) {
-                Ok(reply) => Ok(reply),
-                Err(error) => unavailable_or_queue(&command, &forwarded_options, context, error),
-            }
-        }
-        Err(error) => {
-            let message = format!("{error:#}");
-            if message.contains("unknown_command:")
-                && (message.contains("board") || message.contains("feedback"))
-            {
-                return Err(error.context("restart trufflepig-system.service to enable the board"));
-            }
-            // A failed reply may follow a successful write. Only feedback can queue
-            // the same permanent import key safely; ordinary operations keep the error.
-            if matches!(&command, BoardCommand::Op(BoardOp::Feedback { .. })) {
-                unavailable_or_queue(&command, &forwarded_options, context, error)
-            } else {
-                Err(error)
-            }
-        }
-    }
+    board_client_transport::run(args, options, context)
 }
 
 /// Captures stdin/file bodies and feedback identity once, including across retries.
 pub(crate) fn prepare_client(args: &[String], options: &Arguments) -> Result<Vec<String>> {
+    board_grammar::validate_before_body(options)?;
     let body = read_body(options)?;
     board_grammar::normalize_args(args, options, body.as_deref())
 }
@@ -87,25 +48,26 @@ fn read_body(options: &Arguments) -> Result<Option<String>> {
     let Some(path) = &options.board.body else {
         return Ok(None);
     };
-    let maximum = board_vocabulary::PLAN_TEXT_LIMIT;
-    let mut text = String::new();
+    let maximum = board_grammar::body_limit(options);
+    let mut bytes = Vec::with_capacity(maximum.min(4096));
     if path.as_os_str() == "-" {
         std::io::stdin()
             .lock()
             .take((maximum + 1) as u64)
-            .read_to_string(&mut text)
-            .context("invalid_body: cannot read stdin as UTF-8")?;
+            .read_to_end(&mut bytes)
+            .context("invalid_body: cannot read stdin")?;
     } else {
         std::fs::File::open(path)
             .context("invalid_body: cannot open body file")?
             .take((maximum + 1) as u64)
-            .read_to_string(&mut text)
-            .context("invalid_body: cannot read body file as UTF-8")?;
+            .read_to_end(&mut bytes)
+            .context("invalid_body: cannot read body file")?;
     }
     ensure!(
-        text.len() <= maximum,
+        bytes.len() <= maximum,
         "invalid_body: body exceeds {maximum} bytes"
     );
+    let text = String::from_utf8(bytes).context("invalid_body: body is not UTF-8")?;
     Ok(Some(text))
 }
 
@@ -113,14 +75,15 @@ fn unavailable_or_queue(
     command: &BoardCommand,
     options: &Arguments,
     context: &RequestContext,
+    config: &BoardConfig,
+    spool: &std::path::Path,
     error: anyhow::Error,
 ) -> Result<String> {
     let message = format!("{error:#}");
-    if domain_answer(&message) {
+    if domain_error(&error) {
         return Err(error);
     }
     if let BoardCommand::Op(op @ BoardOp::Feedback { .. }) = command {
-        let config = BoardConfig::load()?;
         let actor = config.actor(context.client.as_deref(), context.session.as_deref())?;
         let mut op = op.clone();
         if let BoardOp::Feedback { metadata, plan, .. } = &mut op {
@@ -141,7 +104,7 @@ fn unavailable_or_queue(
                 effort: options.board.agent_effort.clone(),
             });
         }
-        let reply = feedback_outbox::queue(&crate::system::spool_dir(), &request)?;
+        let reply = feedback_outbox::queue(spool, &request)?;
         let budget =
             crate::output::OutputBudget::new(options.budget)?.with_format(options.output_format());
         return Ok(board_render::render_reply(&reply, &budget)?.text);
@@ -149,21 +112,26 @@ fn unavailable_or_queue(
     bail!("board_unavailable: {message}; run trufflepig system ensure")
 }
 
-fn domain_answer(message: &str) -> bool {
-    message.split(':').any(|segment| {
-        let code = segment.trim();
-        code.starts_with("invalid_")
-            || matches!(
-                code,
-                "board_remote_unsupported"
-                    | "board_api_mismatch"
-                    | "usage"
-                    | "stale_revision"
-                    | "claim_conflict"
-                    | "budget_too_small"
-                    | "unknown_command"
-            )
+fn domain_error(error: &anyhow::Error) -> bool {
+    if let Some(code) = board_protocol::BoardErrorCode::from_error(error) {
+        return code.is_domain_answer();
+    }
+    if error
+        .chain()
+        .any(|cause| cause.downcast_ref::<std::io::Error>().is_some())
+    {
+        return false;
+    }
+    error.chain().any(|cause| {
+        board_protocol::leading_error_code(&cause.to_string()).is_some_and(|(code, _)| {
+            code.starts_with("invalid_") || matches!(code, "budget_too_small" | "unknown_command")
+        })
     })
+}
+
+#[cfg(test)]
+fn domain_answer(message: &str) -> bool {
+    domain_error(&anyhow::anyhow!(message.to_owned()))
 }
 
 pub(crate) fn enrich_feedback_cwd(
@@ -171,6 +139,7 @@ pub(crate) fn enrich_feedback_cwd(
     directory: &std::path::Path,
     timeout: std::time::Duration,
 ) {
+    metadata.cwd.clear();
     if let Ok(Some(root)) = repo_identity::repository_root(directory, timeout) {
         if let Ok(directory) = directory.canonicalize() {
             if let Ok(relative) = directory.strip_prefix(root) {
@@ -222,6 +191,60 @@ mod client_tests {
     }
 
     #[test]
+    fn body_preflight_precedes_file_reads_and_byte_limits_precede_utf8() {
+        let args: Vec<String> = [
+            "--body",
+            "missing-body-file",
+            "board",
+            "propose",
+            "P0@1",
+            "summary",
+        ]
+        .map(str::to_owned)
+        .into();
+        let options = crate::cli::parse(&args).unwrap();
+        let error = prepare_client(&args, &options).unwrap_err();
+        assert!(
+            error.to_string().starts_with("invalid_reference:"),
+            "{error:#}"
+        );
+        let scratch = std::env::var_os("TMPDIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from("/home/josh/.cache/codex-tmp"));
+        std::fs::create_dir_all(&scratch).unwrap();
+        let directory = tempfile::Builder::new().tempdir_in(scratch).unwrap();
+        let path = directory.path().join("oversized-feedback");
+        std::fs::write(&path, vec![0xff; 4097]).unwrap();
+        let args = vec![
+            "--body".into(),
+            path.to_string_lossy().into_owned(),
+            "feedback".into(),
+            "blocked".into(),
+            "summary".into(),
+        ];
+        let options = crate::cli::parse(&args).unwrap();
+        let error = prepare_client(&args, &options).unwrap_err();
+        assert!(
+            error.to_string().contains("body exceeds 4096 bytes"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn typed_transient_cause_wins_over_domain_looking_context() {
+        let error = anyhow::Error::new(board_protocol::BoardError::new(
+            board_protocol::BoardErrorCode::BoardUnavailable,
+            "temporarily offline",
+        ))
+        .context("invalid_body: context is diagnostic prose");
+        assert!(!domain_error(&error));
+        assert!(!domain_error(
+            &anyhow::Error::new(std::io::Error::from(std::io::ErrorKind::BrokenPipe))
+                .context("budget_too_small: diagnostic context")
+        ));
+    }
+
+    #[test]
     fn feedback_domain_answers_are_not_queued() {
         for code in [
             "board_remote_unsupported",
@@ -237,6 +260,12 @@ mod client_tests {
             }
         }
         for message in [
+            "read frame failed: invalid_body: incidental prose",
+            "write failed: invalid_options: diagnostic mention",
+            "unknown_code: stale_revision: detail",
+            "read frame failed: invalid_body: incidental prose",
+            "write failed: invalid_options: diagnostic mention",
+            "unknown_code: stale_revision: detail",
             "board_unavailable: permission denied",
             "daemon: read frame: broken pipe",
             "database is locked",

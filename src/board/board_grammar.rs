@@ -48,9 +48,18 @@ pub struct BoardOptions {
     /// Include plans from every registered repository in inbox reads.
     #[arg(long)]
     pub all: bool,
-    /// Client-normalized free text and optional file body.
+    /// Raw free text, including leading hyphens.
     #[arg(long, hide = true, require_equals = true, allow_hyphen_values = true)]
     pub board_text: Option<String>,
+    /// Internal normalized text, body, and stable feedback identity.
+    #[arg(
+        long,
+        hide = true,
+        require_equals = true,
+        allow_hyphen_values = true,
+        conflicts_with = "board_text"
+    )]
+    pub board_payload: Option<String>,
     /// Model claim captured by the agent wrapper.
     #[arg(long, hide = true)]
     pub agent_model: Option<String>,
@@ -94,6 +103,7 @@ impl BoardOptions {
             ("--scope", self.scope.clone()),
             ("--section", self.section.clone()),
             ("--board-text", self.board_text.clone()),
+            ("--board-payload", self.board_payload.clone()),
             ("--agent-model", self.agent_model.clone()),
             ("--agent-effort", self.agent_effort.clone()),
             ("--recent-calls", self.recent_calls.clone()),
@@ -125,6 +135,7 @@ impl BoardOptions {
             || self.all
             || self.resume
             || self.board_text.is_some()
+            || self.board_payload.is_some()
             || self.agent_model.is_some()
             || self.agent_effort.is_some()
             || self.recent_calls.is_some()
@@ -159,12 +170,7 @@ pub fn normalize_args(
         payload.import_key = import_key;
     }
     if options.words.first().map(String::as_str) == Some("feedback")
-        && options
-            .board
-            .board_text
-            .as_deref()
-            .and_then(|value| serde_json::from_str::<BoardTextPayload>(value).ok())
-            .is_none()
+        && options.board.board_payload.is_none()
     {
         payload.steer_mode = std::env::var("TRUFFLEPIG_AGENT_STEER").ok();
     }
@@ -173,7 +179,8 @@ pub fn normalize_args(
         forwarded.words.truncate(start);
     }
     forwarded.board.body = None;
-    forwarded.board.board_text = if text_position(options).is_some() || payload.body.is_some() {
+    forwarded.board.board_text = None;
+    forwarded.board.board_payload = if text_position(options).is_some() || payload.body.is_some() {
         Some(serde_json::to_string(&payload)?)
     } else {
         None
@@ -209,19 +216,24 @@ fn command_text(options: &Arguments, body: Option<&str>) -> Result<BoardTextPayl
     let positional = text_position(options)
         .map(|start| options.words.get(start..).unwrap_or_default().join(" "))
         .unwrap_or_default();
-    if let Some(hidden) = &options.board.board_text {
+    if let Some(encoded) = &options.board.board_payload {
+        if !positional.is_empty() || options.board.board_text.is_some() {
+            bail!("invalid_options: text supplied twice");
+        }
+        let mut payload: BoardTextPayload = serde_json::from_str(encoded)
+            .context("invalid_options: --board-payload must be a normalized board payload")?;
+        if body.is_some() && payload.body.is_some() {
+            bail!("invalid_options: body supplied twice");
+        }
+        payload.body = payload.body.or_else(|| body.map(str::to_owned));
+        return Ok(payload);
+    }
+    if let Some(raw) = &options.board.board_text {
         if !positional.is_empty() {
             bail!("invalid_options: positional text conflicts with --board-text");
         }
-        if let Ok(mut payload) = serde_json::from_str::<BoardTextPayload>(hidden) {
-            if body.is_some() && payload.body.is_some() {
-                bail!("invalid_options: body supplied twice");
-            }
-            payload.body = payload.body.or_else(|| body.map(str::to_owned));
-            return Ok(payload);
-        }
         return Ok(BoardTextPayload {
-            text: hidden.clone(),
+            text: raw.clone(),
             body: body.map(str::to_owned),
             import_key: None,
             steer_mode: None,
@@ -233,6 +245,26 @@ fn command_text(options: &Arguments, body: Option<&str>) -> Result<BoardTextPayl
         import_key: None,
         steer_mode: None,
     })
+}
+
+/// Validates references and grammar before reading client-owned bodies.
+pub fn validate_before_body(options: &Arguments) -> Result<()> {
+    let placeholder = options.board.body.as_ref().map(|_| {
+        if options.words.first().map(String::as_str) == Some("feedback") {
+            "x"
+        } else {
+            ""
+        }
+    });
+    parse(options, placeholder).map(|_| ())
+}
+
+pub fn body_limit(options: &Arguments) -> usize {
+    if options.words.first().map(String::as_str) == Some("feedback") {
+        super::board_vocabulary::ENTRY_TEXT_LIMIT
+    } else {
+        super::board_vocabulary::PLAN_TEXT_LIMIT
+    }
 }
 
 /// Parse board/feedback words without reading client-owned files.
