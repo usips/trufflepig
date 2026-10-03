@@ -339,7 +339,9 @@ mod tests {
     fn strict_config_rejects_unknown_fields_and_invalid_ttl() {
         let defaults = || {
             BoardConfig::for_database(
-                Path::new(env!("CARGO_MANIFEST_DIR")).join("target/board-config-test.sqlite3"),
+                crate::board::board_test_support::scratch("board-config-")
+                    .path()
+                    .join("board.sqlite3"),
             )
         };
         assert!(BoardConfig::from_toml("usre = 'josh'", defaults()).is_err());
@@ -362,7 +364,9 @@ mod tests {
         let config = BoardConfig::from_toml(
             "mode = 'remote'\nurl = 'https://board.example'",
             BoardConfig::for_database(
-                Path::new(env!("CARGO_MANIFEST_DIR")).join("target/board.sqlite3"),
+                crate::board::board_test_support::scratch("board-config-")
+                    .path()
+                    .join("board.sqlite3"),
             ),
         )
         .unwrap();

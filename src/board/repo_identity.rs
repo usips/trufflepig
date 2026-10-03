@@ -250,12 +250,7 @@ pub(crate) mod tests {
 
     impl GitFixture {
         pub fn new() -> Self {
-            let scratch = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/board-git-tests");
-            std::fs::create_dir_all(&scratch).unwrap();
-            let directory = tempfile::Builder::new()
-                .prefix("repository-")
-                .tempdir_in(scratch)
-                .unwrap();
+            let directory = crate::board::board_test_support::scratch("board-fixture-");
             let root = directory.path().join("repo");
             std::fs::create_dir(&root).unwrap();
             let fixture = Self {

@@ -6,9 +6,7 @@ use crate::board::local_board::LocalBoard;
 use std::time::Duration;
 
 fn database() -> (tempfile::TempDir, LocalBoard) {
-    let parent = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/board-read-tests");
-    std::fs::create_dir_all(&parent).unwrap();
-    let directory = tempfile::Builder::new().tempdir_in(parent).unwrap();
+    let directory = crate::board::board_test_support::scratch("board-fixture-");
     let board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(7200),
@@ -541,4 +539,54 @@ fn show_entry_recovers_full_large_proposal_and_keeps_decided_evidence() {
     assert_eq!(question.replies[0].id, answer);
     assert!(question.backrefs.iter().any(|entry| entry.id == answer));
     assert!(!question.can_answer);
+}
+
+#[test]
+fn repository_reads_sanitize_legacy_origins_without_rewriting_evidence() {
+    let (directory, mut board) = database();
+    let repo = "a".repeat(40);
+    let root_oid = "b".repeat(40);
+    let original = "https://legacy-user:legacy-password@example.invalid/team/repository.git";
+    board
+        .conn
+        .execute(
+            "INSERT INTO repos(repo_key,origin_label) VALUES(?1,?2)",
+            params![repo, original],
+        )
+        .unwrap();
+    board.conn.execute("INSERT INTO repo_paths(repo_key,host,common_dir,root_commits_json,registration_error) VALUES(?1,'laptop',?2,?3,'registration warning')", params![repo, directory.path().join("legacy.git").to_str().unwrap(), serde_json::to_string(&vec![root_oid.clone()]).unwrap()]).unwrap();
+    let changes = board.conn.total_changes();
+    let BoardResult::Repositories(targets) =
+        call(&mut board, "codex", BoardOp::Repositories { plan: None })
+    else {
+        panic!("missing repositories")
+    };
+    assert_eq!(targets.len(), 1);
+    assert_eq!(
+        targets[0].registration.origin_label.as_deref(),
+        Some("https://example.invalid/team/repository.git")
+    );
+    assert_eq!(
+        targets[0].registration.root_commits[0].to_string(),
+        root_oid
+    );
+    assert_eq!(
+        targets[0].registration.registration_error.as_deref(),
+        Some("registration warning")
+    );
+    assert_eq!(targets[0].registration.origin_override, None);
+    let encoded = serde_json::to_string(&targets).unwrap();
+    assert!(!encoded.contains("legacy-user") && !encoded.contains("legacy-password"));
+    assert_eq!(
+        board
+            .conn
+            .query_row(
+                "SELECT origin_label FROM repos WHERE repo_key=?1",
+                [repo],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+        original
+    );
+    assert_eq!(board.conn.total_changes(), changes);
 }

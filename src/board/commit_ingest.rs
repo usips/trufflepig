@@ -469,6 +469,12 @@ mod tests {
             };
             Ok(BoardReply::new("test", result))
         }
+        fn import_feedback(
+            &mut self,
+            request: &BoardRequest,
+        ) -> std::result::Result<BoardReply, BoardError> {
+            self.handle(request)
+        }
         fn max_seq(&self) -> std::result::Result<EventSeq, BoardError> {
             Ok(EventSeq::new(0))
         }

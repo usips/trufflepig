@@ -5,7 +5,7 @@ use std::time::Duration;
 fn explicit_inbox_replays_and_open_reminders_never_advance_the_session_cursor() {
     let fixture = EdgeFixture::new();
     fixture.run(&["board", "new", "Cursor acceptance"], "codex", "writer");
-    fixture.run(&["board", "inbox"], "claude", "reader");
+    fixture.run(&["board", "inbox", "--all"], "claude", "reader");
     assert_eq!(fixture.cursor("claude", "reader"), 1);
     for index in 0..6 {
         fixture.run(
@@ -33,7 +33,7 @@ fn explicit_inbox_replays_and_open_reminders_never_advance_the_session_cursor() 
         "codex",
         "writer",
     );
-    let mut options = fixture.options(&["board", "inbox", "0"]);
+    let mut options = fixture.options(&["board", "inbox", "0", "--all"]);
     options.limit = 2;
     let replay = fixture
         .run_options(options, "claude", "reader", None)
@@ -41,7 +41,7 @@ fn explicit_inbox_replays_and_open_reminders_never_advance_the_session_cursor() 
     assert_eq!(data(&replay)["events"].as_array().unwrap().len(), 2);
     assert_eq!(fixture.cursor("claude", "reader"), 1);
 
-    let mut options = fixture.options(&["board", "inbox"]);
+    let mut options = fixture.options(&["board", "inbox", "--all"]);
     options.limit = 2;
     let first = fixture
         .run_options(options.clone(), "claude", "reader", None)
@@ -84,7 +84,7 @@ fn failed_complete_render_does_not_acknowledge_or_skip_events() {
         "codex",
         "writer",
     );
-    let mut too_small = fixture.options(&["board", "inbox"]);
+    let mut too_small = fixture.options(&["board", "inbox", "--all"]);
     too_small.budget = 1;
     let error = fixture
         .run_options(too_small, "claude", "budget-reader", None)
@@ -94,7 +94,7 @@ fn failed_complete_render_does_not_acknowledge_or_skip_events() {
         "{error:#}"
     );
     assert_eq!(fixture.cursor("claude", "budget-reader"), 0);
-    let recovered = fixture.run(&["board", "inbox"], "claude", "budget-reader");
+    let recovered = fixture.run(&["board", "inbox", "--all"], "claude", "budget-reader");
     assert_eq!(data(&recovered)["events"].as_array().unwrap().len(), 2);
     assert_eq!(fixture.cursor("claude", "budget-reader"), 2);
 }
@@ -102,8 +102,8 @@ fn failed_complete_render_does_not_acknowledge_or_skip_events() {
 #[test]
 fn short_router_deadline_returns_empty_timeout_without_spending_the_worker_budget() {
     let fixture = EdgeFixture::new();
-    let options = fixture.options(&["board", "inbox", "0", "--wait"]);
-    fixture.run(&["board", "inbox", "0"], "codex", "wait-reader");
+    let options = fixture.options(&["board", "inbox", "0", "--wait", "--all"]);
+    fixture.run(&["board", "inbox", "0", "--all"], "codex", "wait-reader");
     let started = std::time::Instant::now();
     let output = fixture
         .host
@@ -143,7 +143,7 @@ fn a_waiting_inbox_receives_a_host_write_before_the_one_second_poll() {
     let fixture = EdgeFixture::new();
     fixture.run(&["board", "new", "Wait notification"], "codex", "writer");
     let host = fixture.host.clone();
-    let options = fixture.options(&["board", "inbox", "1", "--wait"]);
+    let options = fixture.options(&["board", "inbox", "1", "--wait", "--all"]);
     let waiting = std::thread::spawn(move || {
         let started = std::time::Instant::now();
         let output = host

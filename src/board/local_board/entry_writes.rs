@@ -25,6 +25,7 @@ pub(super) fn hello(
         now: ctx.now,
         seq: ctx.seq,
         claim_ttl_secs: ctx.claim_ttl_secs,
+        via: None,
     };
     let body = effort.map_or_else(|| model.to_owned(), |effort| format!("{model}/{effort}"));
     let entry = insert_entry(
@@ -354,6 +355,7 @@ pub(super) fn link_commits(
             now: ctx.now,
             seq: ctx.seq,
             claim_ttl_secs: ctx.claim_ttl_secs,
+            via: None,
         };
         for (plan, tasks) in valid_links {
             let existing: Option<i64> = tx

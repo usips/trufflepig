@@ -481,7 +481,7 @@ fn lines_result(result: &BoardResult) -> String {
             for event in &inbox.events {
                 writeln!(
                     text,
-                    "{}\t{}\t{}\t{}\t{}\t{}{}",
+                    "{}\t{}\t{}\t{}\t{}\t{}{}{}",
                     event.seq,
                     event
                         .plan
@@ -494,7 +494,11 @@ fn lines_result(result: &BoardResult) -> String {
                         event.effort.as_deref()
                     ),
                     cell(event.summary.as_str()),
-                    recipient(&event.to)
+                    recipient(&event.to),
+                    match event.via {
+                        Some(FeedbackVia::Outbox) => "\tvia=outbox spooled unverified",
+                        None => "",
+                    }
                 )
                 .unwrap();
             }
@@ -698,7 +702,7 @@ fn revision_lines(text: &mut String, revision: &RevisionRecord) {
 fn entry_line(text: &mut String, entry: &EntryRecord) {
     writeln!(
         text,
-        "{}\t{}\t{}\t{}{}",
+        "{}\t{}\t{}\t{}{}{}",
         entry.id,
         entry.kind,
         author(
@@ -707,7 +711,11 @@ fn entry_line(text: &mut String, entry: &EntryRecord) {
             entry.effort.as_deref()
         ),
         cell(entry.body.as_str()),
-        recipient(&entry.to)
+        recipient(&entry.to),
+        match entry.via {
+            Some(FeedbackVia::Outbox) => "\tvia=outbox spooled unverified",
+            None => "",
+        }
     )
     .unwrap();
 }

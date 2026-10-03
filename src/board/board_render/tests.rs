@@ -16,6 +16,7 @@ fn actor() -> BoardActor {
 
 fn entry(seq: u64) -> EntryRecord {
     EntryRecord {
+        via: None,
         id: EntryId::new(seq).unwrap(),
         plan: Some(PlanId::new(7).unwrap()),
         kind: EntryKind::Question,
@@ -36,6 +37,7 @@ fn entry(seq: u64) -> EntryRecord {
 fn inbox(advancing: bool) -> InboxReply {
     let events = (11..23)
         .map(|seq| EventRecord {
+            via: None,
             seq: EventSeq::new(seq),
             plan: Some(PlanId::new(7).unwrap()),
             kind: EntryKind::Progress,
@@ -718,4 +720,17 @@ fn entry_drill_keeps_large_proposal_before_long_reverse_references() {
         .unwrap();
         assert!(short.text.contains("board show E80 -b 32768"));
     }
+}
+
+#[test]
+fn spooled_entry_lines_mark_imported_claims_unverified() {
+    let mut imported = entry(1);
+    imported.via = Some(FeedbackVia::Outbox);
+    let mut rendered = String::new();
+    entry_line(&mut rendered, &imported);
+    assert!(rendered.contains("via=outbox spooled unverified"));
+    imported.via = None;
+    rendered.clear();
+    entry_line(&mut rendered, &imported);
+    assert!(!rendered.contains("spooled"));
 }

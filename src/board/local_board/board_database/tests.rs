@@ -1,7 +1,7 @@
 use super::*;
 
 fn directory() -> tempfile::TempDir {
-    tempfile::tempdir().unwrap()
+    crate::board::board_test_support::scratch("board-test-")
 }
 
 #[test]
@@ -326,4 +326,24 @@ fn populated_v1_duplicate_checkout_paths_keep_first_key_and_all_evidence() {
     assert_eq!(targets.len(), 1);
     assert_eq!(targets[0].registration.repo_key, first);
     assert_eq!(targets[0].plans.len(), 2);
+}
+
+#[cfg(unix)]
+#[test]
+fn readonly_open_tightens_private_directory_without_enabling_owner_writes() {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = directory();
+    let path = directory.path().join("board.sqlite3");
+    drop(open(&path).unwrap());
+    for mode in [0o755, 0o555] {
+        std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(mode)).unwrap();
+        let (conn, _) = open_read_with_timeout(&path, Duration::from_secs(1)).unwrap();
+        assert_eq!(
+            directory.path().metadata().unwrap().permissions().mode() & 0o777,
+            mode & !0o077
+        );
+        assert_eq!(conn.total_changes(), 0);
+        drop(conn);
+    }
+    std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
 }

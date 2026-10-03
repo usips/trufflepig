@@ -9,6 +9,8 @@ pub mod board_grammar;
 pub mod board_ids;
 pub mod board_protocol;
 pub mod board_render;
+#[cfg(test)]
+pub(crate) mod board_test_support;
 pub mod board_vocabulary;
 pub mod commit_ingest;
 pub mod commit_trailers;
@@ -159,13 +161,7 @@ mod client_tests {
 
     #[test]
     fn captured_body_survives_file_changes_between_retries() {
-        let scratch =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/board-client-tests");
-        std::fs::create_dir_all(&scratch).unwrap();
-        let directory = tempfile::Builder::new()
-            .prefix("capture-")
-            .tempdir_in(scratch)
-            .unwrap();
+        let directory = crate::board::board_test_support::scratch("board-transport-");
         let body_path = directory.path().join("plan.md");
         std::fs::write(&body_path, "- captured plan\n").unwrap();
         let args = vec![
@@ -208,11 +204,7 @@ mod client_tests {
             error.to_string().starts_with("invalid_reference:"),
             "{error:#}"
         );
-        let scratch = std::env::var_os("TMPDIR")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| std::path::PathBuf::from("/home/josh/.cache/codex-tmp"));
-        std::fs::create_dir_all(&scratch).unwrap();
-        let directory = tempfile::Builder::new().tempdir_in(scratch).unwrap();
+        let directory = crate::board::board_test_support::scratch("board-runtime-");
         let path = directory.path().join("oversized-feedback");
         std::fs::write(&path, vec![0xff; 4097]).unwrap();
         let args = vec![

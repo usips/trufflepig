@@ -132,11 +132,7 @@ mod tests {
 
     #[test]
     fn cached_configuration_errors_retry_on_mtime_and_keep_the_database_pin() {
-        let scratch = std::env::var_os("TMPDIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("/home/josh/.cache/codex-tmp"));
-        fs::create_dir_all(&scratch).unwrap();
-        let directory = tempfile::Builder::new().tempdir_in(scratch).unwrap();
+        let directory = crate::board::board_test_support::scratch("board-runtime-");
         let path = directory.path().join("board.toml");
         let database = directory.path().join("board.sqlite3");
         fs::write(&path, "broken = true").unwrap();

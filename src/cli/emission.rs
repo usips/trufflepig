@@ -8,6 +8,21 @@ use serde_json::{Value, json};
 use std::{io::Write, time::Instant};
 
 pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write) -> i32 {
+    if let Some(answer) = super::board_api_probe::probe_board_api(args) {
+        return match answer {
+            Ok(output) => {
+                if stdout.write_all(output.as_bytes()).is_ok() {
+                    0
+                } else {
+                    2
+                }
+            }
+            Err(error) => {
+                let _ = writeln!(stderr, "{error:#}");
+                2
+            }
+        };
+    }
     let started = Instant::now();
     let mut stderr = CountingWriter {
         writer: stderr,

@@ -12,9 +12,8 @@ fn actor(harness: &str, session: &str) -> BoardActor {
 }
 
 fn database() -> (LocalBoard, PathBuf) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("target/board-storage-tests")
-        .join(uuid::Uuid::new_v4().to_string())
+    let path = crate::board::board_test_support::scratch("board-storage-")
+        .keep()
         .join("board.sqlite3");
     (
         LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap(),
@@ -160,7 +159,8 @@ fn local_board_dedupe_distinguishes_target_and_snapshots_claims() {
 
 #[test]
 fn local_board_refuses_newer_schema_without_changing_journal() {
-    let (board, path) = database();
+    let (mut board, path) = database();
+    drop(board.reader.take());
     board.conn.pragma_update(None, "user_version", 99).unwrap();
     board
         .conn
@@ -183,9 +183,8 @@ fn local_board_refuses_newer_schema_without_changing_journal() {
 
 #[test]
 fn local_board_concurrent_first_open_serializes_migration() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("target/board-storage-tests")
-        .join(uuid::Uuid::new_v4().to_string())
+    let path = crate::board::board_test_support::scratch("board-storage-")
+        .keep()
         .join("board.sqlite3");
     let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
     let handles: Vec<_> = (0..2)

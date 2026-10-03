@@ -1,3 +1,5 @@
+mod stored_feedback_upgrade_tests;
+
 use super::*;
 use crate::board::board_actor::{BoardActor, HarnessLabel};
 use crate::board::board_ids::{EntryId, EventSeq};
@@ -6,9 +8,7 @@ use crate::board::board_vocabulary::{EntryText, FeedbackKind};
 use std::collections::HashMap;
 
 fn scratch() -> tempfile::TempDir {
-    let parent = Path::new("target/test-feedback-outbox");
-    fs::create_dir_all(parent).unwrap();
-    tempfile::Builder::new().tempdir_in(parent).unwrap()
+    crate::board::board_test_support::scratch("feedback-outbox-")
 }
 
 fn report() -> BoardRequest {
@@ -67,6 +67,9 @@ impl BoardBackend for ImportBackend {
             })
             .clone();
         Ok(BoardReply::new("test", BoardResult::Change(change)))
+    }
+    fn import_feedback(&mut self, request: &BoardRequest) -> Result<BoardReply, BoardError> {
+        self.handle(request)
     }
     fn max_seq(&self) -> Result<EventSeq, BoardError> {
         Ok(EventSeq::new(self.entries.len() as u64))
@@ -175,6 +178,7 @@ fn symbolic_link_records_never_read_or_modify_their_targets() {
     let dir = scratch();
     let target = dir.path().join("outside-report");
     fs::write(&target, b"private evidence").unwrap();
+    let modified = target.metadata().unwrap().modified().unwrap();
     let link = dir.path().join(format!("{}.feedback", new_import_key()));
     std::os::unix::fs::symlink(&target, &link).unwrap();
     let mut backend = ImportBackend::default();
@@ -185,6 +189,7 @@ fn symbolic_link_records_never_read_or_modify_their_targets() {
         1
     );
     assert_eq!(fs::read(&target).unwrap(), b"private evidence");
+    assert_eq!(target.metadata().unwrap().modified().unwrap(), modified);
     assert!(backend.entries.is_empty());
 }
 
@@ -210,6 +215,9 @@ struct RejectedImport(BoardErrorCode);
 impl BoardBackend for RejectedImport {
     fn handle(&mut self, _: &BoardRequest) -> Result<BoardReply, BoardError> {
         Err(BoardError::new(self.0, "injected rejection"))
+    }
+    fn import_feedback(&mut self, request: &BoardRequest) -> Result<BoardReply, BoardError> {
+        self.handle(request)
     }
     fn max_seq(&self) -> Result<EventSeq, BoardError> {
         Ok(EventSeq::new(0))
@@ -245,4 +253,143 @@ fn semantic_import_rejections_quarantine_and_transient_rejections_remain_pending
             if transient { "feedback" } else { "quarantine" }
         );
     }
+}
+
+#[test]
+fn queue_makes_existing_permissive_spool_private_before_publishing() {
+    let directory = scratch();
+    let spool = directory.path().join("existing-spool");
+    fs::create_dir(&spool).unwrap();
+    fs::set_permissions(&spool, fs::Permissions::from_mode(0o755)).unwrap();
+    let reply = queue(&spool, &report()).unwrap();
+    let BoardResult::Queued { import_key } = reply.result else {
+        panic!("expected durable queue acknowledgement");
+    };
+    assert_eq!(
+        spool.metadata().unwrap().permissions().mode() & 0o7777,
+        0o700
+    );
+    assert_eq!(
+        spool
+            .join(format!("{import_key}.feedback"))
+            .metadata()
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o7777,
+        0o600
+    );
+}
+
+#[test]
+fn spool_symlink_and_ownership_rejections_preserve_target_permissions() {
+    let directory = scratch();
+    let target = directory.path().join("outside-spool");
+    fs::create_dir(&target).unwrap();
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).unwrap();
+    let spool = directory.path().join("spool-link");
+    std::os::unix::fs::symlink(&target, &spool).unwrap();
+    assert_eq!(
+        queue(&spool, &report()).unwrap_err().code,
+        BoardErrorCode::InvalidOptions
+    );
+    assert_eq!(
+        target.metadata().unwrap().permissions().mode() & 0o7777,
+        0o755
+    );
+    assert_eq!(fs::read_dir(&target).unwrap().count(), 0);
+    let actual_owner = target.metadata().unwrap().uid();
+    assert_eq!(
+        private_directory_owned_by(&target, actual_owner.wrapping_add(1))
+            .unwrap_err()
+            .code,
+        BoardErrorCode::InvalidOptions
+    );
+    assert_eq!(
+        target.metadata().unwrap().permissions().mode() & 0o7777,
+        0o755
+    );
+    assert_eq!(fs::read_dir(&target).unwrap().count(), 0);
+}
+
+#[test]
+fn imported_feedback_sets_server_provenance_and_direct_feedback_does_not() {
+    let directory = scratch();
+    let config = crate::board::BoardConfig::for_database(directory.path().join("board.sqlite3"));
+    let mut backend = crate::board::local_board::LocalBoard::open(&config).unwrap();
+    let direct = report();
+    backend.handle(&direct).unwrap();
+    let mut imported = report();
+    let BoardOp::Feedback { summary, .. } = &mut imported.op else {
+        unreachable!();
+    };
+    *summary = EntryText::new("Imported through trusted outbox dispatch").unwrap();
+    let spool = directory.path().join("spool");
+    queue(&spool, &imported).unwrap();
+    assert_eq!(import_pending(&spool, &mut backend).unwrap().imported, 1);
+    let durable = rusqlite::Connection::open(&config.db_path).unwrap();
+    let via = durable
+        .prepare("SELECT via FROM entries ORDER BY id")
+        .unwrap()
+        .query_map([], |row| row.get::<_, Option<String>>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(via, [None, Some("outbox".into())]);
+    let reply = backend
+        .handle(&BoardRequest::new(
+            imported.actor.clone(),
+            BoardOp::FeedbackList { open_only: false },
+        ))
+        .unwrap();
+    let BoardResult::Feedback(entries) = reply.result else {
+        panic!("expected feedback list");
+    };
+    assert_eq!(entries.len(), 2);
+    assert_eq!(
+        entries
+            .iter()
+            .filter(|feedback| feedback.entry.via
+                == Some(crate::board::board_protocol::FeedbackVia::Outbox))
+            .count(),
+        1
+    );
+    assert_eq!(
+        entries
+            .iter()
+            .filter(|feedback| feedback.entry.via.is_none())
+            .count(),
+        1
+    );
+    assert!(
+        backend
+            .import_feedback(&BoardRequest::new(
+                direct.actor,
+                BoardOp::Show { target: None }
+            ))
+            .is_err()
+    );
+}
+
+#[test]
+fn newly_quarantined_old_records_receive_a_full_retention_window() {
+    let directory = scratch();
+    let path = directory
+        .path()
+        .join(format!("{}.feedback", new_import_key()));
+    fs::write(&path, b"old malformed record").unwrap();
+    let file = File::open(&path).unwrap();
+    file.set_times(
+        fs::FileTimes::new()
+            .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1)),
+    )
+    .unwrap();
+    let started = std::time::SystemTime::now();
+    import_pending(directory.path(), &mut ImportBackend::default()).unwrap();
+    let quarantined = fs::read_dir(directory.path())
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap();
+    assert!(quarantined.metadata().unwrap().modified().unwrap() >= started);
 }

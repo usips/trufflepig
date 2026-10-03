@@ -173,7 +173,7 @@ mod tests {
         );
         for invalid in [
             "bad".to_owned(),
-            key.to_string().to_uppercase(),
+            "AAAAAAAA-AAAA-4AAA-AAAA-AAAAAAAAAAAA".to_owned(),
             key.to_string().replace('-', ""),
         ] {
             assert!(FeedbackImportKey::parse(&invalid).is_err());

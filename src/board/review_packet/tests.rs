@@ -237,6 +237,7 @@ fn review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint() {
     let mut source = evidence();
     for seq in 10..20 {
         source.entries.push(EntryRecord {
+            via: None,
             id: EntryId::new(seq).unwrap(),
             plan: Some(source.plan.id),
             kind: EntryKind::Progress,

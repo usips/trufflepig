@@ -1,4 +1,5 @@
 //! Linux command dispatch; stdout contains one budgeted JSON response.
+mod board_api_probe;
 mod dispatch;
 pub mod emission;
 mod emitted_evidence;
@@ -34,6 +35,9 @@ use std::{
 };
 
 pub fn run(args: &[String]) -> Result<String> {
+    if let Some(answer) = board_api_probe::probe_board_api(args) {
+        return answer;
+    }
     let options = parse(args)?;
     let context = request_context(&options);
     run_with_context(args, &context)
@@ -56,6 +60,9 @@ pub fn run_with_context(
     args: &[String],
     context: &crate::diagnostics::RequestContext,
 ) -> Result<String> {
+    if let Some(answer) = board_api_probe::probe_board_api(args) {
+        return answer;
+    }
     let options = parse(args)?;
     validate(&options)?;
     let verb = options

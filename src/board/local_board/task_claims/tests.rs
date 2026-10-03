@@ -66,6 +66,7 @@ fn write(
         now,
         seq: EventSeq::new(super::super::max_seq(&tx).unwrap().get() + 1),
         claim_ttl_secs: 120,
+        via: None,
     };
     let reply = operation(&tx, &ctx)?;
     tx.commit().unwrap();

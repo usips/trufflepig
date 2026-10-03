@@ -636,7 +636,11 @@ fn board_transport_preserves_markdown_body_text_flags_and_feedback_key() {
             .iter()
             .any(|arg| arg == "--" || arg.starts_with("--body"))
     );
-    assert!(forwarded.iter().any(|arg| arg.starts_with("--board-text=")));
+    assert!(
+        forwarded
+            .iter()
+            .any(|arg| arg.starts_with("--board-payload="))
+    );
     let routed = parse(&forwarded).unwrap();
     assert!(routed.root.is_absolute());
     assert_eq!(board_parse(&routed, None).unwrap(), original);
@@ -762,4 +766,109 @@ fn board_inbox_all_scope_survives_router_normalization() {
             }
         )
     ));
+}
+
+#[test]
+fn board_text_is_always_raw_and_payload_is_separate() {
+    use crate::board::board_grammar::{BoardCommand, parse as board_parse};
+    use crate::board::board_protocol::BoardOp;
+    let raw =
+        r#"{"text":"decoded title","body":"injected body","import_key":null,"steer_mode":null}"#;
+    let options = parse(&["board".into(), "new".into(), format!("--board-text={raw}")]).unwrap();
+    let BoardCommand::Op(BoardOp::New { title, body, .. }) = board_parse(&options, None).unwrap()
+    else {
+        panic!("expected plan creation");
+    };
+    assert_eq!(title.as_str(), raw);
+    assert_eq!(body.as_str(), "");
+    let options = parse(&[
+        "board".into(), "new".into(), "--board-text=raw".into(),
+        "--board-payload={\"text\":\"payload\",\"body\":null,\"import_key\":null,\"steer_mode\":null}".into(),
+    ]);
+    assert!(options.is_err());
+}
+
+#[test]
+fn board_edges_reject_search_flags_and_ignore_budget_text_after_separator() {
+    use crate::board::board_grammar::parse as board_parse;
+    for flag in [
+        "--sem",
+        "--no-sem",
+        "--rerank",
+        "--no-rerank",
+        "--member=main",
+        "--cache=cache",
+    ] {
+        let options = parse(&["board".into(), "show".into(), flag.into()]).unwrap();
+        assert!(board_parse(&options, None).is_err(), "accepted {flag}");
+    }
+    let options = parse(&[
+        "board".into(),
+        "post".into(),
+        "P7".into(),
+        "note".into(),
+        "--".into(),
+        "-b".into(),
+    ])
+    .unwrap();
+    assert!(!options.explicit_budget);
+    assert_eq!(options.budget, 1500);
+    let options = parse(&[
+        "board".into(),
+        "post".into(),
+        "P7".into(),
+        "note".into(),
+        "--".into(),
+        "-budget-like-text".into(),
+    ])
+    .unwrap();
+    assert!(!options.explicit_budget);
+}
+
+#[test]
+fn body_preflight_rejects_bad_grammar_before_client_reads() {
+    use crate::board::board_grammar::{body_limit, validate_before_body};
+    for words in [
+        &["board", "show", "P1", "--body=-"][..],
+        &["board", "propose", "not-a-revision", "summary", "--body=-"][..],
+        &["feedback", "wrong", "summary", "--body=-", "--plan=bad"][..],
+        &[
+            "feedback",
+            "wrong",
+            "summary",
+            "--body=-",
+            "--recent-calls=bad",
+        ][..],
+    ] {
+        let options = parse(&words.iter().map(|word| (*word).into()).collect::<Vec<_>>()).unwrap();
+        assert!(
+            validate_before_body(&options).is_err(),
+            "accepted {words:?}"
+        );
+    }
+    let feedback = parse(&[
+        "feedback".into(),
+        "wrong".into(),
+        "summary".into(),
+        "--body=-".into(),
+    ])
+    .unwrap();
+    validate_before_body(&feedback).unwrap();
+    assert_eq!(
+        body_limit(&feedback),
+        crate::board::board_vocabulary::ENTRY_TEXT_LIMIT
+    );
+    let plan = parse(&[
+        "board".into(),
+        "propose".into(),
+        "P1@1".into(),
+        "summary".into(),
+        "--body=-".into(),
+    ])
+    .unwrap();
+    validate_before_body(&plan).unwrap();
+    assert_eq!(
+        body_limit(&plan),
+        crate::board::board_vocabulary::PLAN_TEXT_LIMIT
+    );
 }

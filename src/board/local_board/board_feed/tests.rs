@@ -8,9 +8,7 @@ use crate::board::local_board::LocalBoard;
 use std::time::Duration;
 
 fn database() -> (tempfile::TempDir, LocalBoard) {
-    let parent = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/board-feed-tests");
-    std::fs::create_dir_all(&parent).unwrap();
-    let directory = tempfile::Builder::new().tempdir_in(parent).unwrap();
+    let directory = crate::board::board_test_support::scratch("board-test-");
     let board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(7200),
@@ -652,6 +650,7 @@ fn event_batches_return_stored_claim_snapshots_without_entry_joins() {
         now: 30,
         seq: EventSeq::new(2),
         claim_ttl_secs: 120,
+        via: None,
     };
     super::super::insert_event(
         &tx,
@@ -700,4 +699,79 @@ fn event_batches_return_stored_claim_snapshots_without_entry_joins() {
             .read_event_batch(EventSeq::new(0), Some(plan), 502)
             .is_err()
     );
+}
+
+#[test]
+fn imported_feedback_provenance_reaches_normal_inbox_and_shared_event_feed() {
+    use crate::board::board_protocol::{FeedbackMetadata, FeedbackVia};
+    use crate::board::board_vocabulary::{FeedbackImportKey, FeedbackKind};
+    let (_directory, mut board) = database();
+    let reported = BoardActor::new(
+        "josh",
+        "laptop",
+        HarnessLabel::parse("human").unwrap(),
+        "spooled-claim",
+    )
+    .unwrap();
+    let imported = BoardRequest::new(
+        reported.clone(),
+        BoardOp::Feedback {
+            kind: FeedbackKind::Wrong,
+            summary: EntryText::new("spooled human identity claim").unwrap(),
+            body: None,
+            plan: None,
+            metadata: FeedbackMetadata::default(),
+            import_key: Some(FeedbackImportKey::new()),
+        },
+    );
+    board.import_feedback(&imported).unwrap();
+    let mut live = imported.clone();
+    let BoardOp::Feedback {
+        summary,
+        import_key,
+        ..
+    } = &mut live.op
+    else {
+        unreachable!()
+    };
+    *summary = EntryText::new("live feedback with a permanent key").unwrap();
+    *import_key = Some(FeedbackImportKey::new());
+    board.handle(&live).unwrap();
+    let inbox = feed(&mut board, Some(EventSeq::new(0)), 20);
+    assert_eq!(inbox.events.len(), 2);
+    assert_eq!(inbox.events[0].via, Some(FeedbackVia::Outbox));
+    assert_eq!(inbox.events[1].via, None);
+    assert_eq!(
+        serde_json::to_value(&inbox.events[0]).unwrap()["via"],
+        "outbox"
+    );
+    let reply = BoardReply::new("test", BoardResult::Inbox(inbox));
+    let lines = crate::board::board_render::render_reply(
+        &reply,
+        &crate::output::OutputBudget::new(4000)
+            .unwrap()
+            .with_format(crate::output::OutputFormat::Lines),
+    )
+    .unwrap()
+    .text;
+    let imported_line = lines
+        .lines()
+        .find(|line| line.contains("spooled human identity claim"))
+        .unwrap();
+    assert!(imported_line.contains("via=outbox spooled unverified"));
+    let live_line = lines
+        .lines()
+        .find(|line| line.contains("live feedback with a permanent key"))
+        .unwrap();
+    assert!(!live_line.contains("spooled unverified"));
+    let events = read_events(
+        &board.conn,
+        EventSeq::new(0),
+        board.max_seq().unwrap(),
+        None,
+        20,
+    )
+    .unwrap();
+    assert_eq!(events[0].via, Some(FeedbackVia::Outbox));
+    assert_eq!(events[1].via, None);
 }

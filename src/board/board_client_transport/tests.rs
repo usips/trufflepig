@@ -19,11 +19,7 @@ impl BoardGateway for FakeGateway {
 }
 
 fn scratch() -> tempfile::TempDir {
-    let scratch = std::env::var_os("TMPDIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/home/josh/.cache/codex-tmp"));
-    std::fs::create_dir_all(&scratch).unwrap();
-    tempfile::Builder::new().tempdir_in(scratch).unwrap()
+    crate::board::board_test_support::scratch("board-client-")
 }
 
 fn invoke(

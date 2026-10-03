@@ -154,6 +154,19 @@ pub(super) fn open_read_with_timeout(
         return Err(unavailable("database path is a symbolic link"));
     }
     let resolved = path.canonicalize().map_err(io_error)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let parent = resolved
+            .parent()
+            .ok_or_else(|| unavailable("database has no parent"))?;
+        let mode = parent.metadata().map_err(io_error)?.permissions().mode();
+        if mode & 0o077 != 0 {
+            // Preserve a deliberately read-only owner's mode while removing other access.
+            std::fs::set_permissions(parent, std::fs::Permissions::from_mode(mode & !0o077))
+                .map_err(io_error)?;
+        }
+    }
     let conn = Connection::open_with_flags(&resolved, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(sql_error)?;
     conn.busy_timeout(timeout.min(Duration::from_secs(5)))
@@ -370,6 +383,7 @@ INSERT INTO commit_plans_v2 SELECT repo_key,oid,plan_id,entry_id FROM commit_pla
 DROP TABLE commit_plans;
 ALTER TABLE commit_plans_v2 RENAME TO commit_plans;
 CREATE INDEX commit_plans_plan ON commit_plans(plan_id);
+CREATE INDEX commit_plans_entry ON commit_plans(entry_id);
 CREATE TABLE claims_v2(
  id INTEGER PRIMARY KEY, plan_id INTEGER NOT NULL, task_ordinal INTEGER NOT NULL,
  actor_id INTEGER NOT NULL REFERENCES actors(id), entry_id INTEGER NOT NULL REFERENCES entries(id),
@@ -382,4 +396,5 @@ DROP TABLE claims;
 ALTER TABLE claims_v2 RENAME TO claims;
 CREATE UNIQUE INDEX claims_one_active ON claims(plan_id,task_ordinal) WHERE ended_at IS NULL;
 CREATE INDEX claims_actor_active ON claims(actor_id,ended_at);
+CREATE INDEX claims_entry_active ON claims(entry_id,id) WHERE ended_at IS NULL;
 "#;

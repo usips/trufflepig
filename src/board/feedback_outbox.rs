@@ -2,13 +2,13 @@
 
 use super::BoardBackend;
 use super::board_protocol::{
-    BoardError, BoardErrorCode, BoardOp, BoardReply, BoardRequest, BoardResult,
+    BOARD_API, BoardError, BoardErrorCode, BoardOp, BoardReply, BoardRequest, BoardResult,
 };
 use super::board_vocabulary::FeedbackImportKey;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 const OUTBOX_LIMIT: u64 = 64 * 1024;
@@ -101,7 +101,7 @@ pub fn import_pending(
                 continue;
             }
         };
-        match backend.handle(&request) {
+        match backend.import_feedback(&request) {
             Ok(reply) if matches!(reply.result, BoardResult::Change(_)) => {
                 match fs::remove_file(&path) {
                     Ok(()) => sync_directory(spool)?,
@@ -153,7 +153,7 @@ fn read_record(path: &Path) -> Result<BoardRequest, BoardError> {
     if bytes.len() as u64 > OUTBOX_LIMIT {
         return Err(invalid_record("feedback exceeds frame limit"));
     }
-    let record: QueuedFeedback = serde_json::from_slice(&bytes).map_err(json_error)?;
+    let mut record: QueuedFeedback = serde_json::from_slice(&bytes).map_err(json_error)?;
     if record.import_key != key {
         return Err(invalid_record("feedback UUID differs from filename"));
     }
@@ -167,6 +167,10 @@ fn read_record(path: &Path) -> Result<BoardRequest, BoardError> {
                 "outbox requires feedback with its stable UUID",
             ));
         }
+    }
+    // Only stored API 1 feedback upgrades to API 2; wire validation stays strict.
+    if record.request.api == 1 && BOARD_API == 2 {
+        record.request.api = BOARD_API;
     }
     record.request.validate().map_err(BoardError::from)?;
     Ok(record.request)
@@ -216,15 +220,42 @@ fn quarantine(path: &Path) -> Result<(), BoardError> {
     let mut name = name.to_os_string();
     name.push(format!(".{}.quarantine", new_import_key()));
     let destination: PathBuf = parent.join(name);
-    match fs::rename(path, destination) {
-        Ok(()) => sync_directory(parent),
+    match fs::rename(path, &destination) {
+        Ok(()) => {
+            use std::os::unix::ffi::OsStrExt;
+            let name = std::ffi::CString::new(destination.as_os_str().as_bytes())
+                .map_err(|_| invalid_record("quarantine path contains NUL"))?;
+            // SAFETY: the owned CString is NUL terminated; null times requests now.
+            // AT_SYMLINK_NOFOLLOW updates a quarantined link itself, never its target.
+            let status = unsafe {
+                libc::utimensat(
+                    libc::AT_FDCWD,
+                    name.as_ptr(),
+                    std::ptr::null(),
+                    libc::AT_SYMLINK_NOFOLLOW,
+                )
+            };
+            if status != 0 {
+                return Err(io_error(std::io::Error::last_os_error()));
+            }
+            sync_directory(parent)
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(io_error(error)),
     }
 }
 
 fn private_directory(path: &Path) -> Result<(), BoardError> {
-    fs::create_dir_all(path).map_err(io_error)?;
+    // SAFETY: getuid has no preconditions and cannot fail.
+    private_directory_owned_by(path, unsafe { libc::getuid() })
+}
+
+fn private_directory_owned_by(path: &Path, owner: u32) -> Result<(), BoardError> {
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(path)
+        .map_err(io_error)?;
     if !path
         .symlink_metadata()
         .map_err(io_error)?
@@ -235,7 +266,18 @@ fn private_directory(path: &Path) -> Result<(), BoardError> {
             "spool must be a directory rather than a symbolic link",
         ));
     }
-    fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(io_error)
+    let directory = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+        .map_err(io_error)?;
+    let metadata = directory.metadata().map_err(io_error)?;
+    if metadata.uid() != owner {
+        return Err(invalid_record("spool must be owned by the current user"));
+    }
+    directory
+        .set_permissions(fs::Permissions::from_mode(0o700))
+        .map_err(io_error)
 }
 
 fn sync_directory(path: &Path) -> Result<(), BoardError> {

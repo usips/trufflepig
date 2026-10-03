@@ -146,3 +146,41 @@ fn committed_outbox_aliases_remain_idempotent_after_manual_dedupe_expiry() {
     );
     assert!(!first.exists() && !second.exists());
 }
+
+#[test]
+fn unrecognized_git_coauthor_ingests_and_reply_evidence_round_trips() {
+    let fixture = EdgeFixture::new();
+    fixture.seed_repo();
+    fixture.run(&["board", "new", "Unrecognized coauthor"], "human", "owner");
+    std::fs::write(fixture.root.join("coauthor.txt"), "authored evidence\n").unwrap();
+    git(&fixture.root, &["add", "coauthor.txt"]);
+    git(
+        &fixture.root,
+        &[
+            "commit",
+            "-m",
+            "Record evidence\n\nPlan: P1\nCo-authored-by: Alice <alice@example.com>",
+        ],
+    );
+    fixture.run(&["board", "ingest"], "codex", "reviewer");
+    assert_eq!(fixture.scalar("SELECT COUNT(*) FROM commit_plans"), 1);
+    let mut board = LocalBoard::open(&fixture.config).unwrap();
+    let reply = board
+        .handle(&BoardRequest::new(
+            fixture.config.actor(Some("codex"), Some("reader")).unwrap(),
+            BoardOp::Show {
+                target: Some("P1".parse().unwrap()),
+            },
+        ))
+        .unwrap();
+    let decoded: crate::board::board_protocol::BoardReply =
+        serde_json::from_str(&serde_json::to_string(&reply).unwrap()).unwrap();
+    let crate::board::board_protocol::BoardResult::Plan(view) = decoded.result else {
+        panic!("expected plan view");
+    };
+    assert!(
+        view.entries
+            .iter()
+            .any(|entry| entry.actor.harness.as_str() == "git:alice@example.com")
+    );
+}

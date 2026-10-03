@@ -210,6 +210,9 @@ impl BoardRequest {
             );
         }
         self.actor.validate()?;
+        if self.actor.harness.as_str().starts_with("git:") {
+            bail!("invalid_actor: git co-author labels cannot act as request harnesses");
+        }
         if let Some(claims) = &self.claims {
             if let Some(model) = &claims.model {
                 validate_claim(model, "model")?;
@@ -308,6 +311,10 @@ pub enum BoardOp {
     },
     FeedbackList {
         open_only: bool,
+    },
+    FeedbackTriage {
+        entry: EntryId,
+        note: Option<EntryText>,
     },
     FeedbackClose {
         entry: EntryId,
@@ -594,6 +601,24 @@ pub enum RevisionSource {
     Direct,
 }
 
+impl RevisionSource {
+    pub fn parse(value: &str) -> Result<Self> {
+        match value {
+            "create" => Ok(Self::Create),
+            "accept" => Ok(Self::Accept),
+            "direct" => Ok(Self::Direct),
+            _ => bail!("invalid_state: unknown revision source '{value}'"),
+        }
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Create => "create",
+            Self::Accept => "accept",
+            Self::Direct => "direct",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RevisionRecord {
     pub id: PlanRevision,
@@ -612,9 +637,27 @@ pub enum EntryState {
     Feedback(FeedbackState),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeedbackVia {
+    Outbox,
+}
+impl FeedbackVia {
+    pub fn parse(value: &str) -> Result<Self> {
+        match value {
+            "outbox" => Ok(Self::Outbox),
+            _ => bail!("invalid_state: unknown feedback provenance '{value}'"),
+        }
+    }
+    pub fn as_str(self) -> &'static str {
+        "outbox"
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EntryRecord {
     pub id: EntryId,
+    pub via: Option<FeedbackVia>,
     pub plan: Option<PlanId>,
     pub kind: EntryKind,
     pub body: EntryText,
@@ -715,6 +758,7 @@ pub struct ProposalRecord {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EventRecord {
+    pub via: Option<FeedbackVia>,
     pub seq: EventSeq,
     pub plan: Option<PlanId>,
     pub kind: EntryKind,
@@ -905,6 +949,27 @@ pub struct FeedbackRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn git_coauthor_actor_round_trips_as_evidence_but_cannot_request() {
+        let actor = BoardActor::new(
+            "josh",
+            "laptop",
+            HarnessLabel::parse("git:alice@example.com").unwrap(),
+            "git-evidence",
+        )
+        .unwrap();
+        let encoded = serde_json::to_string(&actor).unwrap();
+        assert_eq!(serde_json::from_str::<BoardActor>(&encoded).unwrap(), actor);
+        let request = BoardRequest::new(actor, BoardOp::Show { target: None });
+        assert!(
+            request
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .starts_with("invalid_actor:")
+        );
+    }
 
     #[test]
     fn versioned_requests_round_trip_and_reject_mismatch() {

@@ -221,7 +221,7 @@ fn uncovered_sections(body: &str, tasks: &[TaskRecord]) -> Vec<String> {
 
 pub(super) fn entry(conn: &Connection, id: EntryId) -> Result<EntryRecord, BoardError> {
     let mut statement = conn.prepare(
-        "SELECT e.plan_id,e.kind,e.body,e.to_whom,e.supersedes,a.user,a.host,a.harness,a.session,e.model,e.effort,e.repo_key,coalesce(p.state,e.state),e.seq,e.created_at FROM entries e JOIN actors a ON a.id=e.actor_id LEFT JOIN proposals p ON p.entry_id=e.id WHERE e.id=?1",
+        "SELECT e.plan_id,e.kind,e.body,e.to_whom,e.supersedes,a.user,a.host,a.harness,a.session,e.model,e.effort,e.repo_key,coalesce(p.state,e.state),e.seq,e.created_at,e.via FROM entries e JOIN actors a ON a.id=e.actor_id LEFT JOIN proposals p ON p.entry_id=e.id WHERE e.id=?1",
     ).map_err(sql_error)?;
     let mut rows = statement.query([sql_number(id.get())]).map_err(sql_error)?;
     let row = rows
@@ -250,6 +250,13 @@ pub(super) fn entry(conn: &Connection, id: EntryId) -> Result<EntryRecord, Board
     };
     let mut record = EntryRecord {
         id,
+        via: row
+            .get::<_, Option<String>>(15)
+            .map_err(sql_error)?
+            .as_deref()
+            .map(FeedbackVia::parse)
+            .transpose()
+            .map_err(|error| invalid("board_unavailable", error.to_string()))?,
         plan: row
             .get::<_, Option<i64>>(0)
             .map_err(sql_error)?
@@ -676,7 +683,13 @@ pub(super) fn repositories(
         result.push(RepoScanTarget {
             registration: RepoRegistration {
                 repo_key,
-                origin_label: row.get(1).map_err(sql_error)?,
+                origin_label: row
+                    .get::<_, Option<String>>(1)
+                    .map_err(sql_error)?
+                    .as_deref()
+                    .map(crate::board::repo_identity::normalize_origin_label)
+                    .transpose()
+                    .map_err(|error| invalid("board_unavailable", error.to_string()))?,
                 host: row.get(2).map_err(sql_error)?,
                 common_dir: PathBuf::from(row.get::<_, String>(3).map_err(sql_error)?),
                 plan_id: plan,

@@ -88,6 +88,9 @@ const KNOWN_COMMANDS: &[&str] = &[
 )]
 /// Parsed command-line options for local and daemon-routed requests.
 pub struct Arguments {
+    /// Read-only capability used by board service installers.
+    #[arg(long, hide = true)]
+    pub board_api_version: bool,
     /// Repository root to index or inspect; defaults to the current directory.
     #[arg(long, default_value = ".")]
     pub root: PathBuf,
@@ -195,10 +198,20 @@ pub fn parse(args: &[String]) -> Result<Arguments> {
     options.explicit_root = !options.implicit_root
         && args
             .iter()
+            .take_while(|arg| arg.as_str() != "--")
             .any(|arg| arg == "--root" || arg.starts_with("--root="));
-    options.explicit_budget = args.iter().any(|arg| {
-        arg == "--budget" || arg.starts_with("--budget=") || arg == "-b" || arg.starts_with("-b")
-    });
+    options.explicit_budget = args
+        .iter()
+        .take_while(|arg| arg.as_str() != "--")
+        .any(|arg| {
+            arg == "--budget"
+                || arg.starts_with("--budget=")
+                || arg == "-b"
+                || arg.strip_prefix("-b").is_some_and(|value| {
+                    let value = value.strip_prefix('=').unwrap_or(value);
+                    !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+                })
+        });
     if !options.explicit_budget {
         if options.is_board() {
             options.budget = if options.words.first().map(String::as_str) == Some("board")

@@ -81,6 +81,14 @@ pub(crate) fn record_board_database(runtime: &Path, database: &Path) -> Result<(
         "invalid_options: board database path must be absolute"
     );
     fs::create_dir_all(runtime)?;
+    let marker = runtime.join("board-backend.json");
+    let bytes = serde_json::to_vec(&BoardDatabaseMarker {
+        database: database.to_owned(),
+    })?;
+    // SAFETY: getuid has no preconditions and cannot fail.
+    if board_database_marker_matches(&marker, &bytes, unsafe { libc::getuid() })? {
+        return Ok(());
+    }
     let temporary = runtime.join(format!("board-backend-{}.pending", uuid::Uuid::new_v4()));
     let result = (|| {
         let mut file = fs::OpenOptions::new()
@@ -89,17 +97,44 @@ pub(crate) fn record_board_database(runtime: &Path, database: &Path) -> Result<(
             .mode(0o600)
             .custom_flags(libc::O_NOFOLLOW)
             .open(&temporary)?;
-        let bytes = serde_json::to_vec(&BoardDatabaseMarker {
-            database: database.to_owned(),
-        })?;
         file.write_all(&bytes)?;
         file.sync_all()?;
-        fs::rename(&temporary, runtime.join("board-backend.json"))?;
+        fs::rename(&temporary, &marker)?;
         fs::File::open(runtime)?.sync_all()?;
         Ok(())
     })();
     let _ = fs::remove_file(temporary);
     result
+}
+
+fn board_database_marker_matches(marker: &Path, expected: &[u8], owner: u32) -> Result<bool> {
+    use std::{
+        io::Read,
+        os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
+    };
+    let file = match fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(marker)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error).context("board_unavailable: open database pin"),
+    };
+    let metadata = file.metadata()?;
+    ensure!(
+        metadata.file_type().is_file()
+            && metadata.uid() == owner
+            && metadata.permissions().mode() & 0o7777 == 0o600,
+        "board_unavailable: database pin must be a private regular file owned by the current user"
+    );
+    if metadata.len() != expected.len() as u64 {
+        return Ok(false);
+    }
+    let mut bytes = Vec::with_capacity(expected.len());
+    file.take(expected.len() as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    Ok(bytes == expected)
 }
 
 pub(crate) fn validate_board_database(runtime: &Path, database: &Path) -> Result<()> {
@@ -351,11 +386,7 @@ mod deadline_tests {
 
     #[test]
     fn losing_router_start_cannot_replace_the_live_database_marker() {
-        let scratch = std::env::var_os("TMPDIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("/home/josh/.cache/codex-tmp"));
-        fs::create_dir_all(&scratch).unwrap();
-        let directory = tempfile::Builder::new().tempdir_in(scratch).unwrap();
+        let directory = crate::board::board_test_support::scratch("board-runtime-");
         let runtime = directory.path().join("runtime");
         let spool = directory.path().join("spool");
         let live_database = directory.path().join("live.sqlite3");
@@ -399,11 +430,7 @@ mod deadline_tests {
 
     #[test]
     fn router_database_marker_refuses_split_local_fallback() {
-        let scratch = std::env::var_os("TMPDIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("/home/josh/.cache/codex-tmp"));
-        fs::create_dir_all(&scratch).unwrap();
-        let directory = tempfile::Builder::new().tempdir_in(scratch).unwrap();
+        let directory = crate::board::board_test_support::scratch("board-runtime-");
         let pinned = directory.path().join("router.sqlite3");
         record_board_database(directory.path(), &pinned).unwrap();
         validate_board_database(directory.path(), &pinned).unwrap();
@@ -415,12 +442,7 @@ mod deadline_tests {
 
     #[test]
     fn board_routes_without_workspace_or_owner_daemon() {
-        let scratch = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/board-router-tests");
-        fs::create_dir_all(&scratch).unwrap();
-        let directory = tempfile::Builder::new()
-            .prefix("router-")
-            .tempdir_in(scratch)
-            .unwrap();
+        let directory = crate::board::board_test_support::scratch("board-transport-");
         let cache = directory.path().join("owner-cache");
         let database = directory.path().join("data/board.sqlite3");
         let router = SystemRouter {
@@ -462,8 +484,9 @@ mod deadline_tests {
 
     #[test]
     fn router_does_not_reset_an_expired_accepted_deadline() {
-        let root = tempfile::tempdir().unwrap();
-        let cache = tempfile::tempdir().unwrap().path().join("cache");
+        let root = crate::board::board_test_support::scratch("router-deadline-");
+        let cache_directory = crate::board::board_test_support::scratch("router-cache-");
+        let cache = cache_directory.path().join("cache");
         let router = SystemRouter {
             runtime: None,
             cache_base: None,

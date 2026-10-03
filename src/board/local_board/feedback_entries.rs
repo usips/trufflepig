@@ -1,12 +1,14 @@
 //! Feedback evidence, terminal triage, and permanent outbox replay identities.
 
 use super::{
-    EntryDraft, WriteContext, insert_entry, insert_event, invalid, read_entry, require_plan,
-    sql_error, sqlite_id, sqlite_u64,
+    EntryDraft, WriteContext, can_accept, insert_entry, insert_event, invalid, read_entry,
+    require_plan, sql_error, sqlite_id, sqlite_u64,
 };
+use crate::board::board_actor::BoardActor;
 use crate::board::board_ids::EntryId;
 use crate::board::board_protocol::{
-    BoardChange, BoardError, BoardOp, BoardReply, BoardResult, FeedbackMetadata, FeedbackRecord,
+    BoardChange, BoardError, BoardOp, BoardReply, BoardResult, EntryRecord, FeedbackMetadata,
+    FeedbackRecord,
 };
 use crate::board::board_vocabulary::{
     ENTRY_TEXT_LIMIT, EntryKind, FeedbackImportKey, FeedbackKind, FeedbackState,
@@ -62,6 +64,13 @@ pub(super) fn write_feedback(
             state: Some(FeedbackState::Open.as_str().to_owned()),
         },
     )?;
+    if let Some(via) = ctx.via {
+        tx.execute(
+            "UPDATE entries SET via=?1 WHERE id=?2",
+            params![via.as_str(), sqlite_id(entry.get())?],
+        )
+        .map_err(sql_error)?;
+    }
     let recent_calls = serde_json::to_string(&metadata.recent_calls)
         .map_err(|error| invalid("invalid_options", error.to_string()))?;
     tx.execute(
@@ -134,16 +143,34 @@ pub(super) fn read_feedback(
     Ok(records)
 }
 
+pub(super) fn can_manage_feedback(
+    conn: &Connection,
+    actor: &BoardActor,
+    report: &EntryRecord,
+) -> Result<bool, BoardError> {
+    if report.kind != EntryKind::Feedback {
+        return Ok(false);
+    }
+    match report.plan {
+        Some(plan) => can_accept(conn, actor, plan),
+        None => Ok(actor.user == report.actor.user && actor.harness.is_human()),
+    }
+}
+
 pub(super) fn close_feedback(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     op: &BoardOp,
 ) -> Result<BoardReply, BoardError> {
-    let BoardOp::FeedbackClose { entry, state, note } = op else {
-        return Err(invalid(
-            "invalid_options",
-            "expected feedback close operation",
-        ));
+    let (entry, state, note) = match op {
+        BoardOp::FeedbackClose { entry, state, note } => (entry, *state, note),
+        BoardOp::FeedbackTriage { entry, note } => (entry, FeedbackState::Triaged, note),
+        _ => {
+            return Err(invalid(
+                "invalid_options",
+                "expected feedback triage or close operation",
+            ));
+        }
     };
     op.validate().map_err(BoardError::from)?;
     let report = read_entry(tx, *entry)?;
@@ -151,6 +178,12 @@ pub(super) fn close_feedback(
         return Err(invalid(
             "invalid_reference",
             format!("{entry} is not feedback"),
+        ));
+    }
+    if !can_manage_feedback(tx, &ctx.actor, &report)? {
+        return Err(invalid(
+            "invalid_actor",
+            "feedback triage requires the owner human or plan steward",
         ));
     }
     let current: String = tx
@@ -167,7 +200,17 @@ pub(super) fn close_feedback(
             format!("{entry} is already closed {current}"),
         ));
     }
-    let mut summary = format!("closed {state}");
+    if state == FeedbackState::Triaged && current == FeedbackState::Triaged {
+        return Err(invalid(
+            "invalid_state",
+            format!("{entry} is already triaged"),
+        ));
+    }
+    let mut summary = if state == FeedbackState::Triaged {
+        "triaged".to_owned()
+    } else {
+        format!("closed {state}")
+    };
     if let Some(note) = note {
         summary.push_str(&format!(" ({})", note.as_str()));
     }

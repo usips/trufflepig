@@ -21,6 +21,7 @@ const HEARTBEAT_STALE: Duration = Duration::from_secs(5);
 const REPLY_WAIT: Duration = super::CLIENT_REPLY_WAIT;
 const REPLY_POLL: Duration = Duration::from_millis(20);
 const ORPHAN_AGE: Duration = Duration::from_secs(300);
+const QUARANTINE_AGE: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
 /// Sends a request through the spool; `None` means no daemon drains it.
 pub fn request(
@@ -96,6 +97,8 @@ impl SpoolServer {
             let path = entry?.path();
             if transient_file(&path) {
                 let _ = fs::remove_file(path);
+            } else {
+                remove_orphan(&path);
             }
         }
         let mut server = Self {
@@ -211,16 +214,28 @@ fn request_id(path: &Path, extension: &str) -> Option<String> {
     uuid::Uuid::parse_str(stem).ok().map(|id| id.to_string())
 }
 
-/// Removes transient replies and writes nobody collected within the orphan age.
+/// Keeps published feedback until import and quarantines for thirty days.
 fn remove_orphan(path: &Path) {
-    if !transient_file(path) {
+    if path.file_name().is_some_and(|name| name == HEARTBEAT)
+        || path
+            .extension()
+            .is_some_and(|extension| extension == "feedback")
+    {
         return;
     }
-    let old = fs::metadata(path)
+    let maximum_age = if path
+        .extension()
+        .is_some_and(|extension| extension == "quarantine")
+    {
+        QUARANTINE_AGE
+    } else {
+        ORPHAN_AGE
+    };
+    let old = fs::symlink_metadata(path)
         .and_then(|metadata| metadata.modified())
         .ok()
         .and_then(|modified| SystemTime::now().duration_since(modified).ok())
-        .is_some_and(|age| age > ORPHAN_AGE);
+        .is_some_and(|age| age > maximum_age);
     if old {
         let _ = fs::remove_file(path);
     }
@@ -267,11 +282,9 @@ mod tests {
 
     #[test]
     fn router_restart_and_orphan_sweep_preserve_durable_feedback() {
-        let scratch = Path::new("target/test-feedback-spool");
-        fs::create_dir_all(scratch).unwrap();
-        let dir = tempfile::Builder::new().tempdir_in(scratch).unwrap();
+        let dir = tempfile::tempdir().unwrap();
         let id = uuid::Uuid::new_v4();
-        let durable = ["feedback", "feedback.quarantine", "feedback.pending"];
+        let durable = ["feedback", "feedback.quarantine"];
         let modified = SystemTime::now() - ORPHAN_AGE - Duration::from_secs(1);
         for extension in durable {
             let path = dir.path().join(format!("{id}.{extension}"));
@@ -289,10 +302,56 @@ mod tests {
     }
 
     #[test]
+    fn restart_reaps_abandoned_pending_and_expires_quarantine_after_thirty_days() {
+        let dir = tempfile::tempdir().unwrap();
+        let id = uuid::Uuid::new_v4();
+        let cases = [
+            (
+                format!("{id}.feedback"),
+                QUARANTINE_AGE + Duration::from_secs(1),
+                true,
+            ),
+            (
+                format!("{id}.feedback.pending"),
+                ORPHAN_AGE + Duration::from_secs(1),
+                false,
+            ),
+            (
+                format!("{id}.feedback.quarantine"),
+                ORPHAN_AGE + Duration::from_secs(1),
+                true,
+            ),
+            (
+                format!("{id}.feedback.old.quarantine"),
+                QUARANTINE_AGE + Duration::from_secs(1),
+                false,
+            ),
+            (
+                "unknown.old".to_owned(),
+                ORPHAN_AGE + Duration::from_secs(1),
+                false,
+            ),
+            ("unknown.fresh".to_owned(), Duration::ZERO, true),
+            (format!("{id}.feedback.fresh.pending"), Duration::ZERO, true),
+        ];
+        for (name, age, _) in &cases {
+            let path = dir.path().join(name);
+            fs::write(&path, b"fixture").unwrap();
+            File::open(&path)
+                .unwrap()
+                .set_modified(SystemTime::now() - *age)
+                .unwrap();
+        }
+        let mut server = SpoolServer::open(dir.path()).unwrap();
+        assert!(server.claim().is_empty());
+        for (name, _, retained) in cases {
+            assert_eq!(dir.path().join(&name).exists(), retained, "{name}");
+        }
+    }
+
+    #[test]
     fn orphan_sweep_removes_only_expired_transport_files() {
-        let scratch = Path::new("target/test-feedback-spool");
-        fs::create_dir_all(scratch).unwrap();
-        let dir = tempfile::Builder::new().tempdir_in(scratch).unwrap();
+        let dir = tempfile::tempdir().unwrap();
         let id = uuid::Uuid::new_v4();
         let old = dir.path().join(format!("{id}.reply.tmp"));
         let fresh = dir.path().join(format!("{id}.reply"));

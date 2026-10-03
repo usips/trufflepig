@@ -208,6 +208,7 @@ fn text_position(options: &Arguments) -> Option<usize> {
         }
         (Some("feedback"), Some("blocked" | "confused" | "wrong" | "missing")) => Some(2),
         (Some("feedback"), Some("close")) => Some(4),
+        (Some("feedback"), Some("triage")) => Some(3),
         _ => None,
     }
 }
@@ -271,6 +272,18 @@ pub fn body_limit(options: &Arguments) -> usize {
 pub fn parse(options: &Arguments, body: Option<&str>) -> Result<BoardCommand> {
     let verb = options.words.first().map(String::as_str);
     options.board.validate_for_verb(verb)?;
+    for (flag, present) in [
+        ("sem", options.sem),
+        ("no-sem", options.no_sem),
+        ("rerank", options.rerank),
+        ("no-rerank", options.no_rerank),
+        ("member", options.member.is_some()),
+        ("cache", options.cache.is_some()),
+    ] {
+        if present {
+            bail!("invalid_options: --{flag} is not valid for board or feedback");
+        }
+    }
     let payload = command_text(options, body)?;
     if options.board.body.is_some() && payload.body.is_none() {
         bail!("invalid_body: --body must be read by the client before parsing");
@@ -538,7 +551,7 @@ fn parse_feedback(options: &Arguments, payload: BoardTextPayload) -> Result<Boar
     let verb = word(
         options,
         1,
-        "feedback KIND SUMMARY | ls | close E512 STATE [NOTE]",
+        "feedback KIND SUMMARY | ls | triage E512 [NOTE] | close E512 STATE [NOTE]",
     )?;
     let op = match verb {
         "ls" => {
@@ -546,6 +559,13 @@ fn parse_feedback(options: &Arguments, payload: BoardTextPayload) -> Result<Boar
             fixed_words(options, 2, 2, "feedback ls [--open]")?;
             BoardOp::FeedbackList {
                 open_only: options.board.open,
+            }
+        }
+        "triage" => {
+            check_flags(options, &["text"])?;
+            BoardOp::FeedbackTriage {
+                entry: word(options, 2, "feedback triage E512 [NOTE]")?.parse::<EntryId>()?,
+                note: optional_text(&payload.text)?,
             }
         }
         "close" => {
@@ -593,7 +613,11 @@ fn feedback_metadata(options: &Arguments, steer_mode: Option<String>) -> Result<
         version: env!("CARGO_PKG_VERSION").into(),
         build_id: option_env!("TRUFFLEPIG_BUILD_ID").map(str::to_owned),
         repo_key: None,
-        cwd: options.root.to_string_lossy().into_owned(),
+        cwd: if options.root.is_absolute() {
+            String::new()
+        } else {
+            options.root.to_string_lossy().into_owned()
+        },
         steer_mode,
         recent_calls,
     })
@@ -612,7 +636,10 @@ fn check_flags(options: &Arguments, allowed: &[&str]) -> Result<()> {
         ("open", board.open),
         ("all", board.all),
         ("resume", board.resume),
-        ("text", board.board_text.is_some()),
+        (
+            "text",
+            board.board_text.is_some() || board.board_payload.is_some(),
+        ),
         ("recent-calls", board.recent_calls.is_some()),
         ("wait", options.wait),
     ] {

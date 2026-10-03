@@ -30,6 +30,10 @@ use std::{
 /// Typed operations return domain evidence; edge rendering and git stay outside it.
 pub trait BoardBackend: Send {
     fn handle(&mut self, request: &BoardRequest) -> std::result::Result<BoardReply, BoardError>;
+    fn import_feedback(
+        &mut self,
+        request: &BoardRequest,
+    ) -> std::result::Result<BoardReply, BoardError>;
     fn max_seq(&self) -> std::result::Result<EventSeq, BoardError>;
 }
 
@@ -53,6 +57,8 @@ struct HostState {
     sequence: Mutex<EventSeq>,
     changed: Condvar,
     waiters: AtomicUsize,
+    #[cfg(test)]
+    inbox_queries: AtomicUsize,
     maintenance: Mutex<IngestClock>,
 }
 
@@ -169,7 +175,7 @@ impl BoardHost {
                 deadline.remaining().saturating_sub(Duration::from_secs(2)),
             )?;
             let mut reply = BoardReply::new(
-                config.db_path.display().to_string(),
+                format!("local:{}", config.db_path.display()),
                 BoardResult::CommitsLinked(CommitLinkResult {
                     inserted: report.inserted,
                     unknown_plans: report.unknown_plans,
@@ -397,18 +403,44 @@ impl BoardHost {
         let rendered = render_reply(&reply, &budget)?;
         if matches!(&request.op, BoardOp::Inbox { after: None, .. }) {
             if let Some(rendered_through) = rendered.acknowledge_seq {
-                self.handle_by(
+                if let Err(error) = self.handle_by(
                     &BoardRequest::new(actor, BoardOp::AcknowledgeInbox { rendered_through }),
                     deadline,
-                )?;
+                ) {
+                    if !(options.wait && !inbox_has_events(&reply) && waiter_transient(&error)) {
+                        return Err(error);
+                    }
+                }
             }
         }
         Ok(rendered.text)
     }
 
     fn handle_by(&self, request: &BoardRequest, deadline: QueryDeadline) -> Result<BoardReply> {
+        self.handle_by_mode(request, deadline, false)
+    }
+
+    fn handle_imported_by(
+        &self,
+        request: &BoardRequest,
+        deadline: QueryDeadline,
+    ) -> Result<BoardReply> {
+        ensure_feedback_import(request)?;
+        self.handle_by_mode(request, deadline, true)
+    }
+
+    fn handle_by_mode(
+        &self,
+        request: &BoardRequest,
+        deadline: QueryDeadline,
+        imported: bool,
+    ) -> Result<BoardReply> {
         check_deadline(deadline)?;
         request.validate()?;
+        #[cfg(test)]
+        if matches!(request.op, BoardOp::Inbox { .. }) {
+            self.inner.inbox_queries.fetch_add(1, Ordering::Relaxed);
+        }
         let config = self.config()?;
         if request.op.is_read_only() {
             let mut reader = match LocalBoard::open_read_with_timeout(
@@ -457,7 +489,11 @@ impl BoardHost {
             check_deadline(deadline)?;
             backend.set_busy_timeout(deadline.cap(Duration::from_secs(5)))?;
             backend.set_claim_ttl(Duration::from_secs(config.claim_ttl_minutes * 60))?;
-            let reply = backend.handle(request)?;
+            let reply = if imported {
+                backend.import_feedback(request)?
+            } else {
+                backend.handle(request)?
+            };
             reply.validate()?;
             let seq = if deadline.expired() {
                 None
@@ -480,7 +516,34 @@ impl BoardHost {
     }
 
     fn wait_inbox(&self, request: &BoardRequest, deadline: QueryDeadline) -> Result<BoardReply> {
-        let mut reply = self.handle_by(request, deadline)?;
+        let mut reply = match self.handle_by(request, deadline) {
+            Ok(reply) => reply,
+            Err(error) if waiter_transient(&error) => {
+                let BoardOp::Inbox { after, .. } = &request.op else {
+                    return Err(error);
+                };
+                let cursor = after.unwrap_or(EventSeq::new(0));
+                let config = self.config()?;
+                return Ok(BoardReply::new(
+                    format!("local:{}", config.db_path.display()),
+                    BoardResult::Inbox(super::board_protocol::InboxReply {
+                        actor: request.actor.clone(),
+                        cursor,
+                        events: Vec::new(),
+                        open: Vec::new(),
+                        latest: cursor,
+                        scanned_through: cursor,
+                        advancing: false,
+                        repo_key: None,
+                        all: false,
+                        open_omitted: 0,
+                        query_truncated: false,
+                        wait: InboxWait::Timeout,
+                    }),
+                ));
+            }
+            Err(error) => return Err(error),
+        };
         if inbox_has_events(&reply) {
             set_wait(&mut reply, InboxWait::Ready);
             return Ok(reply);
@@ -500,40 +563,62 @@ impl BoardHost {
                 BoardResult::Inbox(inbox) => inbox.latest,
                 _ => EventSeq::new(0),
             };
-            if *observed > known {
-                drop(observed);
-                reply = self.handle_by(request, deadline)?;
-                if inbox_has_events(&reply) {
-                    set_wait(&mut reply, InboxWait::Ready);
-                    return Ok(reply);
-                }
-                observed = recover_lock(&self.inner.sequence);
-                continue;
-            }
             let remaining = expires.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 set_wait(&mut reply, InboxWait::Timeout);
                 return Ok(reply);
             }
-            let (guard, _) = self
-                .inner
-                .changed
-                .wait_timeout(observed, remaining.min(Duration::from_secs(1)))
-                .unwrap_or_else(|poisoned| {
-                    let (mut guard, timeout) = poisoned.into_inner();
-                    *guard = EventSeq::default();
-                    self.inner.sequence.clear_poison();
-                    (guard, timeout)
-                });
-            drop(guard);
-            // Poll once a second even without a notification to see direct writers.
-            reply = self.handle_by(request, deadline)?;
-            if inbox_has_events(&reply) {
-                set_wait(&mut reply, InboxWait::Ready);
-                return Ok(reply);
+            if *observed <= known {
+                let (guard, _) = self
+                    .inner
+                    .changed
+                    .wait_timeout(observed, remaining.min(Duration::from_secs(1)))
+                    .unwrap_or_else(|poisoned| {
+                        let (mut guard, timeout) = poisoned.into_inner();
+                        *guard = EventSeq::default();
+                        self.inner.sequence.clear_poison();
+                        (guard, timeout)
+                    });
+                observed = guard;
+            }
+            drop(observed);
+            let polling = deadline.capped(Duration::from_millis(100));
+            let sequence = match self.max_seq_by(polling) {
+                Ok(sequence) => sequence,
+                Err(error) if waiter_transient(&error) => {
+                    set_wait(&mut reply, InboxWait::Timeout);
+                    return Ok(reply);
+                }
+                Err(error) => return Err(error),
+            };
+            if sequence > known {
+                reply = match self.handle_by(request, polling) {
+                    Ok(reply) => reply,
+                    Err(error) if waiter_transient(&error) => {
+                        set_wait(&mut reply, InboxWait::Timeout);
+                        return Ok(reply);
+                    }
+                    Err(error) => return Err(error),
+                };
+                if inbox_has_events(&reply) {
+                    set_wait(&mut reply, InboxWait::Ready);
+                    return Ok(reply);
+                }
             }
             observed = recover_lock(&self.inner.sequence);
         }
+    }
+
+    fn max_seq_by(&self, deadline: QueryDeadline) -> Result<EventSeq> {
+        check_deadline(deadline)?;
+        let config = self.config()?;
+        if !config.db_path.exists() {
+            return Ok(EventSeq::new(0));
+        }
+        let reader =
+            LocalBoard::open_read_with_timeout(&config, deadline.cap(Duration::from_millis(100)))?;
+        check_deadline(deadline)?;
+        reader.max_seq().map_err(Into::into)
     }
 
     fn repositories(
@@ -742,14 +827,16 @@ impl BoardBackend for HostAccess<'_> {
     fn handle(&mut self, request: &BoardRequest) -> std::result::Result<BoardReply, BoardError> {
         self.0.handle_by(request, self.1).map_err(Into::into)
     }
+    fn import_feedback(
+        &mut self,
+        request: &BoardRequest,
+    ) -> std::result::Result<BoardReply, BoardError> {
+        self.0
+            .handle_imported_by(request, self.1)
+            .map_err(Into::into)
+    }
     fn max_seq(&self) -> std::result::Result<EventSeq, BoardError> {
-        let config = self.0.config().map_err(BoardError::from)?;
-        if !config.db_path.exists() {
-            return Ok(EventSeq::new(0));
-        }
-        let reader =
-            LocalBoard::open_read_with_timeout(&config, self.1.cap(Duration::from_secs(5)))?;
-        reader.max_seq()
+        self.0.max_seq_by(self.1).map_err(BoardError::from)
     }
 }
 
@@ -776,6 +863,30 @@ fn set_wait(reply: &mut BoardReply, wait: InboxWait) {
     if let BoardResult::Inbox(inbox) = &mut reply.result {
         inbox.wait = wait;
     }
+}
+
+pub(crate) fn ensure_feedback_import(
+    request: &BoardRequest,
+) -> std::result::Result<(), BoardError> {
+    if !matches!(
+        &request.op,
+        BoardOp::Feedback {
+            import_key: Some(_),
+            ..
+        }
+    ) {
+        return Err(BoardError::new(
+            super::board_protocol::BoardErrorCode::InvalidOptions,
+            "import requires feedback with its permanent identity",
+        ));
+    }
+    Ok(())
+}
+
+fn waiter_transient(error: &anyhow::Error) -> bool {
+    crate::daemon::deadline::is_timed_out(error)
+        || super::board_protocol::BoardErrorCode::from_error(error)
+            == Some(super::board_protocol::BoardErrorCode::DatabaseLocked)
 }
 
 fn check_deadline(deadline: QueryDeadline) -> Result<()> {
@@ -822,11 +933,7 @@ mod tests {
 
     #[test]
     fn panicked_board_write_rolls_back_then_reopens_for_durable_writes() {
-        let scratch = std::env::var_os("TMPDIR")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| std::path::PathBuf::from("/home/josh/.cache/codex-tmp"));
-        std::fs::create_dir_all(&scratch).unwrap();
-        let directory = tempfile::Builder::new().tempdir_in(scratch).unwrap();
+        let directory = crate::board::board_test_support::scratch("board-runtime-");
         let database = directory.path().join("board.sqlite3");
         let host = BoardHost::with_config(BoardConfig::for_database(&database));
         let actor = host
@@ -890,7 +997,7 @@ mod tests {
 
     #[test]
     fn poisoned_writer_reopens_durable_board_and_recovers_other_locks() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::board::board_test_support::scratch("board-test-");
         let host = BoardHost::with_config(BoardConfig::for_database(
             directory.path().join("board.sqlite3"),
         ));
@@ -941,13 +1048,69 @@ mod tests {
     }
 
     #[test]
+    fn unchanged_waiting_inbox_uses_sequence_gate_and_returns_empty_under_writer_lock() {
+        let directory = crate::board::board_test_support::scratch("board-transport-");
+        let config = BoardConfig::for_database(directory.path().join("board.sqlite3"));
+        drop(LocalBoard::open(&config).unwrap());
+        let host = BoardHost::with_config(config.clone());
+        let mut external = rusqlite::Connection::open(&config.db_path).unwrap();
+        let _writer = external
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .unwrap();
+        let request = BoardRequest::new(
+            config.actor(None, Some("waiting-reader")).unwrap(),
+            BoardOp::Inbox {
+                after: Some(EventSeq::new(0)),
+                limit: 20,
+                repo_key: None,
+                all: true,
+            },
+        );
+        let reply = host
+            .wait_inbox(&request, QueryDeadline::after(Duration::from_millis(2200)))
+            .unwrap();
+        let BoardResult::Inbox(inbox) = reply.result else {
+            panic!("expected inbox");
+        };
+        assert!(inbox.events.is_empty());
+        assert_eq!(inbox.wait, InboxWait::Timeout);
+        assert_eq!(host.inner.inbox_queries.load(Ordering::Relaxed), 1);
+        assert!(host.inner.backend.lock().unwrap().is_none());
+        assert!(waiter_transient(&anyhow::anyhow!(
+            "timed_out: no deadline remains"
+        )));
+        assert!(waiter_transient(&anyhow::Error::new(BoardError::new(
+            super::super::board_protocol::BoardErrorCode::DatabaseLocked,
+            "writer held"
+        ))));
+        assert!(!waiter_transient(&anyhow::anyhow!(
+            "invalid_body: text mentions timed_out"
+        )));
+        let request = BoardRequest::new(
+            config.actor(None, Some("waiting-advancer")).unwrap(),
+            BoardOp::Inbox {
+                after: None,
+                limit: 20,
+                repo_key: None,
+                all: true,
+            },
+        );
+        let reply = host
+            .wait_inbox(&request, QueryDeadline::after(Duration::from_millis(50)))
+            .unwrap();
+        let BoardResult::Inbox(inbox) = reply.result else {
+            panic!("expected empty inbox");
+        };
+        assert_eq!(inbox.wait, InboxWait::Timeout);
+        assert!(inbox.events.is_empty());
+        assert!(!inbox.advancing);
+        assert_eq!(inbox.cursor, EventSeq::new(0));
+    }
+
+    #[test]
     fn host_reads_existing_board_without_initializing_or_waiting_for_writer() {
         use std::os::unix::fs::PermissionsExt;
-        let scratch = std::env::var_os("TMPDIR")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| std::path::PathBuf::from("/home/josh/.cache/codex-tmp"));
-        std::fs::create_dir_all(&scratch).unwrap();
-        let directory = tempfile::Builder::new().tempdir_in(scratch).unwrap();
+        let directory = crate::board::board_test_support::scratch("board-runtime-");
         let parent = directory.path().join("data");
         std::fs::create_dir(&parent).unwrap();
         let config = BoardConfig::for_database(parent.join("board.sqlite3"));
@@ -1081,11 +1244,7 @@ mod tests {
 
     #[test]
     fn configuration_ttl_refresh_changes_existing_writer_claim_policy() {
-        let scratch = std::env::var_os("TMPDIR")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| std::path::PathBuf::from("/home/josh/.cache/codex-tmp"));
-        std::fs::create_dir_all(&scratch).unwrap();
-        let directory = tempfile::Builder::new().tempdir_in(scratch).unwrap();
+        let directory = crate::board::board_test_support::scratch("board-runtime-");
         let database = directory.path().join("board.sqlite3");
         let mut config = BoardConfig::for_database(&database);
         let host = BoardHost::with_config(config.clone());
@@ -1144,11 +1303,7 @@ mod tests {
     #[test]
     fn idle_maintenance_schedules_a_blocked_loader_without_waiting() {
         use std::os::unix::ffi::OsStrExt;
-        let scratch = std::env::var_os("TMPDIR")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| std::path::PathBuf::from("/home/josh/.cache/codex-tmp"));
-        std::fs::create_dir_all(&scratch).unwrap();
-        let directory = tempfile::Builder::new().tempdir_in(scratch).unwrap();
+        let directory = crate::board::board_test_support::scratch("board-runtime-");
         let source = directory.path().join("blocked-board.toml");
         let name = std::ffi::CString::new(source.as_os_str().as_bytes()).unwrap();
         // SAFETY: CString is NUL terminated and mkfifo only creates this test path.
@@ -1187,13 +1342,7 @@ mod tests {
 
     #[test]
     fn expired_board_mutation_never_creates_the_database() {
-        let scratch =
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/board-host-tests");
-        std::fs::create_dir_all(&scratch).unwrap();
-        let directory = tempfile::Builder::new()
-            .prefix("expired-")
-            .tempdir_in(scratch)
-            .unwrap();
+        let directory = crate::board::board_test_support::scratch("board-transport-");
         let database = directory.path().join("data/board.sqlite3");
         let host = BoardHost::with_config(BoardConfig::for_database(&database));
         let options =

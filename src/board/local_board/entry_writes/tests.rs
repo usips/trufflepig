@@ -4,12 +4,7 @@ use crate::board::board_vocabulary::{PlanText, PlanTitle};
 
 #[test]
 fn commit_tasks_retain_all_valid_links_and_unknown_task_falls_back() {
-    let scratch = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/board-storage-tests");
-    std::fs::create_dir_all(&scratch).unwrap();
-    let directory = tempfile::Builder::new()
-        .prefix("commit-links-")
-        .tempdir_in(&scratch)
-        .unwrap();
+    let directory = crate::board::board_test_support::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),

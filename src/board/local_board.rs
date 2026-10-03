@@ -157,6 +157,7 @@ impl LocalBoard {
             now: unix_now()?,
             seq: EventSeq::new(0),
             claim_ttl_secs: self.claim_ttl_secs,
+            via: None,
         };
         let mut reply = match &request.op {
             BoardOp::Inbox {
@@ -186,7 +187,11 @@ impl LocalBoard {
         Ok(reply)
     }
 
-    fn dispatch(&mut self, request: &BoardRequest) -> Result<BoardReply, BoardError> {
+    fn dispatch(
+        &mut self,
+        request: &BoardRequest,
+        imported: bool,
+    ) -> Result<BoardReply, BoardError> {
         request.validate().map_err(BoardError::from)?;
         if request.op.is_read_only() {
             return self.dispatch_read(request);
@@ -247,6 +252,7 @@ impl LocalBoard {
             now,
             seq: EventSeq::new(seq),
             claim_ttl_secs: self.claim_ttl_secs,
+            via: imported.then_some(FeedbackVia::Outbox),
         };
         let dedupable = is_dedupable(&request.op);
         let import_key = match &request.op {
@@ -358,7 +364,7 @@ impl LocalBoard {
             BoardOp::FeedbackList { open_only } => {
                 feedback_entries::list_feedback(&tx, *open_only)?
             }
-            BoardOp::FeedbackClose { .. } => {
+            BoardOp::FeedbackTriage { .. } | BoardOp::FeedbackClose { .. } => {
                 feedback_entries::close_feedback(&tx, &ctx, &request.op)?
             }
             BoardOp::RegisterRepo { registration } => {
@@ -426,7 +432,11 @@ impl LocalBoard {
 
 impl BoardBackend for LocalBoard {
     fn handle(&mut self, request: &BoardRequest) -> Result<BoardReply, BoardError> {
-        self.dispatch(request)
+        self.dispatch(request, false)
+    }
+    fn import_feedback(&mut self, request: &BoardRequest) -> Result<BoardReply, BoardError> {
+        super::board_backend::ensure_feedback_import(request)?;
+        self.dispatch(request, true)
     }
     fn max_seq(&self) -> Result<EventSeq, BoardError> {
         max_seq(self.reader.as_ref().unwrap_or(&self.conn))
@@ -441,6 +451,7 @@ pub(super) struct WriteContext {
     pub now: i64,
     pub seq: EventSeq,
     pub claim_ttl_secs: i64,
+    pub via: Option<FeedbackVia>,
 }
 
 pub(super) struct EntryDraft {
@@ -626,15 +637,25 @@ fn is_dedupable(op: &BoardOp) -> bool {
             | BoardOp::Accept { .. }
             | BoardOp::Reject { .. }
             | BoardOp::Feedback { .. }
+            | BoardOp::FeedbackTriage { .. }
             | BoardOp::FeedbackClose { .. }
     )
 }
 
 fn request_dedupe_key(request: &BoardRequest) -> Result<String, BoardError> {
-    let mut canonical = request.clone();
-    if let BoardOp::Feedback { import_key, .. } = &mut canonical.op {
-        *import_key = None;
+    if let BoardOp::Feedback {
+        kind,
+        summary,
+        body,
+        plan,
+        ..
+    } = &request.op
+    {
+        let bytes = serde_json::to_vec(&(kind, summary, body, plan))
+            .map_err(|error| invalid("board_unavailable", error.to_string()))?;
+        return Ok(blake3::hash(&bytes).to_hex().to_string());
     }
+    let canonical = request.clone();
     let bytes =
         serde_json::to_vec(&canonical).map_err(|e| invalid("board_unavailable", e.to_string()))?;
     Ok(blake3::hash(&bytes).to_hex().to_string())
