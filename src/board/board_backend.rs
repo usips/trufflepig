@@ -35,6 +35,8 @@ pub trait BoardBackend: Send {
 const MAX_WAITERS: usize = 6;
 const MAX_INBOX_WAIT: Duration = Duration::from_secs(15);
 const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(60);
+const IDLE_CHECK_INTERVAL: Duration = Duration::from_secs(2);
+const IMPORT_BACKOFF_MAX: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Default)]
 pub struct BoardHost {
@@ -55,7 +57,47 @@ struct HostState {
 #[derive(Default)]
 struct IngestClock {
     last_started: Option<Instant>,
-    running: Option<JoinHandle<()>>,
+    running: Option<JoinHandle<std::result::Result<Option<super::feedback_outbox::ImportSummary>, BoardError>>>,
+    running_import: bool,
+    last_checked: Option<Instant>,
+    import_retry_at: Option<Instant>,
+    import_delay: Duration,
+    reported_errors: Vec<&'static str>,
+}
+
+impl IngestClock {
+    fn check_due(&mut self, now: Instant) -> bool {
+        if self.last_checked.is_some_and(|checked| now.duration_since(checked) < IDLE_CHECK_INTERVAL) {
+            return false;
+        }
+        self.last_checked = Some(now);
+        true
+    }
+
+    fn import_ready(&self, now: Instant) -> bool {
+        self.import_retry_at.is_none_or(|retry| now >= retry)
+    }
+
+    fn import_finished(&mut self, now: Instant, summary: &super::feedback_outbox::ImportSummary) {
+        if summary.pending == 0 {
+            self.import_retry_at = None;
+            self.import_delay = Duration::ZERO;
+        } else {
+            self.import_delay = if self.import_delay.is_zero() {
+                IDLE_CHECK_INTERVAL
+            } else {
+                self.import_delay.saturating_mul(2).min(IMPORT_BACKOFF_MAX)
+            };
+            self.import_retry_at = Some(now + self.import_delay);
+        }
+    }
+
+    fn report_once(&mut self, code: &'static str, message: &str) {
+        if !self.reported_errors.contains(&code) {
+            self.reported_errors.push(code);
+            eprintln!("trufflepig: board maintenance {code}: {message}");
+        }
+    }
 }
 
 impl BoardHost {
@@ -407,65 +449,94 @@ impl BoardHost {
 
     /// Starts bounded maintenance without running git or importer work on daemon idle.
     pub fn idle(&self) {
-        let Ok(config) = self.config() else {
-            return;
-        };
-        let pending = std::fs::read_dir(crate::system::spool_dir()).is_ok_and(|entries| {
-            entries.filter_map(std::result::Result::ok).any(|entry| {
-                entry
-                    .path()
-                    .extension()
-                    .is_some_and(|ext| ext == "feedback")
-            })
-        });
-        if !config.db_path.is_file() && !pending {
-            return;
-        }
-        let mut clock = recover_lock(&self.inner.maintenance);
-        let ingest_due = config.db_path.is_file()
-            && clock
-                .last_started
-                .is_none_or(|started| started.elapsed() >= MAINTENANCE_INTERVAL);
-        if clock
-            .running
-            .as_ref()
-            .is_some_and(|worker| !worker.is_finished())
-            || (!pending && !ingest_due)
-        {
-            return;
-        }
-        if let Some(finished) = clock.running.take() {
-            let _ = finished.join();
-        }
-        let host = self.clone();
-        // Spawn failure and panics cannot escape into the router maintenance loop.
-        if let Ok(worker) = std::thread::Builder::new()
-            .name("board-maintenance".to_owned())
-            .spawn(move || {
-                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    host.maintain(ingest_due)
-                }));
-            })
-        {
-            clock.running = Some(worker);
-            if ingest_due {
-                clock.last_started = Some(Instant::now());
+        let mut clock = match self.inner.maintenance.try_lock() {
+            Ok(clock) => clock,
+            Err(TryLockError::WouldBlock) => return,
+            Err(TryLockError::Poisoned(poisoned)) => {
+                let mut clock = poisoned.into_inner();
+                *clock = IngestClock::default();
+                self.inner.maintenance.clear_poison();
+                clock
             }
+        };
+        let now = Instant::now();
+        if !clock.check_due(now) { return; }
+        if clock.running.as_ref().is_some_and(|worker| !worker.is_finished()) { return; }
+        if let Some(finished) = clock.running.take() {
+            match finished.join() {
+                Ok(Ok(Some(summary))) => {
+                    clock.import_finished(now, &summary);
+                    if let Some(code) = summary.retry_error {
+                        clock.report_once(code.as_str(), "feedback import deferred");
+                    }
+                }
+                Ok(Ok(None)) => {},
+                outcome => {
+                    let error = match outcome {
+                        Ok(Err(error)) => error,
+                        _ => BoardError::new(super::board_protocol::BoardErrorCode::BoardUnavailable,
+                            "maintenance worker panicked"),
+                    };
+                    clock.report_once(error.code.as_str(), &error.message);
+                    if clock.running_import {
+                        clock.import_finished(now, &super::feedback_outbox::ImportSummary {
+                            pending: 1, ..Default::default()
+                        });
+                    }
+                }
+            }
+        }
+        let config = match self.config() {
+            Ok(config) => config,
+            Err(error) => {
+                let error = BoardError::from(error);
+                clock.report_once(error.code.as_str(), &error.message);
+                return;
+            }
+        };
+        let pending = clock.import_ready(now)
+            && std::fs::read_dir(crate::system::spool_dir()).is_ok_and(|entries| {
+                entries.filter_map(std::result::Result::ok).any(|entry| {
+                    entry.path().extension().is_some_and(|ext| ext == "feedback")
+                })
+            });
+        let ingest_due = config.db_path.is_file()
+            && clock.last_started.is_none_or(|started| started.elapsed() >= MAINTENANCE_INTERVAL);
+        if !pending && !ingest_due { return; }
+        let host = self.clone();
+        match std::thread::Builder::new().name("board-maintenance".to_owned()).spawn(move || {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| host.maintain(ingest_due, pending)))
+                .unwrap_or_else(|_| Err(BoardError::new(
+                    super::board_protocol::BoardErrorCode::BoardUnavailable,
+                    "maintenance worker panicked")))
+        }) {
+            Ok(worker) => {
+                clock.running = Some(worker);
+                clock.running_import = pending;
+                if ingest_due { clock.last_started = Some(now); }
+            }
+            Err(error) => clock.report_once("board_unavailable", &format!("spawn: {error}")),
         }
     }
 
-    fn maintain(&self, ingest_due: bool) -> Result<()> {
-        let config = self.config()?;
-        let actor = config.actor(None, Some("maintenance"))?;
-        super::feedback_outbox::import_pending(
-            &crate::system::spool_dir(),
-            &mut HostAccess(self, QueryDeadline::after(Duration::from_secs(15))),
-        )?;
+    fn maintain(&self, ingest_due: bool, import_due: bool)
+        -> std::result::Result<Option<super::feedback_outbox::ImportSummary>, BoardError> {
+        let config = self.config().map_err(BoardError::from)?;
+        let actor = config.actor(None, Some("maintenance")).map_err(BoardError::from)?;
+        let summary = if import_due {
+            Some(super::feedback_outbox::import_pending(
+                &crate::system::spool_dir(),
+                &mut HostAccess(self, QueryDeadline::after(Duration::from_secs(15))),
+            )?)
+        } else {
+            None
+        };
         if ingest_due && config.db_path.is_file() {
-            self.ingest(&actor, None, Duration::from_secs(15))?;
+            self.ingest(&actor, None, Duration::from_secs(15)).map_err(BoardError::from)?;
         }
-        Ok(())
+        Ok(summary)
     }
+
 }
 
 struct HostAccess<'a>(&'a BoardHost, QueryDeadline);
@@ -612,6 +683,29 @@ mod tests {
         assert!(!host.inner.config.is_poisoned());
         assert!(!host.inner.sequence.is_poisoned());
         assert!(!host.inner.ingestor.is_poisoned());
+    }
+
+    #[test]
+    fn maintenance_import_backoff_caps_and_recovers_without_hot_polling() {
+        let now = Instant::now();
+        let mut clock = IngestClock::default();
+        assert!(clock.check_due(now));
+        assert!(!clock.check_due(now + Duration::from_millis(1)));
+        assert!(clock.check_due(now + Duration::from_secs(2)));
+        let pending = super::super::feedback_outbox::ImportSummary {
+            pending: 1,
+            ..Default::default()
+        };
+        clock.import_finished(now, &pending);
+        assert!(!clock.import_ready(now + Duration::from_secs(1)));
+        assert!(clock.import_ready(now + Duration::from_secs(2)));
+        for _ in 0..10 { clock.import_finished(now, &pending); }
+        assert!(!clock.import_ready(now + Duration::from_secs(59)));
+        assert!(clock.import_ready(now + Duration::from_secs(60)));
+        clock.import_finished(now, &Default::default());
+        assert!(clock.import_ready(now));
+        clock.import_finished(now, &pending);
+        assert!(clock.import_ready(now + Duration::from_secs(2)));
     }
 
     #[test]

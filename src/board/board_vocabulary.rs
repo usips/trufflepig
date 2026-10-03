@@ -7,6 +7,46 @@ pub const ENTRY_TEXT_LIMIT: usize = 4096;
 pub const PLAN_TEXT_LIMIT: usize = 32768;
 pub const PLAN_TITLE_LIMIT: usize = 256;
 
+/// Stable outbox identity; canonical spelling is enforced at the boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct FeedbackImportKey(uuid::Uuid);
+impl FeedbackImportKey {
+    pub fn new() -> Self {
+        Self(uuid::Uuid::new_v4())
+    }
+    pub fn parse(value: &str) -> Result<Self> {
+        let id = uuid::Uuid::parse_str(value).map_err(|_| {
+            anyhow::anyhow!("invalid_options: feedback import key must be a canonical UUID")
+        })?;
+        if id.to_string() != value {
+            bail!("invalid_options: feedback import key must be a canonical UUID");
+        }
+        Ok(Self(id))
+    }
+}
+impl Default for FeedbackImportKey {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl fmt::Display for FeedbackImportKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+impl TryFrom<String> for FeedbackImportKey {
+    type Error = anyhow::Error;
+    fn try_from(value: String) -> Result<Self> {
+        Self::parse(&value)
+    }
+}
+impl From<FeedbackImportKey> for String {
+    fn from(value: FeedbackImportKey) -> Self {
+        value.to_string()
+    }
+}
+
 macro_rules! vocabulary {
     ($name:ident, $error:literal, {$($variant:ident => $label:literal),+ $(,)?}) => {
         #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -120,6 +160,29 @@ bounded_text!(PlanTitle, PLAN_TITLE_LIMIT, false);
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn feedback_import_key_requires_canonical_uuid_at_deserialization() {
+        let key = FeedbackImportKey::new();
+        let encoded = serde_json::to_string(&key).unwrap();
+        assert_eq!(
+            serde_json::from_str::<FeedbackImportKey>(&encoded).unwrap(),
+            key
+        );
+        for invalid in [
+            "bad".to_owned(),
+            key.to_string().to_uppercase(),
+            key.to_string().replace('-', ""),
+        ] {
+            assert!(FeedbackImportKey::parse(&invalid).is_err());
+            assert!(
+                serde_json::from_str::<FeedbackImportKey>(
+                    &serde_json::to_string(&invalid).unwrap()
+                )
+                .is_err()
+            );
+        }
+    }
 
     #[test]
     fn entry_text_cap_counts_utf8_bytes_and_is_enforced_by_serde() {

@@ -139,7 +139,7 @@ impl LocalBoard {
         };
         let dedupable = is_dedupable(&request.op);
         let import_key = match &request.op {
-            BoardOp::Feedback { import_key, .. } => import_key.as_deref(),
+            BoardOp::Feedback { import_key, .. } => import_key.as_ref(),
             _ => None,
         };
         if let Some(import_key) = import_key {

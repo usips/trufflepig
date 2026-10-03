@@ -49,7 +49,7 @@ fn report(session: &str) -> BoardRequest {
                 }],
                 ..FeedbackMetadata::default()
             },
-            import_key: Some(uuid::Uuid::new_v4().to_string()),
+            import_key: Some(crate::board::board_vocabulary::FeedbackImportKey::new()),
         },
     )
 }
@@ -165,7 +165,7 @@ fn permanent_alias_replay_survives_expired_content_dedupe() {
     let BoardOp::Feedback { import_key, .. } = &mut alias.op else {
         unreachable!()
     };
-    *import_key = Some(uuid::Uuid::new_v4().to_string());
+    *import_key = Some(crate::board::board_vocabulary::FeedbackImportKey::new());
     assert!(changed(board.handle(&alias).unwrap()).deduplicated);
     board
         .conn

@@ -8,7 +8,7 @@ use crate::board::board_ids::EntryId;
 use crate::board::board_protocol::{
     BoardChange, BoardError, BoardOp, BoardReply, BoardResult, FeedbackMetadata, FeedbackRecord,
 };
-use crate::board::board_vocabulary::{ENTRY_TEXT_LIMIT, EntryKind, FeedbackKind, FeedbackState};
+use crate::board::board_vocabulary::{ENTRY_TEXT_LIMIT, EntryKind, FeedbackImportKey, FeedbackKind, FeedbackState};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 pub(super) fn write_feedback(
@@ -29,7 +29,6 @@ pub(super) fn write_feedback(
     };
     op.validate().map_err(BoardError::from)?;
     if let Some(key) = import_key {
-        validate_key(key)?;
         if let Some(reply) = imported_reply(tx, key)? {
             return Ok(reply);
         }
@@ -66,7 +65,7 @@ pub(super) fn write_feedback(
         .map_err(|error| invalid("invalid_options", error.to_string()))?;
     tx.execute(
         "INSERT INTO board_feedback(entry_id,feedback_kind,version,build_id,cwd,steer_mode,recent_calls_json,import_key) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
-        params![sqlite_id(entry.get())?, kind.as_str(), metadata.version, metadata.build_id, metadata.cwd, metadata.steer_mode, recent_calls, import_key],
+        params![sqlite_id(entry.get())?, kind.as_str(), metadata.version, metadata.build_id, metadata.cwd, metadata.steer_mode, recent_calls, import_key.map(|key| key.to_string())],
     ).map_err(sql_error)?;
     if let Some(key) = import_key {
         remember_import(tx, key, entry)?;
@@ -219,13 +218,12 @@ pub(super) fn close_feedback(
 /// Aliases include content-deduped requests, so their UUIDs never expire.
 pub(super) fn remember_import(
     tx: &Transaction<'_>,
-    key: &str,
+    key: &FeedbackImportKey,
     entry: EntryId,
 ) -> Result<(), BoardError> {
-    validate_key(key)?;
     tx.execute(
         "INSERT OR IGNORE INTO feedback_imports(import_key,entry_id) VALUES(?1,?2)",
-        params![key, sqlite_id(entry.get())?],
+        params![key.to_string(), sqlite_id(entry.get())?],
     )
     .map_err(sql_error)?;
     Ok(())
@@ -233,13 +231,12 @@ pub(super) fn remember_import(
 
 pub(super) fn imported_reply(
     conn: &Connection,
-    key: &str,
+    key: &FeedbackImportKey,
 ) -> Result<Option<BoardReply>, BoardError> {
-    validate_key(key)?;
     let id: Option<i64> = conn
         .query_row(
             "SELECT entry_id FROM feedback_imports WHERE import_key=?1",
-            [key],
+            [key.to_string()],
             |row| row.get(0),
         )
         .optional()
@@ -262,17 +259,6 @@ pub(super) fn imported_reply(
         ))
     })
     .transpose()
-}
-
-fn validate_key(key: &str) -> Result<(), BoardError> {
-    if uuid::Uuid::parse_str(key).is_ok_and(|id| id.to_string() == key) {
-        Ok(())
-    } else {
-        Err(invalid(
-            "invalid_options",
-            "feedback import key must be a canonical UUID",
-        ))
-    }
 }
 
 fn truncate_entry_summary(text: &mut String) {

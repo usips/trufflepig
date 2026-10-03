@@ -4,6 +4,7 @@ use super::BoardBackend;
 use super::board_protocol::{
     BoardError, BoardErrorCode, BoardOp, BoardReply, BoardRequest, BoardResult,
 };
+use super::board_vocabulary::FeedbackImportKey;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
@@ -15,7 +16,7 @@ const OUTBOX_LIMIT: u64 = 64 * 1024;
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct QueuedFeedback {
-    import_key: String,
+    import_key: FeedbackImportKey,
     request: BoardRequest,
 }
 
@@ -24,10 +25,11 @@ pub struct ImportSummary {
     pub imported: usize,
     pub quarantined: usize,
     pub pending: usize,
+    pub retry_error: Option<BoardErrorCode>,
 }
 
-pub fn new_import_key() -> String {
-    uuid::Uuid::new_v4().to_string()
+pub fn new_import_key() -> FeedbackImportKey {
+    FeedbackImportKey::new()
 }
 
 /// Publishes a complete private record and acknowledges only durable writes.
@@ -41,7 +43,6 @@ pub fn queue(spool: &Path, request: &BoardRequest) -> Result<BoardReply, BoardEr
         ));
     };
     let key = import_key.get_or_insert_with(new_import_key).clone();
-    validate_key(&key)?;
     let record = QueuedFeedback {
         import_key: key.clone(),
         request,
@@ -91,6 +92,7 @@ pub fn import_pending(
             Ok(request) => request,
             Err(error) if error.code == BoardErrorCode::BoardUnavailable => {
                 summary.pending += 1;
+                summary.retry_error.get_or_insert(error.code);
                 continue;
             }
             Err(_) => {
@@ -108,7 +110,15 @@ pub fn import_pending(
                 }
                 summary.imported += 1;
             }
-            Ok(_) | Err(_) => summary.pending += 1,
+            Err(error) if matches!(error.code,
+                BoardErrorCode::BoardUnavailable | BoardErrorCode::DatabaseLocked) => {
+                summary.pending += 1;
+                summary.retry_error.get_or_insert(error.code);
+            }
+            Ok(_) | Err(_) => {
+                quarantine(&path)?;
+                summary.quarantined += 1;
+            }
         }
     }
     Ok(summary)
@@ -119,7 +129,7 @@ fn read_record(path: &Path) -> Result<BoardRequest, BoardError> {
         .file_stem()
         .and_then(|stem| stem.to_str())
         .ok_or_else(|| invalid_record("invalid feedback filename"))?;
-    validate_key(stem)?;
+    let key = FeedbackImportKey::parse(stem).map_err(BoardError::from)?;
     let metadata = path.symlink_metadata().map_err(io_error)?;
     if !metadata.file_type().is_file() || metadata.len() > OUTBOX_LIMIT {
         return Err(invalid_record("feedback is not a bounded regular file"));
@@ -140,14 +150,14 @@ fn read_record(path: &Path) -> Result<BoardRequest, BoardError> {
         return Err(invalid_record("feedback exceeds frame limit"));
     }
     let record: QueuedFeedback = serde_json::from_slice(&bytes).map_err(json_error)?;
-    if record.import_key != stem {
+    if record.import_key != key {
         return Err(invalid_record("feedback UUID differs from filename"));
     }
     match &record.request.op {
         BoardOp::Feedback {
             import_key: Some(key),
             ..
-        } if key == stem => {}
+        } if *key == record.import_key => {}
         _ => {
             return Err(invalid_record(
                 "outbox requires feedback with its stable UUID",
@@ -228,16 +238,6 @@ fn sync_directory(path: &Path) -> Result<(), BoardError> {
     File::open(path)
         .and_then(|file| file.sync_all())
         .map_err(io_error)
-}
-
-fn validate_key(key: &str) -> Result<(), BoardError> {
-    match uuid::Uuid::parse_str(key) {
-        Ok(id) if id.to_string() == key => Ok(()),
-        _ => Err(BoardError::new(
-            BoardErrorCode::InvalidOptions,
-            "feedback import key must be a canonical UUID",
-        )),
-    }
 }
 
 fn invalid_record(message: impl Into<String>) -> BoardError {

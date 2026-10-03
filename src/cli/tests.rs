@@ -573,7 +573,7 @@ fn board_grammar_accepts_every_m1_command_and_skill_example() {
         let actual = match command {
             BoardCommand::Ingest => "ingest".into(),
             BoardCommand::Op(BoardOp::Feedback { import_key, .. }) => {
-                uuid::Uuid::parse_str(import_key.as_deref().unwrap()).unwrap();
+                uuid::Uuid::parse_str(&import_key.unwrap().to_string()).unwrap();
                 "feedback".into()
             }
             BoardCommand::Op(op) => serde_json::to_value(op).unwrap()["op"]

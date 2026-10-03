@@ -429,7 +429,7 @@ fn lines_result(result: &BoardResult) -> String {
             }
         }
         BoardResult::Queued { import_key } => {
-            writeln!(text, "queued: pending import ({})", cell(import_key)).unwrap()
+            writeln!(text, "queued: pending import ({})", cell(&import_key.to_string())).unwrap()
         }
         BoardResult::ScanRecorded => text.push_str("scan recorded\n"),
         BoardResult::Diff(_) | BoardResult::Review(_) => {

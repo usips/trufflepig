@@ -56,7 +56,7 @@ impl BoardBackend for ImportBackend {
         let next = self.entries.len() as u64 + 1;
         let change = self
             .entries
-            .entry(key.clone())
+            .entry(key.to_string())
             .or_insert_with(|| BoardChange {
                 entry: EntryId::new(next).unwrap(),
                 seq: EventSeq::new(next),
@@ -203,4 +203,32 @@ fn invalid_reports_and_unwritable_spool_never_get_queue_acknowledgements() {
         queue(dir.path(), &request).unwrap_err().code,
         BoardErrorCode::InvalidOptions
     );
+}
+
+struct RejectedImport(BoardErrorCode);
+
+impl BoardBackend for RejectedImport {
+    fn handle(&mut self, _: &BoardRequest) -> Result<BoardReply, BoardError> {
+        Err(BoardError::new(self.0, "injected rejection"))
+    }
+    fn max_seq(&self) -> Result<EventSeq, BoardError> {
+        Ok(EventSeq::new(0))
+    }
+}
+
+#[test]
+fn semantic_import_rejections_quarantine_and_transient_rejections_remain_pending() {
+    for code in [BoardErrorCode::InvalidReference, BoardErrorCode::BoardApiMismatch,
+        BoardErrorCode::InvalidState, BoardErrorCode::BoardUnavailable,
+        BoardErrorCode::DatabaseLocked] {
+        let directory = scratch();
+        queue(directory.path(), &report()).unwrap();
+        let summary = import_pending(directory.path(), &mut RejectedImport(code)).unwrap();
+        let transient = matches!(code,
+            BoardErrorCode::BoardUnavailable | BoardErrorCode::DatabaseLocked);
+        assert_eq!(summary.pending, usize::from(transient), "{code:?}");
+        assert_eq!(summary.quarantined, usize::from(!transient), "{code:?}");
+        let path = fs::read_dir(directory.path()).unwrap().next().unwrap().unwrap().path();
+        assert_eq!(path.extension().unwrap(), if transient { "feedback" } else { "quarantine" });
+    }
 }

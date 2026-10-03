@@ -2,7 +2,7 @@
 use super::board_actor::{BoardActor, BoardRecipient, HarnessLabel, validate_actor_component};
 use super::board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId};
 use super::board_vocabulary::{
-    EntryKind, EntryText, FeedbackKind, FeedbackState, PlanText, PlanTitle, ProposalState,
+    EntryKind, EntryText, FeedbackImportKey, FeedbackKind, FeedbackState, PlanText, PlanTitle, ProposalState,
     TaskColumn,
 };
 use crate::identity::GitOid;
@@ -238,7 +238,7 @@ pub enum BoardOp {
         body: Option<EntryText>,
         plan: Option<PlanId>,
         metadata: FeedbackMetadata,
-        import_key: Option<String>,
+        import_key: Option<FeedbackImportKey>,
     },
     FeedbackList {
         open_only: bool,
@@ -339,7 +339,6 @@ impl BoardOp {
                 summary,
                 body,
                 metadata,
-                import_key,
                 ..
             } => {
                 let length = summary.as_str().len()
@@ -348,16 +347,6 @@ impl BoardOp {
                     bail!("invalid_body: feedback text exceeds 4096 bytes");
                 }
                 metadata.validate()?;
-                if let Some(key) = import_key {
-                    let uuid = uuid::Uuid::parse_str(key).map_err(|_| {
-                        anyhow::anyhow!("invalid_options: feedback import_key must be a UUID")
-                    })?;
-                    if uuid.to_string() != *key {
-                        bail!(
-                            "invalid_options: feedback import_key must use canonical UUID spelling"
-                        );
-                    }
-                }
             }
             Self::LinkCommits { commits } => {
                 if commits.len() > 2000 {
@@ -487,7 +476,7 @@ pub enum BoardResult {
     Repositories(Vec<RepoScanTarget>),
     Registered(RepoRegistration),
     CommitsLinked(CommitLinkResult),
-    Queued { import_key: String },
+    Queued { import_key: FeedbackImportKey },
     ScanRecorded,
 }
 

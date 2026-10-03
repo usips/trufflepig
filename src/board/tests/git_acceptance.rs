@@ -87,7 +87,7 @@ fn committed_outbox_aliases_remain_idempotent_after_manual_dedupe_expiry() {
                 version: "acceptance".into(),
                 ..FeedbackMetadata::default()
             },
-            import_key: Some(uuid::Uuid::new_v4().to_string()),
+            import_key: Some(crate::board::board_vocabulary::FeedbackImportKey::new()),
         },
     );
     feedback_outbox::queue(&spool, &request).unwrap();
@@ -105,7 +105,7 @@ fn committed_outbox_aliases_remain_idempotent_after_manual_dedupe_expiry() {
         1
     );
     if let BoardOp::Feedback { import_key, .. } = &mut request.op {
-        *import_key = Some(uuid::Uuid::new_v4().to_string());
+        *import_key = Some(crate::board::board_vocabulary::FeedbackImportKey::new());
     }
     feedback_outbox::queue(&spool, &request).unwrap();
     let second = std::fs::read_dir(&spool)

@@ -5,7 +5,7 @@ use super::{
     board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision},
     board_protocol::{BoardOp, FeedbackMetadata, RecentCall},
     board_vocabulary::{
-        EntryKind, EntryText, FeedbackKind, FeedbackState, PlanText, PlanTitle, TaskColumn,
+        EntryKind, EntryText, FeedbackImportKey, FeedbackKind, FeedbackState, PlanText, PlanTitle, TaskColumn,
     },
 };
 use crate::cli::Arguments;
@@ -121,7 +121,7 @@ impl BoardOptions {
 struct BoardTextPayload {
     text: String,
     body: Option<String>,
-    import_key: Option<String>,
+    import_key: Option<FeedbackImportKey>,
     steer_mode: Option<String>,
 }
 
@@ -491,11 +491,7 @@ fn parse_feedback(options: &Arguments, payload: BoardTextPayload) -> Result<Boar
         }
         _ => {
             check_flags(options, &["body", "plan", "recent-calls", "text"])?;
-            let import_key = payload
-                .import_key
-                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-            uuid::Uuid::parse_str(&import_key)
-                .context("invalid_options: feedback import key must be a UUID")?;
+            let import_key = payload.import_key.unwrap_or_else(FeedbackImportKey::new);
             BoardOp::Feedback {
                 kind: verb.parse::<FeedbackKind>()?,
                 summary: EntryText::new(payload.text)?,
