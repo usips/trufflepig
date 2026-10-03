@@ -5,6 +5,7 @@ binary directory (`$CARGO_HOME/bin`, default `$HOME/.cargo/bin`) on `PATH`;
 `command -v trufflepig` verifies discovery.
 `--root` defaults to the current directory. Without a workspace, root discovery
 does not walk up to Git metadata; use the same root and cache for follow-up reads; configured workspaces route reads to their recorded member.
+For `board`/`feedback` commands, identity, budgets, and errors, see the [board contract](board-contract.md).
 
 ```sh
 trufflepig --help -b 2000
@@ -40,7 +41,7 @@ an indented `LINE: TEXT` snippet, then `coverage:`. Continuing pages print
 `LINE<TAB>text` rows, `next: show CURSOR` when the budget cut the read, and a
 `verified:` footer (`verified: current file` for explicit path reads, which JSON
 marks `"source": "current_file"`) that flags `encoding: byte-escaped` once.
-Errors and every other verb stay JSON. `show` defaults to a 1500-token budget,
+Other source verbs and errors stay JSON. Source `show` defaults to a 1500-token budget,
 never below a workspace's `[output].budget`; `-b/--budget` otherwise defaults to
 600 `o200k_base` tokens for the serialized stdout response, measured on the
 rendered text of the selected format, or to the workspace's `[output].budget`
@@ -64,7 +65,6 @@ trufflepig --workspace evaluation/workspaces/space.toml ws show
 trufflepig --workspace evaluation/workspaces/space.toml search 'airlock'
 trufflepig search 'crayon in:tgstation'
 trufflepig search 'airlock ws:home'
-trufflepig --member tales-from-space hist path:README.md
 trufflepig ws status
 trufflepig ws discover ~/Source/lunatic ~/Source/tales-from-space ~/Source/tgstation
 ```

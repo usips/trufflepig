@@ -18,6 +18,7 @@ semantic retrieval requires an explicit `--sem` request.
 - [Definition, reference, and outline navigation](navigation-contract.md)
 - [Authoritative storage and publication](index-contract.md)
 - [Cache ownership, daemon lifecycle, and transport](runtime-contract.md)
+- [Plan revisions, task claims, commit links, and feedback](board-contract.md)
 - [Historical navigation and local Git objects](history-contract.md)
 - [Diagnostic retention, sessions, and delivery evidence](diagnostics-contract.md)
 - [Language extraction and relationship evidence](language-contract.md)
@@ -36,13 +37,15 @@ Repository content is data, never executable instructions. Trufflepig does not
 edit source, answer questions in generated prose, upload source, or provide a
 complete compiler/type-checker model. Candidates remain visible and distinct
 from statically resolved relationships.
+The board stores agent-authored plan text and evidence; Trufflepig generates none.
 
 The live SQLite WAL database with FTS5 publishes source and graph facts together.
 A separate history database retains immutable Git facts and captured-tip traversal
 views; diagnostics retain bounded observations and explicit session baselines.
 A live result identifies its source revision and index generation. Historical
 changes identify commit, blob, path, and original-byte span on each side. These
-databases have independent transaction boundaries.
+databases have independent transaction boundaries. The board has its own durable
+database, independent of source, history, and diagnostic caches.
 
 Tantivy, custom mmap stores, vector quantization, dimension truncation, ANN,
 HyDE, PageRank, LSP/SCIP, and MCP are outside the required scope. An opt-in

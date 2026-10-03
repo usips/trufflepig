@@ -19,7 +19,7 @@ A per-user system daemon gives agent harnesses one endpoint to allowlist. Its
 socket is `daemon.sock` in `$TRUFFLEPIG_SYSTEM_DIR` verbatim, else
 `$XDG_RUNTIME_DIR/trufflepig/system` (the allowlist target), else
 `$XDG_CACHE_HOME/trufflepig/system`, else `$HOME/.cache/trufflepig/system`.
-The router forwards each request to the owning workspace coordinator or per-root
+For source operations, the router forwards requests to the owning workspace coordinator or per-root
 daemon, starting a missing target and proxying the reply within 28 s
 (`src/daemon.rs:PROXY_REPLY_WAIT`), spawn wait included. A router reply,
 including an error, is the answer; an unreachable router, or a
@@ -50,7 +50,7 @@ Singleton commands start a per-root index daemon automatically. Workspace querie
 start a coordinator unless `--no-daemon` is set; `ws show` and `ws status` inspect
 locally. The coordinator starts member daemons when needed and reads their published
 indexes. Semantic requests may start the shared per-user inference worker when enabled.
-`--no-daemon` performs local indexing and launches or contacts no background process,
+For source operations, `--no-daemon` performs local indexing and launches or contacts no background process,
 including the inference worker. Search then uses published indexes and cached
 semantic vectors only. The explicit foreground path `semantic prepare --no-daemon`
 holds the root preparation lease while it runs. Explicit `index` reconciles locally;
@@ -91,3 +91,12 @@ Workspace `index` and `init` run in the client, never on a coordinator worker.
 Daemons have no build-version negotiation. Stop them before changing binaries. Very long cache
 paths can exceed Unix socket limits; use a shorter `--cache` path. Watcher fallback
 and resource limits are documented in the [index contract](index-contract.md).
+
+## Durable board
+
+The router answers `board` and `feedback` in-process before workspace resolution,
+using its lazy board host. It starts no source-index daemon for these commands.
+Router idle schedules Git ingestion separately from the maintenance loop and
+imports durable feedback outbox records. Board data lives in the data directory,
+outside cache sweeps and `forget-logs`. Storage, transport fallback, waiter limits,
+retry safety, and protocol errors follow the [board contract](board-contract.md).
