@@ -84,7 +84,7 @@ pub struct SpoolServer {
 }
 
 impl SpoolServer {
-    /// Creates the private spool directory and discards leftovers.
+    /// Creates the private spool directory and discards transient leftovers.
     pub fn open(dir: &Path) -> Result<Self> {
         if let Some(parent) = dir.parent() {
             fs::create_dir_all(parent)?;
@@ -93,7 +93,10 @@ impl SpoolServer {
         fs::create_dir_all(dir).context("create daemon spool directory")?;
         fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
         for entry in fs::read_dir(dir)? {
-            let _ = fs::remove_file(entry?.path());
+            let path = entry?.path();
+            if transient_file(&path) {
+                let _ = fs::remove_file(path);
+            }
         }
         let mut server = Self {
             dir: dir.to_owned(),
@@ -208,9 +211,9 @@ fn request_id(path: &Path, extension: &str) -> Option<String> {
     uuid::Uuid::parse_str(stem).ok().map(|id| id.to_string())
 }
 
-/// Removes replies and stray files nobody collected within the orphan age.
+/// Removes transient replies and writes nobody collected within the orphan age.
 fn remove_orphan(path: &Path) {
-    if path.file_name().is_some_and(|name| name == HEARTBEAT) {
+    if !transient_file(path) {
         return;
     }
     let old = fs::metadata(path)
@@ -221,6 +224,24 @@ fn remove_orphan(path: &Path) {
     if old {
         let _ = fs::remove_file(path);
     }
+}
+
+fn transient_file(path: &Path) -> bool {
+    if ["request", "reply", "claimed"]
+        .into_iter()
+        .any(|extension| request_id(path, extension).is_some())
+    {
+        return true;
+    }
+    if path.extension().is_some_and(|extension| extension == "tmp") {
+        return path.file_stem().is_some_and(|stem| {
+            let original = Path::new(stem);
+            ["request", "reply", "claimed"]
+                .into_iter()
+                .any(|extension| request_id(original, extension).is_some())
+        });
+    }
+    false
 }
 
 fn heartbeat_alive(spool: &Path) -> bool {
@@ -237,4 +258,53 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let temporary = PathBuf::from(temporary);
     fs::write(&temporary, bytes)?;
     fs::rename(&temporary, path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+
+    #[test]
+    fn router_restart_and_orphan_sweep_preserve_durable_feedback() {
+        let scratch = Path::new("target/test-feedback-spool");
+        fs::create_dir_all(scratch).unwrap();
+        let dir = tempfile::Builder::new().tempdir_in(scratch).unwrap();
+        let id = uuid::Uuid::new_v4();
+        let durable = ["feedback", "feedback.quarantine", "feedback.pending"];
+        let modified = SystemTime::now() - ORPHAN_AGE - Duration::from_secs(1);
+        for extension in durable {
+            let path = dir.path().join(format!("{id}.{extension}"));
+            fs::write(&path, b"durable report").unwrap();
+            File::open(&path).unwrap().set_modified(modified).unwrap();
+        }
+        let transient = dir.path().join(format!("{id}.reply"));
+        fs::write(&transient, b"reply").unwrap();
+        let mut server = SpoolServer::open(dir.path()).unwrap();
+        assert!(!transient.exists());
+        assert!(server.claim().is_empty());
+        for extension in durable {
+            assert!(dir.path().join(format!("{id}.{extension}")).exists());
+        }
+    }
+
+    #[test]
+    fn orphan_sweep_removes_only_expired_transport_files() {
+        let scratch = Path::new("target/test-feedback-spool");
+        fs::create_dir_all(scratch).unwrap();
+        let dir = tempfile::Builder::new().tempdir_in(scratch).unwrap();
+        let id = uuid::Uuid::new_v4();
+        let old = dir.path().join(format!("{id}.reply.tmp"));
+        let fresh = dir.path().join(format!("{id}.reply"));
+        fs::write(&old, b"old reply").unwrap();
+        fs::write(&fresh, b"fresh reply").unwrap();
+        File::open(&old)
+            .unwrap()
+            .set_modified(SystemTime::now() - ORPHAN_AGE - Duration::from_secs(1))
+            .unwrap();
+        remove_orphan(&old);
+        remove_orphan(&fresh);
+        assert!(!old.exists());
+        assert!(fresh.exists());
+    }
 }
