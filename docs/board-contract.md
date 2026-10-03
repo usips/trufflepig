@@ -79,15 +79,16 @@ immutable revision and a decision entry atomically, and fails `stale_revision` i
 `edit` uses the same base check and marks the revision `direct`; rejection preserves the proposal
 and records its decision.
 
-Task ordinals are allocated atomically per plan. Columns are `todo`, `doing`, `review`, `done`, and
-`blocked`. Claiming moves a task to `doing`, sets its assignee, and records the scope. Carving a
-task and claiming it is one transaction. `--section` links the task to an SSOT heading; it adds no
-second lock.
+Task ordinals are allocated atomically per plan; columns are `todo`, `doing`, `review`, `done`, and
+`blocked`. Claiming sets `doing`, assignee, and scope; carve-and-claim is atomic. `--section` links
+the task to an SSOT heading without another lock.
 
 At most one unended claim exists per task, enforced by a partial unique index. A competing active
-claim fails `claim_conflict` with holder identity, model, effort, claimed time, and last activity. A
-human or steward can reassign through `task P7.3 doing --to HARNESS`, with an event. Moving to any
-other column ends the claim. Post a hand-off note before moving a task back to `todo`.
+claim fails `claim_conflict` with holder identity, model, effort, claimed time, and last activity.
+Claimants may move/release their own task; moving another holder's task requires owner human or
+steward authority. `task P7.3 doing --to HARNESS` always requires that authority, ends the old lease
+as reassigned, and records an event; the assignee must claim its own scope. Moving to another column
+ends the claim. Post a hand-off note before moving a task back to `todo`.
 
 Any claimant write on the plan, its inbox calls, or an ingested matching `Plan-Task` commit
 co-author refreshes `last_active`; a commit qualifies only when `committed_at >= claimed_at`. No
