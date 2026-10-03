@@ -1,8 +1,9 @@
-//! Authenticated board reads, writes, rendering, and router ingestion.
+//! Public assets are empty of board data; every board read and write is authenticated.
 #[cfg(test)]
 mod tests;
 use super::{
-    WebState,
+    PUBLIC_DETAILS, PUBLIC_DOM, PUBLIC_ENTRIES, PUBLIC_FEEDBACK, PUBLIC_READER, PUBLIC_SCRIPT,
+    PUBLIC_SHELL, PUBLIC_STREAM, PUBLIC_STYLE, PUBLIC_VIEWS, WebState,
     event_stream::StreamRequest,
     http_wire::{self, HttpError, HttpMethod, HttpRequest},
     plan_markup,
@@ -24,9 +25,10 @@ pub(super) fn handle(mut stream: TcpStream, accepted_at: Instant, state: &WebSta
             return;
         }
     };
+    let public = request.path() == "/" || public_asset(request.path()).is_some();
     if let Err(error) = state
         .guard
-        .authorize(&request, true, request.method == HttpMethod::Post)
+        .authorize(&request, !public, request.method == HttpMethod::Post)
     {
         send_http_error(&mut stream, error);
         return;
@@ -42,11 +44,28 @@ pub(super) fn handle(mut stream: TcpStream, accepted_at: Instant, state: &WebSta
         );
         return;
     }
-    if let Err(error) = state.store.config(expires) {
-        send_board_error(&mut stream, error);
-        return;
+    if !public {
+        if let Err(error) = state.store.config(expires) {
+            send_board_error(&mut stream, error);
+            return;
+        }
     }
     match (request.method, request.path()) {
+        (HttpMethod::Get, "/") => {
+            let shell = PUBLIC_SHELL.replace("__BOARD_API__", &BOARD_API.to_string());
+            let _ = http_wire::send_response(
+                &mut stream,
+                200,
+                "text/html; charset=utf-8",
+                shell.as_bytes(),
+                false,
+            );
+        }
+        (HttpMethod::Get, path) if public_asset(path).is_some() => {
+            let (content_type, body) = public_asset(path).unwrap();
+            let _ =
+                http_wire::send_response(&mut stream, 200, content_type, body.as_bytes(), false);
+        }
         (HttpMethod::Get, "/api/v1/events") => {
             let prepared = stream_request(&request)
                 .and_then(|request| state.streams.reserve().map(|permit| (request, permit)));
@@ -83,6 +102,22 @@ pub(super) fn handle(mut stream: TcpStream, accepted_at: Instant, state: &WebSta
         }
         _ => send_error(&mut stream, 404, "invalid_reference", "route not found"),
     }
+}
+
+fn public_asset(path: &str) -> Option<(&str, &str)> {
+    let script = match path {
+        "/app.js" => PUBLIC_SCRIPT,
+        "/board_dom.js" => PUBLIC_DOM,
+        "/board_views.js" => PUBLIC_VIEWS,
+        "/board_details.js" => PUBLIC_DETAILS,
+        "/board_stream.js" => PUBLIC_STREAM,
+        "/board_feedback.js" => PUBLIC_FEEDBACK,
+        "/board_reader.js" => PUBLIC_READER,
+        "/board_entries.js" => PUBLIC_ENTRIES,
+        "/app.css" => return Some(("text/css; charset=utf-8", PUBLIC_STYLE)),
+        _ => return None,
+    };
+    Some(("text/javascript; charset=utf-8", script))
 }
 
 fn render_plan(

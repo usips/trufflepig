@@ -33,6 +33,16 @@ const WEB_POOL: PoolSize = PoolSize {
     workers: 8,
     queue: 64,
 };
+const PUBLIC_SHELL: &str = include_str!("board_web/assets/index.html");
+const PUBLIC_SCRIPT: &str = include_str!("board_web/assets/app.js");
+const PUBLIC_STYLE: &str = include_str!("board_web/assets/app.css");
+const PUBLIC_DOM: &str = include_str!("board_web/assets/board_dom.js");
+const PUBLIC_VIEWS: &str = include_str!("board_web/assets/board_views.js");
+const PUBLIC_DETAILS: &str = include_str!("board_web/assets/board_details.js");
+const PUBLIC_STREAM: &str = include_str!("board_web/assets/board_stream.js");
+const PUBLIC_FEEDBACK: &str = include_str!("board_web/assets/board_feedback.js");
+const PUBLIC_READER: &str = include_str!("board_web/assets/board_reader.js");
+const PUBLIC_ENTRIES: &str = include_str!("board_web/assets/board_entries.js");
 
 pub(crate) struct WebStore {
     config: Mutex<BoardConfigCache>,

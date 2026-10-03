@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
+  <meta name="board-api" content="__BOARD_API__">
+  <title>Trufflepig Board</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" type="module"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to board</a>
+  <header class="app-header">
+    <a class="brand" href="/#/" data-route="overview"><span class="brand-mark" aria-hidden="true">T</span><span>Trufflepig <strong>Board</strong></span></a>
+    <nav aria-label="Board navigation">
+      <a href="/#/" data-route="overview">Board</a>
+      <a href="/#/attention" data-route="attention">Needs you <span id="attention-count" class="nav-count" hidden></span></a>
+      <a href="/#/feedback" data-route="feedback">Feedback</a>
+      <a href="/#/search" data-route="search">Search</a>
+    </nav>
+    <a class="button primary compact" href="/#/new" data-route="new">New plan</a>
+  </header>
+  <div class="status-bar"><span id="connection" role="status">Connecting…</span><span id="freshness"></span><button id="refresh" class="text-button" type="button">Refresh</button></div>
+  <div id="notice" role="status" aria-live="polite" hidden></div>
+  <main id="main" tabindex="-1" aria-busy="true"><div class="loading">Loading board…</div></main>
+  <footer class="app-footer">Local boardroom · Plans, evidence, and decisions</footer>
+  <noscript><p class="message">JavaScript is required to open this board. Use <code>trufflepig board</code> from your terminal.</p></noscript>
+</body>
+</html>
