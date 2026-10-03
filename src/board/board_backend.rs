@@ -74,7 +74,10 @@ impl BoardHost {
             .inner
             .config
             .lock()
-            .map_err(|_| anyhow::anyhow!("board_unavailable: config mutex poisoned"))?;
+            .unwrap_or_else(|poisoned| {
+                self.inner.config.clear_poison();
+                poisoned.into_inner()
+            });
         if config.is_none() {
             *config = Some(BoardConfig::load()?);
         }
@@ -278,7 +281,8 @@ impl BoardHost {
         };
         // Housekeeping after a committed mutation cannot turn its receipt into
         // a retryable failure. Polling waiters also see writes without notification.
-        if let (Some(seq), Ok(mut sequence)) = (seq, self.inner.sequence.lock()) {
+        if let Some(seq) = seq {
+            let mut sequence = recover_lock(&self.inner.sequence);
             if seq > *sequence {
                 *sequence = seq;
                 self.inner.changed.notify_all();
@@ -302,11 +306,7 @@ impl BoardHost {
             .saturating_sub(Duration::from_secs(2))
             .min(MAX_INBOX_WAIT);
         let expires = Instant::now() + timeout;
-        let mut observed = self
-            .inner
-            .sequence
-            .lock()
-            .map_err(|_| anyhow::anyhow!("board_unavailable: wake mutex poisoned"))?;
+        let mut observed = recover_lock(&self.inner.sequence);
         loop {
             let known = match &reply.result {
                 BoardResult::Inbox(inbox) => inbox.latest,
@@ -319,11 +319,7 @@ impl BoardHost {
                     set_wait(&mut reply, InboxWait::Ready);
                     return Ok(reply);
                 }
-                observed = self
-                    .inner
-                    .sequence
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("board_unavailable: wake mutex poisoned"))?;
+                observed = recover_lock(&self.inner.sequence);
                 continue;
             }
             let remaining = expires.saturating_duration_since(Instant::now());
@@ -335,7 +331,12 @@ impl BoardHost {
                 .inner
                 .changed
                 .wait_timeout(observed, remaining.min(Duration::from_secs(1)))
-                .map_err(|_| anyhow::anyhow!("board_unavailable: wake mutex poisoned"))?;
+                .unwrap_or_else(|poisoned| {
+                    let (mut guard, timeout) = poisoned.into_inner();
+                    *guard = EventSeq::default();
+                    self.inner.sequence.clear_poison();
+                    (guard, timeout)
+                });
             drop(guard);
             // Poll once a second even without a notification to see direct writers.
             reply = self.handle_by(request, deadline)?;
@@ -343,11 +344,7 @@ impl BoardHost {
                 set_wait(&mut reply, InboxWait::Ready);
                 return Ok(reply);
             }
-            observed = self
-                .inner
-                .sequence
-                .lock()
-                .map_err(|_| anyhow::anyhow!("board_unavailable: wake mutex poisoned"))?;
+            observed = recover_lock(&self.inner.sequence);
         }
     }
 
@@ -424,9 +421,7 @@ impl BoardHost {
         if !config.db_path.is_file() && !pending {
             return;
         }
-        let Ok(mut clock) = self.inner.maintenance.lock() else {
-            return;
-        };
+        let mut clock = recover_lock(&self.inner.maintenance);
         let ingest_due = config.db_path.is_file()
             && clock
                 .last_started
@@ -519,16 +514,30 @@ fn check_deadline(deadline: QueryDeadline) -> Result<()> {
     Ok(())
 }
 
-fn lock_before<'a, T>(
+fn recover_lock<T: Default>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poisoned| {
+        let mut guard = poisoned.into_inner();
+        *guard = T::default();
+        mutex.clear_poison();
+        guard
+    })
+}
+
+fn lock_before<'a, T: Default>(
     mutex: &'a Mutex<T>,
     deadline: QueryDeadline,
-    label: &str,
+    _label: &str,
 ) -> Result<MutexGuard<'a, T>> {
     loop {
         check_deadline(deadline)?;
         match mutex.try_lock() {
             Ok(guard) => return Ok(guard),
-            Err(TryLockError::Poisoned(_)) => bail!("board_unavailable: {label} mutex poisoned"),
+            Err(TryLockError::Poisoned(poisoned)) => {
+                let mut guard = poisoned.into_inner();
+                *guard = T::default();
+                mutex.clear_poison();
+                return Ok(guard);
+            }
             Err(TryLockError::WouldBlock) => {
                 std::thread::sleep(deadline.cap(Duration::from_millis(5)))
             }
@@ -539,6 +548,71 @@ fn lock_before<'a, T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn panicked_board_write_rolls_back_then_reopens_for_durable_writes() {
+        let scratch = std::env::var_os("TMPDIR").map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from("/home/josh/.cache/codex-tmp"));
+        std::fs::create_dir_all(&scratch).unwrap();
+        let directory = tempfile::Builder::new().tempdir_in(scratch).unwrap();
+        let database = directory.path().join("board.sqlite3");
+        let host = BoardHost::with_config(BoardConfig::for_database(&database));
+        let actor = host.config().unwrap().actor(None, Some("panic-test")).unwrap();
+        let create = |title: &str| BoardRequest::new(actor.clone(), BoardOp::New {
+            title: super::super::board_vocabulary::PlanTitle::new(title).unwrap(),
+            body: super::super::board_vocabulary::PlanText::new("").unwrap(),
+            steward: None,
+        });
+        host.handle_by(&create("Before panic"), QueryDeadline::start()).unwrap();
+        host.inner.backend.lock().unwrap().as_mut().unwrap().inject_panic_after_write();
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            host.handle_by(&create("Rolled back"), QueryDeadline::start()).unwrap();
+        }));
+        assert!(panic.is_err());
+        assert!(host.inner.backend.is_poisoned());
+        host.handle_by(&create("After recovery"), QueryDeadline::start()).unwrap();
+        assert!(!host.inner.backend.is_poisoned());
+        let durable = rusqlite::Connection::open(database).unwrap();
+        let titles = durable.prepare("SELECT title FROM plans ORDER BY id").unwrap()
+            .query_map([], |row| row.get::<_, String>(0)).unwrap()
+            .collect::<std::result::Result<Vec<_>, _>>().unwrap();
+        assert_eq!(titles, ["Before panic", "After recovery"]);
+        assert_eq!(durable.query_row("SELECT COUNT(*) FROM events", [], |row| row.get::<_, i64>(0)).unwrap(), 2);
+    }
+
+
+    fn poison<T>(mutex: &Mutex<T>) {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = mutex.lock().unwrap();
+            panic!("injected board worker panic");
+        }));
+        assert!(mutex.is_poisoned());
+    }
+
+    #[test]
+    fn poisoned_writer_reopens_durable_board_and_recovers_other_locks() {
+        let directory = tempfile::tempdir().unwrap();
+        let host = BoardHost::with_config(BoardConfig::for_database(
+            directory.path().join("board.sqlite3"),
+        ));
+        let context = RequestContext::new(None, None);
+        let create = crate::cli::parse(&[
+            "board".into(), "new".into(), "Survives panic".into(),
+        ]).unwrap();
+        host.run(&create, &context, QueryDeadline::start()).unwrap();
+        poison(&host.inner.backend);
+        poison(&host.inner.config);
+        poison(&host.inner.sequence);
+        poison(&host.inner.ingestor);
+        let show = crate::cli::parse(&["board".into(), "show".into()]).unwrap();
+        let reply = host.run(&show, &context, QueryDeadline::start()).unwrap();
+        assert!(reply.contains("Survives panic"));
+        lock_before(&host.inner.ingestor, QueryDeadline::start(), "ingest").unwrap();
+        assert!(!host.inner.backend.is_poisoned());
+        assert!(!host.inner.config.is_poisoned());
+        assert!(!host.inner.sequence.is_poisoned());
+        assert!(!host.inner.ingestor.is_poisoned());
+    }
 
     #[test]
     fn expired_board_mutation_never_creates_the_database() {

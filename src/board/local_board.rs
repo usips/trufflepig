@@ -26,6 +26,8 @@ pub struct LocalBoard {
     conn: Connection,
     path: PathBuf,
     claim_ttl_secs: i64,
+    #[cfg(test)]
+    panic_after_write: bool,
 }
 
 impl LocalBoard {
@@ -61,7 +63,14 @@ impl LocalBoard {
             conn,
             path,
             claim_ttl_secs,
+            #[cfg(test)]
+            panic_after_write: false,
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn inject_panic_after_write(&mut self) {
+        self.panic_after_write = true;
     }
 
     pub fn path(&self) -> &Path {
@@ -257,6 +266,10 @@ impl LocalBoard {
             } => entry_writes::record_scan(&tx, repo_key, host, common_dir, error.as_deref())?,
             BoardOp::LinkCommits { commits } => entry_writes::link_commits(&tx, &ctx, commits)?,
         };
+        #[cfg(test)]
+        if std::mem::take(&mut self.panic_after_write) {
+            panic!("injected panic after uncommitted board mutation");
+        }
         if dedupable {
             let plan = match &reply.result {
                 BoardResult::Change(change) => change.plan,
