@@ -1,12 +1,15 @@
 //! Complete-response board rendering, with prefix-only inbox acknowledgement.
 
+mod review_render;
 #[cfg(test)]
 mod tests;
+
+pub use review_render::render_review;
 
 use super::board_ids::{EventSeq, PlanId};
 use super::board_protocol::*;
 use super::board_vocabulary::{EntryKind, ProposalState};
-use super::review_packet::{ReviewPacket, SsotDiff, assemble_review, build_ssot_diff};
+use super::review_packet::{SsotDiff, assemble_review, build_ssot_diff};
 use crate::output::{OutputBudget, OutputFormat};
 use anyhow::{Result, bail};
 use serde::Serialize;
@@ -47,6 +50,7 @@ pub fn render_reply(reply: &BoardReply, budget: &OutputBudget) -> Result<Rendere
     }
     match &reply.result {
         BoardResult::Inbox(inbox) => render_inbox(reply, inbox, budget),
+        BoardResult::Entry(view) => render_entry(reply, view, budget),
         BoardResult::Plan(view) => render_plan(reply, view, budget),
         BoardResult::Plans(plans) => render_list(
             reply,
@@ -80,14 +84,62 @@ pub fn render_reply(reply: &BoardReply, budget: &OutputBudget) -> Result<Rendere
             &reply.backend,
         ),
         BoardResult::Diff(diff) => render_diff(reply, diff, budget),
-        _ => Ok(RenderedBoard {
-            text: require_fits(
-                render_complete(reply, BoardOmitted::default(), None, None, budget)?,
-                budget,
-            )?,
-            rendered_seq: None,
-        }),
+        _ => {
+            let text = render_complete(reply, BoardOmitted::default(), None, None, budget)?;
+            let text = if budget.fits(&text) {
+                text
+            } else if let Some(receipt) = committed_receipt(&reply.result) {
+                let hint = format!(
+                    "mutation committed; do not repeat; inspect board show{} -b 1500",
+                    reply_plan(reply).map_or_else(String::new, |plan| format!(" {plan}"))
+                );
+                if budget.format == OutputFormat::Json {
+                    let result = if matches!(reply.result, BoardResult::Change(_)) {
+                        Some(&reply.result)
+                    } else {
+                        None
+                    };
+                    budget.encode(&serde_json::json!({ "api": BOARD_API, "committed": true,
+                        "result": result, "receipt": receipt, "warnings_omitted": reply.warnings.len(), "hint": hint }))?
+                } else {
+                    format!("committed: {receipt}\nhint: {hint}\n")
+                }
+            } else {
+                require_fits(text, budget)?
+            };
+            Ok(RenderedBoard {
+                text,
+                rendered_seq: None,
+            })
+        }
     }
+}
+
+fn committed_receipt(result: &BoardResult) -> Option<String> {
+    Some(match result {
+        BoardResult::Change(change) => format!(
+            "{} seq={} plan={} revision={} task={} deduplicated={}",
+            change.entry,
+            change.seq,
+            change
+                .plan
+                .map_or_else(|| "-".into(), |plan| plan.to_string()),
+            change
+                .revision
+                .map_or_else(|| "-".into(), |revision| revision.to_string()),
+            change
+                .task
+                .map_or_else(|| "-".into(), |task| task.to_string()),
+            change.deduplicated
+        ),
+        BoardResult::Session(_) => "session registered".into(),
+        BoardResult::Cursor(cursor) => format!("cursor {cursor}"),
+        BoardResult::Registered(repository) => format!("registered {}", repository.repo_key),
+        BoardResult::CommitsLinked(result) => format!("ingest inserted={}", result.inserted),
+        BoardResult::Queued { .. } => "queued for import".into(),
+        BoardResult::ScanRecorded => "scan recorded".into(),
+        _ => return None,
+    })
 }
 
 fn render_list(
@@ -185,6 +237,74 @@ fn render_inbox(
         } else {
             None
         },
+    })
+}
+
+fn render_entry(
+    reply: &BoardReply,
+    view: &EntryView,
+    budget: &OutputBudget,
+) -> Result<RenderedBoard> {
+    let body_lines = view
+        .proposal
+        .as_ref()
+        .map(|proposal| {
+            proposal
+                .body
+                .as_str()
+                .split_inclusive('\n')
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let render = |body_count: usize, reply_count: usize, backref_count: usize| -> Result<String> {
+        let mut visible = view.clone();
+        visible.replies.truncate(reply_count);
+        visible.backrefs.truncate(backref_count);
+        visible.replies_omitted = view
+            .replies_omitted
+            .saturating_add(view.replies.len() - reply_count);
+        visible.backrefs_omitted = view
+            .backrefs_omitted
+            .saturating_add(view.backrefs.len() - backref_count);
+        if let Some(proposal) = &mut visible.proposal {
+            proposal.body =
+                super::board_vocabulary::PlanText::new(body_lines[..body_count].concat())?;
+        }
+        let mut candidate = reply.clone();
+        candidate.result = BoardResult::Entry(visible);
+        if body_count < body_lines.len() {
+            candidate.warnings.push(format!(
+                "proposal body omitted; inspect board show {} -b {}",
+                view.entry.id,
+                budget.limit.saturating_mul(2).max(32768)
+            ));
+        }
+        render_complete(
+            &candidate,
+            BoardOmitted {
+                body_lines: body_lines.len() - body_count,
+                entries: view.replies.len() - reply_count + view.backrefs.len() - backref_count,
+                ..BoardOmitted::default()
+            },
+            None,
+            None,
+            budget,
+        )
+    };
+    let body_count = if budget.fits(&render(body_lines.len(), 0, 0)?) {
+        body_lines.len()
+    } else {
+        fit_items(body_lines.len(), budget, |count| render(count, 0, 0))?
+    };
+    let reply_count = fit_items(view.replies.len(), budget, |count| {
+        render(body_count, count, 0)
+    })?;
+    let backref_count = fit_items(view.backrefs.len(), budget, |count| {
+        render(body_count, reply_count, count)
+    })?;
+    Ok(RenderedBoard {
+        text: require_fits(render(body_count, reply_count, backref_count)?, budget)?,
+        rendered_seq: None,
     })
 }
 
@@ -295,6 +415,7 @@ fn render_complete(
 fn reply_plan(reply: &BoardReply) -> Option<PlanId> {
     match &reply.result {
         BoardResult::Plan(view) => Some(view.plan.id),
+        BoardResult::Entry(view) => view.entry.plan,
         BoardResult::Revision(revision) => Some(revision.id.plan),
         BoardResult::Diff(diff) => Some(diff.before.id.plan),
         BoardResult::Change(change) => change.plan,
@@ -318,10 +439,15 @@ fn lines_result(result: &BoardResult) -> String {
                 .len();
             writeln!(
                 text,
-                "inbox {} {first}..{last} ({} events, {plans} plans) wait={:?}",
+                "inbox {} {first}..{last} ({} events, {plans} plans) wait={}",
                 cell(&inbox.actor.identity()),
                 inbox.events.len(),
-                inbox.wait
+                match inbox.wait {
+                    InboxWait::None => "none",
+                    InboxWait::Ready => "ready",
+                    InboxWait::Timeout => "timeout",
+                    InboxWait::Busy => "busy",
+                }
             )
             .unwrap();
             for event in &inbox.events {
@@ -350,6 +476,38 @@ fn lines_result(result: &BoardResult) -> String {
             for entry in &inbox.open {
                 entry_line(&mut text, entry);
             }
+        }
+        BoardResult::Entry(view) => {
+            entry_line(&mut text, &view.entry);
+            writeln!(
+                text,
+                "permissions: decide={} supersede={}",
+                view.can_decide, view.can_supersede
+            )
+            .unwrap();
+            if let Some(proposal) = &view.proposal {
+                writeln!(
+                    text,
+                    "proposal {} base={}@{} state={}",
+                    proposal.entry, proposal.plan, proposal.base_revision, proposal.state
+                )
+                .unwrap();
+                for line in proposal.body.as_str().split_inclusive('\n') {
+                    writeln!(text, "| {}", cell(line.trim_end_matches('\n'))).unwrap();
+                }
+            }
+            for entry in &view.replies {
+                entry_line(&mut text, entry);
+            }
+            for entry in &view.backrefs {
+                entry_line(&mut text, entry);
+            }
+            writeln!(
+                text,
+                "omitted: replies={} backrefs={}",
+                view.replies_omitted, view.backrefs_omitted
+            )
+            .unwrap();
         }
         BoardResult::Plan(view) => plan_lines(&mut text, view),
         BoardResult::Plans(plans) => {
@@ -572,170 +730,6 @@ fn footer(text: &mut String, backend: &str, plan: Option<PlanId>) {
     if let Some(plan) = plan {
         writeln!(text, "commit trailer: Plan: {plan}").unwrap();
     }
-}
-
-pub fn render_review(
-    packet: &ReviewPacket,
-    budget: &OutputBudget,
-    backend: &str,
-) -> Result<RenderedBoard> {
-    let render = |packet: &ReviewPacket| review_text(packet, budget, backend);
-    let mut visible = packet.clone();
-    let full = render(&visible)?;
-    if budget.fits(&full) {
-        return Ok(RenderedBoard {
-            text: full,
-            rendered_seq: None,
-        });
-    }
-    let total = visible.entries.len();
-    let kept = fit_items(total, budget, |kept| {
-        let mut candidate = visible.clone();
-        candidate.entries = visible.entries[total - kept..].to_vec();
-        candidate.omitted.entries += total - kept;
-        render(&candidate)
-    })?;
-    visible.entries.drain(..total - kept);
-    visible.omitted.entries += total - kept;
-    let text = render(&visible)?;
-    if budget.fits(&text) {
-        return Ok(RenderedBoard {
-            text,
-            rendered_seq: None,
-        });
-    }
-    visible.trim_diff_context();
-    let text = render(&visible)?;
-    if budget.fits(&text) {
-        return Ok(RenderedBoard {
-            text,
-            rendered_seq: None,
-        });
-    }
-    visible.trim_diff_body();
-    Ok(RenderedBoard {
-        text: require_fits(render(&visible)?, budget)?,
-        rendered_seq: None,
-    })
-}
-
-fn review_text(packet: &ReviewPacket, budget: &OutputBudget, backend: &str) -> Result<String> {
-    if budget.format == OutputFormat::Json {
-        return budget.encode(&serde_json::json!({
-            "api": BOARD_API, "backend": backend, "result": {"result": "review", "data": packet},
-            "commit_trailer": format!("Plan: {}", packet.plan.id),
-        }));
-    }
-    let mut text = format!(
-        "review {}..{} agent={}\n--- SSOT diff ---\n",
-        packet.base,
-        packet.head,
-        packet.agent.as_ref().map_or("all", |agent| agent.as_str())
-    );
-    diff_lines(&mut text, &packet.ssot_diff);
-    text.push_str("--- entries ---\n");
-    for entry in &packet.entries {
-        entry_line(&mut text, entry);
-    }
-    text.push_str("--- tasks ---\n");
-    for task in &packet.tasks {
-        writeln!(
-            text,
-            "{}\t{}\t{}{}",
-            task.id,
-            task.column,
-            cell(task.title.as_str()),
-            recipient(&task.assignee)
-        )?;
-    }
-    text.push_str("--- claims during window ---\n");
-    for claim in &packet.claims {
-        claim_line(&mut text, claim);
-    }
-    for (title, commits) in [("linked", &packet.linked), ("unlinked", &packet.unlinked)] {
-        writeln!(text, "--- {title} commits ---")?;
-        for commit in commits {
-            writeln!(
-                text,
-                "{}\t{}\tfiles={} +{} -{}",
-                commit.commit.oid,
-                cell(&commit.commit.subject),
-                commit.commit.files,
-                commit.commit.insertions,
-                commit.commit.deletions
-            )?;
-            writeln!(text, "  author: {}", cell(&commit.commit.author))?;
-            if commit.commit.coauthors.is_empty() {
-                text.push_str("  attribution: human\n");
-            } else {
-                for coauthor in &commit.commit.coauthors {
-                    writeln!(
-                        text,
-                        "  coauthor: {} ({}) <{}>",
-                        cell(coauthor.harness.as_str()),
-                        cell(&coauthor.model),
-                        cell(&coauthor.email)
-                    )?;
-                }
-            }
-            for link in &commit.commit.plans {
-                writeln!(
-                    text,
-                    "  Plan: {}{}",
-                    link.plan_id,
-                    link.task_ordinal
-                        .map_or_else(String::new, |ordinal| format!(
-                            " Plan-Task: {}.{ordinal}",
-                            link.plan_id
-                        ))
-                )?;
-            }
-            if let Some(drill) = &commit.drill {
-                writeln!(text, "drill: {}", cell(drill))?;
-            }
-        }
-    }
-    text.push_str("--- crossed commits ---\n");
-    for crossed in &packet.crossed {
-        writeln!(
-            text,
-            "{}\t{} claimed by {}\t{}\t{}",
-            crossed.oid,
-            crossed.task,
-            cell(&crossed.claimant.identity()),
-            crossed.claim_entry,
-            cell(crossed.scope.as_str())
-        )?;
-    }
-    text.push_str("--- open proposals ---\n");
-    for proposal in &packet.open_proposals {
-        writeln!(
-            text,
-            "{} base={}@{}",
-            proposal.entry, proposal.plan, proposal.base_revision
-        )?;
-        for line in proposal.body.as_str().split_inclusive('\n') {
-            writeln!(text, "| {}", cell(line.trim_end_matches('\n')))?;
-        }
-    }
-    text.push_str("--- open questions ---\n");
-    for entry in &packet.open_questions {
-        entry_line(&mut text, entry);
-    }
-    text.push_str("--- open feedback ---\n");
-    for feedback in &packet.open_feedback {
-        entry_line(&mut text, &feedback.entry);
-    }
-    for error in &packet.scan_errors {
-        writeln!(text, "scan incomplete: {}", cell(error))?;
-    }
-    writeln!(
-        text,
-        "omitted: entries={} diff_context_lines={} diff_body_lines={}",
-        packet.omitted.entries, packet.omitted.diff_context_lines, packet.omitted.diff_body_lines
-    )?;
-    footer(&mut text, backend, Some(packet.plan.id));
-    Ok(text)
 }
 
 fn diff_lines(text: &mut String, diff: &SsotDiff) {

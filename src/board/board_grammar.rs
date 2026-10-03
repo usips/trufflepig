@@ -278,16 +278,15 @@ fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Result<BoardC
         "inbox" => return parse_inbox(options, 2),
         "show" => {
             check_flags(options, &[])?;
-            fixed_words(options, 2, 3, "board show [P7|P7@12|P7@10..14]")?;
+            fixed_words(options, 2, 3, "board show [P7|P7.3|E80|P7@12|P7@10..14]")?;
             let target = words
                 .get(2)
                 .map(|value| value.parse::<BoardRef>())
                 .transpose()?;
-            if matches!(
-                target,
-                Some(BoardRef::Task(_) | BoardRef::Entry(_) | BoardRef::Commit(_))
-            ) {
-                bail!("invalid_reference: show requires a plan, revision, or revision span");
+            if matches!(target, Some(BoardRef::Commit(_))) {
+                bail!(
+                    "invalid_reference: show requires a plan, task, entry, revision, or revision span"
+                );
             }
             BoardOp::Show { target }
         }

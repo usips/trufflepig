@@ -41,6 +41,7 @@ pub(super) fn show(
             }
             BoardResult::Plan(plan_view(tx, ctx, task.plan)?)
         }
+        Some(BoardRef::Entry(id)) => BoardResult::Entry(entry_view(tx, ctx, *id)?),
         Some(BoardRef::Revision(id)) => BoardResult::Revision(revision(tx, *id)?),
         Some(BoardRef::Span(span)) => {
             let plan = plan(tx, span.plan)?;
@@ -62,7 +63,7 @@ pub(super) fn show(
         Some(_) => {
             return Err(invalid(
                 "invalid_reference",
-                "show requires a plan, task, revision, or revision span",
+                "show requires a plan, task, entry, revision, or revision span",
             ));
         }
     };
@@ -317,6 +318,115 @@ pub(super) fn entries(
     ids.into_iter()
         .map(|id| entry(conn, EntryId::new(id).map_err(BoardError::from)?))
         .collect()
+}
+
+pub(super) fn entry_view(
+    conn: &Connection,
+    ctx: &WriteContext,
+    id: EntryId,
+) -> Result<EntryView, BoardError> {
+    let entry = entry(conn, id)?;
+    let reference = id.to_string();
+    let read_backrefs = |answers_only: bool| -> Result<(Vec<EntryRecord>, usize), BoardError> {
+        let kind = if answers_only {
+            " AND e.kind='answer'"
+        } else {
+            ""
+        };
+        let predicate =
+            format!("entry_refs r JOIN entries e ON e.id=r.entry_id WHERE r.target=?1{kind}");
+        let total: i64 = conn
+            .query_row(
+                &format!("SELECT count(*) FROM {predicate}"),
+                [&reference],
+                |row| row.get(0),
+            )
+            .map_err(sql_error)?;
+        let records = entries(
+            conn,
+            &format!("SELECT e.id FROM {predicate} ORDER BY e.seq,e.id LIMIT 20"),
+            [&reference],
+        )?;
+        let omitted = usize::try_from(total)
+            .map_err(|_| invalid("board_unavailable", "invalid backreference count"))?
+            .saturating_sub(records.len());
+        Ok((records, omitted))
+    };
+    let (replies, replies_omitted) = read_backrefs(true)?;
+    let (backrefs, backrefs_omitted) = read_backrefs(false)?;
+    let mut statement = conn.prepare("SELECT p.plan_id,p.base_revision,t.body,p.state,p.decision_entry,p.result_revision FROM proposals p JOIN texts t ON t.hash=p.text_hash WHERE p.entry_id=?1").map_err(sql_error)?;
+    let mut rows = statement.query([sql_number(id.get())]).map_err(sql_error)?;
+    let proposal = if let Some(row) = rows.next().map_err(sql_error)? {
+        Some(ProposalRecord {
+            entry: id,
+            plan: PlanId::new(row_number(row, 0).map_err(sql_error)?).map_err(BoardError::from)?,
+            base_revision: row_number(row, 1).map_err(sql_error)?,
+            body: PlanText::new(row.get::<_, String>(2).map_err(sql_error)?)
+                .map_err(BoardError::from)?,
+            state: row
+                .get::<_, String>(3)
+                .map_err(sql_error)?
+                .parse()
+                .map_err(BoardError::from)?,
+            decision_entry: row
+                .get::<_, Option<i64>>(4)
+                .map_err(sql_error)?
+                .map(sqlite_u64)
+                .transpose()?
+                .map(EntryId::new)
+                .transpose()
+                .map_err(BoardError::from)?,
+            result_revision: row
+                .get::<_, Option<i64>>(5)
+                .map_err(sql_error)?
+                .map(sqlite_u64)
+                .transpose()?,
+        })
+    } else {
+        None
+    };
+    let authority = entry
+        .plan
+        .map(|plan| super::can_accept(conn, &ctx.actor, plan))
+        .transpose()?
+        .unwrap_or(false);
+    let can_decide = authority
+        && proposal
+            .as_ref()
+            .is_some_and(|proposal| proposal.state == ProposalState::Open);
+    let can_supersede = authority || entry.actor == ctx.actor;
+    let can_answer = conn
+        .query_row(
+            &format!("SELECT EXISTS(SELECT 1 FROM entries e WHERE e.id=?1 AND ({OPEN_QUESTION}))"),
+            [sql_number(id.get())],
+            |row| row.get(0),
+        )
+        .map_err(sql_error)?;
+    let can_triage = matches!(
+        entry.state,
+        Some(EntryState::Feedback(
+            crate::board::board_vocabulary::FeedbackState::Open
+        ))
+    );
+    let can_close = matches!(entry.state, Some(EntryState::Feedback(state)) if !state.is_closed());
+    let plan_head_revision = entry
+        .plan
+        .map(|id| plan(conn, id).map(|record| record.head_revision))
+        .transpose()?;
+    Ok(EntryView {
+        entry,
+        replies,
+        replies_omitted,
+        backrefs,
+        backrefs_omitted,
+        proposal,
+        can_decide,
+        can_supersede,
+        can_answer,
+        can_triage,
+        can_close,
+        plan_head_revision,
+    })
 }
 
 pub(super) fn open_entries(

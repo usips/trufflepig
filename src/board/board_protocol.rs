@@ -325,8 +325,10 @@ impl BoardOp {
                 }
             }
             Self::Show {
-                target: Some(BoardRef::Entry(_) | BoardRef::Commit(_)),
-            } => bail!("invalid_reference: show requires a plan, revision, or revision span"),
+                target: Some(BoardRef::Commit(_)),
+            } => bail!(
+                "invalid_reference: show requires a plan, task, entry, revision, or revision span"
+            ),
             Self::TaskCreate { section, .. } | Self::CarveClaim { section, .. } => {
                 if let Some(section) = section {
                     validate_claim(section, "section")?;
@@ -455,6 +457,7 @@ pub enum BoardResult {
     Cursor(EventSeq),
     Plans(Vec<PlanRecord>),
     Plan(PlanView),
+    Entry(EntryView),
     Revision(RevisionRecord),
     Diff(RevisionDiff),
     Change(BoardChange),
@@ -529,6 +532,22 @@ pub struct EntryRecord {
     pub refs: Vec<BoardRef>,
     pub seq: EventSeq,
     pub created_at: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EntryView {
+    pub entry: EntryRecord,
+    pub replies: Vec<EntryRecord>,
+    pub replies_omitted: usize,
+    pub backrefs: Vec<EntryRecord>,
+    pub backrefs_omitted: usize,
+    pub proposal: Option<ProposalRecord>,
+    pub can_decide: bool,
+    pub can_supersede: bool,
+    pub can_answer: bool,
+    pub can_triage: bool,
+    pub can_close: bool,
+    pub plan_head_revision: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
