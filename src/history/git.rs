@@ -719,12 +719,7 @@ mod tests {
     #[test]
     fn bounded_board_git_uses_243_compatible_no_fetch_policy() {
         use std::os::unix::fs::PermissionsExt;
-        let scratch = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/board-git-tests");
-        std::fs::create_dir_all(&scratch).unwrap();
-        let directory = tempfile::Builder::new()
-            .prefix("git-243-")
-            .tempdir_in(scratch)
-            .unwrap();
+        let directory = crate::board::board_test_support::scratch("git-243-");
         let program = directory.path().join("git243");
         std::fs::write(&program, "#!/bin/sh\nprotocol=no\nfor arg do\n case \"$arg\" in\n --no-lazy-fetch) exit 129;;\n protocol.allow=never) protocol=yes;;\n esac\ndone\n[ \"$protocol\" = yes ] || exit 2\n[ \"$GIT_NO_LAZY_FETCH\" = 1 ] || exit 3\n[ \"${GIT_ALLOW_PROTOCOL+x}\" = x ] && [ -z \"$GIT_ALLOW_PROTOCOL\" ] || exit 4\nprintf 'compatible\\n'\n").unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();

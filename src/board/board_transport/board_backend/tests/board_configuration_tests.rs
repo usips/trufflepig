@@ -112,8 +112,9 @@ fn idle_maintenance_schedules_a_blocked_loader_without_waiting() {
 
 #[test]
 fn idle_maintenance_does_not_wait_for_configuration_lock() {
+    let directory = crate::board::board_test_support::scratch("board-runtime-");
     let host = BoardHost::with_config(BoardConfig::for_database(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/absent-board.sqlite3"),
+        directory.path().join("absent-board.sqlite3"),
     ));
     let held = host.inner.config.lock().unwrap();
     let started = Instant::now();

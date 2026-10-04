@@ -29,12 +29,7 @@ struct EdgeFixture {
 
 impl EdgeFixture {
     fn new() -> Self {
-        let parent = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/test-board-edge");
-        std::fs::create_dir_all(&parent).unwrap();
-        let scratch = tempfile::Builder::new()
-            .prefix("acceptance-")
-            .tempdir_in(parent)
-            .unwrap();
+        let scratch = crate::board::board_test_support::scratch("acceptance-");
         let root = scratch.path().join("repository");
         std::fs::create_dir(&root).unwrap();
         // An unborn fixture prevents Git discovery from reaching the real checkout.
