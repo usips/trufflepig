@@ -78,6 +78,68 @@ fn spawn(streams: &EventStreams, after: u64) -> TcpStream {
 }
 
 #[test]
+fn live_stream_response_carries_security_headers() {
+    let streams = streams(Arc::new(|_, _, _| {
+        Ok(ReplayBatch {
+            latest: EventSeq::new(0),
+            events: vec![],
+        })
+    }));
+    let mut client = spawn(&streams, 0);
+    let headers = read_until(&mut client, "\r\n\r\n");
+    assert!(
+        headers.contains(
+            "Content-Security-Policy: default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'\r\n"
+        ),
+        "{headers}"
+    );
+    assert!(headers.contains("Referrer-Policy: no-referrer\r\n"), "{headers}");
+    assert!(
+        headers.contains("X-Content-Type-Options: nosniff\r\n"),
+        "{headers}"
+    );
+    assert!(headers.contains("Cache-Control: no-store\r\n"), "{headers}");
+    drop(client);
+    wait_released(&streams);
+}
+
+#[test]
+fn ingest_results_reach_live_subscribers_without_an_event_cursor() {
+    let streams = streams(Arc::new(|_, _, _| {
+        Ok(ReplayBatch {
+            latest: EventSeq::new(0),
+            events: vec![],
+        })
+    }));
+    let mut client = spawn(&streams, 0);
+    read_until(&mut client, "\r\n\r\n");
+    streams.publish_ingest(&serde_json::json!({"inserted": 3}));
+    let frame = read_until(&mut client, "event: ingest\n");
+    assert!(frame.contains("data: {\"inserted\":3}\n\n"), "{frame}");
+    assert!(!frame.contains("\nid:"), "{frame}");
+    drop(client);
+    wait_released(&streams);
+}
+
+#[test]
+fn ingest_results_before_subscription_are_not_replayed() {
+    let streams = streams(Arc::new(|_, _, _| {
+        Ok(ReplayBatch {
+            latest: EventSeq::new(0),
+            events: vec![],
+        })
+    }));
+    streams.publish_ingest(&serde_json::json!({"inserted": 1}));
+    let mut client = spawn(&streams, 0);
+    read_until(&mut client, "\r\n\r\n");
+    streams.publish_ingest(&serde_json::json!({"inserted": 2}));
+    let frame = read_until(&mut client, "\"inserted\":2");
+    assert!(!frame.contains("\"inserted\":1"), "{frame}");
+    drop(client);
+    wait_released(&streams);
+}
+
+#[test]
 fn event_cursor_header_precedes_query_without_malformed_fallback() {
     assert_eq!(
         StreamRequest::parse(Some("9"), Some("3"), Some("P7")).unwrap(),
@@ -362,15 +424,14 @@ fn invalid_permit_handoff_releases_capacity_without_spawning() {
     let streams = streams(Arc::new(|_, _, _| unreachable!()));
     let other = super::tests::streams(Arc::new(|_, _, _| unreachable!()));
     let (server, _client) = socket_pair();
+    let server_addr = server.local_addr().unwrap();
     let request = StreamRequest::parse(None, None, None).unwrap();
-    assert_eq!(
-        streams
-            .spawn(server, request, other.reserve().unwrap())
-            .unwrap_err()
-            .kind(),
-        io::ErrorKind::InvalidInput
-    );
-    assert_eq!(other.active(), 0);
+    let refusal = streams
+        .spawn(server, request, other.reserve().unwrap())
+        .unwrap_err();
+    assert_eq!(refusal.error.kind(), io::ErrorKind::InvalidInput);
+    assert_eq!(refusal.socket.local_addr().unwrap(), server_addr);
+    assert_eq!(other.active(), 0, "the refusal releases the slot");
 }
 
 #[test]

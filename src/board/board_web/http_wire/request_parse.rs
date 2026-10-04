@@ -2,7 +2,13 @@ use super::{BODY_LIMIT, HttpError, HttpMethod, HttpRequest};
 use std::collections::BTreeMap;
 
 pub(super) fn check_line_endings(bytes: &[u8]) -> Result<(), HttpError> {
-    for (index, byte) in bytes.iter().copied().enumerate() {
+    check_line_endings_from(bytes, 0)
+}
+
+/// Incremental variant for the read loop: bytes before `from` passed an
+/// earlier check; the caller keeps a trailing CR below `from` for re-check.
+pub(super) fn check_line_endings_from(bytes: &[u8], from: usize) -> Result<(), HttpError> {
+    for (index, byte) in bytes.iter().copied().enumerate().skip(from) {
         if (byte == b'\n' && index.checked_sub(1).is_none_or(|prev| bytes[prev] != b'\r'))
             || (byte == b'\r' && bytes.get(index + 1).is_some_and(|next| *next != b'\n'))
         {
@@ -41,7 +47,7 @@ pub(super) fn parse_headers(bytes: &[u8]) -> Result<HttpRequest, HttpError> {
     let method = match method {
         "GET" => HttpMethod::Get,
         "POST" => HttpMethod::Post,
-        _ => return Err(HttpError::new(405, "method unsupported")),
+        _ => return Err(HttpError::new(405, "method unsupported").with_allow("GET, POST")),
     };
     let mut headers = BTreeMap::new();
     for line in lines {

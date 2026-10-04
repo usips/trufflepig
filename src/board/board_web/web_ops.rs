@@ -42,7 +42,6 @@ impl WebRequest {
                     | "history"
                     | "entries"
                     | "search"
-                    | "review"
                     | "feedback_list"
                     | "new"
                     | "post"
@@ -56,7 +55,7 @@ impl WebRequest {
             )
         );
         if !allowed {
-            return Err(invalid("operation is unavailable in the web board"));
+            return Err(invalid("op not available over web"));
         }
         if let BoardOp::Post { kind, .. } = &self.op {
             if !matches!(
@@ -84,19 +83,44 @@ pub(crate) fn execute(
 ) -> Result<BoardReply, BoardError> {
     let config = store.config(expires)?;
     let request = request.into_request(&config)?;
-    let mut reply = if request.op.is_read_only() {
+    let reply = if request.op.is_read_only() {
         store
             .readers
             .with_reader(&config, expires, |reader| reader.handle(&request))?
     } else {
         store.with_writer(&config, expires, |writer| writer.handle(&request))?
     };
-    if matches!(request.op, BoardOp::Review { .. }) {
-        reply.warnings.push(
-            "web review contains stored evidence only; use ingest to refresh linked commits".into(),
-        );
-    }
     Ok(reply)
+}
+
+/// One router ingest relay runs at a time; later posts observe the running scan.
+#[derive(Default)]
+pub(crate) struct IngestFlight(std::sync::atomic::AtomicBool);
+
+impl IngestFlight {
+    /// Claims the relay slot; false while another relay runs.
+    pub(crate) fn begin(&self) -> bool {
+        !self.0.swap(true, std::sync::atomic::Ordering::AcqRel)
+    }
+
+    pub(crate) fn finish(&self) {
+        self.0.store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+
+/// Returns the relay slot on drop, including panic paths.
+pub(crate) struct IngestFlightGuard<'a>(&'a IngestFlight);
+
+impl<'a> IngestFlightGuard<'a> {
+    pub(crate) fn new(flight: &'a IngestFlight) -> Self {
+        Self(flight)
+    }
+}
+
+impl Drop for IngestFlightGuard<'_> {
+    fn drop(&mut self) {
+        self.0.finish();
+    }
 }
 
 fn invalid(message: impl Into<String>) -> BoardError {
@@ -464,5 +488,33 @@ mod tests {
         .unwrap();
         assert_eq!(reply["inserted"], 1);
         assert_eq!(calls[1], ["--json", "board", "ingest"]);
+    }
+
+    #[test]
+    fn review_is_refused_over_the_web_allowlist() {
+        let config = BoardConfig::for_database("target/web-op.sqlite3");
+        let request = WebRequest {
+            api: BOARD_API,
+            op: BoardOp::Review {
+                base: crate::board::board_ids::PlanRevision::new(
+                    crate::board::board_ids::PlanId::new(1).unwrap(),
+                    1,
+                )
+                .unwrap(),
+                agent: None,
+            },
+        };
+        let error = request.into_request(&config).unwrap_err();
+        assert_eq!(error.code, BoardErrorCode::InvalidOptions);
+        assert_eq!(error.message, "op not available over web");
+    }
+
+    #[test]
+    fn ingest_flight_admits_one_relay_at_a_time() {
+        let flight = IngestFlight::default();
+        assert!(flight.begin());
+        assert!(!flight.begin(), "a running scan admits no second relay");
+        flight.finish();
+        assert!(flight.begin());
     }
 }

@@ -4,7 +4,7 @@ mod tests;
 use super::{
     PUBLIC_DETAILS, PUBLIC_DOM, PUBLIC_ENTRIES, PUBLIC_FEEDBACK, PUBLIC_READER, PUBLIC_SCRIPT,
     PUBLIC_SHELL, PUBLIC_STREAM, PUBLIC_STYLE, PUBLIC_VIEWS, WebState,
-    event_stream::StreamRequest,
+    event_stream::{EventStreams, StreamPermit, StreamRequest},
     http_wire::{self, HttpError, HttpMethod, HttpRequest},
     plan_markup,
     web_guard::{ChallengeNonce, RouteAccess, WebGuard},
@@ -16,13 +16,14 @@ use crate::board::{
     review_packet::build_ssot_diff,
 };
 use serde::Deserialize;
-use std::{net::TcpStream, time::Instant};
+use std::{net::TcpStream, sync::Arc, time::Instant};
 
-pub(super) fn handle(mut stream: TcpStream, accepted_at: Instant, state: &WebState) {
+pub(super) fn handle(mut stream: TcpStream, accepted_at: Instant, state: &Arc<WebState>) {
     let request = match http_wire::read_request(&mut stream, accepted_at) {
         Ok(request) => request,
         Err(error) => {
             send_http_error(&mut stream, error);
+            http_wire::close_after_error(&mut stream);
             return;
         }
     };
@@ -42,13 +43,7 @@ pub(super) fn handle(mut stream: TcpStream, accepted_at: Instant, state: &WebSta
     }
     let expires = accepted_at + http_wire::REQUEST_TIMEOUT;
     if Instant::now() >= expires {
-        send_http_error(
-            &mut stream,
-            HttpError {
-                status: 408,
-                message: "request deadline expired",
-            },
-        );
+        send_http_error(&mut stream, HttpError::new(408, "request deadline expired"));
         return;
     }
     if access == RouteAccess::Private {
@@ -65,13 +60,12 @@ pub(super) fn handle(mut stream: TcpStream, accepted_at: Instant, state: &WebSta
                 200,
                 "text/html; charset=utf-8",
                 shell.as_bytes(),
-                false,
+                true,
             );
         }
         (HttpMethod::Get, path) if public_asset(path).is_some() => {
             let (content_type, body) = public_asset(path).unwrap();
-            let _ =
-                http_wire::send_response(&mut stream, 200, content_type, body.as_bytes(), false);
+            let _ = http_wire::send_response(&mut stream, 200, content_type, body.as_bytes(), true);
         }
         (HttpMethod::Post, "/api/v1/challenge") => {
             send_json_result(&mut stream, challenge_reply(&request, &state.guard));
@@ -79,12 +73,7 @@ pub(super) fn handle(mut stream: TcpStream, accepted_at: Instant, state: &WebSta
         (HttpMethod::Get, "/api/v1/events") => {
             let prepared = stream_request(&request)
                 .and_then(|request| state.streams.reserve().map(|permit| (request, permit)));
-            match prepared {
-                Ok((request, permit)) => {
-                    let _ = state.streams.spawn(stream, request, permit);
-                }
-                Err(error) => send_board_error(&mut stream, error),
-            }
+            stream_subscription(stream, prepared, &state.streams);
         }
         (HttpMethod::Post, "/api/v1/board") => {
             let result = decode::<WebRequest>(&request)
@@ -92,11 +81,11 @@ pub(super) fn handle(mut stream: TcpStream, accepted_at: Instant, state: &WebSta
             send_json_result(&mut stream, result);
         }
         (HttpMethod::Post, "/api/v1/ingest") => {
-            let result = decode::<ApiRequest>(&request).and_then(|request| {
-                request.validate()?;
-                web_ops::relay_ingest(&state.store, expires)
-            });
-            send_json_result(&mut stream, result);
+            let result = decode::<ApiRequest>(&request).and_then(|request| request.validate());
+            match result {
+                Ok(()) => ingest_accepted(stream, state),
+                Err(error) => send_board_error(&mut stream, error),
+            }
         }
         (HttpMethod::Get, path) if path.starts_with("/api/v1/render/plan/") => {
             let target = decode_render_target(&path["/api/v1/render/plan/".len()..]);
@@ -123,6 +112,65 @@ pub(super) fn handle(mut stream: TcpStream, accepted_at: Instant, state: &WebSta
     }
 }
 
+/// A refused spawn (capacity reached, thread spawn failed) still answers the
+/// subscriber: reserve failures map to 503 with Retry-After; a failed handoff
+/// answers 503 on the returned socket instead of dropping it silently.
+fn stream_subscription(
+    mut stream: TcpStream,
+    prepared: Result<(StreamRequest, StreamPermit), BoardError>,
+    streams: &EventStreams,
+) {
+    match prepared {
+        Ok((request, permit)) => {
+            if let Err(refusal) = streams.spawn(stream, request, permit) {
+                let mut socket = refusal.socket;
+                send_error(
+                    &mut socket,
+                    503,
+                    "board_unavailable",
+                    &format!("event stream spawn failed: {}", refusal.error),
+                );
+            }
+        }
+        Err(error) => send_board_error(&mut stream, error),
+    }
+}
+
+/// 202 immediately; one router scan runs at a time, and its completion is
+/// published to stream subscribers as an `ingest` frame.
+fn ingest_accepted(mut stream: TcpStream, state: &Arc<WebState>) {
+    if state.ingest.begin() {
+        let relay_state = Arc::clone(state);
+        let spawned = std::thread::Builder::new()
+            .name("board-ingest-relay".into())
+            .spawn(move || {
+                let _flight = web_ops::IngestFlightGuard::new(&relay_state.ingest);
+                let expires = Instant::now() + crate::daemon::CLIENT_REPLY_WAIT;
+                let result = web_ops::relay_ingest(&relay_state.store, expires);
+                relay_state.streams.publish_ingest(&ingest_receipt(result));
+            });
+        if spawned.is_err() {
+            state.ingest.finish();
+            send_error(&mut stream, 503, "board_unavailable", "ingest relay unavailable");
+            return;
+        }
+    }
+    let body = serde_json::to_vec(&serde_json::json!({ "api": BOARD_API, "ingest": "queued" }))
+        .expect("queued serialization cannot fail");
+    let _ = http_wire::send_response(&mut stream, 202, "application/json", &body, true);
+}
+
+/// Relay outcomes keep the board error envelope so subscribers render a
+/// terminal state whether the scan succeeded or failed.
+fn ingest_receipt(result: Result<serde_json::Value, BoardError>) -> serde_json::Value {
+    match result {
+        Ok(receipt) => receipt,
+        Err(error) => serde_json::json!({
+            "error": { "code": error.code.as_str(), "message": error.message }
+        }),
+    }
+}
+
 fn public_asset(path: &str) -> Option<(&str, &str)> {
     let script = match path {
         "/app.js" => PUBLIC_SCRIPT,
@@ -139,7 +187,8 @@ fn public_asset(path: &str) -> Option<(&str, &str)> {
     Some(("text/javascript; charset=utf-8", script))
 }
 
-/// Percent-decode a render-route suffix; the result is an opaque BoardRef target.
+/// Percent-decode a render-route suffix: only `%40` decodes, to the `@` of a
+/// revision target; strict BoardRef parsing rejects every other byte.
 fn decode_render_target(raw: &str) -> Result<String, BoardError> {
     let bytes = raw.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
@@ -150,25 +199,13 @@ fn decode_render_target(raw: &str) -> Result<String, BoardError> {
             index += 1;
             continue;
         }
-        let pair = match bytes.get(index + 1..index + 3) {
-            Some([high, low]) => percent_hex(*high).zip(percent_hex(*low)),
-            _ => None,
-        };
-        let (high, low) =
-            pair.ok_or_else(|| invalid("malformed percent encoding in render target"))?;
-        decoded.push(high << 4 | low);
+        if bytes.get(index..index + 3) != Some(b"%40") {
+            return Err(invalid("malformed percent encoding in render target"));
+        }
+        decoded.push(b'@');
         index += 3;
     }
     String::from_utf8(decoded).map_err(|_| invalid("render target is not valid UTF-8"))
-}
-
-fn percent_hex(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
-    }
 }
 
 fn render_plan(
@@ -380,6 +417,14 @@ fn send_http_error(stream: &mut TcpStream, error: HttpError) {
         413 => "invalid_body",
         _ => "invalid_options",
     };
+    if error.status == 405 {
+        let body = serde_json::to_vec(
+            &serde_json::json!({ "error": { "code": code, "message": error.message } }),
+        )
+        .expect("error serialization cannot fail");
+        let _ = http_wire::send_method_refusal(stream, &body, error.allow.unwrap_or("GET, POST"));
+        return;
+    }
     send_error(stream, error.status, code, error.message);
 }
 

@@ -15,10 +15,11 @@ use crate::board::{
 use sequence_poller::WakeResult;
 use serde::Serialize;
 use std::{
+    collections::VecDeque,
     io,
     net::TcpStream,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
     thread,
@@ -28,6 +29,8 @@ use std::{
 pub const STREAM_LIMIT: usize = 32;
 pub const REPLAY_LIMIT: usize = 500;
 pub const FEED_READ_LIMIT: usize = REPLAY_LIMIT + 1;
+/// Ingest frames kept for lagging subscribers; older receipts are dropped.
+const INGEST_LOG_LIMIT: usize = 8;
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
 const SEND_DEADLINE: Duration = Duration::from_secs(5);
 
@@ -73,9 +76,18 @@ pub struct EventStreams {
     reader: FeedReader,
     wake: SequenceWake,
     active: Arc<AtomicUsize>,
+    ingest: Arc<Mutex<IngestLog>>,
+}
+
+/// Completed ingest relays, newest last; each subscriber drains by sequence.
+#[derive(Default)]
+struct IngestLog {
+    next: u64,
+    frames: VecDeque<(u64, Vec<u8>)>,
 }
 
 /// Dropping the permit releases capacity on return, disconnect, or unwinding.
+#[derive(Debug)]
 pub struct StreamPermit {
     active: Arc<AtomicUsize>,
 }
@@ -86,12 +98,21 @@ impl Drop for StreamPermit {
     }
 }
 
+/// A refused handoff: the socket returns to the caller for a 503 reply, and
+/// the dropped permit has already released its slot.
+#[derive(Debug)]
+pub struct StreamRefusal {
+    pub socket: TcpStream,
+    pub error: io::Error,
+}
+
 impl EventStreams {
     pub fn new(reader: FeedReader, wake: SequenceWake) -> Self {
         Self {
             reader,
             wake,
             active: Arc::new(AtomicUsize::new(0)),
+            ingest: Arc::new(Mutex::new(IngestLog::default())),
         }
     }
 
@@ -115,31 +136,87 @@ impl EventStreams {
         })
     }
 
-    /// Moves the connection out of its HTTP worker; failed spawn drops the permit.
+    /// Moves the connection out of its HTTP worker; a failed handoff returns
+    /// the socket so the caller can answer 503, releasing the permit's slot.
     pub fn spawn(
         &self,
         socket: TcpStream,
         request: StreamRequest,
         permit: StreamPermit,
-    ) -> io::Result<()> {
+    ) -> Result<(), StreamRefusal> {
         if !Arc::ptr_eq(&self.active, &permit.active) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "foreign stream permit",
-            ));
+            return Err(StreamRefusal {
+                socket,
+                error: io::Error::new(io::ErrorKind::InvalidInput, "foreign stream permit"),
+            });
         }
+        let cloned = match socket.try_clone() {
+            Ok(cloned) => cloned,
+            Err(error) => return Err(StreamRefusal { socket, error }),
+        };
         let streams = self.clone();
-        thread::Builder::new()
+        let spawned = thread::Builder::new()
             .name("board-event-stream".into())
             .spawn(move || {
                 let _permit = permit;
-                let _ = streams.serve(socket, request);
-            })
-            .map(|_| ())
+                let _ = streams.serve(cloned, request);
+            });
+        match spawned {
+            // The thread owns the clone; the original closes on drop here.
+            Ok(_) => Ok(()),
+            // A failed spawn drops the closure with its clone and permit.
+            Err(error) => Err(StreamRefusal { socket, error }),
+        }
     }
 
     pub fn active(&self) -> usize {
         self.active.load(Ordering::Acquire)
+    }
+
+    /// Records a completed ingest relay for broadcast; subscribers send the
+    /// receipts sequenced after their subscription, newest frames kept.
+    pub fn publish_ingest(&self, result: &serde_json::Value) {
+        let Ok(frame) = ingest_frame(result) else {
+            return;
+        };
+        let mut log = self
+            .ingest
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        log.next += 1;
+        let next = log.next;
+        log.frames.push_back((next, frame));
+        while log.frames.len() > INGEST_LOG_LIMIT {
+            log.frames.pop_front();
+        }
+    }
+
+    fn ingest_sequence(&self) -> u64 {
+        self.ingest
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .next
+    }
+
+    /// Sends ingest receipts sequenced after `after_seq`; returns the new cursor.
+    fn send_ingest_frames(&self, socket: &mut TcpStream, after_seq: u64) -> io::Result<u64> {
+        let frames: Vec<(u64, Vec<u8>)> = {
+            let log = self
+                .ingest
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            log.frames
+                .iter()
+                .filter(|(seq, _)| *seq > after_seq)
+                .map(|(seq, frame)| (*seq, frame.clone()))
+                .collect()
+        };
+        let mut cursor = after_seq;
+        for (seq, frame) in frames {
+            stream_socket::send(socket, &frame, SEND_DEADLINE)?;
+            cursor = seq;
+        }
+        Ok(cursor)
     }
 
     fn serve(&self, mut socket: TcpStream, request: StreamRequest) -> io::Result<()> {
@@ -149,6 +226,7 @@ impl EventStreams {
         socket.set_nodelay(true)?;
         socket.set_read_timeout(Some(Duration::from_millis(1)))?;
         stream_socket::send(&mut socket, stream_socket::RESPONSE_HEADERS, SEND_DEADLINE)?;
+        let mut ingest_after = self.ingest_sequence();
         let mut after = request.after;
         let mut last_send = Instant::now();
         loop {
@@ -188,6 +266,7 @@ impl EventStreams {
                 if !stream_socket::peer_connected(&socket)? {
                     return Ok(());
                 }
+                ingest_after = self.send_ingest_frames(&mut socket, ingest_after)?;
                 if last_send.elapsed() >= KEEPALIVE_INTERVAL {
                     stream_socket::send(&mut socket, b": keepalive\n\n", SEND_DEADLINE)?;
                     last_send = Instant::now();
@@ -235,6 +314,12 @@ impl ReplayBatch {
 struct Resync {
     reason: &'static str,
     latest: EventSeq,
+}
+
+/// Ingest receipts ride the stream as a side frame: no `id`, so the board
+/// event cursor never advances on relay completions.
+fn ingest_frame(value: &serde_json::Value) -> io::Result<Vec<u8>> {
+    event_frame("ingest", None, value)
 }
 
 fn event_frame(event: &str, id: Option<EventSeq>, value: &impl Serialize) -> io::Result<Vec<u8>> {

@@ -1,6 +1,8 @@
 use super::*;
 use crate::board::board_backend::BoardBackend;
-use crate::board::board_web::event_stream::{EventStreams, SequencePoller};
+use crate::board::board_web::event_stream::{
+    EventStreams, FeedReader, ReplayBatch, SequencePoller, StreamRequest,
+};
 use crate::board::board_web::web_guard::{BoardWebToken, WebGuard};
 use crate::board::board_web::{WebStore, web_ops};
 use crate::board::{
@@ -10,7 +12,7 @@ use crate::board::{
     board_vocabulary::{EntryText, PlanText, PlanTitle},
 };
 use std::io::{Read, Write};
-use std::net::TcpListener;
+use std::net::{Shutdown, TcpListener};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -111,13 +113,19 @@ fn proposal_diff_preserves_all_lines_and_the_earlier_snapshot() {
 struct RenderFixture {
     _directory: tempfile::TempDir,
     _poller: SequencePoller,
-    state: WebState,
+    state: Arc<WebState>,
     config: BoardConfig,
     token: BoardWebToken,
     authority: String,
 }
 
 fn render_fixture() -> RenderFixture {
+    render_fixture_with(Arc::new(|_, _, _| {
+        unreachable!("render routes never read the feed")
+    }))
+}
+
+fn render_fixture_with(reader: FeedReader) -> RenderFixture {
     let directory = crate::board::board_test_support::scratch("web-render-");
     let config = BoardConfig::for_database(directory.path().join("web.sqlite3"));
     let store = WebStore::open_at(
@@ -130,18 +138,16 @@ fn render_fixture() -> RenderFixture {
     let guard = WebGuard::with_token(bind.local_addr().unwrap(), token.clone()).unwrap();
     let authority = guard.authority().to_owned();
     let poller = SequencePoller::start(Arc::new(|| Ok(EventSeq::new(0)))).unwrap();
-    let streams = EventStreams::new(
-        Arc::new(|_, _, _| unreachable!("render routes never read the feed")),
-        poller.handle(),
-    );
+    let streams = EventStreams::new(reader, poller.handle());
     RenderFixture {
         _directory: directory,
         _poller: poller,
-        state: WebState {
+        state: Arc::new(WebState {
             store: Arc::new(store),
             guard,
             streams,
-        },
+            ingest: Default::default(),
+        }),
         config,
         token,
         authority,
@@ -184,10 +190,188 @@ fn render_get(fixture: &RenderFixture, path: &str) -> String {
         fixture.token.expose()
     )
     .unwrap();
+    client.shutdown(Shutdown::Write).unwrap();
     handle(server, Instant::now(), &fixture.state);
     let mut reply = String::new();
     client.read_to_string(&mut reply).unwrap();
     reply
+}
+
+fn authed_post(fixture: &RenderFixture, path: &str, body: &serde_json::Value) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (server, _) = listener.accept().unwrap();
+    let body = body.to_string();
+    write!(
+        client,
+        "POST {path} HTTP/1.1\r\nHost: {}\r\nOrigin: http://{}\r\nX-Board-Token: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+        fixture.authority,
+        fixture.authority,
+        fixture.token.expose(),
+        body.len(),
+    )
+    .unwrap();
+    client.shutdown(Shutdown::Write).unwrap();
+    handle(server, Instant::now(), &fixture.state);
+    let mut reply = String::new();
+    client.read_to_string(&mut reply).unwrap();
+    reply
+}
+
+fn read_until(client: &mut TcpStream, needle: &str) -> String {
+    let mut bytes = Vec::new();
+    let mut buffer = [0; 4096];
+    while !String::from_utf8_lossy(&bytes).contains(needle) {
+        let count = client.read(&mut buffer).unwrap();
+        assert!(count > 0, "stream closed before {needle}");
+        bytes.extend_from_slice(&buffer[..count]);
+    }
+    String::from_utf8(bytes).unwrap()
+}
+
+#[test]
+fn shell_and_static_assets_defeat_caching() {
+    let fixture = render_fixture();
+    for path in ["/", "/app.js", "/app.css", "/board_stream.js"] {
+        let reply = render_get(&fixture, path);
+        assert!(reply.starts_with("HTTP/1.1 200 "), "{path}: {reply}");
+        assert!(
+            reply.contains("Cache-Control: no-store\r\n"),
+            "{path}: {reply}"
+        );
+    }
+}
+
+#[test]
+fn method_refusals_list_the_permitted_methods() {
+    let fixture = render_fixture();
+    let reply = authed_post(&fixture, "/", &serde_json::json!({}));
+    assert!(reply.starts_with("HTTP/1.1 405 "), "{reply}");
+    assert!(reply.contains("Allow: GET\r\n"), "{reply}");
+    let reply = render_get(&fixture, "/api/v1/challenge");
+    assert!(reply.starts_with("HTTP/1.1 405 "), "{reply}");
+    assert!(reply.contains("Allow: POST\r\n"), "{reply}");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (server, _) = listener.accept().unwrap();
+    write!(client, "HEAD / HTTP/1.1\r\nHost: {}\r\n\r\n", fixture.authority).unwrap();
+    client.shutdown(Shutdown::Write).unwrap();
+    handle(server, Instant::now(), &fixture.state);
+    let mut reply = String::new();
+    client.read_to_string(&mut reply).unwrap();
+    assert!(reply.starts_with("HTTP/1.1 405 "), "{reply}");
+    assert!(reply.contains("Allow: GET, POST\r\n"), "{reply}");
+}
+
+#[test]
+fn early_errors_send_their_reply_before_closing_on_unread_input() {
+    let fixture = render_fixture();
+    let mut oversized_headers = b"GET / HTTP/1.1\r\nHost: x\r\nX-Pad: ".to_vec();
+    oversized_headers.resize(64 * 1024, b'a');
+    let mut oversized_body =
+        b"POST /api/v1/board HTTP/1.1\r\nHost: x\r\nContent-Length: 999999\r\n\r\n".to_vec();
+    oversized_body.resize(oversized_body.len() + 4096, b'b');
+    for (bytes, status) in [(oversized_headers, "431"), (oversized_body, "413")] {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (server, _) = listener.accept().unwrap();
+        client.write_all(&bytes).unwrap();
+        client.shutdown(Shutdown::Write).unwrap();
+        handle(server, Instant::now(), &fixture.state);
+        let mut reply = Vec::new();
+        client.read_to_end(&mut reply).unwrap();
+        let reply = String::from_utf8(reply).unwrap();
+        assert!(reply.starts_with(&format!("HTTP/1.1 {status} ")), "{reply}");
+        assert!(reply.ends_with("}}"), "{reply}");
+    }
+}
+
+#[test]
+fn event_stream_rejects_a_bad_plan_filter_before_success() {
+    let fixture = render_fixture();
+    for query in ["plan=bogus", "plan=P0", "plan=7", "plan="] {
+        let reply = render_get(&fixture, &format!("/api/v1/events?{query}"));
+        assert!(reply.starts_with("HTTP/1.1 400 "), "{query}: {reply}");
+        assert!(
+            reply.contains("\"code\":\"invalid_options\""),
+            "{query}: {reply}"
+        );
+    }
+}
+
+#[test]
+fn event_stream_capacity_refusal_answers_503_with_retry_after() {
+    let fixture = render_fixture();
+    let permits: Vec<_> = (0..crate::board::board_web::event_stream::STREAM_LIMIT)
+        .map(|_| fixture.state.streams.reserve().unwrap())
+        .collect();
+    let reply = render_get(&fixture, "/api/v1/events");
+    assert!(reply.starts_with("HTTP/1.1 503 "), "{reply}");
+    assert!(reply.contains("Retry-After: 1\r\n"), "{reply}");
+    drop(permits);
+}
+
+#[test]
+fn refused_event_stream_spawn_answers_503_instead_of_silence() {
+    let fixture = render_fixture();
+    let poller = SequencePoller::start(Arc::new(|| Ok(EventSeq::new(0)))).unwrap();
+    let foreign = EventStreams::new(
+        Arc::new(|_, _, _| unreachable!("no feed reads")),
+        poller.handle(),
+    );
+    let permit = foreign.reserve().unwrap();
+    let request = StreamRequest::parse(None, None, None).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (server, _) = listener.accept().unwrap();
+    stream_subscription(server, Ok((request, permit)), &fixture.state.streams);
+    let mut reply = String::new();
+    client.read_to_string(&mut reply).unwrap();
+    assert!(reply.starts_with("HTTP/1.1 503 "), "{reply}");
+    assert!(reply.contains("Retry-After: 1\r\n"), "{reply}");
+    assert_eq!(foreign.active(), 0, "refused spawn released the slot");
+}
+
+#[test]
+fn ingest_posts_answer_202_without_waiting_for_the_relay() {
+    let fixture = render_fixture();
+    for _ in 0..2 {
+        let reply = authed_post(&fixture, "/api/v1/ingest", &serde_json::json!({"api": BOARD_API}));
+        assert!(reply.starts_with("HTTP/1.1 202 "), "{reply}");
+        assert!(reply.contains("\"queued\""), "{reply}");
+    }
+}
+
+#[test]
+fn completed_ingest_relay_reaches_stream_subscribers() {
+    let fixture = render_fixture_with(Arc::new(|_, _, _| {
+        Ok(ReplayBatch {
+            latest: EventSeq::new(0),
+            events: vec![],
+        })
+    }));
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut subscriber = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    subscriber
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let (server, _) = listener.accept().unwrap();
+    fixture
+        .state
+        .streams
+        .spawn(
+            server,
+            StreamRequest::parse(None, None, None).unwrap(),
+            fixture.state.streams.reserve().unwrap(),
+        )
+        .unwrap();
+    read_until(&mut subscriber, "\r\n\r\n");
+    let reply = authed_post(&fixture, "/api/v1/ingest", &serde_json::json!({"api": BOARD_API}));
+    assert!(reply.starts_with("HTTP/1.1 202 "), "{reply}");
+    // The fixture has no router, so the relay publishes its failure receipt.
+    let frame = read_until(&mut subscriber, "event: ingest\n");
+    assert!(frame.contains("\"error\""), "{frame}");
+    assert!(frame.contains("board_unavailable"), "{frame}");
 }
 
 #[test]
@@ -223,7 +407,7 @@ fn render_diff_decodes_percent_encoded_span_target() {
 }
 
 #[test]
-fn render_proposal_decodes_percent_encoded_entry_target() {
+fn render_proposal_accepts_a_literal_entry_target() {
     let fixture = render_fixture();
     let plan = create_plan(&fixture);
     let proposal = fixture
@@ -249,14 +433,13 @@ fn render_proposal_decodes_percent_encoded_entry_target() {
         panic!("expected proposal receipt")
     };
     let entry = proposal.entry.to_string();
-    let digits = entry.strip_prefix('E').unwrap();
-    let reply = render_get(&fixture, &format!("/api/v1/render/proposal/%45{digits}"));
+    let reply = render_get(&fixture, &format!("/api/v1/render/proposal/{entry}"));
     assert!(reply.starts_with("HTTP/1.1 200 "), "{reply}");
     assert!(reply.contains(&format!("\"entry\":\"{entry}\"")), "{reply}");
 }
 
 #[test]
-fn render_routes_reject_malformed_percent_encoding() {
+fn render_routes_reject_every_percent_escape_but_at() {
     let fixture = render_fixture();
     for path in [
         "/api/v1/render/plan/P1%4",
@@ -265,29 +448,16 @@ fn render_routes_reject_malformed_percent_encoding() {
         "/api/v1/render/plan/P1%FF1",
         "/api/v1/render/diff/P1%4",
         "/api/v1/render/proposal/E%",
+        "/api/v1/render/plan/P1%2f1",
+        "/api/v1/render/plan/%2F",
+        "/api/v1/render/plan/%00",
+        "/api/v1/render/plan/P1%001",
+        "/api/v1/render/plan/P1%411",
     ] {
         let reply = render_get(&fixture, path);
         assert!(reply.starts_with("HTTP/1.1 400 "), "{path}: {reply}");
         assert!(
             reply.contains("\"code\":\"invalid_options\""),
-            "{path}: {reply}"
-        );
-    }
-}
-
-#[test]
-fn render_routes_decode_slash_and_control_bytes_before_reference_parsing() {
-    let fixture = render_fixture();
-    for path in [
-        "/api/v1/render/plan/P1%2f1",
-        "/api/v1/render/plan/%2F",
-        "/api/v1/render/plan/%00",
-        "/api/v1/render/plan/P1%001",
-    ] {
-        let reply = render_get(&fixture, path);
-        assert!(reply.starts_with("HTTP/1.1 400 "), "{path}: {reply}");
-        assert!(
-            reply.contains("\"code\":\"invalid_reference\""),
             "{path}: {reply}"
         );
     }

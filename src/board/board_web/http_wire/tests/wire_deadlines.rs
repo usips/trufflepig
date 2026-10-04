@@ -2,6 +2,42 @@ use super::*;
 use std::{os::fd::AsRawFd, thread};
 
 #[test]
+fn silent_connection_hits_the_first_byte_timeout_before_the_total_deadline() {
+    let (mut server, _client) = tcp_pair();
+    let started = Instant::now();
+    let error = read_request_until(&mut server, started + Duration::from_secs(30)).unwrap_err();
+    assert_eq!(error.status, 408);
+    assert!(
+        started.elapsed() < Duration::from_secs(10),
+        "{:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn first_byte_timeout_never_extends_past_the_total_deadline() {
+    let (mut server, _client) = tcp_pair();
+    let started = Instant::now();
+    let error = read_request_until(&mut server, started + Duration::from_millis(200)).unwrap_err();
+    assert_eq!(error.status, 408);
+    assert!(started.elapsed() < Duration::from_secs(2));
+}
+
+#[test]
+fn bytes_ahead_of_the_timeout_keep_the_total_deadline() {
+    let (mut server, mut client) = tcp_pair();
+    client.write_all(b"G").unwrap();
+    let started = Instant::now();
+    let error = read_request_until(&mut server, started + Duration::from_millis(2600)).unwrap_err();
+    assert_eq!(error.status, 408);
+    assert!(
+        started.elapsed() >= Duration::from_millis(2400),
+        "{:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
 fn acceptance_deadline_includes_queue_time_even_if_request_is_buffered() {
     let (mut server, mut client) = tcp_pair();
     client

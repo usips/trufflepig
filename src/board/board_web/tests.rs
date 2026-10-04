@@ -1,10 +1,101 @@
 use super::*;
 use crate::board::{
-    board_ids::{BoardRef, RepoKey},
+    board_ids::{BoardRef, EventSeq, RepoKey},
     board_protocol::{BOARD_API, BoardOp, BoardReply, BoardRequest, BoardResult, ClaimResume},
     board_vocabulary::{EntryText, PlanText, PlanTitle},
 };
+use event_stream::{EventStreams, SequencePoller};
+use std::{
+    io::{self, Read},
+    net::{Shutdown, TcpListener, TcpStream},
+    sync::mpsc,
+};
+use web_guard::{BoardWebToken, WebGuard};
 use web_ops::WebRequest;
+
+fn accept_fixture() -> (tempfile::TempDir, Arc<WebState>) {
+    let directory = crate::board::board_test_support::scratch("web-accept-");
+    let config = BoardConfig::for_database(directory.path().join("web.sqlite3"));
+    let store = WebStore::open_at(
+        BoardConfigCache::with_config(config),
+        directory.path().join("runtime"),
+    )
+    .unwrap();
+    let token = BoardWebToken::rotate_at(&directory.path().join("board-web.token")).unwrap();
+    let guard = WebGuard::with_token("127.0.0.1:7341".parse().unwrap(), token).unwrap();
+    let poller = SequencePoller::start(Arc::new(|| Ok(EventSeq::new(0)))).unwrap();
+    let streams = EventStreams::new(
+        Arc::new(|_, _, _| unreachable!("no streams in the accept test")),
+        poller.handle(),
+    );
+    let state = Arc::new(WebState {
+        store: Arc::new(store),
+        guard,
+        streams,
+        ingest: Default::default(),
+    });
+    (directory, state)
+}
+
+#[test]
+fn accept_error_classification_retries_only_transient_failures() {
+    for raw in [
+        libc::ECONNABORTED,
+        libc::ENFILE,
+        libc::EMFILE,
+        libc::ENOBUFS,
+        libc::ENOMEM,
+    ] {
+        assert!(transient_accept_error(&io::Error::from_raw_os_error(raw)), "{raw}");
+    }
+    for kind in [
+        io::ErrorKind::Interrupted,
+        io::ErrorKind::ConnectionAborted,
+        io::ErrorKind::WouldBlock,
+        io::ErrorKind::TimedOut,
+    ] {
+        assert!(transient_accept_error(&io::Error::new(kind, "transient")), "{kind:?}");
+    }
+    for kind in [
+        io::ErrorKind::PermissionDenied,
+        io::ErrorKind::InvalidInput,
+        io::ErrorKind::AddrInUse,
+    ] {
+        assert!(!transient_accept_error(&io::Error::new(kind, "fatal")), "{kind:?}");
+    }
+}
+
+#[test]
+fn transient_accept_errors_do_not_stop_the_server() {
+    let (_directory, state) = accept_fixture();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (server, _) = listener.accept().unwrap();
+    client.write_all(b"GARBAGE\r\n\r\n").unwrap();
+    client.shutdown(Shutdown::Write).unwrap();
+    let (tx, rx) = mpsc::channel::<io::Result<TcpStream>>();
+    tx.send(Err(io::Error::from_raw_os_error(libc::ECONNABORTED)))
+        .unwrap();
+    tx.send(Err(io::Error::from_raw_os_error(libc::ENFILE))).unwrap();
+    tx.send(Ok(server)).unwrap();
+    let worker = {
+        let state = Arc::clone(&state);
+        std::thread::spawn(move || serve_connections(rx.into_iter(), &state))
+    };
+    client
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let mut reply = String::new();
+    client.read_to_string(&mut reply).unwrap();
+    assert!(reply.starts_with("HTTP/1.1 400 "), "{reply}");
+    tx.send(Err(io::Error::new(io::ErrorKind::PermissionDenied, "fatal")))
+        .unwrap();
+    let error = worker.join().unwrap().unwrap_err();
+    assert_eq!(
+        error.downcast_ref::<io::Error>().map(io::Error::kind),
+        Some(io::ErrorKind::PermissionDenied)
+    );
+}
 
 #[test]
 fn bootstrap_line_carries_the_token_only_to_a_terminal() {

@@ -105,12 +105,16 @@ impl WebGuard {
         if !self
             .allowed_authorities
             .iter()
-            .any(|allowed| allowed == host)
+            .any(|allowed| allowed.eq_ignore_ascii_case(host))
         {
             return Err(HttpError::new(421, "Host does not match bound authority"));
         }
         let origin = request.header("origin");
-        let matches_origin = |origin: &str| origin.strip_prefix("http://") == Some(host);
+        let matches_origin = |origin: &str| {
+            origin
+                .strip_prefix("http://")
+                .is_some_and(|authority| authority.eq_ignore_ascii_case(host))
+        };
         if (request.method == HttpMethod::Post && !origin.is_some_and(matches_origin))
             || origin.is_some_and(|origin| !matches_origin(origin))
         {
@@ -118,10 +122,12 @@ impl WebGuard {
         }
         match access {
             RouteAccess::Public if request.method != HttpMethod::Get => {
-                return Err(HttpError::new(405, "public route requires GET"));
+                return Err(HttpError::new(405, "public route requires GET").with_allow("GET"));
             }
             RouteAccess::Challenge if request.method != HttpMethod::Post => {
-                return Err(HttpError::new(405, "challenge route requires POST"));
+                return Err(
+                    HttpError::new(405, "challenge route requires POST").with_allow("POST"),
+                );
             }
             RouteAccess::Private
                 if !request

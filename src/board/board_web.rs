@@ -22,8 +22,8 @@ use anyhow::{Context, Result};
 use event_stream::{EventStreams, ReplayBatch, SequencePoller};
 use reader_pool::ReaderPool;
 use std::{
-    io::{IsTerminal, Write},
-    net::{Shutdown, SocketAddr, TcpListener},
+    io::{self, IsTerminal, Write},
+    net::{Shutdown, SocketAddr, TcpListener, TcpStream},
     path::PathBuf,
     sync::{Arc, Mutex, MutexGuard, TryLockError},
     time::{Duration, Instant},
@@ -125,6 +125,7 @@ pub(crate) struct WebState {
     store: Arc<WebStore>,
     guard: WebGuard,
     streams: EventStreams,
+    ingest: web_ops::IngestFlight,
 }
 
 impl BoardWebServer {
@@ -161,6 +162,7 @@ impl BoardWebServer {
                 store,
                 guard,
                 streams,
+                ingest: web_ops::IngestFlight::default(),
             }),
             _poller: poller,
             endpoint,
@@ -168,28 +170,66 @@ impl BoardWebServer {
     }
 
     pub(crate) fn run(self) -> Result<()> {
-        let pool = RequestPool::new("board-http", WEB_POOL)?;
-        let body = br#"{"error":{"code":"daemon_busy","message":"board web queue is full"}}"#;
-        let busy = http_wire::unavailable_response(1, body);
-        for accepted in self.listener.incoming() {
-            let stream = accepted?;
-            let accepted_at = Instant::now();
-            let refusal = stream.try_clone().ok();
-            let state = Arc::clone(&self.state);
-            let job = Box::new(move || web_routes::handle(stream, accepted_at, &state));
-            if let Err(job) = pool.submit(job) {
-                drop(job);
-                if let Some(mut refusal) = refusal {
-                    // One nonblocking attempt never holds up accepting the next connection.
-                    if refusal.set_nonblocking(true).is_ok() {
-                        let _ = refusal.write(&busy);
-                    }
-                    let _ = refusal.shutdown(Shutdown::Both);
+        serve_connections(self.listener.incoming(), &self.state)
+    }
+}
+
+/// Transient accept failures (aborted handshakes, resource pressure) skip to
+/// the next connection; anything else stops the server.
+fn transient_accept_error(error: &io::Error) -> bool {
+    if matches!(
+        error.kind(),
+        io::ErrorKind::Interrupted
+            | io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::WouldBlock
+            | io::ErrorKind::TimedOut
+    ) {
+        return true;
+    }
+    matches!(
+        error.raw_os_error(),
+        Some(libc::ECONNABORTED | libc::ENFILE | libc::EMFILE | libc::ENOBUFS | libc::ENOMEM)
+    )
+}
+
+fn serve_connections(
+    incoming: impl IntoIterator<Item = io::Result<TcpStream>>,
+    state: &Arc<WebState>,
+) -> Result<()> {
+    let pool = RequestPool::new("board-http", WEB_POOL)?;
+    let body = br#"{"error":{"code":"daemon_busy","message":"board web queue is full"}}"#;
+    let busy = http_wire::unavailable_response(1, body);
+    for accepted in incoming {
+        let stream = match accepted {
+            Ok(stream) => stream,
+            Err(error) if transient_accept_error(&error) => {
+                if matches!(
+                    error.raw_os_error(),
+                    Some(libc::ENFILE | libc::EMFILE | libc::ENOBUFS | libc::ENOMEM)
+                ) {
+                    // Resource pressure persists until workers free descriptors.
+                    std::thread::sleep(Duration::from_millis(10));
                 }
+                continue;
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let accepted_at = Instant::now();
+        let refusal = stream.try_clone().ok();
+        let state = Arc::clone(state);
+        let job = Box::new(move || web_routes::handle(stream, accepted_at, &state));
+        if let Err(job) = pool.submit(job) {
+            drop(job);
+            if let Some(mut refusal) = refusal {
+                // One nonblocking attempt never holds up accepting the next connection.
+                if refusal.set_nonblocking(true).is_ok() {
+                    let _ = refusal.write(&busy);
+                }
+                let _ = refusal.shutdown(Shutdown::Both);
             }
         }
-        Ok(())
     }
+    Ok(())
 }
 
 /// Foreground service; the full bootstrap URL is printed only when stdout is

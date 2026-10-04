@@ -12,6 +12,7 @@ struct ResponseHeaders<'a> {
     content_type: &'a str,
     private: bool,
     retry_after_seconds: Option<u32>,
+    allow: Option<&'a str>,
 }
 
 impl ResponseHeaders<'_> {
@@ -21,6 +22,7 @@ impl ResponseHeaders<'_> {
             content_type: "application/json",
             private: true,
             retry_after_seconds: Some(retry_after_seconds),
+            allow: None,
         }
     }
 }
@@ -55,8 +57,25 @@ pub(super) fn send_response_until(
         content_type,
         private,
         retry_after_seconds: None,
+        allow: None,
     };
     write_response(stream, headers, body, deadline)
+}
+
+/// 405 replies list the methods the route permits.
+pub(crate) fn send_method_refusal(
+    stream: &mut TcpStream,
+    body: &[u8],
+    allow: &str,
+) -> io::Result<()> {
+    let headers = ResponseHeaders {
+        status: 405,
+        content_type: "application/json",
+        private: true,
+        retry_after_seconds: None,
+        allow: Some(allow),
+    };
+    write_response(stream, headers, body, Instant::now() + WRITE_TIMEOUT)
 }
 
 pub(crate) fn send_unavailable(
@@ -98,11 +117,20 @@ fn encode_headers(headers: ResponseHeaders<'_>, content_length: usize) -> io::Re
         content_type,
         private,
         retry_after_seconds,
+        allow,
     } = headers;
     if content_type.is_empty() || content_type.bytes().any(|byte| !(32..127).contains(&byte)) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "invalid content type",
+        ));
+    }
+    if allow.is_some_and(|allow| {
+        allow.is_empty() || allow.bytes().any(|byte| !(32..127).contains(&byte))
+    }) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid allow list",
         ));
     }
     let cache = if private {
@@ -113,8 +141,11 @@ fn encode_headers(headers: ResponseHeaders<'_>, content_length: usize) -> io::Re
     let retry_after = retry_after_seconds
         .map(|seconds| format!("Retry-After: {seconds}\r\n"))
         .unwrap_or_default();
+    let allow = allow
+        .map(|methods| format!("Allow: {methods}\r\n"))
+        .unwrap_or_default();
     Ok(format!(
-        "HTTP/1.1 {status} {}\r\nContent-Type: {content_type}\r\nContent-Length: {content_length}\r\nConnection: close\r\n{cache}{retry_after}{SECURITY_HEADERS}\r\n",
+        "HTTP/1.1 {status} {}\r\nContent-Type: {content_type}\r\nContent-Length: {content_length}\r\nConnection: close\r\n{cache}{retry_after}{allow}{SECURITY_HEADERS}\r\n",
         reason(status),
     ))
 }

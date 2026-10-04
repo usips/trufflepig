@@ -1,10 +1,7 @@
 mod wire_deadlines;
 
 use super::*;
-use std::{
-    io::Write,
-    net::{Shutdown, TcpListener},
-};
+use std::{io::Write, net::{Shutdown, TcpListener}, thread};
 
 fn tcp_pair() -> (TcpStream, TcpStream) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -95,7 +92,7 @@ fn checks_content_length_decimal_overflow_and_limits() {
     }
     rejected(b"POST / HTTP/1.1\r\nHost: local\r\n\r\n", 411);
     rejected(
-        b"POST / HTTP/1.1\r\nHost: local\r\nContent-Length: 65537\r\n\r\n",
+        b"POST / HTTP/1.1\r\nHost: local\r\nContent-Length: 163841\r\n\r\n",
         413,
     );
     let mut request =
@@ -116,6 +113,70 @@ fn checks_total_header_limit_including_request_line() {
     oversized.resize(HEADER_LIMIT - 3, b'a');
     oversized.extend_from_slice(b"\r\n\r\n");
     rejected(&oversized, 431);
+}
+
+#[test]
+fn bodies_between_the_old_and_new_caps_are_accepted() {
+    let mut request =
+        b"POST / HTTP/1.1\r\nHost: local\r\nContent-Length: 100000\r\n\r\n".to_vec();
+    request.resize(request.len() + 100000, b'a');
+    assert_eq!(parse(&request).unwrap().body.len(), 100000);
+}
+
+#[test]
+fn unsupported_methods_list_the_server_method_set() {
+    let error = parse(b"HEAD / HTTP/1.1\r\nHost: local\r\n\r\n").unwrap_err();
+    assert_eq!(error.status, 405);
+    assert_eq!(error.allow, Some("GET, POST"));
+}
+
+#[test]
+fn header_terminator_scan_resumes_from_the_overlap() {
+    let head = b"GET / HTTP/1.1\r\nHost: local\r\nX-Pad: abc\r\n\r\n";
+    assert_eq!(header_end(head, 0), Some(head.len()));
+    for split in 0..head.len() {
+        let prefix = &head[..split];
+        let scanned = prefix.len();
+        assert_eq!(header_end(prefix, 0).is_some(), split >= head.len());
+        let resumed = [prefix, &head[split..]].concat();
+        assert_eq!(header_end(&resumed, scanned), Some(head.len()), "{split}");
+    }
+    assert_eq!(header_end(b"GET / HTTP/1.1\r\n\r", 0), None);
+    assert_eq!(header_end(b"A\r\n\r\r\n\r\n", 0), Some(8));
+}
+
+#[test]
+fn byte_dripped_requests_parse_across_every_boundary() {
+    let (mut server, mut client) = tcp_pair();
+    let producer = thread::spawn(move || {
+        for byte in b"GET / HTTP/1.1\r\nHost: local\r\n\r\n" {
+            if client.write_all(&[*byte]).is_err() {
+                break;
+            }
+        }
+        client.shutdown(Shutdown::Write).ok();
+    });
+    let request = read_request(&mut server, Instant::now()).unwrap();
+    assert_eq!(request.target, "/");
+    producer.join().unwrap();
+}
+
+#[test]
+fn carriage_return_split_across_reads_is_validated_with_its_successor() {
+    let (mut server, mut client) = tcp_pair();
+    client.write_all(b"GET / HTTP/1.1\r").unwrap();
+    client.write_all(b"\nHost: local\r\n\r\n").unwrap();
+    client.shutdown(Shutdown::Write).unwrap();
+    assert!(read_request(&mut server, Instant::now()).is_ok());
+
+    let (mut server, mut client) = tcp_pair();
+    client.write_all(b"GET / HTTP/1.1\r").unwrap();
+    client.write_all(b"X\nHost: local\r\n\r\n").unwrap();
+    client.shutdown(Shutdown::Write).unwrap();
+    assert_eq!(
+        read_request(&mut server, Instant::now()).unwrap_err().status,
+        400
+    );
 }
 
 #[test]

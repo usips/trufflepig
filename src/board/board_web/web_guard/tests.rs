@@ -30,6 +30,67 @@ fn request(guard: &WebGuard, method: HttpMethod, authenticated: bool) -> HttpReq
 }
 
 #[test]
+fn host_and_origin_comparisons_ignore_ascii_case() {
+    let (_directory, guard) = fixture();
+    let port = guard.authority().rsplit_once(':').unwrap().1;
+    let mut request = request(&guard, HttpMethod::Get, true);
+    for host in [format!("LOCALHOST:{port}"), format!("LocalHost:{port}")] {
+        request.headers.insert("host".to_owned(), host.clone());
+        assert!(
+            guard.authorize(&request, RouteAccess::Private, false).is_ok(),
+            "{host}"
+        );
+        request
+            .headers
+            .insert("origin".to_owned(), format!("http://localhost:{port}"));
+        assert!(
+            guard.authorize(&request, RouteAccess::Private, false).is_ok(),
+            "{host} with lowercase origin"
+        );
+    }
+    request.method = HttpMethod::Post;
+    request
+        .headers
+        .insert("host".to_owned(), format!("LOCALHOST:{port}"));
+    request
+        .headers
+        .insert("origin".to_owned(), format!("http://localhost:{port}"));
+    request
+        .headers
+        .insert("content-type".to_owned(), "application/json".to_owned());
+    assert!(guard.authorize(&request, RouteAccess::Private, true).is_ok());
+    request
+        .headers
+        .insert("host".to_owned(), "EXAMPLE.COM".to_owned());
+    assert_eq!(
+        guard
+            .authorize(&request, RouteAccess::Private, true)
+            .unwrap_err()
+            .status,
+        421
+    );
+}
+
+#[test]
+fn method_refusals_carry_their_allow_list() {
+    let (_directory, guard) = fixture();
+    let mut request = request(&guard, HttpMethod::Post, false);
+    request.target = "/".to_owned();
+    let error = guard
+        .authorize(&request, RouteAccess::Public, true)
+        .unwrap_err();
+    assert_eq!(error.status, 405);
+    assert_eq!(error.allow, Some("GET"));
+    request.method = HttpMethod::Get;
+    request.target = "/api/v1/challenge".to_owned();
+    let error = guard
+        .authorize(&request, RouteAccess::Challenge, false)
+        .unwrap_err();
+    assert_eq!(error.status, 405);
+    assert_eq!(error.allow, Some("POST"));
+}
+
+#[test]
 fn guards_actual_ephemeral_port_and_literal_loopback_authority() {
     let (_directory, guard) = fixture();
     let mut request = request(&guard, HttpMethod::Get, true);
