@@ -4,20 +4,26 @@ import { createBoardDom, decodeBoardFragment } from "/board_dom.js";
 import { createBoardViews } from "/board_views.js";
 
   const TOKEN_KEY = "trufflepig-board-token";
-  const fragment = new URLSearchParams(location.hash.slice(1));
-  let token = fragment.get("token") || "";
+  // A bootstrap token is accepted only from a non-route hash that is exactly
+  // `token=<64 lowercase hex>` — never from a query parameter inside a #/
+  // route. A differing stored session always wins; the stray token is still
+  // stripped from the URL and flagged instead of silently replacing it.
+  const offered = location.hash.startsWith("#/") ? null : location.hash.slice(1).match(/^token=([0-9a-f]{64})$/)?.[1] || null;
+  let stored = "";
+  try { stored = sessionStorage.getItem(TOKEN_KEY) || ""; } catch (_) { /* In-memory auth still works. */ }
+  let token = stored;
   const launch = new URL(location.href);
   const launchRef = launch.searchParams.get("ref") || "";
-  if (/^(?:P[1-9]\d*(?:@[1-9]\d*)?|E[1-9]\d*)$/.test(launchRef) && (fragment.has("token") || !location.hash)) {
+  if (/^(?:P[1-9]\d*(?:@[1-9]\d*)?|E[1-9]\d*)$/.test(launchRef) && (offered || !location.hash)) {
     launch.searchParams.delete("ref"); launch.hash = `/${launchRef}`;
-  } else if (fragment.has("token")) launch.hash = "";
-  if (fragment.has("token")) {
+  } else if (offered) launch.hash = "";
+  if (offered) {
     history.replaceState(history.state, "", launch.pathname + launch.search + launch.hash);
-    try { sessionStorage.setItem(TOKEN_KEY, token); } catch (_) { /* In-memory auth still works. */ }
-  } else {
-    try { token = sessionStorage.getItem(TOKEN_KEY) || ""; } catch (_) { /* Auth can use the launch fragment. */ }
-    if (launch.href !== location.href) history.replaceState(history.state, "", launch.pathname + launch.search + launch.hash);
-  }
+    if (offered !== stored) {
+      if (stored) queueMicrotask(() => notice("This link offered a different board token; the tab kept its existing session.", "error"));
+      else { token = offered; try { sessionStorage.setItem(TOKEN_KEY, offered); } catch (_) { /* In-memory auth still works. */ } }
+    }
+  } else if (launch.href !== location.href) history.replaceState(history.state, "", launch.pathname + launch.search + launch.hash);
   const apiVersion = Number(document.querySelector('meta[name="board-api"]')?.content);
   const main = document.getElementById("main");
   const connection = document.getElementById("connection");

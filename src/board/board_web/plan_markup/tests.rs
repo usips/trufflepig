@@ -46,10 +46,31 @@ fn links_are_validated_after_entity_and_markdown_decoding() {
     assert!(!rendered.html.contains("href=\"data:"));
     assert!(!rendered.html.contains("href=\"java"));
     assert!(!rendered.html.contains("href=\"https:"));
-    assert!(rendered.html.contains("href=\"../plan?x=1&amp;y=2\""));
+    assert!(!rendered.html.contains("href=\"../plan"));
     assert!(rendered.html.contains("href=\"HTTPS://example.test/\""));
     assert!(rendered.html.contains("href=\"mailto:owner@example.test\""));
     assert!(rendered.html.contains("script"));
+}
+
+#[test]
+fn relative_links_are_reduced_to_same_page_anchors() {
+    // A same-origin path reuses the tab's origin, so href="/…#token=…" would
+    // overwrite the stored session token; only in-page anchors stay linked.
+    let rendered = render(
+        "[x](/?ref=P1#token=junk) [y](#fine) [z](//host/x) [w](relative/path) \
+         [q](?query=1) [e]() [v](P7@3)\n",
+    );
+    assert!(!rendered.html.contains("href=\"/"), "{}", rendered.html);
+    assert!(!rendered.html.contains("href=\"relative"));
+    assert!(!rendered.html.contains("href=\"?"));
+    assert!(!rendered.html.contains("href=\"\""));
+    assert!(!rendered.html.contains("href=\"P7"));
+    assert!(rendered.html.contains("href=\"#fine\""), "{}", rendered.html);
+    assert!(
+        rendered.html.contains("<p>x <a href=\"#fine\">y</a> z w q e v</p>"),
+        "{}",
+        rendered.html
+    );
 }
 
 #[test]
@@ -86,6 +107,12 @@ fn url_policy_rejects_ambiguous_schemes_and_browser_normalization() {
         "1http:evil",
         "java%73cript:evil",
         "mailto:",
+        "/?ref=P1#token=junk",
+        "/plan/one",
+        "./javascript:filename",
+        "../plan?next=javascript:ignored",
+        "?query=a:b",
+        "",
     ] {
         assert!(!allowed_url(url), "accepted {url:?}");
     }
@@ -93,12 +120,8 @@ fn url_policy_rejects_ambiguous_schemes_and_browser_normalization() {
         "http://example.test/x",
         "HTTPS://example.test/x",
         "mailto:owner@example.test",
-        "/plan/one",
-        "./javascript:filename",
-        "../plan?next=javascript:ignored",
         "#plan-build-api",
-        "?query=a:b",
-        "",
+        "#",
     ] {
         assert!(allowed_url(url), "rejected {url:?}");
     }

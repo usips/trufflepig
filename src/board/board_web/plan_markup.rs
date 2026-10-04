@@ -71,6 +71,9 @@ pub(crate) fn render(body: &str) -> RenderedPlan {
     }
 }
 
+/// HTTP(S) and mailto links survive; among relative links only same-page `#…`
+/// anchors do, since any other relative href navigates this origin (and could
+/// re-bootstrap the tab's token). Controls, backslashes, and `//` are denied.
 fn allowed_url(url: &str) -> bool {
     if url
         .chars()
@@ -81,7 +84,7 @@ fn allowed_url(url: &str) -> bool {
     }
     let prefix = url.split(['/', '?', '#']).next().unwrap_or_default();
     let Some((scheme, _)) = prefix.split_once(':') else {
-        return true;
+        return url.starts_with('#');
     };
     let Some(rest) = url.get(scheme.len() + 1..) else {
         return false;
