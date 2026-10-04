@@ -140,8 +140,8 @@ board` or `usage: feedback`. An unwritable fallback DB reports `board_unavailabl
 ## Git links and review evidence
 
 Agent commits use `Plan: P7` and one `Plan-Task: P7.3` per plan beside `Co-authored-by`. Writes register the canonical root's Git common
-directory and plan/repository association; no `--repo` flag is needed. `repo_key` derives from sorted roots across all refs and linked HEADs
-and is persisted immutably for a host/common-directory binding. Sanitized origin is only a label; `[repos]` overrides support shallow clones
+directory and plan/repository association; no `--repo` flag is needed. `repo_key` derives from sorted roots across refs (notes and stash excluded)
+and linked HEADs, persisted for a host/common-directory binding while root sets overlap; disjoint stored/current roots re-key it. Sanitized origin is only a label; `[repos]` overrides support shallow clones
 but cannot contradict a persisted key. Commit identity is `(repo_key, oid)`; plan associations survive duplicate-binding collapse.
 Registration caches for five minutes, invalidated by HEAD/ref metadata. Continuously absent bindings age out after five minutes of this
 router lifetime; permission/transient errors do not count, and reappearance resets that grace.

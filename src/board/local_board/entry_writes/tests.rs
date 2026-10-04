@@ -118,6 +118,170 @@ fn commit_tasks_retain_all_valid_links_and_unknown_task_falls_back() {
 }
 
 #[test]
+fn common_directory_rekeys_when_unrelated_repository_replaces_content() {
+    let fixture = crate::board::repo_identity::tests::GitFixture::new();
+    fixture.commit("original root");
+    let original = fixture.registration();
+    let path = fixture.directory.path().join("board.sqlite3");
+    let mut board = LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap();
+    let actor = BoardActor::new(
+        "fixture",
+        "fixture-host",
+        HarnessLabel::parse("human").unwrap(),
+        "repo-rekey",
+    )
+    .unwrap();
+    let reply = board
+        .handle(&BoardRequest::new(
+            actor.clone(),
+            BoardOp::New {
+                title: PlanTitle::new("Rekey").unwrap(),
+                body: PlanText::new("Rekey").unwrap(),
+                steward: None,
+                repo_key: None,
+            },
+        ))
+        .unwrap();
+    let BoardResult::Change(change) = reply.result else {
+        panic!("plan result")
+    };
+    let plan = change.plan.unwrap();
+    board
+        .handle(&BoardRequest::new(
+            actor.clone(),
+            BoardOp::RegisterRepo {
+                registration: original.clone(),
+            },
+        ))
+        .unwrap();
+    let link = board
+        .handle(&BoardRequest::new(
+            actor.clone(),
+            BoardOp::LinkCommits {
+                commits: vec![LinkedCommit {
+                    repo_key: original.repo_key.clone(),
+                    oid: original.root_commits[0],
+                    subject: "original root".into(),
+                    committed_at: 1,
+                    author: "Fixture <fixture@example.test>".into(),
+                    coauthors: Vec::new(),
+                    files: 0,
+                    insertions: 0,
+                    deletions: 0,
+                    plans: vec![CommitPlanLink {
+                        plan_id: plan,
+                        task_ordinal: None,
+                    }],
+                }],
+            },
+        ))
+        .unwrap();
+    assert!(matches!(
+        link.result,
+        BoardResult::CommitsLinked(CommitLinkResult { inserted: 1, .. })
+    ));
+    std::fs::remove_dir_all(fixture.root.join(".git")).unwrap();
+    fixture.git(&["init", "--quiet", "--initial-branch=main"]);
+    fixture.commit("unrelated root");
+    let replacement = fixture.registration();
+    assert_ne!(replacement.repo_key, original.repo_key);
+    assert_eq!(replacement.common_dir, original.common_dir);
+    let reply = board
+        .handle(&BoardRequest::new(
+            actor,
+            BoardOp::RegisterRepo {
+                registration: replacement.clone(),
+            },
+        ))
+        .unwrap();
+    let BoardResult::Registered(registration) = reply.result else {
+        panic!("registration result")
+    };
+    assert_eq!(registration.repo_key, replacement.repo_key);
+    assert_eq!(registration.root_commits, replacement.root_commits);
+    assert_eq!(
+        board
+            .conn
+            .query_row(
+                "SELECT repo_key FROM repo_paths WHERE host='fixture-host'",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+        replacement.repo_key.as_str()
+    );
+    assert_eq!(
+        board
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM commits WHERE repo_key=?1",
+                [original.repo_key.as_str()],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        board
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM commit_plans WHERE repo_key=?1",
+                [original.repo_key.as_str()],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+        1
+    );
+}
+
+#[test]
+fn common_directory_keeps_identity_when_fetch_extends_root_set() {
+    let fixture = crate::board::repo_identity::tests::GitFixture::new();
+    fixture.commit("original root");
+    let original = fixture.registration();
+    let foreign = crate::board::repo_identity::tests::GitFixture::new();
+    foreign.commit("foreign root");
+    let path = fixture.directory.path().join("board.sqlite3");
+    let mut board = LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap();
+    let actor = BoardActor::new(
+        "fixture",
+        "fixture-host",
+        HarnessLabel::parse("human").unwrap(),
+        "repo-fetch",
+    )
+    .unwrap();
+    board
+        .handle(&BoardRequest::new(
+            actor.clone(),
+            BoardOp::RegisterRepo {
+                registration: original.clone(),
+            },
+        ))
+        .unwrap();
+    fixture.git(&[
+        "fetch",
+        "--quiet",
+        foreign.root.to_str().unwrap(),
+        "main:refs/remotes/foreign/main",
+    ]);
+    let extended = fixture.registration();
+    assert_eq!(extended.root_commits.len(), 2);
+    assert_ne!(extended.repo_key, original.repo_key);
+    let reply = board
+        .handle(&BoardRequest::new(
+            actor,
+            BoardOp::RegisterRepo {
+                registration: extended,
+            },
+        ))
+        .unwrap();
+    let BoardResult::Registered(registration) = reply.result else {
+        panic!("registration result")
+    };
+    assert_eq!(registration.repo_key, original.repo_key);
+}
+
+#[test]
 fn common_directory_keeps_first_identity_when_root_set_expands() {
     let fixture = crate::board::repo_identity::tests::GitFixture::new();
     fixture.commit("original root");

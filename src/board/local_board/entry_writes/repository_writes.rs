@@ -36,11 +36,19 @@ pub(in crate::board::local_board) fn register_repo(
                 ));
             }
         }
-        registration.repo_key = initial_key;
-        if !roots.is_empty() {
-            registration.root_commits = roots;
+        let rekeyed = registration.origin_override.is_none()
+            && crate::board::repo_identity::root_sets_diverged(
+                &roots,
+                &registration.root_commits,
+            );
+        if !rekeyed {
+            registration.repo_key = initial_key;
+            if !roots.is_empty() {
+                registration.root_commits = roots;
+            }
         }
     }
+    tx.execute("INSERT INTO repos(repo_key,origin_label) VALUES(?1,?2) ON CONFLICT(repo_key) DO UPDATE SET origin_label=COALESCE(excluded.origin_label,repos.origin_label)",params![registration.repo_key.as_str(),registration.origin_label]).map_err(sql_error)?;
     tx.execute(
         "INSERT OR IGNORE INTO plan_repos(plan_id,repo_key) SELECT pr.plan_id,?1 FROM plan_repos pr JOIN repo_paths p ON p.repo_key=pr.repo_key WHERE p.host=?2 AND p.common_dir=?3",
         params![registration.repo_key.as_str(), registration.host, registration.common_dir.to_string_lossy().as_ref()],
@@ -56,7 +64,6 @@ pub(in crate::board::local_board) fn register_repo(
     .map_err(sql_error)?;
     let roots = serde_json::to_string(&registration.root_commits)
         .map_err(|error| invalid("invalid_body", error.to_string()))?;
-    tx.execute("INSERT INTO repos(repo_key,origin_label) VALUES(?1,?2) ON CONFLICT(repo_key) DO UPDATE SET origin_label=COALESCE(excluded.origin_label,repos.origin_label)",params![registration.repo_key.as_str(),registration.origin_label]).map_err(sql_error)?;
     tx.execute(
         "INSERT INTO repo_paths(repo_key,host,common_dir,root_commits_json,registration_error) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(repo_key,host,common_dir) DO UPDATE SET root_commits_json=excluded.root_commits_json,registration_error=excluded.registration_error",
         params![

@@ -84,7 +84,14 @@ fn register_repository_with_overrides(
     } else {
         let roots = run_bounded(
             &directory,
-            &["rev-list", "--max-parents=0", "--all", head.as_str()],
+            &[
+                "rev-list",
+                "--max-parents=0",
+                "--exclude=refs/notes/*",
+                "--exclude=refs/stash",
+                "--all",
+                head.as_str(),
+            ],
             remaining(deadline)?,
         )?;
         std::str::from_utf8(&roots)?
@@ -106,6 +113,13 @@ fn register_repository_with_overrides(
         registration_error: None,
         origin_override: override_key.cloned(),
     }))
+}
+
+/// True when a stored binding and a live registration share no root commit,
+/// meaning a different repository sits behind the host/common-directory pair.
+/// An empty set cannot prove divergence and keeps the stored identity.
+pub fn root_sets_diverged(stored: &[GitOid], current: &[GitOid]) -> bool {
+    !stored.is_empty() && !current.is_empty() && stored.iter().all(|root| !current.contains(root))
 }
 
 fn resolve_head(directory: &Path, deadline: Instant) -> Result<Option<GitOid>> {

@@ -143,6 +143,20 @@ fn reftable_repository_registration_resolves_symbolic_head() {
 }
 
 #[test]
+fn notes_and_stash_refs_do_not_change_repository_identity() {
+    let fixture = GitFixture::new();
+    fixture.commit("root");
+    let initial = fixture.registration();
+    fixture.git(&["notes", "add", "-m", "review note", "HEAD"]);
+    std::fs::write(fixture.root.join("tracked.txt"), "draft").unwrap();
+    fixture.git(&["add", "tracked.txt"]);
+    fixture.git(&["stash", "--quiet"]);
+    let with_extras = fixture.registration();
+    assert_eq!(with_extras.repo_key, initial.repo_key);
+    assert_eq!(with_extras.root_commits, initial.root_commits);
+}
+
+#[test]
 fn nonrepository_and_unborn_repository_have_no_portable_identity() {
     let fixture = GitFixture::new();
     assert!(
