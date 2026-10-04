@@ -227,7 +227,7 @@ def main() -> int:
         subprocess.run(["systemctl", "--user", "stop", "trufflepig-board.service"], check=True)
         subprocess.run(["systemctl", "--user", "enable", "--now", "trufflepig-board.service"], check=True)
         print(f"systemd board service: {unit_directory / 'trufflepig-board.service'}")
-        print("board bootstrap URL: journalctl --user -u trufflepig-board.service")
+        print("board bootstrap URL: run `trufflepig board web`")
     if args.check:
         subprocess.run([sys.executable, str(PLUGIN / "scripts/check_agent.py"),
                         "--wrapper", str(args.bin / "trufflepig-agent"), str(args.check.absolute())], check=True)

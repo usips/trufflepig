@@ -22,7 +22,7 @@ use anyhow::{Context, Result};
 use event_stream::{EventStreams, ReplayBatch, SequencePoller};
 use reader_pool::ReaderPool;
 use std::{
-    io::Write,
+    io::{IsTerminal, Write},
     net::{Shutdown, SocketAddr, TcpListener},
     path::PathBuf,
     sync::{Arc, Mutex, MutexGuard, TryLockError},
@@ -167,10 +167,6 @@ impl BoardWebServer {
         })
     }
 
-    pub(crate) fn bootstrap_url(&self) -> String {
-        self.state.guard.bootstrap_url()
-    }
-
     pub(crate) fn run(self) -> Result<()> {
         let pool = RequestPool::new("board-http", WEB_POOL)?;
         let body = br#"{"error":{"code":"daemon_busy","message":"board web queue is full"}}"#;
@@ -196,7 +192,8 @@ impl BoardWebServer {
     }
 }
 
-/// Foreground service; the bootstrap fragment is printed only to the starting terminal.
+/// Foreground service; the full bootstrap URL is printed only when stdout is
+/// a terminal, never to pipes or the systemd journal.
 pub fn serve(address: SocketAddr) -> Result<()> {
     signal_shutdown::block_termination()?;
     let server = BoardWebServer::bind(address)?;
@@ -204,8 +201,24 @@ pub fn serve(address: SocketAddr) -> Result<()> {
     signal_shutdown::spawn_exit_waiter(move || {
         let _ = std::fs::remove_file(descriptor);
     })?;
-    println!("board web: {}", server.bootstrap_url());
+    println!(
+        "{}",
+        bootstrap_line(&server.state.guard, std::io::stdout().is_terminal())
+    );
     server.run()
+}
+
+/// The token-bearing URL is for the starting terminal only; anything else
+/// gets the origin plus the command that prints the URL on demand.
+fn bootstrap_line(guard: &WebGuard, is_tty: bool) -> String {
+    if is_tty {
+        format!("board web: {}", guard.bootstrap_url())
+    } else {
+        format!(
+            "board web: {}; run `trufflepig board web` for the bootstrap URL",
+            guard.origin()
+        )
+    }
 }
 
 /// Return the live listener's bootstrap URL, optionally opening a plan or entry.

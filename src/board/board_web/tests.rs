@@ -6,6 +6,25 @@ use crate::board::{
 };
 use web_ops::WebRequest;
 
+#[test]
+fn bootstrap_line_carries_the_token_only_to_a_terminal() {
+    let directory = tempfile::tempdir().unwrap();
+    let token = web_guard::BoardWebToken::rotate_at(&directory.path().join("board-web.token"))
+        .unwrap();
+    let guard = WebGuard::with_token("127.0.0.1:7341".parse().unwrap(), token).unwrap();
+    let terminal = bootstrap_line(&guard, true);
+    assert_eq!(terminal, format!("board web: {}", guard.bootstrap_url()));
+    assert!(terminal.contains("#token="));
+    let piped = bootstrap_line(&guard, false);
+    assert!(piped.contains(guard.origin()), "{piped}");
+    assert!(piped.contains("trufflepig board web"), "{piped}");
+    assert!(!piped.contains("#token="), "{piped}");
+    assert!(
+        !piped.contains(guard.bootstrap_url().split_once("#token=").unwrap().1),
+        "{piped}"
+    );
+}
+
 fn overview() -> BoardOp {
     BoardOp::Overview {
         repo_key: None,
