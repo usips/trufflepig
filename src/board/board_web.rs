@@ -128,31 +128,64 @@ pub(crate) struct WebState {
     ingest: web_ops::IngestFlight,
 }
 
+/// The event-stream feed reads through one dedicated query-only connection
+/// outside the reader pool: poller ticks and ring fills never contend with
+/// request reads, and streams never check out a pooled connection.
+struct StreamFeed {
+    store: Arc<WebStore>,
+    board: Mutex<LocalBoard>,
+}
+
+impl StreamFeed {
+    fn open(store: &Arc<WebStore>) -> Result<Self, BoardError> {
+        let config = store.config(Instant::now() + http_wire::REQUEST_TIMEOUT)?;
+        let board = LocalBoard::open_read_with_timeout(&config, Duration::from_secs(5))?;
+        Ok(Self {
+            store: Arc::clone(store),
+            board: Mutex::new(board),
+        })
+    }
+
+    fn read<T>(
+        &self,
+        work: impl FnOnce(&mut LocalBoard) -> Result<T, BoardError>,
+    ) -> Result<T, BoardError> {
+        let expires = Instant::now() + http_wire::REQUEST_TIMEOUT;
+        let config = self.store.config(expires)?;
+        let mut board = self
+            .board
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        board.set_busy_timeout(expires.saturating_duration_since(Instant::now()))?;
+        board.set_claim_ttl(Duration::from_secs(
+            config.claim_ttl_seconds().cast_unsigned(),
+        ))?;
+        work(&mut board)
+    }
+}
+
+/// The poller and the shared ring share the one dedicated feed connection.
+fn open_stream_feed(store: &Arc<WebStore>) -> Result<(SequencePoller, EventStreams)> {
+    let feed = Arc::new(StreamFeed::open(store)?);
+    let sequence_feed = Arc::clone(&feed);
+    let poller = SequencePoller::start(Arc::new(move || {
+        sequence_feed.read(|board| board.max_seq())
+    }))?;
+    let streams = EventStreams::new(
+        Arc::new(move |after, plan, limit| {
+            feed.read(|board| board.read_event_batch(after, plan, limit))
+                .map(|(latest, events)| ReplayBatch { latest, events })
+        }),
+        poller.handle(),
+    );
+    Ok((poller, streams))
+}
+
 impl BoardWebServer {
     pub(crate) fn bind(address: SocketAddr) -> Result<Self> {
         let (listener, guard) = WebGuard::bind(address)?;
         let store = Arc::new(WebStore::open(BoardConfigCache::default())?);
-        let sequence_store = Arc::clone(&store);
-        let poller = SequencePoller::start(Arc::new(move || {
-            let expires = Instant::now() + http_wire::REQUEST_TIMEOUT;
-            let config = sequence_store.config(expires)?;
-            sequence_store
-                .readers
-                .with_reader(&config, expires, |reader| reader.max_seq())
-        }))?;
-        let feed_store = Arc::clone(&store);
-        let streams = EventStreams::new(
-            Arc::new(move |after, plan, limit| {
-                let expires = Instant::now() + http_wire::REQUEST_TIMEOUT;
-                let config = feed_store.config(expires)?;
-                let (latest, events) =
-                    feed_store.readers.with_reader(&config, expires, |reader| {
-                        reader.read_event_batch(after, plan, limit)
-                    })?;
-                Ok(ReplayBatch { latest, events })
-            }),
-            poller.handle(),
-        );
+        let (poller, streams) = open_stream_feed(&store)?;
         let config = store.config(Instant::now() + http_wire::REQUEST_TIMEOUT)?;
         web_endpoint::publish(&store.runtime, listener.local_addr()?, &config.db_path)?;
         let endpoint = web_endpoint::EndpointGuard::arm(&store.runtime);

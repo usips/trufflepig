@@ -12,6 +12,8 @@ use std::{
 pub(crate) struct ReaderPool {
     available: Mutex<Vec<Option<LocalBoard>>>,
     returned: Condvar,
+    #[cfg(test)]
+    checkouts: std::sync::atomic::AtomicUsize,
 }
 
 impl ReaderPool {
@@ -27,7 +29,22 @@ impl ReaderPool {
         Ok(Self {
             available: Mutex::new(readers),
             returned: Condvar::new(),
+            #[cfg(test)]
+            checkouts: std::sync::atomic::AtomicUsize::new(0),
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn checkout_count(&self) -> usize {
+        self.checkouts.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pool_size(&self) -> usize {
+        self.available
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .len()
     }
 
     /// Materialize owned records inside `work`; no connection reaches a network send.
@@ -58,6 +75,9 @@ impl ReaderPool {
             available = next;
         };
         drop(available);
+        #[cfg(test)]
+        self.checkouts
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut lease = ReaderLease { pool: self, reader };
         if lease.reader.is_none() {
             lease.reader = Some(LocalBoard::open_read_with_timeout(

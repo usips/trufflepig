@@ -131,6 +131,32 @@ impl SequenceWake {
         }
     }
 
+    /// Wakes waiters without new data so the ring filler rechecks plan
+    /// registrations; generation inequality is the only waiter signal.
+    pub(super) fn poke(&self) {
+        let mut state = self
+            .0
+            .state
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        state.generation = state.generation.wrapping_add(1);
+        self.0.changed.notify_all();
+    }
+
+    /// Waits out an outage: returns when polling recovers, stops, or times out.
+    pub(super) fn wait_recovery(&self, timeout: Duration) {
+        let state = self
+            .0
+            .state
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        let _ = self
+            .0
+            .changed
+            .wait_timeout_while(state, timeout, |state| state.unavailable && !state.stopped)
+            .unwrap_or_else(|poison| poison.into_inner());
+    }
+
     pub(super) fn mark_unavailable(&self) {
         let mut state = self
             .0
