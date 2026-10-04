@@ -134,7 +134,7 @@ fn board_search_failed_v3_migration_rolls_back_rebuild_and_version_atomically() 
         Err(error) => error,
         Ok(_) => panic!("accepted injected migration failure"),
     };
-    assert_eq!(error.code, BoardErrorCode::BoardUnavailable);
+    assert_eq!(error.code, BoardErrorCode::InvalidState);
     let conn = Connection::open(&path).unwrap();
     assert_eq!(
         conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))

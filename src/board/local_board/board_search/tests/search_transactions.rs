@@ -59,7 +59,7 @@ fn board_search_indexes_plan_edits_proposals_and_posts_in_their_write_transactio
             },
         ))
         .unwrap_err();
-    assert_eq!(error.code, BoardErrorCode::BoardUnavailable);
+    assert_eq!(error.code, BoardErrorCode::InvalidState);
     board
         .conn
         .execute_batch("DROP TRIGGER fail_search_event;")

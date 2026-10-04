@@ -94,3 +94,27 @@ impl BoardBackend for RejectedImport {
         Ok(EventSeq::new(0))
     }
 }
+
+struct SqliteRejectedImport {
+    raw_code: i32,
+    attempts: usize,
+}
+
+impl BoardBackend for SqliteRejectedImport {
+    fn handle(&mut self, _: &BoardRequest) -> Result<BoardReply, BoardError> {
+        self.attempts += 1;
+        let sqlite = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(self.raw_code),
+            Some("simulated storage failure".into()),
+        );
+        Err(BoardError::from(
+            anyhow::Error::new(sqlite).context("import feedback"),
+        ))
+    }
+    fn import_feedback(&mut self, request: &BoardRequest) -> Result<BoardReply, BoardError> {
+        self.handle(request)
+    }
+    fn max_seq(&self) -> Result<EventSeq, BoardError> {
+        Ok(EventSeq::new(0))
+    }
+}

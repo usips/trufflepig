@@ -88,6 +88,45 @@ fn semantic_import_rejections_quarantine_and_transient_rejections_remain_pending
 }
 
 #[test]
+fn deterministic_sqlite_errors_quarantine_once_while_locks_stay_pending() {
+    for (raw_code, quarantines) in [
+        (rusqlite::ffi::SQLITE_CONSTRAINT, true),
+        (rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE, true),
+        (rusqlite::ffi::SQLITE_CORRUPT, true),
+        (rusqlite::ffi::SQLITE_NOTADB, true),
+        (rusqlite::ffi::SQLITE_BUSY, false),
+        (rusqlite::ffi::SQLITE_LOCKED, false),
+    ] {
+        let directory = scratch();
+        queue(directory.path(), &report()).unwrap();
+        let mut backend = SqliteRejectedImport {
+            raw_code,
+            attempts: 0,
+        };
+        let first = import_pending(directory.path(), &mut backend).unwrap();
+        assert_eq!(backend.attempts, 1, "{raw_code}");
+        assert_eq!(first.quarantined, usize::from(quarantines), "{raw_code}");
+        assert_eq!(first.pending, usize::from(!quarantines), "{raw_code}");
+        let second = import_pending(directory.path(), &mut backend).unwrap();
+        let path = fs::read_dir(directory.path())
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        if quarantines {
+            assert_eq!(second, ImportSummary::default(), "{raw_code}");
+            assert_eq!(backend.attempts, 1, "{raw_code}");
+            assert_eq!(path.extension().unwrap(), "quarantine", "{raw_code}");
+        } else {
+            assert_eq!(second.pending, 1, "{raw_code}");
+            assert_eq!(backend.attempts, 2, "{raw_code}");
+            assert_eq!(path.extension().unwrap(), "feedback", "{raw_code}");
+        }
+    }
+}
+
+#[test]
 fn imported_feedback_sets_server_provenance_and_direct_feedback_does_not() {
     let directory = scratch();
     let config = crate::board::BoardConfig::for_database(directory.path().join("board.sqlite3"));

@@ -182,6 +182,34 @@ fn leading_error_codes_ignore_untrusted_diagnostic_segments() {
 }
 
 #[test]
+fn sqlite_storage_failures_classify_by_typed_code() {
+    for (raw, expected) in [
+        (rusqlite::ffi::SQLITE_BUSY, BoardErrorCode::DatabaseLocked),
+        (rusqlite::ffi::SQLITE_LOCKED, BoardErrorCode::DatabaseLocked),
+        (rusqlite::ffi::SQLITE_CONSTRAINT, BoardErrorCode::InvalidState),
+        (
+            rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE,
+            BoardErrorCode::InvalidState,
+        ),
+        (
+            rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY,
+            BoardErrorCode::InvalidState,
+        ),
+        (rusqlite::ffi::SQLITE_CORRUPT, BoardErrorCode::InvalidState),
+        (rusqlite::ffi::SQLITE_NOTADB, BoardErrorCode::InvalidState),
+        (rusqlite::ffi::SQLITE_IOERR, BoardErrorCode::BoardUnavailable),
+    ] {
+        let sqlite = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(raw),
+            Some("simulated storage failure".into()),
+        );
+        let error = anyhow::Error::new(sqlite).context("store entry");
+        assert_eq!(BoardErrorCode::from_error(&error), Some(expected), "{raw}");
+        assert_eq!(BoardError::from(error).code, expected, "{raw}");
+    }
+}
+
+#[test]
 fn typed_errors_win_over_conflicting_textual_contexts() {
     let error = anyhow::Error::new(BoardError::new(BoardErrorCode::ClaimConflict, "claimed"))
         .context("database is locked: while dispatching");
@@ -196,7 +224,7 @@ fn typed_errors_win_over_conflicting_textual_contexts() {
     );
     assert_eq!(
         BoardErrorCode::from_error(&anyhow::Error::new(sqlite)),
-        Some(BoardErrorCode::BoardUnavailable)
+        Some(BoardErrorCode::InvalidState)
     );
     for message in [
         "database is locked",

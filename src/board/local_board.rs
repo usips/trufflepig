@@ -122,12 +122,7 @@ pub(super) fn read_entry(conn: &Connection, id: EntryId) -> Result<EntryRecord, 
 }
 
 pub(super) fn sql_error(error: rusqlite::Error) -> BoardError {
-    if matches!(&error, rusqlite::Error::SqliteFailure(code, _) if matches!(code.code,rusqlite::ErrorCode::DatabaseBusy|rusqlite::ErrorCode::DatabaseLocked))
-    {
-        BoardError::new(BoardErrorCode::DatabaseLocked, error.to_string())
-    } else {
-        invalid("board_unavailable", error.to_string())
-    }
+    BoardError::from(anyhow::anyhow!(error))
 }
 pub(super) fn invalid(code: &str, message: impl Into<String>) -> BoardError {
     BoardError::from(anyhow::anyhow!("{code}: {}", message.into()))
