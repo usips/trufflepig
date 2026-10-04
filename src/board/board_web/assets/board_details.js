@@ -67,7 +67,7 @@ export function createBoardDetails(context) {
     if (tab === "entries") return add(page, panel("Task status", add(el("div", "task-status-strip"), view.tasks.slice(0, 8).map(task => taskCard(task, view.claims, { claimsOmitted: view.claims_omitted, claimAfter: view.claims_next_after, through: view.through })),
       link("Manage tasks", "plan", { ref: plan.id, tab: "tasks" }, "small"))), entriesPage(extra, { ...route, plan: plan.id }, false), panel("Post an entry", postForm(plan.id)));
     if (tab === "history") return add(page, historyPage(extra, plan));
-    if (tab === "commits") return add(page, commitsPage(view.commits, view.commits_omitted, plan.id), link("Browse all commit entries", "plan", { ref: plan.id, tab: "entries", kind: "commit", through: view.through }, "button"),
+    if (tab === "commits") return add(page, commitsPage(view.commits, view.commits_omitted, plan.id), link("Browse all commit entries", "plan", { ref: plan.id, tab: "entries", kind: "commit" }, "button"),
       route.oid && !view.commits.some(commit => commit.oid === route.oid) ? link("Find this commit entry", "search", { q: route.oid, plan: plan.id }, "button") : null);
     if (tab === "review") return add(page, reviewPage(extra));
     const layout = el("div", "plan-layout");
@@ -86,8 +86,7 @@ export function createBoardDetails(context) {
       view.claims_next_after ? link("More claims", "claims", { plan: plan.id, after: JSON.stringify(view.claims_next_after), through: view.through }, "small") : null)));
     add(layout, body, aside); page.append(layout);
     const entries = view.entries || [];
-    if (entries.length) page.append(panel("Recent entries", add(el("div", "entry-list"), entries.map(record => entryCard(record)), omitted(view.entries_omitted, "entries"), link("All entries", "plan", { ref: plan.id, tab: "entries", through: view.through }),
-      view.entries_next_after ? link("Next entries", "plan", { ref: plan.id, tab: "entries", after: JSON.stringify(view.entries_next_after), through: view.through }, "small") : null)));
+    if (entries.length) page.append(panel("Recent entries", add(el("div", "entry-list"), entries.map(record => entryCard(record)), omitted(view.entries_omitted, "entries"), link("All entries", "plan", { ref: plan.id, tab: "entries" }))));
     return page;
   }
   function historyPage(data, plan) {

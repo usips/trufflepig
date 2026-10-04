@@ -2,6 +2,51 @@ export function createBoardReader(context) {
   const { state, dom, views, board, jsonFetch, apiVersion, readOp, snapshotSeq, minimumSeq, cursorFromRoute, parseBoardJson, queryFilters } = context;
   const { el, add, title, panel, planId, actorName, stamp } = dom;
   const { renderOverview, renderAttention, renderClaims, feedbackPage, searchPage, editorPage, entryPage, entriesPage, diffPage, sanitizedMarkup, renderPlan } = views;
+  // The route's `after` marks the page boundary: entries strictly older than
+  // it (entry sequences are minted one per event, so seq-1 is a clean upper
+  // bound). Cursors round-trip as composite JSON like the server's own.
+  function beforeFromRoute(route) {
+    if (!route.after) return null;
+    const cursor = parseBoardJson(route.after);
+    if (!/^(0|[1-9]\d*)$/.test(String(cursor?.seq)) || !/^E[1-9]\d*$/.test(String(cursor?.entry))) throw new Error("Invalid page cursor.");
+    return { seq: BigInt(String(cursor.seq)), entry: String(cursor.entry) };
+  }
+  // Newest-first paging over the ascending Entries window. One event creates
+  // at most one entry, so a sequence span bounds its entry count: probe
+  // (lower, ceiling] windows, widening when they hold too few entries and
+  // narrowing past the 200-row read cap. Small histories settle in one read.
+  async function entriesNewestPage(route, readReply, plan = null) {
+    const want = 50;
+    const filters = {
+      plan: plan || route.plan || null, kind: route.kind || null, harness: route.harness || null,
+      user: route.user || null, host: route.host || null, task: route.task || null, references: null,
+    };
+    const before = beforeFromRoute(route);
+    if (route.through && !/^(0|[1-9]\d*)$/.test(route.through)) throw new Error("Invalid page cursor.");
+    let ceiling = before ? before.seq - 1n : route.through ? BigInt(route.through) : null;
+    let span = 512n, lower = 0n, data = null, rows = [];
+    for (let probe = 0; probe < 6; probe++) {
+      lower = ceiling !== null && ceiling > span ? ceiling - span : 0n;
+      const reply = await readReply(readOp("entries", {
+        ...filters, after: lower === 0n ? null : { seq: String(lower), entry: "E1" },
+        through: ceiling === null ? null : String(ceiling), limit: 200,
+      }));
+      data = reply.data;
+      if (!Array.isArray(data?.entries)) throw new Error("Board reply is missing its entries collection.");
+      if (ceiling === null) ceiling = BigInt(String(data.through));
+      rows = data.entries.filter(entry => BigInt(String(entry.seq)) > lower);
+      if (data.next_after === null || data.next_after === undefined) {
+        if (rows.length >= want || lower === 0n) break;
+        span *= 4n;
+      } else {
+        if (span <= 8n) break;
+        span >>= 2n;
+      }
+    }
+    const shown = rows.slice(-want).reverse();
+    state.liveGap = false;
+    return { ...data, entries: shown, more_older: rows.length > want || lower > 0n || !(data.next_after === null || data.next_after === undefined) };
+  }
   async function fetchRoute(route, signal, forceSnapshot) {
     const replies = [];
     const readReply = async op => {
@@ -54,7 +99,7 @@ export function createBoardReader(context) {
       ]);
       page = entryPage(view, diff, route, { replies: repliesPage, backrefs: backrefsPage });
     } else if (route.view === "entries") {
-      page = entriesPage(await read(readOp("entries", queryFilters(route))), route);
+      page = entriesPage(await entriesNewestPage(route, readReply), route);
     } else if (["plan", "edit"].includes(route.view)) {
       if (!planId(route.ref)) throw new Error("Choose a plan using its P# reference.");
       if (route.view === "plan" && route.ref.includes("..")) {
@@ -70,7 +115,7 @@ export function createBoardReader(context) {
           const [rendered, extra] = await Promise.all([
             renderedReply("plan", view.revision.id),
             route.tab === "history" ? read(readOp("history", { plan: view.plan.id, after: cursorFromRoute(route), through: route.through || null, limit: 50 })) :
-              route.tab === "entries" ? read(readOp("entries", { ...queryFilters(route), plan: view.plan.id })) :
+              route.tab === "entries" ? entriesNewestPage(route, readReply, view.plan.id) :
                 route.tab === "review" ? read(readOp("review", { base: view.revision.id, agent: null })) :
                   route.tab === "tasks" ? Promise.all([
                     read(readOp("tasks", { plan: view.plan.id, after: route.taskAfter || null, through: route.taskThrough || null, ceiling: route.taskCeiling ? parseBoardJson(route.taskCeiling) : null, limit: 50 })),

@@ -26,7 +26,7 @@ import { createBoardViews } from "/board_views.js";
     route: routeFromLocation(), generation: 0, navigation: 0, request: null, loadedAt: 0, clockOffsetMs: 0,
     overview: null, attention: null, watermark: null, stream: null,
     streamGeneration: 0, reconnect: null, streamFailures: 0,
-    refreshTimer: null, refreshing: false, refreshAgain: false, drafts: new Map(), globalRefresh: null, resyncing: false, liveEntries: [], livePending: new Set(),
+    refreshTimer: null, refreshing: false, refreshAgain: false, drafts: new Map(), globalRefresh: null, resyncing: false, liveEntries: [], livePending: new Set(), liveGap: false,
     formDrafts: new Map(), formStatuses: new Map(), pendingForms: new Set(),
   };
   const columns = ["todo", "doing", "review", "done", "blocked"];
@@ -157,18 +157,25 @@ import { createBoardViews } from "/board_views.js";
   function addLiveEntry(event) {
     const route = state.route, subject = String(event?.subject);
     if (!/^E[1-9]\d*$/.test(subject) || route.after || route.through) return;
-    if (route.view !== "entries" && !(route.view === "plan" && route.tab === "entries")) return;
+    const plan = route.view === "entries" ? route.plan : route.view === "plan" && route.tab === "entries" ? planId(route.ref) : null;
+    if (plan === null) return;
+    if (plan && String(event.plan || "") !== plan) return;
+    if (route.kind && event.kind !== route.kind) return;
     if (state.livePending.has(subject) || state.liveEntries.some(item => item.entry.id === subject)) return;
     state.livePending.add(subject);
     void (async () => {
       try {
         const entry = entryRecord((await board(readOp("show", { target: subject }))).data.entry);
         if (!entry?.id || state.liveEntries.some(item => item.entry.id === entry.id)) return;
+        if (String(entry.seq) !== String(event.seq)) return;
         const record = { seq: String(event.seq), entry };
         const at = state.liveEntries.findIndex(item => BigInt(item.seq) > BigInt(record.seq) ||
           (BigInt(item.seq) === BigInt(record.seq) && BigInt(item.entry.id.slice(1)) > BigInt(record.entry.id.slice(1))));
         state.liveEntries.splice(at < 0 ? state.liveEntries.length : at, 0, record);
-        if (state.liveEntries.length > 50) state.liveEntries.splice(state.liveEntries.reduce((lowest, item, index) => BigInt(item.seq) < BigInt(state.liveEntries[lowest].seq) ? index : lowest, 0), 1);
+        if (state.liveEntries.length > 50) {
+          state.liveEntries.splice(state.liveEntries.reduce((lowest, item, index) => BigInt(item.seq) < BigInt(state.liveEntries[lowest].seq) ? index : lowest, 0), 1);
+          state.liveGap = true;
+        }
         scheduleRefresh();
       } catch (_) { /* A failed Show fetch is recovered by the next refresh. */ }
       finally { state.livePending.delete(subject); }

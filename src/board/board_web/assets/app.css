@@ -206,7 +206,7 @@ nav a{padding:.4rem .5rem;white-space:nowrap;font-size:.83rem}
 .primary{color:#172820;background:#8cd8b5}
 .primary:hover:not(:disabled){background:#afe8cb;color:#172820}
 .brand-mark{color:#172820}
-.lane-column,.markup pre{background:#17232a}
+.lane-column,.markup pre,.entry-table .live-divider td{background:#17232a}
 .badge[data-kind=blocked],.badge[data-kind=stale],.badge[data-kind=open],.warning{background:#413521;border-color:#685433}
 .badge[data-kind=rejected],.badge[data-kind=wrong],.diff-line[data-change=removed]{background:#45282d;border-color:#71434a}
 .badge[data-kind=doing],.badge[data-kind=accepted],.badge[data-kind=fixed]{border-color:#3a6952}
@@ -239,6 +239,7 @@ nav a{padding:.4rem .5rem;white-space:nowrap;font-size:.83rem}
 .entry-table td:nth-child(2){max-width:220px;overflow-wrap:anywhere}
 .entry-table .entry-text-cell{min-width:300px;max-width:620px}
 .entry-table .entry-body{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.entry-table .live-divider td{text-align:center;color:var(--muted);font-size:.76rem;background:#f5f7f8;border-bottom:1px solid var(--line);padding:.4rem}
 .entry-table .badge{margin:.1rem .15rem .1rem 0}
 .task-status-strip{display:flex;flex-wrap:wrap;align-items:start;gap:.7rem}
 .task-status-strip .task-card{min-width:190px;max-width:310px;margin:0}
