@@ -315,8 +315,16 @@ fn socket_parsed_post_reaches_same_auth_checks() {
     let guard = WebGuard::with_token(listener.local_addr().unwrap(), token).unwrap();
     let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
     client.write_all(format!(
-        "POST /api/v1/board HTTP/1.1\r\nHost: {}\r\nOrigin: http://evil.example\r\nX-Board-Token: {}\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{{}}",
-        guard.authority(), guard.token.expose(),
+        concat!(
+            "POST /api/v1/board HTTP/1.1\r\n",
+            "Host: {}\r\n",
+            "Origin: http://evil.example\r\n",
+            "X-Board-Token: {}\r\n",
+            "Content-Type: application/json\r\n",
+            "Content-Length: 2\r\n\r\n{{}}"
+        ),
+        guard.authority(),
+        guard.token.expose(),
     ).as_bytes()).unwrap();
     let (mut server, _) = listener.accept().unwrap();
     let request = super::super::http_wire::read_request(&mut server, Instant::now()).unwrap();

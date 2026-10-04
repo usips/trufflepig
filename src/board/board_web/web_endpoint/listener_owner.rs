@@ -92,10 +92,21 @@ mod tests {
     use super::*;
     use std::net::TcpListener;
 
-    const HEADER: &str = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode";
+    const HEADER: &str = concat!(
+        "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   ",
+        "uid  timeout inode"
+    );
 
     fn row(local: &str, state: &str, uid: u32) -> String {
-        format!("   0: {local} 00000000:0000 {state} 00000000:00000000 00:00000000 00000000 {uid}        0 12345 1 0000000000000000 100 0 0 10 0")
+        format!(
+            concat!(
+                "   0: {local} 00000000:0000 {state} 00000000:00000000 00:00000000 00000000 ",
+                "{uid}        0 12345 1 0000000000000000 100 0 0 10 0"
+            ),
+            local = local,
+            state = state,
+            uid = uid
+        )
     }
 
     fn write_table(directory: &tempfile::TempDir, rows: &[String]) -> std::path::PathBuf {

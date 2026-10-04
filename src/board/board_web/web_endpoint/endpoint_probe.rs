@@ -12,7 +12,14 @@ pub(super) fn probe(address: SocketAddr, guard: &WebGuard, expires: Instant) -> 
         "nonce": nonce.to_hex(),
     }))?;
     let headers = format!(
-        "POST /api/v1/challenge HTTP/1.1\r\nHost: {}\r\nOrigin: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        concat!(
+            "POST /api/v1/challenge HTTP/1.1\r\n",
+            "Host: {}\r\n",
+            "Origin: {}\r\n",
+            "Content-Type: application/json\r\n",
+            "Content-Length: {}\r\n",
+            "Connection: close\r\n\r\n"
+        ),
         guard.authority(),
         guard.origin(),
         body.len(),

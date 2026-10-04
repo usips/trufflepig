@@ -8,7 +8,7 @@ mod stream_socket;
 #[cfg(test)]
 mod tests;
 
-pub use sequence_poller::{SequencePoller, SequenceReader, SequenceWake};
+pub use sequence_poller::{SequencePoller, SequenceWake};
 
 use crate::board::{
     board_ids::{EventSeq, PlanId},
@@ -181,6 +181,7 @@ impl EventStreams {
         }
     }
 
+    #[cfg(test)]
     pub fn active(&self) -> usize {
         self.active.load(Ordering::Acquire)
     }

@@ -1,5 +1,8 @@
 export function createBoardStream(context) {
-  const { state, privateFetch, setConnection, loadRoute, scheduleRefresh, parseBoardJson, addTickerEvent, addLiveEntry, noteSeen, onIngest } = context;
+  const {
+    state, privateFetch, setConnection, loadRoute, scheduleRefresh, parseBoardJson, addTickerEvent,
+    addLiveEntry, noteSeen, onIngest,
+  } = context;
   function parseSse(onEvent) {
     let buffer = "", eventName = "message", eventId = null, data = [], frameBytes = 0;
     const encoder = new TextEncoder();
@@ -66,7 +69,8 @@ export function createBoardStream(context) {
   function onRelay(message) {
     if (mode !== "following") return;
     const frame = message.data;
-    if (!frame || typeof frame.event !== "string" || typeof frame.data !== "string" || !(frame.id === null || typeof frame.id === "string")) return;
+    if (!frame || typeof frame.event !== "string" || typeof frame.data !== "string"
+      || !(frame.id === null || typeof frame.id === "string")) return;
     try { deliver(frame); } catch (_) { /* A malformed relayed frame is dropped, never fatal. */ }
   }
 
@@ -121,14 +125,20 @@ export function createBoardStream(context) {
         const response = await privateFetch(`/api/v1/events?after=${encodeURIComponent(cursor)}`, {
           headers: { "Accept": "text/event-stream", "Last-Event-ID": cursor }, signal: controller.signal,
         });
-        if (!response.ok || !response.body || !response.headers.get("Content-Type")?.startsWith("text/event-stream")) throw new Error(`Live connection failed (${response.status}).`);
+        if (!response.ok || !response.body
+          || !response.headers.get("Content-Type")?.startsWith("text/event-stream")) {
+          throw new Error(`Live connection failed (${response.status}).`);
+        }
         if (generation !== state.streamGeneration) return;
         setConnection("Live", "live");
         const decoder = new TextDecoder("utf-8", { fatal: true });
         let resync = false;
         const parse = parseSse(frame => {
           if (generation !== state.streamGeneration || resync) return;
-          if (relay) { try { relay({ event: frame.event, id: frame.id, data: frame.data }); } catch (_) { /* A closed channel still leaves local delivery. */ } }
+          if (relay) {
+            try { relay({ event: frame.event, id: frame.id, data: frame.data }); }
+            catch (_) { /* A closed channel still leaves local delivery. */ }
+          }
           if (deliver(frame)) resync = true;
         });
         reader = response.body.getReader();
@@ -139,7 +149,9 @@ export function createBoardStream(context) {
         }
         if (!resync && generation === state.streamGeneration) setConnection("Reconnecting…", "error");
       } catch (error) {
-        if (error?.name !== "AbortError" && generation === state.streamGeneration) setConnection("Reconnecting…", "error");
+        if (error?.name !== "AbortError" && generation === state.streamGeneration) {
+          setConnection("Reconnecting…", "error");
+        }
       } finally {
         if (reader) { try { await reader.cancel(); } catch (_) { /* Stream already closed. */ } }
         if (generation === state.streamGeneration) {

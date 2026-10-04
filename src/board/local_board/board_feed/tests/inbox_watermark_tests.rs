@@ -217,7 +217,12 @@ fn first_inbox_seeds_from_a_bounded_recent_window() {
     let mut bulk = String::from("BEGIN;");
     for seq in first_filler..first_filler + 520 {
         bulk.push_str(&format!(
-            "INSERT INTO events(seq,kind,subject,actor_id,summary,created_at) VALUES({seq},'note','E1',{codex_id},'own filler',0);"
+            concat!(
+                "INSERT INTO events(seq,kind,subject,actor_id,summary,created_at) ",
+                "VALUES({seq},'note','E1',{codex_id},'own filler',0);"
+            ),
+            seq = seq,
+            codex_id = codex_id
         ));
     }
     bulk.push_str("COMMIT;");

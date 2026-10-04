@@ -46,7 +46,8 @@ fn populated_v1_duplicate_checkout_paths_keep_first_key_and_all_evidence() {
     INSERT INTO feedback_imports VALUES('import',3);
     INSERT INTO events VALUES(1,1,'decision','P1',NULL,1,'created',10);
     INSERT INTO events VALUES(2,1,'proposal','E2',NULL,1,'proposed',11);
-    INSERT INTO operation_dedupes VALUES('operation','{"api":1,"backend":"legacy","result":{"result":"change","data":{"entry":"E1","seq":1,"plan":"P1","revision":"P1@1","task":null,"deduplicated":false}},"warnings":[]}',20);
+    INSERT INTO operation_dedupes VALUES('operation','{"api":1,"backend":"legacy","result":{"result":"change",
+ "data":{"entry":"E1","seq":1,"plan":"P1","revision":"P1@1","task":null,"deduplicated":false}},"warnings":[]}',20);
 
     INSERT INTO repos VALUES('duplicate','second origin');
     INSERT INTO repo_paths VALUES('duplicate','host','/repo','duplicate scan','duplicate digest');
@@ -57,7 +58,8 @@ fn populated_v1_duplicate_checkout_paths_keep_first_key_and_all_evidence() {
     INSERT INTO revisions VALUES(2,1,'body','create',4,1,3);
     INSERT INTO tasks VALUES(2,1,'Second task','doing','codex','Scope',3);
     INSERT INTO claims VALUES(2,2,1,1,5,'second scope',11,21,NULL,NULL);
-    INSERT INTO commits VALUES('duplicate','0123456789012345678901234567890123456789','second commit',12,'second author','[]',0,'[]',0,0);
+    INSERT INTO commits VALUES('duplicate','0123456789012345678901234567890123456789','second commit',12,
+ 'second author','[]',0,'[]',0,0);
     INSERT INTO commit_plans VALUES('duplicate','0123456789012345678901234567890123456789',2,1,5);
     INSERT INTO events VALUES(3,2,'decision','P2',NULL,1,'second created',11);
     INSERT INTO events VALUES(4,2,'commit','E5',NULL,1,'second evidence',12);
@@ -126,7 +128,7 @@ fn populated_v1_duplicate_checkout_paths_keep_first_key_and_all_evidence() {
             .is_none()
     );
     let crate::board::board_protocol::BoardResult::Repositories(targets) =
-        crate::board::local_board::board_reads::repositories(&conn, None)
+        crate::board::local_board::board_queries::board_reads::repositories(&conn, None)
             .unwrap()
             .result
     else {

@@ -2,8 +2,8 @@
 #[cfg(test)]
 mod tests;
 use super::{
-    PUBLIC_DETAILS, PUBLIC_DOM, PUBLIC_ENTRIES, PUBLIC_FEEDBACK, PUBLIC_READER, PUBLIC_SCRIPT,
-    PUBLIC_SHELL, PUBLIC_STREAM, PUBLIC_STYLE, PUBLIC_VIEWS, WebState,
+    PUBLIC_DOM, PUBLIC_ENTRIES, PUBLIC_MAIN, PUBLIC_PAGES, PUBLIC_READER, PUBLIC_SHELL,
+    PUBLIC_STREAM, PUBLIC_STYLE, PUBLIC_TRIAGE, PUBLIC_VIEWS, WebState,
     event_stream::{EventStreams, StreamPermit, StreamRequest},
     http_wire::{self, HttpError, HttpMethod, HttpRequest},
     plan_markup,
@@ -173,15 +173,15 @@ fn ingest_receipt(result: Result<serde_json::Value, BoardError>) -> serde_json::
 
 fn public_asset(path: &str) -> Option<(&str, &str)> {
     let script = match path {
-        "/app.js" => PUBLIC_SCRIPT,
+        "/board_web_main.js" => PUBLIC_MAIN,
         "/board_dom.js" => PUBLIC_DOM,
         "/board_views.js" => PUBLIC_VIEWS,
-        "/board_details.js" => PUBLIC_DETAILS,
+        "/board_pages.js" => PUBLIC_PAGES,
         "/board_stream.js" => PUBLIC_STREAM,
-        "/board_feedback.js" => PUBLIC_FEEDBACK,
+        "/feedback_triage.js" => PUBLIC_TRIAGE,
         "/board_reader.js" => PUBLIC_READER,
         "/board_entries.js" => PUBLIC_ENTRIES,
-        "/app.css" => return Some(("text/css; charset=utf-8", PUBLIC_STYLE)),
+        "/board_web.css" => return Some(("text/css; charset=utf-8", PUBLIC_STYLE)),
         _ => return None,
     };
     Some(("text/javascript; charset=utf-8", script))

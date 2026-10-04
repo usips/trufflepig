@@ -53,12 +53,24 @@ macro_rules! vocabulary {
         pub enum $name { $(#[serde(rename = $label)] $variant),+ }
         impl $name {
             pub fn parse(value: &str) -> Result<Self> {
-                match value { $($label => Ok(Self::$variant),)+ _ => bail!("{}: unknown {} '{}'", $error, stringify!($name), value) }
+                match value {
+                    $($label => Ok(Self::$variant),)+
+                    _ => bail!("{}: unknown {} '{}'", $error, stringify!($name), value),
+                }
             }
             pub fn as_str(self) -> &'static str { match self { $(Self::$variant => $label),+ } }
         }
-        impl fmt::Display for $name { fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str(self.as_str()) } }
-        impl FromStr for $name { type Err = anyhow::Error; fn from_str(value: &str) -> Result<Self> { Self::parse(value) } }
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(self.as_str())
+            }
+        }
+        impl FromStr for $name {
+            type Err = anyhow::Error;
+            fn from_str(value: &str) -> Result<Self> {
+                Self::parse(value)
+            }
+        }
     };
 }
 
@@ -89,8 +101,12 @@ vocabulary!(TaskColumn, "invalid_state", {
 vocabulary!(ProposalState, "invalid_state", {
     Open => "open", Accepted => "accepted", Rejected => "rejected", Superseded => "superseded",
 });
-vocabulary!(FeedbackKind, "invalid_kind", { Blocked => "blocked", Confused => "confused", Wrong => "wrong", Missing => "missing" });
-vocabulary!(FeedbackState, "invalid_state", { Open => "open", Triaged => "triaged", Fixed => "fixed", Wontfix => "wontfix", Duplicate => "duplicate" });
+vocabulary!(FeedbackKind, "invalid_kind", {
+    Blocked => "blocked", Confused => "confused", Wrong => "wrong", Missing => "missing",
+});
+vocabulary!(FeedbackState, "invalid_state", {
+    Open => "open", Triaged => "triaged", Fixed => "fixed", Wontfix => "wontfix", Duplicate => "duplicate",
+});
 impl FeedbackState {
     pub fn is_closed(self) -> bool {
         matches!(self, Self::Fixed | Self::Wontfix | Self::Duplicate)

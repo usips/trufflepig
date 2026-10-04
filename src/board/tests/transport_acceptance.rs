@@ -74,7 +74,10 @@ fn feedback_forwarding_keeps_audit_body_and_model_claims_with_local_repo_context
         "codex",
         "feedback-session",
     );
-    let audit = r#"[{"verb":"show","args":["path:src/lib.rs:1-10"],"exit_code":1,"error_prefix":"stale_source","truncated":true,"coverage":"partial"}]"#;
+    let audit = concat!(
+        r#"[{"verb":"show","args":["path:src/lib.rs:1-10"],"exit_code":1,"#,
+        r#""error_prefix":"stale_source","truncated":true,"coverage":"partial"}]"#
+    );
     let mut options = fixture.options_at(
         &fixture.root.join("nested"),
         &["feedback", "blocked", "--", "- Read", "failed"],

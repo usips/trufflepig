@@ -185,9 +185,10 @@ fn live_stream_response_carries_security_headers() {
     let mut client = spawn(&streams, 0);
     let headers = read_until(&mut client, "\r\n\r\n");
     assert!(
-        headers.contains(
-            "Content-Security-Policy: default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'\r\n"
-        ),
+        headers.contains(concat!(
+            "Content-Security-Policy: default-src 'self'; base-uri 'none'; ",
+            "object-src 'none'; frame-ancestors 'none'\r\n"
+        )),
         "{headers}"
     );
     assert!(headers.contains("Referrer-Policy: no-referrer\r\n"), "{headers}");

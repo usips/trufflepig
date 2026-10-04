@@ -65,7 +65,10 @@ pub(super) fn open_with_timeout(
             let mode = parent.metadata().map_err(io_error)?.permissions().mode();
             if mode & 0o077 != 0 {
                 return Err(unavailable(format!(
-                    "database directory {} is group/world-accessible (mode {:04o}); move the database to a private directory or tighten it yourself with chmod 0700",
+                    concat!(
+                        "database directory {} is group/world-accessible (mode {:04o}); ",
+                        "move the database to a private directory or tighten it yourself with chmod 0700"
+                    ),
                     parent.display(),
                     mode & 0o777
                 )));
@@ -159,7 +162,14 @@ pub(super) fn open_with_timeout(
         tx.pragma_update(None, "user_version", version + 1)
             .map_err(sql_error)?;
     }
-    tx.execute("INSERT INTO board_meta(key,value) VALUES('resolved_path',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [resolved.to_string_lossy().as_ref()]).map_err(sql_error)?;
+    tx.execute(
+        concat!(
+            "INSERT INTO board_meta(key,value) VALUES('resolved_path',?1) ON CONFLICT(key) ",
+            "DO UPDATE SET value=excluded.value"
+        ),
+        [resolved.to_string_lossy().as_ref()],
+    )
+    .map_err(sql_error)?;
     tx.commit().map_err(sql_error)?;
     conn.busy_timeout(timeout.min(Duration::from_secs(5)))
         .map_err(sql_error)?;
@@ -215,7 +225,11 @@ fn retry_busy<T>(
         match operation() {
             Ok(value) => return Ok(value),
             Err(error) => {
-                let busy = matches!(&error, rusqlite::Error::SqliteFailure(code, _) if matches!(code.code,rusqlite::ErrorCode::DatabaseBusy|rusqlite::ErrorCode::DatabaseLocked));
+                let busy = matches!(
+                    &error,
+                    rusqlite::Error::SqliteFailure(code, _)
+                        if matches!(code.code, rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+                );
                 let remaining = deadline.saturating_duration_since(Instant::now());
                 if !busy || remaining.is_zero() {
                     return Err(sql_error(error));

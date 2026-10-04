@@ -41,7 +41,8 @@ fn populated_v1_migration_preserves_durable_evidence() {
     INSERT INTO feedback_imports VALUES('import',3);
     INSERT INTO events VALUES(1,1,'decision','P1',NULL,1,'created',10);
     INSERT INTO events VALUES(2,1,'proposal','E2',NULL,1,'proposed',11);
-    INSERT INTO operation_dedupes VALUES('operation','{"api":1,"backend":"legacy","result":{"result":"change","data":{"entry":"E1","seq":1,"plan":"P1","revision":"P1@1","task":null,"deduplicated":false}},"warnings":[]}',20);
+    INSERT INTO operation_dedupes VALUES('operation','{"api":1,"backend":"legacy","result":{"result":"change",
+ "data":{"entry":"E1","seq":1,"plan":"P1","revision":"P1@1","task":null,"deduplicated":false}},"warnings":[]}',20);
     PRAGMA user_version=1;
     "#).unwrap();
     drop(legacy);

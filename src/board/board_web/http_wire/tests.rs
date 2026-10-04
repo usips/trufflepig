@@ -23,7 +23,14 @@ fn rejected(bytes: &[u8], status: u16) {
 
 #[test]
 fn accepts_origin_form_and_exact_binary_body() {
-    let request = parse(b"POST /api/v1/board?cursor=4 HTTP/1.1\r\nHost: 127.0.0.1:1234\r\nContent-Length: 4\r\nContent-Type: application/json\r\n\r\n\0\xff\r\n").unwrap();
+    let request = parse(
+        &[
+            &b"POST /api/v1/board?cursor=4 HTTP/1.1\r\nHost: 127.0.0.1:1234\r\n"[..],
+            &b"Content-Length: 4\r\nContent-Type: application/json\r\n\r\n\0\xff\r\n"[..],
+        ]
+        .concat(),
+    )
+    .unwrap();
     assert_eq!(request.method, HttpMethod::Post);
     assert_eq!(request.target, "/api/v1/board?cursor=4");
     assert_eq!(request.path(), "/api/v1/board");
@@ -189,7 +196,7 @@ fn eof_never_completes_a_partial_request() {
 }
 
 #[test]
-fn private_response_and_sse_have_safe_framing() {
+fn private_response_has_safe_framing() {
     let (mut server, mut client) = tcp_pair();
     send_response(&mut server, 200, "application/json", b"{}", true).unwrap();
     drop(server);
@@ -201,19 +208,6 @@ fn private_response_and_sse_have_safe_framing() {
     assert!(reply.contains("frame-ancestors 'none'"));
     assert!(!reply.contains("Access-Control-Allow"));
     assert!(reply.ends_with("\r\n\r\n{}"));
-
-    let (mut server, mut client) = tcp_pair();
-    begin_event_stream(&mut server).unwrap();
-    write_event_bytes(&mut server, b": keepalive\n\n").unwrap();
-    drop(server);
-    let mut reply = String::new();
-    client.read_to_string(&mut reply).unwrap();
-    assert!(reply.contains("Content-Type: text/event-stream\r\n"));
-    assert!(reply.contains("Connection: close\r\n"));
-    assert!(reply.contains("Cache-Control: no-store\r\n"));
-    assert!(!reply.contains("Content-Length:"));
-    assert!(!reply.contains("Transfer-Encoding:"));
-    assert!(reply.ends_with(": keepalive\n\n"));
 }
 
 #[test]

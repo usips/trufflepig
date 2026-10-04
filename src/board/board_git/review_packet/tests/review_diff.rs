@@ -44,9 +44,10 @@ fn insertion_diff_header_counts_the_context_it_displays() {
 #[test]
 fn review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint() {
     if crate::board::board_test_support::git_version() < Some((2, 55)) {
-        eprintln!(
-            "skipping review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint: requires Git >= 2.55 for history drill hints"
-        );
+        eprintln!(concat!(
+            "skipping review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint: ",
+            "requires Git >= 2.55 for history drill hints"
+        ));
         return;
     }
     let mut source = evidence();

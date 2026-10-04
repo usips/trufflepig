@@ -106,7 +106,12 @@ fn run_prepared(
         api.store(version, Ordering::Release);
         ensure!(
             reported == BOARD_API,
-            "board_api_mismatch: router board API is {reported}; client expects {BOARD_API}; restart trufflepig-system.service"
+            concat!(
+                "board_api_mismatch: router board API is {reported}; client expects {BOARD_API}; ",
+                "restart trufflepig-system.service"
+            ),
+            reported = reported,
+            BOARD_API = BOARD_API
         );
         if let Some(runtime) = runtime {
             let _ = crate::system::record_board_database(runtime, &database);

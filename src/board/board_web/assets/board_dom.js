@@ -22,9 +22,15 @@ export function createBoardDom(state) {
     return item;
   }
   function routeUrl(view, params = {}) {
-    const path = view === "overview" ? "" : ["plan", "entry"].includes(view) ? params.ref : view === "edit" ? `edit/${params.ref}` : view;
+    const path = view === "overview" ? ""
+      : ["plan", "entry"].includes(view) ? params.ref
+      : view === "edit" ? `edit/${params.ref}` : view;
     const query = new URLSearchParams();
-    for (const [key, value] of Object.entries(params)) if (!["view", "ref"].includes(key) && value !== undefined && value !== null && value !== "") query.set(key, value);
+    for (const [key, value] of Object.entries(params)) {
+      if (!["view", "ref"].includes(key) && value !== undefined && value !== null && value !== "") {
+        query.set(key, value);
+      }
+    }
     return `/#/${path || ""}${query.size ? `?${query}` : ""}`;
   }
   function link(label, view, params = {}, className = "") {
@@ -40,10 +46,16 @@ export function createBoardDom(state) {
     if (!ref) return el("span", className, label || "—");
     const text = String(ref);
     if (/^E[1-9]\d*$/.test(text)) return link(label, "entry", { ref: text }, className);
-    if (/^P[1-9]\d*\.\d+$/.test(text)) return link(label, "plan", { ref: planId(text), tab: "tasks", task: text }, className);
+    if (/^P[1-9]\d*\.\d+$/.test(text)) {
+      return link(label, "plan", { ref: planId(text), tab: "tasks", task: text }, className);
+    }
     if (/^P[1-9]\d*(?:@\d+(?:\.\.(?:\d+)?)?)?$/.test(text)) return link(label, "plan", { ref: text }, className);
-    if (/^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/.test(text)) return context.plan ?
-      link(label, "plan", { ref: context.plan, tab: "commits", oid: text.toLowerCase(), repo: context.repo_key }, className) : link(label, "search", { q: text }, className);
+    if (/^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/.test(text)) {
+      return context.plan
+        ? link(label, "plan",
+          { ref: context.plan, tab: "commits", oid: text.toLowerCase(), repo: context.repo_key }, className)
+        : link(label, "search", { q: text }, className);
+    }
     return el("span", className, label);
   }
   function badge(value) {
@@ -122,7 +134,9 @@ export function createBoardDom(state) {
   }
   function formStatus(form, message, tone = "error") {
     if (form.dataset.draftKey) state.formStatuses.set(form.dataset.draftKey, { message, tone });
-    const forms = [form, ...document.querySelectorAll("form")].filter((item, index, all) => all.indexOf(item) === index && (item === form || form.dataset.draftKey && item.dataset.draftKey === form.dataset.draftKey));
+    const forms = [form, ...document.querySelectorAll("form")].filter((item, index, all) =>
+      all.indexOf(item) === index
+        && (item === form || form.dataset.draftKey && item.dataset.draftKey === form.dataset.draftKey));
     for (const target of forms) {
       let item = target.querySelector(".form-status");
       if (!item) { item = el("p", "form-status"); item.setAttribute("role", "status"); target.append(item); }
@@ -132,11 +146,18 @@ export function createBoardDom(state) {
   function saveForm(form) {
     const key = form.dataset.draftKey;
     if (!key) return;
-    state.formDrafts.set(key, Object.fromEntries([...form.querySelectorAll("input,textarea,select")].filter(input => input.name && !input.readOnly).map(input => [input.name, input.value])));
+    const inputs = [...form.querySelectorAll("input,textarea,select")]
+      .filter(input => input.name && !input.readOnly)
+      .map(input => [input.name, input.value]);
+    state.formDrafts.set(key, Object.fromEntries(inputs));
   }
   function restoreForm(form) {
     const draft = state.formDrafts.get(form.dataset.draftKey);
-    if (draft) for (const input of form.querySelectorAll("input,textarea,select")) if (!input.readOnly && Object.hasOwn(draft, input.name)) input.value = draft[input.name];
+    if (draft) {
+      for (const input of form.querySelectorAll("input,textarea,select")) {
+        if (!input.readOnly && Object.hasOwn(draft, input.name)) input.value = draft[input.name];
+      }
+    }
     const status = state.formStatuses.get(form.dataset.draftKey);
     if (status) formStatus(form, status.message, status.tone);
     if (state.pendingForms.has(form.dataset.draftKey)) setFormBusy(form, true);
@@ -153,7 +174,9 @@ export function createBoardDom(state) {
   function syncForm(form, root) {
     const values = new Map([...form.querySelectorAll("input,textarea,select")].map(input => [input.name, input.value]));
     for (const current of root.querySelectorAll("form")) if (current.dataset.draftKey === form.dataset.draftKey) {
-      for (const input of current.querySelectorAll("input,textarea,select")) if (values.has(input.name)) input.value = values.get(input.name);
+      for (const input of current.querySelectorAll("input,textarea,select")) {
+        if (values.has(input.name)) input.value = values.get(input.name);
+      }
     }
   }
   function setFormBusy(form, busy) {
@@ -168,7 +191,9 @@ export function createBoardDom(state) {
     const input = document.activeElement;
     if (!root.contains(input)) return null;
     const form = input?.closest?.("form");
-    if (form?.dataset.draftKey && input.name) return { key: form.dataset.draftKey, name: input.name, start: input.selectionStart, end: input.selectionEnd };
+    if (form?.dataset.draftKey && input.name) {
+      return { key: form.dataset.draftKey, name: input.name, start: input.selectionStart, end: input.selectionEnd };
+    }
     const keyed = input?.closest?.("[data-focus-key]");
     return keyed ? { focusKey: keyed.dataset.focusKey } : null;
   }
@@ -181,10 +206,18 @@ export function createBoardDom(state) {
     }
     const form = [...root.querySelectorAll("form")].find(item => item.dataset.draftKey === focus.key);
     const input = [...(form?.querySelectorAll("input,textarea,select") || [])].find(item => item.name === focus.name);
-    if (input) { input.focus({ preventScroll: true }); if (focus.start !== null && focus.start !== undefined && input.setSelectionRange) input.setSelectionRange(focus.start, focus.end); }
+    if (input) {
+      input.focus({ preventScroll: true });
+      if (focus.start !== null && focus.start !== undefined && input.setSelectionRange) {
+        input.setSelectionRange(focus.start, focus.end);
+      }
+    }
   }
   function planId(ref) { return String(ref || "").match(/^P[1-9]\d*/)?.[0] || ""; }
 
-  return { el, add, button, routeUrl, link, refLink, badge, actorName, shortActor, stamp, timeNode, age, ageNode, panel, empty, omitted, title, field, formStatus, planId, focusKey,
-    retainForm, captureForms, restoreForms, syncForm, setFormBusy, focusedControl, restoreFocus, saveForm };
+  return {
+    el, add, button, routeUrl, link, refLink, badge, actorName, shortActor, stamp, timeNode, age,
+    ageNode, panel, empty, omitted, title, field, formStatus, planId, focusKey,
+    retainForm, captureForms, restoreForms, syncForm, setFormBusy, focusedControl, restoreFocus, saveForm,
+  };
 }

@@ -184,7 +184,11 @@ fn web_new_plan_links_a_chosen_repository_and_lists_repository_keys() {
     assert_eq!(linked, repo.as_str(), "the new plan links the chosen repo");
     let reply = read(&store, BoardOp::Repositories { plan: None });
     assert!(
-        matches!(&reply.result, BoardResult::Repositories(targets) if targets.iter().any(|target| target.registration.repo_key == repo)),
+        matches!(
+            &reply.result,
+            BoardResult::Repositories(targets)
+                if targets.iter().any(|target| target.registration.repo_key == repo)
+        ),
         "the web board exposes repository keys for the New-plan picker"
     );
 }

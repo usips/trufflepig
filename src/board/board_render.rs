@@ -80,8 +80,10 @@ pub fn render_reply(reply: &BoardReply, budget: &OutputBudget) -> Result<Rendere
                     } else {
                         None
                     };
-                    budget.encode(&serde_json::json!({ "api": BOARD_API, "committed": true,
-                        "result": result, "receipt": receipt, "warnings_omitted": reply.warnings.len(), "hint": hint }))?
+                    budget.encode(&serde_json::json!({
+                        "api": BOARD_API, "committed": true, "result": result, "receipt": receipt,
+                        "warnings_omitted": reply.warnings.len(), "hint": hint
+                    }))?
                 } else {
                     format!("committed: {receipt}\nhint: {hint}\n")
                 }

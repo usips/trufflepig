@@ -96,7 +96,10 @@ impl EdgeFixture {
     fn cursor(&self, harness: &str, session: &str) -> u64 {
         let conn = Connection::open(&self.config.db_path).unwrap();
         conn.query_row(
-            "SELECT coalesce(s.cursor_seq,0) FROM agent_sessions s JOIN actors a ON a.id=s.actor_id WHERE a.user=?1 AND a.host=?2 AND a.harness=?3 AND a.session=?4",
+            concat!(
+                "SELECT coalesce(s.cursor_seq,0) FROM agent_sessions s JOIN actors a ON a.id=s.actor_id ",
+                "WHERE a.user=?1 AND a.host=?2 AND a.harness=?3 AND a.session=?4"
+            ),
             rusqlite::params![self.config.user, self.config.host, harness, session],
             |row| row.get::<_, i64>(0),
         ).optional().unwrap().unwrap_or(0).try_into().unwrap()

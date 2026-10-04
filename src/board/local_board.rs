@@ -1,22 +1,12 @@
 //! SQLite-backed board state, serialized mutations, and immutable evidence.
 
-mod board_commits;
 mod board_database;
 mod board_dispatch;
 mod board_evidence;
 mod board_feed;
 mod board_lifecycle;
-mod board_reads;
-mod board_receipts;
-mod board_search;
-mod board_snapshots;
-mod collection_nested;
-mod collection_reads;
-mod entry_writes;
-mod feedback_entries;
-mod plan_writes;
-mod task_claims;
-mod task_writes;
+mod board_queries;
+mod board_writes;
 #[cfg(test)]
 mod tests;
 
@@ -34,7 +24,7 @@ use super::board_ids::{
 use super::board_protocol::*;
 use super::board_vocabulary::EntryKind;
 pub(super) use board_evidence::{can_accept, insert_entry, insert_event, require_plan};
-use board_receipts::{is_dedupable, receipt_current, request_dedupe_key};
+use board_writes::board_receipts::{is_dedupable, receipt_current, request_dedupe_key};
 
 pub struct LocalBoard {
     conn: Connection,
@@ -118,7 +108,7 @@ pub(super) fn actor_from_row(
 }
 
 pub(super) fn read_entry(conn: &Connection, id: EntryId) -> Result<EntryRecord, BoardError> {
-    board_reads::entry(conn, id)
+    board_queries::board_reads::entry(conn, id)
 }
 
 pub(super) fn sql_error(error: rusqlite::Error) -> BoardError {
@@ -181,7 +171,14 @@ fn ensure_actor(tx: &Transaction<'_>, actor: &BoardActor, now: i64) -> Result<i6
             |r| r.get(0),
         )
         .map_err(sql_error)?;
-    tx.execute("INSERT INTO agent_sessions(actor_id,first_seen,last_seen) VALUES(?1,?2,?2) ON CONFLICT(actor_id) DO UPDATE SET last_seen=excluded.last_seen", params![id,now]).map_err(sql_error)?;
+    tx.execute(
+        concat!(
+            "INSERT INTO agent_sessions(actor_id,first_seen,last_seen) VALUES(?1,?2,?2) ",
+            "ON CONFLICT(actor_id) DO UPDATE SET last_seen=excluded.last_seen"
+        ),
+        params![id, now],
+    )
+    .map_err(sql_error)?;
     Ok(id)
 }
 

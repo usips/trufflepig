@@ -7,25 +7,33 @@
   <meta name="referrer" content="no-referrer">
   <meta name="board-api" content="__BOARD_API__">
   <title>Trufflepig Board</title>
-  <link rel="stylesheet" href="/app.css">
-  <script src="/app.js" type="module"></script>
+  <link rel="stylesheet" href="/board_web.css">
+  <script src="/board_web_main.js" type="module"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to board</a>
   <header class="app-header">
-    <a class="brand" href="/#/" data-route="overview"><span class="brand-mark" aria-hidden="true">T</span><span>Trufflepig <strong>Board</strong></span></a>
+    <a class="brand" href="/#/" data-route="overview"><span class="brand-mark" aria-hidden="true">T</span
+      ><span>Trufflepig <strong>Board</strong></span></a>
     <nav aria-label="Board navigation">
       <a href="/#/" data-route="overview">Board</a>
-      <a href="/#/attention" data-route="attention">Needs you <span id="attention-count" class="nav-count" hidden></span></a>
+      <a href="/#/attention" data-route="attention">Needs you
+        <span id="attention-count" class="nav-count" hidden></span></a>
       <a href="/#/feedback" data-route="feedback">Feedback</a>
       <a href="/#/search" data-route="search">Search</a>
     </nav>
     <a class="button primary compact" href="/#/new" data-route="new">New plan</a>
   </header>
-  <div class="status-bar"><span id="connection">Connecting…</span><span id="connection-announce" class="sr-only" role="status" aria-live="polite"></span><span id="freshness"></span><button id="refresh" class="text-button" type="button">Refresh</button></div>
+  <div class="status-bar">
+    <span id="connection">Connecting…</span>
+    <span id="connection-announce" class="sr-only" role="status" aria-live="polite"></span>
+    <span id="freshness"></span>
+    <button id="refresh" class="text-button" type="button">Refresh</button>
+  </div>
   <div id="notice" role="status" aria-live="polite" hidden></div>
   <main id="main" tabindex="-1" aria-busy="true"><div class="loading">Loading board…</div></main>
   <footer class="app-footer">Local boardroom · Plans, evidence, and decisions</footer>
-  <noscript><p class="message">JavaScript is required to open this board. Use <code>trufflepig board</code> from your terminal.</p></noscript>
+  <noscript><p class="message">JavaScript is required to open this board. Use
+    <code>trufflepig board</code> from your terminal.</p></noscript>
 </body>
 </html>

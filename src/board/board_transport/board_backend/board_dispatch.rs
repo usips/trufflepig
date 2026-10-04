@@ -134,9 +134,18 @@ impl BoardHost {
                         }) {
                             if let Some(configured) = &proposed.origin_override {
                                 if configured != &target.registration.repo_key {
-                                    return Err(BoardError::new(crate::board::board_protocol::BoardErrorCode::InvalidOptions,
-                                        format!("origin override {configured} conflicts with registered repository identity {}",
-                                            target.registration.repo_key)).into());
+                                    return Err(BoardError::new(
+                                        crate::board::board_protocol::BoardErrorCode::InvalidOptions,
+                                        format!(
+                                            concat!(
+                                                "origin override {configured} conflicts with ",
+                                                "registered repository identity {}"
+                                            ),
+                                            target.registration.repo_key,
+                                            configured = configured
+                                        ),
+                                    )
+                                    .into());
                                 }
                             }
                             if let Some(current) = &mut registration {

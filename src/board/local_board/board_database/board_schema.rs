@@ -105,7 +105,8 @@ CREATE TABLE operation_dedupes(
 "#;
 
 pub(super) const SCHEMA_V2: &str = r#"
-UPDATE operation_dedupes SET reply_json=json_set(reply_json,'$.api',2) WHERE json_valid(reply_json) AND json_extract(reply_json,'$.api')=1;
+UPDATE operation_dedupes SET reply_json=json_set(reply_json,'$.api',2)
+ WHERE json_valid(reply_json) AND json_extract(reply_json,'$.api')=1;
 ALTER TABLE agent_sessions DROP COLUMN bound_plan;
 DROP INDEX entries_dedupe;
 ALTER TABLE entries DROP COLUMN dedupe_key;
@@ -128,7 +129,8 @@ ALTER TABLE repo_paths ADD COLUMN root_commits_json TEXT NOT NULL DEFAULT '[]';
 CREATE INDEX entries_sequence ON entries(seq,id);
 ALTER TABLE events ADD COLUMN model TEXT;
 ALTER TABLE events ADD COLUMN effort TEXT;
-UPDATE events SET model=(SELECT model FROM entries WHERE seq=events.seq AND actor_id=events.actor_id ORDER BY id LIMIT 1),
+UPDATE events SET model=(SELECT model FROM entries WHERE seq=events.seq AND actor_id=events.actor_id
+ ORDER BY id LIMIT 1),
  effort=(SELECT effort FROM entries WHERE seq=events.seq AND actor_id=events.actor_id ORDER BY id LIMIT 1);
 DROP INDEX events_recipient_sequence;
 CREATE INDEX entries_supersedes ON entries(supersedes);
@@ -184,5 +186,6 @@ CREATE INDEX claims_entry_active ON claims(entry_id,id) WHERE ended_at IS NULL;
 pub(super) const SCHEMA_V4: &str = r#"
 CREATE INDEX IF NOT EXISTS commit_plans_entry ON commit_plans(entry_id);
 CREATE INDEX IF NOT EXISTS claims_entry_active ON claims(entry_id,id) WHERE ended_at IS NULL;
-UPDATE operation_dedupes SET reply_json=json_set(reply_json,'$.api',3) WHERE json_valid(reply_json) AND json_extract(reply_json,'$.api')<3;
+UPDATE operation_dedupes SET reply_json=json_set(reply_json,'$.api',3)
+ WHERE json_valid(reply_json) AND json_extract(reply_json,'$.api')<3;
 "#;

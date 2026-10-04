@@ -9,7 +9,9 @@ fn native_trailers_link_case_insensitively_and_exclude_body_mentions() {
     fixture.commit("body mention\n\nPlan: P7\n\nThis is body prose, not a trailer.");
     std::fs::write(fixture.root.join("source.txt"), "one\ntwo\n").unwrap();
     fixture.git(&["add", "source.txt"]);
-    let linked = fixture.commit("real footer\n\nPLAN: P7\nPlan-Task: P7.3\nCo-Authored-By: Model Claim <noreply@OpenAI.com>");
+    let linked = fixture.commit(
+        "real footer\n\nPLAN: P7\nPlan-Task: P7.3\nCo-Authored-By: Model Claim <noreply@OpenAI.com>",
+    );
     let folded = fixture.commit("folded footer\n\nPlan:\n P7\nPlan-Task:\n P7.3");
     let spaced = fixture.commit("spaced footer\n\nPlan : P7");
     let target = target(&fixture);
@@ -315,7 +317,14 @@ fn capped_scan_links_bounded_records_without_advancing_digest() {
     let message = linked_message("bulk linked");
     let mut stream = Vec::new();
     for ordinal in 0..=COMMIT_LIMIT {
-        writeln!(stream, "commit refs/heads/main\ncommitter Fixture <fixture@example.test> {} +0000\ndata {}\n{}\n", 1_700_000_000 + ordinal, message.len(), message).unwrap();
+        writeln!(
+            stream,
+            "commit refs/heads/main\ncommitter Fixture <fixture@example.test> {} +0000\ndata {}\n{}\n",
+            1_700_000_000 + ordinal,
+            message.len(),
+            message
+        )
+        .unwrap();
     }
     let mut child = Command::new("git")
         .current_dir(&fixture.root)

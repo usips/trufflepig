@@ -7,9 +7,10 @@ use super::*;
 #[test]
 fn real_branch_ingestion_survives_host_reopening_and_review_identifies_crossed_claims() {
     if crate::board::board_test_support::git_version() < Some((2, 55)) {
-        eprintln!(
-            "skipping real_branch_ingestion_survives_host_reopening_and_review_identifies_crossed_claims: requires Git >= 2.55 for history drill hints"
-        );
+        eprintln!(concat!(
+            "skipping real_branch_ingestion_survives_host_reopening_and_review_identifies_crossed_claims: ",
+            "requires Git >= 2.55 for history drill hints"
+        ));
         return;
     }
     let fixture = EdgeFixture::new();

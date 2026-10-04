@@ -101,7 +101,20 @@ fn readonly_dispatch_leaves_actors_sessions_and_claims_untouched() {
             .unwrap(),
         2
     );
-    assert_eq!(board.conn.query_row("SELECT count(*) FROM agent_sessions WHERE last_seen<>7 OR model<>'stored-model' OR effort<>'stored-effort'", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+    assert_eq!(
+        board
+            .conn
+            .query_row(
+                concat!(
+                    "SELECT count(*) FROM agent_sessions WHERE last_seen<>7 ",
+                    "OR model<>'stored-model' OR effort<>'stored-effort'"
+                ),
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
     assert_eq!(
         board
             .conn

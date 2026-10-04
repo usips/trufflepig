@@ -133,9 +133,10 @@ fn origin_label_removes_url_credentials() {
 #[test]
 fn reftable_repository_registration_resolves_symbolic_head() {
     if crate::board::board_test_support::git_version() < Some((2, 46)) {
-        eprintln!(
-            "skipping reftable_repository_registration_resolves_symbolic_head: requires Git >= 2.46 for git refs migrate"
-        );
+        eprintln!(concat!(
+            "skipping reftable_repository_registration_resolves_symbolic_head: ",
+            "requires Git >= 2.46 for git refs migrate"
+        ));
         return;
     }
     let fixture = GitFixture::new();

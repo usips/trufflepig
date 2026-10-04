@@ -287,8 +287,26 @@ fn mixed_plan_commit_event_is_visible_via_its_same_sequence_entries() {
             row.get(0)
         })
         .unwrap();
-    board.conn.execute("INSERT INTO entries(plan_id,kind,body,actor_id,repo_key,seq,created_at) VALUES(?1,'commit','linked batch',?2,?3,?4,0)",params![sql_number(plan.get()),actor_id,repo.as_str(),sql_number(seq)]).unwrap();
-    board.conn.execute("INSERT INTO events(seq,kind,subject,actor_id,summary,created_at) VALUES(?1,'commit','E1',?2,'linked mixed plans',0)",params![sql_number(seq),actor_id]).unwrap();
+    board
+        .conn
+        .execute(
+            concat!(
+                "INSERT INTO entries(plan_id,kind,body,actor_id,repo_key,seq,created_at) ",
+                "VALUES(?1,'commit','linked batch',?2,?3,?4,0)"
+            ),
+            params![sql_number(plan.get()), actor_id, repo.as_str(), sql_number(seq)],
+        )
+        .unwrap();
+    board
+        .conn
+        .execute(
+            concat!(
+                "INSERT INTO events(seq,kind,subject,actor_id,summary,created_at) ",
+                "VALUES(?1,'commit','E1',?2,'linked mixed plans',0)"
+            ),
+            params![sql_number(seq), actor_id],
+        )
+        .unwrap();
     let inbox = scoped_feed(&mut board, Some(repo), false, 100);
     assert!(inbox.events.iter().any(|event| event.seq.get() == seq));
 }

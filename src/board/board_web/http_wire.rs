@@ -14,8 +14,7 @@ use std::{
 };
 
 pub(crate) use response_write::{
-    begin_event_stream, send_method_refusal, send_response, send_unavailable, unavailable_response,
-    write_event_bytes,
+    send_method_refusal, send_response, send_unavailable, unavailable_response,
 };
 
 pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);

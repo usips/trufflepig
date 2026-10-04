@@ -46,7 +46,11 @@ impl LocalBoard {
         let now = unix_now()?;
         let actor_id = ensure_actor(&tx, &request.actor, now)?;
         if let Some(claims) = &request.claims {
-            tx.execute("UPDATE agent_sessions SET model=COALESCE(?2,model),effort=COALESCE(?3,effort) WHERE actor_id=?1", params![actor_id,claims.model,claims.effort]).map_err(sql_error)?;
+            tx.execute(
+                "UPDATE agent_sessions SET model=COALESCE(?2,model),effort=COALESCE(?3,effort) WHERE actor_id=?1",
+                params![actor_id, claims.model, claims.effort],
+            )
+            .map_err(sql_error)?;
         }
         let (model, effort): (Option<String>, Option<String>) = tx
             .query_row(
@@ -76,10 +80,10 @@ impl LocalBoard {
             _ => None,
         };
         if let Some(import_key) = import_key {
-            if let Some(mut reply) = feedback_entries::imported_reply(&tx, import_key)? {
+            if let Some(mut reply) = board_writes::feedback_entries::imported_reply(&tx, import_key)? {
                 if let BoardResult::Change(change) = &reply.result {
                     if let Some(plan) = change.plan {
-                        task_claims::refresh_plan_claims(&tx, actor_id, plan, now)?;
+                        board_writes::task_claims::refresh_plan_claims(&tx, actor_id, plan, now)?;
                     }
                 }
                 reply.backend = format!("local:{}", self.path.display());
@@ -88,7 +92,14 @@ impl LocalBoard {
             }
         }
         if dedupable {
-            let stored: Option<String> = tx.query_row("SELECT reply_json FROM operation_dedupes WHERE dedupe_key=?1 AND created_at>=?2", params![key, now - 600], |r| r.get(0)).optional().map_err(sql_error)?;
+            let stored: Option<String> = tx
+                .query_row(
+                    "SELECT reply_json FROM operation_dedupes WHERE dedupe_key=?1 AND created_at>=?2",
+                    params![key, now - 600],
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(sql_error)?;
             if let Some(stored) = stored {
                 let mut reply: BoardReply = serde_json::from_str(&stored)
                     .map_err(|e| invalid("board_unavailable", e.to_string()))?;
@@ -96,10 +107,10 @@ impl LocalBoard {
                     if let BoardResult::Change(change) = &mut reply.result {
                         change.deduplicated = true;
                         if let Some(import_key) = import_key {
-                            feedback_entries::remember_import(&tx, import_key, change.entry)?;
+                            board_writes::feedback_entries::remember_import(&tx, import_key, change.entry)?;
                         }
                         if let Some(plan) = change.plan {
-                            task_claims::refresh_plan_claims(&tx, actor_id, plan, now)?;
+                            board_writes::task_claims::refresh_plan_claims(&tx, actor_id, plan, now)?;
                         }
                     }
                     reply.backend = format!("local:{}", self.path.display());
@@ -110,7 +121,7 @@ impl LocalBoard {
         }
         let mut reply = match &request.op {
             BoardOp::Hello { model, effort } => {
-                entry_writes::hello(&tx, &ctx, model, effort.as_deref())?
+                board_writes::entry_writes::hello(&tx, &ctx, model, effort.as_deref())?
             }
             BoardOp::Inbox {
                 after,
@@ -126,59 +137,59 @@ impl LocalBoard {
                 body,
                 steward,
                 repo_key,
-            } => plan_writes::new_plan(&tx, &ctx, title, body, steward.as_ref(), repo_key.as_ref())?,
+            } => board_writes::plan_writes::new_plan(&tx, &ctx, title, body, steward.as_ref(), repo_key.as_ref())?,
             BoardOp::Post {
                 target,
                 kind,
                 body,
                 to,
                 supersedes,
-            } => entry_writes::post(&tx, &ctx, target, *kind, body, to.as_ref(), *supersedes)?,
+            } => board_writes::entry_writes::post(&tx, &ctx, target, *kind, body, to.as_ref(), *supersedes)?,
             BoardOp::TaskCreate {
                 plan,
                 title,
                 to,
                 section,
             } => {
-                task_writes::create_task(&tx, &ctx, *plan, title, to.as_ref(), section.as_deref())?
+                board_writes::task_writes::create_task(&tx, &ctx, *plan, title, to.as_ref(), section.as_deref())?
             }
             BoardOp::TaskMove { task, column, to } => {
-                task_writes::move_task(&tx, &ctx, *task, *column, to.as_ref())?
+                board_writes::task_writes::move_task(&tx, &ctx, *task, *column, to.as_ref())?
             }
             BoardOp::ClaimTask {
                 task,
                 scope,
                 resume,
-            } => task_claims::claim_task(&tx, &ctx, *task, scope.as_ref(), *resume)?,
+            } => board_writes::task_claims::claim_task(&tx, &ctx, *task, scope.as_ref(), *resume)?,
             BoardOp::CarveClaim {
                 plan,
                 title,
                 scope,
                 section,
-            } => task_claims::carve_claim(&tx, &ctx, *plan, title, scope, section.as_deref())?,
+            } => board_writes::task_claims::carve_claim(&tx, &ctx, *plan, title, scope, section.as_deref())?,
             BoardOp::Propose {
                 base,
                 body,
                 summary,
                 supersedes,
-            } => plan_writes::propose(&tx, &ctx, *base, body, summary, *supersedes)?,
+            } => board_writes::plan_writes::propose(&tx, &ctx, *base, body, summary, *supersedes)?,
             BoardOp::Edit {
                 base,
                 body,
                 summary,
-            } => plan_writes::edit(&tx, &ctx, *base, body, summary)?,
+            } => board_writes::plan_writes::edit(&tx, &ctx, *base, body, summary)?,
             BoardOp::Accept { proposal, note } => {
-                plan_writes::accept(&tx, &ctx, *proposal, note.as_ref())?
+                board_writes::plan_writes::accept(&tx, &ctx, *proposal, note.as_ref())?
             }
             BoardOp::Reject { proposal, reason } => {
-                plan_writes::reject(&tx, &ctx, *proposal, reason)?
+                board_writes::plan_writes::reject(&tx, &ctx, *proposal, reason)?
             }
-            BoardOp::Feedback { .. } => feedback_entries::write_feedback(&tx, &ctx, &request.op)?,
+            BoardOp::Feedback { .. } => board_writes::feedback_entries::write_feedback(&tx, &ctx, &request.op)?,
             BoardOp::FeedbackTriage { .. } | BoardOp::FeedbackClose { .. } => {
-                feedback_entries::close_feedback(&tx, &ctx, &request.op)?
+                board_writes::feedback_entries::close_feedback(&tx, &ctx, &request.op)?
             }
             BoardOp::RegisterRepo { registration } => {
-                entry_writes::register_repo(&tx, &ctx, registration)?
+                board_writes::entry_writes::register_repo(&tx, &ctx, registration)?
             }
             BoardOp::Show { .. }
             | BoardOp::Search { .. }
@@ -197,13 +208,13 @@ impl LocalBoard {
                 host,
                 common_dir,
                 error,
-            } => entry_writes::record_scan(&tx, repo_key, host, common_dir, error.as_deref())?,
+            } => board_writes::entry_writes::record_scan(&tx, repo_key, host, common_dir, error.as_deref())?,
             BoardOp::ForgetRepoPath {
                 repo_key,
                 host,
                 common_dir,
-            } => entry_writes::forget_repo_path(&tx, &ctx, repo_key, host, common_dir)?,
-            BoardOp::LinkCommits { commits } => entry_writes::link_commits(&tx, &ctx, commits)?,
+            } => board_writes::entry_writes::forget_repo_path(&tx, &ctx, repo_key, host, common_dir)?,
+            BoardOp::LinkCommits { commits } => board_writes::entry_writes::link_commits(&tx, &ctx, commits)?,
         };
         #[cfg(test)]
         if std::mem::take(&mut self.panic_after_write) {
@@ -215,7 +226,7 @@ impl LocalBoard {
                 _ => request.op.plan_id(),
             };
             if let Some(plan) = plan {
-                task_claims::refresh_plan_claims(&tx, actor_id, plan, now)?;
+                board_writes::task_claims::refresh_plan_claims(&tx, actor_id, plan, now)?;
             }
             let events: i64 = tx
                 .query_row(
@@ -240,7 +251,15 @@ impl LocalBoard {
                 [now - 600],
             )
             .map_err(sql_error)?;
-            tx.execute("INSERT INTO operation_dedupes(dedupe_key,reply_json,created_at) VALUES(?1,?2,?3) ON CONFLICT(dedupe_key) DO UPDATE SET reply_json=excluded.reply_json,created_at=excluded.created_at", params![key, encoded, now]).map_err(sql_error)?;
+            tx.execute(
+                concat!(
+                    "INSERT INTO operation_dedupes(dedupe_key,reply_json,created_at) VALUES(?1,?2,?3) ",
+                    "ON CONFLICT(dedupe_key) DO UPDATE SET reply_json=excluded.reply_json,",
+                    "created_at=excluded.created_at"
+                ),
+                params![key, encoded, now],
+            )
+            .map_err(sql_error)?;
         }
         reply.backend = format!("local:{}", self.path.display());
         if matches!(request.op, BoardOp::Inbox { .. }) {

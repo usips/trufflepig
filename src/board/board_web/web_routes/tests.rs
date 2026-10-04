@@ -204,11 +204,20 @@ fn authed_post(fixture: &RenderFixture, path: &str, body: &serde_json::Value) ->
     let body = body.to_string();
     write!(
         client,
-        "POST {path} HTTP/1.1\r\nHost: {}\r\nOrigin: http://{}\r\nX-Board-Token: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+        concat!(
+            "POST {path} HTTP/1.1\r\n",
+            "Host: {}\r\n",
+            "Origin: http://{}\r\n",
+            "X-Board-Token: {}\r\n",
+            "Content-Type: application/json\r\n",
+            "Content-Length: {}\r\n\r\n{body}"
+        ),
         fixture.authority,
         fixture.authority,
         fixture.token.expose(),
         body.len(),
+        path = path,
+        body = body
     )
     .unwrap();
     client.shutdown(Shutdown::Write).unwrap();
@@ -232,7 +241,7 @@ fn read_until(client: &mut TcpStream, needle: &str) -> String {
 #[test]
 fn shell_and_static_assets_defeat_caching() {
     let fixture = render_fixture();
-    for path in ["/", "/app.js", "/app.css", "/board_stream.js"] {
+    for path in ["/", "/board_web_main.js", "/board_web.css", "/board_stream.js"] {
         let reply = render_get(&fixture, path);
         assert!(reply.starts_with("HTTP/1.1 200 "), "{path}: {reply}");
         assert!(
@@ -470,10 +479,17 @@ fn challenge_post(fixture: &RenderFixture, body: &serde_json::Value) -> String {
     let body = body.to_string();
     write!(
         client,
-        "POST /api/v1/challenge HTTP/1.1\r\nHost: {}\r\nOrigin: http://{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+        concat!(
+            "POST /api/v1/challenge HTTP/1.1\r\n",
+            "Host: {}\r\n",
+            "Origin: http://{}\r\n",
+            "Content-Type: application/json\r\n",
+            "Content-Length: {}\r\n\r\n{body}"
+        ),
         fixture.authority,
         fixture.authority,
         body.len(),
+        body = body
     )
     .unwrap();
     handle(server, Instant::now(), &fixture.state);

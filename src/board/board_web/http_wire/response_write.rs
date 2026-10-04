@@ -5,7 +5,12 @@ use std::{
 };
 
 const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
-const SECURITY_HEADERS: &str = "X-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'none'\r\n";
+const SECURITY_HEADERS: &str = concat!(
+    "X-Content-Type-Options: nosniff\r\n",
+    "Referrer-Policy: no-referrer\r\n",
+    "Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; ",
+    "base-uri 'none'; object-src 'none'; form-action 'none'\r\n"
+);
 
 struct ResponseHeaders<'a> {
     status: u16,
@@ -145,20 +150,22 @@ fn encode_headers(headers: ResponseHeaders<'_>, content_length: usize) -> io::Re
         .map(|methods| format!("Allow: {methods}\r\n"))
         .unwrap_or_default();
     Ok(format!(
-        "HTTP/1.1 {status} {}\r\nContent-Type: {content_type}\r\nContent-Length: {content_length}\r\nConnection: close\r\n{cache}{retry_after}{allow}{SECURITY_HEADERS}\r\n",
+        concat!(
+            "HTTP/1.1 {status} {}\r\n",
+            "Content-Type: {content_type}\r\n",
+            "Content-Length: {content_length}\r\n",
+            "Connection: close\r\n",
+            "{cache}{retry_after}{allow}{SECURITY_HEADERS}\r\n"
+        ),
         reason(status),
+        status = status,
+        content_type = content_type,
+        content_length = content_length,
+        cache = cache,
+        retry_after = retry_after,
+        allow = allow,
+        SECURITY_HEADERS = SECURITY_HEADERS,
     ))
-}
-
-pub(crate) fn begin_event_stream(stream: &mut TcpStream) -> io::Result<()> {
-    let header = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\nConnection: close\r\n{SECURITY_HEADERS}\r\n"
-    );
-    write_event_bytes(stream, header.as_bytes())
-}
-
-pub(crate) fn write_event_bytes(stream: &mut TcpStream, bytes: &[u8]) -> io::Result<()> {
-    write_before(stream, bytes, Instant::now() + WRITE_TIMEOUT)
 }
 
 fn write_before(stream: &mut TcpStream, mut bytes: &[u8], deadline: Instant) -> io::Result<()> {

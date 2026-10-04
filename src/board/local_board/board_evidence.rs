@@ -8,7 +8,30 @@ pub(in crate::board) fn insert_entry(
     entry: &EntryDraft,
 ) -> Result<EntryId, BoardError> {
     crate::board::board_vocabulary::EntryText::new(entry.body.clone()).map_err(BoardError::from)?;
-    let id: u64 = tx.query_row("INSERT INTO entries(plan_id,kind,body,to_whom,supersedes,actor_id,model,effort,repo_key,state,seq,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) RETURNING id", params![entry.plan_id.map(|id|sql_number(id.get())), entry.kind.as_str(), entry.body, entry.to_whom.as_ref().map(BoardRecipient::as_str), entry.supersedes.map(|id|sql_number(id.get())), ctx.actor_id, ctx.model, ctx.effort, entry.repo_key.as_ref().map(RepoKey::as_str), entry.state, sql_number(ctx.seq.get()), ctx.now], |r| row_number(r,0)).map_err(sql_error)?;
+    let id: u64 = tx
+        .query_row(
+            concat!(
+                "INSERT INTO entries(plan_id,kind,body,to_whom,supersedes,actor_id,model,effort,",
+                "repo_key,state,seq,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) ",
+                "RETURNING id"
+            ),
+            params![
+                entry.plan_id.map(|id| sql_number(id.get())),
+                entry.kind.as_str(),
+                entry.body,
+                entry.to_whom.as_ref().map(BoardRecipient::as_str),
+                entry.supersedes.map(|id| sql_number(id.get())),
+                ctx.actor_id,
+                ctx.model,
+                ctx.effort,
+                entry.repo_key.as_ref().map(RepoKey::as_str),
+                entry.state,
+                sql_number(ctx.seq.get()),
+                ctx.now
+            ],
+            |r| row_number(r, 0),
+        )
+        .map_err(sql_error)?;
     let id = EntryId::new(id).map_err(BoardError::from)?;
     for reference in extract_refs(&entry.body)
         .into_iter()
@@ -33,7 +56,25 @@ pub(in crate::board) fn insert_event(
     summary: &str,
 ) -> Result<(), BoardError> {
     crate::board::board_vocabulary::EntryText::new(summary.to_owned()).map_err(BoardError::from)?;
-    tx.execute("INSERT INTO events(seq,plan_id,kind,subject,to_whom,actor_id,summary,created_at,model,effort) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)", params![sql_number(ctx.seq.get()), plan.map(|id|sql_number(id.get())), kind.as_str(), subject, to.map(BoardRecipient::as_str), ctx.actor_id, summary, ctx.now, ctx.model, ctx.effort]).map_err(sql_error)?;
+    tx.execute(
+        concat!(
+            "INSERT INTO events(seq,plan_id,kind,subject,to_whom,actor_id,summary,created_at,model,effort) ",
+            "VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)"
+        ),
+        params![
+            sql_number(ctx.seq.get()),
+            plan.map(|id| sql_number(id.get())),
+            kind.as_str(),
+            subject,
+            to.map(BoardRecipient::as_str),
+            ctx.actor_id,
+            summary,
+            ctx.now,
+            ctx.model,
+            ctx.effort
+        ],
+    )
+    .map_err(sql_error)?;
     Ok(())
 }
 

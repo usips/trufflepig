@@ -1,0 +1,107 @@
+//! Typed immutable plan history, entry references, and review evidence.
+
+#[cfg(test)]
+mod tests;
+
+use std::path::PathBuf;
+
+use rusqlite::{Connection, Params, Row, Transaction, params};
+
+use super::super::{
+    BoardError, WriteContext, actor_from_row, invalid, require_plan, row_number, sql_error,
+    sql_number, sqlite_u64,
+};
+use crate::board::local_board::board_writes::task_claims;
+use crate::board::board_actor::{BoardRecipient, HarnessLabel};
+use crate::board::board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision, RepoKey};
+use crate::board::board_protocol::*;
+use crate::board::board_vocabulary::{EntryKind, EntryText, PlanText, PlanTitle, ProposalState};
+
+mod entry_reference_reads;
+mod plan_history_reads;
+mod repository_reads;
+mod review_evidence_reads;
+
+pub(in crate::board::local_board) use entry_reference_reads::{entries, entry, entry_view, open_entries};
+pub(in crate::board::local_board) use plan_history_reads::plan_row;
+use plan_history_reads::{plan, plan_view, revision};
+pub(in crate::board::local_board) use repository_reads::repositories;
+pub(in crate::board::local_board) use review_evidence_reads::review;
+
+const RECENT_ENTRIES: i64 = 20;
+const PLAN_SELECT: &str = "SELECT id,title,owner_user,steward,head_revision,created_at FROM plans";
+const OPEN_QUESTION: &str = concat!(
+    "e.kind='question' AND NOT EXISTS(SELECT 1 FROM entries answer JOIN entry_refs reference ",
+    "ON reference.entry_id=answer.id WHERE answer.kind='answer' AND reference.target='E'||e.id) ",
+    "AND NOT EXISTS(SELECT 1 FROM entries correction WHERE correction.supersedes=e.id)"
+);
+
+pub(in crate::board::local_board) fn show(
+    tx: &Transaction<'_>,
+    ctx: &WriteContext,
+    target: &BoardRef,
+) -> Result<BoardReply, BoardError> {
+    let result = match target {
+        BoardRef::Plan(plan) => BoardResult::Plan(plan_view(tx, ctx, *plan)?),
+        BoardRef::Task(task) => {
+            let exists: bool = tx
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM tasks WHERE plan_id=?1 AND ordinal=?2)",
+                    params![sql_number(task.plan.get()), sql_number(task.ordinal)],
+                    |row| row.get(0),
+                )
+                .map_err(sql_error)?;
+            if !exists {
+                return Err(invalid("invalid_reference", format!("unknown task {task}")));
+            }
+            BoardResult::Plan(plan_view(tx, ctx, task.plan)?)
+        }
+        BoardRef::Entry(id) => BoardResult::Entry(entry_view(tx, ctx, *id)?),
+        BoardRef::Revision(id) => BoardResult::Revision(revision(tx, *id)?),
+        BoardRef::Span(span) => {
+            let plan = plan(tx, span.plan)?;
+            let end = span.end.unwrap_or(plan.head_revision);
+            if end < span.start {
+                return Err(invalid("invalid_reference", "revision range is reversed"));
+            }
+            BoardResult::Diff(RevisionDiff {
+                before: revision(
+                    tx,
+                    PlanRevision::new(span.plan, span.start).map_err(BoardError::from)?,
+                )?,
+                after: revision(
+                    tx,
+                    PlanRevision::new(span.plan, end).map_err(BoardError::from)?,
+                )?,
+            })
+        }
+        _ => {
+            return Err(invalid(
+                "invalid_reference",
+                "show requires a plan, task, entry, revision, or revision span",
+            ));
+        }
+    };
+    Ok(BoardReply::new("local", result))
+}
+
+fn decode_json<T: serde::de::DeserializeOwned>(body: String) -> Result<T, BoardError> {
+    serde_json::from_str(&body).map_err(|error| invalid("board_unavailable", error.to_string()))
+}
+
+pub(in crate::board::local_board) fn linked_commits_bounded(
+    conn: &Connection,
+    plan: PlanId,
+    start: i64,
+    end: i64,
+    limit: usize,
+) -> Result<(Vec<LinkedCommit>, usize), BoardError> {
+    super::board_commits::linked_commits_bounded(conn, plan, start, end, limit)
+}
+
+pub(in crate::board::local_board) fn linked_commit_for_entry(
+    conn: &Connection,
+    entry: EntryId,
+) -> Result<Option<LinkedCommit>, BoardError> {
+    super::board_commits::linked_commit_for_entry(conn, entry)
+}

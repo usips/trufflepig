@@ -6,14 +6,17 @@ use crate::identity::GitOid;
 use anyhow::{Context, Result, ensure};
 use std::collections::BTreeSet;
 
-pub type CoauthorLabel = CommitCoauthor;
-
 // Matches the LinkCommits wire bound in board_op_validation.
 const COAUTHOR_LIMIT: usize = 64;
 
 // Separate keys preserve both trailer presence and each field's meaning. Git's
 // `key=` is case-insensitive; a pipe-separated key is one literal key.
-pub const LOG_FORMAT: &str = "--format=%x00%H%x00%ct%x00%an <%ae>%x00%s%x00%(trailers:key=Plan,unfold,separator=%x1d)%x00%(trailers:key=Plan-Task,unfold,separator=%x1d)%x00%(trailers:key=Co-authored-by,unfold,separator=%x1d)%x00";
+pub const LOG_FORMAT: &str = concat!(
+    "--format=%x00%H%x00%ct%x00%an <%ae>%x00%s%x00",
+    "%(trailers:key=Plan,unfold,separator=%x1d)%x00",
+    "%(trailers:key=Plan-Task,unfold,separator=%x1d)%x00",
+    "%(trailers:key=Co-authored-by,unfold,separator=%x1d)%x00"
+);
 
 #[derive(Clone, Debug)]
 pub struct ParsedCommit {

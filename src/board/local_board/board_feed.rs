@@ -5,9 +5,11 @@ mod tests;
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
+use super::board_queries::board_reads;
+use super::board_writes::task_claims;
 use super::{
-    BoardError, WriteContext, actor_from_row, board_reads, invalid, max_seq, row_number, sql_error,
-    sql_number, sqlite_u64, task_claims,
+    BoardError, WriteContext, actor_from_row, invalid, max_seq, row_number, sql_error, sql_number,
+    sqlite_u64,
 };
 use crate::board::board_actor::BoardRecipient;
 use crate::board::board_ids::{BoardRef, EventSeq, PlanId, RepoKey};
@@ -19,8 +21,22 @@ use crate::board::board_vocabulary::EntryText;
 const FIRST_FEED_LIMIT: usize = 20;
 /// A first inbox examines at most this many of the newest events for its seed.
 const FIRST_FEED_SCAN: u64 = 500;
-const EVENT_SELECT: &str = "SELECT e.seq,e.plan_id,e.kind,e.subject,e.to_whom,a.user,a.host,a.harness,a.session,e.model,e.effort,e.summary,e.created_at,(SELECT evidence.via FROM entries evidence WHERE evidence.seq=e.seq AND evidence.actor_id=e.actor_id ORDER BY evidence.id LIMIT 1) FROM events e JOIN actors a ON a.id=e.actor_id";
-const RELEVANT_EVENT: &str = "e.actor_id<>?1 AND (e.kind IN ('claim','task') OR e.to_whom IS NULL OR e.to_whom IN (?3,?4,?5)) AND (?7 OR NOT EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id) OR e.to_whom IN (?3,?4,?5) OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id AND scope.repo_key=?8) OR EXISTS(SELECT 1 FROM entries evidence JOIN plan_repos scope ON scope.plan_id=evidence.plan_id WHERE evidence.seq=e.seq AND scope.repo_key=?8) OR (e.kind='feedback' AND EXISTS(SELECT 1 FROM entries report WHERE report.kind='feedback' AND report.actor_id=?1 AND 'E'||report.id=e.subject)))";
+const EVENT_SELECT: &str = concat!(
+    "SELECT e.seq,e.plan_id,e.kind,e.subject,e.to_whom,a.user,a.host,a.harness,a.session,e.model,",
+    "e.effort,e.summary,e.created_at,(SELECT evidence.via FROM entries evidence ",
+    "WHERE evidence.seq=e.seq AND evidence.actor_id=e.actor_id ORDER BY evidence.id LIMIT 1) ",
+    "FROM events e JOIN actors a ON a.id=e.actor_id"
+);
+const RELEVANT_EVENT: &str = concat!(
+    "e.actor_id<>?1 AND (e.kind IN ('claim','task') OR e.to_whom IS NULL OR e.to_whom IN (?3,?4,?5)) ",
+    "AND (?7 OR NOT EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id) ",
+    "OR e.to_whom IN (?3,?4,?5) ",
+    "OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id AND scope.repo_key=?8) ",
+    "OR EXISTS(SELECT 1 FROM entries evidence JOIN plan_repos scope ON scope.plan_id=evidence.plan_id ",
+    "WHERE evidence.seq=e.seq AND scope.repo_key=?8) ",
+    "OR (e.kind='feedback' AND EXISTS(SELECT 1 FROM entries report ",
+    "WHERE report.kind='feedback' AND report.actor_id=?1 AND 'E'||report.id=e.subject)))"
+);
 
 pub(super) fn inbox(
     tx: &Transaction<'_>,
@@ -168,9 +184,16 @@ pub(super) fn read_events(
             "event batch limit must be 1..501",
         ));
     }
-    let mut statement = conn.prepare(&format!(
-        "{EVENT_SELECT} WHERE e.seq>?1 AND e.seq<=?2 AND (?3 IS NULL OR e.plan_id=?3 OR EXISTS(SELECT 1 FROM entries evidence WHERE evidence.seq=e.seq AND evidence.plan_id=?3)) ORDER BY e.seq LIMIT ?4"
-    )).map_err(sql_error)?;
+    let mut statement = conn
+        .prepare(&format!(
+            concat!(
+                "{EVENT_SELECT} WHERE e.seq>?1 AND e.seq<=?2 ",
+                "AND (?3 IS NULL OR e.plan_id=?3 OR EXISTS(SELECT 1 FROM entries evidence ",
+                "WHERE evidence.seq=e.seq AND evidence.plan_id=?3)) ORDER BY e.seq LIMIT ?4"
+            ),
+            EVENT_SELECT = EVENT_SELECT
+        ))
+        .map_err(sql_error)?;
     let mut rows = statement
         .query(params![
             sql_number(after.get()),

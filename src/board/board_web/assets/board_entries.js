@@ -1,6 +1,9 @@
 export function createBoardEntries(context) {
   const { state, dom, navigate, entryRecord, collection, entryKinds } = context;
-  const { el, add, refLink, badge, actorName, timeNode, empty, omitted, title, field, focusKey, retainForm, link } = dom;
+  const {
+    el, add, refLink, badge, actorName, timeNode, empty, omitted, title, field, focusKey, retainForm,
+    link,
+  } = dom;
   function filtersForm(route, includePlan = true) {
     const form = el("form", "filters");
     const fields = [];
@@ -10,11 +13,14 @@ export function createBoardEntries(context) {
     fields.push(field("User", "user", route.user, { placeholder: "user" }));
     fields.push(field("Host", "host", route.host, { placeholder: "host" }));
     fields.push(field("Task", "task", route.task, { placeholder: "P#.N" }));
-    const submit = focusKey(el("button", "compact", "Filter"), `filters-submit:${route.view}:${route.ref || "all"}`); submit.type = "submit";
+    const submit = focusKey(el("button", "compact", "Filter"), `filters-submit:${route.view}:${route.ref || "all"}`);
+    submit.type = "submit";
     add(form, fields.map(item => item.wrapper), submit);
     form.addEventListener("submit", event => {
       event.preventDefault();
-      navigate(route.view, { ref: route.ref, tab: route.tab, plan: route.plan, ...Object.fromEntries(new FormData(form)) });
+      navigate(route.view, {
+        ref: route.ref, tab: route.tab, plan: route.plan, ...Object.fromEntries(new FormData(form)),
+      });
     });
     return retainForm(form, `filters:${route.view}:${route.ref || "all"}`);
   }
@@ -22,15 +28,19 @@ export function createBoardEntries(context) {
     const entry = entryRecord(record), row = el("tr", "entry-row"); row.dataset.entryId = entry.id;
     const cells = Array.from({ length: 7 }, () => el("td"));
     add(cells[0], refLink(entry.id), el("br"), timeNode(entry.created_at));
-    add(cells[1], el("span", "", actorName(entry.actor)), entry.via === "outbox" ? el("span", "provenance", " (spooled, unverified)") : null);
+    add(cells[1], el("span", "", actorName(entry.actor)),
+      entry.via === "outbox" ? el("span", "provenance", " (spooled, unverified)") : null);
     cells[2].textContent = [entry.model, entry.effort].filter(Boolean).join(" · ") || "—";
     add(cells[3], badge(entry.kind), entry.state ? badge(entry.state.state) : null);
     const refs = entry.refs || [];
     const tasks = refs.filter(ref => /^P[1-9]\d*\.\d+$/.test(String(ref)));
-    add(cells[4], tasks.length ? add(el("div", "entry-refs"), tasks.map(ref => refLink(ref))) : el("span", "muted", "—"));
+    add(cells[4],
+      tasks.length ? add(el("div", "entry-refs"), tasks.map(ref => refLink(ref))) : el("span", "muted", "—"));
     const linked = el("div", "entry-refs");
     if (entry.plan) linked.append(refLink(entry.plan));
-    for (const ref of refs.filter(ref => !tasks.includes(ref))) linked.append(refLink(ref, ref, "mono", { plan: entry.plan, repo_key: entry.repo_key }));
+    for (const ref of refs.filter(ref => !tasks.includes(ref))) {
+      linked.append(refLink(ref, ref, "mono", { plan: entry.plan, repo_key: entry.repo_key }));
+    }
     if (entry.supersedes) add(linked, el("span", "muted", "Supersedes"), refLink(entry.supersedes));
     cells[5].append(linked.childElementCount ? linked : el("span", "muted", "—"));
     cells[6].className = "entry-text-cell"; cells[6].append(el("p", "entry-body", entry.body));
@@ -39,9 +49,10 @@ export function createBoardEntries(context) {
   }
   function liveMatch(entry, route) {
     const actor = entry.actor || {}, refs = entry.refs || [];
-    return (!route.plan || entry.plan === route.plan) && (!route.kind || entry.kind === route.kind) &&
-      (!route.harness || actor.harness === route.harness) && (!route.user || actor.user === route.user) && (!route.host || actor.host === route.host) &&
-      (!route.task || refs.includes(route.task)) && (!route.references || refs.includes(route.references));
+    return (!route.plan || entry.plan === route.plan) && (!route.kind || entry.kind === route.kind)
+      && (!route.harness || actor.harness === route.harness) && (!route.user || actor.user === route.user)
+      && (!route.host || actor.host === route.host)
+      && (!route.task || refs.includes(route.task)) && (!route.references || refs.includes(route.references));
   }
   function entriesTable(records, route = {}, through = null) {
     const table = el("table", "entry-table");
@@ -66,7 +77,9 @@ export function createBoardEntries(context) {
     for (const item of live) body.append(entryRow(item.entry));
     if (live.length && records.length) {
       const divider = el("tr", "live-divider");
-      const cell = el("td", "", state.liveGap ? "Live delivery skipped some entries — refresh to catch up." : "New entries since this page loaded");
+      const cell = el("td", "", state.liveGap
+        ? "Live delivery skipped some entries — refresh to catch up."
+        : "New entries since this page loaded");
       cell.colSpan = 7; divider.append(cell); body.append(divider);
     }
     for (const record of records) body.append(entryRow(record));
@@ -77,12 +90,16 @@ export function createBoardEntries(context) {
     if (heading) page.append(title("Entries", "Append-only evidence and conversation."));
     page.append(filtersForm(route, !route.ref));
     const entries = collection(data, "entries");
-    add(page, entriesTable(entries, route, data.through ?? null), entries.length ? null : empty("No entries match these filters."), omitted(data.omitted, "entries"));
+    add(page, entriesTable(entries, route, data.through ?? null),
+      entries.length ? null : empty("No entries match these filters."), omitted(data.omitted, "entries"));
     const pager = el("div", "pager");
-    if (route.after) pager.append(link("Newest entries", route.view, { ...route, after: null, through: null }, "button"));
+    if (route.after) {
+      pager.append(link("Newest entries", route.view, { ...route, after: null, through: null }, "button"));
+    }
     if (entries.length && data.more_older) {
       const oldest = entryRecord(entries[entries.length - 1]);
-      pager.append(link("Older entries", route.view, { ...route, after: JSON.stringify({ seq: String(oldest.seq), entry: oldest.id }), through: null }, "button"));
+      pager.append(link("Older entries", route.view,
+        { ...route, after: JSON.stringify({ seq: String(oldest.seq), entry: oldest.id }), through: null }, "button"));
     }
     if (pager.childElementCount) page.append(pager);
     return page;

@@ -13,7 +13,18 @@ pub(super) fn lines(text: &mut String, result: &BoardResult) {
             )
             .unwrap();
             for item in &page.plans {
-                writeln!(text, "{}\t{}\tquestions={} proposals={} feedback={} tasks_omitted={} claims_omitted={}", item.plan.id, cell(item.plan.title.as_str()), item.open_questions, item.open_proposals, item.open_feedback, item.tasks_omitted, item.claims_omitted).unwrap();
+                writeln!(
+                    text,
+                    "{}\t{}\tquestions={} proposals={} feedback={} tasks_omitted={} claims_omitted={}",
+                    item.plan.id,
+                    cell(item.plan.title.as_str()),
+                    item.open_questions,
+                    item.open_proposals,
+                    item.open_feedback,
+                    item.tasks_omitted,
+                    item.claims_omitted
+                )
+                .unwrap();
             }
         }
         BoardResult::Attention(page) => {

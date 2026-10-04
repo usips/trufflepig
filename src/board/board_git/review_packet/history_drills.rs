@@ -155,9 +155,10 @@ mod tests {
     #[test]
     fn history_drills_refuse_old_git_and_unavailable_blob_objects() {
         if crate::board::board_test_support::git_version() < Some((2, 55)) {
-            eprintln!(
-                "skipping history_drills_refuse_old_git_and_unavailable_blob_objects: requires Git >= 2.55 for history drill hints"
-            );
+            eprintln!(concat!(
+                "skipping history_drills_refuse_old_git_and_unavailable_blob_objects: ",
+                "requires Git >= 2.55 for history drill hints"
+            ));
             return;
         }
         assert!(!version_supported(b"git version 2.43.0\n"));

@@ -6,7 +6,17 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub(super) const RESPONSE_HEADERS: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream; charset=utf-8\r\nCache-Control: no-store\r\nConnection: close\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nContent-Security-Policy: default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'\r\n\r\n";
+pub(super) const RESPONSE_HEADERS: &[u8] = concat!(
+    "HTTP/1.1 200 OK\r\n",
+    "Content-Type: text/event-stream; charset=utf-8\r\n",
+    "Cache-Control: no-store\r\n",
+    "Connection: close\r\n",
+    "X-Content-Type-Options: nosniff\r\n",
+    "Referrer-Policy: no-referrer\r\n",
+    "Content-Security-Policy: default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'\r\n",
+    "\r\n"
+)
+.as_bytes();
 
 pub(super) trait DeadlineWriter: Write {
     fn remaining_timeout(&self, timeout: Duration) -> io::Result<()>;

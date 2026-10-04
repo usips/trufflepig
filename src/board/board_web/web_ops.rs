@@ -161,7 +161,12 @@ fn startup_probe(
         None => Ok(()),
         Some(version) if version == BOARD_SCHEMA_VERSION => Ok(()),
         Some(version) if version < BOARD_SCHEMA_VERSION => Err(unavailable(format!(
-            "board database schema version {version} awaits migration to {BOARD_SCHEMA_VERSION}; start trufflepig system ensure with the current binary"
+            concat!(
+                "board database schema version {version} awaits migration to {BOARD_SCHEMA_VERSION}; ",
+                "start trufflepig system ensure with the current binary"
+            ),
+            version = version,
+            BOARD_SCHEMA_VERSION = BOARD_SCHEMA_VERSION
         ))),
         Some(version) => Err(unavailable(format!(
             "board database schema version {version} is newer than supported {BOARD_SCHEMA_VERSION}"

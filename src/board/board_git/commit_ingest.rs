@@ -33,6 +33,7 @@ pub struct IngestReport {
 #[derive(Clone, Debug)]
 pub struct UnlinkedScan {
     pub commits: Vec<LinkedCommit>,
+    #[cfg(test)]
     pub complete: bool,
     pub scan_error: Option<String>,
 }
@@ -102,7 +103,10 @@ impl RepoIngestor {
                         )),
                     }
                 } else if !target.plans.is_empty() {
-                    report.errors.push(format!("{}: repository common directory is missing; cleanup waits for grace period", target.registration.common_dir.display()));
+                    report.errors.push(format!(
+                        "{}: repository common directory is missing; cleanup waits for grace period",
+                        target.registration.common_dir.display()
+                    ));
                 }
                 report.skipped += 1;
                 continue;
@@ -245,11 +249,9 @@ pub fn find_unlinked(
     let deadline = Instant::now() + timeout;
     let tips = collect_tips(registration, deadline)?;
     let scan = scan_log(registration, &tips, since, false, deadline)?;
-    let mut complete = scan.complete;
-    let mut scan_error =
-        (!complete).then(|| format!("board_scan: unlinked scan exceeds {COMMIT_LIMIT} records"));
+    let mut scan_error = (!scan.complete)
+        .then(|| format!("board_scan: unlinked scan exceeds {COMMIT_LIMIT} records"));
     if collect_tips(registration, deadline)?.digest != tips.digest {
-        complete = false;
         scan_error = Some("board_scan: Git tips changed during unlinked scan".to_owned());
     }
     let commits = scan
@@ -260,7 +262,8 @@ pub fn find_unlinked(
         .collect();
     Ok(UnlinkedScan {
         commits,
-        complete,
+        #[cfg(test)]
+        complete: scan_error.is_none(),
         scan_error: scan_error
             .or_else(|| (!scan.warnings.is_empty()).then(|| scan.warnings.join("; "))),
     })

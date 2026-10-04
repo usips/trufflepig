@@ -73,7 +73,13 @@ impl BoardConfig {
             if let Some(previous) = repos.insert(origin.clone(), key.clone()) {
                 if previous != key {
                     bail!(
-                        "invalid_options: repository origin {origin} has conflicting identity overrides {previous} and {key}"
+                        concat!(
+                            "invalid_options: repository origin {origin} has conflicting identity ",
+                            "overrides {previous} and {key}"
+                        ),
+                        origin = origin,
+                        previous = previous,
+                        key = key
                     );
                 }
             }
