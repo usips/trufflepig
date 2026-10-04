@@ -1,5 +1,5 @@
 export function createBoardEntries(context) {
-  const { dom, navigate, entryRecord, collection, nextAfter, pageParams, entryKinds } = context;
+  const { state, dom, navigate, entryRecord, collection, nextAfter, pageParams, entryKinds } = context;
   const { el, add, refLink, badge, actorName, timeNode, empty, omitted, title, field, retainForm, link } = dom;
   function filtersForm(route, includePlan = true) {
     const form = el("form", "filters");
@@ -18,7 +18,32 @@ export function createBoardEntries(context) {
     });
     return retainForm(form, `filters:${route.view}:${route.ref || "all"}`);
   }
-  function entriesTable(records) {
+  function entryRow(record) {
+    const entry = entryRecord(record), row = el("tr", "entry-row"); row.dataset.entryId = entry.id;
+    const cells = Array.from({ length: 7 }, () => el("td"));
+    add(cells[0], refLink(entry.id), el("br"), timeNode(entry.created_at));
+    add(cells[1], el("span", "", actorName(entry.actor)), entry.via === "outbox" ? el("span", "provenance", " (spooled, unverified)") : null);
+    cells[2].textContent = [entry.model, entry.effort].filter(Boolean).join(" · ") || "—";
+    add(cells[3], badge(entry.kind), entry.state ? badge(entry.state.state) : null);
+    const refs = entry.refs || [];
+    const tasks = refs.filter(ref => /^P[1-9]\d*\.\d+$/.test(String(ref)));
+    add(cells[4], tasks.length ? add(el("div", "entry-refs"), tasks.map(ref => refLink(ref))) : el("span", "muted", "—"));
+    const linked = el("div", "entry-refs");
+    if (entry.plan) linked.append(refLink(entry.plan));
+    for (const ref of refs.filter(ref => !tasks.includes(ref))) linked.append(refLink(ref, ref, "mono", { plan: entry.plan, repo_key: entry.repo_key }));
+    if (entry.supersedes) add(linked, el("span", "muted", "Supersedes"), refLink(entry.supersedes));
+    cells[5].append(linked.childElementCount ? linked : el("span", "muted", "—"));
+    cells[6].className = "entry-text-cell"; cells[6].append(el("p", "entry-body", entry.body));
+    if (entry.to) cells[6].append(el("p", "small muted", `To ${entry.to}`));
+    return add(row, cells);
+  }
+  function liveMatch(entry, route) {
+    const actor = entry.actor || {}, refs = entry.refs || [];
+    return (!route.plan || entry.plan === route.plan) && (!route.kind || entry.kind === route.kind) &&
+      (!route.harness || actor.harness === route.harness) && (!route.user || actor.user === route.user) && (!route.host || actor.host === route.host) &&
+      (!route.task || refs.includes(route.task)) && (!route.references || refs.includes(route.references));
+  }
+  function entriesTable(records, route = {}) {
     const table = el("table", "entry-table");
     const caption = el("caption", "sr-only", "Board entries");
     const head = el("thead"), heading = el("tr"), body = el("tbody");
@@ -26,24 +51,13 @@ export function createBoardEntries(context) {
       const column = el("th", "", label); column.scope = "col"; heading.append(column);
     }
     head.append(heading); add(table, caption, head, body);
-    for (const record of records) {
-      const entry = entryRecord(record), row = el("tr", "entry-row"); row.dataset.entryId = entry.id;
-      const cells = Array.from({ length: 7 }, () => el("td"));
-      add(cells[0], refLink(entry.id), el("br"), timeNode(entry.created_at));
-      add(cells[1], el("span", "", actorName(entry.actor)), entry.via === "outbox" ? el("span", "provenance", " (spooled, unverified)") : null);
-      cells[2].textContent = [entry.model, entry.effort].filter(Boolean).join(" · ") || "—";
-      add(cells[3], badge(entry.kind), entry.state ? badge(entry.state.state) : null);
-      const refs = entry.refs || [];
-      const tasks = refs.filter(ref => /^P[1-9]\d*\.\d+$/.test(String(ref)));
-      add(cells[4], tasks.length ? add(el("div", "entry-refs"), tasks.map(ref => refLink(ref))) : el("span", "muted", "—"));
-      const linked = el("div", "entry-refs");
-      if (entry.plan) linked.append(refLink(entry.plan));
-      for (const ref of refs.filter(ref => !tasks.includes(ref))) linked.append(refLink(ref, ref, "mono", { plan: entry.plan, repo_key: entry.repo_key }));
-      if (entry.supersedes) add(linked, el("span", "muted", "Supersedes"), refLink(entry.supersedes));
-      cells[5].append(linked.childElementCount ? linked : el("span", "muted", "—"));
-      cells[6].className = "entry-text-cell"; cells[6].append(el("p", "entry-body", entry.body));
-      if (entry.to) cells[6].append(el("p", "small muted", `To ${entry.to}`));
-      add(row, cells); body.append(row);
+    for (const record of records) body.append(entryRow(record));
+    if (!route.after && !route.through && state.liveEntries.length) {
+      const shown = new Set(records.map(record => entryRecord(record)?.id));
+      const last = records.length ? entryRecord(records[records.length - 1]) : null;
+      const sortsAfter = item => !last || BigInt(item.seq) > BigInt(last.seq) ||
+        (BigInt(item.seq) === BigInt(last.seq) && BigInt(String(item.entry.id).slice(1)) > BigInt(String(last.id).slice(1)));
+      for (const item of state.liveEntries) if (!shown.has(item.entry.id) && liveMatch(item.entry, route) && sortsAfter(item)) body.append(entryRow(item.entry));
     }
     return add(el("div", "entry-table-scroll"), table);
   }
@@ -52,7 +66,7 @@ export function createBoardEntries(context) {
     if (heading) page.append(title("Entries", "Append-only evidence and conversation."));
     page.append(filtersForm(route, !route.ref));
     const entries = collection(data, "entries");
-    add(page, entriesTable(entries), entries.length ? null : empty("No entries match these filters."), omitted(data.omitted, "entries"));
+    add(page, entriesTable(entries, route), entries.length ? null : empty("No entries match these filters."), omitted(data.omitted, "entries"));
     if (nextAfter(data) !== null) page.append(add(el("div", "pager"), link("Next entries", route.view, pageParams(route, data), "button")));
     return page;
   }

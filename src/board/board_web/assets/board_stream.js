@@ -1,5 +1,5 @@
 export function createBoardStream(context) {
-  const { state, privateFetch, setConnection, loadRoute, scheduleRefresh, parseBoardJson, addTickerEvent } = context;
+  const { state, privateFetch, setConnection, loadRoute, scheduleRefresh, parseBoardJson, addTickerEvent, addLiveEntry } = context;
   function parseSse(onEvent) {
     let buffer = "", eventName = "message", eventId = null, data = [], frameBytes = 0;
     const encoder = new TextEncoder();
@@ -66,6 +66,7 @@ export function createBoardStream(context) {
           state.streamFailures = 0;
           state.watermark = frame.id;
           addTickerEvent(event);
+          addLiveEntry?.(event);
           scheduleRefresh();
         });
         reader = response.body.getReader();

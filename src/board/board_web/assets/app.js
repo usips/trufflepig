@@ -26,7 +26,7 @@ import { createBoardViews } from "/board_views.js";
     route: routeFromLocation(), generation: 0, navigation: 0, request: null, loadedAt: 0, clockOffsetMs: 0,
     overview: null, attention: null, watermark: null, stream: null,
     streamGeneration: 0, reconnect: null, streamFailures: 0,
-    refreshTimer: null, refreshing: false, refreshAgain: false, drafts: new Map(), globalRefresh: null, resyncing: false,
+    refreshTimer: null, refreshing: false, refreshAgain: false, drafts: new Map(), globalRefresh: null, resyncing: false, liveEntries: [], livePending: new Set(),
     formDrafts: new Map(), formStatuses: new Map(), pendingForms: new Set(),
   };
   const columns = ["todo", "doing", "review", "done", "blocked"];
@@ -39,7 +39,7 @@ import { createBoardViews } from "/board_views.js";
   const views = createBoardViews({ state, dom, board, jsonFetch, navigate, scheduleRefresh, submitMutation, notice, apiVersion, entryRecord, collection, permitted, nextAfter, pageParams, queryFilters, postKinds, entryKinds, columns, errorMessage });
   const { entryCard, eventList, workingCard, taskCard, attentionItems, attentionCard, renderOverview, renderAttention, renderClaims, postForm, taskDetails, planTabs, sanitizedMarkup, renderPlan, filtersForm, entriesPage, historyPage, commitsPage, diffPage, reviewPage, feedbackControls, feedbackPage, entryPage, searchPage, editorPage } = views;
 
-  const { parseSse, stopStream, startStream } = createBoardStream({ state, privateFetch, setConnection, loadRoute, scheduleRefresh, parseBoardJson, addTickerEvent });
+  const { parseSse, stopStream, startStream } = createBoardStream({ state, privateFetch, setConnection, loadRoute, scheduleRefresh, parseBoardJson, addTickerEvent, addLiveEntry });
 
   const { fetchRoute } = createBoardReader({ state, dom, views, board, jsonFetch, apiVersion, readOp, snapshotSeq, minimumSeq, cursorFromRoute, parseBoardJson, queryFilters });
 
@@ -153,6 +153,26 @@ import { createBoardViews } from "/board_views.js";
     const events = state.overview.events || (state.overview.events = []);
     if (!events.some(item => String(item.seq) === String(event.seq))) events.unshift(event);
     if (events.length > 20) events.length = 20;
+  }
+  function addLiveEntry(event) {
+    const route = state.route, subject = String(event?.subject);
+    if (!/^E[1-9]\d*$/.test(subject) || route.after || route.through) return;
+    if (route.view !== "entries" && !(route.view === "plan" && route.tab === "entries")) return;
+    if (state.livePending.has(subject) || state.liveEntries.some(item => item.entry.id === subject)) return;
+    state.livePending.add(subject);
+    void (async () => {
+      try {
+        const entry = entryRecord((await board(readOp("show", { target: subject }))).data.entry);
+        if (!entry?.id || state.liveEntries.some(item => item.entry.id === entry.id)) return;
+        const record = { seq: String(event.seq), entry };
+        const at = state.liveEntries.findIndex(item => BigInt(item.seq) > BigInt(record.seq) ||
+          (BigInt(item.seq) === BigInt(record.seq) && BigInt(item.entry.id.slice(1)) > BigInt(record.entry.id.slice(1))));
+        state.liveEntries.splice(at < 0 ? state.liveEntries.length : at, 0, record);
+        if (state.liveEntries.length > 50) state.liveEntries.splice(state.liveEntries.reduce((lowest, item, index) => BigInt(item.seq) < BigInt(state.liveEntries[lowest].seq) ? index : lowest, 0), 1);
+        scheduleRefresh();
+      } catch (_) { /* A failed Show fetch is recovered by the next refresh. */ }
+      finally { state.livePending.delete(subject); }
+    })();
   }
   async function submitMutation(form, op, success) {
     const navigation = state.navigation;
