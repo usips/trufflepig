@@ -157,8 +157,10 @@ textarea.ssot-editor{min-height:400px;font-family:ui-monospace,SFMono-Regular,Co
 .form-status:empty{display:none}
 .form-footer{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap}
 .byte-count{margin-left:auto;font-size:.78rem;color:var(--muted)}
-.search-form{display:flex;gap:.7rem;margin-bottom:1.5rem;flex-wrap:wrap}
-.search-form input[type=search]{flex:1;min-width:250px}
+.search-form{display:flex;gap:.7rem;margin-bottom:1.5rem;flex-wrap:wrap;align-items:end}
+.search-form .field{flex:1;min-width:220px;margin-bottom:0}
+.search-form .field input{width:100%}
+.search-form .field:nth-child(2){flex:0 1 240px}
 .search-result{display:block;padding:1rem;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:inherit;margin-bottom:.75rem}
 .search-result:hover{text-decoration:none;border-color:#adc6b9}
 .search-result h2{margin:0 0 .35rem;font-size:1rem}

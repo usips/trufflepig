@@ -1,6 +1,6 @@
 export function createBoardFeedback(context) {
   const { dom, submitMutation, entryRecord, permitted, collection, nextAfter, pageParams, entryCard } = context;
-  const { el, add, button, link, badge, empty, omitted, title, field, retainForm } = dom;
+  const { el, add, button, link, badge, empty, omitted, title, field, focusKey, retainForm } = dom;
   function feedbackControls(record) {
     const entry = entryRecord(record);
     const form = el("form");
@@ -8,8 +8,13 @@ export function createBoardFeedback(context) {
     if (!permitted(record, "can_triage") && !permitted(record, "can_close")) return null;
     const note = field("Note", "note", "", { multiline: true, maxLength: 4096, hint: "optional" });
     const actions = el("div", "actions");
-    if (status === "open" && permitted(record, "can_triage")) actions.append(button("Mark triaged", () => void submitMutation(form, { op: "feedback_triage", entry: entry.id, note: note.input.value || null }), "compact"));
-    if (permitted(record, "can_close")) for (const value of ["fixed", "wontfix", "duplicate"]) actions.append(button(`Close: ${value}`, () => void submitMutation(form, { op: "feedback_close", entry: entry.id, state: value, note: note.input.value || null }), "compact"));
+    const control = (label, key, action) => {
+      const item = focusKey(button(label, action, "compact"), key);
+      item.append(el("span", "sr-only", ` ${entry.id}`));
+      return item;
+    };
+    if (status === "open" && permitted(record, "can_triage")) actions.append(control("Mark triaged", `feedback:${entry.id}:triage`, () => void submitMutation(form, { op: "feedback_triage", entry: entry.id, note: note.input.value || null })));
+    if (permitted(record, "can_close")) for (const value of ["fixed", "wontfix", "duplicate"]) actions.append(control(`Close: ${value}`, `feedback:${entry.id}:close:${value}`, () => void submitMutation(form, { op: "feedback_close", entry: entry.id, state: value, note: note.input.value || null })));
     add(form, note.wrapper, actions);
     return retainForm(form, `feedback:${entry.id}`);
   }

@@ -1,6 +1,6 @@
 export function createBoardEntries(context) {
   const { state, dom, navigate, entryRecord, collection, entryKinds } = context;
-  const { el, add, refLink, badge, actorName, timeNode, empty, omitted, title, field, retainForm, link } = dom;
+  const { el, add, refLink, badge, actorName, timeNode, empty, omitted, title, field, focusKey, retainForm, link } = dom;
   function filtersForm(route, includePlan = true) {
     const form = el("form", "filters");
     const fields = [];
@@ -10,7 +10,7 @@ export function createBoardEntries(context) {
     fields.push(field("User", "user", route.user, { placeholder: "user" }));
     fields.push(field("Host", "host", route.host, { placeholder: "host" }));
     fields.push(field("Task", "task", route.task, { placeholder: "P#.N" }));
-    const submit = el("button", "compact", "Filter"); submit.type = "submit";
+    const submit = focusKey(el("button", "compact", "Filter"), `filters-submit:${route.view}:${route.ref || "all"}`); submit.type = "submit";
     add(form, fields.map(item => item.wrapper), submit);
     form.addEventListener("submit", event => {
       event.preventDefault();

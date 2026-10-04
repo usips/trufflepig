@@ -22,7 +22,7 @@
     </nav>
     <a class="button primary compact" href="/#/new" data-route="new">New plan</a>
   </header>
-  <div class="status-bar"><span id="connection" role="status">Connecting…</span><span id="freshness"></span><button id="refresh" class="text-button" type="button">Refresh</button></div>
+  <div class="status-bar"><span id="connection">Connecting…</span><span id="connection-announce" class="sr-only" role="status" aria-live="polite"></span><span id="freshness"></span><button id="refresh" class="text-button" type="button">Refresh</button></div>
   <div id="notice" role="status" aria-live="polite" hidden></div>
   <main id="main" tabindex="-1" aria-busy="true"><div class="loading">Loading board…</div></main>
   <footer class="app-footer">Local boardroom · Plans, evidence, and decisions</footer>

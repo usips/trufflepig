@@ -21,6 +21,7 @@ import { createBoardViews } from "/board_views.js";
   const apiVersion = Number(document.querySelector('meta[name="board-api"]')?.content);
   const main = document.getElementById("main");
   const connection = document.getElementById("connection");
+  const connectionAnnounce = document.getElementById("connection-announce");
   const freshness = document.getElementById("freshness");
   const state = {
     route: routeFromLocation(), generation: 0, navigation: 0, request: null, loadedAt: 0, clockOffsetMs: 0,
@@ -34,7 +35,7 @@ import { createBoardViews } from "/board_views.js";
   const entryKinds = ["note", "progress", "review", "question", "answer", "decision", "divergence", "claim", "commit", "proposal", "feedback", "task", "hello", "create", "accept", "reject", "direct"];
 
   const dom = createBoardDom(state);
-  const { el, add, button, routeUrl, link, refLink, badge, actorName, shortActor, stamp, timeNode, age, ageNode, panel, empty, omitted, title, field, formStatus, planId,
+  const { el, add, button, routeUrl, link, refLink, badge, actorName, shortActor, stamp, timeNode, age, ageNode, panel, empty, omitted, title, field, formStatus, planId, focusKey,
     captureForms, restoreForms, syncForm, setFormBusy, focusedControl, restoreFocus, saveForm } = dom;
   const views = createBoardViews({ state, dom, board, jsonFetch, navigate, scheduleRefresh, submitMutation, notice, apiVersion, entryRecord, collection, permitted, nextAfter, pageParams, queryFilters, postKinds, entryKinds, columns, errorMessage });
   const { entryCard, eventList, workingCard, taskCard, attentionItems, attentionCard, renderOverview, renderAttention, renderClaims, postForm, taskDetails, planTabs, sanitizedMarkup, renderPlan, filtersForm, entriesPage, historyPage, commitsPage, diffPage, reviewPage, feedbackControls, feedbackPage, entryPage, searchPage, editorPage } = views;
@@ -49,7 +50,17 @@ import { createBoardViews } from "/board_views.js";
     item.dataset.tone = tone;
     item.hidden = !message;
   }
-  function setConnection(label, mode) { connection.textContent = label; connection.dataset.state = mode; }
+  // The indicator itself stays out of the live region: only losing an
+  // established connection and recovering from an outage are announced,
+  // never routine (re)connect ticks or follower-mode "Live" updates.
+  let connectionAnnounced = "";
+  function setConnection(label, mode) {
+    connection.textContent = label; connection.dataset.state = mode;
+    if (mode === connectionAnnounced) return;
+    if (mode === "error" && connectionAnnounced === "live") connectionAnnounce.textContent = "Board connection lost. Reconnecting.";
+    else if (mode === "live" && connectionAnnounced === "error") connectionAnnounce.textContent = "Board connection restored.";
+    connectionAnnounced = mode;
+  }
   function routeFromLocation() {
     const [path = "", queryText = ""] = (location.hash.startsWith("#/") ? location.hash.slice(2) : "").split("?");
     const query = new URLSearchParams(queryText);
@@ -242,7 +253,7 @@ import { createBoardViews } from "/board_views.js";
     } catch (error) {
       if (isAbort(error) || generation !== state.generation) return;
       if (!main.querySelector("form") || focus) {
-        const box = panel("Board unavailable", add(el("div"), el("p", "", errorMessage(error)), button("Try again", () => void loadRoute(true))), "callout");
+        const box = panel("Board unavailable", add(el("div"), el("p", "", errorMessage(error)), focusKey(button("Try again", () => void loadRoute(true)), "try-again")), "callout");
         main.replaceChildren(box);
       } else notice(errorMessage(error), "error");
       setConnection(token ? "Request failed" : "Authorization required", "error");

@@ -31,8 +31,11 @@ export function createBoardDom(state) {
     const item = el("a", className, label);
     item.href = routeUrl(view, params);
     item.dataset.nav = "true";
+    item.dataset.focusKey = `link:${item.href}`;
     return item;
   }
+  // A deterministic key lets focus survive a wholesale page swap.
+  function focusKey(item, key) { item.dataset.focusKey = key; return item; }
   function refLink(ref, label = ref, className = "mono", context = {}) {
     if (!ref) return el("span", className, label || "—");
     const text = String(ref);
@@ -163,18 +166,25 @@ export function createBoardDom(state) {
   }
   function focusedControl(root) {
     const input = document.activeElement;
+    if (!root.contains(input)) return null;
     const form = input?.closest?.("form");
-    return root.contains(input) && form?.dataset.draftKey && input.name ?
-      { key: form.dataset.draftKey, name: input.name, start: input.selectionStart, end: input.selectionEnd } : null;
+    if (form?.dataset.draftKey && input.name) return { key: form.dataset.draftKey, name: input.name, start: input.selectionStart, end: input.selectionEnd };
+    const keyed = input?.closest?.("[data-focus-key]");
+    return keyed ? { focusKey: keyed.dataset.focusKey } : null;
   }
   function restoreFocus(root, focus) {
     if (!focus) return;
+    if (focus.focusKey) {
+      const target = root.querySelector(`[data-focus-key="${CSS.escape(focus.focusKey)}"]`);
+      if (target) target.focus({ preventScroll: true });
+      return;
+    }
     const form = [...root.querySelectorAll("form")].find(item => item.dataset.draftKey === focus.key);
     const input = [...(form?.querySelectorAll("input,textarea,select") || [])].find(item => item.name === focus.name);
     if (input) { input.focus({ preventScroll: true }); if (focus.start !== null && focus.start !== undefined && input.setSelectionRange) input.setSelectionRange(focus.start, focus.end); }
   }
   function planId(ref) { return String(ref || "").match(/^P[1-9]\d*/)?.[0] || ""; }
 
-  return { el, add, button, routeUrl, link, refLink, badge, actorName, shortActor, stamp, timeNode, age, ageNode, panel, empty, omitted, title, field, formStatus, planId,
+  return { el, add, button, routeUrl, link, refLink, badge, actorName, shortActor, stamp, timeNode, age, ageNode, panel, empty, omitted, title, field, formStatus, planId, focusKey,
     retainForm, captureForms, restoreForms, syncForm, setFormBusy, focusedControl, restoreFocus, saveForm };
 }

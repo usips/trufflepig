@@ -2,7 +2,7 @@ import { createBoardDetails } from "/board_details.js";
 
 export function createBoardViews(context) {
   const { state, dom, board, jsonFetch, navigate, scheduleRefresh, submitMutation, notice, apiVersion, entryRecord, collection, permitted, nextAfter, pageParams, queryFilters, postKinds, entryKinds, columns, errorMessage } = context;
-  const { el, add, button, routeUrl, link, refLink, badge, actorName, shortActor, stamp, timeNode, age, ageNode, panel, empty, omitted, title, field, formStatus, planId, retainForm } = dom;
+  const { el, add, button, routeUrl, link, refLink, badge, actorName, shortActor, stamp, timeNode, age, ageNode, panel, empty, omitted, title, field, formStatus, planId, focusKey, retainForm } = dom;
   function entryCard(record, options = {}) {
     const entry = entryRecord(record);
     if (!entry) return empty("Entry unavailable.");
@@ -63,14 +63,14 @@ export function createBoardViews(context) {
   }
   function renderOverview(data, attention, route) {
     const page = el("div");
-    const ingest = button("Ingest commits", async () => {
+    const ingest = focusKey(button("Ingest commits", async () => {
       ingest.disabled = true;
       try {
         await jsonFetch("/api/v1/ingest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api: apiVersion }) });
         notice("Repository ingestion completed.", "success"); scheduleRefresh();
       } catch (error) { notice(errorMessage(error), "error"); }
       finally { ingest.disabled = false; }
-    }, "compact");
+    }, "compact"), "overview:ingest");
     add(page, title("Board", "Shared plans and the work happening now.", ingest));
     const plans = collection(data, "plans");
     const claims = (data.working || plans.flatMap(item => item.claims || [])).filter(claim => !claim.ended_at);
@@ -130,7 +130,7 @@ export function createBoardViews(context) {
       kind.input.disabled = true; to.input.readOnly = true;
       form.append(add(el("p", "small muted"), el("span", "", "Reply references "), refLink(defaults.question), el("span", "", " and is addressed to the asker.")));
     }
-    const submit = el("button", "primary", defaults.kind === "answer" ? "Send answer" : "Post entry"); submit.type = "submit";
+    const submit = focusKey(el("button", "primary", defaults.kind === "answer" ? "Send answer" : "Post entry"), `post:${target}:${defaults.question || ""}`); submit.type = "submit";
     add(form, kind.wrapper, body.wrapper, add(el("div", "filters"), to.wrapper, supersedes.wrapper), submit);
     form.addEventListener("submit", event => {
       event.preventDefault();
@@ -160,9 +160,13 @@ export function createBoardViews(context) {
       else if (task.assignee) item.append(el("p", "small muted", `Assigned to ${task.assignee}`));
       if (!claim && (data.claims_omitted || data.claims_partial)) item.append(link("Claim details omitted", "claims", { plan: data.plan.id, through: data.claims_through || data.through }, "small"));
       const controls = el("form", "actions");
-      for (const column of columns.filter(column => column !== task.column)) controls.append(button(`Move to ${column}`, () => {
-        void submitMutation(controls, { op: "task_move", task: task.id, column, to: null });
-      }, "compact"));
+      for (const column of columns.filter(column => column !== task.column)) {
+        const move = focusKey(button(`Move to ${column}`, () => {
+          void submitMutation(controls, { op: "task_move", task: task.id, column, to: null });
+        }, "compact"), `move:${task.id}:${column}`);
+        move.append(el("span", "sr-only", ` ${task.id}`));
+        controls.append(move);
+      }
       item.append(retainForm(controls, `move:${task.id}`)); content.append(item);
     }
     if (!tasks.length) content.append(empty("No tasks in this plan."));
@@ -181,7 +185,7 @@ export function createBoardViews(context) {
     const create = el("form");
     const name = field("New task", "task-title", "", { required: true, maxLength: 256 });
     const section = field("SSOT section", "section", "", { choices: [["", "No section"], ...headings.map(heading => [heading.title, heading.title])] });
-    const submit = el("button", "primary", "Create task"); submit.type = "submit";
+    const submit = focusKey(el("button", "primary", "Create task"), `create-task:${data.plan.id}`); submit.type = "submit";
     add(create, name.wrapper, section.wrapper, submit);
     create.addEventListener("submit", event => { event.preventDefault(); void submitMutation(create, { op: "task_create", plan: data.plan.id, title: name.input.value, to: null, section: section.input.value || null }, (_, current) => { name.input.value = ""; if (current) scheduleRefresh(); }); });
     add(content, el("hr"), retainForm(create, `new-task:${data.plan.id}`));

@@ -4,7 +4,7 @@ import { decodeBoardFragment } from "/board_dom.js";
 
 export function createBoardDetails(context) {
   const { state, dom, board, jsonFetch, navigate, scheduleRefresh, submitMutation, notice, apiVersion, entryRecord, collection, permitted, nextAfter, pageParams, queryFilters, postKinds, entryKinds, entryCard, taskCard, workingCard, postForm, taskDetails } = context;
-  const { el, add, button, routeUrl, link, refLink, badge, actorName, shortActor, stamp, timeNode, age, ageNode, panel, empty, omitted, title, field, formStatus, planId, retainForm } = dom;
+  const { el, add, button, routeUrl, link, refLink, badge, actorName, shortActor, stamp, timeNode, age, ageNode, panel, empty, omitted, title, field, formStatus, planId, focusKey, retainForm } = dom;
   const { feedbackControls, feedbackMetadata, feedbackPage } = createBoardFeedback(context);
   const { filtersForm, entriesPage } = createBoardEntries(context);
   function planTabs(ref, selected) {
@@ -94,7 +94,7 @@ export function createBoardDetails(context) {
     const from = field("From revision", "from", "1", { type: "number", required: true });
     const to = field("To revision", "to", String(plan.head_revision), { type: "number", required: true });
     for (const input of [from.input, to.input]) { input.min = "1"; input.max = String(plan.head_revision); input.step = "1"; }
-    const compare = el("button", "primary", "Compare revisions"); compare.type = "submit";
+    const compare = focusKey(el("button", "primary", "Compare revisions"), `compare:${plan.id}`); compare.type = "submit";
     add(selector, from.wrapper, to.wrapper, compare);
     selector.addEventListener("submit", event => {
       event.preventDefault();
@@ -178,14 +178,14 @@ export function createBoardDetails(context) {
         const form = el("form");
         const note = field("Decision note", "decision-note", "", { multiline: true, maxLength: 4096 });
         const actions = el("div", "actions");
-        const accept = button("Accept proposal", () => void submitMutation(form, { op: "accept", proposal: entry.id, note: note.input.value || null }), "primary");
+        const accept = focusKey(button("Accept proposal", () => void submitMutation(form, { op: "accept", proposal: entry.id, note: note.input.value || null }), "primary"), `decision:${entry.id}:accept`);
         accept.disabled = head !== undefined && head !== null && proposal.base_revision !== head;
         if (accept.disabled) accept.title = "The proposal needs to be rebased before acceptance.";
         actions.append(accept);
-        actions.append(button("Reject proposal", () => {
+        actions.append(focusKey(button("Reject proposal", () => {
           if (!note.input.value.trim()) { formStatus(form, "Give a reason for rejecting this proposal."); note.input.focus(); return; }
           void submitMutation(form, { op: "reject", proposal: entry.id, reason: note.input.value });
-        }, "danger"));
+        }, "danger"), `decision:${entry.id}:reject`));
         add(form, note.wrapper, actions); page.append(panel("Decision", retainForm(form, `decision:${entry.id}`)));
       }
     }
@@ -211,12 +211,12 @@ export function createBoardDetails(context) {
   function searchPage(data, route) {
     const page = add(el("div"), title("Search", "Find text in plan revisions, proposals, and entries."));
     const form = el("form", "search-form");
-    const input = el("input"); input.type = "search"; input.name = "q"; input.required = true;
-    input.value = route.q; input.placeholder = "Search board text"; input.setAttribute("aria-label", "Search board text");
-    const plan = el("input"); plan.name = "plan"; plan.value = route.plan; plan.placeholder = "Plan (optional P#)"; plan.setAttribute("aria-label", "Limit search to plan");
-    const submit = el("button", "primary", "Search"); submit.type = "submit";
-    add(form, input, plan, submit);
-    form.addEventListener("submit", event => { event.preventDefault(); navigate("search", { q: input.value, plan: plan.value }); });
+    const query = field("Search board text", "q", route.q, { placeholder: "Search board text" });
+    query.input.type = "search"; query.input.required = true;
+    const plan = field("Limit to plan", "plan", route.plan, { placeholder: "Plan (optional P#)" });
+    const submit = focusKey(el("button", "primary", "Search"), `search-submit:${route.q}:${route.plan}`); submit.type = "submit";
+    add(form, query.wrapper, plan.wrapper, submit);
+    form.addEventListener("submit", event => { event.preventDefault(); navigate("search", { q: query.input.value, plan: plan.input.value }); });
     page.append(retainForm(form, `search:${route.q}:${route.plan}`));
     if (!route.q) return add(page, empty("Enter a phrase to search the board."));
     const hits = collection(data, "hits");
@@ -259,7 +259,7 @@ export function createBoardDetails(context) {
       form.append(item.wrapper);
     }
     const actions = el("div", "form-footer");
-    const submit = el("button", "primary", mode === "new" ? "Create plan" : "Save revision"); submit.type = "submit";
+    const submit = focusKey(el("button", "primary", mode === "new" ? "Create plan" : "Save revision"), `editor:${key}:submit`); submit.type = "submit";
     const cancel = link("Cancel", base ? "plan" : "overview", base ? { ref: planId(base) } : {}, "button");
     const bytes = el("span", "byte-count");
     const updateBytes = () => { const size = new TextEncoder().encode(body.input.value).length; bytes.textContent = `${size.toLocaleString()} / 32,768 bytes`; bytes.classList.toggle("error", size > 32768); };
