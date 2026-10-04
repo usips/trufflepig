@@ -232,6 +232,109 @@ fn common_directory_rekeys_when_unrelated_repository_replaces_content() {
             .unwrap(),
         1
     );
+    assert_eq!(
+        board
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM plan_repos WHERE repo_key=?1",
+                [replacement.repo_key.as_str()],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn common_directory_keeps_plan_links_when_root_set_extends() {
+    let fixture = crate::board::repo_identity::tests::GitFixture::new();
+    fixture.commit("original root");
+    let original = fixture.registration();
+    let path = fixture.directory.path().join("board.sqlite3");
+    let mut board = LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap();
+    let actor = BoardActor::new(
+        "fixture",
+        "fixture-host",
+        HarnessLabel::parse("human").unwrap(),
+        "repo-extend",
+    )
+    .unwrap();
+    let reply = board
+        .handle(&BoardRequest::new(
+            actor.clone(),
+            BoardOp::New {
+                title: PlanTitle::new("Extend").unwrap(),
+                body: PlanText::new("Extend").unwrap(),
+                steward: None,
+                repo_key: None,
+            },
+        ))
+        .unwrap();
+    let BoardResult::Change(change) = reply.result else {
+        panic!("plan result")
+    };
+    let plan = change.plan.unwrap();
+    board
+        .handle(&BoardRequest::new(
+            actor.clone(),
+            BoardOp::RegisterRepo {
+                registration: original.clone(),
+            },
+        ))
+        .unwrap();
+    let link = board
+        .handle(&BoardRequest::new(
+            actor.clone(),
+            BoardOp::LinkCommits {
+                commits: vec![LinkedCommit {
+                    repo_key: original.repo_key.clone(),
+                    oid: original.root_commits[0],
+                    subject: "original root".into(),
+                    committed_at: 1,
+                    author: "Fixture <fixture@example.test>".into(),
+                    coauthors: Vec::new(),
+                    files: 0,
+                    insertions: 0,
+                    deletions: 0,
+                    plans: vec![CommitPlanLink {
+                        plan_id: plan,
+                        task_ordinal: None,
+                    }],
+                }],
+            },
+        ))
+        .unwrap();
+    assert!(matches!(
+        link.result,
+        BoardResult::CommitsLinked(CommitLinkResult { inserted: 1, .. })
+    ));
+    fixture.git(&["switch", "--orphan", "new-root"]);
+    fixture.commit("additional root");
+    let extended = fixture.registration();
+    assert_eq!(extended.root_commits.len(), 2);
+    let reply = board
+        .handle(&BoardRequest::new(
+            actor,
+            BoardOp::RegisterRepo {
+                registration: extended,
+            },
+        ))
+        .unwrap();
+    let BoardResult::Registered(registration) = reply.result else {
+        panic!("registration result")
+    };
+    assert_eq!(registration.repo_key, original.repo_key);
+    assert_eq!(
+        board
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM plan_repos WHERE repo_key=?1",
+                [original.repo_key.as_str()],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+        1
+    );
 }
 
 #[test]
