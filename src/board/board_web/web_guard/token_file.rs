@@ -12,10 +12,12 @@ const TOKEN_BYTES: usize = 64;
 pub(crate) struct BoardWebToken([u8; TOKEN_BYTES]);
 
 impl BoardWebToken {
-    pub(crate) fn load() -> Result<Self> {
+    /// Rotate to a fresh token; board-serve calls this on every start so a
+    /// leaked token dies with the service that published it.
+    pub(crate) fn rotate() -> Result<Self> {
         let directory = crate::system::dir().context("board_web_token: no runtime directory")?;
         fs::create_dir_all(&directory).context("board_web_token: create runtime directory")?;
-        Self::load_at(&directory.join("board-web.token"))
+        Self::rotate_at(&directory.join("board-web.token"))
     }
 
     /// Read an existing private token without creating files or generating a secret.
@@ -23,13 +25,10 @@ impl BoardWebToken {
         read_token(open_existing(path).context("board_web_token: open existing token")?)
     }
 
-    /// Existing unsafe or malformed files fail closed and are never replaced.
-    pub(crate) fn load_at(path: &Path) -> Result<Self> {
-        match open_existing(path) {
-            Ok(file) => return read_token(file),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error).context("board_web_token: open existing token"),
-        }
+    /// Write a fresh token with the load-time O_NOFOLLOW/0600 discipline, then
+    /// atomically rename it over any previous or planted destination entry.
+    /// Existing unsafe or malformed entries are replaced, never written through.
+    pub(crate) fn rotate_at(path: &Path) -> Result<Self> {
         let parent = path
             .parent()
             .filter(|path| !path.as_os_str().is_empty())
@@ -45,18 +44,11 @@ impl BoardWebToken {
             .file
             .sync_all()
             .context("board_web_token: sync token")?;
-        let published = match fs::hard_link(&pending.path, path) {
-            Ok(()) => true,
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => false,
-            Err(error) => return Err(error).context("board_web_token: publish token"),
-        };
-        drop(pending);
-        if published {
-            File::open(parent)
-                .and_then(|directory| directory.sync_all())
-                .context("board_web_token: sync token directory")?;
-        }
-        read_token(open_existing(path).context("board_web_token: open published token")?)
+        fs::rename(&pending.path, path).context("board_web_token: publish rotated token")?;
+        File::open(parent)
+            .and_then(|directory| directory.sync_all())
+            .context("board_web_token: sync token directory")?;
+        read_token(open_existing(path).context("board_web_token: open rotated token")?)
     }
 
     pub(crate) fn expose(&self) -> &str {

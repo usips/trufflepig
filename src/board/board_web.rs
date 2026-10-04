@@ -3,6 +3,7 @@ pub(crate) mod event_stream;
 pub(crate) mod http_wire;
 pub(crate) mod plan_markup;
 mod reader_pool;
+mod signal_shutdown;
 #[cfg(test)]
 mod tests;
 mod web_endpoint;
@@ -117,6 +118,7 @@ pub(crate) struct BoardWebServer {
     listener: TcpListener,
     state: Arc<WebState>,
     _poller: SequencePoller,
+    endpoint: web_endpoint::EndpointGuard,
 }
 
 pub(crate) struct WebState {
@@ -152,6 +154,7 @@ impl BoardWebServer {
         );
         let config = store.config(Instant::now() + http_wire::REQUEST_TIMEOUT)?;
         web_endpoint::publish(&store.runtime, listener.local_addr()?, &config.db_path)?;
+        let endpoint = web_endpoint::EndpointGuard::arm(&store.runtime);
         Ok(Self {
             listener,
             state: Arc::new(WebState {
@@ -160,6 +163,7 @@ impl BoardWebServer {
                 streams,
             }),
             _poller: poller,
+            endpoint,
         })
     }
 
@@ -194,7 +198,12 @@ impl BoardWebServer {
 
 /// Foreground service; the bootstrap fragment is printed only to the starting terminal.
 pub fn serve(address: SocketAddr) -> Result<()> {
+    signal_shutdown::block_termination()?;
     let server = BoardWebServer::bind(address)?;
+    let descriptor = server.endpoint.path().to_owned();
+    signal_shutdown::spawn_exit_waiter(move || {
+        let _ = std::fs::remove_file(descriptor);
+    })?;
     println!("board web: {}", server.bootstrap_url());
     server.run()
 }

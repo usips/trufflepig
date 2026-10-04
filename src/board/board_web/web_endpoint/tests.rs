@@ -1,5 +1,11 @@
 use super::*;
-use std::{net::TcpListener, os::unix::fs::PermissionsExt, thread};
+use crate::board::board_web::web_guard::{ChallengeNonce, RouteAccess};
+use std::{
+    io::Read,
+    net::{TcpListener, TcpStream},
+    os::unix::fs::PermissionsExt,
+    thread,
+};
 
 fn fixture() -> (tempfile::TempDir, PathBuf, BoardConfig) {
     let directory = crate::board::board_test_support::scratch("web-endpoint-");
@@ -16,20 +22,23 @@ fn listening_fixture(
 ) -> (SocketAddr, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
-    let token = BoardWebToken::load_at(&runtime.join("board-web.token")).unwrap();
+    let token = BoardWebToken::rotate_at(&runtime.join("board-web.token")).unwrap();
     let guard = WebGuard::with_token(address, token).unwrap();
     publish(runtime, address, &config.db_path).unwrap();
     let worker = thread::spawn(move || {
         let (mut socket, _) = listener.accept().unwrap();
         let request = http_wire::read_request(&mut socket, Instant::now()).unwrap();
-        guard.authorize(&request, true, true).unwrap();
-        assert_eq!(request.path(), "/api/v1/board");
+        guard
+            .authorize(&request, RouteAccess::Challenge, true)
+            .unwrap();
+        assert_eq!(request.path(), "/api/v1/challenge");
+        assert!(request.header("x-board-token").is_none());
         let value: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
         assert_eq!(value["api"], BOARD_API);
-        assert_eq!(value["op"]["op"], "feed");
-        assert_eq!(value["op"]["limit"], 1);
-        let body = serde_json::to_vec(&serde_json::json!({"api":reply_api,
-            "result":{"result":"feed","data":{"events":[]}}}))
+        let nonce = ChallengeNonce::from_hex(value["nonce"].as_str().unwrap()).unwrap();
+        let body = serde_json::to_vec(
+            &serde_json::json!({"api":reply_api,"proof":guard.challenge_proof(&nonce)}),
+        )
         .unwrap();
         http_wire::send_response(&mut socket, 200, "application/json", &body, true).unwrap();
     });
@@ -65,7 +74,7 @@ fn web_link_refuses_stale_endpoint_and_database_mismatch() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     publish(&runtime, address, &config.db_path).unwrap();
-    BoardWebToken::load_at(&runtime.join("board-web.token")).unwrap();
+    BoardWebToken::rotate_at(&runtime.join("board-web.token")).unwrap();
     drop(listener);
     let stale = link_at(&runtime, &config, None).unwrap_err();
     assert!(
@@ -115,11 +124,115 @@ fn web_endpoint_rejects_unsafe_files_and_external_address() {
     assert_eq!(fs::read_to_string(&other).unwrap(), "unchanged");
     fs::remove_file(destination).unwrap();
     publish(&runtime, "192.0.2.1:7341".parse().unwrap(), &config.db_path).unwrap();
-    BoardWebToken::load_at(&runtime.join("board-web.token")).unwrap();
+    BoardWebToken::rotate_at(&runtime.join("board-web.token")).unwrap();
     assert!(
         link_at(&runtime, &config, None)
             .unwrap_err()
             .to_string()
             .contains("invalid web listener address")
     );
+}
+
+/// Read one raw HTTP request (headers plus Content-Length body) for assertions.
+fn read_raw_request(socket: &mut TcpStream) -> Vec<u8> {
+    let mut raw = Vec::with_capacity(1024);
+    let mut chunk = [0; 1024];
+    let header_end = loop {
+        let count = socket.read(&mut chunk).unwrap();
+        assert!(count > 0, "probe closed before finishing its request");
+        raw.extend_from_slice(&chunk[..count]);
+        if let Some(end) = raw.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
+            break end + 4;
+        }
+    };
+    let headers = std::str::from_utf8(&raw[..header_end]).unwrap();
+    let length: usize = headers
+        .split("\r\n")
+        .filter_map(|line| line.split_once(':'))
+        .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+        .map(|(_, value)| value.trim().parse().unwrap())
+        .expect("probe request carries a content length");
+    while raw.len() < header_end + length {
+        let count = socket.read(&mut chunk).unwrap();
+        assert!(count > 0, "probe closed before sending its body");
+        raw.extend_from_slice(&chunk[..count]);
+    }
+    raw
+}
+
+#[test]
+fn probe_proves_ownership_without_sending_the_token() {
+    let (_directory, runtime, config) = fixture();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let token = BoardWebToken::rotate_at(&runtime.join("board-web.token")).unwrap();
+    let guard = WebGuard::with_token(address, token.clone()).unwrap();
+    publish(&runtime, address, &config.db_path).unwrap();
+    let exposed = token.expose().to_owned();
+    let answering = WebGuard::with_token(address, token.clone()).unwrap();
+    let worker = thread::spawn(move || {
+        let (mut socket, _) = listener.accept().unwrap();
+        let raw = read_raw_request(&mut socket);
+        let text = String::from_utf8(raw).unwrap();
+        let body: serde_json::Value =
+            serde_json::from_str(text.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        let nonce = ChallengeNonce::from_hex(body["nonce"].as_str().unwrap()).unwrap();
+        let reply = serde_json::to_vec(
+            &serde_json::json!({"api":BOARD_API,"proof":answering.challenge_proof(&nonce)}),
+        )
+        .unwrap();
+        http_wire::send_response(&mut socket, 200, "application/json", &reply, true).unwrap();
+        text
+    });
+    endpoint_probe::probe(address, &guard, Instant::now() + http_wire::REQUEST_TIMEOUT).unwrap();
+    let raw = worker.join().unwrap();
+    assert!(
+        !raw.contains(&exposed),
+        "probe must never send the token on the wire: {raw}"
+    );
+    assert!(
+        !raw.to_lowercase().contains("x-board-token"),
+        "probe must not carry a token header: {raw}"
+    );
+}
+
+#[test]
+fn probe_refuses_a_listener_proving_with_the_wrong_token() {
+    let (_directory, runtime, config) = fixture();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let token = BoardWebToken::rotate_at(&runtime.join("board-web.token")).unwrap();
+    let guard = WebGuard::with_token(address, token).unwrap();
+    publish(&runtime, address, &config.db_path).unwrap();
+    let thief_token = BoardWebToken::rotate_at(&runtime.join("thief.token")).unwrap();
+    let thief = WebGuard::with_token(address, thief_token).unwrap();
+    let worker = thread::spawn(move || {
+        let (mut socket, _) = listener.accept().unwrap();
+        let request = http_wire::read_request(&mut socket, Instant::now()).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+        let nonce = ChallengeNonce::from_hex(value["nonce"].as_str().unwrap()).unwrap();
+        let reply = serde_json::to_vec(
+            &serde_json::json!({"api":BOARD_API,"proof":thief.challenge_proof(&nonce)}),
+        )
+        .unwrap();
+        http_wire::send_response(&mut socket, 200, "application/json", &reply, true).unwrap();
+    });
+    let error = endpoint_probe::probe(address, &guard, Instant::now() + http_wire::REQUEST_TIMEOUT)
+        .unwrap_err();
+    worker.join().unwrap();
+    assert!(
+        error.to_string().contains("failed the ownership challenge"),
+        "{error}"
+    );
+}
+
+#[test]
+fn endpoint_guard_removes_the_published_descriptor_on_drop() {
+    let (_directory, runtime, config) = fixture();
+    let address = "127.0.0.1:7341".parse().unwrap();
+    publish(&runtime, address, &config.db_path).unwrap();
+    let descriptor = runtime.join(ENDPOINT_FILE);
+    assert!(descriptor.exists());
+    drop(EndpointGuard::arm(&runtime));
+    assert!(!descriptor.exists());
 }

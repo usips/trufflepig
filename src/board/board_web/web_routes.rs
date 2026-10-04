@@ -7,6 +7,7 @@ use super::{
     event_stream::StreamRequest,
     http_wire::{self, HttpError, HttpMethod, HttpRequest},
     plan_markup,
+    web_guard::{ChallengeNonce, RouteAccess, WebGuard},
     web_ops::{self, WebRequest},
 };
 use crate::board::{
@@ -25,10 +26,16 @@ pub(super) fn handle(mut stream: TcpStream, accepted_at: Instant, state: &WebSta
             return;
         }
     };
-    let public = request.path() == "/" || public_asset(request.path()).is_some();
+    let access = if request.path() == "/" || public_asset(request.path()).is_some() {
+        RouteAccess::Public
+    } else if request.path() == "/api/v1/challenge" {
+        RouteAccess::Challenge
+    } else {
+        RouteAccess::Private
+    };
     if let Err(error) = state
         .guard
-        .authorize(&request, !public, request.method == HttpMethod::Post)
+        .authorize(&request, access, request.method == HttpMethod::Post)
     {
         send_http_error(&mut stream, error);
         return;
@@ -44,7 +51,7 @@ pub(super) fn handle(mut stream: TcpStream, accepted_at: Instant, state: &WebSta
         );
         return;
     }
-    if !public {
+    if access == RouteAccess::Private {
         if let Err(error) = state.store.config(expires) {
             send_board_error(&mut stream, error);
             return;
@@ -65,6 +72,9 @@ pub(super) fn handle(mut stream: TcpStream, accepted_at: Instant, state: &WebSta
             let (content_type, body) = public_asset(path).unwrap();
             let _ =
                 http_wire::send_response(&mut stream, 200, content_type, body.as_bytes(), false);
+        }
+        (HttpMethod::Post, "/api/v1/challenge") => {
+            send_json_result(&mut stream, challenge_reply(&request, &state.guard));
         }
         (HttpMethod::Get, "/api/v1/events") => {
             let prepared = stream_request(&request)
@@ -306,6 +316,32 @@ impl ApiRequest {
         }
         Ok(())
     }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChallengeRequest {
+    api: u32,
+    nonce: String,
+}
+
+/// The unauthenticated ownership proof: answer the client nonce with an HMAC
+/// keyed by the token, so probes verify the listener without sending the token.
+fn challenge_reply(
+    request: &HttpRequest,
+    guard: &WebGuard,
+) -> Result<serde_json::Value, BoardError> {
+    let challenge: ChallengeRequest = decode(request)?;
+    ApiRequest {
+        api: challenge.api,
+    }
+    .validate()?;
+    let nonce = ChallengeNonce::from_hex(&challenge.nonce)
+        .map_err(|error| invalid(error.to_string()))?;
+    Ok(serde_json::json!({
+        "api": BOARD_API,
+        "proof": guard.challenge_proof(&nonce),
+    }))
 }
 
 fn decode<T: serde::de::DeserializeOwned>(request: &HttpRequest) -> Result<T, BoardError> {

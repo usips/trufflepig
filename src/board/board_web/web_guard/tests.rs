@@ -5,7 +5,7 @@ use std::{collections::BTreeMap, io::Write, net::TcpStream, time::Instant};
 
 fn fixture() -> (tempfile::TempDir, WebGuard) {
     let directory = tempfile::tempdir().unwrap();
-    let token = BoardWebToken::load_at(&directory.path().join("board-web.token")).unwrap();
+    let token = BoardWebToken::rotate_at(&directory.path().join("board-web.token")).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let guard = WebGuard::with_token(listener.local_addr().unwrap(), token).unwrap();
     (directory, guard)
@@ -33,7 +33,7 @@ fn request(guard: &WebGuard, method: HttpMethod, authenticated: bool) -> HttpReq
 fn guards_actual_ephemeral_port_and_literal_loopback_authority() {
     let (_directory, guard) = fixture();
     let mut request = request(&guard, HttpMethod::Get, true);
-    assert!(guard.authorize(&request, true, false).is_ok());
+    assert!(guard.authorize(&request, RouteAccess::Private, false).is_ok());
     for host in [
         "127.0.0.1:0",
         "localhost:1234",
@@ -42,12 +42,12 @@ fn guards_actual_ephemeral_port_and_literal_loopback_authority() {
     ] {
         request.headers.insert("host".to_owned(), host.to_owned());
         assert_eq!(
-            guard.authorize(&request, true, false).unwrap_err().status,
+            guard.authorize(&request, RouteAccess::Private, false).unwrap_err().status,
             421
         );
     }
     let directory = tempfile::tempdir().unwrap();
-    let token = BoardWebToken::load_at(&directory.path().join("token")).unwrap();
+    let token = BoardWebToken::rotate_at(&directory.path().join("token")).unwrap();
     let ipv6 = WebGuard::with_token("[::1]:32123".parse().unwrap(), token).unwrap();
     assert_eq!(ipv6.authority(), "[::1]:32123");
     assert_eq!(ipv6.origin(), "http://[::1]:32123");
@@ -61,7 +61,7 @@ fn refuses_non_loopback_before_loading_any_live_token() {
     let scoped = std::net::SocketAddrV6::new(std::net::Ipv6Addr::LOCALHOST, 0, 0, 1);
     assert!(WebGuard::bind(SocketAddr::V6(scoped)).is_err());
     let directory = tempfile::tempdir().unwrap();
-    let token = BoardWebToken::load_at(&directory.path().join("token")).unwrap();
+    let token = BoardWebToken::rotate_at(&directory.path().join("token")).unwrap();
     assert!(WebGuard::with_token("127.0.0.1:0".parse().unwrap(), token).is_err());
 }
 
@@ -77,27 +77,27 @@ fn accepts_all_same_port_aliases_and_requires_matching_request_origin() {
     for host in &aliases {
         let mut request = request(&guard, HttpMethod::Get, true);
         request.headers.insert("host".to_owned(), host.clone());
-        assert!(guard.authorize(&request, true, false).is_ok());
+        assert!(guard.authorize(&request, RouteAccess::Private, false).is_ok());
         request
             .headers
             .insert("origin".to_owned(), format!("http://{host}"));
-        assert!(guard.authorize(&request, true, false).is_ok());
+        assert!(guard.authorize(&request, RouteAccess::Private, false).is_ok());
         request.method = HttpMethod::Post;
         request
             .headers
             .insert("content-type".to_owned(), "application/json".to_owned());
-        assert!(guard.authorize(&request, true, true).is_ok());
+        assert!(guard.authorize(&request, RouteAccess::Private, true).is_ok());
         for other in aliases.iter().filter(|other| *other != host) {
             request
                 .headers
                 .insert("origin".to_owned(), format!("http://{other}"));
             assert_eq!(
-                guard.authorize(&request, true, true).unwrap_err().status,
+                guard.authorize(&request, RouteAccess::Private, true).unwrap_err().status,
                 403
             );
             request.method = HttpMethod::Get;
             assert_eq!(
-                guard.authorize(&request, true, false).unwrap_err().status,
+                guard.authorize(&request, RouteAccess::Private, false).unwrap_err().status,
                 403
             );
             request.method = HttpMethod::Post;
@@ -108,7 +108,7 @@ fn accepts_all_same_port_aliases_and_requires_matching_request_origin() {
 #[test]
 fn default_http_port_uses_browser_normalized_authorities() {
     let directory = tempfile::tempdir().unwrap();
-    let token = BoardWebToken::load_at(&directory.path().join("token")).unwrap();
+    let token = BoardWebToken::rotate_at(&directory.path().join("token")).unwrap();
     let guard = WebGuard::with_token("127.0.0.1:80".parse().unwrap(), token).unwrap();
     assert_eq!(guard.origin(), "http://127.0.0.1");
     for host in ["127.0.0.1", "localhost", "[::1]"] {
@@ -117,7 +117,7 @@ fn default_http_port_uses_browser_normalized_authorities() {
         request
             .headers
             .insert("origin".to_owned(), format!("http://{host}"));
-        assert!(guard.authorize(&request, true, true).is_ok());
+        assert!(guard.authorize(&request, RouteAccess::Private, true).is_ok());
     }
 }
 
@@ -133,21 +133,21 @@ fn every_private_read_requires_token_while_public_gets_do_not() {
     ] {
         request.target = target.to_owned();
         assert_eq!(
-            guard.authorize(&request, true, false).unwrap_err().status,
+            guard.authorize(&request, RouteAccess::Private, false).unwrap_err().status,
             403
         );
         request
             .headers
             .insert("x-board-token".to_owned(), "bad-token".to_owned());
         assert_eq!(
-            guard.authorize(&request, true, false).unwrap_err().status,
+            guard.authorize(&request, RouteAccess::Private, false).unwrap_err().status,
             403
         );
         request.headers.remove("x-board-token");
     }
     for target in ["/", "/board.js", "/board.css"] {
         request.target = target.to_owned();
-        assert!(guard.authorize(&request, false, false).is_ok());
+        assert!(guard.authorize(&request, RouteAccess::Public, false).is_ok());
     }
     assert!(!guard.authority().contains(guard.token.expose()));
     assert!(!guard.origin().contains(guard.token.expose()));
@@ -161,7 +161,7 @@ fn every_private_read_requires_token_while_public_gets_do_not() {
 fn post_requires_exact_origin_and_unparameterized_json_media_type() {
     let (_directory, guard) = fixture();
     let mut request = request(&guard, HttpMethod::Post, true);
-    assert!(guard.authorize(&request, true, true).is_ok());
+    assert!(guard.authorize(&request, RouteAccess::Private, true).is_ok());
     for origin in [
         None,
         Some("null"),
@@ -179,7 +179,7 @@ fn post_requires_exact_origin_and_unparameterized_json_media_type() {
             }
         }
         assert_eq!(
-            guard.authorize(&request, true, true).unwrap_err().status,
+            guard.authorize(&request, RouteAccess::Private, true).unwrap_err().status,
             403
         );
     }
@@ -187,7 +187,7 @@ fn post_requires_exact_origin_and_unparameterized_json_media_type() {
         .headers
         .insert("origin".to_owned(), format!("{}/", guard.origin()));
     assert_eq!(
-        guard.authorize(&request, true, true).unwrap_err().status,
+        guard.authorize(&request, RouteAccess::Private, true).unwrap_err().status,
         403
     );
     request
@@ -209,17 +209,17 @@ fn post_requires_exact_origin_and_unparameterized_json_media_type() {
             }
         }
         assert_eq!(
-            guard.authorize(&request, true, true).unwrap_err().status,
+            guard.authorize(&request, RouteAccess::Private, true).unwrap_err().status,
             403
         );
     }
     request
         .headers
         .insert("content-type".to_owned(), "Application/JSON".to_owned());
-    assert!(guard.authorize(&request, true, true).is_ok());
+    assert!(guard.authorize(&request, RouteAccess::Private, true).is_ok());
     request.headers.remove("x-board-token");
     assert_eq!(
-        guard.authorize(&request, true, true).unwrap_err().status,
+        guard.authorize(&request, RouteAccess::Private, true).unwrap_err().status,
         403
     );
 }
@@ -228,20 +228,20 @@ fn post_requires_exact_origin_and_unparameterized_json_media_type() {
 fn provided_foreign_get_origin_is_forbidden_even_with_correct_token() {
     let (_directory, guard) = fixture();
     let mut request = request(&guard, HttpMethod::Get, true);
-    assert!(guard.authorize(&request, true, false).is_ok());
+    assert!(guard.authorize(&request, RouteAccess::Private, false).is_ok());
     request
         .headers
         .insert("origin".to_owned(), guard.origin().to_owned());
-    assert!(guard.authorize(&request, true, false).is_ok());
+    assert!(guard.authorize(&request, RouteAccess::Private, false).is_ok());
     request
         .headers
         .insert("origin".to_owned(), "http://evil.example".to_owned());
     assert_eq!(
-        guard.authorize(&request, true, false).unwrap_err().status,
+        guard.authorize(&request, RouteAccess::Private, false).unwrap_err().status,
         403
     );
     assert_eq!(
-        guard.authorize(&request, false, false).unwrap_err().status,
+        guard.authorize(&request, RouteAccess::Public, false).unwrap_err().status,
         403
     );
 }
@@ -249,7 +249,7 @@ fn provided_foreign_get_origin_is_forbidden_even_with_correct_token() {
 #[test]
 fn socket_parsed_post_reaches_same_auth_checks() {
     let directory = tempfile::tempdir().unwrap();
-    let token = BoardWebToken::load_at(&directory.path().join("token")).unwrap();
+    let token = BoardWebToken::rotate_at(&directory.path().join("token")).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let guard = WebGuard::with_token(listener.local_addr().unwrap(), token).unwrap();
     let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
@@ -260,7 +260,62 @@ fn socket_parsed_post_reaches_same_auth_checks() {
     let (mut server, _) = listener.accept().unwrap();
     let request = super::super::http_wire::read_request(&mut server, Instant::now()).unwrap();
     assert_eq!(
-        guard.authorize(&request, true, true).unwrap_err().status,
+        guard.authorize(&request, RouteAccess::Private, true).unwrap_err().status,
         403
     );
+}
+
+#[test]
+fn challenge_access_needs_no_token_but_keeps_transport_checks() {
+    let (_directory, guard) = fixture();
+    let mut request = request(&guard, HttpMethod::Post, false);
+    request.target = "/api/v1/challenge".to_owned();
+    assert!(guard.authorize(&request, RouteAccess::Challenge, true).is_ok());
+    request.method = HttpMethod::Get;
+    assert_eq!(
+        guard
+            .authorize(&request, RouteAccess::Challenge, false)
+            .unwrap_err()
+            .status,
+        405
+    );
+    request.method = HttpMethod::Post;
+    request
+        .headers
+        .insert("origin".to_owned(), "http://evil.example".to_owned());
+    assert_eq!(
+        guard
+            .authorize(&request, RouteAccess::Challenge, true)
+            .unwrap_err()
+            .status,
+        403
+    );
+    request
+        .headers
+        .insert("origin".to_owned(), guard.origin().to_owned());
+    request
+        .headers
+        .insert("host".to_owned(), "example.com".to_owned());
+    assert_eq!(
+        guard
+            .authorize(&request, RouteAccess::Challenge, true)
+            .unwrap_err()
+            .status,
+        421
+    );
+}
+
+#[test]
+fn challenge_proof_verifies_only_with_the_local_token_and_address() {
+    let (directory, guard) = fixture();
+    let nonce = ChallengeNonce::generate().unwrap();
+    let proof = guard.challenge_proof(&nonce);
+    assert_eq!(proof.len(), 64);
+    assert!(guard.challenge_matches(&nonce, &proof));
+    let other = BoardWebToken::rotate_at(&directory.path().join("other.token")).unwrap();
+    let address: SocketAddr = guard.authority().parse().unwrap();
+    let foreign = WebGuard::with_token(address, other).unwrap();
+    assert!(!foreign.challenge_matches(&nonce, &proof));
+    let replayed = ChallengeNonce::generate().unwrap();
+    assert!(!guard.challenge_matches(&replayed, &proof));
 }

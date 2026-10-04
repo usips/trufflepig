@@ -1,8 +1,9 @@
-//! Loopback authority, browser-origin, and stable local-token checks.
+//! Loopback authority, browser-origin, and rotating local-token checks.
 //! Bootstrap URLs carry the secret only in the fragment; private requests use a header.
 
 #[cfg(test)]
 mod tests;
+mod challenge;
 mod token_file;
 
 use super::http_wire::{HttpError, HttpMethod, HttpRequest};
@@ -11,9 +12,20 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener},
 };
 
+pub(crate) use challenge::ChallengeNonce;
 pub(crate) use token_file::BoardWebToken;
 
+/// How a route authenticates: shell assets are public, the ownership challenge
+/// proves token possession without receiving it, everything else needs the token.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RouteAccess {
+    Public,
+    Challenge,
+    Private,
+}
+
 pub(crate) struct WebGuard {
+    address: SocketAddr,
     authority: String,
     allowed_authorities: [String; 3],
     origin: String,
@@ -24,7 +36,7 @@ impl WebGuard {
     pub(crate) fn bind(address: SocketAddr) -> io::Result<(TcpListener, Self)> {
         require_loopback(address)?;
         let listener = TcpListener::bind(address)?;
-        let token = BoardWebToken::load().map_err(io::Error::other)?;
+        let token = BoardWebToken::rotate().map_err(io::Error::other)?;
         let guard = Self::with_token(listener.local_addr()?, token)?;
         Ok((listener, guard))
     }
@@ -51,6 +63,7 @@ impl WebGuard {
         let authority = allowed_authorities[if address.is_ipv4() { 0 } else { 2 }].clone();
         let origin = format!("http://{authority}");
         Ok(Self {
+            address,
             authority,
             allowed_authorities,
             origin,
@@ -70,11 +83,22 @@ impl WebGuard {
         format!("{}/#token={}", self.origin, self.token.expose())
     }
 
-    /// Call for every route. Only the GET shell and static assets are public.
+    /// Hex HMAC proof over the client nonce and this listener's address.
+    pub(crate) fn challenge_proof(&self, nonce: &ChallengeNonce) -> String {
+        challenge::proof_hex(&self.token, nonce, &self.address)
+    }
+
+    /// Constant-time check of a replied proof against the local token.
+    pub(crate) fn challenge_matches(&self, nonce: &ChallengeNonce, candidate_hex: &str) -> bool {
+        challenge::proof_matches(&self.token, nonce, &self.address, candidate_hex)
+    }
+
+    /// Call for every route. Only the GET shell, static assets, and the
+    /// ownership challenge answer without the token.
     pub(crate) fn authorize(
         &self,
         request: &HttpRequest,
-        private: bool,
+        access: RouteAccess,
         json_body: bool,
     ) -> Result<(), HttpError> {
         let host = request.header("host").unwrap_or_default();
@@ -92,15 +116,21 @@ impl WebGuard {
         {
             return Err(HttpError::new(403, "Origin forbidden"));
         }
-        if !private && request.method != HttpMethod::Get {
-            return Err(HttpError::new(405, "public route requires GET"));
-        }
-        if private
-            && !request
-                .header("x-board-token")
-                .is_some_and(|token| self.token.matches(token))
-        {
-            return Err(HttpError::new(403, "board token required"));
+        match access {
+            RouteAccess::Public if request.method != HttpMethod::Get => {
+                return Err(HttpError::new(405, "public route requires GET"));
+            }
+            RouteAccess::Challenge if request.method != HttpMethod::Post => {
+                return Err(HttpError::new(405, "challenge route requires POST"));
+            }
+            RouteAccess::Private
+                if !request
+                    .header("x-board-token")
+                    .is_some_and(|token| self.token.matches(token)) =>
+            {
+                return Err(HttpError::new(403, "board token required"));
+            }
+            _ => {}
         }
         if json_body
             && request.method == HttpMethod::Post

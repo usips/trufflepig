@@ -1,5 +1,6 @@
 //! Secure discovery of the actual loopback listener, checked before printing links.
 mod endpoint_probe;
+mod listener_owner;
 #[cfg(test)]
 mod tests;
 
@@ -75,6 +76,30 @@ pub(super) fn publish(runtime: &Path, address: SocketAddr, database: &Path) -> R
     result
 }
 
+/// Removes the published descriptor on drop; board-serve owns one for its
+/// lifetime and its signal waiter removes the same file before exiting.
+pub(super) struct EndpointGuard {
+    path: PathBuf,
+}
+
+impl EndpointGuard {
+    pub(super) fn arm(runtime: &Path) -> Self {
+        Self {
+            path: runtime.join(ENDPOINT_FILE),
+        }
+    }
+
+    pub(super) fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for EndpointGuard {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
 pub(super) fn link(target: Option<BoardRef>) -> Result<String> {
     let runtime = crate::system::dir().context("board_unavailable: no runtime directory")?;
     link_at(&runtime, &BoardConfig::load()?, target)
@@ -125,18 +150,20 @@ fn link_at(runtime: &Path, config: &BoardConfig, target: Option<BoardRef>) -> Re
     let token = BoardWebToken::read_at(&runtime.join("board-web.token"))?;
     let guard = WebGuard::with_token(endpoint.address, token.clone())
         .context("board_unavailable: invalid web listener address")?;
-    endpoint_probe::probe(
-        endpoint.address,
-        &guard,
-        &token,
-        Instant::now() + http_wire::REQUEST_TIMEOUT,
-    )
-    .with_context(|| {
-        format!(
-            "board_unavailable: no verified listener at {}; run board-serve",
-            guard.origin()
-        )
-    })?;
+    listener_owner::require_owned_listener(&endpoint.address)
+        .and_then(|()| {
+            endpoint_probe::probe(
+                endpoint.address,
+                &guard,
+                Instant::now() + http_wire::REQUEST_TIMEOUT,
+            )
+        })
+        .with_context(|| {
+            format!(
+                "board_unavailable: no verified listener at {}; run board-serve",
+                guard.origin()
+            )
+        })?;
     let suffix = target.map_or_else(String::new, |target| format!("?ref={target}"));
     Ok(format!(
         "{}/{}#token={}",

@@ -1,21 +1,20 @@
 use super::*;
+use crate::board::board_web::web_guard::ChallengeNonce;
 use std::{io, net::TcpStream, time::Duration};
 
-pub(super) fn probe(
-    address: SocketAddr,
-    guard: &WebGuard,
-    token: &BoardWebToken,
-    expires: Instant,
-) -> Result<()> {
+/// Verify the listener holds our token without ever sending it: POST a random
+/// nonce to the unauthenticated challenge route and check the HMAC proof.
+pub(super) fn probe(address: SocketAddr, guard: &WebGuard, expires: Instant) -> Result<()> {
+    let nonce = ChallengeNonce::generate().context("board_unavailable: web challenge failed")?;
     let mut socket = TcpStream::connect_timeout(&address, remaining(expires)?)?;
-    let body = serde_json::to_vec(&serde_json::json!({"api":BOARD_API,"op":{
-        "op":"feed","plan":null,"after":null,"through":null,"limit":1,
-    }}))?;
+    let body = serde_json::to_vec(&serde_json::json!({
+        "api": BOARD_API,
+        "nonce": nonce.to_hex(),
+    }))?;
     let headers = format!(
-        "POST /api/v1/board HTTP/1.1\r\nHost: {}\r\nOrigin: {}\r\nX-Board-Token: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "POST /api/v1/challenge HTTP/1.1\r\nHost: {}\r\nOrigin: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         guard.authority(),
         guard.origin(),
-        token.expose(),
         body.len(),
     );
     write_before(&mut socket, headers.as_bytes(), expires)?;
@@ -23,9 +22,15 @@ pub(super) fn probe(
     let reply = read_response(&mut socket, expires)?;
     let value: serde_json::Value = serde_json::from_slice(&reply)?;
     ensure!(
-        value["api"].as_u64() == Some(u64::from(BOARD_API))
-            && value["result"]["result"].as_str() == Some("feed"),
-        "board_unavailable: web listener returned an incompatible authenticated reply"
+        value["api"].as_u64() == Some(u64::from(BOARD_API)),
+        "board_unavailable: web listener answered with an incompatible api version"
+    );
+    let proof = value["proof"]
+        .as_str()
+        .context("board_unavailable: web listener answered without an ownership proof")?;
+    ensure!(
+        guard.challenge_matches(&nonce, proof),
+        "board_unavailable: web listener failed the ownership challenge"
     );
     Ok(())
 }
@@ -78,7 +83,7 @@ fn read_response(socket: &mut TcpStream, expires: Instant) -> Result<Vec<u8>> {
         lines
             .next()
             .is_some_and(|line| line.starts_with("HTTP/1.1 200 ")),
-        "web listener rejected authenticated readiness probe"
+        "web listener rejected the ownership challenge"
     );
     let mut length = None;
     for line in lines.filter(|line| !line.is_empty()) {
