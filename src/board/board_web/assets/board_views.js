@@ -23,9 +23,10 @@ export function createBoardViews(context) {
   }
   function eventList(events) {
     const list = el("ol", "event-list");
+    const fresh = event => state.seenAtOpen !== null && /^(0|[1-9]\d*)$/.test(String(event.seq)) && BigInt(String(event.seq)) > BigInt(state.seenAtOpen);
     for (const event of events || []) {
       const item = el("li", "event-row");
-      add(item, badge(event.kind), refLink(event.subject), el("span", "event-summary", event.summary),
+      add(item, fresh(event) ? badge("new") : null, badge(event.kind), refLink(event.subject), el("span", "event-summary", event.summary),
         el("span", "muted small", shortActor(event.actor)), event.via === "outbox" ? el("span", "provenance", "(spooled, unverified)") : null, timeNode(event.created_at));
       list.append(item);
     }
@@ -63,14 +64,19 @@ export function createBoardViews(context) {
   }
   function renderOverview(data, attention, route) {
     const page = el("div");
+    // The 202 is only a queue receipt; the terminal result arrives as an
+    // `ingest` stream frame (see app.js onIngest), so the control stays busy
+    // until a frame clears state.ingestPending.
     const ingest = focusKey(button("Ingest commits", async () => {
-      ingest.disabled = true;
+      ingest.disabled = true; ingest.setAttribute("aria-busy", "true");
       try {
-        await jsonFetch("/api/v1/ingest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api: apiVersion }) });
-        notice("Repository ingestion completed.", "success"); scheduleRefresh();
-      } catch (error) { notice(errorMessage(error), "error"); }
-      finally { ingest.disabled = false; }
+        const reply = await jsonFetch("/api/v1/ingest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ api: apiVersion }) });
+        if (reply?.ingest !== "queued") throw new Error("Board returned an incompatible ingest reply.");
+        state.ingestPending = true;
+        notice("Repository ingestion queued; the result arrives over the live stream.");
+      } catch (error) { ingest.disabled = false; ingest.removeAttribute("aria-busy"); notice(errorMessage(error), "error"); }
     }, "compact"), "overview:ingest");
+    if (state.ingestPending) { ingest.disabled = true; ingest.setAttribute("aria-busy", "true"); }
     add(page, title("Board", "Shared plans and the work happening now.", ingest));
     const plans = collection(data, "plans");
     const claims = (data.working || plans.flatMap(item => item.claims || [])).filter(claim => !claim.ended_at);

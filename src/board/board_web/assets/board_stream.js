@@ -1,5 +1,5 @@
 export function createBoardStream(context) {
-  const { state, privateFetch, setConnection, loadRoute, scheduleRefresh, parseBoardJson, addTickerEvent, addLiveEntry } = context;
+  const { state, privateFetch, setConnection, loadRoute, scheduleRefresh, parseBoardJson, addTickerEvent, addLiveEntry, noteSeen, onIngest } = context;
   function parseSse(onEvent) {
     let buffer = "", eventName = "message", eventId = null, data = [], frameBytes = 0;
     const encoder = new TextEncoder();
@@ -75,12 +75,17 @@ export function createBoardStream(context) {
   // other side frames carry no cursor and flow through with their type intact.
   function deliver(frame) {
     if (frame.event === "resync") { void runResync(); return true; }
+    if (frame.event === "ingest") {
+      try { onIngest?.(parseBoardJson(frame.data)); } catch (_) { /* A malformed receipt is dropped. */ }
+      return false;
+    }
     if (frame.event !== "board") return false;
     if (!frame.id || !/^(0|[1-9]\d*)$/.test(frame.id)) throw new Error("Live event has an invalid sequence.");
     if (state.watermark !== null && BigInt(frame.id) <= BigInt(state.watermark)) return false;
     const event = parseBoardJson(frame.data);
     state.streamFailures = 0;
     state.watermark = frame.id;
+    noteSeen?.(frame.id);
     addTickerEvent(event);
     addLiveEntry?.(event);
     scheduleRefresh();

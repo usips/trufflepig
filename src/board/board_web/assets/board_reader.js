@@ -116,13 +116,11 @@ export function createBoardReader(context) {
             renderedReply("plan", view.revision.id),
             route.tab === "history" ? read(readOp("history", { plan: view.plan.id, after: cursorFromRoute(route), through: route.through || null, limit: 50 })) :
               route.tab === "entries" ? entriesNewestPage(route, readReply, view.plan.id) :
-                route.tab === "review" ? read(readOp("review", { base: view.revision.id, agent: null })) :
-                  route.tab === "tasks" ? Promise.all([
-                    read(readOp("tasks", { plan: view.plan.id, after: route.taskAfter || null, through: route.taskThrough || null, ceiling: route.taskCeiling ? parseBoardJson(route.taskCeiling) : null, limit: 50 })),
-                    readClaims(view.plan.id, route.claimAfter, route.claimThrough || view.through),
-                  ]).then(([tasks, claims]) => ({ tasks, claims })) : Promise.resolve(null),
+                route.tab === "tasks" ? Promise.all([
+                  read(readOp("tasks", { plan: view.plan.id, after: route.taskAfter || null, through: route.taskThrough || null, ceiling: route.taskCeiling ? parseBoardJson(route.taskCeiling) : null, limit: 50 })),
+                  readClaims(view.plan.id, route.claimAfter, route.claimThrough || view.through),
+                ]).then(([tasks, claims]) => ({ tasks, claims })) : Promise.resolve(null),
           ]);
-          if (route.tab === "review") extra.diff = await renderedReply("diff", `${extra.base.id}..${String(extra.head.id).split("@")[1]}`);
           page = renderPlan(view, rendered, extra, route);
         }
       }

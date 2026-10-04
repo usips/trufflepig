@@ -25,6 +25,11 @@ import { createBoardViews } from "/board_views.js";
     }
   } else if (launch.href !== location.href) history.replaceState(history.state, "", launch.pathname + launch.search + launch.hash);
   const apiVersion = Number(document.querySelector('meta[name="board-api"]')?.content);
+  // The human's seen mark: the highest event sequence this origin has had
+  // delivered, persisted in localStorage; the session baseline renders the
+  // "new since you last saw" badge on the overview ticker.
+  const SEEN_KEY = "trufflepig-board-seen";
+  const seenAtOpen = (() => { try { const raw = localStorage.getItem(SEEN_KEY); return raw && /^(0|[1-9]\d*)$/.test(raw) ? raw : null; } catch (_) { return null; } })();
   const main = document.getElementById("main");
   const connection = document.getElementById("connection");
   const connectionAnnounce = document.getElementById("connection-announce");
@@ -35,6 +40,7 @@ import { createBoardViews } from "/board_views.js";
     streamGeneration: 0, reconnect: null, streamFailures: 0,
     refreshTimer: null, refreshing: false, refreshAgain: false, drafts: new Map(), globalRefresh: null, resyncing: false, liveEntries: [], livePending: new Set(), liveGap: false,
     formDrafts: new Map(), formStatuses: new Map(), pendingForms: new Set(),
+    seenAtOpen, seenHigh: seenAtOpen, ingestPending: false,
   };
   const columns = ["todo", "doing", "review", "done", "blocked"];
   const postKinds = ["note", "answer", "decision", "question"];
@@ -44,11 +50,28 @@ import { createBoardViews } from "/board_views.js";
   const { el, add, button, routeUrl, link, refLink, badge, actorName, shortActor, stamp, timeNode, age, ageNode, panel, empty, omitted, title, field, formStatus, planId, focusKey,
     captureForms, restoreForms, syncForm, setFormBusy, focusedControl, restoreFocus, saveForm } = dom;
   const views = createBoardViews({ state, dom, board, jsonFetch, navigate, scheduleRefresh, submitMutation, notice, apiVersion, entryRecord, collection, permitted, nextAfter, pageParams, queryFilters, postKinds, entryKinds, columns, errorMessage });
-  const { entryCard, eventList, workingCard, taskCard, attentionItems, attentionCard, renderOverview, renderAttention, renderClaims, postForm, taskDetails, planTabs, sanitizedMarkup, renderPlan, filtersForm, entriesPage, historyPage, commitsPage, diffPage, reviewPage, feedbackControls, feedbackPage, entryPage, searchPage, editorPage } = views;
+  const { entryCard, eventList, workingCard, taskCard, attentionItems, attentionCard, renderOverview, renderAttention, renderClaims, postForm, taskDetails, planTabs, sanitizedMarkup, renderPlan, filtersForm, entriesPage, historyPage, commitsPage, diffPage, feedbackControls, feedbackPage, entryPage, searchPage, editorPage } = views;
 
-  const { parseSse, stopStream, startStream } = createBoardStream({ state, privateFetch, setConnection, loadRoute, scheduleRefresh, parseBoardJson, addTickerEvent, addLiveEntry });
+  const { parseSse, stopStream, startStream } = createBoardStream({ state, privateFetch, setConnection, loadRoute, scheduleRefresh, parseBoardJson, addTickerEvent, addLiveEntry, noteSeen, onIngest });
 
   const { fetchRoute } = createBoardReader({ state, dom, views, board, jsonFetch, apiVersion, readOp, snapshotSeq, minimumSeq, cursorFromRoute, parseBoardJson, queryFilters });
+
+  function noteSeen(seq) {
+    const text = String(seq);
+    if (!/^(0|[1-9]\d*)$/.test(text)) return;
+    if (state.seenHigh !== null && BigInt(text) <= BigInt(state.seenHigh)) return;
+    state.seenHigh = text;
+    try { localStorage.setItem(SEEN_KEY, text); } catch (_) { /* The mark is a convenience, not a cursor. */ }
+  }
+  function onIngest(result) {
+    state.ingestPending = false;
+    if (result?.error) notice(`Repository ingestion failed: ${result.error.message || "unknown error"}`, "error");
+    else {
+      const counts = ["scanned", "inserted", "skipped"].map(key => Number.isFinite(result?.[key]) ? `${result[key]} ${key}` : null).filter(Boolean).join(", ");
+      notice(`Repository ingestion completed${counts ? `: ${counts}` : "."}`, "success");
+    }
+    scheduleRefresh();
+  }
 
   function notice(message, tone = "") {
     const item = document.getElementById("notice");
@@ -243,6 +266,7 @@ import { createBoardViews } from "/board_views.js";
       const active = focus ? null : focusedControl(main);
       captureForms(main); restoreForms(result.page); main.replaceChildren(result.page); restoreFocus(main, active);
       state.loadedAt = Date.now();
+      if (result.watermark !== null) noteSeen(result.watermark);
       const count = attentionItems(state.attention).length;
       const label = document.getElementById("attention-count"); label.textContent = count; label.hidden = !count;
       if (result.warnings.length) notice(result.warnings.join(" · "));

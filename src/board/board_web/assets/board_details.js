@@ -9,7 +9,7 @@ export function createBoardDetails(context) {
   const { filtersForm, entriesPage } = createBoardEntries(context);
   function planTabs(ref, selected) {
     const tabs = el("nav", "tabs"); tabs.setAttribute("aria-label", "Plan sections");
-    for (const [key, label] of [["ssot", "Plan"], ["tasks", "Tasks"], ["entries", "Entries"], ["history", "History"], ["commits", "Commits"], ["review", "Stored review"]]) tabs.append(link(label, "plan", { ref: planId(ref), tab: key }, selected === key ? "active" : ""));
+    for (const [key, label] of [["ssot", "Plan"], ["tasks", "Tasks"], ["entries", "Entries"], ["history", "History"], ["commits", "Commits"], ["review", "Review"]]) tabs.append(link(label, "plan", { ref: planId(ref), tab: key }, selected === key ? "active" : ""));
     return tabs;
   }
   function sanitizedMarkup(rendered) {
@@ -69,7 +69,9 @@ export function createBoardDetails(context) {
     if (tab === "history") return add(page, historyPage(extra, plan));
     if (tab === "commits") return add(page, commitsPage(view.commits, view.commits_omitted, plan.id), link("Browse all commit entries", "plan", { ref: plan.id, tab: "entries", kind: "commit" }, "button"),
       route.oid && !view.commits.some(commit => commit.oid === route.oid) ? link("Find this commit entry", "search", { q: route.oid, plan: plan.id }, "button") : null);
-    if (tab === "review") return add(page, reviewPage(extra));
+    if (tab === "review") return add(page, panel("Review", add(el("div"),
+      el("p", "muted", "Review packets stay a CLI surface; the web board carries plans, entries, and history."),
+      add(el("p", "muted small"), el("span", "", "Assemble the stored evidence for a revision with "), el("code", "", `trufflepig board review ${plan.id}@N`), "."))));
     const layout = el("div", "plan-layout");
     const markup = sanitizedMarkup(rendered); annotateHeadings(markup, rendered, view);
     const body = panel("", markup);
@@ -147,19 +149,6 @@ export function createBoardDetails(context) {
         }
       }
       page.append(block);
-    }
-    return page;
-  }
-  function reviewPage(data) {
-    if (!data) return empty("No stored review evidence.");
-    const page = el("div");
-    page.append(el("p", "muted small", "Stored evidence only. Repository ingestion runs through the router."));
-    if (data.diff) page.append(diffPage(data.diff));
-    page.append(panel("Entries", add(el("div", "entry-list"), (data.entries || []).map(record => entryCard(record)))));
-    page.append(commitsPage(data.commits || [], data.commits_omitted));
-    for (const [key, label] of [["open_proposals", "Open proposals"], ["open_questions", "Open questions"], ["open_feedback", "Open feedback"]]) {
-      if (data[key]?.length) page.append(panel(label, add(el("div", "entry-list"), data[key].map(record => key === "open_proposals" ?
-        add(el("article", "entry-card"), add(el("div", "entry-meta"), refLink(record.entry), badge(record.state), refLink(`${record.plan}@${record.base_revision}`)), el("p", "entry-body", record.body)) : entryCard(record)))));
     }
     return page;
   }
@@ -284,5 +273,5 @@ export function createBoardDetails(context) {
     return page;
   }
 
-  return { planTabs, sanitizedMarkup, renderPlan, filtersForm, entriesPage, historyPage, commitsPage, diffPage, reviewPage, feedbackControls, feedbackPage, entryPage, searchPage, editorPage };
+  return { planTabs, sanitizedMarkup, renderPlan, filtersForm, entriesPage, historyPage, commitsPage, diffPage, feedbackControls, feedbackPage, entryPage, searchPage, editorPage };
 }
