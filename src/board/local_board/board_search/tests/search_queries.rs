@@ -90,16 +90,15 @@ fn board_search_filters_plan_before_limit_and_reports_truncation() {
 fn board_search_returns_typed_query_errors_and_bounded_plain_snippets() {
     let (_directory, mut board) = database();
     let plan = plan(&mut board, "One", "first body");
-    for query in ["\"", "needle AND", "missingcolumn:needle", "NEAR("] {
-        let error = board
-            .handle(&BoardRequest::new(owner(), query_op(query, None, 20)))
-            .unwrap_err();
-        assert_eq!(
-            error.code,
-            BoardErrorCode::InvalidOptions,
-            "{query}: {error}"
-        );
+    for query in ["\"", "missingcolumn:needle", "NEAR(", "OR NOT"] {
+        let found = results(&mut board, query, None, 20);
+        assert!(found["hits"].as_array().unwrap().is_empty(), "{query}");
     }
+    let needle = post(&mut board, plan, "needle AND thread");
+    assert_eq!(
+        targets(&results(&mut board, "needle AND", None, 20)),
+        [needle.to_string()].into()
+    );
     for (query, limit) in [
         (" ".to_owned(), 20),
         ("x".repeat(4097), 20),
@@ -188,5 +187,33 @@ fn board_search_uses_a_query_only_committed_snapshot_without_actor_writes() {
         1
     );
     board.conn.execute_batch("ROLLBACK").unwrap();
+    integrity(&board);
+}
+
+#[test]
+fn board_search_matches_literal_punctuation_and_operator_words() {
+    let (_directory, mut board) = database();
+    let plan = plan(&mut board, "One", "body");
+    let entry = post(
+        &mut board,
+        plan,
+        "patch board.rs for P7.3 don't notify user@host about src/x or e-mail AND NEAR",
+    );
+    for query in [
+        "board.rs",
+        "P7.3",
+        "don't",
+        "user@host",
+        "src/x",
+        "e-mail",
+        "AND",
+        "NEAR",
+    ] {
+        assert_eq!(
+            targets(&results(&mut board, query, None, 20)),
+            [entry.to_string()].into(),
+            "{query}"
+        );
+    }
     integrity(&board);
 }

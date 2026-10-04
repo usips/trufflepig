@@ -197,4 +197,4 @@ fails `board_remote_unsupported` without contacting a coordinator or opening a l
 
 Board FTS5 uses stable integer search-document IDs for full entry text/proposal bodies and revision bodies; shared content hashes never
 merge distinct targets or index orphan texts. Plan filters apply before the 50-hit cap; results target `E#` or `P#@N` with plain 512-byte
-snippets. Invalid MATCH syntax is `invalid_options`. Schema rebuild/backfill and trigger maintenance are atomic.
+snippets. Query terms are phrase-quoted and ANDed; residual invalid MATCH syntax is `invalid_options`. Schema rebuild/backfill and trigger maintenance are atomic.

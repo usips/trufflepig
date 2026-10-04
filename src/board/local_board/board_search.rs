@@ -33,12 +33,13 @@ pub(super) fn search(
     if let Some(plan) = plan {
         require_plan(conn, plan)?;
     }
+    let expression = match_expression(query);
     let mut statement = conn.prepare(
         "SELECT d.target,d.plan_id,d.source,substr(snippet(board_text,0,'','',' ... ',24),1,512) FROM board_text JOIN search_documents d ON d.rowid=board_text.rowid WHERE board_text MATCH ?1 AND (?2 IS NULL OR d.plan_id=?2) ORDER BY bm25(board_text),d.rowid LIMIT ?3",
     ).map_err(sql_error)?;
     let mut rows = statement
         .query(params![
-            query,
+            expression,
             plan.map(|id| sql_number(id.get())),
             (limit + 1) as i64
         ])
@@ -97,6 +98,27 @@ pub(super) fn search(
         "local",
         BoardResult::Search(BoardSearchReply { hits, truncated }),
     ))
+}
+
+/// Builds the FTS5 MATCH expression for a user query: each whitespace-separated
+/// term is phrase-quoted (inner `"` doubled) and the phrases are ANDed, so user
+/// text never parses as FTS5 operators. Blank queries are rejected by `search`.
+fn match_expression(query: &str) -> String {
+    let mut expression = String::with_capacity(query.len() + 8);
+    for (index, term) in query.split_whitespace().enumerate() {
+        if index > 0 {
+            expression.push_str(" AND ");
+        }
+        expression.push('"');
+        for character in term.chars() {
+            if character == '"' {
+                expression.push('"');
+            }
+            expression.push(character);
+        }
+        expression.push('"');
+    }
+    expression
 }
 
 fn match_error(error: rusqlite::Error) -> BoardError {
