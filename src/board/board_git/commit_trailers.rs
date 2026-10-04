@@ -8,6 +8,9 @@ use std::collections::BTreeSet;
 
 pub type CoauthorLabel = CommitCoauthor;
 
+// Matches the LinkCommits wire bound in board_op_validation.
+const COAUTHOR_LIMIT: usize = 64;
+
 // Separate keys preserve both trailer presence and each field's meaning. Git's
 // `key=` is case-insensitive; a pipe-separated key is one literal key.
 pub const LOG_FORMAT: &str = "--format=%x00%H%x00%ct%x00%an <%ae>%x00%s%x00%(trailers:key=Plan,unfold,separator=%x1d)%x00%(trailers:key=Plan-Task,unfold,separator=%x1d)%x00%(trailers:key=Co-authored-by,unfold,separator=%x1d)%x00";
@@ -25,6 +28,7 @@ pub struct ParsedLog {
 }
 
 /// Framing is atomic; invalid metadata skips one record without discarding its peers.
+/// Co-author trailers degrade per value: bad or overflowing entries warn only.
 pub fn parse_log(bytes: &[u8], repo_key: &RepoKey) -> Result<ParsedLog> {
     if bytes.is_empty() {
         return Ok(ParsedLog {
@@ -46,7 +50,14 @@ pub fn parse_log(bytes: &[u8], repo_key: &RepoKey) -> Result<ParsedLog> {
     };
     for (index, record) in fields.chunks_exact(8).enumerate() {
         match parse_record(record, repo_key) {
-            Ok(commit) => result.records.push(commit),
+            Ok(parsed) => {
+                result
+                    .warnings
+                    .extend(parsed.warnings.into_iter().map(|warning| {
+                        format!("board_scan: Git record {}: {warning}", index + 1)
+                    }));
+                result.records.push(parsed.commit);
+            }
             Err(error) => result.warnings.push(format!(
                 "board_scan: skipped Git record {}: {error:#}",
                 index + 1
@@ -56,7 +67,12 @@ pub fn parse_log(bytes: &[u8], repo_key: &RepoKey) -> Result<ParsedLog> {
     Ok(result)
 }
 
-fn parse_record(fields: &[&[u8]], repo_key: &RepoKey) -> Result<ParsedCommit> {
+struct ParsedRecord {
+    commit: ParsedCommit,
+    warnings: Vec<String>,
+}
+
+fn parse_record(fields: &[&[u8]], repo_key: &RepoKey) -> Result<ParsedRecord> {
     let text: Vec<_> = fields
         .iter()
         .map(|field| std::str::from_utf8(field))
@@ -87,30 +103,51 @@ fn parse_record(fields: &[&[u8]], repo_key: &RepoKey) -> Result<ParsedCommit> {
         }
     }
     ensure!(links.len() <= 256, "board_scan: too many plan references");
-    let mut coauthors = Vec::new();
+    let mut coauthors: Vec<CommitCoauthor> = Vec::new();
+    let mut malformed = 0usize;
+    let mut first_malformed: Option<anyhow::Error> = None;
+    let mut overflow = 0usize;
     for value in trailer_values(text[6], "Co-authored-by")? {
-        let coauthor = parse_coauthor(value)?;
-        if !coauthors.contains(&coauthor) {
-            coauthors.push(coauthor);
+        match parse_coauthor(value) {
+            Ok(coauthor) if coauthors.contains(&coauthor) => {}
+            Ok(_) if coauthors.len() >= COAUTHOR_LIMIT => overflow += 1,
+            Ok(coauthor) => coauthors.push(coauthor),
+            Err(error) => {
+                malformed += 1;
+                first_malformed.get_or_insert(error);
+            }
         }
     }
-    ensure!(coauthors.len() <= 64, "board_scan: too many coauthors");
+    let mut warnings = Vec::new();
+    if let Some(error) = first_malformed {
+        warnings.push(format!(
+            "skipped {malformed} malformed co-author trailer(s): {error:#}"
+        ));
+    }
+    if overflow > 0 {
+        warnings.push(format!(
+            "skipped {overflow} co-author trailer(s) past the {COAUTHOR_LIMIT} limit"
+        ));
+    }
     let (files, insertions, deletions) = shortstat(text[7]).unwrap_or_default();
-    Ok(ParsedCommit {
-        has_plan_trailer: !plans.is_empty(),
-        commit: LinkedCommit {
-            repo_key: repo_key.clone(),
-            oid: GitOid::parse(text[0])?,
-            committed_at: text[1]
-                .parse()
-                .context("board_scan: invalid commit timestamp")?,
-            author: bounded_git_metadata(text[2], 1024),
-            subject: bounded_git_metadata(text[3], 1024),
-            coauthors,
-            files,
-            insertions,
-            deletions,
-            plans: links,
+    Ok(ParsedRecord {
+        warnings,
+        commit: ParsedCommit {
+            has_plan_trailer: !plans.is_empty(),
+            commit: LinkedCommit {
+                repo_key: repo_key.clone(),
+                oid: GitOid::parse(text[0])?,
+                committed_at: text[1]
+                    .parse()
+                    .context("board_scan: invalid commit timestamp")?,
+                author: bounded_git_metadata(text[2], 1024),
+                subject: bounded_git_metadata(text[3], 1024),
+                coauthors,
+                files,
+                insertions,
+                deletions,
+                plans: links,
+            },
         },
     })
 }

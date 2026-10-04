@@ -5,7 +5,7 @@ use crate::board::{
     commit_trailers::{LOG_FORMAT, ParsedCommit, parse_log},
     repo_identity::{detached_head, remaining},
 };
-use crate::history::git::run_bounded_strict as run_bounded;
+use crate::history::git::{run_bounded, run_bounded_strict};
 use crate::identity::GitOid;
 use anyhow::{Context, Result, ensure};
 use std::collections::{BTreeSet, HashMap};
@@ -19,9 +19,10 @@ pub(super) struct GitTips {
     is_empty: bool,
 }
 
+/// Ref discovery stays strict: a ref warning can hide an entire branch tip.
 pub(super) fn collect_tips(registration: &RepoRegistration, deadline: Instant) -> Result<GitTips> {
     let common = &registration.common_dir;
-    let refs = run_bounded(
+    let refs = run_bounded_strict(
         common,
         &["for-each-ref", "--format=%(objectname)", "refs/heads"],
         remaining(deadline)?,
@@ -120,6 +121,8 @@ pub(super) fn scan_log(
         args.extend(["-E", "-i", "--grep=^Plan(-Task)?[[:space:]]*:"]);
     }
     args.push("--");
+    // Per-commit passes tolerate Git warnings: NUL framing and the strict tip
+    // digest re-check still gate scan completion.
     let bytes = run_bounded(&registration.common_dir, &args, remaining(deadline)?)?;
     let parsed = parse_log(&bytes, &registration.repo_key)?;
     let complete = parsed.record_count <= COMMIT_LIMIT;

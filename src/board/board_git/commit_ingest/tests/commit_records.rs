@@ -41,7 +41,6 @@ fn native_trailers_link_case_insensitively_and_exclude_body_mentions() {
 fn malformed_commit_is_isolated_and_valid_metadata_is_bounded() {
     let fixture = GitFixture::new();
     fixture.commit("root");
-    fixture.commit("bad author\n\nPlan: P7\nCo-authored-by: broken");
     fixture.commit("bad task\n\nPlan: P7\nPlan-Task: invalid");
     let subject = "é".repeat(900);
     fixture.git(&["config", "user.name", &"é".repeat(900)]);
@@ -60,7 +59,7 @@ fn malformed_commit_is_isolated_and_valid_metadata_is_bounded() {
         )
         .unwrap();
     assert_eq!(first.completed.len(), 1);
-    assert_eq!(first.errors.len(), 2);
+    assert_eq!(first.errors.len(), 1);
     assert_eq!(backend.linked.len(), 1);
     let commit = &backend.linked[0];
     assert_eq!(commit.oid, good);
@@ -82,6 +81,195 @@ fn malformed_commit_is_isolated_and_valid_metadata_is_bounded() {
     )
     .validate()
     .unwrap();
+    assert_eq!(
+        ingestor
+            .ingest(&mut backend, &actor(), &[target], Duration::from_secs(5))
+            .unwrap()
+            .skipped,
+        1
+    );
+}
+
+#[test]
+fn malformed_coauthor_keeps_plan_link_and_warns() {
+    let fixture = GitFixture::new();
+    fixture.commit("root");
+    let linked = fixture.commit(
+        "linked\n\nPlan: P7\nPlan-Task: P7.3\nCo-authored-by: broken\nCo-authored-by: Model claim <noreply@openai.com>",
+    );
+    let target = target(&fixture);
+    let mut ingestor = RepoIngestor::default();
+    let mut backend = TestBackend::default();
+    let report = ingestor
+        .ingest(
+            &mut backend,
+            &actor(),
+            &[target.clone()],
+            Duration::from_secs(5),
+        )
+        .unwrap();
+    assert_eq!(report.completed.len(), 1);
+    assert!(
+        report
+            .errors
+            .iter()
+            .any(|error| error.contains("malformed co-author")),
+        "{:?}",
+        report.errors
+    );
+    let commit = backend
+        .linked
+        .iter()
+        .find(|commit| commit.oid == linked)
+        .expect("malformed co-author must not drop the plan link");
+    assert_eq!(commit.plans.len(), 1);
+    assert_eq!(commit.plans[0].task_ordinal, Some(3));
+    assert_eq!(commit.coauthors.len(), 1);
+    assert_eq!(commit.coauthors[0].harness.as_str(), "codex");
+    assert_eq!(commit.coauthors[0].email, "noreply@openai.com");
+    assert_eq!(
+        ingestor
+            .ingest(&mut backend, &actor(), &[target], Duration::from_secs(5))
+            .unwrap()
+            .skipped,
+        1
+    );
+}
+
+#[test]
+fn coauthor_overflow_keeps_bounded_prefix_and_warns() {
+    let fixture = GitFixture::new();
+    fixture.commit("root");
+    let trailers = (0..70)
+        .map(|ordinal| format!("Co-authored-by: Agent {ordinal} <agent{ordinal}@example.test>"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let linked = fixture.commit(&format!("crowded\n\nPlan: P7\n{trailers}"));
+    let target = target(&fixture);
+    let mut ingestor = RepoIngestor::default();
+    let mut backend = TestBackend::default();
+    let report = ingestor
+        .ingest(
+            &mut backend,
+            &actor(),
+            &[target.clone()],
+            Duration::from_secs(5),
+        )
+        .unwrap();
+    assert_eq!(report.completed.len(), 1);
+    assert!(
+        report
+            .errors
+            .iter()
+            .any(|error| error.contains("co-author") && error.contains('6')),
+        "{:?}",
+        report.errors
+    );
+    let commit = backend
+        .linked
+        .iter()
+        .find(|commit| commit.oid == linked)
+        .expect("co-author overflow must not drop the plan link");
+    assert_eq!(commit.coauthors.len(), 64);
+    assert_eq!(commit.coauthors[0].model, "Agent 0");
+    assert_eq!(commit.coauthors[63].model, "Agent 63");
+    BoardRequest::new(
+        actor(),
+        BoardOp::LinkCommits {
+            commits: backend.linked.clone(),
+        },
+    )
+    .validate()
+    .unwrap();
+    assert_eq!(
+        ingestor
+            .ingest(&mut backend, &actor(), &[target], Duration::from_secs(5))
+            .unwrap()
+            .skipped,
+        1
+    );
+}
+
+#[test]
+fn commit_graph_warning_keeps_links_and_completes_scan() {
+    let fixture = GitFixture::new();
+    let linked = fixture.commit(&linked_message("linked"));
+    let target = target(&fixture);
+    std::fs::write(
+        target
+            .registration
+            .common_dir
+            .join("objects/info/commit-graph"),
+        b"corrupt",
+    )
+    .unwrap();
+    let mut ingestor = RepoIngestor::default();
+    let mut backend = TestBackend::default();
+    let report = ingestor
+        .ingest(
+            &mut backend,
+            &actor(),
+            &[target.clone()],
+            Duration::from_secs(5),
+        )
+        .unwrap();
+    assert_eq!(report.completed.len(), 1);
+    assert!(
+        backend.linked.iter().any(|commit| commit.oid == linked),
+        "per-commit Git warnings must not block linking: {:?}",
+        report.errors
+    );
+    assert_eq!(
+        ingestor
+            .ingest(&mut backend, &actor(), &[target], Duration::from_secs(5))
+            .unwrap()
+            .skipped,
+        1
+    );
+}
+
+#[test]
+fn stats_failure_keeps_links_and_reports_warning() {
+    let fixture = GitFixture::new();
+    std::fs::write(fixture.root.join("source.txt"), "data\n").unwrap();
+    fixture.git(&["add", "source.txt"]);
+    fixture.commit("file commit");
+    let linked = fixture.commit(&linked_message("linked"));
+    let target = target(&fixture);
+    let tree = fixture.git(&["rev-parse", "HEAD~1^{tree}"]);
+    let tree = tree.trim();
+    std::fs::remove_file(
+        target
+            .registration
+            .common_dir
+            .join(format!("objects/{}/{}", &tree[..2], &tree[2..])),
+    )
+    .unwrap();
+    let mut ingestor = RepoIngestor::default();
+    let mut backend = TestBackend::default();
+    let report = ingestor
+        .ingest(
+            &mut backend,
+            &actor(),
+            &[target.clone()],
+            Duration::from_secs(5),
+        )
+        .unwrap();
+    assert_eq!(report.completed.len(), 1);
+    assert!(
+        report
+            .errors
+            .iter()
+            .any(|error| error.contains("commit statistics unavailable")),
+        "{:?}",
+        report.errors
+    );
+    let commit = backend
+        .linked
+        .iter()
+        .find(|commit| commit.oid == linked)
+        .expect("stats failures must not drop the plan link");
+    assert_eq!(commit.files, 0);
     assert_eq!(
         ingestor
             .ingest(&mut backend, &actor(), &[target], Duration::from_secs(5))
