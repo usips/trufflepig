@@ -24,7 +24,7 @@ fn cached_claim_or_move_cannot_bypass_a_new_holder() {
         BoardOp::ClaimTask {
             task,
             scope: Some(EntryText::new("my lane").unwrap()),
-            resume: false,
+            resume: ClaimResume::No,
         },
     );
     backend.handle(&claim_request).unwrap();
@@ -43,7 +43,7 @@ fn cached_claim_or_move_cannot_bypass_a_new_holder() {
             BoardOp::ClaimTask {
                 task,
                 scope: Some(EntryText::new("new holder").unwrap()),
-                resume: false,
+                resume: ClaimResume::No,
             },
         ))
         .unwrap();
@@ -96,7 +96,7 @@ fn retried_carve_creates_fresh_task_after_handoff() {
             BoardOp::ClaimTask {
                 task,
                 scope: Some(EntryText::new("next scope").unwrap()),
-                resume: false,
+                resume: ClaimResume::No,
             },
         ))
         .unwrap();

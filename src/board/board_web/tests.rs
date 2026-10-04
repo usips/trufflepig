@@ -1,7 +1,7 @@
 use super::*;
 use crate::board::{
     board_ids::{BoardRef, RepoKey},
-    board_protocol::{BOARD_API, BoardOp, BoardReply, BoardRequest, BoardResult},
+    board_protocol::{BOARD_API, BoardOp, BoardReply, BoardRequest, BoardResult, ClaimResume},
     board_vocabulary::{EntryText, PlanText, PlanTitle},
 };
 use web_ops::WebRequest;
@@ -276,7 +276,7 @@ fn config_reload_reaches_reader_ttl_and_attention_without_events() {
                 BoardOp::ClaimTask {
                     task,
                     scope: Some(EntryText::new("scope").unwrap()),
-                    resume: false,
+                    resume: ClaimResume::No,
                 },
             ))
             .unwrap();

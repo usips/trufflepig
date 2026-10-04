@@ -192,15 +192,15 @@ fn require_superseded_proposal(
     plan: PlanId,
     previous: EntryId,
 ) -> Result<(), BoardError> {
-    let prior: Option<(u64, String, i64)> = tx
+    let prior: Option<(u64, String, String, String)> = tx
         .query_row(
-            "SELECT p.plan_id,p.state,e.actor_id FROM proposals p JOIN entries e ON e.id=p.entry_id WHERE p.entry_id=?1",
+            "SELECT p.plan_id,p.state,a.user,a.harness FROM proposals p JOIN entries e ON e.id=p.entry_id JOIN actors a ON a.id=e.actor_id WHERE p.entry_id=?1",
             [sql_number(previous.get())],
-            |row| Ok((row_number(row, 0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row_number(row, 0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()
         .map_err(sql_error)?;
-    let (prior_plan, state, author) = prior
+    let (prior_plan, state, author_user, author_harness) = prior
         .ok_or_else(|| invalid("invalid_reference", format!("unknown proposal {previous}")))?;
     if prior_plan != plan.get() {
         return Err(invalid(
@@ -208,10 +208,10 @@ fn require_superseded_proposal(
             "superseded proposal belongs to a different plan",
         ));
     }
-    if author != ctx.actor_id {
+    if author_user != ctx.actor.user || author_harness != ctx.actor.harness.as_str() {
         return Err(invalid(
             "invalid_actor",
-            "only the proposal author can supersede it",
+            "supersede requires the same user and harness as the proposal author",
         ));
     }
     if state != "open" {

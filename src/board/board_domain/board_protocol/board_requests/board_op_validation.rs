@@ -24,9 +24,9 @@ impl BoardOp {
         match self {
             Self::ClaimTask {
                 scope: None,
-                resume: false,
+                resume,
                 ..
-            } => {
+            } if !resume.is_resuming() => {
                 bail!("invalid_options: claiming a task requires scope or resume");
             }
             Self::Hello { model, effort } => {

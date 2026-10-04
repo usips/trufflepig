@@ -752,6 +752,55 @@ fn claim_resume_without_scope_survives_router_normalization() {
 }
 
 #[test]
+fn claim_resume_accepts_an_optional_entry_target() {
+    use crate::board::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
+    use crate::board::board_protocol::{BoardOp, ClaimResume};
+    for words in [
+        &["board", "claim", "P7.3", "--resume"][..],
+        &["board", "claim", "P7.3", "--resume", "E42"][..],
+        &["board", "claim", "P7.3", "--resume=E42"][..],
+    ] {
+        let args = words
+            .iter()
+            .map(|word| (*word).to_owned())
+            .collect::<Vec<_>>();
+        let options = parse(&args).unwrap();
+        let command = board_parse(&options, None).unwrap();
+        let forwarded = normalize_args(&args, &options, None).unwrap();
+        let routed = parse(&forwarded).unwrap();
+        assert_eq!(board_parse(&routed, None).unwrap(), command);
+    }
+    let args = ["board", "claim", "P7.3", "--resume", "E42"].map(str::to_owned);
+    let options = parse(&args).unwrap();
+    let BoardCommand::Op(op) = board_parse(&options, None).unwrap() else {
+        panic!("expected op")
+    };
+    let BoardOp::ClaimTask {
+        scope,
+        resume: ClaimResume::Entry(entry),
+        ..
+    } = op
+    else {
+        panic!("expected an explicit entry resume: {op:?}")
+    };
+    assert_eq!(entry, crate::board::board_ids::EntryId::new(42).unwrap());
+    assert!(scope.is_none());
+    let args = ["board", "claim", "P7.3", "fresh", "scope", "--resume"].map(str::to_owned);
+    let options = parse(&args).unwrap();
+    let BoardCommand::Op(op) = board_parse(&options, None).unwrap() else {
+        panic!("expected op")
+    };
+    let BoardOp::ClaimTask { scope, resume, .. } = op else {
+        panic!("expected claim op")
+    };
+    assert_eq!(resume, ClaimResume::Idle);
+    assert_eq!(scope.unwrap().as_str(), "fresh scope");
+    let args = ["board", "claim", "P7.3", "--resume", "bogus"].map(str::to_owned);
+    let options = parse(&args).unwrap();
+    assert!(board_parse(&options, None).is_err());
+}
+
+#[test]
 fn board_inbox_all_scope_survives_router_normalization() {
     use crate::board::board_grammar::{normalize_args, parse as board_parse};
     let args = ["board", "inbox", "42", "--all"].map(str::to_owned);

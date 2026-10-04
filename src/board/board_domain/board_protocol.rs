@@ -15,7 +15,7 @@ pub use board_records::{
     RepoScanTarget, ReviewEvidence, RevisionDiff, RevisionRecord, RevisionSource, SessionRecord,
     TaskRecord,
 };
-pub use board_requests::{AgentClaims, BoardOp, BoardRequest};
+pub use board_requests::{AgentClaims, BoardOp, BoardRequest, ClaimResume};
 
 use anyhow::{Result, bail};
 

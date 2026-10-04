@@ -430,7 +430,9 @@ pub(crate) fn normalized_args(options: &Arguments, root: &Path) -> Vec<String> {
     if let Some(member) = &options.member {
         args.extend(["--member".into(), member.clone()]);
     }
-    options.board.forward(&mut args);
+    // Positional words precede board options: `--resume` takes an optional
+    // value and must not swallow the leading `board`/`feedback` word.
     args.extend(options.words.iter().cloned());
+    options.board.forward(&mut args);
     args
 }

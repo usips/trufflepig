@@ -22,7 +22,7 @@ fn review_preserves_overlapping_ended_claims_and_other_agents_open_work() {
             BoardOp::ClaimTask {
                 task,
                 scope: Some(EntryText::new(format!("scope {ordinal}")).unwrap()),
-                resume: false,
+                resume: ClaimResume::No,
             },
         );
         call(

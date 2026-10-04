@@ -105,7 +105,13 @@ fn claim(
     scope: &str,
 ) -> Result<BoardReply, BoardError> {
     write(conn, actor, now, |tx, ctx| {
-        claim_task(tx, ctx, task, Some(&EntryText::new(scope).unwrap()), false)
+        claim_task(
+            tx,
+            ctx,
+            task,
+            Some(&EntryText::new(scope).unwrap()),
+            ClaimResume::No,
+        )
     })
 }
 

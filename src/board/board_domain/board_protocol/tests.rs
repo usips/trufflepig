@@ -94,13 +94,45 @@ fn internal_entry_kinds_and_open_feedback_cannot_be_posted_or_closed() {
 
 #[test]
 fn claim_scope_is_required_unless_resuming() {
-    for resume in [false, true] {
+    for (resume, valid) in [
+        (serde_json::json!(false), false),
+        (serde_json::json!(true), true),
+        (serde_json::json!("E42"), true),
+    ] {
         let op: BoardOp = serde_json::from_value(serde_json::json!({
             "op": "claim_task", "task": "P1.1", "scope": null, "resume": resume
         }))
         .unwrap();
-        assert_eq!(op.validate().is_ok(), resume);
+        assert_eq!(op.validate().is_ok(), valid, "{resume}");
     }
+}
+
+#[test]
+fn claim_resume_entry_target_round_trips_the_wire_form() {
+    let op: BoardOp = serde_json::from_value(serde_json::json!({
+        "op": "claim_task", "task": "P1.1", "scope": null, "resume": "E42"
+    }))
+    .unwrap();
+    let BoardOp::ClaimTask {
+        resume: ClaimResume::Entry(entry),
+        ..
+    } = op
+    else {
+        panic!("expected an explicit entry resume: {op:?}")
+    };
+    assert_eq!(entry, EntryId::new(42).unwrap());
+    assert_eq!(serde_json::to_value(&op).unwrap()["resume"], "E42");
+    let idle: BoardOp = serde_json::from_value(serde_json::json!({
+        "op": "claim_task", "task": "P1.1", "scope": null, "resume": true
+    }))
+    .unwrap();
+    assert!(matches!(
+        idle,
+        BoardOp::ClaimTask {
+            resume: ClaimResume::Idle,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -116,7 +148,7 @@ fn public_address_records_are_revalidated_at_the_request_boundary() {
             ordinal: u64::MAX,
         },
         scope: Some(EntryText::new("owned scope").unwrap()),
-        resume: false,
+        resume: ClaimResume::No,
     };
     assert!(bad_revision.validate().is_err());
     assert!(bad_task.validate().is_err());

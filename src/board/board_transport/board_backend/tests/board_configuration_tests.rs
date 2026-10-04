@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::ClaimResume;
 
 #[test]
 fn maintenance_import_backoff_caps_and_recovers_without_hot_polling() {
@@ -76,7 +77,7 @@ fn configuration_ttl_refresh_changes_existing_writer_claim_policy() {
         BoardOp::ClaimTask {
             task,
             scope: Some(crate::board::board_vocabulary::EntryText::new("new owner").unwrap()),
-            resume: false,
+            resume: ClaimResume::No,
         },
     );
     host.handle_by(&request, QueryDeadline::start()).unwrap();

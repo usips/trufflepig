@@ -24,9 +24,9 @@ pub struct BoardOptions {
     /// Scope of work covered by a new claimed task.
     #[arg(long)]
     pub scope: Option<String>,
-    /// Resume a prior session's claim for the same user, host, and harness.
-    #[arg(long)]
-    pub resume: bool,
+    /// Resume an idle claim for the same user, host, and harness; `E#` takes over that exact claim entry.
+    #[arg(long, num_args = 0..=1, value_name = "E#")]
+    pub resume: Option<Option<String>>,
     /// Plan heading covered by a new claimed task.
     #[arg(long)]
     pub section: Option<String>,
@@ -114,8 +114,10 @@ impl BoardOptions {
         if self.all {
             args.push("--all".into());
         }
-        if self.resume {
-            args.push("--resume".into());
+        match &self.resume {
+            Some(Some(target)) => args.push(format!("--resume={target}")),
+            Some(None) => args.push("--resume".into()),
+            None => {}
         }
     }
 
@@ -131,7 +133,7 @@ impl BoardOptions {
             || self.through.is_some()
             || self.open
             || self.all
-            || self.resume
+            || self.resume.is_some()
             || self.board_text.is_some()
             || self.board_payload.is_some()
             || self.agent_model.is_some()

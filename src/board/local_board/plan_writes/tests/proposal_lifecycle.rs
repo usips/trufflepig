@@ -102,10 +102,10 @@ fn superseding_proposals_reject_invalid_targets_without_any_mutation() {
         actor("other", "codex", "proposer"),
         proposal_op(base, "other author", None),
     );
-    let other_session = call(
+    let other_harness = call(
         &mut board,
-        actor("josh", "codex", "other-session"),
-        proposal_op(base, "other session", None),
+        actor("josh", "muse", "proposer"),
+        proposal_op(base, "other harness", None),
     );
     let other_plan = call(
         &mut board,
@@ -140,7 +140,7 @@ fn superseding_proposals_reject_invalid_targets_without_any_mutation() {
         (EntryId::new(999).unwrap(), BoardErrorCode::InvalidReference),
         (cross_plan.entry, BoardErrorCode::InvalidReference),
         (other.entry, BoardErrorCode::InvalidActor),
-        (other_session.entry, BoardErrorCode::InvalidActor),
+        (other_harness.entry, BoardErrorCode::InvalidActor),
         (own.entry, BoardErrorCode::InvalidState),
     ] {
         let before = snapshot(&board, plan);
@@ -153,6 +153,51 @@ fn superseding_proposals_reject_invalid_targets_without_any_mutation() {
         assert_eq!(error.code, expected);
         assert_eq!(snapshot(&board, plan), before);
     }
+}
+
+#[test]
+fn supersede_succeeds_from_another_session_of_the_same_user_and_harness() {
+    let (_directory, mut board) = database();
+    let plan = plan(&mut board);
+    let base = PlanRevision::new(plan, 1).unwrap();
+    let original = call(
+        &mut board,
+        actor("josh", "codex", "session-one"),
+        proposal_op(base, "first", None),
+    );
+    let other_session = BoardActor::new(
+        "josh",
+        "desktop",
+        HarnessLabel::parse("codex").unwrap(),
+        "session-two",
+    )
+    .unwrap();
+    let replacement = call(
+        &mut board,
+        other_session,
+        proposal_op(base, "replacement", Some(original.entry)),
+    );
+    let old = read_entry(&board.conn, original.entry).unwrap();
+    assert_eq!(
+        serde_json::to_value(&old).unwrap()["state"]["state"],
+        "superseded"
+    );
+    assert_eq!(old.body.as_str(), "first");
+    let new = read_entry(&board.conn, replacement.entry).unwrap();
+    assert_eq!(new.supersedes, Some(original.entry));
+    assert_eq!(
+        serde_json::to_value(&new).unwrap()["state"]["state"],
+        "open"
+    );
+    let old_body: String = board
+        .conn
+        .query_row(
+            "SELECT t.body FROM proposals p JOIN texts t ON t.hash=p.text_hash WHERE p.entry_id=?1",
+            [sql_number(original.entry.get())],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(old_body, "body for first");
 }
 
 #[test]

@@ -21,9 +21,12 @@ use super::{
 use crate::board::board_actor::{BoardRecipient, claim_vendor};
 use crate::board::board_ids::{EntryId, EventSeq, PlanId, TaskId};
 use crate::board::board_protocol::{
-    BoardReply, ClaimEndReason, ClaimRecord, CommitCoauthor, TaskRecord,
+    BoardReply, ClaimEndReason, ClaimRecord, ClaimResume, CommitCoauthor, TaskRecord,
 };
 use crate::board::board_vocabulary::{EntryKind, EntryText, PlanTitle, TaskColumn};
+
+/// Idle time required before a bare `--resume` may replace a live lease.
+pub(super) const RESUME_IDLE_GRACE_SECS: i64 = 600;
 
 pub(super) struct StoredClaim {
     pub(super) actor_id: i64,
@@ -40,7 +43,22 @@ pub(super) fn carve_claim(
 ) -> Result<BoardReply, BoardError> {
     require_plan(tx, plan)?;
     let task = allocate_task(tx, ctx, plan, title, None, section)?;
-    claim_task(tx, ctx, task, Some(scope), false)
+    claim_task(tx, ctx, task, Some(scope), ClaimResume::No)
+}
+
+fn claim_conflict(task: TaskId, claim: &ClaimRecord, now: i64) -> BoardError {
+    invalid(
+        "claim_conflict",
+        format!(
+            "{task} held by {} ({}/{}) since {}, active {}s ago (last activity {})",
+            claim.actor,
+            claim.model.as_deref().unwrap_or("unknown"),
+            claim.effort.as_deref().unwrap_or("unknown"),
+            claim.claimed_at,
+            now.saturating_sub(claim.last_active),
+            claim.last_active,
+        ),
+    )
 }
 
 pub(super) fn claim_task(
@@ -48,7 +66,7 @@ pub(super) fn claim_task(
     ctx: &WriteContext,
     task: TaskId,
     scope: Option<&EntryText>,
-    resume: bool,
+    resume: ClaimResume,
 ) -> Result<BoardReply, BoardError> {
     let card = require_task(tx, task)?;
     if card.column == TaskColumn::Done {
@@ -61,10 +79,18 @@ pub(super) fn claim_task(
     if holder.is_none() {
         require_assignee(&card, &ctx.actor, task)?;
     }
-    if resume {
+    if resume.is_resuming() {
         let previous = holder
             .as_ref()
             .ok_or_else(|| invalid("invalid_state", format!("{task} has no claim to resume")))?;
+        if let ClaimResume::Entry(entry) = resume {
+            if previous.record.entry != entry {
+                return Err(invalid(
+                    "invalid_reference",
+                    format!("{entry} is not the current claim for {task}"),
+                ));
+            }
+        }
         if previous.record.actor.user != ctx.actor.user
             || previous.record.actor.host != ctx.actor.host
             || previous.record.actor.harness != ctx.actor.harness
@@ -79,7 +105,7 @@ pub(super) fn claim_task(
         .or_else(|| {
             holder
                 .as_ref()
-                .filter(|_| resume)
+                .filter(|_| resume.is_resuming())
                 .map(|claim| &claim.record.scope)
         })
         .ok_or_else(|| {
@@ -89,22 +115,18 @@ pub(super) fn claim_task(
             )
         })?;
     if let Some(holder) = &holder {
-        if holder.actor_id != ctx.actor_id && !holder.record.stale && !resume {
-            let claim = &holder.record;
-            return Err(invalid(
-                "claim_conflict",
-                format!(
-                    "{task} held by {} ({}/{}) since {}, active {}s ago (last activity {})",
-                    claim.actor,
-                    claim.model.as_deref().unwrap_or("unknown"),
-                    claim.effort.as_deref().unwrap_or("unknown"),
-                    claim.claimed_at,
-                    ctx.now.saturating_sub(claim.last_active),
-                    claim.last_active,
-                ),
-            ));
+        match resume {
+            ClaimResume::No if holder.actor_id != ctx.actor_id && !holder.record.stale => {
+                return Err(claim_conflict(task, &holder.record, ctx.now));
+            }
+            ClaimResume::Idle
+                if holder.record.last_active >= ctx.now.saturating_sub(RESUME_IDLE_GRACE_SECS) =>
+            {
+                return Err(claim_conflict(task, &holder.record, ctx.now));
+            }
+            _ => {}
         }
-        let reason = if resume {
+        let reason = if resume.is_resuming() {
             ClaimEndReason::Resumed
         } else if holder.actor_id == ctx.actor_id {
             ClaimEndReason::Released
@@ -160,7 +182,7 @@ pub(super) fn claim_task(
         scope.as_str()
     };
     let summary = match previous {
-        Some(claim) if resume => format!(
+        Some(claim) if resume.is_resuming() => format!(
             "took {task}: {preview}; resumed claim from {}",
             claim.record.actor
         ),

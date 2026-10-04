@@ -9,7 +9,7 @@ use super::{
 };
 use crate::board::board_actor::{BoardActor, BoardRecipient};
 use crate::board::board_ids::{EntryId, PlanId, TaskId};
-use crate::board::board_protocol::{BoardReply, ClaimEndReason};
+use crate::board::board_protocol::{BoardReply, ClaimEndReason, ClaimResume};
 use crate::board::board_vocabulary::{EntryKind, EntryText, PlanTitle, TaskColumn};
 
 pub(super) struct TaskCard {
@@ -147,7 +147,7 @@ pub(super) fn move_task(
         ).optional().map_err(sql_error)?;
         let scope = EntryText::new(scope.unwrap_or_else(|| card.title.as_str().to_owned()))
             .map_err(BoardError::from)?;
-        return claim_task(tx, ctx, task, Some(&scope), false);
+        return claim_task(tx, ctx, task, Some(&scope), ClaimResume::No);
     }
     if holder
         .as_ref()
