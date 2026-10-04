@@ -18,8 +18,9 @@ obsolete paths instead of preserving a bad design.
   implementation. Complete relevant checks before committing.
 - Use Conventional Commits: `type(scope): subject`, imperative, no
   period, at most 50 characters for the complete subject. Put details in
-  the body. Include a `Co-authored-by: Name <email>` trailer identifying
-  the contributing agent with its actual attribution identity.
+  the body. Include one `Co-authored-by: Name <email>` trailer per
+  contributing model, orchestrators included, with its actual
+  attribution identity.
 
 ## Code organization
 

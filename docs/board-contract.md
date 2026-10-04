@@ -157,12 +157,8 @@ creates no duplicate link/entry/event; rebasing creates a new oid and new eviden
 commits are not ingested. External trailers retain all distinct matching plan tasks; unknown tasks
 preserve the plan link and diagnostics.
 
-Co-author email domains map `anthropic.com` to `claude`, `openai.com` to `codex`, `moonshot.ai` to
-`kimi`, `x.ai` to `grok`, `google.com` to `gemini`, and `qwen.ai` to `qwen`; other addresses become
-`git:<email>`. The trailer name is a model claim. No co-author means `human`; Muse/omp running
-Claude appears as `claude`. Claim/review vendor comes from the stored model snapshot: Claude,
-GPT/Codex/ChatGPT, Kimi, Grok, Gemini, or Qwen; unknown models fall back to harness. `cli` and
-`human` claims remain human even when a model was inherited.
+Co-author trailers and model snapshots attribute to vendors per the [CLI attribution
+rules](board-cli-contract.md#attribution).
 
 Ingest runs explicitly, before review within `min(5 s, remaining - 3 s)`, and every 60 s from router
 idle on a separate thread only when the DB exists. Review assembles SSOT diff, agent entries, tasks,

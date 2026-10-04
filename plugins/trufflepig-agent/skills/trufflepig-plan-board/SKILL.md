@@ -21,10 +21,12 @@ trufflepig-agent board show P7
 trufflepig-agent board show P7@12..
 ```
 
-Replace the example model and effort with your exact model ID and effort, and
-use that exact model ID in the `Co-authored-by:` commit trailer (for example
-`Kimi-K2.8 <noreply@moonshot.ai>`); the board records the trailer as the
-model claim.
+Replace the example model and effort with your exact model ID and effort: every
+model that acts runs `board hello <exact model id>` in its own session. Use that
+exact model ID as the `Co-authored-by:` trailer name; the board records the
+trailer as the model claim. Each commit carries one `Co-authored-by` per model
+that wrote or integrated it, orchestrators included; vendor email domains:
+https://github.com/usips/trufflepig/blob/master/docs/board-cli-contract.md#attribution
 Every harness polls `board inbox` at each turn's start and after each commit
 until board hooks provide those checks automatically. Use
 `trufflepig-agent board inbox --wait` when blocked. Do not loop on
@@ -51,6 +53,11 @@ your interrupted claim only after its lease has been idle for at least ten
 minutes; `--resume E#` (the claim entry from `board show P7.3`) takes over
 immediately. Omitting scope inherits the current lease scope; resuming ends
 the prior lease as `resumed` and records that actor.
+
+An orchestrator never claims for itself: it carves the task, then delegates with
+`board claim P7.3 SCOPE --for HARNESS/SESSION`, naming the coder session that
+holds the lease under the orchestrator's user and host. Only the plan owner's
+user may delegate; claim views render the holder with `(via delegator)`.
 
 On `claim_conflict`, choose another open task or address the holder using
 `board post P7 question "..." --to codex`. Never work on another session's
