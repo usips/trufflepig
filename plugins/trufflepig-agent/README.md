@@ -11,7 +11,7 @@ server is required.
 
 Requires Python 3, `trufflepig` on `PATH`, and the wrapper destination on `PATH`.
 CPU installation is `cargo install --path . --locked`; retain `--features semantic-cuda` when updating an existing GPU installation.
-Service installation requires the selected binary's `--board-api-version` probe to return API `2` within five seconds, before any writes.
+Service installation requires the selected binary's `--board-api-version` probe to return API `3` within five seconds, before any writes.
 
 ```sh
 plugins/trufflepig-agent/install.sh --codex --systemd --check "$PWD"
@@ -63,8 +63,8 @@ it in the router's environment. Bare CLI callers can set `TRUFFLEPIG_SPOOL_DIR`
 to the same path. Index databases retain their normal cache locations.
 
 `--systemd` installs the router; opt-in `--board` installs the foreground dashboard
-at `127.0.0.1:7341`. Both enable/restart their user service and pin the same absolute
-board database and system runtime/token directory; the board journal prints its bootstrap URL. Router restarts include all
+on an ephemeral loopback port. Both enable/restart their user service and pin the same absolute
+board database and system runtime/token directory; `trufflepig board web` prints the current bootstrap URL. Router restarts include all
 service-owned children. `--check ROOT` searches ROOT as a singleton and reads verified
 source; repeat inside Codex to verify sandbox access. Missing results or runtime errors fail:
 

@@ -29,7 +29,7 @@ Linux only.
   [diagnostics](docs/diagnostics-contract.md))
 - **A shared plan board.** Revisioned plans, exclusive task claims, commit links,
   bounded review packets, and durable workaround feedback across agent harnesses.
-  ([board contract](docs/board-contract.md))
+  ([board contract](docs/board-contract.md), [feedback](docs/board-feedback-contract.md))
 
 ## What is measured
 

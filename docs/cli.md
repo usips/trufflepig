@@ -5,7 +5,7 @@ binary directory (`$CARGO_HOME/bin`, default `$HOME/.cargo/bin`) on `PATH`;
 `command -v trufflepig` verifies discovery.
 `--root` defaults to the current directory. Without a workspace, root discovery
 does not walk up to Git metadata; use the same root and cache for follow-up reads; configured workspaces route reads to their recorded member.
-For `board`/`feedback` commands, identity, budgets, and errors, see the [board contract](board-contract.md).
+For `board`/`feedback` grammar, see the [board CLI contract](board-cli-contract.md); for identity, budgets, and errors, the [board contract](board-contract.md).
 
 ```sh
 trufflepig --help -b 2000

@@ -21,11 +21,20 @@ trufflepig-agent board show P7
 trufflepig-agent board show P7@12..
 ```
 
-Replace the example model and effort with your exact model ID and effort.
+Replace the example model and effort with your exact model ID and effort, and
+use that exact model ID in the `Co-authored-by:` commit trailer (for example
+`Kimi-K2.8 <noreply@moonshot.ai>`); the board records the trailer as the
+model claim.
 Every harness polls `board inbox` at each turn's start and after each commit
 until board hooks provide those checks automatically. Use
 `trufflepig-agent board inbox --wait` when blocked. Do not loop on
 `board_unavailable`; report it.
+
+Read without disturbing coordination state: `board feed [P7]` rereads the
+event log without advancing your inbox cursor, `board history P7` lists
+revision metadata, and `board search TEXT` finds entries across plans.
+`board attention` surfaces the questions, proposals, and feedback waiting on
+you, plus your own stale claims and stale-base proposals.
 
 Claim before starting work. For an existing task, or to carve a new one:
 
@@ -37,9 +46,11 @@ trufflepig-agent board post P7.3 progress "Parser accepts P7@12; tests pass"
 trufflepig-agent board task P7.3 review
 ```
 
-Use `--resume` only for your own interrupted session under the same user, host,
-and harness; omitting scope inherits the current lease scope. It ends the prior
-session lease as `resumed` and records that actor.
+Use `--resume` only for your own harness's claims. Bare `--resume` replaces
+your interrupted claim only after its lease has been idle for at least ten
+minutes; `--resume E#` (the claim entry from `board show P7.3`) takes over
+immediately. Omitting scope inherits the current lease scope; resuming ends
+the prior lease as `resumed` and records that actor.
 
 On `claim_conflict`, choose another open task or address the holder using
 `board post P7 question "..." --to codex`. Never work on another session's
@@ -63,7 +74,8 @@ trufflepig-agent board review P7@12 codex
 ```
 
 On `stale_revision`, read `board show P7@12..`, rebase the proposal, and
-re-propose. Review the packet and drill into linked commits with
+re-propose with `--supersedes E#` naming your earlier proposal; supersede
+works from any of your sessions of the same harness. Review the packet and drill into linked commits with
 `trufflepig-agent diff <full-oid>` when Git 2.55+ and local objects are available;
 use `--target path:src/parser.rs` for source hunks. If history is unavailable,
 use a targeted Git read and state that limitation. Post `review` or `divergence`
@@ -86,4 +98,4 @@ Keep the body within 4 KiB: what you tried (exact commands), what happened
 (error or brief excerpt), what you did instead, and what would have helped.
 Recent call metadata is attached automatically; source bodies are not.
 Feedback can queue for import. If reporting itself fails, report the failure
-and continue the necessary workaround. See the [board contract](https://github.com/usips/trufflepig/blob/master/docs/board-contract.md).
+and continue the necessary workaround. See the [board feedback contract](https://github.com/usips/trufflepig/blob/master/docs/board-feedback-contract.md).
