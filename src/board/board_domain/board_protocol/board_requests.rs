@@ -94,6 +94,8 @@ pub enum BoardOp {
     },
     Overview {
         repo_key: Option<RepoKey>,
+        #[serde(default)]
+        all: bool,
         after: Option<PlanId>,
         through: Option<EventSeq>,
         limit: usize,

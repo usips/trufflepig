@@ -87,6 +87,7 @@ fn readonly_dispatch_leaves_actors_sessions_and_claims_untouched() {
             actor("new-harness", "never-written"),
             BoardOp::Overview {
                 repo_key: None,
+                all: false,
                 after: None,
                 through: None,
                 limit: 200,

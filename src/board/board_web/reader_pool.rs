@@ -142,6 +142,7 @@ mod tests {
     fn overview() -> BoardOp {
         BoardOp::Overview {
             repo_key: None,
+            all: false,
             after: None,
             through: None,
             limit: 200,

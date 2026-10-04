@@ -123,6 +123,7 @@ fn host_reads_existing_board_without_initializing_or_waiting_for_writer() {
         actor,
         BoardOp::Overview {
             repo_key: None,
+            all: false,
             after: None,
             through: None,
             limit: 200,
@@ -187,6 +188,7 @@ fn host_bootstraps_writable_legacy_storage_but_keeps_readonly_initialization_err
         config.actor(None, Some("legacy-reader")).unwrap(),
         BoardOp::Overview {
             repo_key: None,
+            all: false,
             after: None,
             through: None,
             limit: 200,

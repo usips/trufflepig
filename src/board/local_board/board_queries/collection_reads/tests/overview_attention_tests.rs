@@ -69,6 +69,40 @@ fn collection_overview_caps_nested_rows_and_reports_exact_omissions() {
 }
 
 #[test]
+fn collection_overview_scoped_scope_keeps_unlinked_plans() {
+    let (_directory, board) = database();
+    let repo = register_repositories(&board.conn);
+    board
+        .conn
+        .execute(
+            "INSERT INTO plans(id,title,owner_user,steward,head_revision,created_at) \
+             VALUES(3,'Three','josh',NULL,1,1)",
+            [],
+        )
+        .unwrap();
+    seed_entry(&board.conn, 3, 3, 3, "create", 3, None, "Three");
+    board
+        .conn
+        .execute("INSERT INTO revisions VALUES(3,1,'one','create',3,3,3)", [])
+        .unwrap();
+    let reader = board.reader.as_ref().expect("read connection");
+    let listed =
+        |repo_key: Option<&RepoKey>| match overview(reader, &context(), repo_key, None, None, 200)
+            .unwrap()
+            .result
+        {
+            BoardResult::Overview(page) => page
+                .plans
+                .iter()
+                .map(|plan| plan.plan.id)
+                .collect::<Vec<_>>(),
+            other => panic!("unexpected {other:?}"),
+        };
+    assert_eq!(listed(Some(&repo)), vec![plan(1), plan(3)]);
+    assert_eq!(listed(None), vec![plan(1), plan(2), plan(3)]);
+}
+
+#[test]
 fn collection_attention_uses_actual_actor_and_keeps_own_feedback() {
     let (_directory, board) = database();
     let repo = register_repositories(&board.conn);

@@ -70,11 +70,12 @@ without cards. `--for` leases refresh, resume, and cross commits on the holder, 
 
 Each mutation has one global event sequence. Inbox, Attention, Overview, and Claims default to the
 caller's canonical repository scope; events addressed to the actual user/harness/full actor and
-own-feedback outcomes remain visible outside it. A plan with no `plan_repos` row is global in inbox
-and attention scope. `--all` widens repository scope, retaining recipient filtering. Own events are
-excluded unless they are feedback outcomes; mixed-plan events qualify if a same-sequence entry
-matches scope. `scanned_through` is the highest examined sequence in one snapshot, separate from
-`rendered_through`. Query-cap or render-budget truncation acknowledges only the last rendered event;
+own-feedback outcomes remain visible outside it. A plan with no `plan_repos` row is global in inbox,
+attention, and overview scope. `--all` widens repository scope, retaining recipient filtering. Own
+events are excluded unless they are feedback outcomes; mixed-plan events qualify if a same-sequence
+entry matches scope. `scanned_through` is the highest examined sequence in one snapshot, separate
+from `rendered_through`. Query-cap or render-budget truncation acknowledges only the last rendered
+event;
 a complete fully rendered query acknowledges `scanned_through`, including irrelevant tails and empty
 reads. Explicit `inbox SEQ` never advances a cursor. First inbox seeds the latest `min(limit,20)`
 events in a 500-event scan window, then bounded open reminders. Reminder totals are exact up to 200

@@ -314,8 +314,12 @@ fn scope_read_repo_key(op: &mut BoardOp, registration: Option<&RepoRegistration>
             repo_key,
             all: false,
             ..
+        }
+        | BoardOp::Overview {
+            repo_key,
+            all: false,
+            ..
         } => repo_key,
-        BoardOp::Overview { repo_key, .. } => repo_key,
         _ => return,
     };
     *repo_key = registration.map(|registration| registration.repo_key.clone());
@@ -371,6 +375,7 @@ mod tests {
             },
             BoardOp::Overview {
                 repo_key: None,
+                all: false,
                 after: None,
                 through: None,
                 limit: 20,
@@ -397,6 +402,13 @@ mod tests {
                 all: true,
             },
             BoardOp::Attention {
+                repo_key: None,
+                all: true,
+                after: None,
+                through: None,
+                limit: 20,
+            },
+            BoardOp::Overview {
                 repo_key: None,
                 all: true,
                 after: None,

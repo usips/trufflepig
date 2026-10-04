@@ -28,9 +28,10 @@ pub(super) fn parse_read(
                 }
                 BoardOp::Show { target }
             } else {
-                check_flags(options, &["after", "through"])?;
+                check_flags(options, &["all", "after", "through"])?;
                 BoardOp::Overview {
                     repo_key: None,
+                    all: options.board.all,
                     after: options
                         .board
                         .after

@@ -74,7 +74,8 @@ pub(in crate::board::local_board) fn overview(
     validate_limit(limit, COLLECTION_LIMIT)?;
     let (_, through) = sequence_window(conn, None, through)?;
     let predicate = concat!(
-        "(?1 IS NULL OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=p.id AND scope.repo_key=?1)) ",
+        "(?1 IS NULL OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=p.id AND scope.repo_key=?1) ",
+        "OR NOT EXISTS(SELECT 1 FROM plan_repos s WHERE s.plan_id=p.id)) ",
         "AND p.id>?2 AND EXISTS(SELECT 1 FROM revisions initial ",
         "WHERE initial.plan_id=p.id AND initial.number=1 AND initial.seq<=?3)"
     );

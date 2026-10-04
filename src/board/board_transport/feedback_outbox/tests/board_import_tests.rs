@@ -187,6 +187,7 @@ fn imported_feedback_sets_server_provenance_and_direct_feedback_does_not() {
                 direct.actor,
                 BoardOp::Overview {
                     repo_key: None,
+                    all: false,
                     after: None,
                     through: None,
                     limit: 200

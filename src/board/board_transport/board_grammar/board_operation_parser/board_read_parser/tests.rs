@@ -7,6 +7,7 @@ fn board_collection_grammar_uses_frozen_typed_cursors_and_required_show_targets(
     let examples = [
         vec!["board", "show"],
         vec!["board", "show", "--after=P7", "--through=90", "-n3"],
+        vec!["board", "show", "--all"],
         vec!["board", "show", "E512"],
         vec!["board", "show", "P7.3"],
         vec!["board", "feed"],
@@ -59,12 +60,21 @@ fn board_collection_grammar_uses_frozen_typed_cursors_and_required_show_targets(
     );
     assert_eq!(through.unwrap().get(), 90);
     assert_eq!(limit, 200);
-    let BoardCommand::Op(BoardOp::Overview { limit, .. }) =
+    let BoardCommand::Op(BoardOp::Overview { limit, all, .. }) =
         board_parse(&parse(&["board".into(), "show".into()]).unwrap(), None).unwrap()
     else {
         panic!("overview");
     };
     assert_eq!(limit, 200);
+    assert!(!all);
+    let BoardCommand::Op(BoardOp::Overview { all, .. }) = board_parse(
+        &parse(&["board".into(), "show".into(), "--all".into()]).unwrap(),
+        None,
+    )
+    .unwrap() else {
+        panic!("overview --all");
+    };
+    assert!(all);
 }
 
 #[test]
@@ -79,6 +89,7 @@ fn board_collection_grammar_rejects_wrong_cursor_types_and_cross_command_flags()
         vec!["board", "history", "P7@1"],
         vec!["board", "history", "P7", "--all"],
         vec!["board", "show", "P7", "--after=P1"],
+        vec!["board", "show", "P7", "--all"],
         vec!["board", "show", "--after=12:E512"],
         vec!["board", "show", "-n201"],
         vec!["board", "feed", "-n501"],

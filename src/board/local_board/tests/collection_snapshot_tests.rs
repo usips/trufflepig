@@ -19,6 +19,7 @@ fn collection_dispatch_reports_snapshot_without_registering_reader_actor() {
     let operations = [
         BoardOp::Overview {
             repo_key: None,
+            all: false,
             after: None,
             through: None,
             limit: 10,

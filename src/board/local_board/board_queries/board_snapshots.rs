@@ -70,6 +70,7 @@ impl LocalBoard {
                 after,
                 through,
                 limit,
+                ..
             } => {
                 collection_reads::overview(&tx, &ctx, repo_key.as_ref(), *after, *through, *limit)?
             }
