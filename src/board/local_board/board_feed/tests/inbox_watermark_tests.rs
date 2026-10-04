@@ -185,3 +185,68 @@ fn first_inbox_limit_selects_a_recent_seed_not_a_forward_page() {
     assert_eq!(seed.scanned_through.get(), 7);
     assert_eq!(seed.cursor.get(), 0);
 }
+
+#[test]
+fn first_inbox_seeds_from_a_bounded_recent_window() {
+    let (_directory, mut board) = database();
+    let plan = plan(&mut board);
+    post(
+        &mut board,
+        "claude",
+        plan,
+        EntryKind::Note,
+        "ancient relevant note",
+        None,
+    );
+    post(
+        &mut board,
+        "codex",
+        plan,
+        EntryKind::Note,
+        "own filler seed",
+        None,
+    );
+    let codex_id: i64 = board
+        .conn
+        .query_row("SELECT id FROM actors WHERE harness='codex'", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let first_filler = board.max_seq().unwrap().get() + 1;
+    let mut bulk = String::from("BEGIN;");
+    for seq in first_filler..first_filler + 520 {
+        bulk.push_str(&format!(
+            "INSERT INTO events(seq,kind,subject,actor_id,summary,created_at) VALUES({seq},'note','E1',{codex_id},'own filler',0);"
+        ));
+    }
+    bulk.push_str("COMMIT;");
+    board.conn.execute_batch(&bulk).unwrap();
+    for index in 0..3 {
+        post(
+            &mut board,
+            "claude",
+            plan,
+            EntryKind::Note,
+            &format!("recent relevant note {index}"),
+            None,
+        );
+    }
+    let latest = board.max_seq().unwrap();
+    let first = feed(&mut board, None, 100);
+    assert_eq!(
+        first
+            .events
+            .iter()
+            .map(|event| event.summary.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "recent relevant note 0",
+            "recent relevant note 1",
+            "recent relevant note 2"
+        ],
+        "a sparse history seeds the window's relevant events without scanning everything"
+    );
+    assert_eq!(first.scanned_through, latest);
+    assert_eq!(first.cursor.get(), 0);
+    assert_eq!(first.open.len(), 0);
+}

@@ -250,6 +250,9 @@ pub(in crate::board::local_board) fn entry_view(
     })
 }
 
+/// Reminder totals are exact up to this cap; larger backlogs report a lower bound.
+const OPEN_REMINDER_COUNT_CAP: u64 = 200;
+
 pub(in crate::board::local_board) fn open_entries(
     conn: &Connection,
     ctx: &WriteContext,
@@ -266,8 +269,18 @@ pub(in crate::board::local_board) fn open_entries(
     let parameters = params![ctx.actor.user, harness, identity, all, repo, ctx.actor_id];
     let total: i64 = conn
         .query_row(
-            &format!("SELECT count(*) FROM entries e WHERE {predicate}"),
-            parameters,
+            &format!(
+                "SELECT count(*) FROM (SELECT 1 FROM entries e WHERE {predicate} LIMIT ?7)"
+            ),
+            params![
+                ctx.actor.user,
+                harness,
+                identity,
+                all,
+                repo,
+                ctx.actor_id,
+                sql_number(OPEN_REMINDER_COUNT_CAP)
+            ],
             |row| row.get(0),
         )
         .map_err(sql_error)?;

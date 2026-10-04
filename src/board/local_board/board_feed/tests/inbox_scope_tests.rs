@@ -238,6 +238,29 @@ fn inbox_reminder_query_caps_materialization_and_reports_omissions() {
 }
 
 #[test]
+fn inbox_reminder_count_is_bounded_and_reports_capped_omissions() {
+    let (_directory, mut board) = database();
+    let plan = plan(&mut board);
+    for index in 0..210 {
+        post(
+            &mut board,
+            "claude",
+            plan,
+            EntryKind::Question,
+            &format!("reminder {index}"),
+            None,
+        );
+    }
+    let inbox = scoped_feed(&mut board, None, true, 100);
+    assert_eq!(inbox.open.len(), 20);
+    assert_eq!(inbox.open[0].body.as_str(), "reminder 0");
+    assert_eq!(
+        inbox.open_omitted, 180,
+        "the reminder count stops at its cap instead of scanning every entry"
+    );
+}
+
+#[test]
 fn mixed_plan_commit_event_is_visible_via_its_same_sequence_entries() {
     let (_directory, mut board) = database();
     let plan = plan(&mut board);
