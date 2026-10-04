@@ -19,6 +19,7 @@ semantic retrieval requires an explicit `--sem` request.
 - [Authoritative storage and publication](index-contract.md)
 - [Cache ownership, daemon lifecycle, and transport](runtime-contract.md)
 - [Plan revisions, task claims, commit links, and feedback](board-contract.md)
+- [Local board HTTP, authentication, and live views](board-web-contract.md)
 - [Historical navigation and local Git objects](history-contract.md)
 - [Diagnostic retention, sessions, and delivery evidence](diagnostics-contract.md)
 - [Language extraction and relationship evidence](language-contract.md)

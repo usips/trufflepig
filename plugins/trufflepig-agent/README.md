@@ -1,7 +1,7 @@
 # Trufflepig agent integration
 
 Shared search and plan board skills with an audited CLI wrapper for Codex, Claude Code, Grok Build, Kimi Code, Muse Code, and omp.
-The [plan board skill](skills/trufflepig-plan-board/SKILL.md) coordinates claims, revisions, commits, and feedback.
+The [plan board skill](skills/trufflepig-plan-board/SKILL.md) coordinates claims, revisions, commits, and feedback; the [web contract](../../docs/board-web-contract.md) defines the dashboard.
 The search skill makes Trufflepig the default for project discovery, with targeted
 fallbacks for unavailable or unsupported operations. Optional hooks steer shell
 searches toward it (see [Other harness hooks](#other-harness-hooks)); no MCP
@@ -10,8 +10,8 @@ server is required.
 ## Install
 
 Requires Python 3, `trufflepig` on `PATH`, and the wrapper destination on `PATH`.
-CPU installation is `cargo install --path . --locked`; retain `--features
-semantic-cuda` when updating an existing GPU installation.
+CPU installation is `cargo install --path . --locked`; retain `--features semantic-cuda` when updating an existing GPU installation.
+Service installation requires the selected binary's `--board-api-version` probe to return API `2` within five seconds, before any writes.
 
 ```sh
 plugins/trufflepig-agent/install.sh --codex --systemd --check "$PWD"
@@ -62,11 +62,11 @@ another disk-backed directory the sandbox permits writing. `spool_dir` is its
 it in the router's environment. Bare CLI callers can set `TRUFFLEPIG_SPOOL_DIR`
 to the same path. Index databases retain their normal cache locations.
 
-`--systemd` pins `TRUFFLEPIG_BOARD_DB` and installs, enables, and restarts the user service. Stopping/restarting
-it includes all service-owned child daemons, so use it at an upgrade checkpoint.
-It does not change Codex sandbox permissions. `--check ROOT` searches ROOT as a singleton and reads
-verified source through the installed wrapper; it fails on missing results or
-runtime errors. Repeat the same smoke check inside Codex to verify sandbox access:
+`--systemd` installs the router; opt-in `--board` installs the foreground dashboard
+at `127.0.0.1:7341`. Both enable/restart their user service and pin the same absolute
+board database and system runtime/token directory; the board journal prints its bootstrap URL. Router restarts include all
+service-owned children. `--check ROOT` searches ROOT as a singleton and reads verified
+source; repeat inside Codex to verify sandbox access. Missing results or runtime errors fail:
 
 ```sh
 python3 plugins/trufflepig-agent/scripts/check_agent.py "$PWD"
