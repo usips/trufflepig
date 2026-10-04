@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install shared agent commands, skills, and an optional user router service."""
+"""Install shared agent commands, skills, and optional user router/board services."""
 from __future__ import annotations
 
 import argparse
@@ -14,10 +14,12 @@ import sys
 
 PLUGIN = Path(__file__).resolve().parents[1]
 SKILLS = ("trufflepig-code-search", "trufflepig-plan-board")
+BOARD_API = 2
 sys.path.insert(0, str(PLUGIN / "bin"))
 from trufflepig_runtime import runtime_config_path
 from omp_install import omp_agent_dir
 from claude_install import claude_home, plugin_enabled, prepare_settings, write_settings
+from board_service_pin import validate_router_database
 
 
 def check_link(source: Path, destination: Path) -> None:
@@ -40,30 +42,58 @@ def board_database_path() -> Path:
     if override is not None:
         if not override:
             raise ValueError("TRUFFLEPIG_BOARD_DB must not be empty")
-        return Path(override).absolute()
+        if not Path(override).is_absolute():
+            raise ValueError("TRUFFLEPIG_BOARD_DB must be absolute")
+        return Path(override)
     data_home = os.environ.get("XDG_DATA_HOME")
     base = Path(data_home) if data_home and Path(data_home).is_absolute() \
         else Path(pwd.getpwuid(os.getuid()).pw_dir) / ".local/share"
     return (base / "trufflepig/board.sqlite3").absolute()
 
 
-def service_text(binary: str, spool: Path | None) -> str:
+def system_runtime_path() -> Path:
+    override = os.environ.get("TRUFFLEPIG_SYSTEM_DIR")
+    if override is not None:
+        if not override:
+            raise ValueError("TRUFFLEPIG_SYSTEM_DIR must not be empty")
+        return Path(override).absolute()
+    base = os.environ.get("XDG_RUNTIME_DIR") or os.environ.get("XDG_CACHE_HOME")
+    directory = Path(base) if base else Path.home() / ".cache"
+    return (directory / "trufflepig/system").absolute()
+
+
+def render_service(unit_name: str, binary: str, spool: Path | None = None) -> str:
     # systemd expands percent specifiers even inside quoted strings.
     quote = lambda value: json.dumps(str(value).replace("%", "%%"), ensure_ascii=False)
-    text = (PLUGIN / "systemd/trufflepig-system.service").read_text()
+    text = (PLUGIN / "systemd" / unit_name).read_text()
     text = text.replace("@TRUFFLEPIG@", quote(binary))
-    text = text.replace("[Service]\n", "[Service]\nEnvironment=" +
-                        quote(f"TRUFFLEPIG_BOARD_DB={board_database_path()}") + "\n")
+    environment = [("TRUFFLEPIG_BOARD_DB", board_database_path()),
+                   ("TRUFFLEPIG_SYSTEM_DIR", system_runtime_path())]
     if spool is not None:
-        text = text.replace("[Service]\n", "[Service]\nEnvironment=" +
-                            quote(f"TRUFFLEPIG_SPOOL_DIR={spool}") + "\n")
-    return text
+        environment.append(("TRUFFLEPIG_SPOOL_DIR", spool))
+    lines = "".join("Environment=" + quote(f"{name}={value}") + "\n" for name, value in environment)
+    return text.replace("[Service]\n", "[Service]\n" + lines)
+
+
+def service_text(binary: str, spool: Path | None) -> str:
+    return render_service("trufflepig-system.service", binary, spool)
+
+
+def require_board_api(binary: str) -> None:
+    advice = f"{binary} must support board API {BOARD_API}; reinstall the current trufflepig binary before --systemd/--board"
+    try:
+        result = subprocess.run([binary, "--board-api-version"], stdin=subprocess.DEVNULL,
+                                capture_output=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise ValueError(advice) from error
+    if result.returncode or result.stdout != f"{BOARD_API}\n".encode() or result.stderr:
+        raise ValueError(advice)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bin", type=Path, default=Path.home() / ".local/bin")
-    for flag in ("codex", "claude", "grok", "kimi", "muse", "kimi-hooks", "omp", "systemd", "commands"):
+    for flag in ("codex", "claude", "grok", "kimi", "muse", "kimi-hooks", "omp", "systemd", "board", "commands"):
         parser.add_argument(f"--{flag}", action="store_true")
     parser.add_argument("--omp-agent-dir", type=Path, help="explicit omp agent directory")
     parser.add_argument("--project", type=Path, action="append", default=[])
@@ -72,7 +102,7 @@ def main() -> int:
                         help="search steering mode recorded for the selected harnesses")
     parser.add_argument("--check", type=Path, metavar="ROOT", help="search and read a file through the installed wrapper")
     args = parser.parse_args()
-    if not any((args.codex, args.claude, args.grok, args.kimi, args.muse, args.kimi_hooks, args.omp, args.systemd,
+    if not any((args.codex, args.claude, args.grok, args.kimi, args.muse, args.kimi_hooks, args.omp, args.systemd, args.board,
                 args.commands, args.project, args.check)):
         args.kimi = args.muse = True
     if args.omp_agent_dir and not args.omp:
@@ -127,9 +157,16 @@ def main() -> int:
         settings["steer"] = {**steer, **{name: args.steer for name in steer_harnesses}}
     spool = Path(settings["spool_dir"]) if settings.get("spool_dir") else None
     binary = shutil.which("trufflepig")
-    if args.systemd and (not binary or not shutil.which("systemctl")):
-        raise ValueError("--systemd requires trufflepig and systemctl on PATH")
+    if (args.systemd or args.board) and (not binary or not shutil.which("systemctl")):
+        raise ValueError("--systemd/--board requires trufflepig and systemctl on PATH")
+    if binary:
+        binary = str(Path(binary).absolute())
+    if args.systemd or args.board:
+        config_home = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+        validate_router_database(board_database_path(), system_runtime_path(), config_home)
+        require_board_api(binary)
     unit_text = service_text(binary, spool) if args.systemd else None
+    board_unit_text = render_service("trufflepig-board.service", binary) if args.board else None
 
     if args.claude:
         claude_settings_path = claude_home() / "settings.json"
@@ -172,17 +209,25 @@ def main() -> int:
                 subprocess.run(["muse", "skills", "install", str(skill), "--scope", "user", "--force", "--json"], check=True)
         else:
             print("muse not found; skipped", file=sys.stderr)
-    if args.systemd:
+    if args.systemd or args.board:
         config_home = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
-        unit = config_home / "systemd/user/trufflepig-system.service"
-        unit.parent.mkdir(parents=True, exist_ok=True)
-        unit.write_text(unit_text)
+        unit_directory = config_home / "systemd/user"
+        unit_directory.mkdir(parents=True, exist_ok=True)
+        for name, text in (("trufflepig-system.service", unit_text), ("trufflepig-board.service", board_unit_text)):
+            if text is not None:
+                (unit_directory / name).write_text(text)
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
+    if args.systemd:
         # Stop uses the newly loaded control-group policy, including old children.
         subprocess.run(["systemctl", "--user", "stop", "trufflepig-system.service"], check=True)
         subprocess.run([binary, "system", "stop"], capture_output=True)
         subprocess.run(["systemctl", "--user", "enable", "--now", "trufflepig-system.service"], check=True)
-        print(f"systemd user service: {unit}")
+        print(f"systemd user service: {unit_directory / 'trufflepig-system.service'}")
+    if args.board:
+        subprocess.run(["systemctl", "--user", "stop", "trufflepig-board.service"], check=True)
+        subprocess.run(["systemctl", "--user", "enable", "--now", "trufflepig-board.service"], check=True)
+        print(f"systemd board service: {unit_directory / 'trufflepig-board.service'}")
+        print("board bootstrap URL: journalctl --user -u trufflepig-board.service")
     if args.check:
         subprocess.run([sys.executable, str(PLUGIN / "scripts/check_agent.py"),
                         "--wrapper", str(args.bin / "trufflepig-agent"), str(args.check.absolute())], check=True)

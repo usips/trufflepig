@@ -1,0 +1,14 @@
+# Per-user board dashboard. `install.sh --board` resolves binary and runtime paths,
+# then enables this foreground loopback service.
+[Unit]
+Description=trufflepig local plan board
+
+[Service]
+Type=simple
+ExecStart=@TRUFFLEPIG@ board-serve --listen 127.0.0.1:7341
+Restart=on-failure
+RestartSec=2
+KillMode=control-group
+
+[Install]
+WantedBy=default.target
