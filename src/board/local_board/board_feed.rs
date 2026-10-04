@@ -29,7 +29,7 @@ const EVENT_SELECT: &str = concat!(
 );
 const RELEVANT_EVENT: &str = concat!(
     "e.actor_id<>?1 AND (e.kind IN ('claim','task') OR e.to_whom IS NULL OR e.to_whom IN (?3,?4,?5)) ",
-    "AND (?7 OR NOT EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id) ",
+    "AND (?7 OR (e.plan_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id)) ",
     "OR e.to_whom IN (?3,?4,?5) ",
     "OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id AND scope.repo_key=?8) ",
     "OR EXISTS(SELECT 1 FROM entries evidence JOIN plan_repos scope ON scope.plan_id=evidence.plan_id ",
