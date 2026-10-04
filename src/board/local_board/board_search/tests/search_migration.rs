@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn board_search_migrates_populated_v1_through_v2_v3_without_losing_rows() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::board::board_test_support::scratch("board-search-");
     let (path, before) = legacy_search_fixture::populated_v1(&directory);
     let mut board = LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap();
     assert_eq!(
@@ -122,7 +122,7 @@ fn board_search_migrates_populated_v1_through_v2_v3_without_losing_rows() {
 
 #[test]
 fn board_search_failed_v3_migration_rolls_back_rebuild_and_version_atomically() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::board::board_test_support::scratch("board-search-");
     let (path, before) = legacy_search_fixture::populated_v1(&directory);
     let conn = Connection::open(&path).unwrap();
     conn.execute_batch(

@@ -1,4 +1,6 @@
 //! Disk-backed scratch for board regressions, removed by each test's TempDir.
+//! Scratch directories are owner-only because board opens refuse
+//! group/world-accessible database parents they did not create.
 use std::path::PathBuf;
 
 pub(crate) fn scratch(prefix: &str) -> tempfile::TempDir {
@@ -15,8 +17,12 @@ pub(crate) fn scratch(prefix: &str) -> tempfile::TempDir {
         "board test scratch must not use tmpfs"
     );
     std::fs::create_dir_all(&parent).unwrap();
-    tempfile::Builder::new()
-        .prefix(prefix)
-        .tempdir_in(parent)
-        .unwrap()
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(prefix);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        builder.permissions(std::fs::Permissions::from_mode(0o700));
+    }
+    builder.tempdir_in(parent).unwrap()
 }

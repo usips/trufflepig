@@ -98,6 +98,7 @@ fn host_reads_existing_board_without_initializing_or_waiting_for_writer() {
     let directory = crate::board::board_test_support::scratch("board-runtime-");
     let parent = directory.path().join("data");
     std::fs::create_dir(&parent).unwrap();
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o700)).unwrap();
     let config = BoardConfig::for_database(parent.join("board.sqlite3"));
     let actor = config.actor(None, Some("existing-read")).unwrap();
     {
@@ -176,17 +177,7 @@ fn writer_lock_wait_respects_the_accepted_deadline() {
 #[test]
 fn host_bootstraps_writable_legacy_storage_but_keeps_readonly_initialization_error() {
     use std::os::unix::fs::PermissionsExt;
-    let directory = tempfile::Builder::new()
-        .prefix("legacy-host-")
-        .tempdir_in(
-            std::env::var_os("TMPDIR")
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|| {
-                    std::path::PathBuf::from(std::env::var_os("HOME").expect("HOME"))
-                        .join(".cache/codex-tmp")
-                }),
-        )
-        .unwrap();
+    let directory = crate::board::board_test_support::scratch("legacy-host-");
     let config = BoardConfig::for_database(directory.path().join("board.sqlite3"));
     let external = rusqlite::Connection::open(&config.db_path).unwrap();
     external.pragma_update(None, "user_version", 0).unwrap();

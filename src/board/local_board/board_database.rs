@@ -29,8 +29,17 @@ pub(super) fn open_with_timeout(
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     #[cfg(unix)]
-    {
+    let created = {
         use std::os::unix::fs::DirBuilderExt;
+        let mut missing = Vec::new();
+        let mut probe = parent;
+        while !probe.exists() {
+            missing.push(probe);
+            let Some(ancestor) = probe.parent() else {
+                break;
+            };
+            probe = ancestor;
+        }
         std::fs::DirBuilder::new()
             .recursive(true)
             .mode(0o700)
@@ -43,21 +52,32 @@ pub(super) fn open_with_timeout(
                 }
             })
             .map_err(io_error)?;
-    }
+        missing
+    };
     #[cfg(not(unix))]
     std::fs::create_dir_all(parent).map_err(io_error)?;
     let parent = parent.canonicalize().map_err(io_error)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mode = parent.metadata().map_err(io_error)?.permissions().mode();
-        if mode & 0o200 == 0 {
-            return Err(unavailable("database directory is not writable"));
-        }
-        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o700))
-            .map_err(io_error)?;
-        if parent.metadata().map_err(io_error)?.permissions().mode() & 0o777 != 0o700 {
-            return Err(unavailable("database directory permissions must be 0700"));
+        if created.is_empty() {
+            // A pre-existing directory is never chmodded: the owner chose its mode.
+            let mode = parent.metadata().map_err(io_error)?.permissions().mode();
+            if mode & 0o077 != 0 {
+                return Err(unavailable(format!(
+                    "database directory {} is group/world-accessible (mode {:04o}); move the database to a private directory or tighten it yourself with chmod 0700",
+                    parent.display(),
+                    mode & 0o777
+                )));
+            }
+            if mode & 0o200 == 0 {
+                return Err(unavailable("database directory is not writable"));
+            }
+        } else {
+            for directory in created {
+                std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o700))
+                    .map_err(io_error)?;
+            }
         }
     }
     let name = path
@@ -145,7 +165,8 @@ pub(super) fn open_with_timeout(
     Ok((conn, resolved))
 }
 
-/// A query-only connection refuses absent or unmigrated storage and never creates it.
+/// A query-only connection refuses absent or unmigrated storage and never
+/// creates, migrates, or chmods it: read paths leave the filesystem untouched.
 pub(super) fn open_read_with_timeout(
     path: &Path,
     timeout: Duration,
@@ -157,19 +178,6 @@ pub(super) fn open_read_with_timeout(
         return Err(unavailable("database path is a symbolic link"));
     }
     let resolved = path.canonicalize().map_err(io_error)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let parent = resolved
-            .parent()
-            .ok_or_else(|| unavailable("database has no parent"))?;
-        let mode = parent.metadata().map_err(io_error)?.permissions().mode();
-        if mode & 0o077 != 0 {
-            // Preserve a deliberately read-only owner's mode while removing other access.
-            std::fs::set_permissions(parent, std::fs::Permissions::from_mode(mode & !0o077))
-                .map_err(io_error)?;
-        }
-    }
     let conn = Connection::open_with_flags(&resolved, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(sql_error)?;
     conn.busy_timeout(timeout.min(Duration::from_secs(5)))
