@@ -16,6 +16,23 @@ use crate::board::local_board::{
 const NESTED_LIMIT: usize = 20;
 const OPEN_QUESTION: &str = "e.kind='question' AND NOT EXISTS(SELECT 1 FROM entries answer JOIN entry_refs reference ON reference.entry_id=answer.id WHERE answer.kind='answer' AND reference.target='E'||e.id) AND NOT EXISTS(SELECT 1 FROM entries correction WHERE correction.supersedes=e.id)";
 
+/// The shared attention entry predicate over `entries e JOIN actors a`,
+/// with parameters ?1 user, ?2 host, ?3 harness, ?4 session, ?5 identity,
+/// ?6 all, ?7 repo_key, ?8 after seq, ?9 after entry, ?10 through.
+/// Every branch implies kind question, proposal, or feedback (proposal
+/// rows exist only on proposal entries), so naming the kinds lets SQLite
+/// drive the scan from `entries_kind_state` instead of the sequence window.
+pub(super) fn attention_predicate() -> String {
+    let exact_author = "a.user=?1 AND a.host=?2 AND a.harness=?3 AND a.session=?4";
+    let plan_authority = "EXISTS(SELECT 1 FROM plans managed WHERE managed.id=e.plan_id AND managed.owner_user=?1 AND (?3='human' OR managed.steward=?3))";
+    let current_proposal = "EXISTS(SELECT 1 FROM proposals p JOIN plans head ON head.id=p.plan_id WHERE p.entry_id=e.id AND p.state='open' AND p.base_revision=head.head_revision AND head.owner_user=?1 AND (?3='human' OR head.steward=?3))";
+    let stale_proposal = "EXISTS(SELECT 1 FROM proposals p JOIN plans head ON head.id=p.plan_id WHERE p.entry_id=e.id AND p.state='open' AND p.base_revision<>head.head_revision)";
+    let open_feedback = "e.kind='feedback' AND e.state IN ('open','triaged')";
+    format!(
+        "e.kind IN ('question','proposal','feedback') AND ((({exact_author}) AND (({open_feedback}) OR {stale_proposal})) OR (({current_proposal} OR (({open_feedback}) AND ({plan_authority}))) AND (e.to_whom IS NULL OR e.to_whom IN (?1,?3,?5))) OR ((({OPEN_QUESTION}) OR (({open_feedback}) AND (e.plan_id IS NULL AND a.user=?1 AND ?3='human'))) AND (e.to_whom IS NULL OR e.to_whom IN (?1,?3,?5)) AND (?6 OR NOT EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id) OR e.to_whom IN (?1,?3,?5) OR e.repo_key=?7 OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id AND scope.repo_key=?7)))) AND (e.seq>?8 OR (e.seq=?8 AND e.id>?9)) AND e.seq<=?10"
+    )
+}
+
 pub(in crate::board::local_board) fn overview(
     conn: &Connection,
     ctx: &WriteContext,
@@ -132,14 +149,7 @@ pub(in crate::board::local_board) fn attention(
 ) -> Result<BoardReply, BoardError> {
     validate_limit(limit, COLLECTION_LIMIT)?;
     let (_, through) = sequence_window(conn, after.map(|cursor| cursor.seq), through)?;
-    let exact_author = "a.user=?1 AND a.host=?2 AND a.harness=?3 AND a.session=?4";
-    let plan_authority = "EXISTS(SELECT 1 FROM plans managed WHERE managed.id=e.plan_id AND managed.owner_user=?1 AND (?3='human' OR managed.steward=?3))";
-    let current_proposal = "EXISTS(SELECT 1 FROM proposals p JOIN plans head ON head.id=p.plan_id WHERE p.entry_id=e.id AND p.state='open' AND p.base_revision=head.head_revision AND head.owner_user=?1 AND (?3='human' OR head.steward=?3))";
-    let stale_proposal = "EXISTS(SELECT 1 FROM proposals p JOIN plans head ON head.id=p.plan_id WHERE p.entry_id=e.id AND p.state='open' AND p.base_revision<>head.head_revision)";
-    let open_feedback = "e.kind='feedback' AND e.state IN ('open','triaged')";
-    let predicate = format!(
-        "((({exact_author}) AND (({open_feedback}) OR {stale_proposal})) OR (({current_proposal} OR (({open_feedback}) AND ({plan_authority}))) AND (e.to_whom IS NULL OR e.to_whom IN (?1,?3,?5))) OR ((({OPEN_QUESTION}) OR (({open_feedback}) AND (e.plan_id IS NULL AND a.user=?1 AND ?3='human'))) AND (e.to_whom IS NULL OR e.to_whom IN (?1,?3,?5)) AND (?6 OR NOT EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id) OR e.to_whom IN (?1,?3,?5) OR e.repo_key=?7 OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id AND scope.repo_key=?7)))) AND (e.seq>?8 OR (e.seq=?8 AND e.id>?9)) AND e.seq<=?10"
-    );
+    let predicate = attention_predicate();
     let identity = ctx.actor.identity();
     let parameters = params![
         ctx.actor.user,
@@ -153,13 +163,6 @@ pub(in crate::board::local_board) fn attention(
         sql_number(after.map_or(0, |cursor| cursor.entry.get())),
         sql_number(through.get())
     ];
-    let total = count(
-        conn,
-        &format!(
-            "SELECT count(*) FROM entries e JOIN actors a ON a.id=e.actor_id WHERE {predicate}"
-        ),
-        parameters,
-    )?;
     let mut entries = board_reads::entries(
         conn,
         &format!(
@@ -179,6 +182,19 @@ pub(in crate::board::local_board) fn attention(
             sql_number((limit + 1) as u64)
         ],
     )?;
+    // The exact omitted count is paid for only when the page overflows;
+    // a short page already proves nothing was omitted.
+    let total = if entries.len() > limit {
+        count(
+            conn,
+            &format!(
+                "SELECT count(*) FROM entries e JOIN actors a ON a.id=e.actor_id WHERE {predicate}"
+            ),
+            parameters,
+        )?
+    } else {
+        entries.len()
+    };
     let next_after = if entries.len() > limit {
         entries.truncate(limit);
         entries.last().map(|entry| EntryCursor {

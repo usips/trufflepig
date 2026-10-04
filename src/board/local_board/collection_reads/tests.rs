@@ -169,6 +169,7 @@ fn feedback(
     }
 }
 
+mod attention_index_tests;
 mod attention_proposal_tests;
 mod collection_feedback_authority_tests;
 mod entry_page_tests;

@@ -1,5 +1,6 @@
 mod database_opening_tests;
 mod repository_migration_tests;
+mod schema_repair_tests;
 
 use super::*;
 
@@ -118,7 +119,7 @@ fn populated_v1_migration_preserves_durable_evidence() {
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(receipt.api, 2);
+    assert_eq!(receipt.api, crate::board::board_protocol::BOARD_API);
     let crate::board::board_protocol::BoardResult::Change(change) = receipt.result else {
         panic!("lost legacy receipt");
     };

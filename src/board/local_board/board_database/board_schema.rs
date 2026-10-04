@@ -3,7 +3,7 @@
 mod board_search_schema;
 pub(super) use board_search_schema::SCHEMA_V3;
 
-pub(super) const SCHEMA_VERSION: i64 = 3;
+pub(super) const SCHEMA_VERSION: i64 = 4;
 
 pub(super) const SCHEMA_V1: &str = r#"
 CREATE TABLE board_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -174,4 +174,15 @@ ALTER TABLE claims_v2 RENAME TO claims;
 CREATE UNIQUE INDEX claims_one_active ON claims(plan_id,task_ordinal) WHERE ended_at IS NULL;
 CREATE INDEX claims_actor_active ON claims(actor_id,ended_at);
 CREATE INDEX claims_entry_active ON claims(entry_id,id) WHERE ended_at IS NULL;
+"#;
+
+/// Repairs databases whose v2 step ran before it gained these indexes;
+/// `IF NOT EXISTS` keeps the step a no-op everywhere else. Shipped
+/// migration steps are never edited; repairs land in a new step. The
+/// dedupe rewrite mirrors SCHEMA_V2: stored receipts minted at an older
+/// BOARD_API must validate against the current one.
+pub(super) const SCHEMA_V4: &str = r#"
+CREATE INDEX IF NOT EXISTS commit_plans_entry ON commit_plans(entry_id);
+CREATE INDEX IF NOT EXISTS claims_entry_active ON claims(entry_id,id) WHERE ended_at IS NULL;
+UPDATE operation_dedupes SET reply_json=json_set(reply_json,'$.api',3) WHERE json_valid(reply_json) AND json_extract(reply_json,'$.api')<3;
 "#;

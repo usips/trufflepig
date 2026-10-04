@@ -23,7 +23,7 @@ pub const BOARD_API: u32 = 3;
 
 /// Board storage schema this build serves; tracks
 /// `local_board::board_database::board_schema::SCHEMA_VERSION` (a web probe test pins parity).
-pub const BOARD_SCHEMA_VERSION: i64 = 3;
+pub const BOARD_SCHEMA_VERSION: i64 = 4;
 
 fn validate_claim(value: &str, field: &str) -> Result<()> {
     if value.trim().is_empty() || value.len() > 256 || value.chars().any(char::is_control) {
