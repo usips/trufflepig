@@ -154,15 +154,13 @@ mod tests {
 
     #[test]
     fn history_drills_refuse_old_git_and_unavailable_blob_objects() {
-        if crate::board::board_test_support::git_version() < Some((2, 55)) {
-            eprintln!(concat!(
-                "skipping history_drills_refuse_old_git_and_unavailable_blob_objects: ",
-                "requires Git >= 2.55 for history drill hints"
-            ));
-            return;
-        }
         assert!(!version_supported(b"git version 2.43.0\n"));
         assert!(version_supported(b"git version 2.55.0\n"));
+    }
+
+    #[test]
+    #[cfg_attr(not(board_git_2_55), ignore = "requires Git >=2.55")]
+    fn history_drills_refuse_old_git_and_unavailable_blob_objects_drill_hint() {
         let fixture = GitFixture::new();
         fixture.commit("root");
         std::fs::write(fixture.root.join("file.txt"), "contents\n").unwrap();

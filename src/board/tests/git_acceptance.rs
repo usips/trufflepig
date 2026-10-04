@@ -4,15 +4,8 @@ use super::super::board_vocabulary::{EntryText, FeedbackKind};
 use super::super::{feedback_outbox, local_board::LocalBoard};
 use super::*;
 
-#[test]
-fn real_branch_ingestion_survives_host_reopening_and_review_identifies_crossed_claims() {
-    if crate::board::board_test_support::git_version() < Some((2, 55)) {
-        eprintln!(concat!(
-            "skipping real_branch_ingestion_survives_host_reopening_and_review_identifies_crossed_claims: ",
-            "requires Git >= 2.55 for history drill hints"
-        ));
-        return;
-    }
+/// Seed a crossed-claim branch and ingest it, returning the linked oid.
+fn ingest_crossed_claim() -> (EdgeFixture, String) {
     let fixture = EdgeFixture::new();
     fixture.seed_repo();
     fixture.run(
@@ -46,6 +39,12 @@ fn real_branch_ingestion_survives_host_reopening_and_review_identifies_crossed_c
     git(&fixture.root, &["switch", "main"]);
     assert_ne!(git(&fixture.root, &["rev-parse", "HEAD"]), linked_oid);
     fixture.run(&["board", "ingest"], "codex", "reviewer");
+    (fixture, linked_oid)
+}
+
+#[test]
+fn real_branch_ingestion_survives_host_reopening_and_review_identifies_crossed_claims() {
+    let (fixture, linked_oid) = ingest_crossed_claim();
     assert_eq!(fixture.scalar("SELECT COUNT(*) FROM commit_plans"), 1);
     let events = fixture.scalar("SELECT COUNT(*) FROM events");
     let reopened = BoardHost::with_config(fixture.config.clone());
@@ -71,11 +70,24 @@ fn real_branch_ingestion_survives_host_reopening_and_review_identifies_crossed_c
     assert_eq!(linked.len(), 1);
     assert_eq!(linked[0]["oid"], linked_oid);
     assert_eq!(linked[0]["coauthors"][0]["harness"], "codex");
-    assert!(linked[0]["drill"].as_str().unwrap().contains(&linked_oid));
     let crossed = packet["crossed"].as_array().unwrap();
     assert_eq!(crossed.len(), 1);
     assert_eq!(crossed[0]["claimant"]["harness"], "claude");
     assert_eq!(crossed[0]["scope"], "Parser only; exclude review");
+}
+
+#[test]
+#[cfg_attr(not(board_git_2_55), ignore = "requires Git >=2.55")]
+fn real_branch_ingestion_survives_host_reopening_and_review_identifies_crossed_claims_drill_hint() {
+    let (fixture, linked_oid) = ingest_crossed_claim();
+    let review = fixture.run(&["board", "review", "P1@1", "codex"], "codex", "reviewer");
+    let packet = review
+        .get("review")
+        .or_else(|| review.get("packet"))
+        .unwrap_or_else(|| data(&review));
+    let linked = packet["linked"].as_array().unwrap();
+    assert_eq!(linked.len(), 1);
+    assert!(linked[0]["drill"].as_str().unwrap().contains(&linked_oid));
 }
 
 #[test]

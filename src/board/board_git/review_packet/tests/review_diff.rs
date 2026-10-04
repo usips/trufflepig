@@ -41,15 +41,8 @@ fn insertion_diff_header_counts_the_context_it_displays() {
     assert!(rendered.text.contains("@@ -1,2 +1,3 @@\n A\n+X\n B\n"));
 }
 
-#[test]
-fn review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint() {
-    if crate::board::board_test_support::git_version() < Some((2, 55)) {
-        eprintln!(concat!(
-            "skipping review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint: ",
-            "requires Git >= 2.55 for history drill hints"
-        ));
-        return;
-    }
+/// Assemble the trimmed review packet plus its JSON rendering.
+fn trimmed_review() -> (ReviewPacket, String, serde_json::Value) {
     let mut source = evidence();
     for seq in 10..20 {
         source.entries.push(EntryRecord {
@@ -112,10 +105,15 @@ fn review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint() {
         Vec::new(),
         Vec::new(),
     );
-    assert!(packet.linked[0].drill.as_ref().unwrap().contains("'\"'\"'"));
     let budget = OutputBudget::new(900).unwrap();
     let rendered = render_review(&packet, &budget, "local").unwrap();
     let value: serde_json::Value = serde_json::from_str(&rendered.text).unwrap();
+    (packet, rendered.text, value)
+}
+
+#[test]
+fn review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint() {
+    let (packet, rendered, value) = trimmed_review();
     let data = &value["result"]["data"];
     assert_eq!(
         data["entries"].as_array().unwrap().len() as u64
@@ -125,13 +123,7 @@ fn review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint() {
     assert!(data["omitted"]["diff_context_lines"].as_u64().unwrap() > 0);
     assert_eq!(data["omitted"]["diff_body_lines"], 2000);
     assert_eq!(data["ssot_diff"]["next"], "board show P7@1..2");
-    assert!(
-        data["linked"][0]["drill"]
-            .as_str()
-            .unwrap()
-            .contains("trufflepig-agent --root")
-    );
-    assert!(budget.fits(&rendered.text));
+    assert!(OutputBudget::new(900).unwrap().fits(&rendered));
     let lines = render_review(
         &packet,
         &OutputBudget::new(900)
@@ -160,4 +152,18 @@ fn review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint() {
             .contains("coauthor: codex (claimed model) <agent@example.com>")
     );
     assert!(lines.text.contains("Plan: P7 Plan-Task: P7.1"));
+}
+
+#[test]
+#[cfg_attr(not(board_git_2_55), ignore = "requires Git >=2.55")]
+fn review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint_drill_hint() {
+    let (packet, _, value) = trimmed_review();
+    assert!(packet.linked[0].drill.as_ref().unwrap().contains("'\"'\"'"));
+    let data = &value["result"]["data"];
+    assert!(
+        data["linked"][0]["drill"]
+            .as_str()
+            .unwrap()
+            .contains("trufflepig-agent --root")
+    );
 }
