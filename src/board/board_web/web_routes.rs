@@ -3,7 +3,7 @@
 mod tests;
 use super::{
     PUBLIC_DOM, PUBLIC_ENTRIES, PUBLIC_MAIN, PUBLIC_PAGES, PUBLIC_READER, PUBLIC_SHELL,
-    PUBLIC_STREAM, PUBLIC_STYLE, PUBLIC_TRIAGE, PUBLIC_VIEWS, WebState,
+    PUBLIC_STREAM, PUBLIC_STYLE, PUBLIC_TOKEN, PUBLIC_TRIAGE, PUBLIC_VIEWS, WebState,
     event_stream::{EventStreams, StreamPermit, StreamRequest},
     http_wire::{self, HttpError, HttpMethod, HttpRequest},
     plan_markup,
@@ -181,6 +181,7 @@ fn public_asset(path: &str) -> Option<(&str, &str)> {
         "/feedback_triage.js" => PUBLIC_TRIAGE,
         "/board_reader.js" => PUBLIC_READER,
         "/board_entries.js" => PUBLIC_ENTRIES,
+        "/board_web_token.js" => PUBLIC_TOKEN,
         "/board_web.css" => return Some(("text/css; charset=utf-8", PUBLIC_STYLE)),
         _ => return None,
     };

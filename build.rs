@@ -23,6 +23,7 @@ fn collect_files(path: &Path, files: &mut Vec<PathBuf>) {
 
 fn main() {
     emit_git_cfgs();
+    emit_node_cfgs();
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let mut files = vec![manifest.join("Cargo.toml"), manifest.join("Cargo.lock")];
     collect_files(&manifest.join("src"), &mut files);
@@ -72,12 +73,8 @@ fn emit_git_cfgs() {
         return;
     };
     println!("cargo::rerun-if-changed={}", path.display());
-    let version = std::process::Command::new(&path)
-        .arg("--version")
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .and_then(|output| parse_git_version(&output.stdout));
+    let version =
+        command_stdout(&path, "--version").and_then(|stdout| parse_git_version(&stdout));
     let Some((major, minor)) = version else {
         println!("cargo::warning=board Git-gated tests will be ignored: unparseable git --version output");
         return;
@@ -88,6 +85,37 @@ fn emit_git_cfgs() {
     if (major, minor) >= (2, 55) {
         println!("cargo::rustc-cfg=board_git_2_55");
     }
+}
+
+/// Expose a Node >=20 runtime as the `board_node_20` cfg for asset tests.
+/// Missing or unparseable Node emits no cfg, so the runner test ignores.
+fn emit_node_cfgs() {
+    println!("cargo::rustc-check-cfg=cfg(board_node_20)");
+    println!("cargo::rerun-if-env-changed=PATH");
+    let Some(path) = resolve_on_path("node") else {
+        println!("cargo::warning=board asset tests will be ignored: node not found on PATH");
+        return;
+    };
+    println!("cargo::rerun-if-changed={}", path.display());
+    let version =
+        command_stdout(&path, "--version").and_then(|stdout| parse_node_version(&stdout));
+    let Some(major) = version else {
+        println!("cargo::warning=board asset tests will be ignored: unparseable node --version output");
+        return;
+    };
+    if major >= 20 {
+        println!("cargo::rustc-cfg=board_node_20");
+    }
+}
+
+/// Run `path` with one argument, returning stdout on success.
+fn command_stdout(path: &Path, arg: &str) -> Option<Vec<u8>> {
+    std::process::Command::new(path)
+        .arg(arg)
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| output.stdout)
 }
 
 /// Resolve `name` to an executable file via `PATH` search.
@@ -112,6 +140,11 @@ fn parse_git_version(bytes: &[u8]) -> Option<(u32, u32)> {
     let text = std::str::from_utf8(bytes).ok()?;
     let mut parts = text.split_whitespace().nth(2)?.split('.');
     Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
+}
+
+fn parse_node_version(bytes: &[u8]) -> Option<u32> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    text.trim().strip_prefix('v')?.split('.').next()?.parse().ok()
 }
 
 fn hash_bytes(lanes: &mut [u64; 4], bytes: &[u8]) {

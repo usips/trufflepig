@@ -44,6 +44,7 @@ const PUBLIC_STREAM: &str = include_str!("board_web/assets/board_stream.js");
 const PUBLIC_TRIAGE: &str = include_str!("board_web/assets/feedback_triage.js");
 const PUBLIC_READER: &str = include_str!("board_web/assets/board_reader.js");
 const PUBLIC_ENTRIES: &str = include_str!("board_web/assets/board_entries.js");
+const PUBLIC_TOKEN: &str = include_str!("board_web/assets/board_web_token.js");
 
 pub(crate) struct WebStore {
     config: Mutex<BoardConfigCache>,
