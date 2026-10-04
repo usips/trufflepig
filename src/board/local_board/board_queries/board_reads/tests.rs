@@ -113,6 +113,14 @@ fn plan_views_keep_old_open_questions_and_resolve_references_to_answers() {
     };
     assert_eq!(view.entries.len(), 21);
     assert!(view.entries.iter().any(|entry| entry.id == question));
+    assert_eq!(view.entries_next_after, None);
+    assert_eq!(view.entries_next_before, None);
+    assert!(
+        view.entries
+            .windows(2)
+            .all(|pair| (pair[0].seq, pair[0].id) > (pair[1].seq, pair[1].id)),
+        "plan windows read newest-first"
+    );
     assert_eq!(view.sections_without_tasks, ["Uncovered"]);
     let answer = post(
         &mut board,
@@ -136,6 +144,62 @@ fn plan_views_keep_old_open_questions_and_resolve_references_to_answers() {
     };
     assert_eq!(view.entries.len(), 20);
     assert!(!view.entries.iter().any(|entry| entry.id == question));
+}
+
+#[test]
+fn plan_windows_omit_oldest_entries_behind_a_before_cursor() {
+    let (_directory, board) = database();
+    board
+        .conn
+        .execute_batch(
+            "INSERT INTO actors VALUES(1,'josh','laptop','codex','s1');
+             INSERT INTO plans(id,title,owner_user,head_revision,created_at)
+             VALUES(1,'One','josh',1,1);
+             INSERT INTO texts VALUES('one','body');
+             INSERT INTO entries(id,plan_id,kind,body,actor_id,seq,created_at)
+             VALUES(1,1,'create','One',1,1,50);
+             INSERT INTO revisions VALUES(1,1,'one','create',1,1,1);",
+        )
+        .unwrap();
+    for number in 2..=202u64 {
+        board
+            .conn
+            .execute(
+                "INSERT INTO entries(id,plan_id,kind,body,actor_id,seq,created_at) \
+                 VALUES(?1,1,'question','open?',1,?2,50)",
+                params![number as i64, number as i64],
+            )
+            .unwrap();
+    }
+    let ctx = WriteContext {
+        actor_id: 1,
+        actor: BoardActor::new(
+            "josh",
+            "laptop",
+            HarnessLabel::parse("codex").unwrap(),
+            "session1",
+        )
+        .unwrap(),
+        model: None,
+        effort: None,
+        now: 100,
+        seq: EventSeq::new(0),
+        claim_ttl_secs: 20,
+        via: None,
+    };
+    let view = plan_view(&board.conn, &ctx, PlanId::new(1).unwrap()).unwrap();
+    assert_eq!(view.entries.len(), 200);
+    assert_eq!(view.entries_omitted, 1);
+    assert_eq!(view.entries.first().unwrap().id.get(), 202);
+    assert_eq!(view.entries.last().unwrap().id.get(), 3);
+    assert_eq!(
+        view.entries_next_before,
+        Some(EntryCursor {
+            seq: EventSeq::new(3),
+            entry: EntryId::new(3).unwrap()
+        })
+    );
+    assert_eq!(view.entries_next_after, None);
 }
 
 #[test]

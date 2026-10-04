@@ -8,55 +8,15 @@ export function createBoardReader(context) {
     renderOverview, renderAttention, renderClaims, feedbackPage, searchPage, editorPage, entryPage,
     entriesPage, diffPage, sanitizedMarkup, renderPlan,
   } = views;
-  // The route's `after` marks the page boundary: entries strictly older than
-  // it (entry sequences are minted one per event, so seq-1 is a clean upper
-  // bound). Cursors round-trip as composite JSON like the server's own.
-  function beforeFromRoute(route) {
-    if (!route.after) return null;
-    const cursor = parseBoardJson(route.after);
-    if (!/^(0|[1-9]\d*)$/.test(String(cursor?.seq)) || !/^E[1-9]\d*$/.test(String(cursor?.entry))) {
-      throw new Error("Invalid page cursor.");
-    }
-    return { seq: BigInt(String(cursor.seq)), entry: String(cursor.entry) };
-  }
-  // Newest-first paging over the ascending Entries window. One event creates
-  // at most one entry, so a sequence span bounds its entry count: probe
-  // (lower, ceiling] windows, widening when they hold too few entries and
-  // narrowing past the 200-row read cap. Small histories settle in one read.
+  // Newest-first paging over the descending Entries window: one read
+  // per page, following the server's next-before cursor.
   async function entriesNewestPage(route, readReply, plan = null) {
-    const want = 50;
-    const filters = {
-      plan: plan || route.plan || null, kind: route.kind || null, harness: route.harness || null,
-      user: route.user || null, host: route.host || null, task: route.task || null, references: null,
-    };
-    const before = beforeFromRoute(route);
-    if (route.through && !/^(0|[1-9]\d*)$/.test(route.through)) throw new Error("Invalid page cursor.");
-    let ceiling = before ? before.seq - 1n : route.through ? BigInt(route.through) : null;
-    let span = 512n, lower = 0n, data = null, rows = [];
-    for (let probe = 0; probe < 6; probe++) {
-      lower = ceiling !== null && ceiling > span ? ceiling - span : 0n;
-      const reply = await readReply(readOp("entries", {
-        ...filters, after: lower === 0n ? null : { seq: String(lower), entry: "E1" },
-        through: ceiling === null ? null : String(ceiling), limit: 200,
-      }));
-      data = reply.data;
-      if (!Array.isArray(data?.entries)) throw new Error("Board reply is missing its entries collection.");
-      if (ceiling === null) ceiling = BigInt(String(data.through));
-      rows = data.entries.filter(entry => BigInt(String(entry.seq)) > lower);
-      if (data.next_after === null || data.next_after === undefined) {
-        if (rows.length >= want || lower === 0n) break;
-        span *= 4n;
-      } else {
-        if (span <= 8n) break;
-        span >>= 2n;
-      }
-    }
-    const shown = rows.slice(-want).reverse();
+    const data = (await readReply(readOp("entries", {
+      ...queryFilters(route), plan: plan || route.plan || null,
+    }))).data;
+    if (!Array.isArray(data?.entries)) throw new Error("Board reply is missing its entries collection.");
     state.liveGap = false;
-    return {
-      ...data, entries: shown,
-      more_older: rows.length > want || lower > 0n || !(data.next_after === null || data.next_after === undefined),
-    };
+    return data;
   }
   async function fetchRoute(route, signal, forceSnapshot) {
     const replies = [];

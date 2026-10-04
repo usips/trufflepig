@@ -106,7 +106,7 @@ pub(super) fn plan_view(
                 "WHERE plan_id=?1 ORDER BY seq DESC,id DESC LIMIT ?2) ",
                 "OR EXISTS(SELECT 1 FROM proposals p WHERE p.entry_id=e.id AND p.state='open') ",
                 "OR (e.kind='feedback' AND e.state IN ('open','triaged')) OR ({OPEN_QUESTION})) ",
-                "ORDER BY e.seq,e.id LIMIT 200"
+                "ORDER BY e.seq DESC,e.id DESC LIMIT 200"
             ),
             OPEN_QUESTION = OPEN_QUESTION
         ),
@@ -142,7 +142,7 @@ pub(super) fn plan_view(
         }
     }
     let can_edit = crate::board::local_board::can_accept(conn, &ctx.actor, id)?;
-    let entries_next_after = (entries_omitted > 0)
+    let entries_next_before = (entries_omitted > 0)
         .then(|| {
             entries.last().map(|entry| EntryCursor {
                 seq: entry.seq,
@@ -150,6 +150,7 @@ pub(super) fn plan_view(
             })
         })
         .flatten();
+    let entries_next_after: Option<EntryCursor> = None;
     Ok(PlanView {
         plan,
         revision,
@@ -165,6 +166,7 @@ pub(super) fn plan_view(
         tasks_next_after,
         claims_next_after,
         entries_next_after,
+        entries_next_before,
         through,
         can_edit,
         server_now: ctx.now,

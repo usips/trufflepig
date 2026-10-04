@@ -23,6 +23,7 @@ fn collection_render_budget_keeps_shared_sequence_entries_reachable() {
             after: None,
             through: EventSeq::new(12),
             next_after: None,
+            next_before: None,
         }),
     );
     reply.snapshot_seq = Some(EventSeq::new(15));
@@ -34,12 +35,13 @@ fn collection_render_budget_keeps_shared_sequence_entries_reachable() {
     let page: EntriesPage = serde_json::from_value(value["result"]["data"].clone()).unwrap();
     assert!(!page.entries.is_empty() && page.entries.len() < 4);
     assert_eq!(
-        page.next_after,
+        page.next_before,
         Some(EntryCursor {
             seq: EventSeq::new(10),
             entry: EntryId::new(page.entries.len() as u64).unwrap(),
         })
     );
+    assert!(page.next_after.is_none());
     assert_eq!(page.through, EventSeq::new(12));
     assert_eq!(value["snapshot_seq"], 15);
     assert_eq!(value["omitted"]["entries"], 4 - page.entries.len());

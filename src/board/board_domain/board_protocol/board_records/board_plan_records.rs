@@ -141,6 +141,7 @@ pub struct PlanView {
     pub tasks_next_after: Option<TaskId>,
     pub claims_next_after: Option<ClaimCursor>,
     pub entries_next_after: Option<EntryCursor>,
+    pub entries_next_before: Option<EntryCursor>,
     pub through: EventSeq,
     pub can_edit: bool,
     pub server_now: i64,

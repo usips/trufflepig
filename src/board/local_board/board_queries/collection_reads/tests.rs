@@ -90,6 +90,7 @@ pub(super) fn seed_entry(
 fn entries(
     conn: &Connection,
     after: Option<EntryCursor>,
+    before: Option<EntryCursor>,
     through: Option<EventSeq>,
     limit: usize,
 ) -> EntriesPage {
@@ -103,6 +104,7 @@ fn entries(
         None,
         None,
         after,
+        before,
         through,
         limit,
     )

@@ -98,6 +98,7 @@ pub struct EntriesPage {
     pub after: Option<EntryCursor>,
     pub through: EventSeq,
     pub next_after: Option<EntryCursor>,
+    pub next_before: Option<EntryCursor>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

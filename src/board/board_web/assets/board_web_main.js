@@ -224,7 +224,8 @@ import { resolveBootstrapToken } from "/board_web_token.js";
     return data[key];
   }
   function permitted(data, name) { return data?.[name] === true; }
-  function nextAfter(data) { return data?.next_after ?? null; }
+  // Entries pages continue with next_before; every other collection uses next_after.
+  function nextAfter(data) { return data?.next_after ?? data?.next_before ?? null; }
   function cursorFromRoute(route, composite = false) {
     if (!route.after) return null;
     if (composite) return parseBoardJson(route.after);
@@ -239,7 +240,7 @@ import { resolveBootstrapToken } from "/board_web_token.js";
     return {
       plan: route.plan || null, kind: route.kind || null, harness: route.harness || null,
       user: route.user || null, host: route.host || null, task: route.task || null,
-      references: null, after: cursorFromRoute(route, true), through: route.through || null,
+      references: null, before: cursorFromRoute(route, true), through: route.through || null,
       limit: 50,
     };
   }

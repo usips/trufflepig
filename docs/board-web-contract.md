@@ -104,7 +104,7 @@ Collection bounds are part of the typed reply contract:
 |---|---|
 | Feed | 500 events; ascending `seq`, scalar `next_after`, fixed `through` |
 | History | 200 revision metadata records without bodies; same sequence cursor |
-| Entries | 200 entries; ascending `(seq,id)`; `next_after: {seq,entry}` |
+| Entries | 200 entries; descending `(seq,id)` newest-first; `next_before: {seq,entry}` |
 | Overview | 200 plans; `PlanId` cursor; 20 tasks and 20 active claims each, omitted counts |
 | Attention | 200 entries and 200 own stale claims; entry/claim cursors, omitted counts |
 | Tasks | 200 cards; `TaskId` cursor, captured `TaskCeiling`, and omitted count |
@@ -116,10 +116,11 @@ Collection bounds are part of the typed reply contract:
 
 Sequence pages retain inclusive `through` as their source cutoff; mutable task, claim, and proposal
 states reflect the current transaction, whose watermark is every reply's `snapshot_seq`. Entries
-filters by plan, kind, harness, user, host, task, and referenced entry. Retain whole composite
-cursors so same-sequence entries and same-entry claims are not skipped. Attention returns
-`next_after` for entries and `claims_next_after` for own stale claims; Tasks/Claims/Entries recover
-collections Plan Show omits. Tasks starts with null `after`/`through`/`ceiling`, capturing
+filters by plan, kind, harness, user, host, task, and referenced entry, newest-first: `before`
+continues older, `after` pages ascending (legacy), never both. Retain whole composite cursors so
+same-sequence entries and same-entry claims are not skipped. Attention returns `next_after` for
+entries and `claims_next_after` for own stale claims; Tasks/Claims/Entries recover collections
+Plan Show omits. Tasks starts with null `after`/`through`/`ceiling`, capturing
 `{plan,ordinal}` in the same transaction as PlanView and each PlanOverview's `task_ceiling`;
 ordinal zero freezes an empty plan. Continuations require the whole ceiling plus `after`/`through`:
 moved cards remain, newer ordinals stay out. Feedback preserves `open_only`; Tasks

@@ -126,6 +126,7 @@ pub enum BoardOp {
         task: Option<TaskId>,
         references: Option<EntryId>,
         after: Option<EntryCursor>,
+        before: Option<EntryCursor>,
         through: Option<EventSeq>,
         limit: usize,
     },

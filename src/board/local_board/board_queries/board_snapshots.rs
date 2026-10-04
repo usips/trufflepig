@@ -109,6 +109,7 @@ impl LocalBoard {
                 task,
                 references,
                 after,
+                before,
                 through,
                 limit,
             } => collection_reads::entries_page(
@@ -121,6 +122,7 @@ impl LocalBoard {
                 *task,
                 *references,
                 *after,
+                *before,
                 *through,
                 *limit,
             )?,

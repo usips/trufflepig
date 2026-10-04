@@ -22,6 +22,7 @@ fn collection_reference_pages_filter_replies_and_paginate_backrefs() {
         Some(id(3)),
         None,
         None,
+        None,
         1,
     )
     .unwrap()
@@ -29,7 +30,7 @@ fn collection_reference_pages_filter_replies_and_paginate_backrefs() {
     else {
         panic!("entries");
     };
-    assert_eq!(first.entries[0].id, id(4));
+    assert_eq!(first.entries[0].id, id(6));
     assert_eq!(first.references, Some(id(3)));
     let BoardResult::Entries(second) = collection_reads::entries_page(
         board.reader.as_ref().expect("read connection"),
@@ -40,7 +41,8 @@ fn collection_reference_pages_filter_replies_and_paginate_backrefs() {
         None,
         None,
         Some(id(3)),
-        first.next_after,
+        None,
+        first.next_before,
         Some(first.through),
         1,
     )
@@ -49,8 +51,8 @@ fn collection_reference_pages_filter_replies_and_paginate_backrefs() {
     else {
         panic!("entries");
     };
-    assert_eq!(second.entries[0].id, id(6));
-    assert_eq!(second.next_after, None);
+    assert_eq!(second.entries[0].id, id(4));
+    assert_eq!(second.next_before, None);
     let BoardResult::Entries(backrefs) = collection_reads::entries_page(
         board.reader.as_ref().expect("read connection"),
         None,
@@ -60,6 +62,7 @@ fn collection_reference_pages_filter_replies_and_paginate_backrefs() {
         None,
         None,
         Some(id(3)),
+        None,
         None,
         None,
         200,
@@ -75,13 +78,13 @@ fn collection_reference_pages_filter_replies_and_paginate_backrefs() {
             .iter()
             .map(|entry| entry.id)
             .collect::<Vec<_>>(),
-        vec![id(4), id(5), id(6)]
+        vec![id(6), id(5), id(4)]
     );
     assert_eq!(
-        first.next_after,
+        first.next_before,
         Some(EntryCursor {
             seq: EventSeq::new(4),
-            entry: id(4)
+            entry: id(6)
         })
     );
 }

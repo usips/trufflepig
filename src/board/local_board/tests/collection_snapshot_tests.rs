@@ -51,6 +51,7 @@ fn collection_dispatch_reports_snapshot_without_registering_reader_actor() {
             task: None,
             references: None,
             after: None,
+            before: None,
             through: None,
             limit: 10,
         },

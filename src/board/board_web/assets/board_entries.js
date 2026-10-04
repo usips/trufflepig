@@ -1,5 +1,5 @@
 export function createBoardEntries(context) {
-  const { state, dom, navigate, entryRecord, collection, entryKinds } = context;
+  const { state, dom, navigate, entryRecord, collection, entryKinds, nextAfter, pageParams } = context;
   const {
     el, add, refLink, badge, actorName, timeNode, empty, omitted, title, field, focusKey, retainForm,
     link,
@@ -96,10 +96,8 @@ export function createBoardEntries(context) {
     if (route.after) {
       pager.append(link("Newest entries", route.view, { ...route, after: null, through: null }, "button"));
     }
-    if (entries.length && data.more_older) {
-      const oldest = entryRecord(entries[entries.length - 1]);
-      pager.append(link("Older entries", route.view,
-        { ...route, after: JSON.stringify({ seq: String(oldest.seq), entry: oldest.id }), through: null }, "button"));
+    if (entries.length && nextAfter(data)) {
+      pager.append(link("Older entries", route.view, pageParams(route, data), "button"));
     }
     if (pager.childElementCount) page.append(pager);
     return page;

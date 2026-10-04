@@ -119,33 +119,61 @@ pub(in crate::board::local_board) fn entries_page(
     task: Option<TaskId>,
     references: Option<EntryId>,
     after: Option<EntryCursor>,
+    before: Option<EntryCursor>,
     through: Option<EventSeq>,
     limit: usize,
 ) -> Result<BoardReply, BoardError> {
     validate_limit(limit, COLLECTION_LIMIT)?;
+    if after.is_some() && before.is_some() {
+        return Err(invalid(
+            "invalid_options",
+            "entries accepts at most one of after and before",
+        ));
+    }
     if let Some(plan) = plan {
         require_plan(conn, plan)?;
     }
     if let Some(task) = task {
         validate_task_filter(conn, plan, task)?;
     }
+    if before.is_some_and(|cursor| through.is_some_and(|end| cursor.seq > end)) {
+        return Err(invalid("invalid_reference", "before exceeds through"));
+    }
+    // `after` pages ascending (legacy); `before` and no cursor page
+    // descending newest-first, so the first page needs no cursor at all.
+    let descending = after.is_none();
     let (_, through) = sequence_window(conn, after.map(|cursor| cursor.seq), through)?;
     let task_ref = task.map(|task| task.to_string());
     let reference_target = references.map(|entry| entry.to_string());
+    let cursor = after.or(before);
+    let keyset = if descending {
+        "AND (?7 IS NULL OR e.seq<?7 OR (e.seq=?7 AND e.id<?8)) "
+    } else {
+        "AND (e.seq>?7 OR (e.seq=?7 AND e.id>?8)) "
+    };
+    let ordering = if descending {
+        "ORDER BY e.seq DESC,e.id DESC "
+    } else {
+        "ORDER BY e.seq,e.id "
+    };
     let entries = board_reads::entries(
         conn,
-        concat!(
-            "SELECT e.id FROM entries e JOIN actors a ON a.id=e.actor_id ",
-            "WHERE (?1 IS NULL OR e.plan_id=?1) AND (?2 IS NULL OR e.kind=?2) AND (?3 IS NULL OR a.harness=?3) ",
-            "AND (?4 IS NULL OR a.user=?4) AND (?5 IS NULL OR a.host=?5) ",
-            "AND (?6 IS NULL OR EXISTS(SELECT 1 FROM entry_refs reference ",
-            "WHERE reference.entry_id=e.id AND reference.target=?6) ",
-            "OR EXISTS(SELECT 1 FROM commit_plans link JOIN commit_tasks task ",
-            "ON task.repo_key=link.repo_key AND task.oid=link.oid ",
-            "AND task.plan_id=link.plan_id WHERE link.entry_id=e.id AND task.plan_id=?10 AND task.task_ordinal=?11)) ",
-            "AND (?13 IS NULL OR EXISTS(SELECT 1 FROM entry_refs backref ",
-            "WHERE backref.entry_id=e.id AND backref.target=?13)) ",
-            "AND (e.seq>?7 OR (e.seq=?7 AND e.id>?8)) AND e.seq<=?9 ORDER BY e.seq,e.id LIMIT ?12"
+        &format!(
+            concat!(
+                "SELECT e.id FROM entries e JOIN actors a ON a.id=e.actor_id ",
+                "WHERE (?1 IS NULL OR e.plan_id=?1) AND (?2 IS NULL OR e.kind=?2) AND (?3 IS NULL OR a.harness=?3) ",
+                "AND (?4 IS NULL OR a.user=?4) AND (?5 IS NULL OR a.host=?5) ",
+                "AND (?6 IS NULL OR EXISTS(SELECT 1 FROM entry_refs reference ",
+                "WHERE reference.entry_id=e.id AND reference.target=?6) ",
+                "OR EXISTS(SELECT 1 FROM commit_plans link JOIN commit_tasks task ",
+                "ON task.repo_key=link.repo_key AND task.oid=link.oid ",
+                "AND task.plan_id=link.plan_id WHERE link.entry_id=e.id AND task.plan_id=?10 AND task.task_ordinal=?11)) ",
+                "AND (?13 IS NULL OR EXISTS(SELECT 1 FROM entry_refs backref ",
+                "WHERE backref.entry_id=e.id AND backref.target=?13)) ",
+                "{keyset}AND e.seq<=?9 {ordering}LIMIT ?12"
+            ),
+            keyset = keyset,
+            ordering = ordering
         ),
         params![
             plan.map(|plan| sql_number(plan.get())),
@@ -154,8 +182,8 @@ pub(in crate::board::local_board) fn entries_page(
             user,
             host,
             task_ref,
-            sql_number(after.map_or(0, |cursor| cursor.seq.get())),
-            sql_number(after.map_or(0, |cursor| cursor.entry.get())),
+            cursor.map(|cursor| sql_number(cursor.seq.get())),
+            cursor.map(|cursor| sql_number(cursor.entry.get())),
             sql_number(through.get()),
             task.map(|task| sql_number(task.plan.get())),
             task.map(|task| sql_number(task.ordinal)),
@@ -164,14 +192,19 @@ pub(in crate::board::local_board) fn entries_page(
         ],
     )?;
     let mut entries = entries;
-    let next_after = if entries.len() > limit {
+    let (next_after, next_before) = if entries.len() > limit {
         entries.truncate(limit);
-        entries.last().map(|entry| EntryCursor {
+        let cursor = entries.last().map(|entry| EntryCursor {
             seq: entry.seq,
             entry: entry.id,
-        })
+        });
+        if descending {
+            (None, cursor)
+        } else {
+            (cursor, None)
+        }
     } else {
-        None
+        (None, None)
     };
     Ok(BoardReply::new(
         "local",
@@ -182,6 +215,7 @@ pub(in crate::board::local_board) fn entries_page(
             after,
             through,
             next_after,
+            next_before,
         }),
     ))
 }

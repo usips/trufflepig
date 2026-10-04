@@ -70,6 +70,13 @@ impl BoardOp {
                 bail!("invalid_options: collection limit must be 1..200")
             }
             Self::Entries {
+                after: Some(_),
+                before: Some(_),
+                ..
+            } => {
+                bail!("invalid_options: entries accepts at most one of after and before");
+            }
+            Self::Entries {
                 user, host, task, ..
             } => {
                 if let Some(user) = user {

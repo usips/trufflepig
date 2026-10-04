@@ -191,6 +191,7 @@ fn collection_pages_reject_invalid_bounds_and_unknown_filters() {
             None,
             None,
             None,
+            None,
             1
         )
         .unwrap_err()
@@ -211,6 +212,7 @@ fn collection_pages_reject_invalid_bounds_and_unknown_filters() {
                 seq: EventSeq::new(2),
                 entry: id(2)
             }),
+            None,
             Some(EventSeq::new(1)),
             1
         )

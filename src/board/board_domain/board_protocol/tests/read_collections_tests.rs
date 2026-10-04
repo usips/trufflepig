@@ -168,6 +168,47 @@ fn collection_operations_share_read_classification_and_bounds() {
 }
 
 #[test]
+fn entries_rejects_combined_after_and_before_cursors() {
+    let cursor = |seq: u64, entry: u64| EntryCursor {
+        seq: EventSeq::new(seq),
+        entry: EntryId::new(entry).unwrap(),
+    };
+    let operation = |after, before| BoardOp::Entries {
+        plan: Some(PlanId::new(1).unwrap()),
+        kind: None,
+        harness: None,
+        user: None,
+        host: None,
+        task: None,
+        references: None,
+        after,
+        before,
+        through: None,
+        limit: 50,
+    };
+    assert!(
+        operation(Some(cursor(1, 1)), Some(cursor(2, 2)))
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .starts_with("invalid_options:")
+    );
+    for (after, before) in [
+        (Some(cursor(1, 1)), None),
+        (None, Some(cursor(2, 2))),
+        (None, None),
+    ] {
+        operation(after, before).validate().unwrap();
+    }
+    let decoded: BoardOp = serde_json::from_value(serde_json::json!({
+        "op": "entries", "plan": "P1",
+        "before": {"seq": 2, "entry": "E2"}, "limit": 50
+    }))
+    .unwrap();
+    assert_eq!(decoded, operation(None, Some(cursor(2, 2))));
+}
+
+#[test]
 fn task_continuations_reject_foreign_and_out_of_range_cursors() {
     let plan = PlanId::new(1).unwrap();
     let ceiling = TaskCeiling { plan, ordinal: 1 };

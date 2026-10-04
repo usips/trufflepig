@@ -129,7 +129,13 @@ fn prefix(
         BoardResult::Entries(page) => {
             omitted.entries = page.entries.len() - count;
             if omitted.entries > 0 {
-                page.next_after = entry_cursor(&page.entries[..count]).or(page.after);
+                // Ascending pages carry the request's after cursor; every
+                // other page is a descending newest-first window.
+                if page.after.is_some() {
+                    page.next_after = entry_cursor(&page.entries[..count]).or(page.after);
+                } else {
+                    page.next_before = entry_cursor(&page.entries[..count]).or(page.next_before);
+                }
             }
             page.entries.truncate(count);
         }

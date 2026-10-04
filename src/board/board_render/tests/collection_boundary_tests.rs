@@ -126,6 +126,7 @@ fn internal_collections_keep_frozen_bounds_without_cli_hints() {
             }),
             through,
             next_after: None,
+            next_before: None,
         }),
     ];
     for result in results {

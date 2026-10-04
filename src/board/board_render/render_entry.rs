@@ -114,7 +114,7 @@ pub(super) fn render_plan(
             visible.claims_next_after = None;
         }
         if entries < view.entries.len() {
-            visible.entries_next_after = visible.entries.last().map(|entry| EntryCursor {
+            visible.entries_next_before = visible.entries.last().map(|entry| EntryCursor {
                 seq: entry.seq,
                 entry: entry.id,
             });
