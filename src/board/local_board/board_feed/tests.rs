@@ -40,6 +40,7 @@ fn plan(board: &mut LocalBoard) -> PlanId {
             title: PlanTitle::new("Trial").unwrap(),
             body: PlanText::new("# Scope").unwrap(),
             steward: None,
+            repo_key: None,
         },
     ) {
         BoardResult::Change(change) => change.plan.unwrap(),

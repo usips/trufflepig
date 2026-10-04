@@ -33,6 +33,7 @@ impl WebRequest {
             name["op"].as_str(),
             Some(
                 "overview"
+                    | "repositories"
                     | "show"
                     | "tasks"
                     | "claims"

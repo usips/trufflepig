@@ -38,6 +38,7 @@ fn configuration_ttl_refresh_changes_existing_writer_claim_policy() {
             title: crate::board::board_vocabulary::PlanTitle::new("TTL test").unwrap(),
             body: crate::board::board_vocabulary::PlanText::new("").unwrap(),
             steward: None,
+            repo_key: None,
         },
     );
     let reply = host.handle_by(&create, QueryDeadline::start()).unwrap();

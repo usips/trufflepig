@@ -41,6 +41,7 @@ fn new_plan(board: &mut LocalBoard) -> PlanId {
             title: PlanTitle::new("Trial").unwrap(),
             body: PlanText::new("# Covered\n# Uncovered\n```\n# Not a section\n```\n").unwrap(),
             steward: None,
+            repo_key: None,
         },
     ) {
         BoardResult::Change(change) => change.plan.unwrap(),

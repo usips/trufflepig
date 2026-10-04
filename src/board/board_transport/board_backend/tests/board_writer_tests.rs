@@ -17,6 +17,7 @@ fn panicked_board_write_rolls_back_then_reopens_for_durable_writes() {
                 title: crate::board::board_vocabulary::PlanTitle::new(title).unwrap(),
                 body: crate::board::board_vocabulary::PlanText::new("").unwrap(),
                 steward: None,
+                repo_key: None,
             },
         )
     };
@@ -109,6 +110,7 @@ fn host_reads_existing_board_without_initializing_or_waiting_for_writer() {
                         .unwrap(),
                     body: crate::board::board_vocabulary::PlanText::new("").unwrap(),
                     steward: None,
+                    repo_key: None,
                 },
             ))
             .unwrap();

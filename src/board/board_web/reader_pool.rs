@@ -214,6 +214,7 @@ mod tests {
                 title: PlanTitle::new("forbidden write").unwrap(),
                 body: PlanText::new("").unwrap(),
                 steward: None,
+                repo_key: None,
             },
         );
         let expires = Instant::now() + Duration::from_secs(1);

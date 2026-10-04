@@ -51,6 +51,7 @@ fn plan(board: &mut LocalBoard, title: &str, body: &str) -> PlanId {
             title: PlanTitle::new(title).unwrap(),
             body: PlanText::new(body).unwrap(),
             steward: None,
+            repo_key: None,
         },
     )
     .plan

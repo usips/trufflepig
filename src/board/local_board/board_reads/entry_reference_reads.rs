@@ -258,7 +258,7 @@ pub(in crate::board::local_board) fn open_entries(
     limit: usize,
 ) -> Result<(Vec<EntryRecord>, usize), BoardError> {
     let predicate = format!(
-        "(EXISTS(SELECT 1 FROM proposals p WHERE p.entry_id=e.id AND p.state='open') OR (e.kind='feedback' AND e.state IN ('open','triaged')) OR ({OPEN_QUESTION})) AND (e.to_whom IS NULL OR e.to_whom IN (?1,?2,?3)) AND (?4 OR e.to_whom IN (?1,?2,?3) OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id AND scope.repo_key=?5) OR (e.kind='feedback' AND e.actor_id=?6))"
+        "(EXISTS(SELECT 1 FROM proposals p WHERE p.entry_id=e.id AND p.state='open') OR (e.kind='feedback' AND e.state IN ('open','triaged')) OR ({OPEN_QUESTION})) AND (e.to_whom IS NULL OR e.to_whom IN (?1,?2,?3)) AND (?4 OR NOT EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id) OR e.to_whom IN (?1,?2,?3) OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id AND scope.repo_key=?5) OR (e.kind='feedback' AND e.actor_id=?6))"
     );
     let identity = ctx.actor.identity();
     let harness = ctx.actor.harness.as_str();

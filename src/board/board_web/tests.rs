@@ -1,6 +1,6 @@
 use super::*;
 use crate::board::{
-    board_ids::BoardRef,
+    board_ids::{BoardRef, RepoKey},
     board_protocol::{BOARD_API, BoardOp, BoardReply, BoardRequest, BoardResult},
     board_vocabulary::{EntryText, PlanText, PlanTitle},
 };
@@ -44,6 +44,56 @@ fn read(store: &WebStore, op: BoardOp) -> BoardReply {
 }
 
 #[test]
+fn web_new_plan_links_a_chosen_repository_and_lists_repository_keys() {
+    let directory = crate::board::board_test_support::scratch("web-repo-link-");
+    let config = BoardConfig::for_database(directory.path().join("web.sqlite3"));
+    let store = WebStore::open_at(
+        BoardConfigCache::with_config(config.clone()),
+        directory.path().join("runtime"),
+    )
+    .unwrap();
+    let repo = RepoKey::parse(&"e".repeat(40)).unwrap();
+    let seeded = rusqlite::Connection::open(&config.db_path).unwrap();
+    seeded
+        .execute("INSERT INTO repos(repo_key) VALUES(?1)", [repo.as_str()])
+        .unwrap();
+    seeded
+        .execute(
+            "INSERT INTO repo_paths(repo_key,host,common_dir,root_commits_json) VALUES(?1,'laptop','/repo','[]')",
+            [repo.as_str()],
+        )
+        .unwrap();
+    drop(seeded);
+    let created = read(
+        &store,
+        BoardOp::New {
+            title: PlanTitle::new("Web plan").unwrap(),
+            body: PlanText::new("").unwrap(),
+            steward: None,
+            repo_key: Some(repo.clone()),
+        },
+    );
+    let BoardResult::Change(created) = created.result else {
+        panic!("expected plan receipt")
+    };
+    let plan = created.plan.unwrap();
+    let linked: String = rusqlite::Connection::open(&config.db_path)
+        .unwrap()
+        .query_row(
+            "SELECT repo_key FROM plan_repos WHERE plan_id=?1",
+            [plan.get() as i64],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(linked, repo.as_str(), "the new plan links the chosen repo");
+    let reply = read(&store, BoardOp::Repositories { plan: None });
+    assert!(
+        matches!(&reply.result, BoardResult::Repositories(targets) if targets.iter().any(|target| target.registration.repo_key == repo)),
+        "the web board exposes repository keys for the New-plan picker"
+    );
+}
+
+#[test]
 fn standalone_web_store_reads_and_writes_without_a_router() {
     let directory = crate::board::board_test_support::scratch("web-standalone-");
     let config = BoardConfig::for_database(directory.path().join("web.sqlite3"));
@@ -58,6 +108,7 @@ fn standalone_web_store_reads_and_writes_without_a_router() {
             title: PlanTitle::new("Local board").unwrap(),
             body: PlanText::new("ready\n").unwrap(),
             steward: None,
+            repo_key: None,
         },
     );
     let reply = read(&store, overview());
@@ -87,6 +138,7 @@ fn panicked_web_write_rolls_back_and_reopens_before_next_write() {
                 title: PlanTitle::new("Uncommitted").unwrap(),
                 body: PlanText::new("must disappear\n").unwrap(),
                 steward: None,
+                repo_key: None,
             },
         )
     }));
@@ -100,6 +152,7 @@ fn panicked_web_write_rolls_back_and_reopens_before_next_write() {
             title: PlanTitle::new("Recovered").unwrap(),
             body: PlanText::new("durable\n").unwrap(),
             steward: None,
+            repo_key: None,
         },
     );
     assert!(!store.writer.is_poisoned());
@@ -131,6 +184,7 @@ fn changed_router_marker_refuses_web_writes_after_startup() {
                 title: PlanTitle::new("must not commit").unwrap(),
                 body: PlanText::new("").unwrap(),
                 steward: None,
+                repo_key: None,
             },
         },
         Instant::now() + Duration::from_secs(1),
@@ -192,6 +246,7 @@ fn config_reload_reaches_reader_ttl_and_attention_without_events() {
             title: PlanTitle::new("Trial").unwrap(),
             body: PlanText::new("old\n").unwrap(),
             steward: None,
+            repo_key: None,
         },
     );
     let BoardResult::Change(created) = created.result else {

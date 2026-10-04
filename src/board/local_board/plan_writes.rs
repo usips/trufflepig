@@ -22,9 +22,32 @@ pub(super) fn new_plan(
     title: &PlanTitle,
     body: &PlanText,
     steward: Option<&HarnessLabel>,
+    repo_key: Option<&RepoKey>,
 ) -> Result<BoardReply, BoardError> {
+    if let Some(repo_key) = repo_key {
+        let registered: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM repos WHERE repo_key=?1)",
+                [repo_key.as_str()],
+                |row| row.get(0),
+            )
+            .map_err(sql_error)?;
+        if !registered {
+            return Err(invalid(
+                "invalid_reference",
+                format!("unknown repository {}", repo_key.as_str()),
+            ));
+        }
+    }
     let id: u64 = tx.query_row("INSERT INTO plans(title,owner_user,steward,head_revision,created_at) VALUES(?1,?2,?3,1,?4) RETURNING id", params![title.as_str(),ctx.actor.user,steward.map(HarnessLabel::as_str),ctx.now], |r| row_number(r,0)).map_err(sql_error)?;
     let plan = PlanId::new(id).map_err(BoardError::from)?;
+    if let Some(repo_key) = repo_key {
+        tx.execute(
+            "INSERT INTO plan_repos(plan_id,repo_key) VALUES(?1,?2)",
+            params![sql_number(plan.get()), repo_key.as_str()],
+        )
+        .map_err(sql_error)?;
+    }
     let entry = mutation_entry(tx, ctx, plan, EntryKind::Create, title.as_str(), None, None)?;
     insert_revision(tx, ctx, plan, 1, body, RevisionSource::Create, entry)?;
     insert_event(

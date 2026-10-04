@@ -44,7 +44,7 @@ export function createBoardReader(context) {
     } else if (route.view === "search") {
       page = searchPage(route.q ? await read(readOp("search", { query: route.q, plan: route.plan || null, limit: 50 })) : null, route);
     } else if (route.view === "new") {
-      page = editorPage("new");
+      page = editorPage("new", null, await read(readOp("repositories", { plan: null })));
     } else if (route.view === "entry") {
       const view = await read(readOp("show", { target: route.ref }));
       const [diff, repliesPage, backrefsPage] = await Promise.all([

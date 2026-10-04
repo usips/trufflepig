@@ -230,12 +230,12 @@ export function createBoardDetails(context) {
     if (data?.truncated) page.append(el("p", "omitted", "More matches exist. Refine your query or limit it to a plan."));
     return page;
   }
-  function editorPage(mode, view) {
+  function editorPage(mode, view, repositories = []) {
     const revision = view?.revision || view;
     const base = revision?.id || "";
     const key = mode === "new" ? "new" : `${mode}:${base}`;
     let draft = state.drafts.get(key);
-    if (!draft) { draft = { title: "", body: revision?.body || "", summary: "", steward: "", base }; state.drafts.set(key, draft); }
+    if (!draft) { draft = { title: "", body: revision?.body || "", summary: "", steward: "", repo_key: "", base }; state.drafts.set(key, draft); }
     const page = add(el("div"), title(mode === "new" ? "New plan" : "Edit plan", base ? `Based on ${draft.base}. This base stays fixed while you edit.` : "A shared source of truth for a piece of work."));
     const form = el("form", "panel form-panel");
     const fields = [];
@@ -244,6 +244,17 @@ export function createBoardDetails(context) {
     fields.push(body);
     if (mode === "new") fields.push(field("Steward harness", "steward", draft.steward, { hint: "optional" }));
     else fields.push(field("Change summary", "summary", draft.summary, { required: true, maxLength: 4096 }));
+    if (mode === "new" && repositories.length) {
+      const known = new Map();
+      for (const target of repositories) {
+        const registration = target?.registration;
+        if (registration?.repo_key && !known.has(registration.repo_key)) known.set(registration.repo_key, registration.origin_label || registration.repo_key);
+      }
+      if (known.size) fields.push(field("Repository", "repo_key", draft.repo_key, {
+        choices: [["", "No repository link (visible in every scope)"], ...[...known].map(([repoKey, label]) => [repoKey, label])],
+        hint: "optional; scopes the plan to a registered repository",
+      }));
+    }
     for (const item of fields) {
       item.input.addEventListener("input", () => { draft[item.input.name] = item.input.value; });
       form.append(item.wrapper);
@@ -259,10 +270,10 @@ export function createBoardDetails(context) {
     form.addEventListener("submit", event => {
       event.preventDefault();
       const values = Object.fromEntries(fields.map(item => [item.input.name, item.input.value]));
-      const op = mode === "new" ? { op: "new", title: values.title, body: values.body, steward: values.steward || null } : { op: mode, base: draft.base, body: values.body, summary: values.summary };
+      const op = mode === "new" ? { op: "new", title: values.title, body: values.body, steward: values.steward || null, repo_key: values.repo_key || null } : { op: mode, base: draft.base, body: values.body, summary: values.summary };
       void submitMutation(form, op, (reply, current) => {
         state.drafts.delete(key);
-        Object.assign(draft, { title: "", body: revision?.body || "", summary: "", steward: "" });
+        Object.assign(draft, { title: "", body: revision?.body || "", summary: "", steward: "", repo_key: "" });
         for (const item of fields) item.input.value = draft[item.input.name] || "";
         if (!current) return;
         notice("Plan saved.", "success");

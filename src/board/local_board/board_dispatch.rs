@@ -125,7 +125,8 @@ impl LocalBoard {
                 title,
                 body,
                 steward,
-            } => plan_writes::new_plan(&tx, &ctx, title, body, steward.as_ref())?,
+                repo_key,
+            } => plan_writes::new_plan(&tx, &ctx, title, body, steward.as_ref(), repo_key.as_ref())?,
             BoardOp::Post {
                 target,
                 kind,

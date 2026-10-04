@@ -9,28 +9,57 @@ fn inbox_scope_keeps_repo_news_addressed_messages_and_own_feedback_outcomes() {
         &mut board,
         "human",
         BoardOp::New {
-            title: PlanTitle::new("Another repository").unwrap(),
+            title: PlanTitle::new("Unlinked plan").unwrap(),
             body: PlanText::new("").unwrap(),
             steward: None,
+            repo_key: None,
         },
     ) else {
         panic!("missing plan");
     };
     let second = second.plan.unwrap();
+    let BoardResult::Change(third) = call(
+        &mut board,
+        "human",
+        BoardOp::New {
+            title: PlanTitle::new("Foreign repository plan").unwrap(),
+            body: PlanText::new("").unwrap(),
+            steward: None,
+            repo_key: None,
+        },
+    ) else {
+        panic!("missing plan");
+    };
+    let third = third.plan.unwrap();
     let repo = RepoKey::from_roots([crate::identity::GitOid::parse(
         "1111111111111111111111111111111111111111",
     )
     .unwrap()])
     .unwrap();
+    let foreign = RepoKey::from_roots([crate::identity::GitOid::parse(
+        "3333333333333333333333333333333333333333",
+    )
+    .unwrap()])
+    .unwrap();
     board
         .conn
-        .execute("INSERT INTO repos(repo_key) VALUES(?1)", [repo.as_str()])
+        .execute(
+            "INSERT INTO repos(repo_key) VALUES(?1),(?2)",
+            [repo.as_str(), foreign.as_str()],
+        )
         .unwrap();
     board
         .conn
         .execute(
             "INSERT INTO plan_repos(plan_id,repo_key) VALUES(?1,?2)",
             params![sql_number(first.get()), repo.as_str()],
+        )
+        .unwrap();
+    board
+        .conn
+        .execute(
+            "INSERT INTO plan_repos(plan_id,repo_key) VALUES(?1,?2)",
+            params![sql_number(third.get()), foreign.as_str()],
         )
         .unwrap();
     post(
@@ -46,13 +75,21 @@ fn inbox_scope_keeps_repo_news_addressed_messages_and_own_feedback_outcomes() {
         "claude",
         second,
         EntryKind::Note,
+        "unlinked plan news",
+        None,
+    );
+    post(
+        &mut board,
+        "claude",
+        third,
+        EntryKind::Note,
         "foreign repo news",
         None,
     );
     post(
         &mut board,
         "claude",
-        second,
+        third,
         EntryKind::Note,
         "foreign direct message",
         Some("codex"),
@@ -69,6 +106,14 @@ fn inbox_scope_keeps_repo_news_addressed_messages_and_own_feedback_outcomes() {
         &mut board,
         "claude",
         second,
+        EntryKind::Question,
+        "unlinked reminder",
+        None,
+    );
+    post(
+        &mut board,
+        "claude",
+        third,
         EntryKind::Question,
         "foreign reminder",
         None,
@@ -104,10 +149,27 @@ fn inbox_scope_keeps_repo_news_addressed_messages_and_own_feedback_outcomes() {
             .any(|event| event.summary.as_str() == "caller repo news")
     );
     assert!(
+        inbox
+            .events
+            .iter()
+            .any(|event| event.summary.as_str() == "unlinked plan news"),
+        "a plan with no repository link is global and appears in every scope"
+    );
+    assert!(
+        inbox.events.iter().any(|event| event.kind == EntryKind::Create
+            && event.plan == Some(second)),
+        "an unlinked plan's creation is visible in every scoped inbox"
+    );
+    assert!(
         !inbox
             .events
             .iter()
-            .any(|event| event.summary.as_str() == "foreign repo news")
+            .any(|event| event.summary.as_str() == "foreign repo news"),
+        "a plan linked to another repository must not leak into this scope"
+    );
+    assert!(
+        !inbox.events.iter().any(|event| event.kind == EntryKind::Create
+            && event.plan == Some(third))
     );
     assert!(
         inbox
@@ -122,21 +184,28 @@ fn inbox_scope_keeps_repo_news_addressed_messages_and_own_feedback_outcomes() {
             .any(|event| event.kind == EntryKind::Feedback
                 && event.subject == BoardRef::Entry(report.entry))
     );
-    assert_eq!(inbox.open.len(), 1);
+    assert_eq!(inbox.open.len(), 2);
     assert_eq!(inbox.open[0].body.as_str(), "caller repo reminder");
+    assert_eq!(inbox.open[1].body.as_str(), "unlinked reminder");
     let all = scoped_feed(&mut board, Some(repo), true, 100);
     assert!(
         all.events
             .iter()
             .any(|event| event.summary.as_str() == "foreign repo news")
     );
-    assert_eq!(all.open.len(), 2);
+    assert_eq!(all.open.len(), 3);
     let without_repo = scoped_feed(&mut board, None, false, 100);
     assert!(
         !without_repo
             .events
             .iter()
             .any(|event| event.summary.as_str() == "caller repo news")
+    );
+    assert!(
+        without_repo
+            .events
+            .iter()
+            .any(|event| event.summary.as_str() == "unlinked plan news")
     );
     assert!(
         without_repo

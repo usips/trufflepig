@@ -108,6 +108,7 @@ fn plan_feedback_requires_the_owners_human_or_steward() {
                         .unwrap(),
                     body: crate::board::board_vocabulary::PlanText::new("").unwrap(),
                     steward: Some(HarnessLabel::parse("claude").unwrap()),
+                    repo_key: None,
                 },
             ))
             .unwrap(),

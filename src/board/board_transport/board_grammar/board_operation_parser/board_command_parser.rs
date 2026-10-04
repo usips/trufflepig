@@ -60,6 +60,7 @@ pub(super) fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Re
                     .as_deref()
                     .map(HarnessLabel::parse)
                     .transpose()?,
+                repo_key: None,
             }
         }
         "post" => {

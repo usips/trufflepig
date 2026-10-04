@@ -114,6 +114,7 @@ fn review_commits_keep_coauthors_and_links_to_other_plans() {
             title: PlanTitle::new("Other plan").unwrap(),
             body: PlanText::new("Other scope").unwrap(),
             steward: None,
+            repo_key: None,
         },
     ) else {
         panic!("missing second plan")

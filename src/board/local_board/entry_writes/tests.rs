@@ -24,6 +24,7 @@ fn commit_tasks_retain_all_valid_links_and_unknown_task_falls_back() {
                 title: PlanTitle::new("Commit links").unwrap(),
                 body: PlanText::new("Commit links").unwrap(),
                 steward: None,
+                repo_key: None,
             },
         ))
         .unwrap();

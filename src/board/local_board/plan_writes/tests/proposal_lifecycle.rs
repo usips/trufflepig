@@ -114,6 +114,7 @@ fn superseding_proposals_reject_invalid_targets_without_any_mutation() {
             title: PlanTitle::new("Other plan").unwrap(),
             body: PlanText::new("other plan body").unwrap(),
             steward: None,
+            repo_key: None,
         },
     )
     .plan

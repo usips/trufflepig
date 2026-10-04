@@ -51,6 +51,7 @@ fn proposal_diff_preserves_all_lines_and_the_earlier_snapshot() {
         title: PlanTitle::new("Plan").unwrap(),
         body: PlanText::new("base\n").unwrap(),
         steward: None,
+        repo_key: None,
     })
     .unwrap();
     let BoardResult::Change(created) = created.result else {
@@ -86,6 +87,7 @@ fn proposal_diff_preserves_all_lines_and_the_earlier_snapshot() {
                 title: PlanTitle::new("Intervening event").unwrap(),
                 body: PlanText::new("").unwrap(),
                 steward: None,
+                repo_key: None,
             })?;
         } else {
             later = reply.snapshot_seq;
@@ -162,6 +164,7 @@ fn create_plan(fixture: &RenderFixture) -> PlanId {
             title: PlanTitle::new("Plan").unwrap(),
             body: PlanText::new("base\n").unwrap(),
             steward: None,
+            repo_key: None,
         },
     );
     let BoardResult::Change(created) = created.result else {

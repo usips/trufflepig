@@ -138,7 +138,7 @@ pub(in crate::board::local_board) fn attention(
     let stale_proposal = "EXISTS(SELECT 1 FROM proposals p JOIN plans head ON head.id=p.plan_id WHERE p.entry_id=e.id AND p.state='open' AND p.base_revision<>head.head_revision)";
     let open_feedback = "e.kind='feedback' AND e.state IN ('open','triaged')";
     let predicate = format!(
-        "((({exact_author}) AND (({open_feedback}) OR {stale_proposal})) OR (({current_proposal} OR (({open_feedback}) AND ({plan_authority}))) AND (e.to_whom IS NULL OR e.to_whom IN (?1,?3,?5))) OR ((({OPEN_QUESTION}) OR (({open_feedback}) AND (e.plan_id IS NULL AND a.user=?1 AND ?3='human'))) AND (e.to_whom IS NULL OR e.to_whom IN (?1,?3,?5)) AND (?6 OR e.to_whom IN (?1,?3,?5) OR e.repo_key=?7 OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id AND scope.repo_key=?7)))) AND (e.seq>?8 OR (e.seq=?8 AND e.id>?9)) AND e.seq<=?10"
+        "((({exact_author}) AND (({open_feedback}) OR {stale_proposal})) OR (({current_proposal} OR (({open_feedback}) AND ({plan_authority}))) AND (e.to_whom IS NULL OR e.to_whom IN (?1,?3,?5))) OR ((({OPEN_QUESTION}) OR (({open_feedback}) AND (e.plan_id IS NULL AND a.user=?1 AND ?3='human'))) AND (e.to_whom IS NULL OR e.to_whom IN (?1,?3,?5)) AND (?6 OR NOT EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id) OR e.to_whom IN (?1,?3,?5) OR e.repo_key=?7 OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id AND scope.repo_key=?7)))) AND (e.seq>?8 OR (e.seq=?8 AND e.id>?9)) AND e.seq<=?10"
     );
     let identity = ctx.actor.identity();
     let parameters = params![

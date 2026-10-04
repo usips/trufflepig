@@ -189,7 +189,7 @@ pub(super) fn claim_window(
     }
     let (_, through) = sequence_window(conn, None, through)?;
     let cutoff = ctx.now.saturating_sub(ctx.claim_ttl_secs.max(0));
-    let predicate = "c.ended_at IS NULL AND (?1 IS NULL OR c.plan_id=?1) AND (NOT ?2 OR (a.user=?3 AND a.host=?4 AND a.harness=?5 AND a.session=?6 AND c.last_active<?7)) AND (NOT ?2 OR ?8 OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=c.plan_id AND scope.repo_key=?9)) AND (c.entry_id>?10 OR (c.entry_id=?10 AND c.id>?12)) AND e.seq<=?11";
+    let predicate = "c.ended_at IS NULL AND (?1 IS NULL OR c.plan_id=?1) AND (NOT ?2 OR (a.user=?3 AND a.host=?4 AND a.harness=?5 AND a.session=?6 AND c.last_active<?7)) AND (NOT ?2 OR ?8 OR NOT EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=c.plan_id) OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=c.plan_id AND scope.repo_key=?9)) AND (c.entry_id>?10 OR (c.entry_id=?10 AND c.id>?12)) AND e.seq<=?11";
     let parameters = params![
         plan.map(|plan| sql_number(plan.get())),
         own_stale,

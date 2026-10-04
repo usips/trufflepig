@@ -10,7 +10,7 @@ use crate::{
         board_grammar::{self, BoardCommand},
         board_protocol::{
             AgentClaims, BoardError, BoardOp, BoardReply, BoardRequest, BoardResult,
-            CommitLinkResult,
+            CommitLinkResult, RepoRegistration,
         },
         board_render::render_reply,
     },
@@ -158,16 +158,7 @@ impl BoardHost {
                 deadline.cap(Duration::from_secs(2)),
             );
         }
-        if let BoardOp::Inbox {
-            repo_key,
-            all: false,
-            ..
-        } = &mut op
-        {
-            *repo_key = registration
-                .as_ref()
-                .map(|registration| registration.repo_key.clone());
-        }
+        scope_read_repo_key(&mut op, registration.as_ref());
         let mut request = BoardRequest::new(actor.clone(), op);
         if options.board.agent_model.is_some() || options.board.agent_effort.is_some() {
             request.claims = Some(AgentClaims {
@@ -294,5 +285,147 @@ impl BoardHost {
             }
         }
         Ok(rendered.text)
+    }
+}
+
+/// Scoped reads default to the caller's canonical repository; `all` stays global.
+fn scope_read_repo_key(op: &mut BoardOp, registration: Option<&RepoRegistration>) {
+    let repo_key = match op {
+        BoardOp::Inbox {
+            repo_key,
+            all: false,
+            ..
+        }
+        | BoardOp::Attention {
+            repo_key,
+            all: false,
+            ..
+        }
+        | BoardOp::Claims {
+            repo_key,
+            all: false,
+            ..
+        } => repo_key,
+        BoardOp::Overview { repo_key, .. } => repo_key,
+        _ => return,
+    };
+    *repo_key = registration.map(|registration| registration.repo_key.clone());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::board::board_ids::RepoKey;
+    use crate::board::board_vocabulary::{PlanText, PlanTitle};
+    use std::path::PathBuf;
+
+    fn registration() -> RepoRegistration {
+        RepoRegistration {
+            repo_key: RepoKey::parse(&"a".repeat(40)).unwrap(),
+            origin_label: None,
+            host: "laptop".into(),
+            common_dir: PathBuf::from("/repo/.git"),
+            plan_id: None,
+            root_commits: Vec::new(),
+            registration_error: None,
+            origin_override: None,
+        }
+    }
+
+    fn scoped_key(op: &BoardOp) -> Option<&RepoKey> {
+        match op {
+            BoardOp::Inbox { repo_key, .. }
+            | BoardOp::Attention { repo_key, .. }
+            | BoardOp::Overview { repo_key, .. }
+            | BoardOp::Claims { repo_key, .. } => repo_key.as_ref(),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn scoped_reads_fill_the_caller_repository_and_all_stays_global() {
+        let registration = registration();
+        let expected = Some(registration.repo_key.clone());
+        let mut scoped = [
+            BoardOp::Inbox {
+                after: None,
+                limit: 20,
+                repo_key: None,
+                all: false,
+            },
+            BoardOp::Attention {
+                repo_key: None,
+                all: false,
+                after: None,
+                through: None,
+                limit: 20,
+            },
+            BoardOp::Overview {
+                repo_key: None,
+                after: None,
+                through: None,
+                limit: 20,
+            },
+            BoardOp::Claims {
+                plan: None,
+                own_stale: true,
+                repo_key: None,
+                all: false,
+                after: None,
+                through: None,
+                limit: 20,
+            },
+        ];
+        for op in &mut scoped {
+            scope_read_repo_key(op, Some(&registration));
+            assert_eq!(scoped_key(op), expected.as_ref(), "unexpected scope for {op:?}");
+        }
+        let mut global = [
+            BoardOp::Inbox {
+                after: None,
+                limit: 20,
+                repo_key: None,
+                all: true,
+            },
+            BoardOp::Attention {
+                repo_key: None,
+                all: true,
+                after: None,
+                through: None,
+                limit: 20,
+            },
+            BoardOp::Claims {
+                plan: None,
+                own_stale: true,
+                repo_key: None,
+                all: true,
+                after: None,
+                through: None,
+                limit: 20,
+            },
+        ];
+        for op in &mut global {
+            scope_read_repo_key(op, Some(&registration));
+            assert_eq!(scoped_key(op), None, "--all must stay global for {op:?}");
+        }
+        let mut write = BoardOp::New {
+            title: PlanTitle::new("writes keep their own repo link").unwrap(),
+            body: PlanText::new("").unwrap(),
+            steward: None,
+            repo_key: None,
+        };
+        scope_read_repo_key(&mut write, Some(&registration));
+        assert!(
+            matches!(write, BoardOp::New { repo_key: None, .. }),
+            "writes never receive a read scope"
+        );
+        let mut inbox = BoardOp::Inbox {
+            after: None,
+            limit: 20,
+            repo_key: None,
+            all: false,
+        };
+        scope_read_repo_key(&mut inbox, None);
+        assert_eq!(scoped_key(&inbox), None);
     }
 }

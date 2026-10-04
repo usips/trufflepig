@@ -34,6 +34,7 @@ fn new_plan(board: &mut LocalBoard, author: BoardActor, title: &str) -> BoardCha
                 title: PlanTitle::new(title).unwrap(),
                 body: PlanText::new("# Scope\noriginal").unwrap(),
                 steward: Some(HarnessLabel::parse("claude").unwrap()),
+                repo_key: None,
             },
         ))
         .unwrap();

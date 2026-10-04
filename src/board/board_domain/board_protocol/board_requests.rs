@@ -149,6 +149,7 @@ pub enum BoardOp {
         title: PlanTitle,
         body: PlanText,
         steward: Option<HarnessLabel>,
+        repo_key: Option<RepoKey>,
     },
     Post {
         target: BoardRef,
