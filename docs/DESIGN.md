@@ -22,6 +22,7 @@ semantic retrieval requires an explicit `--sem` request.
 - [Board and feedback command grammar](board-cli-contract.md)
 - [Feedback filing, triage, and the durable outbox](board-feedback-contract.md)
 - [Local board HTTP, authentication, and live views](board-web-contract.md)
+- [Board web UI behavior](board-web-ui.md)
 - [Historical navigation and local Git objects](history-contract.md)
 - [Diagnostic retention, sessions, and delivery evidence](diagnostics-contract.md)
 - [Language extraction and relationship evidence](language-contract.md)
