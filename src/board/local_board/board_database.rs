@@ -12,11 +12,46 @@ use super::{BoardError, invalid, sql_error};
 
 mod board_schema;
 
-use board_schema::{SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_VERSION};
+pub use board_schema::SCHEMA_VERSION;
+use board_schema::{SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4};
 
 #[cfg(test)]
 pub(super) fn open(path: &Path) -> Result<(Connection, PathBuf), BoardError> {
     open_with_timeout(path, Duration::from_secs(5))
+}
+
+fn migration_step(from: i64) -> Result<&'static str, BoardError> {
+    match from {
+        0 => Ok(SCHEMA_V1),
+        1 => Ok(SCHEMA_V2),
+        2 => Ok(SCHEMA_V3),
+        3 => Ok(SCHEMA_V4),
+        _ => Err(unavailable(format!(
+            "missing schema migration from version {from}"
+        ))),
+    }
+}
+
+/// Builds a stale fixture by applying migration steps up to `version`, for
+/// migration tests; skips the open path's permission and journal checks.
+#[cfg(test)]
+pub(crate) fn seed_storage_schema(path: &Path, version: i64) -> Result<(), BoardError> {
+    let connection = Connection::open(path).map_err(sql_error)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            .map_err(io_error)?;
+    }
+    for from in 0..version {
+        connection
+            .execute_batch(migration_step(from)?)
+            .map_err(sql_error)?;
+    }
+    connection
+        .pragma_update(None, "user_version", version)
+        .map_err(sql_error)?;
+    Ok(())
 }
 
 pub(super) fn open_with_timeout(
@@ -147,18 +182,7 @@ pub(super) fn open_with_timeout(
         return Err(unavailable("database schema became newer than supported"));
     }
     for version in locked_version..SCHEMA_VERSION {
-        let migration = match version {
-            0 => SCHEMA_V1,
-            1 => SCHEMA_V2,
-            2 => SCHEMA_V3,
-            3 => SCHEMA_V4,
-            _ => {
-                return Err(unavailable(format!(
-                    "missing schema migration from version {version}"
-                )));
-            }
-        };
-        tx.execute_batch(migration).map_err(sql_error)?;
+        tx.execute_batch(migration_step(version)?).map_err(sql_error)?;
         tx.pragma_update(None, "user_version", version + 1)
             .map_err(sql_error)?;
     }

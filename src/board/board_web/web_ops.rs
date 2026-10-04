@@ -1,17 +1,18 @@
 //! The browser owns operation inputs; captured local identity owns every request.
 use super::WebStore;
 use crate::board::{
+    SCHEMA_VERSION,
     board_backend::BoardBackend,
     board_config::BoardConfig,
-    board_protocol::{
-        BOARD_API, BOARD_SCHEMA_VERSION, BoardError, BoardErrorCode, BoardOp, BoardReply,
-        BoardRequest,
-    },
+    board_protocol::{BOARD_API, BoardError, BoardErrorCode, BoardOp, BoardReply, BoardRequest},
     board_vocabulary::EntryKind,
 };
 use crate::daemon::deadline::QueryDeadline;
 use serde::Deserialize;
-use std::{path::Path, time::Instant};
+use std::{
+    path::Path,
+    time::{Duration, Instant},
+};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -130,6 +131,11 @@ fn invalid(message: impl Into<String>) -> BoardError {
 type RouterExchange<'a> =
     dyn FnMut(&[String], QueryDeadline) -> Result<Option<String>, BoardError> + 'a;
 
+/// How long startup waits for a concurrently-starting router to migrate the
+/// database, and how often it re-polls `system status` while waiting.
+const ROUTER_MIGRATION_WAIT: Duration = Duration::from_secs(30);
+const ROUTER_MIGRATION_POLL: Duration = Duration::from_millis(500);
+
 pub(super) fn check_router_identity(
     runtime: &Path,
     database: &Path,
@@ -137,40 +143,79 @@ pub(super) fn check_router_identity(
 ) -> Result<(), BoardError> {
     let context = crate::diagnostics::RequestContext::new(Some("web".into()), Some("human".into()));
     let deadline = QueryDeadline::after(expires.saturating_duration_since(Instant::now()));
-    startup_probe(database, deadline, &mut |args, deadline| {
-        crate::daemon::request_by(runtime, args, &context, deadline).map_err(BoardError::from)
-    })
+    startup_probe(
+        database,
+        deadline,
+        ROUTER_MIGRATION_WAIT,
+        &mut |args, deadline| {
+            crate::daemon::request_by(runtime, args, &context, deadline).map_err(BoardError::from)
+        },
+    )
 }
 
 /// Startup opens the database only when a same-API router confirms its schema,
 /// the file already holds the supported schema, or a brand-new database may
 /// bootstrap. An answered router error is fatal; only a silent router (`None`)
-/// permits the local schema check.
+/// permits the local schema check. A stale local file waits up to `wait` for a
+/// concurrently-starting router to migrate it; a newer file refuses at once.
+/// After the wait, an answering router is still migrating while a silent one
+/// was never started, and each refusal says so.
 fn startup_probe(
     database: &Path,
     deadline: QueryDeadline,
+    wait: Duration,
     exchange: &mut RouterExchange<'_>,
 ) -> Result<(), BoardError> {
-    let confirmed = probe_router(database, deadline, exchange)?
-        .and_then(|status| status["schema_version"].as_i64())
-        == Some(BOARD_SCHEMA_VERSION);
-    if confirmed {
-        return Ok(());
+    let started = Instant::now();
+    let mut answered = false;
+    loop {
+        // The startup wait outlives the request deadline; each poll stays bounded.
+        let poll = if deadline.expired() {
+            QueryDeadline::after(ROUTER_MIGRATION_POLL)
+        } else {
+            deadline
+        };
+        let status = probe_router(database, poll, exchange)?;
+        answered |= status.is_some();
+        if status.is_some_and(|status| router_confirms_schema(&status)) {
+            return Ok(());
+        }
+        match local_schema_version(database)? {
+            None => return Ok(()),
+            Some(version) if version == SCHEMA_VERSION => return Ok(()),
+            Some(version) if version < SCHEMA_VERSION => {
+                if started.elapsed() >= wait {
+                    if answered {
+                        return Err(unavailable(
+                            "router is migrating; check `systemctl --user status trufflepig-system`",
+                        ));
+                    }
+                    return Err(unavailable(format!(
+                        "board database schema version {version} awaits migration to {SCHEMA_VERSION}; start trufflepig system ensure with the current binary"
+                    )));
+                }
+                std::thread::sleep(
+                    ROUTER_MIGRATION_POLL.min(wait.saturating_sub(started.elapsed())),
+                );
+            }
+            Some(version) => {
+                return Err(unavailable(format!(
+                    "board database schema version {version} is newer than supported {SCHEMA_VERSION}"
+                )));
+            }
+        }
     }
-    match local_schema_version(database)? {
-        None => Ok(()),
-        Some(version) if version == BOARD_SCHEMA_VERSION => Ok(()),
-        Some(version) if version < BOARD_SCHEMA_VERSION => Err(unavailable(format!(
-            concat!(
-                "board database schema version {version} awaits migration to {BOARD_SCHEMA_VERSION}; ",
-                "start trufflepig system ensure with the current binary"
-            ),
-            version = version,
-            BOARD_SCHEMA_VERSION = BOARD_SCHEMA_VERSION
-        ))),
-        Some(version) => Err(unavailable(format!(
-            "board database schema version {version} is newer than supported {BOARD_SCHEMA_VERSION}"
-        ))),
+}
+
+/// A same-API router confirms the schema only once its database file holds the
+/// schema this binary supports; anything else defers to the local file check.
+fn router_confirms_schema(status: &serde_json::Value) -> bool {
+    match (
+        status["schema_file"].as_i64(),
+        status["schema_supported"].as_i64(),
+    ) {
+        (Some(file), Some(supported)) => file == supported && supported == SCHEMA_VERSION,
+        _ => false,
     }
 }
 
@@ -282,6 +327,7 @@ mod tests {
         let failure = startup_probe(
             database,
             QueryDeadline::after(Duration::from_secs(1)),
+            Duration::ZERO,
             &mut |_, _| Err(error()),
         )
         .unwrap_err();
@@ -300,14 +346,36 @@ mod tests {
         let database = Path::new("/source/web.sqlite3");
         let status = serde_json::json!({
             "status": "ok", "board_api": BOARD_API, "board_db": database,
-            "schema_version": BOARD_SCHEMA_VERSION,
+            "schema_file": SCHEMA_VERSION, "schema_supported": SCHEMA_VERSION,
         });
         startup_probe(
             database,
             QueryDeadline::after(Duration::from_secs(1)),
+            Duration::ZERO,
             &mut |_, _| Ok(Some(status.to_string())),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn router_confirmation_requires_a_migrated_file_the_binary_supports() {
+        let migrated = serde_json::json!({
+            "schema_file": SCHEMA_VERSION, "schema_supported": SCHEMA_VERSION,
+        });
+        assert!(router_confirms_schema(&migrated));
+        for status in [
+            serde_json::json!({}),
+            serde_json::json!({"schema_supported": SCHEMA_VERSION}),
+            serde_json::json!({"schema_file": SCHEMA_VERSION}),
+            serde_json::json!({
+                "schema_file": SCHEMA_VERSION - 1, "schema_supported": SCHEMA_VERSION,
+            }),
+            serde_json::json!({
+                "schema_file": SCHEMA_VERSION + 1, "schema_supported": SCHEMA_VERSION + 1,
+            }),
+        ] {
+            assert!(!router_confirms_schema(&status), "{status}");
+        }
     }
 
     #[test]
@@ -317,6 +385,7 @@ mod tests {
         startup_probe(
             &database,
             QueryDeadline::after(Duration::from_secs(1)),
+            Duration::ZERO,
             &mut |_, _| Ok(None),
         )
         .unwrap();
@@ -326,7 +395,7 @@ mod tests {
     #[test]
     fn startup_refuses_off_schema_databases_without_a_router() {
         let directory = crate::board::board_test_support::scratch("web-probe-");
-        for version in [BOARD_SCHEMA_VERSION - 1, BOARD_SCHEMA_VERSION + 1] {
+        for version in [SCHEMA_VERSION - 1, SCHEMA_VERSION + 1] {
             let database = directory.path().join(format!("v{version}.sqlite3"));
             let connection = rusqlite::Connection::open(&database).unwrap();
             connection
@@ -336,6 +405,7 @@ mod tests {
             let error = startup_probe(
                 &database,
                 QueryDeadline::after(Duration::from_secs(1)),
+                Duration::ZERO,
                 &mut |_, _| Ok(None),
             )
             .unwrap_err();
@@ -357,11 +427,12 @@ mod tests {
         // The supported schema constant tracks the migrated storage schema.
         assert_eq!(
             local_schema_version(&database).unwrap(),
-            Some(BOARD_SCHEMA_VERSION)
+            Some(SCHEMA_VERSION)
         );
         startup_probe(
             &database,
             QueryDeadline::after(Duration::from_secs(1)),
+            Duration::ZERO,
             &mut |_, _| Ok(None),
         )
         .unwrap();
@@ -377,13 +448,14 @@ mod tests {
         startup_probe(
             &absent,
             QueryDeadline::after(Duration::from_secs(1)),
+            Duration::ZERO,
             &mut |_, _| Ok(Some(status.to_string())),
         )
         .unwrap();
         let old = directory.path().join("old.sqlite3");
         let connection = rusqlite::Connection::open(&old).unwrap();
         connection
-            .pragma_update(None, "user_version", BOARD_SCHEMA_VERSION - 1)
+            .pragma_update(None, "user_version", SCHEMA_VERSION - 1)
             .unwrap();
         drop(connection);
         let status = serde_json::json!({
@@ -392,6 +464,7 @@ mod tests {
         let error = startup_probe(
             &old,
             QueryDeadline::after(Duration::from_secs(1)),
+            Duration::ZERO,
             &mut |_, _| Ok(Some(status.to_string())),
         )
         .unwrap_err();
@@ -408,11 +481,90 @@ mod tests {
             let error = startup_probe(
                 database,
                 QueryDeadline::after(Duration::from_secs(1)),
+                Duration::ZERO,
                 &mut |_, _| Ok(Some(status.to_string())),
             )
             .unwrap_err();
             assert_eq!(error.code, BoardErrorCode::BoardUnavailable);
         }
+    }
+
+    #[test]
+    fn startup_waits_for_a_migrating_router_before_opening() {
+        let directory = crate::board::board_test_support::scratch("web-probe-");
+        let database = directory.path().join("migrating.sqlite3");
+        let connection = rusqlite::Connection::open(&database).unwrap();
+        connection
+            .pragma_update(None, "user_version", SCHEMA_VERSION - 1)
+            .unwrap();
+        drop(connection);
+        let status = serde_json::json!({
+            "status": "ok", "board_api": BOARD_API, "board_db": database,
+            "schema_file": SCHEMA_VERSION, "schema_supported": SCHEMA_VERSION,
+        })
+        .to_string();
+        let mut polls = 0;
+        startup_probe(
+            &database,
+            QueryDeadline::after(Duration::from_secs(10)),
+            Duration::from_secs(10),
+            &mut |_, _| {
+                polls += 1;
+                Ok(if polls < 3 {
+                    None
+                } else {
+                    Some(status.clone())
+                })
+            },
+        )
+        .unwrap();
+        assert_eq!(polls, 3);
+    }
+
+    #[test]
+    fn startup_refuses_a_stale_file_after_the_migration_wait() {
+        let directory = crate::board::board_test_support::scratch("web-probe-");
+        let database = directory.path().join("stale.sqlite3");
+        let connection = rusqlite::Connection::open(&database).unwrap();
+        connection
+            .pragma_update(None, "user_version", SCHEMA_VERSION - 1)
+            .unwrap();
+        drop(connection);
+        let unmigrated = serde_json::json!({
+            "status": "ok", "board_api": BOARD_API, "board_db": database,
+            "schema_file": SCHEMA_VERSION - 1, "schema_supported": SCHEMA_VERSION,
+        })
+        .to_string();
+        for (answered, advice) in [
+            (
+                None,
+                "start trufflepig system ensure with the current binary",
+            ),
+            (
+                Some(unmigrated.clone()),
+                "router is migrating; check `systemctl --user status trufflepig-system`",
+            ),
+        ] {
+            let mut polls = 0;
+            let error = startup_probe(
+                &database,
+                QueryDeadline::after(Duration::from_secs(1)),
+                Duration::from_millis(300),
+                &mut |_, _| {
+                    polls += 1;
+                    Ok(answered.clone())
+                },
+            )
+            .unwrap_err();
+            assert_eq!(error.code, BoardErrorCode::BoardUnavailable);
+            assert!(error.to_string().contains(advice), "{error}");
+            assert_eq!(polls, 2, "answered: {}", answered.is_some());
+        }
+        assert_eq!(
+            local_schema_version(&database).unwrap(),
+            Some(SCHEMA_VERSION - 1),
+            "the probe must not migrate"
+        );
     }
 
     #[test]

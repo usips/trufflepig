@@ -24,7 +24,7 @@ pub(crate) use pool::{PoolSize, RequestPool};
 use protocol::{DaemonReply, DaemonRequest};
 pub use server::{AcceptedRequest, DAEMON_BUSY, DaemonHandler};
 
-const SOCKET_NAME: &str = "daemon.sock";
+pub(crate) const SOCKET_NAME: &str = "daemon.sock";
 /// Longest a client waits for any daemon reply, over the socket or the spool.
 pub const CLIENT_REPLY_WAIT: Duration = Duration::from_secs(30);
 /// Longest a daemon waits on the daemon it forwards to; shorter than

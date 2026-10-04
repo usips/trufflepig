@@ -109,6 +109,12 @@ pub fn serve() -> Result<()> {
         sweeps: Mutex::new(SweepClock::default()),
         board: crate::board::BoardHost::default(),
     };
+    // Migrate before accepting connections so `system status` and board-serve
+    // never race migration. Best-effort: the router must serve despite a
+    // broken board configuration.
+    let _ = router
+        .board
+        .ensure_writer(QueryDeadline::after(Duration::from_secs(5)));
     daemon::serve_router(&runtime, &spool_dir(), router)
 }
 
@@ -172,19 +178,26 @@ fn route(
     let verb = options.words.first().map(String::as_str);
     if verb == Some("system") {
         let mut status = serde_json::json!({
-            "status": "ok", "board_api": crate::board::BOARD_API,
+            "status": "ok",
+            "board_api": crate::board::BOARD_API,
+            "schema_supported": crate::board::SCHEMA_VERSION,
         });
         // Board fields are best-effort: status must outlive a broken board
         // configuration, an unwritable pin, or an absent database.
-        if let Ok(database) = board.database_path()
-            && database.is_absolute()
-        {
-            if let Some(runtime) = runtime {
-                let _ = record_board_database(runtime, &database);
+        match board.database_path() {
+            Ok(database) if database.is_absolute() => {
+                if let Some(runtime) = runtime {
+                    let _ = record_board_database(runtime, &database);
+                }
+                status["board_db"] = serde_json::json!(database);
+                if let Some(version) = board_schema_version(&database) {
+                    status["schema_file"] = version.into();
+                }
             }
-            status["board_db"] = serde_json::json!(database);
-            if let Some(version) = board_schema_version(&database) {
-                status["schema_version"] = version.into();
+            _ => {
+                if let Some(error) = board.config_error() {
+                    status["board_error"] = serde_json::json!(error);
+                }
             }
         }
         return Ok(serde_json::to_string(&status)?);

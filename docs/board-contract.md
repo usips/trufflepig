@@ -91,7 +91,7 @@ the plan's `Plan: P7` commit trailer.
 
 ## Backend, transport, and deadlines
 
-Every operation uses `BoardRequest { api: BOARD_API, actor, op, claims }` (`BOARD_API = 3`) and a
+Every operation uses `BoardRequest { api: BOARD_API, actor, op, claims }` (`BOARD_API = 4`) and a
 typed `BoardReply`. `BoardBackend` owns state and returns data; the edge parses, reads bodies, scans
 local Git, and renders. An API mismatch fails `board_api_mismatch` without negotiation. `LocalBoard`
 is the SQLite backend. Replies identify the backend and expose a read-transaction `snapshot_seq`.
@@ -106,18 +106,19 @@ negative marker suppresses repeated ensure only after a provably unreached reque
 extend it; success clears it.
 
 The router pins its database before opening it; only the socket-owning router publishes
-`system::dir()/board-backend.json` with the absolute database path. Fallback and service startup
-reject a conflicting known pin, allowing paths that canonicalize to the same file. Read-only
-operations use deferred query-only transactions without creating actors, sessions, or leases.
-Missing/older writable schemas bootstrap once; a read-only legacy schema reports typed
-`InitializationRequired`. The lazy writer uses `BEGIN IMMEDIATE`, WAL, `synchronous=FULL`, foreign
-keys, and a 5 s busy timeout. Waiters release connections and locks before waiting. Inbox waits at
-most `min(15 s, remaining query deadline - 2 s)`, waking on writes and checking the database once
-per second for fallback writers. Timeout or temporary poll lock/deadline returns an empty inbox
-without cursor acknowledgement; read-only polling checks persisted max-seq once per second and reads
-inbox only on change. Six waiters may occupy the 16-worker router pool; a seventh returns
-`wait: busy`. The query deadline is 20 s; transport bounds follow the [runtime
-contract](runtime-contract.md).
+`system::dir()/board-backend.json` with the absolute database path. `system-serve` opens the
+board writer before accepting connections, so migration never races status or board-serve startup.
+Fallback and service startup reject a conflicting known pin, allowing paths that canonicalize to
+the same file. Read-only operations use deferred query-only transactions without creating actors,
+sessions, or leases. Missing/older writable schemas bootstrap once; a read-only legacy schema
+reports typed `InitializationRequired`. The lazy writer uses `BEGIN IMMEDIATE`, WAL,
+`synchronous=FULL`, foreign keys, and a 5 s busy timeout. Waiters release connections and locks
+before waiting. Inbox waits at most `min(15 s, remaining query deadline - 2 s)`, waking on writes
+and checking the database once per second for fallback writers. Timeout or temporary poll
+lock/deadline returns an empty inbox without cursor acknowledgement; read-only polling checks
+persisted max-seq once per second and reads inbox only on change. Six waiters may occupy the
+16-worker router pool; a seventh returns `wait: busy`. The query deadline is 20 s; transport bounds
+follow the [runtime contract](runtime-contract.md).
 
 Calls to `show`, `review`, `ingest`, explicit-cursor inbox, and feedback listing use the normal
 transient retry set. Writes and cursor-advancing inbox retry only typed daemon busy or database lock
@@ -182,7 +183,8 @@ Storage defaults to `$XDG_DATA_HOME/trufflepig/board.sqlite3`, else the passwd h
 is refused — open paths never chmod, read paths never modify the filesystem. The DB records its
 resolved path and uses forward `user_version` migrations; a shipped step is never edited — repairs
 ship as a new step. Schema version 4 repairs the `commit_plans_entry` and `claims_entry_active`
-indexes and rewrites stored dedupe receipts to the current API. Empty/relative DB overrides and
+indexes and rewrites stored dedupe receipts to the current API; later steps carry no version
+literals and dispatch upgrades older stamps on replay. Empty/relative DB overrides and
 newer schemas are refused. Board data is outside cache sweeps and `forget-logs`; entries and
 revisions remain durable. WAL requires local disk, not a network filesystem. Configuration is
 `~/.config/trufflepig/board.toml` with unknown fields denied: mode, user, host, url, token_file,

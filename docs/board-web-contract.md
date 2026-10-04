@@ -26,7 +26,8 @@ publishes API/address/database, without a token, in owned regular 0600
 listener's owner through `/proc/net/tcp{,6}`, and proves token possession before printing the
 listener URL. The proof never sends the token: the client POSTs a random nonce
 to the unauthenticated `POST /api/v1/challenge` route, which answers hexadecimal HMAC-SHA256(key =
-token, nonce ‖ listener address); the client checks that proof against the token it reads locally.
+token, `trufflepig-board-listener-proof-v1` NUL ‖ nonce ‖ listener address); the client checks that
+proof against the token it reads locally.
 The challenge route keeps the Host, Origin, and JSON body checks. Missing, stale, or mismatched
 endpoints advise `board-serve`; `board web` opens no browser and creates no token.
 
@@ -49,7 +50,7 @@ revision CAS.
 
 ## HTTP surface and typed operations
 
-HTTP route version `v1` and typed `BOARD_API = 3` are independent contracts. The public shell
+HTTP route version `v1` and typed `BOARD_API = 4` are independent contracts. The public shell
 supplies the typed API value; every JSON mutation/read envelope uses that value. Mismatches fail
 `board_api_mismatch` without negotiation. Errors are `{"error":{"code":CODE,"message":TEXT}}`.
 
@@ -60,8 +61,8 @@ supplies the typed API value; every JSON mutation/read envelope uses that value.
 | `GET /feedback_triage.js`, `/board_stream.js` | UI modules |
 | `GET /board_reader.js`, `/board_entries.js` | UI modules |
 | `POST /api/v1/challenge` | Unauthenticated ownership proof; Host/Origin/JSON checks apply |
-| `POST /api/v1/board` | `{ "api": 3, "op": BoardOp }`; typed `BoardReply` |
-| `POST /api/v1/ingest` | `{ "api": 3 }`; single-flight router ingest relay |
+| `POST /api/v1/board` | `{ "api": 4, "op": BoardOp }`; typed `BoardReply` |
+| `POST /api/v1/ingest` | `{ "api": 4 }`; single-flight router ingest relay |
 | `GET /api/v1/render/plan/P7` or `P7@12` | `{api, revision, snapshot_seq, html, headings}` |
 | `GET /api/v1/render/diff/P7@10..12` | `{api, before, after, hunks, snapshot_seq}` |
 | `GET /api/v1/render/proposal/E80` | `{api, entry, before, hunks, snapshot_seq}` |
@@ -77,17 +78,18 @@ reads remain available without a responsive router; a conflicting known database
 reads, writes, and streams.
 
 POST ingest probes router API/database identity and relays without spawning a router; an
-unavailable router is an error. Single-flight, it answers 202 `{"api":3,"ingest":"queued"}` at
+unavailable router is an error. Single-flight, it answers 202 `{"api":4,"ingest":"queued"}` at
 once, a concurrent POST the same 202. Completion reaches subscribers as `event: ingest` frames
 (receipt JSON or the standard error envelope, no `id:` line); the server retains the last eight
 receipts and delivers only post-subscription ones.
 
 Startup never migrates an existing database. It opens the writer only when a same-API router's
-`system status` confirms `schema_version` equals the current schema, when the file already holds
-that schema, or when no database exists yet; an older schema awaits `system ensure` and a newer one
-is unsupported — both refuse startup, and a reachable router disagreeing on API or database identity
-is fatal. Read dispatch uses the shared `BoardOp::is_read_only` classifier, regardless of HTTP
-method.
+`system status` confirms `schema_file` equals `schema_supported` at the schema this binary
+supports, when the file already holds that schema, or when no database exists yet; a stale file
+waits up to 30 s, polling every 500 ms, for a concurrently-starting router to migrate it, then
+refuses. An answering router gets `router is migrating`, a silent one gets `system ensure` advice;
+a newer schema is unsupported — a reachable router disagreeing on API or database identity is
+fatal. Read dispatch uses the shared `BoardOp::is_read_only` classifier, regardless of HTTP method.
 Startup opens the writer before four query-only readers; a dedicated stream-feed reader outside the
 pool serves the poller and ring fills, so N streams cost one read per active poll tick, zero when
 idle, and never check out the pool. Each read captures owned records and

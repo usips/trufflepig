@@ -184,7 +184,7 @@ fn router_database_marker_refuses_split_local_fallback() {
 }
 
 #[test]
-fn router_status_reports_the_board_database_schema_version() {
+fn router_status_reports_supported_and_file_schema_versions() {
     let directory = crate::board::board_test_support::scratch("board-status-");
     let database = directory.path().join("board.sqlite3");
     let config = crate::board::BoardConfig::for_database(&database);
@@ -206,14 +206,43 @@ fn router_status_reports_the_board_database_schema_version() {
     assert_eq!(status["status"], "ok");
     assert_eq!(status["board_api"], crate::board::BOARD_API);
     assert_eq!(status["board_db"], serde_json::json!(database));
-    assert_eq!(
-        status["schema_version"],
-        crate::board::board_protocol::BOARD_SCHEMA_VERSION
-    );
+    assert_eq!(status["schema_supported"], crate::board::SCHEMA_VERSION);
+    assert_eq!(status["schema_file"], crate::board::SCHEMA_VERSION);
 }
 
 #[test]
-fn router_status_omits_the_schema_version_of_an_absent_database() {
+fn router_status_reports_migrated_schema_after_startup_migration() {
+    let directory = crate::board::board_test_support::scratch("board-status-");
+    let database = directory.path().join("board.sqlite3");
+    crate::board::local_board::seed_storage_schema(
+        &database,
+        crate::board::SCHEMA_VERSION - 1,
+    )
+    .unwrap();
+    let config = crate::board::BoardConfig::for_database(&database);
+    let board = crate::board::BoardHost::with_config(config);
+    board.ensure_writer(QueryDeadline::start()).unwrap();
+    let router = SystemRouter {
+        runtime: Some(directory.path().join("runtime")),
+        cache_base: None,
+        sweeps: Mutex::new(SweepClock::default()),
+        board,
+    };
+    let reply = router
+        .request(AcceptedRequest {
+            args: ["system".into(), "status".into()].into(),
+            context: RequestContext::new(None, None),
+            deadline: QueryDeadline::start(),
+        })
+        .unwrap();
+    let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(status["status"], "ok");
+    assert_eq!(status["schema_supported"], crate::board::SCHEMA_VERSION);
+    assert_eq!(status["schema_file"], crate::board::SCHEMA_VERSION);
+}
+
+#[test]
+fn router_status_omits_the_schema_file_of_an_absent_database() {
     let directory = crate::board::board_test_support::scratch("board-status-");
     let database = directory.path().join("board.sqlite3");
     let router = SystemRouter {
@@ -234,7 +263,8 @@ fn router_status_omits_the_schema_version_of_an_absent_database() {
     let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
     assert_eq!(status["status"], "ok");
     assert_eq!(status["board_db"], serde_json::json!(database));
-    assert!(status["schema_version"].is_null());
+    assert_eq!(status["schema_supported"], crate::board::SCHEMA_VERSION);
+    assert!(status["schema_file"].is_null());
     assert!(!database.exists(), "status must not create the database");
 }
 
@@ -260,8 +290,9 @@ fn router_status_omits_board_fields_when_the_database_path_is_not_absolute() {
     let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
     assert_eq!(status["status"], "ok");
     assert_eq!(status["board_api"], crate::board::BOARD_API);
+    assert_eq!(status["schema_supported"], crate::board::SCHEMA_VERSION);
     assert!(status["board_db"].is_null());
-    assert!(status["schema_version"].is_null());
+    assert!(status["schema_file"].is_null());
     assert!(!runtime.exists(), "a failed pin must not create its directory");
     let error = router
         .request(AcceptedRequest {
@@ -302,7 +333,8 @@ fn router_status_survives_a_database_pin_write_failure() {
     let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
     assert_eq!(status["status"], "ok");
     assert_eq!(status["board_db"], serde_json::json!(database));
-    assert!(status["schema_version"].is_null());
+    assert_eq!(status["schema_supported"], crate::board::SCHEMA_VERSION);
+    assert!(status["schema_file"].is_null());
     assert!(runtime.join("board-backend.json").is_dir());
 }
 
@@ -350,8 +382,15 @@ fn ensure_reports_a_running_router_despite_unresolvable_board_database() {
     let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
     assert_eq!(status["status"], "ok");
     assert_eq!(status["board_api"], crate::board::BOARD_API);
+    assert_eq!(status["schema_supported"], crate::board::SCHEMA_VERSION);
     assert!(status["board_db"].is_null());
-    assert!(status["schema_version"].is_null());
+    assert!(status["schema_file"].is_null());
+    assert!(
+        status["board_error"]
+            .as_str()
+            .is_some_and(|error| error.contains("board database path must be absolute")),
+        "{status}"
+    );
     crate::system::ensure().unwrap();
     let error = crate::system::request(&["board".into(), "show".into()], &context).unwrap_err();
     assert!(

@@ -9,6 +9,35 @@ fn directory() -> tempfile::TempDir {
 }
 
 #[test]
+fn shipped_migration_steps_are_byte_pinned() {
+    use sha2::{Digest, Sha256};
+    let pin = |sql: &str| {
+        Sha256::digest(sql.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    };
+    // V1..V3 pins are the 715ce6c bytes; V4 is the W4-shipped step. Any edit,
+    // whitespace included, must fail here and ship as a new step instead.
+    assert_eq!(
+        pin(SCHEMA_V1),
+        "47413815133d1a963462fbfe86c3efe50886b2efffaa92083e891379b61824a7"
+    );
+    assert_eq!(
+        pin(SCHEMA_V2),
+        "030cc83ff064e0d7f21733a177031cfd20c79e56d800efa30b47bffe8d205345"
+    );
+    assert_eq!(
+        pin(SCHEMA_V3),
+        "89485ffc412986aa7b37a301194160d662386bcbae5fff7149abb5d013d8d982"
+    );
+    assert_eq!(
+        pin(SCHEMA_V4),
+        "3398d71703ed6b759c64530ef903da210e0ddf21c378a1daf4aea3ca89615c15"
+    );
+}
+
+#[test]
 fn populated_v1_migration_preserves_durable_evidence() {
     let directory = directory();
     let path = directory.path().join("board.sqlite3");
@@ -120,7 +149,9 @@ fn populated_v1_migration_preserves_durable_evidence() {
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(receipt.api, crate::board::board_protocol::BOARD_API);
+    // The v4 step stamps the wire API current at migration time; dispatch
+    // upgrades older stamps to the current API when replaying receipts.
+    assert_eq!(receipt.api, 3);
     let crate::board::board_protocol::BoardResult::Change(change) = receipt.result else {
         panic!("lost legacy receipt");
     };

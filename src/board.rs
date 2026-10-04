@@ -22,6 +22,7 @@ mod tests;
 pub use board_backend::{BoardBackend, BoardHost};
 pub use board_config::BoardConfig;
 pub use board_protocol::{BOARD_API, BoardError, BoardOp, BoardReply, BoardRequest};
+pub use local_board::SCHEMA_VERSION;
 
 use crate::{cli::Arguments, diagnostics::RequestContext};
 use anyhow::{Context, Result, bail, ensure};

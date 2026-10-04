@@ -18,6 +18,24 @@ use std::{
 };
 
 impl BoardHost {
+    /// Opens the writer, creating and migrating the database when needed.
+    /// The router calls this before accepting connections so status and
+    /// board-serve never race migration; request paths call it for lazy
+    /// initialization. Callers starting a server ignore failure: the router
+    /// must serve despite a broken board configuration.
+    pub(crate) fn ensure_writer(&self, deadline: QueryDeadline) -> Result<()> {
+        check_deadline(deadline)?;
+        let config = self.config()?;
+        let mut backend = lock_before(&self.inner.backend, deadline, "writer")?;
+        if backend.is_none() {
+            *backend = Some(LocalBoard::open_with_timeout(
+                &config,
+                deadline.cap(Duration::from_secs(5)),
+            )?);
+        }
+        Ok(())
+    }
+
     pub(super) fn handle_by(
         &self,
         request: &BoardRequest,
@@ -63,14 +81,7 @@ impl BoardHost {
                     {
                         return Err(error.into());
                     }
-                    let mut writer = lock_before(&self.inner.backend, deadline, "writer")?;
-                    if writer.is_none() {
-                        *writer = Some(LocalBoard::open_with_timeout(
-                            &config,
-                            deadline.cap(Duration::from_secs(5)),
-                        )?);
-                    }
-                    drop(writer);
+                    self.ensure_writer(deadline)?;
                     LocalBoard::open_read_with_timeout(
                         &config,
                         deadline.cap(Duration::from_secs(5)),

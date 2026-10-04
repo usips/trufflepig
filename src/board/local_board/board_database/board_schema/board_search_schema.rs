@@ -27,8 +27,7 @@ END;
 CREATE TRIGGER search_entries_update AFTER UPDATE OF body,plan_id ON entries BEGIN
  UPDATE search_documents SET plan_id=new.plan_id,
  source=CASE WHEN EXISTS(SELECT 1 FROM proposals WHERE entry_id=new.id) THEN 'proposal' ELSE 'entry' END,
- body=new.body||COALESCE((SELECT char(10)||t.body FROM proposals p JOIN texts t ON t.hash=p.text_hash
- WHERE p.entry_id=new.id),'')
+ body=new.body||COALESCE((SELECT char(10)||t.body FROM proposals p JOIN texts t ON t.hash=p.text_hash WHERE p.entry_id=new.id),'')
  WHERE target='E'||new.id;
 END;
 CREATE TRIGGER search_entries_delete AFTER DELETE ON entries BEGIN

@@ -1,6 +1,7 @@
-//! Unauthenticated listener-ownership proof: HMAC-SHA256 over nonce and address.
-//! The token keys the proof and never crosses the wire; a fresh random nonce
-//! and the bound listener address make proofs worthless to a relaying thief.
+//! Unauthenticated listener-ownership proof: HMAC-SHA256 over a domain label,
+//! nonce, and address. The token keys the proof and never crosses the wire; a
+//! fresh random nonce and the bound listener address make proofs worthless to
+//! a relaying thief.
 
 use super::BoardWebToken;
 use anyhow::{Context, Result, ensure};
@@ -43,7 +44,10 @@ impl ChallengeNonce {
     }
 }
 
-/// HMAC-SHA256(key = token, message = nonce || address), hex-encoded.
+/// Domain label separating listener proofs from any other token-keyed MAC.
+const PROOF_LABEL: &[u8] = b"trufflepig-board-listener-proof-v1";
+
+/// HMAC-SHA256(key = token, message = label NUL || nonce || address), hex.
 pub(crate) fn proof_hex(
     token: &BoardWebToken,
     nonce: &ChallengeNonce,
@@ -53,7 +57,9 @@ pub(crate) fn proof_hex(
 }
 
 fn proof(token: &BoardWebToken, nonce: &ChallengeNonce, address: &SocketAddr) -> [u8; 32] {
-    let mut message = Vec::with_capacity(NONCE_BYTES + 22);
+    let mut message = Vec::with_capacity(PROOF_LABEL.len() + 1 + NONCE_BYTES + 22);
+    message.extend_from_slice(PROOF_LABEL);
+    message.push(0);
     message.extend_from_slice(&nonce.0);
     message.extend_from_slice(address.to_string().as_bytes());
     hmac_sha256(token.expose().as_bytes(), &message)
@@ -133,6 +139,38 @@ mod tests {
                 b"Test Using Larger Than Block-Size Key - Hash Key First"
             )),
             "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54"
+        );
+    }
+
+    #[test]
+    fn hmac_sha256_pins_a_token_length_block_boundary_key() {
+        let key: Vec<u8> = (0..64).collect();
+        assert_eq!(
+            hex(&hmac_sha256(&key, b"token-length key boundary")),
+            "b969df972b168671adbc59da398442a0ba4b208d65b746d6be48bdbe4ebcded7"
+        );
+    }
+
+    #[test]
+    fn proof_prefixes_a_domain_label_before_nonce_and_address() {
+        let directory = crate::board::board_test_support::scratch("board-challenge-");
+        let path = directory.path().join("token");
+        std::fs::write(&path, "0123456789abcdef".repeat(4)).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        let token = BoardWebToken::read_at(&path).unwrap();
+        assert_eq!(token.expose().len(), 64);
+        let nonce = ChallengeNonce::from_hex(
+            &(0..32).map(|byte| format!("{byte:02x}")).collect::<String>(),
+        )
+        .unwrap();
+        let address: SocketAddr = "127.0.0.1:7341".parse().unwrap();
+        assert_eq!(
+            proof_hex(&token, &nonce, &address),
+            "b59701424c6fc8d95335135b5c96802846acbd291d7d95abe6214c00181ae3f2"
         );
     }
 

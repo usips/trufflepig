@@ -66,6 +66,53 @@ fn no_daemon_board_access_never_contacts_or_starts_router() {
 }
 
 #[test]
+fn no_daemon_refuses_to_migrate_beside_a_live_router() {
+    let directory = scratch();
+    let runtime = directory.path().join("runtime");
+    std::fs::create_dir_all(&runtime).unwrap();
+    let _listener =
+        std::os::unix::net::UnixListener::bind(runtime.join(crate::daemon::SOCKET_NAME)).unwrap();
+    let database = directory.path().join("board.sqlite3");
+    let error = invoke(
+        &["--no-daemon", "board", "show"],
+        &mut FakeGateway::default(),
+        &AtomicU64::new(0),
+        &database,
+        Some(&runtime),
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("router owns migration"),
+        "{error}"
+    );
+    assert!(!database.exists());
+}
+
+#[test]
+fn silent_fallback_refuses_to_migrate_beside_a_live_router() {
+    let directory = scratch();
+    let runtime = directory.path().join("runtime");
+    std::fs::create_dir_all(&runtime).unwrap();
+    let _listener =
+        std::os::unix::net::UnixListener::bind(runtime.join(crate::daemon::SOCKET_NAME)).unwrap();
+    let database = directory.path().join("board.sqlite3");
+    let mut gateway = FakeGateway::default();
+    let error = invoke(
+        &["board", "show"],
+        &mut gateway,
+        &AtomicU64::new(0),
+        &database,
+        Some(&runtime),
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("router owns migration"),
+        "{error}"
+    );
+    assert!(!database.exists());
+}
+
+#[test]
 fn router_api_is_probed_once_before_dispatch_and_mismatch_never_falls_back() {
     let directory = scratch();
     let database = directory.path().join("board.sqlite3");
@@ -91,23 +138,59 @@ fn router_api_is_probed_once_before_dispatch_and_mismatch_never_falls_back() {
     assert_eq!(gateway.requests.len(), 3);
     assert_eq!(gateway.requests[0], ["system", "status"]);
     assert!(!database.exists());
-    let status =
-        serde_json::json!({"status":"ok","board_api":BOARD_API+1,"board_db":database}).to_string();
+    for stale in [3, BOARD_API + 1] {
+        let status =
+            serde_json::json!({"status":"ok","board_api":stale,"board_db":database}).to_string();
+        let mut gateway = FakeGateway {
+            replies: VecDeque::from([Ok(Some(status))]),
+            ..Default::default()
+        };
+        let error = invoke(
+            &["board", "new", "Never written"],
+            &mut gateway,
+            &AtomicU64::new(0),
+            &database,
+            None,
+        )
+        .unwrap_err();
+        assert!(error.to_string().starts_with("board_api_mismatch:"), "{error}");
+        assert!(
+            error.to_string().contains("restart trufflepig-system.service"),
+            "{error}"
+        );
+        assert_eq!(gateway.requests.len(), 1);
+        assert_eq!(gateway.ensured, 0);
+        assert!(!database.exists());
+    }
+}
+
+#[test]
+fn probe_without_board_db_surfaces_the_routers_board_error() {
+    let directory = scratch();
+    let database = directory.path().join("board.sqlite3");
+    let status = serde_json::json!({
+        "status": "ok",
+        "board_api": BOARD_API,
+        "board_error": "invalid_options: board database path must be absolute",
+    })
+    .to_string();
     let mut gateway = FakeGateway {
         replies: VecDeque::from([Ok(Some(status))]),
         ..Default::default()
     };
     let error = invoke(
-        &["board", "new", "Never written"],
+        &["board", "show"],
         &mut gateway,
         &AtomicU64::new(0),
         &database,
         None,
     )
     .unwrap_err();
-    assert!(error.to_string().starts_with("board_api_mismatch:"));
-    assert_eq!(gateway.requests.len(), 1);
-    assert_eq!(gateway.ensured, 0);
+    assert!(error.to_string().starts_with("board_unavailable:"), "{error}");
+    assert!(
+        error.to_string().contains("board database path must be absolute"),
+        "{error}"
+    );
     assert!(!database.exists());
 }
 

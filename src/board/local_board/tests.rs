@@ -162,3 +162,37 @@ fn local_board_dedupe_distinguishes_target_and_snapshots_claims() {
     drop(board);
     std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
+
+#[test]
+fn local_board_replay_upgrades_receipts_stamped_with_an_older_api() {
+    let (mut board, path) = database();
+    let request = BoardRequest::new(
+        actor("codex", "c1"),
+        BoardOp::New {
+            title: PlanTitle::new("Trial").unwrap(),
+            body: PlanText::new("# Scope").unwrap(),
+            steward: None,
+            repo_key: None,
+        },
+    );
+    let first = board.handle(&request).unwrap();
+    assert_eq!(first.api, crate::board::BOARD_API);
+    let stored = rusqlite::Connection::open(&path).unwrap();
+    stored.busy_timeout(Duration::from_secs(5)).unwrap();
+    stored
+        .execute(
+            "UPDATE operation_dedupes SET reply_json=json_set(reply_json,'$.api',?1)",
+            [crate::board::BOARD_API - 1],
+        )
+        .unwrap();
+    drop(stored);
+    let replayed = board.handle(&request).unwrap();
+    assert_eq!(replayed.api, crate::board::BOARD_API);
+    replayed.validate().unwrap();
+    let BoardResult::Change(change) = replayed.result else {
+        panic!("new plan receipt");
+    };
+    assert!(change.deduplicated);
+    drop(board);
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}

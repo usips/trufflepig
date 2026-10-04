@@ -218,3 +218,39 @@ fn host_bootstraps_writable_legacy_storage_but_keeps_readonly_initialization_err
     );
     drop(held);
 }
+
+#[test]
+fn ensure_writer_migrates_once_for_router_startup() {
+    let directory = crate::board::board_test_support::scratch("board-runtime-");
+    let database = directory.path().join("board.sqlite3");
+    let host = BoardHost::with_config(BoardConfig::for_database(&database));
+    assert!(!database.exists());
+    host.ensure_writer(QueryDeadline::start()).unwrap();
+    let version: i64 = rusqlite::Connection::open(&database)
+        .unwrap()
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, crate::board::SCHEMA_VERSION);
+    assert!(host.inner.backend.lock().unwrap().is_some());
+    host.ensure_writer(QueryDeadline::start()).unwrap();
+    assert!(host.inner.backend.lock().unwrap().is_some());
+}
+
+#[test]
+fn ensure_writer_migrates_stale_storage_for_router_startup() {
+    let directory = crate::board::board_test_support::scratch("board-runtime-");
+    let database = directory.path().join("board.sqlite3");
+    crate::board::local_board::seed_storage_schema(
+        &database,
+        crate::board::SCHEMA_VERSION - 1,
+    )
+    .unwrap();
+    let host = BoardHost::with_config(BoardConfig::for_database(&database));
+    host.ensure_writer(QueryDeadline::start()).unwrap();
+    let version: i64 = rusqlite::Connection::open(&database)
+        .unwrap()
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, crate::board::SCHEMA_VERSION);
+    assert!(host.inner.backend.lock().unwrap().is_some());
+}

@@ -17,8 +17,7 @@ import uuid
 
 PLUGIN = Path(__file__).resolve().parents[1]
 SKILLS = ("trufflepig-code-search", "trufflepig-plan-board")
-BOARD_API = 3
-BOARD_SCHEMA = 4
+BOARD_API = 4
 sys.path.insert(0, str(PLUGIN / "bin"))
 from trufflepig_runtime import runtime_config_path
 from omp_install import omp_agent_dir
@@ -153,12 +152,13 @@ def require_current_router(runtime: Path) -> None:
         api = status.get("board_api")
         if api != BOARD_API:
             raise ValueError(f"router reports board_api {api}, expected {BOARD_API}; {advice}")
-        schema = status.get("schema_version")
-        if schema is None or schema == BOARD_SCHEMA or time.monotonic() >= deadline:
+        supported = status.get("schema_supported")
+        schema = status.get("schema_file")
+        if schema is None or schema == supported or time.monotonic() >= deadline:
             break
         time.sleep(0.25)
-    if schema is not None and schema != BOARD_SCHEMA:
-        raise ValueError(f"router reports schema_version {schema}, expected {BOARD_SCHEMA}; {advice}")
+    if schema is not None and schema != supported:
+        raise ValueError(f"router reports schema_file {schema}, expected {supported}; {advice}")
 
 
 def main() -> int:

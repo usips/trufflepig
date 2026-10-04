@@ -4,7 +4,7 @@ use crate::board::{
     board_grammar::{self, BoardCommand},
 };
 use crate::{cli::Arguments, daemon::deadline::QueryDeadline, diagnostics::RequestContext};
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use std::{
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
@@ -170,9 +170,13 @@ fn parse_probe(status: &str) -> Result<(u32, PathBuf)> {
         .context(
             "board_api_mismatch: router lacks board capability; restart trufflepig-system.service",
         )?;
-    let database = status.get("board_db").and_then(serde_json::Value::as_str)
-        .map(PathBuf::from)
-        .context("board_api_mismatch: router omitted its database path; restart trufflepig-system.service")?;
+    let Some(path) = status.get("board_db").and_then(serde_json::Value::as_str) else {
+        if let Some(detail) = status.get("board_error").and_then(serde_json::Value::as_str) {
+            bail!("board_unavailable: router board error: {detail}");
+        }
+        bail!("board_api_mismatch: router omitted its database path; restart trufflepig-system.service");
+    };
+    let database = PathBuf::from(path);
     ensure!(
         database.is_absolute(),
         "board_api_mismatch: router database path is not absolute"
@@ -188,6 +192,10 @@ fn local_reply(
     runtime: Option<&Path>,
     spool: &Path,
 ) -> Result<String> {
+    // A live router owns migration; opening here would migrate under it.
+    if runtime.is_some_and(|runtime| crate::daemon::running(runtime)) {
+        bail!("board_unavailable: router owns migration");
+    }
     let config = load()?;
     if let Some(runtime) = runtime {
         crate::system::validate_board_database(runtime, &config.db_path)?;

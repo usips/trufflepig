@@ -23,6 +23,9 @@ use super::board_ids::{
 };
 use super::board_protocol::*;
 use super::board_vocabulary::EntryKind;
+pub use board_database::SCHEMA_VERSION;
+#[cfg(test)]
+pub(crate) use board_database::seed_storage_schema;
 pub(super) use board_evidence::{can_accept, insert_entry, insert_event, require_plan};
 use board_writes::board_receipts::{is_dedupable, receipt_current, request_dedupe_key};
 

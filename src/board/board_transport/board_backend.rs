@@ -97,6 +97,16 @@ impl BoardHost {
             .ok_or_else(|| anyhow::anyhow!("board_unavailable: database path is unavailable"))
     }
 
+    /// The latest board configuration failure, for `system status` to report
+    /// when no database path is available; `None` means unloaded or healthy.
+    pub(crate) fn config_error(&self) -> Option<String> {
+        let config = self.inner.config.lock().unwrap_or_else(|poisoned| {
+            self.inner.config.clear_poison();
+            poisoned.into_inner()
+        });
+        config.snapshot()?.err().map(|error| error.to_string())
+    }
+
     pub(super) fn idle_config(
         &self,
     ) -> Option<(Option<std::result::Result<BoardConfig, BoardError>>, bool)> {

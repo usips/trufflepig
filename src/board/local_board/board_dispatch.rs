@@ -103,6 +103,10 @@ impl LocalBoard {
             if let Some(stored) = stored {
                 let mut reply: BoardReply = serde_json::from_str(&stored)
                     .map_err(|e| invalid("board_unavailable", e.to_string()))?;
+                // Stored receipts older than the wire API upgrade; validation stays strict.
+                if reply.api < BOARD_API {
+                    reply.api = BOARD_API;
+                }
                 if receipt_current(&tx, request, &reply)? {
                     if let BoardResult::Change(change) = &mut reply.result {
                         change.deduplicated = true;
