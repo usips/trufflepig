@@ -109,8 +109,12 @@ export function createBoardDom(state) {
     if (options.maxLength) input.maxLength = options.maxLength;
     if (options.className) input.className = options.className;
     if (options.placeholder) input.placeholder = options.placeholder;
-    if (options.hint) add(caption, el("span", "hint", ` · ${options.hint}`));
-    add(wrapper, caption, input);
+    let hint = null;
+    if (options.hint) {
+      hint = el("span", "hint", options.hint);
+      hint.id = `${id}-hint`; input.setAttribute("aria-describedby", hint.id);
+    }
+    add(wrapper, caption, input, hint);
     return { wrapper, input };
   }
   function formStatus(form, message, tone = "error") {
