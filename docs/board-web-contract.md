@@ -45,7 +45,7 @@ The backend enforces owner-user plus human/steward authority and revision CAS.
 
 ## HTTP surface and typed operations
 
-HTTP route version `v1` and typed `BOARD_API = 2` are independent contracts.
+HTTP route version `v1` and typed `BOARD_API = 3` are independent contracts.
 The public shell supplies the typed API value; every JSON mutation/read envelope
 uses that value. Mismatches fail `board_api_mismatch` without negotiation.
 Errors are `{ "error": { "code": CODE, "message": TEXT } }`.
@@ -55,8 +55,8 @@ Errors are `{ "error": { "code": CODE, "message": TEXT } }`.
 | `GET /`, `/app.js`, `/app.css` | Public shell and root assets only |
 | `GET /board_dom.js`, `/board_views.js`, `/board_details.js` | Public UI modules |
 | `GET /board_feedback.js`, `/board_stream.js`, `/board_reader.js`, `/board_entries.js` | Public UI modules |
-| `POST /api/v1/board` | `{ "api": 2, "op": BoardOp }`; typed `BoardReply` |
-| `POST /api/v1/ingest` | `{ "api": 2 }`; authenticated router ingest relay |
+| `POST /api/v1/board` | `{ "api": 3, "op": BoardOp }`; typed `BoardReply` |
+| `POST /api/v1/ingest` | `{ "api": 3 }`; authenticated router ingest relay |
 | `GET /api/v1/render/plan/P7` or `P7@12` | `{api, revision, snapshot_seq, html, headings}` |
 | `GET /api/v1/render/diff/P7@10..12` | `{api, before, after, hunks, snapshot_seq}` |
 | `GET /api/v1/render/proposal/E80` | `{api, entry, before, hunks, snapshot_seq}` |

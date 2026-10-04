@@ -91,10 +91,13 @@ class AgentInstallTests(unittest.TestCase):
                                      "TRUFFLEPIG_SYSTEM_DIR": str(self.root / "runtime with spaces/100%")}, clear=True):
             board = module.render_service("trufflepig-board.service", "/bin with spaces/100%/trufflepig")
             router = module.service_text("/bin with spaces/100%/trufflepig", self.root / "spool")
-        self.assertIn('ExecStart="/bin with spaces/100%%/trufflepig" board-serve --listen 127.0.0.1:7341', board)
+        self.assertIn('ExecStart="/bin with spaces/100%%/trufflepig" board-serve --listen 127.0.0.1:0', board)
         self.assertIn("Type=simple", board)
         self.assertIn("Restart=on-failure", board)
         self.assertIn("WantedBy=default.target", board)
+        for line in ("After=trufflepig-system.service", "Wants=trufflepig-system.service",
+                     "PartOf=trufflepig-system.service"):
+            self.assertIn(line, board)
         for name in ("TRUFFLEPIG_BOARD_DB", "TRUFFLEPIG_SYSTEM_DIR"):
             line = next(line for line in board.splitlines() if line.startswith(f'Environment="{name}='))
             self.assertIn(line, router)
@@ -136,7 +139,7 @@ import json, os, sys, time
 from pathlib import Path
 if Path(sys.argv[0]).name == "trufflepig" and sys.argv[1:] == ["--board-api-version"]:
     time.sleep(float(os.environ.get("PROBE_DELAY", "0")))
-    sys.stdout.write(os.environ.get("PROBE_STDOUT", "2\\n"))
+    sys.stdout.write(os.environ.get("PROBE_STDOUT", "3\\n"))
     sys.stderr.write(os.environ.get("PROBE_STDERR", ""))
     sys.exit(int(os.environ.get("PROBE_STATUS", "0")))
 with Path(os.environ["SERVICE_CAPTURE"]).open("a") as handle:
@@ -149,15 +152,15 @@ with Path(os.environ["SERVICE_CAPTURE"]).open("a") as handle:
     def test_service_capability_failure_prevents_all_installation_mutations(self):
         capture = self.service_shims()
         cases = [("", "unknown argument --board-api-version\\n", "2"),
-                 ("1\n", "", "0"), ("3\n", "", "0"), ("API 2\n", "", "0"),
-                 ("2\nextra\n", "", "0"), ("2\n", "", "1"), ("2\n", "diagnostic\n", "0")]
+                 ("1\n", "", "0"), ("2\n", "", "0"), ("API 3\n", "", "0"),
+                 ("3\nextra\n", "", "0"), ("3\n", "", "1"), ("3\n", "diagnostic\n", "0")]
         for flag in ("--board", "--systemd"):
             for output, error, status in cases:
                 with self.subTest(flag=flag, output=output, status=status):
                     self.env.update(PROBE_STDOUT=output, PROBE_STDERR=error, PROBE_STATUS=status)
                     result = self.install("--codex", flag)
                     self.assertEqual(result.returncode, 2, result.stderr)
-                    self.assertIn("must support board API 2", result.stderr)
+                    self.assertIn("must support board API 3", result.stderr)
                     self.assertFalse((self.root / ".local/bin").exists())
                     self.assertFalse((self.root / ".agents").exists())
                     self.assertFalse((self.root / "config").exists())
@@ -170,7 +173,7 @@ with Path(os.environ["SERVICE_CAPTURE"]).open("a") as handle:
         result = subprocess.run([str(PLUGIN / "install.sh"), "--board"], env=self.env,
                                 text=True, capture_output=True, timeout=8)
         self.assertEqual(result.returncode, 2, result.stderr)
-        self.assertIn("must support board API 2", result.stderr)
+        self.assertIn("must support board API 3", result.stderr)
         self.assertFalse((self.root / ".local/bin").exists())
         self.assertFalse((self.root / "config").exists())
         self.assertFalse(capture.exists())
@@ -205,6 +208,19 @@ with Path(os.environ["SERVICE_CAPTURE"]).open("a") as handle:
         self.assertEqual(calls.count(["systemctl", "--user", "daemon-reload"]), 1)
         self.assertIn(["systemctl", "--user", "enable", "--now", "trufflepig-system.service"], calls)
         self.assertIn(["systemctl", "--user", "enable", "--now", "trufflepig-board.service"], calls)
+
+    def test_later_board_install_restarts_the_installed_router(self):
+        capture = self.service_shims()
+        first = self.install("--systemd")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        capture.write_text("")
+        result = self.install("--board")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = [json.loads(line) for line in capture.read_text().splitlines()]
+        self.assertEqual(calls, [["systemctl", "--user", "daemon-reload"],
+                                 ["systemctl", "--user", "stop", "trufflepig-board.service"],
+                                 ["systemctl", "--user", "restart", "trufflepig-system.service"],
+                                 ["systemctl", "--user", "enable", "--now", "trufflepig-board.service"]])
 
     def test_later_board_install_rejects_different_router_database_before_mutation(self):
         capture = self.service_shims()

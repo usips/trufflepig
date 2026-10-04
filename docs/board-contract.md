@@ -109,7 +109,7 @@ size and advise splitting the plan. `show` and `review` default to 4000 output t
 
 ## Backend, transport, and deadlines
 
-Every operation uses `BoardRequest { api: BOARD_API, actor, op, claims }` (`BOARD_API = 2`) and a typed `BoardReply`. `BoardBackend` owns
+Every operation uses `BoardRequest { api: BOARD_API, actor, op, claims }` (`BOARD_API = 3`) and a typed `BoardReply`. `BoardBackend` owns
 state and returns data; the edge parses, reads bodies, scans local Git, and renders. An API mismatch fails `board_api_mismatch` without
 negotiation. `LocalBoard` is the SQLite backend. Replies identify the backend and expose a read-transaction `snapshot_seq`.
 
@@ -189,7 +189,8 @@ reports the failure.
 
 Storage defaults to `$XDG_DATA_HOME/trufflepig/board.sqlite3`, else the passwd home's `.local/share/trufflepig/board.sqlite3`;
 `TRUFFLEPIG_BOARD_DB` overrides it. The DB is 0600 in a 0700 directory, records its resolved path, and uses forward `user_version`
-migrations; empty/relative DB overrides and newer schemas are refused. Board data is outside cache sweeps and `forget-logs`; entries and
+migrations. A shipped migration step is never edited; repairs ship as a new version step. Empty/relative DB overrides and newer schemas are
+refused. Board data is outside cache sweeps and `forget-logs`; entries and
 revisions remain durable. WAL requires local disk, not a network filesystem. Configuration is `~/.config/trufflepig/board.toml` with unknown
 fields denied: mode, user, host, url, token_file, claim_ttl_minutes, repos. Config checks are cached for two seconds and failed unchanged
 reloads back off 60 seconds; successful TTL changes reach existing readers/writer. `mode = "local"` selects local storage; `mode = "remote"`

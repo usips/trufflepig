@@ -184,6 +184,61 @@ fn router_database_marker_refuses_split_local_fallback() {
 }
 
 #[test]
+fn router_status_reports_the_board_database_schema_version() {
+    let directory = crate::board::board_test_support::scratch("board-status-");
+    let database = directory.path().join("board.sqlite3");
+    let config = crate::board::BoardConfig::for_database(&database);
+    drop(crate::board::local_board::LocalBoard::open(&config).unwrap());
+    let router = SystemRouter {
+        runtime: Some(directory.path().join("runtime")),
+        cache_base: None,
+        sweeps: Mutex::new(SweepClock::default()),
+        board: crate::board::BoardHost::with_config(config),
+    };
+    let reply = router
+        .request(AcceptedRequest {
+            args: ["system".into(), "status".into()].into(),
+            context: RequestContext::new(None, None),
+            deadline: QueryDeadline::start(),
+        })
+        .unwrap();
+    let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(status["status"], "ok");
+    assert_eq!(status["board_api"], crate::board::BOARD_API);
+    assert_eq!(status["board_db"], serde_json::json!(database));
+    assert_eq!(
+        status["schema_version"],
+        crate::board::board_protocol::BOARD_SCHEMA_VERSION
+    );
+}
+
+#[test]
+fn router_status_omits_the_schema_version_of_an_absent_database() {
+    let directory = crate::board::board_test_support::scratch("board-status-");
+    let database = directory.path().join("board.sqlite3");
+    let router = SystemRouter {
+        runtime: Some(directory.path().join("runtime")),
+        cache_base: None,
+        sweeps: Mutex::new(SweepClock::default()),
+        board: crate::board::BoardHost::with_config(crate::board::BoardConfig::for_database(
+            &database,
+        )),
+    };
+    let reply = router
+        .request(AcceptedRequest {
+            args: ["system".into(), "status".into()].into(),
+            context: RequestContext::new(None, None),
+            deadline: QueryDeadline::start(),
+        })
+        .unwrap();
+    let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(status["status"], "ok");
+    assert_eq!(status["board_db"], serde_json::json!(database));
+    assert!(status["schema_version"].is_null());
+    assert!(!database.exists(), "status must not create the database");
+}
+
+#[test]
 fn board_routes_without_workspace_or_owner_daemon() {
     let directory = crate::board::board_test_support::scratch("board-transport-");
     let cache = directory.path().join("owner-cache");

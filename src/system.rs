@@ -178,9 +178,13 @@ fn route(
         if let Some(runtime) = runtime {
             record_board_database(runtime, &database)?;
         }
-        return Ok(serde_json::to_string(&serde_json::json!({
+        let mut status = serde_json::json!({
             "status": "ok", "board_api": crate::board::BOARD_API, "board_db": database,
-        }))?);
+        });
+        if let Some(version) = board_schema_version(&database) {
+            status["schema_version"] = version.into();
+        }
+        return Ok(serde_json::to_string(&status)?);
     }
     if matches!(verb, Some("board" | "feedback")) {
         return board.run(&options, &context, deadline);
@@ -240,6 +244,19 @@ fn route(
             .arg("serve"),
     )?;
     forward_spawned(&cache, &args, &context, &child, forwarding)
+}
+
+/// Best-effort read of the board database's storage schema; absent or
+/// unreadable storage reports no version instead of breaking status.
+fn board_schema_version(database: &Path) -> Option<i64> {
+    let connection = rusqlite::Connection::open_with_flags(
+        database,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .ok()?;
+    connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .ok()
 }
 
 /// Refuses a stop aimed at this router's own socket directory.

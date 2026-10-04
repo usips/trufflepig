@@ -35,7 +35,7 @@ const SAVED_M1_FEEDBACK: &str = r#"{
 
 #[test]
 fn saved_m1_feedback_import_preserves_content_provenance_and_permanent_replay_key() {
-    assert_eq!(BOARD_API, 2);
+    assert_eq!(BOARD_API, 3);
     let directory = scratch();
     let config = crate::board::BoardConfig::for_database(directory.path().join("board.sqlite3"));
     let mut backend = LocalBoard::open(&config).unwrap();
@@ -132,11 +132,24 @@ fn saved_m1_feedback_import_preserves_content_provenance_and_permanent_replay_ke
 }
 
 #[test]
+fn saved_feedback_from_any_older_api_upgrades_to_the_current_request() {
+    for api in [1, 2] {
+        let directory = scratch();
+        let mut record: serde_json::Value = serde_json::from_str(SAVED_M1_FEEDBACK).unwrap();
+        record["request"]["api"] = api.into();
+        let key = record["import_key"].as_str().unwrap();
+        let path = directory.path().join(format!("{key}.feedback"));
+        fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+        assert_eq!(read_record(&path).unwrap().api, BOARD_API, "api {api}");
+    }
+}
+
+#[test]
 fn saved_feedback_upgrade_quarantines_unknown_versions_nonfeedback_and_invalid_content() {
     let saved: serde_json::Value = serde_json::from_str(SAVED_M1_FEEDBACK).unwrap();
     let key = saved["import_key"].as_str().unwrap();
     let mut invalid_records = Vec::new();
-    for api in [0, 3, 77] {
+    for api in [BOARD_API + 1, 77] {
         let mut future = saved.clone();
         future["request"]["api"] = api.into();
         invalid_records.push(future);

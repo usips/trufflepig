@@ -9,12 +9,16 @@ from pathlib import Path
 import pwd
 import re
 import shutil
+import socket
 import subprocess
 import sys
+import time
+import uuid
 
 PLUGIN = Path(__file__).resolve().parents[1]
 SKILLS = ("trufflepig-code-search", "trufflepig-plan-board")
-BOARD_API = 2
+BOARD_API = 3
+BOARD_SCHEMA = 3
 sys.path.insert(0, str(PLUGIN / "bin"))
 from trufflepig_runtime import runtime_config_path
 from omp_install import omp_agent_dir
@@ -88,6 +92,66 @@ def require_board_api(binary: str) -> None:
         raise ValueError(advice) from error
     if result.returncode or result.stdout != f"{BOARD_API}\n".encode() or result.stderr:
         raise ValueError(advice)
+
+
+def read_exact(connection: socket.socket, count: int) -> bytes:
+    chunks = []
+    while count > 0:
+        chunk = connection.recv(count)
+        if not chunk:
+            raise OSError("router closed the status reply")
+        chunks.append(chunk)
+        count -= len(chunk)
+    return b"".join(chunks)
+
+
+def router_status(runtime: Path) -> dict | None:
+    """Best-effort `system status` from a listening router; None when none answers."""
+    if not (runtime / "daemon.sock").is_socket():
+        return None
+    request = json.dumps({
+        "command": "Arguments",
+        "arguments": {
+            "context": {"request_id": str(uuid.uuid4()),
+                        "created_unix_micros": int(time.time() * 1_000_000),
+                        "session": None, "client": None},
+            "args": ["system", "status"],
+        },
+    }).encode()
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            connection.settimeout(5)
+            connection.connect(str(runtime / "daemon.sock"))
+            connection.sendall(len(request).to_bytes(4, "big") + request)
+            length = int.from_bytes(read_exact(connection, 4), "big")
+            if length > 4 * 1024 * 1024:
+                return None
+            reply = json.loads(read_exact(connection, length))
+        if reply.get("status") != "success":
+            return None
+        status = json.loads(reply["output"])
+    except (OSError, ValueError):
+        return None
+    return status if isinstance(status, dict) else None
+
+
+def require_current_router(runtime: Path) -> None:
+    """A listening router must run the current binary on the migrated database."""
+    advice = "restart trufflepig-system.service with the current trufflepig binary"
+    deadline = time.monotonic() + 10
+    while True:
+        status = router_status(runtime)
+        if status is None:
+            return  # No listening router leaves the startup probe to the board service.
+        api = status.get("board_api")
+        if api != BOARD_API:
+            raise ValueError(f"router reports board_api {api}, expected {BOARD_API}; {advice}")
+        schema = status.get("schema_version")
+        if schema is None or schema == BOARD_SCHEMA or time.monotonic() >= deadline:
+            break
+        time.sleep(0.25)
+    if schema is not None and schema != BOARD_SCHEMA:
+        raise ValueError(f"router reports schema_version {schema}, expected {BOARD_SCHEMA}; {advice}")
 
 
 def main() -> int:
@@ -225,6 +289,11 @@ def main() -> int:
         print(f"systemd user service: {unit_directory / 'trufflepig-system.service'}")
     if args.board:
         subprocess.run(["systemctl", "--user", "stop", "trufflepig-board.service"], check=True)
+        router_unit = unit_directory / "trufflepig-system.service"
+        if not args.systemd and router_unit.exists():
+            # The board shares the router's database; both must run the same binary.
+            subprocess.run(["systemctl", "--user", "restart", "trufflepig-system.service"], check=True)
+        require_current_router(system_runtime_path())
         subprocess.run(["systemctl", "--user", "enable", "--now", "trufflepig-board.service"], check=True)
         print(f"systemd board service: {unit_directory / 'trufflepig-board.service'}")
         print("board bootstrap URL: run `trufflepig board web`")

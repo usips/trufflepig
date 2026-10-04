@@ -171,8 +171,8 @@ fn read_record(path: &Path) -> Result<BoardRequest, BoardError> {
             ));
         }
     }
-    // Only stored API 1 feedback upgrades to API 2; wire validation stays strict.
-    if record.request.api == 1 && BOARD_API == 2 {
+    // Stored feedback older than the wire API upgrades; validation stays strict.
+    if record.request.api < BOARD_API {
         record.request.api = BOARD_API;
     }
     record.request.validate().map_err(BoardError::from)?;

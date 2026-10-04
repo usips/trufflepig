@@ -3,7 +3,10 @@ use super::WebStore;
 use crate::board::{
     board_backend::BoardBackend,
     board_config::BoardConfig,
-    board_protocol::{BOARD_API, BoardError, BoardErrorCode, BoardOp, BoardReply, BoardRequest},
+    board_protocol::{
+        BOARD_API, BOARD_SCHEMA_VERSION, BoardError, BoardErrorCode, BoardOp, BoardReply,
+        BoardRequest,
+    },
     board_vocabulary::EntryKind,
 };
 use crate::daemon::deadline::QueryDeadline;
@@ -114,17 +117,49 @@ pub(super) fn check_router_identity(
     })
 }
 
+/// Startup opens the database only when a same-API router confirms its schema,
+/// the file already holds the supported schema, or a brand-new database may
+/// bootstrap. An answered router error is fatal; only a silent router (`None`)
+/// permits the local schema check.
 fn startup_probe(
     database: &Path,
     deadline: QueryDeadline,
     exchange: &mut RouterExchange<'_>,
 ) -> Result<(), BoardError> {
-    // Local reads and writes do not depend on a responsive router. Answered identity
-    // mismatches remain fatal; ingestion uses the strict probe below.
-    probe_router(database, deadline, &mut |args, deadline| {
-        Ok(exchange(args, deadline).unwrap_or(None))
-    })
-    .map(|_| ())
+    let confirmed = probe_router(database, deadline, exchange)?
+        .and_then(|status| status["schema_version"].as_i64())
+        == Some(BOARD_SCHEMA_VERSION);
+    if confirmed {
+        return Ok(());
+    }
+    match local_schema_version(database)? {
+        None => Ok(()),
+        Some(version) if version == BOARD_SCHEMA_VERSION => Ok(()),
+        Some(version) if version < BOARD_SCHEMA_VERSION => Err(unavailable(format!(
+            "board database schema version {version} awaits migration to {BOARD_SCHEMA_VERSION}; start trufflepig system ensure with the current binary"
+        ))),
+        Some(version) => Err(unavailable(format!(
+            "board database schema version {version} is newer than supported {BOARD_SCHEMA_VERSION}"
+        ))),
+    }
+}
+
+/// Reads the storage schema without creating or migrating; `None` means absent.
+fn local_schema_version(database: &Path) -> Result<Option<i64>, BoardError> {
+    match database.symlink_metadata() {
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(unavailable(format!("board database: {error}"))),
+    }
+    let connection = rusqlite::Connection::open_with_flags(
+        database,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .map_err(|error| unavailable(format!("board database schema is unreadable: {error}")))?;
+    connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map(Some)
+        .map_err(|error| unavailable(format!("board database schema is unreadable: {error}")))
 }
 
 pub(super) fn relay_ingest(
@@ -140,16 +175,18 @@ pub(super) fn relay_ingest(
     })
 }
 
+/// Fatal when a reachable router disagrees on API or database; `None` only
+/// means no router answered. The returned status lets callers compare schema.
 fn probe_router(
     database: &Path,
     deadline: QueryDeadline,
     exchange: &mut RouterExchange<'_>,
-) -> Result<bool, BoardError> {
+) -> Result<Option<serde_json::Value>, BoardError> {
     if deadline.expired() {
         return Err(super::deadline_error());
     }
     let Some(reply) = exchange(&["system".into(), "status".into()], deadline)? else {
-        return Ok(false);
+        return Ok(None);
     };
     let status: serde_json::Value =
         serde_json::from_str(&reply).map_err(|_| unavailable("router returned invalid status"))?;
@@ -175,7 +212,7 @@ fn probe_router(
             "web database differs from router board_db; restore the router database configuration",
         ));
     }
-    Ok(true)
+    Ok(Some(status))
 }
 
 fn ingest_via(
@@ -183,7 +220,8 @@ fn ingest_via(
     deadline: QueryDeadline,
     exchange: &mut RouterExchange<'_>,
 ) -> Result<serde_json::Value, BoardError> {
-    if !probe_router(database, deadline, exchange)? {
+    // Ingestion runs on the router, which owns migration; schema is not consulted.
+    if probe_router(database, deadline, exchange)?.is_none() {
         return Err(unavailable(
             "router is unavailable; start trufflepig system ensure",
         ));
@@ -208,15 +246,16 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn startup_accepts_unreachable_router_but_ingestion_remains_strict() {
+    fn startup_refuses_an_erroring_router_and_ingestion_stays_strict() {
         let database = Path::new("/source/web.sqlite3");
         let error = || unavailable("router socket permission denied");
-        startup_probe(
+        let failure = startup_probe(
             database,
             QueryDeadline::after(Duration::from_secs(1)),
             &mut |_, _| Err(error()),
         )
-        .unwrap();
+        .unwrap_err();
+        assert_eq!(failure.code, BoardErrorCode::BoardUnavailable);
         let failure = ingest_via(
             database,
             QueryDeadline::after(Duration::from_secs(1)),
@@ -224,6 +263,109 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(failure.code, BoardErrorCode::BoardUnavailable);
+    }
+
+    #[test]
+    fn startup_accepts_a_same_api_router_reporting_the_current_schema() {
+        let database = Path::new("/source/web.sqlite3");
+        let status = serde_json::json!({
+            "status": "ok", "board_api": BOARD_API, "board_db": database,
+            "schema_version": BOARD_SCHEMA_VERSION,
+        });
+        startup_probe(
+            database,
+            QueryDeadline::after(Duration::from_secs(1)),
+            &mut |_, _| Ok(Some(status.to_string())),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn startup_bootstraps_an_absent_database_without_a_router() {
+        let directory = crate::board::board_test_support::scratch("web-probe-");
+        let database = directory.path().join("board.sqlite3");
+        startup_probe(
+            &database,
+            QueryDeadline::after(Duration::from_secs(1)),
+            &mut |_, _| Ok(None),
+        )
+        .unwrap();
+        assert!(!database.exists(), "the probe must not create the database");
+    }
+
+    #[test]
+    fn startup_refuses_off_schema_databases_without_a_router() {
+        let directory = crate::board::board_test_support::scratch("web-probe-");
+        for version in [BOARD_SCHEMA_VERSION - 1, BOARD_SCHEMA_VERSION + 1] {
+            let database = directory.path().join(format!("v{version}.sqlite3"));
+            let connection = rusqlite::Connection::open(&database).unwrap();
+            connection
+                .pragma_update(None, "user_version", version)
+                .unwrap();
+            drop(connection);
+            let error = startup_probe(
+                &database,
+                QueryDeadline::after(Duration::from_secs(1)),
+                &mut |_, _| Ok(None),
+            )
+            .unwrap_err();
+            assert_eq!(error.code, BoardErrorCode::BoardUnavailable, "v{version}");
+            assert_eq!(
+                local_schema_version(&database).unwrap(),
+                Some(version),
+                "the probe must not migrate"
+            );
+        }
+    }
+
+    #[test]
+    fn startup_opens_a_current_database_without_a_router() {
+        let directory = crate::board::board_test_support::scratch("web-probe-");
+        let database = directory.path().join("board.sqlite3");
+        let config = BoardConfig::for_database(&database);
+        drop(crate::board::local_board::LocalBoard::open(&config).unwrap());
+        // The supported schema constant tracks the migrated storage schema.
+        assert_eq!(
+            local_schema_version(&database).unwrap(),
+            Some(BOARD_SCHEMA_VERSION)
+        );
+        startup_probe(
+            &database,
+            QueryDeadline::after(Duration::from_secs(1)),
+            &mut |_, _| Ok(None),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn startup_without_router_schema_defers_to_the_local_database() {
+        let directory = crate::board::board_test_support::scratch("web-probe-");
+        let absent = directory.path().join("absent.sqlite3");
+        let status = serde_json::json!({
+            "status": "ok", "board_api": BOARD_API, "board_db": absent,
+        });
+        startup_probe(
+            &absent,
+            QueryDeadline::after(Duration::from_secs(1)),
+            &mut |_, _| Ok(Some(status.to_string())),
+        )
+        .unwrap();
+        let old = directory.path().join("old.sqlite3");
+        let connection = rusqlite::Connection::open(&old).unwrap();
+        connection
+            .pragma_update(None, "user_version", BOARD_SCHEMA_VERSION - 1)
+            .unwrap();
+        drop(connection);
+        let status = serde_json::json!({
+            "status": "ok", "board_api": BOARD_API, "board_db": old,
+        });
+        let error = startup_probe(
+            &old,
+            QueryDeadline::after(Duration::from_secs(1)),
+            &mut |_, _| Ok(Some(status.to_string())),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, BoardErrorCode::BoardUnavailable);
     }
 
     #[test]

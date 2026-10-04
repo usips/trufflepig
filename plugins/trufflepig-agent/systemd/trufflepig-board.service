@@ -1,11 +1,15 @@
 # Per-user board dashboard. `install.sh --board` resolves binary and runtime paths,
-# then enables this foreground loopback service.
+# then enables this foreground loopback service. The ephemeral port publishes in
+# board-web.json for `board web`; unit links keep router and board on one binary.
 [Unit]
 Description=trufflepig local plan board
+After=trufflepig-system.service
+Wants=trufflepig-system.service
+PartOf=trufflepig-system.service
 
 [Service]
 Type=simple
-ExecStart=@TRUFFLEPIG@ board-serve --listen 127.0.0.1:7341
+ExecStart=@TRUFFLEPIG@ board-serve --listen 127.0.0.1:0
 Restart=on-failure
 RestartSec=2
 KillMode=control-group

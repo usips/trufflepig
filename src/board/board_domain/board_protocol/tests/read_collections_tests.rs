@@ -234,7 +234,7 @@ fn feedback_pages_round_trip_open_filter_and_snapshot_sequence() {
     let mut reply = BoardReply::new("local", BoardResult::Feedback(page));
     reply.snapshot_seq = Some(EventSeq::new(10));
     let encoded = serde_json::to_value(&reply).unwrap();
-    assert_eq!(encoded["api"], 2);
+    assert_eq!(encoded["api"], BOARD_API);
     assert_eq!(encoded["snapshot_seq"], 10);
     assert_eq!(encoded["result"]["data"]["open_only"], true);
     assert_eq!(
