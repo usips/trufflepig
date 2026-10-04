@@ -75,6 +75,7 @@ pub fn request(args: &[String], context: &RequestContext) -> Result<Option<Strin
 }
 
 /// Starts the system daemon when no router answers its status ping.
+/// Board configuration resolves lazily inside the spawned router, never here.
 pub fn ensure() -> Result<()> {
     let ping = vec!["system".to_owned(), "status".to_owned()];
     let context = RequestContext::new(None, None);
@@ -84,10 +85,6 @@ pub fn ensure() -> Result<()> {
     let dir = dir().context("system_unavailable: no runtime dir")?;
     fs::create_dir_all(&dir)?;
     let mut command = Command::new(std::env::current_exe()?);
-    command.env(
-        "TRUFFLEPIG_BOARD_DB",
-        crate::board::BoardConfig::database_path()?,
-    );
     spawn_background(command.arg("system-serve"))?;
     let deadline = Instant::now() + Duration::from_secs(3);
     while Instant::now() < deadline {
@@ -174,15 +171,21 @@ fn route(
     let options = crate::cli::parse(&args)?;
     let verb = options.words.first().map(String::as_str);
     if verb == Some("system") {
-        let database = board.database_path()?;
-        if let Some(runtime) = runtime {
-            record_board_database(runtime, &database)?;
-        }
         let mut status = serde_json::json!({
-            "status": "ok", "board_api": crate::board::BOARD_API, "board_db": database,
+            "status": "ok", "board_api": crate::board::BOARD_API,
         });
-        if let Some(version) = board_schema_version(&database) {
-            status["schema_version"] = version.into();
+        // Board fields are best-effort: status must outlive a broken board
+        // configuration, an unwritable pin, or an absent database.
+        if let Ok(database) = board.database_path()
+            && database.is_absolute()
+        {
+            if let Some(runtime) = runtime {
+                let _ = record_board_database(runtime, &database);
+            }
+            status["board_db"] = serde_json::json!(database);
+            if let Some(version) = board_schema_version(&database) {
+                status["schema_version"] = version.into();
+            }
         }
         return Ok(serde_json::to_string(&status)?);
     }

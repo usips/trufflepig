@@ -49,10 +49,6 @@ impl BoardConfig {
         BoardConfigSource::from_environment()?.load()
     }
 
-    pub(crate) fn database_path() -> Result<PathBuf> {
-        Ok(BoardConfigSource::from_environment()?.defaults.db_path)
-    }
-
     /// Resolve a strict TOML document against supplied defaults without reading env.
     pub fn from_toml(input: &str, mut defaults: Self) -> Result<Self> {
         let file: BoardConfigFile =

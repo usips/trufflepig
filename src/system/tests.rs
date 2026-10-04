@@ -239,6 +239,130 @@ fn router_status_omits_the_schema_version_of_an_absent_database() {
 }
 
 #[test]
+fn router_status_omits_board_fields_when_the_database_path_is_not_absolute() {
+    let directory = crate::board::board_test_support::scratch("board-status-");
+    let runtime = directory.path().join("runtime");
+    let router = SystemRouter {
+        runtime: Some(runtime.clone()),
+        cache_base: None,
+        sweeps: Mutex::new(SweepClock::default()),
+        board: crate::board::BoardHost::with_config(crate::board::BoardConfig::for_database(
+            "relative.sqlite3",
+        )),
+    };
+    let reply = router
+        .request(AcceptedRequest {
+            args: ["system".into(), "status".into()].into(),
+            context: RequestContext::new(None, None),
+            deadline: QueryDeadline::start(),
+        })
+        .unwrap();
+    let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(status["status"], "ok");
+    assert_eq!(status["board_api"], crate::board::BOARD_API);
+    assert!(status["board_db"].is_null());
+    assert!(status["schema_version"].is_null());
+    assert!(!runtime.exists(), "a failed pin must not create its directory");
+    let error = router
+        .request(AcceptedRequest {
+            args: ["board".into(), "show".into()].into(),
+            context: RequestContext::new(None, None),
+            deadline: QueryDeadline::start(),
+        })
+        .unwrap_err();
+    assert!(
+        format!("{error:#}").contains("invalid_options: board database path must be absolute"),
+        "{error:#}"
+    );
+}
+
+#[test]
+fn router_status_survives_a_database_pin_write_failure() {
+    let directory = crate::board::board_test_support::scratch("board-status-");
+    let runtime = directory.path().join("runtime");
+    std::fs::create_dir(&runtime).unwrap();
+    // A directory where the pin belongs makes the marker write fail on any uid.
+    std::fs::create_dir(runtime.join("board-backend.json")).unwrap();
+    let database = directory.path().join("board.sqlite3");
+    let router = SystemRouter {
+        runtime: Some(runtime.clone()),
+        cache_base: None,
+        sweeps: Mutex::new(SweepClock::default()),
+        board: crate::board::BoardHost::with_config(crate::board::BoardConfig::for_database(
+            &database,
+        )),
+    };
+    let reply = router
+        .request(AcceptedRequest {
+            args: ["system".into(), "status".into()].into(),
+            context: RequestContext::new(None, None),
+            deadline: QueryDeadline::start(),
+        })
+        .unwrap();
+    let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(status["status"], "ok");
+    assert_eq!(status["board_db"], serde_json::json!(database));
+    assert!(status["schema_version"].is_null());
+    assert!(runtime.join("board-backend.json").is_dir());
+}
+
+#[test]
+fn ensure_reports_a_running_router_despite_unresolvable_board_database() {
+    if std::env::var_os("TRUFFLEPIG_SYSTEM_TEST_RELATIVE_DB").is_none() {
+        // The child process owns the board environment; parallel tests never see it.
+        let directory = crate::board::board_test_support::scratch("board-lazy-");
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .env("TRUFFLEPIG_SYSTEM_TEST_RELATIVE_DB", "1")
+            .env("TRUFFLEPIG_BOARD_DB", "relative.sqlite3")
+            .env("TRUFFLEPIG_SYSTEM_DIR", directory.path().join("runtime"))
+            .env("TRUFFLEPIG_SPOOL_DIR", directory.path().join("spool"))
+            .args([
+                "system::tests::ensure_reports_a_running_router_despite_unresolvable_board_database",
+                "--exact",
+                "--nocapture",
+            ])
+            .status()
+            .unwrap();
+        assert!(status.success());
+        return;
+    }
+    let runtime = PathBuf::from(std::env::var_os("TRUFFLEPIG_SYSTEM_DIR").unwrap());
+    let spool = PathBuf::from(std::env::var_os("TRUFFLEPIG_SPOOL_DIR").unwrap());
+    let router = SystemRouter {
+        runtime: Some(runtime.clone()),
+        cache_base: None,
+        sweeps: Mutex::new(SweepClock::default()),
+        board: crate::board::BoardHost::default(),
+    };
+    let worker_runtime = runtime.clone();
+    let worker = std::thread::spawn(move || daemon::serve_router(&worker_runtime, &spool, router));
+    let ping: Vec<String> = ["system".into(), "status".into()].into();
+    let context = RequestContext::new(None, None);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        if daemon::request(&runtime, &ping, &context).unwrap().is_some() {
+            break;
+        }
+        assert!(Instant::now() < deadline, "router failed to start");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let reply = crate::system::request(&ping, &context).unwrap().unwrap();
+    let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(status["status"], "ok");
+    assert_eq!(status["board_api"], crate::board::BOARD_API);
+    assert!(status["board_db"].is_null());
+    assert!(status["schema_version"].is_null());
+    crate::system::ensure().unwrap();
+    let error = crate::system::request(&["board".into(), "show".into()], &context).unwrap_err();
+    assert!(
+        format!("{error:#}").contains("board database path must be absolute"),
+        "{error:#}"
+    );
+    daemon::stop(&runtime).unwrap();
+    worker.join().unwrap().unwrap();
+}
+
+#[test]
 fn board_routes_without_workspace_or_owner_daemon() {
     let directory = crate::board::board_test_support::scratch("board-transport-");
     let cache = directory.path().join("owner-cache");
