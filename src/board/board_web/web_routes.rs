@@ -89,16 +89,25 @@ pub(super) fn handle(mut stream: TcpStream, accepted_at: Instant, state: &WebSta
             send_json_result(&mut stream, result);
         }
         (HttpMethod::Get, path) if path.starts_with("/api/v1/render/plan/") => {
-            let target = &path["/api/v1/render/plan/".len()..];
-            send_json_result(&mut stream, render_plan(state, target, expires));
+            let target = decode_render_target(&path["/api/v1/render/plan/".len()..]);
+            send_json_result(
+                &mut stream,
+                target.and_then(|target| render_plan(state, &target, expires)),
+            );
         }
         (HttpMethod::Get, path) if path.starts_with("/api/v1/render/diff/") => {
-            let target = &path["/api/v1/render/diff/".len()..];
-            send_json_result(&mut stream, render_diff(state, target, expires));
+            let target = decode_render_target(&path["/api/v1/render/diff/".len()..]);
+            send_json_result(
+                &mut stream,
+                target.and_then(|target| render_diff(state, &target, expires)),
+            );
         }
         (HttpMethod::Get, path) if path.starts_with("/api/v1/render/proposal/") => {
-            let target = &path["/api/v1/render/proposal/".len()..];
-            send_json_result(&mut stream, render_proposal(state, target, expires));
+            let target = decode_render_target(&path["/api/v1/render/proposal/".len()..]);
+            send_json_result(
+                &mut stream,
+                target.and_then(|target| render_proposal(state, &target, expires)),
+            );
         }
         _ => send_error(&mut stream, 404, "invalid_reference", "route not found"),
     }
@@ -118,6 +127,38 @@ fn public_asset(path: &str) -> Option<(&str, &str)> {
         _ => return None,
     };
     Some(("text/javascript; charset=utf-8", script))
+}
+
+/// Percent-decode a render-route suffix; the result is an opaque BoardRef target.
+fn decode_render_target(raw: &str) -> Result<String, BoardError> {
+    let bytes = raw.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'%' {
+            decoded.push(bytes[index]);
+            index += 1;
+            continue;
+        }
+        let pair = match bytes.get(index + 1..index + 3) {
+            Some([high, low]) => percent_hex(*high).zip(percent_hex(*low)),
+            _ => None,
+        };
+        let (high, low) =
+            pair.ok_or_else(|| invalid("malformed percent encoding in render target"))?;
+        decoded.push(high << 4 | low);
+        index += 3;
+    }
+    String::from_utf8(decoded).map_err(|_| invalid("render target is not valid UTF-8"))
+}
+
+fn percent_hex(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
 }
 
 fn render_plan(

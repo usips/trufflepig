@@ -1,12 +1,17 @@
 use super::*;
 use crate::board::board_backend::BoardBackend;
+use crate::board::board_web::event_stream::{EventStreams, SequencePoller};
+use crate::board::board_web::web_guard::{BoardWebToken, WebGuard};
 use crate::board::board_web::{WebStore, web_ops};
 use crate::board::{
     board_config::{BoardConfig, BoardConfigCache},
-    board_protocol::{BoardRequest, BoardResult},
+    board_ids::{EventSeq, PlanId},
+    board_protocol::{BoardReply, BoardRequest, BoardResult},
     board_vocabulary::{EntryText, PlanText, PlanTitle},
 };
-use std::io::Read;
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[test]
@@ -99,4 +104,188 @@ fn proposal_diff_preserves_all_lines_and_the_earlier_snapshot() {
         .collect::<String>();
     assert_eq!(added, body);
     assert!(added.ends_with("row 1000\n"));
+}
+
+struct RenderFixture {
+    _directory: tempfile::TempDir,
+    _poller: SequencePoller,
+    state: WebState,
+    config: BoardConfig,
+    token: BoardWebToken,
+    authority: String,
+}
+
+fn render_fixture() -> RenderFixture {
+    let directory = crate::board::board_test_support::scratch("web-render-");
+    let config = BoardConfig::for_database(directory.path().join("web.sqlite3"));
+    let store = WebStore::open_at(
+        BoardConfigCache::with_config(config.clone()),
+        directory.path().join("runtime"),
+    )
+    .unwrap();
+    let token = BoardWebToken::load_at(&directory.path().join("board-web.token")).unwrap();
+    let bind = TcpListener::bind("127.0.0.1:0").unwrap();
+    let guard = WebGuard::with_token(bind.local_addr().unwrap(), token.clone()).unwrap();
+    let authority = guard.authority().to_owned();
+    let poller = SequencePoller::start(Arc::new(|| Ok(EventSeq::new(0)))).unwrap();
+    let streams = EventStreams::new(
+        Arc::new(|_, _, _| unreachable!("render routes never read the feed")),
+        poller.handle(),
+    );
+    RenderFixture {
+        _directory: directory,
+        _poller: poller,
+        state: WebState {
+            store: Arc::new(store),
+            guard,
+            streams,
+        },
+        config,
+        token,
+        authority,
+    }
+}
+
+fn execute(fixture: &RenderFixture, op: BoardOp) -> BoardReply {
+    web_ops::execute(
+        &fixture.state.store,
+        WebRequest { api: BOARD_API, op },
+        Instant::now() + Duration::from_secs(5),
+    )
+    .unwrap()
+}
+
+fn create_plan(fixture: &RenderFixture) -> PlanId {
+    let created = execute(
+        fixture,
+        BoardOp::New {
+            title: PlanTitle::new("Plan").unwrap(),
+            body: PlanText::new("base\n").unwrap(),
+            steward: None,
+        },
+    );
+    let BoardResult::Change(created) = created.result else {
+        panic!("expected plan receipt")
+    };
+    created.plan.unwrap()
+}
+
+fn render_get(fixture: &RenderFixture, path: &str) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (server, _) = listener.accept().unwrap();
+    write!(
+        client,
+        "GET {path} HTTP/1.1\r\nHost: {}\r\nX-Board-Token: {}\r\n\r\n",
+        fixture.authority,
+        fixture.token.expose()
+    )
+    .unwrap();
+    handle(server, Instant::now(), &fixture.state);
+    let mut reply = String::new();
+    client.read_to_string(&mut reply).unwrap();
+    reply
+}
+
+#[test]
+fn render_plan_decodes_percent_encoded_revision_target() {
+    let fixture = render_fixture();
+    let plan = create_plan(&fixture);
+    let revision = format!("\"revision\":\"{plan}@1\"");
+    for target in [format!("{plan}@1"), format!("{plan}%401")] {
+        let reply = render_get(&fixture, &format!("/api/v1/render/plan/{target}"));
+        assert!(reply.starts_with("HTTP/1.1 200 "), "{target}: {reply}");
+        assert!(reply.contains(&revision), "{target}: {reply}");
+    }
+}
+
+#[test]
+fn render_diff_decodes_percent_encoded_span_target() {
+    let fixture = render_fixture();
+    let plan = create_plan(&fixture);
+    execute(
+        &fixture,
+        BoardOp::Edit {
+            base: PlanRevision::new(plan, 1).unwrap(),
+            body: PlanText::new("base\nrevised\n").unwrap(),
+            summary: EntryText::new("revise the plan").unwrap(),
+        },
+    );
+    for target in [format!("{plan}@1..2"), format!("{plan}%401..2")] {
+        let reply = render_get(&fixture, &format!("/api/v1/render/diff/{target}"));
+        assert!(reply.starts_with("HTTP/1.1 200 "), "{target}: {reply}");
+        assert!(reply.contains("\"hunks\":"), "{target}: {reply}");
+        assert!(reply.contains("revised"), "{target}: {reply}");
+    }
+}
+
+#[test]
+fn render_proposal_decodes_percent_encoded_entry_target() {
+    let fixture = render_fixture();
+    let plan = create_plan(&fixture);
+    let proposal = fixture
+        .state
+        .store
+        .with_writer(
+            &fixture.config,
+            Instant::now() + Duration::from_secs(5),
+            |writer| {
+                writer.handle(&BoardRequest::new(
+                    fixture.config.actor(Some("codex"), Some("worker")).unwrap(),
+                    BoardOp::Propose {
+                        base: PlanRevision::new(plan, 1).unwrap(),
+                        body: PlanText::new("proposed\n").unwrap(),
+                        summary: EntryText::new("a proposal").unwrap(),
+                        supersedes: None,
+                    },
+                ))
+            },
+        )
+        .unwrap();
+    let BoardResult::Change(proposal) = proposal.result else {
+        panic!("expected proposal receipt")
+    };
+    let entry = proposal.entry.to_string();
+    let digits = entry.strip_prefix('E').unwrap();
+    let reply = render_get(&fixture, &format!("/api/v1/render/proposal/%45{digits}"));
+    assert!(reply.starts_with("HTTP/1.1 200 "), "{reply}");
+    assert!(reply.contains(&format!("\"entry\":\"{entry}\"")), "{reply}");
+}
+
+#[test]
+fn render_routes_reject_malformed_percent_encoding() {
+    let fixture = render_fixture();
+    for path in [
+        "/api/v1/render/plan/P1%4",
+        "/api/v1/render/plan/P1%zz",
+        "/api/v1/render/plan/P1%",
+        "/api/v1/render/plan/P1%FF1",
+        "/api/v1/render/diff/P1%4",
+        "/api/v1/render/proposal/E%",
+    ] {
+        let reply = render_get(&fixture, path);
+        assert!(reply.starts_with("HTTP/1.1 400 "), "{path}: {reply}");
+        assert!(
+            reply.contains("\"code\":\"invalid_options\""),
+            "{path}: {reply}"
+        );
+    }
+}
+
+#[test]
+fn render_routes_decode_slash_and_control_bytes_before_reference_parsing() {
+    let fixture = render_fixture();
+    for path in [
+        "/api/v1/render/plan/P1%2f1",
+        "/api/v1/render/plan/%2F",
+        "/api/v1/render/plan/%00",
+        "/api/v1/render/plan/P1%001",
+    ] {
+        let reply = render_get(&fixture, path);
+        assert!(reply.starts_with("HTTP/1.1 400 "), "{path}: {reply}");
+        assert!(
+            reply.contains("\"code\":\"invalid_reference\""),
+            "{path}: {reply}"
+        );
+    }
 }
