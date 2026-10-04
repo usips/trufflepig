@@ -78,6 +78,7 @@ fn internal_collections_keep_frozen_bounds_without_cli_hints() {
                 stale: false,
                 model: None,
                 effort: None,
+                delegated_by: None,
             },
             cursor: ClaimCursor {
                 entry: EntryId::new(200).unwrap(),

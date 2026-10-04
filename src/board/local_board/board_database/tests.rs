@@ -35,6 +35,10 @@ fn shipped_migration_steps_are_byte_pinned() {
         pin(SCHEMA_V4),
         "3398d71703ed6b759c64530ef903da210e0ddf21c378a1daf4aea3ca89615c15"
     );
+    assert_eq!(
+        pin(SCHEMA_V5),
+        "a4090c5ffac9c08f2ab5b85397cc97a03613ea1fcadc787dccb027cbad56c40e"
+    );
 }
 
 #[test]
@@ -127,6 +131,13 @@ fn populated_v1_migration_preserves_durable_evidence() {
         ))
         .unwrap(),
         ("model".into(), "xhigh".into())
+    );
+    assert_eq!(
+        conn.query_row("SELECT delegated_by FROM claims WHERE id=1", [], |row| {
+            row.get::<_, Option<i64>>(0)
+        })
+        .unwrap(),
+        None
     );
     assert_eq!(
         conn.query_row(

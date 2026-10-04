@@ -1,7 +1,7 @@
 //! Validates operation semantics and bounded request metadata.
 use super::BoardOp;
 use crate::board::{
-    board_actor::validate_actor_component,
+    board_actor::{HarnessLabel, validate_actor_component},
     board_ids::{BoardRef, MAX_BOARD_NUMBER, TaskId},
     board_protocol::{bounded_metadata, validate_claim},
     board_vocabulary::ENTRY_TEXT_LIMIT,
@@ -28,6 +28,13 @@ impl BoardOp {
                 ..
             } if !resume.is_resuming() => {
                 bail!("invalid_options: claiming a task requires scope or resume");
+            }
+            Self::ClaimTask {
+                delegate: Some(delegate),
+                ..
+            } => {
+                HarnessLabel::parse(delegate.harness.as_str())?;
+                validate_actor_component(&delegate.session, "session")?;
             }
             Self::Hello { model, effort } => {
                 validate_claim(model, "model")?;

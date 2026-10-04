@@ -27,6 +27,9 @@ pub struct BoardOptions {
     /// Resume an idle claim for the same user, host, and harness; `E#` takes over that exact claim entry.
     #[arg(long, num_args = 0..=1, value_name = "E#")]
     pub resume: Option<Option<String>>,
+    /// Claim on behalf of HARNESS/SESSION under the caller's user and host.
+    #[arg(long = "for", value_name = "HARNESS/SESSION")]
+    pub delegate: Option<String>,
     /// Plan heading covered by a new claimed task.
     #[arg(long)]
     pub section: Option<String>,
@@ -96,6 +99,7 @@ impl BoardOptions {
             ("--plan", self.plan.clone()),
             ("--scope", self.scope.clone()),
             ("--section", self.section.clone()),
+            ("--for", self.delegate.clone()),
             ("--after", self.after.clone()),
             ("--through", self.through.clone()),
             ("--board-text", self.board_text.clone()),
@@ -134,6 +138,7 @@ impl BoardOptions {
             || self.open
             || self.all
             || self.resume.is_some()
+            || self.delegate.is_some()
             || self.board_text.is_some()
             || self.board_payload.is_some()
             || self.agent_model.is_some()

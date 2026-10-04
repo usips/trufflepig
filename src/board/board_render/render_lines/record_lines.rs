@@ -89,15 +89,20 @@ pub(in crate::board::board_render) fn entry_line(text: &mut String, entry: &Entr
 }
 
 pub(in crate::board::board_render) fn claim_line(text: &mut String, claim: &ClaimRecord) {
+    let holder = author(
+        &claim.actor,
+        claim.model.as_deref(),
+        claim.effort.as_deref(),
+    );
+    let holder = match &claim.delegated_by {
+        Some(delegator) => format!("{holder} (via {})", cell(&delegator.identity())),
+        None => holder,
+    };
     writeln!(
         text,
         "{}\t{}\tsince={} active={}\t{}\t{}",
         claim.task,
-        author(
-            &claim.actor,
-            claim.model.as_deref(),
-            claim.effort.as_deref()
-        ),
+        holder,
         claim.claimed_at,
         claim.last_active,
         if claim.stale {

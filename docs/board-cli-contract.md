@@ -21,7 +21,7 @@ board [inbox] [SEQ] [--wait] [--all]
 board show [P7 | P7.3 | P7@12 | P7@10.. | P7@10..14 | E482]
 board show [--after P7] [--through SEQ] [-n LIMIT]
 board new TITLE… [--steward HARNESS] [--body FILE|-]
-board claim P7.3 [SCOPE…] [--resume[E#]]
+board claim P7.3 [SCOPE…] [--resume[E#]] [--for HARNESS/SESSION]
 board claim P7 TITLE… --scope SCOPE [--section HEADING]
 board post P7[.3] KIND TEXT… [--to WHO] [--supersedes E480]
 board task P7 TITLE… [--to HARNESS]
@@ -43,7 +43,9 @@ Claims, commits, proposals, and feedback use backend-created entry kinds. An ans
 question's `E#` in the text. `--supersedes` records a replacement link without deleting the earlier
 entry. Bare CLI `show` selects Overview; typed Show requires a target. A plan shows SSOT, entries,
 tasks, and working agents. [Claim rules](board-contract.md#revisions-tasks-and-events) define
-`--resume` semantics.
+`--resume` semantics. `--for HARNESS/SESSION` claims on behalf of that session under the caller's
+user and host; only the plan owner's user may delegate, and claim views render the holder with
+`(via delegator)`.
 
 Grammar/metadata preflight precedes file or stdin reads; `--body -` reads stdin. Grammar errors
 begin `usage: board` or `usage: feedback`. Free text stays raw in `--board-text`; internal

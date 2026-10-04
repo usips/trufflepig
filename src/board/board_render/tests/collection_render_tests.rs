@@ -144,3 +144,67 @@ fn collection_attention_keeps_spooled_feedback_provenance_in_json_and_lines() {
         }
     }
 }
+
+#[test]
+fn delegated_claims_render_the_holder_and_its_delegator() {
+    use crate::board::board_ids::TaskId;
+    let plan = PlanId::new(7).unwrap();
+    let delegator = BoardActor::new(
+        "josh",
+        "laptop",
+        HarnessLabel::parse("kimi").unwrap(),
+        "orch",
+    )
+    .unwrap();
+    let reply = BoardReply::new(
+        "local",
+        BoardResult::Claims(ClaimPage {
+            plan: Some(plan),
+            own_stale: false,
+            repo_key: None,
+            all: true,
+            claims: vec![ClaimView {
+                claim: ClaimRecord {
+                    task: TaskId::new(plan, 3).unwrap(),
+                    actor: actor(),
+                    entry: EntryId::new(200).unwrap(),
+                    scope: EntryText::new("delegated lane").unwrap(),
+                    claimed_at: 100,
+                    last_active: 120,
+                    ended_at: None,
+                    end_reason: None,
+                    stale: false,
+                    model: None,
+                    effort: None,
+                    delegated_by: Some(delegator),
+                },
+                cursor: ClaimCursor {
+                    entry: EntryId::new(200).unwrap(),
+                    claim: 6,
+                },
+            }],
+            after: None,
+            through: EventSeq::new(222),
+            next_after: None,
+            omitted: 0,
+            server_now: 150,
+            claim_ttl_secs: 60,
+        }),
+    );
+    for format in [OutputFormat::Json, OutputFormat::Lines] {
+        let rendered = render_reply(
+            &reply,
+            &OutputBudget::new(1500).unwrap().with_format(format),
+        )
+        .unwrap();
+        if format == OutputFormat::Json {
+            let value: serde_json::Value = serde_json::from_str(&rendered.text).unwrap();
+            let claim = &value["result"]["data"]["claims"][0]["claim"];
+            assert_eq!(claim["actor"]["session"], "c1");
+            assert_eq!(claim["delegated_by"]["harness"], "kimi");
+            assert_eq!(claim["delegated_by"]["session"], "orch");
+        } else {
+            assert!(rendered.text.contains("(via josh@laptop/kimi/orch)"));
+        }
+    }
+}

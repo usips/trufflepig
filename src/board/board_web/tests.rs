@@ -377,6 +377,7 @@ fn config_reload_reaches_reader_ttl_and_attention_without_events() {
                     task,
                     scope: Some(EntryText::new("scope").unwrap()),
                     resume: ClaimResume::No,
+                    delegate: None,
                 },
             ))
             .unwrap();

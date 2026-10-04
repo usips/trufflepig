@@ -154,7 +154,7 @@ pub(in crate::board::local_board) fn move_task(
         ).optional().map_err(sql_error)?;
         let scope = EntryText::new(scope.unwrap_or_else(|| card.title.as_str().to_owned()))
             .map_err(BoardError::from)?;
-        return claim_task(tx, ctx, task, Some(&scope), ClaimResume::No);
+        return claim_task(tx, ctx, task, Some(&scope), ClaimResume::No, None);
     }
     if holder
         .as_ref()

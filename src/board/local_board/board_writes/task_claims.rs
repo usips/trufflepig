@@ -11,19 +11,20 @@ pub(in crate::board::local_board) use claim_activity::{
 };
 pub(in crate::board::local_board) use claim_history::{active_claim, read_claims_window, read_tasks};
 
-use rusqlite::{Connection, Row, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 
 use super::task_writes::{allocate_task, require_assignee, require_task};
 #[cfg(test)]
 use super::task_writes::{create_task, move_task};
 use super::super::{
-    BoardError, EntryDraft, WriteContext, actor_from_row, insert_entry, insert_event, invalid,
-    require_plan, row_number, sql_error, sql_number,
+    BoardError, EntryDraft, WriteContext, actor_from_row, can_accept, delegated_actor_from_row,
+    ensure_actor, insert_entry, insert_event, invalid, require_plan, row_number, sql_error,
+    sql_number,
 };
-use crate::board::board_actor::{BoardRecipient, claim_vendor};
+use crate::board::board_actor::{BoardActor, BoardRecipient, claim_vendor};
 use crate::board::board_ids::{EntryId, EventSeq, PlanId, TaskId};
 use crate::board::board_protocol::{
-    BoardReply, ClaimEndReason, ClaimRecord, ClaimResume, CommitCoauthor, TaskRecord,
+    BoardReply, ClaimDelegate, ClaimEndReason, ClaimRecord, ClaimResume, CommitCoauthor, TaskRecord,
 };
 use crate::board::board_vocabulary::{EntryKind, EntryText, PlanTitle, TaskColumn};
 
@@ -45,7 +46,71 @@ pub(in crate::board::local_board) fn carve_claim(
 ) -> Result<BoardReply, BoardError> {
     require_plan(tx, plan)?;
     let task = allocate_task(tx, ctx, plan, title, None, section)?;
-    claim_task(tx, ctx, task, Some(scope), ClaimResume::No)
+    claim_task(tx, ctx, task, Some(scope), ClaimResume::No, None)
+}
+
+struct ResolvedDelegate {
+    actor_id: i64,
+    actor: BoardActor,
+    model: Option<String>,
+    effort: Option<String>,
+    delegated_by: i64,
+}
+
+impl ResolvedDelegate {
+    fn holder_context(&self, ctx: &WriteContext) -> WriteContext {
+        WriteContext {
+            actor_id: self.actor_id,
+            actor: self.actor.clone(),
+            model: self.model.clone(),
+            effort: self.effort.clone(),
+            now: ctx.now,
+            seq: ctx.seq,
+            claim_ttl_secs: ctx.claim_ttl_secs,
+            via: ctx.via,
+        }
+    }
+}
+
+fn resolve_delegate(
+    tx: &Transaction<'_>,
+    ctx: &WriteContext,
+    task: TaskId,
+    target: &ClaimDelegate,
+) -> Result<ResolvedDelegate, BoardError> {
+    let holder = target.holder(&ctx.actor).map_err(BoardError::from)?;
+    let owner: String = tx
+        .query_row(
+            "SELECT owner_user FROM plans WHERE id=?1",
+            [sql_number(task.plan.get())],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(sql_error)?
+        .ok_or_else(|| invalid("invalid_reference", format!("unknown plan {}", task.plan)))?;
+    // Standing is the delegator's, never the delegate's: plan steward/owner
+    // path or the plan owner's user.
+    if !can_accept(tx, &ctx.actor, task.plan)? && ctx.actor.user != owner {
+        return Err(invalid(
+            "invalid_actor",
+            format!("{task} delegation requires the plan owner's user"),
+        ));
+    }
+    let actor_id = ensure_actor(tx, &holder, ctx.now)?;
+    let (model, effort): (Option<String>, Option<String>) = tx
+        .query_row(
+            "SELECT model,effort FROM agent_sessions WHERE actor_id=?1",
+            [actor_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(sql_error)?;
+    Ok(ResolvedDelegate {
+        actor_id,
+        actor: holder,
+        model,
+        effort,
+        delegated_by: ctx.actor_id,
+    })
 }
 
 fn claim_conflict(task: TaskId, claim: &ClaimRecord, now: i64) -> BoardError {
@@ -69,6 +134,7 @@ pub(in crate::board::local_board) fn claim_task(
     task: TaskId,
     scope: Option<&EntryText>,
     resume: ClaimResume,
+    delegate: Option<&ClaimDelegate>,
 ) -> Result<BoardReply, BoardError> {
     let card = require_task(tx, task)?;
     if card.column == TaskColumn::Done {
@@ -77,6 +143,18 @@ pub(in crate::board::local_board) fn claim_task(
             format!("{task} is done and cannot be claimed"),
         ));
     }
+    let delegation = match delegate {
+        Some(target) => Some(resolve_delegate(tx, ctx, task, target)?),
+        None => None,
+    };
+    let held;
+    let (ctx, delegated_by) = match &delegation {
+        Some(resolved) => {
+            held = resolved.holder_context(ctx);
+            (&held, Some(resolved.delegated_by))
+        }
+        None => (ctx, None),
+    };
     let holder = active_claim(tx, task, ctx.now, ctx.claim_ttl_secs)?;
     if holder.is_none() {
         require_assignee(&card, &ctx.actor, task)?;
@@ -152,8 +230,8 @@ pub(in crate::board::local_board) fn claim_task(
     )?;
     tx.execute(
         concat!(
-            "INSERT INTO claims(plan_id,task_ordinal,actor_id,entry_id,scope,claimed_at,last_active) ",
-            "VALUES(?1,?2,?3,?4,?5,?6,?6)"
+            "INSERT INTO claims(plan_id,task_ordinal,actor_id,entry_id,scope,claimed_at,last_active,delegated_by) ",
+            "VALUES(?1,?2,?3,?4,?5,?6,?6,?7)"
         ),
         params![
             sql_number(task.plan.get()),
@@ -161,7 +239,8 @@ pub(in crate::board::local_board) fn claim_task(
             ctx.actor_id,
             sql_number(entry.get()),
             scope.as_str(),
-            ctx.now
+            ctx.now,
+            delegated_by
         ],
     ).map_err(sql_error)?;
     let assignee = BoardRecipient::for_actor(&ctx.actor);

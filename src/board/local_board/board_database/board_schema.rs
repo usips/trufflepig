@@ -3,7 +3,7 @@
 mod board_search_schema;
 pub(super) use board_search_schema::SCHEMA_V3;
 
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 
 pub(super) const SCHEMA_V1: &str = r#"
 CREATE TABLE board_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -186,4 +186,9 @@ CREATE INDEX IF NOT EXISTS commit_plans_entry ON commit_plans(entry_id);
 CREATE INDEX IF NOT EXISTS claims_entry_active ON claims(entry_id,id) WHERE ended_at IS NULL;
 UPDATE operation_dedupes SET reply_json=json_set(reply_json,'$.api',3)
  WHERE json_valid(reply_json) AND json_extract(reply_json,'$.api')<3;
+"#;
+
+/// Records the orchestrator behind a delegated claim; existing rows stay NULL.
+pub(super) const SCHEMA_V5: &str = r#"
+ALTER TABLE claims ADD COLUMN delegated_by INTEGER REFERENCES actors(id);
 "#;

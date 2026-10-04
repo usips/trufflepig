@@ -43,6 +43,7 @@ fn readonly_dispatch_leaves_actors_sessions_and_claims_untouched() {
                 task: crate::board::board_ids::TaskId::new(plan, 1).unwrap(),
                 scope: Some(EntryText::new("scope").unwrap()),
                 resume: ClaimResume::No,
+                delegate: None,
             },
         ))
         .unwrap();

@@ -97,6 +97,7 @@ fn review_uses_claim_intervals_and_coauthors_to_flag_crossed_lanes() {
         stale: false,
         model: Some("opus".into()),
         effort: None,
+        delegated_by: None,
     });
     source.commits = vec![
         commit("codex", 120),
@@ -134,6 +135,7 @@ fn review_uses_claim_model_vendor_for_muse_omp_and_cli() {
             stale: false,
             model: model.map(str::to_owned),
             effort: None,
+            delegated_by: None,
         });
         let mut same = commit(vendor, 120);
         if vendor == "human" {

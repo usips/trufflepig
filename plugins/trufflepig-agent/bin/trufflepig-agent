@@ -28,6 +28,7 @@ FLAGS_WITH_VALUES = {
     "--limit", "--history-cache", "--target", "--side", "--ignore-revs-file",
     "--diagnostics", "--session", "--client", "--format",
     "--body", "--plan", "--steward", "--to", "--supersedes", "--scope", "--section",
+    "--for",
     "--agent-model", "--agent-effort", "--recent-calls", "--board-text",
 }
 def state_dir() -> Path:

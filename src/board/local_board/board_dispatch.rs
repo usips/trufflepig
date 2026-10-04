@@ -164,7 +164,15 @@ impl LocalBoard {
                 task,
                 scope,
                 resume,
-            } => board_writes::task_claims::claim_task(&tx, &ctx, *task, scope.as_ref(), *resume)?,
+                delegate,
+            } => board_writes::task_claims::claim_task(
+                &tx,
+                &ctx,
+                *task,
+                scope.as_ref(),
+                *resume,
+                delegate.as_ref(),
+            )?,
             BoardOp::CarveClaim {
                 plan,
                 title,

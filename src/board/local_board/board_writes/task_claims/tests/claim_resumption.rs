@@ -111,7 +111,7 @@ fn simultaneous_resumes_serialize_history_and_leave_one_current_session() {
                     &mut conn,
                     &actor("josh", "muse", &format!("resumed-{index}")),
                     1050,
-                    |tx, ctx| claim_task(tx, ctx, task, None, ClaimResume::Idle),
+                    |tx, ctx| claim_task(tx, ctx, task, None, ClaimResume::Idle, None),
                 )
             })
         })
@@ -176,9 +176,10 @@ fn resume_racing_stale_takeover_cannot_bypass_new_holders_identity() {
                                 task,
                                 Some(&EntryText::new("takeover scope").unwrap()),
                                 ClaimResume::No,
+                                None,
                             )
                         } else {
-                            claim_task(tx, ctx, task, None, ClaimResume::Idle)
+                            claim_task(tx, ctx, task, None, ClaimResume::Idle, None)
                         }
                     },
                 )
@@ -210,7 +211,7 @@ fn bare_resume_requires_idle_grace_before_replacing_a_live_claim() {
     let task = carved_task(&mut conn, &holder, 1000, "live lane");
     let other = actor("josh", "muse", "worktree-two");
     let refused = write(&mut conn, &other, 1050, |tx, ctx| {
-        claim_task(tx, ctx, task, None, ClaimResume::Idle)
+        claim_task(tx, ctx, task, None, ClaimResume::Idle, None)
     })
     .unwrap_err()
     .to_string();
@@ -228,7 +229,7 @@ fn bare_resume_requires_idle_grace_before_replacing_a_live_claim() {
     conn.execute("UPDATE claims SET last_active=440", [])
         .unwrap();
     write(&mut conn, &other, 1050, |tx, ctx| {
-        claim_task(tx, ctx, task, None, ClaimResume::Idle)
+        claim_task(tx, ctx, task, None, ClaimResume::Idle, None)
     })
     .unwrap();
     let history = read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, 1050, 120).unwrap();
@@ -255,7 +256,7 @@ fn explicit_resume_entry_takes_over_a_live_claim_immediately() {
         EntryId::new(current.entry.get() + 1).unwrap(),
     ] {
         let error = write(&mut conn, &other, 1050, |tx, ctx| {
-            claim_task(tx, ctx, task, None, ClaimResume::Entry(wrong))
+            claim_task(tx, ctx, task, None, ClaimResume::Entry(wrong), None)
         })
         .unwrap_err()
         .to_string();
@@ -263,7 +264,7 @@ fn explicit_resume_entry_takes_over_a_live_claim_immediately() {
     }
     // Naming the exact claim entry asserts deliberate intent: no idle wait.
     write(&mut conn, &other, 1050, |tx, ctx| {
-        claim_task(tx, ctx, task, None, ClaimResume::Entry(current.entry))
+        claim_task(tx, ctx, task, None, ClaimResume::Entry(current.entry), None)
     })
     .unwrap();
     let history = read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, 1050, 120).unwrap();
@@ -275,7 +276,7 @@ fn explicit_resume_entry_takes_over_a_live_claim_immediately() {
     // An ended claim's entry no longer names the current claim.
     let ended = history[0].entry;
     let error = write(&mut conn, &holder, 1060, |tx, ctx| {
-        claim_task(tx, ctx, task, None, ClaimResume::Entry(ended))
+        claim_task(tx, ctx, task, None, ClaimResume::Entry(ended), None)
     })
     .unwrap_err()
     .to_string();
@@ -304,7 +305,7 @@ fn explicit_resume_entry_still_requires_same_user_host_and_harness() {
         .unwrap(),
     ] {
         let error = write(&mut conn, &replacement, 1050, |tx, ctx| {
-            claim_task(tx, ctx, task, None, ClaimResume::Entry(current.entry))
+            claim_task(tx, ctx, task, None, ClaimResume::Entry(current.entry), None)
         })
         .unwrap_err()
         .to_string();

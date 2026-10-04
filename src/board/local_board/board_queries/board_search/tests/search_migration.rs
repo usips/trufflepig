@@ -10,7 +10,7 @@ fn board_search_migrates_populated_v1_through_v2_v3_without_losing_rows() {
             .conn
             .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
             .unwrap(),
-        4
+        crate::board::SCHEMA_VERSION
     );
     assert_eq!(legacy_search_fixture::counts(&board.conn), before);
     assert_eq!(

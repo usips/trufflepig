@@ -13,7 +13,7 @@ use super::{BoardError, invalid, sql_error};
 mod board_schema;
 
 pub use board_schema::SCHEMA_VERSION;
-use board_schema::{SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4};
+use board_schema::{SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5};
 
 #[cfg(test)]
 pub(super) fn open(path: &Path) -> Result<(Connection, PathBuf), BoardError> {
@@ -26,6 +26,7 @@ fn migration_step(from: i64) -> Result<&'static str, BoardError> {
         1 => Ok(SCHEMA_V2),
         2 => Ok(SCHEMA_V3),
         3 => Ok(SCHEMA_V4),
+        4 => Ok(SCHEMA_V5),
         _ => Err(unavailable(format!(
             "missing schema migration from version {from}"
         ))),

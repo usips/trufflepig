@@ -109,6 +109,8 @@ pub struct ClaimRecord {
     pub stale: bool,
     pub model: Option<String>,
     pub effort: Option<String>,
+    #[serde(default)]
+    pub delegated_by: Option<BoardActor>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

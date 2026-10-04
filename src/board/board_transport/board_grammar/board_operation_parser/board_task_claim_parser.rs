@@ -6,7 +6,7 @@ use super::{
 use crate::{
     board::{
         board_ids::{BoardRef, EntryId},
-        board_protocol::{BoardOp, ClaimResume},
+        board_protocol::{BoardOp, ClaimDelegate, ClaimResume},
         board_vocabulary::{EntryText, PlanTitle, TaskColumn},
     },
     cli::Arguments,
@@ -67,7 +67,7 @@ pub(super) fn parse_claim(options: &Arguments, payload: &BoardTextPayload) -> Re
             })
         }
         BoardRef::Task(task) => {
-            check_flags(options, &["resume", "text"])?;
+            check_flags(options, &["for", "resume", "text"])?;
             let scope = optional_text(&payload.text)?;
             let resume = match &options.board.resume {
                 None => ClaimResume::No,
@@ -77,10 +77,17 @@ pub(super) fn parse_claim(options: &Arguments, payload: &BoardTextPayload) -> Re
             if scope.is_none() && !resume.is_resuming() {
                 bail!("invalid_options: claiming a task requires scope or --resume");
             }
+            let delegate = options
+                .board
+                .delegate
+                .as_deref()
+                .map(ClaimDelegate::parse)
+                .transpose()?;
             Ok(BoardOp::ClaimTask {
                 task,
                 scope,
                 resume,
+                delegate,
             })
         }
         _ => bail!("invalid_reference: claim requires a plan or task"),

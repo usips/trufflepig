@@ -28,6 +28,7 @@ fn show_preserves_labor_and_uncovered_sections_while_trimming_the_body() {
         stale,
         model: Some("claimed-model".into()),
         effort: Some("xhigh".into()),
+        delegated_by: None,
     };
     let mut recent = entry(100);
     recent.kind = EntryKind::Progress;

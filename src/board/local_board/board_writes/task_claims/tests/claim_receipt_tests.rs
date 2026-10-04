@@ -25,6 +25,7 @@ fn cached_claim_or_move_cannot_bypass_a_new_holder() {
             task,
             scope: Some(EntryText::new("my lane").unwrap()),
             resume: ClaimResume::No,
+            delegate: None,
         },
     );
     backend.handle(&claim_request).unwrap();
@@ -44,6 +45,7 @@ fn cached_claim_or_move_cannot_bypass_a_new_holder() {
                 task,
                 scope: Some(EntryText::new("new holder").unwrap()),
                 resume: ClaimResume::No,
+                delegate: None,
             },
         ))
         .unwrap();
@@ -97,6 +99,7 @@ fn retried_carve_creates_fresh_task_after_handoff() {
                 task,
                 scope: Some(EntryText::new("next scope").unwrap()),
                 resume: ClaimResume::No,
+                delegate: None,
             },
         ))
         .unwrap();

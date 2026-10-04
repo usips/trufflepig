@@ -801,6 +801,68 @@ fn claim_resume_accepts_an_optional_entry_target() {
 }
 
 #[test]
+fn claim_for_delegates_to_a_session_under_the_caller() {
+    use crate::board::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
+    use crate::board::board_protocol::BoardOp;
+    for words in [
+        &["board", "claim", "P7.3", "scope", "--for", "codex/c7"][..],
+        &["board", "claim", "P7.3", "scope", "--for=codex/c7"][..],
+    ] {
+        let args = words
+            .iter()
+            .map(|word| (*word).to_owned())
+            .collect::<Vec<_>>();
+        let options = parse(&args).unwrap();
+        let command = board_parse(&options, None).unwrap();
+        let forwarded = normalize_args(&args, &options, None).unwrap();
+        let routed = parse(&forwarded).unwrap();
+        assert_eq!(board_parse(&routed, None).unwrap(), command);
+    }
+    let args = ["board", "claim", "P7.3", "scope", "--for", "codex/c7"].map(str::to_owned);
+    let options = parse(&args).unwrap();
+    let BoardCommand::Op(op) = board_parse(&options, None).unwrap() else {
+        panic!("expected op")
+    };
+    let BoardOp::ClaimTask {
+        delegate: Some(delegate),
+        ..
+    } = op
+    else {
+        panic!("expected a delegated claim: {op:?}")
+    };
+    assert_eq!(delegate.harness.as_str(), "codex");
+    assert_eq!(delegate.session, "c7");
+    for bad in [
+        "",
+        "/",
+        "codex/",
+        "/c7",
+        "codex/c7/extra",
+        "codex/c 7",
+        " codex/c7",
+    ] {
+        let args = [
+            "board".to_owned(),
+            "claim".to_owned(),
+            "P7.3".to_owned(),
+            "scope".to_owned(),
+            format!("--for={bad}"),
+        ];
+        let options = parse(&args).unwrap();
+        let error = board_parse(&options, None).unwrap_err().to_string();
+        assert!(error.starts_with("invalid_options:"), "{bad:?}: {error}");
+    }
+    let args = ["board", "task", "P7.3", "doing", "--for=codex/c7"].map(str::to_owned);
+    let options = parse(&args).unwrap();
+    let error = board_parse(&options, None).unwrap_err().to_string();
+    assert!(error.starts_with("invalid_options:"), "{error}");
+    let args = ["board", "claim", "P7", "title", "--scope=s", "--for=c/c"].map(str::to_owned);
+    let options = parse(&args).unwrap();
+    let error = board_parse(&options, None).unwrap_err().to_string();
+    assert!(error.starts_with("invalid_options:"), "{error}");
+}
+
+#[test]
 fn board_inbox_all_scope_survives_router_normalization() {
     use crate::board::board_grammar::{normalize_args, parse as board_parse};
     let args = ["board", "inbox", "42", "--all"].map(str::to_owned);

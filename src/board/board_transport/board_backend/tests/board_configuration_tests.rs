@@ -78,6 +78,7 @@ fn configuration_ttl_refresh_changes_existing_writer_claim_policy() {
             task,
             scope: Some(crate::board::board_vocabulary::EntryText::new("new owner").unwrap()),
             resume: ClaimResume::No,
+            delegate: None,
         },
     );
     host.handle_by(&request, QueryDeadline::start()).unwrap();

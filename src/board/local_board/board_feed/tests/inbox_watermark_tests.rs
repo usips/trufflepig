@@ -22,6 +22,7 @@ fn inbox_refreshes_held_leases_without_a_housekeeping_event() {
             task: TaskId::new(plan, 1).unwrap(),
             scope: Some(EntryText::new("parser and tests").unwrap()),
             resume: ClaimResume::No,
+            delegate: None,
         },
     );
     board

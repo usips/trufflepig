@@ -108,6 +108,38 @@ fn claim_scope_is_required_unless_resuming() {
 }
 
 #[test]
+fn claim_delegate_defaults_absent_so_older_senders_still_parse() {
+    let op: BoardOp = serde_json::from_value(serde_json::json!({
+        "op": "claim_task", "task": "P1.1", "scope": "lane", "resume": false
+    }))
+    .unwrap();
+    assert!(matches!(op, BoardOp::ClaimTask { delegate: None, .. }));
+    assert!(op.validate().is_ok());
+    assert!(
+        !serde_json::to_value(&op)
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .contains_key("delegate")
+    );
+    let delegated: BoardOp = serde_json::from_value(serde_json::json!({
+        "op": "claim_task", "task": "P1.1", "scope": "lane", "resume": false,
+        "delegate": {"harness": "codex", "session": "c7"}
+    }))
+    .unwrap();
+    let BoardOp::ClaimTask {
+        delegate: Some(delegate),
+        ..
+    } = &delegated
+    else {
+        panic!("expected a delegate: {delegated:?}")
+    };
+    assert_eq!(delegate.harness.as_str(), "codex");
+    assert_eq!(delegate.session, "c7");
+    assert!(delegated.validate().is_ok());
+}
+
+#[test]
 fn claim_resume_entry_target_round_trips_the_wire_form() {
     let op: BoardOp = serde_json::from_value(serde_json::json!({
         "op": "claim_task", "task": "P1.1", "scope": null, "resume": "E42"
@@ -149,6 +181,7 @@ fn public_address_records_are_revalidated_at_the_request_boundary() {
         },
         scope: Some(EntryText::new("owned scope").unwrap()),
         resume: ClaimResume::No,
+        delegate: None,
     };
     assert!(bad_revision.validate().is_err());
     assert!(bad_task.validate().is_err());

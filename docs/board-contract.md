@@ -66,7 +66,7 @@ Claimant writes on the plan and inbox calls refresh activity. Matching commit co
 only current leases with `claimed_at <= committed_at <= ingest time`, using the maximum activity
 timestamp. Staleness follows reloadable `claim_ttl_minutes` (120 by default); stale takeover
 names/notifies the prior holder. `show` separates active/stale claims, claimable cards, and headings
-without cards.
+without cards. `--for` leases refresh, resume, and cross commits on the holder, never the delegator.
 
 Each mutation has one global event sequence. Inbox, Attention, Overview, and Claims default to the
 caller's canonical repository scope; events addressed to the actual user/harness/full actor and

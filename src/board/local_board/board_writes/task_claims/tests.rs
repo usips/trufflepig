@@ -1,6 +1,7 @@
 mod claim_activity_tests;
 mod claim_assignment_tests;
 mod claim_concurrency_tests;
+mod claim_delegation_tests;
 mod claim_receipt_tests;
 mod completed_task_tests;
 
@@ -115,6 +116,7 @@ fn claim(
             task,
             Some(&EntryText::new(scope).unwrap()),
             ClaimResume::No,
+            None,
         )
     })
 }

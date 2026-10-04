@@ -43,6 +43,7 @@ fn default_review_budget_bounds_proposals_commits_tasks_and_claims() {
             stale: false,
             model: Some("claimed-model".into()),
             effort: Some("xhigh".into()),
+            delegated_by: None,
         });
         let linked = review_commit(100 + ordinal);
         packet.crossed.push(CrossedCommit {

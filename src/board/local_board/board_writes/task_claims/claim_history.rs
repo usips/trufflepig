@@ -36,8 +36,10 @@ pub(in crate::board::local_board) fn read_tasks(
 
 const CLAIM_SELECT: &str = concat!(
     "SELECT c.actor_id,c.task_ordinal,a.user,a.host,a.harness,a.session,c.entry_id,c.scope,",
-    "c.claimed_at,c.last_active,c.ended_at,c.end_reason,e.model,e.effort FROM claims c ",
-    "JOIN actors a ON a.id=c.actor_id JOIN entries e ON e.id=c.entry_id"
+    "c.claimed_at,c.last_active,c.ended_at,c.end_reason,e.model,e.effort,",
+    "d.user,d.host,d.harness,d.session FROM claims c ",
+    "JOIN actors a ON a.id=c.actor_id JOIN entries e ON e.id=c.entry_id ",
+    "LEFT JOIN actors d ON d.id=c.delegated_by"
 );
 
 pub(in crate::board::local_board) fn active_claim(
@@ -118,6 +120,7 @@ fn claim_from_row(
             stale: ended_at.is_none() && last_active < now.saturating_sub(ttl.max(0)),
             model: row.get(12).map_err(sql_error)?,
             effort: row.get(13).map_err(sql_error)?,
+            delegated_by: delegated_actor_from_row(row, 14).map_err(sql_error)?,
         },
     })
 }

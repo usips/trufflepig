@@ -7,8 +7,8 @@ use rusqlite::{Connection, Row, params};
 
 use super::collection_reads::{claim_ttl, count, sequence_window, validate_limit};
 use super::super::{
-    BoardError, WriteContext, actor_from_row, invalid, require_plan, row_number, sql_error,
-    sql_number,
+    BoardError, WriteContext, actor_from_row, delegated_actor_from_row, invalid, require_plan,
+    row_number, sql_error, sql_number,
 };
 use crate::board::board_actor::BoardRecipient;
 use crate::board::board_domain::board_collections::{
@@ -228,8 +228,10 @@ pub(in crate::board::local_board) fn claim_window(
         .prepare(&format!(
             concat!(
                 "SELECT c.plan_id,c.task_ordinal,a.user,a.host,a.harness,a.session,c.entry_id,c.scope,",
-                "c.claimed_at,c.last_active,e.model,e.effort,c.id FROM claims c ",
-                "JOIN actors a ON a.id=c.actor_id JOIN entries e ON e.id=c.entry_id WHERE {predicate} ",
+                "c.claimed_at,c.last_active,e.model,e.effort,c.id,",
+                "d.user,d.host,d.harness,d.session FROM claims c ",
+                "JOIN actors a ON a.id=c.actor_id JOIN entries e ON e.id=c.entry_id ",
+                "LEFT JOIN actors d ON d.id=c.delegated_by WHERE {predicate} ",
                 "ORDER BY c.entry_id,c.id LIMIT ?13"
             ),
             predicate = predicate
@@ -300,5 +302,6 @@ fn active_claim_row(row: &Row<'_>, cutoff: i64) -> Result<ClaimRecord, BoardErro
         stale: last_active < cutoff,
         model: row.get(10).map_err(sql_error)?,
         effort: row.get(11).map_err(sql_error)?,
+        delegated_by: delegated_actor_from_row(row, 13).map_err(sql_error)?,
     })
 }

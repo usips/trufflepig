@@ -47,32 +47,14 @@ pub(in crate::board::local_board) fn receipt_current(
     reply: &BoardReply,
 ) -> Result<bool, BoardError> {
     match &request.op {
-        BoardOp::ClaimTask { .. } | BoardOp::CarveClaim { .. } => {
-            let BoardResult::Change(change) = &reply.result else {
-                return Ok(false);
+        BoardOp::ClaimTask { delegate, .. } => {
+            let holder = match delegate {
+                Some(target) => target.holder(&request.actor).map_err(BoardError::from)?,
+                None => request.actor.clone(),
             };
-            let Some(task) = change.task else {
-                return Ok(false);
-            };
-            tx.query_row(
-                concat!(
-                    "SELECT EXISTS(SELECT 1 FROM claims c JOIN actors a ON a.id=c.actor_id WHERE c.plan_id=?1 ",
-                    "AND c.task_ordinal=?2 AND c.entry_id=?3 AND c.ended_at IS NULL ",
-                    "AND a.user=?4 AND a.host=?5 AND a.harness=?6 AND a.session=?7)"
-                ),
-                params![
-                    sql_number(task.plan.get()),
-                    sql_number(task.ordinal),
-                    sql_number(change.entry.get()),
-                    request.actor.user,
-                    request.actor.host,
-                    request.actor.harness.as_str(),
-                    request.actor.session
-                ],
-                |r| r.get(0),
-            )
-            .map_err(sql_error)
+            claim_receipt_current(tx, &holder, reply)
         }
+        BoardOp::CarveClaim { .. } => claim_receipt_current(tx, &request.actor, reply),
         BoardOp::TaskMove { task, .. } => {
             let BoardResult::Change(change) = &reply.result else {
                 return Ok(false);
@@ -108,4 +90,35 @@ pub(in crate::board::local_board) fn receipt_current(
         }
         _ => Ok(true),
     }
+}
+
+fn claim_receipt_current(
+    tx: &Transaction<'_>,
+    holder: &BoardActor,
+    reply: &BoardReply,
+) -> Result<bool, BoardError> {
+    let BoardResult::Change(change) = &reply.result else {
+        return Ok(false);
+    };
+    let Some(task) = change.task else {
+        return Ok(false);
+    };
+    tx.query_row(
+        concat!(
+            "SELECT EXISTS(SELECT 1 FROM claims c JOIN actors a ON a.id=c.actor_id WHERE c.plan_id=?1 ",
+            "AND c.task_ordinal=?2 AND c.entry_id=?3 AND c.ended_at IS NULL ",
+            "AND a.user=?4 AND a.host=?5 AND a.harness=?6 AND a.session=?7)"
+        ),
+        params![
+            sql_number(task.plan.get()),
+            sql_number(task.ordinal),
+            sql_number(change.entry.get()),
+            holder.user,
+            holder.host,
+            holder.harness.as_str(),
+            holder.session
+        ],
+        |r| r.get(0),
+    )
+    .map_err(sql_error)
 }

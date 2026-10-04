@@ -110,6 +110,39 @@ pub(super) fn actor_from_row(
     })
 }
 
+pub(super) fn delegated_actor_from_row(
+    row: &rusqlite::Row<'_>,
+    offset: usize,
+) -> rusqlite::Result<Option<BoardActor>> {
+    let user: Option<String> = row.get(offset)?;
+    let host: Option<String> = row.get(offset + 1)?;
+    let harness: Option<String> = row.get(offset + 2)?;
+    let session: Option<String> = row.get(offset + 3)?;
+    match (user, host, harness, session) {
+        (Some(user), Some(host), Some(harness), Some(session)) => {
+            let harness = HarnessLabel::parse(&harness).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    offset + 2,
+                    rusqlite::types::Type::Text,
+                    e.into(),
+                )
+            })?;
+            Ok(Some(BoardActor {
+                user,
+                host,
+                harness,
+                session,
+            }))
+        }
+        (None, None, None, None) => Ok(None),
+        _ => Err(rusqlite::Error::FromSqlConversionFailure(
+            offset,
+            rusqlite::types::Type::Null,
+            "claim delegation references a missing actor".into(),
+        )),
+    }
+}
+
 pub(super) fn read_entry(conn: &Connection, id: EntryId) -> Result<EntryRecord, BoardError> {
     board_queries::board_reads::entry(conn, id)
 }

@@ -23,6 +23,7 @@ fn review_preserves_overlapping_ended_claims_and_other_agents_open_work() {
                 task,
                 scope: Some(EntryText::new(format!("scope {ordinal}")).unwrap()),
                 resume: ClaimResume::No,
+                delegate: None,
             },
         );
         call(
