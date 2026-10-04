@@ -55,13 +55,20 @@ def board_database_path() -> Path:
     return (base / "trufflepig/board.sqlite3").absolute()
 
 
+def login_session_runtime_dir() -> Path | None:
+    """Runtime directory of the user's login session when one is active."""
+    candidate = Path(f"/run/user/{os.getuid()}")
+    return candidate if candidate.is_dir() else None
+
+
 def system_runtime_path() -> Path:
     override = os.environ.get("TRUFFLEPIG_SYSTEM_DIR")
     if override is not None:
         if not override:
             raise ValueError("TRUFFLEPIG_SYSTEM_DIR must not be empty")
         return Path(override).absolute()
-    base = os.environ.get("XDG_RUNTIME_DIR") or os.environ.get("XDG_CACHE_HOME")
+    base = os.environ.get("XDG_RUNTIME_DIR") or login_session_runtime_dir() \
+        or os.environ.get("XDG_CACHE_HOME")
     directory = Path(base) if base else Path.home() / ".cache"
     return (directory / "trufflepig/system").absolute()
 

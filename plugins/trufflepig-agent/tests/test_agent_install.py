@@ -118,9 +118,46 @@ class AgentInstallTests(unittest.TestCase):
             ({"XDG_CACHE_HOME": "/cache"}, Path("/cache/trufflepig/system")),
             ({}, self.root / ".cache/trufflepig/system"),
         ]
-        for environment, expected in cases:
-            with self.subTest(environment=environment), patch.dict(os.environ, {"HOME": str(self.root), **environment}, clear=True):
+        with patch.object(module, "login_session_runtime_dir", return_value=None):
+            for environment, expected in cases:
+                with self.subTest(environment=environment), patch.dict(os.environ, {"HOME": str(self.root), **environment}, clear=True):
+                    self.assertEqual(module.system_runtime_path(), expected)
+
+    def test_router_system_dir_matches_login_shell_resolution(self):
+        spec = importlib.util.spec_from_file_location("install_router_dir", PLUGIN / "scripts/install_agent.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.path.insert(0, str(PLUGIN / "scripts"))
+        self.addCleanup(sys.path.remove, str(PLUGIN / "scripts"))
+        spec.loader.exec_module(module)
+        from unittest.mock import patch
+        cases = [
+            # XDG_RUNTIME_DIR wins over an active login session and the cache chain.
+            ({"XDG_RUNTIME_DIR": "/runtime"}, Path("/run/user/1000"), Path("/runtime/trufflepig/system")),
+            # Without XDG_RUNTIME_DIR (su -, cron) an active login session pins /run/user/<uid>.
+            ({}, Path("/run/user/1000"), Path("/run/user/1000/trufflepig/system")),
+            # Empty XDG_RUNTIME_DIR behaves as unset, like the router's resolution.
+            ({"XDG_RUNTIME_DIR": ""}, Path("/run/user/1000"), Path("/run/user/1000/trufflepig/system")),
+            ({"XDG_RUNTIME_DIR": ""}, None, self.root / ".cache/trufflepig/system"),
+            # No runtime dir and no login session falls back to the cache chain.
+            ({}, None, self.root / ".cache/trufflepig/system"),
+        ]
+        for environment, login_session, expected in cases:
+            with self.subTest(environment=environment, login_session=login_session), \
+                    patch.dict(os.environ, {"HOME": str(self.root), **environment}, clear=True), \
+                    patch.object(module, "login_session_runtime_dir", return_value=login_session):
                 self.assertEqual(module.system_runtime_path(), expected)
+                text = module.service_text("/bin/trufflepig", None)
+                self.assertIn(f'Environment="TRUFFLEPIG_SYSTEM_DIR={expected}"', text)
+
+    def test_login_session_runtime_dir_requires_an_existing_directory(self):
+        spec = importlib.util.spec_from_file_location("install_login_session", PLUGIN / "scripts/install_agent.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.path.insert(0, str(PLUGIN / "scripts"))
+        self.addCleanup(sys.path.remove, str(PLUGIN / "scripts"))
+        spec.loader.exec_module(module)
+        from unittest.mock import patch
+        with patch.object(module.os, "getuid", return_value=99999):
+            self.assertIsNone(module.login_session_runtime_dir())
 
     def test_board_install_selector_is_explicit_in_help(self):
         result = self.install("--help")
