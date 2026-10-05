@@ -200,7 +200,9 @@ pub(in crate::board::local_board) fn claim_task(
                 return Err(claim_conflict(task, &holder.record, ctx.now));
             }
             ClaimResume::Idle
-                if holder.record.last_active >= ctx.now.saturating_sub(RESUME_IDLE_GRACE_SECS) =>
+                if holder.actor_id != ctx.actor_id
+                    && holder.record.last_active
+                        >= ctx.now.saturating_sub(RESUME_IDLE_GRACE_SECS) =>
             {
                 return Err(claim_conflict(task, &holder.record, ctx.now));
             }

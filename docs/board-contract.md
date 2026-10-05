@@ -53,9 +53,10 @@ rules](board-web-contract.md#browser-state-and-safe-rendering).
 At most one unended claim exists per task. Active competing claims fail `claim_conflict` with holder
 identity, model, effort, and activity. Normal claims require scope. Claim views expose each lease's
 entry `E#`. `--resume` replaces only the same user/host/harness lease across sessions, inherits
-omitted scope, and records the prior actor as `resumed`: a bare `--resume` succeeds only once the
-lease has idled for ten minutes, while `--resume E#` names the current unended claim entry and takes
-over immediately. Stale claims remain claimable. Carve retries dedupe only while their current lease
+omitted scope, and records the prior actor as `resumed`: a bare `--resume` refreshes your own
+live claim immediately and succeeds against another session's lease only once it has idled for ten
+minutes, while `--resume=E#` names the current unended claim entry and takes over immediately.
+Stale claims remain claimable. Carve retries dedupe only while their current lease
 remains owned; after release or takeover, another carve creates a fresh task. Claiming a `done` task
 is denied. Moving `done` to `doing` is denied; owner human/steward may explicitly correct `done` to
 `todo`. `task P7.3 doing` without `--to` claims the caller using prior scope or title. An assigned

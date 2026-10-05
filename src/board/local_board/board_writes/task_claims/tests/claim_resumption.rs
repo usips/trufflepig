@@ -240,6 +240,25 @@ fn bare_resume_requires_idle_grace_before_replacing_a_live_claim() {
 }
 
 #[test]
+fn bare_resume_of_own_live_claim_refreshes_without_conflict() {
+    let database = ClaimDatabase::new();
+    let mut conn = database.connect();
+    let holder = actor("josh", "muse", "worktree-one");
+    let task = carved_task(&mut conn, &holder, 1000, "live lane");
+    write(&mut conn, &holder, 1050, |tx, ctx| {
+        claim_task(tx, ctx, task, None, ClaimResume::Idle, None)
+    })
+    .unwrap();
+    let history = read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, 1050, 120).unwrap();
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0].end_reason, Some(ClaimEndReason::Resumed));
+    assert_eq!(history[1].actor, holder);
+    assert_eq!(history[1].scope.as_str(), "live lane");
+    assert_eq!(history[1].last_active, 1050);
+    assert!(history[1].ended_at.is_none());
+}
+
+#[test]
 fn explicit_resume_entry_takes_over_a_live_claim_immediately() {
     let database = ClaimDatabase::new();
     let mut conn = database.connect();

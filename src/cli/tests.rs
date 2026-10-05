@@ -769,7 +769,6 @@ fn claim_resume_accepts_an_optional_entry_target() {
     use crate::board::board_protocol::{BoardOp, ClaimResume};
     for words in [
         &["board", "claim", "P7.3", "--resume"][..],
-        &["board", "claim", "P7.3", "--resume", "E42"][..],
         &["board", "claim", "P7.3", "--resume=E42"][..],
     ] {
         let args = words
@@ -782,7 +781,7 @@ fn claim_resume_accepts_an_optional_entry_target() {
         let routed = parse(&forwarded).unwrap();
         assert_eq!(board_parse(&routed, None).unwrap(), command);
     }
-    let args = ["board", "claim", "P7.3", "--resume", "E42"].map(str::to_owned);
+    let args = ["board", "claim", "P7.3", "--resume=E42"].map(str::to_owned);
     let options = parse(&args).unwrap();
     let BoardCommand::Op(op) = board_parse(&options, None).unwrap() else {
         panic!("expected op")
@@ -807,9 +806,64 @@ fn claim_resume_accepts_an_optional_entry_target() {
     };
     assert_eq!(resume, ClaimResume::Idle);
     assert_eq!(scope.unwrap().as_str(), "fresh scope");
-    let args = ["board", "claim", "P7.3", "--resume", "bogus"].map(str::to_owned);
+    let args = ["board", "claim", "P7.3", "--resume=bogus"].map(str::to_owned);
     let options = parse(&args).unwrap();
     assert!(board_parse(&options, None).is_err());
+}
+
+#[test]
+fn claim_resume_value_requires_equals_and_leaves_positionals_alone() {
+    use crate::board::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
+    use crate::board::board_protocol::{BoardOp, ClaimResume};
+    // Scope words after a bare `--resume` stay scope; nothing is eaten.
+    let args = ["board", "claim", "P7.3", "--resume", "fresh", "scope"].map(str::to_owned);
+    let options = parse(&args).unwrap();
+    let BoardCommand::Op(BoardOp::ClaimTask {
+        task,
+        scope,
+        resume,
+        ..
+    }) = board_parse(&options, None).unwrap()
+    else {
+        panic!("expected claim op")
+    };
+    assert_eq!(task.to_string(), "P7.3");
+    assert_eq!(resume, ClaimResume::Idle);
+    assert_eq!(scope.unwrap().as_str(), "fresh scope");
+    // Flag-before-target: the task ref is not eaten as the resume value.
+    let args = ["board", "claim", "--resume", "P7.3"].map(str::to_owned);
+    let options = parse(&args).unwrap();
+    let BoardCommand::Op(BoardOp::ClaimTask { task, resume, .. }) =
+        board_parse(&options, None).unwrap()
+    else {
+        panic!("expected claim op")
+    };
+    assert_eq!(task.to_string(), "P7.3");
+    assert_eq!(resume, ClaimResume::Idle);
+    // The `=` form still names an explicit entry takeover.
+    let args = ["board", "claim", "P7.3", "--resume=E485"].map(str::to_owned);
+    let options = parse(&args).unwrap();
+    let command = board_parse(&options, None).unwrap();
+    let forwarded = normalize_args(&args, &options, None).unwrap();
+    let routed = parse(&forwarded).unwrap();
+    assert_eq!(board_parse(&routed, None).unwrap(), command);
+    let BoardCommand::Op(BoardOp::ClaimTask { resume, .. }) = command else {
+        panic!("expected claim op")
+    };
+    assert_eq!(
+        resume,
+        ClaimResume::Entry(crate::board::board_ids::EntryId::new(485).unwrap())
+    );
+    // Space form no longer feeds a value: `E42` becomes scope text.
+    let args = ["board", "claim", "P7.3", "--resume", "E42"].map(str::to_owned);
+    let options = parse(&args).unwrap();
+    let BoardCommand::Op(BoardOp::ClaimTask { scope, resume, .. }) =
+        board_parse(&options, None).unwrap()
+    else {
+        panic!("expected claim op")
+    };
+    assert_eq!(resume, ClaimResume::Idle);
+    assert_eq!(scope.unwrap().as_str(), "E42");
 }
 
 #[test]

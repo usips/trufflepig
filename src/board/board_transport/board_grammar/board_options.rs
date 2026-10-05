@@ -25,7 +25,7 @@ pub struct BoardOptions {
     #[arg(long)]
     pub scope: Option<String>,
     /// Resume an idle claim for the same user, host, and harness; `E#` takes over that exact claim entry.
-    #[arg(long, num_args = 0..=1, value_name = "E#")]
+    #[arg(long, num_args = 0..=1, require_equals = true, value_name = "E#")]
     pub resume: Option<Option<String>>,
     /// Claim on behalf of HARNESS/SESSION under the caller's user and host.
     #[arg(long = "for", value_name = "HARNESS/SESSION")]

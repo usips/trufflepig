@@ -298,9 +298,9 @@ impl ClaimDelegate {
 pub enum ClaimResume {
     /// Ordinary claim without resume semantics.
     No,
-    /// Bare `--resume`; succeeds only once the lease idles past the grace window.
+    /// Bare `--resume`; refreshes the holder's own live lease, else waits for idle grace.
     Idle,
-    /// `--resume E#`; immediately replaces that exact unended claim entry.
+    /// `--resume=E#`; immediately replaces that exact unended claim entry.
     Entry(EntryId),
 }
 

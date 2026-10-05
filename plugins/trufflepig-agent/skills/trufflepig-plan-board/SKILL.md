@@ -48,9 +48,10 @@ trufflepig-agent board post P7.3 progress "Parser accepts P7@12; tests pass"
 trufflepig-agent board task P7.3 review
 ```
 
-Use `--resume` only for your own harness's claims. Bare `--resume` replaces
-your interrupted claim only after its lease has been idle for at least ten
-minutes; `--resume E#` (the claim entry from `board show P7.3`) takes over
+Use `--resume` only for your own harness's claims. Bare `--resume` refreshes
+your own live claim immediately and replaces another session's interrupted
+claim only after its lease has been idle for at least ten minutes;
+`--resume=E#` (the claim entry from `board show P7.3`) takes over
 immediately. Omitting scope inherits the current lease scope; resuming ends
 the prior lease as `resumed` and records that actor.
 
