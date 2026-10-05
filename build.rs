@@ -3,6 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+include!("build/tool_probe.rs");
+
 fn collect_files(path: &Path, files: &mut Vec<PathBuf>) {
     let Ok(metadata) = fs::symlink_metadata(path) else {
         return;
@@ -22,8 +24,13 @@ fn collect_files(path: &Path, files: &mut Vec<PathBuf>) {
 }
 
 fn main() {
-    emit_git_cfgs();
-    emit_node_cfgs();
+    println!("cargo::rerun-if-changed=build/tool_probe.rs");
+    let git = emit_git_cfgs();
+    let node = emit_node_cfgs();
+    if let Some(out_dir) = env::var_os("OUT_DIR") {
+        let report = tool_probe::format_probe_report(&[("git", &git), ("node", &node)]);
+        let _ = tool_probe::write_probe_report(Path::new(&out_dir), &report);
+    }
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let mut files = vec![manifest.join("Cargo.toml"), manifest.join("Cargo.lock")];
     collect_files(&manifest.join("src"), &mut files);
@@ -64,20 +71,22 @@ fn main() {
 
 /// Expose the installed Git as `board_git_2_46` / `board_git_2_55` cfgs.
 /// Missing or unparseable Git emits neither cfg, so gated tests ignore.
-fn emit_git_cfgs() {
+fn emit_git_cfgs() -> String {
     println!("cargo::rustc-check-cfg=cfg(board_git_2_46)");
     println!("cargo::rustc-check-cfg=cfg(board_git_2_55)");
     println!("cargo::rerun-if-env-changed=PATH");
-    let Some(path) = resolve_on_path("git") else {
-        println!("cargo::warning=board Git-gated tests will be ignored: git not found on PATH");
-        return;
+    let dirs = tool_probe::path_search_dirs(env::var_os("PATH").as_deref());
+    let Some(path) = tool_probe::resolve_tool_in_dirs(&dirs, "git") else {
+        for dir in &dirs {
+            println!("cargo::rerun-if-changed={}", dir.display());
+        }
+        return format!("missing (searched {} PATH dirs)", dirs.len());
     };
     println!("cargo::rerun-if-changed={}", path.display());
-    let version =
-        command_stdout(&path, "--version").and_then(|stdout| parse_git_version(&stdout));
+    let version = command_stdout(&path, "--version")
+        .and_then(|stdout| tool_probe::parse_git_version(&stdout));
     let Some((major, minor)) = version else {
-        println!("cargo::warning=board Git-gated tests will be ignored: unparseable git --version output");
-        return;
+        return format!("unparseable `{}` --version output", path.display());
     };
     if (major, minor) >= (2, 46) {
         println!("cargo::rustc-cfg=board_git_2_46");
@@ -85,27 +94,31 @@ fn emit_git_cfgs() {
     if (major, minor) >= (2, 55) {
         println!("cargo::rustc-cfg=board_git_2_55");
     }
+    format!("found {} ({major}.{minor})", path.display())
 }
 
 /// Expose a Node >=20 runtime as the `board_node_20` cfg for asset tests.
 /// Missing or unparseable Node emits no cfg, so the runner test ignores.
-fn emit_node_cfgs() {
+fn emit_node_cfgs() -> String {
     println!("cargo::rustc-check-cfg=cfg(board_node_20)");
     println!("cargo::rerun-if-env-changed=PATH");
-    let Some(path) = resolve_on_path("node") else {
-        println!("cargo::warning=board asset tests will be ignored: node not found on PATH");
-        return;
+    let dirs = tool_probe::path_search_dirs(env::var_os("PATH").as_deref());
+    let Some(path) = tool_probe::resolve_tool_in_dirs(&dirs, "node") else {
+        for dir in &dirs {
+            println!("cargo::rerun-if-changed={}", dir.display());
+        }
+        return format!("missing (searched {} PATH dirs)", dirs.len());
     };
     println!("cargo::rerun-if-changed={}", path.display());
-    let version =
-        command_stdout(&path, "--version").and_then(|stdout| parse_node_version(&stdout));
+    let version = command_stdout(&path, "--version")
+        .and_then(|stdout| tool_probe::parse_node_version(&stdout));
     let Some(major) = version else {
-        println!("cargo::warning=board asset tests will be ignored: unparseable node --version output");
-        return;
+        return format!("unparseable `{}` --version output", path.display());
     };
     if major >= 20 {
         println!("cargo::rustc-cfg=board_node_20");
     }
+    format!("found {} (v{major})", path.display())
 }
 
 /// Run `path` with one argument, returning stdout on success.
@@ -116,35 +129,6 @@ fn command_stdout(path: &Path, arg: &str) -> Option<Vec<u8>> {
         .ok()
         .filter(|output| output.status.success())
         .map(|output| output.stdout)
-}
-
-/// Resolve `name` to an executable file via `PATH` search.
-fn resolve_on_path(name: &str) -> Option<PathBuf> {
-    for dir in env::split_paths(&env::var_os("PATH")?) {
-        let candidate = dir.join(name);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-        #[cfg(windows)]
-        {
-            let executable = dir.join(format!("{name}.exe"));
-            if executable.is_file() {
-                return Some(executable);
-            }
-        }
-    }
-    None
-}
-
-fn parse_git_version(bytes: &[u8]) -> Option<(u32, u32)> {
-    let text = std::str::from_utf8(bytes).ok()?;
-    let mut parts = text.split_whitespace().nth(2)?.split('.');
-    Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
-}
-
-fn parse_node_version(bytes: &[u8]) -> Option<u32> {
-    let text = std::str::from_utf8(bytes).ok()?;
-    text.trim().strip_prefix('v')?.split('.').next()?.parse().ok()
 }
 
 fn hash_bytes(lanes: &mut [u64; 4], bytes: &[u8]) {
