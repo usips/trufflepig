@@ -24,7 +24,7 @@ export function createBoardStream(context) {
   // Election and fetch-reader state shared with the stream election module.
   const session = {
     mode: "idle", channel: null, channelName: "", elect: null, lockEnd: null,
-    lockNames: null, electionCursor: null,
+    lockNames: null, electionCursor: null, deferredCursor: null,
     heartbeatTimer: null, freshnessTimer: null, lastHeartbeat: 0,
     stealRequested: false, leaderHealthy: false,
     relayBuffer: [], bufferOverran: false, bufferToken: null,
@@ -62,7 +62,16 @@ export function createBoardStream(context) {
     state.streamGeneration++;
     state.stream?.abort(); state.stream = null;
     clearTimeout(state.reconnect); state.reconnect = null;
+    session.deferredCursor = null;
     election.resetElection();
+  }
+
+  // A stolen lock means another tab leads now: stop fetching and heartbeating,
+  // then rejoin the election as a follower.
+  function rejoinAfterSteal() {
+    const cursor = state.watermark ?? session.electionCursor;
+    stopStream();
+    if (cursor !== null) startStream(cursor);
   }
 
   // The fetch reader: leaders pass a relay, solo tabs pass null. Reconnects
@@ -132,6 +141,10 @@ export function createBoardStream(context) {
 
   function startStream(cursor) {
     if (cursor === null || state.stream || state.resyncing || session.mode !== "idle") return;
+    // A hidden tab never leads: throttled background timers would stall its
+    // heartbeat for every follower. Election resumes on visibilitychange.
+    if (document.visibilityState === "hidden") { session.deferredCursor = cursor; return; }
+    session.deferredCursor = null;
     clearTimeout(state.reconnect); state.reconnect = null;
     if (!election.shareable) { session.mode = "solo"; runFetch(cursor, null); return; }
     // Follow first: frames from the current leader apply while this tab waits
@@ -170,6 +183,14 @@ export function createBoardStream(context) {
 
   const election = createStreamElection({
     session, state, setConnection, authToken, heartbeatMs, freshnessMs, deliver, runFetch,
+    rejoinAfterSteal,
+  });
+
+  // A tab that deferred its election while hidden starts when shown again.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "hidden" && session.deferredCursor !== null) {
+      startStream(session.deferredCursor);
+    }
   });
 
   return { parseSse, stopStream, startStream };

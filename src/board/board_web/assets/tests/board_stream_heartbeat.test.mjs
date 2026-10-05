@@ -104,7 +104,7 @@ describe("board stream heartbeat", () => {
     }
   });
 
-  it("followers steal the lock after missed heartbeats", { todo: "W6.6: steal must drop the signal under strict locks" }, async () => {
+  it("followers steal the lock after missed heartbeats", async () => {
     const name = generationName(TF);
     const seenOptions = [];
     const locks = globalThis.navigator.locks;
@@ -135,6 +135,45 @@ describe("board stream heartbeat", () => {
       locks.request = originalRequest;
       await releaseGen();
       await releaseLegacy();
+    }
+  });
+
+  it("a stolen leader stops fetching and rejoins as a follower", async () => {
+    // The leader's heartbeat interval outlives the test: after its one setup
+    // beat it is silent, like a throttled background tab.
+    const leaderCalls = [];
+    const leader = makeTab({
+      token: TF,
+      fetchImpl: (...args) => { leaderCalls.push(args); return new Promise(() => {}); },
+      heartbeatMs: 10000, freshnessMs: 10000,
+    });
+    const followerCalls = [];
+    const follower = makeTab({
+      token: TF,
+      fetchImpl: (...args) => { followerCalls.push(args); return new Promise(() => {}); },
+      heartbeatMs: 20, freshnessMs: 60,
+    });
+    try {
+      leader.stream.startStream("41");
+      follower.stream.startStream("41");
+      assert.equal(
+        await waitFor(() => leaderCalls.length === 1 && followerCalls.length === 0),
+        true, "the silent-heartbeat tab leads first",
+      );
+      assert.equal(
+        await waitFor(() => followerCalls.length === 1), true, "the follower steals the stalled lock",
+      );
+      assert.equal(leaderCalls[0][1].signal.aborted, true, "the evicted leader stops fetching");
+      assert.equal(
+        await waitFor(() => leader.connections.some(([label]) => label === "Connecting…")),
+        true, "the evicted leader rejoins as a follower",
+      );
+      await tick(100);
+      assert.equal(leaderCalls.length, 1, "the rejoined follower never fetches again");
+      assert.equal(followerCalls.length, 1, "the new leader fetches exactly once");
+    } finally {
+      leader.stream.stopStream();
+      follower.stream.stopStream();
     }
   });
 });

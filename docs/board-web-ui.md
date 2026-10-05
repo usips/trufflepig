@@ -35,5 +35,5 @@ holds the stream, heartbeats every 5 seconds, and relays every frame type over t
 after two missed beats, dedupe by `seq` on per-tab watermarks, and failover resumes from the new
 leader's watermark — without Web Locks or BroadcastChannel each tab keeps its own stream, a bounded
 incremental UTF-8/SSE parser with reconnect backoff, coalesced refreshes, and obsolete-route results
-ignored. A hidden tab yields its stream so a visible tab takes over. A 401/403 expires the tab: it
+ignored. A hidden tab yields its stream and defers its election until shown, so a visible tab leads. A 401/403 expires the tab: it
 releases the lock, drops its token, and announces authorization-expired without retrying.

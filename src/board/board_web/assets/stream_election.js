@@ -11,6 +11,7 @@ const RELAY_BUFFER_CAP = 500;
 
 export function createStreamElection({
   session, state, setConnection, authToken, heartbeatMs, freshnessMs, deliver, runFetch,
+  rejoinAfterSteal,
 }) {
   const shareable = (() => {
     try { return typeof navigator?.locks?.request === "function" && typeof BroadcastChannel === "function"; }
@@ -98,13 +99,11 @@ export function createStreamElection({
   }
 
   // A valid status heartbeat proves the leader's event loop is alive, whatever
-  // its fetch health; only a live one shows Live. A revived leader cancels a
-  // pending steal so a healthy leader is never preempted.
+  // its fetch health; only a live one shows Live. A queued steal cannot be
+  // cancelled — the spec bars signal with steal — so it stands and the leader
+  // it evicts rejoins as a follower instead.
   function onHeartbeat(frame) {
     session.lastHeartbeat = Date.now();
-    if (session.stealRequested && session.lockNames) {
-      try { requestLock(session.lockNames, false); } catch (_) { /* The next heartbeat retries the cancel. */ }
-    }
     if (frame.state === "live") setConnection("Live", "live");
     else if (frame.state === "retrying") setConnection("Reconnecting…", "error");
   }
@@ -131,21 +130,26 @@ export function createStreamElection({
     }, heartbeatMs);
   }
 
-  // A synchronous throw leaves the previous election fields alone so the next
-  // heartbeat or freshness tick retries; callers swallow it the same way.
+  // A steal carries no signal: the spec rejects the two together, so a queued
+  // steal stays pending until granted. A synchronous throw leaves the previous
+  // election fields alone so the next heartbeat or freshness tick retries.
   function requestLock(names, steal) {
     session.elect?.abort();
     const controller = new AbortController();
     const electionGeneration = state.streamGeneration;
-    const options = steal
-      ? { signal: controller.signal, steal: true }
-      : { signal: controller.signal };
+    const options = steal ? { steal: true } : { signal: controller.signal };
+    let granted = false;
     void navigator.locks.request(names.lock, options, () => {
       if (session.mode !== "following" || electionGeneration !== state.streamGeneration) return;
+      granted = true;
       session.mode = "leading";
       becomeLeader(names);
       return new Promise(resolve => { session.lockEnd = resolve; });
-    }).catch(() => { /* An aborted election ends with stopStream. */ });
+    }).catch(error => {
+      // Granted, then AbortError: the lock was stolen. A queued request aborts
+      // only through stopStream, which resets the election itself.
+      if (granted && error?.name === "AbortError") rejoinAfterSteal();
+    });
     session.elect = controller;
     session.stealRequested = steal;
   }

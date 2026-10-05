@@ -1,5 +1,6 @@
 // Browser globals for board asset tests under node:test: storage, strict Web
-// Locks, same-thread broadcast, and a DOM tree with selectors and focus gating.
+// Locks, same-thread broadcast, page visibility, and a DOM tree with selectors
+// and focus gating.
 function createStorage() {
   const values = new Map();
   return {
@@ -124,6 +125,7 @@ class FakeElement {
   }
 }
 
+const documentListeners = new Map();
 let root = null;
 export function installDomShim() {
   if (root) return;
@@ -136,15 +138,23 @@ export function installDomShim() {
   globalThis.BroadcastChannel = ShimBroadcastChannel;
   globalThis.document = {
     activeElement: null,
+    visibilityState: "visible",
     createElement: tag => new FakeElement(tag),
     querySelector: selector => root.querySelector(selector),
     querySelectorAll: selector => root.querySelectorAll(selector),
+    addEventListener(type, listener) {
+      (documentListeners.get(type) || documentListeners.set(type, []).get(type)).push(listener);
+    },
+    dispatchEvent(event) {
+      for (const listener of documentListeners.get(event.type) || []) listener(event);
+      return true;
+    },
   };
   if (!globalThis.CSS) globalThis.CSS = { escape: value => String(value) };
 }
 
 export function resetDomShim() {
   sessionStorage.clear(); localStorage.clear();
-  lockQueues.clear(); channelPeers.clear();
-  document.activeElement = null; root.replaceChildren();
+  lockQueues.clear(); channelPeers.clear(); documentListeners.clear();
+  document.activeElement = null; document.visibilityState = "visible"; root.replaceChildren();
 }
