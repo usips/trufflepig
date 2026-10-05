@@ -4,6 +4,8 @@
 mod event_ring;
 mod ring_filler;
 mod sequence_poller;
+mod stream_ingest;
+mod stream_serve;
 mod stream_socket;
 #[cfg(test)]
 mod tests;
@@ -14,12 +16,10 @@ use crate::board::{
     board_ids::{EventSeq, PlanId},
     board_protocol::{BoardError, BoardErrorCode, EventRecord},
 };
-use event_ring::{Drain, EventRing};
+use event_ring::EventRing;
 use ring_filler::RingFiller;
-use sequence_poller::WakeResult;
 use serde::Serialize;
 use std::{
-    collections::VecDeque,
     io,
     net::TcpStream,
     sync::{
@@ -27,8 +27,9 @@ use std::{
         atomic::{AtomicUsize, Ordering},
     },
     thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
+use stream_ingest::IngestLog;
 
 pub const STREAM_LIMIT: usize = 32;
 pub const REPLAY_LIMIT: usize = 500;
@@ -88,13 +89,6 @@ pub struct EventStreams {
     _filler: Arc<RingFiller>,
     active: Arc<AtomicUsize>,
     ingest: Arc<Mutex<IngestLog>>,
-}
-
-/// Completed ingest relays, newest last; each subscriber drains by sequence.
-#[derive(Default)]
-struct IngestLog {
-    next: u64,
-    frames: VecDeque<(u64, Vec<u8>)>,
 }
 
 /// Dropping the permit releases capacity on return, disconnect, or unwinding.
@@ -194,208 +188,6 @@ impl EventStreams {
     pub fn active(&self) -> usize {
         self.active.load(Ordering::Acquire)
     }
-
-    /// Records a completed ingest relay for broadcast; subscribers drain
-    /// every kept receipt and filter by flight ticket, newest frames kept.
-    pub fn publish_ingest(&self, result: &serde_json::Value) {
-        let Ok(frame) = ingest_frame(result) else {
-            return;
-        };
-        let mut log = self
-            .ingest
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
-        log.next += 1;
-        let next = log.next;
-        log.frames.push_back((next, frame));
-        while log.frames.len() > INGEST_LOG_LIMIT {
-            log.frames.pop_front();
-        }
-    }
-
-    /// A (re)subscribing stream drains every kept receipt, including ones
-    /// published while it was away; tab-side ticket filtering drops the
-    /// flights the tab never joined.
-    fn ingest_replay_start(&self) -> u64 {
-        let log = self
-            .ingest
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
-        log.next.saturating_sub(log.frames.len() as u64)
-    }
-
-    /// Sends ingest receipts sequenced after `after_seq`; returns the new cursor.
-    fn send_ingest_frames(&self, socket: &mut TcpStream, after_seq: u64) -> io::Result<u64> {
-        let frames: Vec<(u64, Vec<u8>)> = {
-            let log = self
-                .ingest
-                .lock()
-                .unwrap_or_else(|poison| poison.into_inner());
-            log.frames
-                .iter()
-                .filter(|(seq, _)| *seq > after_seq)
-                .map(|(seq, frame)| (*seq, frame.clone()))
-                .collect()
-        };
-        let mut cursor = after_seq;
-        for (seq, frame) in frames {
-            stream_socket::send(socket, &frame, SEND_DEADLINE)?;
-            cursor = seq;
-        }
-        Ok(cursor)
-    }
-
-    fn serve(&self, mut socket: TcpStream, request: StreamRequest) -> io::Result<()> {
-        if !self.wake.available() {
-            return Ok(());
-        }
-        if let Some(plan) = request.plan {
-            // Unknown plans are rejected before any 200: a 200-then-close
-            // would reconnect forever. Other read errors fall through to
-            // the filler's availability handling below.
-            match (self.reader)(EventSeq::new(0), Some(plan), 1) {
-                Err(error) if error.code == BoardErrorCode::InvalidReference => {
-                    let body = serde_json::to_vec(&serde_json::json!({
-                        "error": { "code": error.code.as_str(), "message": error.message }
-                    }))
-                    .map_err(io::Error::other)?;
-                    super::http_wire::send_response(
-                        &mut socket,
-                        404,
-                        "application/json",
-                        &body,
-                        true,
-                    )?;
-                    return Ok(());
-                }
-                _ => {}
-            }
-        }
-        socket.set_nodelay(true)?;
-        socket.set_read_timeout(Some(Duration::from_millis(1)))?;
-        stream_socket::send(&mut socket, stream_socket::RESPONSE_HEADERS, SEND_DEADLINE)?;
-        // The lease keeps relevance reads alive; the poke wakes the filler to
-        // annotate the window before this subscriber's first drain needs it.
-        let _plan_lease = request.plan.map(|plan| {
-            let lease = self.ring.subscribe_plan(plan);
-            self.wake.poke();
-            lease
-        });
-        let mut ingest_after = self.ingest_replay_start();
-        let mut cursor = request.after;
-        let mut last_send = Instant::now();
-        let mut ahead_since: Option<Instant> = None;
-        let mut recovering_since: Option<Instant> = None;
-        loop {
-            if !self.wake.available() {
-                return Ok(());
-            }
-            match self.ring.drain(cursor, request.plan) {
-                Drain::Stopped | Drain::PlanFailed => return Ok(()),
-                Drain::Unavailable => {
-                    // A wake outage closes promptly; a recovered poller
-                    // republishes the ring within moments, so bridge that window.
-                    if !self.wake.available() {
-                        return Ok(());
-                    }
-                    let waited = *recovering_since.get_or_insert_with(Instant::now);
-                    let remaining = AHEAD_CURSOR_GRACE.saturating_sub(waited.elapsed());
-                    if remaining.is_zero() {
-                        return Ok(());
-                    }
-                    self.ring.wait_recovery(remaining);
-                }
-                Drain::Gap { latest } => {
-                    let frame = event_frame(
-                        "resync",
-                        None,
-                        &Resync {
-                            reason: "replay_gap",
-                            latest,
-                        },
-                    )?;
-                    return stream_socket::send(&mut socket, &frame, SEND_DEADLINE);
-                }
-                Drain::Ahead {
-                    latest,
-                    generation,
-                } => {
-                    let waited = *ahead_since.get_or_insert_with(Instant::now);
-                    let remaining = AHEAD_CURSOR_GRACE.saturating_sub(waited.elapsed());
-                    if remaining.is_zero() {
-                        // Contention can starve the filler past the grace
-                        // while fresh writes wait; poke it awake, then
-                        // re-read the watermark directly from the feed before
-                        // declaring a genuinely ahead cursor.
-                        self.wake.poke();
-                        let fresh = (self.reader)(cursor, None, 1)
-                            .map(|batch| batch.latest)
-                            .unwrap_or(latest);
-                        if fresh >= cursor {
-                            ahead_since = None;
-                            continue;
-                        }
-                        let frame = event_frame(
-                            "resync",
-                            None,
-                            &Resync {
-                                reason: "cursor_ahead",
-                                latest,
-                            },
-                        )?;
-                        return stream_socket::send(&mut socket, &frame, SEND_DEADLINE);
-                    }
-                    match self
-                        .ring
-                        .wait(generation, remaining.min(sequence_poller::POLL_INTERVAL))
-                    {
-                        WakeResult::Unavailable | WakeResult::Stopped => return Ok(()),
-                        WakeResult::Changed | WakeResult::Timeout => {}
-                    }
-                }
-                Drain::PendingPlan { generation } => {
-                    match self.ring.wait(generation, sequence_poller::POLL_INTERVAL) {
-                        WakeResult::Unavailable | WakeResult::Stopped => return Ok(()),
-                        WakeResult::Changed | WakeResult::Timeout => {}
-                    }
-                }
-                Drain::Frames {
-                    frames,
-                    cursor: target,
-                    generation,
-                } => {
-                    ahead_since = None;
-                    recovering_since = None;
-                    for frame in &frames {
-                        if !self.wake.available() {
-                            return Ok(());
-                        }
-                        stream_socket::send(&mut socket, frame, SEND_DEADLINE)?;
-                        last_send = Instant::now();
-                    }
-                    cursor = target;
-                    loop {
-                        if !stream_socket::peer_connected(&socket)? {
-                            return Ok(());
-                        }
-                        ingest_after = self.send_ingest_frames(&mut socket, ingest_after)?;
-                        if last_send.elapsed() >= KEEPALIVE_INTERVAL {
-                            stream_socket::send(&mut socket, b": keepalive\n\n", SEND_DEADLINE)?;
-                            last_send = Instant::now();
-                        }
-                        let timeout = KEEPALIVE_INTERVAL
-                            .saturating_sub(last_send.elapsed())
-                            .min(sequence_poller::POLL_INTERVAL);
-                        match self.ring.wait(generation, timeout) {
-                            WakeResult::Changed => break,
-                            WakeResult::Timeout => {}
-                            WakeResult::Unavailable | WakeResult::Stopped => return Ok(()),
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
 
 impl ReplayBatch {
@@ -418,12 +210,6 @@ impl ReplayBatch {
 struct Resync {
     reason: &'static str,
     latest: EventSeq,
-}
-
-/// Ingest receipts ride the stream as a side frame: no `id`, so the board
-/// event cursor never advances on relay completions.
-fn ingest_frame(value: &serde_json::Value) -> io::Result<Vec<u8>> {
-    event_frame("ingest", None, value)
 }
 
 fn event_frame(event: &str, id: Option<EventSeq>, value: &impl Serialize) -> io::Result<Vec<u8>> {

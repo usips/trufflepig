@@ -71,12 +71,12 @@ pub fn parse_log(bytes: &[u8], repo_key: &RepoKey) -> Result<ParsedLog> {
     Ok(result)
 }
 
-struct ParsedRecord {
+struct ParsedLogRecord {
     commit: ParsedCommit,
     warnings: Vec<String>,
 }
 
-fn parse_record(fields: &[&[u8]], repo_key: &RepoKey) -> Result<ParsedRecord> {
+fn parse_record(fields: &[&[u8]], repo_key: &RepoKey) -> Result<ParsedLogRecord> {
     let mut warnings = Vec::new();
     let oid = std::str::from_utf8(fields[0])?;
     let timestamp = std::str::from_utf8(fields[1])?;
@@ -143,7 +143,7 @@ fn parse_record(fields: &[&[u8]], repo_key: &RepoKey) -> Result<ParsedRecord> {
         ));
     }
     let (files, insertions, deletions) = shortstat(shortstat_field).unwrap_or_default();
-    Ok(ParsedRecord {
+    Ok(ParsedLogRecord {
         warnings,
         commit: ParsedCommit {
             has_plan_trailer,

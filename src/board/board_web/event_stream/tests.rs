@@ -1,3 +1,4 @@
+use super::sequence_poller::WakeResult;
 use super::*;
 use crate::board::{
     board_actor::{BoardActor, HarnessLabel},
@@ -11,6 +12,7 @@ use std::{
         Mutex,
         atomic::{AtomicBool, AtomicU64},
     },
+    time::Instant,
 };
 
 fn event(seq: u64, summary: &str) -> EventRecord {

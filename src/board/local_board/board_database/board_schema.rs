@@ -177,10 +177,9 @@ CREATE INDEX claims_entry_active ON claims(entry_id,id) WHERE ended_at IS NULL;
 "#;
 
 /// Repairs databases whose v2 step ran before it gained these indexes;
-/// `IF NOT EXISTS` keeps the step a no-op everywhere else. Shipped
-/// migration steps are never edited; repairs land in a new step. The
-/// dedupe rewrite mirrors SCHEMA_V2: stored receipts minted at an older
-/// BOARD_API must validate against the current one.
+/// `IF NOT EXISTS` keeps the step a no-op everywhere else (repairs land in a
+/// new step per `docs/board-contract.md`). The dedupe rewrite mirrors
+/// SCHEMA_V2: older-API receipts must validate against the current one.
 pub(super) const SCHEMA_V4: &str = r#"
 CREATE INDEX IF NOT EXISTS commit_plans_entry ON commit_plans(entry_id);
 CREATE INDEX IF NOT EXISTS claims_entry_active ON claims(entry_id,id) WHERE ended_at IS NULL;

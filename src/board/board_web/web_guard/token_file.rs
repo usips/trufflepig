@@ -1,3 +1,7 @@
+//! Rotating loopback token file: O_NOFOLLOW, owner-only, atomically published.
+//! Rotation writes a fresh token beside the destination and renames it over
+//! any planted entry; reads never create files or mint secrets.
+
 use super::super::board_web_secrets::{constant_time_equal, fill_random, hex_encode};
 use anyhow::{Context, Result, ensure};
 use std::{

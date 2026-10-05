@@ -1,6 +1,18 @@
-use super::*;
-use crate::board::board_web::web_guard::ChallengeNonce;
-use std::{io, net::TcpStream, time::Duration};
+//! Listener ownership probe: challenge the endpoint and verify its proof.
+//! Posts a fresh nonce to the unauthenticated challenge route and checks the
+//! token-keyed HMAC, so callers never send the token itself.
+
+use super::http_wire;
+use crate::board::{
+    board_protocol::BOARD_API,
+    board_web::web_guard::{ChallengeNonce, WebGuard},
+};
+use anyhow::{Context, Result, ensure};
+use std::{
+    io::{self, Read, Write},
+    net::{SocketAddr, TcpStream},
+    time::{Duration, Instant},
+};
 
 /// Verify the listener holds our token without ever sending it: POST a random
 /// nonce to the unauthenticated challenge route and check the HMAC proof.

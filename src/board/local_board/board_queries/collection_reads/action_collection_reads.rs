@@ -28,13 +28,10 @@ fn open_question(through: &str) -> String {
     )
 }
 
-/// The shared attention entry predicate over `entries e JOIN actors a`,
-/// with parameters ?1 user, ?2 host, ?3 harness, ?4 session, ?5 identity,
-/// ?6 all, ?7 repo_key, ?8 after seq, ?9 after entry, ?10 through.
-/// Every branch implies kind question, proposal, or feedback (proposal
-/// rows exist only on proposal entries), so naming the kinds lets SQLite
-/// drive the scan from `entries_kind_state` instead of the sequence window.
-/// A reader's own user-and-harness questions stay out of "Needs you".
+/// Attention predicate over `entries e JOIN actors a` (?1 user, ?2 host,
+/// ?3 harness, ?4 session, ?5 identity, ?6 all, ?7 repo_key, ?8 after seq,
+/// ?9 after entry, ?10 through). Named kinds let SQLite drive the scan from
+/// `entries_kind_state`; a reader's own questions stay out of "Needs you".
 pub(super) fn attention_predicate() -> String {
     let exact_author = "a.user=?1 AND a.host=?2 AND a.harness=?3 AND a.session=?4";
     let plan_authority = concat!(

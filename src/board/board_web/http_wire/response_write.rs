@@ -16,7 +16,6 @@ const SECURITY_HEADERS: &str = concat!(
 struct ResponseHeaders<'a> {
     status: u16,
     content_type: &'a str,
-    private: bool,
     retry_after_seconds: Option<u32>,
     allow: Option<&'a str>,
 }
@@ -26,7 +25,6 @@ impl ResponseHeaders<'_> {
         Self {
             status: 503,
             content_type: "application/json",
-            private: true,
             retry_after_seconds: Some(retry_after_seconds),
             allow: None,
         }
@@ -38,14 +36,12 @@ pub(crate) fn send_response(
     status: u16,
     content_type: &str,
     body: &[u8],
-    private: bool,
 ) -> io::Result<()> {
     send_response_until(
         stream,
         status,
         content_type,
         body,
-        private,
         Instant::now() + WRITE_TIMEOUT,
     )
 }
@@ -55,13 +51,11 @@ pub(super) fn send_response_until(
     status: u16,
     content_type: &str,
     body: &[u8],
-    private: bool,
     deadline: Instant,
 ) -> io::Result<()> {
     let headers = ResponseHeaders {
         status,
         content_type,
-        private,
         retry_after_seconds: None,
         allow: None,
     };
@@ -77,7 +71,6 @@ pub(crate) fn send_method_refusal(
     let headers = ResponseHeaders {
         status: 405,
         content_type: "application/json",
-        private: true,
         retry_after_seconds: None,
         allow: Some(allow),
     };
@@ -121,7 +114,6 @@ fn encode_headers(headers: ResponseHeaders<'_>, content_length: usize) -> io::Re
     let ResponseHeaders {
         status,
         content_type,
-        private,
         retry_after_seconds,
         allow,
     } = headers;
@@ -139,11 +131,7 @@ fn encode_headers(headers: ResponseHeaders<'_>, content_length: usize) -> io::Re
             "invalid allow list",
         ));
     }
-    let cache = if private {
-        "Cache-Control: no-store\r\n"
-    } else {
-        ""
-    };
+    let cache = "Cache-Control: no-store\r\n";
     let retry_after = retry_after_seconds
         .map(|seconds| format!("Retry-After: {seconds}\r\n"))
         .unwrap_or_default();

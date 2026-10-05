@@ -2,12 +2,16 @@
 //! Frames are pre-built SSE bytes; plan relevance is annotated after push so
 //! filtered subscribers replay from the ring without their own database reads.
 
-use super::{REPLAY_LIMIT, sequence_poller::WakeResult};
+mod ring_drain;
+mod ring_plans;
+
+pub(super) use ring_drain::Drain;
+use super::REPLAY_LIMIT;
 use crate::board::board_ids::{EventSeq, PlanId};
+use ring_plans::PlanLease;
 use std::{
     collections::VecDeque,
     sync::{Arc, Condvar, Mutex},
-    time::Duration,
 };
 
 /// One pre-framed `event: board` payload plus the plans annotated as relevant.
@@ -21,12 +25,12 @@ pub(super) struct RingFrame {
 pub(super) struct EventRing(Arc<RingSignal>);
 
 struct RingSignal {
-    state: Mutex<RingState>,
+    state: Mutex<RingCore>,
     changed: Condvar,
 }
 
 #[derive(Default)]
-struct RingState {
+struct RingCore {
     frames: VecDeque<RingFrame>,
     /// Freshest database watermark observed by the filler.
     latest: EventSeq,
@@ -46,52 +50,22 @@ struct PlanTrack {
     failed: bool,
 }
 
-/// One drain decision for a subscriber cursor.
-pub(super) enum Drain {
-    Frames {
-        frames: Vec<Arc<[u8]>>,
-        cursor: EventSeq,
-        generation: u64,
-    },
-    /// The cursor is above the observed watermark; the poller may still lag.
-    Ahead { latest: EventSeq, generation: u64 },
-    /// The cursor is older than the ring's oldest frame.
-    Gap { latest: EventSeq },
-    /// Plan relevance has not caught up with the ring yet.
-    PendingPlan { generation: u64 },
-    PlanFailed,
-    Unavailable,
-    Stopped,
-}
-
-/// Unregisters the plan filter on drop so relevance reads stop with the stream.
-pub(super) struct PlanLease {
-    ring: EventRing,
-    plan: PlanId,
-}
-
-impl Drop for PlanLease {
-    fn drop(&mut self) {
-        self.ring.unsubscribe_plan(self.plan);
-    }
-}
-
 impl EventRing {
     pub(super) fn new() -> Self {
         Self(Arc::new(RingSignal {
-            state: Mutex::new(RingState::default()),
+            state: Mutex::new(RingCore::default()),
             changed: Condvar::new(),
         }))
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, RingState> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, RingCore> {
         self.0
             .state
             .lock()
             .unwrap_or_else(|poison| poison.into_inner())
     }
 
-    fn bump(&self, state: &mut RingState) {
+    fn bump(&self, state: &mut RingCore) {
         state.generation = state.generation.wrapping_add(1);
         self.0.changed.notify_all();
     }
@@ -178,7 +152,7 @@ impl EventRing {
     /// Marks frames relevant to `plan` and advances its annotation watermark.
     pub(super) fn apply_annotation(&self, plan: PlanId, seqs: Vec<EventSeq>) {
         let mut state = self.lock();
-        let RingState {
+        let RingCore {
             frames,
             plans,
             filled,
@@ -251,106 +225,12 @@ impl EventRing {
         }
     }
 
-    fn unsubscribe_plan(&self, plan: PlanId) {
-        let mut state = self.lock();
-        if let Some(index) = state.plans.iter().position(|track| track.plan == plan) {
-            let track = &mut state.plans[index];
-            track.subscribers = track.subscribers.saturating_sub(1);
-            if track.subscribers == 0 {
-                state.plans.remove(index);
-            }
-        }
-    }
-
-    /// Reads one consistent drain decision; frame bytes are cloned under the
-    /// lock so no socket write happens inside it.
-    pub(super) fn drain(&self, cursor: EventSeq, plan: Option<PlanId>) -> Drain {
-        let state = self.lock();
-        if state.stopped {
-            return Drain::Stopped;
-        }
-        if state.unavailable {
-            return Drain::Unavailable;
-        }
-        if cursor > state.latest {
-            return Drain::Ahead {
-                latest: state.latest,
-                generation: state.generation,
-            };
-        }
-        let covered = covered_of(&state);
-        if cursor < covered {
-            return Drain::Gap {
-                latest: state.latest,
-            };
-        }
-        if let Some(plan) = plan {
-            match state
-                .plans
-                .iter()
-                .find(|track| track.plan == plan && track.subscribers > 0)
-            {
-                Some(track) if track.failed => return Drain::PlanFailed,
-                Some(track) if track.annotated < state.filled => {
-                    return Drain::PendingPlan {
-                        generation: state.generation,
-                    };
-                }
-                Some(_) => {}
-                None => return Drain::PlanFailed,
-            }
-        }
-        let frames = state
-            .frames
-            .iter()
-            .filter(|frame| frame.seq > cursor)
-            .filter(|frame| plan.map_or(true, |plan| frame.plans.contains(&plan)))
-            .map(|frame| Arc::clone(&frame.bytes))
-            .collect();
-        Drain::Frames {
-            frames,
-            // The cursor never moves backwards while a truncated fill catches up.
-            cursor: state.filled.max(cursor),
-            generation: state.generation,
-        }
-    }
-
-    pub(super) fn wait(&self, observed: u64, timeout: Duration) -> WakeResult {
-        let state = self.lock();
-        let (state, _) = self
-            .0
-            .changed
-            .wait_timeout_while(state, timeout, |state| {
-                !state.stopped && !state.unavailable && state.generation == observed
-            })
-            .unwrap_or_else(|poison| poison.into_inner());
-        if state.stopped {
-            WakeResult::Stopped
-        } else if state.unavailable {
-            WakeResult::Unavailable
-        } else if state.generation != observed {
-            WakeResult::Changed
-        } else {
-            WakeResult::Timeout
-        }
-    }
-
     pub(super) fn mark_unavailable(&self) {
         let mut state = self.lock();
         if !state.unavailable {
             state.unavailable = true;
             self.bump(&mut state);
         }
-    }
-
-    /// Waits out a feed outage: returns when the ring recovers or stops.
-    pub(super) fn wait_recovery(&self, timeout: Duration) {
-        let state = self.lock();
-        let _ = self
-            .0
-            .changed
-            .wait_timeout_while(state, timeout, |state| state.unavailable && !state.stopped)
-            .unwrap_or_else(|poison| poison.into_inner());
     }
 
     pub(super) fn publish_available(&self) {
@@ -375,14 +255,14 @@ impl EventRing {
 }
 
 /// The oldest cursor the ring can still serve fully.
-fn covered_of(state: &RingState) -> EventSeq {
+fn covered_of(state: &RingCore) -> EventSeq {
     state
         .frames
         .front()
         .map_or(state.filled, |frame| EventSeq::new(frame.seq.get() - 1))
 }
 
-fn push_frames(state: &mut RingState, frames: Vec<RingFrame>) -> Option<EventSeq> {
+fn push_frames(state: &mut RingCore, frames: Vec<RingFrame>) -> Option<EventSeq> {
     let mut last = None;
     for frame in frames {
         last = Some(frame.seq);

@@ -1,3 +1,4 @@
+use super::web_serve::{serve_connections, transient_accept_error};
 use super::*;
 use crate::board::{
     board_ids::{BoardRef, EventSeq, RepoKey},
@@ -6,14 +7,14 @@ use crate::board::{
 };
 use event_stream::{EventStreams, SequencePoller};
 use std::{
-    io::{self, Read},
+    io::{self, Read, Write},
     net::{Shutdown, TcpListener, TcpStream},
     sync::mpsc,
 };
 use web_guard::{BoardWebToken, WebGuard};
 use web_ops::WebRequest;
 
-fn accept_fixture() -> (tempfile::TempDir, Arc<WebState>) {
+fn accept_fixture() -> (tempfile::TempDir, Arc<BoardWebState>) {
     let directory = crate::board::board_test_support::scratch("web-accept-");
     let config = BoardConfig::for_database(directory.path().join("web.sqlite3"));
     let store = WebStore::open_at(
@@ -39,7 +40,7 @@ fn accept_fixture() -> (tempfile::TempDir, Arc<WebState>) {
             writer.board_uuid()
         })
         .unwrap();
-    let state = Arc::new(WebState {
+    let state = Arc::new(BoardWebState {
         store: Arc::new(store),
         guard,
         streams,

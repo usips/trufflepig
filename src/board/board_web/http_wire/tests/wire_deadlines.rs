@@ -110,7 +110,6 @@ fn slow_response_peer_has_a_total_write_deadline() {
         200,
         "application/json",
         &body,
-        true,
         started + Duration::from_millis(100),
     )
     .unwrap_err();

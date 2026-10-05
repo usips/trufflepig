@@ -241,12 +241,12 @@ fn reject_queued_bytes(stream: &TcpStream) -> Result<(), HttpError> {
     }
 }
 
-/// After an early error the client may still hold unread request bytes; a
-/// plain close would RST and hide the reply. Shut down the write side after
-/// sending, then drain inbound briefly so the reply arrives first.
 const DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
 const DRAIN_LIMIT: usize = 256 * 1024;
 
+/// After an early error the client may still hold unread request bytes; a
+/// plain close would RST and hide the reply. Shut down the write side after
+/// sending, then drain inbound briefly so the reply arrives first.
 pub(crate) fn close_after_error(stream: &mut TcpStream) {
     let _ = stream.shutdown(Shutdown::Write);
     let deadline = Instant::now() + DRAIN_TIMEOUT;

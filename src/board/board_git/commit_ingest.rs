@@ -33,8 +33,6 @@ pub struct IngestReport {
 #[derive(Clone, Debug)]
 pub struct UnlinkedScan {
     pub commits: Vec<LinkedCommit>,
-    #[cfg(test)]
-    pub complete: bool,
     pub scan_error: Option<String>,
 }
 
@@ -262,8 +260,6 @@ pub fn find_unlinked(
         .collect();
     Ok(UnlinkedScan {
         commits,
-        #[cfg(test)]
-        complete: scan_error.is_none(),
         scan_error: scan_error
             .or_else(|| (!scan.warnings.is_empty()).then(|| scan.warnings.join("; "))),
     })

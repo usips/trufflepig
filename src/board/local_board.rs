@@ -1,12 +1,12 @@
 //! SQLite-backed board state, serialized mutations, and immutable evidence.
 
 mod board_database;
-mod board_dispatch;
 mod board_evidence;
 mod board_feed;
 mod board_lifecycle;
 mod board_queries;
 mod board_writes;
+mod mutation_dispatch;
 #[cfg(test)]
 mod tests;
 

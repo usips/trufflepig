@@ -40,7 +40,7 @@ fn listening_fixture(
             &serde_json::json!({"api":reply_api,"proof":guard.challenge_proof(&nonce)}),
         )
         .unwrap();
-        http_wire::send_response(&mut socket, 200, "application/json", &body, true).unwrap();
+        http_wire::send_response(&mut socket, 200, "application/json", &body).unwrap();
     });
     (address, worker)
 }
@@ -181,7 +181,7 @@ fn probe_proves_ownership_without_sending_the_token() {
             &serde_json::json!({"api":BOARD_API,"proof":answering.challenge_proof(&nonce)}),
         )
         .unwrap();
-        http_wire::send_response(&mut socket, 200, "application/json", &reply, true).unwrap();
+        http_wire::send_response(&mut socket, 200, "application/json", &reply).unwrap();
         text
     });
     endpoint_probe::probe(address, &guard, Instant::now() + http_wire::REQUEST_TIMEOUT).unwrap();
@@ -215,7 +215,7 @@ fn probe_refuses_a_listener_proving_with_the_wrong_token() {
             &serde_json::json!({"api":BOARD_API,"proof":thief.challenge_proof(&nonce)}),
         )
         .unwrap();
-        http_wire::send_response(&mut socket, 200, "application/json", &reply, true).unwrap();
+        http_wire::send_response(&mut socket, 200, "application/json", &reply).unwrap();
     });
     let error = endpoint_probe::probe(address, &guard, Instant::now() + http_wire::REQUEST_TIMEOUT)
         .unwrap_err();

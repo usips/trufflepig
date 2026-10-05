@@ -1,3 +1,4 @@
+use super::route_render::proposal_diff;
 use super::*;
 use crate::board::board_backend::BoardBackend;
 use crate::board::board_web::event_stream::{
@@ -7,8 +8,8 @@ use crate::board::board_web::web_guard::{BoardWebToken, WebGuard};
 use crate::board::board_web::{WebStore, web_ops};
 use crate::board::{
     board_config::{BoardConfig, BoardConfigCache},
-    board_ids::{EventSeq, PlanId},
-    board_protocol::{BoardReply, BoardRequest, BoardResult},
+    board_ids::{EventSeq, PlanId, PlanRevision},
+    board_protocol::{BoardOp, BoardReply, BoardRequest, BoardResult},
     board_vocabulary::{EntryText, PlanText, PlanTitle},
 };
 use std::io::{Read, Write};
@@ -113,7 +114,7 @@ fn proposal_diff_preserves_all_lines_and_the_earlier_snapshot() {
 struct RenderFixture {
     _directory: tempfile::TempDir,
     _poller: SequencePoller,
-    state: Arc<WebState>,
+    state: Arc<BoardWebState>,
     config: BoardConfig,
     token: BoardWebToken,
     authority: String,
@@ -154,7 +155,7 @@ fn render_fixture_with(reader: FeedReader) -> RenderFixture {
     RenderFixture {
         _directory: directory,
         _poller: poller,
-        state: Arc::new(WebState {
+        state: Arc::new(BoardWebState {
             store: Arc::new(store),
             guard,
             streams,
@@ -760,8 +761,8 @@ fn queue_full_refusal_delivers_the_busy_reply_before_closing() {
     // the reply must sit unread client-side before the read, so a reset
     // cannot slip past already-consumed bytes on either side.
     std::thread::sleep(Duration::from_millis(100));
-    let busy = http_wire::unavailable_response(1, crate::board::board_web::QUEUE_FULL_BODY);
-    crate::board::board_web::refuse_queue_full(server, &busy);
+    let busy = http_wire::unavailable_response(1, super::super::web_serve::QUEUE_FULL_BODY);
+    super::super::web_serve::refuse_queue_full(server, &busy);
     std::thread::sleep(Duration::from_millis(100));
     // A reset may already have destroyed the connection; the body read below
     // is the assertion.
