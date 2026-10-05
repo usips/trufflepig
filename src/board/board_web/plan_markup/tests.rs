@@ -152,6 +152,31 @@ fn token_bearing_links_render_as_text() {
 }
 
 #[test]
+fn numeric_host_links_render_as_text() {
+    for href in [
+        "http://127.1/",
+        "http://0x7f.0.0.1/",
+        "http://0177.0.0.1/",
+        "http://[0:0:0:0:0:0:0:1]/",
+        "http://%31%32%37.0.0.1/",
+        "http://127.0.0.%31/",
+        "http://0x7f.0.0.%31/",
+        "http://%6c%6fcalhost/",
+        "http://localhost%2E/",
+        "http://%5b::1%5d/",
+        "http://%5B0:0:0:0:0:0:0:1%5D/",
+    ] {
+        let rendered = render(&format!("[x]({href})"));
+        assert!(
+            !rendered.html.contains("href="),
+            "{href}: {}",
+            rendered.html
+        );
+        assert!(rendered.html.contains(">x<"), "{href}: {}", rendered.html);
+    }
+}
+
+#[test]
 fn loopback_links_without_tokens_render_as_text() {
     for href in ["http://localhost:7341/page", "http://[::1]:7341/"] {
         let rendered = render(&format!("[x]({href})"));
@@ -185,6 +210,43 @@ fn safe_links_still_link() {
 }
 
 #[test]
+fn numeric_host_policy_blocks_ip_literals_and_encoded_variants() {
+    for url in [
+        "http://127.1/",
+        "http://0x7f.0.0.1/",
+        "http://0177.0.0.1/",
+        "http://0x7F.0X0.0X1.0x1/",
+        "http://[0:0:0:0:0:0:0:1]/",
+        "http://[2001:db8::1]/",
+        "http://8.8.8.8/",
+        "http://128.0.0.1/",
+        "http://1.2.3.4:7341/",
+        "http://0x08080808/",
+        "http://%31%32%37.0.0.1/",
+        "http://127%2e0%2e0%2e1/",
+        "http://127.0.0.%31/",
+        "http://0x7f.0.0.%31/",
+        "http://%6c%6fcalhost/",
+        "http://localhost%2E/",
+        "http://%5b::1%5d/",
+        "http://%5B0:0:0:0:0:0:0:1%5D/",
+    ] {
+        assert!(!allowed_url(url), "accepted {url:?}");
+    }
+    for url in [
+        "http://example.test/x",
+        "http://example.test:7341/",
+        "http://localhost.example.com/",
+        "http://example.test/#section",
+        "http://exam%70le.test/",
+        "mailto:owner@example.test",
+        "#section",
+    ] {
+        assert!(allowed_url(url), "rejected {url:?}");
+    }
+}
+
+#[test]
 fn loopback_matching_ignores_case_userinfo_and_trailing_dots() {
     for url in [
         "http://LOCALHOST:7341/page",
@@ -202,7 +264,6 @@ fn loopback_matching_ignores_case_userinfo_and_trailing_dots() {
         assert!(!allowed_url(url), "accepted {url:?}");
     }
     for url in [
-        "http://128.0.0.1/",
         "http://example.com:7341/",
         "http://localhost.example.com/",
         "http://example.com/#section",

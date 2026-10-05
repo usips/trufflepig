@@ -1,5 +1,7 @@
 //! Sanitized plan HTML; source HTML is text and images have no rendered output.
 
+use std::borrow::Cow;
+
 use crate::board::board_markup::{Heading, heading_model};
 use pulldown_cmark::{CowStr, Event, Parser, Tag, TagEnd, html};
 use serde::Serialize;
@@ -73,7 +75,8 @@ pub(crate) fn render(body: &str) -> RenderedPlan {
 
 /// HTTP(S) and mailto links survive; among relative links only same-page `#…`
 /// anchors do, since any other relative href navigates this origin. Controls,
-/// backslashes, `//`, any `token=` fragment, and absolute loopback links are denied.
+/// backslashes, `//`, any `token=` fragment, and absolute links to localhost
+/// or IP literals are denied.
 fn allowed_url(url: &str) -> bool {
     if url
         .chars()
@@ -103,40 +106,76 @@ fn allowed_url(url: &str) -> bool {
     }
     rest.strip_prefix("//")
         .and_then(|rest| rest.split(['/', '?', '#']).next())
-        .is_some_and(|authority| !authority.is_empty() && !loopback_authority(authority))
+        .is_some_and(|authority| !authority.is_empty() && !blocked_authority(authority))
 }
 
-/// True when an http(s) authority targets loopback: `localhost` (one trailing
-/// dot tolerated), a `127.0.0.0/8` dotted quad or its single-integer form, or
-/// `::1`. Userinfo and `:port` are stripped first; matching is case-insensitive.
-fn loopback_authority(authority: &str) -> bool {
-    let host = authority.rsplit('@').next().unwrap_or_default();
-    let bare = host
-        .strip_prefix('[')
-        .and_then(|rest| rest.split_once(']'))
-        .map(|(inside, _)| inside)
-        .unwrap_or_else(|| host.split(':').next().unwrap_or_default());
-    let bare = bare.strip_suffix('.').unwrap_or(bare);
-    bare.eq_ignore_ascii_case("localhost")
-        || bare.eq_ignore_ascii_case("::1")
-        || is_loopback_quad(bare)
-        || bare.parse::<u32>().is_ok_and(|n| n >> 24 == 127)
-}
-
-/// True for decimal dotted quads in `127.0.0.0/8`; short, octal, and hex
-/// spellings of 127.0.0.1 are out of scope (their token-bearing forms are
-/// still caught by the uniform fragment rule).
-fn is_loopback_quad(host: &str) -> bool {
-    let mut parts = host.split('.');
-    let first_ok = parts.next() == Some("127");
-    let mut rest_ok = true;
-    let mut count = 0;
-    for part in parts {
-        count += 1;
-        rest_ok &=
-            !part.is_empty() && part.len() <= 3 && part.bytes().all(|byte| byte.is_ascii_digit());
+/// True when an http(s) authority targets `localhost` (one trailing dot
+/// tolerated) or an IP literal: any bracketed host, or any IPv4 spelling whose
+/// labels are all decimal, hex, or octal. Percent-encoding decodes first, so
+/// `%31%32%37.0.0.1` and `%5b::1%5d` match; userinfo and `:port` strip after.
+fn blocked_authority(authority: &str) -> bool {
+    let decoded = percent_decode(authority);
+    let host = decoded.rsplit('@').next().unwrap_or_default();
+    if host.starts_with('[') {
+        return true;
     }
-    first_ok && rest_ok && count == 3
+    let bare = host.split(':').next().unwrap_or_default();
+    let bare = bare.strip_suffix('.').unwrap_or(bare);
+    bare.eq_ignore_ascii_case("localhost") || is_numeric_ipv4(bare)
+}
+
+/// True when every dot-separated label is decimal digits (`127`, which covers
+/// the octal spellings) or `0x`-prefixed hex (`0x7f`); short forms (`127.1`)
+/// and single integers (`2130706433`) match, having no non-numeric label.
+fn is_numeric_ipv4(host: &str) -> bool {
+    !host.is_empty() && host.split('.').all(is_numeric_label)
+}
+
+/// True for one IPv4 label: all ASCII digits, or `0x`/`0X` plus hex digits.
+fn is_numeric_label(label: &str) -> bool {
+    if let Some(hex) = label
+        .strip_prefix("0x")
+        .or_else(|| label.strip_prefix("0X"))
+    {
+        return !hex.is_empty() && hex.bytes().all(|byte| byte.is_ascii_hexdigit());
+    }
+    !label.is_empty() && label.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+/// Decodes `%XX` sequences in one pass; malformed or trailing `%` stays
+/// literal. Borrows back when there is nothing to decode.
+fn percent_decode(value: &str) -> Cow<'_, str> {
+    if !value.contains('%') {
+        return Cow::Borrowed(value);
+    }
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        let mut byte = bytes[index];
+        let mut consumed = 1;
+        if byte == b'%' && index + 2 < bytes.len() {
+            if let (Some(high), Some(low)) =
+                (hex_value(bytes[index + 1]), hex_value(bytes[index + 2]))
+            {
+                byte = high << 4 | low;
+                consumed = 3;
+            }
+        }
+        decoded.push(byte);
+        index += consumed;
+    }
+    Cow::Owned(String::from_utf8_lossy(&decoded).into_owned())
+}
+
+/// Value of one hex digit, or `None` for anything else.
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
