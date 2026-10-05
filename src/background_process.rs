@@ -1,9 +1,21 @@
 use std::os::unix::process::CommandExt;
+#[cfg(test)]
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::{
     io,
     process::{Command, Stdio},
     sync::mpsc,
 };
+
+/// Background spawns this process performed; tests assert a waiting client
+/// spawns no second daemon.
+#[cfg(test)]
+static SPAWNED: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(test)]
+pub(crate) fn spawned_count() -> u64 {
+    SPAWNED.load(Ordering::Relaxed)
+}
 
 /// A detached daemon whose exit is reaped by its own waiter thread, so no
 /// process-wide `waitpid(-1)` can steal another thread's child status.
@@ -35,6 +47,8 @@ pub(crate) fn spawn_background(command: &mut Command) -> io::Result<BackgroundCh
         .spawn()?;
     #[cfg(test)]
     let pid = child.id();
+    #[cfg(test)]
+    SPAWNED.fetch_add(1, Ordering::Relaxed);
     let (exited, exit) = mpsc::channel();
     std::thread::Builder::new()
         .name("trufflepig-reaper".into())

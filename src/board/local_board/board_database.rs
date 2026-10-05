@@ -185,6 +185,8 @@ pub(super) fn open_with_timeout(
         return Err(unavailable("database schema became newer than supported"));
     }
     for version in locked_version..SCHEMA_VERSION {
+        #[cfg(test)]
+        slowed_migration_step();
         tx.execute_batch(migration_step(version)?).map_err(sql_error)?;
         tx.pragma_update(None, "user_version", version + 1)
             .map_err(sql_error)?;
@@ -273,6 +275,19 @@ fn retry_busy<T>(
                 std::thread::sleep(remaining.min(Duration::from_millis(1)));
             }
         }
+    }
+}
+
+/// Sleeps once per applied migration step while the router test holds
+/// migration open; unset outside that test, so migration timing never changes.
+#[cfg(test)]
+fn slowed_migration_step() {
+    let delay = std::env::var("TRUFFLEPIG_SYSTEM_TEST_MIGRATION_STEP_DELAY_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0);
+    if delay > 0 {
+        std::thread::sleep(std::time::Duration::from_millis(delay));
     }
 }
 

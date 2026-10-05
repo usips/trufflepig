@@ -100,8 +100,10 @@ pub fn request(args: &[String], context: &RequestContext) -> Result<Option<Strin
     daemon::spool::request(&spool_dir(), args, context)
 }
 
-/// Starts the system daemon when no router answers its status ping.
-/// Board configuration resolves lazily inside the spawned router, never here.
+/// Starts the system daemon when no router answers its status ping, then waits
+/// for that ping to be answered: a starting router binds its socket before it
+/// migrates, so the wait covers migration. Board configuration resolves
+/// lazily inside the spawned router, never here.
 pub fn ensure() -> Result<()> {
     let ping = vec!["system".to_owned(), "status".to_owned()];
     let context = RequestContext::new(None, None);
@@ -111,16 +113,18 @@ pub fn ensure() -> Result<()> {
     let dir = dir().context("system_unavailable: no runtime dir")?;
     fs::create_dir_all(&dir)?;
     let mut command = Command::new(std::env::current_exe()?);
-    spawn_background(command.arg("system-serve"))?;
-    let deadline = Instant::now() + Duration::from_secs(3);
-    while Instant::now() < deadline {
+    let child = spawn_background(command.arg("system-serve"))?;
+    loop {
         if request(&ping, &context)?.is_some() {
             return Ok(());
         }
-        // A racing spawn exits on the socket bind while its winner serves.
+        // A racing spawn exits on the socket bind while its winner serves; a
+        // spawn that is gone with no listener is the only way out.
+        if daemon::spawn_failed(&child, &dir) {
+            bail!("system_unavailable: daemon did not start");
+        }
         std::thread::sleep(Duration::from_millis(25));
     }
-    bail!("system_unavailable: daemon did not start")
 }
 
 /// Serves the system daemon, proxying socket and spooled requests to their
@@ -135,12 +139,8 @@ pub fn serve() -> Result<()> {
         sweeps: Mutex::new(SweepClock::default()),
         board: crate::board::BoardHost::default(),
     };
-    // Migrate before accepting connections so `system status` and board-serve
-    // never race migration. Best-effort: the router must serve despite a
-    // broken board configuration.
-    let _ = router
-        .board
-        .ensure_writer(QueryDeadline::after(Duration::from_secs(5)));
+    // Migration runs in `on_bound`, after the socket binds and before the
+    // accept loop, so waiting clients queue instead of spawning a second router.
     daemon::serve_router(&runtime, &spool_dir(), router)
 }
 
@@ -159,6 +159,13 @@ struct SweepClock {
 }
 
 impl DaemonHandler for SystemRouter {
+    fn on_bound(&self) {
+        // Best-effort: the router must serve despite a broken board configuration.
+        let _ = self
+            .board
+            .ensure_writer(QueryDeadline::after(Duration::from_secs(5)));
+    }
+
     fn request(&self, request: AcceptedRequest) -> Result<String> {
         route(
             &self.board,

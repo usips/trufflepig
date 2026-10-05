@@ -19,10 +19,10 @@ use std::{
 
 impl BoardHost {
     /// Opens the writer, creating and migrating the database when needed.
-    /// The router calls this before accepting connections so status and
-    /// board-serve never race migration; request paths call it for lazy
-    /// initialization. Callers starting a server ignore failure: the router
-    /// must serve despite a broken board configuration.
+    /// The router calls this after binding but before accepting connections,
+    /// so waiting clients queue while status never races migration; request
+    /// paths call it for lazy initialization. Server starters ignore failure:
+    /// the router must serve despite a broken board configuration.
     pub(crate) fn ensure_writer(&self, deadline: QueryDeadline) -> Result<()> {
         check_deadline(deadline)?;
         let config = self.config()?;

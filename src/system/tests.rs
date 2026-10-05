@@ -505,6 +505,68 @@ fn board_routes_without_workspace_or_owner_daemon() {
 }
 
 #[test]
+fn ensure_waits_for_a_migrating_router_without_spawning_a_second() {
+    const MARKER: &str = "TRUFFLEPIG_SYSTEM_TEST_MIGRATING_ROUTER";
+    const STEP_DELAY_MS: &str = "TRUFFLEPIG_SYSTEM_TEST_MIGRATION_STEP_DELAY_MS";
+    const TEST: &str =
+        "system::tests::ensure_waits_for_a_migrating_router_without_spawning_a_second";
+    if std::env::var_os(MARKER).is_none() {
+        // The child process owns the router environment; parallel tests never see it.
+        let directory = crate::board::board_test_support::scratch("router-migration-");
+        let database = directory.path().join("board.sqlite3");
+        crate::board::local_board::seed_storage_schema(
+            &database,
+            crate::board::SCHEMA_VERSION - 1,
+        )
+        .unwrap();
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .env(MARKER, "1")
+            .env("TRUFFLEPIG_SYSTEM_DIR", directory.path().join("runtime"))
+            .env("TRUFFLEPIG_SPOOL_DIR", directory.path().join("spool"))
+            .env("TRUFFLEPIG_BOARD_DB", &database)
+            .env("XDG_CONFIG_HOME", directory.path().join("config"))
+            .env("XDG_DATA_HOME", directory.path().join("data"))
+            .env("XDG_CACHE_HOME", directory.path().join("cache"))
+            .env(STEP_DELAY_MS, "5000")
+            .args([TEST, "--exact", "--nocapture"])
+            .status()
+            .unwrap();
+        assert!(status.success());
+        return;
+    }
+    let runtime = crate::system::dir().expect("child sets TRUFFLEPIG_SYSTEM_DIR");
+    let spawned_before = crate::background_process::spawned_count();
+    let worker = std::thread::spawn(crate::system::serve);
+    // The slowed migration holds the router for five seconds; the socket binds
+    // long before it finishes only when the bind precedes migration.
+    let bound_early = {
+        let deadline = Instant::now() + Duration::from_millis(500);
+        let mut bound = false;
+        while !bound && Instant::now() < deadline {
+            bound = daemon::running(&runtime);
+            if !bound {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+        bound
+    };
+    let ensured = crate::system::ensure();
+    let spawned = crate::background_process::spawned_count() - spawned_before;
+    assert!(ensured.is_ok(), "ensure waits out migration: {ensured:?}");
+    assert!(bound_early, "the router binds its socket before migrating");
+    assert_eq!(spawned, 0, "a waiting ensure spawns no second router");
+    let ping = vec!["system".to_owned(), "status".to_owned()];
+    let reply = crate::system::request(&ping, &RequestContext::new(None, None))
+        .unwrap()
+        .expect("router answers status after migration");
+    let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
+    assert_eq!(status["schema_supported"], crate::board::SCHEMA_VERSION);
+    assert_eq!(status["schema_file"], crate::board::SCHEMA_VERSION);
+    daemon::stop(&runtime).unwrap();
+    worker.join().unwrap().unwrap();
+}
+
+#[test]
 fn router_does_not_reset_an_expired_accepted_deadline() {
     let root = crate::board::board_test_support::scratch("router-deadline-");
     let cache_directory = crate::board::board_test_support::scratch("router-cache-");

@@ -45,6 +45,10 @@ pub struct AcceptedRequest {
 /// Daemon behavior shared by request workers and the maintenance thread.
 pub trait DaemonHandler: Send + Sync + 'static {
     fn request(&self, request: AcceptedRequest) -> Result<String>;
+    /// Blocking startup work after the socket binds and before the accept
+    /// loop: waiting clients queue in the listen backlog while it runs, and
+    /// no request races it.
+    fn on_bound(&self) {}
     /// Reconciles the served root; runs at startup and when changes are due.
     fn reconcile(&self) -> Result<()> {
         Ok(())
@@ -98,6 +102,9 @@ pub(super) fn serve<H: DaemonHandler>(
     // Opened after the startup lock so a losing racer never discards live requests.
     let spool = profile.spool.map(SpoolServer::open).transpose()?;
     let handler = Arc::new(handler);
+    // Blocking startup work (router migration) runs after the bind, before the
+    // accept loop, so waiting clients queue instead of spawning a second daemon.
+    handler.on_bound();
     let pool = Arc::new(RequestPool::new(profile.name, profile.pool)?);
     let state = Arc::new(ServerState::default());
     let (finished, maintenance_done) = mpsc::channel::<()>();
