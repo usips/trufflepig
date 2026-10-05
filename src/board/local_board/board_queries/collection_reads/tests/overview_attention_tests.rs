@@ -189,7 +189,8 @@ fn collection_attention_uses_actual_actor_and_keeps_own_feedback() {
         .execute_batch(concat!(
             "UPDATE entries SET state='open' WHERE id IN (7,8); ",
             "INSERT INTO proposals VALUES(9,1,1,'one','open',NULL,NULL),(10,2,1,'one','open',NULL,NULL); ",
-            "UPDATE plans SET head_revision=2;"
+            "UPDATE plans SET head_revision=2; ",
+            "INSERT INTO revisions VALUES(1,2,'one','accept',9,1,9),(2,2,'one','accept',10,1,10);"
         ))
         .unwrap();
     let mut ctx = context();

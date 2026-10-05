@@ -73,7 +73,7 @@ fn changed(reply: BoardReply) -> BoardChange {
 }
 
 #[test]
-fn feedback_metadata_is_retained_and_closure_reaches_only_original_session() {
+fn feedback_metadata_is_retained_and_closure_reaches_sibling_sessions() {
     let (_dir, mut board) = board();
     let request = report("original");
     let entry = changed(board.handle(&request).unwrap()).entry;
@@ -150,7 +150,10 @@ fn feedback_metadata_is_retained_and_closure_reaches_only_original_session() {
     let BoardResult::Inbox(sibling) = board.handle(&sibling).unwrap().result else {
         panic!("expected inbox");
     };
-    assert!(sibling.events.iter().all(|event| event.seq != closed.seq));
+    assert!(
+        sibling.events.iter().any(|event| event.seq == closed.seq),
+        "a new session of the reporting harness keeps the outcome"
+    );
 }
 
 #[test]

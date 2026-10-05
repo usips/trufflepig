@@ -2,6 +2,7 @@ mod entry_permission_tests;
 mod proposal_entry_view_tests;
 mod reminder_index_tests;
 mod reminder_session_tests;
+mod reminder_through_tests;
 mod repository_evidence_tests;
 mod review_window_tests;
 mod shared_section_tests;

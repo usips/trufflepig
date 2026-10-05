@@ -28,24 +28,34 @@ fn open_question(through: &str) -> String {
     )
 }
 
-/// Attention predicate over `entries e JOIN actors a` (?1 user, ?2 host,
-/// ?3 harness, ?4 session, ?5 identity, ?6 all, ?7 repo_key, ?8 after seq,
-/// ?9 after entry, ?10 through). Named kinds let SQLite drive the scan from
-/// `entries_kind_state`; a reader's own questions stay out of "Needs you".
+/// Attention predicate over `entries e JOIN actors a` (?1 user, ?2 host, ?3 harness,
+/// ?4 session, ?5 identity, ?6 all, ?7 repo_key, ?8 after seq, ?9 after entry, ?10 through).
+/// The kind prefix drives the scan from `entries_kind_state`; own unaddressed questions
+/// stay out of "Needs you" and proposal currency reads the head as of ?10.
 pub(super) fn attention_predicate() -> String {
     let exact_author = "a.user=?1 AND a.host=?2 AND a.harness=?3 AND a.session=?4";
+    let head_at_through = concat!(
+        "(SELECT max(number) FROM revisions head_at WHERE head_at.plan_id=p.plan_id ",
+        "AND head_at.seq<=?10)"
+    );
     let plan_authority = concat!(
         "EXISTS(SELECT 1 FROM plans managed WHERE managed.id=e.plan_id AND managed.owner_user=?1 ",
         "AND (?3='human' OR managed.steward=?3))"
     );
-    let current_proposal = concat!(
-        "EXISTS(SELECT 1 FROM proposals p JOIN plans head ON head.id=p.plan_id WHERE p.entry_id=e.id ",
-        "AND p.state='open' AND p.base_revision=head.head_revision AND head.owner_user=?1 ",
-        "AND (?3='human' OR head.steward=?3))"
+    let current_proposal = format!(
+        concat!(
+            "EXISTS(SELECT 1 FROM proposals p JOIN plans head ON head.id=p.plan_id WHERE p.entry_id=e.id ",
+            "AND p.state='open' AND p.base_revision={head_at_through} AND head.owner_user=?1 ",
+            "AND (?3='human' OR head.steward=?3))"
+        ),
+        head_at_through = head_at_through
     );
-    let stale_proposal = concat!(
-        "EXISTS(SELECT 1 FROM proposals p JOIN plans head ON head.id=p.plan_id WHERE p.entry_id=e.id ",
-        "AND p.state='open' AND p.base_revision<>head.head_revision)"
+    let stale_proposal = format!(
+        concat!(
+            "EXISTS(SELECT 1 FROM proposals p WHERE p.entry_id=e.id ",
+            "AND p.state='open' AND p.base_revision<>{head_at_through})"
+        ),
+        head_at_through = head_at_through
     );
     let open_feedback = "e.kind='feedback' AND e.state IN ('open','triaged')";
     let open_question = open_question("?10");
@@ -55,7 +65,7 @@ pub(super) fn attention_predicate() -> String {
             "AND (({open_feedback}) OR {stale_proposal})) ",
             "OR (({current_proposal} OR (({open_feedback}) AND ({plan_authority}))) ",
             "AND (e.to_whom IS NULL OR e.to_whom IN (?1,?3,?5))) ",
-            "OR ((({open_question} AND NOT (a.user=?1 AND a.harness=?3)) OR (({open_feedback}) AND (e.plan_id IS NULL AND a.user=?1 AND ?3='human'))) ",
+            "OR ((({open_question} AND (NOT ({exact_author}) OR e.to_whom IN (?1,?3,?5))) OR (({open_feedback}) AND (e.plan_id IS NULL AND a.user=?1 AND ?3='human'))) ",
             "AND (e.to_whom IS NULL OR e.to_whom IN (?1,?3,?5)) ",
             "AND (?6 OR NOT EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id) ",
             "OR e.to_whom IN (?1,?3,?5) OR e.repo_key=?7 ",
@@ -286,10 +296,12 @@ pub(in crate::board::local_board) fn attention(
         }
         let stale: bool = conn.query_row(
             concat!(
-                "SELECT EXISTS(SELECT 1 FROM proposals p JOIN plans head ON head.id=p.plan_id WHERE p.entry_id=?1 ",
-                "AND p.state='open' AND p.base_revision<>head.head_revision)"
+                "SELECT EXISTS(SELECT 1 FROM proposals p WHERE p.entry_id=?1 AND p.state='open' ",
+                "AND p.base_revision<>(SELECT max(number) FROM revisions head_at WHERE head_at.plan_id=p.plan_id ",
+                "AND head_at.seq<=?2))"
             ),
-            [sql_number(entry.id.get())], |row| row.get(0),
+            params![sql_number(entry.id.get()), sql_number(through.get())],
+            |row| row.get(0),
         ).map_err(sql_error)?;
         if stale {
             rebase_needed.push(entry.id);

@@ -160,7 +160,8 @@ fn collection_attention_stale_proposals_require_exact_author_for_rebase() {
         .conn
         .execute_batch(concat!(
             "INSERT INTO proposals VALUES(3,1,1,'one','open',NULL,NULL),(4,1,1,'one','open',NULL,NULL); ",
-            "UPDATE plans SET head_revision=2 WHERE id=1;"
+            "UPDATE plans SET head_revision=2 WHERE id=1; ",
+            "INSERT INTO revisions VALUES(1,2,'one','accept',5,1,5);"
         ))
         .unwrap();
     let own = attention_page(
@@ -210,8 +211,8 @@ fn collection_attention_stale_proposals_require_exact_author_for_rebase() {
             true,
             200
         )),
-        Vec::new(),
-        "a sibling session shares the asker's user and harness"
+        vec![id(5)],
+        "a sibling session did not ask the question"
     );
     let other_host = authority_actor("josh", "desktop", "codex", "s1");
     assert_eq!(

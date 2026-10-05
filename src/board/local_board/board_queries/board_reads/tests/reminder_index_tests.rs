@@ -36,7 +36,7 @@ fn reminder_count_query_drives_from_the_kind_index() {
     let plan: Vec<String> = board
         .conn
         .prepare(&format!(
-            "EXPLAIN QUERY PLAN SELECT count(*) FROM (SELECT 1 FROM entries e WHERE {predicate} LIMIT ?6)"
+            "EXPLAIN QUERY PLAN SELECT count(*) FROM (SELECT 1 FROM entries e WHERE {predicate} LIMIT ?7)"
         ))
         .unwrap()
         .query_map(
@@ -46,6 +46,7 @@ fn reminder_count_query_drives_from_the_kind_index() {
                 "josh@laptop/codex/s1",
                 false,
                 None::<&str>,
+                i64::MAX,
                 200i64
             ],
             |row| row.get::<_, String>(3),
