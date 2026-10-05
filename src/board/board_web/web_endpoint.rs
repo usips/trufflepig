@@ -1,6 +1,7 @@
 //! Secure discovery of the actual loopback listener, checked before printing links.
 mod endpoint_probe;
 mod listener_owner;
+mod port_file;
 #[cfg(test)]
 mod tests;
 
@@ -77,7 +78,7 @@ pub(super) fn publish(runtime: &Path, address: SocketAddr, database: &Path) -> R
 }
 
 /// Lenient read of the published listener address for advisory decisions
-/// (refusal message, port reuse); strict checks stay on the publish/link path.
+/// (the refusal message); strict checks stay on the publish/link path.
 pub(super) fn read_published_address(runtime: &Path) -> Option<SocketAddr> {
     let bytes = fs::read(runtime.join(ENDPOINT_FILE)).ok()?;
     serde_json::from_slice::<WebEndpoint>(&bytes)
@@ -89,26 +90,33 @@ pub(super) fn published_origin(runtime: &Path) -> Option<String> {
     read_published_address(runtime).map(WebGuard::origin_for)
 }
 
-/// Bind `requested`, trying the persisted port first when it asks for port 0;
-/// falls back to an ephemeral port when the persisted one is taken.
+/// Bind `requested`, retaking the recorded port first when it asks for port 0;
+/// a taken recorded port falls back to ephemeral with a one-line notice. Every
+/// successful bind re-records its actual port for the next start.
 pub(super) fn bind_listener(runtime: &Path, requested: SocketAddr) -> std::io::Result<TcpListener> {
     super::web_guard::require_loopback(requested)?;
     let persisted = (requested.port() == 0)
-        .then(|| read_published_address(runtime))
+        .then(|| port_file::read(runtime))
         .flatten()
-        .map(|address| address.port())
-        .filter(|port| *port != 0)
         .map(|port| SocketAddr::new(requested.ip(), port));
-    match persisted {
+    let listener = match persisted {
         Some(candidate) => match TcpListener::bind(candidate) {
-            Ok(listener) => Ok(listener),
+            Ok(listener) => listener,
             Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
-                TcpListener::bind(requested)
+                let fallback = TcpListener::bind(requested)?;
+                eprintln!(
+                    "board-serve: port {} in use; using {}",
+                    candidate.port(),
+                    fallback.local_addr()?.port()
+                );
+                fallback
             }
-            Err(error) => Err(error),
+            Err(error) => return Err(error),
         },
-        None => TcpListener::bind(requested),
-    }
+        None => TcpListener::bind(requested)?,
+    };
+    port_file::record(runtime, listener.local_addr()?.port()).map_err(std::io::Error::other)?;
+    Ok(listener)
 }
 
 /// Remove the descriptor only while it still names `address`; a foreign

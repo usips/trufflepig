@@ -2,8 +2,11 @@
 
 The board dashboard is a local human interface to the [durable board](board-contract.md).
 `trufflepig board-serve` runs in the foreground; `--listen` selects a `127.0.0.1` or `::1` address.
-The installed unit passes `--listen 127.0.0.1:0`, and clients discover the ephemeral port through
-`board-web.json`. `--no-daemon` rejects serving verbs. The [agent
+The installed unit passes `--listen 127.0.0.1:0`: a port-0 bind retakes the port recorded in
+`system::dir()/board-web.port` (plain decimal, 0600, re-recorded at every bind and never removed
+on exit), falling back to an ephemeral port with one `board-serve: port N in use; using M` notice
+when the recorded port is taken. Clients discover the actual bound port through `board-web.json`.
+`--no-daemon` rejects serving verbs. The [agent
 installer](../plugins/trufflepig-agent/README.md) provides opt-in `--board` user-service
 installation with `Restart=on-failure`. The dashboard shares the router's absolute database and
 system runtime directory; installation and standalone startup reject a conflicting router pin.

@@ -252,22 +252,81 @@ fn endpoint_guard_keeps_a_foreign_descriptor() {
 }
 
 #[test]
-fn listener_reuses_persisted_port_and_falls_back_when_taken() {
+fn clean_exit_keeps_the_bound_port_for_the_next_start() {
     let (_directory, runtime, config) = fixture();
-    let probe = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = probe.local_addr().unwrap().port();
-    drop(probe);
-    publish(
-        &runtime,
-        SocketAddr::from(([127, 0, 0, 1], port)),
-        &config.db_path,
-    )
-    .unwrap();
+    let first = bind_listener(&runtime, "127.0.0.1:0".parse().unwrap()).unwrap();
+    let address = first.local_addr().unwrap();
+    publish(&runtime, address, &config.db_path).unwrap();
+    let guard = EndpointGuard::arm(&runtime, address);
+    drop(guard);
+    assert!(
+        !runtime.join(ENDPOINT_FILE).exists(),
+        "a clean exit removes the published descriptor"
+    );
+    drop(first);
+    let persisted = runtime.join("board-web.port");
+    assert_eq!(
+        fs::read_to_string(&persisted).unwrap(),
+        address.port().to_string(),
+        "the bound port survives the clean exit"
+    );
+    assert_eq!(
+        fs::metadata(&persisted).unwrap().permissions().mode() & 0o7777,
+        0o600
+    );
+    let second = bind_listener(&runtime, "127.0.0.1:0".parse().unwrap()).unwrap();
+    assert_eq!(second.local_addr().unwrap().port(), address.port());
+}
+
+#[test]
+fn taken_persisted_port_falls_back_with_a_one_line_notice() {
+    const CHILD: &str = "TRUFFLEPIG_BOARD_WEB_PORT_FALLBACK_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let directory = crate::board::board_test_support::scratch("web-port-fallback-");
+        let runtime = directory.path().join("runtime");
+        fs::create_dir_all(&runtime).unwrap();
+        let holder = TcpListener::bind("127.0.0.1:0").unwrap();
+        let taken = holder.local_addr().unwrap().port();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .env(CHILD, "1")
+            .env("TRUFFLEPIG_BOARD_WEB_TEST_RUNTIME", &runtime)
+            .env("TRUFFLEPIG_BOARD_WEB_TEST_TAKEN", taken.to_string())
+            .args([
+                "board::board_web::web_endpoint::tests::taken_persisted_port_falls_back_with_a_one_line_notice",
+                "--exact",
+                "--nocapture",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "child failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let fallback: u16 = fs::read_to_string(runtime.join("fallback-port"))
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert_ne!(fallback, taken);
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert_eq!(
+            stderr,
+            format!("board-serve: port {taken} in use; using {fallback}\n")
+        );
+        drop(holder);
+        return;
+    }
+    let runtime = PathBuf::from(std::env::var_os("TRUFFLEPIG_BOARD_WEB_TEST_RUNTIME").unwrap());
+    let taken: u16 = std::env::var_os("TRUFFLEPIG_BOARD_WEB_TEST_TAKEN")
+        .unwrap()
+        .into_string()
+        .unwrap()
+        .parse()
+        .unwrap();
+    fs::write(runtime.join("board-web.port"), taken.to_string()).unwrap();
     let listener = bind_listener(&runtime, "127.0.0.1:0".parse().unwrap()).unwrap();
-    assert_eq!(listener.local_addr().unwrap().port(), port);
-    drop(listener);
-    let holder = TcpListener::bind(("127.0.0.1", port)).unwrap();
-    let listener = bind_listener(&runtime, "127.0.0.1:0".parse().unwrap()).unwrap();
-    assert_ne!(listener.local_addr().unwrap().port(), port);
-    drop((holder, listener));
+    let fallback = listener.local_addr().unwrap().port();
+    assert_ne!(fallback, taken);
+    fs::write(runtime.join("fallback-port"), fallback.to_string()).unwrap();
 }

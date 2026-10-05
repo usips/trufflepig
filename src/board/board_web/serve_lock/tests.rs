@@ -1,23 +1,46 @@
-use super::super::{web_endpoint, web_guard::BoardWebToken};
-use super::*;
-use std::net::SocketAddr;
+use super::super::web_serve::BoardWebServer;
+use std::path::PathBuf;
+
+const CHILD: &str = "TRUFFLEPIG_SERVE_LOCK_TEST_CHILD";
 
 #[test]
-fn second_acquire_refuses_and_leaves_token_untouched() {
-    let directory = crate::board::board_test_support::scratch("serve-lock-");
-    let runtime = directory.path().join("runtime");
-    std::fs::create_dir_all(&runtime).unwrap();
+fn second_bind_refuses_and_leaves_token_untouched() {
+    if std::env::var_os(CHILD).is_none() {
+        let directory = crate::board::board_test_support::scratch("serve-lock-");
+        let runtime = directory.path().join("runtime");
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .env(CHILD, "1")
+            .env("TRUFFLEPIG_SYSTEM_DIR", &runtime)
+            .env("TRUFFLEPIG_BOARD_DB", directory.path().join("web.sqlite3"))
+            .env("XDG_CONFIG_HOME", directory.path().join("config"))
+            .args([
+                "board::board_web::serve_lock::tests::second_bind_refuses_and_leaves_token_untouched",
+                "--exact",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "child failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            runtime.join("second-bind-refused").exists(),
+            "the child ran the refusal check"
+        );
+        return;
+    }
+    let runtime = PathBuf::from(std::env::var_os("TRUFFLEPIG_SYSTEM_DIR").unwrap());
+    let first = BoardWebServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
     let token_path = runtime.join("board-web.token");
-    BoardWebToken::rotate_at(&token_path).unwrap();
     let before = std::fs::read(&token_path).unwrap();
-    let address: SocketAddr = "127.0.0.1:7341".parse().unwrap();
-    web_endpoint::publish(&runtime, address, &directory.path().join("web.sqlite3")).unwrap();
-    let _first = acquire_at(&runtime).unwrap();
-    let error = acquire_at(&runtime).err().expect("second acquire refuses");
+    let error = BoardWebServer::bind("127.0.0.1:0".parse().unwrap())
+        .err()
+        .expect("second bind refuses");
     assert!(
         error
             .to_string()
-            .contains("board-serve already running at http://127.0.0.1:7341"),
+            .contains("board-serve already running at http://127.0.0.1:"),
         "{error:#}"
     );
     assert_eq!(
@@ -25,4 +48,6 @@ fn second_acquire_refuses_and_leaves_token_untouched() {
         before,
         "a refused start must not rotate the live token"
     );
+    std::fs::write(runtime.join("second-bind-refused"), "refused").unwrap();
+    drop(first);
 }
