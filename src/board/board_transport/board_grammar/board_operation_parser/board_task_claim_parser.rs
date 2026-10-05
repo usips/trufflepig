@@ -77,6 +77,16 @@ pub(super) fn parse_claim(options: &Arguments, payload: &BoardTextPayload) -> Re
             if scope.is_none() && !resume.is_resuming() {
                 bail!("invalid_options: claiming a task requires scope or --resume");
             }
+            if resume == ClaimResume::Idle {
+                if let Some(scope) = &scope {
+                    let token = scope.as_str().trim();
+                    if token.parse::<EntryId>().is_ok() {
+                        bail!(
+                            "invalid_options: --resume {token} passes scope text, not a resume target; use --resume={token}"
+                        );
+                    }
+                }
+            }
             let delegate = options
                 .board
                 .delegate

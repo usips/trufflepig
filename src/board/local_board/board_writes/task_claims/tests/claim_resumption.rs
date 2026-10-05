@@ -245,17 +245,128 @@ fn bare_resume_of_own_live_claim_refreshes_without_conflict() {
     let mut conn = database.connect();
     let holder = actor("josh", "muse", "worktree-one");
     let task = carved_task(&mut conn, &holder, 1000, "live lane");
-    write(&mut conn, &holder, 1050, |tx, ctx| {
+    let before = active_claim(&conn, task, 1000, 120)
+        .unwrap()
+        .unwrap()
+        .record;
+    let entries_before: i64 = conn
+        .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))
+        .unwrap();
+    let events_before: i64 = conn
+        .query_row("SELECT COUNT(*) FROM events", [], |row| row.get(0))
+        .unwrap();
+    let reply = write(&mut conn, &holder, 1050, |tx, ctx| {
         claim_task(tx, ctx, task, None, ClaimResume::Idle, None)
     })
     .unwrap();
+    let BoardResult::Change(change) = reply.result else {
+        panic!("expected change")
+    };
+    assert_eq!(change.entry, before.entry);
     let history = read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, 1050, 120).unwrap();
-    assert_eq!(history.len(), 2);
-    assert_eq!(history[0].end_reason, Some(ClaimEndReason::Resumed));
-    assert_eq!(history[1].actor, holder);
-    assert_eq!(history[1].scope.as_str(), "live lane");
-    assert_eq!(history[1].last_active, 1050);
-    assert!(history[1].ended_at.is_none());
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].entry, before.entry);
+    assert_eq!(history[0].actor, holder);
+    assert_eq!(history[0].scope.as_str(), "live lane");
+    assert_eq!(history[0].claimed_at, 1000);
+    assert_eq!(history[0].last_active, 1050);
+    assert!(history[0].ended_at.is_none());
+    assert!(history[0].end_reason.is_none());
+    let entries_after: i64 = conn
+        .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))
+        .unwrap();
+    let events_after: i64 = conn
+        .query_row("SELECT COUNT(*) FROM events", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(entries_after, entries_before);
+    assert_eq!(events_after, events_before);
+}
+
+#[test]
+fn pre_resume_commit_refreshes_after_own_holder_resume() {
+    let database = ClaimDatabase::new();
+    let mut conn = database.connect();
+    let holder = actor("josh", "codex", "one");
+    let task = carved_task(&mut conn, &holder, 1000, "current");
+    let before = active_claim(&conn, task, 1000, 120)
+        .unwrap()
+        .unwrap()
+        .record;
+    // An own-holder resume with a scope update keeps the original claim row.
+    let reply = write(&mut conn, &holder, 1050, |tx, ctx| {
+        claim_task(
+            tx,
+            ctx,
+            task,
+            Some(&EntryText::new("resumed lane").unwrap()),
+            ClaimResume::Idle,
+            None,
+        )
+    })
+    .unwrap();
+    let BoardResult::Change(change) = reply.result else {
+        panic!("expected change")
+    };
+    assert_eq!(change.entry, before.entry);
+    let history = read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, 1050, 120).unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].claimed_at, 1000);
+    assert_eq!(history[0].scope.as_str(), "resumed lane");
+    // Idle below the commit time so the commit gate is observable, then
+    // ingest a commit predating the resume: claimed_at never moved, so the
+    // commit still counts as lease activity.
+    conn.execute("UPDATE claims SET last_active=1010", [])
+        .unwrap();
+    let coauthor = CommitCoauthor {
+        harness: HarnessLabel::parse("codex").unwrap(),
+        model: "Codex".into(),
+        email: "agent@openai.com".into(),
+    };
+    write(&mut conn, &holder, 1100, |tx, ctx| {
+        refresh_commit_claims(tx, task.plan, task.ordinal, &[coauthor], 1020, ctx.now)?;
+        Ok(ctx.change_reply(EntryId::new(1).unwrap(), Some(task.plan), None, Some(task)))
+    })
+    .unwrap();
+    let history = read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, 1100, 120).unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].last_active, 1020);
+}
+
+#[test]
+fn own_holder_resume_returns_existing_entry_through_dispatch() {
+    let database = ClaimDatabase::new();
+    let mut conn = database.connect();
+    let holder = actor("josh", "muse", "worktree-one");
+    let task = carved_task(&mut conn, &holder, 1000, "live lane");
+    let before = active_claim(&conn, task, 1000, 120)
+        .unwrap()
+        .unwrap()
+        .record;
+    let events_before: i64 = conn
+        .query_row("SELECT COUNT(*) FROM events", [], |row| row.get(0))
+        .unwrap();
+    let mut backend =
+        LocalBoard::open_path(&database.path, std::time::Duration::from_secs(7200)).unwrap();
+    let op: BoardOp = serde_json::from_value(serde_json::json!({
+        "op": "claim_task", "task": task.to_string(), "scope": null, "resume": true
+    }))
+    .unwrap();
+    let reply = backend
+        .handle(&BoardRequest::new(holder.clone(), op))
+        .unwrap();
+    let BoardResult::Change(change) = reply.result else {
+        panic!("expected change")
+    };
+    assert_eq!(change.entry, before.entry);
+    assert_eq!(change.task, Some(task));
+    let history = read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, i64::MAX, 120).unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].claimed_at, 1000);
+    assert!(history[0].last_active > 1000);
+    let events_after: i64 = conn
+        .query_row("SELECT COUNT(*) FROM events", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(events_after, events_before);
 }
 
 #[test]

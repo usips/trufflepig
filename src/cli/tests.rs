@@ -886,16 +886,33 @@ fn claim_resume_value_requires_equals_and_leaves_positionals_alone() {
         resume,
         ClaimResume::Entry(crate::board::board_ids::EntryId::new(485).unwrap())
     );
-    // Space form no longer feeds a value: `E42` becomes scope text.
+    // Space form with a bare entry token is rejected: it meant --resume=E42.
     let args = ["board", "claim", "P7.3", "--resume", "E42"].map(str::to_owned);
+    let options = parse(&args).unwrap();
+    let error = board_parse(&options, None).unwrap_err().to_string();
+    assert!(error.contains("use --resume=E42"), "{error}");
+}
+
+#[test]
+fn claim_resume_space_form_entry_token_points_at_equals_form() {
+    use crate::board::board_grammar::{BoardCommand, parse as board_parse};
+    use crate::board::board_protocol::{BoardOp, ClaimResume};
+    let args = ["board", "claim", "P7.3", "--resume", "E5"].map(str::to_owned);
+    let options = parse(&args).unwrap();
+    let error = board_parse(&options, None).unwrap_err().to_string();
+    assert!(error.contains("use --resume=E5"), "{error}");
+    let args = ["board", "claim", "P7.3", "--resume=E5"].map(str::to_owned);
     let options = parse(&args).unwrap();
     let BoardCommand::Op(BoardOp::ClaimTask { scope, resume, .. }) =
         board_parse(&options, None).unwrap()
     else {
         panic!("expected claim op")
     };
-    assert_eq!(resume, ClaimResume::Idle);
-    assert_eq!(scope.unwrap().as_str(), "E42");
+    assert_eq!(
+        resume,
+        ClaimResume::Entry(crate::board::board_ids::EntryId::new(5).unwrap())
+    );
+    assert!(scope.is_none());
 }
 
 #[test]

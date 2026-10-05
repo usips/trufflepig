@@ -181,6 +181,41 @@ pub(in crate::board::local_board) fn claim_task(
             ));
         }
     }
+    if resume.is_resuming() && delegation.is_none() {
+        if let Some(holder) = holder
+            .as_ref()
+            .filter(|claim| claim.actor_id == ctx.actor_id)
+        {
+            // The caller already holds the live lease: refresh it in place,
+            // keeping the original claim row, entry, and claimed_at.
+            let entry = holder.record.entry;
+            if let Some(text) = scope {
+                tx.execute(
+                    "UPDATE claims SET scope=?4,last_active=?5 WHERE plan_id=?1 AND task_ordinal=?2 AND entry_id=?3 AND ended_at IS NULL",
+                    params![
+                        sql_number(task.plan.get()),
+                        sql_number(task.ordinal),
+                        sql_number(entry.get()),
+                        text.as_str(),
+                        ctx.now
+                    ],
+                )
+                .map_err(sql_error)?;
+            } else {
+                tx.execute(
+                    "UPDATE claims SET last_active=?4 WHERE plan_id=?1 AND task_ordinal=?2 AND entry_id=?3 AND ended_at IS NULL",
+                    params![
+                        sql_number(task.plan.get()),
+                        sql_number(task.ordinal),
+                        sql_number(entry.get()),
+                        ctx.now
+                    ],
+                )
+                .map_err(sql_error)?;
+            }
+            return Ok(ctx.change_reply(entry, Some(task.plan), None, Some(task)));
+        }
+    }
     let scope = scope
         .or_else(|| {
             holder

@@ -123,6 +123,10 @@ impl LocalBoard {
                 }
             }
         }
+        // An own-holder resume refreshes the live lease without an event;
+        // predict it before the mutation runs so the receipt check below
+        // expects zero events instead of one.
+        let resume_refresh = resume_refreshes_in_place(&tx, &request.op, actor_id)?;
         let mut reply = match &request.op {
             BoardOp::Hello { model, effort } => {
                 board_writes::entry_writes::hello(&tx, &ctx, model, effort.as_deref())?
@@ -260,10 +264,19 @@ impl LocalBoard {
                 .map_err(sql_error)?;
             let replay =
                 matches!(&reply.result, BoardResult::Change(change) if change.deduplicated);
-            if events != i64::from(!replay) {
+            let expected = if resume_refresh {
+                0
+            } else {
+                i64::from(!replay)
+            };
+            if events != expected {
                 return Err(invalid(
                     "board_unavailable",
-                    "mutation did not produce exactly one event",
+                    if resume_refresh {
+                        "resume refresh must not produce an event"
+                    } else {
+                        "mutation did not produce exactly one event"
+                    },
                 ));
             }
             reply.backend = format!("local:{}", self.path.display());
@@ -291,4 +304,35 @@ impl LocalBoard {
         tx.commit().map_err(sql_error)?;
         Ok(reply)
     }
+}
+
+/// Whether a resume names the caller's own live lease, which `claim_task`
+/// refreshes in place without writing an event.
+fn resume_refreshes_in_place(
+    tx: &Transaction<'_>,
+    op: &BoardOp,
+    actor_id: i64,
+) -> Result<bool, BoardError> {
+    let BoardOp::ClaimTask {
+        task,
+        resume,
+        delegate,
+        ..
+    } = op
+    else {
+        return Ok(false);
+    };
+    if !resume.is_resuming() || delegate.is_some() {
+        return Ok(false);
+    }
+    tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM claims WHERE plan_id=?1 AND task_ordinal=?2 AND actor_id=?3 AND ended_at IS NULL)",
+        params![
+            sql_number(task.plan.get()),
+            sql_number(task.ordinal),
+            actor_id
+        ],
+        |row| row.get(0),
+    )
+    .map_err(sql_error)
 }
