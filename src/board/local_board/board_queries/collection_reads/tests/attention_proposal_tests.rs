@@ -105,7 +105,8 @@ fn collection_attention_filters_current_proposal_authority_before_limit_and_coun
             true,
             200
         )),
-        vec![id(3), id(4), id(5)]
+        vec![id(3), id(4)],
+        "the steward's own user-and-harness question leaves Needs you"
     );
     let foreign_human = authority_actor("other", "laptop", "human", "h1");
     assert_eq!(
@@ -194,7 +195,11 @@ fn collection_attention_stale_proposals_require_exact_author_for_rebase() {
         true,
         200,
     );
-    assert_eq!(attention_ids(&own), vec![id(4), id(5)]);
+    assert_eq!(
+        attention_ids(&own),
+        vec![id(4)],
+        "the steward's own user-and-harness question leaves Needs you"
+    );
     assert_eq!(own.rebase_needed, vec![id(4)]);
     let other_session = authority_actor("josh", "laptop", "claude", "s3");
     assert_eq!(
@@ -205,7 +210,8 @@ fn collection_attention_stale_proposals_require_exact_author_for_rebase() {
             true,
             200
         )),
-        vec![id(5)]
+        Vec::new(),
+        "a sibling session shares the asker's user and harness"
     );
     let other_host = authority_actor("josh", "desktop", "codex", "s1");
     assert_eq!(

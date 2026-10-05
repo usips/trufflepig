@@ -65,8 +65,13 @@ pub(super) fn render_inbox(
             {
                 hints.push("feedback ls".into());
             }
+            let bound = if inbox.open_omitted_lower_bound {
+                " (lower bound)"
+            } else {
+                ""
+            };
             candidate.warnings.push(format!(
-                "open evidence omitted; inspect {}",
+                "open evidence omitted{bound}; inspect {}",
                 hints.join(", ")
             ));
         }

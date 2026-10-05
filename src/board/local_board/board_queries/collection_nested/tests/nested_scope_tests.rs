@@ -44,6 +44,13 @@ fn collection_attention_pages_preserve_siblings_and_claim_cursors() {
     entry(&board.conn, 3, 3, "question");
     entry(&board.conn, 4, 3, "question");
     entry(&board.conn, 5, 4, "question");
+    board
+        .conn
+        .execute_batch(
+            "INSERT INTO actors VALUES(3,'other','laptop','codex','s1'); \
+             UPDATE entries SET actor_id=3 WHERE kind='question';",
+        )
+        .unwrap();
     task(&board.conn, 1, 1);
     task(&board.conn, 2, 1);
     claim(&board.conn, 1, 1, 1, 1, 79);
@@ -71,6 +78,10 @@ fn collection_attention_pages_preserve_siblings_and_claim_cursors() {
         })
     );
     entry(&board.conn, 6, 5, "question");
+    board
+        .conn
+        .execute("UPDATE entries SET actor_id=3 WHERE id=6", [])
+        .unwrap();
     let BoardResult::Attention(second) = collection_reads::attention(
         board.reader.as_ref().expect("read connection"),
         &context(),

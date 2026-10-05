@@ -261,6 +261,55 @@ fn inbox_reminder_count_is_bounded_and_reports_capped_omissions() {
 }
 
 #[test]
+fn inbox_reminder_count_flags_lower_bound_only_at_the_cap() {
+    let (_directory, mut board) = database();
+    let crowded = plan(&mut board);
+    for index in 0..210 {
+        post(
+            &mut board,
+            "claude",
+            crowded,
+            EntryKind::Question,
+            &format!("reminder {index}"),
+            None,
+        );
+    }
+    let capped = scoped_feed(&mut board, None, true, 100);
+    assert_eq!(capped.open.len(), 20);
+    assert_eq!(capped.open_omitted, 180);
+    assert!(
+        capped.open_omitted_lower_bound,
+        "a count that hits the cap is a lower bound"
+    );
+    let value = serde_json::to_value(&capped).unwrap();
+    assert_eq!(
+        value["open_omitted_lower_bound"],
+        serde_json::Value::Bool(true)
+    );
+    let (_directory, mut board) = database();
+    let small = plan(&mut board);
+    post(
+        &mut board,
+        "claude",
+        small,
+        EntryKind::Question,
+        "lone reminder",
+        None,
+    );
+    let exact = scoped_feed(&mut board, None, true, 100);
+    assert_eq!(exact.open_omitted, 0);
+    assert!(
+        !exact.open_omitted_lower_bound,
+        "a count below the cap is exact"
+    );
+    let value = serde_json::to_value(&exact).unwrap();
+    assert_eq!(
+        value["open_omitted_lower_bound"],
+        serde_json::Value::Bool(false)
+    );
+}
+
+#[test]
 fn mixed_plan_commit_event_is_visible_via_its_same_sequence_entries() {
     let (_directory, mut board) = database();
     let plan = plan(&mut board);

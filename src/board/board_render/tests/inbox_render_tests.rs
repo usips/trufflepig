@@ -133,6 +133,28 @@ fn fresh_events_fit_before_oversized_reminders() {
 }
 
 #[test]
+fn capped_reminder_count_discloses_its_lower_bound_in_text() {
+    let budget = OutputBudget::new(800)
+        .unwrap()
+        .with_format(OutputFormat::Lines);
+    let mut feed = inbox(true);
+    feed.open_omitted = 180;
+    feed.open_omitted_lower_bound = true;
+    let rendered =
+        render_reply(&BoardReply::new("local", BoardResult::Inbox(feed)), &budget).unwrap();
+    assert!(
+        rendered.text.contains("lower bound"),
+        "capped text output discloses the bound: {text}",
+        text = rendered.text
+    );
+    let mut feed = inbox(true);
+    feed.open_omitted = 3;
+    let rendered =
+        render_reply(&BoardReply::new("local", BoardResult::Inbox(feed)), &budget).unwrap();
+    assert!(!rendered.text.contains("lower bound"));
+}
+
+#[test]
 fn complete_empty_inbox_acknowledges_scan_without_claiming_rendered_events() {
     let mut feed = inbox(true);
     feed.events.clear();

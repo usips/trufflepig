@@ -71,6 +71,7 @@ fn inbox(advancing: bool) -> InboxReply {
         events,
         open: vec![entry(500)],
         open_omitted: 0,
+        open_omitted_lower_bound: false,
         repo_key: None,
         all: true,
         latest: EventSeq::new(500),

@@ -107,6 +107,9 @@ pub struct InboxReply {
     pub events: Vec<EventRecord>,
     pub open: Vec<EntryRecord>,
     pub open_omitted: usize,
+    /// True when the reminder count hit its cap, so the omitted total is a lower bound.
+    #[serde(default)]
+    pub open_omitted_lower_bound: bool,
     pub repo_key: Option<RepoKey>,
     pub all: bool,
     pub latest: EventSeq,

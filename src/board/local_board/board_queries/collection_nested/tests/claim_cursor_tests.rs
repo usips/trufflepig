@@ -167,3 +167,34 @@ fn collection_claims_preserve_duplicate_entry_ids_and_actual_actor_scope() {
         BoardErrorCode::InvalidReference
     );
 }
+
+#[test]
+fn collection_claims_show_sibling_session_stale_claims_for_resume() {
+    let (_directory, board) = database();
+    task(&board.conn, 1, 1);
+    entry(&board.conn, 3, 3, "claim");
+    board
+        .conn
+        .execute(
+            "INSERT INTO actors VALUES(3,'josh','laptop','codex','s2')",
+            [],
+        )
+        .unwrap();
+    claim(&board.conn, 1, 1, 1, 3, 79);
+    let mut second = context();
+    second.actor.session = "s2".into();
+    let own = claim_window(
+        board.reader.as_ref().expect("read connection"),
+        &second,
+        None,
+        true,
+        None,
+        true,
+        None,
+        None,
+        200,
+    )
+    .unwrap();
+    assert_eq!(own.claims.len(), 1);
+    assert_eq!(own.claims[0].claim.task.ordinal, 1);
+}

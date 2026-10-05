@@ -194,10 +194,10 @@ pub(in crate::board::local_board) fn claim_window(
     let cutoff = ctx.now.saturating_sub(ctx.claim_ttl_secs.max(0));
     let predicate = concat!(
         "c.ended_at IS NULL AND (?1 IS NULL OR c.plan_id=?1) ",
-        "AND (NOT ?2 OR (a.user=?3 AND a.host=?4 AND a.harness=?5 AND a.session=?6 AND c.last_active<?7)) ",
-        "AND (NOT ?2 OR ?8 OR NOT EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=c.plan_id) ",
-        "OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=c.plan_id AND scope.repo_key=?9)) ",
-        "AND (c.entry_id>?10 OR (c.entry_id=?10 AND c.id>?12)) AND e.seq<=?11"
+        "AND (NOT ?2 OR (a.user=?3 AND a.host=?4 AND a.harness=?5 AND c.last_active<?6)) ",
+        "AND (NOT ?2 OR ?7 OR NOT EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=c.plan_id) ",
+        "OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=c.plan_id AND scope.repo_key=?8)) ",
+        "AND (c.entry_id>?9 OR (c.entry_id=?9 AND c.id>?11)) AND e.seq<=?10"
     );
     let parameters = params![
         plan.map(|plan| sql_number(plan.get())),
@@ -205,7 +205,6 @@ pub(in crate::board::local_board) fn claim_window(
         ctx.actor.user,
         ctx.actor.host,
         ctx.actor.harness.as_str(),
-        ctx.actor.session,
         cutoff,
         all,
         repo_key.map(RepoKey::as_str),
@@ -232,7 +231,7 @@ pub(in crate::board::local_board) fn claim_window(
                 "d.user,d.host,d.harness,d.session FROM claims c ",
                 "JOIN actors a ON a.id=c.actor_id JOIN entries e ON e.id=c.entry_id ",
                 "LEFT JOIN actors d ON d.id=c.delegated_by WHERE {predicate} ",
-                "ORDER BY c.entry_id,c.id LIMIT ?13"
+                "ORDER BY c.entry_id,c.id LIMIT ?12"
             ),
             predicate = predicate
         ))
@@ -244,7 +243,6 @@ pub(in crate::board::local_board) fn claim_window(
             ctx.actor.user,
             ctx.actor.host,
             ctx.actor.harness.as_str(),
-            ctx.actor.session,
             cutoff,
             all,
             repo_key.map(RepoKey::as_str),

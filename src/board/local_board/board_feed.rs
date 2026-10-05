@@ -109,7 +109,8 @@ pub(super) fn inbox(
     } else {
         next.map_or(latest, |event| EventSeq::new(event.seq.get() - 1))
     };
-    let (open, open_omitted) = board_reads::open_entries(tx, ctx, repo_key, all, limit.min(20))?;
+    let (open, open_omitted, open_omitted_lower_bound) =
+        board_reads::open_entries(tx, ctx, repo_key, all, limit.min(20))?;
     Ok(BoardReply::new(
         "local",
         BoardResult::Inbox(InboxReply {
@@ -120,6 +121,7 @@ pub(super) fn inbox(
             events,
             open,
             open_omitted,
+            open_omitted_lower_bound,
             repo_key: repo_key.cloned(),
             all,
             latest,

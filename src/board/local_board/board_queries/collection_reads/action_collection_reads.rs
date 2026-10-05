@@ -13,11 +13,20 @@ use crate::board::local_board::board_queries::{board_reads, collection_nested};
 use crate::board::local_board::{BoardError, WriteContext, sql_error, sql_number};
 
 const NESTED_LIMIT: usize = 20;
-const OPEN_QUESTION: &str = concat!(
-    "e.kind='question' AND NOT EXISTS(SELECT 1 FROM entries answer JOIN entry_refs reference ",
-    "ON reference.entry_id=answer.id WHERE answer.kind='answer' AND reference.target='E'||e.id) ",
-    "AND NOT EXISTS(SELECT 1 FROM entries correction WHERE correction.supersedes=e.id)"
-);
+
+/// Open-question branches with answers and corrections visible at `through`.
+fn open_question(through: &str) -> String {
+    format!(
+        concat!(
+            "e.kind='question' AND NOT EXISTS(SELECT 1 FROM entries answer JOIN entry_refs reference ",
+            "ON reference.entry_id=answer.id WHERE answer.kind='answer' AND reference.target='E'||e.id ",
+            "AND answer.seq<={through}) ",
+            "AND NOT EXISTS(SELECT 1 FROM entries correction WHERE correction.supersedes=e.id ",
+            "AND correction.seq<={through})"
+        ),
+        through = through
+    )
+}
 
 /// The shared attention entry predicate over `entries e JOIN actors a`,
 /// with parameters ?1 user, ?2 host, ?3 harness, ?4 session, ?5 identity,
@@ -25,6 +34,7 @@ const OPEN_QUESTION: &str = concat!(
 /// Every branch implies kind question, proposal, or feedback (proposal
 /// rows exist only on proposal entries), so naming the kinds lets SQLite
 /// drive the scan from `entries_kind_state` instead of the sequence window.
+/// A reader's own user-and-harness questions stay out of "Needs you".
 pub(super) fn attention_predicate() -> String {
     let exact_author = "a.user=?1 AND a.host=?2 AND a.harness=?3 AND a.session=?4";
     let plan_authority = concat!(
@@ -41,13 +51,14 @@ pub(super) fn attention_predicate() -> String {
         "AND p.state='open' AND p.base_revision<>head.head_revision)"
     );
     let open_feedback = "e.kind='feedback' AND e.state IN ('open','triaged')";
+    let open_question = open_question("?10");
     format!(
         concat!(
             "e.kind IN ('question','proposal','feedback') AND ((({exact_author}) ",
             "AND (({open_feedback}) OR {stale_proposal})) ",
             "OR (({current_proposal} OR (({open_feedback}) AND ({plan_authority}))) ",
             "AND (e.to_whom IS NULL OR e.to_whom IN (?1,?3,?5))) ",
-            "OR ((({OPEN_QUESTION}) OR (({open_feedback}) AND (e.plan_id IS NULL AND a.user=?1 AND ?3='human'))) ",
+            "OR ((({open_question} AND NOT (a.user=?1 AND a.harness=?3)) OR (({open_feedback}) AND (e.plan_id IS NULL AND a.user=?1 AND ?3='human'))) ",
             "AND (e.to_whom IS NULL OR e.to_whom IN (?1,?3,?5)) ",
             "AND (?6 OR NOT EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id) ",
             "OR e.to_whom IN (?1,?3,?5) OR e.repo_key=?7 ",
@@ -59,7 +70,7 @@ pub(super) fn attention_predicate() -> String {
         stale_proposal = stale_proposal,
         current_proposal = current_proposal,
         plan_authority = plan_authority,
-        OPEN_QUESTION = OPEN_QUESTION
+        open_question = open_question
     )
 }
 
@@ -116,6 +127,7 @@ pub(in crate::board::local_board) fn overview(
         ],
     )?;
     let mut plans = Vec::with_capacity(records.len());
+    let open_question = open_question("?2");
     for plan in records {
         let tasks =
             collection_nested::task_window(conn, plan.id, None, None, Some(through), NESTED_LIMIT)?;
@@ -138,7 +150,8 @@ pub(in crate::board::local_board) fn overview(
         let open_questions = count(
             conn,
             &format!(
-                "SELECT count(*) FROM entries e WHERE e.plan_id=?1 AND e.seq<=?2 AND ({OPEN_QUESTION})"
+                "SELECT count(*) FROM entries e WHERE e.plan_id=?1 AND e.seq<=?2 AND ({open_question})",
+                open_question = open_question
             ),
             params![sql_number(plan.id.get()), sql_number(through.get())],
         )?;

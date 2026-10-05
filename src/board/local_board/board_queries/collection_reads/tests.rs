@@ -189,7 +189,9 @@ fn feedback(
 }
 
 mod attention_index_tests;
+mod attention_own_question_tests;
 mod attention_proposal_tests;
+mod attention_through_tests;
 mod collection_feedback_authority_tests;
 mod entry_page_tests;
 mod feedback_page_tests;

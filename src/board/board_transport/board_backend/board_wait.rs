@@ -44,6 +44,7 @@ impl BoardHost {
                         repo_key: None,
                         all: false,
                         open_omitted: 0,
+                        open_omitted_lower_bound: false,
                         query_truncated: false,
                         wait: InboxWait::Timeout,
                     }),
