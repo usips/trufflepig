@@ -76,13 +76,12 @@ attention, and overview scope. `--all` widens repository scope, retaining recipi
 events are excluded unless they are feedback outcomes; mixed-plan events qualify if a same-sequence
 entry matches scope. `scanned_through` is the highest examined sequence in one snapshot, separate
 from `rendered_through`. Query-cap or render-budget truncation acknowledges only the last rendered
-event;
-a complete fully rendered query acknowledges `scanned_through`, including irrelevant tails and empty
-reads. Explicit `inbox SEQ` never advances a cursor. First inbox seeds the latest `min(limit,20)`
-events in a 500-event scan window, then bounded open reminders. Reminder totals are exact up to 200
-(a lower bound beyond), and stale-base proposals appear only in their author's reminders. Reminders
-never acknowledge events. Cursor acknowledgements and lease renewal create no events. Shared
-fallback session IDs share a cursor; use explicit `SEQ` to reread.
+event; a complete fully rendered query acknowledges `scanned_through`, including irrelevant tails
+and empty reads. Explicit `inbox SEQ` never advances a cursor. First inbox seeds the latest
+`min(limit,20)` events in a 500-event scan window, then bounded open reminders. Reminder totals
+are exact up to 200 (a lower bound beyond), and stale-base proposals appear only in their author's
+reminders. Reminders never acknowledge events. Cursor acknowledgements and lease renewal create no
+events. Shared fallback session IDs share a cursor; use explicit `SEQ` to reread.
 
 Entry text is nonblank and at most 4096 UTF-8 bytes; SSOT/proposal text is at most 32768 bytes and
 may be empty. Plan titles are nonblank and at most 256 bytes. The serialized daemon frame is capped
@@ -177,19 +176,20 @@ drill references; proposals retain stale markers. Recover detail with
 
 Storage defaults to `$XDG_DATA_HOME/trufflepig/board.sqlite3`, else the passwd home's
 `.local/share/trufflepig/board.sqlite3`; `TRUFFLEPIG_BOARD_DB` overrides it. The DB is 0600; chmod
-0700 applies only to directories the board created, and a pre-existing group/world-accessible parent
-is refused — open paths never chmod, read paths never modify the filesystem. The DB records its
-resolved path and uses forward `user_version` migrations; a shipped step is never edited — repairs
-ship as a new step. Schema version 4 repairs the `commit_plans_entry` and `claims_entry_active`
-indexes and rewrites stored dedupe receipts to the current API; later steps carry no version
-literals and dispatch upgrades older stamps on replay. Empty/relative DB overrides and
-newer schemas are refused. Board data is outside cache sweeps and `forget-logs`; entries and
-revisions remain durable. WAL requires local disk, not a network filesystem. Configuration is
-`~/.config/trufflepig/board.toml` with unknown fields denied: mode, user, host, url, token_file,
-claim_ttl_minutes, repos. Config checks cache for two seconds; failed unchanged reloads back off 60
-seconds; successful TTL changes reach existing readers/writer. `mode = "local"` selects local
-storage; `mode = "remote"` fails `board_remote_unsupported` without contacting a coordinator or
-opening a local DB.
+0700 applies only to directories the board created (on a fresh account it creates and chmods the
+missing `~/.local` and `~/.local/share` ancestors), and a pre-existing group/world-accessible
+parent is refused — open paths never chmod, read paths never modify the filesystem. The DB
+records its resolved path and uses forward `user_version` migrations; a shipped step is never edited
+— repairs ship as a new step. Schema version 4 repairs the `commit_plans_entry` and
+`claims_entry_active` indexes and rewrites stored dedupe receipts to the current API; later
+steps carry no version literals and dispatch upgrades older stamps on replay. Empty/relative DB
+overrides and newer schemas are refused. Board data is outside cache sweeps and
+`forget-logs`; entries and revisions remain durable. WAL requires local disk, not a network
+filesystem. Configuration is `~/.config/trufflepig/board.toml` with unknown fields denied: mode,
+user, host, url, token_file, claim_ttl_minutes, repos. Config checks cache for two seconds;
+failed unchanged reloads back off 60 seconds; successful TTL changes reach existing
+readers/writer. `mode = "local"` selects local storage; `mode = "remote"` fails
+`board_remote_unsupported` without contacting a coordinator or opening a local DB.
 
 Board FTS5 uses stable integer search-document IDs for full entry text/proposal bodies, revision
 bodies, and plan titles; shared content hashes never merge distinct targets or index orphan texts.

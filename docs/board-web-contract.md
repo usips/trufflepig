@@ -25,12 +25,12 @@ publishes API/address/database, without a token, in owned regular 0600
 
 `board web [P7|P7@N|E#]` validates that descriptor and the configured/known DB, verifies the
 listener's owner through `/proc/net/tcp{,6}`, and proves token possession before printing the
-listener URL. The proof never sends the token: the client POSTs a random nonce
-to the unauthenticated `POST /api/v1/challenge` route, which answers hexadecimal HMAC-SHA256(key =
-token, `trufflepig-board-listener-proof-v1` NUL ‖ nonce ‖ listener address); the client checks that
-proof against the token it reads locally.
-The challenge route keeps the Host, Origin, and JSON body checks. Missing, stale, or mismatched
-endpoints advise `board-serve`; `board web` opens no browser and creates no token.
+listener URL. The proof never sends the token: the client POSTs a random nonce to the
+unauthenticated `POST /api/v1/challenge` route, which answers hexadecimal HMAC-SHA256(key =
+token, `trufflepig-board-listener-proof-v1` NUL ‖ nonce ‖ listener address); the client checks
+that proof against the token it reads locally. The challenge route keeps the Host, Origin, and
+JSON body checks. Missing, stale, or mismatched endpoints advise `board-serve`; `board web` opens
+no browser and creates no token.
 
 The token is 256 CSPRNG bits (64 hexadecimal characters) stored at `system::dir()/board-web.token`.
 `board-serve` rotates it on every start — 32 fresh bytes written with `O_NOFOLLOW`/0600 discipline
@@ -91,29 +91,15 @@ waits up to 30 s, polling every 500 ms, for a concurrently-starting router to mi
 refuses. An answering router gets `router is migrating`, a silent one gets `system ensure` advice;
 a newer schema is unsupported — a reachable router disagreeing on API or database identity is
 fatal. Read dispatch uses the shared `BoardOp::is_read_only` classifier, regardless of HTTP method.
-Startup opens the writer before four query-only readers; a dedicated stream-feed reader outside the
-pool serves the poller and ring fills, so N streams cost one read per active poll tick, zero when
-idle, and never check out the pool. Each read captures owned records and
-`snapshot_seq` in one deferred transaction, then releases its lease before rendering or network
-output. Unknown readers create no actor/session records; reader checkout, writer acquisition, and
-SQLite busy waits use the remaining request deadline; poison recovery preserves permits; reloaded
-claim TTL reaches writers and readers.
+Startup opens the writer before four query-only readers; a dedicated stream-feed reader
+outside the pool serves the poller and ring fills, so N streams cost one read per active
+poll tick, zero when idle, and never check out the pool. Each read captures owned records
+and `snapshot_seq` in one deferred transaction, then releases its lease before rendering
+or network output. Unknown readers create no actor/session records; reader checkout, writer
+acquisition, and SQLite busy waits use the remaining request deadline; poison recovery
+preserves permits; reloaded claim TTL reaches writers and readers.
 
-Collection bounds are part of the typed reply contract:
-
-| Read | Bound and continuation |
-|---|---|
-| Feed | 500 events; ascending `seq`, scalar `next_after`, fixed `through` |
-| History | 200 revision metadata records without bodies; same sequence cursor |
-| Entries | 200 entries; descending `(seq,id)` newest-first; `next_before: {seq,entry}` |
-| Overview | 200 plans; `PlanId` cursor; 20 tasks and 20 active claims each, omitted counts |
-| Attention | 200 entries and 200 own stale claims; entry/claim cursors, omitted counts |
-| Tasks | 200 cards; `TaskId` cursor, captured `TaskCeiling`, and omitted count |
-| Claims | 200 claims; composite `{entry,claim}` cursor and omitted count |
-| Plan Show | 200 each tasks, active claims, entries, and commits, with omitted counts |
-| Entry Show | 20 answer replies and 20 reverse references; cursors, `through`, omitted counts |
-| FeedbackList | 200 records; composite `(seq,entry)` cursor, fixed `through`, omitted count |
-| Search | 50 FTS hits, with truncation |
+Collection bounds are part of the [typed reply contract](board-cli-contract.md#collection-bounds).
 
 Sequence pages retain inclusive `through` as their source cutoff; mutable task, claim, and proposal
 states reflect the current transaction, whose watermark is every reply's `snapshot_seq`. Entries
@@ -165,16 +151,17 @@ Subscribe from the `snapshot_seq` returned by the initial read. Events replay fr
 with `seq > cursor` before waiting for new writes. Pages composed from several reads require every
 root `snapshot_seq` and use their minimum as the initial/resync stream cursor; `through` is only
 membership. `Last-Event-ID` takes precedence over the query cursor; malformed cursors fail. An
-unknown `plan=` filter is rejected with 4xx before any 200. Each `board` event has `id: SEQ` and a
-plain `EventRecord` JSON payload. Stream responses carry `Referrer-Policy: no-referrer` and CSP
-`default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'`. A backlog older
-than the ring's oldest frame, or a cursor above the observed watermark after a ~600 ms grace, sends
-a `resync` event without an id and closes the stream; reasons are `replay_gap` or `cursor_ahead`,
-with the current `latest` watermark. Clients reload their snapshot and reconnect from the new
-snapshot's watermark; they never advance to `latest` without fetching the unseen state. Tabs
-sharing one stream also buffer relayed frames across snapshot reads: the channel opens before the
-read, frames with `id` above the snapshot watermark apply in order once it lands, and a buffer
-past 500 frames is dropped for a fresh resync — together closing the snapshot/subscription race.
+unknown `plan=` filter is rejected with 4xx before any 200. Each `board` event has `id: SEQ` and
+a plain `EventRecord` JSON payload. Stream responses carry `Referrer-Policy: no-referrer` and
+the shared CSP (`default-src 'self'`; `frame-ancestors`, `base-uri`, `object-src`, `form-action`
+`'none'`). A backlog older than the ring's oldest frame, or a cursor above the observed watermark
+after a ~600 ms grace, sends a `resync` event without an id and closes the stream; reasons are
+`replay_gap` or `cursor_ahead`, with the current `latest` watermark. Clients reload their snapshot
+and reconnect from the new snapshot's watermark; they never advance to `latest` without fetching
+the unseen state. Tabs sharing one stream also buffer relayed frames across snapshot reads: the
+channel opens before the read, frames with `id` above the snapshot watermark apply in order once
+it lands, and a buffer past 500 frames is dropped for a fresh resync — together closing the
+snapshot/subscription race.
 
 At most 32 subscribers hold RAII permits; handoff immediately releases the HTTP worker, and
 disconnect, failed spawn, panic, or slow writes release permits. No reader, transaction, or writer
@@ -188,11 +175,11 @@ leadership](board-web-ui.md#stream-leadership).
 ## Browser state and safe rendering
 
 Browser behavior — routes, paging, the seen mark, ingest state, focus, and announcements — follows
-the [board web UI contract](board-web-ui.md). The server escapes raw Markdown HTML and inline HTML,
-suppresses images, and validates decoded link
-destinations. Only HTTP(S), mailto, and same-page `#…` anchors are allowed — other relative links
-render inert; controls, backslashes, and ambiguous/obfuscated schemes are denied. Generated
-attributes are escaped. Only server-sanitized
+the [board web UI contract](board-web-ui.md). This split ratifies the P2.24 decision: browser
+behavior lives in the UI companion, server behavior here. The server escapes raw Markdown HTML and
+inline HTML, suppresses images, and validates decoded link destinations. Only HTTP(S), mailto, and
+same-page `#…` anchors are allowed — other relative links render inert; controls, backslashes, and
+ambiguous/obfuscated schemes are denied. Generated attributes are escaped. Only server-sanitized
 markup reaches `innerHTML`; entries, references, snippets, and FTS text use `textContent`. Heading
 anchors are deterministic, including duplicate/formatted headings. `task.section` matches normalized
 visible heading titles exactly; one task covers every repeated heading with that title. Anchors

@@ -82,10 +82,10 @@ trufflepig-agent board review P7@12 codex
 ```
 
 On `stale_revision`, read `board show P7@12..`, rebase the proposal, and
-re-propose with `--supersedes E#` naming your earlier proposal; supersede
-works from any of your sessions of the same harness. Review the packet and drill into linked commits with
-`trufflepig-agent diff <full-oid>` when Git 2.55+ and local objects are available;
-use `--target path:src/parser.rs` for source hunks. If history is unavailable,
+re-propose with `--supersedes E#` naming your earlier proposal; supersede works
+from any of your sessions of the same harness. Review the packet and drill into
+linked commits with `trufflepig-agent diff <full-oid>` when Git 2.55+ and local objects
+are available; use `--target path:src/parser.rs` for source hunks. If history is unavailable,
 use a targeted Git read and state that limitation. Post `review` or `divergence`
 entries and proposals.
 

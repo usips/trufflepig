@@ -52,9 +52,26 @@ begin `usage: board` or `usage: feedback`. Free text stays raw in `--board-text`
 `--board-payload` carries normalized text/body and a stable import UUID. Leading-hyphen Markdown
 survives clap with that transport or `--`. Subverbs reject inapplicable flags; board/feedback reject
 semantic/rerank, member, and source-cache options. Hidden model/effort and recent-call options carry
-wrapper metadata. `--wait` is inbox-only; `--open` lists open/triaged feedback. Feed defaults to
-200/caps 500; other paged CLI reads cap/default 200; Search caps/defaults 50. Retain returned
-`through` and feedback `--open`.
+wrapper metadata. `--wait` is inbox-only; `--open` lists open/triaged feedback.
+
+## Collection bounds
+
+Feed defaults to 200/caps 500; other paged CLI reads cap/default 200; Search caps/defaults 50.
+Retain returned `through` and feedback `--open`. Each typed reply carries these bounds:
+
+| Read | Bound and continuation |
+|---|---|
+| Feed | 500 events; ascending `seq`, scalar `next_after`, fixed `through` |
+| History | 200 revision metadata records without bodies; same sequence cursor |
+| Entries | 200 entries; descending `(seq,id)` newest-first; `next_before: {seq,entry}` |
+| Overview | 200 plans; `PlanId` cursor; 20 tasks and 20 active claims each, omitted counts |
+| Attention | 200 entries and 200 own stale claims; entry/claim cursors, omitted counts |
+| Tasks | 200 cards; `TaskId` cursor, captured `TaskCeiling`, and omitted count |
+| Claims | 200 claims; composite `{entry,claim}` cursor and omitted count |
+| Plan Show | 200 each tasks, active claims, entries, and commits, with omitted counts |
+| Entry Show | 20 answer replies and 20 reverse references; cursors, `through`, omitted counts |
+| FeedbackList | 200 records; composite `(seq,entry)` cursor, fixed `through`, omitted count |
+| Search | 50 FTS hits, with truncation |
 
 ## Attribution
 
