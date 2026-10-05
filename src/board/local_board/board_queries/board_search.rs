@@ -33,7 +33,7 @@ pub(in crate::board::local_board) fn search(
     if let Some(plan) = plan {
         require_plan(conn, plan)?;
     }
-    let expression = match_expression(query);
+    let expression = match_expression(query)?;
     let mut statement = conn.prepare(
         concat!(
             "SELECT d.target,d.plan_id,d.source,substr(snippet(board_text,0,'','',' ... ',24),1,512) ",
@@ -104,25 +104,42 @@ pub(in crate::board::local_board) fn search(
     ))
 }
 
-/// Builds the FTS5 MATCH expression for a user query: each whitespace-separated
-/// term is phrase-quoted (inner `"` doubled) and the phrases are ANDed, so user
-/// text never parses as FTS5 operators. Blank queries are rejected by `search`.
-fn match_expression(query: &str) -> String {
+/// Builds the FTS5 MATCH expression: kept terms are phrase-quoted (`"` doubled)
+/// and ANDed so user text never parses as FTS5 operators. Terms without an
+/// alphanumeric are dropped; one trailing `*` marks a phrase-prefix query.
+fn match_expression(query: &str) -> Result<String, BoardError> {
     let mut expression = String::with_capacity(query.len() + 8);
-    for (index, term) in query.split_whitespace().enumerate() {
-        if index > 0 {
+    let mut kept = 0;
+    for term in query.split_whitespace() {
+        let (stem, prefix) = term
+            .strip_suffix('*')
+            .map_or((term, false), |stem| (stem, true));
+        if !stem.chars().any(|character| character.is_alphanumeric()) {
+            continue;
+        }
+        if kept > 0 {
             expression.push_str(" AND ");
         }
+        kept += 1;
         expression.push('"');
-        for character in term.chars() {
+        for character in stem.chars() {
             if character == '"' {
                 expression.push('"');
             }
             expression.push(character);
         }
         expression.push('"');
+        if prefix {
+            expression.push('*');
+        }
     }
-    expression
+    if kept == 0 {
+        return Err(invalid(
+            "invalid_options",
+            "search query has no searchable terms",
+        ));
+    }
+    Ok(expression)
 }
 
 fn match_error(error: rusqlite::Error) -> BoardError {

@@ -90,10 +90,14 @@ fn board_search_filters_plan_before_limit_and_reports_truncation() {
 fn board_search_returns_typed_query_errors_and_bounded_plain_snippets() {
     let (_directory, mut board) = database();
     let plan = plan(&mut board, "One", "first body");
-    for query in ["\"", "missingcolumn:needle", "NEAR(", "OR NOT"] {
+    for query in ["missingcolumn:needle", "NEAR(", "OR NOT"] {
         let found = results(&mut board, query, None, 20);
         assert!(found["hits"].as_array().unwrap().is_empty(), "{query}");
     }
+    let error = board
+        .handle(&BoardRequest::new(owner(), query_op("\"", None, 20)))
+        .unwrap_err();
+    assert_eq!(error.code, BoardErrorCode::InvalidOptions);
     let needle = post(&mut board, plan, "needle AND thread");
     assert_eq!(
         targets(&results(&mut board, "needle AND", None, 20)),
@@ -187,6 +191,48 @@ fn board_search_uses_a_query_only_committed_snapshot_without_actor_writes() {
         1
     );
     board.conn.execute_batch("ROLLBACK").unwrap();
+    integrity(&board);
+}
+
+#[test]
+fn board_search_ignores_punctuation_only_terms() {
+    let (_directory, mut board) = database();
+    let plan = plan(&mut board, "One", "body");
+    let entry = post(&mut board, plan, "fix the board layout");
+    assert_eq!(
+        targets(&results(&mut board, "fix - board", None, 20)),
+        [entry.to_string()].into()
+    );
+    assert_eq!(
+        targets(&results(&mut board, "fix & board", None, 20)),
+        [entry.to_string()].into()
+    );
+    integrity(&board);
+}
+
+#[test]
+fn board_search_rejects_queries_without_searchable_terms() {
+    let (_directory, mut board) = database();
+    let plan = plan(&mut board, "One", "body");
+    post(&mut board, plan, "fix the board layout");
+    for query in ["-", "&", "*", "→"] {
+        let error = board
+            .handle(&BoardRequest::new(owner(), query_op(query, None, 20)))
+            .unwrap_err();
+        assert_eq!(error.code, BoardErrorCode::InvalidOptions, "{query}");
+    }
+    integrity(&board);
+}
+
+#[test]
+fn board_search_supports_trailing_prefix_wildcards() {
+    let (_directory, mut board) = database();
+    let plan = plan(&mut board, "One", "body");
+    let entry = post(&mut board, plan, "fix the board layout");
+    assert_eq!(
+        targets(&results(&mut board, "boa*", None, 20)),
+        [entry.to_string()].into()
+    );
     integrity(&board);
 }
 
