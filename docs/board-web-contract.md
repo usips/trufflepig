@@ -171,8 +171,10 @@ plain `EventRecord` JSON payload. Stream responses carry `Referrer-Policy: no-re
 than the ring's oldest frame, or a cursor above the observed watermark after a ~600 ms grace, sends
 a `resync` event without an id and closes the stream; reasons are `replay_gap` or `cursor_ahead`,
 with the current `latest` watermark. Clients reload their snapshot and reconnect from the new
-snapshot's watermark; they never advance to `latest` without fetching the unseen state, closing the
-snapshot/subscription race.
+snapshot's watermark; they never advance to `latest` without fetching the unseen state. Tabs
+sharing one stream also buffer relayed frames across snapshot reads: the channel opens before the
+read, frames with `id` above the snapshot watermark apply in order once it lands, and a buffer
+past 500 frames is dropped for a fresh resync — together closing the snapshot/subscription race.
 
 At most 32 subscribers hold RAII permits; handoff immediately releases the HTTP worker, and
 disconnect, failed spawn, panic, or slow writes release permits. No reader, transaction, or writer

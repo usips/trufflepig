@@ -56,6 +56,9 @@ export function createBoardStream(context) {
   // behavior of one stream per tab, with no sharing attempted.
   const LOCK_NAME = "trufflepig-board-stream";
   const CHANNEL_NAME = "trufflepig-board-stream";
+  // Relayed frames received while idle buffer here until the snapshot lands, up
+  // to the server ring size; past that the tab resyncs instead of guessing.
+  const RELAY_BUFFER_CAP = 500;
   const shareable = (() => {
     try { return typeof navigator?.locks?.request === "function" && typeof BroadcastChannel === "function"; }
     catch (_) { return false; }
@@ -64,6 +67,10 @@ export function createBoardStream(context) {
   let lockNames = null, electionCursor = null;
   let heartbeatTimer = null, freshnessTimer = null, lastHeartbeat = 0;
   let stealRequested = false, leaderHealthy = false;
+  let relayBuffer = [], bufferOverran = false, bufferToken = null;
+  function resetRelayBuffer() {
+    relayBuffer = []; bufferOverran = false; bufferToken = null;
+  }
 
   // The lock and channel names for this tab's token: the first 16 hex chars of
   // its SHA-256, so tabs on different tokens never share a leader. Tabs without
@@ -86,21 +93,60 @@ export function createBoardStream(context) {
       channel = new BroadcastChannel(names.channel);
       channelName = names.channel;
       channel.onmessage = onRelay;
+      // A moved listener starts clean: old-generation frames never apply here.
+      resetRelayBuffer();
     }
     return channel;
   }
   function onRelay(message) {
-    if (mode !== "following") return;
     const frame = message.data;
-    if (frame && frame.type === "status") {
-      if (typeof frame.state !== "string"
-        || !(frame.watermark === null || typeof frame.watermark === "string")) return;
-      onHeartbeat(frame);
+    if (mode === "following" && !state.resyncing) {
+      if (frame && frame.type === "status") {
+        if (typeof frame.state !== "string"
+          || !(frame.watermark === null || typeof frame.watermark === "string")) return;
+        onHeartbeat(frame);
+        return;
+      }
+      if (!frame || typeof frame.event !== "string" || typeof frame.data !== "string"
+        || !(frame.id === null || typeof frame.id === "string")) return;
+      try { deliver(frame); } catch (_) { /* A malformed relayed frame is dropped, never fatal. */ }
       return;
     }
+    if (mode !== "idle" && !state.resyncing) return;
+    // Idle or resyncing: validate exactly as above, then buffer for the next
+    // snapshot. Status frames carry no event shape and fall out here.
     if (!frame || typeof frame.event !== "string" || typeof frame.data !== "string"
       || !(frame.id === null || typeof frame.id === "string")) return;
-    try { deliver(frame); } catch (_) { /* A malformed relayed frame is dropped, never fatal. */ }
+    if (bufferToken === null) bufferToken = typeof authToken === "function" ? authToken() : "";
+    relayBuffer.push(frame);
+    if (relayBuffer.length > RELAY_BUFFER_CAP) {
+      relayBuffer = [];
+      bufferOverran = true;
+    }
+  }
+
+  // Applies frames buffered while idle once the snapshot lands. Returns false
+  // when the buffer overran: the caller resyncs instead of trusting the gap.
+  function drainRelayBuffer(cursor) {
+    const pending = relayBuffer;
+    const overran = bufferOverran;
+    const token = typeof authToken === "function" ? authToken() : "";
+    const generationChanged = bufferToken !== null && bufferToken !== token;
+    resetRelayBuffer();
+    // A new generation replays from this snapshot, so stale frames just drop.
+    if (generationChanged) return true;
+    if (overran) return false;
+    for (const frame of pending) {
+      try {
+        if (frame.event === "board" && typeof frame.id === "string" && cursor !== null) {
+          try {
+            if (BigInt(frame.id) <= BigInt(cursor)) continue;
+          } catch (_) { /* Non-numeric ids fall through; deliver drops them. */ }
+        }
+        if (deliver(frame)) break; // A buffered resync supersedes the rest.
+      } catch (_) { /* Same as onRelay: a malformed buffered frame is dropped. */ }
+    }
+    return true;
   }
 
   // A valid status heartbeat proves the leader's event loop is alive, whatever
@@ -204,8 +250,8 @@ export function createBoardStream(context) {
     mode = "idle";
     elect?.abort(); elect = null;
     lockEnd?.(); lockEnd = null;
-    try { channel?.close(); } catch (_) { /* An idle tab holds no channel. */ }
-    channel = null; channelName = "";
+    // The relay channel stays open: frames arriving while idle buffer for the
+    // next snapshot instead of being lost across resyncs and rejoins.
     lockNames = null; electionCursor = null;
     lastHeartbeat = 0; stealRequested = false; leaderHealthy = false;
   }
@@ -282,9 +328,15 @@ export function createBoardStream(context) {
     // Follow first: frames from the current leader apply while this tab waits
     // its turn on the lock. The browser grants the lock to one tab at a time.
     // Sharing names need the token digest, so the election follows async; the
-    // tab claims Live only on a leader heartbeat, never eagerly here.
+    // tab claims Live only on a leader heartbeat, never eagerly here. Connecting
+    // reports synchronously: the open channel can deliver a heartbeat first.
     mode = "following";
     electionCursor = cursor;
+    // Drain synchronously: once following, live frames deliver directly, and a
+    // later drain could apply buffered frames underneath a newer watermark.
+    if (!drainRelayBuffer(cursor)) { void runResync(); return; }
+    if (mode !== "following") return; // A buffered resync stopped the stream.
+    setConnection("Connecting…", "");
     const setupGeneration = state.streamGeneration;
     void (async () => {
       let names;
@@ -295,15 +347,28 @@ export function createBoardStream(context) {
       try {
         lockNames = names;
         channelFor(names);
-        setConnection("Connecting…", "");
         lastHeartbeat = Date.now();
         startFreshnessTimer();
         requestLock(names, false);
       } catch (_) {
         // Sharing facilities that exist but throw leave the tab on its own stream.
         clearInterval(freshnessTimer); freshnessTimer = null;
+        resetRelayBuffer();
         mode = "solo"; elect = null; runFetch(cursor, null);
       }
+    })();
+  }
+
+  // Open the relay channel at setup, before the first snapshot read, so no
+  // relayed frame is ever missed for lack of a listener. A later generation
+  // change moves the listener through channelFor at election time.
+  if (shareable) {
+    void (async () => {
+      let names;
+      try {
+        names = await streamNames();
+      } catch (_) { names = { lock: LOCK_NAME, channel: CHANNEL_NAME }; }
+      try { channelFor(names); } catch (_) { /* startStream falls back to solo. */ }
     })();
   }
 
