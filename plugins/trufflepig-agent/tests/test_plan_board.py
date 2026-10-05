@@ -263,8 +263,10 @@ with Path(os.environ["MUSE_CAPTURE"]).open("a") as handle:
         spec = importlib.util.spec_from_file_location("board_install_agent", PLUGIN / "scripts/install_agent.py")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
+        canned = subprocess.CompletedProcess(args=[], returncode=0, stdout="/system-runtime\n", stderr="")
         with patch.dict(os.environ, {"HOME": "/sandbox/home"}, clear=True), \
-                patch.object(module.pwd, "getpwuid", return_value=SimpleNamespace(pw_dir="/passwd/home")):
+                patch.object(module.pwd, "getpwuid", return_value=SimpleNamespace(pw_dir="/passwd/home")), \
+                patch.object(module.subprocess, "run", return_value=canned):
             self.assertIn('Environment="TRUFFLEPIG_BOARD_DB=/passwd/home/.local/share/trufflepig/board.sqlite3"',
                           module.service_text("/bin/trufflepig", None))
             os.environ["XDG_DATA_HOME"] = "relative/data"

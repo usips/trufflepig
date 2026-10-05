@@ -126,6 +126,18 @@ fn system_routes_gates_internal_and_local_verbs() {
 }
 
 #[test]
+fn system_dir_prints_the_resolved_runtime_path() {
+    let args = ["system".to_owned(), "dir".to_owned()];
+    let options = parse(&args).unwrap();
+    let context = crate::diagnostics::RequestContext::new(None, None);
+    let output = system_command(&options, &context).unwrap();
+    assert_eq!(
+        output,
+        format!("{}\n", crate::system::dir().unwrap().display())
+    );
+}
+
+#[test]
 fn unknown_commands_are_rejected_before_root_validation() {
     let root = tempfile::tempdir().unwrap();
     let other = tempfile::tempdir().unwrap();

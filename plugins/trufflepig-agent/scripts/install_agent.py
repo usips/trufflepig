@@ -54,22 +54,17 @@ def board_database_path() -> Path:
     return (base / "trufflepig/board.sqlite3").absolute()
 
 
-def login_session_runtime_dir() -> Path | None:
-    """Runtime directory of the user's login session when one is active."""
-    candidate = Path(f"/run/user/{os.getuid()}")
-    return candidate if candidate.is_dir() else None
-
-
-def system_runtime_path() -> Path:
-    override = os.environ.get("TRUFFLEPIG_SYSTEM_DIR")
-    if override is not None:
-        if not override:
-            raise ValueError("TRUFFLEPIG_SYSTEM_DIR must not be empty")
-        return Path(override).absolute()
-    base = os.environ.get("XDG_RUNTIME_DIR") or login_session_runtime_dir() \
-        or os.environ.get("XDG_CACHE_HOME")
-    directory = Path(base) if base else Path.home() / ".cache"
-    return (directory / "trufflepig/system").absolute()
+def system_runtime_path(binary: str) -> Path:
+    """Resolve the router runtime dir through the binary, its single owner."""
+    try:
+        result = subprocess.run([binary, "system", "dir"], stdin=subprocess.DEVNULL,
+                                capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise ValueError(f"{binary} cannot resolve the system runtime dir: {error}") from error
+    lines = result.stdout.splitlines()
+    if result.returncode or len(lines) != 1 or not Path(lines[0]).is_absolute():
+        raise ValueError(f"{binary} system dir failed: {result.stderr.strip() or result.stdout.strip()}")
+    return Path(lines[0])
 
 
 def render_service(unit_name: str, binary: str, spool: Path | None = None) -> str:
@@ -78,7 +73,7 @@ def render_service(unit_name: str, binary: str, spool: Path | None = None) -> st
     text = (PLUGIN / "systemd" / unit_name).read_text()
     text = text.replace("@TRUFFLEPIG@", quote(binary))
     environment = [("TRUFFLEPIG_BOARD_DB", board_database_path()),
-                   ("TRUFFLEPIG_SYSTEM_DIR", system_runtime_path())]
+                   ("TRUFFLEPIG_SYSTEM_DIR", system_runtime_path(binary))]
     if spool is not None:
         environment.append(("TRUFFLEPIG_SPOOL_DIR", spool))
     lines = "".join("Environment=" + quote(f"{name}={value}") + "\n" for name, value in environment)
@@ -234,7 +229,7 @@ def main() -> int:
         binary = str(Path(binary).absolute())
     if args.systemd or args.board:
         config_home = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
-        validate_router_database(board_database_path(), system_runtime_path(), config_home)
+        validate_router_database(board_database_path(), system_runtime_path(binary), config_home)
         require_board_api(binary)
     unit_text = service_text(binary, spool) if args.systemd else None
     board_unit_text = render_service("trufflepig-board.service", binary) if args.board else None
@@ -300,7 +295,7 @@ def main() -> int:
         if not args.systemd and router_unit.exists():
             # The board shares the router's database; both must run the same binary.
             subprocess.run(["systemctl", "--user", "restart", "trufflepig-system.service"], check=True)
-        require_current_router(system_runtime_path())
+        require_current_router(system_runtime_path(binary))
         subprocess.run(["systemctl", "--user", "enable", "--now", "trufflepig-board.service"], check=True)
         print(f"systemd board service: {unit_directory / 'trufflepig-board.service'}")
         print("board bootstrap URL: run `trufflepig board web`")

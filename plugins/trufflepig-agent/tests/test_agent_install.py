@@ -74,7 +74,10 @@ class AgentInstallTests(unittest.TestCase):
         sys.path.insert(0, str(PLUGIN / "scripts"))
         self.addCleanup(sys.path.remove, str(PLUGIN / "scripts"))
         spec.loader.exec_module(module)
-        text = module.service_text('/home/a path/100%/trufflepig', Path('/home/a path/spool'))
+        from unittest.mock import patch
+        canned = subprocess.CompletedProcess(args=[], returncode=0, stdout="/system-runtime\n", stderr="")
+        with patch.object(module.subprocess, "run", return_value=canned):
+            text = module.service_text('/home/a path/100%/trufflepig', Path('/home/a path/spool'))
         self.assertIn('ExecStart="/home/a path/100%%/trufflepig" system-serve', text)
         self.assertIn('Environment="TRUFFLEPIG_SPOOL_DIR=/home/a path/spool"', text)
         self.assertIn('KillMode=control-group', text)
@@ -86,9 +89,12 @@ class AgentInstallTests(unittest.TestCase):
         self.addCleanup(sys.path.remove, str(PLUGIN / "scripts"))
         spec.loader.exec_module(module)
         from unittest.mock import patch
+        canned = subprocess.CompletedProcess(args=[], returncode=0,
+                                             stdout=f"{self.root}/runtime with spaces/100%\n", stderr="")
         with patch.dict(os.environ, {"HOME": str(self.root),
                                      "TRUFFLEPIG_BOARD_DB": str(self.root / "data with spaces/100%/board.sqlite3"),
-                                     "TRUFFLEPIG_SYSTEM_DIR": str(self.root / "runtime with spaces/100%")}, clear=True):
+                                     "TRUFFLEPIG_SYSTEM_DIR": str(self.root / "runtime with spaces/100%")}, clear=True), \
+                patch.object(module.subprocess, "run", return_value=canned):
             board = module.render_service("trufflepig-board.service", "/bin with spaces/100%/trufflepig")
             router = module.service_text("/bin with spaces/100%/trufflepig", self.root / "spool")
         self.assertIn('ExecStart="/bin with spaces/100%%/trufflepig" board-serve --listen 127.0.0.1:0', board)
@@ -105,59 +111,21 @@ class AgentInstallTests(unittest.TestCase):
         self.assertNotIn("TRUFFLEPIG_SPOOL_DIR", board)
         self.assertFalse((self.root / "runtime with spaces").exists(), "unit generation must not create a token")
 
-    def test_board_runtime_uses_system_directory_precedence(self):
-        spec = importlib.util.spec_from_file_location("install_board_runtime", PLUGIN / "scripts/install_agent.py")
+    def test_rendered_unit_pins_binary_resolved_runtime_dir(self):
+        spec = importlib.util.spec_from_file_location("install_system_dir_threading", PLUGIN / "scripts/install_agent.py")
         module = importlib.util.module_from_spec(spec)
         sys.path.insert(0, str(PLUGIN / "scripts"))
         self.addCleanup(sys.path.remove, str(PLUGIN / "scripts"))
         spec.loader.exec_module(module)
         from unittest.mock import patch
-        cases = [
-            ({"TRUFFLEPIG_SYSTEM_DIR": "/override", "XDG_RUNTIME_DIR": "/runtime"}, Path("/override")),
-            ({"XDG_RUNTIME_DIR": "/runtime", "XDG_CACHE_HOME": "/cache"}, Path("/runtime/trufflepig/system")),
-            ({"XDG_CACHE_HOME": "/cache"}, Path("/cache/trufflepig/system")),
-            ({}, self.root / ".cache/trufflepig/system"),
-        ]
-        with patch.object(module, "login_session_runtime_dir", return_value=None):
-            for environment, expected in cases:
-                with self.subTest(environment=environment), patch.dict(os.environ, {"HOME": str(self.root), **environment}, clear=True):
-                    self.assertEqual(module.system_runtime_path(), expected)
-
-    def test_router_system_dir_matches_login_shell_resolution(self):
-        spec = importlib.util.spec_from_file_location("install_router_dir", PLUGIN / "scripts/install_agent.py")
-        module = importlib.util.module_from_spec(spec)
-        sys.path.insert(0, str(PLUGIN / "scripts"))
-        self.addCleanup(sys.path.remove, str(PLUGIN / "scripts"))
-        spec.loader.exec_module(module)
-        from unittest.mock import patch
-        cases = [
-            # XDG_RUNTIME_DIR wins over an active login session and the cache chain.
-            ({"XDG_RUNTIME_DIR": "/runtime"}, Path("/run/user/1000"), Path("/runtime/trufflepig/system")),
-            # Without XDG_RUNTIME_DIR (su -, cron) an active login session pins /run/user/<uid>.
-            ({}, Path("/run/user/1000"), Path("/run/user/1000/trufflepig/system")),
-            # Empty XDG_RUNTIME_DIR behaves as unset, like the router's resolution.
-            ({"XDG_RUNTIME_DIR": ""}, Path("/run/user/1000"), Path("/run/user/1000/trufflepig/system")),
-            ({"XDG_RUNTIME_DIR": ""}, None, self.root / ".cache/trufflepig/system"),
-            # No runtime dir and no login session falls back to the cache chain.
-            ({}, None, self.root / ".cache/trufflepig/system"),
-        ]
-        for environment, login_session, expected in cases:
-            with self.subTest(environment=environment, login_session=login_session), \
-                    patch.dict(os.environ, {"HOME": str(self.root), **environment}, clear=True), \
-                    patch.object(module, "login_session_runtime_dir", return_value=login_session):
-                self.assertEqual(module.system_runtime_path(), expected)
-                text = module.service_text("/bin/trufflepig", None)
-                self.assertIn(f'Environment="TRUFFLEPIG_SYSTEM_DIR={expected}"', text)
-
-    def test_login_session_runtime_dir_requires_an_existing_directory(self):
-        spec = importlib.util.spec_from_file_location("install_login_session", PLUGIN / "scripts/install_agent.py")
-        module = importlib.util.module_from_spec(spec)
-        sys.path.insert(0, str(PLUGIN / "scripts"))
-        self.addCleanup(sys.path.remove, str(PLUGIN / "scripts"))
-        spec.loader.exec_module(module)
-        from unittest.mock import patch
-        with patch.object(module.os, "getuid", return_value=99999):
-            self.assertIsNone(module.login_session_runtime_dir())
+        canned = Path("/canned/trufflepig/system")
+        completed = subprocess.CompletedProcess(args=["/bin/trufflepig", "system", "dir"],
+                                                returncode=0, stdout=f"{canned}\n", stderr="")
+        with patch.object(module.subprocess, "run", return_value=completed) as run:
+            text = module.service_text("/bin/trufflepig", None)
+        run.assert_called_once_with(["/bin/trufflepig", "system", "dir"], stdin=subprocess.DEVNULL,
+                                    capture_output=True, text=True, timeout=5)
+        self.assertIn(f'Environment="TRUFFLEPIG_SYSTEM_DIR={canned}"', text)
 
     def test_board_install_selector_is_explicit_in_help(self):
         result = self.install("--help")
@@ -179,6 +147,11 @@ if Path(sys.argv[0]).name == "trufflepig" and sys.argv[1:] == ["--board-api-vers
     sys.stdout.write(os.environ.get("PROBE_STDOUT", "4\\n"))
     sys.stderr.write(os.environ.get("PROBE_STDERR", ""))
     sys.exit(int(os.environ.get("PROBE_STATUS", "0")))
+if Path(sys.argv[0]).name == "trufflepig" and sys.argv[1:] == ["system", "dir"]:
+    override = os.environ.get("TRUFFLEPIG_SYSTEM_DIR")
+    fallback = os.path.join(os.environ.get("HOME", "/nonexistent"), ".cache/trufflepig/system")
+    sys.stdout.write((override or fallback) + "\\n")
+    sys.exit(0)
 with Path(os.environ["SERVICE_CAPTURE"]).open("a") as handle:
     handle.write(json.dumps([Path(sys.argv[0]).name, *sys.argv[1:]]) + "\\n")
 ''')
