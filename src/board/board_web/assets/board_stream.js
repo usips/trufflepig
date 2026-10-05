@@ -83,6 +83,7 @@ export function createBoardStream(context) {
     const generation = ++state.streamGeneration;
     void (async () => {
       let reader;
+      const sent = typeof authToken === "function" ? authToken() : undefined;
       try {
         const response = await privateFetch(`/api/v1/events?after=${encodeURIComponent(cursor)}`, {
           headers: { "Accept": "text/event-stream", "Last-Event-ID": cursor }, signal: controller.signal,
@@ -91,7 +92,7 @@ export function createBoardStream(context) {
         if (response.status === 401 || response.status === 403) {
           stopStream();
           setConnection(BOARD_AUTH_EXPIRED_MESSAGE, "expired");
-          onAuthExpired?.();
+          onAuthExpired?.(sent);
           return;
         }
         if (!response.ok || !response.body

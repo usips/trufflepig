@@ -1,25 +1,28 @@
-import { createBoardReader } from "/board_reader.js";
-import { createBoardStream, BOARD_AUTH_EXPIRED_MESSAGE } from "/board_stream.js";
-import { createBoardDom, decodeBoardFragment } from "/board_dom.js";
-import { createBoardViews } from "/board_views.js";
-import { resolveBootstrapToken, resolveAdoptionToken } from "/board_web_token.js";
-import { completeIngest, createIngestReceiptCache, resolveIngestEvent } from "/board_ingest.js";
-import { createDraftStores } from "/board_lru.js";
-import { seenKey, readSeenMark, writeSeenMark, resyncSeenMark } from "/board_seen.js";
+import { createBoardReader } from "./board_reader.js";
+import { createBoardStream, BOARD_AUTH_EXPIRED_MESSAGE } from "./board_stream.js";
+import { createBoardDom, decodeBoardFragment } from "./board_dom.js";
+import { createBoardViews } from "./board_views.js";
+import { offeredTokenFromHash, resolveBootstrapToken, resolveAdoptionToken } from "./board_web_token.js";
+import { completeIngest, createIngestReceiptCache, resolveIngestEvent } from "./board_ingest.js";
+import { createDraftStores } from "./board_lru.js";
+import { seenKey, readSeenMark, writeSeenMark, resyncSeenMark } from "./board_seen.js";
 
 const TOKEN_KEY = "trufflepig-board-token";
+const TOKEN_MISMATCH_NOTICE = "This link offered a different board token; the tab kept its existing session.";
 let stored = "";
 try { stored = sessionStorage.getItem(TOKEN_KEY) || ""; } catch (_) { /* In-memory auth still works. */ }
 const bootstrap = resolveBootstrapToken({
   locationHash: location.hash, locationHref: location.href, storedToken: stored,
 });
 let token = bootstrap.token;
+// A mismatched offer stays in memory only: the stored session wins at load,
+// but authorization expiry adopts the pending token without a second navigation.
+let pendingToken = bootstrap.pending || "";
 if (bootstrap.replaceUrl !== null) {
   history.replaceState(history.state, "", bootstrap.replaceUrl);
 }
 if (bootstrap.mismatch) {
-  queueMicrotask(() => notice(
-    "This link offered a different board token; the tab kept its existing session.", "error"));
+  queueMicrotask(() => notice(TOKEN_MISMATCH_NOTICE, "error"));
 } else if (bootstrap.persist) {
   try { sessionStorage.setItem(TOKEN_KEY, token); } catch (_) { /* In-memory auth still works. */ }
 }
@@ -75,15 +78,27 @@ const {
 const { parseSse, stopStream, startStream } = createBoardStream({
   state, privateFetch, setConnection, loadRoute, scheduleRefresh, parseBoardJson, addTickerEvent,
   noteSeen, onIngest,
-  authToken: () => token, onAuthExpired: () => enterExpired(),
+  authToken: () => token, onAuthExpired: used => enterExpired(used),
 });
 
 // Authorization expiry is one state wherever the 401/403 lands: the tab
 // releases the lock, drops its token, and never retries until a fresh token
-// is adopted. Idempotent across the stream and JSON fetch paths.
+// is adopted. A 401 for a superseded token is stale and ignored, so parallel
+// requests cannot expire a session adopted a tick earlier; a pending
+// mismatched offer preempts expiry and reloads under the fresh token.
+// Idempotent across the stream and JSON fetch paths.
 let expired = false;
-function enterExpired() {
+function enterExpired(failedToken) {
   if (expired) return;
+  if (failedToken !== undefined && failedToken !== token) return;
+  if (pendingToken) {
+    token = pendingToken; pendingToken = "";
+    try { sessionStorage.setItem(TOKEN_KEY, token); } catch (_) { /* In-memory auth still works. */ }
+    notice("");
+    setConnection("Connecting…", "");
+    void loadRoute(true);
+    return;
+  }
   expired = true;
   token = "";
   try { sessionStorage.removeItem(TOKEN_KEY); } catch (_) { /* In-memory auth still works. */ }
@@ -170,6 +185,7 @@ async function privateFetch(url, options = {}) {
   return fetch(url, { ...options, headers, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" });
 }
 async function jsonFetch(url, options = {}) {
+  const sent = token;
   const response = await privateFetch(url, options);
   let body;
   try { body = parseBoardJson(await response.text()); }
@@ -179,7 +195,7 @@ async function jsonFetch(url, options = {}) {
     const failure = new Error(detail.message || `Board request failed (${response.status}).`);
     failure.code = detail.code || "";
     failure.status = response.status;
-    if (response.status === 401 || response.status === 403) enterExpired();
+    if (response.status === 401 || response.status === 403) enterExpired(sent);
     throw failure;
   }
   return body;
@@ -393,12 +409,21 @@ document.addEventListener("click", event => {
   state.route = routeFromLocation(); notice(""); void loadRoute(true);
 });
 window.addEventListener("hashchange", () => {
-  // Fresh-token offered by navigation: only an expired tab adopts it.
+  // Fresh-token offered by navigation: only an expired tab adopts it. A live
+  // tab still strips the token from the URL at once, so it never lingers in
+  // the address bar or history, and holds it pending for a later expiry.
   const adoption = resolveAdoptionToken({ locationHash: location.hash, expired });
   if (adoption !== null) {
     token = adoption; expired = false;
     try { sessionStorage.setItem(TOKEN_KEY, token); } catch (_) { /* In-memory auth still works. */ }
     history.replaceState(history.state, "", location.pathname + location.search);
+    state.navigation++; state.route = routeFromLocation(); void loadRoute(true); return;
+  }
+  const stray = expired ? null : offeredTokenFromHash(location.hash);
+  if (stray !== null) {
+    pendingToken = stray;
+    history.replaceState(history.state, "", location.pathname + location.search);
+    notice(TOKEN_MISMATCH_NOTICE, "error");
     state.navigation++; state.route = routeFromLocation(); void loadRoute(true); return;
   }
   state.navigation++; state.route = routeFromLocation(); void loadRoute(true);

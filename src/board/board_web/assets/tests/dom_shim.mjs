@@ -1,6 +1,6 @@
 // Browser globals for board asset tests under node:test: storage, strict Web
-// Locks, same-thread broadcast, page visibility, and a DOM tree with selectors
-// and focus gating.
+// Locks, same-thread broadcast, page visibility, and a DOM tree with selectors,
+// focus gating, and a seedable body with id lookup.
 function createStorage() {
   const values = new Map();
   return {
@@ -128,9 +128,19 @@ class FakeElement {
 
 const documentListeners = new Map();
 let root = null;
+let body = null;
+function findById(node, id) {
+  for (const child of node.children) {
+    if (child.id === id) return child;
+    const found = findById(child, id);
+    if (found) return found;
+  }
+  return null;
+}
 export function installDomShim() {
   if (root) return;
   root = new FakeElement("html");
+  body = new FakeElement("body"); root.append(body);
   // Node's navigator binding is getter-only; redefine it with locks.
   Object.defineProperty(globalThis, "navigator", {
     value: { locks: createLocks() }, writable: true, configurable: true,
@@ -140,7 +150,9 @@ export function installDomShim() {
   globalThis.document = {
     activeElement: null,
     visibilityState: "visible",
+    body,
     createElement: tag => new FakeElement(tag),
+    getElementById: id => findById(root, String(id)),
     querySelector: selector => root.querySelector(selector),
     querySelectorAll: selector => root.querySelectorAll(selector),
     addEventListener(type, listener) {
@@ -157,5 +169,6 @@ export function installDomShim() {
 export function resetDomShim() {
   sessionStorage.clear(); localStorage.clear();
   lockQueues.clear(); channelPeers.clear(); documentListeners.clear();
-  document.activeElement = null; document.visibilityState = "visible"; root.replaceChildren();
+  document.activeElement = null; document.visibilityState = "visible";
+  root.replaceChildren(); root.append(body); body.replaceChildren();
 }

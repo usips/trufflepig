@@ -1,9 +1,11 @@
 // Pure launch-URL decision for the board tab bootstrap: resolves the session
-// token, whether to persist or flag it, and the history rewrite, if any.
-// A bootstrap token is accepted only from a non-route hash that is exactly
-// `token=<64 lowercase hex>` — never from a query parameter inside a #/
-// route. A differing stored session always wins; the stray token is still
-// stripped from the URL and flagged instead of silently replacing it.
+// token, whether to persist or flag it, the mismatched offer to hold in
+// memory, and the history rewrite, if any. A bootstrap token is accepted
+// only from a non-route hash that is exactly `token=<64 lowercase hex>` —
+// never from a query parameter inside a #/ route. A differing stored
+// session always wins at load; the stray token is still stripped from the
+// URL and flagged instead of silently replacing it, and stays pending so
+// authorization expiry can adopt it without a second navigation.
 export function offeredTokenFromHash(locationHash) {
   return locationHash.startsWith("#/")
     ? null
@@ -29,5 +31,7 @@ export function resolveBootstrapToken({ locationHash, locationHref, storedToken 
     if (storedToken) mismatch = true;
     else { token = offered; persist = true; }
   }
-  return { token, persist, mismatch, replaceUrl: offered || launch.href !== locationHref ? replacement : null };
+  const pending = mismatch ? offered : null;
+  return { token, persist, mismatch, pending,
+    replaceUrl: offered || launch.href !== locationHref ? replacement : null };
 }

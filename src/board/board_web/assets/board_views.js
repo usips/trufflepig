@@ -1,5 +1,5 @@
-import { createBoardDetails } from "/board_pages.js";
-import { INGEST_TIMEOUT_MS, INGEST_UNKNOWN_MESSAGE, completeIngest, resolveIngestEvent } from "/board_ingest.js";
+import { createBoardDetails } from "./board_pages.js";
+import { INGEST_TIMEOUT_MS, INGEST_UNKNOWN_MESSAGE, completeIngest, resolveIngestEvent } from "./board_ingest.js";
 
 export function createBoardViews(context) {
   const {

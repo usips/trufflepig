@@ -18,8 +18,10 @@ bootstrap URL `http://AUTHORITY/#token=TOKEN` only when stdout is a terminal, an
 origin plus advice to run `trufflepig board web`, which prints the fresh URL. The fragment stays
 outside the HTTP request; JavaScript removes it with `history.replaceState`, retaining it only in
 tab `sessionStorage` and memory, and accepts a bootstrap token only from a non-route hash exactly
-`token=<64 lowercase hex>` — a differing stored session is kept and flagged, never replaced,
-except that a tab showing authorization-expired adopts a fresh `#token=` offered by navigation. CLI
+`token=<64 lowercase hex>` — a differing stored session is kept and flagged at load while the stray
+offer is held in memory; the pending token is adopted without a second navigation when the stored
+session expires, a live tab strips a navigated `#token=` at once without adopting it, and a tab
+showing authorization-expired adopts a fresh `#token=` offered by navigation. CLI
 bootstrap links `/?ref=REF#token=TOKEN` (REF `P7`, `P7@N`, or `E485`) convert to a hash route and
 drop the reference query/token. Every private JSON, render, ingest, and event-stream request
 supplies `X-Board-Token` (browser streams use `fetch` streaming to send it). The server atomically

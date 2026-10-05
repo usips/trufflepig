@@ -1,7 +1,7 @@
-import { createBoardEntries } from "/board_entries.js";
-import { createBoardFeedback } from "/feedback_triage.js";
-import { createPlanPage } from "/plan_page.js";
-import { createProposalPage } from "/proposal_page.js";
+import { createBoardEntries } from "./board_entries.js";
+import { createBoardFeedback } from "./feedback_triage.js";
+import { createPlanPage } from "./plan_page.js";
+import { createProposalPage } from "./proposal_page.js";
 
 export function createBoardDetails(context) {
   const {

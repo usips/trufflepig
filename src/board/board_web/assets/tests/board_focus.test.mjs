@@ -1,11 +1,8 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { register } from "node:module";
 import { installDomShim, resetDomShim } from "./dom_shim.mjs";
 import { createBoardDom } from "../board_dom.js";
-
-register("./board_asset_import_hook.mjs", import.meta.url);
-const { createBoardViews } = await import("../board_views.js");
+import { createBoardViews } from "../board_views.js";
 
 installDomShim();
 beforeEach(() => resetDomShim());
