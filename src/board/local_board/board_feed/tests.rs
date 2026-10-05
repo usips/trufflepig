@@ -1,4 +1,6 @@
 mod event_snapshot_tests;
+mod inbox_planless_tests;
+mod inbox_reminder_cap_tests;
 mod inbox_scope_tests;
 mod inbox_watermark_tests;
 

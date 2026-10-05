@@ -6,10 +6,7 @@ use super::{
     sequence_poller::{POLL_INTERVAL, WakeResult},
     stream_socket,
 };
-use crate::board::{
-    board_ids::EventSeq,
-    board_protocol::BoardErrorCode,
-};
+use crate::board::{board_ids::EventSeq, board_protocol::BoardErrorCode};
 use std::{
     io,
     net::TcpStream,
@@ -89,10 +86,7 @@ impl EventStreams {
                     )?;
                     return stream_socket::send(&mut socket, &frame, SEND_DEADLINE);
                 }
-                Drain::Ahead {
-                    latest,
-                    generation,
-                } => {
+                Drain::Ahead { latest, generation } => {
                     let waited = *ahead_since.get_or_insert_with(Instant::now);
                     let remaining = AHEAD_CURSOR_GRACE.saturating_sub(waited.elapsed());
                     if remaining.is_zero() {
@@ -118,10 +112,7 @@ impl EventStreams {
                         )?;
                         return stream_socket::send(&mut socket, &frame, SEND_DEADLINE);
                     }
-                    match self
-                        .ring
-                        .wait(generation, remaining.min(POLL_INTERVAL))
-                    {
+                    match self.ring.wait(generation, remaining.min(POLL_INTERVAL)) {
                         WakeResult::Unavailable | WakeResult::Stopped => return Ok(()),
                         WakeResult::Changed | WakeResult::Timeout => {}
                     }

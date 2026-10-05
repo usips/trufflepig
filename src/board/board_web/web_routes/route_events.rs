@@ -1,10 +1,10 @@
 //! Event route: stream subscriptions and cursor query parsing.
-use super::invalid;
-use super::route_replies::{send_board_error, send_error};
 use super::super::{
     event_stream::{EventStreams, StreamPermit, StreamRequest},
     http_wire::HttpRequest,
 };
+use super::invalid;
+use super::route_replies::{send_board_error, send_error};
 use crate::board::board_protocol::BoardError;
 use std::net::TcpStream;
 

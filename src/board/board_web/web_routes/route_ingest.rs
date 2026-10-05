@@ -1,10 +1,9 @@
 //! Ingest route: queue a relay flight and publish its receipt to streams.
-use super::route_replies::send_error;
 use super::super::{
-    BoardWebState,
-    http_wire,
+    BoardWebState, http_wire,
     web_ops::{relay_flight, relay_ingest},
 };
+use super::route_replies::send_error;
 use crate::board::board_protocol::{BOARD_API, BoardError, BoardErrorCode};
 use serde::Deserialize;
 use std::{net::TcpStream, sync::Arc, time::Instant};
@@ -33,7 +32,12 @@ pub(super) fn ingest_accepted(mut stream: TcpStream, state: &Arc<BoardWebState>)
             });
         if spawned.is_err() {
             state.ingest.finish();
-            send_error(&mut stream, 503, "board_unavailable", "ingest relay unavailable");
+            send_error(
+                &mut stream,
+                503,
+                "board_unavailable",
+                "ingest relay unavailable",
+            );
             return;
         }
     }
@@ -47,7 +51,10 @@ pub(super) fn ingest_accepted(mut stream: TcpStream, state: &Arc<BoardWebState>)
 /// Relay outcomes keep the board error envelope so subscribers render a
 /// terminal state whether the scan succeeded or failed; every receipt carries
 /// its flight ticket so tabs complete only on their own scan.
-fn ingest_receipt(result: Result<serde_json::Value, BoardError>, ticket: &str) -> serde_json::Value {
+fn ingest_receipt(
+    result: Result<serde_json::Value, BoardError>,
+    ticket: &str,
+) -> serde_json::Value {
     let mut receipt = match result {
         Ok(receipt) => receipt,
         Err(error) => serde_json::json!({

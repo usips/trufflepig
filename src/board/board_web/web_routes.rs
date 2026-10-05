@@ -6,11 +6,11 @@ mod route_replies;
 #[cfg(test)]
 mod tests;
 use super::{
-    PUBLIC_DOM, PUBLIC_ENTRIES, PUBLIC_INGEST, PUBLIC_LRU, PUBLIC_MAIN, PUBLIC_PAGES, PUBLIC_PLAN_PAGE,
-    PUBLIC_PROPOSAL_PAGE, PUBLIC_READER,
-    PUBLIC_SEEN, PUBLIC_SHELL, PUBLIC_STREAM, PUBLIC_STREAM_ELECTION, PUBLIC_STREAM_PARSE,
-    PUBLIC_STYLE, PUBLIC_TOKEN, PUBLIC_TRIAGE,
-    PUBLIC_VIEWS, BoardWebState,
+    BoardWebState, PUBLIC_CARDS, PUBLIC_DOM, PUBLIC_ENTRIES, PUBLIC_INGEST, PUBLIC_LRU,
+    PUBLIC_MAIN, PUBLIC_PAGES, PUBLIC_PLAN_PAGE, PUBLIC_PROPOSAL_PAGE, PUBLIC_READER,
+    PUBLIC_RENDER_LOOP, PUBLIC_ROUTING, PUBLIC_SEEN, PUBLIC_SHELL, PUBLIC_STREAM,
+    PUBLIC_STREAM_ELECTION, PUBLIC_STREAM_PARSE, PUBLIC_STYLE, PUBLIC_TOKEN, PUBLIC_TRIAGE,
+    PUBLIC_VIEWS,
     http_wire::{self, HttpError, HttpMethod, HttpRequest},
     web_guard::{ChallengeNonce, RouteAccess, WebGuard},
     web_ops::{self, WebRequest},
@@ -145,12 +145,15 @@ fn public_asset(path: &str) -> Option<(&str, &str)> {
         "/board_web_main.js" => PUBLIC_MAIN,
         "/board_dom.js" => PUBLIC_DOM,
         "/board_views.js" => PUBLIC_VIEWS,
-        "/board_pages.js" => PUBLIC_PAGES,
-        "/plan_page.js" => PUBLIC_PLAN_PAGE,
-        "/proposal_page.js" => PUBLIC_PROPOSAL_PAGE,
-        "/board_stream.js" => PUBLIC_STREAM,
-        "/stream_election.js" => PUBLIC_STREAM_ELECTION,
-        "/stream_parse.js" => PUBLIC_STREAM_PARSE,
+        "/board_cards.js" => PUBLIC_CARDS,
+        "/board_routing.js" => PUBLIC_ROUTING,
+        "/board_render_loop.js" => PUBLIC_RENDER_LOOP,
+        "/pages/board_pages.js" => PUBLIC_PAGES,
+        "/pages/plan_page.js" => PUBLIC_PLAN_PAGE,
+        "/pages/proposal_page.js" => PUBLIC_PROPOSAL_PAGE,
+        "/stream/board_stream.js" => PUBLIC_STREAM,
+        "/stream/stream_election.js" => PUBLIC_STREAM_ELECTION,
+        "/stream/stream_parse.js" => PUBLIC_STREAM_PARSE,
         "/feedback_triage.js" => PUBLIC_TRIAGE,
         "/board_reader.js" => PUBLIC_READER,
         "/board_entries.js" => PUBLIC_ENTRIES,
@@ -178,12 +181,9 @@ fn challenge_reply(
     guard: &WebGuard,
 ) -> Result<serde_json::Value, BoardError> {
     let challenge: ChallengeRequest = decode(request)?;
-    ApiRequest {
-        api: challenge.api,
-    }
-    .validate()?;
-    let nonce = ChallengeNonce::from_hex(&challenge.nonce)
-        .map_err(|error| invalid(error.to_string()))?;
+    ApiRequest { api: challenge.api }.validate()?;
+    let nonce =
+        ChallengeNonce::from_hex(&challenge.nonce).map_err(|error| invalid(error.to_string()))?;
     Ok(serde_json::json!({
         "api": BOARD_API,
         "proof": guard.challenge_proof(&nonce),

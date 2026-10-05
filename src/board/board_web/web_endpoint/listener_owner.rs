@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn owned_listen_row_is_accepted_and_foreign_uid_is_refused() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::board::board_test_support::scratch("web-listener-");
         let address: SocketAddr = "127.0.0.1:7341".parse().unwrap();
         // SAFETY: geteuid has no preconditions and cannot fail.
         let euid = unsafe { libc::geteuid() };
@@ -137,23 +137,20 @@ mod tests {
         require_owned_listener_at(&address, &table).unwrap();
         let foreign = write_table(&directory, &[row("0100007F:1CAD", "0A", euid + 1)]);
         let error = require_owned_listener_at(&address, &foreign).unwrap_err();
-        assert!(
-            error.to_string().contains("owned by uid"),
-            "{error}"
-        );
+        assert!(error.to_string().contains("owned by uid"), "{error}");
     }
 
     #[test]
     fn non_listen_states_and_other_addresses_do_not_count() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::board::board_test_support::scratch("web-listener-");
         let address: SocketAddr = "127.0.0.1:7341".parse().unwrap();
         // SAFETY: geteuid has no preconditions and cannot fail.
         let euid = unsafe { libc::geteuid() };
         let rows = [
-            row("0100007F:1CAD", "06", euid),  // same address, TIME_WAIT
-            row("0100007F:1CAE", "0A", euid),  // different port, LISTEN
-            row("0200007F:1CAD", "0A", euid),  // 127.0.0.2, LISTEN
-            row("00000000:1CAD", "0A", euid),  // 0.0.0.0 wildcard, LISTEN
+            row("0100007F:1CAD", "06", euid), // same address, TIME_WAIT
+            row("0100007F:1CAE", "0A", euid), // different port, LISTEN
+            row("0200007F:1CAD", "0A", euid), // 127.0.0.2, LISTEN
+            row("00000000:1CAD", "0A", euid), // 0.0.0.0 wildcard, LISTEN
         ];
         let table = write_table(&directory, &rows);
         let error = require_owned_listener_at(&address, &table).unwrap_err();
@@ -162,7 +159,7 @@ mod tests {
 
     #[test]
     fn ipv6_loopback_rows_parse_from_tcp6_tables() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::board::board_test_support::scratch("web-listener-");
         let address: SocketAddr = "[::1]:7341".parse().unwrap();
         // SAFETY: geteuid has no preconditions and cannot fail.
         let euid = unsafe { libc::geteuid() };

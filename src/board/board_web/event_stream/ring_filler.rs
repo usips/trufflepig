@@ -52,11 +52,7 @@ impl RingFiller {
                 None
             }
         };
-        Self {
-            stop,
-            wake,
-            thread,
-        }
+        Self { stop, wake, thread }
     }
 }
 
@@ -127,7 +123,8 @@ fn fill_once(reader: &FeedReader, ring: &EventRing) -> Result<FillProgress, Boar
     validate_batch(&batch, after)?;
     // Any watermark regression means a restored database; a burst beyond the
     // window reseeds as well. Both replace the ring with the newest page.
-    if batch.latest < observed || batch.latest.get().saturating_sub(after.get()) > REPLAY_LIMIT as u64
+    if batch.latest < observed
+        || batch.latest.get().saturating_sub(after.get()) > REPLAY_LIMIT as u64
     {
         // A restored database or a burst beyond the window reseeds the newest page.
         let from = EventSeq::new(batch.latest.get().saturating_sub(REPLAY_LIMIT as u64));
@@ -158,8 +155,9 @@ fn fill_once(reader: &FeedReader, ring: &EventRing) -> Result<FillProgress, Boar
 fn frames(events: Vec<EventRecord>) -> Result<Vec<RingFrame>, BoardError> {
     let mut frames = Vec::with_capacity(events.len());
     for event in events {
-        let bytes = event_frame("board", Some(event.seq), &event)
-            .map_err(|error| BoardError::new(BoardErrorCode::BoardUnavailable, error.to_string()))?;
+        let bytes = event_frame("board", Some(event.seq), &event).map_err(|error| {
+            BoardError::new(BoardErrorCode::BoardUnavailable, error.to_string())
+        })?;
         frames.push(RingFrame {
             seq: event.seq,
             plans: Vec::new(),

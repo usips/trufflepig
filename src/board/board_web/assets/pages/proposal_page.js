@@ -1,4 +1,4 @@
-import { createBoardFeedback } from "./feedback_triage.js";
+import { createBoardFeedback } from "../feedback_triage.js";
 import { createPlanPage } from "./plan_page.js";
 
 export function createProposalPage(context) {

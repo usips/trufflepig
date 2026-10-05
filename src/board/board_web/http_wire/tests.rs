@@ -1,7 +1,11 @@
 mod wire_deadlines;
 
 use super::*;
-use std::{io::Write, net::{Shutdown, TcpListener}, thread};
+use std::{
+    io::Write,
+    net::{Shutdown, TcpListener},
+    thread,
+};
 
 fn tcp_pair() -> (TcpStream, TcpStream) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -124,8 +128,7 @@ fn checks_total_header_limit_including_request_line() {
 
 #[test]
 fn bodies_between_the_old_and_new_caps_are_accepted() {
-    let mut request =
-        b"POST / HTTP/1.1\r\nHost: local\r\nContent-Length: 100000\r\n\r\n".to_vec();
+    let mut request = b"POST / HTTP/1.1\r\nHost: local\r\nContent-Length: 100000\r\n\r\n".to_vec();
     request.resize(request.len() + 100000, b'a');
     assert_eq!(parse(&request).unwrap().body.len(), 100000);
 }
@@ -181,7 +184,9 @@ fn carriage_return_split_across_reads_is_validated_with_its_successor() {
     client.write_all(b"X\nHost: local\r\n\r\n").unwrap();
     client.shutdown(Shutdown::Write).unwrap();
     assert_eq!(
-        read_request(&mut server, Instant::now()).unwrap_err().status,
+        read_request(&mut server, Instant::now())
+            .unwrap_err()
+            .status,
         400
     );
 }

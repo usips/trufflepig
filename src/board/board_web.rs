@@ -1,8 +1,8 @@
 //! Loopback board HTTP service, with bounded workers and independent query readers.
+mod board_web_secrets;
 pub(crate) mod event_stream;
 pub(crate) mod http_wire;
 pub(crate) mod plan_markup;
-mod board_web_secrets;
 mod reader_pool;
 mod serve_lock;
 mod signal_shutdown;
@@ -14,7 +14,6 @@ mod web_ops;
 mod web_routes;
 mod web_serve;
 
-pub use web_serve::serve;
 use super::{
     board_backend::BoardBackend,
     board_config::{BoardConfig, BoardConfigCache},
@@ -30,18 +29,22 @@ use std::{
     time::{Duration, Instant},
 };
 use web_guard::WebGuard;
+pub use web_serve::serve;
 
 const PUBLIC_SHELL: &str = include_str!("board_web/assets/index.html");
 const PUBLIC_MAIN: &str = include_str!("board_web/assets/board_web_main.js");
 const PUBLIC_STYLE: &str = include_str!("board_web/assets/board_web.css");
 const PUBLIC_DOM: &str = include_str!("board_web/assets/board_dom.js");
 const PUBLIC_VIEWS: &str = include_str!("board_web/assets/board_views.js");
-const PUBLIC_PAGES: &str = include_str!("board_web/assets/board_pages.js");
-const PUBLIC_PLAN_PAGE: &str = include_str!("board_web/assets/plan_page.js");
-const PUBLIC_PROPOSAL_PAGE: &str = include_str!("board_web/assets/proposal_page.js");
-const PUBLIC_STREAM: &str = include_str!("board_web/assets/board_stream.js");
-const PUBLIC_STREAM_ELECTION: &str = include_str!("board_web/assets/stream_election.js");
-const PUBLIC_STREAM_PARSE: &str = include_str!("board_web/assets/stream_parse.js");
+const PUBLIC_CARDS: &str = include_str!("board_web/assets/board_cards.js");
+const PUBLIC_ROUTING: &str = include_str!("board_web/assets/board_routing.js");
+const PUBLIC_RENDER_LOOP: &str = include_str!("board_web/assets/board_render_loop.js");
+const PUBLIC_PAGES: &str = include_str!("board_web/assets/pages/board_pages.js");
+const PUBLIC_PLAN_PAGE: &str = include_str!("board_web/assets/pages/plan_page.js");
+const PUBLIC_PROPOSAL_PAGE: &str = include_str!("board_web/assets/pages/proposal_page.js");
+const PUBLIC_STREAM: &str = include_str!("board_web/assets/stream/board_stream.js");
+const PUBLIC_STREAM_ELECTION: &str = include_str!("board_web/assets/stream/stream_election.js");
+const PUBLIC_STREAM_PARSE: &str = include_str!("board_web/assets/stream/stream_parse.js");
 const PUBLIC_TRIAGE: &str = include_str!("board_web/assets/feedback_triage.js");
 const PUBLIC_READER: &str = include_str!("board_web/assets/board_reader.js");
 const PUBLIC_ENTRIES: &str = include_str!("board_web/assets/board_entries.js");

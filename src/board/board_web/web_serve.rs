@@ -1,4 +1,6 @@
 //! Listener bind and the bounded connection-accept loop.
+use super::super::board_config::BoardConfigCache;
+use super::event_stream::SequencePoller;
 use super::{
     BoardWebState, WebStore, bootstrap_line, http_wire, open_stream_feed,
     serve_lock::{self, ServeLock},
@@ -7,8 +9,6 @@ use super::{
     web_guard::WebGuard,
     web_ops, web_routes,
 };
-use super::super::board_config::BoardConfigCache;
-use super::event_stream::SequencePoller;
 use crate::daemon::{PoolSize, RequestPool};
 use anyhow::{Context, Result};
 use std::{

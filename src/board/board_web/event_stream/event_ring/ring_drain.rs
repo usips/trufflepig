@@ -1,22 +1,29 @@
 //! Subscriber reads: one consistent drain decision per cursor.
-use super::{EventRing, covered_of};
 use super::super::sequence_poller::WakeResult;
+use super::{EventRing, covered_of};
 use crate::board::board_ids::{EventSeq, PlanId};
 use std::{sync::Arc, time::Duration};
 
 /// One drain decision for a subscriber cursor.
-pub(crate) enum Drain {
+pub(in crate::board::board_web::event_stream) enum Drain {
     Frames {
         frames: Vec<Arc<[u8]>>,
         cursor: EventSeq,
         generation: u64,
     },
     /// The cursor is above the observed watermark; the poller may still lag.
-    Ahead { latest: EventSeq, generation: u64 },
+    Ahead {
+        latest: EventSeq,
+        generation: u64,
+    },
     /// The cursor is older than the ring's oldest frame.
-    Gap { latest: EventSeq },
+    Gap {
+        latest: EventSeq,
+    },
     /// Plan relevance has not caught up with the ring yet.
-    PendingPlan { generation: u64 },
+    PendingPlan {
+        generation: u64,
+    },
     PlanFailed,
     Unavailable,
     Stopped,
@@ -25,7 +32,11 @@ pub(crate) enum Drain {
 impl EventRing {
     /// Reads one consistent drain decision; frame bytes are cloned under the
     /// lock so no socket write happens inside it.
-    pub(crate) fn drain(&self, cursor: EventSeq, plan: Option<PlanId>) -> Drain {
+    pub(in crate::board::board_web::event_stream) fn drain(
+        &self,
+        cursor: EventSeq,
+        plan: Option<PlanId>,
+    ) -> Drain {
         let state = self.lock();
         if state.stopped {
             return Drain::Stopped;
@@ -76,7 +87,11 @@ impl EventRing {
         }
     }
 
-    pub(crate) fn wait(&self, observed: u64, timeout: Duration) -> WakeResult {
+    pub(in crate::board::board_web::event_stream) fn wait(
+        &self,
+        observed: u64,
+        timeout: Duration,
+    ) -> WakeResult {
         let state = self.lock();
         let (state, _) = self
             .0
@@ -97,7 +112,7 @@ impl EventRing {
     }
 
     /// Waits out a feed outage: returns when the ring recovers or stops.
-    pub(crate) fn wait_recovery(&self, timeout: Duration) {
+    pub(in crate::board::board_web::event_stream) fn wait_recovery(&self, timeout: Duration) {
         let state = self.lock();
         let _ = self
             .0

@@ -1,9 +1,9 @@
 //! Loopback authority, browser-origin, and rotating local-token checks.
 //! Bootstrap URLs carry the secret only in the fragment; private requests use a header.
 
+mod challenge;
 #[cfg(test)]
 mod tests;
-mod challenge;
 mod token_file;
 
 use super::http_wire::{HttpError, HttpMethod, HttpRequest};
@@ -140,9 +140,7 @@ impl WebGuard {
                 return Err(HttpError::new(405, "public route requires GET").with_allow("GET"));
             }
             RouteAccess::Challenge if request.method != HttpMethod::Post => {
-                return Err(
-                    HttpError::new(405, "challenge route requires POST").with_allow("POST"),
-                );
+                return Err(HttpError::new(405, "challenge route requires POST").with_allow("POST"));
             }
             RouteAccess::Private
                 if !request

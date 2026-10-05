@@ -11,6 +11,9 @@ use std::time::Duration;
 mod legacy_search_fixture;
 mod search_migration;
 mod search_queries;
+mod search_results;
+mod search_snapshots;
+mod search_titles;
 mod search_transactions;
 
 fn owner() -> BoardActor {

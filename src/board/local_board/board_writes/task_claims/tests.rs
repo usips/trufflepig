@@ -1,8 +1,11 @@
 mod claim_activity_tests;
 mod claim_assignment_tests;
 mod claim_concurrency_tests;
+mod claim_delegation_authority_tests;
 mod claim_delegation_tests;
 mod claim_receipt_tests;
+mod claim_resume_entry_tests;
+mod claim_resume_race_tests;
 mod completed_task_tests;
 
 mod claim_resumption;

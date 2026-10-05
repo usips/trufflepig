@@ -49,15 +49,69 @@ fn attention_entry_query_drives_from_the_kind_index() {
 fn attention_mixes_kinds_across_states_with_exact_omitted_counts() {
     let (_directory, board) = database();
     seed_entry(&board.conn, 3, 3, 1, "question", 3, None, "open question");
-    seed_entry(&board.conn, 4, 4, 1, "question", 3, None, "answered question");
-    seed_entry(&board.conn, 5, 5, 1, "feedback", 4, None, "foreign open feedback");
-    seed_entry(&board.conn, 6, 6, 1, "feedback", 1, None, "own triaged feedback");
-    seed_entry(&board.conn, 7, 7, 1, "feedback", 1, None, "own closed feedback");
-    seed_entry(&board.conn, 8, 8, 1, "proposal", 3, None, "current proposal");
+    seed_entry(
+        &board.conn,
+        4,
+        4,
+        1,
+        "question",
+        3,
+        None,
+        "answered question",
+    );
+    seed_entry(
+        &board.conn,
+        5,
+        5,
+        1,
+        "feedback",
+        4,
+        None,
+        "foreign open feedback",
+    );
+    seed_entry(
+        &board.conn,
+        6,
+        6,
+        1,
+        "feedback",
+        1,
+        None,
+        "own triaged feedback",
+    );
+    seed_entry(
+        &board.conn,
+        7,
+        7,
+        1,
+        "feedback",
+        1,
+        None,
+        "own closed feedback",
+    );
+    seed_entry(
+        &board.conn,
+        8,
+        8,
+        1,
+        "proposal",
+        3,
+        None,
+        "current proposal",
+    );
     seed_entry(&board.conn, 9, 9, 1, "note", 1, None, "plain note");
     seed_entry(&board.conn, 10, 10, 1, "decision", 1, None, "decision");
     seed_entry(&board.conn, 11, 11, 1, "answer", 3, None, "answer");
-    seed_entry(&board.conn, 12, 12, 1, "question", 4, None, "foreign question");
+    seed_entry(
+        &board.conn,
+        12,
+        12,
+        1,
+        "question",
+        4,
+        None,
+        "foreign question",
+    );
     board
         .conn
         .execute_batch(

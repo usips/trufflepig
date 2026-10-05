@@ -37,7 +37,10 @@ fn block(signals: &[i32]) -> Result<()> {
     Ok(())
 }
 
-fn spawn_waiter(signals: &[i32], cleanup: impl FnOnce() + Send + 'static) -> Result<JoinHandle<()>> {
+fn spawn_waiter(
+    signals: &[i32],
+    cleanup: impl FnOnce() + Send + 'static,
+) -> Result<JoinHandle<()>> {
     let set = signal_set(signals)?;
     Ok(thread::spawn(move || {
         if wait_for_signal(&set) {
@@ -79,7 +82,7 @@ mod tests {
 
     #[test]
     fn blocked_termination_signal_reaches_the_waiter_and_runs_cleanup() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::board::board_test_support::scratch("web-signal-");
         let descriptor = directory.path().join("board-web.json");
         std::fs::write(&descriptor, "{}").unwrap();
         block(&[libc::SIGUSR1]).unwrap();

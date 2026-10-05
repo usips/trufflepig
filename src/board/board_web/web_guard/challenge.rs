@@ -151,7 +151,9 @@ mod tests {
         let token = BoardWebToken::read_at(&path).unwrap();
         assert_eq!(token.expose().len(), 64);
         let nonce = ChallengeNonce::from_hex(
-            &(0..32).map(|byte| format!("{byte:02x}")).collect::<String>(),
+            &(0..32)
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
         )
         .unwrap();
         let address: SocketAddr = "127.0.0.1:7341".parse().unwrap();

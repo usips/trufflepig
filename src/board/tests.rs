@@ -4,6 +4,8 @@ mod client_tests;
 
 mod cursor_acceptance;
 mod git_acceptance;
+mod manual_link_acceptance;
+mod outbox_acceptance;
 mod transport_acceptance;
 
 use super::board_actor::{BoardActor, HarnessLabel};

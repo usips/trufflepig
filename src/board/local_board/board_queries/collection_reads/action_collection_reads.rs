@@ -1,5 +1,7 @@
 //! Plan overview and actor-specific attention within the caller's read transaction.
+mod attention_predicates;
 
+pub(super) use attention_predicates::attention_predicate;
 use rusqlite::{Connection, params};
 
 use super::{COLLECTION_LIMIT, claim_ttl, count, sequence_window, validate_limit};
@@ -25,59 +27,6 @@ fn open_question(through: &str) -> String {
             "AND correction.seq<={through})"
         ),
         through = through
-    )
-}
-
-/// Attention predicate over `entries e JOIN actors a` (?1 user, ?2 host, ?3 harness,
-/// ?4 session, ?5 identity, ?6 all, ?7 repo_key, ?8 after seq, ?9 after entry, ?10 through).
-/// The kind prefix drives the scan from `entries_kind_state`; own unaddressed questions
-/// stay out of "Needs you" and proposal currency reads the head as of ?10.
-pub(super) fn attention_predicate() -> String {
-    let exact_author = "a.user=?1 AND a.host=?2 AND a.harness=?3 AND a.session=?4";
-    let head_at_through = concat!(
-        "(SELECT max(number) FROM revisions head_at WHERE head_at.plan_id=p.plan_id ",
-        "AND head_at.seq<=?10)"
-    );
-    let plan_authority = concat!(
-        "EXISTS(SELECT 1 FROM plans managed WHERE managed.id=e.plan_id AND managed.owner_user=?1 ",
-        "AND (?3='human' OR managed.steward=?3))"
-    );
-    let current_proposal = format!(
-        concat!(
-            "EXISTS(SELECT 1 FROM proposals p JOIN plans head ON head.id=p.plan_id WHERE p.entry_id=e.id ",
-            "AND p.state='open' AND p.base_revision={head_at_through} AND head.owner_user=?1 ",
-            "AND (?3='human' OR head.steward=?3))"
-        ),
-        head_at_through = head_at_through
-    );
-    let stale_proposal = format!(
-        concat!(
-            "EXISTS(SELECT 1 FROM proposals p WHERE p.entry_id=e.id ",
-            "AND p.state='open' AND p.base_revision<>{head_at_through})"
-        ),
-        head_at_through = head_at_through
-    );
-    let open_feedback = "e.kind='feedback' AND e.state IN ('open','triaged')";
-    let open_question = open_question("?10");
-    format!(
-        concat!(
-            "e.kind IN ('question','proposal','feedback') AND ((({exact_author}) ",
-            "AND (({open_feedback}) OR {stale_proposal})) ",
-            "OR (({current_proposal} OR (({open_feedback}) AND ({plan_authority}))) ",
-            "AND (e.to_whom IS NULL OR e.to_whom IN (?1,?3,?5))) ",
-            "OR ((({open_question} AND (NOT ({exact_author}) OR e.to_whom IN (?1,?3,?5))) OR (({open_feedback}) AND (e.plan_id IS NULL AND a.user=?1 AND ?3='human'))) ",
-            "AND (e.to_whom IS NULL OR e.to_whom IN (?1,?3,?5)) ",
-            "AND (?6 OR NOT EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id) ",
-            "OR e.to_whom IN (?1,?3,?5) OR e.repo_key=?7 ",
-            "OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id AND scope.repo_key=?7)))) ",
-            "AND (e.seq>?8 OR (e.seq=?8 AND e.id>?9)) AND e.seq<=?10"
-        ),
-        exact_author = exact_author,
-        open_feedback = open_feedback,
-        stale_proposal = stale_proposal,
-        current_proposal = current_proposal,
-        plan_authority = plan_authority,
-        open_question = open_question
     )
 }
 

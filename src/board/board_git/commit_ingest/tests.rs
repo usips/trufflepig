@@ -1,6 +1,8 @@
+mod coauthor_records;
 mod commit_records;
 mod repository_paths;
 mod scan_cache;
+mod scan_resilience;
 
 use super::*;
 use crate::board::board_ids::EventSeq;

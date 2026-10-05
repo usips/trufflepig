@@ -6,7 +6,7 @@ use std::{
 
 #[test]
 fn read_only_token_discovery_never_creates_or_repairs_a_file() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::board::board_test_support::scratch("web-token-");
     let path = directory.path().join("board-web.token");
     assert!(BoardWebToken::read_at(&path).is_err());
     assert!(!path.exists());
@@ -25,7 +25,7 @@ fn read_only_token_discovery_never_creates_or_repairs_a_file() {
 
 #[test]
 fn concurrent_rotations_each_publish_a_complete_token() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::board::board_test_support::scratch("web-token-");
     let path = directory.path().join("board-web.token");
     let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
     let threads: Vec<_> = (0..8)
@@ -49,7 +49,7 @@ fn concurrent_rotations_each_publish_a_complete_token() {
 
 #[test]
 fn incomplete_abandoned_candidate_does_not_poison_final_token() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::board::board_test_support::scratch("web-token-");
     let abandoned = directory.path().join(".board-web-token-abandoned.pending");
     fs::write(&abandoned, b"partial").unwrap();
     fs::set_permissions(&abandoned, fs::Permissions::from_mode(0o600)).unwrap();
@@ -65,7 +65,7 @@ fn incomplete_abandoned_candidate_does_not_poison_final_token() {
 
 #[test]
 fn token_is_private_random_and_stable_across_reads() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::board::board_test_support::scratch("web-token-");
     let path = directory.path().join("board-web.token");
     let token = BoardWebToken::rotate_at(&path).unwrap();
     let first = BoardWebToken::read_at(&path).unwrap();
@@ -84,7 +84,7 @@ fn token_is_private_random_and_stable_across_reads() {
 
 #[test]
 fn token_comparison_checks_every_position_and_length() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::board::board_test_support::scratch("web-token-");
     let token = BoardWebToken::rotate_at(&directory.path().join("token")).unwrap();
     assert!(token.matches(token.expose()));
     for index in 0..64 {
@@ -99,7 +99,7 @@ fn token_comparison_checks_every_position_and_length() {
 
 #[test]
 fn reads_reject_symlink_and_never_change_its_target() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::board::board_test_support::scratch("web-token-");
     let target = directory.path().join("target");
     let token = BoardWebToken::rotate_at(&target).unwrap();
     let link = directory.path().join("symlink.token");
@@ -110,7 +110,7 @@ fn reads_reject_symlink_and_never_change_its_target() {
 
 #[test]
 fn reads_reject_unsafe_modes_and_preserve_existing_bytes() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::board::board_test_support::scratch("web-token-");
     let path = directory.path().join("token");
     let token = BoardWebToken::rotate_at(&path).unwrap();
     for mode in [0o644, 0o660, 0o700, 0o4600] {
@@ -122,7 +122,7 @@ fn reads_reject_unsafe_modes_and_preserve_existing_bytes() {
 
 #[test]
 fn reads_reject_malformed_regular_files_and_non_regular_files() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::board::board_test_support::scratch("web-token-");
     let path = directory.path().join("token");
     File::create(&path).unwrap();
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
@@ -147,7 +147,7 @@ fn reads_reject_malformed_regular_files_and_non_regular_files() {
 
 #[test]
 fn every_rotation_publishes_a_fresh_0600_token() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::board::board_test_support::scratch("web-token-");
     let path = directory.path().join("board-web.token");
     let first = BoardWebToken::rotate_at(&path).unwrap();
     let second = BoardWebToken::rotate_at(&path).unwrap();
@@ -165,7 +165,7 @@ fn every_rotation_publishes_a_fresh_0600_token() {
 
 #[test]
 fn rotation_replaces_planted_links_without_writing_through() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::board::board_test_support::scratch("web-token-");
     let target = directory.path().join("elsewhere");
     fs::write(&target, b"untouched").unwrap();
     let path = directory.path().join("board-web.token");

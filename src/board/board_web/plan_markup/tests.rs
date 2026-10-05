@@ -65,9 +65,15 @@ fn relative_links_are_reduced_to_same_page_anchors() {
     assert!(!rendered.html.contains("href=\"?"));
     assert!(!rendered.html.contains("href=\"\""));
     assert!(!rendered.html.contains("href=\"P7"));
-    assert!(rendered.html.contains("href=\"#fine\""), "{}", rendered.html);
     assert!(
-        rendered.html.contains("<p>x <a href=\"#fine\">y</a> z w q e v</p>"),
+        rendered.html.contains("href=\"#fine\""),
+        "{}",
+        rendered.html
+    );
+    assert!(
+        rendered
+            .html
+            .contains("<p>x <a href=\"#fine\">y</a> z w q e v</p>"),
         "{}",
         rendered.html
     );

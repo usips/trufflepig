@@ -1,5 +1,5 @@
-import { createBoardEntries } from "./board_entries.js";
-import { decodeBoardFragment } from "./board_dom.js";
+import { createBoardEntries } from "../board_entries.js";
+import { decodeBoardFragment } from "../board_dom.js";
 
 export function createPlanPage(context) {
   const {

@@ -5,9 +5,9 @@
 mod ring_drain;
 mod ring_plans;
 
-pub(super) use ring_drain::Drain;
 use super::REPLAY_LIMIT;
 use crate::board::board_ids::{EventSeq, PlanId};
+pub(super) use ring_drain::Drain;
 use ring_plans::PlanLease;
 use std::{
     collections::VecDeque,
@@ -108,12 +108,7 @@ impl EventRing {
 
     /// Appends a contiguous batch; `truncated` batches leave `filled` at the
     /// last pushed frame so the filler continues where the read stopped.
-    pub(super) fn apply_events(
-        &self,
-        latest: EventSeq,
-        frames: Vec<RingFrame>,
-        truncated: bool,
-    ) {
+    pub(super) fn apply_events(&self, latest: EventSeq, frames: Vec<RingFrame>, truncated: bool) {
         let mut state = self.lock();
         let pushed = push_frames(&mut state, frames);
         state.latest = latest;
@@ -127,12 +122,7 @@ impl EventRing {
 
     /// Replaces the window outright (startup seed, restored database, or a
     /// burst beyond capacity); every tracked plan re-annotates the new window.
-    pub(super) fn apply_reseed(
-        &self,
-        latest: EventSeq,
-        frames: Vec<RingFrame>,
-        truncated: bool,
-    ) {
+    pub(super) fn apply_reseed(&self, latest: EventSeq, frames: Vec<RingFrame>, truncated: bool) {
         let mut state = self.lock();
         state.frames.clear();
         let pushed = push_frames(&mut state, frames);

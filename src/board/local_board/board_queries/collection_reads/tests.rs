@@ -165,11 +165,15 @@ fn seed_feedback(conn: &Connection, entry: u64, seq: u64, state: &str) {
             "INSERT INTO board_feedback(entry_id,feedback_kind,version,build_id,cwd,steer_mode,",
             "recent_calls_json) VALUES(?1,'missing','v1','build1','src','plan',?2)"
         ),
-        params![entry, concat!(
-            r#"[{"verb":"search","args":["needle"],"exit_code":0,"#,
-            r#""error_prefix":null,"truncated":false,"coverage":"complete"}]"#
-        )],
-    ).unwrap();
+        params![
+            entry,
+            concat!(
+                r#"[{"verb":"search","args":["needle"],"exit_code":0,"#,
+                r#""error_prefix":null,"truncated":false,"coverage":"complete"}]"#
+            )
+        ],
+    )
+    .unwrap();
 }
 
 fn feedback(
@@ -191,11 +195,15 @@ fn feedback(
 mod attention_index_tests;
 mod attention_own_question_tests;
 mod attention_proposal_tests;
+mod attention_scoped_authority_tests;
 mod attention_through_tests;
 mod collection_feedback_authority_tests;
+mod entry_commit_page_tests;
+mod entry_filter_tests;
 mod entry_page_tests;
 mod feedback_page_tests;
 mod overview_attention_tests;
+mod overview_page_tests;
 mod revision_page_tests;
 
 fn authority_actor(user: &str, host: &str, harness: &str, session: &str) -> WriteContext {

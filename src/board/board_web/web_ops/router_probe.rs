@@ -91,11 +91,11 @@ pub(super) fn local_schema_version(database: &Path) -> Result<Option<i64>, Board
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(unavailable(format!("board database: {error}"))),
     }
-    let connection = rusqlite::Connection::open_with_flags(
-        database,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .map_err(|error| unavailable(format!("board database schema is unreadable: {error}")))?;
+    let connection =
+        rusqlite::Connection::open_with_flags(database, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|error| {
+                unavailable(format!("board database schema is unreadable: {error}"))
+            })?;
     connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .map(Some)

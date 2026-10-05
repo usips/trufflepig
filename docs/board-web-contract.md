@@ -63,9 +63,11 @@ supplies the typed API value; every JSON mutation/read envelope uses that value.
 | Method and route | Request or result |
 |---|---|
 | `GET /`, `/board_web_main.js`, `/board_web.css` | Public shell and root assets only |
-| `GET /board_dom.js`, `/board_views.js`, `/board_pages.js` | Public UI modules |
-| `GET /feedback_triage.js`, `/board_stream.js` | UI modules |
-| `GET /board_reader.js`, `/board_entries.js` | UI modules |
+| `GET /board_dom.js`, `/board_views.js`, `/board_cards.js` | Public UI modules |
+| `GET /board_routing.js`, `/board_render_loop.js` | Public UI modules |
+| `GET /pages/board_pages.js`, `/pages/plan_page.js`, `/pages/proposal_page.js` | Page modules |
+| `GET /stream/board_stream.js`, `/stream/stream_election.js`, `/stream/stream_parse.js` | Stream modules |
+| `GET /feedback_triage.js`, `/board_reader.js`, `/board_entries.js` | UI modules |
 | `POST /api/v1/challenge` | Unauthenticated ownership proof; Host/Origin/JSON checks apply |
 | `POST /api/v1/board` | `{ "api": 5, "op": BoardOp }`; typed `BoardReply` |
 | `POST /api/v1/ingest` | `{ "api": 5 }`; single-flight router ingest relay |

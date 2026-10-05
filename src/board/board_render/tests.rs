@@ -8,6 +8,7 @@ use crate::board::review_packet::{ReviewPacket, SsotDiff};
 mod budget_render_tests;
 mod collection_boundary_tests;
 mod collection_render_tests;
+mod entry_render_tests;
 mod inbox_render_tests;
 mod review_render_tests;
 mod view_boundary_render_tests;

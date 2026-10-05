@@ -5,13 +5,13 @@ mod router_probe;
 mod tests;
 mod web_request;
 
-pub(crate) use ingest_flight::{IngestFlight, relay_flight};
-pub(crate) use web_request::{WebRequest, execute};
 use super::WebStore;
 use crate::board::board_protocol::BoardError;
 use crate::daemon::deadline::QueryDeadline;
+pub(crate) use ingest_flight::{IngestFlight, relay_flight};
 use router_probe::{ROUTER_MIGRATION_WAIT, ingest_via, startup_probe};
 use std::{path::Path, time::Instant};
+pub(crate) use web_request::{WebRequest, execute};
 
 pub(super) fn check_router_identity(
     runtime: &Path,

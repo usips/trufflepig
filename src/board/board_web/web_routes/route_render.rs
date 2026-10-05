@@ -1,10 +1,9 @@
 //! Render routes: plan markup, revision diffs, and proposal diffs.
-use super::invalid;
 use super::super::{
-    BoardWebState,
-    plan_markup,
+    BoardWebState, plan_markup,
     web_ops::{self, WebRequest},
 };
+use super::invalid;
 use crate::board::{
     board_ids::{BoardRef, PlanRevision},
     board_protocol::{BOARD_API, BoardError, BoardOp, BoardReply, BoardResult},
