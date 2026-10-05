@@ -7,8 +7,9 @@ database and avoid RAM-backed `/tmp`. A linked Git worktree owns its own cache,
 seeded silently from its main checkout's default cache when that cache holds an
 index (`src/store/seed.rs`, outcome in `seed-outcome.json`), and records its
 root in a `cache-root` marker until it holds an index. The router evicts a
-default-base cache whose recorded root no longer exists, on startup and every ten minutes, after a one-minute grace
-period and only when the root's parent directory still exists (`src/system/sweep.rs`);
+default-base cache whose recorded root no longer exists, on startup and every ten minutes,
+after a one-minute grace period and only when the root's parent directory still exists
+(`src/system/sweep.rs`);
 `system prune` runs that sweep now. Explicit `--cache` bases are never swept.
 History defaults to the normal cache base
 keyed by canonical Git common directory, so linked worktrees share immutable Git
@@ -16,9 +17,14 @@ facts. An explicit `--cache` isolates history; `--history-cache DIRECTORY` selec
 a shared history-cache base. In workspace mode, `--cache` supplies an isolated
 base with coordinator state and separate member caches.
 A per-user system daemon gives agent harnesses one endpoint to allowlist. Its
-socket is `daemon.sock` in `$TRUFFLEPIG_SYSTEM_DIR` verbatim, else
-`$XDG_RUNTIME_DIR/trufflepig/system` (the allowlist target), else
-`$XDG_CACHE_HOME/trufflepig/system`, else `$HOME/.cache/trufflepig/system`.
+socket is `daemon.sock` in the system directory (`src/system.rs:dir_from`):
+`$TRUFFLEPIG_SYSTEM_DIR` when absolute, else
+`$XDG_RUNTIME_DIR/trufflepig/system` (the allowlist target) when absolute, else
+`/run/user/<uid>/trufflepig/system` when that login-session directory exists, is
+owned by the caller, and is mode 0700, else `$XDG_CACHE_HOME/trufflepig/system`,
+else `$HOME/.cache/trufflepig/system`. Empty and relative values fall through at
+every step, and with no absolute candidate there is no directory
+(`system_unavailable`). `trufflepig system dir` prints the resolved directory.
 For source operations, the router forwards requests to the owning workspace coordinator or per-root
 daemon, starting a missing target and proxying the reply within 28 s
 (`src/daemon.rs:PROXY_REPLY_WAIT`), spawn wait included. A router reply,
@@ -50,9 +56,10 @@ Singleton commands start a per-root index daemon automatically. Workspace querie
 start a coordinator unless `--no-daemon` is set; `ws show` and `ws status` inspect
 locally. The coordinator starts member daemons when needed and reads their published
 indexes. Semantic requests may start the shared per-user inference worker when enabled.
-For source operations, `--no-daemon` performs local indexing and launches or contacts no background process,
-including the inference worker. Search then uses published indexes and cached
-semantic vectors only. The explicit foreground path `semantic prepare --no-daemon`
+For source operations, `--no-daemon` performs local indexing and launches or
+contacts no background process, including the inference worker. Search then uses published
+indexes and cached semantic vectors only. The explicit foreground path
+`semantic prepare --no-daemon`
 holds the root preparation lease while it runs. Explicit `index` reconciles locally;
 `status` reports existing indexed coverage. `serve` runs the singleton index daemon
 in the foreground and `stop` requests shutdown. In workspace mode, `stop` stops only
@@ -67,13 +74,15 @@ Every daemon answers requests concurrently: its accept thread hands each
 connection to a bounded worker pool (`src/daemon/pool.rs`: router 16 workers,
 coordinator 8, root 4, each queueing 64), and a full queue answers
 `daemon_busy: retry` after reading the request. A panicking request answers
-`internal_error: MESSAGE` and its worker keeps serving. One maintenance thread (`src/daemon/reconciler.rs`) watches,
-reconciles on watch events and periodically, drains the spool, and runs idle
+`internal_error: MESSAGE` and its worker keeps serving. One maintenance thread
+(`src/daemon/reconciler.rs`) watches, reconciles on watch events and periodically, drains
+the spool, and runs idle
 probes; if it panics, the daemon exits (releasing its socket) so the next client
 starts a fresh one. A root daemon binds and serves at once, before any database work; its
 initial reconcile creates the schema, and until the first publication reads
-answer `index_warming` (`more`, `ctx`, handle, and path reads still work). The maintenance thread lowers itself to nice 10 and idle I/O
-after that initial reconcile; request workers keep normal priority. Each read
+answer `index_warming` (`more`, `ctx`, handle, and path reads still work). The maintenance
+thread lowers itself to nice 10 and idle I/O after that initial reconcile; request workers
+keep normal priority. Each read
 request carries its 20 s query deadline from socket accept through local dispatch
 and router forwarding. Query-only index reads cap lock waits and interrupt long
 SQL statements at expiry. Spool requests start their deadline before entering

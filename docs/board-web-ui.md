@@ -17,8 +17,10 @@ Overview refreshes every 15 seconds and claim ages tick locally each second: inb
 expiry, and configuration changes can occur without advancing the event sequence. Entries views
 page newest-first with a composite before-cursor; each refresh re-reads the page with one entries
 read, and there is no live tail or divider. The seen mark holds the highest delivered seq and
-badges newer ticker rows; it lives at `localStorage["trufflepig-board-seen:<board-id>"]`. Snapshot
-loads raise it to at least the snapshot watermark; delivered stream frames raise it as they arrive.
+badges newer ticker rows; it lives at `localStorage["trufflepig-board-seen:<board-id>"]`.
+Snapshot loads and delivered stream frames raise it monotonically — every write keeps the
+stored maximum, so a lagging tab cannot lower it. Only a resync lowers it, to the fresh
+snapshot watermark, when the database was replaced underneath the tab.
 The ingest button holds the 202's ticket, shows queued, then completes only on the `ingest` frame
 with that ticket or reports unknown at 30s.
 
@@ -35,5 +37,11 @@ holds the stream, heartbeats every 5 seconds, and relays every frame type over t
 after two missed beats, dedupe by `seq` on per-tab watermarks, and failover resumes from the new
 leader's watermark — without Web Locks or BroadcastChannel each tab keeps its own stream, a bounded
 incremental UTF-8/SSE parser with reconnect backoff, coalesced refreshes, and obsolete-route results
-ignored. A hidden tab yields its stream and defers its election until shown, so a visible tab leads. A 401/403 expires the tab: it
-releases the lock, drops its token, and announces authorization-expired without retrying.
+ignored. A hidden tab yields its stream and defers its election until shown, so a visible tab leads.
+A 401/403 expires the tab: it releases the lock, drops its token, and announces
+authorization-expired without retrying.
+
+Tabs sharing one stream buffer relayed frames across snapshot reads: the channel stays open
+while idle, frames with an `id` above the snapshot watermark apply in order once it lands, and
+a buffer past 500 frames is dropped for a fresh resync — together closing the
+snapshot/subscription race.

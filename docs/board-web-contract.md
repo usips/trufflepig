@@ -66,7 +66,8 @@ supplies the typed API value; every JSON mutation/read envelope uses that value.
 | `GET /board_dom.js`, `/board_views.js`, `/board_cards.js` | Public UI modules |
 | `GET /board_routing.js`, `/board_render_loop.js` | Public UI modules |
 | `GET /pages/board_pages.js`, `/pages/plan_page.js`, `/pages/proposal_page.js` | Page modules |
-| `GET /stream/board_stream.js`, `/stream/stream_election.js`, `/stream/stream_parse.js` | Stream modules |
+| `GET /stream/board_stream.js`, `/stream/stream_parse.js` | Stream modules |
+| `GET /stream/stream_election.js` | Stream modules |
 | `GET /feedback_triage.js`, `/board_reader.js`, `/board_entries.js` | UI modules |
 | `POST /api/v1/challenge` | Unauthenticated ownership proof; Host/Origin/JSON checks apply |
 | `POST /api/v1/board` | `{ "api": 5, "op": BoardOp }`; typed `BoardReply` |
@@ -166,10 +167,7 @@ the shared CSP (`default-src 'self'`; `frame-ancestors`, `base-uri`, `object-src
 after a ~600 ms grace, sends a `resync` event without an id and closes the stream; reasons are
 `replay_gap` or `cursor_ahead`, with the current `latest` watermark. Clients reload their snapshot
 and reconnect from the new snapshot's watermark; they never advance to `latest` without fetching
-the unseen state. Tabs sharing one stream also buffer relayed frames across snapshot reads: the
-channel opens before the read, frames with `id` above the snapshot watermark apply in order once
-it lands, and a buffer past 500 frames is dropped for a fresh resync — together closing the
-snapshot/subscription race.
+the unseen state (follower relay buffering: [stream leadership](board-web-ui.md#stream-leadership)).
 
 At most 32 subscribers hold RAII permits; handoff immediately releases the HTTP worker, and
 disconnect, failed spawn, panic, or slow writes release permits. No reader, transaction, or writer
@@ -183,8 +181,7 @@ leadership](board-web-ui.md#stream-leadership).
 ## Browser state and safe rendering
 
 Browser behavior — routes, paging, the seen mark, ingest state, focus, and announcements — follows
-the [board web UI contract](board-web-ui.md). This split ratifies the P2.24 decision: browser
-behavior lives in the UI companion, server behavior here. The server escapes raw Markdown HTML and
+the [board web UI contract](board-web-ui.md). The server escapes raw Markdown HTML and
 inline HTML, suppresses images, and validates decoded link destinations. Only HTTP(S), mailto, and
 same-page `#…` anchors are allowed — other relative links render inert; controls, backslashes, and
 ambiguous/obfuscated schemes are denied. Generated attributes are escaped. Only server-sanitized
