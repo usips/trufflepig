@@ -110,3 +110,22 @@ fn feedback_domain_answers_are_not_queued() {
         assert!(!domain_answer(message));
     }
 }
+
+#[test]
+fn oversized_write_reports_size_code_instead_of_invalid_state() {
+    let sqlite = rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_TOOBIG),
+        Some("String or BLOB exceeds size limit".into()),
+    );
+    let error = anyhow::Error::new(sqlite).context("store entry");
+    assert_eq!(
+        board_protocol::BoardErrorCode::from_error(&error),
+        Some(board_protocol::BoardErrorCode::InvalidBody)
+    );
+    assert!(domain_error(&error));
+    let rendered = board_protocol::BoardError::from(error).to_string();
+    assert!(
+        rendered.starts_with("invalid_body:"),
+        "CLI shows the size error, got: {rendered}"
+    );
+}

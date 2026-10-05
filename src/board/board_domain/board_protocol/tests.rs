@@ -304,8 +304,8 @@ fn sqlite_storage_failures_classify_by_typed_code() {
             rusqlite::ffi::SQLITE_NOTADB,
             BoardErrorCode::BoardUnavailable,
         ),
-        (rusqlite::ffi::SQLITE_TOOBIG, BoardErrorCode::InvalidState),
-        (rusqlite::ffi::SQLITE_MISMATCH, BoardErrorCode::InvalidState),
+        (rusqlite::ffi::SQLITE_TOOBIG, BoardErrorCode::InvalidBody),
+        (rusqlite::ffi::SQLITE_MISMATCH, BoardErrorCode::InvalidKind),
         (
             rusqlite::ffi::SQLITE_IOERR,
             BoardErrorCode::BoardUnavailable,

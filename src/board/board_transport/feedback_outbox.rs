@@ -113,12 +113,7 @@ pub fn import_pending(
                 }
                 summary.imported += 1;
             }
-            Err(error)
-                if matches!(
-                    error.code,
-                    BoardErrorCode::BoardUnavailable | BoardErrorCode::DatabaseLocked
-                ) =>
-            {
+            Err(error) if transient_import_error(&error) => {
                 summary.pending += 1;
                 summary.retry_error.get_or_insert(error.code);
             }
@@ -212,6 +207,15 @@ fn quarantine(path: &Path) -> Result<(), BoardError> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(io_error(error)),
     }
+}
+
+/// Only unavailable or locked storage retries; constraint, size, type, and
+/// semantic import failures are deterministic and quarantine on first attempt.
+fn transient_import_error(error: &BoardError) -> bool {
+    matches!(
+        error.code,
+        BoardErrorCode::BoardUnavailable | BoardErrorCode::DatabaseLocked
+    )
 }
 
 fn invalid_record(message: impl Into<String>) -> BoardError {

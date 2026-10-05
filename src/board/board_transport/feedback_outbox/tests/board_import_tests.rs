@@ -62,6 +62,8 @@ fn semantic_import_rejections_quarantine_and_transient_rejections_remain_pending
         BoardErrorCode::InvalidReference,
         BoardErrorCode::BoardApiMismatch,
         BoardErrorCode::InvalidState,
+        BoardErrorCode::InvalidBody,
+        BoardErrorCode::InvalidKind,
         BoardErrorCode::BoardUnavailable,
         BoardErrorCode::DatabaseLocked,
     ] {
@@ -224,4 +226,29 @@ fn imported_feedback_sets_server_provenance_and_direct_feedback_does_not() {
             ))
             .is_err()
     );
+}
+
+#[test]
+fn oversized_record_quarantines_on_first_attempt_with_size_code() {
+    let sqlite = rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_TOOBIG),
+        Some("String or BLOB exceeds size limit".into()),
+    );
+    assert_eq!(
+        BoardError::from(anyhow::Error::new(sqlite).context("import feedback")).code,
+        BoardErrorCode::InvalidBody,
+    );
+    let directory = scratch();
+    queue(directory.path(), &report()).unwrap();
+    let mut backend = SqliteRejectedImport {
+        raw_code: rusqlite::ffi::SQLITE_TOOBIG,
+        attempts: 0,
+    };
+    let first = import_pending(directory.path(), &mut backend).unwrap();
+    assert_eq!(backend.attempts, 1);
+    assert_eq!(first.quarantined, 1);
+    assert_eq!(first.pending, 0);
+    let second = import_pending(directory.path(), &mut backend).unwrap();
+    assert_eq!(second, ImportSummary::default());
+    assert_eq!(backend.attempts, 1);
 }
