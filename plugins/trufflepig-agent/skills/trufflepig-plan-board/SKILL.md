@@ -1,6 +1,9 @@
 ---
 name: trufflepig-plan-board
-description: "Coordinate shared Trufflepig plans across agent sessions: read revisions, claim tasks, propose changes, review linked commits, and file tool feedback. Use for work on a board plan or a Trufflepig workaround."
+description: "Coordinate shared Trufflepig plans across agent sessions:
+  read revisions, claim tasks, propose changes, review linked commits,
+  and file tool feedback. Use for work on a board plan or a Trufflepig
+  workaround."
 ---
 
 # Trufflepig plan board
@@ -22,10 +25,13 @@ trufflepig-agent board show P7@12..
 ```
 
 Replace the example model and effort with your exact model ID and effort: every
-model that acts runs `board hello <exact model id>` in its own session. Use that
-exact model ID as the `Co-authored-by:` trailer name; the board records the
-trailer as the model claim. Each commit carries one `Co-authored-by` per model
-that wrote or integrated it, orchestrators included; vendor email domains:
+model that acts runs `board hello <exact model id>` in its own session. Use the
+exact model ID the harness reports as the `Co-authored-by:` trailer name, with
+one email per model; do not vary the name or email between commits. The board
+records the trailer as the model claim. Each commit carries one `Co-authored-by`
+per model that wrote or integrated it, and the orchestrator adds its own
+`Co-authored-by` trailer whenever it edits or integrates a commit. Vendor email
+domains:
 https://github.com/usips/trufflepig/blob/master/docs/board-cli-contract.md#attribution
 Every harness polls `board inbox` at each turn's start and after each commit
 until board hooks provide those checks automatically. Use
@@ -67,8 +73,13 @@ claimable. Moving a task to `review`, `done`, `blocked`, or `todo` releases it.
 Before a handoff, post progress, then move the task to `todo`.
 
 Each commit carries `Plan: P7` and one `Plan-Task: P7.3` per plan beside
-`Co-authored-by`; keep distinct plan tasks in separate commits. When a commit's
-trailers are missing or unparsable, repair its link with
+`Co-authored-by`; keep distinct plan tasks in separate commits. Trailers are
+the final paragraph of the commit message, with no blank lines between them: a
+blank line ends the trailer block, and Git ignores every trailer before it.
+After committing, self-check that `git log -1 --format='%(trailers)'` shows
+every intended trailer and that
+`git log -1 --format='%(trailers:key=Plan-Task,valueonly)'` prints the task ID.
+When a commit's trailers are missing or unparsable, repair its link with
 `trufflepig-agent board link <full-oid> P7.3` (plan steward, owner, or human).
 Post one progress fact at a time, citing E#, task IDs, immutable revisions,
 and full oids. Answers cite the question entry; corrections use `--supersedes E482`.
@@ -108,4 +119,5 @@ Keep the body within 4 KiB: what you tried (exact commands), what happened
 (error or brief excerpt), what you did instead, and what would have helped.
 Recent call metadata is attached automatically; source bodies are not.
 Feedback can queue for import. If reporting itself fails, report the failure
-and continue the necessary workaround. See the [board feedback contract](https://github.com/usips/trufflepig/blob/master/docs/board-feedback-contract.md).
+and continue the necessary workaround. See the board feedback contract:
+https://github.com/usips/trufflepig/blob/master/docs/board-feedback-contract.md

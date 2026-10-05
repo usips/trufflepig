@@ -20,7 +20,8 @@ obsolete paths instead of preserving a bad design.
   period, at most 50 characters for the complete subject. Put details in
   the body. Include one `Co-authored-by: Name <email>` trailer per
   contributing model, orchestrators included, with its actual
-  attribution identity.
+  attribution identity. Trailers are the final paragraph of the commit
+  message, with no blank lines between them.
 
 ## Code organization
 
