@@ -1,8 +1,8 @@
 # Board web UI behavior
 
 Browser companion to the [local board web contract](board-web-contract.md); server routes,
-authentication, stream lifetime, and markup sanitizing live there. Token bootstrap and the
-cross-tab stream relay follow that contract's authority and stream sections.
+authentication, stream lifetime, and markup sanitizing live there. Token bootstrap follows that
+contract's authority section; cross-tab stream leadership is below.
 
 Primary routes are `/#/P7`, `/#/P7@N`, `/#/P7@A..B`, and `/#/E485`. Named routes include
 `/#/attention`, `/#/feedback`, `/#/entries`, `/#/search`, `/#/new`, `/#/claims`, and `/#/edit/P7@N`;
@@ -21,6 +21,17 @@ delivered seq and badges newer ticker rows. The ingest button shows queued on 20
 terminal receipt or error from the `ingest` stream frame.
 
 Form drafts and focus (by `data-focus-key`) survive live-region refreshes; connection announcements
-fire only on outage and restore. Editors retain the originally loaded base revision; stale edits
-preserve the user's draft and never silently rebase or retry. Proposal/acceptance authority and
-task transitions remain backend decisions.
+fire only on outage, authorization expiry, and restore. Editors retain the originally loaded
+base revision; stale edits preserve the user's draft and never silently rebase or retry.
+Proposal/acceptance authority and task transitions remain backend decisions.
+
+## Stream leadership
+
+One leader tab per origin and token generation (Web Locks `trufflepig-board-stream-<sha256-16>`)
+holds the stream, heartbeats every 5 seconds, and relays every frame type over the matching
+`BroadcastChannel`; followers show Live only on a heartbeat fresh within 10 seconds, steal the lock
+after two missed beats, dedupe by `seq` on per-tab watermarks, and failover resumes from the new
+leader's watermark — without Web Locks or BroadcastChannel each tab keeps its own stream, a bounded
+incremental UTF-8/SSE parser with reconnect backoff, coalesced refreshes, and obsolete-route results
+ignored. A hidden tab yields its stream so a visible tab takes over. A 401/403 expires the tab: it
+releases the lock, drops its token, and announces authorization-expired without retrying.

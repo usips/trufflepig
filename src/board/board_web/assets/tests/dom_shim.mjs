@@ -27,6 +27,7 @@ function pumpLock(name) {
     } catch (error) {
       head.reject(error);
     } finally {
+      if (head.evicted) return;
       entry.waiters.shift();
       entry.busy = false;
       pumpLock(name);
@@ -37,7 +38,8 @@ function createLocks() {
   return {
     request(name, options, callback) {
       const run = typeof options === "function" ? options : callback;
-      const signal = typeof options === "function" ? undefined : options?.signal;
+      const opts = typeof options === "function" ? {} : options || {};
+      const signal = opts.signal;
       if (signal?.aborted) return Promise.reject(signal.reason);
       const waiter = { run, signal, granted: false, resolve: null, reject: null };
       const pending = new Promise((resolve, reject) => {
@@ -48,6 +50,13 @@ function createLocks() {
       if (!entry) {
         entry = { waiters: [], busy: false };
         lockQueues.set(name, entry);
+      }
+      // A steal preempts the held lock like the real API: the evicted holder
+      // keeps running, and its late release no longer touches the queue.
+      if (opts.steal && entry.busy && entry.waiters.length > 0) {
+        entry.waiters[0].evicted = true;
+        entry.waiters.shift();
+        entry.busy = false;
       }
       entry.waiters.push(waiter);
       signal?.addEventListener("abort", () => {

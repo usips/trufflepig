@@ -45,6 +45,7 @@ nav a:hover{text-decoration:none;background:var(--accent-soft)}
  background:#9babb5;margin-right:.5rem}
 #connection[data-state=live]:before{background:#268562}
 #connection[data-state=error]:before{background:#c05646}
+#connection[data-state=expired]:before{background:#c05646}
 #freshness{margin-left:auto}
 #notice{margin:1rem 2rem 0;border:1px solid var(--line);border-radius:7px;padding:.65rem 1rem;background:var(--surface)}
 #notice[data-tone=error]{border-color:#dfb2b5;color:var(--danger)}

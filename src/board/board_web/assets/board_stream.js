@@ -1,7 +1,12 @@
+// One expired state, one message: a 401/403 anywhere converges here, and the
+// bootstrap announces this label rather than a generic reconnect warning.
+export const BOARD_AUTH_EXPIRED_MESSAGE = "Authorization expired. Run `trufflepig board web`.";
+
 export function createBoardStream(context) {
   const {
     state, privateFetch, setConnection, loadRoute, scheduleRefresh, parseBoardJson, addTickerEvent,
     addLiveEntry, noteSeen, onIngest,
+    authToken, onAuthExpired, heartbeatMs = 5000, freshnessMs = 10000,
   } = context;
   function parseSse(onEvent) {
     let buffer = "", eventName = "message", eventId = null, data = [], frameBytes = 0;
@@ -39,16 +44,14 @@ export function createBoardStream(context) {
     };
   }
 
-  // Cross-tab stream sharing. One leader per origin holds the Web Lock and runs
-  // the fetch reader; every other tab follows parsed frames over a broadcast
-  // channel instead of opening its own stream (browsers cap connections per
-  // host, so each extra stream crowds out API calls). State machine per tab:
-  //   idle → following → leading → idle (on stopStream or resync relay)
-  // The lock is requested without ifAvailable: it is granted when the leader's
-  // tab closes or releases, promoting the next waiter (failover). A promoted
-  // tab restarts the stream from its own watermark; every tab dedupes by frame
-  // id, so overlapping redelivery after a leadership change is harmless. A
-  // resync frame, received or relayed, sends every tab through the resync path.
+  // Cross-tab stream sharing. One leader per origin and token generation holds
+  // the Web Lock and runs the fetch reader; every other tab follows parsed
+  // frames over a broadcast channel instead of opening its own stream (browsers
+  // cap connections per host, so each extra stream crowds out API calls). State
+  // machine per tab: idle → following → leading → idle (on stopStream or resync
+  // relay). The leader heartbeats every few seconds; followers show Live only on
+  // a fresh heartbeat and steal the lock after two missed beats. A 401/403
+  // expires the tab: it releases the lock, drops its token, and never retries.
   // Without navigator.locks or BroadcastChannel the tab stays solo: today's
   // behavior of one stream per tab, with no sharing attempted.
   const LOCK_NAME = "trufflepig-board-stream";
@@ -57,11 +60,31 @@ export function createBoardStream(context) {
     try { return typeof navigator?.locks?.request === "function" && typeof BroadcastChannel === "function"; }
     catch (_) { return false; }
   })();
-  let mode = "idle", channel = null, elect = null, lockEnd = null;
+  let mode = "idle", channel = null, channelName = "", elect = null, lockEnd = null;
+  let lockNames = null, electionCursor = null;
+  let heartbeatTimer = null, freshnessTimer = null, lastHeartbeat = 0;
+  let stealRequested = false, leaderHealthy = false;
 
-  function relayChannel() {
-    if (!channel) {
-      channel = new BroadcastChannel(CHANNEL_NAME);
+  // The lock and channel names for this tab's token: the first 16 hex chars of
+  // its SHA-256, so tabs on different tokens never share a leader. Tabs without
+  // a token, or without crypto.subtle, share the legacy un-namespaced names.
+  async function streamNames() {
+    const token = typeof authToken === "function" ? authToken() : "";
+    const subtle = globalThis.crypto?.subtle;
+    if (!token || typeof subtle?.digest !== "function") return { lock: LOCK_NAME, channel: CHANNEL_NAME };
+    try {
+      const digest = await subtle.digest("SHA-256", new TextEncoder().encode(token));
+      const generation = [...new Uint8Array(digest)]
+        .map(byte => byte.toString(16).padStart(2, "0")).join("").slice(0, 16);
+      return { lock: `${LOCK_NAME}-${generation}`, channel: `${CHANNEL_NAME}-${generation}` };
+    } catch (_) { return { lock: LOCK_NAME, channel: CHANNEL_NAME }; }
+  }
+
+  function channelFor(names) {
+    if (!channel || channelName !== names.channel) {
+      try { channel?.close(); } catch (_) { /* A missing close still replaces the channel. */ }
+      channel = new BroadcastChannel(names.channel);
+      channelName = names.channel;
       channel.onmessage = onRelay;
     }
     return channel;
@@ -69,9 +92,78 @@ export function createBoardStream(context) {
   function onRelay(message) {
     if (mode !== "following") return;
     const frame = message.data;
+    if (frame && frame.type === "status") {
+      if (typeof frame.state !== "string"
+        || !(frame.watermark === null || typeof frame.watermark === "string")) return;
+      onHeartbeat(frame);
+      return;
+    }
     if (!frame || typeof frame.event !== "string" || typeof frame.data !== "string"
       || !(frame.id === null || typeof frame.id === "string")) return;
     try { deliver(frame); } catch (_) { /* A malformed relayed frame is dropped, never fatal. */ }
+  }
+
+  // A valid status heartbeat proves the leader's event loop is alive, whatever
+  // its fetch health; only a live one shows Live. A revived leader cancels a
+  // pending steal so a healthy leader is never preempted.
+  function onHeartbeat(frame) {
+    lastHeartbeat = Date.now();
+    if (stealRequested && lockNames) {
+      try { requestLock(lockNames, false); } catch (_) { /* The next heartbeat retries the cancel. */ }
+    }
+    if (frame.state === "live") setConnection("Live", "live");
+    else if (frame.state === "retrying") setConnection("Reconnecting…", "error");
+  }
+
+  function sendHeartbeat(names) {
+    try {
+      channelFor(names).postMessage({
+        type: "status", state: leaderHealthy ? "live" : "retrying", watermark: state.watermark,
+      });
+    } catch (_) { /* A closed channel still leaves local delivery. */ }
+  }
+
+  // Followers watch for a silent leader: past the freshness window the tab
+  // stops claiming Live and takes the lock by force, once per election.
+  function startFreshnessTimer() {
+    clearInterval(freshnessTimer);
+    freshnessTimer = setInterval(() => {
+      if (mode !== "following" || !lockNames) return;
+      if (Date.now() - lastHeartbeat <= freshnessMs) return;
+      setConnection("Reconnecting…", "error");
+      if (!stealRequested) {
+        try { requestLock(lockNames, true); } catch (_) { /* The next tick retries the steal. */ }
+      }
+    }, heartbeatMs);
+  }
+
+  // A synchronous throw leaves the previous election fields alone so the next
+  // heartbeat or freshness tick retries; callers swallow it the same way.
+  function requestLock(names, steal) {
+    elect?.abort();
+    const controller = new AbortController();
+    const electionGeneration = state.streamGeneration;
+    const options = steal
+      ? { signal: controller.signal, steal: true }
+      : { signal: controller.signal };
+    void navigator.locks.request(names.lock, options, () => {
+      if (mode !== "following" || electionGeneration !== state.streamGeneration) return;
+      mode = "leading";
+      becomeLeader(names);
+      return new Promise(resolve => { lockEnd = resolve; });
+    }).catch(() => { /* An aborted election ends with stopStream. */ });
+    elect = controller;
+    stealRequested = steal;
+  }
+
+  function becomeLeader(names) {
+    clearInterval(freshnessTimer); freshnessTimer = null;
+    stealRequested = false;
+    leaderHealthy = false;
+    sendHeartbeat(names);
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = setInterval(() => { if (mode === "leading") sendHeartbeat(names); }, heartbeatMs);
+    void runFetch(state.watermark ?? electionCursor, frame => channelFor(names).postMessage(frame));
   }
 
   // One frame handler for the leader's parsed frames and relayed frames alike.
@@ -107,9 +199,15 @@ export function createBoardStream(context) {
     state.streamGeneration++;
     state.stream?.abort(); state.stream = null;
     clearTimeout(state.reconnect); state.reconnect = null;
+    clearInterval(heartbeatTimer); heartbeatTimer = null;
+    clearInterval(freshnessTimer); freshnessTimer = null;
     mode = "idle";
     elect?.abort(); elect = null;
     lockEnd?.(); lockEnd = null;
+    try { channel?.close(); } catch (_) { /* An idle tab holds no channel. */ }
+    channel = null; channelName = "";
+    lockNames = null; electionCursor = null;
+    lastHeartbeat = 0; stealRequested = false; leaderHealthy = false;
   }
 
   // The fetch reader: leaders pass a relay, solo tabs pass null. Reconnects
@@ -125,11 +223,18 @@ export function createBoardStream(context) {
         const response = await privateFetch(`/api/v1/events?after=${encodeURIComponent(cursor)}`, {
           headers: { "Accept": "text/event-stream", "Last-Event-ID": cursor }, signal: controller.signal,
         });
+        if (generation !== state.streamGeneration) return;
+        if (response.status === 401 || response.status === 403) {
+          stopStream();
+          setConnection(BOARD_AUTH_EXPIRED_MESSAGE, "expired");
+          onAuthExpired?.();
+          return;
+        }
         if (!response.ok || !response.body
           || !response.headers.get("Content-Type")?.startsWith("text/event-stream")) {
           throw new Error(`Live connection failed (${response.status}).`);
         }
-        if (generation !== state.streamGeneration) return;
+        leaderHealthy = true;
         setConnection("Live", "live");
         const decoder = new TextDecoder("utf-8", { fatal: true });
         let resync = false;
@@ -147,9 +252,13 @@ export function createBoardStream(context) {
           if (chunk.done) { parse(decoder.decode()); break; }
           parse(decoder.decode(chunk.value, { stream: true }));
         }
-        if (!resync && generation === state.streamGeneration) setConnection("Reconnecting…", "error");
+        if (!resync && generation === state.streamGeneration) {
+          leaderHealthy = false;
+          setConnection("Reconnecting…", "error");
+        }
       } catch (error) {
         if (error?.name !== "AbortError" && generation === state.streamGeneration) {
+          leaderHealthy = false;
           setConnection("Reconnecting…", "error");
         }
       } finally {
@@ -170,25 +279,32 @@ export function createBoardStream(context) {
     if (cursor === null || state.stream || state.resyncing || mode !== "idle") return;
     clearTimeout(state.reconnect); state.reconnect = null;
     if (!shareable) { mode = "solo"; runFetch(cursor, null); return; }
-    try {
-      // Follow first: frames from the current leader apply while this tab waits
-      // its turn on the lock. The browser grants the lock to one tab at a time.
-      mode = "following";
-      relayChannel();
-      setConnection("Live", "live");
-      const generation = state.streamGeneration;
-      const controller = new AbortController();
-      elect = controller;
-      void navigator.locks.request(LOCK_NAME, { signal: controller.signal }, () => {
-        if (mode !== "following" || generation !== state.streamGeneration) return;
-        mode = "leading";
-        void runFetch(state.watermark ?? cursor, frame => relayChannel().postMessage(frame));
-        return new Promise(resolve => { lockEnd = resolve; });
-      }).catch(() => { /* An aborted election ends with stopStream. */ });
-    } catch (_) {
-      // Sharing facilities that exist but throw leave the tab on its own stream.
-      mode = "solo"; elect = null; runFetch(cursor, null);
-    }
+    // Follow first: frames from the current leader apply while this tab waits
+    // its turn on the lock. The browser grants the lock to one tab at a time.
+    // Sharing names need the token digest, so the election follows async; the
+    // tab claims Live only on a leader heartbeat, never eagerly here.
+    mode = "following";
+    electionCursor = cursor;
+    const setupGeneration = state.streamGeneration;
+    void (async () => {
+      let names;
+      try {
+        names = await streamNames();
+      } catch (_) { names = { lock: LOCK_NAME, channel: CHANNEL_NAME }; }
+      if (mode !== "following" || setupGeneration !== state.streamGeneration) return;
+      try {
+        lockNames = names;
+        channelFor(names);
+        setConnection("Connecting…", "");
+        lastHeartbeat = Date.now();
+        startFreshnessTimer();
+        requestLock(names, false);
+      } catch (_) {
+        // Sharing facilities that exist but throw leave the tab on its own stream.
+        clearInterval(freshnessTimer); freshnessTimer = null;
+        mode = "solo"; elect = null; runFetch(cursor, null);
+      }
+    })();
   }
 
   return { parseSse, stopStream, startStream };

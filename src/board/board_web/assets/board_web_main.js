@@ -1,8 +1,8 @@
 import { createBoardReader } from "/board_reader.js";
-import { createBoardStream } from "/board_stream.js";
+import { createBoardStream, BOARD_AUTH_EXPIRED_MESSAGE } from "/board_stream.js";
 import { createBoardDom, decodeBoardFragment } from "/board_dom.js";
 import { createBoardViews } from "/board_views.js";
-import { resolveBootstrapToken } from "/board_web_token.js";
+import { resolveBootstrapToken, resolveAdoptionToken } from "/board_web_token.js";
 
   const TOKEN_KEY = "trufflepig-board-token";
   let stored = "";
@@ -72,7 +72,21 @@ import { resolveBootstrapToken } from "/board_web_token.js";
   const { parseSse, stopStream, startStream } = createBoardStream({
     state, privateFetch, setConnection, loadRoute, scheduleRefresh, parseBoardJson, addTickerEvent,
     addLiveEntry, noteSeen, onIngest,
+    authToken: () => token, onAuthExpired: () => enterExpired(),
   });
+
+  // Authorization expiry is one state wherever the 401/403 lands: the tab
+  // releases the lock, drops its token, and never retries until a fresh token
+  // is adopted. Idempotent across the stream and JSON fetch paths.
+  let expired = false;
+  function enterExpired() {
+    if (expired) return;
+    expired = true;
+    token = "";
+    try { sessionStorage.removeItem(TOKEN_KEY); } catch (_) { /* In-memory auth still works. */ }
+    stopStream();
+    setConnection(BOARD_AUTH_EXPIRED_MESSAGE, "expired");
+  }
 
   const { fetchRoute } = createBoardReader({
     state, dom, views, board, jsonFetch, apiVersion, readOp, snapshotSeq, minimumSeq, cursorFromRoute,
@@ -105,15 +119,17 @@ import { resolveBootstrapToken } from "/board_web_token.js";
     item.hidden = !message;
   }
   // The indicator itself stays out of the live region: only losing an
-  // established connection and recovering from an outage are announced,
-  // never routine (re)connect ticks or follower-mode "Live" updates.
+  // established connection, authorization expiry, and recovering from an
+  // outage are announced, never routine (re)connect ticks or follower "Live".
   let connectionAnnounced = "";
   function setConnection(label, mode) {
     connection.textContent = label; connection.dataset.state = mode;
     if (mode === connectionAnnounced) return;
-    if (mode === "error" && connectionAnnounced === "live") {
+    if (mode === "expired") {
+      connectionAnnounce.textContent = label;
+    } else if (mode === "error" && connectionAnnounced === "live") {
       connectionAnnounce.textContent = "Board connection lost. Reconnecting.";
-    } else if (mode === "live" && connectionAnnounced === "error") {
+    } else if (mode === "live" && (connectionAnnounced === "error" || connectionAnnounced === "expired")) {
       connectionAnnounce.textContent = "Board connection restored.";
     }
     connectionAnnounced = mode;
@@ -165,7 +181,7 @@ import { resolveBootstrapToken } from "/board_web_token.js";
       const failure = new Error(detail.message || `Board request failed (${response.status}).`);
       failure.code = detail.code || "";
       failure.status = response.status;
-      if (response.status === 401 || response.status === 403) setConnection("Authorization required", "error");
+      if (response.status === 401 || response.status === 403) enterExpired();
       throw failure;
     }
     return body;
@@ -358,7 +374,7 @@ import { resolveBootstrapToken } from "/board_web_token.js";
           focusKey(button("Try again", () => void loadRoute(true)), "try-again")), "callout");
         main.replaceChildren(box);
       } else notice(errorMessage(error), "error");
-      setConnection(token ? "Request failed" : "Authorization required", "error");
+      if (!expired) setConnection(token ? "Request failed" : "Authorization required", "error");
     } finally {
       if (generation === state.generation) {
         state.refreshing = false; main.setAttribute("aria-busy", "false");
@@ -377,7 +393,7 @@ import { resolveBootstrapToken } from "/board_web_token.js";
       if (snapshotSeq(overview) === null) throw new Error("Overview is missing its snapshot sequence.");
       state.overview = { ...overview.data, events: state.overview?.events || [] };
       if (Number.isFinite(overview.data.server_now)) state.clockOffsetMs = overview.data.server_now * 1000 - Date.now();
-    } catch (error) { if (!isAbort(error)) setConnection("Refresh failed", "error"); }
+    } catch (error) { if (!isAbort(error) && !expired) setConnection("Refresh failed", "error"); }
     finally { if (state.globalRefresh === controller) state.globalRefresh = null; }
   }
   document.addEventListener("click", event => {
@@ -405,6 +421,14 @@ import { resolveBootstrapToken } from "/board_web_token.js";
     state.route = routeFromLocation(); notice(""); void loadRoute(true);
   });
   window.addEventListener("hashchange", () => {
+    // Fresh-token offered by navigation: only an expired tab adopts it.
+    const adoption = resolveAdoptionToken({ locationHash: location.hash, expired });
+    if (adoption !== null) {
+      token = adoption; expired = false;
+      try { sessionStorage.setItem(TOKEN_KEY, token); } catch (_) { /* In-memory auth still works. */ }
+      history.replaceState(history.state, "", location.pathname + location.search);
+      state.navigation++; state.route = routeFromLocation(); void loadRoute(true); return;
+    }
     state.navigation++; state.route = routeFromLocation(); void loadRoute(true);
   });
   window.addEventListener("pagehide", () => { stopStream(); state.request?.abort(); state.globalRefresh?.abort(); });
@@ -421,6 +445,10 @@ import { resolveBootstrapToken } from "/board_web_token.js";
     }
   }, 15000);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") scheduleRefresh();
+    // A hidden tab yields its stream: a hidden leader's timers are throttled,
+    // so it releases the lock and a visible tab takes over. Foregrounding
+    // refreshes and rejoins the stream; a stale watermark resyncs by itself.
+    if (document.visibilityState === "hidden") stopStream();
+    else if (document.visibilityState === "visible") scheduleRefresh();
   });
   void loadRoute(true);

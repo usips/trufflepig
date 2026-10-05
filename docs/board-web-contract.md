@@ -15,7 +15,8 @@ bootstrap URL `http://AUTHORITY/#token=TOKEN` only when stdout is a terminal, an
 origin plus advice to run `trufflepig board web`, which prints the fresh URL. The fragment stays
 outside the HTTP request; JavaScript removes it with `history.replaceState`, retaining it only in
 tab `sessionStorage` and memory, and accepts a bootstrap token only from a non-route hash exactly
-`token=<64 lowercase hex>` — a differing stored session is kept and flagged, never replaced. CLI
+`token=<64 lowercase hex>` — a differing stored session is kept and flagged, never replaced,
+except that a tab showing authorization-expired adopts a fresh `#token=` offered by navigation. CLI
 bootstrap links `/?ref=REF#token=TOKEN` (REF `P7`, `P7@N`, or `E485`) convert to a hash route and
 drop the reference query/token. Every private JSON, render, ingest, and event-stream request
 supplies `X-Board-Token` (browser streams use `fetch` streaming to send it). The server atomically
@@ -178,12 +179,9 @@ disconnect, failed spawn, panic, or slow writes release permits. No reader, tran
 lock survives a network send or wait. A 250 ms poller observes cross-process sequence changes and
 coalesces generation wakeups; poller errors or panics mark the service unavailable, close active
 streams, and reject new subscriptions with `board_unavailable`/503 until polling recovers. SSE is
-close-delimited with `Connection: close`, no Content-Length, and keepalives every 15 seconds. One
-leader tab per origin (Web Locks `trufflepig-board-stream`) holds the stream and relays every frame
-type over `BroadcastChannel`; followers dedupe by `seq` on per-tab watermarks and failover resumes
-from the new leader's watermark — without Web Locks or BroadcastChannel each tab keeps its own
-stream, a bounded incremental UTF-8/SSE parser with reconnect backoff, coalesced refreshes, and
-obsolete-route results ignored.
+close-delimited with `Connection: close`, no Content-Length, and keepalives every 15 seconds.
+Client tab leadership — elections, heartbeats, expiry — follows [stream
+leadership](board-web-ui.md#stream-leadership).
 
 ## Browser state and safe rendering
 
