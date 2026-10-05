@@ -29,6 +29,7 @@ pub(in crate::board::local_board) use repository_reads::repositories;
 pub(in crate::board::local_board) use review_evidence_reads::review;
 
 const RECENT_ENTRIES: i64 = 20;
+const PLAN_ENTRY_CAP: u64 = 200;
 const PLAN_SELECT: &str = "SELECT id,title,owner_user,steward,head_revision,created_at FROM plans";
 const OPEN_QUESTION: &str = concat!(
     "e.kind='question' AND NOT EXISTS(SELECT 1 FROM entries answer JOIN entry_refs reference ",

@@ -474,6 +474,82 @@ fn common_directory_keeps_first_identity_when_root_set_expands() {
     );
 }
 
+#[test]
+fn disjoint_roots_rekey_starts_without_copied_plan_links() {
+    let first = crate::board::repo_identity::tests::GitFixture::new();
+    first.commit("first root");
+    let second = crate::board::repo_identity::tests::GitFixture::new();
+    second.commit("second root");
+    let mut original = first.registration();
+    let mut replaced = second.registration();
+    replaced.common_dir = original.common_dir.clone();
+    assert_ne!(original.repo_key, replaced.repo_key);
+    assert!(crate::board::repo_identity::root_sets_diverged(
+        &original.root_commits,
+        &replaced.root_commits
+    ));
+    let directory = crate::board::board_test_support::scratch("board-fixture-");
+    let mut board = LocalBoard::open_path(
+        &directory.path().join("board.sqlite3"),
+        Duration::from_secs(120),
+    )
+    .unwrap();
+    let actor = BoardActor::new(
+        "fixture",
+        "fixture-host",
+        HarnessLabel::parse("human").unwrap(),
+        "repo-rekey",
+    )
+    .unwrap();
+    let reply = board
+        .handle(&BoardRequest::new(
+            actor.clone(),
+            BoardOp::New {
+                title: PlanTitle::new("Rekeyed links").unwrap(),
+                body: PlanText::new("Rekeyed links").unwrap(),
+                steward: None,
+                repo_key: None,
+            },
+        ))
+        .unwrap();
+    let BoardResult::Change(change) = reply.result else {
+        panic!("plan result")
+    };
+    original.plan_id = Some(change.plan.unwrap());
+    board
+        .handle(&BoardRequest::new(
+            actor.clone(),
+            BoardOp::RegisterRepo {
+                registration: original.clone(),
+            },
+        ))
+        .unwrap();
+    let reply = board
+        .handle(&BoardRequest::new(
+            actor,
+            BoardOp::RegisterRepo {
+                registration: replaced.clone(),
+            },
+        ))
+        .unwrap();
+    let BoardResult::Registered(rekeyed) = reply.result else {
+        panic!("registration result")
+    };
+    assert_eq!(rekeyed.repo_key, replaced.repo_key);
+    let links = |key: &RepoKey| -> i64 {
+        board
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM plan_repos WHERE repo_key=?1",
+                params![key.as_str()],
+                |row| row.get(0),
+            )
+            .unwrap()
+    };
+    assert_eq!(links(&replaced.repo_key), 0);
+    assert_eq!(links(&original.repo_key), 1);
+}
+
 fn manual_link_actor(user: &str, harness: &str) -> BoardActor {
     BoardActor::new(user, "fixture-host", HarnessLabel::parse(harness).unwrap(), "linker").unwrap()
 }

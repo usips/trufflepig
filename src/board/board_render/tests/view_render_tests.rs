@@ -77,7 +77,6 @@ fn show_preserves_labor_and_uncovered_sections_while_trimming_the_body() {
         commits_omitted: 0,
         tasks_next_after: None,
         claims_next_after: None,
-        entries_next_after: None,
         entries_next_before: None,
         through: EventSeq::new(100),
         can_edit: true,
@@ -158,7 +157,6 @@ fn plan_trim_keeps_newest_entries_behind_a_before_cursor() {
         commits_omitted: 0,
         tasks_next_after: None,
         claims_next_after: None,
-        entries_next_after: None,
         entries_next_before: None,
         through: EventSeq::new(104),
         can_edit: true,
@@ -183,7 +181,6 @@ fn plan_trim_keeps_newest_entries_behind_a_before_cursor() {
             entry: oldest.id,
         })
     );
-    assert!(page.entries_next_after.is_none());
     assert_eq!(value["omitted"]["entries"], 4 - page.entries.len());
 }
 

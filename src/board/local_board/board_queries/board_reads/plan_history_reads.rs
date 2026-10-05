@@ -98,19 +98,28 @@ pub(super) fn plan_view(
     let claims_omitted = claims.omitted;
     let claims_next_after = claims.next_after;
     let claims = claims.claims.into_iter().map(|view| view.claim).collect();
-    let entries = entries(
+    let recent = entries(
+        conn,
+        "SELECT e.id FROM entries e WHERE e.plan_id=?1 ORDER BY e.seq DESC,e.id DESC LIMIT ?2",
+        params![sql_number(id.get()), RECENT_ENTRIES],
+    )?;
+    let extras = entries(
         conn,
         &format!(
             concat!(
-                "SELECT e.id FROM entries e WHERE e.plan_id=?1 AND (e.id IN (SELECT id FROM entries ",
+                "SELECT e.id FROM entries e WHERE e.plan_id=?1 AND e.id NOT IN (SELECT id FROM entries ",
                 "WHERE plan_id=?1 ORDER BY seq DESC,id DESC LIMIT ?2) ",
-                "OR EXISTS(SELECT 1 FROM proposals p WHERE p.entry_id=e.id AND p.state='open') ",
+                "AND (EXISTS(SELECT 1 FROM proposals p WHERE p.entry_id=e.id AND p.state='open') ",
                 "OR (e.kind='feedback' AND e.state IN ('open','triaged')) OR ({OPEN_QUESTION})) ",
-                "ORDER BY e.seq DESC,e.id DESC LIMIT 200"
+                "ORDER BY e.seq DESC,e.id DESC LIMIT ?3"
             ),
             OPEN_QUESTION = OPEN_QUESTION
         ),
-        params![sql_number(id.get()), RECENT_ENTRIES],
+        params![
+            sql_number(id.get()),
+            RECENT_ENTRIES,
+            sql_number(PLAN_ENTRY_CAP.saturating_sub(recent.len() as u64))
+        ],
     )?;
     let entries_total: i64 = conn.query_row(
         &format!(
@@ -126,7 +135,7 @@ pub(super) fn plan_view(
     ).map_err(sql_error)?;
     let entries_omitted = usize::try_from(entries_total)
         .map_err(|_| invalid("board_unavailable", "invalid entry count"))?
-        .saturating_sub(entries.len());
+        .saturating_sub(recent.len() + extras.len());
     let (commits, commits_omitted) = linked_commits_bounded(conn, id, i64::MIN, i64::MAX, 200)?;
     let mut sections_without_tasks = Vec::new();
     for section in uncovered_sections(revision.body.as_str(), &[]) {
@@ -142,15 +151,18 @@ pub(super) fn plan_view(
         }
     }
     let can_edit = crate::board::local_board::can_accept(conn, &ctx.actor, id)?;
+    // The before cursor anchors the recent window, not the open extras listed
+    // after it, so paging continues past older non-open entries in between.
     let entries_next_before = (entries_omitted > 0)
         .then(|| {
-            entries.last().map(|entry| EntryCursor {
+            recent.last().map(|entry| EntryCursor {
                 seq: entry.seq,
                 entry: entry.id,
             })
         })
         .flatten();
-    let entries_next_after: Option<EntryCursor> = None;
+    let mut entries = recent;
+    entries.extend(extras);
     Ok(PlanView {
         plan,
         revision,
@@ -165,7 +177,6 @@ pub(super) fn plan_view(
         commits_omitted,
         tasks_next_after,
         claims_next_after,
-        entries_next_after,
         entries_next_before,
         through,
         can_edit,

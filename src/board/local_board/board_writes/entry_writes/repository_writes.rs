@@ -17,7 +17,6 @@ pub(in crate::board::local_board) fn register_repo(
         require_plan(tx, plan)?;
     }
     let mut registration = registration.clone();
-    let mut copy_plan_links = true;
     let prior: Option<(String, String)> = tx.query_row(
         "SELECT repo_key,root_commits_json FROM repo_paths WHERE host=?1 AND common_dir=?2 ORDER BY rowid LIMIT 1",
         params![registration.host, registration.common_dir.to_string_lossy().as_ref()],
@@ -42,12 +41,6 @@ pub(in crate::board::local_board) fn register_repo(
                 &roots,
                 &registration.root_commits,
             );
-        // Copy the replaced path's plan links only when the stored roots are
-        // carried forward into the incoming set; a disjoint re-key starts clean.
-        // Compare before the branch below may replace the incoming roots.
-        copy_plan_links = roots
-            .iter()
-            .all(|root| registration.root_commits.contains(root));
         if !rekeyed {
             registration.repo_key = initial_key;
             if !roots.is_empty() {
@@ -63,15 +56,6 @@ pub(in crate::board::local_board) fn register_repo(
         params![registration.repo_key.as_str(), registration.origin_label],
     )
     .map_err(sql_error)?;
-    if copy_plan_links {
-        tx.execute(
-            concat!(
-                "INSERT OR IGNORE INTO plan_repos(plan_id,repo_key) SELECT pr.plan_id,?1 FROM plan_repos pr ",
-                "JOIN repo_paths p ON p.repo_key=pr.repo_key WHERE p.host=?2 AND p.common_dir=?3"
-            ),
-            params![registration.repo_key.as_str(), registration.host, registration.common_dir.to_string_lossy().as_ref()],
-        ).map_err(sql_error)?;
-    }
     tx.execute(
         "DELETE FROM repo_paths WHERE host=?1 AND common_dir=?2 AND repo_key<>?3",
         params![
