@@ -24,22 +24,34 @@ fn resolve_on_path(name: &str) -> Option<PathBuf> {
 fn board_asset_tests_pass_under_node() {
     let tests =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/board/board_web/assets/tests");
+    // Node >=21 treats a `--test` directory argument as a single module and
+    // dies with MODULE_NOT_FOUND (nodejs/node#64555); explicit files run
+    // identically on every Node >=20.
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&tests)
+        .unwrap_or_else(|error| panic!("board asset tests unreadable: {}: {error}", tests.display()))
+        .map(|entry| entry.expect("read board asset test entry").path())
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().ends_with(".test.mjs"))
+        })
+        .collect();
+    files.sort();
     assert!(
-        tests.is_dir(),
+        !files.is_empty(),
         "board asset tests missing: {}",
         tests.display()
     );
     let node = resolve_on_path("node").expect("node on PATH: build probed Node >=20");
     let output = Command::new(node)
         .arg("--test")
-        .arg(&tests)
+        .args(&files)
         .output()
         .expect("spawn node --test");
     println!("{}", String::from_utf8_lossy(&output.stdout));
     eprint!("{}", String::from_utf8_lossy(&output.stderr));
     assert!(
         output.status.success(),
-        "node --test {} failed: {}",
+        "node --test {}/*.test.mjs failed: {}",
         tests.display(),
         output.status
     );

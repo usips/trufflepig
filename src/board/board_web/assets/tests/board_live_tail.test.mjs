@@ -1,12 +1,12 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { installFakeDom, resetFakeDom } from "./fake_dom.mjs";
+import { installDomShim, resetDomShim } from "./dom_shim.mjs";
 import { createBoardDom } from "../board_dom.js";
 import { createBoardEntries } from "../board_entries.js";
 import { createBoardReader } from "../board_reader.js";
 
-installFakeDom();
-beforeEach(() => resetFakeDom());
+installDomShim();
+beforeEach(() => resetDomShim());
 
 function entry(id, seq) {
   return {
