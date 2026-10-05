@@ -7,7 +7,8 @@ use std::process::{Command, Stdio};
 fn native_trailers_link_case_insensitively_and_exclude_body_mentions() {
     let fixture = GitFixture::new();
     fixture.commit("root");
-    fixture.commit("body mention\n\nPlan: P7\n\nThis is body prose, not a trailer.");
+    let body_mention =
+        fixture.commit("body mention\n\nPlan: P7\n\nThis is body prose, not a trailer.");
     std::fs::write(fixture.root.join("source.txt"), "one\ntwo\n").unwrap();
     fixture.git(&["add", "source.txt"]);
     let linked = fixture.commit(
@@ -20,7 +21,13 @@ fn native_trailers_link_case_insensitively_and_exclude_body_mentions() {
     let report = RepoIngestor::default()
         .ingest(&mut backend, &actor(), &[target], Duration::from_secs(5))
         .unwrap();
-    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
+    assert!(
+        report.errors[0].contains("misplaced_trailers")
+            && report.errors[0].contains(&body_mention.to_string()),
+        "a trailer-shaped body line warns without linking: {:?}",
+        report.errors
+    );
     assert_eq!(
         backend
             .linked
@@ -296,6 +303,140 @@ fn stats_failure_keeps_links_and_reports_warning() {
             .unwrap()
             .skipped,
         1
+    );
+}
+
+#[test]
+fn misplaced_plan_trailers_warn_through_scan_reports_without_linking() {
+    let fixture = GitFixture::new();
+    fixture.commit("root");
+    // The exact W5-H1 shape (commit 49a77c3): blank lines between trailers,
+    // so Git's final-paragraph rule parses only the co-author.
+    let misplaced = fixture.commit(concat!(
+        "feat(board): delegate claims to coder sessions\n",
+        "\n",
+        "Steward orchestrators claim tasks on behalf of coder sessions via 'board claim P7.3 SCOPE --for HARNESS/SESSION'.\n",
+        "\n",
+        "Red evidence: the delegation tests failed to compile before the change.\n",
+        "\n",
+        "Plan: P7\n",
+        "\n",
+        "Plan-Task: P7.3\n",
+        "\n",
+        "Co-authored-by: Muse Spark <noreply@meta.com>"
+    ));
+    let target = target(&fixture);
+    let mut ingestor = RepoIngestor::default();
+    let mut backend = TestBackend::default();
+    let report = ingestor
+        .ingest(
+            &mut backend,
+            &actor(),
+            &[target.clone()],
+            Duration::from_secs(5),
+        )
+        .unwrap();
+    assert!(
+        backend.linked.is_empty(),
+        "misplaced trailers never create links: {:?}",
+        backend.linked
+    );
+    assert_eq!(
+        backend.scan_errors.last(),
+        Some(&None),
+        "warnings must not fail the scan: {:?}",
+        backend.scan_errors
+    );
+    assert!(
+        report
+            .errors
+            .iter()
+            .any(|error| error.contains("misplaced_trailers")
+                && error.contains(&misplaced.to_string())),
+        "{:?}",
+        report.errors
+    );
+    // A cached stamp re-emits the warning until the commit is repaired.
+    let second = ingestor
+        .ingest(&mut backend, &actor(), &[target], Duration::from_secs(5))
+        .unwrap();
+    assert_eq!(second.skipped, 1);
+    assert!(
+        second
+            .errors
+            .iter()
+            .any(|error| error.contains("misplaced_trailers")),
+        "{:?}",
+        second.errors
+    );
+}
+
+#[test]
+fn plan_task_trailer_without_plan_warns_through_scan_reports() {
+    let fixture = GitFixture::new();
+    fixture.commit("root");
+    let task_only = fixture
+        .commit("task only\n\nPlan-Task: P7.3\nCo-authored-by: Model claim <noreply@openai.com>");
+    let target = target(&fixture);
+    let mut backend = TestBackend::default();
+    let report = RepoIngestor::default()
+        .ingest(&mut backend, &actor(), &[target], Duration::from_secs(5))
+        .unwrap();
+    assert!(
+        backend.linked.is_empty(),
+        "a plan task without a plan never links: {:?}",
+        backend.linked
+    );
+    assert!(
+        report
+            .errors
+            .iter()
+            .any(|error| error.contains("plan_task_without_plan")
+                && error.contains(&task_only.to_string())),
+        "{:?}",
+        report.errors
+    );
+}
+
+#[test]
+fn latin1_coauthor_trailer_keeps_the_record_and_plan_link() {
+    let fixture = GitFixture::new();
+    fixture.commit("root");
+    fixture.git(&["config", "i18n.commitEncoding", "latin1"]);
+    let message = fixture.root.join("message.txt");
+    std::fs::write(
+        &message,
+        b"latin1 coauthor\n\nPlan: P7\nCo-authored-by: Caf\xe9 <c@example.test>\n",
+    )
+    .unwrap();
+    fixture.git(&[
+        "commit",
+        "--allow-empty",
+        "--quiet",
+        "-F",
+        message.to_str().unwrap(),
+    ]);
+    let linked = GitOid::parse(fixture.git(&["rev-parse", "HEAD"]).trim()).unwrap();
+    let target = target(&fixture);
+    let mut backend = TestBackend::default();
+    let report = RepoIngestor::default()
+        .ingest(&mut backend, &actor(), &[target], Duration::from_secs(5))
+        .unwrap();
+    let commit = backend
+        .linked
+        .iter()
+        .find(|commit| commit.oid == linked)
+        .expect("a non-UTF-8 trailer must not drop the commit");
+    assert_eq!(commit.plans.len(), 1);
+    assert_eq!(commit.coauthors.len(), 1);
+    assert_eq!(commit.coauthors[0].model, "Caf\u{fffd}");
+    assert!(
+        report
+            .errors
+            .iter()
+            .any(|error| error.contains("not valid UTF-8")),
+        "{:?}",
+        report.errors
     );
 }
 

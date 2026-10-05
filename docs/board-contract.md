@@ -152,7 +152,11 @@ scans at most 2000 commits since the oldest linked plan minus one day, matching 
 `Plan`/`Plan-Task` trailers, with stats and co-authors. The tip digest advances only after a
 complete metadata scan; unknown plan links are skipped and reported. Stats are bounded best-effort
 metadata independent of enumeration; malformed record metadata is skipped with diagnostics, while
-incomplete NUL framing invalidates the scan. Cached stamps retain warnings and unknown references.
+incomplete NUL framing invalidates the scan. Non-UTF-8 metadata decodes lossily with a warning
+instead of dropping the commit. A parsed `Plan-Task` without a `Plan` warns
+`plan_task_without_plan OID` and stays unlinked; a trailer-shaped body line Git's final-paragraph
+rule ignored warns `misplaced_trailers OID` and never links.
+Cached stamps retain warnings and unknown references.
 Board Git access supports Git 2.43 independently of historical navigation's gate. Repeated ingestion
 creates no duplicate link/entry/event; rebasing creates a new oid and new evidence. Untrailered
 commits are not ingested; `board link OID P7.3` repairs one by hand. External trailers retain all

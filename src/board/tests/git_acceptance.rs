@@ -205,6 +205,57 @@ fn unrecognized_git_coauthor_ingests_and_reply_evidence_round_trips() {
 }
 
 #[test]
+fn misplaced_trailers_surface_in_ingest_warnings_and_review_scan_errors() {
+    let fixture = EdgeFixture::new();
+    fixture.seed_repo();
+    fixture.run(
+        &["board", "new", "Misplaced trailers", "--steward", "codex"],
+        "human",
+        "owner",
+    );
+    fixture.run(&["board", "task", "P1", "Trailer lane"], "human", "owner");
+    // The W5-H1 shape: blank lines between trailers, so Git parses only the
+    // final paragraph (the co-author) and ignores both plan trailers.
+    git(
+        &fixture.root,
+        &[
+            "commit",
+            "--allow-empty",
+            "-m",
+            "Split trailer footer\n\nBody prose.\n\nPlan: P1\n\nPlan-Task: P1.1\n\nCo-authored-by: Muse Spark <noreply@meta.com>",
+        ],
+    );
+    let oid = git(&fixture.root, &["rev-parse", "HEAD"]);
+    let ingest = fixture.run(&["board", "ingest"], "codex", "reviewer");
+    let warnings = ingest["warnings"].as_array().cloned().unwrap_or_default();
+    assert!(
+        warnings.iter().any(|warning| {
+            let warning = warning.as_str().unwrap_or_default();
+            warning.contains("misplaced_trailers") && warning.contains(&oid)
+        }),
+        "{warnings:?}"
+    );
+    assert_eq!(
+        fixture.scalar("SELECT COUNT(*) FROM commit_plans"),
+        0,
+        "misplaced trailers never create links"
+    );
+    let review = fixture.run(&["board", "review", "P1@1"], "codex", "reviewer");
+    let packet = data(&review);
+    let scan_errors = packet["scan_errors"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        scan_errors.iter().any(|error| {
+            let error = error.as_str().unwrap_or_default();
+            error.contains("misplaced_trailers") && error.contains(&oid)
+        }),
+        "{scan_errors:?}"
+    );
+}
+
+#[test]
 fn manual_link_repairs_an_untrailered_commit_through_host_resolution() {
     let fixture = EdgeFixture::new();
     fixture.seed_repo();
