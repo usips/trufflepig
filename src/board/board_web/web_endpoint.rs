@@ -152,10 +152,6 @@ impl EndpointGuard {
     pub(super) fn path(&self) -> &Path {
         &self.path
     }
-
-    pub(super) fn address(&self) -> SocketAddr {
-        self.address
-    }
 }
 
 impl Drop for EndpointGuard {

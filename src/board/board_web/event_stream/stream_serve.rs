@@ -18,8 +18,10 @@ use std::{
 
 impl EventStreams {
     pub(super) fn serve(&self, mut socket: TcpStream, request: StreamRequest) -> io::Result<()> {
+        // A poller lost between reserve and serve still answers: an empty
+        // reply would read as a dropped connection, not a retryable outage.
         if !self.wake.available() {
-            return Ok(());
+            return unavailable_reply(&mut socket);
         }
         if let Some(plan) = request.plan {
             // Unknown plans are rejected before any 200: a 200-then-close
@@ -167,4 +169,17 @@ impl EventStreams {
             }
         }
     }
+}
+
+/// Pre-200 refusal for a poller lost after admission; matches the route 503
+/// envelope so reconnecting subscribers back off instead of spinning.
+fn unavailable_reply(socket: &mut TcpStream) -> io::Result<()> {
+    let body = serde_json::to_vec(&serde_json::json!({
+        "error": {
+            "code": "board_unavailable",
+            "message": "event sequence poller unavailable",
+        }
+    }))
+    .map_err(io::Error::other)?;
+    super::super::http_wire::send_unavailable(socket, 1, &body)
 }

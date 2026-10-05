@@ -125,6 +125,12 @@ impl EventStreams {
         }
     }
 
+    /// True once the filler has stopped; the ring never recovers
+    /// in-process, so the serve loop exits for a systemd restart.
+    pub fn ring_stopped(&self) -> bool {
+        self.ring.stopped()
+    }
+
     /// Reserve only after request authentication and cursor parsing succeed.
     pub fn reserve(&self) -> Result<StreamPermit, BoardError> {
         if self.ring.stopped() {

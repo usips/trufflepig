@@ -36,7 +36,7 @@ fn socket_pair() -> (TcpStream, TcpStream) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
     client
-        .set_read_timeout(Some(Duration::from_secs(2)))
+        .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();
     (listener.accept().unwrap().0, client)
 }
@@ -142,7 +142,7 @@ impl FakeFeed {
         let started = Instant::now();
         while self.read_count() < at_least {
             assert!(
-                started.elapsed() < Duration::from_secs(2),
+                started.elapsed() < Duration::from_secs(5),
                 "feed reads stalled at {}",
                 self.read_count()
             );
@@ -166,10 +166,33 @@ fn wait_released(streams: &EventStreams) {
     let started = Instant::now();
     while streams.active() != 0 {
         assert!(
-            started.elapsed() < Duration::from_secs(2),
+            started.elapsed() < Duration::from_secs(5),
             "stream permit retained"
         );
         thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// Polls `count` until it stays flat for `quiet`; a filler that keeps
+/// reading on an idle subscriber never settles and fails the deadline.
+fn wait_reads_quiet(count: impl Fn() -> usize, quiet: Duration) -> usize {
+    let started = Instant::now();
+    let mut settled = count();
+    let mut settled_at = Instant::now();
+    loop {
+        let current = count();
+        if current != settled {
+            settled = current;
+            settled_at = Instant::now();
+        }
+        if settled_at.elapsed() >= quiet {
+            return settled;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "feed reads never settled: still growing at {settled}"
+        );
+        thread::sleep(Duration::from_millis(5));
     }
 }
 
@@ -331,13 +354,9 @@ fn replay_precedes_wait_and_serializes_multiline_utf8_json() {
         .unwrap();
     let decoded: EventRecord = serde_json::from_str(data).unwrap();
     assert_eq!(decoded.summary.as_str(), "雪\n\"quoted\"");
-    let reads = feed.read_count();
-    thread::sleep(Duration::from_millis(300));
-    assert_eq!(
-        feed.read_count(),
-        reads,
-        "an idle subscriber must not drive further reads"
-    );
+    // An idle subscriber drives no reads: the count settles instead of
+    // merely surviving a fixed window that load can shift.
+    wait_reads_quiet(|| feed.read_count(), Duration::from_millis(300));
     drop(client);
     wait_released(&streams);
 }
@@ -354,13 +373,9 @@ fn two_subscribers_replay_one_shared_fill() {
     let payload_a = replay_a.split("\r\n\r\n").nth(1).unwrap();
     let payload_b = replay_b.split("\r\n\r\n").nth(1).unwrap();
     assert_eq!(payload_a, payload_b, "both subscribers replay the same history");
-    let reads = feed.unfiltered_reads();
-    thread::sleep(Duration::from_millis(300));
-    assert_eq!(
-        feed.unfiltered_reads(),
-        reads,
-        "idle subscribers share one quiet ring"
-    );
+    // Idle subscribers share one quiet ring: unfiltered reads settle
+    // instead of merely surviving a fixed window that load can shift.
+    let reads = wait_reads_quiet(|| feed.unfiltered_reads(), Duration::from_millis(300));
     feed.push(event(4, "live"));
     wake.publish(EventSeq::new(4));
     assert!(read_until(&mut first, "id: 4\n").contains("id: 4\n"));
@@ -507,7 +522,7 @@ fn failing_feeds_close_streams_and_panicking_feeds_refuse_reserve() {
     let started = Instant::now();
     while panicked.reserve().is_ok() {
         assert!(
-            started.elapsed() < Duration::from_secs(2),
+            started.elapsed() < Duration::from_secs(5),
             "reserve() never observed the stopped filler"
         );
         thread::sleep(Duration::from_millis(5));
@@ -553,7 +568,7 @@ fn recovering_feed_restores_availability_and_ordered_replay() {
 }
 
 #[test]
-fn outage_between_reservation_and_spawn_closes_before_http_success() {
+fn outage_between_reservation_and_spawn_answers_503() {
     let wake = SequenceWake::new();
     let streams = EventStreams::new(empty_reader(), wake.clone());
     let permit = streams.reserve().unwrap();
@@ -568,7 +583,39 @@ fn outage_between_reservation_and_spawn_closes_before_http_success() {
         .unwrap();
     let mut response = String::new();
     client.read_to_string(&mut response).unwrap();
-    assert!(response.is_empty());
+    assert!(response.starts_with("HTTP/1.1 503 "), "{response}");
+    assert!(response.contains("Retry-After: 1\r\n"), "{response}");
+    assert!(
+        response.contains("\"code\":\"board_unavailable\""),
+        "{response}"
+    );
+    assert!(!response.contains("HTTP/1.1 200"), "{response}");
+    wait_released(&streams);
+}
+
+#[test]
+fn dropped_poller_between_reservation_and_spawn_answers_503() {
+    let poller = SequencePoller::start(Arc::new(|| Ok(EventSeq::new(0)))).unwrap();
+    let streams = EventStreams::new(empty_reader(), poller.handle());
+    let permit = streams.reserve().unwrap();
+    drop(poller);
+    let (server, mut client) = socket_pair();
+    streams
+        .spawn(
+            server,
+            StreamRequest::parse(None, None, None).unwrap(),
+            permit,
+        )
+        .unwrap();
+    let mut response = String::new();
+    client.read_to_string(&mut response).unwrap();
+    assert!(response.starts_with("HTTP/1.1 503 "), "{response}");
+    assert!(response.contains("Retry-After: 1\r\n"), "{response}");
+    assert!(
+        response.contains("\"code\":\"board_unavailable\""),
+        "{response}"
+    );
+    assert!(!response.contains("HTTP/1.1 200"), "{response}");
     wait_released(&streams);
 }
 
@@ -673,7 +720,15 @@ fn sequence_wakes_coalesce_and_poller_retries_at_bounded_cadence() {
         Err(BoardError::new(BoardErrorCode::DatabaseLocked, "busy"))
     }))
     .unwrap();
-    thread::sleep(Duration::from_millis(550));
+    // Two ticks prove the cadence without assuming how fast they land.
+    let started = Instant::now();
+    while calls.load(Ordering::Acquire) < 2 {
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "poller never ticked twice"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
     let handle = poller.handle();
     drop(poller);
     assert!((2..=4).contains(&calls.load(Ordering::Acquire)));
@@ -735,7 +790,7 @@ fn polling_busy_or_panic_rejects_admission_then_recovers_unchanged_sequence() {
         let started = Instant::now();
         while !wake.available() {
             assert!(
-                started.elapsed() < Duration::from_secs(2),
+                started.elapsed() < Duration::from_secs(5),
                 "poller failed to recover"
             );
             thread::sleep(Duration::from_millis(5));

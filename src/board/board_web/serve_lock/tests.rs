@@ -1,5 +1,5 @@
-use super::super::web_serve::BoardWebServer;
-use std::path::PathBuf;
+use super::super::web_serve::{BoardWebServer, PublishedEndpoint};
+use std::{path::PathBuf, sync::OnceLock};
 
 const CHILD: &str = "TRUFFLEPIG_SERVE_LOCK_TEST_CHILD";
 
@@ -31,10 +31,16 @@ fn second_bind_refuses_and_leaves_token_untouched() {
         return;
     }
     let runtime = PathBuf::from(std::env::var_os("TRUFFLEPIG_SYSTEM_DIR").unwrap());
-    let first = BoardWebServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let published: PublishedEndpoint = OnceLock::new();
+    let first = BoardWebServer::bind("127.0.0.1:0".parse().unwrap(), &published).unwrap();
+    // Bind hands the descriptor to the pre-bind signal waiter through the lock.
+    assert_eq!(
+        published.get().map(|(path, _)| path),
+        Some(&runtime.join("board-web.json")),
+    );
     let token_path = runtime.join("board-web.token");
     let before = std::fs::read(&token_path).unwrap();
-    let error = BoardWebServer::bind("127.0.0.1:0".parse().unwrap())
+    let error = BoardWebServer::bind("127.0.0.1:0".parse().unwrap(), &OnceLock::new())
         .err()
         .expect("second bind refuses");
     assert!(
