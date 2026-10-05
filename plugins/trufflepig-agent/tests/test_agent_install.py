@@ -137,27 +137,79 @@ class AgentInstallTests(unittest.TestCase):
         directory = self.root / "service-bin"
         directory.mkdir()
         capture = self.root / "service-calls.jsonl"
+        state = self.root / "service-state.json"
         for name in ("trufflepig", "systemctl"):
             shim = directory / name
             shim.write_text('''#!/usr/bin/env python3
 import json, os, sys, time
 from pathlib import Path
-if Path(sys.argv[0]).name == "trufflepig" and sys.argv[1:] == ["--board-api-version"]:
+name = Path(sys.argv[0]).name
+if name == "trufflepig" and sys.argv[1:] == ["--board-api-version"]:
     time.sleep(float(os.environ.get("PROBE_DELAY", "0")))
     sys.stdout.write(os.environ.get("PROBE_STDOUT", "5\\n"))
     sys.stderr.write(os.environ.get("PROBE_STDERR", ""))
     sys.exit(int(os.environ.get("PROBE_STATUS", "0")))
-if Path(sys.argv[0]).name == "trufflepig" and sys.argv[1:] == ["system", "dir"]:
+if name == "trufflepig" and sys.argv[1:] == ["system", "dir"]:
+    if os.environ.get("PROBE_STDOUT", "5\\n") != "5\\n":
+        # Older binaries predate `system dir` and answer with usage.
+        sys.stderr.write("usage: trufflepig [--help] ...\\n")
+        sys.exit(2)
     override = os.environ.get("TRUFFLEPIG_SYSTEM_DIR")
     fallback = os.path.join(os.environ.get("HOME", "/nonexistent"), ".cache/trufflepig/system")
     sys.stdout.write((override or fallback) + "\\n")
     sys.exit(0)
 with Path(os.environ["SERVICE_CAPTURE"]).open("a") as handle:
-    handle.write(json.dumps([Path(sys.argv[0]).name, *sys.argv[1:]]) + "\\n")
+    handle.write(json.dumps([name, *sys.argv[1:]]) + "\\n")
+if name != "systemctl":
+    sys.exit(0)
+# Model the unit state systemctl would keep: the board's PartOf stops it
+# with the router, try-restart revives running units only, and a unit is
+# known only while its unit file exists.
+units_dir = Path(os.environ["XDG_CONFIG_HOME"]) / "systemd/user"
+state_path = Path(os.environ["SERVICE_STATE"])
+state = json.loads(state_path.read_text()) if state_path.exists() else {}
+words = [word for word in sys.argv[1:] if not word.startswith("-")]
+command, units = (words[0], words[1:]) if words else ("", [])
+def unknown(unit, status):
+    sys.stderr.write(f"Unit {unit} could not be found.\\n")
+    sys.exit(status)
+if command == "is-active":
+    if not (units_dir / units[0]).is_file():
+        unknown(units[0], 4)
+    sys.exit(0 if state.get(units[0]) else 3)
+for unit in units:
+    if not (units_dir / unit).is_file():
+        unknown(unit, 5 if command == "try-restart" else 4)
+if command == "stop":
+    for unit in units:
+        state[unit] = False
+    if "trufflepig-system.service" in units:
+        state["trufflepig-board.service"] = False
+elif command in ("start", "restart"):
+    for unit in units:
+        state[unit] = True
+elif command == "enable" and "--now" in sys.argv:
+    if os.environ.get("FAIL_ENABLE"):
+        sys.exit(1)
+    for unit in units:
+        state[unit] = True
+elif command == "try-restart":
+    # try-restart revives running units only: a running unit restarts in
+    # place and a stopped unit stays stopped, so end state never changes.
+    pass
+state_path.write_text(json.dumps(state, indent=2) + "\\n")
 ''')
             shim.chmod(0o755)
-        self.env.update(PATH=f"{directory}:{self.env['PATH']}", SERVICE_CAPTURE=str(capture))
+        self.env.update(PATH=f"{directory}:{self.env['PATH']}",
+                        SERVICE_CAPTURE=str(capture), SERVICE_STATE=str(state))
         return capture
+
+    def systemctl(self, *args):
+        return subprocess.run(["systemctl", "--user", *args], env=self.env, text=True, capture_output=True)
+
+    def active_units(self):
+        return {name: self.systemctl("is-active", "--quiet", name).returncode == 0
+                for name in ("trufflepig-system.service", "trufflepig-board.service")}
 
     def serve_router_status(self, replies):
         """Answer `system status` polls on $TRUFFLEPIG_SYSTEM_DIR/daemon.sock."""
@@ -243,6 +295,17 @@ with Path(os.environ["SERVICE_CAPTURE"]).open("a") as handle:
         self.assertFalse((self.root / "config").exists())
         self.assertFalse(capture.exists())
 
+    def test_api_3_binary_gets_reinstall_advice_not_usage(self):
+        self.service_shims()
+        self.env["PROBE_STDOUT"] = "3\n"
+        for flag in ("--systemd", "--board"):
+            with self.subTest(flag=flag):
+                result = self.install(flag)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("must support board API 5", result.stderr)
+                self.assertNotIn("usage", result.stderr)
+                self.assertFalse((self.root / "config/systemd").exists())
+
     def test_service_preflight_rejects_relative_board_path_before_mutation(self):
         capture = self.service_shims()
         self.env["TRUFFLEPIG_BOARD_DB"] = "relative.sqlite3"
@@ -260,7 +323,9 @@ with Path(os.environ["SERVICE_CAPTURE"]).open("a") as handle:
         result = self.install("--board")
         self.assertEqual(result.returncode, 0, result.stderr)
         calls = [json.loads(line) for line in capture.read_text().splitlines()]
-        self.assertEqual(calls, [["systemctl", "--user", "daemon-reload"],
+        self.assertEqual(calls, [["systemctl", "--user", "is-active", "--quiet", "trufflepig-system.service"],
+                                 ["systemctl", "--user", "is-active", "--quiet", "trufflepig-board.service"],
+                                 ["systemctl", "--user", "daemon-reload"],
                                  ["systemctl", "--user", "stop", "trufflepig-board.service"],
                                  ["systemctl", "--user", "enable", "--now", "trufflepig-board.service"]])
         units = self.root / "config/systemd/user"
@@ -282,32 +347,38 @@ with Path(os.environ["SERVICE_CAPTURE"]).open("a") as handle:
         result = self.install("--board")
         self.assertEqual(result.returncode, 0, result.stderr)
         calls = [json.loads(line) for line in capture.read_text().splitlines()]
-        self.assertEqual(calls, [["systemctl", "--user", "daemon-reload"],
+        self.assertEqual(calls, [["systemctl", "--user", "is-active", "--quiet", "trufflepig-system.service"],
+                                 ["systemctl", "--user", "is-active", "--quiet", "trufflepig-board.service"],
+                                 ["systemctl", "--user", "daemon-reload"],
                                  ["systemctl", "--user", "stop", "trufflepig-board.service"],
                                  ["systemctl", "--user", "restart", "trufflepig-system.service"],
                                  ["systemctl", "--user", "enable", "--now", "trufflepig-board.service"]])
 
-    def test_systemd_install_try_restarts_board_after_router_enable(self):
+    def test_systemd_alone_with_active_board_leaves_both_active(self):
         capture = self.service_shims()
         units = self.root / "config/systemd/user"
         units.mkdir(parents=True)
         (units / "trufflepig-board.service").write_text("previous board unit\n")
+        self.systemctl("start", "trufflepig-board.service")
+        capture.write_text("")
         result = self.install("--systemd")
         self.assertEqual(result.returncode, 0, result.stderr)
         calls = [json.loads(line) for line in capture.read_text().splitlines()]
         enable = ["systemctl", "--user", "enable", "--now", "trufflepig-system.service"]
         self.assertIn(enable, calls)
         self.assertEqual(calls[calls.index(enable) + 1],
-                         ["systemctl", "--user", "try-restart", "trufflepig-board.service"])
+                         ["systemctl", "--user", "start", "trufflepig-board.service"])
+        self.assertEqual(self.active_units(),
+                         {"trufflepig-system.service": True, "trufflepig-board.service": True})
 
-    def test_systemd_install_without_board_skips_try_restart(self):
+    def test_systemd_install_without_board_skips_board_start(self):
         capture = self.service_shims()
         result = self.install("--systemd")
         self.assertEqual(result.returncode, 0, result.stderr)
         calls = [json.loads(line) for line in capture.read_text().splitlines()]
-        self.assertNotIn(["systemctl", "--user", "try-restart", "trufflepig-board.service"], calls)
+        self.assertNotIn(["systemctl", "--user", "start", "trufflepig-board.service"], calls)
 
-    def test_failing_router_check_restores_previous_unit_files(self):
+    def test_failing_router_check_leaves_units_running_and_files_untouched(self):
         capture = self.service_shims()
         current = {"board_api": 5, "schema_supported": "2026-01-01", "schema_file": "2026-01-01"}
         stale = {"board_api": 3, "schema_supported": "2026-01-01", "schema_file": "2026-01-01"}
@@ -318,24 +389,41 @@ with Path(os.environ["SERVICE_CAPTURE"]).open("a") as handle:
         board_unit = units / "trufflepig-board.service"
         previous = "previous board unit\n"
         board_unit.write_text(previous)
+        self.systemctl("start", "trufflepig-system.service")
+        self.systemctl("start", "trufflepig-board.service")
         capture.write_text("")
         result = self.install("--board")
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn("board_api 3", result.stderr)
         self.assertEqual(board_unit.read_text(), previous)
-        reload = ["systemctl", "--user", "daemon-reload"]
-        calls = [json.loads(line) for line in capture.read_text().splitlines()]
-        self.assertEqual(calls.count(reload), 2)
-        self.assertEqual(calls[-1], reload)
-        self.assertNotIn(["systemctl", "--user", "enable", "--now", "trufflepig-board.service"], calls)
+        self.assertEqual(capture.read_text(), "")
+        self.assertEqual(self.active_units(),
+                         {"trufflepig-system.service": True, "trufflepig-board.service": True})
         board_unit.unlink()
         capture.write_text("")
         result = self.install("--board")
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertFalse(board_unit.exists())
-        calls = [json.loads(line) for line in capture.read_text().splitlines()]
-        self.assertEqual(calls.count(reload), 2)
-        self.assertEqual(calls[-1], reload)
+        self.assertEqual(capture.read_text(), "")
+        self.assertTrue(self.active_units()["trufflepig-system.service"])
+
+    def test_enable_failure_restores_files_and_restarts_active_units(self):
+        self.service_shims()
+        units = self.root / "config/systemd/user"
+        units.mkdir(parents=True)
+        router_unit = units / "trufflepig-system.service"
+        board_unit = units / "trufflepig-board.service"
+        router_unit.write_text("previous router unit\n")
+        board_unit.write_text("previous board unit\n")
+        self.systemctl("start", "trufflepig-system.service")
+        self.systemctl("start", "trufflepig-board.service")
+        self.env["FAIL_ENABLE"] = "1"
+        result = self.install("--systemd")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertEqual(router_unit.read_text(), "previous router unit\n")
+        self.assertEqual(board_unit.read_text(), "previous board unit\n")
+        self.assertEqual(self.active_units(),
+                         {"trufflepig-system.service": True, "trufflepig-board.service": True})
 
     def test_router_check_polls_until_router_answers(self):
         spec = importlib.util.spec_from_file_location("install_router_poll", PLUGIN / "scripts/install_agent.py")
