@@ -33,11 +33,18 @@ fn accept_fixture() -> (tempfile::TempDir, Arc<WebState>) {
         }),
         poller.handle(),
     );
+    let expires = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let board_id = store
+        .with_writer(&store.config(expires).unwrap(), expires, |writer| {
+            writer.board_uuid()
+        })
+        .unwrap();
     let state = Arc::new(WebState {
         store: Arc::new(store),
         guard,
         streams,
         ingest: Default::default(),
+        board_id,
     });
     (directory, state)
 }

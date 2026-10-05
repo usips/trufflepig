@@ -196,6 +196,14 @@ pub(super) fn open_with_timeout(
         [resolved.to_string_lossy().as_ref()],
     )
     .map_err(sql_error)?;
+    // The database identity is minted once and never rotated: existing stores
+    // backfill on their next writable open, with no schema migration.
+    let board_uuid = uuid::Uuid::new_v4().to_string();
+    tx.execute(
+        "INSERT INTO board_meta(key,value) VALUES('board_uuid',?1) ON CONFLICT(key) DO NOTHING",
+        [&board_uuid],
+    )
+    .map_err(sql_error)?;
     tx.commit().map_err(sql_error)?;
     conn.busy_timeout(timeout.min(Duration::from_secs(5)))
         .map_err(sql_error)?;

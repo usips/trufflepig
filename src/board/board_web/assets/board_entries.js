@@ -47,14 +47,9 @@ export function createBoardEntries(context) {
     if (entry.to) cells[6].append(el("p", "small muted", `To ${entry.to}`));
     return add(row, cells);
   }
-  function liveMatch(entry, route) {
-    const actor = entry.actor || {}, refs = entry.refs || [];
-    return (!route.plan || entry.plan === route.plan) && (!route.kind || entry.kind === route.kind)
-      && (!route.harness || actor.harness === route.harness) && (!route.user || actor.user === route.user)
-      && (!route.host || actor.host === route.host)
-      && (!route.task || refs.includes(route.task)) && (!route.references || refs.includes(route.references));
-  }
-  function entriesTable(records, route = {}, through = null) {
+  // Newest-first refresh already covers the tail: the table renders only its
+  // snapshot records, with no live seam above them.
+  function entriesTable(records) {
     const table = el("table", "entry-table");
     const caption = el("caption", "sr-only", "Board entries");
     const head = el("thead"), heading = el("tr"), body = el("tbody");
@@ -62,26 +57,6 @@ export function createBoardEntries(context) {
       const column = el("th", "", label); column.scope = "col"; heading.append(column);
     }
     head.append(heading); add(table, caption, head, body);
-    // Live rows are newer than the page's snapshot watermark, so they sort
-    // above the paged history; a divider marks the seam between the two.
-    const live = [];
-    if (!route.after && !route.through && through !== null && state.liveEntries.length) {
-      const shown = new Set(records.map(record => entryRecord(record)?.id));
-      for (const item of state.liveEntries) {
-        if (shown.has(item.entry.id) || !liveMatch(item.entry, route)) continue;
-        if (BigInt(item.seq) <= BigInt(String(through))) continue;
-        live.push(item);
-      }
-      live.sort((a, b) => BigInt(b.seq) < BigInt(a.seq) ? -1 : BigInt(b.seq) > BigInt(a.seq) ? 1 : 0);
-    }
-    for (const item of live) body.append(entryRow(item.entry));
-    if (live.length && records.length) {
-      const divider = el("tr", "live-divider");
-      const cell = el("td", "", state.liveGap
-        ? "Live delivery skipped some entries — refresh to catch up."
-        : "New entries since this page loaded");
-      cell.colSpan = 7; divider.append(cell); body.append(divider);
-    }
     for (const record of records) body.append(entryRow(record));
     return add(el("div", "entry-table-scroll"), table);
   }
@@ -90,7 +65,7 @@ export function createBoardEntries(context) {
     if (heading) page.append(title("Entries", "Append-only evidence and conversation."));
     page.append(filtersForm(route, !route.ref));
     const entries = collection(data, "entries");
-    add(page, entriesTable(entries, route, data.through ?? null),
+    add(page, entriesTable(entries),
       entries.length ? null : empty("No entries match these filters."), omitted(data.omitted, "entries"));
     const pager = el("div", "pager");
     if (route.after) {

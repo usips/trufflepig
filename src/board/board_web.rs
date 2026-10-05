@@ -47,6 +47,8 @@ const PUBLIC_READER: &str = include_str!("board_web/assets/board_reader.js");
 const PUBLIC_ENTRIES: &str = include_str!("board_web/assets/board_entries.js");
 const PUBLIC_TOKEN: &str = include_str!("board_web/assets/board_web_token.js");
 const PUBLIC_INGEST: &str = include_str!("board_web/assets/board_ingest.js");
+const PUBLIC_LRU: &str = include_str!("board_web/assets/board_lru.js");
+const PUBLIC_SEEN: &str = include_str!("board_web/assets/board_seen.js");
 
 pub(crate) struct WebStore {
     config: Mutex<BoardConfigCache>,
@@ -130,6 +132,9 @@ pub(crate) struct WebState {
     guard: WebGuard,
     streams: EventStreams,
     ingest: web_ops::IngestFlight,
+    /// Database identity served in the shell; read once at bind because the
+    /// server never changes databases without a restart.
+    board_id: String,
 }
 
 /// The event-stream feed reads through one dedicated query-only connection
@@ -195,6 +200,11 @@ impl BoardWebServer {
         let store = Arc::new(WebStore::open(BoardConfigCache::default())?);
         let (poller, streams) = open_stream_feed(&store)?;
         let config = store.config(Instant::now() + http_wire::REQUEST_TIMEOUT)?;
+        let board_id = store.with_writer(
+            &config,
+            Instant::now() + http_wire::REQUEST_TIMEOUT,
+            |writer| writer.board_uuid(),
+        )?;
         web_endpoint::publish(&store.runtime, listener.local_addr()?, &config.db_path)?;
         let endpoint = web_endpoint::EndpointGuard::arm(&store.runtime, listener.local_addr()?);
         Ok(Self {
@@ -204,6 +214,7 @@ impl BoardWebServer {
                 guard,
                 streams,
                 ingest: web_ops::IngestFlight::default(),
+                board_id,
             }),
             _poller: poller,
             endpoint,

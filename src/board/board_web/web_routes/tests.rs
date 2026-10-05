@@ -144,6 +144,13 @@ fn render_fixture_with(reader: FeedReader) -> RenderFixture {
     let authority = guard.authority().to_owned();
     let poller = SequencePoller::start(Arc::new(|| Ok(EventSeq::new(0)))).unwrap();
     let streams = EventStreams::new(reader, poller.handle());
+    let board_id = store
+        .with_writer(
+            &config,
+            Instant::now() + Duration::from_secs(5),
+            |writer| writer.board_uuid(),
+        )
+        .unwrap();
     RenderFixture {
         _directory: directory,
         _poller: poller,
@@ -152,6 +159,7 @@ fn render_fixture_with(reader: FeedReader) -> RenderFixture {
             guard,
             streams,
             ingest: Default::default(),
+            board_id,
         }),
         config,
         token,
@@ -241,6 +249,29 @@ fn read_until(client: &mut TcpStream, needle: &str) -> String {
         bytes.extend_from_slice(&buffer[..count]);
     }
     String::from_utf8(bytes).unwrap()
+}
+
+#[test]
+fn shell_carries_the_database_board_id() {
+    let fixture = render_fixture();
+    let reply = render_get(&fixture, "/");
+    assert!(reply.starts_with("HTTP/1.1 200 "), "{reply}");
+    let stored = fixture
+        .state
+        .store
+        .with_writer(
+            &fixture.config,
+            Instant::now() + Duration::from_secs(5),
+            |writer| writer.board_uuid(),
+        )
+        .unwrap();
+    assert_eq!(fixture.state.board_id, stored);
+    assert!(
+        reply.contains(&format!(
+            "<meta name=\"board-id\" content=\"{stored}\">"
+        )),
+        "{reply}"
+    );
 }
 
 #[test]

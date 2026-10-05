@@ -1,3 +1,4 @@
+mod board_identity_tests;
 mod collection_snapshot_tests;
 mod commit_transaction_tests;
 mod connection_lifecycle_tests;

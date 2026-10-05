@@ -2,10 +2,20 @@
 // bootstrap announces this label rather than a generic reconnect warning.
 export const BOARD_AUTH_EXPIRED_MESSAGE = "Authorization expired. Run `trufflepig board web`.";
 
+// Delivery always advances the watermark, ticker, and seen mark; only the
+// page re-fetch is gated. Feedback lists only feedback-kind events, and a
+// plan-filtered search only its plan; a query-only search cannot exclude any
+// event, so it refetches like every other route.
+export function routeRefreshesOn(route, event) {
+  if (route?.view === "feedback") return event?.kind === "feedback";
+  if (route?.view === "search") return !route.plan || String(event?.plan || "") === route.plan;
+  return true;
+}
+
 export function createBoardStream(context) {
   const {
     state, privateFetch, setConnection, loadRoute, scheduleRefresh, parseBoardJson, addTickerEvent,
-    addLiveEntry, noteSeen, onIngest,
+    noteSeen, onIngest,
     authToken, onAuthExpired, heartbeatMs = 5000, freshnessMs = 10000,
   } = context;
   function parseSse(onEvent) {
@@ -229,8 +239,7 @@ export function createBoardStream(context) {
     state.watermark = frame.id;
     noteSeen?.(frame.id);
     addTickerEvent(event);
-    addLiveEntry?.(event);
-    scheduleRefresh();
+    if (routeRefreshesOn(state.route, event)) scheduleRefresh();
     return false;
   }
   async function runResync() {

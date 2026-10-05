@@ -187,6 +187,10 @@ export function createBoardDom(state) {
       busyControls.get(form).forEach(([input, disabled]) => { input.disabled = disabled; }); busyControls.delete(form);
     }
   }
+  // Duplicate hrefs share one key, so the recorded key carries the element's
+  // occurrence among same-key matches, counted lazily here because pages build
+  // incrementally. The nearest keyed ancestor and enclosing form ride along as
+  // fallbacks for when the element itself is gone after a refresh.
   function focusedControl(root) {
     const input = document.activeElement;
     if (!root.contains(input)) return null;
@@ -195,12 +199,27 @@ export function createBoardDom(state) {
       return { key: form.dataset.draftKey, name: input.name, start: input.selectionStart, end: input.selectionEnd };
     }
     const keyed = input?.closest?.("[data-focus-key]");
-    return keyed ? { focusKey: keyed.dataset.focusKey } : null;
+    if (!keyed) return null;
+    const key = keyed.dataset.focusKey;
+    const occurrence = [...root.querySelectorAll(`[data-focus-key="${CSS.escape(key)}"]`)].indexOf(keyed);
+    const ancestor = keyed.parentElement?.closest?.("[data-focus-key]");
+    return {
+      focusKey: `${key}#${occurrence}`,
+      ancestorKey: ancestor ? ancestor.dataset.focusKey : null,
+      formKey: form?.dataset.draftKey || null,
+    };
   }
   function restoreFocus(root, focus) {
     if (!focus) return;
     if (focus.focusKey) {
-      const target = root.querySelector(`[data-focus-key="${CSS.escape(focus.focusKey)}"]`);
+      const keyed = /^(.*)#(\d+)$/.exec(focus.focusKey);
+      const key = keyed ? keyed[1] : focus.focusKey;
+      const occurrence = keyed ? Number(keyed[2]) : 0;
+      const matches = [...root.querySelectorAll(`[data-focus-key="${CSS.escape(key)}"]`)];
+      const target = matches[occurrence]
+        || (focus.ancestorKey && root.querySelector(`[data-focus-key="${CSS.escape(focus.ancestorKey)}"]`))
+        || (focus.formKey
+          && [...root.querySelectorAll("form")].find(item => item.dataset.draftKey === focus.formKey));
       if (target) target.focus({ preventScroll: true });
       return;
     }

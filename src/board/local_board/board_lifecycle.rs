@@ -82,6 +82,19 @@ impl LocalBoard {
         &self.path
     }
 
+    /// Stable identity of this database, minted on first writable open.
+    /// Read-only handles of stores that never had a writable open report
+    /// a missing key instead of minting one.
+    pub fn board_uuid(&self) -> Result<String, BoardError> {
+        self.conn
+            .query_row(
+                "SELECT value FROM board_meta WHERE key='board_uuid'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(sql_error)
+    }
+
     pub fn set_busy_timeout(&self, timeout: Duration) -> Result<(), BoardError> {
         let timeout = timeout.min(Duration::from_secs(5));
         self.conn.busy_timeout(timeout).map_err(sql_error)?;

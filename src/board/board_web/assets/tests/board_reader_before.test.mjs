@@ -58,7 +58,7 @@ function serveEntries(all, op) {
 function harness(entryCount = 120) {
   const all = makeEntries(entryCount);
   const calls = [];
-  const state = { watermark: "1", liveGap: true, liveEntries: [] };
+  const state = { watermark: "1" };
   const board = async op => {
     calls.push(op);
     const data = op.op === "entries"
@@ -109,7 +109,6 @@ describe("entries before-cursor paging", () => {
     assert.deepEqual(ids(page.data.entries), ids(makeEntries(120).slice(70).reverse()));
     assert.deepEqual(page.data.next_before, { seq: "71", entry: "E71" });
     assert.equal(page.data.through, "120");
-    assert.equal(state.liveGap, false);
   });
 
   it("older pages follow next_before across three pages exactly once", async () => {

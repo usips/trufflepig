@@ -4,6 +4,8 @@ import { createBoardDom, decodeBoardFragment } from "/board_dom.js";
 import { createBoardViews } from "/board_views.js";
 import { resolveBootstrapToken, resolveAdoptionToken } from "/board_web_token.js";
 import { resolveIngestEvent } from "/board_ingest.js";
+import { createDraftStores } from "/board_lru.js";
+import { seenKey, readSeenMark, writeSeenMark, resyncSeenMark } from "/board_seen.js";
 
   const TOKEN_KEY = "trufflepig-board-token";
   let stored = "";
@@ -22,27 +24,26 @@ import { resolveIngestEvent } from "/board_ingest.js";
     try { sessionStorage.setItem(TOKEN_KEY, token); } catch (_) { /* In-memory auth still works. */ }
   }
   const apiVersion = Number(document.querySelector('meta[name="board-api"]')?.content);
-  // The human's seen mark: the highest event sequence this origin has had
-  // delivered, persisted in localStorage; the session baseline renders the
+  // The human's seen mark: the highest event sequence this browser has had
+  // delivered, namespaced by board id; the session baseline renders the
   // "new since you last saw" badge on the overview ticker.
-  const SEEN_KEY = "trufflepig-board-seen";
-  const seenAtOpen = (() => {
-    try {
-      const raw = localStorage.getItem(SEEN_KEY);
-      return raw && /^(0|[1-9]\d*)$/.test(raw) ? raw : null;
-    } catch (_) { return null; }
+  const SEEN_KEY = seenKey(document.querySelector('meta[name="board-id"]')?.content);
+  const seenStorage = (() => {
+    try { return localStorage; } catch (_) { return null; }
   })();
+  const seenAtOpen = readSeenMark(seenStorage, SEEN_KEY);
   const main = document.getElementById("main");
   const connection = document.getElementById("connection");
   const connectionAnnounce = document.getElementById("connection-announce");
   const freshness = document.getElementById("freshness");
+  const draftStores = createDraftStores();
   const state = {
     route: routeFromLocation(), generation: 0, navigation: 0, request: null, loadedAt: 0, clockOffsetMs: 0,
     overview: null, attention: null, watermark: null, stream: null,
     streamGeneration: 0, reconnect: null, streamFailures: 0,
-    refreshTimer: null, refreshing: false, refreshAgain: false, drafts: new Map(), globalRefresh: null,
-    resyncing: false, liveEntries: [], livePending: new Set(), liveGap: false,
-    formDrafts: new Map(), formStatuses: new Map(), pendingForms: new Set(),
+    refreshTimer: null, refreshing: false, refreshAgain: false, drafts: draftStores.drafts, globalRefresh: null,
+    resyncing: false, formDrafts: draftStores.formDrafts, formStatuses: draftStores.formStatuses,
+    pendingForms: new Set(),
     seenAtOpen, seenHigh: seenAtOpen, ingestPending: false, ingestTicket: null, ingestTimer: null,
   };
   const columns = ["todo", "doing", "review", "done", "blocked"];
@@ -55,7 +56,7 @@ import { resolveIngestEvent } from "/board_ingest.js";
   const dom = createBoardDom(state);
   const {
     el, add, button, routeUrl, link, refLink, badge, actorName, shortActor, stamp, timeNode, age,
-    ageNode, panel, empty, omitted, title, field, formStatus, planId, focusKey,
+    ageNode, panel, empty, omitted, title, field, formStatus, focusKey,
     captureForms, restoreForms, syncForm, setFormBusy, focusedControl, restoreFocus, saveForm,
   } = dom;
   const views = createBoardViews({
@@ -72,7 +73,7 @@ import { resolveIngestEvent } from "/board_ingest.js";
 
   const { parseSse, stopStream, startStream } = createBoardStream({
     state, privateFetch, setConnection, loadRoute, scheduleRefresh, parseBoardJson, addTickerEvent,
-    addLiveEntry, noteSeen, onIngest,
+    noteSeen, onIngest,
     authToken: () => token, onAuthExpired: () => enterExpired(),
   });
 
@@ -95,11 +96,8 @@ import { resolveIngestEvent } from "/board_ingest.js";
   });
 
   function noteSeen(seq) {
-    const text = String(seq);
-    if (!/^(0|[1-9]\d*)$/.test(text)) return;
-    if (state.seenHigh !== null && BigInt(text) <= BigInt(state.seenHigh)) return;
-    state.seenHigh = text;
-    try { localStorage.setItem(SEEN_KEY, text); } catch (_) { /* The mark is a convenience, not a cursor. */ }
+    const mark = writeSeenMark(seenStorage, SEEN_KEY, seq);
+    if (mark !== null) state.seenHigh = mark;
   }
   function onIngest(result) {
     // Foreign tickets (other tabs' flights, replays from before this tab
@@ -276,40 +274,6 @@ import { resolveIngestEvent } from "/board_ingest.js";
     if (!events.some(item => String(item.seq) === String(event.seq))) events.unshift(event);
     if (events.length > 20) events.length = 20;
   }
-  function addLiveEntry(event) {
-    const route = state.route, subject = String(event?.subject);
-    if (!/^E[1-9]\d*$/.test(subject) || route.after || route.through) return;
-    const plan = route.view === "entries" ? route.plan
-      : route.view === "plan" && route.tab === "entries" ? planId(route.ref) : null;
-    if (plan === null) return;
-    if (plan && String(event.plan || "") !== plan) return;
-    if (route.kind && event.kind !== route.kind) return;
-    if (state.livePending.has(subject) || state.liveEntries.some(item => item.entry.id === subject)) return;
-    state.livePending.add(subject);
-    void (async () => {
-      try {
-        const entry = entryRecord((await board(readOp("show", { target: subject }))).data.entry);
-        if (!entry?.id || state.liveEntries.some(item => item.entry.id === entry.id)) return;
-        if (String(entry.seq) !== String(event.seq)) return;
-        const record = { seq: String(event.seq), entry };
-        const at = state.liveEntries.findIndex(item =>
-          BigInt(item.seq) > BigInt(record.seq)
-            || (BigInt(item.seq) === BigInt(record.seq)
-              && BigInt(item.entry.id.slice(1)) > BigInt(record.entry.id.slice(1))));
-        state.liveEntries.splice(at < 0 ? state.liveEntries.length : at, 0, record);
-        if (state.liveEntries.length > 50) {
-          const oldest = state.liveEntries.reduce(
-            (lowest, item, index) => BigInt(item.seq) < BigInt(state.liveEntries[lowest].seq) ? index : lowest,
-            0
-          );
-          state.liveEntries.splice(oldest, 1);
-          state.liveGap = true;
-        }
-        scheduleRefresh();
-      } catch (_) { /* A failed Show fetch is recovered by the next refresh. */ }
-      finally { state.livePending.delete(subject); }
-    })();
-  }
   async function submitMutation(form, op, success) {
     const navigation = state.navigation;
     const key = form.dataset.draftKey;
@@ -359,7 +323,15 @@ import { resolveIngestEvent } from "/board_ingest.js";
       const active = focus ? null : focusedControl(main);
       captureForms(main); restoreForms(result.page); main.replaceChildren(result.page); restoreFocus(main, active);
       state.loadedAt = Date.now();
-      if (result.watermark !== null) noteSeen(result.watermark);
+      if (result.watermark !== null) {
+        // A fresh baseline is the only legitimate lowering: the stored mark
+        // can exceed it only when the database was replaced under the tab.
+        if (forceSnapshot || state.watermark === null) {
+          const mark = resyncSeenMark(seenStorage, SEEN_KEY, result.watermark);
+          if (mark !== null) state.seenHigh = mark;
+        }
+        noteSeen(result.watermark);
+      }
       const count = attentionItems(state.attention).length;
       const label = document.getElementById("attention-count"); label.textContent = count; label.hidden = !count;
       if (result.warnings.length) notice(result.warnings.join(" · "));

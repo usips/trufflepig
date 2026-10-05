@@ -2,8 +2,9 @@
 #[cfg(test)]
 mod tests;
 use super::{
-    PUBLIC_DOM, PUBLIC_ENTRIES, PUBLIC_INGEST, PUBLIC_MAIN, PUBLIC_PAGES, PUBLIC_READER,
-    PUBLIC_SHELL, PUBLIC_STREAM, PUBLIC_STYLE, PUBLIC_TOKEN, PUBLIC_TRIAGE, PUBLIC_VIEWS, WebState,
+    PUBLIC_DOM, PUBLIC_ENTRIES, PUBLIC_INGEST, PUBLIC_LRU, PUBLIC_MAIN, PUBLIC_PAGES, PUBLIC_READER,
+    PUBLIC_SEEN, PUBLIC_SHELL, PUBLIC_STREAM, PUBLIC_STYLE, PUBLIC_TOKEN, PUBLIC_TRIAGE,
+    PUBLIC_VIEWS, WebState,
     event_stream::{EventStreams, StreamPermit, StreamRequest},
     http_wire::{self, HttpError, HttpMethod, HttpRequest},
     plan_markup,
@@ -54,7 +55,9 @@ pub(super) fn handle(mut stream: TcpStream, accepted_at: Instant, state: &Arc<We
     }
     match (request.method, request.path()) {
         (HttpMethod::Get, "/") => {
-            let shell = PUBLIC_SHELL.replace("__BOARD_API__", &BOARD_API.to_string());
+            let shell = PUBLIC_SHELL
+                .replace("__BOARD_API__", &BOARD_API.to_string())
+                .replace("__BOARD_ID__", &state.board_id);
             let _ = http_wire::send_response(
                 &mut stream,
                 200,
@@ -223,6 +226,8 @@ fn public_asset(path: &str) -> Option<(&str, &str)> {
         "/board_entries.js" => PUBLIC_ENTRIES,
         "/board_web_token.js" => PUBLIC_TOKEN,
         "/board_ingest.js" => PUBLIC_INGEST,
+        "/board_lru.js" => PUBLIC_LRU,
+        "/board_seen.js" => PUBLIC_SEEN,
         "/board_web.css" => return Some(("text/css; charset=utf-8", PUBLIC_STYLE)),
         _ => return None,
     };

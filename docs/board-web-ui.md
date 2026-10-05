@@ -15,9 +15,9 @@ outbox entries/events display `(spooled, unverified)`.
 
 Overview refreshes every 15 seconds and claim ages tick locally each second: inbox renewal, claim
 expiry, and configuration changes can occur without advancing the event sequence. Entries views
-page newest-first with a composite before-cursor, and live rows sit above a divider for entries new
-since the page loaded. The seen mark `localStorage["trufflepig-board-seen"]` holds the highest
-delivered seq and badges newer ticker rows. The ingest button holds the 202's ticket, shows
+page newest-first with a composite before-cursor, and each refresh re-reads the tail, so no live
+divider is needed. The seen mark `localStorage["trufflepig-board-seen:<board-id>"]` holds the
+highest delivered seq and badges newer ticker rows. The ingest button holds the 202's ticket, shows
 queued, then completes only on the `ingest` frame with that ticket or reports unknown at 30s.
 
 Form drafts and focus (by `data-focus-key`) survive live-region refreshes; connection announcements

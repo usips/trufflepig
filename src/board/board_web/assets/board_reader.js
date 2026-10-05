@@ -15,7 +15,6 @@ export function createBoardReader(context) {
       ...queryFilters(route), plan: plan || route.plan || null,
     }))).data;
     if (!Array.isArray(data?.entries)) throw new Error("Board reply is missing its entries collection.");
-    state.liveGap = false;
     return data;
   }
   async function fetchRoute(route, signal, forceSnapshot) {
