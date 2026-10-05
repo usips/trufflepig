@@ -1,6 +1,6 @@
 //! Durable plan coordination through the per-machine router and a typed backend.
 //! The client reads bodies and normalizes text before socket or spool transport.
-//! Only an absent router permits local fallback; ambiguous replies never replay writes.
+//! Fallback queues feedback and never migrates beside a live router; ambiguous replies never replay writes.
 pub mod board_domain;
 pub(crate) mod board_markup;
 pub(crate) mod board_web;

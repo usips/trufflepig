@@ -192,18 +192,77 @@ fn local_reply(
     runtime: Option<&Path>,
     spool: &Path,
 ) -> Result<String> {
-    // A live router owns migration; opening here would migrate under it.
+    // A live router owns migration: feedback queues for it to import while
+    // other operations run without migrating and refuse stale storage only.
     if runtime.is_some_and(|runtime| crate::daemon::running(runtime)) {
-        bail!("board_unavailable: router owns migration");
+        if matches!(
+            command,
+            BoardCommand::Op(crate::board::BoardOp::Feedback { .. })
+        ) {
+            let config = load()?;
+            return crate::board::unavailable_or_queue(
+                command,
+                options,
+                context,
+                &config,
+                spool,
+                anyhow::anyhow!("board_unavailable: router owns migration"),
+            );
+        }
+        let config = load()?;
+        if let Some(runtime) = runtime {
+            crate::system::validate_board_database(runtime, &config.db_path)?;
+        }
+        refuse_stale_storage_beside_router(command, options, context, &config, spool)?;
+        return run_local(command, options, context, &config, spool);
     }
     let config = load()?;
     if let Some(runtime) = runtime {
         crate::system::validate_board_database(runtime, &config.db_path)?;
     }
+    run_local(command, options, context, &config, spool)
+}
+
+/// Opens read-only beside a live router, so missing or stale storage refuses
+/// without creating or migrating it; current files proceed to the local run.
+fn refuse_stale_storage_beside_router(
+    command: &BoardCommand,
+    options: &Arguments,
+    context: &RequestContext,
+    config: &BoardConfig,
+    spool: &Path,
+) -> Result<()> {
+    use crate::board::local_board::LocalBoard;
+    match LocalBoard::open_read_with_timeout(config, std::time::Duration::from_secs(5)) {
+        Ok(_) => Ok(()),
+        Err(error)
+            if !config.db_path.exists() || LocalBoard::needs_writable_initialization(&error) =>
+        {
+            bail!("board_unavailable: router owns migration")
+        }
+        Err(error) => crate::board::unavailable_or_queue(
+            command,
+            options,
+            context,
+            config,
+            spool,
+            error.into(),
+        )
+        .map(|_| ()),
+    }
+}
+
+fn run_local(
+    command: &BoardCommand,
+    options: &Arguments,
+    context: &RequestContext,
+    config: &BoardConfig,
+    spool: &Path,
+) -> Result<String> {
     match BoardHost::with_config(config.clone()).run(options, context, QueryDeadline::start()) {
         Ok(reply) => Ok(reply),
         Err(error) => {
-            crate::board::unavailable_or_queue(command, options, context, &config, spool, error)
+            crate::board::unavailable_or_queue(command, options, context, config, spool, error)
         }
     }
 }

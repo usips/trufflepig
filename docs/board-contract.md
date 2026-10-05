@@ -98,13 +98,13 @@ local Git, and renders. An API mismatch fails `board_api_mismatch` without negot
 is the SQLite backend. Replies identify the backend and expose a read-transaction `snapshot_seq`.
 
 The client routes before workspace resolution: socket, spool, then one `system ensure` and retry if
-no router answers. Direct `LocalBoard` fallback preserves the resolved DB identity and is allowed
-only when no router answers. `--no-daemon` board calls use no router requests or spawns. A router's
-error is final; `unknown_command: board` advises restarting `trufflepig-system.service`. Board
-requests start no root index daemon and produce no source-cache diagnostic records. A process probes
-router `board_api`/`board_db` once before dispatch; mismatch advises restart. A private 30-second
-negative marker suppresses repeated ensure only after a provably unreached request; hits do not
-extend it; success clears it.
+no router answers. Direct `LocalBoard` fallback preserves the resolved DB identity and never
+migrates beside a live router: feedback queues to the outbox, others refuse unless the stored schema
+is current. `--no-daemon` board calls use no router requests or spawns. A router's error is final;
+`unknown_command: board` advises restarting `trufflepig-system.service`. Board requests start no
+root index daemon and produce no source-cache diagnostic records. One `board_api`/`board_db` probe
+precedes dispatch; mismatch advises restart. A private 30-second negative marker suppresses repeated
+ensure only after a provably unreached request; hits do not extend it; success clears it.
 
 The router pins its database before opening it; only the socket-owning router publishes
 `system::dir()/board-backend.json` with the absolute database path. `system-serve` opens the
