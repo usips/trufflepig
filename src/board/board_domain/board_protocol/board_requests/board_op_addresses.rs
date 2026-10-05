@@ -38,6 +38,7 @@ impl BoardOp {
             | Self::Claims { plan, .. } => *plan,
             Self::History { plan, .. } | Self::Tasks { plan, .. } => Some(*plan),
             Self::RegisterRepo { registration } => registration.plan_id,
+            Self::LinkCommit { task, .. } => Some(task.plan),
             _ => None,
         }
     }

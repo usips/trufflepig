@@ -157,25 +157,15 @@ impl BoardOp {
                     bail!("invalid_options: commit batch exceeds 2000 records");
                 }
                 for commit in commits {
-                    bounded_metadata(&commit.subject, 1024, "commit subject")?;
-                    bounded_metadata(&commit.author, 1024, "commit author")?;
-                    if commit.coauthors.len() > COAUTHOR_LIMIT || commit.plans.len() > LINK_LIMIT {
-                        bail!("invalid_options: commit metadata exceeds collection limits");
-                    }
-                    for number in [commit.files, commit.insertions, commit.deletions] {
-                        if number > MAX_BOARD_NUMBER {
-                            bail!("invalid_options: commit statistics exceed SQLite integer range");
-                        }
-                    }
-                    for author in &commit.coauthors {
-                        bounded_metadata(&author.model, 256, "co-author model")?;
-                        bounded_metadata(&author.email, 256, "co-author email")?;
-                    }
-                    for link in &commit.plans {
-                        if let Some(ordinal) = link.task_ordinal {
-                            TaskId::new(link.plan_id, ordinal)?;
-                        }
-                    }
+                    validate_commit_metadata(commit)?;
+                }
+            }
+            Self::LinkCommit {
+                task, resolution, ..
+            } => {
+                task.validate()?;
+                if let Some(commit) = resolution {
+                    validate_commit_metadata(commit)?;
                 }
             }
             Self::RegisterRepo { registration } => {
@@ -219,4 +209,28 @@ impl BoardOp {
         }
         Ok(())
     }
+}
+
+/// Bounds one commit's metadata the same way on scan and manual-link paths.
+fn validate_commit_metadata(commit: &crate::board::board_protocol::LinkedCommit) -> Result<()> {
+    bounded_metadata(&commit.subject, 1024, "commit subject")?;
+    bounded_metadata(&commit.author, 1024, "commit author")?;
+    if commit.coauthors.len() > COAUTHOR_LIMIT || commit.plans.len() > LINK_LIMIT {
+        bail!("invalid_options: commit metadata exceeds collection limits");
+    }
+    for number in [commit.files, commit.insertions, commit.deletions] {
+        if number > MAX_BOARD_NUMBER {
+            bail!("invalid_options: commit statistics exceed SQLite integer range");
+        }
+    }
+    for author in &commit.coauthors {
+        bounded_metadata(&author.model, 256, "co-author model")?;
+        bounded_metadata(&author.email, 256, "co-author email")?;
+    }
+    for link in &commit.plans {
+        if let Some(ordinal) = link.task_ordinal {
+            TaskId::new(link.plan_id, ordinal)?;
+        }
+    }
+    Ok(())
 }

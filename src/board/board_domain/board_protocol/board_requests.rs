@@ -237,6 +237,14 @@ pub enum BoardOp {
     LinkCommits {
         commits: Vec<LinkedCommit>,
     },
+    /// Manual repair link; the board host fills `resolution` from the plan's
+    /// registered repositories before dispatch, so the wire carries no metadata.
+    LinkCommit {
+        oid: crate::identity::GitOid,
+        task: TaskId,
+        #[serde(skip)]
+        resolution: Option<Box<LinkedCommit>>,
+    },
     Repositories {
         plan: Option<PlanId>,
     },

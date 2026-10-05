@@ -17,7 +17,7 @@ import uuid
 
 PLUGIN = Path(__file__).resolve().parents[1]
 SKILLS = ("trufflepig-code-search", "trufflepig-plan-board")
-BOARD_API = 4
+BOARD_API = 5
 sys.path.insert(0, str(PLUGIN / "bin"))
 from trufflepig_runtime import runtime_config_path
 from omp_install import omp_agent_dir

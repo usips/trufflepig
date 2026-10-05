@@ -10,7 +10,7 @@ mod repository_writes;
 
 use crate::board::board_actor::BoardRecipient;
 use crate::board::board_vocabulary::EntryText;
-pub(in crate::board::local_board) use commit_link_writes::link_commits;
+pub(in crate::board::local_board) use commit_link_writes::{link_commit, link_commits};
 pub(in crate::board::local_board) use repository_writes::{forget_repo_path, record_scan, register_repo};
 
 pub(in crate::board::local_board) fn hello(

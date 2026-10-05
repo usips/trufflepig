@@ -1,7 +1,7 @@
 //! Deadline-bound ref discovery and complete, bounded commit scans.
 use super::COMMIT_LIMIT;
 use crate::board::{
-    board_protocol::RepoRegistration,
+    board_protocol::{LinkedCommit, RepoRegistration},
     commit_trailers::{LOG_FORMAT, ParsedCommit, parse_log},
     repo_identity::{detached_head, remaining},
 };
@@ -88,6 +88,58 @@ pub(super) struct LogScan {
     pub(super) records: Vec<ParsedCommit>,
     pub(super) complete: bool,
     pub(super) warnings: Vec<String>,
+}
+
+/// Reads one commit's metadata exactly as a scan does, without trailer links.
+pub(super) fn read_commit(
+    registration: &RepoRegistration,
+    oid: GitOid,
+    deadline: Instant,
+) -> Result<LinkedCommit> {
+    let args = [
+        "log",
+        "-1",
+        "--no-decorate",
+        "--no-color",
+        "--no-notes",
+        "--no-renames",
+        LOG_FORMAT,
+        oid.as_str(),
+        "--",
+    ];
+    let bytes = run_bounded(&registration.common_dir, &args, remaining(deadline)?)?;
+    let mut parsed = parse_log(&bytes, &registration.repo_key)?;
+    ensure!(
+        parsed.record_count == 1 && parsed.records.len() == 1,
+        "board_link: commit metadata is unavailable"
+    );
+    let stats_budget = remaining(deadline)?.min(Duration::from_secs(1));
+    if !stats_budget.is_zero() {
+        let stats_args = [
+            "log",
+            "--shortstat",
+            "-1",
+            "--no-decorate",
+            "--no-color",
+            "--no-notes",
+            "--no-renames",
+            LOG_FORMAT,
+            oid.as_str(),
+            "--",
+        ];
+        if let Ok(stats) = run_bounded(&registration.common_dir, &stats_args, stats_budget)
+            .and_then(|bytes| parse_log(&bytes, &registration.repo_key))
+            && let Some(stats) = stats.records.into_iter().next()
+        {
+            let record = &mut parsed.records[0].commit;
+            record.files = stats.commit.files;
+            record.insertions = stats.commit.insertions;
+            record.deletions = stats.commit.deletions;
+        }
+    }
+    let mut record = parsed.records.into_iter().next().expect("one record");
+    record.commit.plans = Vec::new();
+    Ok(record.commit)
 }
 
 pub(super) fn scan_log(

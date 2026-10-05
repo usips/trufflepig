@@ -92,7 +92,7 @@ the plan's `Plan: P7` commit trailer.
 
 ## Backend, transport, and deadlines
 
-Every operation uses `BoardRequest { api: BOARD_API, actor, op, claims }` (`BOARD_API = 4`) and a
+Every operation uses `BoardRequest { api: BOARD_API, actor, op, claims }` (`BOARD_API = 5`) and a
 typed `BoardReply`. `BoardBackend` owns state and returns data; the edge parses, reads bodies, scans
 local Git, and renders. An API mismatch fails `board_api_mismatch` without negotiation. `LocalBoard`
 is the SQLite backend. Replies identify the backend and expose a read-transaction `snapshot_seq`.
@@ -155,8 +155,8 @@ metadata independent of enumeration; malformed record metadata is skipped with d
 incomplete NUL framing invalidates the scan. Cached stamps retain warnings and unknown references.
 Board Git access supports Git 2.43 independently of historical navigation's gate. Repeated ingestion
 creates no duplicate link/entry/event; rebasing creates a new oid and new evidence. Untrailered
-commits are not ingested. External trailers retain all distinct matching plan tasks; unknown tasks
-preserve the plan link and diagnostics.
+commits are not ingested; `board link OID P7.3` repairs one by hand. External trailers retain all
+distinct matching plan tasks; unknown tasks preserve the plan link and diagnostics.
 
 Co-author trailers and model snapshots attribute to vendors per the [CLI attribution
 rules](board-cli-contract.md#attribution).

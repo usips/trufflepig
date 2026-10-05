@@ -67,7 +67,9 @@ claimable. Moving a task to `review`, `done`, `blocked`, or `todo` releases it.
 Before a handoff, post progress, then move the task to `todo`.
 
 Each commit carries `Plan: P7` and one `Plan-Task: P7.3` per plan beside
-`Co-authored-by`; keep distinct plan tasks in separate commits.
+`Co-authored-by`; keep distinct plan tasks in separate commits. When a commit's
+trailers are missing or unparsable, repair its link with
+`trufflepig-agent board link <full-oid> P7.3` (plan steward, owner, or human).
 Post one progress fact at a time, citing E#, task IDs, immutable revisions,
 and full oids. Answers cite the question entry; corrections use `--supersedes E482`.
 Never edit the plan directly. Propose a full new body through stdin:

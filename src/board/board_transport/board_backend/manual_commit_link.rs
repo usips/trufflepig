@@ -1,0 +1,60 @@
+//! Manual commit links resolve one oid in the plan's registered repositories.
+use super::BoardHost;
+use crate::{
+    board::{
+        board_ids::TaskId,
+        board_protocol::{BoardError, BoardErrorCode, BoardOp, BoardRequest},
+    },
+    daemon::deadline::QueryDeadline,
+    identity::GitOid,
+};
+use anyhow::Result;
+use std::time::Duration;
+
+impl BoardHost {
+    /// Fills a manual link's resolution from Git before the write dispatch.
+    pub(super) fn resolve_link_commit(
+        &self,
+        request: &BoardRequest,
+        oid: GitOid,
+        task: TaskId,
+        deadline: QueryDeadline,
+    ) -> Result<BoardRequest> {
+        let targets = self.repositories(&request.actor, Some(task.plan), deadline)?;
+        let mut resolved = None;
+        for target in &targets {
+            let spec = format!("{oid}^{{commit}}");
+            if crate::history::git::run_bounded(
+                &target.registration.common_dir,
+                &["cat-file", "-e", spec.as_str()],
+                deadline.cap(Duration::from_secs(5)),
+            )
+            .is_ok()
+            {
+                resolved = Some(crate::board::commit_ingest::read_commit(
+                    &target.registration,
+                    oid,
+                    deadline.remaining(),
+                )?);
+                break;
+            }
+        }
+        let Some(commit) = resolved else {
+            return Err(BoardError::new(
+                BoardErrorCode::InvalidReference,
+                format!(
+                    "unknown commit {oid} in the registered repositories of {}",
+                    task.plan
+                ),
+            )
+            .into());
+        };
+        let mut request = request.clone();
+        request.op = BoardOp::LinkCommit {
+            oid,
+            task,
+            resolution: Some(Box::new(commit)),
+        };
+        Ok(request)
+    }
+}

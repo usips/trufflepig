@@ -212,6 +212,39 @@ fn feedback_enforces_recent_call_and_metadata_bounds() {
 }
 
 #[test]
+fn link_commit_wire_carries_only_the_oid_and_task() {
+    let oid = "a".repeat(40);
+    let op: BoardOp = serde_json::from_value(serde_json::json!({
+        "op": "link_commit", "oid": oid, "task": "P7.3"
+    }))
+    .unwrap();
+    let BoardOp::LinkCommit {
+        oid: parsed,
+        task,
+        resolution,
+    } = &op
+    else {
+        panic!("expected a commit link: {op:?}")
+    };
+    assert_eq!(parsed.as_str(), oid);
+    assert_eq!(task.to_string(), "P7.3");
+    assert!(resolution.is_none());
+    op.validate().unwrap();
+    assert_eq!(
+        serde_json::to_value(&op).unwrap(),
+        serde_json::json!({"op": "link_commit", "oid": oid, "task": "P7.3"}),
+        "the host resolution never leaves the process"
+    );
+    assert!(
+        serde_json::from_value::<BoardOp>(serde_json::json!({
+            "op": "link_commit", "oid": oid, "task": "P7.3", "resolution": null
+        }))
+        .is_err(),
+        "clients cannot inject a forged resolution"
+    );
+}
+
+#[test]
 fn leading_error_codes_ignore_untrusted_diagnostic_segments() {
     for message in [
         "daemon: daemon: invalid_body: text mentions : invalid_actor: nope",

@@ -3,7 +3,7 @@
 mod board_search_schema;
 pub(super) use board_search_schema::{SCHEMA_V3, SCHEMA_V6};
 
-pub const SCHEMA_VERSION: i64 = 6;
+pub const SCHEMA_VERSION: i64 = 7;
 
 pub(super) const SCHEMA_V1: &str = r#"
 CREATE TABLE board_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -190,4 +190,10 @@ UPDATE operation_dedupes SET reply_json=json_set(reply_json,'$.api',3)
 /// Records the orchestrator behind a delegated claim; existing rows stay NULL.
 pub(super) const SCHEMA_V5: &str = r#"
 ALTER TABLE claims ADD COLUMN delegated_by INTEGER REFERENCES actors(id);
+"#;
+
+/// Commit-link provenance: manual repairs are distinguishable from scan links.
+pub(super) const SCHEMA_V7: &str = r#"
+ALTER TABLE commit_plans ADD COLUMN source TEXT NOT NULL DEFAULT 'scan' CHECK(source IN ('scan','manual'));
+ALTER TABLE commit_tasks ADD COLUMN source TEXT NOT NULL DEFAULT 'scan' CHECK(source IN ('scan','manual'));
 "#;

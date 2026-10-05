@@ -518,6 +518,16 @@ fn board_grammar_accepts_every_m1_command_and_skill_example() {
         (&["board", "ingest"], None, "ingest"),
         (
             &[
+                "board",
+                "link",
+                "0123456789abcdef0123456789abcdef01234567",
+                "P7.3",
+            ],
+            None,
+            "link_commit",
+        ),
+        (
+            &[
                 "feedback",
                 "blocked",
                 "Router unavailable",
@@ -614,6 +624,28 @@ fn board_grammar_rejects_cross_verb_flags_and_invalid_domain_references() {
         &["board", "propose", "P7@12", "summary"][..],
         &["board", "show", "--wait"][..],
         &["board", "hello", "model", "effort", "extra"][..],
+        &["board", "link", "not-an-oid", "P7.3"][..],
+        &[
+            "board",
+            "link",
+            "0123456789abcdef0123456789abcdef01234567",
+            "P7",
+        ][..],
+        &[
+            "board",
+            "link",
+            "0123456789abcdef0123456789abcdef01234567",
+            "P7.3",
+            "extra",
+        ][..],
+        &[
+            "board",
+            "link",
+            "0123456789abcdef0123456789abcdef01234567",
+            "P7.3",
+            "--to",
+            "codex",
+        ][..],
         &["board", "inbox", "18446744073709551615"][..],
         &["board", "inbox", "+1"][..],
         &["board", "inbox", "00"][..],

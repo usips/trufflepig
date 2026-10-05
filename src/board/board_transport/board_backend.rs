@@ -4,6 +4,7 @@ mod board_dispatch;
 mod board_maintenance;
 mod board_wait;
 mod board_writer;
+mod manual_commit_link;
 #[cfg(test)]
 mod tests;
 

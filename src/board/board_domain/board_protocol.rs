@@ -19,7 +19,7 @@ pub use board_requests::{AgentClaims, BoardOp, BoardRequest, ClaimDelegate, Clai
 
 use anyhow::{Result, bail};
 
-pub const BOARD_API: u32 = 4;
+pub const BOARD_API: u32 = 5;
 
 fn validate_claim(value: &str, field: &str) -> Result<()> {
     if value.trim().is_empty() || value.len() > 256 || value.chars().any(char::is_control) {

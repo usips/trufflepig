@@ -43,6 +43,10 @@ fn shipped_migration_steps_are_byte_pinned() {
         pin(SCHEMA_V6),
         "83d284f13f2019c911ad4ded97fcb5ab05469ef89df071d72cc630864a9ec8ce"
     );
+    assert_eq!(
+        pin(SCHEMA_V7),
+        "650667e03644b553c7712e329fd69433da899aedb20e16445178d7e275f97964"
+    );
 }
 
 #[test]
@@ -123,6 +127,15 @@ fn populated_v1_migration_preserves_durable_evidence() {
             .unwrap(),
         1
     );
+    for table in ["commit_plans", "commit_tasks"] {
+        assert_eq!(
+            conn.query_row(&format!("SELECT source FROM {table}"), [], |row| row
+                .get::<_, String>(0))
+                .unwrap(),
+            "scan",
+            "{table} provenance backfills to scan"
+        );
+    }
     assert_eq!(
         conn.query_row("SELECT via FROM entries WHERE id=3", [], |row| row
             .get::<_, String>(0))

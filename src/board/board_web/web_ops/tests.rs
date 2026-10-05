@@ -354,6 +354,26 @@ fn review_is_refused_over_the_web_allowlist() {
 }
 
 #[test]
+fn link_commit_is_refused_over_the_web_allowlist() {
+    let config = BoardConfig::for_database("target/web-op.sqlite3");
+    let request = WebRequest {
+        api: BOARD_API,
+        op: BoardOp::LinkCommit {
+            oid: crate::identity::GitOid::parse(&"a".repeat(40)).unwrap(),
+            task: crate::board::board_ids::TaskId::new(
+                crate::board::board_ids::PlanId::new(1).unwrap(),
+                1,
+            )
+            .unwrap(),
+            resolution: None,
+        },
+    };
+    let error = request.into_request(&config).unwrap_err();
+    assert_eq!(error.code, BoardErrorCode::InvalidOptions);
+    assert_eq!(error.message, "op not available over web");
+}
+
+#[test]
 fn ingest_flight_admits_one_relay_at_a_time() {
     let flight = IngestFlight::default();
     assert!(flight.begin().leads);

@@ -61,6 +61,16 @@ impl BoardHost {
     ) -> Result<BoardReply> {
         check_deadline(deadline)?;
         request.validate()?;
+        if !imported
+            && let BoardOp::LinkCommit {
+                oid,
+                task,
+                resolution: None,
+            } = &request.op
+        {
+            let request = self.resolve_link_commit(request, *oid, *task, deadline)?;
+            return self.handle_by_mode(&request, deadline, false);
+        }
         #[cfg(test)]
         if matches!(request.op, BoardOp::Inbox { .. }) {
             self.inner.inbox_queries.fetch_add(1, Ordering::Relaxed);

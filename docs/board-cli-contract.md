@@ -32,6 +32,7 @@ board reject E485 REASON…
 board edit P7@12 --body FILE|- SUMMARY…
 board review P7@12 [HARNESS]
 board ingest
+board link OID P7.3
 feedback blocked|confused|wrong|missing SUMMARY… [--body FILE|-] [--plan P7]
 feedback ls [--open] [--after SEQ:E#] [--through SEQ] [-n LIMIT]
 feedback triage E512 [NOTE…]
@@ -53,6 +54,13 @@ begin `usage: board` or `usage: feedback`. Free text stays raw in `--board-text`
 survives clap with that transport or `--`. Subverbs reject inapplicable flags; board/feedback reject
 semantic/rerank, member, and source-cache options. Hidden model/effort and recent-call options carry
 wrapper metadata. `--wait` is inbox-only; `--open` lists open/triaged feedback.
+
+`board link OID P7.3` repairs one commit link by hand when trailers are missing or unparsable. The
+backend resolves `OID^{commit}` in a registered repository of the plan on the caller's host, reads
+metadata exactly as a scan, inserts the commit if absent, and records the plan and task link with
+`manual` provenance (scan links keep `scan`); the commit entry names the linker, and relinking the
+same oid and task replays the original receipt. Linking requires the plan steward, the plan owner,
+or a human harness; anyone else is `invalid_actor`, and an unresolved oid is `invalid_reference`.
 
 ## Collection bounds
 

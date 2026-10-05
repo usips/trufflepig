@@ -143,14 +143,14 @@ fn collection_entry_filters_match_all_actor_fields_and_task_links() {
     board
         .conn
         .execute(
-            "INSERT INTO commit_plans VALUES(?1,?2,1,9)",
+            "INSERT INTO commit_plans(repo_key,oid,plan_id,entry_id) VALUES(?1,?2,1,9)",
             params![repo.as_str(), oid],
         )
         .unwrap();
     board
         .conn
         .execute(
-            "INSERT INTO commit_tasks VALUES(?1,?2,1,1)",
+            "INSERT INTO commit_tasks(repo_key,oid,plan_id,task_ordinal) VALUES(?1,?2,1,1)",
             params![repo.as_str(), oid],
         )
         .unwrap();

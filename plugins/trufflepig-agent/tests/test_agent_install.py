@@ -144,7 +144,7 @@ import json, os, sys, time
 from pathlib import Path
 if Path(sys.argv[0]).name == "trufflepig" and sys.argv[1:] == ["--board-api-version"]:
     time.sleep(float(os.environ.get("PROBE_DELAY", "0")))
-    sys.stdout.write(os.environ.get("PROBE_STDOUT", "4\\n"))
+    sys.stdout.write(os.environ.get("PROBE_STDOUT", "5\\n"))
     sys.stderr.write(os.environ.get("PROBE_STDERR", ""))
     sys.exit(int(os.environ.get("PROBE_STATUS", "0")))
 if Path(sys.argv[0]).name == "trufflepig" and sys.argv[1:] == ["system", "dir"]:
@@ -216,16 +216,16 @@ with Path(os.environ["SERVICE_CAPTURE"]).open("a") as handle:
     def test_service_capability_failure_prevents_all_installation_mutations(self):
         capture = self.service_shims()
         cases = [("", "unknown argument --board-api-version\\n", "2"),
-                 ("1\n", "", "0"), ("2\n", "", "0"), ("3\n", "", "0"),
-                 ("API 4\n", "", "0"), ("4\nextra\n", "", "0"), ("4\n", "", "1"),
-                 ("4\n", "diagnostic\n", "0")]
+                 ("1\n", "", "0"), ("2\n", "", "0"), ("3\n", "", "0"), ("4\n", "", "0"),
+                 ("API 5\n", "", "0"), ("5\nextra\n", "", "0"), ("5\n", "", "1"),
+                 ("5\n", "diagnostic\n", "0")]
         for flag in ("--board", "--systemd"):
             for output, error, status in cases:
                 with self.subTest(flag=flag, output=output, status=status):
                     self.env.update(PROBE_STDOUT=output, PROBE_STDERR=error, PROBE_STATUS=status)
                     result = self.install("--codex", flag)
                     self.assertEqual(result.returncode, 2, result.stderr)
-                    self.assertIn("must support board API 4", result.stderr)
+                    self.assertIn("must support board API 5", result.stderr)
                     self.assertFalse((self.root / ".local/bin").exists())
                     self.assertFalse((self.root / ".agents").exists())
                     self.assertFalse((self.root / "config").exists())
@@ -238,7 +238,7 @@ with Path(os.environ["SERVICE_CAPTURE"]).open("a") as handle:
         result = subprocess.run([str(PLUGIN / "install.sh"), "--board"], env=self.env,
                                 text=True, capture_output=True, timeout=8)
         self.assertEqual(result.returncode, 2, result.stderr)
-        self.assertIn("must support board API 4", result.stderr)
+        self.assertIn("must support board API 5", result.stderr)
         self.assertFalse((self.root / ".local/bin").exists())
         self.assertFalse((self.root / "config").exists())
         self.assertFalse(capture.exists())
@@ -309,7 +309,7 @@ with Path(os.environ["SERVICE_CAPTURE"]).open("a") as handle:
 
     def test_failing_router_check_restores_previous_unit_files(self):
         capture = self.service_shims()
-        current = {"board_api": 4, "schema_supported": "2026-01-01", "schema_file": "2026-01-01"}
+        current = {"board_api": 5, "schema_supported": "2026-01-01", "schema_file": "2026-01-01"}
         stale = {"board_api": 3, "schema_supported": "2026-01-01", "schema_file": "2026-01-01"}
         self.serve_router_status([current, stale])
         first = self.install("--systemd", "--board")
@@ -344,7 +344,7 @@ with Path(os.environ["SERVICE_CAPTURE"]).open("a") as handle:
         self.addCleanup(sys.path.remove, str(PLUGIN / "scripts"))
         spec.loader.exec_module(module)
         from unittest.mock import patch
-        current = {"board_api": 4, "schema_supported": "s", "schema_file": "s"}
+        current = {"board_api": 5, "schema_supported": "s", "schema_file": "s"}
         with patch.object(module, "router_status", side_effect=[None, None, current]) as status, \
                 patch.object(module.time, "sleep") as sleep:
             module.require_current_router(self.root / "runtime")

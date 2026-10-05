@@ -264,3 +264,12 @@ pub fn find_unlinked(
             .or_else(|| (!scan.warnings.is_empty()).then(|| scan.warnings.join("; "))),
     })
 }
+
+/// Reads one commit's metadata exactly as a scan does, without trailer links.
+pub fn read_commit(
+    registration: &RepoRegistration,
+    oid: crate::identity::GitOid,
+    timeout: Duration,
+) -> Result<LinkedCommit> {
+    commit_scanner::read_commit(registration, oid, Instant::now() + timeout)
+}

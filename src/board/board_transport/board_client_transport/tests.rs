@@ -138,7 +138,7 @@ fn router_api_is_probed_once_before_dispatch_and_mismatch_never_falls_back() {
     assert_eq!(gateway.requests.len(), 3);
     assert_eq!(gateway.requests[0], ["system", "status"]);
     assert!(!database.exists());
-    for stale in [3, BOARD_API + 1] {
+    for stale in [4, BOARD_API + 1] {
         let status =
             serde_json::json!({"status":"ok","board_api":stale,"board_db":database}).to_string();
         let mut gateway = FakeGateway {

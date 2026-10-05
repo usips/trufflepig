@@ -227,6 +227,17 @@ impl LocalBoard {
                 common_dir,
             } => board_writes::entry_writes::forget_repo_path(&tx, &ctx, repo_key, host, common_dir)?,
             BoardOp::LinkCommits { commits } => board_writes::entry_writes::link_commits(&tx, &ctx, commits)?,
+            BoardOp::LinkCommit {
+                task, resolution, ..
+            } => {
+                let commit = resolution.as_deref().ok_or_else(|| {
+                    invalid(
+                        "invalid_options",
+                        "commit links resolve through the board host",
+                    )
+                })?;
+                board_writes::entry_writes::link_commit(&tx, &ctx, *task, commit)?
+            }
         };
         #[cfg(test)]
         if std::mem::take(&mut self.panic_after_write) {
