@@ -25,8 +25,9 @@ callers.
 If router/DB delivery fails, the client atomically writes a 0600 `<uuid>.feedback` in the spool and
 reports `queued: pending import`. Only `*.request` files are claimed as requests; startup/orphan
 cleanup preserves feedback records. Idle import deduplicates UUIDs transactionally, removes files
-only after commit, and quarantines permanent semantic errors. Unavailable/locked imports stay
-pending with retry backoff from two to 60 seconds; quarantine time resets on quarantine without
-following symlinks. Imported entries show `via=outbox`, unverified spooled provenance; quarantines
-expire after 30 days, while pending `.feedback` has no expiry. If the spool is unwritable,
-`board_unavailable` reports the failure.
+only after commit, and quarantines permanent semantic errors. Constraint, too-big, and
+type-mismatch storage failures quarantine as invalid state; corrupt and not-a-database storage
+stays pending with retry backoff from two to 60 seconds, as do unavailable/locked imports;
+quarantine time resets on quarantine without following symlinks. Imported entries show
+`via=outbox`, unverified spooled provenance; quarantines expire after 30 days, while pending
+`.feedback` has no expiry. If the spool is unwritable, `board_unavailable` reports the failure.

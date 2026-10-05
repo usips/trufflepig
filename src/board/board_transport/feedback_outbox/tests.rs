@@ -118,3 +118,24 @@ impl BoardBackend for SqliteRejectedImport {
         Ok(EventSeq::new(0))
     }
 }
+
+/// A backend whose storage file holds garbage bytes, so every import attempt
+/// fails with a genuine SQLITE_NOTADB error through the real mapping.
+struct CorruptDbImport {
+    conn: rusqlite::Connection,
+}
+
+impl BoardBackend for CorruptDbImport {
+    fn handle(&mut self, _: &BoardRequest) -> Result<BoardReply, BoardError> {
+        self.conn
+            .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+            .map_err(|error| BoardError::from(anyhow::Error::new(error)))?;
+        unreachable!("garbage database unexpectedly answered");
+    }
+    fn import_feedback(&mut self, request: &BoardRequest) -> Result<BoardReply, BoardError> {
+        self.handle(request)
+    }
+    fn max_seq(&self) -> Result<EventSeq, BoardError> {
+        Ok(EventSeq::new(0))
+    }
+}

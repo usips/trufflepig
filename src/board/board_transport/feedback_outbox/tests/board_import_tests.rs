@@ -92,8 +92,10 @@ fn deterministic_sqlite_errors_quarantine_once_while_locks_stay_pending() {
     for (raw_code, quarantines) in [
         (rusqlite::ffi::SQLITE_CONSTRAINT, true),
         (rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE, true),
-        (rusqlite::ffi::SQLITE_CORRUPT, true),
-        (rusqlite::ffi::SQLITE_NOTADB, true),
+        (rusqlite::ffi::SQLITE_TOOBIG, true),
+        (rusqlite::ffi::SQLITE_MISMATCH, true),
+        (rusqlite::ffi::SQLITE_CORRUPT, false),
+        (rusqlite::ffi::SQLITE_NOTADB, false),
         (rusqlite::ffi::SQLITE_BUSY, false),
         (rusqlite::ffi::SQLITE_LOCKED, false),
     ] {
@@ -124,6 +126,33 @@ fn deterministic_sqlite_errors_quarantine_once_while_locks_stay_pending() {
             assert_eq!(path.extension().unwrap(), "feedback", "{raw_code}");
         }
     }
+}
+
+#[test]
+fn garbage_database_imports_stay_pending_without_quarantine() {
+    let directory = scratch();
+    let db_path = directory.path().join("board.sqlite3");
+    fs::write(&db_path, b"this is not a sqlite database").unwrap();
+    let spool = directory.path().join("spool");
+    queue(&spool, &report()).unwrap();
+    let mut backend = CorruptDbImport {
+        conn: rusqlite::Connection::open(&db_path).unwrap(),
+    };
+    let summary = import_pending(&spool, &mut backend).unwrap();
+    assert_eq!(summary.pending, 1);
+    assert_eq!(summary.quarantined, 0);
+    assert_eq!(summary.imported, 0);
+    let path = fs::read_dir(&spool)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    assert_eq!(path.extension().unwrap(), "feedback");
+    // A second tick still retries instead of quarantining.
+    let retry = import_pending(&spool, &mut backend).unwrap();
+    assert_eq!(retry.pending, 1);
+    assert_eq!(retry.quarantined, 0);
 }
 
 #[test]

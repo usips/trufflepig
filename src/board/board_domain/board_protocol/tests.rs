@@ -251,7 +251,10 @@ fn sqlite_storage_failures_classify_by_typed_code() {
     for (raw, expected) in [
         (rusqlite::ffi::SQLITE_BUSY, BoardErrorCode::DatabaseLocked),
         (rusqlite::ffi::SQLITE_LOCKED, BoardErrorCode::DatabaseLocked),
-        (rusqlite::ffi::SQLITE_CONSTRAINT, BoardErrorCode::InvalidState),
+        (
+            rusqlite::ffi::SQLITE_CONSTRAINT,
+            BoardErrorCode::InvalidState,
+        ),
         (
             rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE,
             BoardErrorCode::InvalidState,
@@ -260,9 +263,20 @@ fn sqlite_storage_failures_classify_by_typed_code() {
             rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY,
             BoardErrorCode::InvalidState,
         ),
-        (rusqlite::ffi::SQLITE_CORRUPT, BoardErrorCode::InvalidState),
-        (rusqlite::ffi::SQLITE_NOTADB, BoardErrorCode::InvalidState),
-        (rusqlite::ffi::SQLITE_IOERR, BoardErrorCode::BoardUnavailable),
+        (
+            rusqlite::ffi::SQLITE_CORRUPT,
+            BoardErrorCode::BoardUnavailable,
+        ),
+        (
+            rusqlite::ffi::SQLITE_NOTADB,
+            BoardErrorCode::BoardUnavailable,
+        ),
+        (rusqlite::ffi::SQLITE_TOOBIG, BoardErrorCode::InvalidState),
+        (rusqlite::ffi::SQLITE_MISMATCH, BoardErrorCode::InvalidState),
+        (
+            rusqlite::ffi::SQLITE_IOERR,
+            BoardErrorCode::BoardUnavailable,
+        ),
     ] {
         let sqlite = rusqlite::Error::SqliteFailure(
             rusqlite::ffi::Error::new(raw),
