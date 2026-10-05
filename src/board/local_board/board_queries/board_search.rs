@@ -1,4 +1,4 @@
-//! Searchable entry and revision targets with atomic external-content FTS maintenance.
+//! Searchable entry, revision, and plan-title targets with atomic external-content FTS maintenance.
 
 #[cfg(test)]
 mod tests;
@@ -34,11 +34,22 @@ pub(in crate::board::local_board) fn search(
         require_plan(conn, plan)?;
     }
     let expression = match_expression(query)?;
+    // bm25 is computed per FTS table, so title and body ranks share a scale
+    // in name only; the UNION orders by them anyway with a target tiebreak.
+    // The result is deterministic but not a cross-source relevance claim.
+    // Title targets (P#) never collide with body targets (E#, P#@N), so
+    // UNION ALL skips the dedup pass; LIMIT applies across the UNION.
     let mut statement = conn.prepare(
         concat!(
-            "SELECT d.target,d.plan_id,d.source,substr(snippet(board_text,0,'','',' ... ',24),1,512) ",
-            "FROM board_text JOIN search_documents d ON d.rowid=board_text.rowid WHERE board_text MATCH ?1 ",
-            "AND (?2 IS NULL OR d.plan_id=?2) ORDER BY bm25(board_text),d.rowid LIMIT ?3"
+            "SELECT target,plan_id,source,snippet FROM(",
+            "SELECT d.target AS target,d.plan_id AS plan_id,d.source AS source,",
+            "substr(snippet(board_text,0,'','',' ... ',24),1,512) AS snippet,bm25(board_text) AS rank ",
+            "FROM board_text JOIN search_documents d ON d.rowid=board_text.rowid ",
+            "WHERE board_text MATCH ?1 AND (?2 IS NULL OR d.plan_id=?2) UNION ALL ",
+            "SELECT 'P'||t.plan_id,t.plan_id,'plan',substr(t.title,1,512),bm25(plan_titles) ",
+            "FROM plan_titles JOIN plan_text t ON t.plan_id=plan_titles.rowid ",
+            "WHERE plan_titles MATCH ?1 AND (?2 IS NULL OR t.plan_id=?2) ",
+            "ORDER BY rank,target LIMIT ?3)"
         ),
     ).map_err(sql_error)?;
     let mut rows = statement
@@ -55,7 +66,10 @@ pub(in crate::board::local_board) fn search(
             .map_err(sql_error)?
             .parse()
             .map_err(BoardError::from)?;
-        if !matches!(target, BoardRef::Entry(_) | BoardRef::Revision(_)) {
+        if !matches!(
+            target,
+            BoardRef::Entry(_) | BoardRef::Revision(_) | BoardRef::Plan(_)
+        ) {
             return Err(invalid(
                 "board_unavailable",
                 "search document has an unsupported target",
@@ -73,6 +87,7 @@ pub(in crate::board::local_board) fn search(
             "entry" => BoardSearchSource::Entry,
             "revision" => BoardSearchSource::Revision,
             "proposal" => BoardSearchSource::Proposal,
+            "plan" => BoardSearchSource::Plan,
             _ => {
                 return Err(invalid(
                     "board_unavailable",

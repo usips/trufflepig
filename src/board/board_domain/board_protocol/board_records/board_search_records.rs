@@ -8,6 +8,7 @@ pub enum BoardSearchSource {
     Entry,
     Revision,
     Proposal,
+    Plan,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

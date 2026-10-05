@@ -39,6 +39,10 @@ fn shipped_migration_steps_are_byte_pinned() {
         pin(SCHEMA_V5),
         "a4090c5ffac9c08f2ab5b85397cc97a03613ea1fcadc787dccb027cbad56c40e"
     );
+    assert_eq!(
+        pin(SCHEMA_V6),
+        "83d284f13f2019c911ad4ded97fcb5ab05469ef89df071d72cc630864a9ec8ce"
+    );
 }
 
 #[test]

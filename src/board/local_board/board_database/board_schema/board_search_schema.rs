@@ -67,3 +67,31 @@ INSERT INTO search_documents(target,plan_id,source,body)
  FROM revisions r JOIN texts t ON t.hash=r.text_hash ORDER BY r.plan_id,r.number;
 INSERT INTO board_text(board_text,rank) VALUES('integrity-check',1);
 "#;
+
+pub(in crate::board::local_board::board_database) const SCHEMA_V6: &str = r#"
+CREATE TABLE plan_text(
+ plan_id INTEGER PRIMARY KEY, title TEXT NOT NULL
+);
+CREATE VIRTUAL TABLE plan_titles USING fts5(
+ title, content='plan_text', content_rowid='plan_id', tokenize='unicode61'
+);
+CREATE TRIGGER plan_text_insert AFTER INSERT ON plan_text BEGIN
+ INSERT INTO plan_titles(rowid,title) VALUES(new.plan_id,new.title);
+END;
+CREATE TRIGGER plan_text_delete AFTER DELETE ON plan_text BEGIN
+ INSERT INTO plan_titles(plan_titles,rowid,title) VALUES('delete',old.plan_id,old.title);
+END;
+CREATE TRIGGER plan_text_update AFTER UPDATE ON plan_text BEGIN
+ INSERT INTO plan_titles(plan_titles,rowid,title) VALUES('delete',old.plan_id,old.title);
+ INSERT INTO plan_titles(rowid,title) VALUES(new.plan_id,new.title);
+END;
+CREATE TRIGGER search_plans_insert AFTER INSERT ON plans BEGIN
+ INSERT INTO plan_text(plan_id,title) VALUES(new.id,new.title);
+END;
+CREATE TRIGGER search_plans_update AFTER UPDATE OF title ON plans BEGIN
+ UPDATE plan_text SET title=new.title WHERE plan_id=new.id;
+END;
+INSERT INTO plan_text(plan_id,title)
+ SELECT id,title FROM plans ORDER BY id;
+INSERT INTO plan_titles(plan_titles,rank) VALUES('integrity-check',1);
+"#;

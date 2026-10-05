@@ -96,11 +96,13 @@ fn targets(result: &Value) -> std::collections::BTreeSet<String> {
 }
 
 fn integrity(board: &LocalBoard) {
-    board
-        .conn
-        .execute(
-            "INSERT INTO board_text(board_text,rank) VALUES('integrity-check',1)",
-            [],
-        )
-        .unwrap();
+    for table in ["board_text", "plan_titles"] {
+        board
+            .conn
+            .execute(
+                &format!("INSERT INTO {table}({table},rank) VALUES('integrity-check',1)"),
+                [],
+            )
+            .unwrap();
+    }
 }

@@ -1,9 +1,9 @@
 //! Durable board schema and forward-only migration SQL.
 
 mod board_search_schema;
-pub(super) use board_search_schema::SCHEMA_V3;
+pub(super) use board_search_schema::{SCHEMA_V3, SCHEMA_V6};
 
-pub const SCHEMA_VERSION: i64 = 5;
+pub const SCHEMA_VERSION: i64 = 6;
 
 pub(super) const SCHEMA_V1: &str = r#"
 CREATE TABLE board_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);

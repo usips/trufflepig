@@ -331,7 +331,7 @@ export function createBoardDetails(context) {
     return page;
   }
   function searchPage(data, route) {
-    const page = add(el("div"), title("Search", "Find text in plan revisions, proposals, and entries."));
+    const page = add(el("div"), title("Search", "Find text in plan titles, revisions, proposals, and entries."));
     const form = el("form", "search-form");
     const query = field("Search board text", "q", route.q, { placeholder: "Search board text" });
     query.input.type = "search"; query.input.required = true;

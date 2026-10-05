@@ -121,6 +121,41 @@ fn search_budget_keeps_empty_results_and_query_truncation_explicit() {
 }
 
 #[test]
+fn search_lines_and_json_render_plan_title_hits() {
+    let plan = PlanId::new(7).unwrap();
+    let reply = BoardReply::new(
+        "local:/board",
+        BoardResult::Search(BoardSearchReply {
+            hits: vec![BoardSearchHit {
+                target: BoardRef::Plan(plan),
+                plan: Some(plan),
+                source: BoardSearchSource::Plan,
+                snippet: "Zephyr navigation overhaul".into(),
+            }],
+            truncated: false,
+        }),
+    );
+    let budget = OutputBudget::new(800)
+        .unwrap()
+        .with_format(OutputFormat::Lines);
+    let rendered = render_reply(&reply, &budget).unwrap();
+    assert!(
+        rendered
+            .text
+            .contains("P7\tPlan\tZephyr navigation overhaul"),
+        "{}",
+        rendered.text
+    );
+    let budget = OutputBudget::new(800)
+        .unwrap()
+        .with_format(OutputFormat::Json);
+    let rendered = render_reply(&reply, &budget).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&rendered.text).unwrap();
+    assert_eq!(value["result"]["data"]["hits"][0]["source"], "plan");
+    assert_eq!(value["result"]["data"]["hits"][0]["target"], "P7");
+}
+
+#[test]
 fn search_budget_rejects_an_oversized_first_hit_without_skipping_it() {
     let reply = search_reply(2, false);
     for format in [OutputFormat::Json, OutputFormat::Lines] {

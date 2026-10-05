@@ -190,8 +190,10 @@ seconds; successful TTL changes reach existing readers/writer. `mode = "local"` 
 storage; `mode = "remote"` fails `board_remote_unsupported` without contacting a coordinator or
 opening a local DB.
 
-Board FTS5 uses stable integer search-document IDs for full entry text/proposal bodies and revision
-bodies; shared content hashes never merge distinct targets or index orphan texts. Plan filters apply
-before the 50-hit cap; results target `E#` or `P#@N` with plain 512-byte snippets. Query terms are
-phrase-quoted and ANDed; residual invalid MATCH syntax is `invalid_options`. Schema rebuild/backfill
+Board FTS5 uses stable integer search-document IDs for full entry text/proposal bodies, revision
+bodies, and plan titles; shared content hashes never merge distinct targets or index orphan texts.
+Plan filters apply before the 50-hit cap; results target `E#`, `P#@N`, or `P#` with plain 512-byte
+snippets, title hits carrying source `plan` and the title itself. Query terms are phrase-quoted
+and ANDed; residual invalid MATCH syntax is `invalid_options`. Title and body ranks use per-table
+bm25, so cross-source order is deterministic but not a relevance claim. Schema rebuild/backfill
 and trigger maintenance are atomic.
