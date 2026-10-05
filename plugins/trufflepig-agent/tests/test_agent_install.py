@@ -159,6 +159,60 @@ with Path(os.environ["SERVICE_CAPTURE"]).open("a") as handle:
         self.env.update(PATH=f"{directory}:{self.env['PATH']}", SERVICE_CAPTURE=str(capture))
         return capture
 
+    def serve_router_status(self, replies):
+        """Answer `system status` polls on $TRUFFLEPIG_SYSTEM_DIR/daemon.sock."""
+        import socket
+        import threading
+        runtime = Path(self.env["TRUFFLEPIG_SYSTEM_DIR"])
+        runtime.mkdir(parents=True, exist_ok=True)
+        path = runtime / "daemon.sock"
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        server.bind(str(path))
+        server.listen(8)
+        server.settimeout(5)
+        stop = threading.Event()
+        served = []
+
+        def serve():
+            try:
+                while not stop.is_set():
+                    try:
+                        connection, _ = server.accept()
+                    except socket.timeout:
+                        continue
+                    with connection:
+                        connection.settimeout(5)
+                        raw = connection.recv(4)
+                        if len(raw) < 4:
+                            continue
+                        length = int.from_bytes(raw, "big")
+                        body = b""
+                        while len(body) < length:
+                            chunk = connection.recv(length - len(body))
+                            if not chunk:
+                                break
+                            body += chunk
+                        payload = replies[min(len(served), len(replies) - 1)]
+                        served.append(payload)
+                        reply = json.dumps({"status": "success", "output": json.dumps(payload)}).encode()
+                        connection.sendall(len(reply).to_bytes(4, "big") + reply)
+            finally:
+                server.close()
+
+        thread = threading.Thread(target=serve, daemon=True)
+        thread.start()
+
+        def stop_router():
+            stop.set()
+            thread.join(10)
+
+        self.addCleanup(stop_router)
+        return path
+
     def test_service_capability_failure_prevents_all_installation_mutations(self):
         capture = self.service_shims()
         cases = [("", "unknown argument --board-api-version\\n", "2"),
@@ -232,6 +286,84 @@ with Path(os.environ["SERVICE_CAPTURE"]).open("a") as handle:
                                  ["systemctl", "--user", "stop", "trufflepig-board.service"],
                                  ["systemctl", "--user", "restart", "trufflepig-system.service"],
                                  ["systemctl", "--user", "enable", "--now", "trufflepig-board.service"]])
+
+    def test_systemd_install_try_restarts_board_after_router_enable(self):
+        capture = self.service_shims()
+        units = self.root / "config/systemd/user"
+        units.mkdir(parents=True)
+        (units / "trufflepig-board.service").write_text("previous board unit\n")
+        result = self.install("--systemd")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = [json.loads(line) for line in capture.read_text().splitlines()]
+        enable = ["systemctl", "--user", "enable", "--now", "trufflepig-system.service"]
+        self.assertIn(enable, calls)
+        self.assertEqual(calls[calls.index(enable) + 1],
+                         ["systemctl", "--user", "try-restart", "trufflepig-board.service"])
+
+    def test_systemd_install_without_board_skips_try_restart(self):
+        capture = self.service_shims()
+        result = self.install("--systemd")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = [json.loads(line) for line in capture.read_text().splitlines()]
+        self.assertNotIn(["systemctl", "--user", "try-restart", "trufflepig-board.service"], calls)
+
+    def test_failing_router_check_restores_previous_unit_files(self):
+        capture = self.service_shims()
+        current = {"board_api": 4, "schema_supported": "2026-01-01", "schema_file": "2026-01-01"}
+        stale = {"board_api": 3, "schema_supported": "2026-01-01", "schema_file": "2026-01-01"}
+        self.serve_router_status([current, stale])
+        first = self.install("--systemd", "--board")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        units = self.root / "config/systemd/user"
+        board_unit = units / "trufflepig-board.service"
+        previous = "previous board unit\n"
+        board_unit.write_text(previous)
+        capture.write_text("")
+        result = self.install("--board")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("board_api 3", result.stderr)
+        self.assertEqual(board_unit.read_text(), previous)
+        reload = ["systemctl", "--user", "daemon-reload"]
+        calls = [json.loads(line) for line in capture.read_text().splitlines()]
+        self.assertEqual(calls.count(reload), 2)
+        self.assertEqual(calls[-1], reload)
+        self.assertNotIn(["systemctl", "--user", "enable", "--now", "trufflepig-board.service"], calls)
+        board_unit.unlink()
+        capture.write_text("")
+        result = self.install("--board")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertFalse(board_unit.exists())
+        calls = [json.loads(line) for line in capture.read_text().splitlines()]
+        self.assertEqual(calls.count(reload), 2)
+        self.assertEqual(calls[-1], reload)
+
+    def test_router_check_polls_until_router_answers(self):
+        spec = importlib.util.spec_from_file_location("install_router_poll", PLUGIN / "scripts/install_agent.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.path.insert(0, str(PLUGIN / "scripts"))
+        self.addCleanup(sys.path.remove, str(PLUGIN / "scripts"))
+        spec.loader.exec_module(module)
+        from unittest.mock import patch
+        current = {"board_api": 4, "schema_supported": "s", "schema_file": "s"}
+        with patch.object(module, "router_status", side_effect=[None, None, current]) as status, \
+                patch.object(module.time, "sleep") as sleep:
+            module.require_current_router(self.root / "runtime")
+        self.assertEqual(status.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_router_check_returns_when_no_router_answers_within_timeout(self):
+        spec = importlib.util.spec_from_file_location("install_router_timeout", PLUGIN / "scripts/install_agent.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.path.insert(0, str(PLUGIN / "scripts"))
+        self.addCleanup(sys.path.remove, str(PLUGIN / "scripts"))
+        spec.loader.exec_module(module)
+        from unittest.mock import patch
+        with patch.object(module, "router_status", return_value=None) as status, \
+                patch.object(module.time, "monotonic", side_effect=[100.0, 200.0]), \
+                patch.object(module.time, "sleep") as sleep:
+            module.require_current_router(self.root / "runtime")
+        self.assertEqual(status.call_count, 1)
+        sleep.assert_not_called()
 
     def test_later_board_install_rejects_different_router_database_before_mutation(self):
         capture = self.service_shims()
