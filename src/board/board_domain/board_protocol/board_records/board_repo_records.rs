@@ -9,6 +9,11 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Maximum co-authors per linked commit; the scanner and wire agree.
+pub const COAUTHOR_LIMIT: usize = 64;
+/// Maximum plan links per linked commit; the scanner and wire agree.
+pub const LINK_LIMIT: usize = 256;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RepoRegistration {
     pub repo_key: RepoKey,

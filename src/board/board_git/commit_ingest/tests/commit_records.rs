@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::CommitPlanLink;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -62,7 +63,24 @@ fn malformed_commit_is_isolated_and_valid_metadata_is_bounded() {
         .unwrap();
     assert_eq!(first.completed.len(), 1);
     assert_eq!(first.errors.len(), 1);
-    assert_eq!(backend.linked.len(), 1);
+    assert!(
+        first.errors[0].contains("malformed Plan-Task"),
+        "{:?}",
+        first.errors
+    );
+    assert_eq!(backend.linked.len(), 2);
+    let degraded = backend
+        .linked
+        .iter()
+        .find(|commit| commit.oid != good)
+        .unwrap();
+    assert_eq!(
+        degraded.plans,
+        vec![CommitPlanLink {
+            plan_id: PlanId::new(7).unwrap(),
+            task_ordinal: None,
+        }]
+    );
     let commit = &backend.linked[0];
     assert_eq!(commit.oid, good);
     assert!(commit.subject.len() <= 1024);

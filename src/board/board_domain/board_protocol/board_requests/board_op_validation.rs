@@ -3,7 +3,7 @@ use super::BoardOp;
 use crate::board::{
     board_actor::{HarnessLabel, validate_actor_component},
     board_ids::{BoardRef, MAX_BOARD_NUMBER, TaskId},
-    board_protocol::{bounded_metadata, validate_claim},
+    board_protocol::{COAUTHOR_LIMIT, LINK_LIMIT, bounded_metadata, validate_claim},
     board_vocabulary::ENTRY_TEXT_LIMIT,
 };
 use anyhow::{Result, bail};
@@ -159,7 +159,7 @@ impl BoardOp {
                 for commit in commits {
                     bounded_metadata(&commit.subject, 1024, "commit subject")?;
                     bounded_metadata(&commit.author, 1024, "commit author")?;
-                    if commit.coauthors.len() > 64 || commit.plans.len() > 256 {
+                    if commit.coauthors.len() > COAUTHOR_LIMIT || commit.plans.len() > LINK_LIMIT {
                         bail!("invalid_options: commit metadata exceeds collection limits");
                     }
                     for number in [commit.files, commit.insertions, commit.deletions] {

@@ -1,13 +1,14 @@
 //! Git-native trailer fields and complete, bounded log records.
 use crate::board::board_actor::HarnessLabel;
 use crate::board::board_ids::{PlanId, RepoKey, TaskId};
-use crate::board::board_protocol::{CommitCoauthor, CommitPlanLink, LinkedCommit};
+use crate::board::board_protocol::{
+    COAUTHOR_LIMIT, CommitCoauthor, CommitPlanLink, LINK_LIMIT, LinkedCommit,
+};
 use crate::identity::GitOid;
 use anyhow::{Context, Result, ensure};
+use std::borrow::Cow;
 use std::collections::BTreeSet;
-
-// Matches the LinkCommits wire bound in board_op_validation.
-const COAUTHOR_LIMIT: usize = 64;
+use std::str::FromStr;
 
 // Separate keys preserve both trailer presence and each field's meaning. Git's
 // `key=` is case-insensitive; a pipe-separated key is one literal key.
@@ -31,7 +32,7 @@ pub struct ParsedLog {
 }
 
 /// Framing is atomic; invalid metadata skips one record without discarding its peers.
-/// Co-author trailers degrade per value: bad or overflowing entries warn only.
+/// Plan, task, and co-author trailers degrade per value: bad entries warn only.
 pub fn parse_log(bytes: &[u8], repo_key: &RepoKey) -> Result<ParsedLog> {
     if bytes.is_empty() {
         return Ok(ParsedLog {
@@ -76,41 +77,51 @@ struct ParsedRecord {
 }
 
 fn parse_record(fields: &[&[u8]], repo_key: &RepoKey) -> Result<ParsedRecord> {
-    let text: Vec<_> = fields
-        .iter()
-        .map(|field| std::str::from_utf8(field))
-        .collect::<std::result::Result<_, _>>()?;
-    let plans = trailer_values(text[4], "Plan")?;
-    let tasks = trailer_values(text[5], "Plan-Task")?
-        .into_iter()
-        .map(str::parse::<TaskId>)
-        .collect::<Result<BTreeSet<_>>>()?;
+    let mut warnings = Vec::new();
+    let oid = std::str::from_utf8(fields[0])?;
+    let timestamp = std::str::from_utf8(fields[1])?;
+    let author = lossy_field(fields[2], "author", &mut warnings);
+    let subject = lossy_field(fields[3], "subject", &mut warnings);
+    let plan_field = std::str::from_utf8(fields[4])?;
+    let task_field = std::str::from_utf8(fields[5])?;
+    let coauthor_field = std::str::from_utf8(fields[6])?;
+    let shortstat_field = std::str::from_utf8(fields[7])?;
+    let raw_plans = trailer_values(plan_field, "Plan")?;
+    let has_plan_trailer = !raw_plans.is_empty();
+    let plans: BTreeSet<PlanId> = trailer_ids(raw_plans, "Plan", &mut warnings);
+    let tasks: BTreeSet<TaskId> = trailer_ids(
+        trailer_values(task_field, "Plan-Task")?,
+        "Plan-Task",
+        &mut warnings,
+    );
     let mut links = Vec::with_capacity(plans.len() + tasks.len());
-    for plan in plans
-        .iter()
-        .map(|value| value.parse::<PlanId>())
-        .collect::<Result<BTreeSet<_>>>()?
-    {
+    for plan in &plans {
         let before = links.len();
-        for task in tasks.iter().filter(|task| task.plan == plan) {
+        for task in tasks.iter().filter(|task| task.plan == *plan) {
             links.push(CommitPlanLink {
-                plan_id: plan,
+                plan_id: *plan,
                 task_ordinal: Some(task.ordinal),
             });
         }
         if links.len() == before {
             links.push(CommitPlanLink {
-                plan_id: plan,
+                plan_id: *plan,
                 task_ordinal: None,
             });
         }
     }
-    ensure!(links.len() <= 256, "board_scan: too many plan references");
+    if links.len() > LINK_LIMIT {
+        warnings.push(format!(
+            "skipped {} plan reference(s) past the {LINK_LIMIT} limit",
+            links.len() - LINK_LIMIT
+        ));
+        links.truncate(LINK_LIMIT);
+    }
     let mut coauthors: Vec<CommitCoauthor> = Vec::new();
     let mut malformed = 0usize;
     let mut first_malformed: Option<anyhow::Error> = None;
     let mut overflow = 0usize;
-    for value in trailer_values(text[6], "Co-authored-by")? {
+    for value in trailer_values(coauthor_field, "Co-authored-by")? {
         match parse_coauthor(value) {
             Ok(coauthor) if coauthors.contains(&coauthor) => {}
             Ok(_) if coauthors.len() >= COAUTHOR_LIMIT => overflow += 1,
@@ -121,7 +132,6 @@ fn parse_record(fields: &[&[u8]], repo_key: &RepoKey) -> Result<ParsedRecord> {
             }
         }
     }
-    let mut warnings = Vec::new();
     if let Some(error) = first_malformed {
         warnings.push(format!(
             "skipped {malformed} malformed co-author trailer(s): {error:#}"
@@ -132,19 +142,19 @@ fn parse_record(fields: &[&[u8]], repo_key: &RepoKey) -> Result<ParsedRecord> {
             "skipped {overflow} co-author trailer(s) past the {COAUTHOR_LIMIT} limit"
         ));
     }
-    let (files, insertions, deletions) = shortstat(text[7]).unwrap_or_default();
+    let (files, insertions, deletions) = shortstat(shortstat_field).unwrap_or_default();
     Ok(ParsedRecord {
         warnings,
         commit: ParsedCommit {
-            has_plan_trailer: !plans.is_empty(),
+            has_plan_trailer,
             commit: LinkedCommit {
                 repo_key: repo_key.clone(),
-                oid: GitOid::parse(text[0])?,
-                committed_at: text[1]
+                oid: GitOid::parse(oid)?,
+                committed_at: timestamp
                     .parse()
                     .context("board_scan: invalid commit timestamp")?,
-                author: bounded_git_metadata(text[2], 1024),
-                subject: bounded_git_metadata(text[3], 1024),
+                author: bounded_git_metadata(&author, 1024),
+                subject: bounded_git_metadata(&subject, 1024),
                 coauthors,
                 files,
                 insertions,
@@ -153,6 +163,44 @@ fn parse_record(fields: &[&[u8]], repo_key: &RepoKey) -> Result<ParsedRecord> {
             },
         },
     })
+}
+
+/// Author and subject decode lossily so one bad byte never drops a record.
+fn lossy_field<'a>(field: &'a [u8], name: &str, warnings: &mut Vec<String>) -> Cow<'a, str> {
+    match std::str::from_utf8(field) {
+        Ok(value) => Cow::Borrowed(value),
+        Err(_) => {
+            warnings.push(format!("{name} field is not valid UTF-8; decoded lossily"));
+            String::from_utf8_lossy(field)
+        }
+    }
+}
+
+/// Trailer ids degrade per value: bad values warn, good ones still link.
+fn trailer_ids<T>(values: Vec<&str>, key: &str, warnings: &mut Vec<String>) -> BTreeSet<T>
+where
+    T: FromStr<Err = anyhow::Error> + Ord,
+{
+    let mut ids = BTreeSet::new();
+    let mut malformed = 0usize;
+    let mut first_malformed: Option<anyhow::Error> = None;
+    for value in values {
+        match value.parse::<T>() {
+            Ok(id) => {
+                ids.insert(id);
+            }
+            Err(error) => {
+                malformed += 1;
+                first_malformed.get_or_insert(error);
+            }
+        }
+    }
+    if let Some(error) = first_malformed {
+        warnings.push(format!(
+            "skipped {malformed} malformed {key}: value(s): {error:#}"
+        ));
+    }
+    ids
 }
 
 fn bounded_git_metadata(value: &str, limit: usize) -> String {
@@ -306,9 +354,9 @@ mod tests {
         let valid =
             format!("\0{oid}\01700000000\0Fixture <f@example.test>\0valid\0Plan: P7\0\0\0\n");
         let mut bytes = valid.as_bytes().to_vec();
-        let malformed = format!("\0{oid}\01700000000\0Fixture <f@example.test>\0");
+        let malformed = format!("\0{oid}\01700000000\0Fixture <f@example.test>\0valid\0");
         bytes.extend_from_slice(malformed.as_bytes());
-        bytes.extend_from_slice(b"\xff\0Plan: P7\0\0\0\n");
+        bytes.extend_from_slice(b"\xff\0\0\0\n");
         bytes.extend_from_slice(valid.as_bytes());
         let parsed = parse_log(&bytes, &key).unwrap();
         assert_eq!(parsed.record_count, 3);
@@ -321,5 +369,113 @@ mod tests {
         let key = RepoKey::from_roots([GitOid::parse(&"a".repeat(40)).unwrap()]).unwrap();
         assert!(parse_log(b"\0bad\0record", &key).is_err());
         assert!(parse_coauthor("Model <email>").is_err());
+    }
+
+    #[test]
+    fn malformed_plan_task_value_warns_without_dropping_valid_link() {
+        let key = RepoKey::from_roots([GitOid::parse(&"a".repeat(40)).unwrap()]).unwrap();
+        let oid = "b".repeat(40);
+        let bytes = format!(
+            "\0{oid}\01700000000\0Fixture <f@example.test>\0subject\0Plan: P7\0Plan-Task: P7.1\x1dPlan-Task: garbage\0\0\n"
+        );
+        let parsed = parse_log(bytes.as_bytes(), &key).unwrap();
+        assert_eq!(parsed.records.len(), 1);
+        assert_eq!(
+            parsed.records[0].commit.plans,
+            vec![CommitPlanLink {
+                plan_id: PlanId::new(7).unwrap(),
+                task_ordinal: Some(1),
+            }]
+        );
+        assert_eq!(parsed.warnings.len(), 1);
+        assert!(
+            parsed.warnings[0].contains("malformed Plan-Task"),
+            "unexpected warning: {}",
+            parsed.warnings[0]
+        );
+    }
+
+    #[test]
+    fn malformed_plan_value_warns_without_dropping_valid_link() {
+        let key = RepoKey::from_roots([GitOid::parse(&"a".repeat(40)).unwrap()]).unwrap();
+        let oid = "b".repeat(40);
+        let bytes = format!(
+            "\0{oid}\01700000000\0Fixture <f@example.test>\0subject\0Plan: P7\x1dPlan: garbage\0\0\0\n"
+        );
+        let parsed = parse_log(bytes.as_bytes(), &key).unwrap();
+        assert_eq!(parsed.records.len(), 1);
+        assert_eq!(
+            parsed.records[0].commit.plans,
+            vec![CommitPlanLink {
+                plan_id: PlanId::new(7).unwrap(),
+                task_ordinal: None,
+            }]
+        );
+        assert_eq!(parsed.warnings.len(), 1);
+        assert!(
+            parsed.warnings[0].contains("malformed Plan:"),
+            "unexpected warning: {}",
+            parsed.warnings[0]
+        );
+    }
+
+    #[test]
+    fn all_bad_plan_values_still_record_the_commit() {
+        let key = RepoKey::from_roots([GitOid::parse(&"a".repeat(40)).unwrap()]).unwrap();
+        let oid = "b".repeat(40);
+        let bytes = format!(
+            "\0{oid}\01700000000\0Fixture <f@example.test>\0subject\0Plan: garbage\0\0\0\n"
+        );
+        let parsed = parse_log(bytes.as_bytes(), &key).unwrap();
+        assert_eq!(parsed.records.len(), 1);
+        assert!(parsed.records[0].commit.plans.is_empty());
+        assert!(parsed.records[0].has_plan_trailer);
+        assert_eq!(parsed.warnings.len(), 1);
+    }
+
+    #[test]
+    fn latin1_author_decodes_lossily_with_warning() {
+        let key = RepoKey::from_roots([GitOid::parse(&"a".repeat(40)).unwrap()]).unwrap();
+        let oid = "b".repeat(40);
+        let mut bytes = format!("\0{oid}\01700000000\0").into_bytes();
+        bytes.extend_from_slice(b"Caf\xe9 <c@example.test>");
+        bytes.extend_from_slice(b"\0subject\0Plan: P7\0\0\0\n");
+        let parsed = parse_log(&bytes, &key).unwrap();
+        assert_eq!(parsed.records.len(), 1);
+        assert_eq!(
+            parsed.records[0].commit.author,
+            "Caf\u{fffd} <c@example.test>"
+        );
+        assert!(!parsed.records[0].commit.plans.is_empty());
+        assert_eq!(parsed.warnings.len(), 1);
+        assert!(
+            parsed.warnings[0].contains("author"),
+            "unexpected warning: {}",
+            parsed.warnings[0]
+        );
+    }
+
+    #[test]
+    fn plan_links_past_limit_truncate_with_warning() {
+        let key = RepoKey::from_roots([GitOid::parse(&"a".repeat(40)).unwrap()]).unwrap();
+        let oid = "b".repeat(40);
+        let plans = (1..=260u64)
+            .map(|number| format!("Plan: P{number}"))
+            .collect::<Vec<_>>()
+            .join("\x1d");
+        let bytes =
+            format!("\0{oid}\01700000000\0Fixture <f@example.test>\0subject\0{plans}\0\0\0\n");
+        let parsed = parse_log(bytes.as_bytes(), &key).unwrap();
+        assert_eq!(parsed.records.len(), 1);
+        let links = &parsed.records[0].commit.plans;
+        assert_eq!(links.len(), 256);
+        assert_eq!(links.first().unwrap().plan_id, PlanId::new(1).unwrap());
+        assert_eq!(links.last().unwrap().plan_id, PlanId::new(256).unwrap());
+        assert_eq!(parsed.warnings.len(), 1);
+        assert!(
+            parsed.warnings[0].contains("past the 256 limit"),
+            "unexpected warning: {}",
+            parsed.warnings[0]
+        );
     }
 }

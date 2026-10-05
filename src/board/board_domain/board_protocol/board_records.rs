@@ -25,8 +25,8 @@ pub use board_plan_records::{
     RevisionDiff, RevisionRecord, RevisionSource, TaskRecord,
 };
 pub use board_repo_records::{
-    CommitCoauthor, CommitLinkResult, CommitPlanLink, LinkedCommit, RepoRegistration,
-    RepoScanTarget,
+    COAUTHOR_LIMIT, CommitCoauthor, CommitLinkResult, CommitPlanLink, LINK_LIMIT, LinkedCommit,
+    RepoRegistration, RepoScanTarget,
 };
 pub use board_search_records::{BoardSearchHit, BoardSearchReply, BoardSearchSource};
 

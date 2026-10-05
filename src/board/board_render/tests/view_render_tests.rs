@@ -267,6 +267,33 @@ fn entry_drill_keeps_large_proposal_before_long_reverse_references() {
 }
 
 #[test]
+fn claim_line_shows_the_lease_entry() {
+    use crate::board::board_ids::TaskId;
+    let plan = PlanId::new(7).unwrap();
+    let claim = ClaimRecord {
+        task: TaskId::new(plan, 3).unwrap(),
+        actor: BoardActor::new("josh", "laptop", HarnessLabel::parse("codex").unwrap(), "s")
+            .unwrap(),
+        entry: EntryId::new(12).unwrap(),
+        scope: EntryText::new("parser only").unwrap(),
+        claimed_at: 100,
+        last_active: 120,
+        ended_at: None,
+        end_reason: None,
+        stale: false,
+        model: Some("claimed-model".into()),
+        effort: Some("xhigh".into()),
+        delegated_by: None,
+    };
+    let mut rendered = String::new();
+    claim_line(&mut rendered, &claim);
+    assert_eq!(
+        rendered,
+        "P7.3\tjosh@laptop/codex/s(claimed-model/xhigh)\tE12 since=100 active=120\tactive\tparser only\n"
+    );
+}
+
+#[test]
 fn spooled_entry_lines_mark_imported_claims_unverified() {
     let mut imported = entry(1);
     imported.via = Some(FeedbackVia::Outbox);

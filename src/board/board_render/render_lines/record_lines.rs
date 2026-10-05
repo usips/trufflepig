@@ -100,9 +100,10 @@ pub(in crate::board::board_render) fn claim_line(text: &mut String, claim: &Clai
     };
     writeln!(
         text,
-        "{}\t{}\tsince={} active={}\t{}\t{}",
+        "{}\t{}\t{} since={} active={}\t{}\t{}",
         claim.task,
         holder,
+        claim.entry,
         claim.claimed_at,
         claim.last_active,
         if claim.stale {
