@@ -1,12 +1,13 @@
 //! Termination-signal cleanup for the foreground board web service.
-//! SIGTERM/SIGINT stay blocked in every thread; a dedicated waiter consumes
-//! them with sigwait and runs the shutdown action, so systemd stops and
-//! Ctrl-C both remove the published endpoint before the process exits.
+//! SIGTERM/SIGINT/SIGHUP/SIGQUIT stay blocked in every thread; a dedicated
+//! waiter consumes them with sigwait and runs the shutdown action, so systemd
+//! stops, Ctrl-C, hangups, and quits all remove the published endpoint
+//! before the process exits.
 
 use anyhow::{Context, Result};
 use std::thread::{self, JoinHandle};
 
-const TERMINATION: [i32; 2] = [libc::SIGTERM, libc::SIGINT];
+const TERMINATION: [i32; 4] = [libc::SIGTERM, libc::SIGINT, libc::SIGHUP, libc::SIGQUIT];
 
 /// Block termination signals in the calling thread; threads spawned later
 /// inherit the mask, keeping the signals pending for the waiter instead of

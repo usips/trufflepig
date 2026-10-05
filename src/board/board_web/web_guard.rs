@@ -33,12 +33,27 @@ pub(crate) struct WebGuard {
 }
 
 impl WebGuard {
-    pub(crate) fn bind(address: SocketAddr) -> io::Result<(TcpListener, Self)> {
-        require_loopback(address)?;
-        let listener = TcpListener::bind(address)?;
+    /// Adopt an already-bound listener (the serve path reuses the persisted
+    /// port first); rotation still precedes any publish.
+    pub(crate) fn with_listener(listener: TcpListener) -> io::Result<(TcpListener, Self)> {
         let token = BoardWebToken::rotate().map_err(io::Error::other)?;
         let guard = Self::with_token(listener.local_addr()?, token)?;
         Ok((listener, guard))
+    }
+
+    /// Browser origin for a bound loopback listener address.
+    pub(crate) fn origin_for(address: SocketAddr) -> String {
+        let port = if address.port() == 80 {
+            String::new()
+        } else {
+            format!(":{}", address.port())
+        };
+        let authority = if address.is_ipv4() {
+            format!("127.0.0.1{port}")
+        } else {
+            format!("[::1]{port}")
+        };
+        format!("http://{authority}")
     }
 
     /// The address is the listener's actual local address, including its assigned port.
@@ -61,7 +76,7 @@ impl WebGuard {
             format!("[::1]{port}"),
         ];
         let authority = allowed_authorities[if address.is_ipv4() { 0 } else { 2 }].clone();
-        let origin = format!("http://{authority}");
+        let origin = Self::origin_for(address);
         Ok(Self {
             address,
             authority,
@@ -150,7 +165,7 @@ impl WebGuard {
     }
 }
 
-fn require_loopback(address: SocketAddr) -> io::Result<()> {
+pub(super) fn require_loopback(address: SocketAddr) -> io::Result<()> {
     let ip_allowed = matches!(address.ip(), IpAddr::V4(ip) if ip == Ipv4Addr::LOCALHOST)
         || matches!(address.ip(), IpAddr::V6(ip) if ip == Ipv6Addr::LOCALHOST);
     let scoped = matches!(address, SocketAddr::V6(address) if address.scope_id() != 0 || address.flowinfo() != 0);

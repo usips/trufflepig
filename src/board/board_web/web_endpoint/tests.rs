@@ -233,6 +233,41 @@ fn endpoint_guard_removes_the_published_descriptor_on_drop() {
     publish(&runtime, address, &config.db_path).unwrap();
     let descriptor = runtime.join(ENDPOINT_FILE);
     assert!(descriptor.exists());
-    drop(EndpointGuard::arm(&runtime));
+    drop(EndpointGuard::arm(&runtime, address));
     assert!(!descriptor.exists());
+}
+
+#[test]
+fn endpoint_guard_keeps_a_foreign_descriptor() {
+    let (_directory, runtime, config) = fixture();
+    let ours: SocketAddr = "127.0.0.1:7341".parse().unwrap();
+    let foreign: SocketAddr = "127.0.0.1:7342".parse().unwrap();
+    publish(&runtime, ours, &config.db_path).unwrap();
+    let guard = EndpointGuard::arm(&runtime, ours);
+    publish(&runtime, foreign, &config.db_path).unwrap();
+    drop(guard);
+    let bytes = fs::read(runtime.join(ENDPOINT_FILE)).unwrap();
+    let endpoint: WebEndpoint = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(endpoint.address, foreign);
+}
+
+#[test]
+fn listener_reuses_persisted_port_and_falls_back_when_taken() {
+    let (_directory, runtime, config) = fixture();
+    let probe = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = probe.local_addr().unwrap().port();
+    drop(probe);
+    publish(
+        &runtime,
+        SocketAddr::from(([127, 0, 0, 1], port)),
+        &config.db_path,
+    )
+    .unwrap();
+    let listener = bind_listener(&runtime, "127.0.0.1:0".parse().unwrap()).unwrap();
+    assert_eq!(listener.local_addr().unwrap().port(), port);
+    drop(listener);
+    let holder = TcpListener::bind(("127.0.0.1", port)).unwrap();
+    let listener = bind_listener(&runtime, "127.0.0.1:0".parse().unwrap()).unwrap();
+    assert_ne!(listener.local_addr().unwrap().port(), port);
+    drop((holder, listener));
 }

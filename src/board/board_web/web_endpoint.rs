@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
-    net::SocketAddr,
+    net::{SocketAddr, TcpListener},
     os::unix::fs::{MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
     time::Instant,
@@ -76,27 +76,83 @@ pub(super) fn publish(runtime: &Path, address: SocketAddr, database: &Path) -> R
     result
 }
 
-/// Removes the published descriptor on drop; board-serve owns one for its
-/// lifetime and its signal waiter removes the same file before exiting.
+/// Lenient read of the published listener address for advisory decisions
+/// (refusal message, port reuse); strict checks stay on the publish/link path.
+pub(super) fn read_published_address(runtime: &Path) -> Option<SocketAddr> {
+    let bytes = fs::read(runtime.join(ENDPOINT_FILE)).ok()?;
+    serde_json::from_slice::<WebEndpoint>(&bytes)
+        .map(|endpoint| endpoint.address)
+        .ok()
+}
+
+pub(super) fn published_origin(runtime: &Path) -> Option<String> {
+    read_published_address(runtime).map(WebGuard::origin_for)
+}
+
+/// Bind `requested`, trying the persisted port first when it asks for port 0;
+/// falls back to an ephemeral port when the persisted one is taken.
+pub(super) fn bind_listener(runtime: &Path, requested: SocketAddr) -> std::io::Result<TcpListener> {
+    super::web_guard::require_loopback(requested)?;
+    let persisted = (requested.port() == 0)
+        .then(|| read_published_address(runtime))
+        .flatten()
+        .map(|address| address.port())
+        .filter(|port| *port != 0)
+        .map(|port| SocketAddr::new(requested.ip(), port));
+    match persisted {
+        Some(candidate) => match TcpListener::bind(candidate) {
+            Ok(listener) => Ok(listener),
+            Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+                TcpListener::bind(requested)
+            }
+            Err(error) => Err(error),
+        },
+        None => TcpListener::bind(requested),
+    }
+}
+
+/// Remove the descriptor only while it still names `address`; a foreign
+/// rewrite, an absent file, or an unparsable file is left alone.
+pub(super) fn remove_if_ours(path: &Path, address: SocketAddr) {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(_) => return,
+    };
+    let ours = serde_json::from_slice::<WebEndpoint>(&bytes)
+        .is_ok_and(|endpoint| endpoint.address == address);
+    if ours {
+        let _ = fs::remove_file(path);
+    }
+}
+
+/// Removes the published descriptor on drop while it still names our bound
+/// address; board-serve owns one for its lifetime and its signal waiter
+/// removes the same file before exiting.
 pub(super) struct EndpointGuard {
     path: PathBuf,
+    address: SocketAddr,
 }
 
 impl EndpointGuard {
-    pub(super) fn arm(runtime: &Path) -> Self {
+    pub(super) fn arm(runtime: &Path, address: SocketAddr) -> Self {
         Self {
             path: runtime.join(ENDPOINT_FILE),
+            address,
         }
     }
 
     pub(super) fn path(&self) -> &Path {
         &self.path
     }
+
+    pub(super) fn address(&self) -> SocketAddr {
+        self.address
+    }
 }
 
 impl Drop for EndpointGuard {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.path);
+        remove_if_ours(&self.path, self.address);
     }
 }
 

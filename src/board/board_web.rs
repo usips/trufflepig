@@ -3,6 +3,7 @@ pub(crate) mod event_stream;
 pub(crate) mod http_wire;
 pub(crate) mod plan_markup;
 mod reader_pool;
+mod serve_lock;
 mod signal_shutdown;
 #[cfg(test)]
 mod tests;
@@ -120,6 +121,7 @@ pub(crate) struct BoardWebServer {
     state: Arc<WebState>,
     _poller: SequencePoller,
     endpoint: web_endpoint::EndpointGuard,
+    _serve_lock: serve_lock::ServeLock,
 }
 
 pub(crate) struct WebState {
@@ -184,12 +186,16 @@ fn open_stream_feed(store: &Arc<WebStore>) -> Result<(SequencePoller, EventStrea
 
 impl BoardWebServer {
     pub(crate) fn bind(address: SocketAddr) -> Result<Self> {
-        let (listener, guard) = WebGuard::bind(address)?;
+        let runtime =
+            crate::system::dir().context("board_unavailable: no router runtime directory")?;
+        let serve_lock = serve_lock::acquire_at(&runtime)?;
+        let listener = web_endpoint::bind_listener(&runtime, address)?;
+        let (listener, guard) = WebGuard::with_listener(listener)?;
         let store = Arc::new(WebStore::open(BoardConfigCache::default())?);
         let (poller, streams) = open_stream_feed(&store)?;
         let config = store.config(Instant::now() + http_wire::REQUEST_TIMEOUT)?;
         web_endpoint::publish(&store.runtime, listener.local_addr()?, &config.db_path)?;
-        let endpoint = web_endpoint::EndpointGuard::arm(&store.runtime);
+        let endpoint = web_endpoint::EndpointGuard::arm(&store.runtime, listener.local_addr()?);
         Ok(Self {
             listener,
             state: Arc::new(WebState {
@@ -200,6 +206,7 @@ impl BoardWebServer {
             }),
             _poller: poller,
             endpoint,
+            _serve_lock: serve_lock,
         })
     }
 
@@ -272,8 +279,9 @@ pub fn serve(address: SocketAddr) -> Result<()> {
     signal_shutdown::block_termination()?;
     let server = BoardWebServer::bind(address)?;
     let descriptor = server.endpoint.path().to_owned();
+    let address = server.endpoint.address();
     signal_shutdown::spawn_exit_waiter(move || {
-        let _ = std::fs::remove_file(descriptor);
+        web_endpoint::remove_if_ours(&descriptor, address);
     })?;
     println!(
         "{}",

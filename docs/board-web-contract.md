@@ -21,7 +21,7 @@ bootstrap links `/?ref=REF#token=TOKEN` (REF `P7`, `P7@N`, or `E485`) convert to
 drop the reference query/token. Every private JSON, render, ingest, and event-stream request
 supplies `X-Board-Token` (browser streams use `fetch` streaming to send it). The server atomically
 publishes API/address/database, without a token, in owned regular 0600
-`system::dir()/board-web.json`, removed on shutdown (drop guard plus SIGTERM/SIGINT).
+`system::dir()/board-web.json`, removed on shutdown (drop guard plus SIGTERM/SIGINT/SIGHUP/SIGQUIT).
 
 `board web [P7|P7@N|E#]` validates that descriptor and the configured/known DB, verifies the
 listener's owner through `/proc/net/tcp{,6}`, and proves token possession before printing the
