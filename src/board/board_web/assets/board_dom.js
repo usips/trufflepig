@@ -40,8 +40,17 @@ export function createBoardDom(state) {
     item.dataset.focusKey = `link:${item.href}`;
     return item;
   }
-  // A deterministic key lets focus survive a wholesale page swap.
-  function focusKey(item, key) { item.dataset.focusKey = key; return item; }
+  // A deterministic key lets focus survive a wholesale page swap. Keyed cards
+  // and sections take tabindex="-1" so restore targets take programmatic
+  // focus in a real browser; links and controls are focusable already.
+  function focusKey(item, key) {
+    item.dataset.focusKey = key;
+    const tag = item.tagName;
+    const native = tag === "BUTTON" || tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA"
+      || (tag === "A" && item.href !== undefined && item.href !== null && item.href !== "");
+    if (!native) item.setAttribute("tabindex", "-1");
+    return item;
+  }
   function refLink(ref, label = ref, className = "mono", context = {}) {
     if (!ref) return el("span", className, label || "—");
     const text = String(ref);
@@ -97,7 +106,7 @@ export function createBoardDom(state) {
     const item = el("section", `panel section ${className}`);
     if (title) item.append(el("h2", "", title));
     if (body) item.append(body);
-    return item;
+    return focusKey(item, `section:${title}`);
   }
   function empty(text) { return el("p", "empty", text); }
   function omitted(value, label = "records") {
@@ -143,12 +152,18 @@ export function createBoardDom(state) {
       item.textContent = message; item.className = `form-status ${tone}`;
     }
   }
+  // Empty and unchanged snapshots stay out of the draft stores: refreshes
+  // capture every form, and button-only forms must not churn the LRU.
   function saveForm(form) {
     const key = form.dataset.draftKey;
     if (!key) return;
     const inputs = [...form.querySelectorAll("input,textarea,select")]
       .filter(input => input.name && !input.readOnly)
       .map(input => [input.name, input.value]);
+    if (!inputs.length) return;
+    const prior = state.formDrafts.get(key);
+    if (prior && Object.keys(prior).length === inputs.length
+      && inputs.every(([name, value]) => prior[name] === value)) return;
     state.formDrafts.set(key, Object.fromEntries(inputs));
   }
   function restoreForm(form) {
@@ -189,8 +204,10 @@ export function createBoardDom(state) {
   }
   // Duplicate hrefs share one key, so the recorded key carries the element's
   // occurrence among same-key matches, counted lazily here because pages build
-  // incrementally. The nearest keyed ancestor and enclosing form ride along as
-  // fallbacks for when the element itself is gone after a refresh.
+  // incrementally. The occurrence is scoped within the nearest keyed ancestor,
+  // so a new row elsewhere (a fresh ticker event) never shifts other keys.
+  // The ancestor and the enclosing form ride along as fallbacks for when the
+  // element itself is gone after a refresh.
   function focusedControl(root) {
     const input = document.activeElement;
     if (!root.contains(input)) return null;
@@ -201,8 +218,9 @@ export function createBoardDom(state) {
     const keyed = input?.closest?.("[data-focus-key]");
     if (!keyed) return null;
     const key = keyed.dataset.focusKey;
-    const occurrence = [...root.querySelectorAll(`[data-focus-key="${CSS.escape(key)}"]`)].indexOf(keyed);
     const ancestor = keyed.parentElement?.closest?.("[data-focus-key]");
+    const scope = ancestor && root.contains(ancestor) ? ancestor : root;
+    const occurrence = [...scope.querySelectorAll(`[data-focus-key="${CSS.escape(key)}"]`)].indexOf(keyed);
     return {
       focusKey: `${key}#${occurrence}`,
       ancestorKey: ancestor ? ancestor.dataset.focusKey : null,
@@ -215,12 +233,17 @@ export function createBoardDom(state) {
       const keyed = /^(.*)#(\d+)$/.exec(focus.focusKey);
       const key = keyed ? keyed[1] : focus.focusKey;
       const occurrence = keyed ? Number(keyed[2]) : 0;
-      const matches = [...root.querySelectorAll(`[data-focus-key="${CSS.escape(key)}"]`)];
-      const target = matches[occurrence]
-        || (focus.ancestorKey && root.querySelector(`[data-focus-key="${CSS.escape(focus.ancestorKey)}"]`))
-        || (focus.formKey
-          && [...root.querySelectorAll("form")].find(item => item.dataset.draftKey === focus.formKey));
-      if (target) target.focus({ preventScroll: true });
+      const scope = focus.ancestorKey
+        ? root.querySelector(`[data-focus-key="${CSS.escape(focus.ancestorKey)}"]`) : null;
+      const matches = [...(scope || root).querySelectorAll(`[data-focus-key="${CSS.escape(key)}"]`)];
+      const target = matches[occurrence] || scope || null;
+      if (target) { target.focus({ preventScroll: true }); return; }
+      if (focus.formKey) {
+        const form = [...root.querySelectorAll("form")].find(item => item.dataset.draftKey === focus.formKey);
+        const control = [...(form?.querySelectorAll("input,textarea,select,button,a") || [])]
+          .find(item => !item.disabled && (item.tagName !== "A" || item.href));
+        if (control) control.focus({ preventScroll: true });
+      }
       return;
     }
     const form = [...root.querySelectorAll("form")].find(item => item.dataset.draftKey === focus.key);

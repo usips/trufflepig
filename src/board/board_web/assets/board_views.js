@@ -15,6 +15,7 @@ export function createBoardViews(context) {
     const entry = entryRecord(record);
     if (!entry) return empty("Entry unavailable.");
     const item = el("article", "entry-card");
+    focusKey(item, `entry-card:${entry.id}`);
     const meta = el("div", "entry-meta");
     add(meta, refLink(entry.id), badge(entry.kind), el("span", "", actorName(entry.actor)),
       entry.via === "outbox" ? el("span", "provenance", "(spooled, unverified)") : null,
@@ -38,6 +39,7 @@ export function createBoardViews(context) {
       && BigInt(String(event.seq)) > BigInt(state.seenAtOpen);
     for (const event of events || []) {
       const item = el("li", "event-row");
+      focusKey(item, `event:${event.seq}`);
       add(item, fresh(event) ? badge("new") : null, badge(event.kind), refLink(event.subject),
         el("span", "event-summary", event.summary),
         el("span", "muted small", shortActor(event.actor)),
@@ -49,6 +51,7 @@ export function createBoardViews(context) {
   }
   function workingCard(claim) {
     const item = el("div", "working-card"); item.dataset.stale = claim.stale;
+    focusKey(item, `working-card:${claim.task}`);
     add(item,
       add(el("div", "row spread"), el("strong", "", shortActor(claim.actor)),
         claim.stale ? badge("stale") : badge("doing")),
@@ -61,6 +64,7 @@ export function createBoardViews(context) {
   function taskCard(task, claims, options = {}) {
     const claim = (claims || []).find(item => item.task === task.id && !item.ended_at);
     const item = el("article", "task-card");
+    focusKey(item, `task-card:${task.id}`);
     if (claim) item.dataset.stale = claim.stale;
     add(item, refLink(task.id, task.title, ""), el("div", "small muted", task.id),
       claim
@@ -83,6 +87,7 @@ export function createBoardViews(context) {
   function attentionCard(item) {
     const entry = entryRecord(item.record);
     const card = el("article", "attention-card");
+    focusKey(card, `attention-card:${entry?.id || item.record.entry}`);
     add(card,
       add(el("div", "row"), badge(item.type), entry?.plan ? refLink(entry.plan) : null),
       refLink(entry?.id || item.record.entry, entry?.body || item.record.summary || "Open entry", ""),
@@ -139,6 +144,7 @@ export function createBoardViews(context) {
     for (const item of plans) {
       const plan = item.plan || item;
       const lane = el("section", "swimlane");
+      focusKey(lane, `swimlane:${plan.id}`);
       const heading = add(el("div", "lane-heading"), refLink(plan.id),
         link(plan.title, "plan", { ref: plan.id }),
         el("span", "badge", `Revision ${plan.head_revision}`),
@@ -236,6 +242,7 @@ export function createBoardViews(context) {
       const claim = claims.find(item => item.task === task.id && !item.ended_at);
       const item = el("article", "task-detail");
       item.id = task.id;
+      focusKey(item, `task-detail:${task.id}`);
       add(item, add(el("div", "row wrap"), refLink(task.id), badge(task.column), el("strong", "", task.title)));
       if (task.section) {
         const heading = headings.find(value => value.title === task.section);

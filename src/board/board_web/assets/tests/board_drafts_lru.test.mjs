@@ -36,4 +36,29 @@ describe("board draft stores", () => {
     assert.equal(drafts.delete("key"), true);
     assert.equal(drafts.delete("key"), false);
   });
+
+  it("pins editor drafts outside the 64-key LRU", () => {
+    const { formDrafts } = createDraftStores();
+    formDrafts.set("editor:edit:P1@3", { body: "unsaved plan text" });
+    // Two Tasks tabs snapshot more than a full LRU of filter and move forms.
+    for (let tab = 0; tab < 2; tab++) {
+      for (let index = 0; index < 40; index++) formDrafts.set(`tab-${tab}:form-${index}`, index);
+    }
+    assert.deepEqual(formDrafts.get("editor:edit:P1@3"), { body: "unsaved plan text" });
+    assert.equal(formDrafts.has("tab-0:form-0"), false);
+  });
+
+  it("lets pinned keys survive in every store without consuming capacity", () => {
+    const { formDrafts, formStatuses, drafts } = createDraftStores();
+    formDrafts.set("editor:edit:P1@3", { body: "text" });
+    formStatuses.set("editor:edit:P1@3", { message: "Saving…", tone: "muted" });
+    drafts.set("editor:new", { title: "fresh" });
+    for (let index = 0; index < 64; index++) formDrafts.set(`key-${index}`, index);
+    assert.equal(formDrafts.get("key-0"), 0);
+    assert.deepEqual(formDrafts.get("editor:edit:P1@3"), { body: "text" });
+    assert.deepEqual(formStatuses.get("editor:edit:P1@3"), { message: "Saving…", tone: "muted" });
+    assert.deepEqual(drafts.get("editor:new"), { title: "fresh" });
+    assert.equal(formDrafts.delete("editor:edit:P1@3"), true);
+    assert.equal(formDrafts.has("editor:edit:P1@3"), false);
+  });
 });
