@@ -206,3 +206,29 @@ fn commit_activity_uses_claimed_model_vendor_and_harness_fallback() {
         );
     }
 }
+
+#[test]
+fn muse_claim_refreshes_from_meta_com_coauthor() {
+    let database = ClaimDatabase::new();
+    let mut conn = database.connect();
+    let holder = actor("josh", "muse", "one");
+    let task = carved_task(&mut conn, &holder, 1000, "current");
+    // The hello model snapshot claims Muse; no vendor prefix matches it, so
+    // the claim vendor falls back to the muse harness.
+    conn.execute(
+        "UPDATE entries SET model='Muse Spark' WHERE id=(SELECT entry_id FROM claims WHERE plan_id=?1 AND task_ordinal=?2)",
+        params![sql_number(task.plan.get()), sql_number(task.ordinal)],
+    )
+    .unwrap();
+    let coauthor =
+        crate::board::commit_trailers::parse_coauthor("Muse Spark <noreply@meta.com>").unwrap();
+    write(&mut conn, &holder, 1100, |tx, ctx| {
+        refresh_commit_claims(tx, task.plan, task.ordinal, &[coauthor], 1050, ctx.now)?;
+        Ok(ctx.change_reply(EntryId::new(1).unwrap(), Some(task.plan), None, Some(task)))
+    })
+    .unwrap();
+    assert_eq!(
+        read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, 1100, 120).unwrap()[0].last_active,
+        1050
+    );
+}

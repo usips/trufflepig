@@ -310,6 +310,7 @@ pub fn parse_coauthor(value: &str) -> Result<CommitCoauthor> {
         "x.ai" => "grok",
         "google.com" => "gemini",
         "qwen.ai" => "qwen",
+        "meta.com" => "muse",
         _ => "",
     };
     let harness = if label.is_empty() {
@@ -378,6 +379,7 @@ mod tests {
             ("x.ai", "grok"),
             ("google.com", "gemini"),
             ("qwen.ai", "qwen"),
+            ("meta.com", "muse"),
         ] {
             let coauthor = parse_coauthor(&format!("Model claim <agent@{domain}>")).unwrap();
             assert_eq!(coauthor.harness.as_str(), label);
@@ -390,6 +392,16 @@ mod tests {
                 .as_str(),
             "git:a@openai.com.evil.test"
         );
+    }
+
+    #[test]
+    fn meta_com_coauthors_map_to_one_muse_identity() {
+        // Both Muse addresses seen in the wild share one harness identity.
+        for email in ["noreply@meta.com", "muse-spark@meta.com"] {
+            let coauthor = parse_coauthor(&format!("Muse Spark <{email}>")).unwrap();
+            assert_eq!(coauthor.harness.as_str(), "muse", "{email}");
+            assert_eq!(coauthor.email, email);
+        }
     }
 
     #[test]

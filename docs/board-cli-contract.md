@@ -84,8 +84,8 @@ Retain returned `through` and feedback `--open`. Each typed reply carries these 
 ## Attribution
 
 Co-author email domains map `anthropic.com` to `claude`, `openai.com` to `codex`, `moonshot.ai` to
-`kimi`, `x.ai` to `grok`, `google.com` to `gemini`, and `qwen.ai` to `qwen`; other addresses become
-`git:<email>`. The trailer name is a model claim. No co-author means `human`; Muse/omp running
-Claude appears as `claude`. Claim/review vendor comes from the stored model snapshot: Claude,
-GPT/Codex/ChatGPT, Kimi, Grok, Gemini, or Qwen; unknown models fall back to harness. `cli` and
-`human` claims remain human even when a model was inherited.
+`kimi`, `x.ai` to `grok`, `google.com` to `gemini`, `qwen.ai` to `qwen`, and `meta.com` to `muse`;
+other addresses become `git:<email>`. The trailer name is a model claim. No co-author means
+`human`; Muse/omp running Claude appears as `claude`. Claim/review vendor comes from the stored
+model snapshot: Claude, GPT/Codex/ChatGPT, Kimi, Grok, Gemini, or Qwen; unknown models fall back
+to harness. `cli` and `human` claims remain human even when a model was inherited.
