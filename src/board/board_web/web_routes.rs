@@ -108,6 +108,28 @@ pub(super) fn handle(mut stream: TcpStream, accepted_at: Instant, state: &Arc<We
                 target.and_then(|target| render_proposal(state, &target, expires)),
             );
         }
+        (HttpMethod::Post, "/api/v1/events") => send_http_error(
+            &mut stream,
+            HttpError::new(405, "events route requires GET").with_allow("GET"),
+        ),
+        (HttpMethod::Get, "/api/v1/board") => send_http_error(
+            &mut stream,
+            HttpError::new(405, "board route requires POST").with_allow("POST"),
+        ),
+        (HttpMethod::Get, "/api/v1/ingest") => send_http_error(
+            &mut stream,
+            HttpError::new(405, "ingest route requires POST").with_allow("POST"),
+        ),
+        (HttpMethod::Post, path)
+            if path.starts_with("/api/v1/render/plan/")
+                || path.starts_with("/api/v1/render/diff/")
+                || path.starts_with("/api/v1/render/proposal/") =>
+        {
+            send_http_error(
+                &mut stream,
+                HttpError::new(405, "render route requires GET").with_allow("GET"),
+            );
+        }
         _ => send_error(&mut stream, 404, "invalid_reference", "route not found"),
     }
 }
@@ -416,6 +438,7 @@ fn send_http_error(stream: &mut TcpStream, error: HttpError) {
         403 => "forbidden",
         408 => "timed_out",
         413 => "invalid_body",
+        421 => "misdirected_request",
         _ => "invalid_options",
     };
     if error.status == 405 {

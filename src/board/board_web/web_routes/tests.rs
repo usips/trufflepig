@@ -120,8 +120,13 @@ struct RenderFixture {
 }
 
 fn render_fixture() -> RenderFixture {
+    // The filler always performs an initial unfiltered read; an empty feed
+    // keeps the fixture ring alive without serving phantom events.
     render_fixture_with(Arc::new(|_, _, _| {
-        unreachable!("render routes never read the feed")
+        Ok(ReplayBatch {
+            latest: EventSeq::new(0),
+            events: vec![],
+        })
     }))
 }
 
@@ -541,4 +546,156 @@ fn challenge_route_keeps_method_and_origin_checks_without_a_token() {
     );
     assert!(reply.starts_with("HTTP/1.1 400 "), "{reply}");
     assert!(reply.contains("\"board_api_mismatch\""), "{reply}");
+}
+
+#[test]
+fn stopped_filler_refuses_new_subscriptions_with_503() {
+    let fixture = render_fixture_with(Arc::new(|_, _, _| panic!("feed poisoned")));
+    // The filler stops itself after the panicking first fill; reserve()
+    // must observe the stopped ring, not just the healthy poller wake.
+    let started = Instant::now();
+    while fixture.state.streams.reserve().is_ok() {
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "reserve() never observed the stopped filler"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        fixture.state.streams.reserve().err().unwrap().code,
+        BoardErrorCode::BoardUnavailable
+    );
+    let reply = render_get(&fixture, "/api/v1/events");
+    assert!(reply.starts_with("HTTP/1.1 503 "), "{reply}");
+    assert!(reply.contains("Retry-After: 1\r\n"), "{reply}");
+}
+
+#[test]
+fn event_stream_rejects_an_unknown_plan_before_success() {
+    let fixture = render_fixture_with(Arc::new(|_, plan, _| match plan {
+        Some(plan) => Err(BoardError::new(
+            BoardErrorCode::InvalidReference,
+            format!("unknown plan {plan}"),
+        )),
+        None => Ok(ReplayBatch {
+            latest: EventSeq::new(0),
+            events: vec![],
+        }),
+    }));
+    let reply = render_get(&fixture, "/api/v1/events?plan=P99999");
+    assert!(reply.starts_with("HTTP/1.1 404 "), "{reply}");
+    assert!(reply.contains("\"code\":\"invalid_reference\""), "{reply}");
+    assert!(!reply.contains("HTTP/1.1 200"), "{reply}");
+}
+
+#[test]
+fn private_routes_reject_wrong_methods_with_allow() {
+    let fixture = render_fixture();
+    for (method, path, allow) in [
+        ("POST", "/api/v1/events", "GET"),
+        ("GET", "/api/v1/board", "POST"),
+        ("GET", "/api/v1/ingest", "POST"),
+        ("POST", "/api/v1/render/plan/P1", "GET"),
+        ("POST", "/api/v1/render/diff/P1@1..2", "GET"),
+        ("POST", "/api/v1/render/proposal/E1", "GET"),
+    ] {
+        let reply = match method {
+            "GET" => render_get(&fixture, path),
+            _ => authed_post(&fixture, path, &serde_json::json!({"api": BOARD_API})),
+        };
+        assert!(
+            reply.starts_with("HTTP/1.1 405 "),
+            "{method} {path}: {reply}"
+        );
+        assert!(
+            reply.contains(&format!("Allow: {allow}\r\n")),
+            "{method} {path}: {reply}"
+        );
+    }
+}
+
+fn wrong_host_get(fixture: &RenderFixture, path: &str) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (server, _) = listener.accept().unwrap();
+    write!(
+        client,
+        "GET {path} HTTP/1.1\r\nHost: wrong.invalid\r\nX-Board-Token: {}\r\n\r\n",
+        fixture.token.expose()
+    )
+    .unwrap();
+    client.shutdown(Shutdown::Write).unwrap();
+    handle(server, Instant::now(), &fixture.state);
+    let mut reply = String::new();
+    client.read_to_string(&mut reply).unwrap();
+    reply
+}
+
+#[test]
+fn misdirected_render_requests_carry_a_421_code() {
+    let fixture = render_fixture();
+    for path in [
+        "/api/v1/render/plan/P1",
+        "/api/v1/render/diff/P1@1..2",
+        "/api/v1/render/proposal/E1",
+    ] {
+        let reply = wrong_host_get(&fixture, path);
+        assert!(reply.starts_with("HTTP/1.1 421 "), "{path}: {reply}");
+        assert!(
+            reply.contains("\"code\":\"misdirected_request\""),
+            "{path}: {reply}"
+        );
+    }
+}
+
+#[test]
+fn slow_pre_auth_drip_is_cut_at_five_seconds_total_from_accept() {
+    let fixture = render_fixture();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (server, _) = listener.accept().unwrap();
+    let accepted_at = Instant::now();
+    let mut dripper = client.try_clone().unwrap();
+    let producer = std::thread::spawn(move || {
+        dripper.write_all(b"G").unwrap();
+        std::thread::sleep(Duration::from_secs(3));
+        dripper.write_all(b"E").unwrap();
+    });
+    handle(server, accepted_at, &fixture.state);
+    let mut reply = String::new();
+    client.read_to_string(&mut reply).unwrap();
+    producer.join().unwrap();
+    assert!(reply.starts_with("HTTP/1.1 408 "), "{reply}");
+    assert!(
+        accepted_at.elapsed() < Duration::from_secs(7),
+        "a second byte must not restart the five-second hold: {:?}",
+        accepted_at.elapsed()
+    );
+}
+
+#[test]
+fn queue_full_refusal_delivers_the_busy_reply_before_closing() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (server, _) = listener.accept().unwrap();
+    // A mid-request client: bytes queued unread server-side, no FIN yet.
+    client
+        .write_all(b"GET /api/v1/board HTTP/1.1\r\nHost: x")
+        .unwrap();
+    // The request must be queued unread server-side before the refusal, and
+    // the reply must sit unread client-side before the read, so a reset
+    // cannot slip past already-consumed bytes on either side.
+    std::thread::sleep(Duration::from_millis(100));
+    let busy = http_wire::unavailable_response(1, crate::board::board_web::QUEUE_FULL_BODY);
+    crate::board::board_web::refuse_queue_full(server, &busy);
+    std::thread::sleep(Duration::from_millis(100));
+    // A reset may already have destroyed the connection; the body read below
+    // is the assertion.
+    let _ = client.shutdown(Shutdown::Write);
+    let mut reply = Vec::new();
+    client.read_to_end(&mut reply).unwrap();
+    let reply = String::from_utf8(reply).unwrap();
+    assert!(reply.starts_with("HTTP/1.1 503 "), "{reply}");
+    assert!(reply.contains("daemon_busy"), "{reply}");
+    assert!(reply.ends_with("}}"), "{reply}");
 }

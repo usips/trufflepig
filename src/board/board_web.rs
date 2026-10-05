@@ -24,7 +24,7 @@ use event_stream::{EventStreams, ReplayBatch, SequencePoller};
 use reader_pool::ReaderPool;
 use std::{
     io::{self, IsTerminal, Write},
-    net::{Shutdown, SocketAddr, TcpListener, TcpStream},
+    net::{SocketAddr, TcpListener, TcpStream},
     path::PathBuf,
     sync::{Arc, Mutex, MutexGuard, TryLockError},
     time::{Duration, Instant},
@@ -233,13 +233,33 @@ fn transient_accept_error(error: &io::Error) -> bool {
     )
 }
 
+const QUEUE_FULL_BODY: &[u8] =
+    br#"{"error":{"code":"daemon_busy","message":"board web queue is full"}}"#;
+
+/// Refuses a connection the pool cannot take: one nonblocking busy write,
+/// then a short-lived thread drains unread input after shutting down the
+/// write side, so the client reads the reply instead of a reset. The
+/// accept loop never blocks on a refused connection.
+fn refuse_queue_full(mut refusal: TcpStream, busy: &[u8]) {
+    // One nonblocking attempt never holds up accepting the next connection.
+    if refusal.set_nonblocking(true).is_ok() {
+        let _ = refusal.write(busy);
+    }
+    // A failed spawn drops the socket, as an immediate close would.
+    let _ = std::thread::Builder::new()
+        .name("board-refusal-drain".into())
+        .spawn(move || {
+            let _ = refusal.set_nonblocking(false);
+            http_wire::close_after_error(&mut refusal);
+        });
+}
+
 fn serve_connections(
     incoming: impl IntoIterator<Item = io::Result<TcpStream>>,
     state: &Arc<WebState>,
 ) -> Result<()> {
     let pool = RequestPool::new("board-http", WEB_POOL)?;
-    let body = br#"{"error":{"code":"daemon_busy","message":"board web queue is full"}}"#;
-    let busy = http_wire::unavailable_response(1, body);
+    let busy = http_wire::unavailable_response(1, QUEUE_FULL_BODY);
     for accepted in incoming {
         let stream = match accepted {
             Ok(stream) => stream,
@@ -261,12 +281,8 @@ fn serve_connections(
         let job = Box::new(move || web_routes::handle(stream, accepted_at, &state));
         if let Err(job) = pool.submit(job) {
             drop(job);
-            if let Some(mut refusal) = refusal {
-                // One nonblocking attempt never holds up accepting the next connection.
-                if refusal.set_nonblocking(true).is_ok() {
-                    let _ = refusal.write(&busy);
-                }
-                let _ = refusal.shutdown(Shutdown::Both);
+            if let Some(refusal) = refusal {
+                refuse_queue_full(refusal, &busy);
             }
         }
     }

@@ -366,6 +366,12 @@ impl EventRing {
         state.stopped = true;
         self.0.changed.notify_all();
     }
+
+    /// The filler stopped (spawn failure, poisoned feed, or shutdown); new
+    /// subscriptions must refuse instead of serving a dead ring.
+    pub(super) fn stopped(&self) -> bool {
+        self.lock().stopped
+    }
 }
 
 /// The oldest cursor the ring can still serve fully.

@@ -143,10 +143,9 @@ fn fill_once(reader: &FeedReader, ring: &EventRing) -> Result<FillProgress, Boar
     for (plan, annotated) in ring.due_plans() {
         match reader(annotated, Some(plan), FEED_READ_LIMIT) {
             Ok(batch) => ring.apply_annotation(plan, relevant_through(&batch, filled)),
-            Err(error) if error.code == BoardErrorCode::InvalidReference => {
-                ring.fail_plan(plan);
-            }
-            Err(error) => return Err(error),
+            // One plan's relevance read failed (unknown plan or a read
+            // error): fail only that plan's subscribers and keep filling.
+            Err(_) => ring.fail_plan(plan),
         }
     }
     Ok(if ring.behind() {

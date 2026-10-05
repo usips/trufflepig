@@ -59,6 +59,7 @@ struct FakeFeed {
     events: Mutex<Vec<EventRecord>>,
     relevant: Mutex<Vec<(u64, PlanId)>>,
     known_plans: Mutex<Vec<PlanId>>,
+    fail_plans: Mutex<Vec<PlanId>>,
     reads: Mutex<Vec<(u64, Option<PlanId>)>>,
     down: AtomicBool,
 }
@@ -84,6 +85,12 @@ impl FakeFeed {
             let events = feed.events.lock().unwrap();
             let latest = events.last().map(|event| event.seq).unwrap_or_default();
             if let Some(plan) = plan {
+                if feed.fail_plans.lock().unwrap().contains(&plan) {
+                    return Err(BoardError::new(
+                        BoardErrorCode::BoardUnavailable,
+                        format!("plan read failed {plan}"),
+                    ));
+                }
                 let known = feed.known_plans.lock().unwrap();
                 if !known.is_empty() && !known.contains(&plan) {
                     return Err(BoardError::new(
@@ -450,7 +457,7 @@ fn quiet_disconnect_releases_the_stream_slot() {
 }
 
 #[test]
-fn failing_and_panicking_feeds_close_streams_and_release_slots() {
+fn failing_feeds_close_streams_and_panicking_feeds_refuse_reserve() {
     let down_feed = FakeFeed::seeded(vec![]);
     down_feed.down.store(true, Ordering::Release);
     let failing = streams(down_feed.reader());
@@ -462,10 +469,21 @@ fn failing_and_panicking_feeds_close_streams_and_release_slots() {
         panic!("feed panic")
     }) as FeedReader;
     let panicked = streams(panicking);
-    let mut client = spawn(&panicked, 0);
-    let mut response = String::new();
-    client.read_to_string(&mut response).unwrap();
-    wait_released(&panicked);
+    // A poisoned feed stops the ring, so reserve() refuses new streams
+    // instead of spawning closes; no slot is held or leaked.
+    let started = Instant::now();
+    while panicked.reserve().is_ok() {
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "reserve() never observed the stopped filler"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        panicked.reserve().err().unwrap().code,
+        BoardErrorCode::BoardUnavailable
+    );
+    assert_eq!(panicked.active(), 0);
 }
 
 #[test]
@@ -566,7 +584,7 @@ fn plan_filtered_stream_replays_annotated_relevance_and_advances_cursor() {
 }
 
 #[test]
-fn unknown_plan_filter_closes_the_stream_after_headers() {
+fn unknown_plan_filter_is_rejected_before_success() {
     let feed = FakeFeed::seeded(vec![event(1, "scoped progress")]);
     *feed.known_plans.lock().unwrap() = vec![PlanId::new(7).unwrap()];
     let streams = streams(feed.reader());
@@ -576,7 +594,12 @@ fn unknown_plan_filter_closes_the_stream_after_headers() {
     );
     let mut response = String::new();
     client.read_to_string(&mut response).unwrap();
-    assert!(response.starts_with("HTTP/1.1 200 "), "{response}");
+    assert!(response.starts_with("HTTP/1.1 404 "), "{response}");
+    assert!(
+        response.contains("\"code\":\"invalid_reference\""),
+        "{response}"
+    );
+    assert!(!response.contains("HTTP/1.1 200"), "{response}");
     assert!(!response.contains("event: board\n"), "{response}");
     wait_released(&streams);
 }
@@ -782,4 +805,60 @@ fn invalid_permit_handoff_releases_capacity_without_spawning() {
     assert_eq!(refusal.error.kind(), io::ErrorKind::InvalidInput);
     assert_eq!(refusal.socket.local_addr().unwrap(), server_addr);
     assert_eq!(other.active(), 0, "the refusal releases the slot");
+}
+
+#[test]
+fn one_plan_read_error_fails_only_that_plan_stream() {
+    let feed = FakeFeed::seeded(vec![event(1, "scoped progress")]);
+    *feed.known_plans.lock().unwrap() = vec![PlanId::new(7).unwrap(), PlanId::new(8).unwrap()];
+    feed.fail_plans
+        .lock()
+        .unwrap()
+        .push(PlanId::new(8).unwrap());
+    let wake = SequenceWake::new();
+    let streams = EventStreams::new(feed.reader(), wake.clone());
+    // Reconnecting clients keep a failing plan registered; hold its lease
+    // for the whole test so the filler must contain the error per plan.
+    let _failing_lease = streams.ring.subscribe_plan(PlanId::new(8).unwrap());
+    let mut healthy = spawn_request(
+        &streams,
+        StreamRequest::parse(None, Some("0"), Some("P7")).unwrap(),
+    );
+    let replay = read_until(&mut healthy, "id: 1\n");
+    assert!(replay.contains("scoped progress"), "{replay}");
+    let mut failing = spawn_request(
+        &streams,
+        StreamRequest::parse(None, Some("0"), Some("P8")).unwrap(),
+    );
+    let mut closed = String::new();
+    failing.read_to_string(&mut closed).unwrap();
+    assert!(closed.starts_with("HTTP/1.1 200 "), "{closed}");
+    assert!(!closed.contains("event: board\n"), "{closed}");
+    feed.push(event(2, "still served"));
+    wake.publish(EventSeq::new(2));
+    let live = read_until(&mut healthy, "id: 2\n");
+    assert!(!live.contains("event: resync\n"), "{live}");
+    drop(healthy);
+    wait_released(&streams);
+}
+
+#[test]
+fn ahead_cursor_pokes_the_filler_and_rechecks_before_resyncing() {
+    let feed = FakeFeed::seeded((1..=10).map(|seq| event(seq, "entry")).collect());
+    let wake = SequenceWake::new();
+    let streams = EventStreams::new(feed.reader(), wake.clone());
+    feed.wait_total_reads(1);
+    let mut client = spawn(&streams, 11);
+    read_until(&mut client, "\r\n\r\n");
+    // Fresh writes the poller has not published yet: without a poke the
+    // filler never fills, and without a recheck the grace resyncs.
+    feed.push(event(11, "caught up"));
+    feed.push(event(12, "live"));
+    let response = read_until(&mut client, "id: 12\n");
+    assert!(
+        !response.contains("event: resync\n"),
+        "a subscribed wait must not resync when the data exists: {response}"
+    );
+    drop(client);
+    wait_released(&streams);
 }
