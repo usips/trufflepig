@@ -1,4 +1,5 @@
 import { createBoardDetails } from "/board_pages.js";
+import { INGEST_TIMEOUT_MS, INGEST_UNKNOWN_MESSAGE, resolveIngestEvent } from "/board_ingest.js";
 
 export function createBoardViews(context) {
   const {
@@ -92,8 +93,8 @@ export function createBoardViews(context) {
   function renderOverview(data, attention, route) {
     const page = el("div");
     // The 202 is only a queue receipt; the terminal result arrives as an
-    // `ingest` stream frame (see board_web_main.js onIngest), so the control stays busy
-    // until a frame clears state.ingestPending.
+    // `ingest` stream frame carrying the 202's ticket (see board_web_main.js
+    // onIngest), so the control stays busy until its own frame or a timeout.
     const ingest = focusKey(button("Ingest commits", async () => {
       ingest.disabled = true; ingest.setAttribute("aria-busy", "true");
       try {
@@ -101,8 +102,20 @@ export function createBoardViews(context) {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ api: apiVersion }),
         });
-        if (reply?.ingest !== "queued") throw new Error("Board returned an incompatible ingest reply.");
+        if (reply?.ingest !== "queued" || typeof reply?.ticket !== "string" || !reply.ticket) {
+          throw new Error("Board returned an incompatible ingest reply.");
+        }
+        if (state.ingestTimer !== null) { clearTimeout(state.ingestTimer); state.ingestTimer = null; }
         state.ingestPending = true;
+        state.ingestTicket = reply.ticket;
+        state.ingestTimer = setTimeout(() => {
+          state.ingestTimer = null;
+          if (resolveIngestEvent(state.ingestTicket, { type: "timeout" }).outcome !== "unknown") return;
+          state.ingestTicket = null;
+          state.ingestPending = false;
+          notice(INGEST_UNKNOWN_MESSAGE, "error");
+          scheduleRefresh();
+        }, INGEST_TIMEOUT_MS);
         notice("Repository ingestion queued; the result arrives over the live stream.");
       } catch (error) {
         ingest.disabled = false; ingest.removeAttribute("aria-busy"); notice(errorMessage(error), "error");

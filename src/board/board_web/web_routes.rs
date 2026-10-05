@@ -2,8 +2,8 @@
 #[cfg(test)]
 mod tests;
 use super::{
-    PUBLIC_DOM, PUBLIC_ENTRIES, PUBLIC_MAIN, PUBLIC_PAGES, PUBLIC_READER, PUBLIC_SHELL,
-    PUBLIC_STREAM, PUBLIC_STYLE, PUBLIC_TOKEN, PUBLIC_TRIAGE, PUBLIC_VIEWS, WebState,
+    PUBLIC_DOM, PUBLIC_ENTRIES, PUBLIC_INGEST, PUBLIC_MAIN, PUBLIC_PAGES, PUBLIC_READER,
+    PUBLIC_SHELL, PUBLIC_STREAM, PUBLIC_STYLE, PUBLIC_TOKEN, PUBLIC_TRIAGE, PUBLIC_VIEWS, WebState,
     event_stream::{EventStreams, StreamPermit, StreamRequest},
     http_wire::{self, HttpError, HttpMethod, HttpRequest},
     plan_markup,
@@ -158,18 +158,24 @@ fn stream_subscription(
     }
 }
 
-/// 202 immediately; one router scan runs at a time, and its completion is
-/// published to stream subscribers as an `ingest` frame.
+/// 202 immediately with the flight ticket; one router scan runs at a time,
+/// its completion published to stream subscribers as an `ingest` frame, and
+/// mid-scan POSTs rerun the scan until one runs clean.
 fn ingest_accepted(mut stream: TcpStream, state: &Arc<WebState>) {
-    if state.ingest.begin() {
+    let claim = state.ingest.begin();
+    if claim.leads {
         let relay_state = Arc::clone(state);
+        let ticket = claim.ticket.clone();
         let spawned = std::thread::Builder::new()
             .name("board-ingest-relay".into())
             .spawn(move || {
-                let _flight = web_ops::IngestFlightGuard::new(&relay_state.ingest);
                 let expires = Instant::now() + crate::daemon::CLIENT_REPLY_WAIT;
-                let result = web_ops::relay_ingest(&relay_state.store, expires);
-                relay_state.streams.publish_ingest(&ingest_receipt(result));
+                web_ops::relay_flight(&relay_state.ingest, || {
+                    let result = web_ops::relay_ingest(&relay_state.store, expires);
+                    relay_state
+                        .streams
+                        .publish_ingest(&ingest_receipt(result, &ticket));
+                });
             });
         if spawned.is_err() {
             state.ingest.finish();
@@ -177,20 +183,32 @@ fn ingest_accepted(mut stream: TcpStream, state: &Arc<WebState>) {
             return;
         }
     }
-    let body = serde_json::to_vec(&serde_json::json!({ "api": BOARD_API, "ingest": "queued" }))
-        .expect("queued serialization cannot fail");
+    let body = serde_json::to_vec(&serde_json::json!({
+        "api": BOARD_API, "ingest": "queued", "ticket": claim.ticket,
+    }))
+    .expect("queued serialization cannot fail");
     let _ = http_wire::send_response(&mut stream, 202, "application/json", &body, true);
 }
 
 /// Relay outcomes keep the board error envelope so subscribers render a
-/// terminal state whether the scan succeeded or failed.
-fn ingest_receipt(result: Result<serde_json::Value, BoardError>) -> serde_json::Value {
-    match result {
+/// terminal state whether the scan succeeded or failed; every receipt carries
+/// its flight ticket so tabs complete only on their own scan.
+fn ingest_receipt(result: Result<serde_json::Value, BoardError>, ticket: &str) -> serde_json::Value {
+    let mut receipt = match result {
         Ok(receipt) => receipt,
         Err(error) => serde_json::json!({
             "error": { "code": error.code.as_str(), "message": error.message }
         }),
+    };
+    match receipt.as_object_mut() {
+        Some(object) => {
+            object.insert("ticket".into(), serde_json::json!(ticket));
+        }
+        None => {
+            receipt = serde_json::json!({ "ticket": ticket, "receipt": receipt });
+        }
     }
+    receipt
 }
 
 fn public_asset(path: &str) -> Option<(&str, &str)> {
@@ -204,6 +222,7 @@ fn public_asset(path: &str) -> Option<(&str, &str)> {
         "/board_reader.js" => PUBLIC_READER,
         "/board_entries.js" => PUBLIC_ENTRIES,
         "/board_web_token.js" => PUBLIC_TOKEN,
+        "/board_ingest.js" => PUBLIC_INGEST,
         "/board_web.css" => return Some(("text/css; charset=utf-8", PUBLIC_STYLE)),
         _ => return None,
     };

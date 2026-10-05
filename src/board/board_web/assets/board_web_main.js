@@ -3,6 +3,7 @@ import { createBoardStream, BOARD_AUTH_EXPIRED_MESSAGE } from "/board_stream.js"
 import { createBoardDom, decodeBoardFragment } from "/board_dom.js";
 import { createBoardViews } from "/board_views.js";
 import { resolveBootstrapToken, resolveAdoptionToken } from "/board_web_token.js";
+import { resolveIngestEvent } from "/board_ingest.js";
 
   const TOKEN_KEY = "trufflepig-board-token";
   let stored = "";
@@ -42,7 +43,7 @@ import { resolveBootstrapToken, resolveAdoptionToken } from "/board_web_token.js
     refreshTimer: null, refreshing: false, refreshAgain: false, drafts: new Map(), globalRefresh: null,
     resyncing: false, liveEntries: [], livePending: new Set(), liveGap: false,
     formDrafts: new Map(), formStatuses: new Map(), pendingForms: new Set(),
-    seenAtOpen, seenHigh: seenAtOpen, ingestPending: false,
+    seenAtOpen, seenHigh: seenAtOpen, ingestPending: false, ingestTicket: null, ingestTimer: null,
   };
   const columns = ["todo", "doing", "review", "done", "blocked"];
   const postKinds = ["note", "answer", "decision", "question"];
@@ -101,6 +102,11 @@ import { resolveBootstrapToken, resolveAdoptionToken } from "/board_web_token.js
     try { localStorage.setItem(SEEN_KEY, text); } catch (_) { /* The mark is a convenience, not a cursor. */ }
   }
   function onIngest(result) {
+    // Foreign tickets (other tabs' flights, replays from before this tab
+    // queued) are ignored; only the held ticket completes the control.
+    if (resolveIngestEvent(state.ingestTicket, { type: "receipt", result }).outcome === "ignored") return;
+    if (state.ingestTimer !== null) { clearTimeout(state.ingestTimer); state.ingestTimer = null; }
+    state.ingestTicket = null;
     state.ingestPending = false;
     if (result?.error) notice(`Repository ingestion failed: ${result.error.message || "unknown error"}`, "error");
     else {

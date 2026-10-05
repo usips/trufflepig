@@ -357,6 +357,49 @@ fn ingest_posts_answer_202_without_waiting_for_the_relay() {
 }
 
 #[test]
+fn ingest_202_and_receipt_carry_the_same_flight_ticket() {
+    let fixture = render_fixture_with(Arc::new(|_, _, _| {
+        Ok(ReplayBatch {
+            latest: EventSeq::new(0),
+            events: vec![],
+        })
+    }));
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut subscriber = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    subscriber
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let (server, _) = listener.accept().unwrap();
+    fixture
+        .state
+        .streams
+        .spawn(
+            server,
+            StreamRequest::parse(None, None, None).unwrap(),
+            fixture.state.streams.reserve().unwrap(),
+        )
+        .unwrap();
+    read_until(&mut subscriber, "\r\n\r\n");
+    let reply = authed_post(&fixture, "/api/v1/ingest", &serde_json::json!({"api": BOARD_API}));
+    assert!(reply.starts_with("HTTP/1.1 202 "), "{reply}");
+    let body: serde_json::Value =
+        serde_json::from_str(reply.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert_eq!(body["ingest"], "queued");
+    let ticket = body["ticket"]
+        .as_str()
+        .expect("the 202 carries the flight ticket");
+    // The fixture has no router, so the relay publishes its failure receipt.
+    let frame = read_until(&mut subscriber, "}\n\n");
+    assert!(frame.contains("event: ingest\n"), "{frame}");
+    let data = frame
+        .lines()
+        .find_map(|line| line.strip_prefix("data: "))
+        .unwrap();
+    let receipt: serde_json::Value = serde_json::from_str(data).unwrap();
+    assert_eq!(receipt["ticket"], ticket);
+}
+
+#[test]
 fn completed_ingest_relay_reaches_stream_subscribers() {
     let fixture = render_fixture_with(Arc::new(|_, _, _| {
         Ok(ReplayBatch {

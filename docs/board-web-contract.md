@@ -79,10 +79,10 @@ reads remain available without a responsive router; a conflicting known database
 reads, writes, and streams.
 
 POST ingest probes router API/database identity and relays without spawning a router; an
-unavailable router is an error. Single-flight, it answers 202 `{"api":4,"ingest":"queued"}` at
-once, a concurrent POST the same 202. Completion reaches subscribers as `event: ingest` frames
-(receipt JSON or the standard error envelope, no `id:` line); the server retains the last eight
-receipts and delivers only post-subscription ones.
+unavailable router is an error. Single-flight, it answers 202 with `ingest:"queued"` plus a
+flight `ticket` at once; a concurrent POST joins the running ticket and queues one rerun.
+Completion reaches subscribers as `event: ingest` frames (receipt or error envelope, ticket
+attached, no `id:` line); the last eight receipts replay to every (re)subscribing stream.
 
 Startup never migrates an existing database. It opens the writer only when a same-API router's
 `system status` confirms `schema_file` equals `schema_supported` at the schema this binary

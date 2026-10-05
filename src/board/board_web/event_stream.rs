@@ -195,8 +195,8 @@ impl EventStreams {
         self.active.load(Ordering::Acquire)
     }
 
-    /// Records a completed ingest relay for broadcast; subscribers send the
-    /// receipts sequenced after their subscription, newest frames kept.
+    /// Records a completed ingest relay for broadcast; subscribers drain
+    /// every kept receipt and filter by flight ticket, newest frames kept.
     pub fn publish_ingest(&self, result: &serde_json::Value) {
         let Ok(frame) = ingest_frame(result) else {
             return;
@@ -213,11 +213,15 @@ impl EventStreams {
         }
     }
 
-    fn ingest_sequence(&self) -> u64 {
-        self.ingest
+    /// A (re)subscribing stream drains every kept receipt, including ones
+    /// published while it was away; tab-side ticket filtering drops the
+    /// flights the tab never joined.
+    fn ingest_replay_start(&self) -> u64 {
+        let log = self
+            .ingest
             .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .next
+            .unwrap_or_else(|poison| poison.into_inner());
+        log.next.saturating_sub(log.frames.len() as u64)
     }
 
     /// Sends ingest receipts sequenced after `after_seq`; returns the new cursor.
@@ -277,7 +281,7 @@ impl EventStreams {
             self.wake.poke();
             lease
         });
-        let mut ingest_after = self.ingest_sequence();
+        let mut ingest_after = self.ingest_replay_start();
         let mut cursor = request.after;
         let mut last_send = Instant::now();
         let mut ahead_since: Option<Instant> = None;

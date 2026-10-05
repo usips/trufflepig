@@ -17,8 +17,8 @@ Overview refreshes every 15 seconds and claim ages tick locally each second: inb
 expiry, and configuration changes can occur without advancing the event sequence. Entries views
 page newest-first with a composite before-cursor, and live rows sit above a divider for entries new
 since the page loaded. The seen mark `localStorage["trufflepig-board-seen"]` holds the highest
-delivered seq and badges newer ticker rows. The ingest button shows queued on 202, then the
-terminal receipt or error from the `ingest` stream frame.
+delivered seq and badges newer ticker rows. The ingest button holds the 202's ticket, shows
+queued, then completes only on the `ingest` frame with that ticket or reports unknown at 30s.
 
 Form drafts and focus (by `data-focus-key`) survive live-region refreshes; connection announcements
 fire only on outage, authorization expiry, and restore. Editors retain the originally loaded
