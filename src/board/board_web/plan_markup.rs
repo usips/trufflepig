@@ -72,13 +72,19 @@ pub(crate) fn render(body: &str) -> RenderedPlan {
 }
 
 /// HTTP(S) and mailto links survive; among relative links only same-page `#…`
-/// anchors do, since any other relative href navigates this origin (and could
-/// re-bootstrap the tab's token). Controls, backslashes, and `//` are denied.
+/// anchors do, since any other relative href navigates this origin. Controls,
+/// backslashes, `//`, any `token=` fragment, and absolute loopback links are denied.
 fn allowed_url(url: &str) -> bool {
     if url
         .chars()
         .any(|character| character.is_control() || character.is_whitespace() || character == '\\')
         || url.starts_with("//")
+    {
+        return false;
+    }
+    if url
+        .split_once('#')
+        .is_some_and(|(_, fragment)| fragment.starts_with("token="))
     {
         return false;
     }
@@ -97,7 +103,40 @@ fn allowed_url(url: &str) -> bool {
     }
     rest.strip_prefix("//")
         .and_then(|rest| rest.split(['/', '?', '#']).next())
-        .is_some_and(|authority| !authority.is_empty())
+        .is_some_and(|authority| !authority.is_empty() && !loopback_authority(authority))
+}
+
+/// True when an http(s) authority targets loopback: `localhost` (one trailing
+/// dot tolerated), a `127.0.0.0/8` dotted quad or its single-integer form, or
+/// `::1`. Userinfo and `:port` are stripped first; matching is case-insensitive.
+fn loopback_authority(authority: &str) -> bool {
+    let host = authority.rsplit('@').next().unwrap_or_default();
+    let bare = host
+        .strip_prefix('[')
+        .and_then(|rest| rest.split_once(']'))
+        .map(|(inside, _)| inside)
+        .unwrap_or_else(|| host.split(':').next().unwrap_or_default());
+    let bare = bare.strip_suffix('.').unwrap_or(bare);
+    bare.eq_ignore_ascii_case("localhost")
+        || bare.eq_ignore_ascii_case("::1")
+        || is_loopback_quad(bare)
+        || bare.parse::<u32>().is_ok_and(|n| n >> 24 == 127)
+}
+
+/// True for decimal dotted quads in `127.0.0.0/8`; short, octal, and hex
+/// spellings of 127.0.0.1 are out of scope (their token-bearing forms are
+/// still caught by the uniform fragment rule).
+fn is_loopback_quad(host: &str) -> bool {
+    let mut parts = host.split('.');
+    let first_ok = parts.next() == Some("127");
+    let mut rest_ok = true;
+    let mut count = 0;
+    for part in parts {
+        count += 1;
+        rest_ok &=
+            !part.is_empty() && part.len() <= 3 && part.bytes().all(|byte| byte.is_ascii_digit());
+    }
+    first_ok && rest_ok && count == 3
 }
 
 #[cfg(test)]

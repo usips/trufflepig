@@ -126,3 +126,87 @@ fn url_policy_rejects_ambiguous_schemes_and_browser_normalization() {
         assert!(allowed_url(url), "rejected {url:?}");
     }
 }
+
+const TOKEN_HEX: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+#[test]
+fn token_bearing_links_render_as_text() {
+    for href in [
+        format!("/#token={TOKEN_HEX}"),
+        format!("#token={TOKEN_HEX}"),
+        format!("http://127.0.0.1:7341/#token={TOKEN_HEX}"),
+    ] {
+        let rendered = render(&format!("[x]({href})"));
+        assert!(
+            !rendered.html.contains("href="),
+            "{href}: {}",
+            rendered.html
+        );
+        assert!(rendered.html.contains(">x<"), "{href}: {}", rendered.html);
+        assert!(
+            !rendered.html.contains("token="),
+            "{href}: {}",
+            rendered.html
+        );
+    }
+}
+
+#[test]
+fn loopback_links_without_tokens_render_as_text() {
+    for href in ["http://localhost:7341/page", "http://[::1]:7341/"] {
+        let rendered = render(&format!("[x]({href})"));
+        assert!(
+            !rendered.html.contains("href="),
+            "{href}: {}",
+            rendered.html
+        );
+        assert!(rendered.html.contains(">x<"), "{href}: {}", rendered.html);
+    }
+}
+
+#[test]
+fn safe_links_still_link() {
+    let rendered = render("[x](#section) [y](https://example.com/) [z](mailto:a@b.example)");
+    assert!(
+        rendered.html.contains("href=\"#section\""),
+        "{}",
+        rendered.html
+    );
+    assert!(
+        rendered.html.contains("href=\"https://example.com/\""),
+        "{}",
+        rendered.html
+    );
+    assert!(
+        rendered.html.contains("href=\"mailto:a@b.example\""),
+        "{}",
+        rendered.html
+    );
+}
+
+#[test]
+fn loopback_matching_ignores_case_userinfo_and_trailing_dots() {
+    for url in [
+        "http://LOCALHOST:7341/page",
+        "http://localhost.:7341/",
+        "http://user@example.test@localhost/",
+        "http://127.0.0.2:7341/",
+        "http://127.1.2.3/",
+        "http://2130706433/",
+        "http://[::1]/",
+        "https://127.0.0.1/",
+        "http://localhost?x=1",
+        "http://127.0.0.1#frag",
+        "mailto:a@b.example#token=junk",
+    ] {
+        assert!(!allowed_url(url), "accepted {url:?}");
+    }
+    for url in [
+        "http://128.0.0.1/",
+        "http://example.com:7341/",
+        "http://localhost.example.com/",
+        "http://example.com/#section",
+    ] {
+        assert!(allowed_url(url), "rejected {url:?}");
+    }
+}
