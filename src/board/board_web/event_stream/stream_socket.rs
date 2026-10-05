@@ -1,5 +1,6 @@
 //! Close-delimited SSE writes have one absolute deadline per frame.
 
+use super::super::http_wire::content_security_policy;
 use std::{
     io::{self, Write},
     net::TcpStream,
@@ -13,8 +14,8 @@ pub(super) const RESPONSE_HEADERS: &[u8] = concat!(
     "Connection: close\r\n",
     "X-Content-Type-Options: nosniff\r\n",
     "Referrer-Policy: no-referrer\r\n",
-    "Content-Security-Policy: default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'\r\n",
-    "\r\n"
+    content_security_policy!(),
+    "\r\n\r\n"
 )
 .as_bytes();
 

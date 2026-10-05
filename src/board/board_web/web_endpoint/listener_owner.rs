@@ -68,13 +68,13 @@ fn parse_proc_address(text: &str) -> Option<SocketAddr> {
     let ip = match host.len() {
         8 => {
             let raw = u32::from_str_radix(host, 16).ok()?;
-            IpAddr::V4(Ipv4Addr::from(raw.swap_bytes()))
+            IpAddr::V4(Ipv4Addr::from(raw.to_ne_bytes()))
         }
         32 => {
             let mut words = [0; 4];
             for (index, word) in words.iter_mut().enumerate() {
                 let raw = u32::from_str_radix(host.get(index * 8..index * 8 + 8)?, 16).ok()?;
-                *word = raw.swap_bytes();
+                *word = u32::from_ne_bytes(raw.to_be_bytes());
             }
             let value = u128::from(words[0]) << 96
                 | u128::from(words[1]) << 64
@@ -113,6 +113,18 @@ mod tests {
         let path = directory.path().join("tcp");
         std::fs::write(&path, format!("{HEADER}\n{}\n", rows.join("\n"))).unwrap();
         path
+    }
+
+    #[test]
+    fn proc_address_decode_pins_loopback_vectors() {
+        assert_eq!(
+            parse_proc_address("0100007F:1CAD").unwrap(),
+            "127.0.0.1:7341".parse().unwrap()
+        );
+        assert_eq!(
+            parse_proc_address("00000000000000000000000001000000:1CAD").unwrap(),
+            "[::1]:7341".parse().unwrap()
+        );
     }
 
     #[test]

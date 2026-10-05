@@ -1,3 +1,4 @@
+use super::super::board_web_secrets::{constant_time_equal, fill_random, hex_encode};
 use anyhow::{Context, Result, ensure};
 use std::{
     fs::{self, File, OpenOptions},
@@ -48,7 +49,7 @@ impl BoardWebToken {
         File::open(parent)
             .and_then(|directory| directory.sync_all())
             .context("board_web_token: sync token directory")?;
-        read_token(open_existing(path).context("board_web_token: open rotated token")?)
+        Ok(token)
     }
 
     pub(crate) fn expose(&self) -> &str {
@@ -56,12 +57,7 @@ impl BoardWebToken {
     }
 
     pub(crate) fn matches(&self, candidate: &str) -> bool {
-        let candidate = candidate.as_bytes();
-        let mut difference = candidate.len() ^ TOKEN_BYTES;
-        for (index, expected) in self.0.iter().enumerate() {
-            difference |= usize::from(expected ^ candidate.get(index).copied().unwrap_or(0));
-        }
-        difference == 0
+        constant_time_equal(&self.0, candidate.as_bytes())
     }
 }
 
@@ -142,14 +138,8 @@ fn validate_file(file: &File, existing: bool) -> Result<()> {
 
 fn random_token() -> Result<BoardWebToken> {
     let mut random = [0; TOKEN_BYTES / 2];
-    File::open("/dev/urandom")
-        .and_then(|mut source| source.read_exact(&mut random))
-        .context("board_web_token: read operating-system random source")?;
+    fill_random(&mut random).context("board_web_token: read operating-system random source")?;
     let mut bytes = [0; TOKEN_BYTES];
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    for (index, byte) in random.iter().copied().enumerate() {
-        bytes[index * 2] = HEX[usize::from(byte >> 4)];
-        bytes[index * 2 + 1] = HEX[usize::from(byte & 15)];
-    }
+    bytes.copy_from_slice(hex_encode(&random).as_bytes());
     Ok(BoardWebToken(bytes))
 }

@@ -4,7 +4,7 @@ use super::*;
 use std::{collections::BTreeMap, io::Write, net::TcpStream, time::Instant};
 
 fn fixture() -> (tempfile::TempDir, WebGuard) {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::board::board_test_support::scratch("web-guard-");
     let token = BoardWebToken::rotate_at(&directory.path().join("board-web.token")).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let guard = WebGuard::with_token(listener.local_addr().unwrap(), token).unwrap();
@@ -107,7 +107,7 @@ fn guards_actual_ephemeral_port_and_literal_loopback_authority() {
             421
         );
     }
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::board::board_test_support::scratch("web-guard-ipv6-");
     let token = BoardWebToken::rotate_at(&directory.path().join("token")).unwrap();
     let ipv6 = WebGuard::with_token("[::1]:32123".parse().unwrap(), token).unwrap();
     assert_eq!(ipv6.authority(), "[::1]:32123");
@@ -131,7 +131,7 @@ fn refuses_non_loopback_before_loading_any_live_token() {
         0,
         "a refused bind creates no runtime files"
     );
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::board::board_test_support::scratch("web-guard-port-zero-");
     let token = BoardWebToken::rotate_at(&directory.path().join("token")).unwrap();
     assert!(WebGuard::with_token("127.0.0.1:0".parse().unwrap(), token).is_err());
 }
@@ -178,7 +178,7 @@ fn accepts_all_same_port_aliases_and_requires_matching_request_origin() {
 
 #[test]
 fn default_http_port_uses_browser_normalized_authorities() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::board::board_test_support::scratch("web-guard-port80-");
     let token = BoardWebToken::rotate_at(&directory.path().join("token")).unwrap();
     let guard = WebGuard::with_token("127.0.0.1:80".parse().unwrap(), token).unwrap();
     assert_eq!(guard.origin(), "http://127.0.0.1");
@@ -319,7 +319,7 @@ fn provided_foreign_get_origin_is_forbidden_even_with_correct_token() {
 
 #[test]
 fn socket_parsed_post_reaches_same_auth_checks() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::board::board_test_support::scratch("web-guard-socket-");
     let token = BoardWebToken::rotate_at(&directory.path().join("token")).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let guard = WebGuard::with_token(listener.local_addr().unwrap(), token).unwrap();

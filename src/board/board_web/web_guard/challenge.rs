@@ -3,10 +3,13 @@
 //! fresh random nonce and the bound listener address make proofs worthless to
 //! a relaying thief.
 
+use super::super::board_web_secrets::{
+    PROOF_HEX_LEN, constant_time_equal, fill_random, hex_encode,
+};
 use super::BoardWebToken;
 use anyhow::{Context, Result, ensure};
 use sha2::{Digest, Sha256};
-use std::{fs::File, io::Read, net::SocketAddr};
+use std::net::SocketAddr;
 
 pub(crate) const NONCE_BYTES: usize = 32;
 
@@ -16,15 +19,14 @@ pub(crate) struct ChallengeNonce([u8; NONCE_BYTES]);
 impl ChallengeNonce {
     pub(crate) fn generate() -> Result<Self> {
         let mut bytes = [0; NONCE_BYTES];
-        File::open("/dev/urandom")
-            .and_then(|mut source| source.read_exact(&mut bytes))
+        fill_random(&mut bytes)
             .context("board_web_challenge: read operating-system random source")?;
         Ok(Self(bytes))
     }
 
     pub(crate) fn from_hex(text: &str) -> Result<Self> {
         ensure!(
-            text.len() == NONCE_BYTES * 2 && text.bytes().all(|byte| byte.is_ascii_hexdigit()),
+            text.len() == PROOF_HEX_LEN && text.bytes().all(|byte| byte.is_ascii_hexdigit()),
             "board_web_challenge: nonce must be 64 hexadecimal characters"
         );
         let value = |byte: u8| match byte {
@@ -73,12 +75,7 @@ pub(crate) fn proof_matches(
     candidate_hex: &str,
 ) -> bool {
     let expected = hex_encode(&proof(token, nonce, address));
-    let candidate = candidate_hex.as_bytes();
-    let mut difference = candidate.len() ^ (NONCE_BYTES * 2);
-    for (index, expected) in expected.bytes().enumerate() {
-        difference |= usize::from(expected ^ candidate.get(index).copied().unwrap_or(0));
-    }
-    difference == 0
+    constant_time_equal(expected.as_bytes(), candidate_hex.as_bytes())
 }
 
 fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
@@ -103,16 +100,6 @@ fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
     outer.update(opad);
     outer.update(inner_hash);
     outer.finalize().into()
-}
-
-fn hex_encode(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut encoded = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        encoded.push(HEX[usize::from(byte >> 4)] as char);
-        encoded.push(HEX[usize::from(byte & 15)] as char);
-    }
-    encoded
 }
 
 #[cfg(test)]
@@ -192,7 +179,7 @@ mod tests {
 
     #[test]
     fn proof_binds_token_nonce_and_listener_address() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::board::board_test_support::scratch("board-challenge-");
         let token = BoardWebToken::rotate_at(&directory.path().join("token")).unwrap();
         let other = BoardWebToken::rotate_at(&directory.path().join("other")).unwrap();
         let nonce = ChallengeNonce::generate().unwrap();

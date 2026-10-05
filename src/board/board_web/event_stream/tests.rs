@@ -193,8 +193,8 @@ fn live_stream_response_carries_security_headers() {
     let headers = read_until(&mut client, "\r\n\r\n");
     assert!(
         headers.contains(concat!(
-            "Content-Security-Policy: default-src 'self'; base-uri 'none'; ",
-            "object-src 'none'; frame-ancestors 'none'\r\n"
+            "Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; ",
+            "base-uri 'none'; object-src 'none'; form-action 'none'\r\n"
         )),
         "{headers}"
     );

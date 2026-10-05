@@ -1,3 +1,4 @@
+use super::content_security_policy;
 use std::{
     io::{self, Write},
     net::TcpStream,
@@ -8,8 +9,8 @@ const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 const SECURITY_HEADERS: &str = concat!(
     "X-Content-Type-Options: nosniff\r\n",
     "Referrer-Policy: no-referrer\r\n",
-    "Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; ",
-    "base-uri 'none'; object-src 'none'; form-action 'none'\r\n"
+    content_security_policy!(),
+    "\r\n"
 );
 
 struct ResponseHeaders<'a> {

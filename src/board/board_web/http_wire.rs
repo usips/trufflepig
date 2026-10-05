@@ -24,18 +24,51 @@ pub(crate) const FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(2);
 pub(crate) const HEADER_LIMIT: usize = 16 * 1024;
 pub(crate) const BODY_LIMIT: usize = 160 * 1024;
 
+/// Shared Content-Security-Policy header line for normal and SSE replies.
+/// A literal macro because `concat!` header blocks cannot consume a `const`.
+macro_rules! content_security_policy {
+    () => {
+        "Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'none'"
+    };
+}
+pub(crate) use content_security_policy;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum HttpMethod {
     Get,
     Post,
 }
 
-#[derive(Debug)]
 pub(crate) struct HttpRequest {
     pub(crate) method: HttpMethod,
     pub(crate) target: String,
     pub(crate) headers: BTreeMap<String, String>,
     pub(crate) body: Vec<u8>,
+}
+
+impl std::fmt::Debug for HttpRequest {
+    /// Debug redacts the board token; every other field prints unchanged.
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let headers: BTreeMap<&str, &str> = self
+            .headers
+            .iter()
+            .map(|(name, value)| {
+                let shown = if name.eq_ignore_ascii_case("x-board-token") {
+                    "[redacted]"
+                } else {
+                    value.as_str()
+                };
+                (name.as_str(), shown)
+            })
+            .collect();
+        formatter
+            .debug_struct("HttpRequest")
+            .field("method", &self.method)
+            .field("target", &self.target)
+            .field("headers", &headers)
+            .field("body", &self.body)
+            .finish()
+    }
 }
 
 impl HttpRequest {

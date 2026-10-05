@@ -211,6 +211,23 @@ fn private_response_has_safe_framing() {
 }
 
 #[test]
+fn debug_redacts_the_board_token_but_keeps_other_headers() {
+    let mut headers = BTreeMap::new();
+    headers.insert("host".to_owned(), "127.0.0.1:7341".to_owned());
+    headers.insert("X-Board-Token".to_owned(), "secret-token-value".to_owned());
+    let request = HttpRequest {
+        method: HttpMethod::Get,
+        target: "/".to_owned(),
+        headers,
+        body: Vec::new(),
+    };
+    let debug = format!("{request:?}");
+    assert!(!debug.contains("secret-token-value"), "{debug}");
+    assert!(debug.contains("127.0.0.1:7341"), "{debug}");
+    assert!(debug.contains("X-Board-Token"), "{debug}");
+}
+
+#[test]
 fn unavailable_response_has_typed_retry_after_and_private_headers() {
     let (mut server, mut client) = tcp_pair();
     send_unavailable(&mut server, 5, b"{}").unwrap();
