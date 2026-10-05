@@ -11,17 +11,20 @@ use std::{net::TcpStream, sync::Arc, time::Instant};
 
 /// 202 immediately with the flight ticket; one router scan runs at a time,
 /// its completion published to stream subscribers as an `ingest` frame, and
-/// mid-scan POSTs rerun the scan until one runs clean.
+/// mid-scan POSTs take the next ticket and rerun until one scan runs clean.
 pub(super) fn ingest_accepted(mut stream: TcpStream, state: &Arc<BoardWebState>) {
     let claim = state.ingest.begin();
     if claim.leads {
         let relay_state = Arc::clone(state);
-        let ticket = claim.ticket.clone();
         let spawned = std::thread::Builder::new()
             .name("board-ingest-relay".into())
             .spawn(move || {
-                let expires = Instant::now() + crate::daemon::CLIENT_REPLY_WAIT;
                 relay_flight(&relay_state.ingest, || {
+                    // Every scan reads its own ticket and restarts the
+                    // router reply budget; a rerun never inherits the
+                    // first scan's spent deadline.
+                    let ticket = relay_state.ingest.current_ticket();
+                    let expires = Instant::now() + crate::daemon::CLIENT_REPLY_WAIT;
                     let result = relay_ingest(&relay_state.store, expires);
                     relay_state
                         .streams

@@ -83,9 +83,10 @@ reads, writes, and streams.
 
 POST ingest probes router API/database identity and relays without spawning a router; an
 unavailable router is an error. Single-flight, it answers 202 with `ingest:"queued"` plus a
-flight `ticket` at once; a concurrent POST joins the running ticket and queues one rerun.
-Completion reaches subscribers as `event: ingest` frames (receipt or error envelope, ticket
-attached, no `id:` line); the last eight receipts replay to every (re)subscribing stream.
+flight `ticket` at once; a POST landing mid-scan takes the next ticket and queues one
+rerun under it, and every scan restarts the router reply deadline. Completion reaches
+subscribers as `event: ingest` frames (receipt or error envelope, ticket attached, no
+`id:` line); the last eight receipts replay to every (re)subscribing stream.
 
 Startup never migrates an existing database. It opens the writer only when a same-API router's
 `system status` confirms `schema_file` equals `schema_supported` at the schema this binary

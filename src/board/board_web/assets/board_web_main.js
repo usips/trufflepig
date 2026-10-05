@@ -3,7 +3,7 @@ import { createBoardStream, BOARD_AUTH_EXPIRED_MESSAGE } from "/board_stream.js"
 import { createBoardDom, decodeBoardFragment } from "/board_dom.js";
 import { createBoardViews } from "/board_views.js";
 import { resolveBootstrapToken, resolveAdoptionToken } from "/board_web_token.js";
-import { resolveIngestEvent } from "/board_ingest.js";
+import { completeIngest, createIngestReceiptCache, resolveIngestEvent } from "/board_ingest.js";
 import { createDraftStores } from "/board_lru.js";
 import { seenKey, readSeenMark, writeSeenMark, resyncSeenMark } from "/board_seen.js";
 
@@ -45,6 +45,7 @@ const state = {
   resyncing: false, formDrafts: draftStores.formDrafts, formStatuses: draftStores.formStatuses,
   pendingForms: new Set(),
   seenAtOpen, seenHigh: seenAtOpen, ingestPending: false, ingestTicket: null, ingestTimer: null,
+  ingestReceipts: createIngestReceiptCache(),
 };
 const columns = ["todo", "doing", "review", "done", "blocked"];
 const postKinds = ["note", "answer", "decision", "question"];
@@ -100,20 +101,13 @@ function noteSeen(seq) {
   if (mark !== null) state.seenHigh = mark;
 }
 function onIngest(result) {
-  // Foreign tickets (other tabs' flights, replays from before this tab
-  // queued) are ignored; only the held ticket completes the control.
+  // Every frame is cached first: a receipt may publish before the tab's
+  // own 202 arrives, and the 202 completes from the cache. Foreign
+  // tickets (other tabs' flights, replays from before this tab queued)
+  // are ignored; only the held ticket completes the control.
+  state.ingestReceipts.observe(result);
   if (resolveIngestEvent(state.ingestTicket, { type: "receipt", result }).outcome === "ignored") return;
-  if (state.ingestTimer !== null) { clearTimeout(state.ingestTimer); state.ingestTimer = null; }
-  state.ingestTicket = null;
-  state.ingestPending = false;
-  if (result?.error) notice(`Repository ingestion failed: ${result.error.message || "unknown error"}`, "error");
-  else {
-    const counts = ["scanned", "inserted", "skipped"]
-      .map(key => Number.isFinite(result?.[key]) ? `${result[key]} ${key}` : null)
-      .filter(Boolean).join(", ");
-    notice(`Repository ingestion completed${counts ? `: ${counts}` : "."}`, "success");
-  }
-  scheduleRefresh();
+  completeIngest(state, result, { notice, scheduleRefresh });
 }
 
 function notice(message, tone = "") {

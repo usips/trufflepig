@@ -464,6 +464,135 @@ fn completed_ingest_relay_reaches_stream_subscribers() {
 }
 
 #[test]
+fn rerun_after_a_25s_first_scan_still_succeeds() {
+    let fixture = render_fixture_with(Arc::new(|_, _, _| {
+        Ok(ReplayBatch {
+            latest: EventSeq::new(0),
+            events: vec![],
+        })
+    }));
+    let runtime = fixture._directory.path().join("runtime");
+    std::fs::create_dir_all(&runtime).unwrap();
+    let socket = runtime.join(crate::daemon::SOCKET_NAME);
+    let board_db = fixture.config.db_path.to_string_lossy().into_owned();
+    // Fake router: instant status probes, a 25 s first scan, a 10 s rerun.
+    // Under one inherited 30 s deadline the rerun's 10 s of work cannot fit
+    // the ~5 s left; only a fresh per-scan deadline lets it succeed.
+    let router = std::thread::spawn(move || {
+        let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        let mut ingests = 0;
+        // Two scans of probe plus ingest, served in relay order.
+        for _ in 0..4 {
+            let (mut stream, _) = listener.accept().unwrap();
+            let args = read_daemon_args(&mut stream);
+            if args == ["system", "status"] {
+                write_daemon_reply(
+                    &mut stream,
+                    &serde_json::json!({
+                        "status": "ok", "board_api": BOARD_API, "board_db": board_db,
+                    })
+                    .to_string(),
+                );
+            } else {
+                assert_eq!(
+                    args,
+                    ["--json", "board", "ingest"],
+                    "unexpected router call: {args:?}"
+                );
+                ingests += 1;
+                std::thread::sleep(Duration::from_secs(if ingests == 1 { 25 } else { 10 }));
+                write_daemon_reply(
+                    &mut stream,
+                    &serde_json::json!({"api": BOARD_API, "inserted": 1}).to_string(),
+                );
+            }
+        }
+    });
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut subscriber = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    subscriber
+        .set_read_timeout(Some(Duration::from_secs(90)))
+        .unwrap();
+    let (server, _) = listener.accept().unwrap();
+    fixture
+        .state
+        .streams
+        .spawn(
+            server,
+            StreamRequest::parse(None, None, None).unwrap(),
+            fixture.state.streams.reserve().unwrap(),
+        )
+        .unwrap();
+    let mut transcript = read_until(&mut subscriber, "\r\n\r\n");
+    let post = || {
+        let reply = authed_post(
+            &fixture,
+            "/api/v1/ingest",
+            &serde_json::json!({"api": BOARD_API}),
+        );
+        assert!(reply.starts_with("HTTP/1.1 202 "), "{reply}");
+        let body: serde_json::Value =
+            serde_json::from_str(reply.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(body["ingest"], "queued");
+        body["ticket"].as_str().unwrap().to_owned()
+    };
+    let leader = post();
+    // The first scan sleeps 25 s, so this POST always lands mid-scan.
+    let joiner = post();
+    assert_ne!(
+        joiner, leader,
+        "a mid-scan POST holds the next ticket, not the running scan's"
+    );
+    // Drain both ingest frames; each frame carries exactly one data line,
+    // and only ingest receipts carry a flight ticket.
+    let mut receipts = Vec::new();
+    while receipts.len() < 2 {
+        transcript.push_str(&read_until(&mut subscriber, "event: ingest\n"));
+        receipts = transcript
+            .lines()
+            .filter_map(|line| line.strip_prefix("data: "))
+            .filter_map(|data| serde_json::from_str::<serde_json::Value>(data).ok())
+            .filter(|receipt| receipt.get("ticket").is_some())
+            .collect::<Vec<_>>();
+    }
+    assert_eq!(receipts[0]["ticket"], leader);
+    assert_eq!(receipts[1]["ticket"], joiner);
+    for receipt in &receipts {
+        assert!(
+            receipt.get("error").is_none(),
+            "the rerun still succeeds on its own deadline: {receipt}"
+        );
+    }
+    router.join().unwrap();
+}
+
+/// Reads one length-prefixed daemon request frame and returns its args.
+fn read_daemon_args(stream: &mut std::os::unix::net::UnixStream) -> Vec<String> {
+    use std::io::Read;
+    let mut header = [0_u8; 4];
+    stream.read_exact(&mut header).unwrap();
+    let length = u32::from_be_bytes(header) as usize;
+    let mut bytes = vec![0; length];
+    stream.read_exact(&mut bytes).unwrap();
+    let request: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    request["arguments"]["args"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|arg| arg.as_str().unwrap().to_owned())
+        .collect()
+}
+
+/// Writes one length-prefixed success reply; a timed-out client may be
+/// gone, and the reply still counts as served.
+fn write_daemon_reply(stream: &mut std::os::unix::net::UnixStream, output: &str) {
+    use std::io::Write;
+    let reply = serde_json::json!({"status": "success", "output": output}).to_string();
+    let _ = stream.write_all(&(reply.len() as u32).to_be_bytes());
+    let _ = stream.write_all(reply.as_bytes());
+}
+
+#[test]
 fn render_plan_decodes_percent_encoded_revision_target() {
     let fixture = render_fixture();
     let plan = create_plan(&fixture);
