@@ -17,9 +17,9 @@ use super::task_writes::{allocate_task, require_assignee, require_task};
 #[cfg(test)]
 use super::task_writes::{create_task, move_task};
 use super::super::{
-    BoardError, EntryDraft, WriteContext, actor_from_row, can_accept, delegated_actor_from_row,
-    ensure_actor, insert_entry, insert_event, invalid, require_plan, row_number, sql_error,
-    sql_number,
+    BoardError, EntryDraft, WriteContext, actor_from_row, delegated_actor_from_row,
+    ensure_actor_without_seen_bump, insert_entry, insert_event, invalid, require_plan, row_number,
+    sql_error, sql_number,
 };
 use crate::board::board_actor::{BoardActor, BoardRecipient, claim_vendor};
 use crate::board::board_ids::{EntryId, EventSeq, PlanId, TaskId};
@@ -88,15 +88,14 @@ fn resolve_delegate(
         .optional()
         .map_err(sql_error)?
         .ok_or_else(|| invalid("invalid_reference", format!("unknown plan {}", task.plan)))?;
-    // Standing is the delegator's, never the delegate's: plan steward/owner
-    // path or the plan owner's user.
-    if !can_accept(tx, &ctx.actor, task.plan)? && ctx.actor.user != owner {
+    // Standing is the delegator's, never the delegate's: the plan owner's user.
+    if ctx.actor.user != owner {
         return Err(invalid(
             "invalid_actor",
             format!("{task} delegation requires the plan owner's user"),
         ));
     }
-    let actor_id = ensure_actor(tx, &holder, ctx.now)?;
+    let actor_id = ensure_actor_without_seen_bump(tx, &holder, ctx.now)?;
     let (model, effort): (Option<String>, Option<String>) = tx
         .query_row(
             "SELECT model,effort FROM agent_sessions WHERE actor_id=?1",
@@ -148,6 +147,7 @@ pub(in crate::board::local_board) fn claim_task(
         None => None,
     };
     let held;
+    let delegator = ctx;
     let (ctx, delegated_by) = match &delegation {
         Some(resolved) => {
             held = resolved.holder_context(ctx);
@@ -294,9 +294,15 @@ pub(in crate::board::local_board) fn claim_task(
     let previous = holder
         .as_ref()
         .filter(|claim| claim.actor_id != ctx.actor_id);
-    let recipient = previous
-        .as_ref()
-        .map(|claim| BoardRecipient::for_actor(&claim.record.actor));
+    // A delegated claim notifies its holder: the event is authored by the
+    // delegator and addressed to the delegate, so inbox filtering keeps it
+    // visible instead of hiding it as an own event.
+    let recipient = match &delegation {
+        Some(resolved) => Some(BoardRecipient::for_actor(&resolved.actor)),
+        None => previous
+            .as_ref()
+            .map(|claim| BoardRecipient::for_actor(&claim.record.actor)),
+    };
     let preview_end = scope
         .as_str()
         .char_indices()
@@ -320,9 +326,17 @@ pub(in crate::board::local_board) fn claim_task(
         ),
         None => format!("took {task}: {preview}"),
     };
+    let summary = match &delegation {
+        Some(_) => format!("{summary} (via {})", delegator.actor.identity()),
+        None => summary,
+    };
+    let event_ctx = match &delegation {
+        Some(_) => delegator,
+        None => ctx,
+    };
     insert_event(
         tx,
-        ctx,
+        event_ctx,
         Some(task.plan),
         EntryKind::Claim,
         &entry.to_string(),

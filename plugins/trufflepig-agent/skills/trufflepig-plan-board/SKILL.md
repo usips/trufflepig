@@ -64,7 +64,9 @@ the prior lease as `resumed` and records that actor.
 An orchestrator never claims for itself: it carves the task, then delegates with
 `board claim P7.3 SCOPE --for HARNESS/SESSION`, naming the coder session that
 holds the lease under the orchestrator's user and host. Only the plan owner's
-user may delegate; claim views render the holder with `(via delegator)`.
+user may delegate; the lease lands in the delegate's inbox with
+`(via delegator)`, and the delegator may release it by moving the task. Claim
+views render the holder with `(via delegator)`.
 
 On `claim_conflict`, choose another open task or address the holder using
 `board post P7 question "..." --to codex`. Never work on another session's

@@ -184,7 +184,7 @@ fn lookup_actor(conn: &Connection, actor: &BoardActor) -> Result<Option<i64>, Bo
     .map_err(sql_error)
 }
 
-fn ensure_actor(tx: &Transaction<'_>, actor: &BoardActor, now: i64) -> Result<i64, BoardError> {
+fn insert_actor(tx: &Transaction<'_>, actor: &BoardActor) -> Result<i64, BoardError> {
     tx.execute(
         "INSERT OR IGNORE INTO actors(user,host,harness,session) VALUES(?1,?2,?3,?4)",
         params![
@@ -195,23 +195,43 @@ fn ensure_actor(tx: &Transaction<'_>, actor: &BoardActor, now: i64) -> Result<i6
         ],
     )
     .map_err(sql_error)?;
-    let id = tx
-        .query_row(
-            "SELECT id FROM actors WHERE user=?1 AND host=?2 AND harness=?3 AND session=?4",
-            params![
-                actor.user,
-                actor.host,
-                actor.harness.as_str(),
-                actor.session
-            ],
-            |r| r.get(0),
-        )
-        .map_err(sql_error)?;
+    tx.query_row(
+        "SELECT id FROM actors WHERE user=?1 AND host=?2 AND harness=?3 AND session=?4",
+        params![
+            actor.user,
+            actor.host,
+            actor.harness.as_str(),
+            actor.session
+        ],
+        |r| r.get(0),
+    )
+    .map_err(sql_error)
+}
+
+fn ensure_actor(tx: &Transaction<'_>, actor: &BoardActor, now: i64) -> Result<i64, BoardError> {
+    let id = insert_actor(tx, actor)?;
     tx.execute(
         concat!(
             "INSERT INTO agent_sessions(actor_id,first_seen,last_seen) VALUES(?1,?2,?2) ",
             "ON CONFLICT(actor_id) DO UPDATE SET last_seen=excluded.last_seen"
         ),
+        params![id, now],
+    )
+    .map_err(sql_error)?;
+    Ok(id)
+}
+
+/// Ensures delegate rows without marking activity.
+/// Delegation resolves a holder that may never have acted; creating its
+/// session row must leave an existing `last_seen` untouched.
+fn ensure_actor_without_seen_bump(
+    tx: &Transaction<'_>,
+    actor: &BoardActor,
+    now: i64,
+) -> Result<i64, BoardError> {
+    let id = insert_actor(tx, actor)?;
+    tx.execute(
+        "INSERT OR IGNORE INTO agent_sessions(actor_id,first_seen,last_seen) VALUES(?1,?2,?2)",
         params![id, now],
     )
     .map_err(sql_error)?;

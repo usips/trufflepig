@@ -156,11 +156,19 @@ pub(in crate::board::local_board) fn move_task(
             .map_err(BoardError::from)?;
         return claim_task(tx, ctx, task, Some(&scope), ClaimResume::No, None);
     }
-    if holder
+    // A delegator may release the lease it delegated; reassignment above
+    // still requires plan privilege.
+    let held_by_other = holder
         .as_ref()
-        .is_some_and(|claim| claim.actor_id != ctx.actor_id)
-        && !privileged
-    {
+        .is_some_and(|claim| claim.actor_id != ctx.actor_id);
+    let released_by_delegator = holder.as_ref().is_some_and(|claim| {
+        claim
+            .record
+            .delegated_by
+            .as_ref()
+            .is_some_and(|delegator| *delegator == ctx.actor)
+    });
+    if held_by_other && !privileged && !released_by_delegator {
         return Err(invalid(
             "invalid_actor",
             format!("cannot move {task} held by another actor"),

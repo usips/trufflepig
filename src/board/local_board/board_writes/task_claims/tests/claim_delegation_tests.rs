@@ -50,14 +50,19 @@ fn delegated_claim_refreshes_on_holder_commits_not_delegator_commits() {
     assert_eq!(history[0].model.as_deref(), Some("Codex"));
     let entry = crate::board::local_board::read_entry(&conn, history[0].entry).unwrap();
     assert_eq!(entry.actor, coder);
-    let event_actor: String = conn
+    let (event_actor, to_whom, summary): (String, Option<String>, String) = conn
         .query_row(
-            "SELECT a.user||'@'||a.host||'/'||a.harness||'/'||a.session FROM events e JOIN actors a ON a.id=e.actor_id WHERE e.subject=?1",
+            "SELECT a.user||'@'||a.host||'/'||a.harness||'/'||a.session,e.to_whom,e.summary FROM events e JOIN actors a ON a.id=e.actor_id WHERE e.subject=?1",
             [history[0].entry.to_string()],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .unwrap();
-    assert_eq!(event_actor, coder.identity());
+    assert_eq!(event_actor, orchestrator.identity());
+    assert_eq!(to_whom.as_deref(), Some(coder.identity()).as_deref());
+    assert!(
+        summary.contains(&format!("(via {})", orchestrator.identity())),
+        "{summary}"
+    );
     let claimed_at = history[0].claimed_at;
     let coauthor = |harness: &str| CommitCoauthor {
         harness: HarnessLabel::parse(harness).unwrap(),
@@ -115,6 +120,168 @@ fn delegated_claim_refreshes_on_holder_commits_not_delegator_commits() {
 
 fn coder_delegator() -> BoardActor {
     actor("josh", "kimi", "orch")
+}
+
+#[test]
+fn delegated_claim_event_reaches_delegate_inbox_with_via_summary() {
+    let database = ClaimDatabase::new();
+    let mut backend =
+        LocalBoard::open_path(&database.path, std::time::Duration::from_secs(120)).unwrap();
+    let orchestrator = actor("josh", "kimi", "orch");
+    let coder = actor("josh", "codex", "c7");
+    backend
+        .handle(&BoardRequest::new(
+            coder.clone(),
+            BoardOp::Hello {
+                model: "Codex".into(),
+                effort: Some("xhigh".into()),
+            },
+        ))
+        .unwrap();
+    // Backdate the delegate's activity so the no-bump check is exact.
+    database
+        .connect()
+        .execute("UPDATE agent_sessions SET last_seen=1000", [])
+        .unwrap();
+    let task = TaskId::new(PlanId::new(1).unwrap(), 1).unwrap();
+    backend
+        .handle(&BoardRequest::new(
+            orchestrator.clone(),
+            BoardOp::TaskCreate {
+                plan: task.plan,
+                title: PlanTitle::new("Delegated lane").unwrap(),
+                to: None,
+                section: None,
+            },
+        ))
+        .unwrap();
+    let reply = backend
+        .handle(&BoardRequest::new(
+            orchestrator.clone(),
+            BoardOp::ClaimTask {
+                task,
+                scope: Some(EntryText::new("coder lane").unwrap()),
+                resume: ClaimResume::No,
+                delegate: Some(ClaimDelegate {
+                    harness: HarnessLabel::parse("codex").unwrap(),
+                    session: "c7".into(),
+                }),
+            },
+        ))
+        .unwrap();
+    let BoardResult::Change(change) = reply.result else {
+        panic!("expected change");
+    };
+    let conn = database.connect();
+    let (event_actor, to_whom, summary): (String, Option<String>, String) = conn
+        .query_row(
+            "SELECT a.user||'@'||a.host||'/'||a.harness||'/'||a.session,e.to_whom,e.summary FROM events e JOIN actors a ON a.id=e.actor_id WHERE e.subject=?1",
+            [change.entry.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(event_actor, orchestrator.identity());
+    assert_eq!(to_whom.as_deref(), Some(coder.identity()).as_deref());
+    assert!(
+        summary.contains(&format!("(via {})", orchestrator.identity())),
+        "{summary}"
+    );
+    let entry = crate::board::local_board::read_entry(&conn, change.entry).unwrap();
+    assert_eq!(entry.actor, coder);
+    let last_seen: i64 = conn
+        .query_row(
+            "SELECT last_seen FROM agent_sessions WHERE actor_id=(SELECT id FROM actors WHERE user=?1 AND host=?2 AND harness=?3 AND session=?4)",
+            rusqlite::params![coder.user, coder.host, coder.harness.as_str(), coder.session],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(last_seen, 1000);
+    let reply = backend
+        .handle(&BoardRequest::new(
+            coder.clone(),
+            BoardOp::Inbox {
+                after: None,
+                limit: 50,
+                repo_key: None,
+                all: false,
+            },
+        ))
+        .unwrap();
+    let BoardResult::Inbox(inbox) = reply.result else {
+        panic!("expected inbox");
+    };
+    let event = inbox
+        .events
+        .iter()
+        .find(|event| event.subject.to_string() == change.entry.to_string())
+        .unwrap_or_else(|| panic!("delegate inbox lacks the claim: {:?}", inbox.events));
+    assert_eq!(event.actor, orchestrator);
+    assert_eq!(event.to, Some(BoardRecipient::for_actor(&coder)));
+}
+
+#[test]
+fn delegator_releases_delegated_claim_by_moving_task() {
+    let database = ClaimDatabase::new();
+    let mut backend =
+        LocalBoard::open_path(&database.path, std::time::Duration::from_secs(120)).unwrap();
+    let orchestrator = actor("josh", "kimi", "orch");
+    let task = TaskId::new(PlanId::new(1).unwrap(), 1).unwrap();
+    backend
+        .handle(&BoardRequest::new(
+            orchestrator.clone(),
+            BoardOp::TaskCreate {
+                plan: task.plan,
+                title: PlanTitle::new("Delegated lane").unwrap(),
+                to: None,
+                section: None,
+            },
+        ))
+        .unwrap();
+    backend
+        .handle(&BoardRequest::new(
+            orchestrator.clone(),
+            BoardOp::ClaimTask {
+                task,
+                scope: Some(EntryText::new("coder lane").unwrap()),
+                resume: ClaimResume::No,
+                delegate: Some(ClaimDelegate {
+                    harness: HarnessLabel::parse("codex").unwrap(),
+                    session: "c7".into(),
+                }),
+            },
+        ))
+        .unwrap();
+    let error = backend
+        .handle(&BoardRequest::new(
+            actor("josh", "muse", "two"),
+            BoardOp::TaskMove {
+                task,
+                column: TaskColumn::Review,
+                to: None,
+            },
+        ))
+        .unwrap_err()
+        .to_string();
+    assert!(error.starts_with("invalid_actor:"), "{error}");
+    backend
+        .handle(&BoardRequest::new(
+            orchestrator,
+            BoardOp::TaskMove {
+                task,
+                column: TaskColumn::Todo,
+                to: None,
+            },
+        ))
+        .unwrap();
+    let conn = database.connect();
+    let claims = read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, i64::MAX, 120).unwrap();
+    assert_eq!(claims.len(), 1);
+    assert_eq!(claims[0].end_reason, Some(ClaimEndReason::Released));
+    assert!(claims[0].ended_at.is_some());
+    assert_eq!(
+        read_tasks(&conn, task.plan).unwrap()[0].column,
+        TaskColumn::Todo
+    );
 }
 
 #[test]
