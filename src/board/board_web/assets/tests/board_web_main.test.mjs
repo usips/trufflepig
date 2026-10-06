@@ -17,12 +17,23 @@ const MISMATCH = "This link offered a different board token; the tab kept its ex
 const realFetch = globalThis.fetch;
 const realSetInterval = globalThis.setInterval;
 globalThis.setInterval = () => 0;
-after(() => { globalThis.fetch = realFetch; globalThis.setInterval = realSetInterval; });
+after(() => {
+  // Every imported module instance registered pagehide on the window live at
+  // its import; fire them all so reconnect timers and election state stop
+  // before the real fetch returns (a relative URL would throw into the
+  // reconnect path and keep Node ≤22's event loop alive forever).
+  for (const listeners of windows) {
+    for (const listener of listeners.get("pagehide") || []) listener({});
+  }
+  globalThis.fetch = realFetch;
+  globalThis.setInterval = realSetInterval;
+});
 
 let fakeUrl = new URL("https://board.test/");
 let fetchCalls = [];
 let fetchHandler = null;
 let windowListeners = new Map();
+const windows = [];
 let imports = 0;
 
 function boardReply(op, data, seq = "40") {
@@ -82,6 +93,7 @@ function setup({ hash = "", stored = "", seen = null, handler }) {
     pushState: (_, __, url) => { fakeUrl = new URL(url, fakeUrl.href); },
   };
   windowListeners = new Map();
+  windows.push(windowListeners);
   globalThis.window = {
     addEventListener: (type, listener) => {
       if (!windowListeners.has(type)) windowListeners.set(type, []);
