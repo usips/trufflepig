@@ -36,7 +36,9 @@ const RELEVANT_EVENT: &str = concat!(
     "OR EXISTS(SELECT 1 FROM entries evidence JOIN plan_repos scope ON scope.plan_id=evidence.plan_id ",
     "WHERE evidence.seq=e.seq AND scope.repo_key=?8))) ",
     "OR (e.kind='feedback' AND EXISTS(SELECT 1 FROM entries report JOIN actors author ON author.id=report.actor_id ",
-    "WHERE report.kind='feedback' AND author.user=?3 AND author.harness=?4 AND 'E'||report.id=e.subject)))"
+    "WHERE report.kind='feedback' AND author.user=?3 AND author.harness=?4 AND 'E'||report.id=e.subject ",
+    "AND (e.to_whom IS NULL OR e.to_whom IN (?3,?4,?5) ",
+    "OR e.to_whom=author.user||'@'||author.host||'/'||author.harness||'/'||author.session))))"
 );
 
 pub(super) fn inbox(

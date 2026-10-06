@@ -129,3 +129,28 @@ fn oversized_write_reports_size_code_instead_of_invalid_state() {
         "CLI shows the size error, got: {rendered}"
     );
 }
+
+#[test]
+fn newer_schema_refusal_advises_upgrade() {
+    let directory = crate::board::board_test_support::scratch("board-schema-");
+    let config = crate::board::BoardConfig::for_database(directory.path().join("board.sqlite3"));
+    let args: Vec<String> = ["board", "inbox"].map(str::to_owned).into();
+    let options = crate::cli::parse(&args).unwrap();
+    let command = board_grammar::parse(&options, None).unwrap();
+    let context = crate::diagnostics::RequestContext::new(None, None);
+    let error = anyhow::anyhow!("board_unavailable: schema version 99 is newer than supported 7");
+    let refusal = crate::board::unavailable_or_queue(
+        &command,
+        &options,
+        &context,
+        &config,
+        directory.path(),
+        error,
+    )
+    .unwrap_err();
+    assert_eq!(
+        refusal.to_string(),
+        "board_unavailable: database schema 99 is newer than this trufflepig (7); \
+         upgrade trufflepig"
+    );
+}

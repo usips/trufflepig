@@ -254,3 +254,31 @@ fn own_holder_resume_returns_existing_entry_through_dispatch() {
         .unwrap();
     assert_eq!(events_after, events_before);
 }
+
+#[test]
+fn own_resume_returns_the_claim_entry_seq() {
+    let database = ClaimDatabase::new();
+    let mut conn = database.connect();
+    let holder = actor("josh", "muse", "worktree-one");
+    let task = carved_task(&mut conn, &holder, 1000, "live lane");
+    let before = active_claim(&conn, task, 1000, 120)
+        .unwrap()
+        .unwrap()
+        .record;
+    let entry_seq = conn
+        .query_row(
+            "SELECT seq FROM entries WHERE id=?1",
+            [sql_number(before.entry.get())],
+            |row| row_number(row, 0),
+        )
+        .unwrap();
+    let reply = write(&mut conn, &holder, 1050, |tx, ctx| {
+        claim_task(tx, ctx, task, None, ClaimResume::Idle, None)
+    })
+    .unwrap();
+    let BoardResult::Change(change) = reply.result else {
+        panic!("expected change")
+    };
+    assert_eq!(change.entry, before.entry);
+    assert_eq!(change.seq.get(), entry_seq);
+}

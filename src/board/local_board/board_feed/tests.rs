@@ -1,4 +1,5 @@
 mod event_snapshot_tests;
+mod feedback_gate_tests;
 mod inbox_planless_tests;
 mod inbox_reminder_cap_tests;
 mod inbox_scope_tests;

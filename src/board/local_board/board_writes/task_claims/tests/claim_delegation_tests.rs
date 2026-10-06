@@ -218,3 +218,80 @@ fn delegated_claim_event_reaches_delegate_inbox_with_via_summary() {
     assert_eq!(event.actor, orchestrator);
     assert_eq!(event.to, Some(BoardRecipient::for_actor(&coder)));
 }
+
+#[test]
+fn delegation_takeover_notifies_the_stale_holder() {
+    let database = ClaimDatabase::new();
+    let mut conn = database.connect();
+    let old = actor("josh", "muse", "old");
+    let task = carved_task(&mut conn, &old, 1000, "stale scope");
+    let orchestrator = actor("josh", "kimi", "orch");
+    write(&mut conn, &orchestrator, 1121, |tx, ctx| {
+        claim_task(
+            tx,
+            ctx,
+            task,
+            Some(&EntryText::new("delegated lane").unwrap()),
+            ClaimResume::No,
+            Some(&ClaimDelegate {
+                harness: HarnessLabel::parse("codex").unwrap(),
+                session: "c7".into(),
+            }),
+        )
+    })
+    .unwrap();
+    let (recipient, summary): (String, String) = conn
+        .query_row(
+            "SELECT to_whom,summary FROM events ORDER BY seq DESC LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(recipient, old.identity());
+    assert!(summary.contains("took over stale claim from"), "{summary}");
+}
+
+#[test]
+fn unseen_delegate_gets_no_last_seen() {
+    let database = ClaimDatabase::new();
+    let mut conn = database.connect();
+    let orchestrator = actor("josh", "kimi", "orch");
+    let coder = actor("josh", "codex", "c7");
+    let reply = write(&mut conn, &orchestrator, 1000, |tx, ctx| {
+        create_task(
+            tx,
+            ctx,
+            PlanId::new(1).unwrap(),
+            &PlanTitle::new("Delegated lane").unwrap(),
+            None,
+            None,
+        )
+    })
+    .unwrap();
+    let BoardResult::Change(created) = reply.result else {
+        panic!("expected change")
+    };
+    let task = created.task.unwrap();
+    write(&mut conn, &orchestrator, 1001, |tx, ctx| {
+        claim_task(
+            tx,
+            ctx,
+            task,
+            Some(&EntryText::new("coder lane").unwrap()),
+            ClaimResume::No,
+            Some(&ClaimDelegate {
+                harness: HarnessLabel::parse("codex").unwrap(),
+                session: "c7".into(),
+            }),
+        )
+    })
+    .unwrap();
+    let last_seen: i64 = conn
+        .query_row(
+            "SELECT last_seen FROM agent_sessions WHERE actor_id=(SELECT id FROM actors WHERE user=?1 AND host=?2 AND harness=?3 AND session=?4)",
+            rusqlite::params![coder.user, coder.host, coder.harness.as_str(), coder.session],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(last_seen, 0, "a delegate that never acted was never seen");
+}

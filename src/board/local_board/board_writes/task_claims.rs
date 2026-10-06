@@ -113,7 +113,8 @@ pub(in crate::board::local_board) fn claim_task(
             .filter(|claim| claim.actor_id == ctx.actor_id)
         {
             // The caller already holds the live lease: refresh it in place,
-            // keeping the original claim row, entry, and claimed_at.
+            // keeping the original claim row, entry, and claimed_at. No event
+            // is written, so the receipt points at the claim entry's own seq.
             let entry = holder.record.entry;
             if let Some(text) = scope {
                 tx.execute(
@@ -139,7 +140,15 @@ pub(in crate::board::local_board) fn claim_task(
                 )
                 .map_err(sql_error)?;
             }
-            return Ok(ctx.change_reply(entry, Some(task.plan), None, Some(task)));
+            let seq = EventSeq::new(
+                tx.query_row(
+                    "SELECT seq FROM entries WHERE id=?1",
+                    [sql_number(entry.get())],
+                    |row| row_number(row, 0),
+                )
+                .map_err(sql_error)?,
+            );
+            return Ok(ctx.change_reply_at(seq, entry, Some(task.plan), Some(task)));
         }
     }
     let scope = scope
@@ -220,15 +229,18 @@ pub(in crate::board::local_board) fn claim_task(
     let previous = holder
         .as_ref()
         .filter(|claim| claim.actor_id != ctx.actor_id);
-    // A delegated claim notifies its holder: the event is authored by the
-    // delegator and addressed to the delegate, so inbox filtering keeps it
-    // visible instead of hiding it as an own event.
-    let recipient = match &delegation {
-        Some(resolved) => Some(BoardRecipient::for_actor(&resolved.actor)),
-        None => previous
-            .as_ref()
-            .map(|claim| BoardRecipient::for_actor(&claim.record.actor)),
-    };
+    // A takeover notifies the previous holder, even when a delegation takes
+    // over their stale lease. A fresh delegated claim notifies the delegate:
+    // the event is authored by the delegator and addressed to the delegate,
+    // so inbox filtering keeps it visible instead of hiding it as an own event.
+    let recipient = previous
+        .as_ref()
+        .map(|claim| BoardRecipient::for_actor(&claim.record.actor))
+        .or_else(|| {
+            delegation
+                .as_ref()
+                .map(|resolved| BoardRecipient::for_actor(&resolved.actor))
+        });
     let preview_end = scope
         .as_str()
         .char_indices()

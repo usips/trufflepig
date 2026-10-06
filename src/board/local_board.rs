@@ -70,11 +70,34 @@ impl WriteContext {
         revision: Option<PlanRevision>,
         task: Option<TaskId>,
     ) -> BoardReply {
+        self.reply_at(self.seq, entry, plan, revision, task)
+    }
+
+    /// A receipt for an in-place refresh points at an existing event
+    /// sequence rather than the unwritten next one.
+    fn change_reply_at(
+        &self,
+        seq: EventSeq,
+        entry: EntryId,
+        plan: Option<PlanId>,
+        task: Option<TaskId>,
+    ) -> BoardReply {
+        self.reply_at(seq, entry, plan, None, task)
+    }
+
+    fn reply_at(
+        &self,
+        seq: EventSeq,
+        entry: EntryId,
+        plan: Option<PlanId>,
+        revision: Option<PlanRevision>,
+        task: Option<TaskId>,
+    ) -> BoardReply {
         BoardReply::new(
             "local",
             BoardResult::Change(BoardChange {
                 entry,
-                seq: self.seq,
+                seq,
                 plan,
                 revision,
                 task,
@@ -222,8 +245,9 @@ fn ensure_actor(tx: &Transaction<'_>, actor: &BoardActor, now: i64) -> Result<i6
 }
 
 /// Ensures delegate rows without marking activity.
-/// Delegation resolves a holder that may never have acted; creating its
-/// session row must leave an existing `last_seen` untouched.
+/// Delegation resolves a holder that may never have acted: a new session
+/// row starts with `last_seen` 0 (never seen) and an existing row keeps
+/// its stored value untouched.
 fn ensure_actor_without_seen_bump(
     tx: &Transaction<'_>,
     actor: &BoardActor,
@@ -231,7 +255,7 @@ fn ensure_actor_without_seen_bump(
 ) -> Result<i64, BoardError> {
     let id = insert_actor(tx, actor)?;
     tx.execute(
-        "INSERT OR IGNORE INTO agent_sessions(actor_id,first_seen,last_seen) VALUES(?1,?2,?2)",
+        "INSERT OR IGNORE INTO agent_sessions(actor_id,first_seen,last_seen) VALUES(?1,?2,0)",
         params![id, now],
     )
     .map_err(sql_error)?;
