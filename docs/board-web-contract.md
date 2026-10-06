@@ -52,9 +52,11 @@ revision CAS.
 
 ## HTTP surface and typed operations
 
-HTTP route version `v1` and typed `BOARD_API = 5` are independent contracts. The public shell
-supplies the typed API value; every JSON mutation/read envelope uses that value. Mismatches fail
-`board_api_mismatch` without negotiation. Errors are `{"error":{"code":CODE,"message":TEXT}}`.
+HTTP route version `v1` and the typed
+[`BOARD_API`](board-contract.md#backend-transport-and-deadlines) value are independent contracts.
+The public shell supplies the typed API value; every JSON mutation/read envelope uses that value.
+Mismatches fail `board_api_mismatch` without negotiation. Errors are
+`{"error":{"code":CODE,"message":TEXT}}`.
 
 | Method and route | Request or result |
 |---|---|
@@ -66,8 +68,8 @@ supplies the typed API value; every JSON mutation/read envelope uses that value.
 | `GET /stream/stream_election.js` | Stream modules |
 | `GET /feedback_triage.js`, `/board_reader.js`, `/board_entries.js` | UI modules |
 | `POST /api/v1/challenge` | Unauthenticated ownership proof; Host/Origin/JSON checks apply |
-| `POST /api/v1/board` | `{ "api": 5, "op": BoardOp }`; typed `BoardReply` |
-| `POST /api/v1/ingest` | `{ "api": 5 }`; single-flight router ingest relay |
+| `POST /api/v1/board` | `{ "api": BOARD_API, "op": BoardOp }`; typed `BoardReply` |
+| `POST /api/v1/ingest` | `{ "api": BOARD_API }`; single-flight router ingest relay |
 | `GET /api/v1/render/plan/P7` or `P7@12` | `{api, revision, snapshot_seq, html, headings}` |
 | `GET /api/v1/render/diff/P7@10..12` | `{api, before, after, hunks, snapshot_seq}` |
 | `GET /api/v1/render/proposal/E80` | `{api, entry, before, hunks, snapshot_seq}` |

@@ -55,18 +55,20 @@ trufflepig-agent board task P7.3 review
 ```
 
 Use `--resume` only for your own harness's claims. Bare `--resume` refreshes
-your own live claim immediately and replaces another session's interrupted
-claim only after its lease has been idle for at least ten minutes;
-`--resume=E#` (the claim entry from `board show P7.3`) takes over
-immediately. Omitting scope inherits the current lease scope; resuming ends
-the prior lease as `resumed` and records that actor.
+your own live claim in place — same claim entry, no new entry or event — and
+replaces another session's interrupted claim only after its lease has been idle
+for at least ten minutes; `--resume=E#` (the claim entry from
+`board show P7.3`) takes over immediately. Write `--resume=E5`, never the space
+form `--resume E5`, which is refused with `use --resume=E5`. Omitting scope
+inherits the current lease scope; taking over ends the prior lease as `resumed`
+and records that actor.
 
 An orchestrator never claims for itself: it carves the task, then delegates with
-`board claim P7.3 SCOPE --for HARNESS/SESSION`, naming the coder session that
-holds the lease under the orchestrator's user and host. Only the plan owner's
-user may delegate; the lease lands in the delegate's inbox with
-`(via delegator)`, and the delegator may release it by moving the task. Claim
-views render the holder with `(via delegator)`.
+`board claim P7.3 SCOPE --for HARNESS/SESSION`, naming the coder session. The
+delegation rules live in the CLI contract:
+https://github.com/usips/trufflepig/blob/master/docs/board-cli-contract.md#commands
+The lease lands in the delegate's inbox with `(via delegator)`, and the
+delegator may release it by moving the task.
 
 On `claim_conflict`, choose another open task or address the holder using
 `board post P7 question "..." --to codex`. Never work on another session's

@@ -10,7 +10,7 @@ use std::{net::TcpStream, sync::Arc, time::Instant};
 
 /// 202 immediately with the flight ticket; one router scan runs at a time,
 /// its completion published to stream subscribers as an `ingest` frame, and
-/// mid-scan POSTs take the next ticket and rerun until one scan runs clean.
+/// mid-scan POSTs take the next ticket and rerun once per dirty flag.
 pub(super) fn ingest_accepted(mut stream: TcpStream, state: &Arc<BoardWebState>) {
     let claim = state.ingest.begin();
     if claim.leads {

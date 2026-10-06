@@ -1,17 +1,20 @@
 # Trufflepig agent integration
 
-Shared search and plan board skills with an audited CLI wrapper for Codex, Claude Code, Grok Build, Kimi Code, Muse Code, and omp.
-The [plan board skill](skills/trufflepig-plan-board/SKILL.md) coordinates claims, revisions, commits, and feedback; the [web contract](../../docs/board-web-contract.md) defines the dashboard.
-The search skill makes Trufflepig the default for project discovery, with targeted
-fallbacks for unavailable or unsupported operations. Optional hooks steer shell
-searches toward it (see [Other harness hooks](#other-harness-hooks)); no MCP
-server is required.
+Shared search and plan board skills with an audited CLI wrapper for Codex, Claude Code,
+Grok Build, Kimi Code, Muse Code, and omp. The [plan board
+skill](skills/trufflepig-plan-board/SKILL.md) coordinates claims, revisions, commits, and
+feedback; the [web contract](../../docs/board-web-contract.md) defines the dashboard. The
+search skill makes Trufflepig the default for project discovery, with targeted fallbacks for
+unavailable or unsupported operations. Optional hooks steer shell searches toward it (see
+[Other harness hooks](#other-harness-hooks)); no MCP server is required.
 
 ## Install
 
-Requires Python 3, `trufflepig` on `PATH`, and the wrapper destination on `PATH`.
-CPU installation is `cargo install --path . --locked`; retain `--features semantic-cuda` when updating an existing GPU installation.
-Service installation requires the selected binary's `--board-api-version` probe to return API `5` within five seconds, before any writes.
+Requires Python 3, `trufflepig` on `PATH`, and the wrapper destination on `PATH`. CPU
+installation is `cargo install --path . --locked`; retain `--features semantic-cuda` when
+updating an existing GPU installation. Service installation probes the selected binary's
+`--board-api-version` before any writes: it must return the current [board
+API](../../docs/board-contract.md#backend-transport-and-deadlines) within five seconds.
 
 ```sh
 plugins/trufflepig-agent/install.sh --codex --systemd --check "$PWD"
@@ -30,12 +33,11 @@ for discovery, session lifecycle, permissions, verification, and removal.
 `--grok` installs both skills into `$GROK_HOME/skills` (default
 `~/.grok/skills`). See [Grok integration](grok.md) for discovery and verification.
 
-`--codex` symlinks both skills into `~/.agents/skills`, with automatic
-selection enabled. `--project DIR` installs into `DIR/.agents/skills`; avoid
-installing the same skill at both scopes for Codex. Existing links to this
-checkout are reusable; conflicting unmanaged destinations fail without replacement.
-`--bin DIR` changes the default `~/.local/bin` wrapper destination. With no
-selectors, the installer attempts Kimi and Muse installation.
+`--codex` symlinks both skills into `~/.agents/skills`, with automatic selection enabled.
+`--project DIR` installs into `DIR/.agents/skills`; avoid installing the same skill at both
+scopes for Codex. Existing links to this checkout are reusable; conflicting unmanaged
+destinations fail without replacement. `--bin DIR` changes the default `~/.local/bin` wrapper
+destination. With no selectors, the installer attempts Kimi and Muse installation.
 
 `--omp` links both skills and a session-attribution extension under
 omp's active agent directory (default `~/.omp/agent`), honoring its environment
@@ -54,19 +56,20 @@ It builds one Cargo target with an installed nightly and returns bounded JSON
 with compilation provenance and source spans. The symlink installation includes
 the helper and its reference; no additional wrapper or daemon setup is needed.
 
-The Codex, Claude, and Grok installers configure a data-only `agent-runtime.json` under
-`$XDG_CONFIG_HOME/trufflepig` (default `~/.config/trufflepig`). Its `runtime_dir`
-is `~/.cache/codex-tmp/trufflepig-agent` by default; `--runtime-dir DIR` selects
-another disk-backed directory the sandbox permits writing. `spool_dir` is its
-`spool` child. The wrapper supplies that spool to the CLI, and `--systemd` installs
-it in the router's environment. Bare CLI callers can set `TRUFFLEPIG_SPOOL_DIR`
-to the same path. Index databases retain their normal cache locations.
+Codex, Claude, and Grok installers configure a data-only `agent-runtime.json` under
+`$XDG_CONFIG_HOME/trufflepig` (default `~/.config/trufflepig`). `runtime_dir` defaults to
+`~/.cache/codex-tmp/trufflepig-agent`; `--runtime-dir DIR` selects another disk-backed
+directory the sandbox permits writing. `spool_dir` is its `spool` child. The wrapper supplies
+that spool to the CLI, and `--systemd` installs it in the router's environment. Bare CLI
+callers set `TRUFFLEPIG_SPOOL_DIR` to the same path. Index databases keep normal cache locations.
 
 `--systemd` installs the router; opt-in `--board` installs the foreground dashboard
-on an ephemeral loopback port. Both enable/restart their user service and pin the same absolute
-board database and system runtime/token directory; `trufflepig board web` prints the current bootstrap URL. Router restarts include all
-service-owned children. `--check ROOT` searches ROOT as a singleton and reads verified
-source; repeat inside Codex to verify sandbox access. Missing results or runtime errors fail:
+on a stable loopback port (see the [web contract](../../docs/board-web-contract.md)). Both pin
+the same absolute board database and system runtime/token directory. Reinstalling the router
+restarts it and starts the board only if it was running; `trufflepig board web` prints the
+current bootstrap URL. Router restarts include all service-owned children. `--check ROOT`
+searches ROOT as a singleton and reads verified source; repeat inside Codex to verify sandbox
+access. Missing results or runtime errors fail:
 
 ```sh
 python3 plugins/trufflepig-agent/scripts/check_agent.py "$PWD"
@@ -123,25 +126,23 @@ establishes compiler-equivalent binding resolution or automatic parent delivery.
 
 ## Attribution and audit
 
-`trufflepig-agent` injects compact lines output, client, session, and detailed
-diagnostics unless explicitly supplied. Codex markers identify the harness;
-`CODEX_THREAD_ID` groups its calls across working directories, with
-`CODEX_SESSION_ID` as a fallback. Explicit CLI `--client`/`--session` win over
-`TRUFFLEPIG_AGENT_HARNESS`/`TRUFFLEPIG_SESSION`, which win over detection.
-Claude attribution uses its session environment hook as described in
-[Claude integration](claude-code.md). [omp integration](omp.md) supplies session
-identity in each shell invocation. Kimi/Muse retain their own session variables
-and session-start markers; a marker older than twelve hours is ignored. Without
-session information, attribution falls back to a harness/directory/day identifier.
+`trufflepig-agent` injects compact lines output, client, session, and detailed diagnostics
+unless explicitly supplied. Codex markers identify the harness; `CODEX_THREAD_ID` groups its
+calls across working directories, with `CODEX_SESSION_ID` as a fallback. Explicit CLI
+`--client`/`--session` win over `TRUFFLEPIG_AGENT_HARNESS`/`TRUFFLEPIG_SESSION`, which win
+over detection. Claude attribution uses its session environment hook as described in
+[Claude integration](claude-code.md). [omp integration](omp.md) supplies session identity in
+each shell invocation. Kimi/Muse retain their own session variables and session-start
+markers; a marker older than twelve hours is ignored. Without session information,
+attribution falls back to a harness/directory/day identifier.
 
-Each call logs arguments, exit code, latency, byte count, coverage, truncation, and struggle signals.
-Board/feedback text is redacted. Logs use `$TRUFFLEPIG_AGENT_LOG_DIR`, otherwise
-`$XDG_STATE_HOME/trufflepig/agent-audit` (default `~/.local/state/trufflepig`). If
-unwritable, audit/recent-query state uses the configured runtime directory.
-Without runtime configuration, fallback uses `$TMPDIR/trufflepig-<uid>` or
-`~/.cache/codex-tmp/trufflepig-<uid>`; set `TMPDIR` to disk-backed storage.
-`trufflepig-audit` reads primary and fallback logs without double counting a
-shared directory. Logging does not change the CLI's stdout or exit code.
+Each call logs arguments, exit code, latency, byte count, coverage, truncation, and struggle
+signals. Board/feedback text is redacted. Logs use `$TRUFFLEPIG_AGENT_LOG_DIR`, otherwise
+`$XDG_STATE_HOME/trufflepig/agent-audit` (default `~/.local/state/trufflepig`). If unwritable,
+audit/recent-query state uses the configured runtime directory. Without runtime configuration,
+fallback uses `$TMPDIR/trufflepig-<uid>` or `~/.cache/codex-tmp/trufflepig-<uid>`; set `TMPDIR`
+to disk-backed storage. `trufflepig-audit` reads primary and fallback logs without double
+counting a shared directory. Logging does not change the CLI's stdout or exit code.
 
 ```sh
 trufflepig-audit --harness codex --calls
@@ -149,34 +150,31 @@ trufflepig-audit --session SESSION --json
 trufflepig audit SESSION
 ```
 
-`TRUFFLEPIG_AGENT_MODEL`/`TRUFFLEPIG_AGENT_EFFORT` supply claims only to board/feedback. `TRUFFLEPIG_BINARY` selects the executable; `TRUFFLEPIG_AGENT_DIAGNOSTICS` selects
-`detailed` (default), `metadata`, or `off`. Explicit `--json` returns fields omitted
-by compact output. Wrapper audit still records query arguments independently of
-the daemon diagnostics setting. Audit follow-through is a heuristic, not evidence
-of task success or measured token savings.
+`TRUFFLEPIG_AGENT_MODEL`/`TRUFFLEPIG_AGENT_EFFORT` supply claims only to board/feedback.
+`TRUFFLEPIG_BINARY` selects the executable; `TRUFFLEPIG_AGENT_DIAGNOSTICS` selects `detailed`
+(default), `metadata`, or `off`. Explicit `--json` returns fields omitted by compact output.
+Wrapper audit still records query arguments independently of the daemon diagnostics setting.
+Audit follow-through is a heuristic, not evidence of task success or measured token savings.
 
 ## Other harness hooks
 
 Kimi's optional `--kimi-hooks` and the Muse manifest use `hooks/session-start.sh`
 for attribution and best-effort daemon startup.
 
-`hooks/steer-search.py` steers ordinary search in checkouts of registered
-workspace members, including linked worktrees. It classifies each shell search
-(`definition`, `body`, `outline`, `references`, `regex`, `concept`, `files`) and
-source read (`read`: `sed -n A,Bp F` → `show path:F:A-B`, `cat F` → `map F`),
-resolving paths against `cd DIR`/`git -C DIR`, and names the equivalent command
-(prefixed with `cd CHECKOUT &&` when that is another checkout). Pipe filters,
-copies (`cat F > out`), logs and command output, other revisions, filesystem
-`find` actions, shell variables, and paths outside the checkout are never steered.
-Nudges are full for an agent's first search of a class, one line after; piped or
-chained `trufflepig-agent` calls get a tip that the footer was lost. Modes:
-
-| Mode | Behavior |
-| --- | --- |
-| `off` | Nothing. |
-| `nudge` | Allow; add the equivalent command as context after the search (Claude default). |
-| `block` | Deny until one Trufflepig call from this directory in 45 minutes (Kimi/Muse default). |
-| `strict` | Deny `definition`, `body`, `outline`, `references` with the equivalent command unless a Trufflepig call from this checkout returned no hits or failed in the last 10 minutes, or the command ends with `# tp-fallback: reason`; nudge the rest, including `read`. |
+`hooks/steer-search.py` steers ordinary search in checkouts of registered workspace members,
+including linked worktrees. It classifies each shell search (`definition`, `body`, `outline`,
+`references`, `regex`, `concept`, `files`) and source read (`read`: `sed -n A,Bp F` →
+`show path:F:A-B`, `cat F` → `map F`), resolving paths against `cd DIR`/`git -C DIR`, and
+names the equivalent command (prefixed with `cd CHECKOUT &&` when that is another checkout).
+Pipe filters, copies (`cat F > out`), logs and command output, other revisions, filesystem
+`find` actions, shell variables, and paths outside the checkout are never steered. Nudges are
+full for an agent's first search of a class, one line after; piped or chained
+`trufflepig-agent` calls get a tip that the footer was lost. Modes: `off` does nothing; `nudge`
+allows and adds the equivalent command as context after the search (Claude default); `block`
+denies until one Trufflepig call from this directory in 45 minutes (Kimi/Muse default);
+`strict` denies `definition`, `body`, `outline`, and `references` with the equivalent command
+unless a Trufflepig call from this checkout returned no hits or failed in the last 10 minutes,
+or the command ends with `# tp-fallback: reason`; it nudges the rest, including `read`.
 
 `TRUFFLEPIG_AGENT_STEER` overrides `steer.<harness>` in `agent-runtime.json`,
 which `install.sh --steer MODE` records for the selected Claude, Kimi, or Muse
@@ -195,6 +193,7 @@ python3 -m unittest discover -s plugins/trufflepig-agent/tests -p 'test_*.py'
 python3 evaluation/navigation_replay.py --trufflepig target/debug/trufflepig
 ```
 
-Use tasks with identical required source evidence to compare ordinary tools with Trufflepig. Count output tokens with `o200k_base`
+Use tasks with identical required source evidence to compare ordinary tools with Trufflepig.
+Count output tokens with `o200k_base`
 when available, calls, and completed evidence; do not substitute byte estimates
 for missing tokenizer measurements or infer billed usage from replay results.

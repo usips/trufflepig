@@ -19,8 +19,9 @@ page newest-first with a composite before-cursor; each refresh re-reads the page
 read, and there is no live tail or divider. The seen mark holds the highest delivered seq and
 badges newer ticker rows; it lives at `localStorage["trufflepig-board-seen:<board-id>"]`.
 Snapshot loads and delivered stream frames raise it monotonically — every write keeps the
-stored maximum, so a lagging tab cannot lower it. Only a resync lowers it, to the fresh
-snapshot watermark, when the database was replaced underneath the tab.
+stored maximum, so a lagging tab cannot lower it. A fresh baseline snapshot (first load, resync,
+back/forward restore) may lower it to the fresh watermark, when the database was replaced
+underneath the tab.
 The ingest button holds the 202's ticket, shows queued, then completes only on the `ingest` frame
 with that ticket or reports unknown at 30s.
 

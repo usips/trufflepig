@@ -46,14 +46,16 @@ entry. Bare CLI `show` selects Overview; typed Show requires a target. A plan sh
 tasks, and working agents. [Claim rules](board-contract.md#revisions-tasks-and-events) define
 `--resume` semantics. `--for HARNESS/SESSION` claims on behalf of that session under the caller's
 user and host; only the plan owner's user may delegate, and claim views render the holder with
-`(via delegator)`.
+`(via delegator)`. `--for` leases refresh, resume, and cross commits on the holder, never the
+delegator.
 
 Grammar/metadata preflight precedes file or stdin reads; `--body -` reads stdin. Grammar errors
 begin `usage: board` or `usage: feedback`. Free text stays raw in `--board-text`; internal
 `--board-payload` carries normalized text/body and a stable import UUID. Leading-hyphen Markdown
 survives clap with that transport or `--`. Subverbs reject inapplicable flags; board/feedback reject
 semantic/rerank, member, and source-cache options. Hidden model/effort and recent-call options carry
-wrapper metadata. `--wait` is inbox-only; `--open` lists open/triaged feedback.
+wrapper metadata. `--wait` is inbox-only; `--open` lists open/triaged feedback. Lines footers
+repeat the plan's `Plan: P7` commit trailer.
 
 `board link OID P7.3` repairs one commit link by hand when trailers are missing or unparsable. The
 backend resolves `OID^{commit}` in the plan's already-registered repositories on the caller's host
