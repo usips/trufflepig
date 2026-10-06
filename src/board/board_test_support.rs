@@ -1,6 +1,7 @@
 //! Disk-backed scratch for board regressions, removed by each test's TempDir.
 //! Scratch directories are owner-only because board opens refuse
 //! group/world-accessible database parents they did not create.
+use std::io::Read;
 use std::path::PathBuf;
 
 pub(crate) fn scratch(prefix: &str) -> tempfile::TempDir {
@@ -25,4 +26,19 @@ pub(crate) fn scratch(prefix: &str) -> tempfile::TempDir {
         builder.permissions(std::fs::Permissions::from_mode(0o700));
     }
     builder.tempdir_in(parent).unwrap()
+}
+
+/// Reads into `buffer`, retrying interrupted syscalls: signal tests run
+/// beside blocking test reads under the full suite, so a raw `read` can
+/// return `ErrorKind::Interrupted`, which callers must retry.
+pub(crate) fn read_ignoring_interrupts(
+    stream: &mut std::net::TcpStream,
+    buffer: &mut [u8],
+) -> std::io::Result<usize> {
+    loop {
+        match stream.read(buffer) {
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            result => return result,
+        }
+    }
 }

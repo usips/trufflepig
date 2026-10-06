@@ -112,14 +112,21 @@ fn post_landing_as_a_scan_completes_still_gets_a_scan() {
     let leader = flight.begin();
     assert!(leader.leads);
     let gate = Arc::new(Barrier::new(2));
+    let rerun_started = Arc::new(Barrier::new(2));
     let scans = Arc::new(AtomicUsize::new(0));
     let shared = &flight;
     let (first, second) = std::thread::scope(|scope| {
         let worker_gate = Arc::clone(&gate);
+        let worker_rerun_started = Arc::clone(&rerun_started);
         let worker_scans = Arc::clone(&scans);
         scope.spawn(move || {
             relay_flight(shared, || {
                 let scan = worker_scans.fetch_add(1, Ordering::SeqCst) + 1;
+                // Announce the rerun only after settle promoted the next
+                // ticket, so a POST landing now must mint a following one.
+                if scan == 2 {
+                    worker_rerun_started.wait();
+                }
                 // Hold the first two scans open so each POST lands
                 // mid-scan, inside the completion race window.
                 if scan <= 2 {
@@ -132,6 +139,7 @@ fn post_landing_as_a_scan_completes_still_gets_a_scan() {
         // running scan's ticket.
         let first = flight.begin();
         gate.wait();
+        rerun_started.wait();
         let second = flight.begin();
         gate.wait();
         (first, second)
