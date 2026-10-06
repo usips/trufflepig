@@ -1,10 +1,14 @@
-import { describe, it } from "node:test";
+import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import {
   INGEST_TIMEOUT_MS,
   INGEST_UNKNOWN_MESSAGE,
+  createIngestReceiptCache,
   resolveIngestEvent,
 } from "../board_ingest.js";
+import { installDomShim, resetDomShim } from "./support/dom_shim.mjs";
+import { createBoardDom } from "../board_dom.js";
+import { createBoardViews } from "../board_views.js";
 
 const OWN = "ticket-own";
 const FOREIGN = "ticket-foreign";
@@ -105,5 +109,65 @@ describe("ingest receipt cache", () => {
     for (let id = 0; id < 9; id++) cache.observe({ ticket: `ticket-${id}` });
     assert.equal(cache.take("ticket-0"), undefined);
     assert.deepEqual(cache.take("ticket-8"), { ticket: "ticket-8" });
+  });
+});
+
+// The receipt cache can deliver a receipt before its 202 resolves; the
+// overview control must keep that receipt's notice as the last word.
+installDomShim();
+beforeEach(() => resetDomShim());
+
+function boardState() {
+  return {
+    clockOffsetMs: 0, formDrafts: new Map(), formStatuses: new Map(), pendingForms: new Set(),
+    seenAtOpen: null, ingestPending: false, ingestTicket: null, ingestTimer: null,
+    ingestReceipts: createIngestReceiptCache(),
+  };
+}
+
+function viewsContext(state, dom, overrides = {}) {
+  const noop = () => {};
+  return {
+    state, dom, board: noop, jsonFetch: noop, navigate: noop, scheduleRefresh: noop,
+    submitMutation: noop, notice: noop, apiVersion: 1,
+    entryRecord: record => (record?.entry && typeof record.entry === "object" ? record.entry : record),
+    collection: (data, key) => {
+      if (!Array.isArray(data?.[key])) throw new Error(`Board reply is missing its ${key} collection.`);
+      return data[key];
+    },
+    permitted: () => false, nextAfter: () => null, pageParams: route => ({ ...route }),
+    queryFilters: () => ({}), postKinds: ["note"], entryKinds: ["note"],
+    columns: ["todo", "doing", "review", "done", "blocked"],
+    errorMessage: error => error?.message || String(error),
+    ...overrides,
+  };
+}
+
+async function flush() {
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+}
+
+describe("ingest early receipt", () => {
+  it("shows the failure when the receipt lands before the 202 resolves", async () => {
+    const state = boardState();
+    const dom = createBoardDom(state);
+    const notices = [];
+    const jsonFetch = async (url, options) => {
+      assert.equal(url, "/api/v1/ingest");
+      assert.equal(options.method, "POST");
+      state.ingestReceipts.observe({ ticket: OWN, error: { message: "disk full" } });
+      return { ingest: "queued", ticket: OWN };
+    };
+    const views = createBoardViews(viewsContext(state, dom, {
+      jsonFetch, notice: (text, kind) => notices.push({ text, kind }),
+    }));
+    const overview = views.renderOverview({ plans: [], events: [] }, { entries: [] }, { after: "" });
+    const control = overview.querySelector('[data-focus-key="overview:ingest"]');
+    for (const listener of control.listeners.get("click") || []) listener({ preventDefault: () => {} });
+    await flush();
+    assert.deepEqual(notices.at(-1), {
+      text: "Repository ingestion failed: disk full", kind: "error",
+    });
   });
 });

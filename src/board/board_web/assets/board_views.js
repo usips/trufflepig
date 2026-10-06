@@ -48,8 +48,8 @@ export function createBoardViews(context) {
             notice(INGEST_UNKNOWN_MESSAGE, "error");
             scheduleRefresh();
           }, INGEST_TIMEOUT_MS);
+          notice("Repository ingestion queued; the result arrives over the live stream.");
         }
-        notice("Repository ingestion queued; the result arrives over the live stream.");
       } catch (error) {
         ingest.disabled = false; ingest.removeAttribute("aria-busy"); notice(errorMessage(error), "error");
       }
