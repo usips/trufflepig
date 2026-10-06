@@ -3,7 +3,7 @@
 // and the seen-mark reset on a snapshot below the stored mark.
 import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";
-import { installDomShim, resetDomShim } from "./dom_shim.mjs";
+import { installDomShim, resetDomShim } from "./support/dom_shim.mjs";
 
 installDomShim();
 

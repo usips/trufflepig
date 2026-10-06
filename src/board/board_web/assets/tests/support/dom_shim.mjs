@@ -1,6 +1,8 @@
-// Browser globals for board asset tests under node:test: storage, strict Web
-// Locks, same-thread broadcast, page visibility, and a DOM tree with selectors,
+// Browser globals for board asset tests under node:test: storage, Web Locks,
+// same-thread broadcast, page visibility, and a DOM tree with selectors,
 // focus gating, and a seedable body with id lookup.
+import { createLocks, resetLocksShim } from "./locks_shim.mjs";
+
 function createStorage() {
   const values = new Map();
   return {
@@ -8,48 +10,6 @@ function createStorage() {
     setItem: (key, value) => { values.set(String(key), String(value)); },
     removeItem: key => { values.delete(String(key)); },
     clear: () => values.clear(),
-  };
-}
-
-const lockQueues = new Map();
-function pumpLock(name) {
-  const entry = lockQueues.get(name);
-  if (!entry || entry.busy || !entry.waiters.length) return;
-  const head = entry.waiters[0];
-  entry.busy = true;
-  queueMicrotask(async () => {
-    try { head.resolve(await head.run()); }
-    catch (error) { head.reject(error); }
-    finally { if (!head.evicted) { entry.waiters.shift(); entry.busy = false; pumpLock(name); } }
-  });
-}
-function createLocks() {
-  return {
-    request(name, options, callback) {
-      const run = typeof options === "function" ? options : callback;
-      const opts = typeof options === "function" ? {} : options || {};
-      const signal = opts.signal;
-      if (signal && opts.steal) { // The spec makes the two mutually exclusive.
-        return Promise.reject(new DOMException("signal with steal", "NotSupportedError"));
-      }
-      if (signal?.aborted) return Promise.reject(signal.reason);
-      const waiter = { run, signal, evicted: false };
-      const pending = new Promise((yes, no) => { waiter.resolve = yes; waiter.reject = no; });
-      const entry = lockQueues.get(name) || lockQueues.set(name, { waiters: [], busy: false }).get(name);
-      // A steal evicts the holder with AbortError; its late release leaves the queue alone.
-      if (opts.steal && entry.busy && entry.waiters.length) {
-        const held = entry.waiters.shift();
-        held.evicted = true; entry.busy = false;
-        held.reject(new DOMException("The lock was stolen", "AbortError"));
-      }
-      entry.waiters.push(waiter);
-      signal?.addEventListener("abort", () => {
-        const at = entry.waiters.indexOf(waiter);
-        if (at > 0 || (at === 0 && !entry.busy)) { entry.waiters.splice(at, 1); waiter.reject(signal.reason); }
-      }, { once: true });
-      pumpLock(name);
-      return pending;
-    },
   };
 }
 
@@ -168,7 +128,7 @@ export function installDomShim() {
 
 export function resetDomShim() {
   sessionStorage.clear(); localStorage.clear();
-  lockQueues.clear(); channelPeers.clear(); documentListeners.clear();
+  resetLocksShim(); channelPeers.clear(); documentListeners.clear();
   document.activeElement = null; document.visibilityState = "visible";
   root.replaceChildren(); root.append(body); body.replaceChildren();
 }

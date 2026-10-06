@@ -1,6 +1,6 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { installDomShim, resetDomShim } from "./dom_shim.mjs";
+import { installDomShim, resetDomShim } from "./support/dom_shim.mjs";
 import { createBoardDom } from "../board_dom.js";
 import { createBoardViews } from "../board_views.js";
 
