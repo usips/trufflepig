@@ -117,7 +117,8 @@ export function createStreamElection({
   }
 
   // Followers watch for a silent leader: past the freshness window the tab
-  // stops claiming Live and takes the lock by force, once per election.
+  // stops claiming Live and takes the lock by force, one steal in flight at
+  // a time; a rejection re-arms the next tick.
   function startFreshnessTimer() {
     clearInterval(session.freshnessTimer);
     session.freshnessTimer = setInterval(() => {
@@ -131,10 +132,14 @@ export function createStreamElection({
   }
 
   // A steal carries no signal: the spec rejects the two together, so a queued
-  // steal stays pending until granted. A synchronous throw leaves the previous
-  // election fields alone so the next heartbeat or freshness tick retries.
+  // steal stays pending until granted. The queued election stays in place
+  // until the steal is granted, so a rejected steal never costs the tab its
+  // queue position; the catch below re-arms the freshness tick to retry. A
+  // synchronous throw leaves the previous election fields alone so the next
+  // heartbeat or freshness tick retries.
   function requestLock(names, steal) {
-    session.elect?.abort();
+    const previousElect = session.elect;
+    if (!steal) previousElect?.abort();
     const controller = new AbortController();
     const electionGeneration = state.streamGeneration;
     const options = steal ? { steal: true } : { signal: controller.signal };
@@ -142,15 +147,19 @@ export function createStreamElection({
     void navigator.locks.request(names.lock, options, () => {
       if (session.mode !== "following" || electionGeneration !== state.streamGeneration) return;
       granted = true;
+      // Only a granted steal retires the queued request; a rejected one keeps it.
+      previousElect?.abort();
       session.mode = "leading";
       becomeLeader(names);
       return new Promise(resolve => { session.lockEnd = resolve; });
     }).catch(error => {
       // Granted, then AbortError: the lock was stolen. A queued request aborts
       // only through stopStream, which resets the election itself.
-      if (granted && error?.name === "AbortError") rejoinAfterSteal();
+      if (granted && error?.name === "AbortError") { rejoinAfterSteal(); return; }
+      // A rejected steal leaves the queue position alone; the next tick retries.
+      if (steal) session.stealRequested = false;
     });
-    session.elect = controller;
+    if (!steal) session.elect = controller;
     session.stealRequested = steal;
   }
 

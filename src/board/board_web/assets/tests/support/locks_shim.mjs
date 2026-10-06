@@ -2,6 +2,10 @@
 // abortable waiters, and steals that evict the holder and queue ahead of
 // every waiting request.
 const lockQueues = new Map();
+// Test knob: while armed, steal requests reject instead of queueing, like a
+// browser refusing a steal; rejectedStealCount records how many were refused.
+let stealsRejected = false;
+let rejectedStealCount = 0;
 
 function pumpLock(name) {
   const entry = lockQueues.get(name);
@@ -25,6 +29,10 @@ export function createLocks() {
         return Promise.reject(new DOMException("signal with steal", "NotSupportedError"));
       }
       if (signal?.aborted) return Promise.reject(signal.reason);
+      if (opts.steal && stealsRejected) {
+        rejectedStealCount += 1;
+        return Promise.reject(new DOMException("The steal was rejected", "NotSupportedError"));
+      }
       const waiter = { run, signal, evicted: false };
       const pending = new Promise((yes, no) => { waiter.resolve = yes; waiter.reject = no; });
       const entry = lockQueues.get(name) || lockQueues.set(name, { waiters: [], busy: false }).get(name);
@@ -47,6 +55,12 @@ export function createLocks() {
   };
 }
 
+export function rejectSteals() { stealsRejected = true; }
+export function allowSteals() { stealsRejected = false; }
+export function stealRejections() { return rejectedStealCount; }
+
 export function resetLocksShim() {
   lockQueues.clear();
+  stealsRejected = false;
+  rejectedStealCount = 0;
 }

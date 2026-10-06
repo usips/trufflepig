@@ -2,6 +2,7 @@ import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { createBoardStream } from "../stream/board_stream.js";
 import { installDomShim, resetDomShim } from "./support/dom_shim.mjs";
+import { rejectSteals, allowSteals, stealRejections } from "./support/locks_shim.mjs";
 
 installDomShim();
 afterEach(() => resetDomShim());
@@ -140,6 +141,36 @@ describe("board stream leader election", () => {
       assert.equal(callsA.length, 1, "the closed leader stays quiet");
       assert.equal(callsB.length, 1, "exactly one leader fetches");
     } finally {
+      follower.stream.stopStream();
+    }
+  });
+
+  it("rejected_steal_keeps_the_queue_position", async () => {
+    const callsA = [], callsB = [];
+    // Same stalled-leader setup as the takeover test, but the shim refuses
+    // every steal: the follower must fall back on its queued lock request.
+    const stalled = makeTab(callsA, { heartbeatMs: 10000, freshnessMs: 10000 });
+    const follower = makeTab(callsB, { heartbeatMs: 20, freshnessMs: 60 });
+    stalled.state.watermark = "41";
+    follower.state.watermark = "41";
+    rejectSteals();
+    try {
+      stalled.stream.startStream("41");
+      follower.stream.startStream("41");
+      assert.equal(
+        await waitFor(() => callsA.length === 1 && callsB.length === 0),
+        true, "the stalled tab leads first",
+      );
+      assert.equal(
+        await waitFor(() => stealRejections() > 0), true, "the follower's steal is rejected",
+      );
+      stalled.stream.stopStream();
+      assert.equal(
+        await waitFor(() => callsB.length === 1), true,
+        "the queued follower keeps its position and takes over",
+      );
+    } finally {
+      allowSteals();
       follower.stream.stopStream();
     }
   });
