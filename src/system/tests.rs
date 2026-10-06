@@ -567,6 +567,86 @@ fn ensure_waits_for_a_migrating_router_without_spawning_a_second() {
 }
 
 #[test]
+fn ensure_waits_for_a_slow_spawned_router() {
+    const MARKER: &str = "TRUFFLEPIG_SYSTEM_TEST_SLOW_ROUTER";
+    const STEP_DELAY_MS: &str = "TRUFFLEPIG_SYSTEM_TEST_MIGRATION_STEP_DELAY_MS";
+    const TEST: &str = "system::tests::ensure_waits_for_a_slow_spawned_router";
+    if std::env::var_os(MARKER).is_none() {
+        // The child process owns the router environment; parallel tests never see it.
+        let directory = crate::board::board_test_support::scratch("router-slow-spawn-");
+        let database = directory.path().join("board.sqlite3");
+        crate::board::local_board::seed_storage_schema(&database, crate::board::SCHEMA_VERSION - 1)
+            .unwrap();
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .env(MARKER, "1")
+            .env("TRUFFLEPIG_SYSTEM_DIR", directory.path().join("runtime"))
+            .env("TRUFFLEPIG_SPOOL_DIR", directory.path().join("spool"))
+            .env("TRUFFLEPIG_BOARD_DB", &database)
+            .env("XDG_CONFIG_HOME", directory.path().join("config"))
+            .env("XDG_DATA_HOME", directory.path().join("data"))
+            .env("XDG_CACHE_HOME", directory.path().join("cache"))
+            .env(STEP_DELAY_MS, "3000")
+            .args([TEST, "--exact", "--nocapture"])
+            .status()
+            .unwrap();
+        assert!(status.success());
+        return;
+    }
+    let runtime = crate::system::dir().expect("child sets TRUFFLEPIG_SYSTEM_DIR");
+    let worker = std::thread::spawn(crate::system::serve);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !daemon::running(&runtime) {
+        assert!(Instant::now() < deadline, "router failed to bind");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // The slowed migration holds the router for three seconds after the bind;
+    // ensure must wait for the first status answer instead of giving up.
+    crate::system::ensure().unwrap();
+    daemon::stop(&runtime).unwrap();
+    worker.join().unwrap().unwrap();
+}
+
+#[test]
+fn ensure_gives_up_after_the_cap() {
+    const MARKER: &str = "TRUFFLEPIG_SYSTEM_TEST_HUNG_ROUTER";
+    const STEP_DELAY_MS: &str = "TRUFFLEPIG_SYSTEM_TEST_MIGRATION_STEP_DELAY_MS";
+    const TEST: &str = "system::tests::ensure_gives_up_after_the_cap";
+    if std::env::var_os(MARKER).is_none() {
+        // The child process owns the router environment; parallel tests never see it.
+        let directory = crate::board::board_test_support::scratch("router-hung-spawn-");
+        let database = directory.path().join("board.sqlite3");
+        crate::board::local_board::seed_storage_schema(&database, crate::board::SCHEMA_VERSION - 1)
+            .unwrap();
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .env(MARKER, "1")
+            .env("TRUFFLEPIG_SYSTEM_DIR", directory.path().join("runtime"))
+            .env("TRUFFLEPIG_SPOOL_DIR", directory.path().join("spool"))
+            .env("TRUFFLEPIG_BOARD_DB", &database)
+            .env("XDG_CONFIG_HOME", directory.path().join("config"))
+            .env("XDG_DATA_HOME", directory.path().join("data"))
+            .env("XDG_CACHE_HOME", directory.path().join("cache"))
+            .env(STEP_DELAY_MS, "60000")
+            .args([TEST, "--exact", "--nocapture"])
+            .status()
+            .unwrap();
+        assert!(status.success());
+        return;
+    }
+    // The slowed migration holds the router for a minute, well past the cap;
+    // the child process exits with the migration thread still sleeping.
+    let _worker = std::thread::spawn(crate::system::serve);
+    let started = Instant::now();
+    let error = super::ensure_within(Duration::from_millis(300)).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .starts_with("system_unavailable: router still starting after"),
+        "{error:#}"
+    );
+    assert!(started.elapsed() < Duration::from_secs(10), "{error:#}");
+}
+
+#[test]
 fn router_does_not_reset_an_expired_accepted_deadline() {
     let root = crate::board::board_test_support::scratch("router-deadline-");
     let cache_directory = crate::board::board_test_support::scratch("router-cache-");

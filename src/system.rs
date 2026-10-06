@@ -21,6 +21,7 @@ use anyhow::{Context, Result, bail, ensure};
 use std::{
     ffi::OsString,
     fs,
+    io::ErrorKind,
     path::{Path, PathBuf},
     process::Command,
     sync::Mutex,
@@ -100,14 +101,24 @@ pub fn request(args: &[String], context: &RequestContext) -> Result<Option<Strin
     daemon::spool::request(&spool_dir(), args, context)
 }
 
+/// Longest `ensure` waits for a spawned router's first status answer.
+const ROUTER_START_WAIT: Duration = Duration::from_secs(120);
+
 /// Starts the system daemon when no router answers its status ping, then waits
-/// for that ping to be answered: a starting router binds its socket before it
-/// migrates, so the wait covers migration. Board configuration resolves
-/// lazily inside the spawned router, never here.
+/// up to [`ROUTER_START_WAIT`] for that ping to be answered: a starting router
+/// binds its socket before it migrates, so the wait covers migration. Board
+/// configuration resolves lazily inside the spawned router, never here.
 pub fn ensure() -> Result<()> {
+    ensure_within(ROUTER_START_WAIT)
+}
+
+/// `ensure` with the router start wait capped at `start_wait`, so tests can
+/// inject a short cap and a hung spawn fails fast.
+fn ensure_within(start_wait: Duration) -> Result<()> {
     let ping = vec!["system".to_owned(), "status".to_owned()];
     let context = RequestContext::new(None, None);
-    if request(&ping, &context)?.is_some() {
+    let started = Instant::now();
+    if poll(&ping, &context, started, start_wait)?.is_some() {
         return Ok(());
     }
     let dir = dir().context("system_unavailable: no runtime dir")?;
@@ -115,16 +126,59 @@ pub fn ensure() -> Result<()> {
     let mut command = Command::new(std::env::current_exe()?);
     let child = spawn_background(command.arg("system-serve"))?;
     loop {
-        if request(&ping, &context)?.is_some() {
+        let remaining = start_wait.saturating_sub(started.elapsed());
+        ensure!(
+            !remaining.is_zero(),
+            "system_unavailable: router still starting after {} s",
+            start_wait.as_secs()
+        );
+        if poll(&ping, &context, started, start_wait)?.is_some() {
             return Ok(());
         }
         // A racing spawn exits on the socket bind while its winner serves; a
-        // spawn that is gone with no listener is the only way out.
+        // spawn that is gone with no listener fails before the cap.
         if daemon::spawn_failed(&child, &dir) {
             bail!("system_unavailable: daemon did not start");
         }
-        std::thread::sleep(Duration::from_millis(25));
+        std::thread::sleep(Duration::from_millis(25).min(remaining));
     }
+}
+
+/// One status probe over the socket, then the spool, bounded by the rest of
+/// the start budget; a probe the budget cuts short reads as "still starting".
+fn poll(
+    ping: &[String],
+    context: &RequestContext,
+    started: Instant,
+    start_wait: Duration,
+) -> Result<Option<String>> {
+    let Some(dir) = dir() else {
+        return Ok(None);
+    };
+    let remaining = start_wait.saturating_sub(started.elapsed());
+    if remaining.is_zero() {
+        return Ok(None);
+    }
+    let reply = match daemon::request_by(&dir, ping, context, QueryDeadline::after(remaining)) {
+        Ok(reply) => reply,
+        Err(error) if poll_budget_spent(&error) => None,
+        Err(error) => return Err(error),
+    };
+    if reply.is_some() {
+        return Ok(reply);
+    }
+    daemon::spool::request(&spool_dir(), ping, context)
+}
+
+/// Whether a bounded poll error only reports its own expired budget.
+fn poll_budget_spent(error: &anyhow::Error) -> bool {
+    daemon::deadline::is_timed_out(error)
+        || error.chain().any(|cause| {
+            matches!(
+                cause.downcast_ref::<std::io::Error>(),
+                Some(io) if matches!(io.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut)
+            )
+        })
 }
 
 /// Serves the system daemon, proxying socket and spooled requests to their

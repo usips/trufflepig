@@ -89,7 +89,9 @@ SQL statements at expiry. Spool requests start their deadline before entering
 the worker queue. `stop` releases the socket, drains accepted work for up to
 28 s, then rejects queued work and returns so the daemon process exits; requests
 still running at that point may lose their reply. Liveness checks connect to the
-socket (`src/daemon.rs:running`) and never touch the startup lock. Clients wait
+socket (`src/daemon.rs:running`) and never touch the startup lock. `system
+ensure` waits at most 120 s for a spawned router's first status answer
+(`src/system.rs:ROUTER_START_WAIT`). Clients wait
 at most 30 s for any reply (`src/daemon.rs:CLIENT_REPLY_WAIT`, socket and spool
 alike; a spooled request whose claiming router stops beating fails at once with
 `daemon_unavailable`). A read verb retries once, with a fresh request id, on
