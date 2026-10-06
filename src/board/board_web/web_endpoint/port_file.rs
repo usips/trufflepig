@@ -2,16 +2,23 @@
 use anyhow::Result;
 use std::{
     fs::{self, File, OpenOptions},
-    io::Write,
+    io::{Read, Write},
     os::unix::fs::OpenOptionsExt,
     path::Path,
 };
 
 const PORT_FILE: &str = "board-web.port";
+const PORT_LIMIT: u64 = 16;
 
-/// Lenient read of the recorded port; absent or invalid content is ignored.
+/// Lenient read of the recorded port through a private non-blocking open
+/// capped at 16 bytes; an absent, unsafe, or invalid file is ignored.
 pub(super) fn read(runtime: &Path) -> Option<u16> {
-    let bytes = fs::read(runtime.join(PORT_FILE)).ok()?;
+    let mut file = super::open_private(&runtime.join(PORT_FILE)).ok()?;
+    let mut bytes = Vec::with_capacity(PORT_LIMIT as usize);
+    Read::by_ref(&mut file)
+        .take(PORT_LIMIT)
+        .read_to_end(&mut bytes)
+        .ok()?;
     std::str::from_utf8(&bytes)
         .ok()?
         .trim()

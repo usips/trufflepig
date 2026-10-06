@@ -53,6 +53,88 @@ fn clean_exit_keeps_the_bound_port_for_the_next_start() {
 }
 
 #[test]
+fn symlinked_port_file_is_ignored() {
+    let (_directory, runtime, _config) = fixture();
+    let planted = runtime.join("planted-port");
+    fs::write(&planted, "43210").unwrap();
+    std::os::unix::fs::symlink(&planted, runtime.join("board-web.port")).unwrap();
+    assert_eq!(port_file::read(&runtime), None);
+}
+
+#[test]
+fn fifo_port_file_does_not_block() {
+    let (_directory, runtime, _config) = fixture();
+    let fifo = runtime.join("board-web.port");
+    let path = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+    // SAFETY: mkfifo on a fresh scratch path; the result is checked.
+    let created = unsafe { libc::mkfifo(path.as_ptr(), 0o600) };
+    assert_eq!(
+        created,
+        0,
+        "mkfifo failed: {}",
+        std::io::Error::last_os_error()
+    );
+    let (sender, receiver) = std::sync::mpsc::channel();
+    thread::spawn(move || {
+        let _ = sender.send(port_file::read(&runtime));
+    });
+    let read = receiver
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("port file read blocked on a FIFO for over five seconds");
+    assert_eq!(read, None);
+}
+
+#[test]
+fn privileged_recorded_port_falls_back() {
+    const CHILD: &str = "TRUFFLEPIG_BOARD_WEB_PORT_PRIVILEGED_CHILD";
+    // SAFETY: geteuid has no preconditions and cannot fail.
+    if unsafe { libc::geteuid() } == 0 {
+        eprintln!("skipping: root can bind privileged ports");
+        return;
+    }
+    if std::env::var_os(CHILD).is_none() {
+        let directory = crate::board::board_test_support::scratch("web-port-privileged-");
+        let runtime = directory.path().join("runtime");
+        fs::create_dir_all(&runtime).unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .env(CHILD, "1")
+            .env("TRUFFLEPIG_BOARD_WEB_TEST_RUNTIME", &runtime)
+            .args([
+                "board::board_web::web_endpoint::tests::guard_bind_tests::privileged_recorded_port_falls_back",
+                "--exact",
+                "--nocapture",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "child failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let fallback: u16 = fs::read_to_string(runtime.join("fallback-port"))
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert_ne!(fallback, 80);
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(
+            stderr.contains(&format!(
+                "board-serve: recorded port 80 unusable (Permission denied (os error 13)); using {fallback}"
+            )),
+            "unexpected stderr: {stderr}"
+        );
+        return;
+    }
+    let runtime = PathBuf::from(std::env::var_os("TRUFFLEPIG_BOARD_WEB_TEST_RUNTIME").unwrap());
+    port_file::record(&runtime, 80).unwrap();
+    let listener = bind_listener(&runtime, "127.0.0.1:0".parse().unwrap()).unwrap();
+    let fallback = listener.local_addr().unwrap().port();
+    assert_ne!(fallback, 80);
+    fs::write(runtime.join("fallback-port"), fallback.to_string()).unwrap();
+}
+
+#[test]
 fn taken_persisted_port_falls_back_with_a_one_line_notice() {
     const CHILD: &str = "TRUFFLEPIG_BOARD_WEB_PORT_FALLBACK_CHILD";
     if std::env::var_os(CHILD).is_none() {
@@ -86,7 +168,10 @@ fn taken_persisted_port_falls_back_with_a_one_line_notice() {
         let stderr = String::from_utf8(output.stderr).unwrap();
         assert_eq!(
             stderr,
-            format!("board-serve: port {taken} in use; using {fallback}\n")
+            format!(
+                "board-serve: recorded port {taken} unusable \
+                 (Address already in use (os error 98)); using {fallback}\n"
+            )
         );
         drop(holder);
         return;
@@ -98,7 +183,7 @@ fn taken_persisted_port_falls_back_with_a_one_line_notice() {
         .unwrap()
         .parse()
         .unwrap();
-    fs::write(runtime.join("board-web.port"), taken.to_string()).unwrap();
+    port_file::record(&runtime, taken).unwrap();
     let listener = bind_listener(&runtime, "127.0.0.1:0".parse().unwrap()).unwrap();
     let fallback = listener.local_addr().unwrap().port();
     assert_ne!(fallback, taken);

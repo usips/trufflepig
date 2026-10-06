@@ -91,8 +91,8 @@ pub(super) fn published_origin(runtime: &Path) -> Option<String> {
 }
 
 /// Bind `requested`, retaking the recorded port first when it asks for port 0;
-/// a taken recorded port falls back to ephemeral with a one-line notice. Every
-/// successful bind re-records its actual port for the next start.
+/// an unusable recorded port falls back to ephemeral with a one-line notice.
+/// Every successful bind re-records its actual port for the next start.
 pub(super) fn bind_listener(runtime: &Path, requested: SocketAddr) -> std::io::Result<TcpListener> {
     super::web_guard::require_loopback(requested)?;
     let persisted = (requested.port() == 0)
@@ -102,16 +102,15 @@ pub(super) fn bind_listener(runtime: &Path, requested: SocketAddr) -> std::io::R
     let listener = match persisted {
         Some(candidate) => match TcpListener::bind(candidate) {
             Ok(listener) => listener,
-            Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+            Err(error) => {
                 let fallback = TcpListener::bind(requested)?;
                 eprintln!(
-                    "board-serve: port {} in use; using {}",
+                    "board-serve: recorded port {} unusable ({error}); using {}",
                     candidate.port(),
                     fallback.local_addr()?.port()
                 );
                 fallback
             }
-            Err(error) => return Err(error),
         },
         None => TcpListener::bind(requested)?,
     };
