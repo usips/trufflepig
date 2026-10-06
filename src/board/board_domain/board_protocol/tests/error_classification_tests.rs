@@ -36,6 +36,20 @@ fn leading_error_codes_ignore_untrusted_diagnostic_segments() {
 }
 
 #[test]
+fn type_mismatch_is_invalid_state() {
+    let sqlite = rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_MISMATCH),
+        Some("datatype mismatch".into()),
+    );
+    let error = anyhow::Error::new(sqlite).context("store entry");
+    assert_eq!(
+        BoardErrorCode::from_error(&error),
+        Some(BoardErrorCode::InvalidState)
+    );
+    assert_eq!(BoardError::from(error).code, BoardErrorCode::InvalidState);
+}
+
+#[test]
 fn sqlite_storage_failures_classify_by_typed_code() {
     for (raw, expected) in [
         (rusqlite::ffi::SQLITE_BUSY, BoardErrorCode::DatabaseLocked),
@@ -61,7 +75,7 @@ fn sqlite_storage_failures_classify_by_typed_code() {
             BoardErrorCode::BoardUnavailable,
         ),
         (rusqlite::ffi::SQLITE_TOOBIG, BoardErrorCode::InvalidBody),
-        (rusqlite::ffi::SQLITE_MISMATCH, BoardErrorCode::InvalidKind),
+        (rusqlite::ffi::SQLITE_MISMATCH, BoardErrorCode::InvalidState),
         (
             rusqlite::ffi::SQLITE_IOERR,
             BoardErrorCode::BoardUnavailable,

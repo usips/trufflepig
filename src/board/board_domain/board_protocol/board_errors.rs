@@ -130,10 +130,10 @@ pub fn leading_error_code(mut message: &str) -> Option<(&str, &str)> {
     }
 }
 
-/// Constraint violations classify as invalid state; too-big and datatype-mismatch
-/// storage keep their distinct body/kind codes for CLI callers. Only contention
-/// maps to the locked code; corrupt, not-a-database, and other storage failures
-/// stay transient so the outbox keeps them pending with backoff.
+/// Constraint violations and datatype mismatches classify as invalid state;
+/// too-big storage keeps its distinct body code for CLI callers. Only
+/// contention maps to the locked code; corrupt, not-a-database, and other
+/// storage failures stay transient so the outbox keeps them pending.
 fn sqlite_board_code(error: &rusqlite::Error) -> BoardErrorCode {
     match error.sqlite_error_code() {
         Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked) => {
@@ -141,7 +141,7 @@ fn sqlite_board_code(error: &rusqlite::Error) -> BoardErrorCode {
         }
         Some(rusqlite::ErrorCode::ConstraintViolation) => BoardErrorCode::InvalidState,
         Some(rusqlite::ErrorCode::TooBig) => BoardErrorCode::InvalidBody,
-        Some(rusqlite::ErrorCode::TypeMismatch) => BoardErrorCode::InvalidKind,
+        Some(rusqlite::ErrorCode::TypeMismatch) => BoardErrorCode::InvalidState,
         _ => BoardErrorCode::BoardUnavailable,
     }
 }
