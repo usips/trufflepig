@@ -3,6 +3,7 @@ mod board_web_secrets;
 pub(crate) mod event_stream;
 pub(crate) mod http_wire;
 pub(crate) mod plan_markup;
+mod published_endpoint;
 mod reader_pool;
 mod serve_lock;
 mod signal_shutdown;

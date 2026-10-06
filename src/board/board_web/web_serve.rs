@@ -3,6 +3,7 @@ use super::super::board_config::BoardConfigCache;
 use super::event_stream::SequencePoller;
 use super::{
     BoardWebState, WebStore, bootstrap_line, http_wire, open_stream_feed,
+    published_endpoint::{PublishedEndpoint, remove_published_endpoint},
     serve_lock::{self, ServeLock},
     signal_shutdown,
     web_endpoint::{self, EndpointGuard},
@@ -14,9 +15,8 @@ use anyhow::{Context, Result};
 use std::{
     io::{self, IsTerminal, Write},
     net::{SocketAddr, TcpListener, TcpStream},
-    path::PathBuf,
     sync::{
-        Arc, OnceLock,
+        Arc,
         atomic::{AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
@@ -26,18 +26,6 @@ const WEB_POOL: PoolSize = PoolSize {
     workers: 8,
     queue: 64,
 };
-
-/// Endpoint identity for the pre-bind signal waiter; bind fills it in
-/// before publishing the descriptor file.
-pub(crate) type PublishedEndpoint = OnceLock<(PathBuf, SocketAddr)>;
-
-/// Removes the descriptor bind published, if any; a signal during early
-/// bind finds nothing set and exits cleanly without cleanup.
-pub(super) fn remove_published_endpoint(published: &PublishedEndpoint) {
-    if let Some((path, address)) = published.get() {
-        web_endpoint::remove_if_ours(path, *address);
-    }
-}
 
 pub(crate) struct BoardWebServer {
     listener: TcpListener,
@@ -64,10 +52,15 @@ impl BoardWebServer {
         )?;
         let bound = listener.local_addr()?;
         let endpoint = EndpointGuard::arm(&store.runtime, bound);
-        // Memory before file: a signal landing here removes at most a
-        // stale descriptor, and never leaves a fresh one behind.
-        let _ = published.set((endpoint.path().to_owned(), bound));
-        web_endpoint::publish(&store.runtime, bound, &config.db_path)?;
+        // Record and publish under one lock: a signal landing here makes
+        // the waiter's cleanup wait for the completed descriptor, then
+        // remove it, so no stale board-web.json can survive the signal.
+        published.publish(
+            endpoint.path().to_owned(),
+            bound,
+            &store.runtime,
+            &config.db_path,
+        )?;
         Ok(Self {
             listener,
             state: Arc::new(BoardWebState {
@@ -95,7 +88,7 @@ pub fn serve(address: SocketAddr) -> Result<()> {
     // The waiter starts before bind: bind can wait on the router for a
     // migration, and a SIGTERM during that wait must still exit promptly.
     // Bind publishes the endpoint into the lock once it is known.
-    let published: Arc<PublishedEndpoint> = Arc::new(OnceLock::new());
+    let published = Arc::new(PublishedEndpoint::default());
     let waiter_published = Arc::clone(&published);
     signal_shutdown::spawn_exit_waiter(move || {
         remove_published_endpoint(&waiter_published);
@@ -133,10 +126,6 @@ pub(super) const QUEUE_FULL_BODY: &[u8] =
 /// refusal closes at once instead of draining unread input.
 pub(super) const REFUSAL_DRAIN_LIMIT: usize = 16;
 
-static REFUSAL_DRAINS: AtomicUsize = AtomicUsize::new(0);
-#[cfg(test)]
-static REFUSAL_DRAIN_MAX: AtomicUsize = AtomicUsize::new(0);
-
 /// Admits one drain thread while fewer than `limit` are running.
 pub(super) fn try_admit_drain(active: &AtomicUsize, limit: usize) -> bool {
     active
@@ -146,52 +135,74 @@ pub(super) fn try_admit_drain(active: &AtomicUsize, limit: usize) -> bool {
         .is_ok()
 }
 
-struct DrainGuard;
+/// Drain-thread counters for one serve loop; the loop owns them, so a
+/// restart or a concurrent test never shares admission state. Drain
+/// threads hold an `Arc` clone to release their slot on the way out.
+#[derive(Default)]
+pub(super) struct RefusalDrains {
+    active: AtomicUsize,
+    #[cfg(test)]
+    max: AtomicUsize,
+}
 
-impl Drop for DrainGuard {
-    fn drop(&mut self) {
-        REFUSAL_DRAINS.fetch_sub(1, Ordering::AcqRel);
+impl RefusalDrains {
+    /// Admits one drain thread while fewer than the limit are running.
+    fn admit(&self) -> bool {
+        let admitted = try_admit_drain(&self.active, REFUSAL_DRAIN_LIMIT);
+        #[cfg(test)]
+        if admitted {
+            self.max
+                .fetch_max(self.active.load(Ordering::Acquire), Ordering::AcqRel);
+        }
+        admitted
+    }
+
+    fn release(&self) {
+        self.active.fetch_sub(1, Ordering::AcqRel);
+    }
+
+    /// Highest concurrent drain count observed on these counters.
+    #[cfg(test)]
+    pub(super) fn max(&self) -> usize {
+        self.max.load(Ordering::Acquire)
     }
 }
 
-/// Highest concurrent drain count observed since the last reset.
-#[cfg(test)]
-pub(super) fn refusal_drain_max() -> usize {
-    REFUSAL_DRAIN_MAX.load(Ordering::Acquire)
-}
+struct DrainGuard(Arc<RefusalDrains>);
 
-/// Restarts the highest-concurrent-drain observation window.
-#[cfg(test)]
-pub(super) fn reset_refusal_drain_max() {
-    REFUSAL_DRAIN_MAX.store(0, Ordering::Release);
+impl Drop for DrainGuard {
+    fn drop(&mut self) {
+        self.0.release();
+    }
 }
 
 /// Refuses a connection the pool cannot take: one nonblocking busy write,
 /// then a short-lived thread drains unread input after shutting down the
 /// write side, so the client reads the reply instead of a reset. The
 /// accept loop never blocks on a refused connection.
-pub(super) fn refuse_queue_full(mut refusal: TcpStream, busy: &[u8]) {
+pub(super) fn refuse_queue_full(mut refusal: TcpStream, busy: &[u8], drains: &Arc<RefusalDrains>) {
     // One nonblocking attempt never holds up accepting the next connection.
     if refusal.set_nonblocking(true).is_ok() {
         let _ = refusal.write(busy);
     }
     // Past the cap the socket drops here: an immediate close with
     // the busy bytes already written, and no drain thread at all.
-    if !try_admit_drain(&REFUSAL_DRAINS, REFUSAL_DRAIN_LIMIT) {
+    if !drains.admit() {
         return;
     }
-    #[cfg(test)]
-    REFUSAL_DRAIN_MAX.fetch_max(REFUSAL_DRAINS.load(Ordering::Acquire), Ordering::AcqRel);
     // A failed spawn drops the socket, as an immediate close would.
     let spawned = std::thread::Builder::new()
         .name("board-refusal-drain".into())
-        .spawn(move || {
-            let _guard = DrainGuard;
-            let _ = refusal.set_nonblocking(false);
-            http_wire::close_after_error(&mut refusal);
+        .spawn({
+            let drains = Arc::clone(drains);
+            move || {
+                let _guard = DrainGuard(drains);
+                let _ = refusal.set_nonblocking(false);
+                http_wire::close_after_error(&mut refusal);
+            }
         });
     if spawned.is_err() {
-        REFUSAL_DRAINS.fetch_sub(1, Ordering::AcqRel);
+        drains.release();
     }
 }
 
@@ -201,6 +212,7 @@ pub(super) fn serve_connections(
 ) -> Result<()> {
     let pool = RequestPool::new("board-http", WEB_POOL)?;
     let busy = http_wire::unavailable_response(1, QUEUE_FULL_BODY);
+    let drains = Arc::new(RefusalDrains::default());
     let mut incoming = incoming.into_iter();
     loop {
         // A stopped ring never recovers in-process; fail so systemd
@@ -232,7 +244,7 @@ pub(super) fn serve_connections(
         if let Err(job) = pool.submit(job) {
             drop(job);
             if let Some(refusal) = refusal {
-                refuse_queue_full(refusal, &busy);
+                refuse_queue_full(refusal, &busy, &drains);
             }
         }
     }

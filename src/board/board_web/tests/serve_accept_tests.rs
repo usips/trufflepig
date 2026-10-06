@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn stopped_ring_exits_the_serve_loop_without_any_traffic() {
+fn stopped_ring_ends_the_serve_loop_at_next_accept() {
     let harness = accept_harness_with(Arc::new(|_, _, _| panic!("feed poisoned")));
     wait_ring_stopped(&harness);
     let empty: Vec<io::Result<TcpStream>> = Vec::new();
@@ -57,7 +57,7 @@ fn drain_admission_stops_at_the_cap_and_reopens_on_release() {
 
 #[test]
 fn queue_full_flood_caps_concurrent_drain_threads() {
-    reset_refusal_drain_max();
+    let drains = Arc::new(RefusalDrains::default());
     let busy =
         http_wire::unavailable_response(1, crate::board::board_web::web_serve::QUEUE_FULL_BODY);
     // Held clients keep every admitted drain inside its read so all
@@ -70,10 +70,10 @@ fn queue_full_flood_caps_concurrent_drain_threads() {
         client
             .write_all(b"GET /api/v1/board HTTP/1.1\r\nHost: x")
             .unwrap();
-        refuse_queue_full(server, &busy);
+        refuse_queue_full(server, &busy, &drains);
         held.push(client);
     }
-    let peak = refusal_drain_max();
+    let peak = drains.max();
     assert!(
         peak > 1,
         "the flood overlapped too little to prove the cap: {peak}"
@@ -102,20 +102,49 @@ fn deferred_cleanup_removes_only_the_published_descriptor() {
         )
         .unwrap();
     };
-    // A signal during early bind finds nothing published: no cleanup.
+    // A signal during early bind finds nothing recorded: no cleanup.
     write_descriptor();
-    remove_published_endpoint(&OnceLock::new());
-    assert!(descriptor.exists(), "an unset lock removes nothing");
+    remove_published_endpoint(&PublishedEndpoint::default());
+    assert!(
+        descriptor.exists(),
+        "an unrecorded endpoint removes nothing"
+    );
     // A foreign rewrite after publish is left alone.
-    let foreign: PublishedEndpoint = OnceLock::new();
-    let _ = foreign.set((descriptor.clone(), "127.0.0.1:2".parse().unwrap()));
+    let foreign = PublishedEndpoint::default();
+    foreign.record_for_test(descriptor.clone(), "127.0.0.1:2".parse().unwrap());
     remove_published_endpoint(&foreign);
     assert!(descriptor.exists(), "a mismatched address removes nothing");
     // The published descriptor is removed.
-    let published: PublishedEndpoint = OnceLock::new();
-    let _ = published.set((descriptor.clone(), address));
+    let published = PublishedEndpoint::default();
+    published.record_for_test(descriptor.clone(), address);
     remove_published_endpoint(&published);
     assert!(!descriptor.exists(), "the published descriptor is removed");
+}
+
+#[test]
+fn signal_during_publish_leaves_no_descriptor() {
+    let directory = crate::board::board_test_support::scratch("web-publish-race-");
+    let runtime = directory.path().join("runtime");
+    let database = directory.path().join("web.sqlite3");
+    let descriptor = runtime.join("board-web.json");
+    let address: std::net::SocketAddr = "127.0.0.1:7341".parse().unwrap();
+    // Park bind between recording the endpoint and writing the descriptor,
+    // then run the exit waiter's signal cleanup inside that window.
+    let gate = Arc::new(std::sync::Barrier::new(2));
+    let published = Arc::new(PublishedEndpoint::gated_for_test(Arc::clone(&gate)));
+    let binder = {
+        let published = Arc::clone(&published);
+        let runtime = runtime.clone();
+        let path = descriptor.clone();
+        std::thread::spawn(move || published.publish(path, address, &runtime, &database))
+    };
+    gate.wait();
+    remove_published_endpoint(&published);
+    binder.join().unwrap().unwrap();
+    assert!(
+        !descriptor.exists(),
+        "a signal mid-publish left a stale descriptor"
+    );
 }
 
 #[test]
