@@ -69,6 +69,16 @@ fn main() {
     println!("cargo:rustc-env=TRUFFLEPIG_BUILD_ID={build_id}");
 }
 
+/// Watch each absolute, existing PATH dir for later tool installs.
+/// Relative or missing dirs would rebuild the package on every run.
+fn watch_path_dirs(dirs: &[PathBuf]) {
+    for dir in dirs {
+        if dir.is_absolute() && dir.is_dir() {
+            println!("cargo::rerun-if-changed={}", dir.display());
+        }
+    }
+}
+
 /// Expose the installed Git as `board_git_2_46` / `board_git_2_55` cfgs.
 /// Missing or unparseable Git emits neither cfg, so gated tests ignore.
 fn emit_git_cfgs() -> String {
@@ -77,9 +87,7 @@ fn emit_git_cfgs() -> String {
     println!("cargo::rerun-if-env-changed=PATH");
     let dirs = tool_probe::path_search_dirs(env::var_os("PATH").as_deref());
     let Some(path) = tool_probe::resolve_tool_in_dirs(&dirs, "git") else {
-        for dir in &dirs {
-            println!("cargo::rerun-if-changed={}", dir.display());
-        }
+        watch_path_dirs(&dirs);
         return format!("missing (searched {} PATH dirs)", dirs.len());
     };
     println!("cargo::rerun-if-changed={}", path.display());
@@ -104,9 +112,7 @@ fn emit_node_cfgs() -> String {
     println!("cargo::rerun-if-env-changed=PATH");
     let dirs = tool_probe::path_search_dirs(env::var_os("PATH").as_deref());
     let Some(path) = tool_probe::resolve_tool_in_dirs(&dirs, "node") else {
-        for dir in &dirs {
-            println!("cargo::rerun-if-changed={}", dir.display());
-        }
+        watch_path_dirs(&dirs);
         return format!("missing (searched {} PATH dirs)", dirs.len());
     };
     println!("cargo::rerun-if-changed={}", path.display());
