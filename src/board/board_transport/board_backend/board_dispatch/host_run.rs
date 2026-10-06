@@ -9,10 +9,11 @@ use crate::{
     board::{
         board_grammar::{self, BoardCommand},
         board_protocol::{
-            AgentClaims, BoardError, BoardOp, BoardReply, BoardRequest, BoardResult,
-            CommitLinkResult,
+            AgentClaims, BoardError, BoardErrorCode, BoardOp, BoardReply, BoardRequest,
+            BoardResult, CommitLinkResult,
         },
         board_render::render_reply,
+        commit_ingest::IngestReport,
     },
     cli::Arguments,
     daemon::deadline::QueryDeadline,
@@ -119,9 +120,7 @@ impl BoardHost {
                     },
                     Err(error)
                         if error.downcast_ref::<BoardError>().map(|error| error.code)
-                            == Some(
-                                crate::board::board_protocol::BoardErrorCode::InvalidOptions,
-                            ) =>
+                            == Some(BoardErrorCode::InvalidOptions) =>
                     {
                         return Err(error);
                     }
@@ -188,11 +187,11 @@ impl BoardHost {
             let (targets, report) = if scan_budget.is_zero() {
                 (
                     self.repositories(&actor, Some(base.plan), deadline)?,
-                    crate::board::commit_ingest::IngestReport {
+                    IngestReport {
                         errors: vec![
                             "review git scan skipped: no remaining scan budget".to_owned(),
                         ],
-                        ..crate::board::commit_ingest::IngestReport::default()
+                        ..Default::default()
                     },
                 )
             } else {
@@ -200,7 +199,7 @@ impl BoardHost {
                     Ok(result) => result,
                     Err(error) => (
                         self.repositories(&actor, Some(base.plan), deadline)?,
-                        crate::board::commit_ingest::IngestReport {
+                        IngestReport {
                             errors: vec![format!("review git scan unavailable: {error:#}")],
                             ..Default::default()
                         },

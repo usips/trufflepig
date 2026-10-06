@@ -89,10 +89,8 @@ const { parseSse, stopStream, startStream } = createBoardStream({
 
 // Authorization expiry is one state wherever the 401/403 lands: the tab
 // releases the lock, drops its token, and never retries until a fresh token
-// is adopted. A 401 for a superseded token is stale and ignored, so parallel
-// requests cannot expire a session adopted a tick earlier; a pending
-// mismatched offer preempts expiry and reloads under the fresh token.
-// Idempotent across the stream and JSON fetch paths.
+// is adopted. A 401 for a superseded token is stale and ignored; a pending
+// mismatched offer preempts expiry. Idempotent across stream and JSON paths.
 let expired = false;
 function enterExpired(failedToken) {
   if (expired) return;

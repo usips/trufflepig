@@ -12,8 +12,9 @@ export function offeredTokenFromHash(locationHash) {
     : locationHash.slice(1).match(/^token=([0-9a-f]{64})$/)?.[1] || null;
 }
 
-// Fresh-token adoption: only a tab whose stored token already failed with
-// 401/403 adopts a URL token; a live tab keeps its session (never-overwrite).
+// Fresh-token adoption: a tab whose stored token failed with 401/403, or a
+// tab holding no token at all, adopts a URL token; a live tab keeps its
+// session (never-overwrite).
 export function resolveAdoptionToken({ locationHash, expired }) {
   return expired ? offeredTokenFromHash(locationHash) : null;
 }

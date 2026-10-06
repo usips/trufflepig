@@ -1,9 +1,11 @@
 //! Deterministic review evidence assembly and ordered, explicit budget trimming.
 
 mod history_drills;
+mod ssot_diff;
 #[cfg(test)]
 mod tests;
 use history_drills::HistoryDrillGate;
+pub use ssot_diff::{SsotDiff, SsotHunk, build_ssot_diff};
 
 use crate::board::board_actor::{BoardActor, HarnessLabel, claim_vendor};
 use crate::board::board_ids::PlanRevision;
@@ -13,7 +15,6 @@ use crate::board::board_protocol::{
 };
 use crate::board::board_vocabulary::EntryKind;
 use crate::board::commit_trailers::attributed_to;
-use crate::history::source_diff::diff_sources;
 use crate::identity::GitOid;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -62,24 +63,6 @@ pub struct CrossedCommit {
     pub claimant: crate::board::board_actor::BoardActor,
     pub claim_entry: crate::board::board_ids::EntryId,
     pub scope: crate::board::board_vocabulary::EntryText,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SsotDiff {
-    pub before: PlanRevision,
-    pub after: PlanRevision,
-    pub hunks: Vec<SsotHunk>,
-    pub next: Option<String>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SsotHunk {
-    pub before_start: usize,
-    pub after_start: usize,
-    pub removed: Vec<String>,
-    pub added: Vec<String>,
-    pub context_before: Vec<String>,
-    pub context_after: Vec<String>,
 }
 
 /// Assemble evidence only; git scans and board reads belong to the caller.
@@ -260,63 +243,6 @@ fn manual_linker(
 
 fn shell_path(path: &Path) -> String {
     format!("'{}'", path.to_string_lossy().replace('\'', "'\"'\"'"))
-}
-
-pub fn build_ssot_diff(
-    before: &crate::board::board_protocol::RevisionRecord,
-    after: &crate::board::board_protocol::RevisionRecord,
-) -> SsotDiff {
-    let before_text = before.body.as_str();
-    let after_text = after.body.as_str();
-    let changes = diff_sources(before_text.as_bytes(), after_text.as_bytes());
-    let before_lines = before_text.split_inclusive('\n').collect::<Vec<_>>();
-    let after_lines = after_text.split_inclusive('\n').collect::<Vec<_>>();
-    let hunks = changes
-        .changes
-        .iter()
-        .enumerate()
-        .map(|(index, change)| {
-            let start = change.before_lines.start;
-            let end = change.before_lines.end;
-            let context_start = start.saturating_sub(3).max(
-                index
-                    .checked_sub(1)
-                    .map_or(0, |previous| changes.changes[previous].before_lines.end),
-            );
-            let context_end = (end + 3).min(
-                changes
-                    .changes
-                    .get(index + 1)
-                    .map_or(before_lines.len(), |next| next.before_lines.start),
-            );
-            SsotHunk {
-                before_start: start + 1,
-                after_start: change.after_lines.start + 1,
-                removed: before_lines[change.before_lines.clone()]
-                    .iter()
-                    .map(|line| (*line).to_owned())
-                    .collect(),
-                added: after_lines[change.after_lines.clone()]
-                    .iter()
-                    .map(|line| (*line).to_owned())
-                    .collect(),
-                context_before: before_lines[context_start..start]
-                    .iter()
-                    .map(|line| (*line).to_owned())
-                    .collect(),
-                context_after: before_lines[end..context_end]
-                    .iter()
-                    .map(|line| (*line).to_owned())
-                    .collect(),
-            }
-        })
-        .collect();
-    SsotDiff {
-        before: before.id,
-        after: after.id,
-        hunks,
-        next: None,
-    }
 }
 
 impl ReviewPacket {

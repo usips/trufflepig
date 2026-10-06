@@ -1,5 +1,6 @@
 use super::board_runtime::{BoardDatabaseMarker, board_database_marker_matches};
 use super::*;
+use std::path::Path;
 
 fn lookup<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<OsString> + 'a {
     move |name| {

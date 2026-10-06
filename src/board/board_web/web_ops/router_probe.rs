@@ -19,12 +19,9 @@ pub(super) const ROUTER_MIGRATION_WAIT: Duration = Duration::from_secs(30);
 const ROUTER_MIGRATION_POLL: Duration = Duration::from_millis(500);
 
 /// Startup opens the database only when a same-API router confirms its schema,
-/// the file already holds the supported schema, or a brand-new database may
-/// bootstrap. An answered router error is fatal; only a silent router (`None`)
-/// permits the local schema check. A stale local file waits up to `wait` for a
-/// concurrently-starting router to migrate it; a newer file refuses at once.
-/// After the wait, an answering router is still migrating while a silent one
-/// was never started, and each refusal says so.
+/// the file holds the supported schema, or a new database may bootstrap; an
+/// answered router error is fatal. A stale file waits up to `wait` for a
+/// starting router to migrate it; a newer file refuses at once.
 pub(super) fn startup_probe(
     database: &Path,
     deadline: QueryDeadline,
