@@ -109,19 +109,23 @@ fn allowed_url(url: &str) -> bool {
         .is_some_and(|authority| !authority.is_empty() && !blocked_authority(authority))
 }
 
-/// True when an http(s) authority targets `localhost` (one trailing dot
-/// tolerated) or an IP literal: any bracketed host, or any IPv4 spelling whose
-/// labels are all decimal, hex, or octal. Percent-encoding decodes first, so
-/// `%31%32%37.0.0.1` and `%5b::1%5d` match; userinfo and `:port` strip after.
+/// True when an http(s) authority targets `localhost` or a `*.localhost`
+/// subdomain (one trailing dot tolerated), a non-ASCII host (browsers fold
+/// fullwidth digits, `。` dots, and soft hyphens to loopback), or an IP
+/// literal. Percent-decoding decodes first; userinfo and `:port` strip after.
 fn blocked_authority(authority: &str) -> bool {
     let decoded = percent_decode(authority);
     let host = decoded.rsplit('@').next().unwrap_or_default();
-    if host.starts_with('[') {
+    if host.starts_with('[') || !host.is_ascii() {
         return true;
     }
     let bare = host.split(':').next().unwrap_or_default();
     let bare = bare.strip_suffix('.').unwrap_or(bare);
-    bare.eq_ignore_ascii_case("localhost") || is_numeric_ipv4(bare)
+    bare.eq_ignore_ascii_case("localhost")
+        || bare
+            .get(bare.len().saturating_sub(".localhost".len())..)
+            .is_some_and(|suffix| suffix.eq_ignore_ascii_case(".localhost"))
+        || is_numeric_ipv4(bare)
 }
 
 /// True when every dot-separated label is decimal digits (`127`, which covers

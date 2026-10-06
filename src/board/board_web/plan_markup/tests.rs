@@ -196,6 +196,28 @@ fn loopback_links_without_tokens_render_as_text() {
 }
 
 #[test]
+fn unicode_loopback_hosts_and_subdomains_render_as_text() {
+    for href in [
+        "http://１２７.0.0.1/",
+        "http://127。0。0。1/",
+        "http://127．0．0．1/",
+        "http://127\u{ad}.0.0.1/",
+        "http://ｌｏｃａｌｈｏｓｔ/",
+        "http://evil.localhost/",
+        "http://evil.localhost./",
+    ] {
+        assert!(!allowed_url(href), "accepted {href:?}");
+        let rendered = render(&format!("[x]({href})"));
+        assert!(
+            !rendered.html.contains("href="),
+            "{href}: {}",
+            rendered.html
+        );
+        assert!(rendered.html.contains(">x<"), "{href}: {}", rendered.html);
+    }
+}
+
+#[test]
 fn safe_links_still_link() {
     let rendered = render("[x](#section) [y](https://example.com/) [z](mailto:a@b.example)");
     assert!(
