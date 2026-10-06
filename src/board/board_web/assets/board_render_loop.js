@@ -136,7 +136,12 @@ export function createBoardRenderLoop({
       formStatus(form, current ? "Saved." : "", "muted");
       if (success) success(result, current);
       else if (current) { notice("Saved.", "success"); scheduleRefresh(); }
-      if (key) { saveForm(form); syncForm(form, main); if (!current) state.formStatuses.delete(key); }
+      if (key) {
+        // Re-saving a pinned key would pin the just-deleted draft again.
+        if (!state.formDrafts.pinned?.(key)) saveForm(form);
+        syncForm(form, main);
+        if (!current) state.formStatuses.delete(key);
+      }
       return true;
     } catch (error) {
       const stale = error.code === "stale_revision" || errorMessage(error).startsWith("stale_revision");

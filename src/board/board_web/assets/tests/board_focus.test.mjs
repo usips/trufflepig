@@ -59,6 +59,23 @@ describe("board focus restore", () => {
     assert.equal(document.activeElement, after.second);
   });
 
+  it("returns focus to the second duplicate panel", () => {
+    const dom = createBoardDom(blankState());
+    const build = () => {
+      const root = document.createElement("div");
+      const panels = [0, 1].map(() => dom.panel("Duplicates", dom.link("Plan P1", "plan", { ref: "P1" })));
+      root.append(panels);
+      return { root, panels };
+    };
+    const before = build();
+    document.activeElement = before.panels[1].querySelector("a");
+    const focus = dom.focusedControl(before.root);
+    const after = build();
+    document.activeElement = null;
+    dom.restoreFocus(after.root, focus);
+    assert.equal(document.activeElement, after.panels[1].querySelector("a"));
+  });
+
   it("falls back to the nearest keyed ancestor when the link is gone", () => {
     const dom = createBoardDom(blankState());
     const root = document.createElement("div");

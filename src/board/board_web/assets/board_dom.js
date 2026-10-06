@@ -206,8 +206,9 @@ export function createBoardDom(state) {
   // occurrence among same-key matches, counted lazily here because pages build
   // incrementally. The occurrence is scoped within the nearest keyed ancestor,
   // so a new row elsewhere (a fresh ticker event) never shifts other keys.
-  // The ancestor and the enclosing form ride along as fallbacks for when the
-  // element itself is gone after a refresh.
+  // The ancestor and its own occurrence ride along as fallbacks for when the
+  // element itself is gone after a refresh, and to scope duplicates of the
+  // ancestor (two panels with the same key) to the instance that held focus.
   function focusedControl(root) {
     const input = document.activeElement;
     if (!root.contains(input)) return null;
@@ -221,9 +222,13 @@ export function createBoardDom(state) {
     const ancestor = keyed.parentElement?.closest?.("[data-focus-key]");
     const scope = ancestor && root.contains(ancestor) ? ancestor : root;
     const occurrence = [...scope.querySelectorAll(`[data-focus-key="${CSS.escape(key)}"]`)].indexOf(keyed);
+    const ancestorKey = ancestor ? ancestor.dataset.focusKey : null;
+    const ancestorOccurrence = ancestor
+      ? [...root.querySelectorAll(`[data-focus-key="${CSS.escape(ancestorKey)}"]`)].indexOf(ancestor)
+      : 0;
     return {
       focusKey: `${key}#${occurrence}`,
-      ancestorKey: ancestor ? ancestor.dataset.focusKey : null,
+      ancestorKey: ancestor ? `${ancestorKey}#${ancestorOccurrence}` : null,
       formKey: form?.dataset.draftKey || null,
     };
   }
@@ -233,8 +238,12 @@ export function createBoardDom(state) {
       const keyed = /^(.*)#(\d+)$/.exec(focus.focusKey);
       const key = keyed ? keyed[1] : focus.focusKey;
       const occurrence = keyed ? Number(keyed[2]) : 0;
-      const scope = focus.ancestorKey
-        ? root.querySelector(`[data-focus-key="${CSS.escape(focus.ancestorKey)}"]`) : null;
+      const recorded = focus.ancestorKey ? /^(.*)#(\d+)$/.exec(focus.ancestorKey) : null;
+      const ancestorKey = recorded ? recorded[1] : focus.ancestorKey;
+      const ancestorOccurrence = recorded ? Number(recorded[2]) : 0;
+      const ancestors = ancestorKey
+        ? [...root.querySelectorAll(`[data-focus-key="${CSS.escape(ancestorKey)}"]`)] : [];
+      const scope = ancestors[ancestorOccurrence] || ancestors[0] || null;
       const matches = [...(scope || root).querySelectorAll(`[data-focus-key="${CSS.escape(key)}"]`)];
       const target = matches[occurrence] || scope || null;
       if (target) { target.focus({ preventScroll: true }); return; }

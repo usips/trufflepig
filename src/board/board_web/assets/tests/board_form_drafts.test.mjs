@@ -82,6 +82,28 @@ describe("board draft stores", () => {
     assert.equal(formDrafts.has("tab-0:form-0"), false);
   });
 
+  it("keeps a production edit draft alive across two task tabs", () => {
+    const { formDrafts, drafts } = createDraftStores();
+    // The plan editor's draft key, built as pages/board_pages.js does.
+    const mode = "edit";
+    const base = "P1@3";
+    const key = mode === "new" ? "new" : `${mode}:${base}`;
+    drafts.set(key, { title: "", body: "unsaved plan text", summary: "", steward: "", repo_key: "", base });
+    for (let tab = 0; tab < 2; tab++) {
+      for (let index = 0; index < 40; index++) formDrafts.set(`tab-${tab}:form-${index}`, index);
+    }
+    assert.equal(drafts.get(key)?.body, "unsaved plan text");
+  });
+
+  it("caps pinned keys at 8 and demotes the oldest pin into the bound", () => {
+    const { formDrafts } = createDraftStores();
+    for (let index = 0; index < 12; index++) formDrafts.set(`editor:edit:P1@${index}`, { index });
+    for (let index = 0; index < 64; index++) formDrafts.set(`form-${index}`, index);
+    // The four oldest pins fell back into the LRU and evicted first.
+    for (let index = 0; index < 4; index++) assert.equal(formDrafts.has(`editor:edit:P1@${index}`), false);
+    for (let index = 4; index < 12; index++) assert.equal(formDrafts.has(`editor:edit:P1@${index}`), true);
+  });
+
   it("lets pinned keys survive in every store without consuming capacity", () => {
     const { formDrafts, formStatuses, drafts } = createDraftStores();
     formDrafts.set("editor:edit:P1@3", { body: "text" });

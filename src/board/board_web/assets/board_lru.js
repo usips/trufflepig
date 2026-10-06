@@ -1,46 +1,68 @@
 // One bounded recency group shared by the tab's draft maps: form drafts,
 // form statuses, and editor drafts together hold at most 64 keys, and the
 // least-recently-used key (use = read or write) evicts first. Each store is
-// Map-like; recency and capacity are shared across all three. Keys starting
-// with `editor:` are pinned outside the bound, so a Tasks tab's snapshots
-// can never evict an unsaved plan-editor draft.
+// Map-like; recency and capacity are shared across all three. Keys a save
+// would destroy — `editor:*` snapshots plus the plan editor's `new` and
+// `edit:*` entries in the drafts store — pin outside the bound. Pins are
+// themselves LRU-capped: a pin past the cap demotes the oldest pin back into
+// the shared group, and a successful save deletes (unpins) its key.
 export const DRAFT_STORE_CAPACITY = 64;
+export const DRAFT_PIN_CAPACITY = 8;
 
-export function createDraftStores(capacity = DRAFT_STORE_CAPACITY) {
+export function createDraftStores(capacity = DRAFT_STORE_CAPACITY, pinCapacity = DRAFT_PIN_CAPACITY) {
   const entries = new Map();
   const pinned = new Map();
-  const touch = slot => {
-    const value = entries.get(slot);
-    entries.delete(slot);
-    entries.set(slot, value);
+  const touch = (map, slot) => {
+    const value = map.get(slot);
+    map.delete(slot);
+    map.set(slot, value);
   };
   const evict = () => {
     while (entries.size > capacity) entries.delete(entries.keys().next().value);
   };
-  function store(prefix) {
+  const demoteOldestPin = () => {
+    const oldest = pinned.keys().next().value;
+    entries.set(oldest, pinned.get(oldest));
+    pinned.delete(oldest);
+  };
+  function store(prefix, pinnable = key => key.startsWith("editor:")) {
     const slot = key => `${prefix}${key}`;
-    const held = key => (String(key).startsWith("editor:") ? pinned : entries);
     return {
       get(key) {
-        const map = held(key);
         const at = slot(key);
-        if (!map.has(at)) return undefined;
-        if (map === entries) touch(at);
-        return map.get(at);
+        if (pinned.has(at)) {
+          touch(pinned, at);
+          return pinned.get(at);
+        }
+        if (!entries.has(at)) return undefined;
+        touch(entries, at);
+        return entries.get(at);
       },
       set(key, value) {
-        const map = held(key);
         const at = slot(key);
-        if (map.has(at)) map.delete(at);
-        map.set(at, value);
-        if (map === entries) evict();
+        pinned.delete(at);
+        entries.delete(at);
+        if (pinnable(String(key))) {
+          while (pinned.size >= pinCapacity && pinned.size) demoteOldestPin();
+          pinned.set(at, value);
+        } else {
+          entries.set(at, value);
+        }
+        evict();
         return this;
       },
       delete(key) {
-        return held(key).delete(slot(key));
+        const at = slot(key);
+        return pinned.delete(at) || entries.delete(at);
       },
       has(key) {
-        return held(key).has(slot(key));
+        const at = slot(key);
+        return pinned.has(at) || entries.has(at);
+      },
+      // Whether sets of this key pin outside the shared bound. Callers skip
+      // re-saving such a key after a successful save deleted it.
+      pinned(key) {
+        return pinnable(String(key));
       },
       clear() {
         for (const map of [entries, pinned]) {
@@ -59,6 +81,7 @@ export function createDraftStores(capacity = DRAFT_STORE_CAPACITY) {
   return {
     formDrafts: store("form\0"),
     formStatuses: store("status\0"),
-    drafts: store("draft\0"),
+    drafts: store("draft\0",
+      key => key === "new" || key.startsWith("edit:") || key.startsWith("editor:")),
   };
 }
