@@ -96,10 +96,10 @@ def require_board_api(binary: str) -> None:
 
 
 def unit_active(name: str) -> bool:
-    """True when a user unit is active; unknown or inactive units are False."""
-    result = subprocess.run(["systemctl", "--user", "is-active", "--quiet", name],
-                            capture_output=True)
-    return result.returncode == 0
+    """True while a user unit is up: active, activating, or reloading."""
+    result = subprocess.run(["systemctl", "--user", "is-active", name],
+                            capture_output=True, text=True)
+    return result.stdout.strip() in ("active", "activating", "reloading")
 
 
 def read_exact(connection: socket.socket, count: int) -> bytes:
@@ -240,11 +240,15 @@ def main() -> int:
         binary = str(Path(binary).absolute())
     if args.systemd or args.board:
         config_home = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+        unit_directory = config_home / "systemd/user"
         database = board_database_path()
         require_board_api(binary)
         router_runtime = system_runtime_path(binary)
         validate_router_database(database, router_runtime, config_home)
-        if args.board:
+        # A managed router is restarted below, so check it after the restart;
+        # only a router the install will not restart gates writing anything.
+        managed_router = args.systemd or (unit_directory / "trufflepig-system.service").exists()
+        if args.board and not managed_router:
             # The board shares the router's database: refuse before touching
             # anything when the listening router is stale.
             require_current_router(router_runtime)
@@ -293,8 +297,6 @@ def main() -> int:
         else:
             print("muse not found; skipped", file=sys.stderr)
     if args.systemd or args.board:
-        config_home = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
-        unit_directory = config_home / "systemd/user"
         router_was_active = unit_active("trufflepig-system.service")
         board_was_active = unit_active("trufflepig-board.service")
         unit_directory.mkdir(parents=True, exist_ok=True)
@@ -306,8 +308,8 @@ def main() -> int:
                 except FileNotFoundError:
                     previous_units[name] = None
                 (unit_directory / name).write_text(text)
-        subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
         try:
+            subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
             if args.systemd:
                 # Stop uses the newly loaded control-group policy, including old children.
                 subprocess.run(["systemctl", "--user", "stop", "trufflepig-system.service"], check=True)
@@ -321,26 +323,35 @@ def main() -> int:
                 print(f"systemd user service: {unit_directory / 'trufflepig-system.service'}")
             if args.board:
                 subprocess.run(["systemctl", "--user", "stop", "trufflepig-board.service"], check=True)
-                router_unit = unit_directory / "trufflepig-system.service"
-                if not args.systemd and router_unit.exists():
+                if not args.systemd and managed_router:
                     # The board shares the router's database; both must run the same binary.
                     subprocess.run(["systemctl", "--user", "restart", "trufflepig-system.service"], check=True)
                 subprocess.run(["systemctl", "--user", "enable", "--now", "trufflepig-board.service"], check=True)
+                if managed_router:
+                    # The restarted router must run the current binary on the migrated database.
+                    require_current_router(router_runtime)
                 print(f"systemd board service: {unit_directory / 'trufflepig-board.service'}")
                 print("board bootstrap URL: run `trufflepig board web`")
         except (OSError, ValueError, subprocess.CalledProcessError):
-            # Restore the unit files this run overwrote, then revive exactly
-            # the units that were active before the install began.
+            # Undo this run's unit state: disable and remove units it created,
+            # stop units that were inactive before, and start the units that
+            # were active before on their restored unit files.
             for name, previous in previous_units.items():
                 if previous is None:
+                    subprocess.run(["systemctl", "--user", "disable", "--now", name], check=True)
                     (unit_directory / name).unlink(missing_ok=True)
-                else:
+            for name, was_active in (("trufflepig-system.service", router_was_active),
+                                    ("trufflepig-board.service", board_was_active)):
+                if not was_active and (unit_directory / name).exists():
+                    subprocess.run(["systemctl", "--user", "stop", name], check=True)
+            for name, previous in previous_units.items():
+                if previous is not None:
                     (unit_directory / name).write_text(previous)
             subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
             for name, was_active in (("trufflepig-system.service", router_was_active),
                                     ("trufflepig-board.service", board_was_active)):
                 if was_active:
-                    subprocess.run(["systemctl", "--user", "restart", name], check=True)
+                    subprocess.run(["systemctl", "--user", "start", name], check=True)
             raise
     if args.check:
         subprocess.run([sys.executable, str(PLUGIN / "scripts/check_agent.py"),
