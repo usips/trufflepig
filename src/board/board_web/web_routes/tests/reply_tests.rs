@@ -45,11 +45,38 @@ fn early_errors_send_their_reply_before_closing_on_unread_input() {
     }
 }
 
+/// Polls until `needle` sits unread in the socket's receive buffer; the 5 s
+/// deadline turns a stuck producer into a failure instead of a hang. Peeking
+/// never consumes, so the bytes stay queued for the code under test.
+fn peek_until(socket: &mut TcpStream, needle: &[u8]) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut buffered = vec![0; 64 * 1024];
+    socket.set_nonblocking(true).unwrap();
+    loop {
+        let arrived = match socket.peek(&mut buffered) {
+            Ok(count) => buffered[..count]
+                .windows(needle.len())
+                .any(|window| window == needle),
+            Err(_) => false,
+        };
+        if arrived {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for {:?}",
+            String::from_utf8_lossy(needle)
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    socket.set_nonblocking(false).unwrap();
+}
+
 #[test]
 fn queue_full_refusal_delivers_the_busy_reply_before_closing() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
-    let (server, _) = listener.accept().unwrap();
+    let (mut server, _) = listener.accept().unwrap();
     // A mid-request client: bytes queued unread server-side, no FIN yet.
     client
         .write_all(b"GET /api/v1/board HTTP/1.1\r\nHost: x")
@@ -57,11 +84,11 @@ fn queue_full_refusal_delivers_the_busy_reply_before_closing() {
     // The request must be queued unread server-side before the refusal, and
     // the reply must sit unread client-side before the read, so a reset
     // cannot slip past already-consumed bytes on either side.
-    std::thread::sleep(Duration::from_millis(100));
+    peek_until(&mut server, b"Host: x");
     let busy =
         http_wire::unavailable_response(1, crate::board::board_web::web_serve::QUEUE_FULL_BODY);
     crate::board::board_web::web_serve::refuse_queue_full(server, &busy);
-    std::thread::sleep(Duration::from_millis(100));
+    peek_until(&mut client, b"daemon_busy");
     // A reset may already have destroyed the connection; the body read below
     // is the assertion.
     let _ = client.shutdown(Shutdown::Write);

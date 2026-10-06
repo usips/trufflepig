@@ -1,6 +1,37 @@
 use super::*;
 
 #[test]
+fn probe_retries_an_interrupted_read() {
+    // A signal may interrupt the probe's blocking reply read; the probe
+    // retries instead of failing, because an interrupted read delivered
+    // no bytes and lost nothing.
+    struct FlakyReply {
+        interrupted: bool,
+    }
+    impl std::io::Read for FlakyReply {
+        fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+            if self.interrupted {
+                bytes[..3].copy_from_slice(b"200");
+                return Ok(3);
+            }
+            self.interrupted = true;
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "EINTR",
+            ))
+        }
+    }
+    let mut reply = FlakyReply { interrupted: false };
+    let mut chunk = [0; 8];
+    let count = http_wire::read_ignoring_interrupts(&mut reply, &mut chunk).unwrap();
+    assert_eq!(&chunk[..count], b"200");
+    assert!(
+        reply.interrupted,
+        "the first read must have been interrupted"
+    );
+}
+
+#[test]
 fn probe_proves_ownership_without_sending_the_token() {
     let (_directory, runtime, config) = fixture();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();

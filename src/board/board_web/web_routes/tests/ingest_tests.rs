@@ -62,20 +62,29 @@ fn ingest_202_and_receipt_carry_the_same_flight_ticket() {
 }
 
 #[test]
-fn rerun_after_a_25s_first_scan_still_succeeds() {
-    let fixture = render_fixture_with(Arc::new(|_, _, _| {
-        Ok(ReplayBatch {
-            latest: EventSeq::new(0),
-            events: vec![],
-        })
-    }));
+fn rerun_after_a_slow_first_scan_still_succeeds() {
+    // Timing as parameters: a 700 ms first scan fits its own 1 s budget,
+    // and the 400 ms rerun fits a fresh one; an inherited deadline would
+    // leave the rerun only ~300 ms and fail it.
+    let scan_budget = Duration::from_millis(1000);
+    let first_scan = Duration::from_millis(700);
+    let rerun_scan = Duration::from_millis(400);
+    let fixture = render_fixture_with_ingest(
+        Arc::new(|_, _, _| {
+            Ok(ReplayBatch {
+                latest: EventSeq::new(0),
+                events: vec![],
+            })
+        }),
+        web_ops::IngestFlight::with_scan_budget(scan_budget),
+    );
     let runtime = fixture._directory.path().join("runtime");
     std::fs::create_dir_all(&runtime).unwrap();
     let socket = runtime.join(crate::daemon::SOCKET_NAME);
     let board_db = fixture.config.db_path.to_string_lossy().into_owned();
-    // Fake router: instant status probes, a 25 s first scan, a 10 s rerun.
-    // Under one inherited 30 s deadline the rerun's 10 s of work cannot fit
-    // the ~5 s left; only a fresh per-scan deadline lets it succeed.
+    // Fake router: instant status probes, a slow first scan, a faster rerun.
+    // Under one inherited budget the rerun's work cannot fit what the first
+    // scan left over; only a fresh per-scan budget lets it succeed.
     let router = std::thread::spawn(move || {
         let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
         let mut ingests = 0;
@@ -98,7 +107,7 @@ fn rerun_after_a_25s_first_scan_still_succeeds() {
                     "unexpected router call: {args:?}"
                 );
                 ingests += 1;
-                std::thread::sleep(Duration::from_secs(if ingests == 1 { 25 } else { 10 }));
+                std::thread::sleep(if ingests == 1 { first_scan } else { rerun_scan });
                 write_daemon_reply(
                     &mut stream,
                     &serde_json::json!({"api": BOARD_API, "inserted": 1}).to_string(),
@@ -109,7 +118,7 @@ fn rerun_after_a_25s_first_scan_still_succeeds() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let mut subscriber = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
     subscriber
-        .set_read_timeout(Some(Duration::from_secs(90)))
+        .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();
     let (server, _) = listener.accept().unwrap();
     fixture
@@ -135,7 +144,7 @@ fn rerun_after_a_25s_first_scan_still_succeeds() {
         body["ticket"].as_str().unwrap().to_owned()
     };
     let leader = post();
-    // The first scan sleeps 25 s, so this POST always lands mid-scan.
+    // The first scan is slow, so this POST always lands mid-scan.
     let joiner = post();
     assert_ne!(
         joiner, leader,

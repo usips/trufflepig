@@ -225,6 +225,21 @@ fn read_before(
     }
 }
 
+/// One blocking read that retries EINTR: a signal may interrupt any read,
+/// and the retry loses nothing because an interrupted read delivered no
+/// bytes.
+pub(crate) fn read_ignoring_interrupts(
+    stream: &mut impl Read,
+    bytes: &mut [u8],
+) -> io::Result<usize> {
+    loop {
+        match stream.read(bytes) {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            result => return result,
+        }
+    }
+}
+
 fn reject_queued_bytes(stream: &TcpStream) -> Result<(), HttpError> {
     stream
         .set_nonblocking(true)
@@ -241,7 +256,7 @@ fn reject_queued_bytes(stream: &TcpStream) -> Result<(), HttpError> {
     }
 }
 
-const DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
+pub(crate) const DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
 const DRAIN_LIMIT: usize = 256 * 1024;
 
 /// After an early error the client may still hold unread request bytes; a
@@ -263,10 +278,9 @@ pub(crate) fn close_after_error(stream: &mut TcpStream) {
             break;
         }
         let limit = remaining.min(chunk.len());
-        match stream.read(&mut chunk[..limit]) {
+        match read_ignoring_interrupts(stream, &mut chunk[..limit]) {
             Ok(0) => break,
             Ok(count) => remaining -= count,
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
             Err(_) => break,
         }
     }

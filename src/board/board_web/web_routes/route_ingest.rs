@@ -23,7 +23,7 @@ pub(super) fn ingest_accepted(mut stream: TcpStream, state: &Arc<BoardWebState>)
                     // router reply budget; a rerun never inherits the
                     // first scan's spent deadline.
                     let ticket = relay_state.ingest.current_ticket();
-                    let expires = Instant::now() + crate::daemon::CLIENT_REPLY_WAIT;
+                    let expires = Instant::now() + relay_state.ingest.scan_budget();
                     let result = relay_ingest(&relay_state.store, expires);
                     relay_state
                         .streams

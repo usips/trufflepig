@@ -9,7 +9,7 @@ use crate::board::{
 };
 use anyhow::{Context, Result, ensure};
 use std::{
-    io::{self, Read, Write},
+    io::{self, Write},
     net::{SocketAddr, TcpStream},
     time::{Duration, Instant},
 };
@@ -142,7 +142,7 @@ fn read_response(socket: &mut TcpStream, expires: Instant) -> Result<Vec<u8>> {
 fn read_chunk(socket: &mut TcpStream, buffered: &mut Vec<u8>, expires: Instant) -> Result<()> {
     socket.set_read_timeout(Some(remaining(expires)?))?;
     let mut chunk = [0; 4096];
-    let count = socket.read(&mut chunk)?;
+    let count = http_wire::read_ignoring_interrupts(socket, &mut chunk)?;
     ensure!(count > 0, "web listener closed before readiness reply");
     buffered.extend_from_slice(&chunk[..count]);
     Ok(())

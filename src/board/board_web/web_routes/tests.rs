@@ -38,6 +38,10 @@ fn render_fixture() -> RenderFixture {
 }
 
 fn render_fixture_with(reader: FeedReader) -> RenderFixture {
+    render_fixture_with_ingest(reader, Default::default())
+}
+
+fn render_fixture_with_ingest(reader: FeedReader, ingest: web_ops::IngestFlight) -> RenderFixture {
     let directory = crate::board::board_test_support::scratch("web-render-");
     let config = BoardConfig::for_database(directory.path().join("web.sqlite3"));
     let store = WebStore::open_at(
@@ -63,7 +67,7 @@ fn render_fixture_with(reader: FeedReader) -> RenderFixture {
             store: Arc::new(store),
             guard,
             streams,
-            ingest: Default::default(),
+            ingest,
             board_id,
         }),
         config,
