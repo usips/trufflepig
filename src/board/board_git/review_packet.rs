@@ -14,6 +14,7 @@ use crate::board::board_protocol::{
 use crate::board::board_vocabulary::EntryKind;
 use crate::board::commit_trailers::attributed_to;
 use crate::history::source_diff::diff_sources;
+use crate::identity::GitOid;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -142,6 +143,13 @@ pub fn assemble_review(
         }
     }
     let mut drill_gate = HistoryDrillGate::default();
+    // Board-linked oids (manual links included) are evidence, never noise:
+    // they leave the unlinked list and their scan warnings drop out.
+    let linked_ids: std::collections::BTreeSet<(crate::board::board_ids::RepoKey, GitOid)> =
+        commits
+            .iter()
+            .map(|commit| (commit.repo_key.clone(), commit.oid))
+            .collect();
     let linked = commits
         .into_iter()
         .map(|commit| {
@@ -155,6 +163,7 @@ pub fn assemble_review(
         .filter(|commit| {
             commit.committed_at >= evidence.base.created_at
                 && commit.committed_at <= evidence.window_end
+                && !linked_ids.contains(&(commit.repo_key.clone(), commit.oid))
         })
         .collect::<Vec<_>>();
     unlinked.sort_by(|a, b| (&a.repo_key, &a.oid).cmp(&(&b.repo_key, &b.oid)));
@@ -166,6 +175,13 @@ pub fn assemble_review(
         if let Some(error) = &repository.scan_error {
             scan_errors.push(error.clone());
         }
+    }
+    if !linked_ids.is_empty() {
+        scan_errors.retain(|error| {
+            !linked_ids
+                .iter()
+                .any(|(_, oid)| error.contains(oid.as_str()))
+        });
     }
     scan_errors.sort();
     scan_errors.dedup();

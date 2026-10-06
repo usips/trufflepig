@@ -21,20 +21,17 @@ pub(super) fn parse_record(fields: &[&[u8]], repo_key: &RepoKey) -> Result<Parse
     let timestamp = std::str::from_utf8(fields[1])?;
     let author = lossy_field(fields[2], "author", &mut warnings);
     let subject = lossy_field(fields[3], "subject", &mut warnings);
-    let plan_field = lossy_field(fields[5], "Plan trailer", &mut warnings);
-    let task_field = lossy_field(fields[6], "Plan-Task trailer", &mut warnings);
-    let coauthor_field = lossy_field(fields[7], "Co-authored-by trailer", &mut warnings);
-    let shortstat_field = lossy_field(fields[8], "shortstat", &mut warnings);
+    let plan_field = lossy_field(fields[4], "Plan trailer", &mut warnings);
+    let task_field = lossy_field(fields[5], "Plan-Task trailer", &mut warnings);
+    let coauthor_field = lossy_field(fields[6], "Co-authored-by trailer", &mut warnings);
+    let shortstat_field = lossy_field(fields[7], "shortstat", &mut warnings);
     let raw_plans = trailer_values(&plan_field, "Plan")?;
     let has_plan_trailer = !raw_plans.is_empty();
     let raw_tasks = trailer_values(&task_field, "Plan-Task")?;
-    if misplaced_trailer(fields[4], &raw_plans, &raw_tasks) {
-        warnings.push(format!("misplaced_trailers {oid}"));
-    }
     let plans: BTreeSet<PlanId> = trailer_ids(raw_plans, "Plan", &mut warnings);
     let tasks: BTreeSet<TaskId> = trailer_ids(raw_tasks, "Plan-Task", &mut warnings);
-    if !tasks.is_empty() && plans.is_empty() {
-        warnings.push(format!("plan_task_without_plan {oid}"));
+    if tasks.iter().any(|task| !plans.contains(&task.plan)) {
+        warnings.push("plan_task_without_plan".to_owned());
     }
     let mut links = Vec::with_capacity(plans.len() + tasks.len());
     for plan in &plans {
@@ -118,44 +115,6 @@ fn lossy_field<'a>(field: &'a [u8], name: &str, warnings: &mut Vec<String>) -> C
     }
 }
 
-/// A trailer-shaped body line Git did not parse as a trailer means its
-/// final-paragraph rule ignored the line; warn, never link.
-fn misplaced_trailer(body: &[u8], plans: &[&str], tasks: &[&str]) -> bool {
-    body.split(|byte| *byte == b'\n').any(|line| {
-        let Some((task, value)) = trailer_shaped(line) else {
-            return false;
-        };
-        let parsed = if task { tasks } else { plans };
-        !parsed.iter().any(|known| known.as_bytes() == value)
-    })
-}
-
-/// Matches `^(Plan|Plan-Task):\s*P\d+`; returns the key kind and trimmed value.
-fn trailer_shaped(line: &[u8]) -> Option<(bool, &[u8])> {
-    for (key, task) in [
-        (b"Plan-Task:".as_slice(), true),
-        (b"Plan:".as_slice(), false),
-    ] {
-        if let Some(rest) = line.strip_prefix(key) {
-            let value = trim_ascii(rest);
-            if value.len() >= 2 && value[0] == b'P' && value[1].is_ascii_digit() {
-                return Some((task, value));
-            }
-        }
-    }
-    None
-}
-
-fn trim_ascii(mut bytes: &[u8]) -> &[u8] {
-    while bytes.first().is_some_and(u8::is_ascii_whitespace) {
-        bytes = &bytes[1..];
-    }
-    while bytes.last().is_some_and(u8::is_ascii_whitespace) {
-        bytes = &bytes[..bytes.len() - 1];
-    }
-    bytes
-}
-
 /// Trailer ids degrade per value: bad values warn, good ones still link.
 fn trailer_ids<T>(values: Vec<&str>, key: &str, warnings: &mut Vec<String>) -> BTreeSet<T>
 where
@@ -210,7 +169,7 @@ fn trailer_values<'a>(field: &'a str, key: &str) -> Result<Vec<&'a str>> {
         .collect()
 }
 
-fn shortstat(value: &str) -> Result<(u64, u64, u64)> {
+pub(crate) fn shortstat(value: &str) -> Result<(u64, u64, u64)> {
     let value = value.trim();
     if value.is_empty() {
         return Ok((0, 0, 0));

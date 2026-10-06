@@ -41,9 +41,9 @@ fn meta_com_coauthors_map_to_one_muse_identity() {
 fn invalid_utf8_record_is_skipped_without_losing_raw_count() {
     let key = RepoKey::from_roots([GitOid::parse(&"a".repeat(40)).unwrap()]).unwrap();
     let oid = "b".repeat(40);
-    let valid = format!("\0{oid}\01700000000\0Fixture <f@example.test>\0valid\0\0Plan: P7\0\0\0\n");
+    let valid = format!("\0{oid}\01700000000\0Fixture <f@example.test>\0valid\0Plan: P7\0\0\0\n");
     let mut bytes = valid.as_bytes().to_vec();
-    let malformed = format!("\0{oid}\01700000000\0Fixture <f@example.test>\0valid\0\0");
+    let malformed = format!("\0{oid}\01700000000\0Fixture <f@example.test>\0valid\0");
     bytes.extend_from_slice(malformed.as_bytes());
     bytes.extend_from_slice(b"\xff\0\0\0\n");
     bytes.extend_from_slice(valid.as_bytes());
@@ -65,7 +65,7 @@ fn malformed_plan_task_value_warns_without_dropping_valid_link() {
     let key = RepoKey::from_roots([GitOid::parse(&"a".repeat(40)).unwrap()]).unwrap();
     let oid = "b".repeat(40);
     let bytes = format!(
-        "\0{oid}\01700000000\0Fixture <f@example.test>\0subject\0\0Plan: P7\0Plan-Task: P7.1\x1dPlan-Task: garbage\0\0\n"
+        "\0{oid}\01700000000\0Fixture <f@example.test>\0subject\0Plan: P7\0Plan-Task: P7.1\x1dPlan-Task: garbage\0\0\n"
     );
     let parsed = parse_log(bytes.as_bytes(), &key).unwrap();
     assert_eq!(parsed.records.len(), 1);
@@ -89,7 +89,7 @@ fn malformed_plan_value_warns_without_dropping_valid_link() {
     let key = RepoKey::from_roots([GitOid::parse(&"a".repeat(40)).unwrap()]).unwrap();
     let oid = "b".repeat(40);
     let bytes = format!(
-        "\0{oid}\01700000000\0Fixture <f@example.test>\0subject\0\0Plan: P7\x1dPlan: garbage\0\0\0\n"
+        "\0{oid}\01700000000\0Fixture <f@example.test>\0subject\0Plan: P7\x1dPlan: garbage\0\0\0\n"
     );
     let parsed = parse_log(bytes.as_bytes(), &key).unwrap();
     assert_eq!(parsed.records.len(), 1);
@@ -113,7 +113,7 @@ fn all_bad_plan_values_still_record_the_commit() {
     let key = RepoKey::from_roots([GitOid::parse(&"a".repeat(40)).unwrap()]).unwrap();
     let oid = "b".repeat(40);
     let bytes =
-        format!("\0{oid}\01700000000\0Fixture <f@example.test>\0subject\0\0Plan: garbage\0\0\0\n");
+        format!("\0{oid}\01700000000\0Fixture <f@example.test>\0subject\0Plan: garbage\0\0\0\n");
     let parsed = parse_log(bytes.as_bytes(), &key).unwrap();
     assert_eq!(parsed.records.len(), 1);
     assert!(parsed.records[0].commit.plans.is_empty());
@@ -122,12 +122,42 @@ fn all_bad_plan_values_still_record_the_commit() {
 }
 
 #[test]
+fn mismatched_plan_task_warns() {
+    let key = RepoKey::from_roots([GitOid::parse(&"a".repeat(40)).unwrap()]).unwrap();
+    let oid = "b".repeat(40);
+    let bytes = format!(
+        "\0{oid}\01700000000\0Fixture <f@example.test>\0subject\0Plan: P4\0Plan-Task: P3.4\0\0\n"
+    );
+    let parsed = parse_log(bytes.as_bytes(), &key).unwrap();
+    assert_eq!(parsed.records.len(), 1);
+    assert_eq!(
+        parsed.records[0].commit.plans,
+        vec![CommitPlanLink {
+            plan_id: PlanId::new(4).unwrap(),
+            task_ordinal: None,
+        }],
+        "a task of another plan never links"
+    );
+    assert_eq!(parsed.warnings.len(), 1, "{:?}", parsed.warnings);
+    assert!(
+        parsed.warnings[0].contains("plan_task_without_plan"),
+        "unexpected warning: {}",
+        parsed.warnings[0]
+    );
+    assert!(
+        parsed.warnings[0].contains(&oid),
+        "warning must name the commit: {}",
+        parsed.warnings[0]
+    );
+}
+
+#[test]
 fn latin1_author_decodes_lossily_with_warning() {
     let key = RepoKey::from_roots([GitOid::parse(&"a".repeat(40)).unwrap()]).unwrap();
     let oid = "b".repeat(40);
     let mut bytes = format!("\0{oid}\01700000000\0").into_bytes();
     bytes.extend_from_slice(b"Caf\xe9 <c@example.test>");
-    bytes.extend_from_slice(b"\0subject\0\0Plan: P7\0\0\0\n");
+    bytes.extend_from_slice(b"\0subject\0Plan: P7\0\0\0\n");
     let parsed = parse_log(&bytes, &key).unwrap();
     assert_eq!(parsed.records.len(), 1);
     assert_eq!(
@@ -144,52 +174,11 @@ fn latin1_author_decodes_lossily_with_warning() {
 }
 
 #[test]
-fn misplaced_plan_trailers_warn_once_per_commit_without_linking() {
-    let key = RepoKey::from_roots([GitOid::parse(&"a".repeat(40)).unwrap()]).unwrap();
-    let oid = "b".repeat(40);
-    // The W5-H1 shape (commit 49a77c3): blank lines between trailers, so
-    // Git's final-paragraph rule parses only the co-author.
-    let body = concat!(
-        "feat(board): delegate claims to coder sessions\n",
-        "\n",
-        "Steward orchestrators claim tasks on behalf of coder sessions.\n",
-        "\n",
-        "Plan: P3\n",
-        "\n",
-        "Plan-Task: P3.4\n",
-        "\n",
-        "Co-authored-by: Muse Spark <noreply@meta.com>\n"
-    );
-    let bytes = format!(
-        "\0{oid}\01700000000\0Fixture <f@example.test>\0feat(board): delegate claims to coder sessions\0{body}\0\0\0Co-authored-by: Muse Spark <noreply@meta.com>\0\n"
-    );
-    let parsed = parse_log(bytes.as_bytes(), &key).unwrap();
-    assert_eq!(parsed.records.len(), 1);
-    assert!(
-        parsed.records[0].commit.plans.is_empty(),
-        "misplaced trailers never create links"
-    );
-    assert_eq!(parsed.warnings.len(), 1, "{:?}", parsed.warnings);
-    assert!(
-        parsed.warnings[0].contains("misplaced_trailers"),
-        "unexpected warning: {}",
-        parsed.warnings[0]
-    );
-    assert!(
-        parsed.warnings[0].contains(&oid),
-        "warning must name the commit: {}",
-        parsed.warnings[0]
-    );
-}
-
-#[test]
 fn final_paragraph_trailers_seen_by_git_do_not_warn() {
     let key = RepoKey::from_roots([GitOid::parse(&"a".repeat(40)).unwrap()]).unwrap();
     let oid = "b".repeat(40);
-    let body =
-        "subject\n\nPlan: P7\nPlan-Task: P7.3\nCo-authored-by: Model claim <noreply@openai.com>\n";
     let bytes = format!(
-        "\0{oid}\01700000000\0Fixture <f@example.test>\0subject\0{body}\0Plan: P7\0Plan-Task: P7.3\0Co-authored-by: Model claim <noreply@openai.com>\0\n"
+        "\0{oid}\01700000000\0Fixture <f@example.test>\0subject\0Plan: P7\0Plan-Task: P7.3\0Co-authored-by: Model claim <noreply@openai.com>\0\n"
     );
     let parsed = parse_log(bytes.as_bytes(), &key).unwrap();
     assert_eq!(parsed.records.len(), 1);
@@ -201,9 +190,8 @@ fn final_paragraph_trailers_seen_by_git_do_not_warn() {
 fn plan_task_trailer_without_plan_warns_and_stays_unlinked() {
     let key = RepoKey::from_roots([GitOid::parse(&"a".repeat(40)).unwrap()]).unwrap();
     let oid = "b".repeat(40);
-    let body = "task only\n\nPlan-Task: P7.3\nCo-authored-by: Model claim <noreply@openai.com>\n";
     let bytes = format!(
-        "\0{oid}\01700000000\0Fixture <f@example.test>\0task only\0{body}\0\0Plan-Task: P7.3\0Co-authored-by: Model claim <noreply@openai.com>\0\n"
+        "\0{oid}\01700000000\0Fixture <f@example.test>\0task only\0\0Plan-Task: P7.3\0Co-authored-by: Model claim <noreply@openai.com>\0\n"
     );
     let parsed = parse_log(bytes.as_bytes(), &key).unwrap();
     assert_eq!(parsed.records.len(), 1);
@@ -229,9 +217,8 @@ fn plan_task_trailer_without_plan_warns_and_stays_unlinked() {
 fn latin1_coauthor_trailer_decodes_lossily_keeping_the_record() {
     let key = RepoKey::from_roots([GitOid::parse(&"a".repeat(40)).unwrap()]).unwrap();
     let oid = "b".repeat(40);
-    let mut bytes =
-            format!("\0{oid}\01700000000\0Fixture <f@example.test>\0subject\0subject\n\nPlan: P7\n\0Plan: P7\0\0")
-                .into_bytes();
+    let mut bytes = format!("\0{oid}\01700000000\0Fixture <f@example.test>\0subject\0Plan: P7\0\0")
+        .into_bytes();
     bytes.extend_from_slice(b"Co-authored-by: Caf\xe9 <c@example.test>");
     bytes.extend_from_slice(b"\0\n");
     let parsed = parse_log(&bytes, &key).unwrap();
@@ -261,8 +248,7 @@ fn plan_links_past_limit_truncate_with_warning() {
         .map(|number| format!("Plan: P{number}"))
         .collect::<Vec<_>>()
         .join("\x1d");
-    let bytes =
-        format!("\0{oid}\01700000000\0Fixture <f@example.test>\0subject\0\0{plans}\0\0\0\n");
+    let bytes = format!("\0{oid}\01700000000\0Fixture <f@example.test>\0subject\0{plans}\0\0\0\n");
     let parsed = parse_log(bytes.as_bytes(), &key).unwrap();
     assert_eq!(parsed.records.len(), 1);
     let links = &parsed.records[0].commit.plans;

@@ -8,18 +8,20 @@ use crate::board::board_ids::RepoKey;
 use crate::board::board_protocol::{CommitCoauthor, LinkedCommit};
 use anyhow::{Context, Result, ensure};
 use trailer_records::parse_record;
+pub(crate) use trailer_records::shortstat;
 
 // Separate keys preserve both trailer presence and each field's meaning. Git's
-// `key=` is case-insensitive; a pipe-separated key is one literal key. The raw
-// body detects trailer-shaped lines Git's final-paragraph rule ignored.
+// `key=` is case-insensitive; a pipe-separated key is one literal key. Bodies
+// stay out of the format: a bounded window of long bodies must not overflow
+// the output limit, so misplaced trailers are found by a second grep pass.
 pub const LOG_FORMAT: &str = concat!(
-    "--format=%x00%H%x00%ct%x00%an <%ae>%x00%s%x00%B%x00",
+    "--format=%x00%H%x00%ct%x00%an <%ae>%x00%s%x00",
     "%(trailers:key=Plan,unfold,separator=%x1d)%x00",
     "%(trailers:key=Plan-Task,unfold,separator=%x1d)%x00",
     "%(trailers:key=Co-authored-by,unfold,separator=%x1d)%x00"
 );
 
-const RECORD_FIELDS: usize = 9;
+const RECORD_FIELDS: usize = 8;
 
 #[derive(Clone, Debug)]
 pub struct ParsedCommit {
@@ -35,7 +37,7 @@ pub struct ParsedLog {
 
 /// Framing is atomic; invalid metadata skips one record without discarding its peers.
 /// Plan, task, and co-author trailers degrade per value: bad entries warn only.
-/// Body lines that look like plan trailers but were not parsed warn per commit.
+/// Warnings key by commit oid and deduplicate, so repeated scans name an oid once.
 pub fn parse_log(bytes: &[u8], repo_key: &RepoKey) -> Result<ParsedLog> {
     if bytes.is_empty() {
         return Ok(ParsedLog {
@@ -55,23 +57,27 @@ pub fn parse_log(bytes: &[u8], repo_key: &RepoKey) -> Result<ParsedLog> {
         record_count: fields.len() / RECORD_FIELDS,
         warnings: Vec::new(),
     };
-    for (index, record) in fields.chunks_exact(RECORD_FIELDS).enumerate() {
+    for record in fields.chunks_exact(RECORD_FIELDS) {
+        let oid = String::from_utf8_lossy(record[0]).into_owned();
         match parse_record(record, repo_key) {
             Ok(parsed) => {
                 result.warnings.extend(
                     parsed
                         .warnings
                         .into_iter()
-                        .map(|warning| format!("board_scan: Git record {}: {warning}", index + 1)),
+                        .map(|warning| format!("board_scan: {oid}: {warning}")),
                 );
                 result.records.push(parsed.commit);
             }
-            Err(error) => result.warnings.push(format!(
-                "board_scan: skipped Git record {}: {error:#}",
-                index + 1
-            )),
+            Err(error) => result
+                .warnings
+                .push(format!("board_scan: {oid}: skipped record: {error:#}")),
         }
     }
+    let mut seen = std::collections::HashSet::with_capacity(result.warnings.len());
+    result
+        .warnings
+        .retain(|warning| seen.insert(warning.clone()));
     Ok(result)
 }
 

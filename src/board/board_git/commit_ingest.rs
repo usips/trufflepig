@@ -130,6 +130,8 @@ impl RepoIngestor {
         report.unknown_plans.dedup();
         report.unknown_tasks.sort_unstable();
         report.unknown_tasks.dedup();
+        let mut seen = std::collections::HashSet::with_capacity(report.errors.len());
+        report.errors.retain(|error| seen.insert(error.clone()));
         Ok(report)
     }
 

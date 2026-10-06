@@ -170,6 +170,54 @@ fn capped_scan_links_bounded_records_without_advancing_digest() {
 }
 
 #[test]
+fn scan_survives_long_bodies() {
+    let fixture = GitFixture::new();
+    let body = "lorem ipsum dolor sit amet, consectetur adipiscing elit\n".repeat(100);
+    assert!(body.len() >= 5 * 1024);
+    let mut stream = Vec::new();
+    for ordinal in 0..=COMMIT_LIMIT {
+        let message = if ordinal == 0 {
+            "root\n".to_owned()
+        } else {
+            format!("bulk {ordinal}\n\n{body}\nPlan: P7\n")
+        };
+        writeln!(
+            stream,
+            "commit refs/heads/main\ncommitter Fixture <fixture@example.test> {} +0000\ndata {}\n{}\n",
+            1_700_000_100 + ordinal as i64,
+            message.len(),
+            message
+        )
+        .unwrap();
+    }
+    let mut child = Command::new("git")
+        .current_dir(&fixture.root)
+        .args(["fast-import", "--quiet"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(&stream).unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let registration = fixture.registration();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let tips = commit_scanner::collect_tips(&registration, deadline).unwrap();
+    let scan =
+        commit_scanner::scan_log(&registration, &tips, 1_700_000_000, true, deadline).unwrap();
+    assert!(
+        scan.complete,
+        "a full window of long-body commits must scan completely"
+    );
+    assert_eq!(scan.records.len(), COMMIT_LIMIT);
+}
+
+#[test]
 fn broken_git_reference_warning_prevents_complete_scan() {
     let fixture = GitFixture::new();
     fixture.commit(&linked_message("valid root"));

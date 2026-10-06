@@ -250,6 +250,45 @@ fn review_names_the_hand_linker_and_renders_it() {
 }
 
 #[test]
+fn manually_linked_commit_leaves_unlinked_list() {
+    let mut source = evidence();
+    let manual = commit("codex", 120);
+    source.entries.push(commit_entry(&manual, "linker"));
+    source.commits.push(manual.clone());
+    let packet = assemble_review(
+        &source,
+        source.agent.as_ref(),
+        &[],
+        vec![manual],
+        Vec::new(),
+    );
+    assert_eq!(packet.linked.len(), 1);
+    assert!(
+        packet.unlinked.is_empty(),
+        "a linked commit is never also unlinked: {:?}",
+        packet
+            .unlinked
+            .iter()
+            .map(|item| item.commit.oid)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn linked_commit_warnings_leave_review_scan_errors() {
+    let mut source = evidence();
+    let linked = commit("codex", 120);
+    source.commits.push(linked.clone());
+    let warning = format!("board_scan: {}: misplaced_trailers", linked.oid);
+    let packet = assemble_review(&source, None, &[], Vec::new(), vec![warning]);
+    assert!(
+        packet.scan_errors.is_empty(),
+        "warnings for linked commits are noise: {:?}",
+        packet.scan_errors
+    );
+}
+
+#[test]
 fn scan_commit_entries_are_not_hand_links() {
     let mut source = evidence();
     let scanned = commit("codex", 120);

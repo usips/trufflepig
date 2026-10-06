@@ -181,6 +181,55 @@ fn misplaced_plan_trailers_warn_through_scan_reports_without_linking() {
 }
 
 #[test]
+fn misplaced_trailer_warning_names_each_oid_once() {
+    let fixture = GitFixture::new();
+    fixture.commit("root");
+    let first = fixture.commit(concat!(
+        "split footer one\n\nBody prose.\n\nPlan: P7\n\nPlan-Task: P7.3\n\n",
+        "Co-authored-by: Muse Spark <noreply@meta.com>"
+    ));
+    fixture.commit("plain middle");
+    let second = fixture.commit(concat!(
+        "split footer two\n\nMore prose.\n\nPlan: P7\n\n",
+        "Co-authored-by: Muse Spark <noreply@meta.com>"
+    ));
+    let target = target(&fixture);
+    let mut backend = TestBackend::default();
+    let report = RepoIngestor::default()
+        .ingest(&mut backend, &actor(), &[target], Duration::from_secs(5))
+        .unwrap();
+    let scan = find_unlinked(
+        &fixture.registration(),
+        1_700_000_000,
+        &HarnessLabel::parse("muse").unwrap(),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let mut warnings = report.errors.clone();
+    if let Some(error) = &scan.scan_error {
+        warnings.extend(error.split("; ").map(str::to_owned));
+    }
+    warnings.sort();
+    warnings.dedup();
+    for oid in [first, second] {
+        assert_eq!(
+            warnings
+                .iter()
+                .filter(|warning| warning.contains(oid.as_str()))
+                .count(),
+            1,
+            "each misplaced oid is named once: {warnings:?}"
+        );
+    }
+    assert!(
+        warnings
+            .iter()
+            .all(|warning| !warning.contains("Git record")),
+        "warnings key by oid, not record index: {warnings:?}"
+    );
+}
+
+#[test]
 fn plan_task_trailer_without_plan_warns_through_scan_reports() {
     let fixture = GitFixture::new();
     fixture.commit("root");

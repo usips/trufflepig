@@ -1,4 +1,6 @@
 //! Deadline-bound ref discovery and complete, bounded commit scans.
+mod passes;
+
 use super::COMMIT_LIMIT;
 use crate::board::{
     board_protocol::{LinkedCommit, RepoRegistration},
@@ -8,10 +10,13 @@ use crate::board::{
 use crate::history::git::{run_bounded, run_bounded_strict};
 use crate::identity::GitOid;
 use anyhow::{Context, Result, ensure};
-use std::collections::{BTreeSet, HashMap};
+use passes::{GREP_FORMAT, MISPLACED_PATTERN, STATS_FORMAT, log_args, parse_grep_log, parse_stats};
+use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
 const TIP_LIMIT: usize = 4096;
+
+const GREP_PATTERN: &str = "^Plan(-Task)?[[:space:]]*:";
 
 pub(super) struct GitTips {
     detached: Vec<GitOid>,
@@ -123,18 +128,18 @@ pub(super) fn read_commit(
             "--no-color",
             "--no-notes",
             "--no-renames",
-            LOG_FORMAT,
+            STATS_FORMAT,
             oid.as_str(),
             "--",
         ];
         if let Ok(stats) = run_bounded(&registration.common_dir, &stats_args, stats_budget)
-            .and_then(|bytes| parse_log(&bytes, &registration.repo_key))
-            && let Some(stats) = stats.records.into_iter().next()
+            .and_then(|bytes| parse_stats(&bytes))
+            && let Some(&(files, insertions, deletions)) = stats.get(&oid)
         {
             let record = &mut parsed.records[0].commit;
-            record.files = stats.commit.files;
-            record.insertions = stats.commit.insertions;
-            record.deletions = stats.commit.deletions;
+            record.files = files;
+            record.insertions = insertions;
+            record.deletions = deletions;
         }
     }
     let mut record = parsed.records.into_iter().next().expect("one record");
@@ -158,50 +163,60 @@ pub(super) fn scan_log(
     }
     let since = format!("--since=@{since}");
     let cap = format!("--max-count={}", COMMIT_LIMIT + 1);
-    let mut args = Vec::with_capacity(tips.detached.len() + 12);
-    args.extend([
-        "log",
-        "--branches",
-        "--no-decorate",
-        "--no-color",
-        "--no-notes",
-        "--no-renames",
-    ]);
-    args.extend(tips.detached.iter().map(GitOid::as_str));
-    args.extend([since.as_str(), cap.as_str(), LOG_FORMAT]);
+    let mut filter = Vec::new();
     if linked_only {
-        args.extend(["-E", "-i", "--grep=^Plan(-Task)?[[:space:]]*:"]);
+        filter.extend(["-E", "-i", "--grep", GREP_PATTERN]);
     }
-    args.push("--");
     // Per-commit passes tolerate Git warnings: NUL framing and the strict tip
     // digest re-check still gate scan completion.
-    let bytes = run_bounded(&registration.common_dir, &args, remaining(deadline)?)?;
+    let bytes = run_bounded(
+        &registration.common_dir,
+        &log_args(&tips.detached, &since, &cap, LOG_FORMAT, &filter),
+        remaining(deadline)?,
+    )?;
     let parsed = parse_log(&bytes, &registration.repo_key)?;
     let complete = parsed.record_count <= COMMIT_LIMIT;
     let mut records = parsed.records;
     records.truncate(COMMIT_LIMIT);
     let mut warnings = parsed.warnings;
+    match run_bounded(
+        &registration.common_dir,
+        &log_args(
+            &tips.detached,
+            &since,
+            &cap,
+            GREP_FORMAT,
+            &["-E", "--grep", MISPLACED_PATTERN],
+        ),
+        remaining(deadline)?,
+    )
+    .and_then(|bytes| parse_grep_log(&bytes))
+    {
+        Ok(misplaced) => warnings.extend(misplaced),
+        Err(error) => warnings.push(format!(
+            "board_scan: misplaced-trailer scan unavailable: {error:#}"
+        )),
+    }
     let stats_budget = deadline
         .saturating_duration_since(Instant::now())
         .saturating_sub(Duration::from_millis(500))
         .min(Duration::from_secs(1));
     if !records.is_empty() && !stats_budget.is_zero() {
-        let mut stats_args = args.clone();
-        stats_args.insert(1, "--shortstat");
-        match run_bounded(&registration.common_dir, &stats_args, stats_budget)
-            .and_then(|bytes| parse_log(&bytes, &registration.repo_key))
+        let mut stats_filter = filter.clone();
+        stats_filter.insert(0, "--shortstat");
+        match run_bounded(
+            &registration.common_dir,
+            &log_args(&tips.detached, &since, &cap, STATS_FORMAT, &stats_filter),
+            stats_budget,
+        )
+        .and_then(|bytes| parse_stats(&bytes))
         {
             Ok(stats) => {
-                let statistics = stats
-                    .records
-                    .into_iter()
-                    .map(|record| (record.commit.oid, record.commit))
-                    .collect::<HashMap<_, _>>();
                 for record in &mut records {
-                    if let Some(stats) = statistics.get(&record.commit.oid) {
-                        record.commit.files = stats.files;
-                        record.commit.insertions = stats.insertions;
-                        record.commit.deletions = stats.deletions;
+                    if let Some(&(files, insertions, deletions)) = stats.get(&record.commit.oid) {
+                        record.commit.files = files;
+                        record.commit.insertions = insertions;
+                        record.commit.deletions = deletions;
                     }
                 }
             }
@@ -210,6 +225,8 @@ pub(super) fn scan_log(
             )),
         }
     }
+    let mut seen = std::collections::HashSet::with_capacity(warnings.len());
+    warnings.retain(|warning| seen.insert(warning.clone()));
     Ok(LogScan {
         records,
         complete,
