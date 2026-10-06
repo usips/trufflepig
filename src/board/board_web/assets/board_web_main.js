@@ -183,10 +183,12 @@ document.addEventListener("click", event => {
   state.route = routeFromLocation(); notice(""); void loop.loadRoute(true);
 });
 window.addEventListener("hashchange", () => {
-  // Fresh-token offered by navigation: only an expired tab adopts it. A live
-  // tab still strips the token from the URL at once, so it never lingers in
-  // the address bar or history, and holds it pending for a later expiry.
-  const adoption = resolveAdoptionToken({ locationHash: location.hash, expired });
+  // Fresh token offered by navigation: an expired tab adopts it, and so does
+  // a tab that never had a token — with no stored session there is nothing to
+  // keep or flag. A live tab still strips the token from the URL at once, so
+  // it never lingers in the address bar or history; a differing offer waits
+  // pending for a later expiry, while the same token strips without a notice.
+  const adoption = resolveAdoptionToken({ locationHash: location.hash, expired: expired || !token });
   if (adoption !== null) {
     token = adoption; expired = false;
     try { sessionStorage.setItem(TOKEN_KEY, token); } catch (_) { /* In-memory auth still works. */ }
@@ -195,9 +197,8 @@ window.addEventListener("hashchange", () => {
   }
   const stray = expired ? null : offeredTokenFromHash(location.hash);
   if (stray !== null) {
-    pendingToken = stray;
+    if (stray !== token) { pendingToken = stray; notice(TOKEN_MISMATCH_NOTICE, "error"); }
     history.replaceState(history.state, "", location.pathname + location.search);
-    notice(TOKEN_MISMATCH_NOTICE, "error");
     state.navigation++; state.route = routeFromLocation(); void loop.loadRoute(true); return;
   }
   state.navigation++; state.route = routeFromLocation(); void loop.loadRoute(true);

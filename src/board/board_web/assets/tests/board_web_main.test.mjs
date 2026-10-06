@@ -186,4 +186,73 @@ describe("board_web_main bootstrap", () => {
     assert.equal(sessionStorage.getItem(TOKEN_KEY), T1);
     assert.equal(document.getElementById("notice").textContent, MISMATCH);
   });
+
+  it("empty_tab_adopts_a_navigated_token", async () => {
+    setup({ handler: boardSuccess });
+    await loadMain();
+    fakeUrl.hash = `#token=${T2}`;
+    for (const listener of windowListeners.get("hashchange") || []) listener({});
+    assert.equal(
+      await waitFor(() => sessionStorage.getItem(TOKEN_KEY) === T2),
+      true, "a tokenless tab stores the navigated token",
+    );
+    assert.equal(
+      await waitFor(() => fetchCalls.some(call => call.token === T2)),
+      true, "the next fetch carries the adopted token",
+    );
+    assert.equal(location.hash, "");
+  });
+
+  it("same_token_link_strips_silently", async () => {
+    setup({ stored: T1, handler: boardSuccess });
+    await loadMain();
+    assert.equal(await waitFor(() => fetchCalls.length >= 3), true, "the tab loads live first");
+    fakeUrl.hash = `#token=${T1}`;
+    for (const listener of windowListeners.get("hashchange") || []) listener({});
+    assert.equal(location.hash, "");
+    assert.ok(!location.href.includes("token="));
+    assert.equal(document.getElementById("notice").textContent, "", "no mismatch notice");
+    assert.equal(sessionStorage.getItem(TOKEN_KEY), T1);
+  });
+
+  it("stream_without_token_stops_instead_of_reconnecting", async () => {
+    const { createBoardStream } = await import("../stream/board_stream.js?no-token-terminal=1");
+    const delays = [];
+    const realSetTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = (fn, ms) => { delays.push(ms); return realSetTimeout(fn, ms); };
+    const state = {
+      watermark: "41", stream: null, streamGeneration: 0, reconnect: null,
+      streamFailures: 0, resyncing: false,
+    };
+    const connections = [];
+    const stream = createBoardStream({
+      state,
+      privateFetch: async () => {
+        throw new Error("Open the launch URL printed by trufflepig board web to authorize this tab.");
+      },
+      setConnection: (label, mode) => connections.push([label, mode]),
+      loadRoute: async () => {},
+      scheduleRefresh: () => {},
+      parseBoardJson: JSON.parse,
+      addTickerEvent: () => {},
+      noteSeen: () => {},
+      onIngest: () => {},
+      authToken: () => "",
+      onAuthExpired: () => {},
+      heartbeatMs: 20, freshnessMs: 60,
+    });
+    try {
+      stream.startStream("41");
+      assert.equal(
+        await waitFor(() => connections.some(([label]) => label === "Authorization required")),
+        true, "a tokenless stream reports authorization required",
+      );
+      await new Promise(resolve => realSetTimeout(resolve, 50));
+      assert.equal(state.reconnect, null, "no reconnect timer is pending");
+      assert.ok(!delays.some(delay => delay >= 1000), "no backoff timer was scheduled");
+    } finally {
+      stream.stopStream();
+      globalThis.setTimeout = realSetTimeout;
+    }
+  });
 });

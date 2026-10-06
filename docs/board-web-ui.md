@@ -1,8 +1,8 @@
 # Board web UI behavior
 
 Browser companion to the [local board web contract](board-web-contract.md); server routes,
-authentication, stream lifetime, and markup sanitizing live there. Token bootstrap follows that
-contract's authority section; cross-tab stream leadership is below.
+authentication, stream lifetime, and markup sanitizing live there. Token bootstrap and cross-tab
+stream leadership are below.
 
 Primary routes are `/#/P7`, `/#/P7@N`, `/#/P7@A..B`, and `/#/E485`. Named routes include
 `/#/attention`, `/#/feedback`, `/#/entries`, `/#/search`, `/#/new`, `/#/claims`, and `/#/edit/P7@N`;
@@ -28,6 +28,17 @@ Form drafts and focus (by `data-focus-key`) survive live-region refreshes; conne
 fire only on outage, authorization expiry, and restore. Editors retain the originally loaded
 base revision; stale edits preserve the user's draft and never silently rebase or retry.
 Proposal/acceptance authority and task transitions remain backend decisions.
+
+## Token bootstrap
+
+The tab accepts a bootstrap token only from a non-route hash exactly `token=<64 lowercase hex>`,
+removes it from the URL with `history.replaceState`, and retains it only in tab `sessionStorage`
+and memory. A differing stored session is kept and flagged at load while the stray offer is held
+in memory; the pending token is adopted without a second navigation when the stored session
+expires. On later navigations, an expired or never-authorized tab adopts an offered `#token=`;
+a live tab strips it at once without adopting it, flagging a differing offer and staying silent
+when it matches the current token. A stream that cannot send for lack of a token stops without
+reconnecting and reports authorization required.
 
 ## Stream leadership
 

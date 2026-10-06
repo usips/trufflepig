@@ -122,6 +122,14 @@ export function createBoardStream(context) {
           setConnection("Reconnecting…", "error");
         }
       } catch (error) {
+        // A throw before the request is sent — assertAuth refusing an empty
+        // token — is terminal, unlike the 401/403 responses handled above:
+        // stop instead of backing off on a request that can never succeed.
+        if (!sent && error?.name !== "AbortError" && generation === state.streamGeneration) {
+          stopStream();
+          setConnection("Authorization required", "error");
+          return;
+        }
         if (error?.name !== "AbortError" && generation === state.streamGeneration) {
           session.leaderHealthy = false;
           setConnection("Reconnecting…", "error");
