@@ -5,12 +5,13 @@ mod history_drills;
 mod tests;
 use history_drills::HistoryDrillGate;
 
-use crate::board::board_actor::{HarnessLabel, claim_vendor};
+use crate::board::board_actor::{BoardActor, HarnessLabel, claim_vendor};
 use crate::board::board_ids::PlanRevision;
 use crate::board::board_protocol::{
     ClaimRecord, EntryRecord, FeedbackRecord, LinkedCommit, PlanRecord, ProposalRecord,
     RepoScanTarget, ReviewEvidence, TaskRecord,
 };
+use crate::board::board_vocabulary::EntryKind;
 use crate::board::commit_trailers::attributed_to;
 use crate::history::source_diff::diff_sources;
 use serde::{Deserialize, Serialize};
@@ -48,6 +49,8 @@ pub struct ReviewCommit {
     #[serde(flatten)]
     pub commit: LinkedCommit,
     pub drill: Option<String>,
+    /// The actor of a `manual` link; scan links carry none.
+    pub linked_by: Option<BoardActor>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -141,7 +144,11 @@ pub fn assemble_review(
     let mut drill_gate = HistoryDrillGate::default();
     let linked = commits
         .into_iter()
-        .map(|commit| drill_commit(commit, repositories, &mut drill_gate))
+        .map(|commit| {
+            let mut review = drill_commit(commit, repositories, &mut drill_gate);
+            review.linked_by = manual_linker(&review.commit, evidence.plan.id, &evidence.entries);
+            review
+        })
         .collect();
     let mut unlinked = unlinked
         .into_iter()
@@ -209,7 +216,30 @@ fn drill_commit(
             )
         })
     });
-    ReviewCommit { commit, drill }
+    ReviewCommit {
+        commit,
+        drill,
+        linked_by: None,
+    }
+}
+
+/// A manual link's commit entry names its linker; scan entries use a synthetic
+/// `git-OID` session instead.
+fn manual_linker(
+    commit: &LinkedCommit,
+    plan: crate::board::board_ids::PlanId,
+    entries: &[EntryRecord],
+) -> Option<BoardActor> {
+    let scan_session = format!("git-{}", commit.oid);
+    entries
+        .iter()
+        .filter(|entry| entry.kind == EntryKind::Commit && entry.plan == Some(plan))
+        .filter(|entry| entry.repo_key.as_ref() == Some(&commit.repo_key))
+        .find(|entry| {
+            entry.body.as_str().starts_with(commit.oid.as_str())
+                && entry.actor.session != scan_session
+        })
+        .map(|entry| entry.actor.clone())
 }
 
 fn shell_path(path: &Path) -> String {

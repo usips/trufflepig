@@ -56,11 +56,15 @@ semantic/rerank, member, and source-cache options. Hidden model/effort and recen
 wrapper metadata. `--wait` is inbox-only; `--open` lists open/triaged feedback.
 
 `board link OID P7.3` repairs one commit link by hand when trailers are missing or unparsable. The
-backend resolves `OID^{commit}` in a registered repository of the plan on the caller's host, reads
-metadata exactly as a scan, inserts the commit if absent, and records the plan and task link with
-`manual` provenance (scan links keep `scan`); the commit entry names the linker, and relinking the
-same oid and task replays the original receipt. Linking requires the plan steward, the plan owner,
-or a human harness; anyone else is `invalid_actor`, and an unresolved oid is `invalid_reference`.
+backend resolves `OID^{commit}` in the plan's already-registered repositories on the caller's host
+without registering the caller's repository, reads metadata exactly as a scan, inserts the commit
+if absent, and records the plan and task link with `manual` provenance (scan links keep `scan`).
+The commit entry names the linker, review renders a manual link as `linked by hand by ACTOR`,
+relinking the same oid and task replays the original receipt, and linking another task of the same
+plan writes a new event. Linking requires the plan owner's user acting with a `human` harness or
+the plan steward harness; `cli` and every other actor is `invalid_actor`. An unresolved oid is
+`invalid_reference`; an oid that names a tag is refused with `invalid_reference: OID names a tag;
+pass the commit id`.
 
 ## Collection bounds
 

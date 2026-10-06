@@ -114,8 +114,23 @@ fn manual_commit_link_is_idempotent_and_returns_the_original_receipt() {
     );
 }
 
+fn manual_link_attempt(
+    board: &mut LocalBoard,
+    actor: BoardActor,
+    task: TaskId,
+) -> Result<crate::board::board_protocol::BoardReply, crate::board::board_protocol::BoardError> {
+    board.handle(&BoardRequest::new(
+        actor,
+        BoardOp::LinkCommit {
+            oid: crate::identity::GitOid::parse(&"b".repeat(40)).unwrap(),
+            task,
+            resolution: Some(Box::new(manual_link_resolution())),
+        },
+    ))
+}
+
 #[test]
-fn manual_commit_link_authority_covers_steward_owner_and_humans() {
+fn manual_commit_link_authority_requires_owner_hand_or_steward() {
     let directory = crate::board::board_test_support::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
@@ -123,43 +138,122 @@ fn manual_commit_link_authority_covers_steward_owner_and_humans() {
     )
     .unwrap();
     let (_owner, task) = manual_link_plan(&mut board);
-    let oid = crate::identity::GitOid::parse(&"b".repeat(40)).unwrap();
-    let outsider = manual_link_actor("mallory", "kimi");
-    let error = board
-        .handle(&BoardRequest::new(
-            outsider,
-            BoardOp::LinkCommit {
-                oid,
-                task,
-                resolution: Some(Box::new(manual_link_resolution())),
-            },
-        ))
-        .unwrap_err();
-    assert_eq!(
-        error.code,
-        crate::board::board_protocol::BoardErrorCode::InvalidActor,
-        "{error}"
-    );
-    for actor in [
-        manual_link_actor("mallory", "human"),
-        manual_link_actor("mallory", "cli"),
-        manual_link_actor("mallory", "codex"),
-        manual_link_actor("fixture", "kimi"),
-    ] {
-        let reply = board
-            .handle(&BoardRequest::new(
-                actor.clone(),
-                BoardOp::LinkCommit {
-                    oid,
-                    task,
-                    resolution: Some(Box::new(manual_link_resolution())),
-                },
-            ))
+    for harness in ["human", "cli", "codex"] {
+        let actor = manual_link_actor("mallory", harness);
+        let error = manual_link_attempt(&mut board, actor, task).unwrap_err();
+        assert_eq!(
+            error.code,
+            crate::board::board_protocol::BoardErrorCode::InvalidActor,
+            "outsider {harness}: {error}"
+        );
+    }
+    for harness in ["human", "codex"] {
+        let actor = manual_link_actor("fixture", harness);
+        let reply = manual_link_attempt(&mut board, actor.clone(), task)
             .unwrap_or_else(|error| panic!("{} must link: {error}", actor.harness));
         assert!(matches!(reply.result, BoardResult::Change(_)));
     }
     assert_eq!(
         manual_link_count(&board, "SELECT COUNT(*) FROM commit_plans"),
+        1
+    );
+}
+
+#[test]
+fn non_steward_agent_cannot_link() {
+    let directory = crate::board::board_test_support::scratch("board-fixture-");
+    let mut board = LocalBoard::open_path(
+        &directory.path().join("board.sqlite3"),
+        Duration::from_secs(120),
+    )
+    .unwrap();
+    let (_owner, task) = manual_link_plan(&mut board);
+    let error =
+        manual_link_attempt(&mut board, manual_link_actor("fixture", "kimi"), task).unwrap_err();
+    assert_eq!(
+        error.code,
+        crate::board::board_protocol::BoardErrorCode::InvalidActor,
+        "{error}"
+    );
+    assert_eq!(
+        manual_link_count(&board, "SELECT COUNT(*) FROM commit_plans"),
+        0
+    );
+}
+
+#[test]
+fn cli_harness_cannot_link() {
+    let directory = crate::board::board_test_support::scratch("board-fixture-");
+    let mut board = LocalBoard::open_path(
+        &directory.path().join("board.sqlite3"),
+        Duration::from_secs(120),
+    )
+    .unwrap();
+    let (_owner, task) = manual_link_plan(&mut board);
+    let error =
+        manual_link_attempt(&mut board, manual_link_actor("fixture", "cli"), task).unwrap_err();
+    assert_eq!(
+        error.code,
+        crate::board::board_protocol::BoardErrorCode::InvalidActor,
+        "{error}"
+    );
+    assert_eq!(
+        manual_link_count(&board, "SELECT COUNT(*) FROM commit_plans"),
+        0
+    );
+}
+
+#[test]
+fn relinking_to_another_task_writes_an_event() {
+    let directory = crate::board::board_test_support::scratch("board-fixture-");
+    let mut board = LocalBoard::open_path(
+        &directory.path().join("board.sqlite3"),
+        Duration::from_secs(120),
+    )
+    .unwrap();
+    let (owner, task) = manual_link_plan(&mut board);
+    board
+        .handle(&BoardRequest::new(
+            owner.clone(),
+            BoardOp::TaskCreate {
+                plan: task.plan,
+                title: PlanTitle::new("follow-up").unwrap(),
+                to: None,
+                section: None,
+            },
+        ))
+        .unwrap();
+    let other = TaskId::new(task.plan, 2).unwrap();
+    let first = manual_link_attempt(&mut board, owner.clone(), task).unwrap();
+    let BoardResult::Change(first) = first.result else {
+        panic!("change result")
+    };
+    let events = manual_link_count(&board, "SELECT COUNT(*) FROM events");
+    let second = manual_link_attempt(&mut board, owner, other).unwrap();
+    let BoardResult::Change(second) = second.result else {
+        panic!("change result")
+    };
+    assert!(
+        !second.deduplicated,
+        "a new task link is not a replay: {second:?}"
+    );
+    assert_eq!(second.entry, first.entry, "the commit keeps its plan entry");
+    assert_eq!(second.task, Some(other));
+    assert_eq!(
+        manual_link_count(&board, "SELECT COUNT(*) FROM events"),
+        events + 1,
+        "relinking to another task writes an event"
+    );
+    assert_eq!(
+        manual_link_count(&board, "SELECT COUNT(*) FROM commit_plans"),
+        1
+    );
+    assert_eq!(
+        manual_link_count(&board, "SELECT COUNT(*) FROM commit_tasks"),
+        2
+    );
+    assert_eq!(
+        manual_link_count(&board, "SELECT COUNT(*) FROM entries WHERE kind='commit'"),
         1
     );
 }

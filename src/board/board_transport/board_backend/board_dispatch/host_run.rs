@@ -57,8 +57,11 @@ impl BoardHost {
             return Ok(render_reply(&reply, &budget)?.text);
         };
         let mut warnings = Vec::new();
-        let register_write = !op.is_read_only() && !matches!(op, BoardOp::Inbox { .. });
-        let probe = if matches!(&op, BoardOp::Inbox { all: true, .. }) {
+        let register_write = op.registers_workspace();
+        let probe = if matches!(
+            &op,
+            BoardOp::Inbox { all: true, .. } | BoardOp::LinkCommit { .. }
+        ) {
             Ok(crate::board::repo_identity::RegistrationProbe {
                 registration: None,
                 warning: None,

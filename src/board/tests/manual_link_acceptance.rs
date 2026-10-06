@@ -77,3 +77,60 @@ fn manual_link_rejects_an_unknown_oid_before_writing() {
     );
     assert_eq!(fixture.scalar("SELECT COUNT(*) FROM commit_plans"), 0);
 }
+
+#[test]
+fn failed_link_leaves_plan_repos_unchanged() {
+    let fixture = EdgeFixture::new();
+    fixture.seed_repo();
+    fixture.run(&["board", "new", "Manual link"], "human", "owner");
+    fixture.run(&["board", "task", "P1", "Repair lane"], "human", "owner");
+    let other = fixture.root.parent().unwrap().join("other");
+    std::fs::create_dir(&other).unwrap();
+    git(&other, &["init", "--initial-branch=main"]);
+    std::fs::write(other.join("other.txt"), "other repository\n").unwrap();
+    git(&other, &["add", "other.txt"]);
+    git(&other, &["commit", "-m", "Other root"]);
+    let before = fixture.scalar("SELECT COUNT(*) FROM plan_repos");
+    let error = fixture
+        .run_options(
+            fixture.options_at(&other, &["board", "link", &"f".repeat(40), "P1.1"]),
+            "human",
+            "owner",
+            None,
+        )
+        .unwrap_err();
+    assert!(
+        error.to_string().starts_with("invalid_reference:"),
+        "{error:#}"
+    );
+    assert_eq!(
+        fixture.scalar("SELECT COUNT(*) FROM plan_repos"),
+        before,
+        "a failed link must not register the caller's repository"
+    );
+}
+
+#[test]
+fn tag_oid_is_refused() {
+    let fixture = EdgeFixture::new();
+    fixture.seed_repo();
+    fixture.run(&["board", "new", "Manual link"], "human", "owner");
+    fixture.run(&["board", "task", "P1", "Repair lane"], "human", "owner");
+    git(
+        &fixture.root,
+        &["tag", "-a", "release", "-m", "tagged release"],
+    );
+    let tag = git(&fixture.root, &["rev-parse", "release"]);
+    let error = fixture
+        .run_options(
+            fixture.options(&["board", "link", &tag, "P1.1"]),
+            "human",
+            "owner",
+            None,
+        )
+        .unwrap_err();
+    let text = format!("{error:#}");
+    assert!(text.starts_with("invalid_reference:"), "{text}");
+    assert!(text.contains("names a tag; pass the commit id"), "{text}");
+    assert_eq!(fixture.scalar("SELECT COUNT(*) FROM commit_plans"), 0);
+}

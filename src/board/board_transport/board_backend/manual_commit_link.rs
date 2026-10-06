@@ -24,20 +24,26 @@ impl BoardHost {
         let mut resolved = None;
         for target in &targets {
             let spec = format!("{oid}^{{commit}}");
-            if crate::history::git::run_bounded(
+            let Ok(peeled) = crate::history::git::run_bounded(
                 &target.registration.common_dir,
-                &["cat-file", "-e", spec.as_str()],
+                &["rev-parse", "--verify", "--end-of-options", spec.as_str()],
                 deadline.cap(Duration::from_secs(5)),
-            )
-            .is_ok()
-            {
-                resolved = Some(crate::board::commit_ingest::read_commit(
-                    &target.registration,
-                    oid,
-                    deadline.remaining(),
-                )?);
-                break;
+            ) else {
+                continue;
+            };
+            if String::from_utf8_lossy(&peeled).trim() != oid.as_str() {
+                return Err(BoardError::new(
+                    BoardErrorCode::InvalidReference,
+                    format!("{oid} names a tag; pass the commit id"),
+                )
+                .into());
             }
+            resolved = Some(crate::board::commit_ingest::read_commit(
+                &target.registration,
+                oid,
+                deadline.remaining(),
+            )?);
+            break;
         }
         let Some(commit) = resolved else {
             return Err(BoardError::new(

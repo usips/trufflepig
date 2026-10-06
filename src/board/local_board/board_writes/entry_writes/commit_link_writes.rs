@@ -1,6 +1,7 @@
 //! Idempotent commit links and their task activity evidence.
 
 use super::*;
+use commit_link_authority::{plan_link_receipt, record_plan_link, require_link_authority};
 
 pub(in crate::board::local_board) fn link_commits(
     tx: &Transaction<'_>,
@@ -17,8 +18,6 @@ pub(in crate::board::local_board) fn link_commits(
             [commit.repo_key.as_str()],
         )
         .map_err(sql_error)?;
-        let coauthors = serde_json::to_string(&commit.coauthors)
-            .map_err(|e| invalid("invalid_body", e.to_string()))?;
         let mut valid_links =
             std::collections::BTreeMap::<PlanId, std::collections::BTreeSet<u64>>::new();
         for link in &commit.plans {
@@ -55,24 +54,7 @@ pub(in crate::board::local_board) fn link_commits(
         if valid_links.is_empty() {
             continue;
         }
-        tx.execute(
-            concat!(
-                "INSERT OR IGNORE INTO commits(repo_key,oid,subject,committed_at,author,coauthors,files,",
-                "insertions,deletions) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)"
-            ),
-            params![
-                commit.repo_key.as_str(),
-                commit.oid.to_string(),
-                commit.subject,
-                commit.committed_at,
-                commit.author,
-                coauthors,
-                sql_number(commit.files),
-                sql_number(commit.insertions),
-                sql_number(commit.deletions)
-            ],
-        )
-        .map_err(sql_error)?;
+        insert_commit_row(tx, commit)?;
         let harness = commit.coauthors.first().map_or_else(
             || HarnessLabel::parse("human").map_err(BoardError::from),
             |author| Ok(author.harness.clone()),
@@ -182,18 +164,9 @@ pub(in crate::board::local_board) fn link_commits(
     Ok(BoardReply::new("local", BoardResult::CommitsLinked(result)))
 }
 
-fn bounded_summary(text: &str) -> String {
-    let mut end = text
-        .len()
-        .min(crate::board::board_vocabulary::ENTRY_TEXT_LIMIT);
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    text[..end].to_owned()
-}
-
-/// Manual links name the linker and record `manual` provenance; a relink
-/// replays the original receipt without new rows, entries, or events.
+/// Manual links name the linker and record `manual` provenance. Relinking the
+/// same task replays the original receipt; linking another task of the plan
+/// writes a new event without duplicating the plan link.
 pub(in crate::board::local_board) fn link_commit(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
@@ -212,13 +185,70 @@ pub(in crate::board::local_board) fn link_commit(
     if !task_exists {
         return Err(invalid("invalid_reference", format!("unknown task {task}")));
     }
+    insert_commit_row(tx, commit)?;
+    let receipt = plan_link_receipt(tx, commit, plan)?;
+    let (entry, seq, deduplicated) = match receipt {
+        Some((entry, seq)) => (entry, seq, true),
+        None => (record_plan_link(tx, ctx, commit, plan)?, ctx.seq, false),
+    };
+    tx.execute(
+        "INSERT OR IGNORE INTO plan_repos(plan_id,repo_key) VALUES(?1,?2)",
+        params![sql_number(plan.get()), commit.repo_key.as_str()],
+    )
+    .map_err(sql_error)?;
+    let inserted = tx.execute(
+        "INSERT OR IGNORE INTO commit_tasks(repo_key,oid,plan_id,task_ordinal,source) VALUES(?1,?2,?3,?4,'manual')",
+        params![
+            commit.repo_key.as_str(),
+            commit.oid.as_str(),
+            sql_number(plan.get()),
+            sql_number(task.ordinal)
+        ],
+    ).map_err(sql_error)?;
+    let (seq, deduplicated) = if inserted > 0 {
+        task_claims::refresh_commit_claims(
+            tx,
+            plan,
+            task.ordinal,
+            &commit.coauthors,
+            commit.committed_at,
+            ctx.now,
+        )?;
+        insert_event(
+            tx,
+            ctx,
+            Some(plan),
+            EntryKind::Commit,
+            &entry.to_string(),
+            None,
+            &format!("linked {} to {task} by hand", commit.oid),
+        )?;
+        (ctx.seq, false)
+    } else {
+        (seq, deduplicated)
+    };
+    Ok(BoardReply::new(
+        "local",
+        BoardResult::Change(BoardChange {
+            entry,
+            seq,
+            plan: Some(plan),
+            revision: None,
+            task: Some(task),
+            deduplicated,
+        }),
+    ))
+}
+
+/// Inserts the commit metadata row when absent.
+fn insert_commit_row(tx: &Transaction<'_>, commit: &LinkedCommit) -> Result<(), BoardError> {
     tx.execute(
         "INSERT OR IGNORE INTO repos(repo_key) VALUES(?1)",
         [commit.repo_key.as_str()],
     )
     .map_err(sql_error)?;
-    let coauthors =
-        serde_json::to_string(&commit.coauthors).map_err(|e| invalid("invalid_body", e.to_string()))?;
+    let coauthors = serde_json::to_string(&commit.coauthors)
+        .map_err(|e| invalid("invalid_body", e.to_string()))?;
     tx.execute(
         concat!(
             "INSERT OR IGNORE INTO commits(repo_key,oid,subject,committed_at,author,coauthors,files,",
@@ -237,127 +267,5 @@ pub(in crate::board::local_board) fn link_commit(
         ],
     )
     .map_err(sql_error)?;
-    let existing: Option<(i64, i64)> = tx
-        .query_row(
-            concat!(
-                "SELECT p.entry_id,e.seq FROM commit_plans p JOIN entries e ON e.id=p.entry_id ",
-                "WHERE p.repo_key=?1 AND p.oid=?2 AND p.plan_id=?3"
-            ),
-            params![
-                commit.repo_key.as_str(),
-                commit.oid.as_str(),
-                sql_number(plan.get())
-            ],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()
-        .map_err(sql_error)?;
-    let (entry, seq, deduplicated) = match existing {
-        Some((entry, seq)) => (
-            EntryId::new(sqlite_u64(entry)?).map_err(BoardError::from)?,
-            EventSeq::new(sqlite_u64(seq)?),
-            true,
-        ),
-        None => {
-            let body = bounded_summary(&format!("{} {}", commit.oid, commit.subject));
-            let entry = insert_entry(
-                tx,
-                ctx,
-                &EntryDraft {
-                    plan_id: Some(plan),
-                    kind: EntryKind::Commit,
-                    body,
-                    to_whom: None,
-                    supersedes: None,
-                    repo_key: Some(commit.repo_key.clone()),
-                    state: None,
-                },
-            )?;
-            tx.execute(
-                "INSERT INTO commit_plans(repo_key,oid,plan_id,entry_id,source) VALUES(?1,?2,?3,?4,'manual')",
-                params![
-                    commit.repo_key.as_str(),
-                    commit.oid.as_str(),
-                    sql_number(plan.get()),
-                    sql_number(entry.get())
-                ],
-            )
-            .map_err(sql_error)?;
-            (entry, ctx.seq, false)
-        }
-    };
-    tx.execute(
-        "INSERT OR IGNORE INTO plan_repos(plan_id,repo_key) VALUES(?1,?2)",
-        params![sql_number(plan.get()), commit.repo_key.as_str()],
-    )
-    .map_err(sql_error)?;
-    let inserted = tx.execute(
-        "INSERT OR IGNORE INTO commit_tasks(repo_key,oid,plan_id,task_ordinal,source) VALUES(?1,?2,?3,?4,'manual')",
-        params![
-            commit.repo_key.as_str(),
-            commit.oid.as_str(),
-            sql_number(plan.get()),
-            sql_number(task.ordinal)
-        ],
-    ).map_err(sql_error)?;
-    if inserted > 0 {
-        task_claims::refresh_commit_claims(
-            tx,
-            plan,
-            task.ordinal,
-            &commit.coauthors,
-            commit.committed_at,
-            ctx.now,
-        )?;
-    }
-    if !deduplicated {
-        insert_event(
-            tx,
-            ctx,
-            Some(plan),
-            EntryKind::Commit,
-            &entry.to_string(),
-            None,
-            &format!("linked {} to {task} by hand", commit.oid),
-        )?;
-    }
-    Ok(BoardReply::new(
-        "local",
-        BoardResult::Change(BoardChange {
-            entry,
-            seq,
-            plan: Some(plan),
-            revision: None,
-            task: Some(task),
-            deduplicated,
-        }),
-    ))
-}
-
-/// The plan's steward harness, the plan owner's user, or any human may repair links.
-fn require_link_authority(
-    tx: &Transaction<'_>,
-    actor: &BoardActor,
-    plan: PlanId,
-) -> Result<(), BoardError> {
-    let (owner, steward): (String, Option<String>) = tx
-        .query_row(
-            "SELECT owner_user,steward FROM plans WHERE id=?1",
-            [sql_number(plan.get())],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()
-        .map_err(sql_error)?
-        .ok_or_else(|| invalid("invalid_reference", format!("unknown plan {plan}")))?;
-    if actor.harness.is_human()
-        || actor.harness.is_cli()
-        || actor.user == owner
-        || steward.as_deref() == Some(actor.harness.as_str())
-    {
-        return Ok(());
-    }
-    Err(invalid(
-        "invalid_actor",
-        format!("linking a commit to {plan} requires its steward, its owner, or a human"),
-    ))
+    Ok(())
 }

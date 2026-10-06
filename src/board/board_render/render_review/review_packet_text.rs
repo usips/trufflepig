@@ -124,6 +124,9 @@ pub(super) fn review_text(
                         ))
                 )?;
             }
+            if let Some(linker) = &commit.linked_by {
+                writeln!(text, "  linked by hand by {}", cell(&linker.identity()))?;
+            }
             if let Some(drill) = &commit.drill {
                 writeln!(text, "drill: {}", cell(drill))?;
             }

@@ -82,7 +82,8 @@ After committing, self-check that `git log -1 --format='%(trailers)'` shows
 every intended trailer and that
 `git log -1 --format='%(trailers:key=Plan-Task,valueonly)'` prints the task ID.
 When a commit's trailers are missing or unparsable, repair its link with
-`trufflepig-agent board link <full-oid> P7.3` (plan steward, owner, or human).
+`trufflepig-agent board link <full-oid> P7.3` (only the plan owner's user with
+a `human` harness, or the plan steward harness; `cli` is rejected).
 Post one progress fact at a time, citing E#, task IDs, immutable revisions,
 and full oids. Answers cite the question entry; corrections use `--supersedes E482`.
 Never edit the plan directly. Propose a full new body through stdin:

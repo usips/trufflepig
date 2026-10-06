@@ -140,5 +140,6 @@ fn review_commit(number: u64) -> super::super::review_packet::ReviewCommit {
         drill: Some(format!(
             "trufflepig-agent --root '/source/review' diff {number:040x}"
         )),
+        linked_by: None,
     }
 }

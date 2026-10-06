@@ -22,6 +22,12 @@ impl BoardOp {
         )
     }
 
+    /// Workspace writes register the caller's repository; manual links resolve
+    /// only repositories already registered for the plan.
+    pub fn registers_workspace(&self) -> bool {
+        !self.is_read_only() && !matches!(self, Self::Inbox { .. } | Self::LinkCommit { .. })
+    }
+
     pub fn plan_id(&self) -> Option<PlanId> {
         match self {
             Self::Post { target, .. } | Self::Show { target } => target.plan_id(),

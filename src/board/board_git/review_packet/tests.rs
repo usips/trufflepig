@@ -194,3 +194,68 @@ fn duplicate_clones_do_not_duplicate_unlinked_commit_evidence() {
     );
     assert_eq!(packet.unlinked.len(), 2, "identity is repository plus oid");
 }
+
+fn commit_entry(commit: &LinkedCommit, session: &str) -> EntryRecord {
+    EntryRecord {
+        id: EntryId::new(90).unwrap(),
+        via: None,
+        plan: Some(PlanId::new(7).unwrap()),
+        kind: EntryKind::Commit,
+        body: EntryText::new(format!("{} {}", commit.oid, commit.subject)).unwrap(),
+        to: None,
+        supersedes: None,
+        actor: BoardActor::new(
+            "josh",
+            "laptop",
+            HarnessLabel::parse("human").unwrap(),
+            session,
+        )
+        .unwrap(),
+        model: None,
+        effort: None,
+        repo_key: Some(commit.repo_key.clone()),
+        state: None,
+        refs: Vec::new(),
+        seq: EventSeq::new(90),
+        created_at: 150,
+    }
+}
+
+#[test]
+fn review_names_the_hand_linker_and_renders_it() {
+    let mut source = evidence();
+    let manual = commit("human", 120);
+    source.entries.push(commit_entry(&manual, "linker"));
+    source.commits.push(manual);
+    let packet = assemble_review(&source, None, &[], Vec::new(), Vec::new());
+    assert_eq!(
+        packet.linked[0]
+            .linked_by
+            .as_ref()
+            .map(BoardActor::identity)
+            .as_deref(),
+        Some("josh@laptop/human/linker")
+    );
+    let budget = OutputBudget::new(32768)
+        .unwrap()
+        .with_format(OutputFormat::Lines);
+    let rendered = render_review(&packet, &budget, "local").unwrap();
+    assert!(
+        rendered
+            .text
+            .contains("linked by hand by josh@laptop/human/linker"),
+        "{}",
+        rendered.text
+    );
+}
+
+#[test]
+fn scan_commit_entries_are_not_hand_links() {
+    let mut source = evidence();
+    let scanned = commit("codex", 120);
+    let session = format!("git-{}", scanned.oid);
+    source.entries.push(commit_entry(&scanned, &session));
+    source.commits.push(scanned);
+    let packet = assemble_review(&source, None, &[], Vec::new(), Vec::new());
+    assert!(packet.linked[0].linked_by.is_none());
+}

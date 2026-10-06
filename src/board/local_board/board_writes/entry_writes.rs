@@ -5,6 +5,7 @@ use rusqlite::{Transaction, params};
 use super::super::*;
 use super::task_claims;
 
+mod commit_link_authority;
 mod commit_link_writes;
 mod repository_writes;
 
@@ -150,6 +151,17 @@ pub(in crate::board::local_board) fn post(
             None
         },
     ))
+}
+
+/// Truncates a commit summary to the entry text limit on a char boundary.
+fn bounded_summary(text: &str) -> String {
+    let mut end = text
+        .len()
+        .min(crate::board::board_vocabulary::ENTRY_TEXT_LIMIT);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text[..end].to_owned()
 }
 
 #[cfg(test)]
