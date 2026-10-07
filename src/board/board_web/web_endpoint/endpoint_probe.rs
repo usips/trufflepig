@@ -38,7 +38,9 @@ pub(super) fn probe(address: SocketAddr, guard: &WebGuard, expires: Instant) -> 
     );
     write_before(&mut socket, headers.as_bytes(), expires)?;
     write_before(&mut socket, &body, expires)?;
-    let reply = read_response(&mut socket, expires)?;
+    let reply = read_response(&mut socket, expires, |socket, timeout| {
+        socket.set_read_timeout(Some(timeout))
+    })?;
     let value: serde_json::Value = serde_json::from_slice(&reply)?;
     ensure!(
         value["api"].as_u64() == Some(u64::from(BOARD_API)),
@@ -80,7 +82,11 @@ fn write_before(socket: &mut TcpStream, mut bytes: &[u8], expires: Instant) -> i
     Ok(())
 }
 
-fn read_response(socket: &mut TcpStream, expires: Instant) -> Result<Vec<u8>> {
+pub(super) fn read_response<R: io::Read>(
+    reader: &mut R,
+    expires: Instant,
+    mut set_read_timeout: impl FnMut(&R, Duration) -> io::Result<()>,
+) -> Result<Vec<u8>> {
     let mut buffered = Vec::with_capacity(4096);
     let header_end = loop {
         if let Some(start) = buffered.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
@@ -90,7 +96,7 @@ fn read_response(socket: &mut TcpStream, expires: Instant) -> Result<Vec<u8>> {
             buffered.len() < http_wire::HEADER_LIMIT,
             "web response headers too large"
         );
-        read_chunk(socket, &mut buffered, expires)?;
+        read_chunk(reader, &mut buffered, expires, &mut set_read_timeout)?;
     };
     ensure!(
         header_end <= http_wire::HEADER_LIMIT,
@@ -130,7 +136,7 @@ fn read_response(socket: &mut TcpStream, expires: Instant) -> Result<Vec<u8>> {
     );
     let end = header_end + length;
     while buffered.len() < end {
-        read_chunk(socket, &mut buffered, expires)?;
+        read_chunk(reader, &mut buffered, expires, &mut set_read_timeout)?;
     }
     ensure!(
         buffered.len() == end,
@@ -139,10 +145,15 @@ fn read_response(socket: &mut TcpStream, expires: Instant) -> Result<Vec<u8>> {
     Ok(buffered[header_end..].to_vec())
 }
 
-fn read_chunk(socket: &mut TcpStream, buffered: &mut Vec<u8>, expires: Instant) -> Result<()> {
-    socket.set_read_timeout(Some(remaining(expires)?))?;
+fn read_chunk<R: io::Read>(
+    reader: &mut R,
+    buffered: &mut Vec<u8>,
+    expires: Instant,
+    set_read_timeout: &mut impl FnMut(&R, Duration) -> io::Result<()>,
+) -> Result<()> {
+    set_read_timeout(reader, remaining(expires)?)?;
     let mut chunk = [0; 4096];
-    let count = http_wire::read_ignoring_interrupts(socket, &mut chunk)?;
+    let count = http_wire::read_ignoring_interrupts(reader, &mut chunk)?;
     ensure!(count > 0, "web listener closed before readiness reply");
     buffered.extend_from_slice(&chunk[..count]);
     Ok(())

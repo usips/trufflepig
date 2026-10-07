@@ -1,11 +1,15 @@
 //! One ingest relay flight at a time; mid-scan posts take the next ticket.
+#[cfg(test)]
+mod tests;
+
+#[cfg(test)]
 use std::time::Duration;
 
 /// One router ingest relay runs at a time; a POST landing mid-scan takes
 /// the next ticket and dirties the flight so the relay reruns under it.
 pub(crate) struct IngestFlight {
     state: std::sync::Mutex<FlightState>,
-    /// Router reply budget per scan; every scan restarts a fresh budget.
+    #[cfg(test)]
     scan_budget: Duration,
 }
 
@@ -19,27 +23,19 @@ struct FlightState {
 }
 
 impl IngestFlight {
-    fn with_budget(scan_budget: Duration) -> Self {
-        Self {
-            state: std::sync::Mutex::new(FlightState {
-                running: false,
-                dirty: false,
-                ticket: String::new(),
-                next: String::new(),
-            }),
-            scan_budget,
-        }
-    }
-
     /// Test constructor shrinking the per-scan budget so a slow fake
     /// router crosses the deadline in milliseconds instead of seconds.
     #[cfg(test)]
     pub(crate) fn with_scan_budget(scan_budget: Duration) -> Self {
-        Self::with_budget(scan_budget)
+        Self {
+            scan_budget,
+            ..Self::default()
+        }
     }
 
     /// The router reply budget for one scan; the relay restarts it per
     /// scan so a rerun never inherits the first scan's spent deadline.
+    #[cfg(test)]
     pub(crate) fn scan_budget(&self) -> Duration {
         self.scan_budget
     }
@@ -47,7 +43,16 @@ impl IngestFlight {
 
 impl Default for IngestFlight {
     fn default() -> Self {
-        Self::with_budget(crate::daemon::CLIENT_REPLY_WAIT)
+        Self {
+            state: std::sync::Mutex::new(FlightState {
+                running: false,
+                dirty: false,
+                ticket: String::new(),
+                next: String::new(),
+            }),
+            #[cfg(test)]
+            scan_budget: crate::daemon::CLIENT_REPLY_WAIT,
+        }
     }
 }
 
@@ -102,7 +107,7 @@ impl IngestFlight {
     /// for exactly one rerun, a clean flight releases the slot. Clearing
     /// `running` and consuming `dirty` is one atomic step under the mutex,
     /// so a landing POST either queues its rerun or leads the next flight.
-    fn settle(&self) -> Option<String> {
+    fn settle(&self, after_clean_check: &mut impl FnMut()) -> Option<String> {
         let mut state = self
             .state
             .lock()
@@ -112,6 +117,7 @@ impl IngestFlight {
             state.ticket = std::mem::take(&mut state.next);
             Some(state.ticket.clone())
         } else {
+            after_clean_check();
             state.running = false;
             None
         }
@@ -132,10 +138,10 @@ pub(crate) fn relay_flight(flight: &IngestFlight, scan: impl FnMut()) {
     relay(flight, scan, || ());
 }
 
-/// Test-only entry parking the relay between a scan and its settle, so a
-/// POST landing in that window provably still earns its rerun.
+/// Parks after the clean dirty check, while settle still holds the mutex.
+/// A concurrent begin must wait for the slot to clear, then lead a new scan.
 #[cfg(test)]
-pub(crate) fn relay_flight_with_settle_hook(
+fn relay_flight_with_settle_hook(
     flight: &IngestFlight,
     scan: impl FnMut(),
     at_settle: impl FnMut(),
@@ -147,8 +153,7 @@ fn relay(flight: &IngestFlight, mut scan: impl FnMut(), mut at_settle: impl FnMu
     let guard = IngestFlightGuard::new(flight);
     loop {
         scan();
-        at_settle();
-        if flight.settle().is_none() {
+        if flight.settle(&mut at_settle).is_none() {
             guard.disarm();
             return;
         }

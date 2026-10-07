@@ -2,33 +2,57 @@ use super::*;
 
 #[test]
 fn probe_retries_an_interrupted_read() {
-    // A signal may interrupt the probe's blocking reply read; the probe
-    // retries instead of failing, because an interrupted read delivered
-    // no bytes and lost nothing.
-    struct FlakyReply {
-        interrupted: bool,
+    struct FlakyReply<'a> {
+        parts: [&'a [u8]; 2],
+        reads: usize,
     }
-    impl std::io::Read for FlakyReply {
+    impl std::io::Read for FlakyReply<'_> {
         fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
-            if self.interrupted {
-                bytes[..3].copy_from_slice(b"200");
-                return Ok(3);
+            self.reads += 1;
+            if self.reads % 2 == 1 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Interrupted,
+                    "EINTR",
+                ));
             }
-            self.interrupted = true;
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Interrupted,
-                "EINTR",
-            ))
+            let part = self
+                .parts
+                .get(self.reads / 2 - 1)
+                .copied()
+                .unwrap_or_default();
+            bytes[..part.len()].copy_from_slice(part);
+            Ok(part.len())
         }
     }
-    let mut reply = FlakyReply { interrupted: false };
-    let mut chunk = [0; 8];
-    let count = http_wire::read_ignoring_interrupts(&mut reply, &mut chunk).unwrap();
-    assert_eq!(&chunk[..count], b"200");
-    assert!(
-        reply.interrupted,
-        "the first read must have been interrupted"
+    let body = serde_json::to_vec(&serde_json::json!({
+        "api": BOARD_API, "proof": "ownership-proof",
+    }))
+    .unwrap();
+    let headers = format!(
+        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len(),
     );
+    let mut reply = FlakyReply {
+        parts: [headers.as_bytes(), &body],
+        reads: 0,
+    };
+    let mut timeouts = 0;
+    let response = endpoint_probe::read_response(
+        &mut reply,
+        Instant::now() + http_wire::REQUEST_TIMEOUT,
+        |_, timeout| {
+            assert!(!timeout.is_zero() && timeout <= http_wire::REQUEST_TIMEOUT);
+            timeouts += 1;
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        response, body,
+        "the HTTP parser consumes the complete challenge body"
+    );
+    assert_eq!(reply.reads, 4, "both header and body reads retry EINTR");
+    assert_eq!(timeouts, 2, "EINTR retries keep the chunk's timeout");
 }
 
 #[test]

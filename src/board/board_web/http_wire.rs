@@ -256,7 +256,7 @@ fn reject_queued_bytes(stream: &TcpStream) -> Result<(), HttpError> {
     }
 }
 
-pub(crate) const DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
+pub(super) const DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
 const DRAIN_LIMIT: usize = 256 * 1024;
 
 /// After an early error the client may still hold unread request bytes; a
