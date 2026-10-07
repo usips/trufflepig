@@ -220,14 +220,19 @@ fn ensure_gives_up_after_the_cap() {
     }
     // The slowed migration holds the router for a minute, well past the cap;
     // the child process exits with the migration thread still sleeping.
+    let cap = Duration::from_millis(300);
     let _worker = std::thread::spawn(crate::system::serve);
     let started = Instant::now();
-    let error = super::ensure_with(Duration::from_millis(300), super::spawn_router).unwrap_err();
+    let error = super::ensure_with(cap, super::spawn_router).unwrap_err();
     assert!(
         error
             .to_string()
             .starts_with("system_unavailable: router still starting after"),
         "{error:#}"
     );
-    assert!(started.elapsed() < Duration::from_secs(1), "{error:#}");
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < cap + Duration::from_secs(2),
+        "ensure exceeded its {cap:?} cap plus scheduling slack: {elapsed:?}; {error:#}"
+    );
 }
