@@ -40,31 +40,22 @@ pub mod tool_probe {
         }
     }
 
-    /// Resolve `name` against `dirs`; `is_executable` is injected for tests.
-    pub fn resolve_tool_with(
-        dirs: &[PathBuf],
-        name: &str,
-        is_executable: impl Fn(&Path) -> bool,
-    ) -> Option<PathBuf> {
+    /// Resolve `name` against `dirs` using the host executable check.
+    pub fn resolve_tool_in_dirs(dirs: &[PathBuf], name: &str) -> Option<PathBuf> {
         dirs.iter().find_map(|dir| {
             let candidate = dir.join(name);
-            if is_executable(&candidate) {
+            if is_executable_file(&candidate) {
                 return Some(candidate);
             }
             #[cfg(windows)]
             {
                 let executable = dir.join(format!("{name}.exe"));
-                if is_executable(&executable) {
+                if is_executable_file(&executable) {
                     return Some(executable);
                 }
             }
             None
         })
-    }
-
-    /// Resolve `name` against `dirs` using the host executable check.
-    pub fn resolve_tool_in_dirs(dirs: &[PathBuf], name: &str) -> Option<PathBuf> {
-        resolve_tool_with(dirs, name, is_executable_file)
     }
 
     /// Parse `git --version` stdout into `(major, minor)`.

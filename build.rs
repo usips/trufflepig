@@ -5,6 +5,11 @@ use std::{
 
 include!("build/tool_probe.rs");
 
+#[cfg(test)]
+mod tests {
+    include!("build/tests.rs");
+}
+
 fn collect_files(path: &Path, files: &mut Vec<PathBuf>) {
     let Ok(metadata) = fs::symlink_metadata(path) else {
         return;
@@ -69,10 +74,13 @@ fn main() {
     println!("cargo:rustc-env=TRUFFLEPIG_BUILD_ID={build_id}");
 }
 
-/// Watch each absolute, existing PATH dir for later tool installs.
-/// Relative or missing dirs would rebuild the package on every run.
-fn watch_path_dirs(dirs: &[PathBuf]) {
+/// Watch absolute, existing PATH dirs before the selected tool's directory.
+/// Missing tools watch every eligible dir; relative or missing dirs never emit.
+fn watch_path_dirs(dirs: &[PathBuf], resolved_tool: Option<&Path>) {
     for dir in dirs {
+        if resolved_tool.is_some_and(|tool| tool.parent() == Some(dir.as_path())) {
+            break;
+        }
         if dir.is_absolute() && dir.is_dir() {
             println!("cargo::rerun-if-changed={}", dir.display());
         }
@@ -87,9 +95,10 @@ fn emit_git_cfgs() -> String {
     println!("cargo::rerun-if-env-changed=PATH");
     let dirs = tool_probe::path_search_dirs(env::var_os("PATH").as_deref());
     let Some(path) = tool_probe::resolve_tool_in_dirs(&dirs, "git") else {
-        watch_path_dirs(&dirs);
+        watch_path_dirs(&dirs, None);
         return format!("missing (searched {} PATH dirs)", dirs.len());
     };
+    watch_path_dirs(&dirs, Some(&path));
     println!("cargo::rerun-if-changed={}", path.display());
     let version = command_stdout(&path, "--version")
         .and_then(|stdout| tool_probe::parse_git_version(&stdout));
@@ -112,9 +121,10 @@ fn emit_node_cfgs() -> String {
     println!("cargo::rerun-if-env-changed=PATH");
     let dirs = tool_probe::path_search_dirs(env::var_os("PATH").as_deref());
     let Some(path) = tool_probe::resolve_tool_in_dirs(&dirs, "node") else {
-        watch_path_dirs(&dirs);
+        watch_path_dirs(&dirs, None);
         return format!("missing (searched {} PATH dirs)", dirs.len());
     };
+    watch_path_dirs(&dirs, Some(&path));
     println!("cargo::rerun-if-changed={}", path.display());
     let version = command_stdout(&path, "--version")
         .and_then(|stdout| tool_probe::parse_node_version(&stdout));
