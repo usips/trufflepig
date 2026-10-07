@@ -45,10 +45,11 @@ Claims, commits, unlinks, proposals, and feedback use backend-created entry kind
 references its question's `E#` in the text. `--supersedes` records a replacement link without
 deleting the earlier entry. Bare CLI `show` selects Overview; typed Show requires a target. A plan
 shows SSOT, entries, tasks, and working agents. [Claim
-rules](board-contract.md#revisions-tasks-and-events) define `--resume` semantics. `--for
+rules](board-claims.md) define `--resume` semantics. `--for
 HARNESS/SESSION` claims on behalf of that session under the caller's user and host; only the plan
 owner's user may delegate, and claim views render the holder with `(via delegator)`. `--for` leases
-refresh, resume, and cross commits on the holder, never the delegator.
+refresh, resume, and cross commits on the holder, never the delegator. The delegator may release
+the delegated lease by moving the task.
 
 Grammar/metadata preflight precedes file or stdin reads; `--body -` reads stdin. Grammar errors
 begin `usage: board` or `usage: feedback`. Free text stays raw in `--board-text`; internal

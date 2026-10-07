@@ -31,8 +31,7 @@ one email per model; do not vary the name or email between commits. The board
 records the trailer as the model claim. Each commit carries one `Co-authored-by`
 per model that wrote or integrated it, and the orchestrator adds its own
 `Co-authored-by` trailer whenever it edits or integrates a commit. Vendor email
-domains:
-https://github.com/usips/trufflepig/blob/master/docs/board-cli-contract.md#attribution
+domains follow the [CLI attribution rules](../../../../docs/board-cli-contract.md#attribution).
 Every harness polls `board inbox` at each turn's start and after each commit
 until board hooks provide those checks automatically. Use
 `trufflepig-agent board inbox --wait` when blocked. Do not loop on
@@ -54,21 +53,14 @@ trufflepig-agent board post P7.3 progress "Parser accepts P7@12; tests pass"
 trufflepig-agent board task P7.3 review
 ```
 
-Use `--resume` only for your own harness's claims. Bare `--resume` refreshes
-your own live claim in place — same claim entry, no new entry or event — and
-replaces another session's interrupted claim only after its lease has been idle
-for at least ten minutes; `--resume=E#` (the claim entry from
-`board show P7.3`) takes over immediately. Write `--resume=E5`, never the space
-form `--resume E5`, which is refused with `use --resume=E5`. Omitting scope
-inherits the current lease scope; taking over ends the prior lease as `resumed`
-and records that actor.
+Inspect `board show P7.3` before resuming. Follow the
+[claim and resume rules](../../../../docs/board-claims.md) for authority,
+refresh, takeover, and scope inheritance.
 
 An orchestrator never claims for itself: it carves the task, then delegates with
-`board claim P7.3 SCOPE --for HARNESS/SESSION`, naming the coder session. The
-delegation rules live in the CLI contract:
-https://github.com/usips/trufflepig/blob/master/docs/board-cli-contract.md#commands
-The lease lands in the delegate's inbox with `(via delegator)`, and the
-delegator may release it by moving the task.
+`board claim P7.3 SCOPE --for HARNESS/SESSION`, naming the coder session. Follow
+the [CLI delegation rules](../../../../docs/board-cli-contract.md#commands) for
+authority and lease release.
 
 On `claim_conflict`, choose another open task or address the holder using
 `board post P7 question "..." --to codex`. Never work on another session's
@@ -84,11 +76,11 @@ After committing, self-check that `git log -1 --format='%(trailers)'` shows
 every intended trailer and that
 `git log -1 --format='%(trailers:key=Plan-Task,valueonly)'` prints the task ID.
 When a commit's trailers are missing or unparsable, repair its link with
-`trufflepig-agent board link <full-oid> P7.3` (only the plan owner's user with
-a `human` harness, or the plan steward harness; `cli` is rejected).
-Manual-link retries replay the durable task event across callers and reopens. If a
-historical retry returns `invalid_state`, preserve unknown attribution; see the
-[manual-link contract](../../../../docs/board-contract.md#git-links-and-review-evidence).
+`trufflepig-agent board link <full-oid> P7.3`. Follow the
+[CLI manual-link rules](../../../../docs/board-cli-contract.md#commands) for
+authority and errors, and the
+[manual-link contract](../../../../docs/board-contract.md#git-links-and-review-evidence)
+for receipts, replay, and unknown historical attribution.
 Post one progress fact at a time, citing E#, task IDs, immutable revisions,
 and full oids. Answers cite the question entry; corrections use `--supersedes E482`.
 Never edit the plan directly. Propose a full new body through stdin:

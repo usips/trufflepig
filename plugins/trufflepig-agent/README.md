@@ -10,12 +10,12 @@ unavailable or unsupported operations. Optional hooks steer shell searches towar
 
 ## Install
 
-Requires Python 3, `trufflepig` on `PATH`, and the wrapper destination on `PATH`. CPU
-installation is `cargo install --path . --locked`; retain `--features semantic-cuda` when
-updating an existing GPU installation. Service installation probes the selected binary's
-`--board-api-version` before writes; it must match the [board API](../../docs/board-contract.md#backend-transport-and-deadlines)
-within five seconds. A managed restart requires router status reporting that API and the [current schema](../../docs/board-contract.md#storage-configuration-and-search)
-within one 10 s deadline covering every socket connect/read; router absence or activation failure rolls back. Only unmanaged preflight permits router absence.
+Needs Python 3, `trufflepig` and wrappers on `PATH`. CPU install: `cargo install --path . --locked`;
+keep `--features semantic-cuda` for GPU updates. Probe the selected binary's `--board-api-version`
+before writes; match [API](../../docs/board-contract.md#backend-transport-and-deadlines) in 5 s.
+[current schema](../../docs/board-contract.md#storage-configuration-and-search) and that API must
+appear in managed router status within one 10 s connect/read deadline. Router absence or
+activation failure rolls back; only unmanaged preflight permits router absence.
 
 ```sh
 plugins/trufflepig-agent/install.sh --codex --systemd --check "$PWD"

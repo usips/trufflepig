@@ -22,8 +22,10 @@ Snapshot loads and delivered stream frames raise it monotonically — every writ
 stored maximum, so a lagging tab cannot lower it. A fresh baseline snapshot (first load, resync,
 back/forward restore) may lower it to the fresh watermark, when the database was replaced
 underneath the tab.
-The ingest button holds the 202's ticket, shows queued, then completes only on the `ingest` frame
-with that ticket or reports unknown at 30s.
+The ingest button holds the 202's ticket and completes from its matching `ingest` receipt. A
+receipt arriving before the 202 reply is cached by ticket and consumed immediately on reply,
+preserving its completion or failure notice. The button shows queued only while awaiting the
+receipt; it reports unknown after 30 seconds without a matching receipt.
 
 Form drafts and focus (by `data-focus-key`) survive live-region refreshes; connection announcements
 fire only on outage, authorization expiry, and restore. Editors retain the originally loaded
