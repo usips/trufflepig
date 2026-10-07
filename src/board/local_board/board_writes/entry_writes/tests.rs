@@ -67,6 +67,8 @@ fn manual_link_count(board: &LocalBoard, sql: &str) -> i64 {
 }
 
 mod commit_task_tests;
+mod commit_unlink_edge_tests;
+mod commit_unlink_tests;
 mod manual_link_receipt_tests;
 mod manual_link_tests;
 mod repo_identity_tests;

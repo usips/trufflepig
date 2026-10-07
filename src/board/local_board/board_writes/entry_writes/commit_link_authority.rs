@@ -9,23 +9,12 @@ pub(in crate::board::local_board) fn require_link_authority(
     actor: &BoardActor,
     plan: PlanId,
 ) -> Result<(), BoardError> {
-    let (owner, steward): (String, Option<String>) = tx
-        .query_row(
-            "SELECT owner_user,steward FROM plans WHERE id=?1",
-            [sql_number(plan.get())],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()
-        .map_err(sql_error)?
-        .ok_or_else(|| invalid("invalid_reference", format!("unknown plan {plan}")))?;
-    if actor.user == owner
-        && (actor.harness.is_human() || steward.as_deref() == Some(actor.harness.as_str()))
-    {
+    if can_accept(tx, actor, plan)? {
         return Ok(());
     }
     Err(invalid(
         "invalid_actor",
-        format!("linking a commit to {plan} requires its owner by hand or its steward"),
+        format!("changing commit links for {plan} requires its owner by hand or its steward"),
     ))
 }
 
@@ -74,7 +63,8 @@ pub(in crate::board::local_board) fn plan_commit_entry(
 /// The durable receipt for an existing commit-to-task association.
 pub(in crate::board::local_board) fn task_link_receipt(
     tx: &Transaction<'_>,
-    commit: &LinkedCommit,
+    repo: &RepoKey,
+    oid: crate::identity::GitOid,
     task: TaskId,
 ) -> Result<Option<TaskLinkReceipt>, BoardError> {
     let row: Option<(String, Option<i64>)> = tx
@@ -84,8 +74,8 @@ pub(in crate::board::local_board) fn task_link_receipt(
                 "WHERE repo_key=?1 AND oid=?2 AND plan_id=?3 AND task_ordinal=?4"
             ),
             params![
-                commit.repo_key.as_str(),
-                commit.oid.as_str(),
+                repo.as_str(),
+                oid.as_str(),
                 sql_number(task.plan.get()),
                 sql_number(task.ordinal)
             ],

@@ -149,19 +149,30 @@ pub(super) fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Re
             fixed_words(options, 2, 2, "board ingest")?;
             return Ok(BoardCommand::Ingest);
         }
-        "link" => {
+        "link" | "unlink" => {
             check_flags(options, &[])?;
-            fixed_words(options, 4, 4, "board link OID P7.3")?;
-            BoardOp::LinkCommit {
-                oid: crate::identity::GitOid::parse(word(options, 2, "board link OID P7.3")?)?,
-                task: word(options, 3, "board link OID P7.3")?.parse()?,
-                resolution: None,
+            let syntax = if verb == "link" {
+                "board link OID P7.3"
+            } else {
+                "board unlink OID P7.3"
+            };
+            fixed_words(options, 4, 4, syntax)?;
+            let oid = crate::identity::GitOid::parse(word(options, 2, syntax)?)?;
+            let task = word(options, 3, syntax)?.parse()?;
+            if verb == "link" {
+                BoardOp::LinkCommit {
+                    oid,
+                    task,
+                    resolution: None,
+                }
+            } else {
+                BoardOp::UnlinkCommit { oid, task }
             }
         }
         value if value.parse::<u64>().is_ok() => return parse_inbox(options, 1),
         _ => bail!(concat!(
             "usage: board hello|inbox|show|feed|attention|history|search|web|claim|post|task|propose",
-            "|review|accept|reject|edit|new|ingest|link"
+            "|review|accept|reject|edit|new|ingest|link|unlink"
         )),
     };
     Ok(BoardCommand::Op(op))

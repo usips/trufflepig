@@ -13,7 +13,7 @@ import unittest
 PLUGIN = Path(__file__).resolve().parents[1]
 UNIT_NAMES = ("trufflepig-system.service", "trufflepig-board.service")
 CURRENT_ROUTER_STATUS = {
-    "status": "ok", "board_api": 6, "schema_supported": 8, "schema_file": 8,
+    "status": "ok", "board_api": 7, "schema_supported": 8, "schema_file": 8,
 }
 
 
@@ -76,11 +76,11 @@ from pathlib import Path
 name = Path(sys.argv[0]).name
 if name == "trufflepig" and sys.argv[1:] == ["--board-api-version"]:
     time.sleep(float(os.environ.get("PROBE_DELAY", "0")))
-    sys.stdout.write(os.environ.get("PROBE_STDOUT", "6\\n"))
+    sys.stdout.write(os.environ.get("PROBE_STDOUT", "7\\n"))
     sys.stderr.write(os.environ.get("PROBE_STDERR", ""))
     sys.exit(int(os.environ.get("PROBE_STATUS", "0")))
 if name == "trufflepig" and sys.argv[1:] == ["system", "dir"]:
-    if os.environ.get("PROBE_STDOUT", "6\\n") != "6\\n":
+    if os.environ.get("PROBE_STDOUT", "7\\n") != "7\\n":
         # Older binaries predate `system dir` and answer with usage.
         sys.stderr.write("usage: trufflepig [--help] ...\\n")
         sys.exit(2)

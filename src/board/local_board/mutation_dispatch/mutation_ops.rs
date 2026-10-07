@@ -148,5 +148,8 @@ pub(super) fn apply_mutation(
             })?;
             board_writes::entry_writes::link_commit(tx, ctx, *task, commit)
         }
+        BoardOp::UnlinkCommit { oid, task } => {
+            board_writes::entry_writes::unlink_commit(tx, ctx, *oid, *task)
+        }
     }
 }

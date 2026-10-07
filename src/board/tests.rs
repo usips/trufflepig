@@ -5,8 +5,10 @@ mod client_tests;
 mod cursor_acceptance;
 mod git_acceptance;
 mod manual_link_acceptance;
+mod manual_unlink_acceptance;
 mod outbox_acceptance;
 mod transport_acceptance;
+mod unlink_grammar_tests;
 
 use super::board_actor::{BoardActor, HarnessLabel};
 use super::board_backend::BoardHost;

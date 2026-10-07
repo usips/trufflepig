@@ -1,10 +1,10 @@
 //! Backend request runs: CLI commands onto the board host.
-use super::scope_read_repo_key;
 use super::super::{
     BoardHost,
     board_wait::{inbox_has_events, waiter_transient},
     board_writer::{check_deadline, lock_before},
 };
+use super::scope_read_repo_key;
 use crate::{
     board::{
         board_grammar::{self, BoardCommand},
@@ -61,7 +61,9 @@ impl BoardHost {
         let register_write = op.registers_workspace();
         let probe = if matches!(
             &op,
-            BoardOp::Inbox { all: true, .. } | BoardOp::LinkCommit { .. }
+            BoardOp::Inbox { all: true, .. }
+                | BoardOp::LinkCommit { .. }
+                | BoardOp::UnlinkCommit { .. }
         ) {
             Ok(crate::board::repo_identity::RegistrationProbe {
                 registration: None,

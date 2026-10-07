@@ -77,7 +77,7 @@ macro_rules! vocabulary {
 vocabulary!(EntryKind, "invalid_kind", {
     Note => "note", Progress => "progress", Review => "review", Question => "question",
     Answer => "answer", Decision => "decision", Divergence => "divergence", Claim => "claim",
-    Commit => "commit", Feedback => "feedback", Task => "task", Hello => "hello",
+    Commit => "commit", Unlinked => "unlinked", Feedback => "feedback", Task => "task", Hello => "hello",
     Create => "create", Proposal => "proposal", Accept => "accept", Reject => "reject", Direct => "direct",
 });
 impl EntryKind {

@@ -22,7 +22,7 @@ mod tests {
     fn board_api_capability_exits_before_dispatch_and_emission_diagnostics() {
         let args = ["--board-api-version".to_owned()];
         let expected = format!("{}\n", crate::board::board_protocol::BOARD_API);
-        assert_eq!(crate::board::board_protocol::BOARD_API, 6);
+        assert_eq!(crate::board::board_protocol::BOARD_API, 7);
         assert_eq!(crate::cli::run(&args).unwrap(), expected);
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();

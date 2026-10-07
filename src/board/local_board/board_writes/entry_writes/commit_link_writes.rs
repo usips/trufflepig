@@ -189,7 +189,7 @@ pub(in crate::board::local_board) fn link_commit(
     }
     insert_commit_row(tx, commit)?;
     let existing_entry = plan_commit_entry(tx, commit, plan)?;
-    if let Some(receipt) = task_link_receipt(tx, commit, task)? {
+    if let Some(receipt) = task_link_receipt(tx, &commit.repo_key, commit.oid, task)? {
         let plan_entry = existing_entry.ok_or_else(|| {
             invalid(
                 "invalid_state",

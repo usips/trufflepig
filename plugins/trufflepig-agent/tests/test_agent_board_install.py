@@ -6,7 +6,7 @@ import unittest
 
 from agent_install_case import CURRENT_ROUTER_STATUS, PLUGIN, AgentInstallCase
 
-STALE_ROUTER = {"status": "ok", "board_api": 5, "schema_supported": 8, "schema_file": 8}
+STALE_ROUTER = {"status": "ok", "board_api": 6, "schema_supported": 8, "schema_file": 8}
 
 
 class AgentBoardInstallTests(AgentInstallCase):
@@ -14,15 +14,15 @@ class AgentBoardInstallTests(AgentInstallCase):
         capture = self.service_shims()
         cases = [("", "unknown argument --board-api-version\\n", "2"),
                  ("1\n", "", "0"), ("2\n", "", "0"), ("3\n", "", "0"), ("4\n", "", "0"),
-                 ("5\n", "", "0"), ("API 6\n", "", "0"), ("6\nextra\n", "", "0"),
-                 ("6\n", "", "1"), ("6\n", "diagnostic\n", "0")]
+                 ("6\n", "", "0"), ("API 7\n", "", "0"), ("7\nextra\n", "", "0"),
+                 ("7\n", "", "1"), ("7\n", "diagnostic\n", "0")]
         for flag in ("--board", "--systemd"):
             for output, error, status in cases:
                 with self.subTest(flag=flag, output=output, status=status):
                     self.env.update(PROBE_STDOUT=output, PROBE_STDERR=error, PROBE_STATUS=status)
                     result = self.install("--codex", flag)
                     self.assertEqual(result.returncode, 2, result.stderr)
-                    self.assertIn("must support board API 6", result.stderr)
+                    self.assertIn("must support board API 7", result.stderr)
                     self.assertFalse((self.root / ".local/bin").exists())
                     self.assertFalse((self.root / ".agents").exists())
                     self.assertFalse((self.root / "config").exists())
@@ -35,7 +35,7 @@ class AgentBoardInstallTests(AgentInstallCase):
         result = subprocess.run([str(PLUGIN / "install.sh"), "--board"], env=self.env,
                                 text=True, capture_output=True, timeout=8)
         self.assertEqual(result.returncode, 2, result.stderr)
-        self.assertIn("must support board API 6", result.stderr)
+        self.assertIn("must support board API 7", result.stderr)
         self.assertFalse((self.root / ".local/bin").exists())
         self.assertFalse((self.root / "config").exists())
         self.assertFalse(capture.exists())
@@ -47,7 +47,7 @@ class AgentBoardInstallTests(AgentInstallCase):
             with self.subTest(flag=flag):
                 result = self.install(flag)
                 self.assertEqual(result.returncode, 2, result.stderr)
-                self.assertIn("must support board API 6", result.stderr)
+                self.assertIn("must support board API 7", result.stderr)
                 self.assertNotIn("usage", result.stderr)
                 self.assertFalse((self.root / "config/systemd").exists())
 

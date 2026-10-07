@@ -1,4 +1,5 @@
 mod no_daemon_tests;
+mod router_api_version_tests;
 mod router_probe_tests;
 
 use super::*;

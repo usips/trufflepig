@@ -248,6 +248,11 @@ pub enum BoardOp {
         #[serde(skip)]
         resolution: Option<Box<LinkedCommit>>,
     },
+    /// Removes a stored task association without resolving Git or registering a repository.
+    UnlinkCommit {
+        oid: crate::identity::GitOid,
+        task: TaskId,
+    },
     Repositories {
         plan: Option<PlanId>,
     },

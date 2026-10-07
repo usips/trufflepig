@@ -33,6 +33,7 @@ board edit P7@12 --body FILE|- SUMMARY…
 board review P7@12 [HARNESS]
 board ingest
 board link OID P7.3
+board unlink OID P7.3
 feedback blocked|confused|wrong|missing SUMMARY… [--body FILE|-] [--plan P7]
 feedback ls [--open] [--after SEQ:E#] [--through SEQ] [-n LIMIT]
 feedback triage E512 [NOTE…]
@@ -40,14 +41,14 @@ feedback close E512 fixed|wontfix|duplicate [NOTE…]
 ```
 
 Post kinds are `note`, `progress`, `review`, `question`, `answer`, `decision`, and `divergence`.
-Claims, commits, proposals, and feedback use backend-created entry kinds. An answer references its
-question's `E#` in the text. `--supersedes` records a replacement link without deleting the earlier
-entry. Bare CLI `show` selects Overview; typed Show requires a target. A plan shows SSOT, entries,
-tasks, and working agents. [Claim rules](board-contract.md#revisions-tasks-and-events) define
-`--resume` semantics. `--for HARNESS/SESSION` claims on behalf of that session under the caller's
-user and host; only the plan owner's user may delegate, and claim views render the holder with
-`(via delegator)`. `--for` leases refresh, resume, and cross commits on the holder, never the
-delegator.
+Claims, commits, unlinks, proposals, and feedback use backend-created entry kinds. An answer
+references its question's `E#` in the text. `--supersedes` records a replacement link without
+deleting the earlier entry. Bare CLI `show` selects Overview; typed Show requires a target. A plan
+shows SSOT, entries, tasks, and working agents. [Claim
+rules](board-contract.md#revisions-tasks-and-events) define `--resume` semantics. `--for
+HARNESS/SESSION` claims on behalf of that session under the caller's user and host; only the plan
+owner's user may delegate, and claim views render the holder with `(via delegator)`. `--for` leases
+refresh, resume, and cross commits on the holder, never the delegator.
 
 Grammar/metadata preflight precedes file or stdin reads; `--body -` reads stdin. Grammar errors
 begin `usage: board` or `usage: feedback`. Free text stays raw in `--board-text`; internal
@@ -64,6 +65,12 @@ commit if absent. It requires the plan owner's user with a `human` harness or th
 harness; `cli` and every other actor is `invalid_actor`. An unresolved oid is `invalid_reference`;
 an oid that names a tag is refused with `invalid_reference: OID names a tag; pass the commit id`.
 Durable task receipts, replay, and unknown historical attribution follow the [board contract](board-contract.md#git-links-and-review-evidence).
+
+`board unlink OID P7.3` removes one stored task link using the same owner/human or steward
+authority. It requires a full commit oid, uses stored repository identity without reading Git, and
+does not register the caller's repository. Unknown or ambiguous links are `invalid_reference`. Audit
+receipts, retries, and subsequent trailer ingestion follow the [board
+contract](board-contract.md#git-links-and-review-evidence).
 
 ## Collection bounds
 

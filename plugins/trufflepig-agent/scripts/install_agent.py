@@ -17,7 +17,7 @@ import uuid
 
 PLUGIN = Path(__file__).resolve().parents[1]
 SKILLS = ("trufflepig-code-search", "trufflepig-plan-board")
-BOARD_API = 6
+BOARD_API = 7
 BOARD_SCHEMA = 8
 ROUTER_READY_TIMEOUT_SECONDS = 10
 sys.path.insert(0, str(PLUGIN / "bin"))
@@ -128,7 +128,7 @@ def router_endpoint_present(runtime: Path) -> bool:
 
 def require_current_router(runtime: Path, *, allow_absent: bool = False,
                            timeout: float = ROUTER_READY_TIMEOUT_SECONDS) -> None:
-    """Require API 6/schema 8, optionally tolerating an absent unmanaged router."""
+    """Require API 7/schema 8, optionally tolerating an absent unmanaged router."""
     advice = "restart trufflepig-system.service with the current trufflepig binary"
     if allow_absent and not router_endpoint_present(runtime):
         return

@@ -22,10 +22,14 @@ impl BoardOp {
         )
     }
 
-    /// Workspace writes register the caller's repository; manual links resolve
-    /// only repositories already registered for the plan.
+    /// Workspace writes register the caller's repository; commit link edits
+    /// use the plan's existing repository identities.
     pub fn registers_workspace(&self) -> bool {
-        !self.is_read_only() && !matches!(self, Self::Inbox { .. } | Self::LinkCommit { .. })
+        !self.is_read_only()
+            && !matches!(
+                self,
+                Self::Inbox { .. } | Self::LinkCommit { .. } | Self::UnlinkCommit { .. }
+            )
     }
 
     pub fn plan_id(&self) -> Option<PlanId> {
@@ -44,7 +48,7 @@ impl BoardOp {
             | Self::Claims { plan, .. } => *plan,
             Self::History { plan, .. } | Self::Tasks { plan, .. } => Some(*plan),
             Self::RegisterRepo { registration } => registration.plan_id,
-            Self::LinkCommit { task, .. } => Some(task.plan),
+            Self::LinkCommit { task, .. } | Self::UnlinkCommit { task, .. } => Some(task.plan),
             _ => None,
         }
     }

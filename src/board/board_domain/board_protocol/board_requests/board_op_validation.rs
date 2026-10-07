@@ -12,7 +12,9 @@ impl BoardOp {
     pub fn validate(&self) -> Result<()> {
         match self {
             Self::Post { target, .. } | Self::Show { target } => target.validate()?,
-            Self::TaskMove { task, .. } | Self::ClaimTask { task, .. } => task.validate()?,
+            Self::TaskMove { task, .. }
+            | Self::ClaimTask { task, .. }
+            | Self::UnlinkCommit { task, .. } => task.validate()?,
             Self::Propose { base, .. } | Self::Edit { base, .. } | Self::Review { base, .. } => {
                 base.validate()?
             }
