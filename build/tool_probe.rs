@@ -1,4 +1,4 @@
-/// PATH tool probing shared by `build.rs` and its integration test.
+/// PATH tool probing used by the build script.
 pub mod tool_probe {
     use std::{
         env,
