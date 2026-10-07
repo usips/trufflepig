@@ -2,7 +2,7 @@ import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import {
   createLocks, resetLocksShim, abortNextGrantBeforeCallback, abortedGrantCallbacks,
-} from "./support/locks_shim.mjs";
+} from "../support/locks_shim.mjs";
 
 afterEach(() => resetLocksShim());
 

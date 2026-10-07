@@ -97,7 +97,8 @@ pub(in crate::board::local_board) fn write_feedback(
             recent_calls,
             import_key.map(|key| key.to_string())
         ],
-    ).map_err(sql_error)?;
+    )
+    .map_err(sql_error)?;
     if let Some(key) = import_key {
         remember_import(tx, key, entry)?;
     }

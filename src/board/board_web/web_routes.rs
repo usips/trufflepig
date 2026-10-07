@@ -157,10 +157,10 @@ fn public_asset(path: &str) -> Option<(&str, &str)> {
         "/feedback_triage.js" => PUBLIC_TRIAGE,
         "/board_reader.js" => PUBLIC_READER,
         "/board_entries.js" => PUBLIC_ENTRIES,
-        "/board_web_token.js" => PUBLIC_TOKEN,
+        "/state/board_web_token.js" => PUBLIC_TOKEN,
         "/board_ingest.js" => PUBLIC_INGEST,
-        "/board_lru.js" => PUBLIC_LRU,
-        "/board_seen.js" => PUBLIC_SEEN,
+        "/state/board_lru.js" => PUBLIC_LRU,
+        "/state/board_seen.js" => PUBLIC_SEEN,
         "/board_web.css" => return Some(("text/css; charset=utf-8", PUBLIC_STYLE)),
         _ => return None,
     };

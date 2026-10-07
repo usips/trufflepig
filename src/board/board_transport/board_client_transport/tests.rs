@@ -1,5 +1,6 @@
 mod no_daemon_tests;
 mod router_api_version_tests;
+mod router_probe_cache_tests;
 mod router_probe_tests;
 mod schema_advice_tests;
 
@@ -30,7 +31,7 @@ fn scratch() -> tempfile::TempDir {
 fn invoke(
     words: &[&str],
     gateway: &mut FakeGateway,
-    api: &AtomicU64,
+    transport: &mut BoardClientTransport,
     database: &Path,
     runtime: Option<&Path>,
 ) -> Result<String> {
@@ -39,13 +40,12 @@ fn invoke(
     let args = crate::board::prepare_client(&args, &options)?;
     let options = crate::cli::parse(&args)?;
     let command = board_grammar::parse(&options, None)?;
-    run_prepared(
+    transport.run_prepared(
         &args,
         &options,
         &command,
         &RequestContext::new(None, None),
         gateway,
-        api,
         &mut || Ok(BoardConfig::for_database(database)),
         runtime,
         &database.parent().unwrap().join("spool"),

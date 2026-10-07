@@ -1,11 +1,7 @@
-// One bounded recency group shared by the tab's draft maps: form drafts,
-// form statuses, and editor drafts together hold at most 64 keys, and the
-// least-recently-used key (use = read or write) evicts first. Each store is
-// Map-like; recency and capacity are shared across all three. Editor input
-// stores `editor:*` snapshots and the plan editor's `new` or `edit:*` draft
-// outside the bound. Pins are LRU-capped: a pin past the cap demotes the
-// oldest into the shared group. Successful saves delete their draft keys;
-// opening an editor and showing a save confirmation create no entries.
+// Drafts, statuses, and editor drafts share an LRU cap; reads and writes touch keys.
+// Editor snapshots and plan new/edit drafts pin outside that cap until a successful save.
+// Pins have a separate LRU cap; overflow demotes the oldest into the shared group.
+// A successful save deletes its key and releases its pin.
 export const DRAFT_STORE_CAPACITY = 64;
 export const DRAFT_PIN_CAPACITY = 8;
 

@@ -82,7 +82,9 @@ impl LocalBoard {
             _ => None,
         };
         if let Some(import_key) = import_key {
-            if let Some(mut reply) = board_writes::feedback_entries::imported_reply(&tx, import_key)? {
+            if let Some(mut reply) =
+                board_writes::feedback_entries::imported_reply(&tx, import_key)?
+            {
                 if let BoardResult::Change(change) = &reply.result {
                     if let Some(plan) = change.plan {
                         board_writes::task_claims::refresh_plan_claims(&tx, actor_id, plan, now)?;
@@ -113,10 +115,16 @@ impl LocalBoard {
                     if let BoardResult::Change(change) = &mut reply.result {
                         change.deduplicated = true;
                         if let Some(import_key) = import_key {
-                            board_writes::feedback_entries::remember_import(&tx, import_key, change.entry)?;
+                            board_writes::feedback_entries::remember_import(
+                                &tx,
+                                import_key,
+                                change.entry,
+                            )?;
                         }
                         if let Some(plan) = change.plan {
-                            board_writes::task_claims::refresh_plan_claims(&tx, actor_id, plan, now)?;
+                            board_writes::task_claims::refresh_plan_claims(
+                                &tx, actor_id, plan, now,
+                            )?;
                         }
                     }
                     reply.backend = format!("local:{}", self.path.display());

@@ -61,7 +61,7 @@ fn intermediate_v2_databases_gain_the_repair_indexes_without_losing_data() {
     assert_eq!(
         conn.query_row("SELECT entry_id FROM commit_plans", [], |row| row
             .get::<_, i64>(0))
-        .unwrap(),
+            .unwrap(),
         1
     );
     assert!(

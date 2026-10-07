@@ -59,13 +59,13 @@ pub(in crate::board::local_board) fn history(
     validate_limit(limit, COLLECTION_LIMIT)?;
     require_plan(conn, plan)?;
     let (after, through) = sequence_window(conn, after, through)?;
-    let mut statement = conn.prepare(
-        concat!(
+    let mut statement = conn
+        .prepare(concat!(
             "SELECT r.number,r.source,a.user,a.host,a.harness,a.session,e.body,r.seq,e.created_at ",
             "FROM revisions r JOIN actors a ON a.id=r.actor_id JOIN entries e ON e.id=r.entry_id ",
             "WHERE r.plan_id=?1 AND r.seq>?2 AND r.seq<=?3 ORDER BY r.seq,r.number LIMIT ?4"
-        )
-    ).map_err(sql_error)?;
+        ))
+        .map_err(sql_error)?;
     let mut rows = statement
         .query(params![
             sql_number(plan.get()),

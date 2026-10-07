@@ -4,10 +4,12 @@ import { createBoardDom, decodeBoardFragment } from "./board_dom.js";
 import { createBoardViews } from "./board_views.js";
 import { createBoardRouting, routeFromLocation } from "./board_routing.js";
 import { createBoardRenderLoop } from "./board_render_loop.js";
-import { offeredTokenFromHash, resolveBootstrapToken, resolveAdoptionToken } from "./board_web_token.js";
+import {
+  offeredTokenFromHash, resolveBootstrapToken, resolveAdoptionToken,
+} from "./state/board_web_token.js";
 import { completeIngest, createIngestReceiptCache, resolveIngestEvent } from "./board_ingest.js";
-import { createDraftStores } from "./board_lru.js";
-import { seenKey, readSeenMark, writeSeenMark } from "./board_seen.js";
+import { createDraftStores } from "./state/board_lru.js";
+import { seenKey, readSeenMark, writeSeenMark } from "./state/board_seen.js";
 
 const TOKEN_KEY = "trufflepig-board-token";
 const TOKEN_MISMATCH_NOTICE = "This link offered a different board token; the tab kept its existing session.";
@@ -181,11 +183,9 @@ document.addEventListener("click", event => {
   state.route = routeFromLocation(); notice(""); void loop.loadRoute(true);
 });
 window.addEventListener("hashchange", () => {
-  // Fresh token offered by navigation: an expired tab adopts it, and so does
-  // a tab that never had a token — with no stored session there is nothing to
-  // keep or flag. A live tab still strips the token from the URL at once, so
-  // it never lingers in the address bar or history; a differing offer waits
-  // pending for a later expiry, while the same token strips without a notice.
+  // Tabs with expired or absent sessions adopt offered tokens.
+  // Live tabs strip tokens at once; differing offers stay pending until expiry.
+  // Matching offers strip quietly and preserve the stored session.
   const adoption = resolveAdoptionToken({ locationHash: location.hash, expired: expired || !token });
   if (adoption !== null) {
     token = adoption; expired = false;

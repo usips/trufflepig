@@ -143,12 +143,9 @@ export function createStreamElection({
     }, heartbeatMs);
   }
 
-  // A steal carries no signal: the spec rejects the two together, so a queued
-  // steal stays pending until granted. The queued election stays in place
-  // until the steal is granted, so a rejected steal never costs the tab its
-  // queue position; the catch below re-arms the freshness tick to retry. A
-  // synchronous throw leaves the previous election fields alone so the next
-  // heartbeat or freshness tick retries.
+  // Steals omit signals and retain the queued election until a grant.
+  // Rejections keep queue position and allow the next freshness tick to retry.
+  // Synchronous throws preserve election fields for the next heartbeat or tick.
   function requestLock(names, steal) {
     const previousElect = session.elect;
     if (!steal) previousElect?.abort();

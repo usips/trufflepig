@@ -82,7 +82,14 @@ fn writable_open_tightens_only_directories_it_created() {
         );
     }
     assert_eq!(
-        nested.parent().unwrap().metadata().unwrap().permissions().mode() & 0o777,
+        nested
+            .parent()
+            .unwrap()
+            .metadata()
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
         0o700,
         "board-created intermediate directories are tightened"
     );

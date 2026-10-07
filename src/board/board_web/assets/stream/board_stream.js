@@ -167,11 +167,9 @@ export function createBoardStream(context) {
     session.deferredCursor = null;
     clearTimeout(state.reconnect); state.reconnect = null;
     if (!election.shareable) { session.mode = "solo"; runFetch(cursor, null); return; }
-    // Follow first: frames from the current leader apply while this tab waits
-    // its turn on the lock. The browser grants the lock to one tab at a time.
-    // Sharing names need the token digest, so the election follows async; the
-    // tab claims Live only on a leader heartbeat, never eagerly here. Connecting
-    // reports synchronously: the open channel can deliver a heartbeat first.
+    // Follow and apply leader frames while waiting for the browser lock.
+    // Sharing names use the token digest; only a leader heartbeat announces Live.
+    // Report Connecting before the channel can deliver an immediate heartbeat.
     session.mode = "following";
     session.electionCursor = cursor;
     // Drain synchronously: once following, live frames deliver directly, and a

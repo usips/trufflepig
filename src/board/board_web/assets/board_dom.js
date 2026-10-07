@@ -214,13 +214,10 @@ export function createBoardDom(state) {
       busyControls.get(form).forEach(([input, disabled]) => { input.disabled = disabled; }); busyControls.delete(form);
     }
   }
-  // Duplicate hrefs share one key, so the recorded key carries the element's
-  // occurrence among same-key matches, counted lazily here because pages build
-  // incrementally. The occurrence is scoped within the nearest keyed ancestor,
-  // so a new row elsewhere (a fresh ticker event) never shifts other keys.
-  // The ancestor and its own occurrence ride along as fallbacks for when the
-  // element itself is gone after a refresh, and to scope duplicates of the
-  // ancestor (two panels with the same key) to the instance that held focus.
+  // Duplicate keys carry their occurrence within the nearest keyed ancestor.
+  // Count occurrences lazily because pages grow during rendering.
+  // Keep the ancestor's key and occurrence if the focused content disappears.
+  // Scoping both occurrences prevents new rows and duplicate panels from shifting focus.
   function focusedControl(root) {
     const input = document.activeElement;
     if (!root.contains(input)) return null;

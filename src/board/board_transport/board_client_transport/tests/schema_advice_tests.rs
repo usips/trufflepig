@@ -28,7 +28,7 @@ fn router_schema_refusal_gives_upgrade_advice() {
     let error = invoke(
         &["board", "show"],
         &mut gateway,
-        &AtomicU64::new(0),
+        &mut BoardClientTransport::default(),
         &database,
         None,
     )
@@ -50,7 +50,7 @@ fn router_schema_refusal_queues_feedback_for_an_upgrade() {
     invoke(
         &["feedback", "blocked", "newer storage"],
         &mut gateway,
-        &AtomicU64::new(0),
+        &mut BoardClientTransport::default(),
         &database,
         None,
     )

@@ -37,10 +37,7 @@ pub(in crate::board::local_board) fn register_repo(
             }
         }
         let rekeyed = registration.origin_override.is_none()
-            && crate::board::repo_identity::root_sets_diverged(
-                &roots,
-                &registration.root_commits,
-            );
+            && crate::board::repo_identity::root_sets_diverged(&roots, &registration.root_commits);
         if !rekeyed {
             registration.repo_key = initial_key;
             if !roots.is_empty() {

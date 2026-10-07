@@ -15,7 +15,7 @@ fn api_6_router_gets_restart_hint() {
     let result = invoke(
         &["board", "show"],
         &mut gateway,
-        &AtomicU64::new(0),
+        &mut BoardClientTransport::default(),
         &database,
         None,
     );

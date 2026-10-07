@@ -53,7 +53,9 @@ fn populated_m1_feedback_uuid_replay_survives_schema_and_dedupe_upgrade() {
         .execute_batch(crate::board::local_board::board_database::legacy_schema())
         .unwrap();
     let key = FeedbackImportKey::parse("aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa").unwrap();
-    legacy.execute_batch(r#"
+    legacy
+        .execute_batch(
+            r#"
         INSERT INTO actors VALUES(1,'josh','laptop','codex','original');
         INSERT INTO agent_sessions VALUES(1,NULL,NULL,NULL,NULL,10,10);
         INSERT INTO entries VALUES(1,NULL,'feedback','M1 report',NULL,NULL,1,NULL,NULL,NULL,
@@ -66,7 +68,9 @@ fn populated_m1_feedback_uuid_replay_survives_schema_and_dedupe_upgrade() {
  '{"api":1,"backend":"local","warnings":[],"result":{"result":"change",
  "data":{"entry":"E1","seq":1,"plan":null,"revision":null,"task":null,"deduplicated":false}}}',10);
         PRAGMA user_version=1;
-    "#).unwrap();
+    "#,
+        )
+        .unwrap();
     drop(legacy);
     let mut board = LocalBoard::open_path(&path, Duration::from_secs(1800)).unwrap();
     let request = BoardRequest::new(

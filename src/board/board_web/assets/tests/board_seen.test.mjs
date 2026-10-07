@@ -2,7 +2,7 @@ import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { installDomShim, resetDomShim } from "./support/dom_shim.mjs";
 import { createBoardTestClock, createBoardTestSignal } from "./support/board_test_clock.mjs";
-import { seenKey, readSeenMark, writeSeenMark, resyncSeenMark } from "../board_seen.js";
+import { seenKey, readSeenMark, writeSeenMark, resyncSeenMark } from "../state/board_seen.js";
 
 installDomShim();
 beforeEach(() => resetDomShim());

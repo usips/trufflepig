@@ -1,7 +1,7 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { createBoardStream } from "../stream/board_stream.js";
-import { installDomShim, resetDomShim } from "./support/dom_shim.mjs";
+import { createBoardStream } from "../../stream/board_stream.js";
+import { installDomShim, resetDomShim } from "../support/dom_shim.mjs";
 
 installDomShim();
 afterEach(() => resetDomShim());
@@ -212,7 +212,7 @@ describe("board stream token rotation", () => {
   it("an expired tab adopts a fresh URL token and a live tab never does", async () => {
     // Dynamic import keeps this file loadable before the fix, so the red run
     // fails on this assertion instead of a static import error.
-    const tokenModule = await import("../board_web_token.js");
+    const tokenModule = await import("../../state/board_web_token.js");
     assert.equal(typeof tokenModule.resolveAdoptionToken, "function", "adoption helper exists");
     const { resolveAdoptionToken } = tokenModule;
     assert.equal(resolveAdoptionToken({ locationHash: `#token=${T2}`, expired: true }), T2);

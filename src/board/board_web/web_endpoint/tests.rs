@@ -54,8 +54,7 @@ fn read_raw_request(socket: &mut TcpStream) -> Vec<u8> {
     let mut chunk = [0; 1024];
     let header_end = loop {
         let count =
-            crate::board::board_test_support::read_ignoring_interrupts(socket, &mut chunk)
-                .unwrap();
+            crate::board::board_test_support::read_ignoring_interrupts(socket, &mut chunk).unwrap();
         assert!(count > 0, "probe closed before finishing its request");
         raw.extend_from_slice(&chunk[..count]);
         if let Some(end) = raw.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
@@ -71,8 +70,7 @@ fn read_raw_request(socket: &mut TcpStream) -> Vec<u8> {
         .expect("probe request carries a content length");
     while raw.len() < header_end + length {
         let count =
-            crate::board::board_test_support::read_ignoring_interrupts(socket, &mut chunk)
-                .unwrap();
+            crate::board::board_test_support::read_ignoring_interrupts(socket, &mut chunk).unwrap();
         assert!(count > 0, "probe closed before sending its body");
         raw.extend_from_slice(&chunk[..count]);
     }

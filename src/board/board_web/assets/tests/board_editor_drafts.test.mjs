@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { installDomShim, resetDomShim } from "./support/dom_shim.mjs";
 import { createBoardDom } from "../board_dom.js";
-import { createDraftStores } from "../board_lru.js";
+import { createDraftStores } from "../state/board_lru.js";
 import { createBoardViews } from "../board_views.js";
 import { createBoardReader } from "../board_reader.js";
 import { createBoardRouting } from "../board_routing.js";

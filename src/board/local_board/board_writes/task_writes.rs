@@ -2,11 +2,11 @@
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
-use super::task_claims::{active_claim, claim_task, end_claim};
 use super::super::{
     BoardError, EntryDraft, WriteContext, can_accept, insert_entry, insert_event, invalid,
     require_plan, row_number, sql_error, sql_number,
 };
+use super::task_claims::{active_claim, claim_task, end_claim};
 use crate::board::board_actor::{BoardActor, BoardRecipient};
 use crate::board::board_ids::{EntryId, PlanId, TaskId};
 use crate::board::board_protocol::{BoardReply, ClaimEndReason, ClaimResume};
@@ -18,7 +18,10 @@ pub(in crate::board::local_board) struct TaskCard {
     assignee: Option<BoardRecipient>,
 }
 
-pub(in crate::board::local_board) fn require_task(conn: &Connection, task: TaskId) -> Result<TaskCard, BoardError> {
+pub(in crate::board::local_board) fn require_task(
+    conn: &Connection,
+    task: TaskId,
+) -> Result<TaskCard, BoardError> {
     let stored: Option<(String, String, Option<String>)> = conn
         .query_row(
             "SELECT title,column_name,assignee FROM tasks WHERE plan_id=?1 AND ordinal=?2",

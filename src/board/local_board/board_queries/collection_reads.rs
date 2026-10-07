@@ -32,7 +32,10 @@ use rusqlite::params;
 
 const COLLECTION_LIMIT: usize = 200;
 
-pub(in crate::board::local_board) fn validate_limit(limit: usize, maximum: usize) -> Result<(), BoardError> {
+pub(in crate::board::local_board) fn validate_limit(
+    limit: usize,
+    maximum: usize,
+) -> Result<(), BoardError> {
     if !(1..=maximum).contains(&limit) {
         return Err(invalid(
             "invalid_options",

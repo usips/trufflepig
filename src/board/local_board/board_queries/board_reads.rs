@@ -11,18 +11,20 @@ use super::super::{
     BoardError, WriteContext, actor_from_row, invalid, require_plan, row_number, sql_error,
     sql_number, sqlite_u64,
 };
-use crate::board::local_board::board_writes::task_claims;
 use crate::board::board_actor::{BoardRecipient, HarnessLabel};
 use crate::board::board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision, RepoKey};
 use crate::board::board_protocol::*;
 use crate::board::board_vocabulary::{EntryKind, EntryText, PlanText, PlanTitle, ProposalState};
+use crate::board::local_board::board_writes::task_claims;
 
 mod entry_reference_reads;
 mod plan_history_reads;
 mod repository_reads;
 mod review_evidence_reads;
 
-pub(in crate::board::local_board) use entry_reference_reads::{entries, entry, entry_view, open_entries};
+pub(in crate::board::local_board) use entry_reference_reads::{
+    entries, entry, entry_view, open_entries,
+};
 pub(in crate::board::local_board) use plan_history_reads::plan_row;
 use plan_history_reads::{plan, plan_view, revision};
 pub(in crate::board::local_board) use repository_reads::repositories;

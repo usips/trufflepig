@@ -22,7 +22,9 @@ pub(in crate::board::local_board) fn is_dedupable(op: &BoardOp) -> bool {
     )
 }
 
-pub(in crate::board::local_board) fn request_dedupe_key(request: &BoardRequest) -> Result<String, BoardError> {
+pub(in crate::board::local_board) fn request_dedupe_key(
+    request: &BoardRequest,
+) -> Result<String, BoardError> {
     if let BoardOp::Feedback {
         kind,
         summary,

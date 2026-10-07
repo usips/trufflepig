@@ -63,7 +63,11 @@ fn scoped_reads_fill_the_caller_repository_and_all_stays_global() {
     ];
     for op in &mut scoped {
         scope_read_repo_key(op, Some(&registration));
-        assert_eq!(scoped_key(op), expected.as_ref(), "unexpected scope for {op:?}");
+        assert_eq!(
+            scoped_key(op),
+            expected.as_ref(),
+            "unexpected scope for {op:?}"
+        );
     }
     let mut global = [
         BoardOp::Inbox {

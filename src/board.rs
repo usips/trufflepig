@@ -9,7 +9,6 @@ pub use board_domain::{
     board_actor, board_collections, board_ids, board_protocol, board_vocabulary,
 };
 pub mod board_transport;
-use board_transport::board_client_transport;
 pub use board_transport::{board_backend, board_config, board_grammar, feedback_outbox};
 pub mod board_git;
 pub use board_git::{commit_ingest, commit_trailers, repo_identity, review_packet};
@@ -29,15 +28,6 @@ use crate::{cli::Arguments, diagnostics::RequestContext};
 use anyhow::{Context, Result, bail, ensure};
 use board_grammar::BoardCommand;
 use std::io::Read;
-
-/// Reads client-owned body files, then uses the system gateway or an absent-router fallback.
-pub fn run_client(
-    args: &[String],
-    options: &Arguments,
-    context: &RequestContext,
-) -> Result<String> {
-    board_client_transport::run(args, options, context)
-}
 
 /// Captures stdin/file bodies and feedback identity once, including across retries.
 pub(crate) fn prepare_client(args: &[String], options: &Arguments) -> Result<Vec<String>> {

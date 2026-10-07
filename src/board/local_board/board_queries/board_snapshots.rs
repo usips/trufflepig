@@ -1,7 +1,7 @@
 //! Committed read snapshots and query-only dispatch.
 
-use super::{board_reads, board_search, collection_nested, collection_reads};
 use super::super::*;
+use super::{board_reads, board_search, collection_nested, collection_reads};
 
 impl LocalBoard {
     /// Returns one committed event snapshot without retaining a read transaction.

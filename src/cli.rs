@@ -1,10 +1,14 @@
 //! Linux command dispatch; stdout contains one budgeted JSON response.
 mod board_api_probe;
+mod client_command;
+use client_command::ClientCommand;
 mod dispatch;
 pub mod emission;
 mod emitted_evidence;
 mod retry;
 mod root_daemon;
+mod system_client_routing;
+use system_client_routing::{system_command, system_reply, system_routes};
 pub(crate) mod semantic;
 use crate::{
     background_process::spawn_background,
@@ -60,79 +64,7 @@ pub fn run_with_context(
     args: &[String],
     context: &crate::diagnostics::RequestContext,
 ) -> Result<String> {
-    if let Some(answer) = board_api_probe::probe_board_api(args) {
-        return answer;
-    }
-    let options = parse(args)?;
-    validate(&options)?;
-    let verb = options
-        .words
-        .first()
-        .map(String::as_str)
-        .unwrap_or("status");
-    if verb == "semantic-worker-serve" {
-        return semantic::serve_worker(&options);
-    }
-    if verb == "semantic" && options.words.get(1).is_some_and(|verb| verb == "worker") {
-        return semantic::worker_command(&options);
-    }
-    if verb == "ws" && options.words.get(1).is_some_and(|v| v == "discover") {
-        return crate::workspace::discover_paths(&options.words[2..], options.budget);
-    }
-    if verb == "board-serve" {
-        let address = options.board_listen_address();
-        return crate::board::board_web::serve(address).map(|()| String::new());
-    }
-    if verb == "system-serve" {
-        return crate::system::serve().map(|()| String::new());
-    }
-    if verb == "system" {
-        return system_command(&options, context);
-    }
-    if verb == "board" && options.words.get(1).is_some_and(|word| word == "web") {
-        let crate::board::board_grammar::BoardCommand::Web { target } =
-            crate::board::board_grammar::parse(&options, None)?
-        else {
-            unreachable!("web grammar produces a web command");
-        };
-        return crate::board::board_web::link(target);
-    }
-    if matches!(verb, "board" | "feedback") {
-        return crate::board::run_client(args, &options, context);
-    }
-    if system_routes(&options, verb)
-        && let Ok(root) = options.root.canonicalize()
-        && let Ok(config) = crate::workspace::resolve(&options)
-    {
-        let applied = match config.as_ref() {
-            Some(config) => crate::workspace::apply_config(config, &options)?,
-            None => options.clone(),
-        };
-        let mut forwarded = normalized_args(&applied, &root);
-        if config.is_some()
-            && options.wait
-            && !(verb == "semantic" && options.words.get(1).is_some_and(|c| c == "prepare"))
-        {
-            forwarded.push("--wait".into());
-        }
-        let routed = crate::system::request(&forwarded, context).and_then(|reply| match reply {
-            Some(reply) => Ok(Some(reply)),
-            None => {
-                let _ = crate::system::ensure();
-                crate::system::request(&forwarded, context)
-            }
-        });
-        match routed {
-            Ok(Some(reply)) => return system_reply(&applied, &root, verb, config.as_ref(), reply),
-            // A router that could not reach or start the owner leaves direct
-            // execution; any other router error is the answer.
-            Err(error) if !format!("{error:#}").contains("daemon_unavailable") => {
-                return Err(error);
-            }
-            _ => {}
-        }
-    }
-    direct(&options, context, CLIENT_REPLY_WAIT)
+    ClientCommand::default().run(args, context)
 }
 
 /// Runs `args` without the system router. Daemons issue their sub-requests
@@ -262,110 +194,6 @@ fn root_reply(root: &Path, cache: &Path, options: &Arguments, response: String) 
         semantic::wait_for_schedule(root, cache, options, response)
     } else {
         Ok(response)
-    }
-}
-
-/// Routes a verb through the system daemon unless it must run locally.
-fn system_routes(options: &Arguments, verb: &str) -> bool {
-    if options.no_daemon
-        || matches!(
-            verb,
-            "serve"
-                | "history-serve"
-                | "workspace-serve"
-                | "system-serve"
-                | "system"
-                | "ws"
-                | "stop"
-                | "index"
-                | "init"
-                | "semantic-check"
-        )
-    {
-        return false;
-    }
-    !(verb == "semantic"
-        && options
-            .words
-            .get(1)
-            .is_some_and(|command| command == "status"))
-}
-
-/// Handles the `system` verb against the per-user routing daemon.
-fn system_command(
-    options: &Arguments,
-    context: &crate::diagnostics::RequestContext,
-) -> Result<String> {
-    let render = |json: &str| -> Result<String> {
-        OutputBudget::new(options.budget)?.render(&serde_json::from_str::<serde_json::Value>(json)?)
-    };
-    match options.words.get(1).map(String::as_str) {
-        Some("ensure") => {
-            crate::system::ensure()?;
-            render("{\"status\":\"ok\"}")
-        }
-        Some("stop") => render(&crate::system::stop()?),
-        Some("dir") => match crate::system::dir() {
-            Some(dir) => Ok(format!("{}\n", dir.display())),
-            None => anyhow::bail!("system_unavailable: no runtime dir"),
-        },
-        Some("prune") => {
-            let evicted = crate::system::sweep::sweep(
-                &cache_base()?,
-                std::time::SystemTime::now(),
-                crate::system::sweep::SWEEP_GRACE,
-            );
-            render(&serde_json::to_string(
-                &serde_json::json!({ "evicted": evicted }),
-            )?)
-        }
-        None | Some("status") => {
-            let ping = vec!["system".to_owned(), "status".to_owned()];
-            let status = if crate::system::request(&ping, context)
-                .ok()
-                .flatten()
-                .is_some()
-            {
-                "ok"
-            } else {
-                "not_running"
-            };
-            render(&format!("{{\"status\":\"{status}\"}}"))
-        }
-        Some(other) => {
-            anyhow::bail!(
-                "usage: system status | system ensure | system stop | system prune | system dir (got {other})"
-            )
-        }
-    }
-}
-
-/// Applies to a system-routed reply the waits a local route would have run.
-fn system_reply(
-    options: &Arguments,
-    root: &Path,
-    verb: &str,
-    config: Option<&crate::workspace::config::WorkspaceConfig>,
-    reply: String,
-) -> Result<String> {
-    if let Some(config) = config {
-        if options.wait
-            && verb == "semantic"
-            && options
-                .words
-                .get(1)
-                .is_some_and(|command| command == "prepare")
-        {
-            return semantic::wait_for_workspace(config, options, reply);
-        }
-        return Ok(reply);
-    }
-    let reply = wait_for_history(root, options, reply)?;
-    if verb == "semantic" {
-        let cache = cache_path(root, options.cache.as_deref())?;
-        semantic::wait_for_schedule(root, &cache, options, reply)
-    } else {
-        Ok(reply)
     }
 }
 

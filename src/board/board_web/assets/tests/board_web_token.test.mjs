@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { resolveBootstrapToken } from "../board_web_token.js";
+import { resolveBootstrapToken } from "../state/board_web_token.js";
 
 const A = "a".repeat(64);
 const B = "b".repeat(64);

@@ -1,4 +1,5 @@
 //! Backend request runs: CLI commands onto the board host.
+mod host_review;
 use super::super::{
     BoardHost,
     board_wait::{inbox_has_events, waiter_transient},
@@ -13,7 +14,6 @@ use crate::{
             BoardResult, CommitLinkResult,
         },
         board_render::render_reply,
-        commit_ingest::IngestReport,
     },
     cli::Arguments,
     daemon::deadline::QueryDeadline,
@@ -21,7 +21,7 @@ use crate::{
     output::OutputBudget,
 };
 use anyhow::{Result, bail};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 impl BoardHost {
     /// Dispatches without workspace resolution, holding the writer only for backend work.
@@ -181,98 +181,7 @@ impl BoardHost {
         }
         request.validate()?;
         if let BoardOp::Review { base, agent } = &request.op {
-            let scan_budget = deadline
-                .remaining()
-                .saturating_sub(Duration::from_secs(3))
-                .min(Duration::from_secs(5));
-            let started = Instant::now();
-            let (targets, report) = if scan_budget.is_zero() {
-                (
-                    self.repositories(&actor, Some(base.plan), deadline)?,
-                    IngestReport {
-                        errors: vec![
-                            "review git scan skipped: no remaining scan budget".to_owned(),
-                        ],
-                        ..Default::default()
-                    },
-                )
-            } else {
-                match self.ingest(&actor, Some(base.plan), scan_budget) {
-                    Ok(result) => result,
-                    Err(error) => (
-                        self.repositories(&actor, Some(base.plan), deadline)?,
-                        IngestReport {
-                            errors: vec![format!("review git scan unavailable: {error:#}")],
-                            ..Default::default()
-                        },
-                    ),
-                }
-            };
-            warnings.extend(report.errors);
-            warnings.extend(
-                report
-                    .unknown_plans
-                    .iter()
-                    .map(|plan| format!("unknown plan {plan}; commit trailer ignored")),
-            );
-            warnings.extend(
-                report
-                    .unknown_tasks
-                    .iter()
-                    .map(|task| format!("unknown task {task}; commit linked to its plan")),
-            );
-            let reply = self.handle_by(&request, deadline)?;
-            let BoardResult::Review(evidence) = &reply.result else {
-                bail!("board_api_mismatch: review backend returned an unexpected result");
-            };
-            let mut unlinked = Vec::new();
-            if let Some(agent) = agent {
-                for target in &targets {
-                    let remaining = scan_budget.saturating_sub(started.elapsed());
-                    if remaining.is_zero() {
-                        warnings.push("review git scan deadline reached".to_owned());
-                        break;
-                    }
-                    match crate::board::commit_ingest::find_unlinked(
-                        &target.registration,
-                        evidence.base.created_at,
-                        agent,
-                        remaining,
-                    ) {
-                        Ok(mut scan) => {
-                            unlinked.extend(scan.commits);
-                            if let Err(error) =
-                                crate::board::commit_ingest::suppress_linked_warnings(
-                                    &BoardHostBackendAccess(self, deadline),
-                                    &target.registration.repo_key,
-                                    &mut scan.warnings,
-                                )
-                            {
-                                warnings.push(format!("linked commit lookup: {error:#}"));
-                            }
-                            warnings.extend(scan.warnings);
-                            if let Some(error) = scan.scan_error {
-                                warnings.push(error);
-                            }
-                        }
-                        Err(error) => warnings.push(format!("unlinked scan: {error:#}")),
-                    }
-                }
-            }
-            warnings.extend(reply.warnings.clone());
-            let packet = crate::board::review_packet::assemble_review(
-                evidence,
-                agent.as_ref(),
-                &targets,
-                unlinked,
-                warnings,
-            );
-            return Ok(crate::board::board_render::render_review(
-                &packet,
-                &budget,
-                &reply.backend,
-            )?
-            .text);
+            return self.run_review(&request, base, agent.as_ref(), &budget, deadline, warnings);
         }
         let mut reply = if options.wait && matches!(&request.op, BoardOp::Inbox { .. }) {
             self.wait_inbox(&request, deadline)?

@@ -242,11 +242,8 @@ fn ensure_writer_migrates_once_for_router_startup() {
 fn ensure_writer_migrates_stale_storage_for_router_startup() {
     let directory = crate::board::board_test_support::scratch("board-runtime-");
     let database = directory.path().join("board.sqlite3");
-    crate::board::local_board::seed_storage_schema(
-        &database,
-        crate::board::SCHEMA_VERSION - 1,
-    )
-    .unwrap();
+    crate::board::local_board::seed_storage_schema(&database, crate::board::SCHEMA_VERSION - 1)
+        .unwrap();
     let host = BoardHost::with_config(BoardConfig::for_database(&database));
     host.ensure_writer(QueryDeadline::start()).unwrap();
     let version: i64 = rusqlite::Connection::open(&database)

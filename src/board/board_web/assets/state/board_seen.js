@@ -1,8 +1,6 @@
-// Per-database seen mark: the highest event sequence this browser has had
-// delivered, namespaced by the board id so port-0 restarts never mix marks.
-// Every write re-reads storage and keeps the max, so a lagging tab cannot
-// lower a mark another tab already raised. Only a fresh server snapshot may
-// lower the mark, when the database was replaced underneath the tab.
+// Seen marks track delivered sequences per database, independent of the serving port.
+// Writes read storage and keep its maximum, preserving another tab's newer mark.
+// A fresh server snapshot can lower the mark after the database changes.
 export function seenKey(boardId) {
   return `trufflepig-board-seen:${boardId || ""}`;
 }

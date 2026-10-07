@@ -8,7 +8,7 @@ fn no_daemon_board_access_never_contacts_or_starts_router() {
     invoke(
         &["--no-daemon", "board", "show"],
         &mut gateway,
-        &AtomicU64::new(0),
+        &mut BoardClientTransport::default(),
         &database,
         None,
     )
@@ -29,7 +29,7 @@ fn no_daemon_refuses_to_migrate_beside_a_live_router() {
     let error = invoke(
         &["--no-daemon", "board", "show"],
         &mut FakeGateway::default(),
-        &AtomicU64::new(0),
+        &mut BoardClientTransport::default(),
         &database,
         Some(&runtime),
     )
@@ -52,7 +52,7 @@ fn no_daemon_feedback_beside_live_router_is_queued() {
     let reply = invoke(
         &["--no-daemon", "feedback", "blocked", "router live"],
         &mut FakeGateway::default(),
-        &AtomicU64::new(0),
+        &mut BoardClientTransport::default(),
         &database,
         Some(&runtime),
     )
@@ -72,7 +72,7 @@ fn no_daemon_show_beside_live_router_succeeds_on_current_schema() {
     invoke(
         &["--no-daemon", "board", "new", "Seeded plan"],
         &mut FakeGateway::default(),
-        &AtomicU64::new(0),
+        &mut BoardClientTransport::default(),
         &database,
         None,
     )
@@ -84,7 +84,7 @@ fn no_daemon_show_beside_live_router_succeeds_on_current_schema() {
     let reply = invoke(
         &["--no-daemon", "board", "show"],
         &mut FakeGateway::default(),
-        &AtomicU64::new(0),
+        &mut BoardClientTransport::default(),
         &database,
         Some(&runtime),
     )

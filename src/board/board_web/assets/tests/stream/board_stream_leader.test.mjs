@@ -1,8 +1,8 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { createBoardStream } from "../stream/board_stream.js";
-import { installDomShim, resetDomShim } from "./support/dom_shim.mjs";
-import { rejectSteals, allowSteals, stealRejections } from "./support/locks_shim.mjs";
+import { createBoardStream } from "../../stream/board_stream.js";
+import { installDomShim, resetDomShim } from "../support/dom_shim.mjs";
+import { rejectSteals, allowSteals, stealRejections } from "../support/locks_shim.mjs";
 
 installDomShim();
 afterEach(() => resetDomShim());

@@ -61,22 +61,14 @@ fn resolve_on_path(name: &str) -> Option<PathBuf> {
     None
 }
 
-/// Sorted `*.test.mjs` files directly inside the board asset test directory.
+/// Sorted `*.test.mjs` files beneath the board asset test directory.
 fn asset_test_files() -> Vec<PathBuf> {
     let tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/board/board_web/assets/tests");
     // Node >=21 treats a `--test` directory argument as a single module and
     // dies with MODULE_NOT_FOUND (nodejs/node#64555); explicit files run
     // identically on every Node >=20.
-    let mut files: Vec<PathBuf> = std::fs::read_dir(&tests)
-        .unwrap_or_else(|error| {
-            panic!("board asset tests unreadable: {}: {error}", tests.display())
-        })
-        .map(|entry| entry.expect("read board asset test entry").path())
-        .filter(|path| {
-            path.file_name()
-                .is_some_and(|name| name.to_string_lossy().ends_with(".test.mjs"))
-        })
-        .collect();
+    let mut files = Vec::new();
+    collect_asset_test_files(&tests, &mut files);
     files.sort();
     assert!(
         !files.is_empty(),
@@ -84,6 +76,26 @@ fn asset_test_files() -> Vec<PathBuf> {
         tests.display()
     );
     files
+}
+
+fn collect_asset_test_files(directory: &Path, files: &mut Vec<PathBuf>) {
+    let entries = std::fs::read_dir(directory).unwrap_or_else(|error| {
+        panic!(
+            "board asset tests unreadable: {}: {error}",
+            directory.display()
+        )
+    });
+    for entry in entries {
+        let path = entry.expect("read board asset test entry").path();
+        if path.is_dir() {
+            collect_asset_test_files(&path, files);
+        } else if path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().ends_with(".test.mjs"))
+        {
+            files.push(path);
+        }
+    }
 }
 
 #[test]

@@ -1,8 +1,8 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { createBoardStream } from "../stream/board_stream.js";
-import { installDomShim, resetDomShim } from "./support/dom_shim.mjs";
+import { createBoardStream } from "../../stream/board_stream.js";
+import { installDomShim, resetDomShim } from "../support/dom_shim.mjs";
 
 installDomShim();
 afterEach(() => resetDomShim());

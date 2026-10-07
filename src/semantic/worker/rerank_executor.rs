@@ -150,9 +150,9 @@ impl RerankLane {
                 self.start_loader();
             }
             let message = if cooldown_blocks {
-                self.load_error.clone().unwrap_or_else(|| {
-                    "rerank_loading: reranker is loading".into()
-                })
+                self.load_error
+                    .clone()
+                    .unwrap_or_else(|| "rerank_loading: reranker is loading".into())
             } else {
                 "rerank_loading: reranker is loading".into()
             };
@@ -225,8 +225,9 @@ impl RerankLane {
             inflight,
         };
         self.active = true;
-        if let Err(mpsc::SendError(RerankExecutorCommand::Execute(mut connection))) =
-            self.executor_send.send(RerankExecutorCommand::Execute(connection))
+        if let Err(mpsc::SendError(RerankExecutorCommand::Execute(mut connection))) = self
+            .executor_send
+            .send(RerankExecutorCommand::Execute(connection))
         {
             self.active = false;
             self.record_load_failure(
@@ -339,7 +340,12 @@ impl RerankLane {
             .clone()
             .unwrap_or_else(|| "rerank_unavailable: rerank executor exited".into());
         while let Some(mut item) = self.queue.pop_front() {
-            let _ = write_reply(&mut item.stream, &WorkerReply::Error { message: message.clone() });
+            let _ = write_reply(
+                &mut item.stream,
+                &WorkerReply::Error {
+                    message: message.clone(),
+                },
+            );
         }
     }
 

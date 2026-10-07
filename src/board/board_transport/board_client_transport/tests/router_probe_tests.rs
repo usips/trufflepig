@@ -12,7 +12,7 @@ fn silent_fallback_refuses_to_migrate_beside_a_live_router() {
     let error = invoke(
         &["board", "show"],
         &mut gateway,
-        &AtomicU64::new(0),
+        &mut BoardClientTransport::default(),
         &database,
         Some(&runtime),
     )
@@ -22,63 +22,6 @@ fn silent_fallback_refuses_to_migrate_beside_a_live_router() {
         "{error}"
     );
     assert!(!database.exists());
-}
-
-#[test]
-fn router_api_is_probed_once_before_dispatch_and_mismatch_never_falls_back() {
-    let directory = scratch();
-    let database = directory.path().join("board.sqlite3");
-    let status =
-        serde_json::json!({"status":"ok","board_api":BOARD_API,"board_db":database}).to_string();
-    let mut gateway = FakeGateway {
-        replies: VecDeque::from([
-            Ok(Some(status)),
-            Ok(Some("first".into())),
-            Ok(Some("second".into())),
-        ]),
-        ..Default::default()
-    };
-    let api = AtomicU64::new(0);
-    assert_eq!(
-        invoke(&["board", "show"], &mut gateway, &api, &database, None).unwrap(),
-        "first"
-    );
-    assert_eq!(
-        invoke(&["board", "show"], &mut gateway, &api, &database, None).unwrap(),
-        "second"
-    );
-    assert_eq!(gateway.requests.len(), 3);
-    assert_eq!(gateway.requests[0], ["system", "status"]);
-    assert!(!database.exists());
-    for stale in [4, BOARD_API + 1] {
-        let status =
-            serde_json::json!({"status":"ok","board_api":stale,"board_db":database}).to_string();
-        let mut gateway = FakeGateway {
-            replies: VecDeque::from([Ok(Some(status))]),
-            ..Default::default()
-        };
-        let error = invoke(
-            &["board", "new", "Never written"],
-            &mut gateway,
-            &AtomicU64::new(0),
-            &database,
-            None,
-        )
-        .unwrap_err();
-        assert!(
-            error.to_string().starts_with("board_api_mismatch:"),
-            "{error}"
-        );
-        assert!(
-            error
-                .to_string()
-                .contains("restart trufflepig-system.service"),
-            "{error}"
-        );
-        assert_eq!(gateway.requests.len(), 1);
-        assert_eq!(gateway.ensured, 0);
-        assert!(!database.exists());
-    }
 }
 
 #[test]
@@ -98,7 +41,7 @@ fn probe_without_board_db_surfaces_the_routers_board_error() {
     let error = invoke(
         &["board", "show"],
         &mut gateway,
-        &AtomicU64::new(0),
+        &mut BoardClientTransport::default(),
         &database,
         None,
     )
@@ -122,11 +65,11 @@ fn unavailable_marker_skips_ensure_without_extending_its_deadline() {
     let runtime = directory.path().join("runtime");
     let database = directory.path().join("board.sqlite3");
     let mut gateway = FakeGateway::default();
-    let api = AtomicU64::new(0);
+    let mut transport = BoardClientTransport::default();
     invoke(
         &["board", "show"],
         &mut gateway,
-        &api,
+        &mut transport,
         &database,
         Some(&runtime),
     )
@@ -135,7 +78,7 @@ fn unavailable_marker_skips_ensure_without_extending_its_deadline() {
     invoke(
         &["board", "show"],
         &mut gateway,
-        &api,
+        &mut transport,
         &database,
         Some(&runtime),
     )
@@ -150,7 +93,7 @@ fn unavailable_marker_skips_ensure_without_extending_its_deadline() {
     invoke(
         &["board", "show"],
         &mut gateway,
-        &api,
+        &mut transport,
         &database,
         Some(&runtime),
     )
@@ -175,7 +118,7 @@ fn lost_router_write_reply_never_replays_or_sets_absence_marker() {
     invoke(
         &["board", "new", "Ambiguous write"],
         &mut gateway,
-        &AtomicU64::new(0),
+        &mut BoardClientTransport::default(),
         &database,
         Some(&runtime),
     )
@@ -196,7 +139,7 @@ fn every_local_client_path_refuses_a_different_router_database_pin() {
         let error = invoke(
             &words,
             &mut FakeGateway::default(),
-            &AtomicU64::new(0),
+            &mut BoardClientTransport::default(),
             &database,
             Some(&runtime),
         )
@@ -219,7 +162,7 @@ fn failed_capability_probe_queues_feedback_once_with_its_stable_key() {
     let reply = invoke(
         &["feedback", "blocked", "probe failed"],
         &mut gateway,
-        &AtomicU64::new(0),
+        &mut BoardClientTransport::default(),
         &database,
         None,
     )
@@ -252,7 +195,7 @@ fn live_router_refuses_stale_schema_without_migrating() {
     let error = invoke(
         &["--no-daemon", "board", "show"],
         &mut FakeGateway::default(),
-        &AtomicU64::new(0),
+        &mut BoardClientTransport::default(),
         &database,
         Some(&runtime),
     )

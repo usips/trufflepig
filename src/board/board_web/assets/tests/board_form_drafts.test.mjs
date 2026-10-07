@@ -2,7 +2,7 @@ import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { installDomShim, resetDomShim } from "./support/dom_shim.mjs";
 import { createBoardDom } from "../board_dom.js";
-import { createDraftStores } from "../board_lru.js";
+import { createDraftStores } from "../state/board_lru.js";
 
 installDomShim();
 beforeEach(() => resetDomShim());

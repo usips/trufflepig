@@ -1,8 +1,8 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { createStreamElection } from "../stream/stream_election.js";
-import { installDomShim, resetDomShim } from "./support/dom_shim.mjs";
-import { abortNextGrantBeforeCallback, abortedGrantCallbacks } from "./support/locks_shim.mjs";
+import { createStreamElection } from "../../stream/stream_election.js";
+import { installDomShim, resetDomShim } from "../support/dom_shim.mjs";
+import { abortNextGrantBeforeCallback, abortedGrantCallbacks } from "../support/locks_shim.mjs";
 
 installDomShim();
 afterEach(() => resetDomShim());

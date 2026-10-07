@@ -140,10 +140,10 @@ fn asset_imports_resolve_to_served_paths() {
         ("/feedback_triage.js", PUBLIC_TRIAGE),
         ("/board_reader.js", PUBLIC_READER),
         ("/board_entries.js", PUBLIC_ENTRIES),
-        ("/board_web_token.js", PUBLIC_TOKEN),
+        ("/state/board_web_token.js", PUBLIC_TOKEN),
         ("/board_ingest.js", PUBLIC_INGEST),
-        ("/board_lru.js", PUBLIC_LRU),
-        ("/board_seen.js", PUBLIC_SEEN),
+        ("/state/board_lru.js", PUBLIC_LRU),
+        ("/state/board_seen.js", PUBLIC_SEEN),
     ];
     let mut checked = 0;
     for (path, script) in scripts {

@@ -1,4 +1,4 @@
-import { resyncSeenMark } from "./board_seen.js";
+import { resyncSeenMark } from "./state/board_seen.js";
 
 export function createBoardRenderLoop({
   state, dom, main, apiVersion, seenStorage, seenKey,

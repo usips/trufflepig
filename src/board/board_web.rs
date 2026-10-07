@@ -49,10 +49,10 @@ const PUBLIC_STREAM_PARSE: &str = include_str!("board_web/assets/stream/stream_p
 const PUBLIC_TRIAGE: &str = include_str!("board_web/assets/feedback_triage.js");
 const PUBLIC_READER: &str = include_str!("board_web/assets/board_reader.js");
 const PUBLIC_ENTRIES: &str = include_str!("board_web/assets/board_entries.js");
-const PUBLIC_TOKEN: &str = include_str!("board_web/assets/board_web_token.js");
+const PUBLIC_TOKEN: &str = include_str!("board_web/assets/state/board_web_token.js");
 const PUBLIC_INGEST: &str = include_str!("board_web/assets/board_ingest.js");
-const PUBLIC_LRU: &str = include_str!("board_web/assets/board_lru.js");
-const PUBLIC_SEEN: &str = include_str!("board_web/assets/board_seen.js");
+const PUBLIC_LRU: &str = include_str!("board_web/assets/state/board_lru.js");
+const PUBLIC_SEEN: &str = include_str!("board_web/assets/state/board_seen.js");
 
 pub(crate) struct WebStore {
     config: Mutex<BoardConfigCache>,

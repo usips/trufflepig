@@ -68,6 +68,8 @@ Mismatches fail `board_api_mismatch` without negotiation. Errors are
 | `GET /stream/board_stream.js`, `/stream/stream_parse.js` | Stream modules |
 | `GET /stream/stream_election.js` | Stream modules |
 | `GET /feedback_triage.js`, `/board_reader.js`, `/board_entries.js` | UI modules |
+| `GET /state/board_lru.js`, `/state/board_seen.js` | State modules |
+| `GET /state/board_web_token.js` | Token state module |
 | `POST /api/v1/challenge` | Unauthenticated ownership proof; Host/Origin/JSON checks apply |
 | `POST /api/v1/board` | `{ "api": BOARD_API, "op": BoardOp }`; typed `BoardReply` |
 | `POST /api/v1/ingest` | `{ "api": BOARD_API }`; single-flight router ingest relay |
