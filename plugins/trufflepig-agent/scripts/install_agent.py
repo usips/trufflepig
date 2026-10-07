@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from functools import partial
 import json
 import os
 from pathlib import Path
@@ -16,32 +17,16 @@ import time
 import uuid
 
 PLUGIN = Path(__file__).resolve().parents[1]
-SKILLS = ("trufflepig-code-search", "trufflepig-plan-board")
 BOARD_API = 7
 BOARD_SCHEMA = 8
 ROUTER_READY_TIMEOUT_SECONDS = 10
 sys.path.insert(0, str(PLUGIN / "bin"))
 from trufflepig_runtime import runtime_config_path
-from omp_install import omp_agent_dir
-from claude_install import claude_home, plugin_enabled, prepare_settings, write_settings
+from agent_install_links import AgentLinkPlan, link
+from claude_install import claude_home, prepare_settings, write_settings
 from board_service_pin import validate_router_database
 from systemd_units import (apply_units, board_database_path, render_service, service_text,
                            system_runtime_path)
-
-
-def check_link(source: Path, destination: Path) -> None:
-    if destination.is_symlink() and destination.resolve() == source.resolve():
-        return
-    if destination.exists() or destination.is_symlink():
-        raise ValueError(f"unmanaged destination exists: {destination}; move it before installing")
-
-
-def link(source: Path, destination: Path) -> None:
-    check_link(source, destination)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if not destination.is_symlink():
-        destination.symlink_to(source, target_is_directory=source.is_dir())
-    print(f"linked {destination}")
 
 
 def require_board_api(binary: str) -> None:
@@ -127,8 +112,9 @@ def router_endpoint_present(runtime: Path) -> bool:
 
 
 def require_current_router(runtime: Path, *, allow_absent: bool = False, managed_restart: bool = False,
+                           require_schema: bool = True,
                            timeout: float = ROUTER_READY_TIMEOUT_SECONDS) -> None:
-    """Require API 7/schema 8, optionally tolerating an absent unmanaged router."""
+    """Require the current API and, when requested, a migrated board database."""
     advice = ("rerun plugins/trufflepig-agent/install.sh --systemd with the current trufflepig binary"
               if managed_restart else "restart trufflepig-system.service with the current trufflepig binary")
     if allow_absent and not router_endpoint_present(runtime):
@@ -154,6 +140,10 @@ def require_current_router(runtime: Path, *, allow_absent: bool = False, managed
         api = status.get("board_api")
         if api != BOARD_API:
             raise ValueError(f"router reports board_api {api}, expected {BOARD_API}; {advice}")
+        if not require_schema:
+            if status.get("board_error"):
+                print(f"warning: router board_error: {status['board_error']}", file=sys.stderr)
+            return
         supported = status.get("schema_supported")
         schema = status.get("schema_file")
         if supported != BOARD_SCHEMA:
@@ -167,7 +157,9 @@ def require_current_router(runtime: Path, *, allow_absent: bool = False, managed
     if allow_absent and last_status is None and not endpoint_seen:
         return
     if last_status is None:
-        detail = f"did not become ready with board API {BOARD_API} and schema {BOARD_SCHEMA}"
+        detail = f"did not become ready with board API {BOARD_API}"
+        if require_schema:
+            detail += f" and schema {BOARD_SCHEMA}"
     else:
         detail = (f"reports schema_file {last_status.get('schema_file')}, "
                   f"expected {BOARD_SCHEMA}")
@@ -197,32 +189,7 @@ def main() -> int:
     if args.steer and not steer_harnesses:
         parser.error("--steer requires --claude, --kimi, or --muse")
 
-    skills = tuple(PLUGIN / "skills" / name for name in SKILLS)
-    links = [(PLUGIN / "bin" / name, args.bin / name)
-             for name in ("trufflepig-agent", "trufflepig-audit")]
-    links.extend((PLUGIN / "hooks" / source, args.bin / name) for source, name in (
-        ("session-start.sh", "trufflepig-agent-session"), ("steer-search.py", "trufflepig-agent-steer")))
-    kimi_home = Path(os.environ.get("KIMI_CODE_HOME") or Path.home() / ".kimi-code")
-    if args.kimi:
-        links.extend((skill, kimi_home / "skills" / skill.name) for skill in skills)
-    if args.codex:
-        links.extend((skill, Path.home() / ".agents/skills" / skill.name) for skill in skills)
-    if args.grok:
-        grok_home = Path(os.environ.get("GROK_HOME") or Path.home() / ".grok").expanduser().absolute()
-        links.extend((skill, grok_home / "skills" / skill.name) for skill in skills)
-    # An enabled Claude plugin already provides the skill and hooks.
-    claude_plugin = args.claude and plugin_enabled(claude_home() / "settings.json")
-    if args.claude and not claude_plugin:
-        links.extend((skill, claude_home() / "skills" / skill.name) for skill in skills)
-        links.append((PLUGIN / "hooks/claude-session.py", args.bin / "trufflepig-claude-session"))
-    if args.omp:
-        agent_dir = omp_agent_dir(args.omp_agent_dir)
-        links.extend((skill, agent_dir / "skills" / skill.name) for skill in skills)
-        links.append((PLUGIN / "omp/session.ts", agent_dir / "extensions/trufflepig-session.ts"))
-    links.extend((skill, root.absolute() / ".agents/skills" / skill.name)
-                 for root in args.project for skill in skills)
-    for source, destination in links:
-        check_link(source, destination)
+    link_plan = AgentLinkPlan.prepare(PLUGIN, args)
 
     config_path = runtime_config_path()
     settings = {}
@@ -249,6 +216,7 @@ def main() -> int:
         config_home = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
         unit_directory = config_home / "systemd/user"
         database = board_database_path()
+        require_schema = args.board or database.exists()
         require_board_api(binary)
         router_runtime = system_runtime_path(binary)
         validate_router_database(database, router_runtime, config_home)
@@ -267,9 +235,9 @@ def main() -> int:
         claude_settings_path = claude_home() / "settings.json"
         claude_settings = prepare_settings(
             claude_settings_path,
-            None if claude_plugin else args.bin / "trufflepig-claude-session",
-            runtime, None if claude_plugin else args.bin / "trufflepig-agent-steer")
-    for source, destination in links:
+            None if link_plan.claude_plugin else args.bin / "trufflepig-claude-session",
+            runtime, None if link_plan.claude_plugin else args.bin / "trufflepig-agent-steer")
+    for source, destination in link_plan.links:
         link(source, destination)
     if args.codex or args.claude or args.grok:
         runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -283,14 +251,14 @@ def main() -> int:
         print(f"search steering {args.steer}: {', '.join(steer_harnesses)}")
     if args.claude:
         write_settings(claude_settings_path, claude_settings)
-        owner = "plugin trufflepig-agent (enabled)" if claude_plugin else "settings"
+        owner = "plugin trufflepig-agent (enabled)" if link_plan.claude_plugin else "settings"
         print(f"Claude skill and hooks via {owner}; wrapper permission and runtime access: "
               f"{claude_settings_path}")
     if not binary:
         print("warning: trufflepig missing from PATH; cargo install --path . --locked", file=sys.stderr)
 
     if args.kimi_hooks:
-        config = kimi_home / "config.toml"
+        config = link_plan.kimi_home / "config.toml"
         text = config.read_text() if config.exists() else ""
         block = ("# trufflepig-agent hooks begin\n" + (PLUGIN / "kimi/hooks.toml").read_text() +
                  "# trufflepig-agent hooks end\n")
@@ -300,13 +268,14 @@ def main() -> int:
         config.write_text(text)
     if args.muse:
         if shutil.which("muse"):
-            for skill in skills:
+            for skill in link_plan.skills:
                 subprocess.run(["muse", "skills", "install", str(skill), "--scope", "user", "--force", "--json"], check=True)
         else:
             print("muse not found; skipped", file=sys.stderr)
     if args.systemd or args.board:
         apply_units(binary, unit_directory, router_runtime, managed_router,
-                    args.systemd, args.board, unit_text, board_unit_text, require_current_router)
+                    args.systemd, args.board, unit_text, board_unit_text,
+                    partial(require_current_router, require_schema=require_schema))
     if args.check:
         subprocess.run([sys.executable, str(PLUGIN / "scripts/check_agent.py"),
                         "--wrapper", str(args.bin / "trufflepig-agent"), str(args.check.absolute())], check=True)

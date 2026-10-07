@@ -12,20 +12,27 @@ import unittest
 
 PLUGIN = Path(__file__).resolve().parents[1]
 UNIT_NAMES = ("trufflepig-system.service", "trufflepig-board.service")
+installer_spec = importlib.util.spec_from_file_location("installer_constants", PLUGIN / "scripts/install_agent.py")
+installer = importlib.util.module_from_spec(installer_spec)
+sys.path.insert(0, str(PLUGIN / "scripts"))
+installer_spec.loader.exec_module(installer)
+sys.path.pop(0)
 CURRENT_ROUTER_STATUS = {
-    "status": "ok", "board_api": 7, "schema_supported": 8, "schema_file": 8,
+    "status": "ok", "board_api": installer.BOARD_API,
+    "schema_supported": installer.BOARD_SCHEMA, "schema_file": installer.BOARD_SCHEMA,
 }
 
 
 class AgentInstallCase(unittest.TestCase):
     def setUp(self):
-        self.scratch = tempfile.TemporaryDirectory(prefix="trufflepig-install-")
+        self.scratch = tempfile.TemporaryDirectory(prefix="ai-")
         self.addCleanup(self.scratch.cleanup)
         self.root = Path(self.scratch.name)
         self.env = dict({k: v for k, v in os.environ.items()
                          if not k.startswith("TRUFFLEPIG") and k not in ("CLAUDE_CONFIG_DIR", "GROK_HOME", "XDG_RUNTIME_DIR")},
                         HOME=str(self.root), XDG_CONFIG_HOME=str(self.root / "config"), XDG_STATE_HOME=str(self.root / "state"),
-                        TRUFFLEPIG_SYSTEM_DIR=str(self.root / "system-runtime"), TRUFFLEPIG_BOARD_DB=str(self.root / "data/board.sqlite3"))
+                        TRUFFLEPIG_SYSTEM_DIR=str(self.root / "system-runtime"), TRUFFLEPIG_BOARD_DB=str(self.root / "data/board.sqlite3"),
+                        INSTALLER_BOARD_API=str(CURRENT_ROUTER_STATUS["board_api"]))
 
     def install(self, *args):
         return subprocess.run([str(PLUGIN / "install.sh"), *args], env=self.env, text=True, capture_output=True)
@@ -38,9 +45,11 @@ class AgentInstallCase(unittest.TestCase):
         module = self.load_installer("install_agent_main_test")
         require_router = module.require_current_router
 
-        def bounded_router_check(runtime, *, allow_absent=False, managed_restart=False, timeout=None):
+        def bounded_router_check(runtime, *, allow_absent=False, managed_restart=False,
+                                 require_schema=True, timeout=None):
             return require_router(runtime, allow_absent=allow_absent,
-                                  managed_restart=managed_restart, timeout=router_timeout)
+                                  managed_restart=managed_restart, require_schema=require_schema,
+                                  timeout=router_timeout)
 
         module.require_current_router = bounded_router_check
         stdout = io.StringIO()

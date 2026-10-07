@@ -11,7 +11,7 @@ class AgentBoardRollbackTests(AgentInstallCase):
     def test_failing_router_check_leaves_units_running_and_files_untouched(self):
         self.service_shims()
         current = CURRENT_ROUTER_STATUS
-        stale = {"status": "ok", "board_api": 3, "schema_supported": 8, "schema_file": 8}
+        stale = {**CURRENT_ROUTER_STATUS, "board_api": 3}
         self.serve_router_status([current, stale])
         first = self.install("--systemd", "--board")
         self.assertEqual(first.returncode, 0, first.stderr)

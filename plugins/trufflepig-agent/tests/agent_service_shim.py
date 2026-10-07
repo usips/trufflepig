@@ -2,13 +2,14 @@
 import hashlib, json, os, sys, time
 from pathlib import Path
 name = Path(sys.argv[0]).name
+api_output = os.environ["INSTALLER_BOARD_API"] + "\n"
 if name == "trufflepig" and sys.argv[1:] == ["--board-api-version"]:
     time.sleep(float(os.environ.get("PROBE_DELAY", "0")))
-    sys.stdout.write(os.environ.get("PROBE_STDOUT", "7\n"))
+    sys.stdout.write(os.environ.get("PROBE_STDOUT", api_output))
     sys.stderr.write(os.environ.get("PROBE_STDERR", ""))
     sys.exit(int(os.environ.get("PROBE_STATUS", "0")))
 if name == "trufflepig" and sys.argv[1:] == ["system", "dir"]:
-    if os.environ.get("PROBE_STDOUT", "7\n") != "7\n":
+    if os.environ.get("PROBE_STDOUT", api_output) != api_output:
         # Older binaries predate `system dir` and answer with usage.
         sys.stderr.write("usage: trufflepig [--help] ...\n")
         sys.exit(2)

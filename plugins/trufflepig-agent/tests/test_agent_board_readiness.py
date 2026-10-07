@@ -97,7 +97,8 @@ class AgentBoardReadinessTests(AgentInstallCase):
             ("non-object status", {"status": "success", "output": "[]"}),
         ]
         cases = [("absent listener", "absent", None),
-                 ("partial schema restart", "status", {**CURRENT_ROUTER_STATUS, "schema_file": 7}),
+                 ("partial schema restart", "status",
+                  {**CURRENT_ROUTER_STATUS, "schema_file": CURRENT_ROUTER_STATUS["schema_supported"] - 1}),
                  *[(name, "raw", reply) for name, reply in malformed_replies]]
         for index, (name, kind, reply) in enumerate(cases):
             with self.subTest(case=name):
