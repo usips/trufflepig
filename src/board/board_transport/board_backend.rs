@@ -61,6 +61,8 @@ struct BoardHostShared {
     waiters: AtomicUsize,
     #[cfg(test)]
     inbox_queries: AtomicUsize,
+    #[cfg(test)]
+    next_inbox_wait: Mutex<Option<std::sync::mpsc::SyncSender<()>>>,
     maintenance: Mutex<BoardMaintenanceClock>,
 }
 

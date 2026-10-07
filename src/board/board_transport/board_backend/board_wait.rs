@@ -18,6 +18,14 @@ pub(super) const MAX_WAITERS: usize = 6;
 const MAX_INBOX_WAIT: Duration = Duration::from_secs(15);
 
 impl BoardHost {
+    /// A one-shot rendezvous before the wait releases the sequence mutex.
+    #[cfg(test)]
+    pub(crate) fn next_inbox_wait_barrier(&self) -> std::sync::mpsc::Receiver<()> {
+        let (entered, ready) = std::sync::mpsc::sync_channel(0);
+        *recover_lock(&self.inner.next_inbox_wait) = Some(entered);
+        ready
+    }
+
     pub(super) fn wait_inbox(
         &self,
         request: &BoardRequest,
@@ -77,6 +85,11 @@ impl BoardHost {
                 return Ok(reply);
             }
             if *observed <= known {
+                #[cfg(test)]
+                if let Some(entered) = recover_lock(&self.inner.next_inbox_wait).take() {
+                    // A dropped receiver releases a failed test's sender as well.
+                    let _ = entered.send(());
+                }
                 let (guard, _) = self
                     .inner
                     .changed

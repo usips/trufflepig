@@ -28,6 +28,7 @@ fn slow_pre_auth_drip_is_cut_at_five_seconds_total_from_accept() {
     // second byte lands inside that window and must not restart it.
     const REMAINING: Duration = Duration::from_millis(1500);
     const DRIP_GAP: Duration = Duration::from_millis(900);
+    const SCHEDULER_SLACK: Duration = Duration::from_millis(750);
     let accepted_at = Instant::now() - (http_wire::REQUEST_TIMEOUT - REMAINING);
     let mut dripper = client.try_clone().unwrap();
     let producer = std::thread::spawn(move || {
@@ -43,10 +44,11 @@ fn slow_pre_auth_drip_is_cut_at_five_seconds_total_from_accept() {
     producer.join().unwrap();
     assert!(reply.starts_with("HTTP/1.1 408 "), "{reply}");
     // The cut lands at the deadline; the refusal drain adds its own bounded
-    // wait before the connection closes.
+    // wait before the connection closes. Scheduler slack stays below the drip
+    // gap, so restarting the remaining hold after the second byte still fails.
     assert!(
         accepted_at.elapsed()
-            < http_wire::REQUEST_TIMEOUT + http_wire::DRAIN_TIMEOUT + DRIP_GAP / 2,
+            < http_wire::REQUEST_TIMEOUT + http_wire::DRAIN_TIMEOUT + SCHEDULER_SLACK,
         "a second byte must not restart the five-second hold: {:?}",
         accepted_at.elapsed()
     );

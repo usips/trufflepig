@@ -71,7 +71,6 @@ fn resubscribe_replays_only_the_last_eight_receipts() {
         streams.publish_ingest(&serde_json::json!({"n": n}));
     }
     let mut client = spawn(&streams, 0);
-    read_until(&mut client, "\r\n\r\n");
     let replay = read_until(&mut client, "\"n\":10");
     for n in 3..=10 {
         assert!(replay.contains(&format!("\"n\":{n}")), "{replay}");

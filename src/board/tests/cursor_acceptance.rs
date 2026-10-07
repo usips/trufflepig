@@ -142,10 +142,10 @@ fn expired_accepted_board_write_never_opens_storage_or_commits_an_event() {
 fn a_waiting_inbox_receives_a_host_write_before_the_one_second_poll() {
     let fixture = EdgeFixture::new();
     fixture.run(&["board", "new", "Wait notification"], "codex", "writer");
+    let entered_wait = fixture.host.next_inbox_wait_barrier();
     let host = fixture.host.clone();
     let options = fixture.options(&["board", "inbox", "1", "--wait", "--all"]);
     let waiting = std::thread::spawn(move || {
-        let started = std::time::Instant::now();
         let output = host
             .run(
                 &options,
@@ -153,19 +153,19 @@ fn a_waiting_inbox_receives_a_host_write_before_the_one_second_poll() {
                 QueryDeadline::after(Duration::from_secs(4)),
             )
             .unwrap();
-        (
-            started.elapsed(),
-            serde_json::from_str::<Value>(&output).unwrap(),
-        )
+        serde_json::from_str::<Value>(&output).unwrap()
     });
-    // Let the initial empty query enter the wait; no daemon or process env changes.
-    std::thread::sleep(Duration::from_millis(75));
+    entered_wait
+        .recv_timeout(Duration::from_secs(2))
+        .expect("the empty inbox query must reach its condition-variable wait");
+    let posted_at = std::time::Instant::now();
     fixture.run(
         &["board", "post", "P1", "progress", "Wake up with evidence"],
         "codex",
         "writer",
     );
-    let (elapsed, reply) = waiting.join().unwrap();
+    let reply = waiting.join().unwrap();
+    let elapsed = posted_at.elapsed();
     assert_eq!(data(&reply)["wait"], "ready");
     assert_eq!(data(&reply)["events"].as_array().unwrap().len(), 1);
     assert!(

@@ -1,4 +1,5 @@
 use super::*;
+mod clean_restart_child;
 
 #[test]
 fn endpoint_guard_removes_the_published_descriptor_on_drop() {
@@ -27,29 +28,7 @@ fn endpoint_guard_keeps_a_foreign_descriptor() {
 
 #[test]
 fn clean_exit_keeps_the_bound_port_for_the_next_start() {
-    let (_directory, runtime, config) = fixture();
-    let first = bind_listener(&runtime, "127.0.0.1:0".parse().unwrap()).unwrap();
-    let address = first.local_addr().unwrap();
-    publish(&runtime, address, &config.db_path).unwrap();
-    let guard = EndpointGuard::arm(&runtime, address);
-    drop(guard);
-    assert!(
-        !runtime.join(ENDPOINT_FILE).exists(),
-        "a clean exit removes the published descriptor"
-    );
-    drop(first);
-    let persisted = runtime.join("board-web.port");
-    assert_eq!(
-        fs::read_to_string(&persisted).unwrap(),
-        address.port().to_string(),
-        "the bound port survives the clean exit"
-    );
-    assert_eq!(
-        fs::metadata(&persisted).unwrap().permissions().mode() & 0o7777,
-        0o600
-    );
-    let second = bind_listener(&runtime, "127.0.0.1:0".parse().unwrap()).unwrap();
-    assert_eq!(second.local_addr().unwrap().port(), address.port());
+    clean_restart_child::check_clean_restart();
 }
 
 #[test]

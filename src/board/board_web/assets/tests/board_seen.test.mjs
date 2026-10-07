@@ -1,6 +1,7 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { installDomShim, resetDomShim } from "./support/dom_shim.mjs";
+import { createBoardTestClock, createBoardTestSignal } from "./support/board_test_clock.mjs";
 import { seenKey, readSeenMark, writeSeenMark, resyncSeenMark } from "../board_seen.js";
 
 installDomShim();
@@ -80,7 +81,7 @@ function boardData(op) {
   throw new Error(`unexpected board op ${op}`);
 }
 
-function sseResponse(chunks, gapMs) {
+function sseResponse(chunks, clock, gapReady) {
   const parts = chunks.map(text => new TextEncoder().encode(text));
   let index = 0;
   return {
@@ -90,9 +91,12 @@ function sseResponse(chunks, gapMs) {
       getReader: () => ({
         read: async () => {
           if (index >= parts.length) return { done: true };
-          // A real gap between chunks lets the raised mark be observed before
-          // the resync frame lands; both frames in one chunk apply atomically.
-          if (index > 0) await new Promise(resolve => setTimeout(resolve, gapMs));
+          if (index > 0) {
+            const gap = createBoardTestSignal();
+            clock.setTimeout(gap.release, 100);
+            gapReady.release();
+            await gap.ready;
+          }
           const value = parts[index];
           index += 1;
           return { done: false, value };
@@ -103,23 +107,32 @@ function sseResponse(chunks, gapMs) {
   };
 }
 
-async function waitFor(predicate, timeoutMs = 2000) {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() >= deadline) return false;
-    await new Promise(resolve => setTimeout(resolve, 10));
-  }
-  return true;
-}
-
 describe("board seen mark resync", () => {
   it("seen_mark_lowers_on_resync", async () => {
     let snapshotSeq = "40";
     let eventsCalls = 0;
     const windowListeners = new Map();
-    const realFetch = globalThis.fetch;
-    const realSetInterval = globalThis.setInterval;
-    globalThis.setInterval = () => 0;
+    const clock = createBoardTestClock();
+    const raised = createBoardTestSignal();
+    const lowered = createBoardTestSignal();
+    const gapReady = createBoardTestSignal();
+    const restarted = createBoardTestSignal();
+    const globalNames = ["fetch", "location", "history", "window",
+      "setTimeout", "clearTimeout", "setInterval", "clearInterval"];
+    const originalGlobals = new Map(globalNames.map(name => [name,
+      Object.getOwnPropertyDescriptor(globalThis, name)]));
+    const originalNow = Date.now;
+    const originalStorageMethod = Object.getOwnPropertyDescriptor(localStorage, "setItem");
+    const setItem = localStorage.setItem;
+    localStorage.setItem = function (key, value) {
+      setItem.call(this, key, value);
+      if (key === MAIN_SEEN_KEY && value === "90") raised.release();
+      if (key === MAIN_SEEN_KEY && value === "45") lowered.release();
+    };
+    Date.now = clock.now;
+    for (const name of ["setTimeout", "clearTimeout", "setInterval", "clearInterval"]) {
+      globalThis[name] = clock[name];
+    }
     let fakeUrl = new URL("https://board.test/");
     globalThis.location = {
       get href() { return fakeUrl.href; },
@@ -142,14 +155,14 @@ describe("board seen mark resync", () => {
     globalThis.fetch = async (url, options = {}) => {
       if (String(url).includes("/api/v1/events")) {
         eventsCalls += 1;
-        if (eventsCalls > 1) return new Promise(() => {});
+        if (eventsCalls > 1) { restarted.release(); return new Promise(() => {}); }
         // The forced snapshot the resync frame triggers reads the replaced
         // database's lower watermark.
         snapshotSeq = "45";
         return sseResponse([
           "event: board\nid: 90\ndata: {\"seq\": 90, \"kind\": \"note\"}\n\n",
           "event: resync\ndata: {}\n\n",
-        ], 100);
+        ], clock, gapReady);
       }
       const op = JSON.parse(options.body).op.op;
       return boardReply(op, boardData(op), snapshotSeq);
@@ -159,14 +172,21 @@ describe("board seen mark resync", () => {
       localStorage.setItem(MAIN_SEEN_KEY, "40");
       seedBoardShell();
       await import("../board_web_main.js?seen-resync=1");
-      assert.equal(await waitFor(() => localStorage.getItem(MAIN_SEEN_KEY) === "90"), true,
-        "a delivered frame raises the mark");
-      assert.equal(await waitFor(() => localStorage.getItem(MAIN_SEEN_KEY) === "45"), true,
-        "the resync's fresh baseline lowers the mark");
+      await Promise.all([raised.ready, gapReady.ready]);
+      assert.equal(localStorage.getItem(MAIN_SEEN_KEY), "90", "a delivered frame raises the mark");
+      await clock.advance(100);
+      await Promise.all([lowered.ready, restarted.ready]);
+      assert.equal(localStorage.getItem(MAIN_SEEN_KEY), "45", "the resync's fresh baseline lowers the mark");
     } finally {
       for (const listener of windowListeners.get("pagehide") || []) listener({});
-      globalThis.fetch = realFetch;
-      globalThis.setInterval = realSetInterval;
+      clock.clear();
+      Date.now = originalNow;
+      if (originalStorageMethod) Object.defineProperty(localStorage, "setItem", originalStorageMethod);
+      else delete localStorage.setItem;
+      for (const [name, descriptor] of originalGlobals) {
+        if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+        else delete globalThis[name];
+      }
     }
   });
 });

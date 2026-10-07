@@ -12,6 +12,7 @@ const RELAY_BUFFER_CAP = 500;
 export function createStreamElection({
   session, state, setConnection, authToken, heartbeatMs, freshnessMs, deliver, runFetch,
   rejoinAfterSteal,
+  now = Date.now, setInterval = globalThis.setInterval, clearInterval = globalThis.clearInterval,
 }) {
   const shareable = (() => {
     try {
@@ -112,7 +113,7 @@ export function createStreamElection({
   // cancelled — the spec bars signal with steal — so it stands and the leader
   // it evicts rejoins as a follower instead.
   function onHeartbeat(frame) {
-    session.lastHeartbeat = Date.now();
+    session.lastHeartbeat = now();
     if (frame.state === "live") setConnection("Live", "live");
     else if (frame.state === "retrying") setConnection("Reconnecting…", "error");
   }
@@ -133,7 +134,7 @@ export function createStreamElection({
     clearInterval(session.freshnessTimer);
     session.freshnessTimer = setInterval(() => {
       if (session.mode !== "following" || !session.lockNames) return;
-      if (Date.now() - session.lastHeartbeat <= freshnessMs) return;
+      if (now() - session.lastHeartbeat <= freshnessMs) return;
       setConnection("Reconnecting…", "error");
       if (!session.stealRequested) {
         try { requestLock(session.lockNames, true); }

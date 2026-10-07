@@ -20,6 +20,7 @@ export function createBoardStream(context) {
     state, privateFetch, setConnection, loadRoute, scheduleRefresh, parseBoardJson, addTickerEvent,
     noteSeen, onIngest,
     authToken, onAuthExpired, heartbeatMs = 5000, freshnessMs = 10000,
+    now = Date.now, setInterval = globalThis.setInterval, clearInterval = globalThis.clearInterval,
   } = context;
   if (typeof authToken !== "function") throw new TypeError("createBoardStream requires authToken.");
   // Election and fetch-reader state shared with the stream election module.
@@ -188,7 +189,7 @@ export function createBoardStream(context) {
       try {
         session.lockNames = names;
         election.channelFor(names);
-        session.lastHeartbeat = Date.now();
+        session.lastHeartbeat = now();
         election.startFreshnessTimer();
         election.requestLock(names, false);
       } catch (_) {
@@ -202,7 +203,7 @@ export function createBoardStream(context) {
 
   const election = createStreamElection({
     session, state, setConnection, authToken, heartbeatMs, freshnessMs, deliver, runFetch,
-    rejoinAfterSteal,
+    rejoinAfterSteal, now, setInterval, clearInterval,
   });
 
   // A tab that deferred its election while hidden starts when shown again.
