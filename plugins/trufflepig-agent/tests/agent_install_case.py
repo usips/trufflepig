@@ -38,9 +38,8 @@ class AgentInstallCase(unittest.TestCase):
         module = self.load_installer("install_agent_main_test")
         require_router = module.require_current_router
 
-        def bounded_router_check(runtime, *, database=None, allow_absent=False, timeout=None):
-            return require_router(runtime, database=database, allow_absent=allow_absent,
-                                  timeout=router_timeout)
+        def bounded_router_check(runtime, *, allow_absent=False, timeout=None):
+            return require_router(runtime, allow_absent=allow_absent, timeout=router_timeout)
 
         module.require_current_router = bounded_router_check
         stdout = io.StringIO()
@@ -173,15 +172,6 @@ sys.exit(failure)
         self.env.update(PATH=f"{directory}:{self.env['PATH']}",
                         SERVICE_CAPTURE=str(capture), SERVICE_STATE=str(state))
         return capture
-
-    def fresh_router_status(self, **overrides):
-        """Describe an API 6 router whose selected board database is absent."""
-        status = {
-            "status": "ok", "board_api": 6, "schema_supported": 8,
-            "board_db": str(Path(self.env["TRUFFLEPIG_BOARD_DB"]).absolute()),
-        }
-        status.update(overrides)
-        return status
 
     def systemctl(self, *args):
         return subprocess.run(["systemctl", "--user", *args], env=self.env, text=True, capture_output=True)

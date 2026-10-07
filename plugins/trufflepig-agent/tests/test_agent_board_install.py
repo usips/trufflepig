@@ -71,31 +71,6 @@ class AgentBoardInstallTests(AgentInstallCase):
         self.assertEqual(self.active_units(),
                          {"trufflepig-system.service": True, "trufflepig-board.service": True})
 
-    def test_fresh_managed_router_without_database_passes_readiness(self):
-        capture = self.service_shims()
-        database = Path(self.env["TRUFFLEPIG_BOARD_DB"])
-        self.assertFalse(database.exists())
-        current_reply = {"value": self.fresh_router_status()}
-        self.serve_router_status(lambda: current_reply["value"])
-
-        for shape, status in (("omitted schema_file", self.fresh_router_status()),
-                              ("null schema_file", self.fresh_router_status(schema_file=None))):
-            with self.subTest(shape=shape):
-                current_reply["value"] = status
-                result = self.install("--systemd", "--board")
-
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertFalse(database.exists(),
-                                 "status and installer must not create a fresh board DB")
-                self.assertEqual(self.active_units(),
-                                 {"trufflepig-system.service": True, "trufflepig-board.service": True})
-                self.assertEqual(self.enabled_units(),
-                                 {"trufflepig-system.service": True, "trufflepig-board.service": True})
-
-        calls = [json.loads(line) for line in capture.read_text().splitlines()]
-        self.assertIn(["systemctl", "--user", "enable", "--now", "trufflepig-system.service"], calls)
-        self.assertIn(["systemctl", "--user", "enable", "--now", "trufflepig-board.service"], calls)
-
     def test_later_board_install_restarts_the_installed_router(self):
         self.service_shims()
         self.serve_router_status([CURRENT_ROUTER_STATUS])

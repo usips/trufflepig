@@ -10,12 +10,12 @@ unavailable or unsupported operations. Optional hooks steer shell searches towar
 
 ## Install
 
-Requires Python 3, `trufflepig` and wrapper destination on `PATH`. Install CPU with `cargo install --path . --locked`;
-retain `--features semantic-cuda` for GPU updates. Service installation probes the selected binary's
-`--board-api-version` before writes; it must match the [board API](../../docs/board-contract.md#backend-transport-and-deadlines) within five seconds.
-Managed restart requires observed API 6 and `schema_supported=8` within one 10 s deadline over all socket connects/reads ([schema contract](../../docs/board-contract.md#storage-configuration-and-search)).
-Require `schema_file=8` when the configured DB exists; if `lstat` proves the known matching absolute DB path absent, accept it until its first service write ([fresh initialization](../../docs/board-web-contract.md#authority-and-bootstrap)).
-Router absence or activation failure rolls back; only unmanaged preflight permits router absence.
+Requires Python 3, `trufflepig` on `PATH`, and the wrapper destination on `PATH`. CPU
+installation is `cargo install --path . --locked`; retain `--features semantic-cuda` when
+updating an existing GPU installation. Service installation probes the selected binary's
+`--board-api-version` before writes; it must match the [board API](../../docs/board-contract.md#backend-transport-and-deadlines)
+within five seconds. A managed restart requires router status reporting that API and the [current schema](../../docs/board-contract.md#storage-configuration-and-search)
+within one 10 s deadline covering every socket connect/read; router absence or activation failure rolls back. Only unmanaged preflight permits router absence.
 
 ```sh
 plugins/trufflepig-agent/install.sh --codex --systemd --check "$PWD"

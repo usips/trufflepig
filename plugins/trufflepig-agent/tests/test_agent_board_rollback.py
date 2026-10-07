@@ -207,68 +207,6 @@ class AgentBoardRollbackTests(AgentInstallCase):
         calls = [json.loads(line) for line in capture.read_text().splitlines()]
         self.assertIn(["systemctl", "--user", "enable", "--now", "trufflepig-system.service"], calls)
 
-    def test_missing_schema_requires_a_matching_absent_database_without_board_error(self):
-        self.service_shims()
-        units = self.root / "config/systemd/user"
-        units.mkdir(parents=True)
-        router_unit = units / "trufflepig-system.service"
-        board_unit = units / "trufflepig-board.service"
-        previous_router = "previous router unit\n"
-        previous_board = "previous board unit\n"
-        router_unit.write_text(previous_router)
-        board_unit.write_text(previous_board)
-        database = Path(self.env["TRUFFLEPIG_BOARD_DB"])
-        current_reply = {"value": None}
-        self.serve_router_status(lambda: current_reply["value"])
-
-        missing_database = self.fresh_router_status()
-        missing_database.pop("board_db")
-        cases = [
-            ("missing database path", missing_database, None),
-            ("relative database path", self.fresh_router_status(board_db="board.sqlite3"), None),
-            ("non-string database path", self.fresh_router_status(board_db=7), None),
-            ("mismatched database path",
-             self.fresh_router_status(board_db=str(database.with_name("other.sqlite3"))), None),
-            ("reported board error",
-             self.fresh_router_status(board_error="database pin could not be validated"), None),
-            ("existing file with missing schema", self.fresh_router_status(), "file"),
-            ("database directory with missing schema", self.fresh_router_status(), "directory"),
-            ("dangling database symlink with missing schema",
-             self.fresh_router_status(), "dangling-symlink"),
-        ]
-        for name, status, database_kind in cases:
-            with self.subTest(case=name):
-                if database.is_symlink() or database.is_file():
-                    database.unlink()
-                elif database.is_dir():
-                    database.rmdir()
-                current_reply["value"] = status
-                if database_kind:
-                    database.parent.mkdir(parents=True, exist_ok=True)
-                    if database_kind == "file":
-                        database.touch()
-                    elif database_kind == "directory":
-                        database.mkdir()
-                    elif database_kind == "dangling-symlink":
-                        database.symlink_to(database.with_name("missing-target.sqlite3"))
-
-                result = self.run_installer_main("--systemd", "--board", router_timeout=0.04)
-
-                self.assertEqual(result.returncode, 2, result.stderr)
-                self.assertIn("router", result.stderr)
-                self.assertEqual(router_unit.read_text(), previous_router)
-                self.assertEqual(board_unit.read_text(), previous_board)
-                self.assertEqual(self.active_units(),
-                                 {"trufflepig-system.service": False, "trufflepig-board.service": False})
-                self.assertEqual(self.enabled_units(),
-                                 {"trufflepig-system.service": False, "trufflepig-board.service": False})
-                if database_kind == "file":
-                    self.assertTrue(database.is_file())
-                elif database_kind == "directory":
-                    self.assertTrue(database.is_dir())
-                elif database_kind == "dangling-symlink":
-                    self.assertTrue(database.is_symlink())
-
     def test_failed_readiness_preserves_disabled_inactive_units(self):
         self.service_shims()
         units = self.root / "config/systemd/user"

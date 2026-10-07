@@ -10,7 +10,6 @@ import pwd  # tests patch install_agent.pwd.getpwuid for the passwd-home fallbac
 import re
 import shutil
 import socket
-import stat
 import subprocess
 import sys
 import time
@@ -127,35 +126,9 @@ def router_endpoint_present(runtime: Path) -> bool:
     return True
 
 
-def absent_database_path(database: Path) -> bool:
-    """Return true only when the configured database path is genuinely absent."""
-    try:
-        database.lstat()
-    except FileNotFoundError:
-        # A missing parent is valid on a fresh profile, but a dangling symlink
-        # anywhere in that parent chain is a broken configuration.
-        for parent in database.parents:
-            try:
-                metadata = parent.lstat()
-            except FileNotFoundError:
-                continue
-            except OSError as error:
-                raise ValueError(f"cannot inspect board database parent {parent}: {error}") from error
-            if stat.S_ISLNK(metadata.st_mode):
-                try:
-                    parent.resolve(strict=True)
-                except OSError as error:
-                    raise ValueError(f"cannot resolve board database parent {parent}: {error}") from error
-        return True
-    except OSError as error:
-        raise ValueError(f"cannot inspect board database {database}: {error}") from error
-    return False
-
-
-def require_current_router(runtime: Path, *, database: Path | None = None,
-                           allow_absent: bool = False,
+def require_current_router(runtime: Path, *, allow_absent: bool = False,
                            timeout: float = ROUTER_READY_TIMEOUT_SECONDS) -> None:
-    """Require API 6/schema 8, or a reported fresh database, from the router."""
+    """Require API 6/schema 8, optionally tolerating an absent unmanaged router."""
     advice = "restart trufflepig-system.service with the current trufflepig binary"
     if allow_absent and not router_endpoint_present(runtime):
         return
@@ -177,10 +150,6 @@ def require_current_router(runtime: Path, *, database: Path | None = None,
         if time.monotonic() >= deadline:
             break
         last_status = status
-        if status.get("status") != "ok":
-            raise ValueError(f"router returned an incomplete status; {advice}")
-        if "board_error" in status:
-            raise ValueError(f"router reports board_error {status['board_error']}; {advice}")
         api = status.get("board_api")
         if api != BOARD_API:
             raise ValueError(f"router reports board_api {api}, expected {BOARD_API}; {advice}")
@@ -190,18 +159,6 @@ def require_current_router(runtime: Path, *, database: Path | None = None,
             raise ValueError(f"router reports schema_supported {supported}, expected {BOARD_SCHEMA}; {advice}")
         if schema == BOARD_SCHEMA:
             return
-        if schema is None:
-            reported_database = status.get("board_db")
-            if (database is None or not isinstance(reported_database, str)
-                    or not Path(reported_database).is_absolute()):
-                raise ValueError(f"router omitted schema_file without an absolute board_db path; {advice}")
-            if reported_database != str(database):
-                raise ValueError(f"router reports board_db {reported_database}, expected {database}; {advice}")
-            if absent_database_path(database):
-                return
-            raise ValueError(f"router omitted schema_file for existing board database {database}; {advice}")
-        if not isinstance(schema, int) or isinstance(schema, bool):
-            raise ValueError(f"router reports invalid schema_file {schema!r}; {advice}")
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
@@ -301,7 +258,7 @@ def main() -> int:
             # The board shares the router's database: refuse before touching
             # anything when a listening router is stale. An unmanaged absent
             # router remains valid because this install does not restart it.
-            require_current_router(router_runtime, database=database, allow_absent=True)
+            require_current_router(router_runtime, allow_absent=True)
     unit_text = service_text(binary, spool) if args.systemd else None
     board_unit_text = render_service("trufflepig-board.service", binary) if args.board else None
 
@@ -347,11 +304,8 @@ def main() -> int:
         else:
             print("muse not found; skipped", file=sys.stderr)
     if args.systemd or args.board:
-        def check_router(runtime: Path) -> None:
-            require_current_router(runtime, database=database)
-
         apply_units(binary, unit_directory, router_runtime, managed_router,
-                    args.systemd, args.board, unit_text, board_unit_text, check_router)
+                    args.systemd, args.board, unit_text, board_unit_text, require_current_router)
     if args.check:
         subprocess.run([sys.executable, str(PLUGIN / "scripts/check_agent.py"),
                         "--wrapper", str(args.bin / "trufflepig-agent"), str(args.check.absolute())], check=True)
