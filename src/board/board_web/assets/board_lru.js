@@ -1,11 +1,11 @@
 // One bounded recency group shared by the tab's draft maps: form drafts,
 // form statuses, and editor drafts together hold at most 64 keys, and the
 // least-recently-used key (use = read or write) evicts first. Each store is
-// Map-like; recency and capacity are shared across all three. Keys a save
-// would destroy — `editor:*` snapshots plus the plan editor's `new` and
-// `edit:*` entries in the drafts store — pin outside the bound. Pins are
-// themselves LRU-capped: a pin past the cap demotes the oldest pin back into
-// the shared group, and a successful save deletes (unpins) its key.
+// Map-like; recency and capacity are shared across all three. Editor input
+// stores `editor:*` snapshots and the plan editor's `new` or `edit:*` draft
+// outside the bound. Pins are LRU-capped: a pin past the cap demotes the
+// oldest into the shared group. Successful saves delete their draft keys;
+// opening an editor and showing a save confirmation create no entries.
 export const DRAFT_STORE_CAPACITY = 64;
 export const DRAFT_PIN_CAPACITY = 8;
 
@@ -58,11 +58,6 @@ export function createDraftStores(capacity = DRAFT_STORE_CAPACITY, pinCapacity =
       has(key) {
         const at = slot(key);
         return pinned.has(at) || entries.has(at);
-      },
-      // Whether sets of this key pin outside the shared bound. Callers skip
-      // re-saving such a key after a successful save deleted it.
-      pinned(key) {
-        return pinnable(String(key));
       },
       clear() {
         for (const map of [entries, pinned]) {

@@ -61,6 +61,17 @@ class FakeElement {
     this.children = []; this.parentElement = null; this.dataset = {}; this.attributes = new Map();
     this.className = ""; this.id = ""; this.textContent = ""; this.listeners = new Map();
   }
+  get classList() {
+    return {
+      toggle: (name, force) => {
+        const names = new Set(this.className.split(/\s+/).filter(Boolean));
+        const enabled = force ?? !names.has(name);
+        if (enabled) names.add(name); else names.delete(name);
+        this.className = [...names].join(" ");
+        return enabled;
+      },
+    };
+  }
   append(...nodes) {
     for (const node of nodes.flat(Infinity)) {
       if (node !== null && node !== undefined && node !== false) { node.parentElement = this; this.children.push(node); }

@@ -5,6 +5,7 @@ export function decodeBoardFragment(value) {
 export function createBoardDom(state) {
   let fieldSequence = 0;
   const busyControls = new WeakMap();
+  const editedForms = new WeakSet(), savedForms = new WeakSet();
   function el(tag, className, text) {
     const element = document.createElement(tag);
     if (className) element.className = className;
@@ -141,8 +142,8 @@ export function createBoardDom(state) {
     add(wrapper, caption, input, hint);
     return { wrapper, input };
   }
-  function formStatus(form, message, tone = "error") {
-    if (form.dataset.draftKey) state.formStatuses.set(form.dataset.draftKey, { message, tone });
+  function formStatus(form, message, tone = "error", retain = true) {
+    if (retain && form.dataset.draftKey) state.formStatuses.set(form.dataset.draftKey, { message, tone });
     const forms = [form, ...document.querySelectorAll("form")].filter((item, index, all) =>
       all.indexOf(item) === index
         && (item === form || form.dataset.draftKey && item.dataset.draftKey === form.dataset.draftKey));
@@ -152,11 +153,12 @@ export function createBoardDom(state) {
       item.textContent = message; item.className = `form-status ${tone}`;
     }
   }
-  // Empty and unchanged snapshots stay out of the draft stores: refreshes
-  // capture every form, and button-only forms must not churn the LRU.
+  // Editors enter the stores on input; saved, empty and unchanged forms
+  // stay out when refreshes or navigation capture the mounted controls.
   function saveForm(form) {
     const key = form.dataset.draftKey;
-    if (!key) return;
+    if (!key || savedForms.has(form)) return;
+    if (key.startsWith("editor:") && !editedForms.has(form)) return;
     const inputs = [...form.querySelectorAll("input,textarea,select")]
       .filter(input => input.name && !input.readOnly)
       .map(input => [input.name, input.value]);
@@ -169,6 +171,7 @@ export function createBoardDom(state) {
   function restoreForm(form) {
     const draft = state.formDrafts.get(form.dataset.draftKey);
     if (draft) {
+      editedForms.add(form);
       for (const input of form.querySelectorAll("input,textarea,select")) {
         if (!input.readOnly && Object.hasOwn(draft, input.name)) input.value = draft[input.name];
       }
@@ -180,15 +183,24 @@ export function createBoardDom(state) {
   function retainForm(form, key) {
     form.dataset.draftKey = key;
     restoreForm(form);
-    form.addEventListener("input", () => saveForm(form));
-    form.addEventListener("change", () => saveForm(form));
+    const changed = () => { savedForms.delete(form); editedForms.add(form); saveForm(form); };
+    form.addEventListener("input", changed);
+    form.addEventListener("change", changed);
     return form;
+  }
+  function markFormSaved(form, root) {
+    for (const current of [form, ...root.querySelectorAll("form")]) {
+      if (current === form || form.dataset.draftKey && current.dataset.draftKey === form.dataset.draftKey) {
+        savedForms.add(current); editedForms.delete(current);
+      }
+    }
   }
   function captureForms(root) { for (const form of root.querySelectorAll("form")) saveForm(form); }
   function restoreForms(root) { for (const form of root.querySelectorAll("form")) restoreForm(form); }
   function syncForm(form, root) {
     const values = new Map([...form.querySelectorAll("input,textarea,select")].map(input => [input.name, input.value]));
     for (const current of root.querySelectorAll("form")) if (current.dataset.draftKey === form.dataset.draftKey) {
+      if (savedForms.has(form)) { savedForms.add(current); editedForms.delete(current); }
       for (const input of current.querySelectorAll("input,textarea,select")) {
         if (values.has(input.name)) input.value = values.get(input.name);
       }
@@ -269,6 +281,6 @@ export function createBoardDom(state) {
   return {
     el, add, button, routeUrl, link, refLink, badge, actorName, shortActor, stamp, timeNode, age,
     ageNode, panel, empty, omitted, title, field, formStatus, planId, focusKey,
-    retainForm, captureForms, restoreForms, syncForm, setFormBusy, focusedControl, restoreFocus, saveForm,
+    retainForm, captureForms, restoreForms, syncForm, setFormBusy, focusedControl, restoreFocus, saveForm, markFormSaved,
   };
 }

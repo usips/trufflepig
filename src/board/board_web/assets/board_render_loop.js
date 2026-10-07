@@ -7,7 +7,7 @@ export function createBoardRenderLoop({
   const {
     el, add, button, panel, focusKey,
     captureForms, restoreForms, syncForm, setFormBusy, formStatus, focusedControl, restoreFocus,
-    saveForm,
+    saveForm, markFormSaved,
   } = dom;
 
   function errorMessage(error) { return error?.message || String(error); }
@@ -127,18 +127,19 @@ export function createBoardRenderLoop({
   async function submitMutation(form, op, success) {
     const navigation = state.navigation;
     const key = form.dataset.draftKey;
+    const editor = key?.startsWith("editor:");
     saveForm(form); if (key) state.pendingForms.add(key); setFormBusy(form, true);
     formStatus(form, "Saving…", "muted");
     try {
       const result = await board(op);
       const current = navigation === state.navigation;
       if (key) { state.formDrafts.delete(key); state.formStatuses.delete(key); }
-      formStatus(form, current ? "Saved." : "", "muted");
+      if (editor) markFormSaved(form, main);
+      formStatus(form, current ? "Saved." : "", "muted", !editor);
       if (success) success(result, current);
       else if (current) { notice("Saved.", "success"); scheduleRefresh(); }
       if (key) {
-        // Re-saving a pinned key would pin the just-deleted draft again.
-        if (!state.formDrafts.pinned?.(key)) saveForm(form);
+        if (!editor) saveForm(form);
         syncForm(form, main);
         if (!current) state.formStatuses.delete(key);
       }

@@ -50,11 +50,8 @@ export function createBoardDetails(context) {
     const revision = view?.revision || view;
     const base = revision?.id || "";
     const key = mode === "new" ? "new" : `${mode}:${base}`;
-    let draft = state.drafts.get(key);
-    if (!draft) {
-      draft = { title: "", body: revision?.body || "", summary: "", steward: "", repo_key: "", base };
-      state.drafts.set(key, draft);
-    }
+    const draft = state.drafts.get(key)
+      || { title: "", body: revision?.body || "", summary: "", steward: "", repo_key: "", base };
     const page = add(el("div"), title(
       mode === "new" ? "New plan" : "Edit plan",
       base
@@ -85,7 +82,9 @@ export function createBoardDetails(context) {
       }));
     }
     for (const item of fields) {
-      item.input.addEventListener("input", () => { draft[item.input.name] = item.input.value; });
+      item.input.addEventListener("input", () => {
+        draft[item.input.name] = item.input.value; state.drafts.set(key, draft);
+      });
       form.append(item.wrapper);
     }
     const actions = el("div", "form-footer");

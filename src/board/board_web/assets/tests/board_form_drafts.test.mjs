@@ -155,7 +155,7 @@ describe("board form drafts", () => {
     const dom = createBoardDom(state);
     const editor = namedForm(dom, "editor:edit:P1@3",
       [["title", "Plan"], ["body", "unsaved plan text"], ["summary", "draft"]]);
-    dom.saveForm(editor);
+    for (const listener of editor.listeners.get("input") || []) listener({ target: editor });
     for (let tab = 0; tab < 2; tab++) {
       const root = document.createElement("div");
       for (let index = 0; index < 40; index++) {
