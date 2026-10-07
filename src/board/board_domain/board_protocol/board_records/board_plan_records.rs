@@ -3,9 +3,10 @@ use super::{EntryRecord, FeedbackRecord, LinkedCommit};
 use crate::board::board_domain::board_collections::{ClaimCursor, EntryCursor, TaskCeiling};
 use crate::board::{
     board_actor::{BoardActor, BoardRecipient, HarnessLabel},
-    board_ids::{EntryId, EventSeq, PlanId, PlanRevision, TaskId},
+    board_ids::{EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
     board_vocabulary::{EntryText, PlanText, PlanTitle, ProposalState, TaskColumn},
 };
+use crate::identity::GitOid;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 
@@ -165,7 +166,18 @@ pub struct ReviewEvidence {
     pub tasks: Vec<TaskRecord>,
     pub claims: Vec<ClaimRecord>,
     pub commits: Vec<LinkedCommit>,
+    pub manual_links: Vec<ManualCommitLink>,
     pub open_proposals: Vec<ProposalRecord>,
     pub open_questions: Vec<EntryRecord>,
     pub open_feedback: Vec<FeedbackRecord>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ManualCommitLink {
+    pub repo_key: RepoKey,
+    pub oid: GitOid,
+    pub task: TaskId,
+    pub entry: EntryId,
+    pub seq: Option<EventSeq>,
+    pub actor: Option<BoardActor>,
 }

@@ -7,13 +7,12 @@ mod tests;
 use history_drills::HistoryDrillGate;
 pub use ssot_diff::{SsotDiff, SsotHunk, build_ssot_diff};
 
-use crate::board::board_actor::{BoardActor, HarnessLabel, claim_vendor};
+use crate::board::board_actor::{HarnessLabel, claim_vendor};
 use crate::board::board_ids::PlanRevision;
 use crate::board::board_protocol::{
-    ClaimRecord, EntryRecord, FeedbackRecord, LinkedCommit, PlanRecord, ProposalRecord,
-    RepoScanTarget, ReviewEvidence, TaskRecord,
+    ClaimRecord, EntryRecord, FeedbackRecord, LinkedCommit, ManualCommitLink, PlanRecord,
+    ProposalRecord, RepoScanTarget, ReviewEvidence, TaskRecord,
 };
-use crate::board::board_vocabulary::EntryKind;
 use crate::board::commit_trailers::attributed_to;
 use crate::identity::GitOid;
 use serde::{Deserialize, Serialize};
@@ -51,8 +50,8 @@ pub struct ReviewCommit {
     #[serde(flatten)]
     pub commit: LinkedCommit,
     pub drill: Option<String>,
-    /// The actor of a `manual` link; scan links carry none.
-    pub linked_by: Option<BoardActor>,
+    /// Durable manual links, ordered by task and then link receipt.
+    pub manual_links: Vec<ManualCommitLink>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -137,7 +136,20 @@ pub fn assemble_review(
         .into_iter()
         .map(|commit| {
             let mut review = drill_commit(commit, repositories, &mut drill_gate);
-            review.linked_by = manual_linker(&review.commit, evidence.plan.id, &evidence.entries);
+            review.manual_links = evidence
+                .manual_links
+                .iter()
+                .filter(|link| {
+                    link.repo_key == review.commit.repo_key
+                        && link.oid == review.commit.oid
+                        && link.task.plan == evidence.plan.id
+                        && evidence.tasks.iter().any(|task| task.id == link.task)
+                })
+                .cloned()
+                .collect();
+            review
+                .manual_links
+                .sort_by_key(|link| (link.task.ordinal, link.seq, link.entry));
             review
         })
         .collect();
@@ -218,27 +230,8 @@ fn drill_commit(
     ReviewCommit {
         commit,
         drill,
-        linked_by: None,
+        manual_links: Vec::new(),
     }
-}
-
-/// A manual link's commit entry names its linker; scan entries use a synthetic
-/// `git-OID` session instead.
-fn manual_linker(
-    commit: &LinkedCommit,
-    plan: crate::board::board_ids::PlanId,
-    entries: &[EntryRecord],
-) -> Option<BoardActor> {
-    let scan_session = format!("git-{}", commit.oid);
-    entries
-        .iter()
-        .filter(|entry| entry.kind == EntryKind::Commit && entry.plan == Some(plan))
-        .filter(|entry| entry.repo_key.as_ref() == Some(&commit.repo_key))
-        .find(|entry| {
-            entry.body.as_str().starts_with(commit.oid.as_str())
-                && entry.actor.session != scan_session
-        })
-        .map(|entry| entry.actor.clone())
 }
 
 fn shell_path(path: &Path) -> String {

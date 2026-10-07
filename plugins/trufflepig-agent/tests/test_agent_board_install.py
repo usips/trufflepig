@@ -4,10 +4,9 @@ from pathlib import Path
 import subprocess
 import unittest
 
-from agent_install_case import PLUGIN, AgentInstallCase
+from agent_install_case import CURRENT_ROUTER_STATUS, PLUGIN, AgentInstallCase
 
-STALE_ROUTER = {"board_api": 4, "schema_supported": "s", "schema_file": "s"}
-CURRENT_ROUTER = {"board_api": 5, "schema_supported": "s", "schema_file": "s"}
+STALE_ROUTER = {"status": "ok", "board_api": 5, "schema_supported": 8, "schema_file": 8}
 
 
 class AgentBoardInstallTests(AgentInstallCase):
@@ -15,15 +14,15 @@ class AgentBoardInstallTests(AgentInstallCase):
         capture = self.service_shims()
         cases = [("", "unknown argument --board-api-version\\n", "2"),
                  ("1\n", "", "0"), ("2\n", "", "0"), ("3\n", "", "0"), ("4\n", "", "0"),
-                 ("API 5\n", "", "0"), ("5\nextra\n", "", "0"), ("5\n", "", "1"),
-                 ("5\n", "diagnostic\n", "0")]
+                 ("5\n", "", "0"), ("API 6\n", "", "0"), ("6\nextra\n", "", "0"),
+                 ("6\n", "", "1"), ("6\n", "diagnostic\n", "0")]
         for flag in ("--board", "--systemd"):
             for output, error, status in cases:
                 with self.subTest(flag=flag, output=output, status=status):
                     self.env.update(PROBE_STDOUT=output, PROBE_STDERR=error, PROBE_STATUS=status)
                     result = self.install("--codex", flag)
                     self.assertEqual(result.returncode, 2, result.stderr)
-                    self.assertIn("must support board API 5", result.stderr)
+                    self.assertIn("must support board API 6", result.stderr)
                     self.assertFalse((self.root / ".local/bin").exists())
                     self.assertFalse((self.root / ".agents").exists())
                     self.assertFalse((self.root / "config").exists())
@@ -36,7 +35,7 @@ class AgentBoardInstallTests(AgentInstallCase):
         result = subprocess.run([str(PLUGIN / "install.sh"), "--board"], env=self.env,
                                 text=True, capture_output=True, timeout=8)
         self.assertEqual(result.returncode, 2, result.stderr)
-        self.assertIn("must support board API 5", result.stderr)
+        self.assertIn("must support board API 6", result.stderr)
         self.assertFalse((self.root / ".local/bin").exists())
         self.assertFalse((self.root / "config").exists())
         self.assertFalse(capture.exists())
@@ -48,7 +47,7 @@ class AgentBoardInstallTests(AgentInstallCase):
             with self.subTest(flag=flag):
                 result = self.install(flag)
                 self.assertEqual(result.returncode, 2, result.stderr)
-                self.assertIn("must support board API 5", result.stderr)
+                self.assertIn("must support board API 6", result.stderr)
                 self.assertNotIn("usage", result.stderr)
                 self.assertFalse((self.root / "config/systemd").exists())
 
@@ -59,9 +58,12 @@ class AgentBoardInstallTests(AgentInstallCase):
         units = self.root / "config/systemd/user"
         self.assertTrue((units / "trufflepig-board.service").is_file())
         self.assertFalse((units / "trufflepig-system.service").exists())
+        self.assertEqual(self.enabled_units(),
+                         {"trufflepig-system.service": False, "trufflepig-board.service": True})
         self.assertEqual(self.active_units(),
                          {"trufflepig-system.service": False, "trufflepig-board.service": True})
         capture.write_text("")
+        self.serve_router_status([CURRENT_ROUTER_STATUS])
         result = self.install("--systemd", "--board")
         self.assertEqual(result.returncode, 0, result.stderr)
         calls = [json.loads(line) for line in capture.read_text().splitlines()]
@@ -71,6 +73,7 @@ class AgentBoardInstallTests(AgentInstallCase):
 
     def test_later_board_install_restarts_the_installed_router(self):
         self.service_shims()
+        self.serve_router_status([CURRENT_ROUTER_STATUS])
         first = self.install("--systemd")
         self.assertEqual(first.returncode, 0, first.stderr)
         boots = self.router_boots()
@@ -86,7 +89,7 @@ class AgentBoardInstallTests(AgentInstallCase):
         units.mkdir(parents=True)
         (units / "trufflepig-system.service").write_text("stale router unit\n")
         self.systemctl("start", "trufflepig-system.service")
-        self.serve_router_upgrade(STALE_ROUTER, CURRENT_ROUTER)
+        self.serve_router_upgrade(STALE_ROUTER, CURRENT_ROUTER_STATUS)
         result = self.install("--board")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.router_boots(), 2)
@@ -99,7 +102,7 @@ class AgentBoardInstallTests(AgentInstallCase):
         units.mkdir(parents=True)
         (units / "trufflepig-system.service").write_text("stale router unit\n")
         self.systemctl("start", "trufflepig-system.service")
-        self.serve_router_upgrade(STALE_ROUTER, CURRENT_ROUTER)
+        self.serve_router_upgrade(STALE_ROUTER, CURRENT_ROUTER_STATUS)
         result = self.install("--systemd", "--board")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.router_boots(), 2)
@@ -108,10 +111,12 @@ class AgentBoardInstallTests(AgentInstallCase):
 
     def test_systemd_alone_with_active_board_leaves_both_active(self):
         capture = self.service_shims()
+        self.serve_router_status([CURRENT_ROUTER_STATUS])
         units = self.root / "config/systemd/user"
         units.mkdir(parents=True)
         (units / "trufflepig-board.service").write_text("previous board unit\n")
         self.systemctl("start", "trufflepig-board.service")
+        self.systemctl("disable", "trufflepig-board.service")
         capture.write_text("")
         result = self.install("--systemd")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -120,11 +125,14 @@ class AgentBoardInstallTests(AgentInstallCase):
         self.assertIn(enable, calls)
         self.assertEqual(calls[calls.index(enable) + 1],
                          ["systemctl", "--user", "start", "trufflepig-board.service"])
+        self.assertEqual(self.enabled_units(),
+                         {"trufflepig-system.service": True, "trufflepig-board.service": False})
         self.assertEqual(self.active_units(),
                          {"trufflepig-system.service": True, "trufflepig-board.service": True})
 
     def test_systemd_install_without_board_skips_board_start(self):
         self.service_shims()
+        self.serve_router_status([CURRENT_ROUTER_STATUS])
         result = self.install("--systemd")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((self.root / "config/systemd/user/trufflepig-board.service").exists())

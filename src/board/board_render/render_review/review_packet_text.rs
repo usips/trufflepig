@@ -124,8 +124,26 @@ pub(super) fn review_text(
                         ))
                 )?;
             }
-            if let Some(linker) = &commit.linked_by {
-                writeln!(text, "  linked by hand by {}", cell(&linker.identity()))?;
+            for link in &commit.manual_links {
+                let seq = link
+                    .seq
+                    .map_or_else(|| "unknown".to_owned(), |seq| seq.to_string());
+                if let Some(linker) = &link.actor {
+                    writeln!(
+                        text,
+                        "  task {} linked by hand by {} (entry {}, seq {})",
+                        link.task,
+                        cell(&linker.identity()),
+                        link.entry,
+                        seq
+                    )?;
+                } else {
+                    writeln!(
+                        text,
+                        "  task {} linked by hand; historical attribution unknown (entry {}, seq {})",
+                        link.task, link.entry, seq
+                    )?;
+                }
             }
             if let Some(drill) = &commit.drill {
                 writeln!(text, "drill: {}", cell(drill))?;

@@ -86,6 +86,9 @@ every intended trailer and that
 When a commit's trailers are missing or unparsable, repair its link with
 `trufflepig-agent board link <full-oid> P7.3` (only the plan owner's user with
 a `human` harness, or the plan steward harness; `cli` is rejected).
+Manual-link retries replay the durable task event across callers and reopens. If a
+historical retry returns `invalid_state`, preserve unknown attribution; see the
+[manual-link contract](../../../../docs/board-contract.md#git-links-and-review-evidence).
 Post one progress fact at a time, citing E#, task IDs, immutable revisions,
 and full oids. Answers cite the question entry; corrections use `--supersedes E482`.
 Never edit the plan directly. Propose a full new body through stdin:

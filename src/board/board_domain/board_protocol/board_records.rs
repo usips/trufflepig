@@ -21,8 +21,8 @@ pub use board_entry_records::{
 };
 pub use board_feedback_records::{FeedbackMetadata, FeedbackRecord, RecentCall};
 pub use board_plan_records::{
-    ClaimEndReason, ClaimRecord, PlanRecord, PlanView, ProposalRecord, ReviewEvidence,
-    RevisionDiff, RevisionRecord, RevisionSource, TaskRecord,
+    ClaimEndReason, ClaimRecord, ManualCommitLink, PlanRecord, PlanView, ProposalRecord,
+    ReviewEvidence, RevisionDiff, RevisionRecord, RevisionSource, TaskRecord,
 };
 pub use board_repo_records::{
     COAUTHOR_LIMIT, CommitCoauthor, CommitLinkResult, CommitPlanLink, LINK_LIMIT, LinkedCommit,

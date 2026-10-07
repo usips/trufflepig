@@ -2,7 +2,7 @@
 import json
 import unittest
 
-from agent_install_case import AgentInstallCase
+from agent_install_case import CURRENT_ROUTER_STATUS, AgentInstallCase
 
 
 class AgentBoardPreflightTests(AgentInstallCase):
@@ -24,6 +24,7 @@ class AgentBoardPreflightTests(AgentInstallCase):
         pinned = self.root / "custom data/100%/board.sqlite3"
         self.env.update(TRUFFLEPIG_SYSTEM_DIR=str(runtime), TRUFFLEPIG_BOARD_DB=str(pinned),
                         XDG_DATA_HOME=str(self.root / "default-data"))
+        self.serve_router_status([CURRENT_ROUTER_STATUS])
         first = self.install("--systemd")
         self.assertEqual(first.returncode, 0, first.stderr)
         unit = self.root / "config/systemd/user/trufflepig-system.service"
@@ -31,7 +32,7 @@ class AgentBoardPreflightTests(AgentInstallCase):
         capture.write_text("")
         for marker in (False, True):
             if marker:
-                runtime.mkdir(mode=0o700)
+                runtime.mkdir(mode=0o700, exist_ok=True)
                 (runtime / "board-backend.json").write_text(json.dumps({"database": str(pinned)}))
             for candidate in (None, str(self.root / "other/board.sqlite3")):
                 if candidate is None:
@@ -57,6 +58,7 @@ class AgentBoardPreflightTests(AgentInstallCase):
         runtime.mkdir()
         (runtime / "board-backend.json").write_text(json.dumps({"database": str(pinned)}))
         self.env.update(TRUFFLEPIG_SYSTEM_DIR=str(runtime), TRUFFLEPIG_BOARD_DB=str(alias))
+        self.serve_router_status([CURRENT_ROUTER_STATUS])
         result = self.install("--board")
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -64,6 +66,7 @@ class AgentBoardPreflightTests(AgentInstallCase):
         capture = self.service_shims()
         runtime = self.root / "custom-runtime"
         self.env["TRUFFLEPIG_SYSTEM_DIR"] = str(runtime)
+        self.serve_router_status([CURRENT_ROUTER_STATUS])
         first = self.install("--systemd")
         self.assertEqual(first.returncode, 0, first.stderr)
         capture.write_text("")
@@ -77,6 +80,7 @@ class AgentBoardPreflightTests(AgentInstallCase):
 
     def test_router_unit_unsets_apply_after_later_environment_assignments(self):
         self.service_shims()
+        self.serve_router_status([CURRENT_ROUTER_STATUS])
         unit = self.root / "config/systemd/user/trufflepig-system.service"
         unit.parent.mkdir(parents=True)
         unit.write_text('[Service]\nUnsetEnvironment = TRUFFLEPIG_BOARD_DB\n'
@@ -86,6 +90,7 @@ class AgentBoardPreflightTests(AgentInstallCase):
 
     def test_router_drop_in_whitespace_cannot_hide_database_or_environment_file(self):
         capture = self.service_shims()
+        self.serve_router_status([CURRENT_ROUTER_STATUS])
         first = self.install("--systemd")
         self.assertEqual(first.returncode, 0, first.stderr)
         capture.write_text("")

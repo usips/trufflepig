@@ -7,6 +7,7 @@ mod reminder_index_tests;
 mod reminder_session_tests;
 mod reminder_through_tests;
 mod repository_evidence_tests;
+mod review_manual_link_tests;
 mod review_window_tests;
 mod shared_section_tests;
 

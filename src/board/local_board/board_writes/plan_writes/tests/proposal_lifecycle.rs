@@ -64,6 +64,7 @@ fn superseding_proposals_preserve_history_and_close_only_the_previous_proposal()
     );
     let evidence = review(&mut board, plan);
     assert_eq!(evidence.head.body.as_str(), "# Scope\noriginal");
+    assert!(evidence.manual_links.is_empty());
     assert_eq!(evidence.open_proposals.len(), 1);
     assert_eq!(evidence.open_proposals[0].entry, replacement.entry);
     assert_eq!(

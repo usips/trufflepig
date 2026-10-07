@@ -175,3 +175,39 @@ fn review_commit_trimming_uses_one_chronological_window() {
     assert!(oldest > 1);
     assert!(budget.fits(&rendered.text));
 }
+
+#[test]
+fn review_budget_keeps_each_manual_link_set_with_its_commit() {
+    use crate::board::{
+        board_ids::{EntryId, EventSeq, TaskId},
+        board_protocol::ManualCommitLink,
+    };
+
+    let mut packet = review_packet();
+    let mut linked = review_commit(101);
+    linked.manual_links = (1..=80)
+        .map(|ordinal| ManualCommitLink {
+            repo_key: linked.commit.repo_key.clone(),
+            oid: linked.commit.oid,
+            task: TaskId::new(packet.plan.id, ordinal).unwrap(),
+            entry: EntryId::new(ordinal).unwrap(),
+            seq: Some(EventSeq::new(ordinal)),
+            actor: Some(actor()),
+        })
+        .collect();
+    packet.linked.push(linked);
+
+    let budget = OutputBudget::new(600)
+        .unwrap()
+        .with_format(OutputFormat::Json);
+    let rendered = render_review(&packet, &budget, "local").unwrap();
+    let value: serde_json::Value = serde_json::from_str(&rendered.text).unwrap();
+    let data = &value["result"]["data"];
+    let shown = data["linked"].as_array().unwrap();
+    let omitted = data["omitted"]["linked_commits"].as_u64().unwrap() as usize;
+    assert_eq!(shown.len() + omitted, 1);
+    if let Some(commit) = shown.first() {
+        assert_eq!(commit["manual_links"].as_array().unwrap().len(), 80);
+    }
+    assert!(budget.fits(&rendered.text));
+}

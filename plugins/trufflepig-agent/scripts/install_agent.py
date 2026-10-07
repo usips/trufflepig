@@ -17,7 +17,9 @@ import uuid
 
 PLUGIN = Path(__file__).resolve().parents[1]
 SKILLS = ("trufflepig-code-search", "trufflepig-plan-board")
-BOARD_API = 5
+BOARD_API = 6
+BOARD_SCHEMA = 8
+ROUTER_READY_TIMEOUT_SECONDS = 10
 sys.path.insert(0, str(PLUGIN / "bin"))
 from trufflepig_runtime import runtime_config_path
 from omp_install import omp_agent_dir
@@ -53,9 +55,13 @@ def require_board_api(binary: str) -> None:
         raise ValueError(advice)
 
 
-def read_exact(connection: socket.socket, count: int) -> bytes:
+def read_exact(connection: socket.socket, count: int, deadline: float) -> bytes:
     chunks = []
     while count > 0:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("router status deadline expired")
+        connection.settimeout(remaining)
         chunk = connection.recv(count)
         if not chunk:
             raise OSError("router closed the status reply")
@@ -64,8 +70,10 @@ def read_exact(connection: socket.socket, count: int) -> bytes:
     return b"".join(chunks)
 
 
-def router_status(runtime: Path) -> dict | None:
-    """Best-effort `system status` from a listening router; None when none answers."""
+def router_status(runtime: Path, deadline: float) -> dict | None:
+    """Read one router status reply without exceeding its shared deadline."""
+    if time.monotonic() >= deadline:
+        return None
     if not (runtime / "daemon.sock").is_socket():
         return None
     request = json.dumps({
@@ -79,43 +87,90 @@ def router_status(runtime: Path) -> dict | None:
     }).encode()
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-            connection.settimeout(5)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            connection.settimeout(remaining)
             connection.connect(str(runtime / "daemon.sock"))
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            connection.settimeout(remaining)
             connection.sendall(len(request).to_bytes(4, "big") + request)
-            length = int.from_bytes(read_exact(connection, 4), "big")
+            length = int.from_bytes(read_exact(connection, 4, deadline), "big")
             if length > 4 * 1024 * 1024:
                 return None
-            reply = json.loads(read_exact(connection, length))
-        if reply.get("status") != "success":
+            reply = json.loads(read_exact(connection, length, deadline))
+        if not isinstance(reply, dict) or reply.get("status") != "success":
             return None
-        status = json.loads(reply["output"])
+        output = reply.get("output")
+        if not isinstance(output, str):
+            return None
+        status = json.loads(output)
     except (OSError, ValueError):
+        return None
+    if time.monotonic() >= deadline:
         return None
     return status if isinstance(status, dict) else None
 
 
-def require_current_router(runtime: Path) -> None:
-    """A listening router must run the current binary on the migrated database."""
+def router_endpoint_present(runtime: Path) -> bool:
+    """Distinguish a missing endpoint from a present but unusable socket path."""
+    socket_path = runtime / "daemon.sock"
+    try:
+        socket_path.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        raise ValueError(f"cannot inspect router endpoint {socket_path}: {error}") from error
+    return True
+
+
+def require_current_router(runtime: Path, *, allow_absent: bool = False,
+                           timeout: float = ROUTER_READY_TIMEOUT_SECONDS) -> None:
+    """Require API 6/schema 8, optionally tolerating an absent unmanaged router."""
     advice = "restart trufflepig-system.service with the current trufflepig binary"
-    deadline = time.monotonic() + 10
+    if allow_absent and not router_endpoint_present(runtime):
+        return
+    deadline = time.monotonic() + timeout
+    last_status = None
+    endpoint_seen = False
     while True:
-        status = router_status(runtime)
+        if time.monotonic() >= deadline:
+            break
+        endpoint_seen |= router_endpoint_present(runtime)
+        status = router_status(runtime, deadline)
+        endpoint_seen |= router_endpoint_present(runtime)
         if status is None:
-            # systemctl returns before the restarted router listens; wait for it.
-            if time.monotonic() >= deadline:
-                return  # No listening router leaves the startup probe to the board service.
-            time.sleep(0.25)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(0.25, remaining))
             continue
+        if time.monotonic() >= deadline:
+            break
+        last_status = status
         api = status.get("board_api")
         if api != BOARD_API:
             raise ValueError(f"router reports board_api {api}, expected {BOARD_API}; {advice}")
         supported = status.get("schema_supported")
         schema = status.get("schema_file")
-        if schema is None or schema == supported or time.monotonic() >= deadline:
+        if supported != BOARD_SCHEMA:
+            raise ValueError(f"router reports schema_supported {supported}, expected {BOARD_SCHEMA}; {advice}")
+        if schema == BOARD_SCHEMA:
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
             break
-        time.sleep(0.25)
-    if schema is not None and schema != supported:
-        raise ValueError(f"router reports schema_file {schema}, expected {supported}; {advice}")
+        time.sleep(min(0.25, remaining))
+    if allow_absent and last_status is None and not endpoint_seen:
+        return
+    if last_status is None:
+        detail = f"did not become ready with board API {BOARD_API} and schema {BOARD_SCHEMA}"
+    else:
+        detail = (f"reports schema_file {last_status.get('schema_file')}, "
+                  f"expected {BOARD_SCHEMA}")
+    raise ValueError(f"router {detail} within {timeout:g}s; {advice}")
 
 
 def main() -> int:
@@ -201,8 +256,9 @@ def main() -> int:
         managed_router = args.systemd or (unit_directory / "trufflepig-system.service").exists()
         if args.board and not managed_router:
             # The board shares the router's database: refuse before touching
-            # anything when the listening router is stale.
-            require_current_router(router_runtime)
+            # anything when a listening router is stale. An unmanaged absent
+            # router remains valid because this install does not restart it.
+            require_current_router(router_runtime, allow_absent=True)
     unit_text = service_text(binary, spool) if args.systemd else None
     board_unit_text = render_service("trufflepig-board.service", binary) if args.board else None
 

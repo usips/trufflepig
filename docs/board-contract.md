@@ -88,10 +88,11 @@ plan. `show` and `review` default to 4000 output tokens; other board/feedback co
 
 ## Backend, transport, and deadlines
 
-Every operation uses `BoardRequest { api: BOARD_API, actor, op, claims }` (`BOARD_API = 5`) and a
-typed `BoardReply`. `BoardBackend` owns state and returns data; the edge parses, reads bodies, scans
-local Git, and renders. An API mismatch fails `board_api_mismatch` without negotiation. `LocalBoard`
-is the SQLite backend. Replies identify the backend and expose a read-transaction `snapshot_seq`.
+Every operation uses `BoardRequest { api: BOARD_API, actor, op, claims }` (`BOARD_API = 6`) and a typed `BoardReply`.
+`BoardBackend` owns state and returns data; the edge parses, reads bodies, scans local Git, and renders. An API mismatch fails
+`board_api_mismatch` without negotiation. `LocalBoard` is the SQLite backend. Replies identify the backend and expose a
+read-transaction `snapshot_seq`. `ReviewEvidence.manual_links` contains per-task `ManualCommitLink { repo_key: RepoKey,
+oid: GitOid, task: TaskId, entry: EntryId, seq: Option<EventSeq>, actor: Option<BoardActor> }`; absent optionals preserve unknown attribution.
 
 The client routes before workspace resolution: socket, spool, then one `system ensure` and retry if
 no router answers. Direct `LocalBoard` fallback preserves the resolved DB identity and never
@@ -141,54 +142,52 @@ associations survive duplicate-binding collapse. Registration caches five minute
 HEAD/ref metadata. Continuously absent bindings age out after five minutes of router lifetime;
 permission/transient errors do not count; reappearance resets that grace.
 
-Ingestion scans local branch tips and detached HEADs in the main checkout and linked worktrees,
-validates oids, hashing the tip set; an unchanged digest skips the repository. A changed set scans
-up to 2000 commits since the oldest linked plan minus one day, matching case-insensitive
-`Plan`/`Plan-Task` trailers with stats and co-authors. The tip digest advances only after a
-complete metadata scan; unknown plan links are skipped and reported. Stats are bounded best-effort
-metadata independent of enumeration; malformed record metadata is skipped with diagnostics,
-incomplete NUL framing invalidates the scan, and non-UTF-8 metadata decodes lossily with a warning
-rather than dropping it. A parsed `Plan-Task` whose plan is not among the commit's `Plan`
-trailers warns `plan_task_without_plan` and stays unlinked. Bodies stay out of the scan format: a
-second pass greps the same range for `^(Plan|Plan-Task):\s*P\d` and warns `misplaced_trailers`
-when a matching commit parsed no plan trailer; those ignored trailer-shaped lines never link.
-Scan warnings key by oid and dedupe; ingest scan reports and `board review` scan errors are
-their home, and review drops warnings and unlinked listings for plan-linked commits, manual links
-included. Cached stamps retain warnings and unknown references. Board Git access supports Git 2.43
-independently of historical navigation's gate. Repeated ingestion creates no duplicate
-link/entry/event; rebasing creates a new oid and evidence. Untrailered commits are not ingested;
-`board link OID P7.3` repairs one. External trailers retain all distinct matching plan tasks;
-unknown tasks preserve the plan link and diagnostics. Co-author trailers and model snapshots
-attribute to vendors per the [CLI attribution rules](board-cli-contract.md#attribution).
+Ingestion scans local branch tips and detached HEADs in the main checkout and linked worktrees, validates oids, hashing the tip
+set; an unchanged digest skips the repository. A changed set scans up to 2000 commits since the oldest linked plan minus one day,
+matching case-insensitive `Plan`/`Plan-Task` trailers with stats and co-authors. The tip digest advances only after a complete
+metadata scan; unknown plan links are skipped and reported. Stats are bounded best-effort metadata independent of enumeration;
+malformed record metadata is skipped with diagnostics, incomplete NUL framing invalidates the scan, and non-UTF-8 metadata decodes
+lossily with a warning rather than dropping it. A parsed `Plan-Task` whose plan is not among the commit's `Plan` trailers warns
+`plan_task_without_plan` and stays unlinked. Bodies stay out of the scan format: a second pass greps the same range for
+`^(Plan|Plan-Task):\s*P\d` and warns `misplaced_trailers` when a matching commit parsed no plan trailer; those ignored
+trailer-shaped lines never link. Scan warnings key by oid and dedupe; ingest scan reports and `board review` scan errors are their
+home, and review drops warnings and unlinked listings for plan-linked commits, manual links included. Cached stamps retain
+warnings and unknown references. Board Git access supports Git 2.43 independently of historical navigation's gate. Repeated
+ingestion creates no duplicate link/entry/event; rebasing creates a new oid and evidence. Untrailered commits are not ingested;
+`board link OID P7.3` repairs one. Manual task links atomically write a canonical `commit` event and store its sequence in
+`commit_tasks.link_seq`; a plan-level scan entry may be reused. Exact manual retries return the original task receipt across
+callers and reopens. Existing scanned task links stay `source=scan` and are no-op dedupes; a `source=manual` link without a
+receipt fails `invalid_state`. External trailers retain all distinct matching plan tasks; unknown tasks preserve the plan link and
+diagnostics. Co-author trailers and model snapshots attribute to vendors per the [CLI attribution
+rules](board-cli-contract.md#attribution).
 
-Ingest runs explicitly, before review within `min(5 s, remaining - 3 s)`, and every 60 s from
-router idle on a separate thread only when the DB exists. Review assembles SSOT diff, entries,
-tasks, historical claims/scopes, linked commit stats and local `diff` drill hints, open
-proposals/questions/feedback, and omitted counts. It finds the agent's untrailered commits since
-base as `unlinked`, and task commits whose co-author vendor differs from the claimant as `crossed`.
-Drill hints use `trufflepig-agent` only with supported historical navigation (Git 2.55+) and local
-objects. Budget trimming retains newest entries, removes diff context/body, refits after each
-stage, then trims older commits and remaining evidence with explicit omissions and drill
-references; proposals retain stale markers. Recover detail with `board review P7@1 [codex] -b N`
-or proposal bodies with `board show E80 -b 32768`.
+Ingest runs explicitly, before review within `min(5 s, remaining - 3 s)`, and every 60 s from router idle on a separate thread
+only when the DB exists. Review assembles SSOT diff, entries, tasks, historical claims/scopes, linked commit stats, manual-link
+receipts, local `diff` drill hints, open proposals/questions/feedback, and omitted counts. It fetches receipts independently of
+base/agent-filtered entry rows for commits in the existing commit window. A scanned commit manually linked to a task stays once
+in `linked`, with its duplicate removed from `unlinked`. Known actors render per task; a link with neither actor nor sequence
+renders `historical attribution unknown`. Review finds the agent's untrailered commits since base as `unlinked`, and task commits
+whose co-author vendor differs from the claimant as `crossed`. Drill hints use `trufflepig-agent` only with supported historical
+navigation (Git 2.55+) and local objects. Budget trimming retains newest entries, removes diff context/body, refits after each
+stage, then trims older commits and remaining evidence with explicit omissions and drill references; proposals retain stale
+markers. Recover detail with `board review P7@1 [codex] -b N` or proposal bodies with `board show E80 -b 32768`.
 
 ## Storage, configuration, and search
 
-Storage defaults to `$XDG_DATA_HOME/trufflepig/board.sqlite3`, else the passwd home's
-`.local/share/trufflepig/board.sqlite3`; `TRUFFLEPIG_BOARD_DB` overrides it. The DB is 0600;
-chmod 0700 applies only to board-created directories (a fresh account's missing `~/.local` and
-`~/.local/share` ancestors), and a pre-existing group/world-accessible parent is refused — open
-paths never chmod, read paths never modify the filesystem. The DB records its resolved path and
-uses forward `user_version` migrations; a shipped step is never edited — repairs ship as a new
-step. Schema version 4 repairs the `commit_plans_entry` and `claims_entry_active` indexes and
-rewrites stored dedupe receipts to the current API; later steps carry no version literals and
-dispatch upgrades older stamps on replay; empty/relative DB overrides and newer schemas are
-refused. Board data is outside cache sweeps and `forget-logs`; entries and revisions remain
-durable. WAL requires local disk, not network filesystems. Configuration is
-`~/.config/trufflepig/board.toml` with unknown fields denied: mode, user, host, url, token_file,
-claim_ttl_minutes, repos. Config checks cache for two seconds; failed unchanged reloads back off
-60 seconds; successful TTL changes reach existing readers/writer. `mode = "local"` uses local
-storage; `mode = "remote"` fails `board_remote_unsupported` without a coordinator or local DB.
+Storage defaults to `$XDG_DATA_HOME/trufflepig/board.sqlite3`, else the passwd home's `.local/share/trufflepig/board.sqlite3`;
+`TRUFFLEPIG_BOARD_DB` overrides it. The DB is 0600; chmod 0700 applies only to board-created directories (a fresh account's
+missing `~/.local` and `~/.local/share` ancestors), and a pre-existing group/world-accessible parent is refused — open paths never
+chmod, read paths never modify the filesystem. The DB records its resolved path and uses forward `user_version` migrations; every
+shipped step is immutable, including migrations 1–7. Schema 4 repairs `commit_plans_entry` and `claims_entry_active` and rewrites
+stored dedupe receipts to the current API. Subsequent steps contain no API-version literals; dispatch upgrades older receipt stamps on replay.
+Schema 8 adds indexed nullable `commit_tasks.link_seq REFERENCES events(seq)`. For manual rows, it backfills only the earliest
+event matching the plan, kind `commit`, target `E<entry_id>`, and exact summary `linked <oid> to P<plan>.<task> by hand`.
+Unmatched history stays unknown; scanned rows remain `source=scan`. Empty/relative DB overrides and newer schemas are refused.
+Board data is outside cache sweeps and `forget-logs`; entries and revisions remain durable. WAL requires local disk, not network
+filesystems. Configuration is `~/.config/trufflepig/board.toml` with unknown fields denied: mode, user, host, url, token_file,
+claim_ttl_minutes, repos. Config checks cache for two seconds; failed unchanged reloads back off 60 seconds; successful TTL
+changes reach existing readers/writer. `mode = "local"` uses local storage; `mode = "remote"` fails `board_remote_unsupported`
+without a coordinator or local DB.
 
 Board FTS5 uses stable integer search-document IDs for full entry text/proposal bodies, revision
 bodies, and plan titles; shared content hashes never merge distinct targets or index orphan texts.

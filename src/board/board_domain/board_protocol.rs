@@ -11,15 +11,15 @@ pub use board_records::{
     BoardChange, BoardReply, BoardResult, BoardSearchHit, BoardSearchReply, BoardSearchSource,
     COAUTHOR_LIMIT, ClaimEndReason, ClaimRecord, CommitCoauthor, CommitLinkResult, CommitPlanLink,
     EntryRecord, EntryState, EntryView, EventRecord, FeedbackMetadata, FeedbackRecord, FeedbackVia,
-    InboxReply, InboxWait, LINK_LIMIT, LinkedCommit, PlanRecord, PlanView, ProposalRecord,
-    RecentCall, RepoRegistration, RepoScanTarget, ReviewEvidence, RevisionDiff, RevisionRecord,
-    RevisionSource, SessionRecord, TaskRecord,
+    InboxReply, InboxWait, LINK_LIMIT, LinkedCommit, ManualCommitLink, PlanRecord, PlanView,
+    ProposalRecord, RecentCall, RepoRegistration, RepoScanTarget, ReviewEvidence, RevisionDiff,
+    RevisionRecord, RevisionSource, SessionRecord, TaskRecord,
 };
 pub use board_requests::{AgentClaims, BoardOp, BoardRequest, ClaimDelegate, ClaimResume};
 
 use anyhow::{Result, bail};
 
-pub const BOARD_API: u32 = 5;
+pub const BOARD_API: u32 = 6;
 
 fn validate_claim(value: &str, field: &str) -> Result<()> {
     if value.trim().is_empty() || value.len() > 256 || value.chars().any(char::is_control) {

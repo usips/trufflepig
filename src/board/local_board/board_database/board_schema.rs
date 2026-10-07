@@ -3,7 +3,7 @@
 mod board_search_schema;
 pub(super) use board_search_schema::{SCHEMA_V3, SCHEMA_V6};
 
-pub const SCHEMA_VERSION: i64 = 7;
+pub const SCHEMA_VERSION: i64 = 8;
 
 pub(super) const SCHEMA_V1: &str = r#"
 CREATE TABLE board_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -196,4 +196,24 @@ ALTER TABLE claims ADD COLUMN delegated_by INTEGER REFERENCES actors(id);
 pub(super) const SCHEMA_V7: &str = r#"
 ALTER TABLE commit_plans ADD COLUMN source TEXT NOT NULL DEFAULT 'scan' CHECK(source IN ('scan','manual'));
 ALTER TABLE commit_tasks ADD COLUMN source TEXT NOT NULL DEFAULT 'scan' CHECK(source IN ('scan','manual'));
+"#;
+
+/// Durable event sequence for manual task links; historical scans stay unlinked.
+pub(super) const SCHEMA_V8: &str = r#"
+ALTER TABLE commit_tasks ADD COLUMN link_seq INTEGER REFERENCES events(seq);
+CREATE INDEX events_manual_commit_lookup ON events(plan_id,kind,subject,summary,seq);
+UPDATE commit_tasks AS linked
+SET link_seq=(
+ SELECT MIN(event.seq)
+ FROM commit_plans AS plan_link
+ JOIN events AS event
+  ON event.plan_id=plan_link.plan_id
+  AND event.kind='commit'
+  AND event.subject='E'||plan_link.entry_id
+ WHERE plan_link.repo_key=linked.repo_key
+  AND plan_link.oid=linked.oid
+  AND plan_link.plan_id=linked.plan_id
+  AND event.summary='linked '||linked.oid||' to P'||linked.plan_id||'.'||linked.task_ordinal||' by hand'
+)
+WHERE linked.source='manual';
 "#;

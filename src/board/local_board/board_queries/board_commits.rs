@@ -1,13 +1,14 @@
 //! Commit metadata reads preserve every plan/task link and bound plan projections.
-use super::super::{BoardError, invalid, row_number, sql_error, sql_number, sqlite_u64};
+use super::super::{
+    BoardError, actor_from_row, invalid, row_number, sql_error, sql_number, sqlite_u64,
+};
 use crate::board::{
-    board_ids::{EntryId, PlanId, RepoKey},
-    board_protocol::{CommitPlanLink, LinkedCommit},
+    board_ids::{EntryId, EventSeq, PlanId, RepoKey, TaskId},
+    board_protocol::{CommitPlanLink, LinkedCommit, ManualCommitLink},
 };
 use rusqlite::{Connection, params};
 
-const COMMIT_COLUMNS: &str =
-    "c.repo_key,c.oid,c.subject,c.committed_at,c.author,c.coauthors,c.files,c.insertions,c.deletions";
+const COMMIT_COLUMNS: &str = "c.repo_key,c.oid,c.subject,c.committed_at,c.author,c.coauthors,c.files,c.insertions,c.deletions";
 const PLAN_WINDOW: &str = concat!(
     "EXISTS(SELECT 1 FROM commit_plans p WHERE p.repo_key=c.repo_key AND p.oid=c.oid AND p.plan_id=?1) ",
     "AND c.committed_at>=?2 AND c.committed_at<=?3"
@@ -47,6 +48,73 @@ pub(in crate::board::local_board) fn linked_commits_all(
     end: i64,
 ) -> Result<Vec<LinkedCommit>, BoardError> {
     read_plan_window(conn, plan, start, end, -1, usize::MAX)
+}
+
+pub(in crate::board::local_board) fn manual_commit_links_window(
+    conn: &Connection,
+    plan: PlanId,
+    start: i64,
+    end: i64,
+) -> Result<Vec<ManualCommitLink>, BoardError> {
+    let mut statement = conn
+        .prepare(&format!(
+            concat!(
+                "SELECT c.repo_key,c.oid,t.task_ordinal,p.entry_id,t.link_seq,",
+                "a.user,a.host,a.harness,a.session FROM commits c ",
+                "JOIN commit_plans p ON p.repo_key=c.repo_key AND p.oid=c.oid ",
+                "JOIN commit_tasks t ON t.repo_key=p.repo_key AND t.oid=p.oid AND t.plan_id=p.plan_id ",
+                "LEFT JOIN events e ON e.seq=t.link_seq ",
+                "LEFT JOIN actors a ON a.id=e.actor_id ",
+                "WHERE {PLAN_WINDOW} AND p.plan_id=?1 AND t.source='manual' ",
+                "ORDER BY c.committed_at,c.repo_key,c.oid,t.task_ordinal"
+            ),
+            PLAN_WINDOW = PLAN_WINDOW
+        ))
+        .map_err(sql_error)?;
+    let mut rows = statement
+        .query(params![sql_number(plan.get()), start, end])
+        .map_err(sql_error)?;
+    let mut links = Vec::new();
+    while let Some(row) = rows.next().map_err(sql_error)? {
+        let repo_key = row
+            .get::<_, String>(0)
+            .map_err(sql_error)?
+            .parse()
+            .map_err(BoardError::from)?;
+        let oid = row
+            .get::<_, String>(1)
+            .map_err(sql_error)?
+            .parse::<crate::identity::GitOid>()
+            .map_err(BoardError::from)?;
+        let task_ordinal = row_number(row, 2).map_err(sql_error)?;
+        let entry =
+            EntryId::new(row_number(row, 3).map_err(sql_error)?).map_err(BoardError::from)?;
+        let link_seq = row
+            .get::<_, Option<i64>>(4)
+            .map_err(sql_error)?
+            .map(sqlite_u64)
+            .transpose()?
+            .map(EventSeq::new);
+        let actor = if link_seq.is_some()
+            && row
+                .get::<_, Option<String>>(5)
+                .map_err(sql_error)?
+                .is_some()
+        {
+            Some(actor_from_row(row, 5).map_err(sql_error)?)
+        } else {
+            None
+        };
+        links.push(ManualCommitLink {
+            repo_key,
+            oid,
+            task: TaskId::new(plan, task_ordinal).map_err(BoardError::from)?,
+            entry,
+            seq: link_seq,
+            actor,
+        });
+    }
+    Ok(links)
 }
 
 fn read_plan_window(

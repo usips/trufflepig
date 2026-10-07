@@ -59,14 +59,11 @@ repeat the plan's `Plan: P7` commit trailer.
 
 `board link OID P7.3` repairs one commit link by hand when trailers are missing or unparsable. The
 backend resolves `OID^{commit}` in the plan's already-registered repositories on the caller's host
-without registering the caller's repository, reads metadata exactly as a scan, inserts the commit
-if absent, and records the plan and task link with `manual` provenance (scan links keep `scan`).
-The commit entry names the linker, review renders a manual link as `linked by hand by ACTOR`,
-relinking the same oid and task replays the original receipt, and linking another task of the same
-plan writes a new event. Linking requires the plan owner's user acting with a `human` harness or
-the plan steward harness; `cli` and every other actor is `invalid_actor`. An unresolved oid is
-`invalid_reference`; an oid that names a tag is refused with `invalid_reference: OID names a tag;
-pass the commit id`.
+without registering the caller's repository, reads metadata exactly as a scan, and inserts the
+commit if absent. It requires the plan owner's user with a `human` harness or the plan steward
+harness; `cli` and every other actor is `invalid_actor`. An unresolved oid is `invalid_reference`;
+an oid that names a tag is refused with `invalid_reference: OID names a tag; pass the commit id`.
+Durable task receipts, replay, and unknown historical attribution follow the [board contract](board-contract.md#git-links-and-review-evidence).
 
 ## Collection bounds
 

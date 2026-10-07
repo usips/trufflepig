@@ -1,15 +1,20 @@
 """Shared installer test scaffolding: isolated stores and service shims."""
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 PLUGIN = Path(__file__).resolve().parents[1]
 UNIT_NAMES = ("trufflepig-system.service", "trufflepig-board.service")
+CURRENT_ROUTER_STATUS = {
+    "status": "ok", "board_api": 6, "schema_supported": 8, "schema_file": 8,
+}
 
 
 class AgentInstallCase(unittest.TestCase):
@@ -24,6 +29,30 @@ class AgentInstallCase(unittest.TestCase):
 
     def install(self, *args):
         return subprocess.run([str(PLUGIN / "install.sh"), *args], env=self.env, text=True, capture_output=True)
+
+    def run_installer_main(self, *args, router_timeout=0.05):
+        """Run the installer in-process with a short test-only router deadline."""
+        from contextlib import redirect_stderr, redirect_stdout
+        from unittest.mock import patch
+
+        module = self.load_installer("install_agent_main_test")
+        require_router = module.require_current_router
+
+        def bounded_router_check(runtime, *, allow_absent=False, timeout=None):
+            return require_router(runtime, allow_absent=allow_absent, timeout=router_timeout)
+
+        module.require_current_router = bounded_router_check
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        command = [str(PLUGIN / "install.sh"), *args]
+        with patch.dict(os.environ, self.env), patch.object(sys, "argv", command):
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                try:
+                    status = module.main()
+                except (OSError, ValueError, subprocess.CalledProcessError) as error:
+                    print(f"trufflepig-agent install: {error}", file=stderr)
+                    status = 2
+        return subprocess.CompletedProcess(command, status, stdout.getvalue(), stderr.getvalue())
 
     def load_installer(self, name):
         """Import scripts/install_agent.py as a fresh module named `name`."""
@@ -47,11 +76,11 @@ from pathlib import Path
 name = Path(sys.argv[0]).name
 if name == "trufflepig" and sys.argv[1:] == ["--board-api-version"]:
     time.sleep(float(os.environ.get("PROBE_DELAY", "0")))
-    sys.stdout.write(os.environ.get("PROBE_STDOUT", "5\\n"))
+    sys.stdout.write(os.environ.get("PROBE_STDOUT", "6\\n"))
     sys.stderr.write(os.environ.get("PROBE_STDERR", ""))
     sys.exit(int(os.environ.get("PROBE_STATUS", "0")))
 if name == "trufflepig" and sys.argv[1:] == ["system", "dir"]:
-    if os.environ.get("PROBE_STDOUT", "5\\n") != "5\\n":
+    if os.environ.get("PROBE_STDOUT", "6\\n") != "6\\n":
         # Older binaries predate `system dir` and answer with usage.
         sys.stderr.write("usage: trufflepig [--help] ...\\n")
         sys.exit(2)
@@ -72,6 +101,7 @@ units_dir = Path(os.environ["XDG_CONFIG_HOME"]) / "systemd/user"
 state_path = Path(os.environ["SERVICE_STATE"])
 state = json.loads(state_path.read_text()) if state_path.exists() else {}
 units_state = state.setdefault("units", {})
+enabled_state = state.setdefault("enabled", {})
 boots = state.setdefault("boots", {})
 words = [word for word in sys.argv[1:] if not word.startswith("-")]
 command, units = (words[0], words[1:]) if words else ("", [])
@@ -85,25 +115,51 @@ if command == "is-active":
     if "--quiet" not in sys.argv:
         sys.stdout.write(status + "\\n")
     sys.exit(0 if status == "active" else 3)
+if command == "is-enabled":
+    if not (units_dir / units[0]).is_file():
+        if "--quiet" not in sys.argv:
+            sys.stdout.write("not-found\\n")
+        sys.exit(1)
+    status = enabled_state.get(units[0], "disabled")
+    if status == "disabled" and (units_dir / units[0]).read_text().startswith("# static unit\\n"):
+        status = "static"
+    if "--quiet" not in sys.argv:
+        sys.stdout.write(status + "\\n")
+    sys.exit(0 if status in ("enabled", "enabled-runtime") else 1)
 for unit in units:
     if not (units_dir / unit).is_file():
         unknown(unit, 5 if command == "try-restart" else 4)
 failure = 0
-if command == "stop" or (command == "disable" and "--now" in sys.argv):
+if command == "stop":
     for unit in units:
         units_state[unit] = "inactive"
     if "trufflepig-system.service" in units:
+        units_state["trufflepig-board.service"] = "inactive"
+elif command == "disable":
+    for unit in units:
+        if "--runtime" in sys.argv:
+            if enabled_state.get(unit) == "enabled-runtime":
+                enabled_state[unit] = "disabled"
+        else:
+            enabled_state[unit] = "disabled"
+        if "--now" in sys.argv:
+            units_state[unit] = "inactive"
+    if "--now" in sys.argv and "trufflepig-system.service" in units:
         units_state["trufflepig-board.service"] = "inactive"
 elif command in ("start", "restart"):
     for unit in units:
         units_state[unit] = "active"
         boots[unit] = boots.get(unit, 0) + 1
-elif command == "enable" and "--now" in sys.argv:
-    # FAIL_ENABLE leaves the unit running, as a partial `enable --now` can.
+elif command == "enable":
     for unit in units:
-        units_state[unit] = "active"
-        boots[unit] = boots.get(unit, 0) + 1
-    if os.environ.get("FAIL_ENABLE"):
+        enabled_state[unit] = "enabled-runtime" if "--runtime" in sys.argv else "enabled"
+        if "--now" in sys.argv:
+            units_state[unit] = "active"
+            boots[unit] = boots.get(unit, 0) + 1
+    # Fail one activation after applying it, as a partial `enable --now` can.
+    if ("--now" in sys.argv and os.environ.get("FAIL_ENABLE")
+            and not state.get("fail_enable_consumed")):
+        state["fail_enable_consumed"] = True
         failure = 1
 elif command == "try-restart":
     # try-restart revives running units only: a running unit restarts in
@@ -126,17 +182,37 @@ sys.exit(failure)
         return {name: self.systemctl("is-active", name).stdout.strip() in live
                 for name in UNIT_NAMES}
 
+    def enabled_units(self):
+        """Whether installed services have persistent or runtime enable links."""
+        return {name: self.systemctl("is-enabled", name).stdout.strip()
+                in ("enabled", "enabled-runtime")
+                for name in UNIT_NAMES}
+
+    def enabled_state(self, name):
+        """Recorded enablement, including a unit removed during rollback."""
+        state = json.loads(Path(self.env["SERVICE_STATE"]).read_text())
+        return state.get("enabled", {}).get(name, "disabled")
+
+    def set_enabled_state(self, name, status):
+        """Seed systemctl's reported enablement for a preexisting unit."""
+        state_path = Path(self.env["SERVICE_STATE"])
+        state = json.loads(state_path.read_text()) if state_path.exists() else {}
+        state.setdefault("enabled", {})[name] = status
+        state_path.write_text(json.dumps(state, indent=2) + "\\n")
+
     def router_boots(self):
         state = Path(self.env["SERVICE_STATE"])
         if not state.exists():
             return 0
         return json.loads(state.read_text()).get("boots", {}).get("trufflepig-system.service", 0)
 
-    def serve_router_status(self, replies):
+    def serve_router_status(self, replies, *, listen_delay=0.0, response_delay=0.0,
+                            stall=False, raw_reply=None):
         """Answer `system status` polls on $TRUFFLEPIG_SYSTEM_DIR/daemon.sock.
 
         `replies` is a list consumed in order (the last entry repeats) or a
-        callable evaluated per request.
+        callable evaluated per request. `raw_reply` bypasses the normal router
+        response envelope for malformed-protocol regression cases.
         """
         import socket
         import threading
@@ -148,14 +224,21 @@ sys.exit(failure)
         except FileNotFoundError:
             pass
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        server.bind(str(path))
-        server.listen(8)
-        server.settimeout(5)
+        if not listen_delay:
+            server.bind(str(path))
+            server.listen(8)
+            server.settimeout(0.05)
         stop = threading.Event()
         served = []
 
         def serve():
             try:
+                if listen_delay:
+                    if stop.wait(listen_delay):
+                        return
+                    server.bind(str(path))
+                    server.listen(8)
+                    server.settimeout(0.05)
                 while not stop.is_set():
                     try:
                         connection, _ = server.accept()
@@ -173,9 +256,17 @@ sys.exit(failure)
                             if not chunk:
                                 break
                             body += chunk
-                        payload = replies() if callable(replies) else replies[min(len(served), len(replies) - 1)]
-                        served.append(payload)
-                        reply = json.dumps({"status": "success", "output": json.dumps(payload)}).encode()
+                        if stall:
+                            stop.wait()
+                            break
+                        if response_delay and stop.wait(response_delay):
+                            break
+                        if raw_reply is None:
+                            payload = replies() if callable(replies) else replies[min(len(served), len(replies) - 1)]
+                            served.append(payload)
+                            reply = json.dumps({"status": "success", "output": json.dumps(payload)}).encode()
+                        else:
+                            reply = raw_reply if isinstance(raw_reply, bytes) else json.dumps(raw_reply).encode()
                         connection.sendall(len(reply).to_bytes(4, "big") + reply)
             finally:
                 server.close()
@@ -186,6 +277,10 @@ sys.exit(failure)
         def stop_router():
             stop.set()
             thread.join(10)
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
 
         self.addCleanup(stop_router)
         return path

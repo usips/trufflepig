@@ -36,13 +36,22 @@ pub(in crate::board::local_board) fn review(
     )?;
     let open_questions = entries_for_open_questions(tx, plan.id)?;
     let open_feedback = feedback_for_plan(tx, plan.id)?;
+    let commits = linked_commits(tx, plan.id, base.created_at, ctx.now)?;
+    let manual_links =
+        crate::board::local_board::board_queries::board_commits::manual_commit_links_window(
+            tx,
+            plan.id,
+            base.created_at,
+            ctx.now,
+        )?;
     let evidence = ReviewEvidence {
         agent: agent.cloned(),
         window_end: ctx.now,
         tasks: task_claims::read_tasks(tx, plan.id)?,
         claims,
         entries,
-        commits: linked_commits(tx, plan.id, base.created_at, ctx.now)?,
+        commits,
+        manual_links,
         open_proposals: open_proposals(tx, plan.id)?,
         open_questions,
         open_feedback,
@@ -119,33 +128,45 @@ fn feedback_for_plan(conn: &Connection, plan: PlanId) -> Result<Vec<FeedbackReco
         ),
         [sql_number(plan.get())],
     )?;
-    records.into_iter().map(|entry| {
-        let mut statement = conn
-            .prepare(concat!(
-                "SELECT feedback_kind,version,build_id,cwd,steer_mode,recent_calls_json ",
-                "FROM board_feedback WHERE entry_id=?1"
-            ))
-            .map_err(sql_error)?;
-        let mut rows = statement.query([sql_number(entry.id.get())]).map_err(sql_error)?;
-        let row = rows
-            .next()
-            .map_err(sql_error)?
-            .ok_or_else(|| invalid("board_unavailable", "feedback metadata is missing"))?;
-        let state = match entry.state {
-            Some(EntryState::Feedback(state)) => state,
-            _ => return Err(invalid("board_unavailable", "feedback state is missing")),
-        };
-        Ok(FeedbackRecord {
-            kind: row.get::<_, String>(0).map_err(sql_error)?.parse().map_err(BoardError::from)?, state,
-            metadata: FeedbackMetadata {
-                version: row.get(1).map_err(sql_error)?, build_id: row.get(2).map_err(sql_error)?,
-                repo_key: entry.repo_key.clone(),
-                cwd: row.get(3).map_err(sql_error)?,
-                steer_mode: row.get(4).map_err(sql_error)?,
-                recent_calls: decode_json(row.get(5).map_err(sql_error)?)?,
-            }, entry,
+    records
+        .into_iter()
+        .map(|entry| {
+            let mut statement = conn
+                .prepare(concat!(
+                    "SELECT feedback_kind,version,build_id,cwd,steer_mode,recent_calls_json ",
+                    "FROM board_feedback WHERE entry_id=?1"
+                ))
+                .map_err(sql_error)?;
+            let mut rows = statement
+                .query([sql_number(entry.id.get())])
+                .map_err(sql_error)?;
+            let row = rows
+                .next()
+                .map_err(sql_error)?
+                .ok_or_else(|| invalid("board_unavailable", "feedback metadata is missing"))?;
+            let state = match entry.state {
+                Some(EntryState::Feedback(state)) => state,
+                _ => return Err(invalid("board_unavailable", "feedback state is missing")),
+            };
+            Ok(FeedbackRecord {
+                kind: row
+                    .get::<_, String>(0)
+                    .map_err(sql_error)?
+                    .parse()
+                    .map_err(BoardError::from)?,
+                state,
+                metadata: FeedbackMetadata {
+                    version: row.get(1).map_err(sql_error)?,
+                    build_id: row.get(2).map_err(sql_error)?,
+                    repo_key: entry.repo_key.clone(),
+                    cwd: row.get(3).map_err(sql_error)?,
+                    steer_mode: row.get(4).map_err(sql_error)?,
+                    recent_calls: decode_json(row.get(5).map_err(sql_error)?)?,
+                },
+                entry,
+            })
         })
-    }).collect()
+        .collect()
 }
 
 fn linked_commits(
@@ -154,5 +175,7 @@ fn linked_commits(
     start: i64,
     end: i64,
 ) -> Result<Vec<LinkedCommit>, BoardError> {
-    crate::board::local_board::board_queries::board_commits::linked_commits_all(conn, plan, start, end)
+    crate::board::local_board::board_queries::board_commits::linked_commits_all(
+        conn, plan, start, end,
+    )
 }
