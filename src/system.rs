@@ -99,7 +99,12 @@ pub fn request(args: &[String], context: &RequestContext) -> Result<Option<Strin
     {
         return Ok(Some(reply));
     }
-    daemon::spool::request(&spool_dir(), args, context)
+    daemon::spool::request(
+        &spool_dir(),
+        args,
+        context,
+        QueryDeadline::after(Duration::from_secs(30)),
+    )
 }
 
 /// Longest `ensure` waits for a spawned router's first status answer.
@@ -116,59 +121,76 @@ pub fn ensure() -> Result<()> {
 /// `ensure` with the router start wait capped at `start_wait`, so tests can
 /// inject a short cap and a hung spawn fails fast.
 fn ensure_within(start_wait: Duration) -> Result<()> {
+    let deadline = QueryDeadline::after(start_wait);
     let ping = vec!["system".to_owned(), "status".to_owned()];
     let context = RequestContext::new(None, None);
-    let started = Instant::now();
-    if poll(&ping, &context, started, start_wait)?.is_some() {
+    if poll(&ping, &context, deadline)?.is_some() {
         return Ok(());
     }
+    ensure_router_starting(deadline, start_wait)?;
     let dir = dir().context("system_unavailable: no runtime dir")?;
     fs::create_dir_all(&dir)?;
+    ensure_router_starting(deadline, start_wait)?;
     let mut command = Command::new(std::env::current_exe()?);
+    ensure_router_starting(deadline, start_wait)?;
     let child = spawn_background(command.arg("system-serve"))?;
     loop {
-        let remaining = start_wait.saturating_sub(started.elapsed());
-        ensure!(
-            !remaining.is_zero(),
-            "system_unavailable: router still starting after {} s",
-            start_wait.as_secs()
-        );
-        if poll(&ping, &context, started, start_wait)?.is_some() {
+        ensure_router_starting(deadline, start_wait)?;
+        if poll(&ping, &context, deadline)?.is_some() {
             return Ok(());
         }
+        ensure_router_starting(deadline, start_wait)?;
         // A racing spawn exits on the socket bind while its winner serves; a
         // spawn that is gone with no listener fails before the cap.
         if daemon::spawn_failed(&child, &dir) {
             bail!("system_unavailable: daemon did not start");
         }
-        std::thread::sleep(Duration::from_millis(25).min(remaining));
+        std::thread::sleep(Duration::from_millis(25).min(deadline.remaining()));
     }
 }
 
-/// One status probe over the socket, then the spool, bounded by the rest of
-/// the start budget; a probe the budget cuts short reads as "still starting".
+/// Reports the existing startup failure after the one absolute deadline expires.
+fn ensure_router_starting(deadline: QueryDeadline, start_wait: Duration) -> Result<()> {
+    ensure!(
+        !deadline.expired(),
+        "system_unavailable: router still starting after {} s",
+        start_wait.as_secs()
+    );
+    Ok(())
+}
+
+/// Probes the socket and spool using the same absolute startup deadline.
 fn poll(
     ping: &[String],
     context: &RequestContext,
-    started: Instant,
-    start_wait: Duration,
+    deadline: QueryDeadline,
 ) -> Result<Option<String>> {
+    if deadline.expired() {
+        return Ok(None);
+    }
     let Some(dir) = dir() else {
         return Ok(None);
     };
-    let remaining = start_wait.saturating_sub(started.elapsed());
-    if remaining.is_zero() {
+    if deadline.expired() {
         return Ok(None);
     }
-    let reply = match daemon::request_by(&dir, ping, context, QueryDeadline::after(remaining)) {
+    let reply = match daemon::request_by(&dir, ping, context, deadline) {
         Ok(reply) => reply,
         Err(error) if poll_budget_spent(&error) => None,
         Err(error) => return Err(error),
     };
-    if reply.is_some() {
-        return Ok(reply);
+    if let Some(reply) = reply {
+        return Ok((!deadline.expired()).then_some(reply));
     }
-    daemon::spool::request(&spool_dir(), ping, context)
+    if deadline.expired() {
+        return Ok(None);
+    }
+    match daemon::spool::request(&spool_dir(), ping, context, deadline) {
+        Ok(_) if deadline.expired() => Ok(None),
+        Ok(reply) => Ok(reply),
+        Err(error) if poll_budget_spent(&error) => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 /// Whether a bounded poll error only reports its own expired budget.

@@ -85,16 +85,18 @@ thread lowers itself to nice 10 and idle I/O after that initial reconcile; reque
 keep normal priority. Each read
 request carries its 20 s query deadline from socket accept through local dispatch
 and router forwarding. Query-only index reads cap lock waits and interrupt long
-SQL statements at expiry. Spool requests start their deadline before entering
-the worker queue. `stop` releases the socket, drains accepted work for up to
+SQL statements at expiry. Spool callers pass `QueryDeadline` explicitly;
+ordinary requests use 30 s, and expiry remains typed `timed_out`.
+`stop` releases the socket, drains accepted work for up to
 28 s, then rejects queued work and returns so the daemon process exits; requests
 still running at that point may lose their reply. Liveness checks connect to the
 socket (`src/daemon.rs:running`) and never touch the startup lock. `system
-ensure` waits at most 120 s for a spawned router's first status answer
-(`src/system.rs:ROUTER_START_WAIT`). Clients wait
-at most 30 s for any reply (`src/daemon.rs:CLIENT_REPLY_WAIT`, socket and spool
-alike; a spooled request whose claiming router stops beating fails at once with
-`daemon_unavailable`). A read verb retries once, with a fresh request id, on
+ensure` uses one absolute 120 s startup deadline for status probes, spawn, and
+socket/spool polling; it starts no probe or process after expiry and reports
+`system_unavailable: router still starting after 120 s`. Clients wait at most 30 s for a reply
+(`src/daemon.rs:CLIENT_REPLY_WAIT`; a spooled request whose claiming router
+stops beating fails at once with `daemon_unavailable`). A read verb retries
+once, with a fresh request id, on
 `daemon_busy`, `database is locked`, a dropped connection, a socket timeout that
 struck within 5 s, or, after 2 s, `index_warming`; a timeout after a full reply
 wait is final (`src/cli/retry.rs`).

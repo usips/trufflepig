@@ -7,6 +7,7 @@
 //! file, refreshed while the daemon serves, tells clients whether anyone is
 //! draining the spool before they wait.
 
+use super::deadline::{self, QueryDeadline, TIMED_OUT};
 use super::protocol::{DaemonReply, DaemonRequest};
 use anyhow::{Context, Result, bail};
 use std::fs;
@@ -18,44 +19,85 @@ use std::time::{Duration, Instant, SystemTime};
 const HEARTBEAT: &str = "heartbeat";
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
 const HEARTBEAT_STALE: Duration = Duration::from_secs(5);
-const REPLY_WAIT: Duration = super::CLIENT_REPLY_WAIT;
 const REPLY_POLL: Duration = Duration::from_millis(20);
 const ORPHAN_AGE: Duration = Duration::from_secs(300);
 const QUARANTINE_AGE: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
-/// Sends a request through the spool; `None` means no daemon drains it.
+/// Sends a request until `deadline`; `None` means no daemon drains it.
 pub fn request(
     spool: &Path,
     args: &[String],
     context: &crate::diagnostics::RequestContext,
+    deadline: QueryDeadline,
 ) -> Result<Option<String>> {
+    check_deadline(&deadline)?;
     let request = DaemonRequest::Arguments {
         context: context.clone(),
         args: args.to_vec(),
     };
-    request.validate()?;
-    if !heartbeat_alive(spool) {
-        return Ok(None);
-    }
-    let id = uuid::Uuid::parse_str(&context.request_id)?.to_string();
+    let validation = request.validate();
+    check_deadline(&deadline)?;
+    validation?;
+    let serialized = serde_json::to_vec(&request);
+    check_deadline(&deadline)?;
+    let bytes = serialized?;
+
+    let parsed_id = uuid::Uuid::parse_str(&context.request_id);
+    check_deadline(&deadline)?;
+    let id = parsed_id?.to_string();
     let request_path = spool.join(format!("{id}.request"));
     let reply_path = spool.join(format!("{id}.reply"));
-    if let Err(error) = write_atomic(&request_path, &serde_json::to_vec(&request)?) {
-        if matches!(
-            error.kind(),
-            ErrorKind::NotFound | ErrorKind::PermissionDenied | ErrorKind::ReadOnlyFilesystem
-        ) {
+    let result = request_until(spool, &request_path, &reply_path, &bytes, deadline);
+    if result.as_ref().err().is_some_and(deadline::is_timed_out) {
+        remove_pending_request(&request_path);
+    }
+    result
+}
+
+fn request_until(
+    spool: &Path,
+    request_path: &Path,
+    reply_path: &Path,
+    bytes: &[u8],
+    deadline: QueryDeadline,
+) -> Result<Option<String>> {
+    if !heartbeat_alive(spool, &deadline)? {
+        return Ok(None);
+    }
+    check_deadline(&deadline)?;
+    let write_result = write_request_atomic(request_path, bytes, &deadline, |temporary, bytes| {
+        fs::write(temporary, bytes)
+    });
+    check_deadline(&deadline)?;
+    if let Err(error) = write_result {
+        let spool_unavailable = error.chain().any(|cause| {
+            matches!(
+                cause.downcast_ref::<std::io::Error>(),
+                Some(io)
+                    if matches!(
+                        io.kind(),
+                        ErrorKind::NotFound
+                            | ErrorKind::PermissionDenied
+                            | ErrorKind::ReadOnlyFilesystem
+                    )
+            )
+        });
+        if spool_unavailable {
             return Ok(None);
         }
         return Err(error).context("write spooled daemon request");
     }
-    let deadline = Instant::now() + REPLY_WAIT;
-    while Instant::now() < deadline {
-        match fs::read(&reply_path) {
+    loop {
+        check_deadline(&deadline)?;
+        let read_result = fs::read(reply_path);
+        check_deadline(&deadline)?;
+        match read_result {
             Ok(bytes) => {
-                let _ = fs::remove_file(&reply_path);
-                let reply: DaemonReply =
-                    serde_json::from_slice(&bytes).context("decode spooled daemon reply")?;
+                let decoded = serde_json::from_slice(&bytes).context("decode spooled daemon reply");
+                check_deadline(&deadline)?;
+                let reply: DaemonReply = decoded?;
+                let _ = fs::remove_file(reply_path);
+                check_deadline(&deadline)?;
                 return match reply {
                     DaemonReply::Success { output } => Ok(Some(output)),
                     DaemonReply::Failure { message } => bail!("daemon: {message}"),
@@ -64,18 +106,37 @@ pub fn request(
             Err(error) if error.kind() == ErrorKind::NotFound => {}
             Err(error) => return Err(error).context("read spooled daemon reply"),
         }
-        if !heartbeat_alive(spool) {
-            if fs::remove_file(&request_path).is_ok() {
+        if !heartbeat_alive(spool, &deadline)? {
+            check_deadline(&deadline)?;
+            if fs::remove_file(request_path).is_ok() {
+                check_deadline(&deadline)?;
                 return Ok(None);
             }
             // Claimed by a router that stopped beating: no reply is coming.
-            let _ = fs::remove_file(spool.join(format!("{id}.claimed")));
+            if let Some(id) = request_id(request_path, "request") {
+                let _ = fs::remove_file(spool.join(format!("{id}.claimed")));
+            }
+            check_deadline(&deadline)?;
             bail!("daemon_unavailable: router stopped while answering a spooled request");
         }
-        std::thread::sleep(REPLY_POLL);
+        let wait = deadline.cap(REPLY_POLL);
+        if wait.is_zero() {
+            check_deadline(&deadline)?;
+        }
+        std::thread::sleep(wait);
     }
-    let _ = fs::remove_file(&request_path);
-    bail!("daemon_unavailable: spooled request timed out")
+}
+
+fn check_deadline(deadline: &QueryDeadline) -> Result<()> {
+    if deadline.expired() {
+        bail!("{TIMED_OUT}: spooled request deadline expired");
+    }
+    Ok(())
+}
+
+fn remove_pending_request(path: &Path) {
+    let _ = fs::remove_file(path);
+    let _ = fs::remove_file(temporary_path(path));
 }
 
 /// Serves one spool directory from a daemon's maintenance ticks.
@@ -259,12 +320,15 @@ fn transient_file(path: &Path) -> bool {
     false
 }
 
-fn heartbeat_alive(spool: &Path) -> bool {
-    fs::metadata(spool.join(HEARTBEAT))
+fn heartbeat_alive(spool: &Path, deadline: &QueryDeadline) -> Result<bool> {
+    check_deadline(deadline)?;
+    let metadata = fs::metadata(spool.join(HEARTBEAT));
+    check_deadline(deadline)?;
+    Ok(metadata
         .and_then(|metadata| metadata.modified())
         .ok()
         .and_then(|modified| SystemTime::now().duration_since(modified).ok())
-        .is_some_and(|age| age < HEARTBEAT_STALE)
+        .is_some_and(|age| age < HEARTBEAT_STALE))
 }
 
 fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
@@ -275,10 +339,70 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     fs::rename(&temporary, path)
 }
 
+fn write_request_atomic(
+    path: &Path,
+    bytes: &[u8],
+    deadline: &QueryDeadline,
+    write_temporary: impl FnOnce(&Path, &[u8]) -> std::io::Result<()>,
+) -> Result<()> {
+    check_deadline(deadline)?;
+    let temporary = temporary_path(path);
+    check_deadline(deadline)?;
+    let write_result = write_temporary(&temporary, bytes);
+    if let Err(error) = write_result {
+        if let Err(timeout) = check_deadline(deadline) {
+            let _ = fs::remove_file(&temporary);
+            return Err(timeout);
+        }
+        let _ = fs::remove_file(&temporary);
+        return Err(error).context("write spooled daemon request");
+    }
+    if let Err(timeout) = check_deadline(deadline) {
+        let _ = fs::remove_file(&temporary);
+        return Err(timeout);
+    }
+    fs::rename(&temporary, path).context("publish spooled daemon request")?;
+    Ok(())
+}
+
+fn temporary_path(path: &Path) -> PathBuf {
+    let mut temporary = path.as_os_str().to_owned();
+    temporary.push(".tmp");
+    PathBuf::from(temporary)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs::File;
+
+    #[test]
+    fn request_publication_does_not_rename_after_temp_write_expires_deadline() {
+        let dir = tempfile::tempdir().unwrap();
+        let request_path = dir.path().join("request.request");
+        let temporary = temporary_path(&request_path);
+        let deadline = QueryDeadline::after(Duration::from_millis(250));
+        let mut wrote_temporary = false;
+
+        let error =
+            write_request_atomic(&request_path, b"request", &deadline, |temporary, bytes| {
+                fs::write(temporary, bytes)?;
+                wrote_temporary = true;
+                while !deadline.expired() {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                Ok(())
+            })
+            .unwrap_err();
+
+        assert!(wrote_temporary, "test did not reach the temporary write");
+        assert!(deadline::is_timed_out(&error), "{error:#}");
+        assert!(!request_path.exists(), "expired request was published");
+        assert!(
+            !temporary.exists(),
+            "expired temporary request was retained"
+        );
+    }
 
     #[test]
     fn router_restart_and_orphan_sweep_preserve_durable_feedback() {

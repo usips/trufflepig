@@ -162,7 +162,14 @@ fn spool_round_trip_answers_request_and_cleans_up() {
     let args = vec!["status".to_owned()];
     let client = {
         let (dir, context) = (dir.clone(), context.clone());
-        std::thread::spawn(move || spool::request(&dir, &args, &context))
+        std::thread::spawn(move || {
+            spool::request(
+                &dir,
+                &args,
+                &context,
+                QueryDeadline::after(super::CLIENT_REPLY_WAIT),
+            )
+        })
     };
     let request = dir.join(format!("{}.request", context.request_id));
     while !request.exists() {
@@ -188,7 +195,14 @@ fn spool_claims_each_request_once_until_answered() {
     let context = crate::diagnostics::RequestContext::new(None, None);
     let client = {
         let (dir, context) = (dir.clone(), context.clone());
-        std::thread::spawn(move || spool::request(&dir, &["refs".to_owned()], &context))
+        std::thread::spawn(move || {
+            spool::request(
+                &dir,
+                &["refs".to_owned()],
+                &context,
+                QueryDeadline::after(super::CLIENT_REPLY_WAIT),
+            )
+        })
     };
     let request = dir.join(format!("{}.request", context.request_id));
     while !request.exists() {
@@ -210,7 +224,13 @@ fn spool_without_heartbeat_reports_no_daemon() {
     let dir = scratch.path().join("spool");
     let context = crate::diagnostics::RequestContext::new(None, None);
     assert_eq!(
-        spool::request(&dir, &["status".to_owned()], &context).unwrap(),
+        spool::request(
+            &dir,
+            &["status".to_owned()],
+            &context,
+            QueryDeadline::after(super::CLIENT_REPLY_WAIT),
+        )
+        .unwrap(),
         None
     );
     fs::create_dir_all(&dir).unwrap();
@@ -221,7 +241,13 @@ fn spool_without_heartbeat_reports_no_daemon() {
         .set_modified(stale)
         .unwrap();
     assert_eq!(
-        spool::request(&dir, &["status".to_owned()], &context).unwrap(),
+        spool::request(
+            &dir,
+            &["status".to_owned()],
+            &context,
+            QueryDeadline::after(super::CLIENT_REPLY_WAIT),
+        )
+        .unwrap(),
         None
     );
     assert!(fs::read_dir(&dir).unwrap().count() == 1);
@@ -236,7 +262,14 @@ fn spool_reports_handler_failure_and_ignores_foreign_files() {
     let context = crate::diagnostics::RequestContext::new(None, None);
     let client = {
         let (dir, context) = (dir.clone(), context.clone());
-        std::thread::spawn(move || spool::request(&dir, &["search".to_owned()], &context))
+        std::thread::spawn(move || {
+            spool::request(
+                &dir,
+                &["search".to_owned()],
+                &context,
+                QueryDeadline::after(super::CLIENT_REPLY_WAIT),
+            )
+        })
     };
     let request = dir.join(format!("{}.request", context.request_id));
     while !request.exists() {
@@ -258,7 +291,14 @@ fn spool_client_gives_up_when_the_claiming_router_dies() {
     let context = crate::diagnostics::RequestContext::new(None, None);
     let client = {
         let (dir, context) = (dir.clone(), context.clone());
-        std::thread::spawn(move || spool::request(&dir, &["refs".to_owned()], &context))
+        std::thread::spawn(move || {
+            spool::request(
+                &dir,
+                &["refs".to_owned()],
+                &context,
+                QueryDeadline::after(super::CLIENT_REPLY_WAIT),
+            )
+        })
     };
     let request = dir.join(format!("{}.request", context.request_id));
     while !request.exists() {
@@ -279,6 +319,29 @@ fn spool_client_gives_up_when_the_claiming_router_dies() {
     assert!(started.elapsed() < Duration::from_secs(5));
     assert!(!dir.join(format!("{}.claimed", context.request_id)).exists());
 }
+
+#[test]
+fn spool_client_deadline_expires_while_fresh_heartbeat_is_not_drained() {
+    let scratch = scratch();
+    let dir = scratch.path().join("spool");
+    let _server = spool::SpoolServer::open(&dir).unwrap();
+    let context = crate::diagnostics::RequestContext::new(None, None);
+    let request = dir.join(format!("{}.request", context.request_id));
+    let deadline = QueryDeadline::after(Duration::from_millis(200));
+
+    // The heartbeat is fresh, but no maintenance tick claims the request.
+    let started = Instant::now();
+    let error = spool::request(&dir, &["status".to_owned()], &context, deadline).unwrap_err();
+
+    assert!(deadline::is_timed_out(&error), "{error:#}");
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "spool client exceeded its injected deadline: {:?}",
+        started.elapsed()
+    );
+    assert!(!request.exists(), "timed out request was left pending");
+}
+
 #[test]
 fn encoded_request_limit_counts_json_escaping() {
     let context = crate::diagnostics::RequestContext::new(None, None);

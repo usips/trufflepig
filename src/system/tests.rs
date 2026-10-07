@@ -644,7 +644,7 @@ fn ensure_gives_up_after_the_cap() {
             .starts_with("system_unavailable: router still starting after"),
         "{error:#}"
     );
-    assert!(started.elapsed() < Duration::from_secs(10), "{error:#}");
+    assert!(started.elapsed() < Duration::from_secs(1), "{error:#}");
 }
 
 #[test]

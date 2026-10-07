@@ -1,3 +1,4 @@
+use super::super::deadline::QueryDeadline;
 use super::super::tests::scratch;
 use super::super::{SOCKET_NAME, request, stop};
 use super::*;
@@ -256,7 +257,12 @@ fn router_answers_spooled_requests_on_its_workers() {
             let spool = spool.clone();
             std::thread::spawn(move || {
                 let args = vec!["search".to_owned(), client.to_string()];
-                super::super::spool::request(&spool, &args, &RequestContext::new(None, None))
+                super::super::spool::request(
+                    &spool,
+                    &args,
+                    &RequestContext::new(None, None),
+                    QueryDeadline::after(super::super::CLIENT_REPLY_WAIT),
+                )
             })
         })
         .collect();
