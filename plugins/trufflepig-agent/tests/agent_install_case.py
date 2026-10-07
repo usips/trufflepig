@@ -38,8 +38,9 @@ class AgentInstallCase(unittest.TestCase):
         module = self.load_installer("install_agent_main_test")
         require_router = module.require_current_router
 
-        def bounded_router_check(runtime, *, allow_absent=False, timeout=None):
-            return require_router(runtime, allow_absent=allow_absent, timeout=router_timeout)
+        def bounded_router_check(runtime, *, allow_absent=False, managed_restart=False, timeout=None):
+            return require_router(runtime, allow_absent=allow_absent,
+                                  managed_restart=managed_restart, timeout=router_timeout)
 
         module.require_current_router = bounded_router_check
         stdout = io.StringIO()
@@ -51,6 +52,8 @@ class AgentInstallCase(unittest.TestCase):
                     status = module.main()
                 except (OSError, ValueError, subprocess.CalledProcessError) as error:
                     print(f"trufflepig-agent install: {error}", file=stderr)
+                    for detail in getattr(error, "rollback_errors", ()):
+                        print(f"systemd rollback: {detail}", file=stderr)
                     status = 2
         return subprocess.CompletedProcess(command, status, stdout.getvalue(), stderr.getvalue())
 
@@ -70,104 +73,7 @@ class AgentInstallCase(unittest.TestCase):
         state = self.root / "service-state.json"
         for name in ("trufflepig", "systemctl"):
             shim = directory / name
-            shim.write_text('''#!/usr/bin/env python3
-import json, os, sys, time
-from pathlib import Path
-name = Path(sys.argv[0]).name
-if name == "trufflepig" and sys.argv[1:] == ["--board-api-version"]:
-    time.sleep(float(os.environ.get("PROBE_DELAY", "0")))
-    sys.stdout.write(os.environ.get("PROBE_STDOUT", "7\\n"))
-    sys.stderr.write(os.environ.get("PROBE_STDERR", ""))
-    sys.exit(int(os.environ.get("PROBE_STATUS", "0")))
-if name == "trufflepig" and sys.argv[1:] == ["system", "dir"]:
-    if os.environ.get("PROBE_STDOUT", "7\\n") != "7\\n":
-        # Older binaries predate `system dir` and answer with usage.
-        sys.stderr.write("usage: trufflepig [--help] ...\\n")
-        sys.exit(2)
-    override = os.environ.get("TRUFFLEPIG_SYSTEM_DIR")
-    fallback = os.path.join(os.environ.get("HOME", "/nonexistent"), ".cache/trufflepig/system")
-    sys.stdout.write((override or fallback) + "\\n")
-    sys.exit(0)
-with Path(os.environ["SERVICE_CAPTURE"]).open("a") as handle:
-    handle.write(json.dumps([name, *sys.argv[1:]]) + "\\n")
-if name != "systemctl":
-    sys.exit(0)
-# Model the unit state systemctl would keep: is-active prints the unit
-# state and exits nonzero unless it is "active", the board's PartOf stops
-# it with the router, try-restart revives running units only, and a unit
-# is known only while its unit file exists. Starts count boots so tests
-# can tell a restarted router apart from one still running old code.
-units_dir = Path(os.environ["XDG_CONFIG_HOME"]) / "systemd/user"
-state_path = Path(os.environ["SERVICE_STATE"])
-state = json.loads(state_path.read_text()) if state_path.exists() else {}
-units_state = state.setdefault("units", {})
-enabled_state = state.setdefault("enabled", {})
-boots = state.setdefault("boots", {})
-words = [word for word in sys.argv[1:] if not word.startswith("-")]
-command, units = (words[0], words[1:]) if words else ("", [])
-def unknown(unit, status):
-    sys.stderr.write(f"Unit {unit} could not be found.\\n")
-    sys.exit(status)
-if command == "is-active":
-    if not (units_dir / units[0]).is_file():
-        unknown(units[0], 4)
-    status = units_state.get(units[0], "inactive")
-    if "--quiet" not in sys.argv:
-        sys.stdout.write(status + "\\n")
-    sys.exit(0 if status == "active" else 3)
-if command == "is-enabled":
-    if not (units_dir / units[0]).is_file():
-        if "--quiet" not in sys.argv:
-            sys.stdout.write("not-found\\n")
-        sys.exit(1)
-    status = enabled_state.get(units[0], "disabled")
-    if status == "disabled" and (units_dir / units[0]).read_text().startswith("# static unit\\n"):
-        status = "static"
-    if "--quiet" not in sys.argv:
-        sys.stdout.write(status + "\\n")
-    sys.exit(0 if status in ("enabled", "enabled-runtime") else 1)
-for unit in units:
-    if not (units_dir / unit).is_file():
-        unknown(unit, 5 if command == "try-restart" else 4)
-failure = 0
-if command == "stop":
-    for unit in units:
-        units_state[unit] = "inactive"
-    if "trufflepig-system.service" in units:
-        units_state["trufflepig-board.service"] = "inactive"
-elif command == "disable":
-    for unit in units:
-        if "--runtime" in sys.argv:
-            if enabled_state.get(unit) == "enabled-runtime":
-                enabled_state[unit] = "disabled"
-        else:
-            enabled_state[unit] = "disabled"
-        if "--now" in sys.argv:
-            units_state[unit] = "inactive"
-    if "--now" in sys.argv and "trufflepig-system.service" in units:
-        units_state["trufflepig-board.service"] = "inactive"
-elif command in ("start", "restart"):
-    for unit in units:
-        units_state[unit] = "active"
-        boots[unit] = boots.get(unit, 0) + 1
-elif command == "enable":
-    for unit in units:
-        enabled_state[unit] = "enabled-runtime" if "--runtime" in sys.argv else "enabled"
-        if "--now" in sys.argv:
-            units_state[unit] = "active"
-            boots[unit] = boots.get(unit, 0) + 1
-    # Fail one activation after applying it, as a partial `enable --now` can.
-    if ("--now" in sys.argv and os.environ.get("FAIL_ENABLE")
-            and not state.get("fail_enable_consumed")):
-        state["fail_enable_consumed"] = True
-        failure = 1
-elif command == "try-restart":
-    # try-restart revives running units only: a running unit restarts in
-    # place and a stopped unit stays stopped, so end state never changes.
-    pass
-state_path.write_text(json.dumps(state, indent=2) + "\\n")
-sys.exit(failure)
-''')
+            shim.write_text((PLUGIN / "tests/agent_service_shim.py").read_text())
             shim.chmod(0o755)
         self.env.update(PATH=f"{directory}:{self.env['PATH']}",
                         SERVICE_CAPTURE=str(capture), SERVICE_STATE=str(state))
@@ -205,6 +111,11 @@ sys.exit(failure)
         if not state.exists():
             return 0
         return json.loads(state.read_text()).get("boots", {}).get("trufflepig-system.service", 0)
+
+    def loaded_unit_hashes(self):
+        """Definitions used by actual starts/restarts, including active no-op starts."""
+        state = Path(self.env["SERVICE_STATE"])
+        return json.loads(state.read_text()).get("loaded_hashes", {})
 
     def serve_router_status(self, replies, *, listen_delay=0.0, response_delay=0.0,
                             stall=False, raw_reply=None):

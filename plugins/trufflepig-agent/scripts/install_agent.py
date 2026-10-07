@@ -126,10 +126,11 @@ def router_endpoint_present(runtime: Path) -> bool:
     return True
 
 
-def require_current_router(runtime: Path, *, allow_absent: bool = False,
+def require_current_router(runtime: Path, *, allow_absent: bool = False, managed_restart: bool = False,
                            timeout: float = ROUTER_READY_TIMEOUT_SECONDS) -> None:
     """Require API 7/schema 8, optionally tolerating an absent unmanaged router."""
-    advice = "restart trufflepig-system.service with the current trufflepig binary"
+    advice = ("rerun plugins/trufflepig-agent/install.sh --systemd with the current trufflepig binary"
+              if managed_restart else "restart trufflepig-system.service with the current trufflepig binary")
     if allow_absent and not router_endpoint_present(runtime):
         return
     deadline = time.monotonic() + timeout
@@ -317,4 +318,6 @@ if __name__ == "__main__":
         sys.exit(main())
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"trufflepig-agent install: {error}", file=sys.stderr)
+        for detail in getattr(error, "rollback_errors", ()):
+            print(f"systemd rollback: {detail}", file=sys.stderr)
         sys.exit(2)

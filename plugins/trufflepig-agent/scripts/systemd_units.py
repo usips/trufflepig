@@ -60,14 +60,14 @@ def service_text(binary: str, spool: Path | None) -> str:
 def unit_active(name: str) -> bool:
     """True while a user unit is up: active, activating, or reloading."""
     result = subprocess.run(["systemctl", "--user", "is-active", name],
-                            capture_output=True, text=True)
+                            capture_output=True, text=True, check=False)
     return result.stdout.strip() in ("active", "activating", "reloading")
 
 
 def unit_enablement(name: str) -> str:
     """Return a supported systemd enablement state or fail before mutation."""
     result = subprocess.run(["systemctl", "--user", "is-enabled", name],
-                            capture_output=True, text=True)
+                            capture_output=True, text=True, check=False)
     state = result.stdout.strip()
     if state in MASKED_UNIT_STATES:
         raise ValueError(f"cannot safely update {name}: systemd reports {state}")
@@ -77,47 +77,84 @@ def unit_enablement(name: str) -> str:
     return state
 
 
-def change_unit_enablement(name: str, command: str, *options: str) -> None:
-    subprocess.run(["systemctl", "--user", command, *options, name], check=True)
+class UnitRollback:
+    """Attempt each recovery operation independently and retain its diagnostic."""
 
+    def __init__(self):
+        self.errors = []
 
-def clear_run_enablement(name: str, previous_state: str) -> None:
-    """Remove only enablement the failed run could have added."""
-    current = unit_enablement(name)
-    if current == previous_state or current not in ENABLED_UNIT_STATES:
-        return
-    change_unit_enablement(name, "disable", *(('--runtime',) if current == "enabled-runtime" else ()))
+    def attempt(self, description, operation, *args, **kwargs):
+        try:
+            return operation(*args, **kwargs)
+        except Exception as error:
+            self.errors.append(f"{description}: {error}")
+            return None
 
+    def systemctl(self, *args) -> bool:
+        command = ["systemctl", "--user", *args]
+        description = " ".join(command)
+        result = self.attempt(description, subprocess.run, command, check=False,
+                              capture_output=True, text=True)
+        if result is None:
+            return False
+        if result.returncode:
+            detail = result.stderr.strip() or result.stdout.strip() or f"exit status {result.returncode}"
+            self.errors.append(f"{description}: {detail}")
+            return False
+        return True
 
-def restore_unit_enablement(name: str, previous_state: str) -> None:
-    """Restore persistent/runtime enablement after the old unit file is loaded."""
-    current = unit_enablement(name)
-    if current == previous_state:
-        return
-    if current == "enabled-runtime":
-        change_unit_enablement(name, "disable", "--runtime")
-    elif current == "enabled":
-        change_unit_enablement(name, "disable")
-    if previous_state == "enabled-runtime":
-        change_unit_enablement(name, "enable", "--runtime")
-    elif previous_state == "enabled":
-        change_unit_enablement(name, "enable")
-    elif unit_enablement(name) != previous_state:
-        raise ValueError(f"cannot restore {name} to systemd state {previous_state}")
+    def restore_enablement(self, name: str, previous: str, was_active: bool) -> bool:
+        """Restore links; report whether --now also stopped an initially inactive unit."""
+        if previous == "not-found":
+            options = () if was_active else ("--now",)
+            stopped = self.systemctl("disable", *options, name)
+            return stopped and not was_active
+        current = self.attempt(f"read enablement for {name}", unit_enablement, name)
+        if current == previous:
+            return False
+        stopped = False
+        if current in ENABLED_UNIT_STATES or current is None:
+            options = ("--runtime",) if current == "enabled-runtime" else ()
+            stop = not was_active and previous not in ENABLED_UNIT_STATES
+            stopped = self.systemctl("disable", *options, *(("--now",) if stop else ()), name) and stop
+        if previous in ENABLED_UNIT_STATES:
+            options = ("--runtime",) if previous == "enabled-runtime" else ()
+            self.systemctl("enable", *options, name)
+        restored = self.attempt(f"verify enablement for {name}", unit_enablement, name)
+        if restored is not None and restored != previous:
+            self.errors.append(f"cannot restore {name} to systemd state {previous}: reports {restored}")
+        return stopped
+
+    def restore(self, unit_directory, previous_units, previous_active,
+                previous_enablement, activation_attempts):
+        for name, previous in previous_units.items():
+            path = unit_directory / name
+            if previous is None:
+                self.attempt(f"remove {path}", path.unlink, missing_ok=True)
+            else:
+                self.attempt(f"restore {path}", path.write_text, previous)
+        self.systemctl("daemon-reload")
+        for name, was_active in previous_active.items():
+            if was_active:
+                self.systemctl("restart", name)
+        stopped_units = set()
+        for name in activation_attempts:
+            if self.restore_enablement(name, previous_enablement[name], previous_active[name]):
+                stopped_units.add(name)
+        for name, was_active in previous_active.items():
+            if not was_active and name not in stopped_units:
+                exists = self.attempt(f"inspect {unit_directory / name}", (unit_directory / name).exists)
+                if name in activation_attempts or exists:
+                    self.systemctl("stop", name)
 
 
 def apply_units(binary: str, unit_directory: Path, router_runtime: Path, managed_router: bool,
                 install_router: bool, install_board: bool,
                 unit_text: str | None, board_unit_text: str | None, check_router) -> None:
     """Write and enable the requested user units; on failure restore the prior unit state."""
-    router_was_active = unit_active("trufflepig-system.service")
-    board_was_active = unit_active("trufflepig-board.service")
-    previous_enablement = {}
-    if install_router:
-        previous_enablement["trufflepig-system.service"] = unit_enablement("trufflepig-system.service")
-    if install_board:
-        previous_enablement["trufflepig-board.service"] = unit_enablement("trufflepig-board.service")
-    unit_directory.mkdir(parents=True, exist_ok=True)
+    previous_active = {name: unit_active(name)
+                       for name in ("trufflepig-system.service", "trufflepig-board.service")}
+    board_was_active = previous_active["trufflepig-board.service"]
     previous_units = {}
     for name, text in (("trufflepig-system.service", unit_text), ("trufflepig-board.service", board_unit_text)):
         if text is not None:
@@ -125,17 +162,29 @@ def apply_units(binary: str, unit_directory: Path, router_runtime: Path, managed
                 previous_units[name] = (unit_directory / name).read_text()
             except FileNotFoundError:
                 previous_units[name] = None
-            (unit_directory / name).write_text(text)
+    previous_enablement = {}
+    for name, requested in (("trufflepig-system.service", install_router),
+                            ("trufflepig-board.service", install_board)):
+        if requested:
+            previous_enablement[name] = (unit_enablement(name) if (unit_directory / name).exists()
+                                         else "not-found")
+    activation_attempts = []
     try:
+        unit_directory.mkdir(parents=True, exist_ok=True)
+        for name, text in (("trufflepig-system.service", unit_text),
+                           ("trufflepig-board.service", board_unit_text)):
+            if text is not None:
+                (unit_directory / name).write_text(text)
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
         if install_router:
             # Stop uses the newly loaded control-group policy, including old children.
             subprocess.run(["systemctl", "--user", "stop", "trufflepig-system.service"], check=True)
             subprocess.run([binary, "system", "stop"], capture_output=True)
+            activation_attempts.append("trufflepig-system.service")
             subprocess.run(["systemctl", "--user", "enable", "--now", "trufflepig-system.service"], check=True)
             # A successful systemctl command does not prove the router finished
             # starting on the migrated database.
-            check_router(router_runtime)
+            check_router(router_runtime, managed_restart=True)
             if board_was_active:
                 # The router stop propagates to the board through PartOf, so the
                 # board is stopped by now and try-restart would leave it down;
@@ -147,38 +196,14 @@ def apply_units(binary: str, unit_directory: Path, router_runtime: Path, managed
             if not install_router and managed_router:
                 # The board shares the router's database; both must run the same binary.
                 subprocess.run(["systemctl", "--user", "restart", "trufflepig-system.service"], check=True)
-                check_router(router_runtime)
+                check_router(router_runtime, managed_restart=True)
+            activation_attempts.append("trufflepig-board.service")
             subprocess.run(["systemctl", "--user", "enable", "--now", "trufflepig-board.service"], check=True)
             print(f"systemd board service: {unit_directory / 'trufflepig-board.service'}")
             print("board bootstrap URL: run `trufflepig board web`")
-    except (OSError, ValueError, subprocess.CalledProcessError):
-        # Undo this run's unit state before restoring older unit definitions.
-        for name, previous in previous_units.items():
-            if previous is None:
-                was_active = (router_was_active if name == "trufflepig-system.service"
-                              else board_was_active)
-                previous_state = previous_enablement.get(name)
-                if previous_state is not None:
-                    clear_run_enablement(name, previous_state)
-                if not was_active:
-                    subprocess.run(["systemctl", "--user", "stop", name], check=True)
-                (unit_directory / name).unlink(missing_ok=True)
-        for name, was_active in (("trufflepig-system.service", router_was_active),
-                                ("trufflepig-board.service", board_was_active)):
-            if not was_active and (unit_directory / name).exists():
-                subprocess.run(["systemctl", "--user", "stop", name], check=True)
-        for name, previous in previous_units.items():
-            previous_state = previous_enablement.get(name)
-            if previous is not None and previous_state is not None:
-                clear_run_enablement(name, previous_state)
-        for name, previous in previous_units.items():
-            if previous is not None:
-                (unit_directory / name).write_text(previous)
-        subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
-        for name, previous_state in previous_enablement.items():
-            restore_unit_enablement(name, previous_state)
-        for name, was_active in (("trufflepig-system.service", router_was_active),
-                                ("trufflepig-board.service", board_was_active)):
-            if was_active:
-                subprocess.run(["systemctl", "--user", "start", name], check=True)
+    except Exception as error:
+        rollback = UnitRollback()
+        rollback.restore(unit_directory, previous_units, previous_active,
+                         previous_enablement, activation_attempts)
+        error.rollback_errors = tuple(rollback.errors)
         raise
