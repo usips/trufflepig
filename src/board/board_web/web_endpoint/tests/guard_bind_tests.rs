@@ -57,6 +57,7 @@ fn symlinked_port_file_is_ignored() {
     let (_directory, runtime, _config) = fixture();
     let planted = runtime.join("planted-port");
     fs::write(&planted, "43210").unwrap();
+    fs::set_permissions(&planted, fs::Permissions::from_mode(0o600)).unwrap();
     std::os::unix::fs::symlink(&planted, runtime.join("board-web.port")).unwrap();
     assert_eq!(port_file::read(&runtime), None);
 }
@@ -90,6 +91,14 @@ fn privileged_recorded_port_falls_back() {
     // SAFETY: geteuid has no preconditions and cannot fail.
     if unsafe { libc::geteuid() } == 0 {
         eprintln!("skipping: root can bind privileged ports");
+        return;
+    }
+    if fs::read_to_string("/proc/sys/net/ipv4/ip_unprivileged_port_start")
+        .ok()
+        .and_then(|value| value.trim().parse::<u32>().ok())
+        .is_some_and(|start| start <= 80)
+    {
+        eprintln!("skipping: port 80 is unprivileged on this host");
         return;
     }
     if std::env::var_os(CHILD).is_none() {

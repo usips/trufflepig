@@ -4,8 +4,12 @@
 //! stops, Ctrl-C, hangups, and quits all remove the published endpoint
 //! before the process exits.
 
+use super::published_endpoint::{PublishedEndpoint, remove_published_endpoint};
 use anyhow::{Context, Result};
-use std::thread::{self, JoinHandle};
+use std::{
+    sync::Arc,
+    thread::{self, JoinHandle},
+};
 
 const TERMINATION: [i32; 4] = [libc::SIGTERM, libc::SIGINT, libc::SIGHUP, libc::SIGQUIT];
 
@@ -16,11 +20,13 @@ pub(crate) fn block_termination() -> Result<()> {
     block(&TERMINATION)
 }
 
-/// Wait for a blocked termination signal, run `cleanup`, then exit with
-/// success so a systemd stop is not treated as a failure.
-pub(crate) fn spawn_exit_waiter(cleanup: impl FnOnce() + Send + 'static) -> Result<JoinHandle<()>> {
+/// Remove the descriptor on a blocked termination signal, holding the
+/// publication lock through successful process exit.
+pub(crate) fn spawn_exit_waiter(published: Arc<PublishedEndpoint>) -> Result<JoinHandle<()>> {
     spawn_waiter(&TERMINATION, move || {
-        cleanup();
+        let _publication_guard = remove_published_endpoint(&published);
+        #[cfg(test)]
+        published.check_exit_lock_for_test();
         std::process::exit(0);
     })
 }

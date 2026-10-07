@@ -15,6 +15,8 @@ pub(crate) struct PublishedEndpoint {
     slot: Mutex<Option<(PathBuf, SocketAddr)>>,
     #[cfg(test)]
     publish_gate: Option<std::sync::Arc<std::sync::Barrier>>,
+    #[cfg(test)]
+    require_exit_lock: bool,
 }
 
 impl PublishedEndpoint {
@@ -55,6 +57,28 @@ impl PublishedEndpoint {
         Self {
             slot: Mutex::new(None),
             publish_gate: Some(publish_gate),
+            require_exit_lock: false,
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn checking_exit_lock_for_test() -> Self {
+        Self {
+            require_exit_lock: true,
+            ..Self::default()
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn check_exit_lock_for_test(&self) {
+        if self.require_exit_lock {
+            assert!(
+                matches!(
+                    self.slot.try_lock(),
+                    Err(std::sync::TryLockError::WouldBlock)
+                ),
+                "exit waiter released the publication mutex before process exit"
+            );
         }
     }
 
@@ -65,11 +89,16 @@ impl PublishedEndpoint {
     }
 }
 
-/// Removes the descriptor bind published, if any; a signal during early
-/// bind finds nothing recorded and exits cleanly without cleanup.
-pub(super) fn remove_published_endpoint(published: &PublishedEndpoint) {
+/// Remove the published descriptor, if any, and retain the publication lock.
+/// The exit waiter holds the returned guard through process exit; cleanup
+/// callers that continue release it explicitly.
+#[must_use = "retain the publication guard through process exit"]
+pub(super) fn remove_published_endpoint(
+    published: &PublishedEndpoint,
+) -> MutexGuard<'_, Option<(PathBuf, SocketAddr)>> {
     let slot = published.lock();
     if let Some((path, address)) = &*slot {
         web_endpoint::remove_if_ours(path, *address);
     }
+    slot
 }

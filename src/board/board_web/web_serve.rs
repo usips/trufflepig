@@ -3,7 +3,7 @@ use super::super::board_config::BoardConfigCache;
 use super::event_stream::SequencePoller;
 use super::{
     BoardWebState, WebStore, bootstrap_line, http_wire, open_stream_feed,
-    published_endpoint::{PublishedEndpoint, remove_published_endpoint},
+    published_endpoint::PublishedEndpoint,
     serve_lock::{self, ServeLock},
     signal_shutdown,
     web_endpoint::{self, EndpointGuard},
@@ -90,9 +90,7 @@ pub fn serve(address: SocketAddr) -> Result<()> {
     // Bind publishes the endpoint into the lock once it is known.
     let published = Arc::new(PublishedEndpoint::default());
     let waiter_published = Arc::clone(&published);
-    signal_shutdown::spawn_exit_waiter(move || {
-        remove_published_endpoint(&waiter_published);
-    })?;
+    signal_shutdown::spawn_exit_waiter(waiter_published)?;
     let server = BoardWebServer::bind(address, &published)?;
     println!(
         "{}",

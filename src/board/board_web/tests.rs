@@ -122,9 +122,8 @@ fn read_frame_until(client: &mut TcpStream, needle: &str) -> String {
     let mut bytes = Vec::new();
     let mut buffer = [0; 4096];
     while !String::from_utf8_lossy(&bytes).contains(needle) {
-        let count =
-            crate::board::board_test_support::read_ignoring_interrupts(client, &mut buffer)
-                .unwrap();
+        let count = crate::board::board_test_support::read_ignoring_interrupts(client, &mut buffer)
+            .unwrap();
         assert!(count > 0, "stream closed before {needle}");
         bytes.extend_from_slice(&buffer[..count]);
     }
@@ -145,5 +144,6 @@ fn subscribe(streams: &EventStreams) -> TcpStream {
 
 mod config_reload_tests;
 mod serve_accept_tests;
+mod serve_shutdown_tests;
 mod stream_feed_tests;
 mod web_store_tests;

@@ -1,4 +1,5 @@
 use super::*;
+use std::os::unix::fs::PermissionsExt;
 
 #[test]
 fn stopped_ring_ends_the_serve_loop_at_next_accept() {
@@ -101,10 +102,11 @@ fn deferred_cleanup_removes_only_the_published_descriptor() {
             .to_string(),
         )
         .unwrap();
+        std::fs::set_permissions(&descriptor, std::fs::Permissions::from_mode(0o600)).unwrap();
     };
     // A signal during early bind finds nothing recorded: no cleanup.
     write_descriptor();
-    remove_published_endpoint(&PublishedEndpoint::default());
+    drop(remove_published_endpoint(&PublishedEndpoint::default()));
     assert!(
         descriptor.exists(),
         "an unrecorded endpoint removes nothing"
@@ -112,12 +114,12 @@ fn deferred_cleanup_removes_only_the_published_descriptor() {
     // A foreign rewrite after publish is left alone.
     let foreign = PublishedEndpoint::default();
     foreign.record_for_test(descriptor.clone(), "127.0.0.1:2".parse().unwrap());
-    remove_published_endpoint(&foreign);
+    drop(remove_published_endpoint(&foreign));
     assert!(descriptor.exists(), "a mismatched address removes nothing");
     // The published descriptor is removed.
     let published = PublishedEndpoint::default();
     published.record_for_test(descriptor.clone(), address);
-    remove_published_endpoint(&published);
+    drop(remove_published_endpoint(&published));
     assert!(!descriptor.exists(), "the published descriptor is removed");
 }
 
@@ -139,7 +141,7 @@ fn signal_during_publish_leaves_no_descriptor() {
         std::thread::spawn(move || published.publish(path, address, &runtime, &database))
     };
     gate.wait();
-    remove_published_endpoint(&published);
+    drop(remove_published_endpoint(&published));
     binder.join().unwrap().unwrap();
     assert!(
         !descriptor.exists(),

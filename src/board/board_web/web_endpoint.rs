@@ -118,13 +118,22 @@ pub(super) fn bind_listener(runtime: &Path, requested: SocketAddr) -> std::io::R
     Ok(listener)
 }
 
-/// Remove the descriptor only while it still names `address`; a foreign
-/// rewrite, an absent file, or an unparsable file is left alone.
+/// Remove a private regular descriptor only while it still names `address`;
+/// an unsafe, absent, foreign, oversized, or unparsable file is left alone.
 pub(super) fn remove_if_ours(path: &Path, address: SocketAddr) {
-    let bytes = match fs::read(path) {
-        Ok(bytes) => bytes,
+    let mut file = match open_private(path) {
+        Ok(file) => file,
         Err(_) => return,
     };
+    let mut bytes = Vec::with_capacity(512);
+    if Read::by_ref(&mut file)
+        .take(ENDPOINT_LIMIT + 1)
+        .read_to_end(&mut bytes)
+        .is_err()
+        || bytes.len() as u64 > ENDPOINT_LIMIT
+    {
+        return;
+    }
     let ours = serde_json::from_slice::<WebEndpoint>(&bytes)
         .is_ok_and(|endpoint| endpoint.address == address);
     if ours {
