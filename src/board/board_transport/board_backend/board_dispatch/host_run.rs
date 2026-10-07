@@ -2,7 +2,7 @@
 use super::super::{
     BoardHost,
     board_wait::{inbox_has_events, waiter_transient},
-    board_writer::{check_deadline, lock_before},
+    board_writer::{BoardHostBackendAccess, check_deadline, lock_before},
 };
 use super::scope_read_repo_key;
 use crate::{
@@ -239,8 +239,18 @@ impl BoardHost {
                         agent,
                         remaining,
                     ) {
-                        Ok(scan) => {
+                        Ok(mut scan) => {
                             unlinked.extend(scan.commits);
+                            if let Err(error) =
+                                crate::board::commit_ingest::suppress_linked_warnings(
+                                    &BoardHostBackendAccess(self, deadline),
+                                    &target.registration.repo_key,
+                                    &mut scan.warnings,
+                                )
+                            {
+                                warnings.push(format!("linked commit lookup: {error:#}"));
+                            }
+                            warnings.extend(scan.warnings);
                             if let Some(error) = scan.scan_error {
                                 warnings.push(error);
                             }

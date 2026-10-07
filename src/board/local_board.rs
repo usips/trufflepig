@@ -49,6 +49,17 @@ impl BoardBackend for LocalBoard {
     fn max_seq(&self) -> Result<EventSeq, BoardError> {
         max_seq(self.reader.as_ref().unwrap_or(&self.conn))
     }
+    fn linked_commit_oids(
+        &self,
+        repo_key: &RepoKey,
+        oids: &[crate::identity::GitOid],
+    ) -> Result<std::collections::BTreeSet<crate::identity::GitOid>, BoardError> {
+        board_queries::linked_oid_reads::linked_commit_oids(
+            self.reader.as_ref().unwrap_or(&self.conn),
+            repo_key,
+            oids,
+        )
+    }
 }
 
 pub(super) struct WriteContext {

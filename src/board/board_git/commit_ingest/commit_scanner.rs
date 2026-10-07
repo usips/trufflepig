@@ -15,8 +15,20 @@ use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
 const TIP_LIMIT: usize = 4096;
+const AUXILIARY_BUDGET: Duration = Duration::from_secs(1);
+const FINAL_SCAN_RESERVE: Duration = Duration::from_millis(500);
 
 const GREP_PATTERN: &str = "^Plan(-Task)?[[:space:]]*:";
+
+#[cfg(test)]
+thread_local! {
+    static EXPIRE_AFTER_MAIN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+pub(super) fn expire_next_auxiliary_budget() {
+    EXPIRE_AFTER_MAIN.with(|expire| expire.set(true));
+}
 
 pub(super) struct GitTips {
     detached: Vec<GitOid>,
@@ -179,28 +191,50 @@ pub(super) fn scan_log(
     let mut records = parsed.records;
     records.truncate(COMMIT_LIMIT);
     let mut warnings = parsed.warnings;
-    match run_bounded(
-        &registration.common_dir,
-        &log_args(
-            &tips.detached,
-            &since,
-            &cap,
-            GREP_FORMAT,
-            &["-E", "--grep", MISPLACED_PATTERN],
-        ),
-        remaining(deadline)?,
-    )
-    .and_then(|bytes| parse_grep_log(&bytes))
-    {
-        Ok(misplaced) => warnings.extend(misplaced),
-        Err(error) => warnings.push(format!(
-            "board_scan: misplaced-trailer scan unavailable: {error:#}"
-        )),
+    #[cfg(test)]
+    let deadline = EXPIRE_AFTER_MAIN.with(|expire| {
+        if expire.replace(false) {
+            Instant::now()
+        } else {
+            deadline
+        }
+    });
+    let grep_budget = deadline
+        .saturating_duration_since(Instant::now())
+        .saturating_sub(AUXILIARY_BUDGET + FINAL_SCAN_RESERVE)
+        .min(AUXILIARY_BUDGET);
+    if grep_budget.is_zero() {
+        warnings.push(
+            "board_scan: trailer_check_skipped: misplaced-trailer scan budget exhausted".into(),
+        );
+    } else {
+        match run_bounded(
+            &registration.common_dir,
+            &log_args(
+                &tips.detached,
+                &since,
+                &cap,
+                GREP_FORMAT,
+                &["-E", "-i", "--grep", MISPLACED_PATTERN],
+            ),
+            grep_budget,
+        )
+        .and_then(|bytes| parse_grep_log(&bytes))
+        {
+            Ok(misplaced) => warnings.extend(
+                misplaced
+                    .into_iter()
+                    .map(|oid| format!("board_scan: {oid}: misplaced_trailers")),
+            ),
+            Err(error) => warnings.push(format!(
+                "board_scan: trailer_check_skipped: misplaced-trailer scan unavailable: {error:#}"
+            )),
+        }
     }
     let stats_budget = deadline
         .saturating_duration_since(Instant::now())
-        .saturating_sub(Duration::from_millis(500))
-        .min(Duration::from_secs(1));
+        .saturating_sub(FINAL_SCAN_RESERVE)
+        .min(AUXILIARY_BUDGET);
     if !records.is_empty() && !stats_budget.is_zero() {
         let mut stats_filter = filter.clone();
         stats_filter.insert(0, "--shortstat");

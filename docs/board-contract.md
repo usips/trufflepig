@@ -100,11 +100,13 @@ matching case-insensitive `Plan`/`Plan-Task` trailers with stats and co-authors.
 metadata scan; unknown plan links are skipped and reported. Stats are bounded best-effort metadata independent of enumeration;
 malformed record metadata is skipped with diagnostics, incomplete NUL framing invalidates the scan, and non-UTF-8 metadata decodes
 lossily with a warning rather than dropping it. A parsed `Plan-Task` whose plan is not among the commit's `Plan` trailers warns
-`plan_task_without_plan` and stays unlinked. Bodies stay out of the scan format: a second pass greps the same range for
-`^(Plan|Plan-Task):\s*P\d` and warns `misplaced_trailers` when a matching commit parsed no plan trailer; those ignored
-trailer-shaped lines never link. Scan warnings key by oid and dedupe; ingest scan reports and `board review` scan errors are their
-home, and review drops warnings and unlinked listings for plan-linked commits, manual links included. Cached stamps retain
-warnings and unknown references. Board Git access supports Git 2.43 independently of historical navigation's gate. Repeated
+`plan_task_without_plan` and stays unlinked. Body-free grep matches `^(Plan|Plan-Task):\s*P\d`
+case-insensitively; empty plan trailer fields warn `misplaced_trailers`, never link. Subject
+matches are skipped even when bodies match. Grep is capped at 1 s, reserving 1 s for stats and
+500 ms for final checks; failure warns `trailer_check_skipped`. Warnings stay separate from fatal
+errors. Task links across plans/windows suppress exact oid-keyed warnings per repo, including cache.
+Other diagnostics stay; review omits linked commits from `unlinked`. Caches retain raw warnings and
+unknown refs. Scans support Git 2.43 separately from history's gate. Repeated
 ingestion creates no duplicate link/entry/event; rebasing creates a new oid and evidence. Untrailered commits are not ingested;
 `board link OID P7.3` repairs one. Manual task links atomically write a canonical `commit` event and store its sequence in
 `commit_tasks.link_seq`; a plan-level scan entry may be reused. Exact manual retries return the original task receipt across

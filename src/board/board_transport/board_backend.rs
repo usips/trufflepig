@@ -4,13 +4,14 @@ mod board_dispatch;
 mod board_maintenance;
 mod board_wait;
 mod board_writer;
+mod linked_commit_reads;
 mod manual_commit_link;
 #[cfg(test)]
 mod tests;
 
 use crate::board::{
     board_config::{BoardConfig, BoardConfigCache},
-    board_ids::EventSeq,
+    board_ids::{EventSeq, RepoKey},
     board_protocol::{BoardError, BoardReply, BoardRequest},
     commit_ingest::RepoIngestor,
     feedback_outbox::ImportSummary,
@@ -18,10 +19,12 @@ use crate::board::{
     repo_identity::RepoIdentityCache,
 };
 use crate::daemon::deadline::QueryDeadline;
+use crate::identity::GitOid;
 use anyhow::Result;
 use board_writer::check_deadline;
 pub(crate) use board_writer::ensure_feedback_import;
 use std::{
+    collections::BTreeSet,
     sync::{Arc, Condvar, Mutex, TryLockError, atomic::AtomicUsize},
     thread::JoinHandle,
     time::{Duration, Instant},
@@ -35,6 +38,11 @@ pub trait BoardBackend: Send {
         request: &BoardRequest,
     ) -> std::result::Result<BoardReply, BoardError>;
     fn max_seq(&self) -> std::result::Result<EventSeq, BoardError>;
+    fn linked_commit_oids(
+        &self,
+        repo_key: &RepoKey,
+        oids: &[GitOid],
+    ) -> std::result::Result<BTreeSet<GitOid>, BoardError>;
 }
 
 #[derive(Clone, Default)]

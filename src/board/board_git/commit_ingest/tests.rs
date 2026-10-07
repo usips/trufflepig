@@ -1,8 +1,10 @@
 mod coauthor_records;
 mod commit_records;
+mod linked_warning_cache;
 mod repository_paths;
 mod scan_cache;
 mod scan_resilience;
+mod warning_subjects;
 
 use super::*;
 use crate::board::board_ids::EventSeq;
@@ -20,6 +22,7 @@ struct TestBackend {
     scan_errors: Vec<Option<String>>,
     forgotten: usize,
     fail_forget: bool,
+    manual_oids: BTreeSet<(RepoKey, GitOid)>,
 }
 impl BoardBackend for TestBackend {
     fn handle(&mut self, request: &BoardRequest) -> std::result::Result<BoardReply, BoardError> {
@@ -62,6 +65,24 @@ impl BoardBackend for TestBackend {
     }
     fn max_seq(&self) -> std::result::Result<EventSeq, BoardError> {
         Ok(EventSeq::new(0))
+    }
+    fn linked_commit_oids(
+        &self,
+        repo_key: &RepoKey,
+        oids: &[GitOid],
+    ) -> std::result::Result<BTreeSet<GitOid>, BoardError> {
+        Ok(oids
+            .iter()
+            .copied()
+            .filter(|oid| {
+                self.manual_oids.contains(&(repo_key.clone(), *oid))
+                    || self.linked.iter().any(|commit| {
+                        &commit.repo_key == repo_key
+                            && commit.oid == *oid
+                            && commit.plans.iter().any(|link| link.task_ordinal.is_some())
+                    })
+            })
+            .collect())
     }
 }
 

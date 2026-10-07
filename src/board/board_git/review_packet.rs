@@ -125,8 +125,8 @@ pub fn assemble_review(
         }
     }
     let mut drill_gate = HistoryDrillGate::default();
-    // Board-linked oids (manual links included) are evidence, never noise:
-    // they leave the unlinked list and their scan warnings drop out.
+    // Linked identities leave the unlinked list. The caller filters scan
+    // warnings per repository before flattening them into packet diagnostics.
     let linked_ids: std::collections::BTreeSet<(crate::board::board_ids::RepoKey, GitOid)> =
         commits
             .iter()
@@ -170,13 +170,6 @@ pub fn assemble_review(
         if let Some(error) = &repository.scan_error {
             scan_errors.push(error.clone());
         }
-    }
-    if !linked_ids.is_empty() {
-        scan_errors.retain(|error| {
-            !linked_ids
-                .iter()
-                .any(|(_, oid)| error.contains(oid.as_str()))
-        });
     }
     scan_errors.sort();
     scan_errors.dedup();

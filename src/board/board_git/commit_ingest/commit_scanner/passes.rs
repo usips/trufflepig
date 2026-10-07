@@ -9,7 +9,7 @@ pub(super) const STATS_FORMAT: &str = "--format=%x00%H%x00";
 /// A trailer-shaped line Git's final-paragraph rule ignored still matches this
 /// grep; its parsed plan trailers stay empty, so the commit warns, never links.
 pub(super) const GREP_FORMAT: &str = concat!(
-    "--format=%x00%H%x00",
+    "--format=%x00%H%x00%s%x00",
     "%(trailers:key=Plan,valueonly)%x00",
     "%(trailers:key=Plan-Task,valueonly)%x00"
 );
@@ -59,26 +59,39 @@ pub(super) fn parse_stats(bytes: &[u8]) -> Result<HashMap<GitOid, (u64, u64, u64
     Ok(stats)
 }
 
-/// One warning per oid the misplaced-trailer grep matched while both parsed
-/// plan trailer fields stayed empty.
-pub(super) fn parse_grep_log(bytes: &[u8]) -> Result<Vec<String>> {
+/// Candidates have no parsed plan trailer and no matching subject; a subject
+/// match is conservatively skipped because grep also searches that line.
+pub(super) fn parse_grep_log(bytes: &[u8]) -> Result<Vec<GitOid>> {
     if bytes.is_empty() {
         return Ok(Vec::new());
     }
     ensure!(bytes[0] == 0, "board_scan: invalid Git grep framing");
     let fields: Vec<_> = bytes[1..].split(|byte| *byte == 0).collect();
     ensure!(
-        fields.len() % 4 == 0,
+        fields.len() % 5 == 0,
         "board_scan: incomplete Git grep record"
     );
-    let mut warnings = Vec::new();
-    for record in fields.chunks_exact(4) {
-        if record[1].is_empty() && record[2].is_empty() {
-            warnings.push(format!(
-                "board_scan: {}: misplaced_trailers",
-                String::from_utf8_lossy(record[0])
-            ));
+    let mut oids = Vec::with_capacity(fields.len() / 5);
+    for record in fields.chunks_exact(5) {
+        let oid = GitOid::parse(std::str::from_utf8(record[0])?)?;
+        if record[2].is_empty()
+            && record[3].is_empty()
+            && !subject_matches(&String::from_utf8_lossy(record[1]))
+        {
+            oids.push(oid);
         }
     }
-    Ok(warnings)
+    Ok(oids)
+}
+
+fn subject_matches(subject: &str) -> bool {
+    let Some((key, value)) = subject.split_once(':') else {
+        return false;
+    };
+    let value = value.trim_start().as_bytes();
+    (key.eq_ignore_ascii_case("Plan") || key.eq_ignore_ascii_case("Plan-Task"))
+        && value
+            .first()
+            .is_some_and(|byte| byte.to_ascii_uppercase() == b'P')
+        && value.get(1).is_some_and(u8::is_ascii_digit)
 }

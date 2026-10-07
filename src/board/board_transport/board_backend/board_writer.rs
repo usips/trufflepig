@@ -170,6 +170,15 @@ impl BoardBackend for BoardHostBackendAccess<'_> {
     fn max_seq(&self) -> std::result::Result<EventSeq, BoardError> {
         self.0.max_seq_by(self.1).map_err(BoardError::from)
     }
+    fn linked_commit_oids(
+        &self,
+        repo_key: &crate::board::board_ids::RepoKey,
+        oids: &[crate::identity::GitOid],
+    ) -> std::result::Result<std::collections::BTreeSet<crate::identity::GitOid>, BoardError> {
+        self.0
+            .linked_commit_oids_by(repo_key, oids, self.1)
+            .map_err(BoardError::from)
+    }
 }
 
 pub(crate) fn ensure_feedback_import(

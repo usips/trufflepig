@@ -9,6 +9,7 @@ mod manual_unlink_acceptance;
 mod outbox_acceptance;
 mod transport_acceptance;
 mod unlink_grammar_tests;
+mod warning_suppression_acceptance;
 
 use super::board_actor::{BoardActor, HarnessLabel};
 use super::board_backend::BoardHost;

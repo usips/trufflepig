@@ -206,8 +206,9 @@ fn misplaced_trailer_warning_names_each_oid_once() {
     )
     .unwrap();
     let mut warnings = report.errors.clone();
+    warnings.extend(scan.warnings);
     if let Some(error) = &scan.scan_error {
-        warnings.extend(error.split("; ").map(str::to_owned));
+        warnings.push(error.clone());
     }
     warnings.sort();
     warnings.dedup();

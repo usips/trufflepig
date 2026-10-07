@@ -1,4 +1,5 @@
 mod review_diff;
+mod warning_suppression;
 
 use super::*;
 use crate::board::{
@@ -396,17 +397,13 @@ fn manually_linked_commit_leaves_unlinked_list() {
 }
 
 #[test]
-fn linked_commit_warnings_leave_review_scan_errors() {
+fn assembly_preserves_unscoped_commit_warnings() {
     let mut source = evidence();
     let linked = commit("codex", 120);
     source.commits.push(linked.clone());
     let warning = format!("board_scan: {}: misplaced_trailers", linked.oid);
-    let packet = assemble_review(&source, None, &[], Vec::new(), vec![warning]);
-    assert!(
-        packet.scan_errors.is_empty(),
-        "warnings for linked commits are noise: {:?}",
-        packet.scan_errors
-    );
+    let packet = assemble_review(&source, None, &[], Vec::new(), vec![warning.clone()]);
+    assert_eq!(packet.scan_errors, vec![warning]);
 }
 
 #[test]

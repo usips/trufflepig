@@ -12,9 +12,11 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 mod commit_scanner;
+mod commit_warnings;
 #[cfg(test)]
 mod tests;
 use commit_scanner::{collect_tips, scan_log};
+pub(crate) use commit_warnings::suppress_linked_warnings;
 
 const COMMIT_LIMIT: usize = 2000;
 const MISSING_REPOSITORY_GRACE: Duration = Duration::from_secs(300);
@@ -33,6 +35,7 @@ pub struct IngestReport {
 #[derive(Clone, Debug)]
 pub struct UnlinkedScan {
     pub commits: Vec<LinkedCommit>,
+    pub warnings: Vec<String>,
     #[cfg(test)]
     pub complete: bool,
     pub scan_error: Option<String>,
@@ -169,7 +172,9 @@ impl RepoIngestor {
             report
                 .unknown_tasks
                 .extend_from_slice(&completed.unknown_tasks);
-            report.errors.extend_from_slice(&completed.warnings);
+            let mut warnings = completed.warnings.clone();
+            suppress_linked_warnings(backend, &registration.repo_key, &mut warnings)?;
+            report.errors.extend(warnings);
             report.skipped += 1;
             report.completed.push(registration.clone());
             return Ok(());
@@ -196,7 +201,9 @@ impl RepoIngestor {
         report
             .unknown_tasks
             .extend_from_slice(&result.unknown_tasks);
-        report.errors.extend_from_slice(&scan.warnings);
+        let mut warnings = scan.warnings.clone();
+        suppress_linked_warnings(backend, &registration.repo_key, &mut warnings)?;
+        report.errors.extend(warnings);
         ensure!(
             scan.complete,
             "board_scan: commit scan exceeds {COMMIT_LIMIT} records"
@@ -264,10 +271,10 @@ pub fn find_unlinked(
         .collect();
     Ok(UnlinkedScan {
         commits,
+        warnings: scan.warnings,
         #[cfg(test)]
         complete: scan_error.is_none(),
-        scan_error: scan_error
-            .or_else(|| (!scan.warnings.is_empty()).then(|| scan.warnings.join("; "))),
+        scan_error,
     })
 }
 

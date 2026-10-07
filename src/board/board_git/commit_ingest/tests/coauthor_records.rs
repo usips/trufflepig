@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn malformed_coauthor_keeps_plan_link_and_warns() {
+fn malformed_coauthor_keeps_plan_link_and_raw_warning() {
     let fixture = GitFixture::new();
     fixture.commit("root");
     let linked = fixture.commit(
@@ -19,13 +19,20 @@ fn malformed_coauthor_keeps_plan_link_and_warns() {
         )
         .unwrap();
     assert_eq!(report.completed.len(), 1);
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    let scan = find_unlinked(
+        &target.registration,
+        1_700_000_000,
+        &actor().harness,
+        Duration::from_secs(5),
+    )
+    .unwrap();
     assert!(
-        report
-            .errors
+        scan.warnings
             .iter()
             .any(|error| error.contains("malformed co-author")),
         "{:?}",
-        report.errors
+        scan.warnings
     );
     let commit = backend
         .linked

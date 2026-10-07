@@ -5,10 +5,11 @@ mod stored_feedback_upgrade_tests;
 use super::board_spool::private_directory_owned_by;
 use super::*;
 use crate::board::board_actor::{BoardActor, HarnessLabel};
-use crate::board::board_ids::{EntryId, EventSeq};
+use crate::board::board_ids::{EntryId, EventSeq, RepoKey};
 use crate::board::board_protocol::{BoardChange, FeedbackMetadata};
 use crate::board::board_vocabulary::{EntryText, FeedbackKind};
-use std::collections::HashMap;
+use crate::identity::GitOid;
+use std::collections::{BTreeSet, HashMap};
 use std::fs::File;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
@@ -79,6 +80,13 @@ impl BoardBackend for ImportBackend {
     fn max_seq(&self) -> Result<EventSeq, BoardError> {
         Ok(EventSeq::new(self.entries.len() as u64))
     }
+    fn linked_commit_oids(
+        &self,
+        _: &RepoKey,
+        _: &[GitOid],
+    ) -> Result<BTreeSet<GitOid>, BoardError> {
+        unreachable!("feedback importer does not read commit links")
+    }
 }
 
 struct RejectedImport(BoardErrorCode);
@@ -92,6 +100,13 @@ impl BoardBackend for RejectedImport {
     }
     fn max_seq(&self) -> Result<EventSeq, BoardError> {
         Ok(EventSeq::new(0))
+    }
+    fn linked_commit_oids(
+        &self,
+        _: &RepoKey,
+        _: &[GitOid],
+    ) -> Result<BTreeSet<GitOid>, BoardError> {
+        unreachable!("feedback importer does not read commit links")
     }
 }
 
@@ -117,6 +132,13 @@ impl BoardBackend for SqliteRejectedImport {
     fn max_seq(&self) -> Result<EventSeq, BoardError> {
         Ok(EventSeq::new(0))
     }
+    fn linked_commit_oids(
+        &self,
+        _: &RepoKey,
+        _: &[GitOid],
+    ) -> Result<BTreeSet<GitOid>, BoardError> {
+        unreachable!("feedback importer does not read commit links")
+    }
 }
 
 /// A backend whose storage file holds garbage bytes, so every import attempt
@@ -137,5 +159,12 @@ impl BoardBackend for CorruptDbImport {
     }
     fn max_seq(&self) -> Result<EventSeq, BoardError> {
         Ok(EventSeq::new(0))
+    }
+    fn linked_commit_oids(
+        &self,
+        _: &RepoKey,
+        _: &[GitOid],
+    ) -> Result<BTreeSet<GitOid>, BoardError> {
+        unreachable!("feedback importer does not read commit links")
     }
 }
