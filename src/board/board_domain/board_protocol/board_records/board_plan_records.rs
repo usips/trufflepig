@@ -179,5 +179,6 @@ pub struct ManualCommitLink {
     pub task: TaskId,
     pub entry: EntryId,
     pub seq: Option<EventSeq>,
+    #[serde(rename = "linked_by")]
     pub actor: Option<BoardActor>,
 }

@@ -1,5 +1,86 @@
 use super::*;
 
+fn hand_linked_kimi_commit() -> (EdgeFixture, String, Value) {
+    let fixture = EdgeFixture::new();
+    fixture.seed_repo();
+    fixture.run(&["board", "new", "Hand linker review"], "human", "owner");
+    fixture.run(&["board", "task", "P1", "Reviewed lane"], "human", "owner");
+    git(
+        &fixture.root,
+        &[
+            "commit",
+            "--allow-empty",
+            "-m",
+            "Untrailered Kimi work\n\nCo-authored-by: Kimi K2 <noreply@moonshot.ai>",
+        ],
+    );
+    let oid = git(&fixture.root, &["rev-parse", "HEAD"]);
+    let receipt = fixture.run(&["board", "link", &oid, "P1.1"], "human", "hand-linker");
+    (fixture, oid, data(&receipt).clone())
+}
+
+#[test]
+fn review_with_agent_names_hand_linker() {
+    let (fixture, oid, receipt) = hand_linked_kimi_commit();
+    let linker = fixture.actor("human", "hand-linker");
+    let expected = format!(
+        "task P1.1 linked by hand by {} (entry {}, seq {})",
+        linker.identity(),
+        receipt["entry"].as_str().unwrap(),
+        receipt["seq"].as_u64().unwrap(),
+    );
+    for words in [
+        &["board", "review", "P1@1"][..],
+        &["board", "review", "P1@1", "kimi"][..],
+    ] {
+        let mut options = fixture.options(words);
+        options.format = "lines".into();
+        let review = fixture
+            .host
+            .run(
+                &options,
+                &context("codex", "reviewer"),
+                QueryDeadline::start(),
+            )
+            .unwrap();
+        assert!(review.contains(&oid), "{review}");
+        assert!(review.contains("coauthor: kimi (Kimi K2)"), "{review}");
+        assert!(review.contains(&expected), "{review}");
+    }
+}
+
+#[test]
+fn review_json_manual_links_names_hand_linker() {
+    let (fixture, oid, receipt) = hand_linked_kimi_commit();
+    for words in [
+        &["board", "review", "P1@1"][..],
+        &["board", "review", "P1@1", "kimi"][..],
+    ] {
+        let review = fixture.run(words, "codex", "reviewer");
+        let packet = data(&review);
+        if words.len() == 4 {
+            assert_eq!(packet["agent"], "kimi");
+            assert!(packet["entries"].as_array().unwrap().is_empty());
+        }
+        let linked = packet["linked"].as_array().unwrap();
+        assert_eq!(linked.len(), 1);
+        assert_eq!(linked[0]["oid"], oid);
+        let manual_links = linked[0]["manual_links"].as_array().unwrap();
+        assert_eq!(manual_links.len(), 1);
+        assert_eq!(
+            manual_links[0],
+            serde_json::json!({
+                "repo_key": linked[0]["repo_key"],
+                "oid": oid,
+                "task": "P1.1",
+                "entry": receipt["entry"],
+                "seq": receipt["seq"],
+                "linked_by": fixture.actor("human", "hand-linker"),
+            }),
+        );
+    }
+}
+
 #[test]
 fn manual_link_repairs_an_untrailered_commit_through_host_resolution() {
     let fixture = EdgeFixture::new();

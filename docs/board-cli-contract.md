@@ -64,7 +64,8 @@ without registering the caller's repository, reads metadata exactly as a scan, a
 commit if absent. It requires the plan owner's user with a `human` harness or the plan steward
 harness; `cli` and every other actor is `invalid_actor`. An unresolved oid is `invalid_reference`;
 an oid that names a tag is refused with `invalid_reference: OID names a tag; pass the commit id`.
-Durable task receipts, replay, and unknown historical attribution follow the [board contract](board-contract.md#git-links-and-review-evidence).
+Durable task receipts, replay, and unknown historical attribution follow the
+[board contract](board-contract.md#git-links-and-review-evidence).
 
 `board unlink OID P7.3` removes one stored task link using the same owner/human or steward
 authority. It requires a full commit oid, uses stored repository identity without reading Git, and
@@ -99,3 +100,9 @@ other addresses become `git:<email>`. The trailer name is a model claim. No co-a
 `human`; Muse/omp running Claude appears as `claude`. Claim/review vendor comes from the stored
 model snapshot: Claude, GPT/Codex/ChatGPT, Kimi, Grok, Gemini, or Qwen; unknown models fall back
 to harness. `cli` and `human` claims remain human even when a model was inherited.
+
+Review JSON stores per-task hand links in each linked commit's `manual_links` array. Each receipt
+has `repo_key`, `oid`, `task`, `entry`, `seq`, and `linked_by`. `linked_by` contains the linker's
+`{user, host, harness, session}` identity, or `null` when historical attribution is unknown. `seq`
+is the nullable durable link-event sequence. These receipts remain visible when `HARNESS` filters
+review entries.

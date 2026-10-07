@@ -211,3 +211,28 @@ fn review_budget_keeps_each_manual_link_set_with_its_commit() {
     }
     assert!(budget.fits(&rendered.text));
 }
+
+#[test]
+fn review_json_keeps_linked_by_null_when_historical_attribution_is_unknown() {
+    use crate::board::{board_ids::TaskId, board_protocol::ManualCommitLink};
+
+    let mut packet = review_packet();
+    let mut linked = review_commit(101);
+    linked.manual_links.push(ManualCommitLink {
+        repo_key: linked.commit.repo_key.clone(),
+        oid: linked.commit.oid,
+        task: TaskId::new(packet.plan.id, 1).unwrap(),
+        entry: EntryId::new(10).unwrap(),
+        seq: None,
+        actor: None,
+    });
+    packet.linked.push(linked);
+    let rendered = render_review(&packet, &OutputBudget::new(2000).unwrap(), "local").unwrap();
+    let value: serde_json::Value = serde_json::from_str(&rendered.text).unwrap();
+    let manual_link = &value["result"]["data"]["linked"][0]["manual_links"][0];
+    assert_eq!(manual_link["task"], "P7.1");
+    assert_eq!(manual_link["entry"], "E10");
+    assert_eq!(manual_link["seq"], serde_json::Value::Null);
+    assert_eq!(manual_link.get("linked_by"), Some(&serde_json::Value::Null));
+    assert!(manual_link.get("actor").is_none());
+}
