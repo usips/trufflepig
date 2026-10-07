@@ -21,6 +21,7 @@ export function createBoardStream(context) {
     noteSeen, onIngest,
     authToken, onAuthExpired, heartbeatMs = 5000, freshnessMs = 10000,
   } = context;
+  if (typeof authToken !== "function") throw new TypeError("createBoardStream requires authToken.");
   // Election and fetch-reader state shared with the stream election module.
   const session = {
     mode: "idle", channel: null, channelName: "", elect: null, lockEnd: null,
@@ -36,11 +37,14 @@ export function createBoardStream(context) {
   function deliver(frame) {
     if (frame.event === "resync") { void runResync(); return true; }
     if (frame.event === "ingest") {
-      try { onIngest?.(parseBoardJson(frame.data)); } catch (_) { /* A malformed receipt is dropped. */ }
+      try { onIngest?.(parseBoardJson(frame.data)); }
+      catch (_) { /* A malformed receipt is dropped. */ }
       return false;
     }
     if (frame.event !== "board") return false;
-    if (!frame.id || !/^(0|[1-9]\d*)$/.test(frame.id)) throw new Error("Live event has an invalid sequence.");
+    if (!frame.id || !/^(0|[1-9]\d*)$/.test(frame.id)) {
+      throw new Error("Live event has an invalid sequence.");
+    }
     if (state.watermark !== null && BigInt(frame.id) <= BigInt(state.watermark)) return false;
     const event = parseBoardJson(frame.data);
     state.streamFailures = 0;
@@ -66,6 +70,15 @@ export function createBoardStream(context) {
     election.resetElection();
   }
 
+  function authorizedToken() {
+    const token = authToken();
+    if (!token) {
+      stopStream();
+      setConnection("Authorization required", "error");
+    }
+    return token;
+  }
+
   // A stolen lock means another tab leads now: stop fetching and heartbeating,
   // then rejoin the election as a follower.
   function rejoinAfterSteal() {
@@ -78,15 +91,17 @@ export function createBoardStream(context) {
   // re-enter directly so a leader keeps its lock across transient failures.
   function runFetch(cursor, relay) {
     if (state.stream) return;
+    const sent = authorizedToken();
+    if (!sent) return;
     const controller = new AbortController();
     state.stream = controller;
     const generation = ++state.streamGeneration;
     void (async () => {
       let reader;
-      const sent = typeof authToken === "function" ? authToken() : undefined;
       try {
         const response = await privateFetch(`/api/v1/events?after=${encodeURIComponent(cursor)}`, {
-          headers: { "Accept": "text/event-stream", "Last-Event-ID": cursor }, signal: controller.signal,
+          headers: { "Accept": "text/event-stream", "Last-Event-ID": cursor },
+          signal: controller.signal,
         });
         if (generation !== state.streamGeneration) return;
         if (response.status === 401 || response.status === 403) {
@@ -122,14 +137,6 @@ export function createBoardStream(context) {
           setConnection("Reconnecting…", "error");
         }
       } catch (error) {
-        // A throw before the request is sent — assertAuth refusing an empty
-        // token — is terminal, unlike the 401/403 responses handled above:
-        // stop instead of backing off on a request that can never succeed.
-        if (!sent && error?.name !== "AbortError" && generation === state.streamGeneration) {
-          stopStream();
-          setConnection("Authorization required", "error");
-          return;
-        }
         if (error?.name !== "AbortError" && generation === state.streamGeneration) {
           session.leaderHealthy = false;
           setConnection("Reconnecting…", "error");
@@ -141,7 +148,9 @@ export function createBoardStream(context) {
           const delay = Math.min(30000, 1000 * 2 ** Math.min(state.streamFailures++, 5));
           state.reconnect = setTimeout(() => {
             state.reconnect = null;
-            if (session.mode !== "idle" && state.watermark !== null && !state.resyncing) runFetch(state.watermark, relay);
+            if (session.mode !== "idle" && state.watermark !== null && !state.resyncing) {
+              runFetch(state.watermark, relay);
+            }
           }, delay);
         }
       }
@@ -150,6 +159,7 @@ export function createBoardStream(context) {
 
   function startStream(cursor) {
     if (cursor === null || state.stream || state.resyncing || session.mode !== "idle") return;
+    if (!authorizedToken()) return;
     // A hidden tab never leads: throttled background timers would stall its
     // heartbeat for every follower. Election resumes on visibilitychange.
     if (document.visibilityState === "hidden") { session.deferredCursor = cursor; return; }

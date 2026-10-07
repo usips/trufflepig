@@ -6,6 +6,10 @@ const lockQueues = new Map();
 // browser refusing a steal; rejectedStealCount records how many were refused.
 let stealsRejected = false;
 let rejectedStealCount = 0;
+// One-shot eviction between grant and callback dispatch; the rejected request's
+// callback still runs after its rejection handler, as a delayed browser task can.
+let abortBeforeCallback = false;
+let abortedGrantCallbackCount = 0;
 
 function pumpLock(name) {
   const entry = lockQueues.get(name);
@@ -13,7 +17,19 @@ function pumpLock(name) {
   const head = entry.waiters[0];
   entry.busy = true;
   queueMicrotask(async () => {
-    try { head.resolve(await head.run()); }
+    try {
+      const abortGrant = abortBeforeCallback && !head.evicted;
+      if (abortGrant) {
+        abortBeforeCallback = false;
+        head.evicted = true; entry.waiters.shift(); entry.busy = false;
+        head.reject(new DOMException("The granted lock was stolen before callback", "AbortError"));
+        pumpLock(name);
+        await Promise.resolve();
+      }
+      const held = head.run();
+      if (abortGrant) abortedGrantCallbackCount += 1;
+      head.resolve(await held);
+    }
     catch (error) { head.reject(error); }
     finally { if (!head.evicted) { entry.waiters.shift(); entry.busy = false; pumpLock(name); } }
   });
@@ -35,7 +51,8 @@ export function createLocks() {
       }
       const waiter = { run, signal, evicted: false };
       const pending = new Promise((yes, no) => { waiter.resolve = yes; waiter.reject = no; });
-      const entry = lockQueues.get(name) || lockQueues.set(name, { waiters: [], busy: false }).get(name);
+      const entry = lockQueues.get(name)
+        || lockQueues.set(name, { waiters: [], busy: false }).get(name);
       // A steal evicts the holder with AbortError; its late release leaves the queue alone.
       if (opts.steal && entry.busy && entry.waiters.length) {
         const held = entry.waiters.shift();
@@ -47,7 +64,9 @@ export function createLocks() {
       else entry.waiters.push(waiter);
       signal?.addEventListener("abort", () => {
         const at = entry.waiters.indexOf(waiter);
-        if (at > 0 || (at === 0 && !entry.busy)) { entry.waiters.splice(at, 1); waiter.reject(signal.reason); }
+        if (at > 0 || (at === 0 && !entry.busy)) {
+          entry.waiters.splice(at, 1); waiter.reject(signal.reason);
+        }
       }, { once: true });
       pumpLock(name);
       return pending;
@@ -58,9 +77,13 @@ export function createLocks() {
 export function rejectSteals() { stealsRejected = true; }
 export function allowSteals() { stealsRejected = false; }
 export function stealRejections() { return rejectedStealCount; }
+export function abortNextGrantBeforeCallback() { abortBeforeCallback = true; }
+export function abortedGrantCallbacks() { return abortedGrantCallbackCount; }
 
 export function resetLocksShim() {
   lockQueues.clear();
   stealsRejected = false;
   rejectedStealCount = 0;
+  abortBeforeCallback = false;
+  abortedGrantCallbackCount = 0;
 }

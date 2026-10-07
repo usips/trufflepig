@@ -1,5 +1,6 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { createBoardStream } from "../stream/board_stream.js";
 import { installDomShim, resetDomShim } from "./support/dom_shim.mjs";
 
@@ -7,7 +8,9 @@ installDomShim();
 afterEach(() => resetDomShim());
 
 const tick = (ms = 10) => new Promise(resolve => setTimeout(resolve, ms));
-const CHANNEL = "trufflepig-board-stream";
+const TOKEN = "stream-test-token";
+const GENERATION = createHash("sha256").update(TOKEN).digest("hex").slice(0, 16);
+const CHANNEL = `trufflepig-board-stream-${GENERATION}`;
 
 function makeTab() {
   const state = {
@@ -28,6 +31,7 @@ function makeTab() {
     addLiveEntry: () => {},
     noteSeen: () => {},
     onIngest: () => {},
+    authToken: () => TOKEN,
   });
   return { state, stream, events, routeCalls, refreshCount: () => refreshes };
 }

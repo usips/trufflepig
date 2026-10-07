@@ -1,6 +1,8 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { createLocks, resetLocksShim } from "./support/locks_shim.mjs";
+import {
+  createLocks, resetLocksShim, abortNextGrantBeforeCallback, abortedGrantCallbacks,
+} from "./support/locks_shim.mjs";
 
 afterEach(() => resetLocksShim());
 
@@ -13,6 +15,18 @@ function deferred() {
 }
 
 describe("web locks shim", () => {
+  it("aborts a granted request before dispatching its callback", async () => {
+    const locks = createLocks();
+    const order = [];
+    abortNextGrantBeforeCallback();
+    await locks.request("resource", () => { order.push("callback"); })
+      .catch(error => { assert.equal(error.name, "AbortError"); order.push("rejected"); });
+    assert.deepEqual(order, ["rejected", "callback"]);
+    assert.equal(abortedGrantCallbacks(), 1);
+    await locks.request("resource", () => { order.push("next"); });
+    assert.equal(order.at(-1), "next", "the aborted grant releases its queue position");
+  });
+
   it("holds the lock until the callback settles", async () => {
     const locks = createLocks();
     const held = deferred();

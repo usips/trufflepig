@@ -28,6 +28,7 @@ function makeTab(fetchCalls, { heartbeatMs, freshnessMs } = {}) {
     addLiveEntry: () => {},
     noteSeen: () => {},
     onIngest: () => {},
+    authToken: () => "stream-test-token",
     heartbeatMs,
     freshnessMs,
   });
@@ -43,18 +44,26 @@ async function waitFor(predicate, timeoutMs = 2000) {
   return true;
 }
 
+async function startKnownLeader(tab, fetchCalls) {
+  tab.stream.startStream("41");
+  assert.equal(await waitFor(() => fetchCalls.length === 1), true,
+    "the intended leader acquires its lock before the follower starts");
+}
+
 describe("board stream leader election", () => {
   it("exactly one tab leads while the other follows", async () => {
     const callsA = [], callsB = [];
     const tabA = makeTab(callsA), tabB = makeTab(callsB);
     tabA.state.watermark = "41";
     tabB.state.watermark = "41";
-    tabA.stream.startStream("41");
-    tabB.stream.startStream("41");
-    await tick(50);
-    assert.equal(callsA.length + callsB.length, 1);
-    tabA.stream.stopStream();
-    tabB.stream.stopStream();
+    try {
+      tabA.stream.startStream("41");
+      tabB.stream.startStream("41");
+      assert.equal(await waitFor(() => callsA.length + callsB.length === 1), true);
+    } finally {
+      tabA.stream.stopStream();
+      tabB.stream.stopStream();
+    }
   });
 
   it("follower is promoted when the leader stops", async () => {
@@ -62,29 +71,36 @@ describe("board stream leader election", () => {
     const tabA = makeTab(callsA), tabB = makeTab(callsB);
     tabA.state.watermark = "41";
     tabB.state.watermark = "41";
-    tabA.stream.startStream("41");
-    tabB.stream.startStream("41");
-    await tick(50);
-    assert.equal(callsA.length, 1);
-    assert.equal(callsB.length, 0);
-    tabA.stream.stopStream();
-    await tick(50);
-    assert.equal(callsB.length, 1);
-    tabB.stream.stopStream();
+    const locks = navigator.locks, request = locks.request;
+    let requests = 0;
+    locks.request = function (...args) { requests++; return request.apply(this, args); };
+    try {
+      await startKnownLeader(tabA, callsA);
+      tabB.stream.startStream("41");
+      assert.equal(await waitFor(() => requests === 2), true, "the follower joins the queue");
+      assert.equal(callsB.length, 0);
+      tabA.stream.stopStream();
+      assert.equal(await waitFor(() => callsB.length === 1), true);
+    } finally {
+      tabA.stream.stopStream();
+      tabB.stream.stopStream();
+      locks.request = request;
+    }
   });
 
   it("tab opens its own stream without sharing facilities", async () => {
     const navigator_ = globalThis.navigator;
     globalThis.navigator = {};
+    let tab;
     try {
       const calls = [];
-      const tab = makeTab(calls);
+      tab = makeTab(calls);
       tab.state.watermark = "41";
       tab.stream.startStream("41");
       await tick(20);
       assert.equal(calls.length, 1);
-      tab.stream.stopStream();
     } finally {
+      tab?.stream.stopStream();
       globalThis.navigator = navigator_;
     }
   });
@@ -126,7 +142,7 @@ describe("board stream leader election", () => {
     stalled.state.watermark = "41";
     follower.state.watermark = "41";
     try {
-      stalled.stream.startStream("41");
+      await startKnownLeader(stalled, callsA);
       follower.stream.startStream("41");
       assert.equal(
         await waitFor(() => callsA.length === 1 && callsB.length === 0),
@@ -141,6 +157,7 @@ describe("board stream leader election", () => {
       assert.equal(callsA.length, 1, "the closed leader stays quiet");
       assert.equal(callsB.length, 1, "exactly one leader fetches");
     } finally {
+      stalled.stream.stopStream();
       follower.stream.stopStream();
     }
   });
@@ -155,7 +172,7 @@ describe("board stream leader election", () => {
     follower.state.watermark = "41";
     rejectSteals();
     try {
-      stalled.stream.startStream("41");
+      await startKnownLeader(stalled, callsA);
       follower.stream.startStream("41");
       assert.equal(
         await waitFor(() => callsA.length === 1 && callsB.length === 0),
@@ -171,6 +188,30 @@ describe("board stream leader election", () => {
       );
     } finally {
       allowSteals();
+      stalled.stream.stopStream();
+      follower.stream.stopStream();
+    }
+  });
+
+  it("rejected_steal_retries", async () => {
+    const leaderCalls = [], followerCalls = [];
+    const leader = makeTab(leaderCalls, { heartbeatMs: 10000, freshnessMs: 10000 });
+    const follower = makeTab(followerCalls, { heartbeatMs: 20, freshnessMs: 60 });
+    leader.state.watermark = "41"; follower.state.watermark = "41";
+    rejectSteals();
+    try {
+      await startKnownLeader(leader, leaderCalls);
+      follower.stream.startStream("41");
+      assert.equal(await waitFor(() => leaderCalls.length === 1), true);
+      assert.equal(await waitFor(() => stealRejections() >= 2), true,
+        "each rejected steal re-arms the next freshness tick");
+      assert.equal(followerCalls.length, 0, "rejected steals never start a reader");
+      leader.stream.stopStream();
+      assert.equal(await waitFor(() => followerCalls.length === 1), true,
+        "the queued election survives repeated rejected steals");
+    } finally {
+      allowSteals();
+      leader.stream.stopStream();
       follower.stream.stopStream();
     }
   });
