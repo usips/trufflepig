@@ -59,12 +59,15 @@ wrapper metadata. `--wait` is inbox-only; `--open` lists open/triaged feedback. 
 repeat the plan's `Plan: P7` commit trailer.
 
 `board link OID P7.3` repairs one commit link by hand when trailers are missing or unparsable. The
-backend resolves `OID^{commit}` in the plan's already-registered repositories on the caller's host
-without registering the caller's repository, reads metadata exactly as a scan, and inserts the
-commit if absent. It requires the plan owner's user with a `human` harness or the plan steward
-harness; `cli` and every other actor is `invalid_actor`. An unresolved oid is `invalid_reference`;
-an oid that names a tag is refused with `invalid_reference: OID names a tag; pass the commit id`.
-Durable task receipts, replay, and unknown historical attribution follow the
+backend checks owner human/steward authority before Git resolution and repeats that check in the
+write transaction. Rejected `cli` actors receive `invalid_actor` with `pass --client human`. With
+authority, it resolves `OID^{commit}` in the plan's already-registered repositories on the caller's
+host without registering the caller's repository, reads metadata exactly as a scan, and inserts
+the commit if absent. A plan without a registered repository on that host fails
+`invalid_reference: P7 has no registered repository on HOST; run any P7 board write from the
+checkout first`. An unresolved oid is `invalid_reference`; an oid that names a tag is refused with
+`invalid_reference: OID names a tag; pass the commit id`. Durable task receipts, replay, and unknown
+historical attribution follow the
 [board contract](board-contract.md#git-links-and-review-evidence).
 
 `board unlink OID P7.3` removes one stored task link using the same owner/human or steward

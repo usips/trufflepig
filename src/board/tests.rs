@@ -5,6 +5,7 @@ mod client_tests;
 mod cursor_acceptance;
 mod git_acceptance;
 mod manual_link_acceptance;
+mod manual_link_diagnostics;
 mod manual_unlink_acceptance;
 mod outbox_acceptance;
 mod transport_acceptance;

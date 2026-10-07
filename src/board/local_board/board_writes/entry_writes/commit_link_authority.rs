@@ -2,6 +2,18 @@
 
 use super::*;
 
+impl LocalBoard {
+    /// Checks manual link authority without creating actor or event state.
+    pub(in crate::board) fn require_commit_link_authority(
+        &mut self,
+        actor: &BoardActor,
+        plan: PlanId,
+    ) -> Result<(), BoardError> {
+        let tx = self.conn.transaction().map_err(sql_error)?;
+        require_link_authority(&tx, actor, plan)
+    }
+}
+
 /// A plan's owner links by hand or through its steward harness; every other
 /// actor is rejected.
 pub(in crate::board::local_board) fn require_link_authority(
@@ -12,9 +24,14 @@ pub(in crate::board::local_board) fn require_link_authority(
     if can_accept(tx, actor, plan)? {
         return Ok(());
     }
+    let hint = if actor.harness.as_str() == "cli" {
+        "; pass --client human"
+    } else {
+        ""
+    };
     Err(invalid(
         "invalid_actor",
-        format!("changing commit links for {plan} requires its owner by hand or its steward"),
+        format!("changing commit links for {plan} requires its owner by hand or its steward{hint}"),
     ))
 }
 
