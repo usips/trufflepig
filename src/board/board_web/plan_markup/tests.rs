@@ -1,6 +1,8 @@
 use super::{allowed_url, render};
 use crate::board::board_markup::headings;
 
+mod empty_hex_tests;
+
 #[test]
 fn source_html_is_escaped_and_markdown_formatting_survives() {
     let rendered = render(

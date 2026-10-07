@@ -135,13 +135,14 @@ fn is_numeric_ipv4(host: &str) -> bool {
     !host.is_empty() && host.split('.').all(is_numeric_label)
 }
 
-/// True for one IPv4 label: all ASCII digits, or `0x`/`0X` plus hex digits.
+/// True for ASCII decimal digits or `0x`/`0X` plus hex digits.
+/// Bare hex prefixes count as zero in URL host parsing.
 fn is_numeric_label(label: &str) -> bool {
     if let Some(hex) = label
         .strip_prefix("0x")
         .or_else(|| label.strip_prefix("0X"))
     {
-        return !hex.is_empty() && hex.bytes().all(|byte| byte.is_ascii_hexdigit());
+        return hex.bytes().all(|byte| byte.is_ascii_hexdigit());
     }
     !label.is_empty() && label.bytes().all(|byte| byte.is_ascii_digit())
 }

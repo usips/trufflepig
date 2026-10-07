@@ -1,5 +1,15 @@
 use super::*;
 
+#[test]
+fn package_manifest_is_not_served() {
+    let fixture = render_fixture();
+    let asset = render_get(&fixture, "/board_web_main.js");
+    assert!(asset.starts_with("HTTP/1.1 200 "), "{asset}");
+    let manifest = render_get(&fixture, "/package.json");
+    assert!(manifest.starts_with("HTTP/1.1 404 "), "{manifest}");
+    assert!(manifest.contains("route not found"), "{manifest}");
+}
+
 /// Raw ES import specifiers in one served script, skipping comments and strings.
 fn asset_import_specifiers(script: &str) -> Vec<&str> {
     let bytes = script.as_bytes();
