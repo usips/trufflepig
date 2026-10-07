@@ -1,23 +1,24 @@
 use std::{
     ffi::OsString,
-    io::{self, Read},
+    io,
     path::Path,
     process::{Child, Command, ExitStatus, Output, Stdio},
-    thread::{self, JoinHandle},
+    sync::atomic::{AtomicBool, Ordering},
+    thread::{self, ScopedJoinHandle},
     time::{Duration, Instant},
 };
 
-fn read_pipe(mut pipe: impl Read) -> io::Result<Vec<u8>> {
-    let mut bytes = Vec::new();
-    pipe.read_to_end(&mut bytes)?;
-    Ok(bytes)
-}
+mod board_node_output_capture;
+mod board_node_pipe_reader;
+
+use board_node_output_capture::{NodeOutputCapture, bounded_diagnostics};
+use board_node_pipe_reader::read_pipe;
 
 fn join_pipe_reader(
-    reader: JoinHandle<io::Result<Vec<u8>>>,
+    reader: ScopedJoinHandle<'_, io::Result<NodeOutputCapture>>,
     invocation: &str,
     stream: &str,
-) -> Result<Vec<u8>, String> {
+) -> Result<NodeOutputCapture, String> {
     reader
         .join()
         .map_err(|_| format!("{invocation} {stream} reader panicked"))?
@@ -25,13 +26,23 @@ fn join_pipe_reader(
 }
 
 fn join_pipe_readers(
-    stdout: JoinHandle<io::Result<Vec<u8>>>,
-    stderr: JoinHandle<io::Result<Vec<u8>>>,
+    stdout: ScopedJoinHandle<'_, io::Result<NodeOutputCapture>>,
+    stderr: ScopedJoinHandle<'_, io::Result<NodeOutputCapture>>,
     invocation: &str,
+    failed: bool,
 ) -> Result<(Vec<u8>, Vec<u8>), String> {
-    let stdout = join_pipe_reader(stdout, invocation, "stdout")?;
-    let stderr = join_pipe_reader(stderr, invocation, "stderr")?;
-    Ok((stdout, stderr))
+    let mut stdout = join_pipe_reader(stdout, invocation, "stdout")?;
+    let mut stderr = join_pipe_reader(stderr, invocation, "stderr")?;
+    if failed {
+        stdout
+            .print_diagnostics("stdout")
+            .and_then(|()| stderr.print_diagnostics("stderr"))
+            .map_err(|error| format!("print {invocation} diagnostics: {error}"))?;
+    }
+    stdout
+        .output_bytes()
+        .and_then(|stdout| stderr.output_bytes().map(|stderr| (stdout, stderr)))
+        .map_err(|error| format!("collect {invocation} output: {error}"))
 }
 
 fn append_output_diagnostics(
@@ -41,10 +52,18 @@ fn append_output_diagnostics(
     match streams {
         Ok((stdout, stderr)) => format!(
             "{message}\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&stdout),
-            String::from_utf8_lossy(&stderr)
+            String::from_utf8_lossy(&bounded_diagnostics(&stdout)),
+            String::from_utf8_lossy(&bounded_diagnostics(&stderr))
         ),
         Err(error) => format!("{message}\noutput collection failed: {error}"),
+    }
+}
+
+struct StopReadersOnDrop<'a>(&'a AtomicBool);
+
+impl Drop for StopReadersOnDrop<'_> {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Release);
     }
 }
 
@@ -67,7 +86,7 @@ fn terminate_owned_process_tree(child: &mut Child) {
     let _ = child.wait();
 }
 
-/// Run node --test until the child exits and both captured pipes reach EOF.
+/// Run node --test with a deadline for the child and its captured pipes.
 pub(crate) fn run_node_tests(
     node: &Path,
     files: &[std::path::PathBuf],
@@ -106,45 +125,58 @@ fn run_node_process(
         .map_err(|error| format!("spawn {invocation}: {error}"))?;
     let stdout = child.stdout.take().expect("stdout is piped");
     let stderr = child.stderr.take().expect("stderr is piped");
-    let stdout_reader = thread::spawn(move || read_pipe(stdout));
-    let stderr_reader = thread::spawn(move || read_pipe(stderr));
-    let mut status: Option<ExitStatus> = None;
+    let stop = AtomicBool::new(false);
+    thread::scope(|scope| {
+        let _stop_readers = StopReadersOnDrop(&stop);
+        let stdout_reader = scope.spawn(|| read_pipe(stdout, &stop));
+        let stderr_reader = scope.spawn(|| read_pipe(stderr, &stop));
+        let mut status: Option<ExitStatus> = None;
 
-    loop {
-        if status.is_none() {
-            match child.try_wait() {
-                Ok(child_status) => status = child_status,
-                Err(error) => {
-                    terminate_owned_process_tree(&mut child);
-                    let streams = join_pipe_readers(stdout_reader, stderr_reader, invocation);
-                    return Err(append_output_diagnostics(
-                        format!("poll {invocation}: {error}"),
-                        streams,
-                    ));
+        loop {
+            if status.is_none() {
+                match child.try_wait() {
+                    Ok(child_status) => status = child_status,
+                    Err(error) => {
+                        stop.store(true, Ordering::Release);
+                        terminate_owned_process_tree(&mut child);
+                        let streams =
+                            join_pipe_readers(stdout_reader, stderr_reader, invocation, true);
+                        return Err(append_output_diagnostics(
+                            format!("poll {invocation}: {error}"),
+                            streams,
+                        ));
+                    }
                 }
             }
-        }
 
-        let now = Instant::now();
-        if status.is_some() && stdout_reader.is_finished() && stderr_reader.is_finished() {
-            if now < deadline {
-                let (stdout, stderr) = join_pipe_readers(stdout_reader, stderr_reader, invocation)?;
+            let now = Instant::now();
+            if let Some(status) = status
+                && stdout_reader.is_finished()
+                && stderr_reader.is_finished()
+                && now < deadline
+            {
+                let (stdout, stderr) =
+                    join_pipe_readers(stdout_reader, stderr_reader, invocation, !status.success())?;
                 return Ok(Output {
-                    status: status.expect("checked above"),
+                    status,
                     stdout,
                     stderr,
                 });
             }
-        }
-        if now >= deadline {
-            terminate_owned_process_tree(&mut child);
-            let streams = join_pipe_readers(stdout_reader, stderr_reader, invocation);
-            return Err(append_output_diagnostics(
-                format!("{invocation} timed out after {} s", timeout.as_secs()),
-                streams,
-            ));
-        }
+            if now >= deadline {
+                stop.store(true, Ordering::Release);
+                terminate_owned_process_tree(&mut child);
+                let streams = join_pipe_readers(stdout_reader, stderr_reader, invocation, true);
+                let message = format!("{invocation} timed out after {} s", timeout.as_secs_f64());
+                #[cfg(unix)]
+                let message = format!("{message}\nNODE_PROCESS_GROUP_ID={}", child.id());
+                return Err(append_output_diagnostics(message, streams));
+            }
 
-        thread::sleep((deadline - now).min(Duration::from_millis(10)));
-    }
+            thread::sleep((deadline - now).min(Duration::from_millis(10)));
+        }
+    })
 }
+
+#[cfg(test)]
+mod tests;

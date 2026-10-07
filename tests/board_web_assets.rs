@@ -6,11 +6,24 @@ use std::{
 };
 
 mod board_web_assets {
+    mod board_node_output_probe;
+    mod board_node_process_group_regression;
+    mod board_node_temporary_files;
     mod board_web_asset_node_runner;
 
+    #[cfg(all(unix, board_node_20))]
+    pub(super) use self::board_node_process_group_regression::{
+        run_isolated_reaping_probe, run_process_group_regression,
+    };
+    #[cfg(all(unix, board_node_20))]
+    pub(super) use self::board_node_temporary_files::node_temporary_directory;
     pub(super) use self::board_web_asset_node_runner::{run_node_program, run_node_tests};
 }
 
+#[cfg(all(unix, board_node_20))]
+use board_web_assets::{
+    node_temporary_directory, run_isolated_reaping_probe, run_process_group_regression,
+};
 use board_web_assets::{run_node_program, run_node_tests};
 
 /// Bound one `node --test` run so a leaked handle fails instead of hanging.
@@ -80,8 +93,10 @@ fn board_asset_tests_pass_under_node() {
     let node = resolve_on_path("node").expect("node on PATH: build probed Node >=20");
     let output =
         run_node_tests(&node, &files, NODE_TEST_TIMEOUT).unwrap_or_else(|error| panic!("{error}"));
-    println!("{}", String::from_utf8_lossy(&output.stdout));
-    eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    if output.status.success() {
+        println!("{}", String::from_utf8_lossy(&output.stdout));
+        eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    }
     assert!(
         output.status.success(),
         "node --test failed: {}",
@@ -105,10 +120,10 @@ fn leaked_timer_fails_instead_of_hanging() {
 
 #[test]
 #[cfg_attr(not(board_node_20), ignore = "requires Node >=20")]
-fn noisy_node_success_drains_both_pipes() {
+fn chatty_suite_passes_within_deadline() {
     let node = resolve_on_path("node").expect("node on PATH: build probed Node >=20");
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/noisy_pass.mjs");
-    let output = run_node_program(&node, &fixture, Duration::from_secs(30))
+    let output = run_node_program(&node, &fixture, Duration::from_secs(10))
         .expect("noisy passing Node test completes");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -147,38 +162,87 @@ fn noisy_node_failure_preserves_both_streams_and_diagnostic() {
 
 #[test]
 #[cfg(all(unix, board_node_20))]
-fn timeout_kills_node_descendants_holding_pipes() {
+fn timeout_reaps_the_process_group() {
+    run_process_group_regression("timeout_reaps_the_process_group");
+}
+
+#[test]
+#[cfg(all(unix, board_node_20))]
+fn timeout_bounds_escaped_descendant_pipe_wait() {
+    if !run_isolated_reaping_probe("timeout_bounds_escaped_descendant_pipe_wait") {
+        return;
+    }
     let node = resolve_on_path("node").expect("node on PATH: build probed Node >=20");
-    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/descendant_open_pipes.test.mjs");
-    let error = run_node_tests(&node, &[fixture], Duration::from_secs(3))
-        .expect_err("a descendant keeping the pipes open must hit the deadline");
-    assert!(
-        error.contains("node --test timed out after 3 s"),
-        "unexpected failure: {error}"
-    );
-    let pid = error
-        .split_whitespace()
-        .find_map(|word| word.strip_prefix("DESCENDANT_PID="))
-        .and_then(|value| value.parse::<u32>().ok())
-        .expect("timeout diagnostics include the descendant PID");
-    assert!(
-        !unix_process_is_running(pid),
-        "process-group descendant {pid} survived timeout cleanup"
-    );
+    let directory =
+        tempfile::tempdir_in(node_temporary_directory().expect("disk scratch directory"))
+            .expect("escaped-pipe fixture directory");
+    let program = directory.path().join("escaped_pipe_holder.mjs");
+    let pid_file = directory.path().join("escaped-pipe.pid");
+    std::fs::write(&program, include_str!("fixtures/escaped_pipe_holder.mjs"))
+        .expect("write escaped-pipe fixture");
+
+    std::thread::scope(|scope| {
+        let (cleanup, cleanup_request) = std::sync::mpsc::channel();
+        let guardian = scope.spawn(move || {
+            let deadline = std::time::Instant::now() + Duration::from_secs(3);
+            let pid = loop {
+                if let Ok(pid) = std::fs::read_to_string(&pid_file)
+                    && let Ok(pid) = pid.parse::<u32>()
+                {
+                    break pid;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "escaped descendant did not publish its PID"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            };
+            let _ = cleanup_request.recv_timeout(Duration::from_secs(3));
+            unsafe {
+                libc::kill(pid as libc::pid_t, libc::SIGKILL);
+            }
+            let deadline = std::time::Instant::now() + Duration::from_secs(1);
+            loop {
+                #[cfg(target_os = "linux")]
+                unsafe {
+                    libc::waitpid(pid as libc::pid_t, std::ptr::null_mut(), libc::WNOHANG);
+                }
+                if unix_process_is_absent(pid) {
+                    break;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "escaped fixture {pid} was not reaped"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            pid
+        });
+
+        let start = std::time::Instant::now();
+        let error = run_node_program(&node, &program, Duration::from_millis(500))
+            .expect_err("an escaped pipe holder must hit the deadline");
+        let elapsed = start.elapsed();
+        let _ = cleanup.send(());
+        let pid = guardian.join().expect("escaped descendant cleanup");
+        assert!(
+            error.contains("node timed out"),
+            "unexpected error: {error}"
+        );
+        assert!(error.contains("ESCAPED_PIPE_PID="));
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "reader join exceeded the post-kill bound: {elapsed:?}"
+        );
+        assert!(
+            unix_process_is_absent(pid),
+            "escaped fixture was not reaped"
+        );
+    });
 }
 
 #[cfg(all(unix, board_node_20))]
-fn unix_process_is_running(pid: u32) -> bool {
-    match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
-        Ok(stat) => stat
-            .rsplit_once(')')
-            .and_then(|(_, rest)| rest.split_whitespace().next())
-            .is_some_and(|state| state != "Z" && state != "X"),
-        Err(_) => {
-            let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
-            result == 0
-                || std::io::Error::last_os_error().kind() == std::io::ErrorKind::PermissionDenied
-        }
-    }
+fn unix_process_is_absent(pid: u32) -> bool {
+    let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
+    result == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
 }
