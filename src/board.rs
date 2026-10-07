@@ -111,21 +111,24 @@ fn unavailable_or_queue(
             crate::output::OutputBudget::new(options.budget)?.with_format(options.output_format());
         return Ok(board_render::render_reply(&reply, &budget)?.text);
     }
-    if let Some(refusal) = newer_schema_refusal(&message) {
-        bail!("board_unavailable: {refusal}");
+    if board_protocol::BoardErrorCode::from_error(&error)
+        == Some(board_protocol::BoardErrorCode::SchemaNewer)
+    {
+        return Err(schema_upgrade_advice(error));
     }
     bail!("board_unavailable: {message}; run trufflepig system ensure")
 }
 
-/// A newer on-disk schema needs a newer binary; `system ensure` cannot
-/// downgrade storage written by a future trufflepig.
-fn newer_schema_refusal(message: &str) -> Option<String> {
-    let (_, rest) = message.split_once("schema version ")?;
-    let (version, rest) = rest.split_once(" is newer than supported ")?;
-    let supported = rest.split_whitespace().next()?;
-    Some(format!(
-        "database schema {version} is newer than this trufflepig ({supported}); upgrade trufflepig"
-    ))
+/// Keeps typed schema refusals and their details; restarting cannot downgrade storage.
+pub(crate) fn schema_upgrade_advice(error: anyhow::Error) -> anyhow::Error {
+    if board_protocol::BoardErrorCode::from_error(&error)
+        != Some(board_protocol::BoardErrorCode::SchemaNewer)
+    {
+        return error;
+    }
+    let mut refusal = BoardError::from(error);
+    refusal.message.push_str("; upgrade trufflepig");
+    refusal.into()
 }
 
 fn domain_error(error: &anyhow::Error) -> bool {

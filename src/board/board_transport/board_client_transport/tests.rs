@@ -1,6 +1,7 @@
 mod no_daemon_tests;
 mod router_api_version_tests;
 mod router_probe_tests;
+mod schema_advice_tests;
 
 use super::*;
 use std::{collections::VecDeque, time::Duration};

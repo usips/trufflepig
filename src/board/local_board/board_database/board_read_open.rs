@@ -37,9 +37,10 @@ pub(in crate::board::local_board) fn open_read_with_timeout(
         ));
     }
     if version > SCHEMA_VERSION {
-        return Err(unavailable(format!(
-            "schema version {version} is newer than supported {SCHEMA_VERSION}"
-        )));
+        return Err(BoardError::new(
+            BoardErrorCode::SchemaNewer,
+            format!("schema version {version} is newer than supported {SCHEMA_VERSION}"),
+        ));
     }
     Ok((conn, resolved))
 }

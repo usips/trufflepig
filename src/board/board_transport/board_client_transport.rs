@@ -155,7 +155,7 @@ fn failed_request(
         let config = load()?;
         crate::board::unavailable_or_queue(command, options, context, &config, spool, error)
     } else {
-        Err(error)
+        Err(crate::board::schema_upgrade_advice(error))
     }
 }
 
@@ -171,10 +171,15 @@ fn parse_probe(status: &str) -> Result<(u32, PathBuf)> {
             "board_api_mismatch: router lacks board capability; restart trufflepig-system.service",
         )?;
     let Some(path) = status.get("board_db").and_then(serde_json::Value::as_str) else {
-        if let Some(detail) = status.get("board_error").and_then(serde_json::Value::as_str) {
+        if let Some(detail) = status
+            .get("board_error")
+            .and_then(serde_json::Value::as_str)
+        {
             bail!("board_unavailable: router board error: {detail}");
         }
-        bail!("board_api_mismatch: router omitted its database path; restart trufflepig-system.service");
+        bail!(
+            "board_api_mismatch: router omitted its database path; restart trufflepig-system.service"
+        );
     };
     let database = PathBuf::from(path);
     ensure!(

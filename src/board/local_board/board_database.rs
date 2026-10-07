@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use rusqlite::Connection;
 
 use super::{BoardError, invalid, sql_error};
+use crate::board::board_protocol::BoardErrorCode;
 
 mod board_read_open;
 mod board_schema;
@@ -48,8 +49,7 @@ pub(crate) fn seed_storage_schema(path: &Path, version: i64) -> Result<(), Board
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-            .map_err(io_error)?;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).map_err(io_error)?;
     }
     for from in 0..version {
         connection
@@ -165,9 +165,10 @@ pub(super) fn open_with_timeout(
         conn.query_row("PRAGMA user_version", [], |r| r.get(0))
     })?;
     if version > SCHEMA_VERSION {
-        return Err(unavailable(format!(
-            "schema version {version} is newer than supported {SCHEMA_VERSION}"
-        )));
+        return Err(BoardError::new(
+            BoardErrorCode::SchemaNewer,
+            format!("schema version {version} is newer than supported {SCHEMA_VERSION}"),
+        ));
     }
     let journal: String = retry_busy(&conn, deadline, || {
         conn.query_row("PRAGMA journal_mode=WAL", [], |r| r.get(0))
@@ -180,6 +181,8 @@ pub(super) fn open_with_timeout(
     })?;
     conn.busy_timeout(deadline.saturating_duration_since(Instant::now()))
         .map_err(sql_error)?;
+    #[cfg(test)]
+    tests::upgrade_schema_before_lock(&resolved);
     let tx = conn
         .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .map_err(sql_error)?;
@@ -187,12 +190,16 @@ pub(super) fn open_with_timeout(
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(sql_error)?;
     if locked_version > SCHEMA_VERSION {
-        return Err(unavailable("database schema became newer than supported"));
+        return Err(BoardError::new(
+            BoardErrorCode::SchemaNewer,
+            "database schema became newer than supported",
+        ));
     }
     for version in locked_version..SCHEMA_VERSION {
         #[cfg(test)]
         slowed_migration_step();
-        tx.execute_batch(migration_step(version)?).map_err(sql_error)?;
+        tx.execute_batch(migration_step(version)?)
+            .map_err(sql_error)?;
         tx.pragma_update(None, "user_version", version + 1)
             .map_err(sql_error)?;
     }

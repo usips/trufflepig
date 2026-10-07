@@ -14,7 +14,7 @@ fn local_board_refuses_newer_schema_without_changing_journal() {
         Err(error) => error,
         Ok(_) => panic!("accepted newer schema"),
     };
-    assert_eq!(error.code, BoardErrorCode::BoardUnavailable);
+    assert_eq!(error.code, BoardErrorCode::SchemaNewer);
     let conn = Connection::open(&path).unwrap();
     let mode: String = conn
         .query_row("PRAGMA journal_mode", [], |r| r.get(0))

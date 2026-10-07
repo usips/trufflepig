@@ -214,7 +214,9 @@ fn quarantine(path: &Path) -> Result<(), BoardError> {
 fn transient_import_error(error: &BoardError) -> bool {
     matches!(
         error.code,
-        BoardErrorCode::BoardUnavailable | BoardErrorCode::DatabaseLocked
+        BoardErrorCode::BoardUnavailable
+            | BoardErrorCode::SchemaNewer
+            | BoardErrorCode::DatabaseLocked
     )
 }
 

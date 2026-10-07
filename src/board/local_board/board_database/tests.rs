@@ -1,7 +1,10 @@
 mod database_opening_tests;
 mod manual_link_migration_tests;
 mod repository_migration_tests;
+mod schema_refusal_tests;
 mod schema_repair_tests;
+
+pub(super) use schema_refusal_tests::upgrade_schema_before_lock;
 
 use super::*;
 

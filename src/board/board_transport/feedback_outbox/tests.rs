@@ -1,5 +1,6 @@
 mod board_import_tests;
 mod board_spool_tests;
+mod schema_upgrade_outbox_tests;
 mod stored_feedback_upgrade_tests;
 
 use super::board_spool::private_directory_owned_by;

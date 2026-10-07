@@ -104,6 +104,7 @@ fn feedback_domain_answers_are_not_queued() {
         "write failed: invalid_options: diagnostic mention",
         "unknown_code: stale_revision: detail",
         "board_unavailable: permission denied",
+        "schema_newer: storage requires a newer binary",
         "daemon: read frame: broken pipe",
         "database is locked",
     ] {
@@ -138,7 +139,10 @@ fn newer_schema_refusal_advises_upgrade() {
     let options = crate::cli::parse(&args).unwrap();
     let command = board_grammar::parse(&options, None).unwrap();
     let context = crate::diagnostics::RequestContext::new(None, None);
-    let error = anyhow::anyhow!("board_unavailable: schema version 99 is newer than supported 8");
+    let error = anyhow::Error::new(board_protocol::BoardError::new(
+        board_protocol::BoardErrorCode::SchemaNewer,
+        "schema version 99 is newer than supported 8",
+    ));
     let refusal = crate::board::unavailable_or_queue(
         &command,
         &options,
@@ -150,7 +154,32 @@ fn newer_schema_refusal_advises_upgrade() {
     .unwrap_err();
     assert_eq!(
         refusal.to_string(),
-        "board_unavailable: database schema 99 is newer than this trufflepig (8); \
-         upgrade trufflepig"
+        "schema_newer: schema version 99 is newer than supported 8; upgrade trufflepig"
     );
+}
+
+#[test]
+fn schema_words_in_transport_prose_do_not_advise_upgrade() {
+    let directory = crate::board::board_test_support::scratch("board-schema-prose-");
+    let config = crate::board::BoardConfig::for_database(directory.path().join("board.sqlite3"));
+    let args: Vec<String> = ["board", "inbox"].map(str::to_owned).into();
+    let options = crate::cli::parse(&args).unwrap();
+    let command = board_grammar::parse(&options, None).unwrap();
+    let error = anyhow::anyhow!(
+        "board_unavailable: transport note quotes schema version 99 is newer than supported 8"
+    );
+    let refusal = crate::board::unavailable_or_queue(
+        &command,
+        &options,
+        &crate::diagnostics::RequestContext::new(None, None),
+        &config,
+        directory.path(),
+        error,
+    )
+    .unwrap_err();
+    assert!(
+        !refusal.to_string().contains("upgrade trufflepig"),
+        "{refusal:#}"
+    );
+    assert!(refusal.to_string().contains("system ensure"), "{refusal:#}");
 }

@@ -7,6 +7,7 @@ pub enum BoardErrorCode {
     StaleRevision,
     ClaimConflict,
     BoardUnavailable,
+    SchemaNewer,
     BoardInitializationRequired,
     InvalidReference,
     InvalidKind,
@@ -27,6 +28,7 @@ impl BoardErrorCode {
             Self::StaleRevision => "stale_revision",
             Self::ClaimConflict => "claim_conflict",
             Self::BoardUnavailable => "board_unavailable",
+            Self::SchemaNewer => "schema_newer",
             Self::BoardInitializationRequired => "board_initialization_required",
             Self::InvalidReference => "invalid_reference",
             Self::InvalidKind => "invalid_kind",
@@ -49,6 +51,7 @@ impl BoardErrorCode {
             "stale_revision" => Self::StaleRevision,
             "claim_conflict" => Self::ClaimConflict,
             "board_unavailable" => Self::BoardUnavailable,
+            "schema_newer" => Self::SchemaNewer,
             "board_initialization_required" => Self::BoardInitializationRequired,
             "invalid_reference" => Self::InvalidReference,
             "invalid_kind" => Self::InvalidKind,
@@ -88,7 +91,7 @@ impl BoardErrorCode {
     pub fn is_domain_answer(self) -> bool {
         !matches!(
             self,
-            Self::BoardUnavailable | Self::DatabaseLocked | Self::DaemonBusy
+            Self::BoardUnavailable | Self::SchemaNewer | Self::DatabaseLocked | Self::DaemonBusy
         )
     }
 }

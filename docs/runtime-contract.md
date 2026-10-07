@@ -92,7 +92,10 @@ ordinary requests use 30 s, and expiry remains typed `timed_out`.
 still running at that point may lose their reply. Liveness checks connect to the
 socket (`src/daemon.rs:running`) and never touch the startup lock. `system
 ensure` uses one absolute 120 s startup deadline for status probes, spawn, and
-socket/spool polling; it starts no probe or process after expiry and reports
+socket/spool polling. Its initial status probe waits at most 250 ms; a bound
+router then gets the remaining startup budget without a second spawn. Polling
+uses the spool even when no socket runtime directory resolves. It starts no
+probe or process after expiry and reports
 `system_unavailable: router still starting after 120 s`. Clients wait at most 30 s for a reply
 (`src/daemon.rs:CLIENT_REPLY_WAIT`; a spooled request whose claiming router
 stops beating fails at once with `daemon_unavailable`). A read verb retries

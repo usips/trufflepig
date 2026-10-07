@@ -13,7 +13,7 @@ pub(crate) use board_runtime::{
 mod tests;
 
 use crate::{
-    background_process::spawn_background,
+    background_process::{BackgroundChild, spawn_background},
     daemon::{self, AcceptedRequest, DaemonHandler, deadline::QueryDeadline},
     diagnostics::RequestContext,
 };
@@ -109,31 +109,41 @@ pub fn request(args: &[String], context: &RequestContext) -> Result<Option<Strin
 
 /// Longest `ensure` waits for a spawned router's first status answer.
 const ROUTER_START_WAIT: Duration = Duration::from_secs(120);
+const ROUTER_STATUS_PROBE: Duration = Duration::from_millis(250);
 
 /// Starts the system daemon when no router answers its status ping, then waits
 /// up to [`ROUTER_START_WAIT`] for that ping to be answered: a starting router
 /// binds its socket before it migrates, so the wait covers migration. Board
 /// configuration resolves lazily inside the spawned router, never here.
 pub fn ensure() -> Result<()> {
-    ensure_within(ROUTER_START_WAIT)
+    ensure_with(ROUTER_START_WAIT, spawn_router)
 }
 
-/// `ensure` with the router start wait capped at `start_wait`, so tests can
-/// inject a short cap and a hung spawn fails fast.
-fn ensure_within(start_wait: Duration) -> Result<()> {
+fn spawn_router() -> Result<BackgroundChild> {
+    let mut command = Command::new(std::env::current_exe()?);
+    Ok(spawn_background(command.arg("system-serve"))?)
+}
+
+fn ensure_with(
+    start_wait: Duration,
+    spawn: impl FnOnce() -> Result<BackgroundChild>,
+) -> Result<()> {
     let deadline = QueryDeadline::after(start_wait);
-    let ping = vec!["system".to_owned(), "status".to_owned()];
+    let ping = ["system".to_owned(), "status".to_owned()];
     let context = RequestContext::new(None, None);
-    if poll(&ping, &context, deadline)?.is_some() {
+    if poll(&ping, &context, deadline.capped(ROUTER_STATUS_PROBE))?.is_some() {
         return Ok(());
     }
     ensure_router_starting(deadline, start_wait)?;
     let dir = dir().context("system_unavailable: no runtime dir")?;
-    fs::create_dir_all(&dir)?;
-    ensure_router_starting(deadline, start_wait)?;
-    let mut command = Command::new(std::env::current_exe()?);
-    ensure_router_starting(deadline, start_wait)?;
-    let child = spawn_background(command.arg("system-serve"))?;
+    let child = if daemon::running(&dir) {
+        None
+    } else {
+        ensure_router_starting(deadline, start_wait)?;
+        fs::create_dir_all(&dir)?;
+        ensure_router_starting(deadline, start_wait)?;
+        Some(spawn()?)
+    };
     loop {
         ensure_router_starting(deadline, start_wait)?;
         if poll(&ping, &context, deadline)?.is_some() {
@@ -142,7 +152,10 @@ fn ensure_within(start_wait: Duration) -> Result<()> {
         ensure_router_starting(deadline, start_wait)?;
         // A racing spawn exits on the socket bind while its winner serves; a
         // spawn that is gone with no listener fails before the cap.
-        if daemon::spawn_failed(&child, &dir) {
+        if child
+            .as_ref()
+            .is_some_and(|child| daemon::spawn_failed(child, &dir))
+        {
             bail!("system_unavailable: daemon did not start");
         }
         std::thread::sleep(Duration::from_millis(25).min(deadline.remaining()));
@@ -168,24 +181,33 @@ fn poll(
     if deadline.expired() {
         return Ok(None);
     }
-    let Some(dir) = dir() else {
-        return Ok(None);
-    };
+    poll_at(dir().as_deref(), &spool_dir(), ping, context, deadline)
+}
+
+fn poll_at(
+    runtime: Option<&std::path::Path>,
+    spool: &std::path::Path,
+    ping: &[String],
+    context: &RequestContext,
+    deadline: QueryDeadline,
+) -> Result<Option<String>> {
     if deadline.expired() {
         return Ok(None);
     }
-    let reply = match daemon::request_by(&dir, ping, context, deadline) {
-        Ok(reply) => reply,
-        Err(error) if poll_budget_spent(&error) => None,
-        Err(error) => return Err(error),
-    };
-    if let Some(reply) = reply {
-        return Ok((!deadline.expired()).then_some(reply));
+    if let Some(dir) = runtime {
+        let reply = match daemon::request_by(dir, ping, context, deadline) {
+            Ok(reply) => reply,
+            Err(error) if poll_budget_spent(&error) => None,
+            Err(error) => return Err(error),
+        };
+        if let Some(reply) = reply {
+            return Ok((!deadline.expired()).then_some(reply));
+        }
     }
     if deadline.expired() {
         return Ok(None);
     }
-    match daemon::spool::request(&spool_dir(), ping, context, deadline) {
+    match daemon::spool::request(spool, ping, context, deadline) {
         Ok(_) if deadline.expired() => Ok(None),
         Ok(reply) => Ok(reply),
         Err(error) if poll_budget_spent(&error) => Ok(None),
