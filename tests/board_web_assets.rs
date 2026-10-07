@@ -2,10 +2,16 @@
 use std::{
     env,
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
-    thread::sleep,
-    time::{Duration, Instant},
+    time::Duration,
 };
+
+mod board_web_assets {
+    mod board_web_asset_node_runner;
+
+    pub(super) use self::board_web_asset_node_runner::{run_node_program, run_node_tests};
+}
+
+use board_web_assets::{run_node_program, run_node_tests};
 
 /// Bound one `node --test` run so a leaked handle fails instead of hanging.
 const NODE_TEST_TIMEOUT: Duration = Duration::from_secs(300);
@@ -40,37 +46,6 @@ fn resolve_on_path(name: &str) -> Option<PathBuf> {
         }
     }
     None
-}
-
-/// Run `node --test` over `files`, killing the child when `timeout` lapses.
-fn run_node_tests(node: &Path, files: &[PathBuf], timeout: Duration) -> Result<Output, String> {
-    let mut child = Command::new(node)
-        .arg("--test")
-        .args(files)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("spawn node --test: {error}"))?;
-    let deadline = Instant::now() + timeout;
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => {
-                return child
-                    .wait_with_output()
-                    .map_err(|error| format!("collect node --test output: {error}"));
-            }
-            Ok(None) if Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(format!(
-                    "node --test timed out after {} s",
-                    timeout.as_secs()
-                ));
-            }
-            Ok(None) => sleep(Duration::from_millis(50)),
-            Err(error) => return Err(format!("poll node --test: {error}")),
-        }
-    }
 }
 
 /// Sorted `*.test.mjs` files directly inside the board asset test directory.
@@ -126,4 +101,84 @@ fn leaked_timer_fails_instead_of_hanging() {
         error.contains("node --test timed out after 3 s"),
         "unexpected failure: {error}"
     );
+}
+
+#[test]
+#[cfg_attr(not(board_node_20), ignore = "requires Node >=20")]
+fn noisy_node_success_drains_both_pipes() {
+    let node = resolve_on_path("node").expect("node on PATH: build probed Node >=20");
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/noisy_pass.mjs");
+    let output = run_node_program(&node, &fixture, Duration::from_secs(30))
+        .expect("noisy passing Node test completes");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        output.status.success(),
+        "Node exited with {}",
+        output.status
+    );
+    assert!(output.stdout.len() > 64 * 1024, "stdout was not drained");
+    assert!(output.stderr.len() > 64 * 1024, "stderr was not drained");
+    assert!(stdout.contains("NOISY_PASS_STDOUT_BEGIN"));
+    assert!(stderr.contains("NOISY_PASS_STDERR_BEGIN"));
+    assert!(stdout.contains("NOISY_PASS_EXIT_OK"));
+}
+
+#[test]
+#[cfg_attr(not(board_node_20), ignore = "requires Node >=20")]
+fn noisy_node_failure_preserves_both_streams_and_diagnostic() {
+    let node = resolve_on_path("node").expect("node on PATH: build probed Node >=20");
+    let fixture =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/noisy_failure.mjs");
+    let output = run_node_program(&node, &fixture, Duration::from_secs(30))
+        .expect("a nonzero Node exit returns captured output");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(!output.status.success(), "Node unexpectedly passed");
+    assert!(output.stdout.len() > 64 * 1024, "stdout was not drained");
+    assert!(output.stderr.len() > 64 * 1024, "stderr was not drained");
+    assert!(stdout.contains("NOISY_FAILURE_STDOUT_BEGIN"));
+    assert!(stderr.contains("NOISY_FAILURE_STDERR_BEGIN"));
+    assert!(stderr.contains("NOISY_FAILURE_USEFUL_DIAGNOSTIC"));
+    assert_eq!(output.status.code(), Some(23));
+}
+
+#[test]
+#[cfg(all(unix, board_node_20))]
+fn timeout_kills_node_descendants_holding_pipes() {
+    let node = resolve_on_path("node").expect("node on PATH: build probed Node >=20");
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/descendant_open_pipes.test.mjs");
+    let error = run_node_tests(&node, &[fixture], Duration::from_secs(3))
+        .expect_err("a descendant keeping the pipes open must hit the deadline");
+    assert!(
+        error.contains("node --test timed out after 3 s"),
+        "unexpected failure: {error}"
+    );
+    let pid = error
+        .split_whitespace()
+        .find_map(|word| word.strip_prefix("DESCENDANT_PID="))
+        .and_then(|value| value.parse::<u32>().ok())
+        .expect("timeout diagnostics include the descendant PID");
+    assert!(
+        !unix_process_is_running(pid),
+        "process-group descendant {pid} survived timeout cleanup"
+    );
+}
+
+#[cfg(all(unix, board_node_20))]
+fn unix_process_is_running(pid: u32) -> bool {
+    match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+        Ok(stat) => stat
+            .rsplit_once(')')
+            .and_then(|(_, rest)| rest.split_whitespace().next())
+            .is_some_and(|state| state != "Z" && state != "X"),
+        Err(_) => {
+            let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
+            result == 0
+                || std::io::Error::last_os_error().kind() == std::io::ErrorKind::PermissionDenied
+        }
+    }
 }
