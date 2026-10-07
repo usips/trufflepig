@@ -58,8 +58,8 @@ pub fn request_context(options: &Arguments) -> crate::diagnostics::RequestContex
 }
 
 /// Runs a client command, through the system router when the verb routes there.
-/// A router error is the answer; only an absent router falls through to
-/// [`run_direct`]'s coordinator, root-daemon, and local paths.
+/// An absent router, unavailable owner, or locally expired spool wait reaches
+/// [`run_direct`]'s coordinator, root-daemon, and local paths; other replies stay answers.
 pub fn run_with_context(
     args: &[String],
     context: &crate::diagnostics::RequestContext,

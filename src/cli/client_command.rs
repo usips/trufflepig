@@ -81,9 +81,12 @@ impl ClientCommand {
                 Ok(Some(reply)) => {
                     return system_reply(&applied, &root, verb, config.as_ref(), reply);
                 }
-                // A router that could not reach or start the owner leaves direct
-                // execution; any other router error is the answer.
-                Err(error) if !format!("{error:#}").contains("daemon_unavailable") => {
+                // An unavailable owner or locally expired spool wait leaves direct
+                // execution; other router errors remain answers.
+                Err(error)
+                    if !daemon::spool::is_local_spool_timeout(&error)
+                        && !format!("{error:#}").contains("daemon_unavailable") =>
+                {
                     return Err(error);
                 }
                 _ => {}

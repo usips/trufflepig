@@ -11,6 +11,7 @@ import pwd  # tests patch install_agent.pwd.getpwuid for the passwd-home fallbac
 import re
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -100,14 +101,23 @@ def router_status(runtime: Path, deadline: float) -> dict | None:
 
 
 def router_endpoint_present(runtime: Path) -> bool:
-    """Distinguish a missing endpoint from a present but unusable socket path."""
+    """A missing path or refused Unix socket is absent; other failures stay present."""
     socket_path = runtime / "daemon.sock"
     try:
-        socket_path.lstat()
+        metadata = socket_path.lstat()
     except FileNotFoundError:
         return False
     except OSError as error:
         raise ValueError(f"cannot inspect router endpoint {socket_path}: {error}") from error
+    if stat.S_ISSOCK(metadata.st_mode):
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+                connection.setblocking(False)
+                connection.connect(str(socket_path))
+        except (ConnectionRefusedError, FileNotFoundError):
+            return False
+        except OSError:
+            return True
     return True
 
 

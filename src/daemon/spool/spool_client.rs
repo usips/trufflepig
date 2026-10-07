@@ -47,6 +47,12 @@ fn request_until(
     let write_result = write_request_atomic(request_path, bytes, &deadline, |temporary, bytes| {
         fs::write(temporary, bytes)
     });
+    #[cfg(test)]
+    let deadline = if write_result.is_ok() {
+        spool_test_deadline::after_publication(request_path, deadline)
+    } else {
+        deadline
+    };
     check_deadline(&deadline)?;
     if let Err(error) = write_result {
         let spool_unavailable = error.chain().any(|cause| {
@@ -108,7 +114,7 @@ fn request_until(
 
 pub(super) fn check_deadline(deadline: &QueryDeadline) -> Result<()> {
     if deadline.expired() {
-        bail!("{TIMED_OUT}: spooled request deadline expired");
+        return Err(spool_timeout::LocalSpoolTimeout.into());
     }
     Ok(())
 }

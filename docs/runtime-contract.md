@@ -27,10 +27,11 @@ every step, and with no absolute candidate there is no directory
 (`system_unavailable`). `trufflepig system dir` prints the resolved directory.
 For source operations, the router forwards requests to the owning workspace coordinator or per-root
 daemon, starting a missing target and proxying the reply within 28 s
-(`src/daemon.rs:PROXY_REPLY_WAIT`), spawn wait included. A router reply,
-including an error, is the answer; an unreachable router, or a
-`daemon_unavailable` reply (the owner could not be reached or started), falls
-back to the per-root/coordinator path, then local dispatch. Daemons issue their
+(`src/daemon.rs:PROXY_REPLY_WAIT`), spawn wait included. Router replies, including
+`timed_out` errors, remain answers. An unreachable router, a `daemon_unavailable`
+reply (the owner could not be reached or started), or a locally expired
+file-spool deadline falls back to the per-root/coordinator path, then local
+dispatch (`src/cli.rs:run_with_context`). Daemons issue their
 own sub-requests (workspace owner verbs, member `semantic` commands) directly
 (`src/cli.rs:run_direct`), never through the router that may still be proxying
 the request, and wait for them only within the request's query deadline. `stop`,
@@ -42,13 +43,16 @@ foreground. The agent plugin ships a systemd user unit (`install.sh
 --systemd`) that keeps the router running and restarts it on failure. Service stop/restart
 includes its child daemons so binary upgrades do not retain old processes; its
 session-start hook starts that service, or straps a detached router when the unit is
-absent. A sandbox whose seccomp filter denies unix-socket connects (Muse's does) cannot
+absent. Installation treats a refused Unix-socket connection as an absent unmanaged
+router; managed service readiness still requires a live compatible reply
+(`plugins/trufflepig-agent/scripts/install_agent.py:router_endpoint_present`).
+A sandbox whose seccomp filter denies unix-socket connects (Muse's does) cannot
 reach any socket, and its read-only cache also blocks `--no-daemon`; such clients reach
 the router through its file spool instead. The router claims each `<request>.request`
 file in `$TRUFFLEPIG_SPOOL_DIR`, else `/tmp/trufflepig-<uid>/spool`, by renaming it
 to `<request>.claimed`, answers it on a worker with `<request>.reply`, and refreshes a `heartbeat`
 file every second; a client whose socket connect fails spools its request only while
-that heartbeat is under five seconds old, and otherwise reports `workspace_unavailable`.
+that heartbeat is under five seconds old, and otherwise leaves the request unspooled.
 The [Codex integration](../plugins/trufflepig-agent/README.md) configures a shared,
 disk-backed spool for its wrapper and router; do not use the legacy `/tmp` default
 on machines with RAM-backed temporary storage.

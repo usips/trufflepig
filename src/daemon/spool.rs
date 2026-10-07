@@ -7,7 +7,7 @@
 //! file, refreshed while the daemon serves, tells clients whether anyone is
 //! draining the spool before they wait.
 
-use super::deadline::{self, QueryDeadline, TIMED_OUT};
+use super::deadline::{self, QueryDeadline};
 use super::protocol::{DaemonReply, DaemonRequest};
 use anyhow::{Context, Result, bail};
 use std::fs;
@@ -24,9 +24,15 @@ const ORPHAN_AGE: Duration = Duration::from_secs(300);
 const QUARANTINE_AGE: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
 mod spool_client;
+#[cfg(test)]
+mod spool_test_deadline;
+mod spool_timeout;
 
 use spool_client::check_deadline;
 pub use spool_client::request;
+#[cfg(test)]
+pub(crate) use spool_test_deadline::{expire_after_next_publication, publication_expired};
+pub(crate) use spool_timeout::is_local_spool_timeout;
 
 /// Serves one spool directory from a daemon's maintenance ticks.
 pub struct SpoolServer {
