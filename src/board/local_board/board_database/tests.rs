@@ -1,6 +1,7 @@
 mod database_opening_tests;
 mod manual_link_migration_tests;
 mod repository_migration_tests;
+mod schema_nine_tests;
 mod schema_refusal_tests;
 mod schema_repair_tests;
 
@@ -54,6 +55,10 @@ fn shipped_migration_steps_are_byte_pinned() {
     assert_eq!(
         pin(SCHEMA_V8),
         "a182e6dbd24a6ff72524909ab87ee66abf64585afde1616f32cc75e8bd62d13d"
+    );
+    assert_eq!(
+        pin(SCHEMA_V9),
+        "9e78780cdd2f2cb7510f5d048982cf5026e5ca2ba626c9866ecd3631387e94d2"
     );
 }
 

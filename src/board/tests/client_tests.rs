@@ -141,7 +141,10 @@ fn newer_schema_refusal_advises_upgrade() {
     let context = crate::diagnostics::RequestContext::new(None, None);
     let error = anyhow::Error::new(board_protocol::BoardError::new(
         board_protocol::BoardErrorCode::SchemaNewer,
-        "schema version 99 is newer than supported 8",
+        format!(
+            "schema version 99 is newer than supported {}",
+            crate::board::SCHEMA_VERSION
+        ),
     ));
     let refusal = crate::board::unavailable_or_queue(
         &command,
@@ -154,7 +157,10 @@ fn newer_schema_refusal_advises_upgrade() {
     .unwrap_err();
     assert_eq!(
         refusal.to_string(),
-        "schema_newer: schema version 99 is newer than supported 8; upgrade trufflepig"
+        format!(
+            "schema_newer: schema version 99 is newer than supported {}; upgrade trufflepig",
+            crate::board::SCHEMA_VERSION
+        )
     );
 }
 

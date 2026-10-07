@@ -81,7 +81,7 @@ fn schema_eight_backfills_only_exact_earliest_manual_events() {
 fn failed_schema_eight_migration_rolls_back_and_reopens_after_repair() {
     let directory = directory();
     let path = directory.path().join("board.sqlite3");
-    seed_storage_schema(&path, SCHEMA_VERSION - 1).unwrap();
+    seed_storage_schema(&path, 7).unwrap();
     let legacy = Connection::open(&path).unwrap();
     legacy
         .execute(
@@ -102,7 +102,7 @@ fn failed_schema_eight_migration_rolls_back_and_reopens_after_repair() {
     let version: i64 = rolled_back
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, SCHEMA_VERSION - 1);
+    assert_eq!(version, 7);
     assert!(!has_link_seq(&rolled_back));
     assert_eq!(
         rolled_back
@@ -152,8 +152,8 @@ fn failed_schema_eight_migration_rolls_back_and_reopens_after_repair() {
     );
 }
 
-fn seed_manual_link_history(path: &Path) {
-    seed_storage_schema(path, SCHEMA_VERSION - 1).unwrap();
+pub(super) fn seed_manual_link_history(path: &Path) {
+    seed_storage_schema(path, 7).unwrap();
     let connection = Connection::open(path).unwrap();
     connection
         .execute_batch(

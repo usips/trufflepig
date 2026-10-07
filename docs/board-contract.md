@@ -153,14 +153,16 @@ Storage defaults to `$XDG_DATA_HOME/trufflepig/board.sqlite3`, else the passwd h
 0700 applies only to board-created directories (a fresh account's missing `~/.local` and
 `~/.local/share` ancestors), and a pre-existing group/world-accessible parent is refused — open
 paths never chmod, read paths never modify the filesystem. The DB records its resolved path and uses
-forward `user_version` migrations; every shipped step is immutable, including migrations 1–7. Schema
+forward `user_version` migrations; every shipped step is immutable, including migrations 1–8. Schema
 4 repairs `commit_plans_entry` and `claims_entry_active` and rewrites stored dedupe receipts to the
 current API. Subsequent steps contain no API-version literals; dispatch upgrades older receipt
-stamps on replay. Schema 8 adds indexed nullable `commit_tasks.link_seq REFERENCES events(seq)`. For
+stamps on replay. Schema 8 adds nullable `commit_tasks.link_seq REFERENCES events(seq)`. For
 manual rows, it backfills only the earliest event matching the plan, kind `commit`, target
 `E<entry_id>`, and exact summary `linked <oid> to P<plan>.<task> by hand`. Unmatched history stays
-unknown; scanned rows remain `source=scan`. Empty/relative DB overrides and newer schemas are
-refused. Board data is outside cache sweeps and `forget-logs`; entries and revisions remain durable.
+unknown; scanned rows remain `source=scan`. Schema 9 drops the backfill-only
+`events_manual_commit_lookup` index; `link_seq` has no dedicated index. Empty/relative DB overrides
+and newer schemas are refused. Board data is outside cache sweeps and `forget-logs`; entries and
+revisions remain durable.
 WAL requires local disk, not network filesystems. Configuration is `~/.config/trufflepig/board.toml`
 with unknown fields denied: mode, user, host, url, token_file, claim_ttl_minutes, repos. Config
 checks cache for two seconds; failed unchanged reloads back off 60 seconds; successful TTL changes

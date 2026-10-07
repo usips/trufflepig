@@ -3,7 +3,7 @@
 mod board_search_schema;
 pub(super) use board_search_schema::{SCHEMA_V3, SCHEMA_V6};
 
-pub const SCHEMA_VERSION: i64 = 8;
+pub const SCHEMA_VERSION: i64 = 9;
 
 pub(super) const SCHEMA_V1: &str = r#"
 CREATE TABLE board_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -216,4 +216,9 @@ SET link_seq=(
   AND event.summary='linked '||linked.oid||' to P'||linked.plan_id||'.'||linked.task_ordinal||' by hand'
 )
 WHERE linked.source='manual';
+"#;
+
+/// Removes the index used only by the completed manual-link backfill.
+pub(super) const SCHEMA_V9: &str = r#"
+DROP INDEX events_manual_commit_lookup;
 "#;
