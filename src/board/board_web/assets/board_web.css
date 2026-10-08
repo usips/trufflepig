@@ -76,6 +76,7 @@ h4{font-size:.9rem;margin:.2rem 0}
 .panel-title h2{margin:0}
 .badge{display:inline-block;border:1px solid var(--line);border-radius:20px;
  padding:.1rem .45rem;font-size:.72rem;white-space:nowrap;color:var(--muted)}
+.badge[hidden]{display:none}
 .badge[data-kind=doing],.badge[data-kind=accepted],.badge[data-kind=fixed],
 .badge[data-kind=new]{color:var(--accent);background:var(--accent-soft);border-color:#c2d9ca}
 .badge[data-kind=blocked],.badge[data-kind=stale],
