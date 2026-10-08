@@ -1,8 +1,8 @@
 # Workspace contract
 
-A workspace federates explicitly named local repository roots. Members have names
-and paths, without project roles or inferred implementation ownership. An agent
-interprets matches from each repository; Trufflepig exposes evidence and origin.
+A workspace federates explicitly named local repository roots with named members
+and paths; registered workspaces define [board Projects](board-projects.md#registry).
+Trufflepig exposes matches and origin without inferring implementation ownership.
 The [retrieval contract](retrieval-contract.md) applies within every member.
 
 ## Membership and discovery
@@ -93,16 +93,16 @@ workspace, and explicit selectors never widen. Selectors do not establish
 dependency, import, or compiler-resolution relationships.
 
 A parent-index answer reads worktree bytes; its row has `state: parent_fallback`, `home_state`,
-`served_from`, `differs` (`null` when unknown), and `differing_hits`. Lines read
-`MEMBER@WT warming → served from MEMBER index (N files differ)`, `(1 file differs)`, `(no files
-differ)`, or `(differences unknown)`; changed-file hits ([index](index-contract.md)) end in `differs`.
-`sym:`, `map FILE`, and `show` re-extract changed files (`served_from: MEMBER index; re-extracted in
-worktree`). Without a published parent, home reads
-`MEMBER@WT warming (no parent index)`. An exact `sym:` miss without a parent-index candidate refreshes divergence and examines at most 64 changed files. More
-than 64 changed paths, a failed Git probe, or an unchecked changed file makes
-coverage partial and truncated: absence is not exhaustive and home does not
-widen. Other fallback reads can reuse cached divergence for up to five seconds.
-Without an index, reads (including `show path:`) answer `index_warming` unless `--no-daemon` indexes first.
+`served_from`, `differs` (`null` when unknown), and `differing_hits`. Lines read `MEMBER@WT warming
+→ served from MEMBER index (N files differ)`, `(1 file differs)`, `(no files differ)`, or
+`(differences unknown)`; changed-file hits ([index](index-contract.md)) end in `differs`. `sym:`,
+`map FILE`, and `show` re-extract changed files (`served_from: MEMBER index; re-extracted in
+worktree`). Without a published parent, home reads `MEMBER@WT warming (no parent index)`. An exact
+`sym:` miss without a parent-index candidate refreshes divergence and examines at most 64 changed
+files. More than 64 changed paths, a failed Git probe, or an unchecked changed file makes coverage
+partial and truncated: absence is not exhaustive and home does not widen. Other fallback reads can
+reuse cached divergence for up to five seconds. Without an index, reads (including `show path:`)
+answer `index_warming` unless `--no-daemon` indexes first.
 
 Each member produces its existing ranked candidate list. Retrieval collapses
 each lane to one representative occurrence per file, then fuses file ranks with

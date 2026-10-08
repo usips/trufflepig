@@ -33,6 +33,9 @@ impl ClientCommand {
         if verb == "ws" && options.words.get(1).is_some_and(|v| v == "discover") {
             return crate::workspace::discover_paths(&options.words[2..], options.budget);
         }
+        if verb == "ws" && options.words.get(1).is_some_and(|v| v == "list") {
+            return crate::workspace::list(&options);
+        }
         if verb == "board-serve" {
             let address = options.board_listen_address();
             return crate::board::board_web::serve(address).map(|()| String::new());

@@ -9,6 +9,7 @@ mod result_cache;
 mod retrieval;
 #[cfg(test)]
 mod test_fixture;
+mod workspace_list;
 mod worktree_cache;
 use crate::{
     cli::Arguments, diagnostics::RequestContext, output::OutputBudget, store::encode_path,
@@ -21,6 +22,7 @@ use member_root::MemberRoot;
 use result_cache::WorkspaceResults;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
+pub(crate) use workspace_list::list;
 
 pub fn resolve(options: &Arguments) -> Result<Option<WorkspaceConfig>> {
     let start = options

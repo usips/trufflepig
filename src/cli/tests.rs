@@ -6,3 +6,4 @@ mod grammar_tests;
 mod spool_fallback_fixture;
 mod spool_fallback_tests;
 mod transport_tests;
+mod workspace_list_tests;

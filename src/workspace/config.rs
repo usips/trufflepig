@@ -12,6 +12,12 @@ use super::member_root::{self, MemberRoot};
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 
+mod workspace_registry;
+pub use workspace_registry::{
+    RegisteredWorkspace, RegisteredWorkspaceMember, registered_workspaces,
+    registered_workspaces_from, registry_path,
+};
+
 const CONFIG_LIMIT: u64 = 256 * 1024;
 const MEMBER_LIMIT: usize = 32;
 pub const CONFIG_NAME: &str = "trufflepig.workspace.toml";
@@ -196,9 +202,7 @@ impl WorkspaceConfig {
                 identity,
             });
         }
-        let id = blake3::hash(path.as_os_str().as_bytes())
-            .to_hex()
-            .to_string();
+        let id = config_id(&path);
         Ok(Self {
             name: document.workspace.name,
             id,
@@ -257,18 +261,10 @@ impl WorkspaceConfig {
                 return config.accept_root(&start, explicit_root);
             }
         }
-        let Some(base) = std::env::var_os("XDG_CONFIG_HOME")
-            .filter(|value| !value.is_empty())
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
-        else {
+        let Some(path) = registry_path() else {
             return Ok(None);
         };
-        discover_registry(
-            &base.join("trufflepig/workspaces.toml"),
-            &start,
-            explicit_root,
-        )
+        discover_registry(&path, &start, explicit_root)
     }
 
     /// The member whose checkout or linked worktree contains `start`.
@@ -414,6 +410,12 @@ fn read_document<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
     let contents = std::str::from_utf8(&bytes).context("workspace configuration is not UTF-8")?;
     toml::from_str(contents)
         .with_context(|| format!("parse workspace configuration {}", path.display()))
+}
+
+fn config_id(path: &Path) -> String {
+    blake3::hash(path.as_os_str().as_bytes())
+        .to_hex()
+        .to_string()
 }
 
 pub fn load(path: &Path) -> Result<WorkspaceConfig> {
