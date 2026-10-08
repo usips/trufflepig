@@ -7,10 +7,10 @@ mod route_replies;
 mod tests;
 use super::{
     BoardWebState, PUBLIC_AGENT_MARKS, PUBLIC_CARDS, PUBLIC_DOM, PUBLIC_DONE_PAGE, PUBLIC_ENTRIES,
-    PUBLIC_INGEST, PUBLIC_LRU, PUBLIC_MAIN, PUBLIC_PAGES, PUBLIC_PLAN_PAGE, PUBLIC_PROPOSAL_PAGE,
-    PUBLIC_READER, PUBLIC_RENDER_LOOP, PUBLIC_ROUTING, PUBLIC_SEEN, PUBLIC_SHELL, PUBLIC_STREAM,
-    PUBLIC_STREAM_ELECTION, PUBLIC_STREAM_PARSE, PUBLIC_STYLE, PUBLIC_TOKEN, PUBLIC_TRIAGE,
-    PUBLIC_VIEWS,
+    PUBLIC_INGEST, PUBLIC_LRU, PUBLIC_MAIN, PUBLIC_OVERVIEW_STYLE, PUBLIC_PAGES, PUBLIC_PLAN_PAGE,
+    PUBLIC_PROPOSAL_PAGE, PUBLIC_READER, PUBLIC_RENDER_LOOP, PUBLIC_ROUTING, PUBLIC_SEEN,
+    PUBLIC_SHELL, PUBLIC_STREAM, PUBLIC_STREAM_ELECTION, PUBLIC_STREAM_PARSE, PUBLIC_STYLE,
+    PUBLIC_TOKEN, PUBLIC_TRIAGE, PUBLIC_VIEWS,
     http_wire::{self, HttpError, HttpMethod, HttpRequest},
     web_guard::{ChallengeNonce, RouteAccess, WebGuard},
     web_ops::{self, WebRequest},
@@ -164,6 +164,9 @@ fn public_asset(path: &str) -> Option<(&str, &str)> {
         "/state/board_lru.js" => PUBLIC_LRU,
         "/state/board_seen.js" => PUBLIC_SEEN,
         "/board_web.css" => return Some(("text/css; charset=utf-8", PUBLIC_STYLE)),
+        "/styles/board_overview.css" => {
+            return Some(("text/css; charset=utf-8", PUBLIC_OVERVIEW_STYLE));
+        }
         _ => return None,
     };
     Some(("text/javascript; charset=utf-8", script))

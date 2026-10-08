@@ -36,6 +36,7 @@ pub use web_serve::serve;
 const PUBLIC_SHELL: &str = include_str!("board_web/assets/index.html");
 const PUBLIC_MAIN: &str = include_str!("board_web/assets/board_web_main.js");
 const PUBLIC_STYLE: &str = include_str!("board_web/assets/board_web.css");
+const PUBLIC_OVERVIEW_STYLE: &str = include_str!("board_web/assets/styles/board_overview.css");
 const PUBLIC_DOM: &str = include_str!("board_web/assets/board_dom.js");
 const PUBLIC_VIEWS: &str = include_str!("board_web/assets/board_views.js");
 const PUBLIC_CARDS: &str = include_str!("board_web/assets/board_cards.js");

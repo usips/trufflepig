@@ -13,6 +13,18 @@ export function createBoardRenderLoop({
 
   function errorMessage(error) { return error?.message || String(error); }
   function isAbort(error) { return error?.name === "AbortError"; }
+  function captureDoneDisclosures(root) {
+    const open = state.openDonePlans ||= new Set();
+    for (const details of root.querySelectorAll(".lane-done")) {
+      if (details.open) open.add(details.dataset.donePlan);
+      else open.delete(details.dataset.donePlan);
+    }
+  }
+  function restoreDoneDisclosures(root) {
+    for (const details of root.querySelectorAll(".lane-done")) {
+      details.open = state.openDonePlans?.has(details.dataset.donePlan) || false;
+    }
+  }
   function acceptProjects(projects) {
     if (!projects) return;
     state.projects = projects; wiring.updateProjectSelector?.(projects);
@@ -171,7 +183,7 @@ export function createBoardRenderLoop({
     const controller = new AbortController(); state.request = controller;
     const generation = ++state.generation;
     const route = { ...state.route };
-    captureForms(main);
+    captureForms(main); captureDoneDisclosures(main);
     state.refreshing = true; state.refreshAgain = false;
     main.setAttribute("aria-busy", "true");
     if (focus) main.replaceChildren(el("div", "loading", "Loading…"));
@@ -186,6 +198,9 @@ export function createBoardRenderLoop({
       acceptProjects(result.projects);
       if (result.serverNow !== null) state.clockOffsetMs = result.serverNow * 1000 - Date.now();
       const active = focus ? null : focusedControl(main);
+      // Read the still-visible disclosure again: its choice may have changed
+      // while the request was pending, before a native toggle event is delivered.
+      captureDoneDisclosures(main); restoreDoneDisclosures(result.page);
       captureForms(main); restoreForms(result.page); main.replaceChildren(result.page); restoreFocus(main, active);
       state.loadedAt = Date.now();
       if (result.watermark !== null) {
@@ -216,7 +231,7 @@ export function createBoardRenderLoop({
       if (!main.querySelector("form") || focus) {
         const box = panel("Board unavailable", add(el("div"), el("p", "", errorMessage(error)),
           focusKey(button("Try again", () => void loadRoute(true)), "try-again")), "callout");
-        main.replaceChildren(box);
+        captureDoneDisclosures(main); main.replaceChildren(box);
       } else notice(errorMessage(error), "error");
       if (!isExpired()) setConnection(getToken() ? "Request failed" : "Authorization required", "error");
     } finally {

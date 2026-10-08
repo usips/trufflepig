@@ -5,6 +5,10 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
     el, add, link, refLink, badge, actorName, shortActor, timeNode, ageNode,
     empty, focusKey, planId,
   } = dom;
+  function cardPreview(value) {
+    const text = String(value || ""), characters = Array.from(text);
+    return characters.length > 280 ? `${characters.slice(0, 279).join("")}…` : text;
+  }
 
   function entryCard(record, options = {}) {
     const entry = entryRecord(record);
@@ -37,7 +41,7 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
       const item = el("li", "event-row");
       focusKey(item, `event:${event.seq}`);
       add(item, fresh(event) ? badge("new") : null, badge(event.kind), refLink(event.subject),
-        el("span", "event-summary", event.summary),
+        el("span", "event-summary", cardPreview(event.summary)),
         actorMark(event), el("span", "muted small", shortActor(event.actor)),
         event.via === "outbox" ? el("span", "provenance", "(spooled, unverified)") : null,
         timeNode(event.created_at));
@@ -45,17 +49,23 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
     }
     return list.childElementCount ? list : empty("No recent activity.");
   }
-  function workingCard(claim) {
-    const item = el("div", "working-card"); item.dataset.stale = claim.stale;
+  function claimIdentity(claim, className = "") {
+    const identity = add(el("span", `claim-identity ${className}`), actorMark(claim),
+      el("span", "", shortActor(claim.actor)));
+    identity.title = actorName(claim.actor);
+    return identity;
+  }
+  function workingCard(claim, task) {
+    const item = el("article", "working-card"); item.dataset.stale = claim.stale;
     focusKey(item, `working-card:${claim.task}`);
     add(item,
-      add(el("div", "row spread"), add(el("strong", ""), actorMark(claim),
-        el("span", "", shortActor(claim.actor))),
+      add(el("div", "working-card-heading"), refLink(claim.task, task?.title || claim.task, "working-task"),
         claim.stale ? badge("stale") : badge("doing")),
-      refLink(claim.task), el("div", "muted small", actorName(claim.actor)),
-      claim.model || claim.effort ? el("div", "small", [claim.model, claim.effort].filter(Boolean).join(" · ")) : null,
-      add(el("div", "small"), el("span", "muted", "Active "), ageNode(claim.last_active)),
-      el("div", "small", claim.scope));
+      el("p", "working-scope", claim.scope),
+      add(el("div", "working-meta"), claimIdentity(claim, "working-identity"),
+        claim.model || claim.effort ? el("span", "", [claim.model, claim.effort].filter(Boolean).join(" · ")) : null,
+        refLink(claim.task),
+        add(el("span", "working-active"), el("span", "", "Active "), ageNode(claim.last_active))));
     return item;
   }
   function taskCard(task, claims, options = {}) {
@@ -65,7 +75,7 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
     if (claim) item.dataset.stale = claim.stale;
     add(item, refLink(task.id, task.title, ""), el("div", "small muted", task.id),
       claim
-        ? add(el("div", "small"), actorMark(claim), el("span", "", actorName(claim.actor)),
+        ? add(el("div", "small task-claim"), claimIdentity(claim),
           el("span", "muted", " · "),
           ageNode(claim.last_active))
         : (task.assignee ? add(el("div", "small muted"), recipientMark(task.assignee),
@@ -87,14 +97,32 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
     const entry = entryRecord(item.record);
     const card = el("article", "attention-card");
     focusKey(card, `attention-card:${entry?.id || item.record.entry}`);
+    const preview = cardPreview(entry?.body || item.record.summary || "Open entry");
     add(card,
-      add(el("div", "row"), badge(item.type), entry?.plan ? refLink(entry.plan) : null),
-      refLink(entry?.id || item.record.entry, entry?.body || item.record.summary || "Open entry", ""),
-      add(el("p"), entry?.actor ? actorMark(entry) : null,
-        el("span", "", entry?.actor ? `From ${actorName(entry.actor)}` : ""),
+      add(el("div", "row wrap"), badge(item.type), entry?.plan ? refLink(entry.plan) : null),
+      el("p", "attention-preview", preview),
+      refLink(entry?.id || item.record.entry, "Read entry →", "attention-entry-link"),
+      add(el("p", "attention-author"), entry?.actor ? actorMark(entry) : null,
+        el("span", "", entry?.actor ? `From ${shortActor(entry.actor)}` : ""),
         entry?.via === "outbox" ? el("span", "provenance", " (spooled, unverified)") : null));
+    if (entry?.actor) card.querySelector(".attention-author").title = actorName(entry.actor);
     return card;
   }
+  function doneFooter(plan, item) {
+    const done = el("details", "lane-done"), count = item.done_count || 0;
+    done.dataset.donePlan = plan.id;
+    done.open = state.openDonePlans?.has(plan.id) || false;
+    const summary = el("summary", "done-summary", `Done (${count})`);
+    summary.dataset.focusKey = `done:${plan.id}`;
+    const recent = (item.recent_done || []).slice(0, 5);
+    const more = count - recent.length;
+    add(done, summary, add(el("div", "lane-done-content"),
+      recent.length ? add(el("div", "recent-done-cards"), recent.map(task => taskCard(task, [])))
+        : el("p", "small muted", "No completed tasks yet."),
+      link(more > 0 ? `${more} more →` : "View all completed tasks →", "plan",
+        { ref: plan.id, tab: "done" }, "small done-history-link")));
+    return done;
+  }
 
-  return { entryCard, eventList, workingCard, taskCard, attentionItems, attentionCard };
+  return { entryCard, eventList, workingCard, taskCard, attentionItems, attentionCard, doneFooter };
 }

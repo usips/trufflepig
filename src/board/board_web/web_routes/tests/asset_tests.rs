@@ -10,6 +10,25 @@ fn package_manifest_is_not_served() {
     assert!(manifest.contains("route not found"), "{manifest}");
 }
 
+#[test]
+fn shell_stylesheets_are_served_as_css() {
+    let fixture = render_fixture();
+    let mut checked = 0;
+    for link in PUBLIC_SHELL.split("rel=\"stylesheet\" href=\"").skip(1) {
+        let path = link.split('"').next().unwrap();
+        let asset = render_get(&fixture, path);
+        assert!(asset.starts_with("HTTP/1.1 200 "), "{path}: {asset}");
+        assert!(
+            asset.contains("Content-Type: text/css; charset=utf-8"),
+            "{path}: {asset}"
+        );
+        checked += 1;
+    }
+    assert!(checked > 0, "the shell stylesheet scanner matched nothing");
+    let unknown = render_get(&fixture, "/styles/private.css");
+    assert!(unknown.starts_with("HTTP/1.1 404 "), "{unknown}");
+}
+
 /// Raw ES import specifiers in one served script, skipping comments and strings.
 fn asset_import_specifiers(script: &str) -> Vec<&str> {
     let bytes = script.as_bytes();

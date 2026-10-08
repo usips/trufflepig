@@ -15,7 +15,7 @@ export function createBoardViews(context) {
     ageNode, panel, empty, omitted, title, field, formStatus, planId, focusKey, retainForm,
   } = dom;
   const {
-    entryCard, eventList, workingCard, taskCard, attentionItems, attentionCard,
+    entryCard, eventList, workingCard, taskCard, attentionItems, attentionCard, doneFooter,
   } = createBoardCards({ state, dom, entryRecord, collection });
   function projectChips(repoKeys, projects = state.projects || []) {
     if (!Array.isArray(repoKeys)) return null;
@@ -37,7 +37,7 @@ export function createBoardViews(context) {
     return chips.childElementCount ? chips : null;
   }
   function renderOverview(data, attention, route, projects) {
-    const page = el("div");
+    const page = el("div", "overview-page");
     // The 202 is only a queue receipt; the terminal result arrives as an
     // `ingest` stream frame carrying the 202's ticket (see board_web_main.js
     // onIngest), so the control stays busy until its own frame or a timeout.
@@ -79,36 +79,33 @@ export function createBoardViews(context) {
     add(page, title("Board", "Shared plans and the work happening now.", ingest));
     const plans = collection(data, "plans");
     const claims = (data.working || plans.flatMap(item => item.claims || [])).filter(claim => !claim.ended_at);
-    if (claims.length) add(page, panel("Working now", add(el("div", "working-strip"), claims.map(workingCard))));
+    const tasksById = new Map(plans.flatMap(item => (item.tasks || []).map(task => [task.id, task])));
+    if (claims.length) add(page, panel("Working now", add(el("div", "working-strip"),
+      claims.map(claim => workingCard(claim, tasksById.get(claim.task)))), "working-panel"));
     const layout = el("div", "overview-layout");
     const lanes = el("div");
     for (const item of plans) {
       const plan = item.plan || item;
+      const activeTasks = (item.tasks || []).filter(task => task.column !== "done");
+      const activeCount = activeTasks.length + (item.tasks_omitted || 0);
       const lane = el("section", "swimlane");
       focusKey(lane, `swimlane:${plan.id}`);
       const heading = add(el("div", "lane-heading"), refLink(plan.id),
         link(plan.title, "plan", { ref: plan.id }),
         el("span", "badge", `Revision ${plan.head_revision}`),
         projectChips(item.repo_keys, projects),
-        el("span", "count", `${(item.tasks || []).length} tasks`));
+        el("span", "count", `${activeCount} active · ${item.done_count || 0} done`));
       const grid = el("div", "lane-columns");
       for (const column of columns.filter(column => column !== "done")) {
-        const tasks = (item.tasks || []).filter(task => task.column === column);
+        const tasks = activeTasks.filter(task => task.column === column);
         const cell = add(el("div", "lane-column"), el("div", "column-name", `${column} · ${tasks.length}`));
         add(cell, tasks.map(task => taskCard(task, item.claims,
           { claimsOmitted: item.claims_omitted, plan: plan.id, through: data.through })));
         if (!tasks.length) cell.append(el("div", "small muted", "—"));
         grid.append(cell);
       }
-      const recentDone = item.recent_done || [];
-      const done = add(el("details", "lane-column lane-done"),
-        el("summary", "column-name", `Done (${item.done_count || 0})`));
-      add(done, recentDone.map(task => taskCard(task, [])));
-      const moreDone = (item.done_count || 0) - recentDone.length;
-      if (moreDone > 0) done.append(link(`${moreDone} more →`, "plan", { ref: plan.id, tab: "done" }, "small"));
-      if (!recentDone.length && !moreDone) done.append(el("div", "small muted", "—"));
-      grid.append(done);
-      add(lane, heading, grid, omitted(item.tasks_omitted, "tasks"),
+      add(lane, heading, activeCount ? grid : el("p", "lane-empty small muted", "No active tasks."),
+        doneFooter(plan, item), omitted(item.tasks_omitted, "tasks"),
         item.tasks_omitted ? link("Browse all tasks", "plan", { ref: plan.id, tab: "tasks" }, "small") : null,
         omitted(item.claims_omitted, "claims"),
         item.claims_omitted ? link("Browse all claims", "claims", { plan: plan.id }, "small") : null);

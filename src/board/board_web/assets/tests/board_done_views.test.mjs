@@ -83,7 +83,7 @@ it("done_load_older_link_keeps_the_returned_cursor", () => {
   assert.equal(page.querySelector(".done-group").querySelector("h2").textContent, "Earlier");
 });
 
-it("done_column_preserves_active_cards_and_zero_more", () => {
+it("done_column_preserves_active_cards_and_complete_history_link", () => {
   const view = planView();
   view.tasks = [ { id: "P7.6", title: "Active", column: "todo" } ];
   const page = harness().renderOverview({ plans: [{ ...view, done_count: 1, recent_done: [task(1, 1)] }] },
@@ -91,7 +91,8 @@ it("done_column_preserves_active_cards_and_zero_more", () => {
   assert.equal(page.querySelectorAll(".task-card").length, 2);
   const done = page.querySelector(".lane-done");
   assert.equal(done.querySelectorAll(".task-card").length, 1);
-  assert.ok(!done.querySelectorAll("a").some(link => link.href.includes("tab=done")));
+  assert.equal(done.querySelector(".done-history-link").href, "/#/P7?tab=done");
+  assert.equal(done.querySelector(".done-history-link").textContent, "View all completed tasks →");
 });
 
 it("done_card_opens_the_actual_task_beyond_the_first_ordinal_page", () => {

@@ -41,11 +41,25 @@ Proposal/acceptance authority and task transitions remain backend decisions.
 
 ## Active tasks and Done
 
+Working now leads Overview with a wrapping grid of the returned current claims. Cards show the
+task title when it is present in the snapshot, the full claim scope, and compact harness/model
+metadata; hovering the identity shows its complete actor identity. Working now never requires
+horizontal scrolling. Below it, Needs you precedes plan lanes on narrow screens.
+
+Needs you cards and Latest activity summaries preview at most 280 Unicode codepoints. Their entry
+links retain access to the complete body, and entry pages display that body without truncation.
+
 Overview prioritizes `todo`, `doing`, `review`, and `blocked` tasks in ordinal order within the
 [collection bounds](board-cli-contract.md#collection-bounds). `tasks_omitted` counts additional
-active tasks only. Its Done column is a collapsed native `details` element with summary
-`Done (<count>)` and up to five recent Done cards. An `N more →` link opens the plan's Done tab,
-where N is the count minus cards shown.
+active tasks only; plan counts include those omitted tasks. The four active columns align to
+their own content and reflow to two columns, then one, as the screen narrows. A plan without
+active tasks displays a compact empty state instead of empty columns.
+
+Done is a full-width footer below the active columns: a native `details` element with summary
+`Done (<count>)`, closed by default, and up to five recent Done cards. Its link always opens the
+plan's Done tab, displaying `N more →` when N (the count minus cards shown) is positive. The
+disclosure's open or closed choice survives live refresh and navigation within the same tab;
+reloading the page starts closed.
 
 The plan Done tab is `/#/P7?tab=done`; `/#/done` reads Done tasks across the selected scope.
 Completion fields and current-state paging follow the
