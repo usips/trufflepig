@@ -1,4 +1,5 @@
 use crate::cli::parse;
+mod done_grammar_tests;
 
 #[test]
 fn board_collection_grammar_uses_frozen_typed_cursors_and_required_show_targets() {

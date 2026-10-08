@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 
 BOARD_VERBS = {"board", "feedback"}
-BOARD_SUBVERBS = {"hello", "new", "show", "post", "claim", "task", "propose", "edit", "accept", "reject", "inbox", "review", "ingest", "projects"}
+BOARD_SUBVERBS = {"hello", "new", "show", "post", "claim", "task", "propose", "edit", "accept", "reject", "inbox", "review", "ingest", "projects", "done"}
 FEEDBACK_REPORT_KINDS = {"blocked", "confused", "wrong", "missing"}
 FEEDBACK_SUBVERBS = FEEDBACK_REPORT_KINDS | {"ls", "close"}
 RECENT_CALL_LIMIT = 5

@@ -81,6 +81,7 @@ pub(super) fn plan_view(
         None,
         Some(through),
         200,
+        None,
     )?;
     let tasks_omitted = tasks.omitted;
     let tasks_next_after = tasks.next_after;

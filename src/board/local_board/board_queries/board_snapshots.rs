@@ -118,11 +118,31 @@ impl LocalBoard {
             )?,
             BoardOp::Tasks {
                 plan,
+                column,
+                order,
+                before,
                 after,
                 ceiling,
                 through,
                 limit,
-            } => collection_nested::tasks_page(&tx, *plan, *after, *ceiling, *through, *limit)?,
+            } => collection_nested::tasks_page(
+                &tx,
+                *plan,
+                *after,
+                *ceiling,
+                *through,
+                *limit,
+                collection_nested::TaskSelection {
+                    column: *column,
+                    order: *order,
+                    before: *before,
+                },
+            )?,
+            BoardOp::DoneTasks {
+                scope,
+                before,
+                limit,
+            } => collection_nested::done_tasks_page(&tx, scope, *before, *limit, ctx.now)?,
             BoardOp::Claims {
                 plan,
                 own_stale,

@@ -17,7 +17,8 @@ fn scope_read_repo_key(op: &mut BoardOp, registration: Option<&RepoRegistration>
             own_stale: true,
             ..
         }
-        | BoardOp::Overview { scope, .. } => scope,
+        | BoardOp::Overview { scope, .. }
+        | BoardOp::DoneTasks { scope, .. } => scope,
         _ => return,
     };
     if matches!(scope, ReadScope::All | ReadScope::Repo(_)) {

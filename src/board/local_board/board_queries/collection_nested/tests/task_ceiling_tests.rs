@@ -89,7 +89,8 @@ fn collection_tasks_paginate_completely_and_retain_moved_members() {
             Some(TaskId::new(plan(2), 1).unwrap()),
             Some(first.ceiling),
             None,
-            1
+            1,
+            TaskSelection::default(),
         )
         .unwrap_err()
         .code,
@@ -152,7 +153,8 @@ fn collection_task_ceiling_keeps_empty_membership_and_validates_continuations() 
             None,
             None,
             Some(empty.through),
-            1
+            1,
+            TaskSelection::default(),
         )
         .unwrap_err()
         .code,
@@ -165,7 +167,8 @@ fn collection_task_ceiling_keeps_empty_membership_and_validates_continuations() 
             Some(TaskId::new(plan(1), 1).unwrap()),
             None,
             None,
-            1
+            1,
+            TaskSelection::default(),
         )
         .unwrap_err()
         .code,
@@ -181,7 +184,8 @@ fn collection_task_ceiling_keeps_empty_membership_and_validates_continuations() 
                 ordinal: 0
             }),
             None,
-            1
+            1,
+            TaskSelection::default(),
         )
         .unwrap_err()
         .code,
@@ -197,7 +201,8 @@ fn collection_task_ceiling_keeps_empty_membership_and_validates_continuations() 
                 ordinal: i64::MAX as u64 + 1
             }),
             None,
-            1
+            1,
+            TaskSelection::default(),
         )
         .unwrap_err()
         .code,

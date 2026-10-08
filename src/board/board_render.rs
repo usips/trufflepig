@@ -60,6 +60,7 @@ pub(crate) fn render_cli_reply(
         | BoardResult::History(_)
         | BoardResult::Entries(_)
         | BoardResult::Tasks(_)
+        | BoardResult::DoneTasks(_)
         | BoardResult::Claims(_)
         | BoardResult::Feedback(_) => render_collections(reply, budget, project),
         BoardResult::Review(evidence) => render_review(

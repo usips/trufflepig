@@ -9,6 +9,7 @@ use crate::board::review_packet::{ReviewPacket, SsotDiff};
 mod budget_render_tests;
 mod collection_boundary_tests;
 mod collection_render_tests;
+mod done_task_budget_tests;
 mod entry_render_tests;
 mod inbox_render_tests;
 mod overview_done_budget_tests;

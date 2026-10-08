@@ -8,7 +8,7 @@ export function createBoardReader(context) {
   const { el, add, title, panel, planId, actorName, stamp } = dom;
   const {
     renderOverview, renderAttention, renderClaims, feedbackPage, searchPage, editorPage, entryPage,
-    entriesPage, diffPage, sanitizedMarkup, renderPlan, projectChips,
+    entriesPage, diffPage, sanitizedMarkup, renderPlan, renderDone, projectChips,
   } = views;
   // Newest-first paging over the descending Entries window: one read
   // per page, following the server's next-before cursor.
@@ -18,6 +18,23 @@ export function createBoardReader(context) {
     }))).data;
     if (!Array.isArray(data?.entries)) throw new Error("Board reply is missing its entries collection.");
     return data;
+  }
+  function doneClock(data) {
+    if (Number.isFinite(data?.server_now)) state.clockOffsetMs = data.server_now * 1000 - Date.now();
+  }
+  function taskWindow(route, view) {
+    const bounds = { after: route.taskAfter || null, through: route.taskThrough || null,
+      ceiling: route.taskCeiling ? parseBoardJson(route.taskCeiling) : null };
+    if (!route.task) return bounds;
+    const target = /^(P[1-9]\d*)\.([1-9]\d*)$/.exec(route.task);
+    if (!target || target[1] !== view.plan.id) throw new Error("Choose a task from the current plan.");
+    const ordinal = BigInt(target[2]);
+    if (route.taskAfter || ordinal <= 50n) return bounds;
+    const ceiling = view.task_ceiling;
+    if (ceiling?.plan !== view.plan.id || ordinal > BigInt(ceiling.ordinal)) {
+      throw new Error("This task is outside the captured plan task window.");
+    }
+    return { after: String(ordinal - 1n), through: view.through, ceiling };
   }
   async function fetchRoute(route, signal, forceSnapshot) {
     const replies = [];
@@ -75,6 +92,12 @@ export function createBoardReader(context) {
       page = renderOverview(overview, attention, route, projects);
     } else if (route.view === "attention") {
       attention = await readAttention(route); page = renderAttention(attention, route);
+    } else if (route.view === "done") {
+      const completed = await read(readOp("done_tasks", {
+        scope: boardReadScope(route.project), before: route.before ? parseBoardJson(route.before) : null,
+        limit: 50,
+      }));
+      doneClock(completed); page = renderDone(completed, route);
     } else if (route.view === "claims") {
       page = renderClaims(
         await readClaims(route.plan || null, route.after, route.through, route.own_stale === "1"),
@@ -136,14 +159,19 @@ export function createBoardReader(context) {
             route.tab === "history" ? read(readOp("history",
               { plan: view.plan.id, after: cursorFromRoute(route), through: route.through || null, limit: 50 })) :
               route.tab === "entries" ? entriesNewestPage(route, readReply, view.plan.id) :
-                route.tab === "tasks" ? Promise.all([
+                route.tab === "done" ? read(readOp("tasks", {
+                  plan: view.plan.id, column: "done", order: "recent_first",
+                  before: route.before ? parseBoardJson(route.before) : null,
+                  after: null, ceiling: null, through: null, limit: 50,
+                })) : route.tab === "tasks" ? Promise.all([
                   read(readOp("tasks", {
-                    plan: view.plan.id, after: route.taskAfter || null, through: route.taskThrough || null,
-                    ceiling: route.taskCeiling ? parseBoardJson(route.taskCeiling) : null, limit: 50,
+                    plan: view.plan.id, column: null, order: "ordinal", before: null,
+                    ...taskWindow(route, view), limit: 50,
                   })),
                   readClaims(view.plan.id, route.claimAfter, route.claimThrough || view.through),
                 ]).then(([tasks, claims]) => ({ tasks, claims })) : Promise.resolve(null),
           ]);
+          if (route.tab === "done") doneClock(view);
           page = renderPlan(view, rendered, extra, route, projects);
         }
       }

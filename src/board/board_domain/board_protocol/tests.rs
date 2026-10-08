@@ -1,3 +1,4 @@
+mod done_task_read_contracts;
 mod error_classification_tests;
 mod op_validation_tests;
 mod read_collections_tests;

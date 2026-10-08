@@ -159,6 +159,7 @@ pub(super) fn lines_result(result: &BoardResult) -> String {
         | BoardResult::History(_)
         | BoardResult::Entries(_)
         | BoardResult::Tasks(_)
+        | BoardResult::DoneTasks(_)
         | BoardResult::Claims(_) => collection_lines::lines(&mut text, result),
         BoardResult::Repositories(repositories) => {
             for repository in repositories {

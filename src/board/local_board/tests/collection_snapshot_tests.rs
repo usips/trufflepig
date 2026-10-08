@@ -57,6 +57,9 @@ fn collection_dispatch_reports_snapshot_without_registering_reader_actor() {
             limit: 10,
         },
         BoardOp::Tasks {
+            column: None,
+            order: TaskOrder::Ordinal,
+            before: None,
             plan,
             after: None,
             ceiling: None,

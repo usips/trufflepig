@@ -114,6 +114,20 @@ pub(super) fn lines(text: &mut String, result: &BoardResult) {
                 .unwrap();
             }
         }
+        BoardResult::DoneTasks(page) => {
+            writeln!(text, "done omitted={}", page.omitted).unwrap();
+            for task in &page.tasks {
+                writeln!(
+                    text,
+                    "{}\t{}\tcompleted={}",
+                    task.id,
+                    cell(task.title.as_str()),
+                    task.done_at
+                        .map_or_else(|| "unknown".into(), |time| time.to_string())
+                )
+                .unwrap();
+            }
+        }
         BoardResult::Claims(page) => {
             writeln!(
                 text,

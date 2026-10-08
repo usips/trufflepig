@@ -93,11 +93,15 @@ fn internal_collections_keep_frozen_bounds_without_cli_hints() {
     let results = [
         BoardResult::Tasks(TaskPage {
             plan,
+            column: None,
+            order: TaskOrder::Ordinal,
             tasks,
             after: Some(TaskId::new(plan, 5).unwrap()),
+            before: None,
             ceiling: TaskCeiling { plan, ordinal: 40 },
             through,
             next_after: Some(TaskId::new(plan, 35).unwrap()),
+            next_before: None,
             omitted: 7,
         }),
         BoardResult::Claims(ClaimPage {

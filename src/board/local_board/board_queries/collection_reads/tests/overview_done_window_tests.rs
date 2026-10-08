@@ -174,7 +174,8 @@ fn task_done_at_tracks_completion_and_clears_when_reopened() {
     assert_eq!(overview["done_count"], json!(0));
 
     move_seeded_task(&board, 1, TaskColumn::Done, 6, 900);
-    let page = collection_nested::task_window(&board.conn, plan(1), None, None, None, 20).unwrap();
+    let page =
+        collection_nested::task_window(&board.conn, plan(1), None, None, None, 20, None).unwrap();
     let tasks = serde_json::to_value(&page.tasks).unwrap();
     assert_eq!(tasks[0]["done_at"], json!(900));
     let tasks =

@@ -1,7 +1,7 @@
 //! Versioned replies and the records they contain.
 use super::{
-    AttentionReply, BOARD_API, ClaimPage, EntriesPage, EventPage, FeedbackPage, HistoryPage,
-    OverviewReply, TaskPage,
+    AttentionReply, BOARD_API, ClaimPage, DoneTasksPage, EntriesPage, EventPage, FeedbackPage,
+    HistoryPage, OverviewReply, TaskPage,
 };
 use crate::board::{
     board_actor::BoardActor, board_ids::EventSeq, board_vocabulary::FeedbackImportKey,
@@ -84,6 +84,7 @@ pub enum BoardResult {
     History(HistoryPage),
     Entries(EntriesPage),
     Tasks(TaskPage),
+    DoneTasks(DoneTasksPage),
     Claims(ClaimPage),
     Feedback(FeedbackPage),
     Repositories(Vec<RepoScanTarget>),

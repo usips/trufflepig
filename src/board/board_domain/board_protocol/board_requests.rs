@@ -1,7 +1,7 @@
 //! Versioned backend requests and operation addresses.
 use super::{
     BOARD_API, ClaimCursor, EntryCursor, FeedbackMetadata, LinkedCommit, RepoRegistration,
-    TaskCeiling, validate_claim,
+    TaskCeiling, TaskCursor, TaskOrder, validate_claim,
 };
 use crate::board::{
     board_actor::{BoardActor, BoardRecipient, HarnessLabel},
@@ -137,9 +137,17 @@ pub enum BoardOp {
     },
     Tasks {
         plan: PlanId,
+        column: Option<TaskColumn>,
+        order: TaskOrder,
+        before: Option<TaskCursor>,
         after: Option<TaskId>,
         ceiling: Option<TaskCeiling>,
         through: Option<EventSeq>,
+        limit: usize,
+    },
+    DoneTasks {
+        scope: ReadScope,
+        before: Option<TaskCursor>,
         limit: usize,
     },
     Claims {

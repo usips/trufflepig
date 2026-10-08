@@ -5,6 +5,13 @@ use crate::board::local_board::LocalBoard;
 use rusqlite::OptionalExtension;
 
 impl LocalBoard {
+    /// Reads durable plan associations without requiring registered host paths.
+    pub(crate) fn plan_repo_keys(&self, plan: PlanId) -> Result<Vec<RepoKey>, BoardError> {
+        let conn = self.reader.as_ref().unwrap_or(&self.conn);
+        require_plan(conn, plan)?;
+        crate::board::local_board::board_queries::read_scope_sql::plan_repo_keys(conn, plan)
+    }
+
     /// Durable host/path identity; paths use the same lossy encoding as registration writes.
     pub fn repo_key_at(
         &self,

@@ -11,6 +11,7 @@ use super::board_protocol::{
     TaskRecord,
 };
 use super::board_vocabulary::EntryText;
+use super::board_vocabulary::TaskColumn;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -118,12 +119,53 @@ pub struct FeedbackPage {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TaskPage {
     pub plan: PlanId,
+    pub column: Option<TaskColumn>,
+    pub order: TaskOrder,
     pub tasks: Vec<TaskRecord>,
     pub after: Option<TaskId>,
+    pub before: Option<TaskCursor>,
     pub ceiling: TaskCeiling,
     pub through: EventSeq,
     pub next_after: Option<TaskId>,
+    pub next_before: Option<TaskCursor>,
     pub omitted: usize,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskOrder {
+    #[default]
+    Ordinal,
+    RecentFirst,
+}
+
+/// Completion sequence and numeric task identity form a descending paging key.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskCursor {
+    pub seq: EventSeq,
+    pub id: TaskId,
+}
+
+impl TaskCursor {
+    pub fn validate(self) -> anyhow::Result<()> {
+        self.id.validate()?;
+        anyhow::ensure!(
+            (1..=MAX_BOARD_NUMBER).contains(&self.seq.get()),
+            "invalid_reference: task cursor must contain a positive SQLite sequence"
+        );
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DoneTasksPage {
+    pub scope: super::board_protocol::ReadScope,
+    pub tasks: Vec<TaskRecord>,
+    pub before: Option<TaskCursor>,
+    pub next_before: Option<TaskCursor>,
+    pub omitted: usize,
+    pub server_now: i64,
 }
 
 /// The captured maximum task ordinal freezes membership, including an empty plan at zero.

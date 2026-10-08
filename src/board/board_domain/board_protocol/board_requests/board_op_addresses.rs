@@ -19,6 +19,7 @@ impl BoardOp {
                 | Self::History { .. }
                 | Self::Entries { .. }
                 | Self::Tasks { .. }
+                | Self::DoneTasks { .. }
                 | Self::Claims { .. }
         )
     }
@@ -29,6 +30,7 @@ impl BoardOp {
             Self::Inbox { scope, .. }
             | Self::Overview { scope, .. }
             | Self::Attention { scope, .. }
+            | Self::DoneTasks { scope, .. }
             | Self::Claims { scope, .. }
             | Self::Feed { scope, .. } => Some(scope),
             _ => None,

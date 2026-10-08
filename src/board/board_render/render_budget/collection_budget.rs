@@ -1,8 +1,11 @@
 //! Prefix fitting preserves each collection's continuation and membership boundary.
 use super::{BoardOmitted, fit_items, render_complete, require_fits};
-use crate::board::board_protocol::{BoardReply, BoardResult, EntryCursor, EntryRecord};
+use crate::board::board_protocol::{
+    BoardReply, BoardResult, EntryCursor, EntryRecord, ReadScope, TaskCursor, TaskOrder, TaskRecord,
+};
 use crate::board::board_render::RenderedBoard;
 use crate::board::board_render::render_scope_hints::cli_scope_flag;
+use crate::board::board_vocabulary::TaskColumn;
 use crate::output::OutputBudget;
 use anyhow::{Result, bail};
 
@@ -18,6 +21,7 @@ pub(in crate::board::board_render) fn render_collections(
         BoardResult::History(page) => page.revisions.len(),
         BoardResult::Entries(page) => page.entries.len(),
         BoardResult::Tasks(page) => page.tasks.len(),
+        BoardResult::DoneTasks(page) => page.tasks.len(),
         BoardResult::Claims(page) => page.claims.len(),
         BoardResult::Feedback(page) => page.feedback.len(),
         _ => unreachable!("collection renderer requires a collection"),
@@ -145,11 +149,23 @@ fn prefix(
         BoardResult::Tasks(page) => {
             omitted.entries = page.tasks.len() - count;
             if omitted.entries > 0 {
-                page.next_after = page
-                    .tasks
-                    .get(count.wrapping_sub(1))
-                    .map(|task| task.id)
-                    .or(page.after);
+                if page.order == TaskOrder::RecentFirst {
+                    page.next_before = task_cursor(&page.tasks[..count]).or(page.before);
+                } else {
+                    page.next_after = page
+                        .tasks
+                        .get(count.wrapping_sub(1))
+                        .map(|task| task.id)
+                        .or(page.after);
+                }
+            }
+            page.tasks.truncate(count);
+            page.omitted += omitted.entries;
+        }
+        BoardResult::DoneTasks(page) => {
+            omitted.entries = page.tasks.len() - count;
+            if omitted.entries > 0 {
+                page.next_before = task_cursor(&page.tasks[..count]).or(page.before);
             }
             page.tasks.truncate(count);
             page.omitted += omitted.entries;
@@ -193,8 +209,36 @@ fn entry_cursor(entries: &[EntryRecord]) -> Option<EntryCursor> {
     })
 }
 
+fn task_cursor(tasks: &[TaskRecord]) -> Option<TaskCursor> {
+    tasks.last().map(|task| TaskCursor {
+        seq: task.seq,
+        id: task.id,
+    })
+}
+
 fn next_hint(result: &BoardResult, project: Option<&str>) -> Option<String> {
     match result {
+        BoardResult::Tasks(page)
+            if page.order == TaskOrder::RecentFirst && page.column == Some(TaskColumn::Done) =>
+        {
+            page.next_before.map(|cursor| {
+                let selector = project.map_or_else(String::new, |selector| {
+                    cli_scope_flag(&ReadScope::All, Some(selector))
+                });
+                format!(
+                    "board done {} --after {}:{}{selector}",
+                    page.plan, cursor.seq, cursor.id
+                )
+            })
+        }
+        BoardResult::DoneTasks(page) => page.next_before.map(|cursor| {
+            format!(
+                "board done --after {}:{}{}",
+                cursor.seq,
+                cursor.id,
+                cli_scope_flag(&page.scope, project)
+            )
+        }),
         BoardResult::Overview(page) => page.next_after.map(|after| {
             format!(
                 "board show --after {after} --through {}{}",

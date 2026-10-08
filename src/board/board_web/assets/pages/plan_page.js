@@ -5,7 +5,7 @@ export function createPlanPage(context) {
   const {
     state, dom, board, jsonFetch, navigate, scheduleRefresh, submitMutation, notice, apiVersion,
     entryRecord, collection, permitted, nextAfter, pageParams, queryFilters, postKinds, entryKinds,
-    entryCard, taskCard, workingCard, postForm, taskDetails, projectChips,
+    entryCard, taskCard, workingCard, postForm, taskDetails, doneTasks, projectChips,
   } = context;
   const {
     el, add, button, routeUrl, link, refLink, badge, actorName, shortActor, stamp, timeNode, age,
@@ -15,7 +15,7 @@ export function createPlanPage(context) {
   function planTabs(ref, selected) {
     const tabs = el("nav", "tabs"); tabs.setAttribute("aria-label", "Plan sections");
     for (const [key, label] of [
-      ["ssot", "Plan"], ["tasks", "Tasks"], ["entries", "Entries"],
+      ["ssot", "Plan"], ["tasks", "Tasks"], ["done", "Done"], ["entries", "Entries"],
       ["history", "History"], ["commits", "Commits"], ["review", "Review"],
     ]) tabs.append(link(label, "plan", { ref: planId(ref), tab: key }, selected === key ? "active" : ""));
     return tabs;
@@ -84,6 +84,7 @@ export function createPlanPage(context) {
       planTabs(plan.id, route.tab || "ssot")
     );
     const tab = route.tab || "ssot";
+    if (tab === "done") return add(page, doneTasks(extra, route));
     if (tab === "tasks") {
       const tasks = extra.tasks, claims = extra.claims;
       const details = taskDetails({

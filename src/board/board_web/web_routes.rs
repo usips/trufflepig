@@ -6,8 +6,8 @@ mod route_replies;
 #[cfg(test)]
 mod tests;
 use super::{
-    BoardWebState, PUBLIC_CARDS, PUBLIC_DOM, PUBLIC_ENTRIES, PUBLIC_INGEST, PUBLIC_LRU,
-    PUBLIC_MAIN, PUBLIC_PAGES, PUBLIC_PLAN_PAGE, PUBLIC_PROPOSAL_PAGE, PUBLIC_READER,
+    BoardWebState, PUBLIC_CARDS, PUBLIC_DOM, PUBLIC_DONE_PAGE, PUBLIC_ENTRIES, PUBLIC_INGEST,
+    PUBLIC_LRU, PUBLIC_MAIN, PUBLIC_PAGES, PUBLIC_PLAN_PAGE, PUBLIC_PROPOSAL_PAGE, PUBLIC_READER,
     PUBLIC_RENDER_LOOP, PUBLIC_ROUTING, PUBLIC_SEEN, PUBLIC_SHELL, PUBLIC_STREAM,
     PUBLIC_STREAM_ELECTION, PUBLIC_STREAM_PARSE, PUBLIC_STYLE, PUBLIC_TOKEN, PUBLIC_TRIAGE,
     PUBLIC_VIEWS,
@@ -150,6 +150,7 @@ fn public_asset(path: &str) -> Option<(&str, &str)> {
         "/board_render_loop.js" => PUBLIC_RENDER_LOOP,
         "/pages/board_pages.js" => PUBLIC_PAGES,
         "/pages/plan_page.js" => PUBLIC_PLAN_PAGE,
+        "/pages/done_page.js" => PUBLIC_DONE_PAGE,
         "/pages/proposal_page.js" => PUBLIC_PROPOSAL_PAGE,
         "/stream/board_stream.js" => PUBLIC_STREAM,
         "/stream/stream_election.js" => PUBLIC_STREAM_ELECTION,

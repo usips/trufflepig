@@ -1,4 +1,5 @@
 //! Backend request runs: CLI commands onto the board host.
+mod host_done;
 mod host_review;
 use super::super::{
     BoardHost,
@@ -183,12 +184,14 @@ impl BoardHost {
             );
         }
         if let Some(selector) = options.board.project.as_deref() {
-            if selector == "unscoped" {
-                *op.read_scope_mut()
-                    .context("invalid_options: --project requires a scoped read")? =
-                    ReadScope::Unscoped;
-            } else {
-                self.select_project_scope(&mut op, selector, &actor.host, deadline)?;
+            if !self.validate_done_project(&op, selector, &actor.host, deadline)? {
+                if selector == "unscoped" {
+                    *op.read_scope_mut()
+                        .context("invalid_options: --project requires a scoped read")? =
+                        ReadScope::Unscoped;
+                } else {
+                    self.select_project_scope(&mut op, selector, &actor.host, deadline)?;
+                }
             }
         }
         scope_read_repo_key(&mut op, registration.as_ref(), options.board.all);

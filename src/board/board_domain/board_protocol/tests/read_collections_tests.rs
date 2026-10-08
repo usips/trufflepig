@@ -34,6 +34,9 @@ fn read_contract_rejects_missing_show_target_and_invalid_claim_cursors() {
 fn task_read_contract_validates_ceilings_and_requires_captured_membership() {
     let plan = PlanId::new(1).unwrap();
     let operation = |after, ceiling, through| BoardOp::Tasks {
+        column: None,
+        order: TaskOrder::Ordinal,
+        before: None,
         plan,
         after,
         ceiling,
@@ -45,7 +48,7 @@ fn task_read_contract_validates_ceilings_and_requires_captured_membership() {
         .validate()
         .unwrap();
     let decoded: BoardOp = serde_json::from_value(serde_json::json!({
-        "op": "tasks", "plan": "P1", "after": null,
+        "op": "tasks", "order": "ordinal", "plan": "P1", "after": null,
         "ceiling": {"plan": "P1", "ordinal": 0}, "through": 10, "limit": 1
     }))
     .unwrap();
@@ -114,7 +117,7 @@ fn collection_operations_share_read_classification_and_bounds() {
             200,
         ),
         (
-            serde_json::json!({"op": "tasks", "plan": "P1", "limit": 1}),
+            serde_json::json!({"op": "tasks", "order": "ordinal", "plan": "P1", "limit": 1}),
             Some("P1"),
             200,
         ),
@@ -224,6 +227,9 @@ fn task_continuations_reject_foreign_and_out_of_range_cursors() {
         },
     ] {
         let operation = BoardOp::Tasks {
+            column: None,
+            order: TaskOrder::Ordinal,
+            before: None,
             plan,
             after: Some(after),
             ceiling: Some(ceiling),
@@ -239,6 +245,9 @@ fn task_continuations_reject_foreign_and_out_of_range_cursors() {
         );
     }
     BoardOp::Tasks {
+        column: None,
+        order: TaskOrder::Ordinal,
+        before: None,
         plan,
         after: Some(TaskId::new(plan, 2).unwrap()),
         ceiling: Some(ceiling),

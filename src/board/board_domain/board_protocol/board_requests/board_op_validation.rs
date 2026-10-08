@@ -3,7 +3,7 @@ use super::BoardOp;
 use crate::board::{
     board_actor::{HarnessLabel, validate_actor_component},
     board_ids::{BoardRef, MAX_BOARD_NUMBER, TaskId},
-    board_protocol::{COAUTHOR_LIMIT, LINK_LIMIT, bounded_metadata, validate_claim},
+    board_protocol::{COAUTHOR_LIMIT, LINK_LIMIT, TaskOrder, bounded_metadata, validate_claim},
     board_vocabulary::ENTRY_TEXT_LIMIT,
 };
 use anyhow::{Result, bail};
@@ -21,6 +21,10 @@ impl BoardOp {
             Self::Claims {
                 after: Some(after), ..
             } => after.validate()?,
+            Self::DoneTasks {
+                before: Some(before),
+                ..
+            } => before.validate()?,
             _ => {}
         }
         match self {
@@ -65,6 +69,7 @@ impl BoardOp {
             | Self::History { limit, .. }
             | Self::Entries { limit, .. }
             | Self::Tasks { limit, .. }
+            | Self::DoneTasks { limit, .. }
             | Self::Claims { limit, .. }
             | Self::FeedbackList { limit, .. }
                 if !(1..=200).contains(limit) =>
@@ -93,11 +98,30 @@ impl BoardOp {
             }
             Self::Tasks {
                 plan,
+                order,
+                before,
                 after,
                 ceiling,
                 through,
                 ..
             } => {
+                if *order == TaskOrder::RecentFirst {
+                    if after.is_some() || ceiling.is_some() || through.is_some() {
+                        bail!(
+                            "invalid_options: recent-first tasks use before, without after, ceiling, or through"
+                        );
+                    }
+                    if let Some(before) = before {
+                        before.validate()?;
+                        if before.id.plan != *plan {
+                            bail!("invalid_reference: task cursor belongs to another plan");
+                        }
+                    }
+                    return Ok(());
+                }
+                if before.is_some() {
+                    bail!("invalid_options: ordinal tasks do not accept before");
+                }
                 if let Some(after) = after {
                     after.validate()?;
                     if after.plan != *plan {

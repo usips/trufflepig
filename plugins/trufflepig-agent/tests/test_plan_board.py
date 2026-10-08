@@ -63,6 +63,17 @@ sys.exit(int(os.environ.get("EXIT", "0")))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.records()[-1]["args"], ["projects"])
 
+    def test_done_command_keeps_project_and_recent_cursor_out_of_audit(self):
+        self.env.update(TRUFFLEPIG_AGENT_MODEL="gpt-6.1-sol", TRUFFLEPIG_AGENT_EFFORT="max")
+        result = self.run_wrapper("--project", "PRIVATE_PROJECT", "board", "done", "P7",
+                                  "--after", "123:P7.3", "-n1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--agent-model", self.argv())
+        self.assertIn("123:P7.3", self.argv())
+        self.assertEqual(self.records()[-1]["args"], ["done", "P7"])
+        self.assertNotIn("PRIVATE_PROJECT", json.dumps(self.records()[-1]))
+        self.assertNotIn("123:P7.3", json.dumps(self.records()[-1]))
+
     def test_claim_environment_applies_only_to_board_and_feedback(self):
         self.env.update(TRUFFLEPIG_AGENT_MODEL="gpt-6-luna", TRUFFLEPIG_AGENT_EFFORT="xhigh")
         for verb, words in (("board", ["inbox"]), ("feedback", ["missing", "Feature"]), ("search", ["needle"])):

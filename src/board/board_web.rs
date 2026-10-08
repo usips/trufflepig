@@ -43,6 +43,7 @@ const PUBLIC_ROUTING: &str = include_str!("board_web/assets/board_routing.js");
 const PUBLIC_RENDER_LOOP: &str = include_str!("board_web/assets/board_render_loop.js");
 const PUBLIC_PAGES: &str = include_str!("board_web/assets/pages/board_pages.js");
 const PUBLIC_PLAN_PAGE: &str = include_str!("board_web/assets/pages/plan_page.js");
+const PUBLIC_DONE_PAGE: &str = include_str!("board_web/assets/pages/done_page.js");
 const PUBLIC_PROPOSAL_PAGE: &str = include_str!("board_web/assets/pages/proposal_page.js");
 const PUBLIC_STREAM: &str = include_str!("board_web/assets/stream/board_stream.js");
 const PUBLIC_STREAM_ELECTION: &str = include_str!("board_web/assets/stream/stream_election.js");

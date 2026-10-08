@@ -35,6 +35,7 @@ impl WebRequest {
                     | "projects"
                     | "show"
                     | "tasks"
+                    | "done_tasks"
                     | "claims"
                     | "feed"
                     | "attention"

@@ -1,5 +1,6 @@
 import { createBoardDetails } from "./pages/board_pages.js";
 import { createBoardCards } from "./board_cards.js";
+import { createDonePage } from "./pages/done_page.js";
 import { INGEST_TIMEOUT_MS, INGEST_UNKNOWN_MESSAGE, completeIngest, resolveIngestEvent } from "./board_ingest.js";
 
 export function createBoardViews(context) {
@@ -90,7 +91,7 @@ export function createBoardViews(context) {
         projectChips(item.repo_keys, projects),
         el("span", "count", `${(item.tasks || []).length} tasks`));
       const grid = el("div", "lane-columns");
-      for (const column of columns) {
+      for (const column of columns.filter(column => column !== "done")) {
         const tasks = (item.tasks || []).filter(task => task.column === column);
         const cell = add(el("div", "lane-column"), el("div", "column-name", `${column} · ${tasks.length}`));
         add(cell, tasks.map(task => taskCard(task, item.claims,
@@ -98,6 +99,14 @@ export function createBoardViews(context) {
         if (!tasks.length) cell.append(el("div", "small muted", "—"));
         grid.append(cell);
       }
+      const recentDone = item.recent_done || [];
+      const done = add(el("details", "lane-column lane-done"),
+        el("summary", "column-name", `Done (${item.done_count || 0})`));
+      add(done, recentDone.map(task => taskCard(task, [])));
+      const moreDone = (item.done_count || 0) - recentDone.length;
+      if (moreDone > 0) done.append(link(`${moreDone} more →`, "plan", { ref: plan.id, tab: "done" }, "small"));
+      if (!recentDone.length && !moreDone) done.append(el("div", "small muted", "—"));
+      grid.append(done);
       add(lane, heading, grid, omitted(item.tasks_omitted, "tasks"),
         item.tasks_omitted ? link("Browse all tasks", "plan", { ref: plan.id, tab: "tasks" }, "small") : null,
         omitted(item.claims_omitted, "claims"),
@@ -260,11 +269,12 @@ export function createBoardViews(context) {
     if (data.next_after) page.append(link("Next claims", "claims", pageParams(route, data), "button"));
     return page;
   }
+  const done = createDonePage({ state, dom, taskCard });
   const details = createBoardDetails({
-    ...context, entryCard, taskCard, workingCard, postForm, taskDetails, projectChips,
+    ...context, entryCard, taskCard, workingCard, postForm, taskDetails, projectChips, ...done,
   });
   return {
     entryCard, eventList, workingCard, taskCard, attentionItems, attentionCard, renderOverview,
-    renderAttention, renderClaims, postForm, taskDetails, projectChips, ...details,
+    renderAttention, renderClaims, postForm, taskDetails, projectChips, ...done, ...details,
   };
 }

@@ -106,9 +106,17 @@ fn tasks(
     through: Option<EventSeq>,
     limit: usize,
 ) -> TaskPage {
-    match tasks_page(conn, plan(1), after, ceiling, through, limit)
-        .unwrap()
-        .result
+    match tasks_page(
+        conn,
+        plan(1),
+        after,
+        ceiling,
+        through,
+        limit,
+        TaskSelection::default(),
+    )
+    .unwrap()
+    .result
     {
         BoardResult::Tasks(page) => page,
         other => panic!("unexpected {other:?}"),
@@ -126,6 +134,7 @@ fn overview(conn: &Connection, after: Option<PlanId>, through: Option<EventSeq>)
 }
 
 mod claim_cursor_tests;
+mod done_paging_tests;
 mod entry_backref_tests;
 mod nested_scope_tests;
 mod task_ceiling_tests;

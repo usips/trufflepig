@@ -116,6 +116,7 @@ pub(super) fn apply_mutation(
         | BoardOp::History { .. }
         | BoardOp::Entries { .. }
         | BoardOp::Tasks { .. }
+        | BoardOp::DoneTasks { .. }
         | BoardOp::Claims { .. } => unreachable!("read operations use query-only dispatch"),
         BoardOp::RecordScan {
             repo_key,

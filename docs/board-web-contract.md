@@ -65,6 +65,7 @@ Mismatches fail `board_api_mismatch` without negotiation. Errors are
 | `GET /board_dom.js`, `/board_views.js`, `/board_cards.js` | Public UI modules |
 | `GET /board_routing.js`, `/board_render_loop.js` | Public UI modules |
 | `GET /pages/board_pages.js`, `/pages/plan_page.js`, `/pages/proposal_page.js` | Page modules |
+| `GET /pages/done_page.js` | Completed-task page module |
 | `GET /stream/board_stream.js`, `/stream/stream_parse.js` | Stream modules |
 | `GET /stream/stream_election.js` | Stream modules |
 | `GET /feedback_triage.js`, `/board_reader.js`, `/board_entries.js` | UI modules |
@@ -82,12 +83,12 @@ Render route targets decode only `%40` (to `@`); any other percent escape fails 
 The optional top-level `project` selects a host Project for scoped reads; see the
 [read scope contract](board-projects.md#read-scopes) for resolution and conflicting-scope errors.
 
-The web allowlist exposes Overview, Repositories, Projects, Show, Tasks, Claims, Feed, Attention,
-History, Entries, Search, and FeedbackList reads; New, Post, TaskCreate, TaskMove, Accept, Reject,
-Edit, FeedbackClose, and FeedbackTriage writes. Browser Post kinds are `note`, `answer`, `decision`,
-and `question`. Other typed operations fail `invalid_options: op not available over web`. Local
-reads remain available without a responsive router; a conflicting known database pin rejects private
-reads, writes, and streams.
+The web allowlist exposes Overview, Repositories, Projects, Show, Tasks, DoneTasks, Claims, Feed,
+Attention, History, Entries, Search, and FeedbackList reads; New, Post, TaskCreate, TaskMove,
+Accept, Reject, Edit, FeedbackClose, and FeedbackTriage writes. Browser Post kinds are `note`,
+`answer`, `decision`, and `question`. Other operations fail
+`invalid_options: op not available over web`. Local reads remain available without a responsive
+router; a conflicting known database pin rejects private reads, writes, and streams.
 
 POST ingest probes router API/database identity and relays without spawning a router; an
 unavailable router is an error. Single-flight, it answers 202 with `ingest:"queued"` plus a
@@ -119,11 +120,12 @@ filters by plan, kind, harness, user, host, task, and referenced entry, newest-f
 continues older, `after` pages ascending (legacy), never both. Retain whole composite cursors so
 same-sequence entries and same-entry claims are not skipped. Attention returns `next_after` for
 entries and `claims_next_after` for own stale claims; Tasks/Claims/Entries recover collections
-Plan Show omits. Tasks starts with null `after`/`through`/`ceiling`, capturing
+Plan Show omits. Ordinal Tasks start with null `after`/`through`/`ceiling`, capturing
 `{plan,ordinal}` in the same transaction as PlanView and each PlanOverview's `task_ceiling`;
 ordinal zero freezes an empty plan. Continuations require the whole ceiling plus `after`/`through`:
-moved cards remain, newer ordinals stay out. Feedback preserves `open_only`; Tasks
-`after`/`through` without a captured ceiling is invalid. Overview/Attention/Plan expose
+moved cards remain, newer ordinals stay out. Feedback preserves `open_only`; ordinal Tasks
+`after`/`through` without a captured ceiling is invalid. Recent-first Tasks and DoneTasks follow
+the linked collection bounds. Overview/Attention/Plan expose
 `server_now` and `claim_ttl_secs`; Plan exposes `can_edit`. Attention uses the actual request actor
 for recipients and own stale claims; `rebase_needed` names that actor's stale-base open proposals.
 Entry Show retains optional any-state proposal body/base/state and permissions, feedback metadata,

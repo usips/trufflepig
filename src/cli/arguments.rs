@@ -38,6 +38,7 @@ Plans:
   board hello MODEL [EFFORT]  identify this session
   board inbox [SEQ] [--wait]  plan events and questions
   board show [P7|P7.3|P7@12|E512]  bounded overview or one plan, task, revision, or entry
+  board done [P7] [--project NAME|ID]  recent completed tasks; --after SEQ:P7.N pages older
   board feed [P7] [SEQ]      frozen event pages
   board attention [--all]   pending work for this actor
   board history P7 [SEQ]    immutable plan revision history
@@ -242,7 +243,7 @@ pub fn parse(args: &[String]) -> Result<Arguments> {
             options.words.first().map(String::as_str),
             options.words.get(1).map(String::as_str),
         ) {
-            (Some("board"), Some("feed" | "attention" | "history"))
+            (Some("board"), Some("feed" | "attention" | "history" | "done"))
             | (Some("feedback"), Some("ls")) => options.limit = 200,
             (Some("board"), Some("show")) if options.words.len() == 2 => options.limit = 200,
             (Some("board"), Some("search")) => options.limit = 50,

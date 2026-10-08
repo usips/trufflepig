@@ -1,7 +1,7 @@
 import { decodeBoardFragment } from "./board_dom.js";
 
 const PAGE_BOUNDS = [
-  "after", "through", "taskAfter", "taskCeiling", "claimAfter", "repliesAfter", "backrefsAfter",
+  "after", "before", "through", "taskAfter", "taskCeiling", "claimAfter", "repliesAfter", "backrefsAfter",
   "taskThrough", "claimThrough", "repliesThrough", "backrefsThrough",
 ];
 
@@ -32,7 +32,7 @@ export function routeFromLocation() {
     "tab", "q", "plan", "kind", "harness", "user", "host", "task", "after", "through", "state",
     "heading", "oid", "repo", "taskAfter", "taskCeiling", "claimAfter", "repliesAfter",
     "backrefsAfter", "own_stale", "taskThrough", "claimThrough", "repliesThrough",
-    "backrefsThrough", "project",
+    "backrefsThrough", "before", "project",
   ].map(key => [key, query.get(key) || ""]));
   const launchQuery = new URLSearchParams(location.search || "");
   route.project = query.has("project") ? query.get("project")

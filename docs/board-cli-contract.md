@@ -14,6 +14,8 @@ use `alias board='trufflepig --client human board'`.
 board hello MODEL [EFFORT]
 board feed [P7] [SEQ] [--after SEQ] [--through SEQ] [-n LIMIT]
 board attention [--all | --project NAME|ID] [--after SEQ:E#] [--through SEQ] [-n LIMIT]
+board done [P7] [--project NAME|ID] [--after SEQ:P7.N] [-n LIMIT]
+board done --all [--after SEQ:P7.N] [-n LIMIT]
 board history P7 [SEQ] [--after SEQ] [--through SEQ] [-n LIMIT]
 board search TEXT… [--plan P7] [-n LIMIT]
 board web [P7 | P7@N | E482]
@@ -95,11 +97,24 @@ Retain returned `through` and feedback `--open`. Each typed reply carries these 
 | Overview | 200 plans; `PlanId` cursor; 20 tasks and 20 active claims each, omitted counts |
 | Attention | 200 entries and 200 own stale claims; entry/claim cursors, omitted counts |
 | Tasks | 200 cards; `TaskId` cursor, captured `TaskCeiling`, and omitted count |
+| DoneTasks | 200 current Done tasks; descending `(seq,plan,ordinal)`, `next_before: {seq,id}` |
 | Claims | 200 claims; composite `{entry,claim}` cursor and omitted count |
 | Plan Show | 200 each tasks, active claims, entries, and commits, with omitted counts |
 | Entry Show | 20 answer replies and 20 reverse references; cursors, `through`, omitted counts |
 | FeedbackList | 200 records; composite `(seq,entry)` cursor, fixed `through`, omitted count |
 | Search | 50 FTS hits, with truncation |
+
+`board done` reads recent completions in the caller's repository plus unscoped plans when the
+working-directory identity resolves; otherwise it reads All. `--all` explicitly reads the board.
+`--project` selects a host project or `unscoped` and conflicts with `--all`. With an explicit plan,
+the host checks that the plan belongs to the selected project; a mismatch is `invalid_options`.
+`--after SEQ:P7.N` continues after that item in recent-first order and sends the wire `before`
+cursor. Recent-first Tasks rejects `after`, `ceiling`, and `through`; `before` continues the page.
+Its reply's ceiling/through fields describe the current read. Ordinal Tasks retains its frozen
+ceiling and rejects `after`/`through` without it; it can filter by column. Completion pages
+read current state: reopening a task between pages removes it from Done. `done_at` is the event
+timestamp at the task's current sequence while its column is Done. Continuation hints retain the
+original project selector.
 
 ## Attribution
 

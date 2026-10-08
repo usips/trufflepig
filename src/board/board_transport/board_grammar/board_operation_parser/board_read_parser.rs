@@ -7,7 +7,8 @@ use super::{
     board_syntax_validation::{check_flags, fixed_words, word},
 };
 use crate::board::board_ids::{BoardRef, EventSeq, PlanId};
-use crate::board::board_protocol::{BoardOp, EntryCursor};
+use crate::board::board_protocol::{BoardOp, EntryCursor, TaskCursor, TaskOrder};
+use crate::board::board_vocabulary::TaskColumn;
 use crate::cli::Arguments;
 use anyhow::{Context, Result, bail, ensure};
 
@@ -40,6 +41,52 @@ pub(super) fn parse_read(
                         .transpose()?,
                     through: through(options)?,
                     limit: bounded_limit(options, 200)?,
+                }
+            }
+        }
+        "done" => {
+            check_flags(options, &["all", "project", "after"])?;
+            fixed_words(
+                options,
+                2,
+                3,
+                "board done [P7] [--project NAME|ID] [--after SEQ:P7.N] [-n N]",
+            )?;
+            let before = options
+                .board
+                .after
+                .as_deref()
+                .map(|cursor| {
+                    let (seq, id) = cursor
+                        .split_once(':')
+                        .context("invalid_reference: Done cursor must be SEQ:P7.N")?;
+                    Ok::<_, anyhow::Error>(TaskCursor {
+                        seq: seq.parse()?,
+                        id: id.parse()?,
+                    })
+                })
+                .transpose()?;
+            let limit = bounded_limit(options, 200)?;
+            if let Some(plan) = options.words.get(2) {
+                ensure!(
+                    !options.board.all,
+                    "invalid_options: --all applies only to board-wide Done"
+                );
+                BoardOp::Tasks {
+                    plan: plan.parse::<PlanId>()?,
+                    column: Some(TaskColumn::Done),
+                    order: TaskOrder::RecentFirst,
+                    before,
+                    after: None,
+                    ceiling: None,
+                    through: None,
+                    limit,
+                }
+            } else {
+                BoardOp::DoneTasks {
+                    scope: ReadScope::All,
+                    before,
+                    limit,
                 }
             }
         }
