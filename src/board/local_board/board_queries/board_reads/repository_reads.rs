@@ -1,6 +1,26 @@
 //! Registered checkout paths and associated plan boundaries.
 
 use super::*;
+use crate::board::local_board::LocalBoard;
+use rusqlite::OptionalExtension;
+
+impl LocalBoard {
+    /// Durable host/path identity; paths use the same lossy encoding as registration writes.
+    pub fn repo_key_at(
+        &self,
+        host: &str,
+        common_dir: &std::path::Path,
+    ) -> Result<Option<RepoKey>, BoardError> {
+        let key: Option<String> = self.reader.as_ref().unwrap_or(&self.conn)
+            .query_row(
+                "SELECT repo_key FROM repo_paths WHERE host=?1 AND common_dir=?2 ORDER BY rowid LIMIT 1",
+                params![host, common_dir.to_string_lossy().as_ref()],
+                |row| row.get(0),
+            ).optional().map_err(sql_error)?;
+        key.map(|key| key.parse().map_err(BoardError::from))
+            .transpose()
+    }
+}
 
 pub(in crate::board::local_board) fn repositories(
     conn: &Connection,

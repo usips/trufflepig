@@ -12,6 +12,7 @@ mod tests;
 use crate::board::{
     board_config::{BoardConfig, BoardConfigCache},
     board_ids::{EventSeq, RepoKey},
+    board_projects::{ProjectResolver, ResolvedProject},
     board_protocol::{BoardError, BoardReply, BoardRequest},
     commit_ingest::RepoIngestor,
     feedback_outbox::ImportSummary,
@@ -56,6 +57,7 @@ struct BoardHostShared {
     backend: Mutex<Option<LocalBoard>>,
     ingestor: Mutex<RepoIngestor>,
     registrations: Mutex<RepoIdentityCache>,
+    projects: Mutex<ProjectResolver>,
     sequence: Mutex<EventSeq>,
     changed: Condvar,
     waiters: AtomicUsize,
@@ -86,6 +88,16 @@ impl BoardHost {
                 ..BoardHostShared::default()
             }),
         }
+    }
+
+    /// Resolves serving-host workspaces without acquiring or initializing a board writer.
+    pub fn projects(&self, host: &str, deadline: QueryDeadline) -> Result<Vec<ResolvedProject>> {
+        check_deadline(deadline)?;
+        let config = self.config()?;
+        let mut projects = board_writer::lock_before(&self.inner.projects, deadline, "projects")?;
+        projects
+            .resolve(&config, host, deadline)
+            .map_err(Into::into)
     }
 
     pub(super) fn config(&self) -> Result<BoardConfig> {
