@@ -1,6 +1,7 @@
 import { createBoardDetails } from "./pages/board_pages.js";
 import { createBoardCards } from "./board_cards.js";
 import { createDonePage } from "./pages/done_page.js";
+import { actorMark, recipientMark } from "./marks/agent_marks.js";
 import { INGEST_TIMEOUT_MS, INGEST_UNKNOWN_MESSAGE, completeIngest, resolveIngestEvent } from "./board_ingest.js";
 
 export function createBoardViews(context) {
@@ -203,12 +204,14 @@ export function createBoardViews(context) {
         }
         add(item, add(el("p"), el("span", "muted small", "Section: "), section));
       }
-      if (claim) add(item, el("p", "small", actorName(claim.actor)),
+      if (claim) add(item,
+        add(el("p", "small"), actorMark(claim), el("span", "", actorName(claim.actor))),
         claim.model || claim.effort ? el("p", "small", [claim.model, claim.effort].filter(Boolean).join(" · ")) : null,
         el("p", "small", claim.scope),
         add(el("p", "small muted"), el("span", "", "Last active "), ageNode(claim.last_active),
           claim.stale ? badge("stale") : null));
-      else if (task.assignee) item.append(el("p", "small muted", `Assigned to ${task.assignee}`));
+      else if (task.assignee) item.append(add(el("p", "small muted"), recipientMark(task.assignee),
+        el("span", "", `Assigned to ${task.assignee}`)));
       if (!claim && (data.claims_omitted || data.claims_partial)) {
         item.append(link("Claim details omitted", "claims",
           { plan: data.plan.id, through: data.claims_through || data.through }, "small"));

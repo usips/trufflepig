@@ -1,3 +1,5 @@
+import { actorMark, recipientMark } from "./marks/agent_marks.js";
+
 export function createBoardCards({ state, dom, entryRecord, collection }) {
   const {
     el, add, link, refLink, badge, actorName, shortActor, timeNode, ageNode,
@@ -10,7 +12,8 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
     const item = el("article", "entry-card");
     focusKey(item, `entry-card:${entry.id}`);
     const meta = el("div", "entry-meta");
-    add(meta, refLink(entry.id), badge(entry.kind), el("span", "", actorName(entry.actor)),
+    add(meta, refLink(entry.id), badge(entry.kind), actorMark(entry),
+      el("span", "", actorName(entry.actor)),
       entry.via === "outbox" ? el("span", "provenance", "(spooled, unverified)") : null,
       entry.model ? el("span", "", `${entry.model}${entry.effort ? ` · ${entry.effort}` : ""}`) : null,
       entry.state ? badge(entry.state.state || entry.state) : null, timeNode(entry.created_at));
@@ -35,7 +38,7 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
       focusKey(item, `event:${event.seq}`);
       add(item, fresh(event) ? badge("new") : null, badge(event.kind), refLink(event.subject),
         el("span", "event-summary", event.summary),
-        el("span", "muted small", shortActor(event.actor)),
+        actorMark(event), el("span", "muted small", shortActor(event.actor)),
         event.via === "outbox" ? el("span", "provenance", "(spooled, unverified)") : null,
         timeNode(event.created_at));
       list.append(item);
@@ -46,7 +49,8 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
     const item = el("div", "working-card"); item.dataset.stale = claim.stale;
     focusKey(item, `working-card:${claim.task}`);
     add(item,
-      add(el("div", "row spread"), el("strong", "", shortActor(claim.actor)),
+      add(el("div", "row spread"), add(el("strong", ""), actorMark(claim),
+        el("span", "", shortActor(claim.actor))),
         claim.stale ? badge("stale") : badge("doing")),
       refLink(claim.task), el("div", "muted small", actorName(claim.actor)),
       claim.model || claim.effort ? el("div", "small", [claim.model, claim.effort].filter(Boolean).join(" · ")) : null,
@@ -61,9 +65,11 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
     if (claim) item.dataset.stale = claim.stale;
     add(item, refLink(task.id, task.title, ""), el("div", "small muted", task.id),
       claim
-        ? add(el("div", "small"), el("span", "", actorName(claim.actor)), el("span", "muted", " · "),
+        ? add(el("div", "small"), actorMark(claim), el("span", "", actorName(claim.actor)),
+          el("span", "muted", " · "),
           ageNode(claim.last_active))
-        : (task.assignee ? el("div", "small muted", `Assigned: ${task.assignee}`) : null),
+        : (task.assignee ? add(el("div", "small muted"), recipientMark(task.assignee),
+          el("span", "", `Assigned: ${task.assignee}`)) : null),
       claim?.stale ? badge("stale") : null);
     if (claim?.model || claim?.effort) {
       item.append(el("div", "small muted", [claim.model, claim.effort].filter(Boolean).join(" · ")));
@@ -84,7 +90,8 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
     add(card,
       add(el("div", "row"), badge(item.type), entry?.plan ? refLink(entry.plan) : null),
       refLink(entry?.id || item.record.entry, entry?.body || item.record.summary || "Open entry", ""),
-      add(el("p"), el("span", "", entry?.actor ? `From ${actorName(entry.actor)}` : ""),
+      add(el("p"), entry?.actor ? actorMark(entry) : null,
+        el("span", "", entry?.actor ? `From ${actorName(entry.actor)}` : ""),
         entry?.via === "outbox" ? el("span", "provenance", " (spooled, unverified)") : null));
     return card;
   }

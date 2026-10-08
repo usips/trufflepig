@@ -6,9 +6,9 @@ mod route_replies;
 #[cfg(test)]
 mod tests;
 use super::{
-    BoardWebState, PUBLIC_CARDS, PUBLIC_DOM, PUBLIC_DONE_PAGE, PUBLIC_ENTRIES, PUBLIC_INGEST,
-    PUBLIC_LRU, PUBLIC_MAIN, PUBLIC_PAGES, PUBLIC_PLAN_PAGE, PUBLIC_PROPOSAL_PAGE, PUBLIC_READER,
-    PUBLIC_RENDER_LOOP, PUBLIC_ROUTING, PUBLIC_SEEN, PUBLIC_SHELL, PUBLIC_STREAM,
+    BoardWebState, PUBLIC_AGENT_MARKS, PUBLIC_CARDS, PUBLIC_DOM, PUBLIC_DONE_PAGE, PUBLIC_ENTRIES,
+    PUBLIC_INGEST, PUBLIC_LRU, PUBLIC_MAIN, PUBLIC_PAGES, PUBLIC_PLAN_PAGE, PUBLIC_PROPOSAL_PAGE,
+    PUBLIC_READER, PUBLIC_RENDER_LOOP, PUBLIC_ROUTING, PUBLIC_SEEN, PUBLIC_SHELL, PUBLIC_STREAM,
     PUBLIC_STREAM_ELECTION, PUBLIC_STREAM_PARSE, PUBLIC_STYLE, PUBLIC_TOKEN, PUBLIC_TRIAGE,
     PUBLIC_VIEWS,
     http_wire::{self, HttpError, HttpMethod, HttpRequest},
@@ -146,6 +146,7 @@ fn public_asset(path: &str) -> Option<(&str, &str)> {
         "/board_dom.js" => PUBLIC_DOM,
         "/board_views.js" => PUBLIC_VIEWS,
         "/board_cards.js" => PUBLIC_CARDS,
+        "/marks/agent_marks.js" => PUBLIC_AGENT_MARKS,
         "/board_routing.js" => PUBLIC_ROUTING,
         "/board_render_loop.js" => PUBLIC_RENDER_LOOP,
         "/pages/board_pages.js" => PUBLIC_PAGES,

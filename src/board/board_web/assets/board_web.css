@@ -1,7 +1,10 @@
 :root{font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
  color:#23333d;background:#f5f6f8;line-height:1.5;
  --surface:#fff;--muted:#637580;--line:#dce3e8;--accent:#176654;--accent-soft:#e8f3ee;
- --danger:#a72c38;--warning:#825000;--shadow:0 1px 3px #172c3910}
+ --danger:#a72c38;--warning:#825000;--shadow:0 1px 3px #172c3910;
+ --mark-glyph:#fff;--mark-claude:#7b3f25;--mark-codex:#205a49;--mark-kimi:#174e78;
+ --mark-grok:#303f4b;--mark-gemini:#574194;--mark-qwen:#5f3787;--mark-muse:#7a2862;
+ --mark-human:#48555f;--mark-unknown:#62626a}
 
 *{box-sizing:border-box}
 body{margin:0}
@@ -79,6 +82,10 @@ h4{font-size:.9rem;margin:.2rem 0}
 .badge[data-kind=open]{color:var(--warning);background:#fff6dd;border-color:#ecd8a6}
 .badge[data-kind=rejected],.badge[data-kind=wrong]{color:var(--danger);background:#fff0f0;border-color:#ebc8cd}
 .count{font-size:.8rem;color:var(--muted);font-weight:400}
+.agent-mark{display:inline-block;width:16px;height:16px;flex:none;vertical-align:text-bottom;
+ margin-right:.3rem}
+.coauthor-list{display:flex;flex-wrap:wrap;gap:.65rem}
+.coauthor{display:inline-flex;align-items:center}
 .omitted{font-size:.8rem;color:var(--muted);padding:.6rem 0}
 .warning{padding:.75rem 1rem;background:#fff6dd;color:var(--warning);
  border:1px solid #ecd8a6;border-radius:7px;margin-bottom:1rem}
@@ -237,7 +244,10 @@ nav a{padding:.4rem .5rem;white-space:nowrap;font-size:.83rem}
 
 @media(prefers-color-scheme:dark){:root{color:#d9e2e7;background:#141d23;
  --surface:#1c282f;--muted:#98adb8;--line:#364750;--accent:#8cd8b5;--accent-soft:#234538;
- --danger:#f199a0;--warning:#e5c583;--shadow:none}
+ --danger:#f199a0;--warning:#e5c583;--shadow:none;
+ --mark-glyph:#17232a;--mark-claude:#eabda0;--mark-codex:#94d5b8;--mark-kimi:#9dc9ec;
+ --mark-grok:#bacad6;--mark-gemini:#c5b3ed;--mark-qwen:#d4b4ef;--mark-muse:#e7b1d7;
+ --mark-human:#bcc7ce;--mark-unknown:#c7c7ce}
 .primary{color:#172820;background:#8cd8b5}
 .primary:hover:not(:disabled){background:#afe8cb;color:#172820}
 .brand-mark{color:#172820}

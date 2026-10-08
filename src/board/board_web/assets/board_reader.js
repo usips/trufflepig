@@ -1,4 +1,5 @@
 import { boardReadScope, boardProjectSelector } from "./board_routing.js";
+import { actorMark, harnessVendor } from "./marks/agent_marks.js";
 
 export function createBoardReader(context) {
   const {
@@ -148,9 +149,13 @@ export function createBoardReader(context) {
           page = editorPage(route.view, { ...current, revision: view.plan ? view.revision : view });
         } else if (!view.plan) {
           const current = await read(readOp("show", { target: planId(route.ref) }));
+          const actorLine = `${view.source} · ${actorName(view.actor)} · ${stamp(view.created_at)}`;
+          const heading = title(`Plan revision · ${view.id}`, actorLine);
+          const detail = heading.querySelector("p"); detail.textContent = "";
+          add(detail, actorMark({ ...view, vendor: harnessVendor(view.actor?.harness) }),
+            el("span", "", actorLine));
           page = add(el("div"),
-            title(`Plan revision · ${view.id}`,
-              `${view.source} · ${actorName(view.actor)} · ${stamp(view.created_at)}`),
+            heading,
             projectChips(current.repo_keys, projects),
             panel("", sanitizedMarkup(await renderedReply("plan", route.ref))));
         } else {

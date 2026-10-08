@@ -36,7 +36,8 @@ function matchSelector(element, selector) {
     if (!parsed) return false;
     const [, tag, classes, conditions] = parsed;
     if (tag && element.tagName !== tag.toUpperCase()) return false;
-    const held = String(element.className || "").split(/\s+/).filter(Boolean);
+    const held = String(element.attributes.get("class") || element.className || "")
+      .split(/\s+/).filter(Boolean);
     if ((classes || "").split(".").filter(Boolean).some(cls => !held.includes(cls))) return false;
     return (conditions.match(/\[[^\]]+\]/g) || []).every(condition => {
       const body = condition.slice(1, -1);
@@ -123,6 +124,7 @@ export function installDomShim() {
     visibilityState: "visible",
     body,
     createElement: tag => new FakeElement(tag),
+    createElementNS: (namespaceURI, tag) => Object.assign(new FakeElement(tag), { namespaceURI }),
     getElementById: id => findById(root, String(id)),
     querySelector: selector => root.querySelector(selector),
     querySelectorAll: selector => root.querySelectorAll(selector),

@@ -39,6 +39,7 @@ const PUBLIC_STYLE: &str = include_str!("board_web/assets/board_web.css");
 const PUBLIC_DOM: &str = include_str!("board_web/assets/board_dom.js");
 const PUBLIC_VIEWS: &str = include_str!("board_web/assets/board_views.js");
 const PUBLIC_CARDS: &str = include_str!("board_web/assets/board_cards.js");
+const PUBLIC_AGENT_MARKS: &str = include_str!("board_web/assets/marks/agent_marks.js");
 const PUBLIC_ROUTING: &str = include_str!("board_web/assets/board_routing.js");
 const PUBLIC_RENDER_LOOP: &str = include_str!("board_web/assets/board_render_loop.js");
 const PUBLIC_PAGES: &str = include_str!("board_web/assets/pages/board_pages.js");

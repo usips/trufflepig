@@ -1,5 +1,6 @@
 import { createBoardEntries } from "../board_entries.js";
 import { decodeBoardFragment } from "../board_dom.js";
+import { actorMark, agentMark, harnessVendor } from "../marks/agent_marks.js";
 
 export function createPlanPage(context) {
   const {
@@ -42,8 +43,10 @@ export function createPlanPage(context) {
         const claim = view.claims.find(item => item.task === task.id && !item.ended_at);
         if (claim) {
           const marker = badge(claim.stale ? "stale" : "claimed");
-          marker.textContent = [actorName(claim.actor), claim.model, claim.effort, claim.stale ? "stale" : null]
-            .filter(Boolean).join(" · ");
+          marker.textContent = "";
+          add(marker, actorMark(claim), el("span", "",
+            [actorName(claim.actor), claim.model, claim.effort, claim.stale ? "stale" : null]
+              .filter(Boolean).join(" · ")));
           markers.append(marker);
         } else {
           markers.append(badge(task.column));
@@ -188,7 +191,8 @@ export function createPlanPage(context) {
     for (const revision of revisions) {
       const item = el("li");
       const details = add(el("div"), refLink(revision.id),
-        add(el("p"), el("span", "", actorName(revision.actor)), el("span", "", ` · ${revision.source}`)),
+        add(el("p"), actorMark({ ...revision, vendor: harnessVendor(revision.actor?.harness) }),
+          el("span", "", actorName(revision.actor)), el("span", "", ` · ${revision.source}`)),
         el("p", "", revision.summary));
       const number = Number(String(revision.id).split("@")[1]);
       add(item, details,
@@ -217,7 +221,11 @@ export function createPlanPage(context) {
           `${commit.author} · ${stamp(commit.committed_at)} · ${commit.files} files · `
             + `+${commit.insertions} −${commit.deletions}`));
       if (commit.coauthors?.length) {
-        item.append(el("p", "small", commit.coauthors.map(author => `${author.harness} (${author.model})`).join(", ")));
+        item.append(add(el("p", "small coauthor-list"), commit.coauthors.map(author => {
+          const label = `${author.model} · ${author.harness} · ${author.email}`;
+          return add(el("span", "coauthor"), agentMark(harnessVendor(author.harness), label),
+            el("span", "", `${author.harness} (${author.model})`));
+        })));
       }
       if (commit.plans?.length) {
         const links = commit.plans.map(value => refLink(

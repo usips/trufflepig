@@ -63,6 +63,7 @@ Mismatches fail `board_api_mismatch` without negotiation. Errors are
 |---|---|
 | `GET /`, `/board_web_main.js`, `/board_web.css` | Public shell and root assets only |
 | `GET /board_dom.js`, `/board_views.js`, `/board_cards.js` | Public UI modules |
+| `GET /marks/agent_marks.js` | JavaScript marks; no vendor image routes |
 | `GET /board_routing.js`, `/board_render_loop.js` | Public UI modules |
 | `GET /pages/board_pages.js`, `/pages/plan_page.js`, `/pages/proposal_page.js` | Page modules |
 | `GET /pages/done_page.js` | Completed-task page module |

@@ -129,6 +129,7 @@ fn asset_imports_resolve_to_served_paths() {
         ("/board_dom.js", PUBLIC_DOM),
         ("/board_views.js", PUBLIC_VIEWS),
         ("/board_cards.js", PUBLIC_CARDS),
+        ("/marks/agent_marks.js", PUBLIC_AGENT_MARKS),
         ("/board_routing.js", PUBLIC_ROUTING),
         ("/board_render_loop.js", PUBLIC_RENDER_LOOP),
         ("/pages/board_pages.js", PUBLIC_PAGES),

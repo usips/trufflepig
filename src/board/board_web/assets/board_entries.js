@@ -1,3 +1,5 @@
+import { actorMark } from "./marks/agent_marks.js";
+
 export function createBoardEntries(context) {
   const { state, dom, navigate, entryRecord, collection, entryKinds, nextAfter, pageParams } = context;
   const {
@@ -28,7 +30,7 @@ export function createBoardEntries(context) {
     const entry = entryRecord(record), row = el("tr", "entry-row"); row.dataset.entryId = entry.id;
     const cells = Array.from({ length: 7 }, () => el("td"));
     add(cells[0], refLink(entry.id), el("br"), timeNode(entry.created_at));
-    add(cells[1], el("span", "", actorName(entry.actor)),
+    add(cells[1], actorMark(entry), el("span", "", actorName(entry.actor)),
       entry.via === "outbox" ? el("span", "provenance", " (spooled, unverified)") : null);
     cells[2].textContent = [entry.model, entry.effort].filter(Boolean).join(" · ") || "—";
     add(cells[3], badge(entry.kind), entry.state ? badge(entry.state.state) : null);
