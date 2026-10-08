@@ -85,6 +85,7 @@ fn prefix(
                 plan.tasks_omitted += plan.tasks.len();
                 plan.claims_omitted += plan.claims.len();
                 plan.tasks.clear();
+                plan.recent_done.clear();
                 plan.claims.clear();
             }
         }

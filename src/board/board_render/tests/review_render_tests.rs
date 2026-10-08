@@ -30,6 +30,7 @@ fn default_review_budget_bounds_proposals_commits_tasks_and_claims() {
             assignee: None,
             section: None,
             seq: EventSeq::new(ordinal),
+            done_at: None,
         });
         packet.claims.push(ClaimRecord {
             task,

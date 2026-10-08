@@ -64,6 +64,7 @@ fn internal_collections_keep_frozen_bounds_without_cli_hints() {
             assignee: None,
             section: None,
             seq: EventSeq::new(20),
+            done_at: None,
         })
         .collect();
     let claims = (6..10)
@@ -186,6 +187,7 @@ fn overview_nested_fallback_keeps_task_membership_ceiling() {
             assignee: None,
             section: None,
             seq: EventSeq::new(20),
+            done_at: None,
         })
         .collect();
     let mut reply = BoardReply::new(
@@ -204,6 +206,8 @@ fn overview_nested_fallback_keeps_task_membership_ceiling() {
                 },
                 tasks,
                 task_ceiling: TaskCeiling { plan, ordinal: 30 },
+                done_count: 0,
+                recent_done: Vec::new(),
                 claims: Vec::new(),
                 open_questions: 2,
                 open_proposals: 3,

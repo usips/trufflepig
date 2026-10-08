@@ -34,6 +34,7 @@ fn task_record(plan: PlanId, ordinal: u64) -> TaskRecord {
         assignee: None,
         section: None,
         seq: EventSeq::new(ordinal),
+        done_at: None,
     }
 }
 

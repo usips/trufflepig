@@ -204,6 +204,7 @@ mod entry_filter_tests;
 mod entry_page_tests;
 mod feedback_page_tests;
 mod overview_attention_tests;
+mod overview_done_window_tests;
 mod overview_page_tests;
 mod revision_page_tests;
 

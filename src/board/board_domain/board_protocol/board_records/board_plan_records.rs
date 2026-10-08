@@ -65,6 +65,7 @@ pub struct TaskRecord {
     pub assignee: Option<BoardRecipient>,
     pub section: Option<String>,
     pub seq: EventSeq,
+    pub done_at: Option<i64>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

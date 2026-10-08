@@ -14,6 +14,7 @@ fn show_preserves_labor_and_uncovered_sections_while_trimming_the_body() {
         assignee: None,
         section: Some("Parser".into()),
         seq: EventSeq::new(10),
+        done_at: None,
     };
     let claim = |ordinal, harness: &str, stale, ended_at, scope: &str| ClaimRecord {
         task: TaskId::new(plan, ordinal).unwrap(),

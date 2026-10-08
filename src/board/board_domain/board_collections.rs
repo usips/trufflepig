@@ -31,6 +31,8 @@ pub struct PlanOverview {
     pub repo_keys: Vec<RepoKey>,
     pub tasks: Vec<TaskRecord>,
     pub task_ceiling: TaskCeiling,
+    pub done_count: usize,
+    pub recent_done: Vec<TaskRecord>,
     pub claims: Vec<ClaimRecord>,
     pub open_questions: usize,
     pub open_proposals: usize,

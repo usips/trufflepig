@@ -88,10 +88,11 @@ pub(in crate::board::local_board) fn overview(
     let mut plans = Vec::with_capacity(records.len());
     let open_question = open_question("?2");
     for plan in records {
-        let tasks =
-            collection_nested::task_window(conn, plan.id, None, None, Some(through), NESTED_LIMIT)?;
+        let tasks = collection_nested::overview_task_window(conn, plan.id, NESTED_LIMIT)?;
         let tasks_omitted = tasks.omitted;
         let task_ceiling = tasks.ceiling;
+        let done_count = tasks.done_count;
+        let recent_done = tasks.recent_done;
         let tasks = tasks.tasks;
         let claims = collection_nested::claim_window(
             conn,
@@ -134,6 +135,8 @@ pub(in crate::board::local_board) fn overview(
             plan,
             tasks,
             task_ceiling,
+            done_count,
+            recent_done,
             claims,
             open_questions,
             open_proposals,

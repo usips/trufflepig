@@ -1,35 +1,23 @@
 //! Stored task cards and immutable lease history windows.
 
 use super::*;
+use crate::board::local_board::board_queries::collection_nested::{TASK_SELECT, task_row};
 
 pub(in crate::board::local_board) fn read_tasks(
     conn: &Connection,
     plan: PlanId,
 ) -> Result<Vec<TaskRecord>, BoardError> {
     let mut statement = conn
-        .prepare("SELECT ordinal,title,column_name,assignee,section,seq FROM tasks WHERE plan_id=?1 ORDER BY ordinal")
+        .prepare(&format!(
+            "{TASK_SELECT} WHERE t.plan_id=?1 ORDER BY t.ordinal"
+        ))
         .map_err(sql_error)?;
     let mut rows = statement
         .query([sql_number(plan.get())])
         .map_err(sql_error)?;
     let mut tasks = Vec::new();
     while let Some(row) = rows.next().map_err(sql_error)? {
-        let title: String = row.get(1).map_err(sql_error)?;
-        let column: String = row.get(2).map_err(sql_error)?;
-        let assignee: Option<String> = row.get(3).map_err(sql_error)?;
-        tasks.push(TaskRecord {
-            id: TaskId::new(plan, row_number(row, 0).map_err(sql_error)?)
-                .map_err(BoardError::from)?,
-            title: PlanTitle::new(title).map_err(BoardError::from)?,
-            column: column.parse().map_err(BoardError::from)?,
-            assignee: assignee
-                .as_deref()
-                .map(BoardRecipient::parse)
-                .transpose()
-                .map_err(BoardError::from)?,
-            section: row.get(4).map_err(sql_error)?,
-            seq: EventSeq::new(row_number(row, 5).map_err(sql_error)?),
-        });
+        tasks.push(task_row(row, plan)?);
     }
     Ok(tasks)
 }

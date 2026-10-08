@@ -1,10 +1,11 @@
 //! Task ordinal ceilings and claim source sequences bound current-state collection pages.
 
 mod claim_windows;
+mod overview_task_windows;
 #[cfg(test)]
 mod tests;
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, Row, params};
 
 #[cfg(test)]
 use super::super::WriteContext;
@@ -20,8 +21,38 @@ use crate::board::board_ids::{EventSeq, PlanId, TaskId};
 use crate::board::board_protocol::{BoardReply, BoardResult, TaskRecord};
 use crate::board::board_vocabulary::PlanTitle;
 pub(in crate::board::local_board) use claim_windows::{claim_window, claims_page};
+pub(in crate::board::local_board) use overview_task_windows::overview_task_window;
 
 const NESTED_PAGE_LIMIT: usize = 200;
+pub(in crate::board::local_board) const TASK_SELECT: &str = concat!(
+    "SELECT t.ordinal,t.title,t.column_name,t.assignee,t.section,t.seq,completion.created_at ",
+    "FROM tasks t LEFT JOIN events completion ON completion.seq=t.seq AND t.column_name='done'"
+);
+
+pub(in crate::board::local_board) fn task_row(
+    row: &Row<'_>,
+    plan: PlanId,
+) -> Result<TaskRecord, BoardError> {
+    let assignee: Option<String> = row.get(3).map_err(sql_error)?;
+    Ok(TaskRecord {
+        id: TaskId::new(plan, row_number(row, 0).map_err(sql_error)?).map_err(BoardError::from)?,
+        title: PlanTitle::new(row.get::<_, String>(1).map_err(sql_error)?)
+            .map_err(BoardError::from)?,
+        column: row
+            .get::<_, String>(2)
+            .map_err(sql_error)?
+            .parse()
+            .map_err(BoardError::from)?,
+        assignee: assignee
+            .as_deref()
+            .map(BoardRecipient::parse)
+            .transpose()
+            .map_err(BoardError::from)?,
+        section: row.get(4).map_err(sql_error)?,
+        seq: EventSeq::new(row_number(row, 5).map_err(sql_error)?),
+        done_at: row.get(6).map_err(sql_error)?,
+    })
+}
 
 pub(in crate::board::local_board) fn tasks_page(
     conn: &Connection,
@@ -96,9 +127,9 @@ pub(in crate::board::local_board) fn task_window(
         parameters,
     )?;
     let mut statement = conn
-        .prepare(concat!(
-            "SELECT ordinal,title,column_name,assignee,section,seq FROM tasks WHERE plan_id=?1 ",
-            "AND ordinal>?2 AND ordinal<=?3 ORDER BY ordinal LIMIT ?4"
+        .prepare(&format!(
+            "{TASK_SELECT} WHERE t.plan_id=?1 AND t.ordinal>?2 AND t.ordinal<=?3 \
+             ORDER BY t.ordinal LIMIT ?4"
         ))
         .map_err(sql_error)?;
     let mut rows = statement
@@ -111,25 +142,7 @@ pub(in crate::board::local_board) fn task_window(
         .map_err(sql_error)?;
     let mut tasks = Vec::with_capacity((limit + 1).min(total));
     while let Some(row) = rows.next().map_err(sql_error)? {
-        let assignee: Option<String> = row.get(3).map_err(sql_error)?;
-        tasks.push(TaskRecord {
-            id: TaskId::new(plan, row_number(row, 0).map_err(sql_error)?)
-                .map_err(BoardError::from)?,
-            title: PlanTitle::new(row.get::<_, String>(1).map_err(sql_error)?)
-                .map_err(BoardError::from)?,
-            column: row
-                .get::<_, String>(2)
-                .map_err(sql_error)?
-                .parse()
-                .map_err(BoardError::from)?,
-            assignee: assignee
-                .as_deref()
-                .map(BoardRecipient::parse)
-                .transpose()
-                .map_err(BoardError::from)?,
-            section: row.get(4).map_err(sql_error)?,
-            seq: EventSeq::new(row_number(row, 5).map_err(sql_error)?),
-        });
+        tasks.push(task_row(row, plan)?);
     }
     let next_after = if tasks.len() > limit {
         tasks.truncate(limit);
