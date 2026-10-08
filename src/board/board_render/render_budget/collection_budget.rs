@@ -2,12 +2,14 @@
 use super::{BoardOmitted, fit_items, render_complete, require_fits};
 use crate::board::board_protocol::{BoardReply, BoardResult, EntryCursor, EntryRecord};
 use crate::board::board_render::RenderedBoard;
+use crate::board::board_render::render_scope_hints::cli_scope_flag;
 use crate::output::OutputBudget;
 use anyhow::{Result, bail};
 
 pub(in crate::board::board_render) fn render_collections(
     reply: &BoardReply,
     budget: &OutputBudget,
+    project: Option<&str>,
 ) -> Result<RenderedBoard> {
     let maximum = match &reply.result {
         BoardResult::Overview(page) => page.plans.len(),
@@ -26,7 +28,7 @@ pub(in crate::board::board_render) fn render_collections(
             &candidate,
             omitted,
             None,
-            next_hint(&candidate.result),
+            next_hint(&candidate.result, project),
             budget,
         )?)
     } else {
@@ -38,7 +40,7 @@ pub(in crate::board::board_render) fn render_collections(
             &candidate,
             omitted,
             None,
-            next_hint(&candidate.result),
+            next_hint(&candidate.result, project),
             budget,
         )
     };
@@ -190,11 +192,15 @@ fn entry_cursor(entries: &[EntryRecord]) -> Option<EntryCursor> {
     })
 }
 
-fn next_hint(result: &BoardResult) -> Option<String> {
+fn next_hint(result: &BoardResult, project: Option<&str>) -> Option<String> {
     match result {
-        BoardResult::Overview(page) => page
-            .next_after
-            .map(|after| format!("board show --after {after} --through {}", page.through)),
+        BoardResult::Overview(page) => page.next_after.map(|after| {
+            format!(
+                "board show --after {after} --through {}{}",
+                page.through,
+                cli_scope_flag(&page.scope, project)
+            )
+        }),
         BoardResult::Feed(page) => page.next_after.map(|after| {
             format!(
                 "board feed{} --after {after} --through {}",
@@ -215,7 +221,7 @@ fn next_hint(result: &BoardResult) -> Option<String> {
                 after.seq,
                 after.entry,
                 page.through,
-                if page.scope.is_all() { " --all" } else { "" }
+                cli_scope_flag(&page.scope, project)
             )
         }),
         BoardResult::Feedback(page) => page.next_after.map(|after| {

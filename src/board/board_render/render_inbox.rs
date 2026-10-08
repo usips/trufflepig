@@ -1,5 +1,6 @@
 //! Inbox rendering fits fresh events before reminders and acknowledges prefixes.
 
+use super::render_scope_hints::cli_scope_flag;
 use super::{BoardOmitted, RenderedBoard, fit_items, render_complete, require_fits};
 use crate::board::board_protocol::{BoardReply, BoardResult, InboxReply};
 use crate::board::board_vocabulary::EntryKind;
@@ -10,6 +11,7 @@ pub(super) fn render_inbox(
     reply: &BoardReply,
     inbox: &InboxReply,
     budget: &OutputBudget,
+    project: Option<&str>,
 ) -> Result<RenderedBoard> {
     if inbox
         .events
@@ -25,12 +27,12 @@ pub(super) fn render_inbox(
     {
         bail!("board_unavailable: inbox scan watermark precedes selected events");
     }
+    let scope_flag = cli_scope_flag(&inbox.scope, project);
     let render = |count: usize, open_count: usize| {
         let mut visible = inbox.clone();
         visible.events.truncate(count);
         visible.open.truncate(open_count);
         let rendered = visible.events.last().map(|event| event.seq);
-        let scope_flag = if inbox.scope.is_all() { " --all" } else { "" };
         let next = if count < inbox.events.len() || inbox.query_truncated {
             if inbox.advancing {
                 format!("board inbox{scope_flag}")
@@ -57,7 +59,7 @@ pub(super) fn render_inbox(
                 .take(5)
                 .map(|plan| format!("board show {plan}"))
                 .collect::<Vec<_>>();
-            hints.push("board show".into());
+            hints.push(format!("board show{scope_flag}"));
             if inbox.open[open_count..]
                 .iter()
                 .any(|entry| entry.kind == EntryKind::Feedback)

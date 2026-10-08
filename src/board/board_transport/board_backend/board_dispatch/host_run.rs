@@ -11,16 +11,16 @@ use crate::{
         board_grammar::{self, BoardCommand},
         board_protocol::{
             AgentClaims, BoardError, BoardErrorCode, BoardOp, BoardReply, BoardRequest,
-            BoardResult, CommitLinkResult,
+            BoardResult, CommitLinkResult, ReadScope,
         },
-        board_render::render_reply,
+        board_render::{render_cli_reply, render_reply},
     },
     cli::Arguments,
     daemon::deadline::QueryDeadline,
     diagnostics::RequestContext,
     output::OutputBudget,
 };
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use std::time::Duration;
 
 impl BoardHost {
@@ -182,6 +182,15 @@ impl BoardHost {
                 deadline.cap(Duration::from_secs(2)),
             );
         }
+        if let Some(selector) = options.board.project.as_deref() {
+            if selector == "unscoped" {
+                *op.read_scope_mut()
+                    .context("invalid_options: --project requires a scoped read")? =
+                    ReadScope::Unscoped;
+            } else {
+                self.select_project_scope(&mut op, selector, &actor.host, deadline)?;
+            }
+        }
         scope_read_repo_key(&mut op, registration.as_ref(), options.board.all);
         let mut request = BoardRequest::new(actor.clone(), op);
         if options.board.agent_model.is_some() || options.board.agent_effort.is_some() {
@@ -214,7 +223,7 @@ impl BoardHost {
             }
         }
         reply.warnings.extend(warnings);
-        let rendered = render_reply(&reply, &budget)?;
+        let rendered = render_cli_reply(&reply, &budget, options.board.project.as_deref())?;
         if matches!(&request.op, BoardOp::Inbox { after: None, .. }) {
             if let Some(rendered_through) = rendered.acknowledge_seq {
                 if let Err(error) = self.handle_by(

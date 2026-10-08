@@ -6,6 +6,7 @@ mod render_entry;
 mod render_inbox;
 mod render_lines;
 mod render_review;
+mod render_scope_hints;
 mod search_render;
 #[cfg(test)]
 mod tests;
@@ -34,6 +35,14 @@ pub struct RenderedBoard {
 }
 
 pub fn render_reply(reply: &BoardReply, budget: &OutputBudget) -> Result<RenderedBoard> {
+    render_cli_reply(reply, budget, None)
+}
+
+pub(crate) fn render_cli_reply(
+    reply: &BoardReply,
+    budget: &OutputBudget,
+    project: Option<&str>,
+) -> Result<RenderedBoard> {
     if reply.api != BOARD_API {
         bail!(
             "board_api_mismatch: expected {BOARD_API}, received {}",
@@ -41,7 +50,7 @@ pub fn render_reply(reply: &BoardReply, budget: &OutputBudget) -> Result<Rendere
         );
     }
     match &reply.result {
-        BoardResult::Inbox(inbox) => render_inbox(reply, inbox, budget),
+        BoardResult::Inbox(inbox) => render_inbox(reply, inbox, budget, project),
         BoardResult::Search(result) => search_render::render(reply, result, budget),
         BoardResult::Entry(view) => render_entry(reply, view, budget),
         BoardResult::Plan(view) => render_plan(reply, view, budget),
@@ -52,7 +61,7 @@ pub fn render_reply(reply: &BoardReply, budget: &OutputBudget) -> Result<Rendere
         | BoardResult::Entries(_)
         | BoardResult::Tasks(_)
         | BoardResult::Claims(_)
-        | BoardResult::Feedback(_) => render_collections(reply, budget),
+        | BoardResult::Feedback(_) => render_collections(reply, budget, project),
         BoardResult::Review(evidence) => render_review(
             &assemble_review(
                 evidence,

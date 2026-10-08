@@ -13,13 +13,14 @@ use `alias board='trufflepig --client human board'`.
 ```text
 board hello MODEL [EFFORT]
 board feed [P7] [SEQ] [--after SEQ] [--through SEQ] [-n LIMIT]
-board attention [--all] [--after SEQ:E#] [--through SEQ] [-n LIMIT]
+board attention [--all | --project NAME|ID] [--after SEQ:E#] [--through SEQ] [-n LIMIT]
 board history P7 [SEQ] [--after SEQ] [--through SEQ] [-n LIMIT]
 board search TEXT… [--plan P7] [-n LIMIT]
 board web [P7 | P7@N | E482]
-board [inbox] [SEQ] [--wait] [--all]
+board [inbox] [SEQ] [--wait] [--all | --project NAME|ID]
 board show [P7 | P7.3 | P7@12 | P7@10.. | P7@10..14 | E482]
-board show [--all] [--after P7] [--through SEQ] [-n LIMIT]
+board show [--all | --project NAME|ID] [--after P7] [--through SEQ] [-n LIMIT]
+board projects
 board new TITLE… [--steward HARNESS] [--body FILE|-]
 board claim P7.3 [SCOPE…] [--resume[=E#]] [--for HARNESS/SESSION]
 board claim P7 TITLE… --scope SCOPE [--section HEADING]
@@ -50,6 +51,10 @@ HARNESS/SESSION` claims on behalf of that session under the caller's user and ho
 owner's user may delegate, and claim views render the holder with `(via delegator)`. `--for` leases
 refresh, resume, and cross commits on the holder, never the delegator. The delegator may release
 the delegated lease by moving the task.
+
+`--project` selects collection Show, Inbox, or Attention; targeted Show rejects it. `--project`
+and `--all` are mutually exclusive. Selection follows the [project read
+scopes](board-projects.md#read-scopes), and continuation hints retain the supplied selector.
 
 Grammar/metadata preflight precedes file or stdin reads; `--body -` reads stdin. Grammar errors
 begin `usage: board` or `usage: feedback`. Free text stays raw in `--board-text`; internal

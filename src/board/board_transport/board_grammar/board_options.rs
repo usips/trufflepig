@@ -1,4 +1,6 @@
 //! Options shared by board and feedback command transport.
+#[cfg(test)]
+mod tests;
 use anyhow::{Result, bail};
 use clap::Args;
 use std::path::PathBuf;
@@ -36,9 +38,12 @@ pub struct BoardOptions {
     /// List only open feedback reports.
     #[arg(long)]
     pub open: bool,
-    /// Include plans from every repository in inbox and attention reads.
+    /// Include plans from every repository in collection reads.
     #[arg(long)]
     pub all: bool,
+    /// Select a registered workspace project by its name or ID.
+    #[arg(long, value_name = "NAME|ID", allow_hyphen_values = true)]
+    pub project: Option<String>,
     /// Resume a frozen collection after its returned cursor.
     #[arg(long)]
     pub after: Option<String>,
@@ -74,6 +79,16 @@ impl BoardOptions {
         if !matches!(verb, Some("board" | "feedback")) && self.has_options() {
             bail!("invalid_options: board options require board or feedback");
         }
+        if self.all && self.project.is_some() {
+            bail!("invalid_options: --project and --all are mutually exclusive");
+        }
+        if self
+            .project
+            .as_ref()
+            .is_some_and(|selector| selector.trim().is_empty())
+        {
+            bail!("invalid_options: --project requires a name or ID");
+        }
         if self
             .recent_calls
             .as_ref()
@@ -102,6 +117,7 @@ impl BoardOptions {
             ("--for", self.delegate.clone()),
             ("--after", self.after.clone()),
             ("--through", self.through.clone()),
+            ("--project", self.project.clone()),
             ("--board-text", self.board_text.clone()),
             ("--board-payload", self.board_payload.clone()),
             ("--agent-model", self.agent_model.clone()),
@@ -137,6 +153,7 @@ impl BoardOptions {
             || self.through.is_some()
             || self.open
             || self.all
+            || self.project.is_some()
             || self.resume.is_some()
             || self.delegate.is_some()
             || self.board_text.is_some()

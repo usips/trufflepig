@@ -33,7 +33,8 @@ planless events do not qualify. An explicit Feed plan must itself belong to the 
 a shared event has evidence for other plans. Repository sets bind as one JSON array in SQL.
 
 The serving host resolves a Project ID or unique raw workspace name into `Keys` before
-`LocalBoard` dispatch. IDs take precedence over names; duplicate names report matching IDs.
+`LocalBoard` dispatch. IDs take precedence over names; ambiguity fails with
+`invalid_options: project NAME matches <id1>, <id2>`, listing IDs in ascending order.
 Bare CLI Overview, Attention, and Inbox use the current root's `Repo` identity when resolved,
 or `All` when no identity is available; `--all` selects `All`. Bare Feed retains its global
 default. A Claims scope intersects the requested plan; regular plan reads using `All` remain
@@ -49,3 +50,11 @@ Unavailable members carry `name`, a percent-encoded `root`, and `available: fals
 Projects reads an existing database in one query-only snapshot; absent storage returns zero
 counts and snapshot zero without creating directories or a database. Existing storage errors
 remain errors; Projects never creates or migrates storage.
+
+## CLI
+
+`board projects` lists the host Project records described above. `--project NAME|ID` follows
+[read-scope resolution](#read-scopes). The reserved `--project unscoped` selects Unscoped; select a
+workspace named `unscoped` by ID. `--project` and `--all` are mutually exclusive. The
+[CLI grammar](board-cli-contract.md#commands) defines accepted commands; continuation hints retain
+the supplied selector.

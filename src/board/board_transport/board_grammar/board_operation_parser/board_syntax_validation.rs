@@ -19,6 +19,7 @@ pub(super) fn check_flags(options: &Arguments, allowed: &[&str]) -> Result<()> {
         ("through", board.through.is_some()),
         ("open", board.open),
         ("all", board.all),
+        ("project", board.project.is_some()),
         ("resume", board.resume.is_some()),
         ("for", board.delegate.is_some()),
         (

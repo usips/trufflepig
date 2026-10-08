@@ -173,20 +173,20 @@ pub(super) fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Re
         value if value.parse::<u64>().is_ok() => return parse_inbox(options, 1),
         _ => bail!(concat!(
             "usage: board hello|inbox|show|feed|attention|history|search|web|claim|post|task|propose",
-            "|review|accept|reject|edit|new|ingest|link|unlink"
+            "|review|accept|reject|edit|new|ingest|link|unlink|projects"
         )),
     };
     Ok(BoardCommand::Op(op))
 }
 
 fn parse_inbox(options: &Arguments, index: usize) -> Result<BoardCommand> {
-    check_flags(options, &["wait", "all"])?;
+    check_flags(options, &["wait", "all", "project"])?;
     let minimum = if options.words.len() == 1 { 1 } else { index };
     fixed_words(
         options,
         minimum,
         index + 1,
-        "board [inbox] [SEQ] [--wait] [--all]",
+        "board [inbox] [SEQ] [--wait] [--all|--project NAME|ID]",
     )?;
     let after = options
         .words

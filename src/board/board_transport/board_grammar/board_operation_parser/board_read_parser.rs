@@ -29,7 +29,7 @@ pub(super) fn parse_read(
                 }
                 BoardOp::Show { target }
             } else {
-                check_flags(options, &["all", "after", "through"])?;
+                check_flags(options, &["all", "project", "after", "through"])?;
                 BoardOp::Overview {
                     scope: ReadScope::All,
                     after: options
@@ -42,6 +42,11 @@ pub(super) fn parse_read(
                     limit: bounded_limit(options, 200)?,
                 }
             }
+        }
+        "projects" => {
+            check_flags(options, &[])?;
+            fixed_words(options, 2, 2, "board projects")?;
+            BoardOp::Projects
         }
         "feed" => {
             check_flags(options, &["after", "through"])?;
@@ -71,12 +76,12 @@ pub(super) fn parse_read(
             }
         }
         "attention" => {
-            check_flags(options, &["all", "after", "through"])?;
+            check_flags(options, &["all", "project", "after", "through"])?;
             fixed_words(
                 options,
                 2,
                 2,
-                "board attention [--all] [--after SEQ:E#] [--through SEQ]",
+                "board attention [--all|--project NAME|ID] [--after SEQ:E#] [--through SEQ]",
             )?;
             BoardOp::Attention {
                 scope: ReadScope::All,

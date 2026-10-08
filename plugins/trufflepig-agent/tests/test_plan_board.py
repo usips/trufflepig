@@ -49,6 +49,20 @@ sys.exit(int(os.environ.get("EXIT", "0")))
         path = self.root / "state/trufflepig/agent-audit/codex.jsonl"
         return [json.loads(line) for line in path.read_text().splitlines()]
 
+    def test_project_selector_before_board_keeps_identity_and_audit_private(self):
+        self.env.update(TRUFFLEPIG_AGENT_MODEL="gpt-6.1-sol", TRUFFLEPIG_AGENT_EFFORT="max")
+        result = self.run_wrapper("--project", "PRIVATE_PROJECT", "board", "show")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--agent-model", self.argv())
+        self.assertEqual(self.records()[-1]["verb"], "board")
+        self.assertEqual(self.records()[-1]["args"], ["show"])
+        self.assertNotIn("PRIVATE_PROJECT", json.dumps(self.records()[-1]))
+
+    def test_projects_command_remains_visible_in_board_audit(self):
+        result = self.run_wrapper("board", "projects")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.records()[-1]["args"], ["projects"])
+
     def test_claim_environment_applies_only_to_board_and_feedback(self):
         self.env.update(TRUFFLEPIG_AGENT_MODEL="gpt-6-luna", TRUFFLEPIG_AGENT_EFFORT="xhigh")
         for verb, words in (("board", ["inbox"]), ("feedback", ["missing", "Feature"]), ("search", ["needle"])):

@@ -6,6 +6,7 @@ use crate::diagnostics::RequestContext;
 use std::sync::atomic::Ordering;
 
 mod board_configuration_tests;
+mod board_project_cli_tests;
 mod board_registration_tests;
 mod board_wait_tests;
 mod board_writer_tests;
