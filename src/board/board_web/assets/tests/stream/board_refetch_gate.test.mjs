@@ -18,6 +18,7 @@ function makeTab(route) {
     streamFailures: 0, resyncing: false, route, overview: null,
   };
   let refreshes = 0, fetches = 0;
+  const tickerEvents = [];
   const stream = createBoardStream({
     state,
     privateFetch: () => { fetches++; return new Promise(() => {}); },
@@ -25,13 +26,13 @@ function makeTab(route) {
     loadRoute: async () => {},
     scheduleRefresh: () => { refreshes++; },
     parseBoardJson: JSON.parse,
-    addTickerEvent: () => {},
+    addTickerEvent: event => tickerEvents.push(event),
     addLiveEntry: () => {},
     noteSeen: () => {},
     onIngest: () => {},
     authToken: () => TOKEN,
   });
-  return { state, stream, refreshes: () => refreshes, fetches: () => fetches };
+  return { state, stream, tickerEvents, refreshes: () => refreshes, fetches: () => fetches };
 }
 
 async function waitFor(predicate, timeoutMs = 2000) {
@@ -126,4 +127,20 @@ describe("board refetch gate", () => {
       follower.stream.stopStream();
     }
   });
+
+  for (const project of ["w1", "unscoped"]) {
+    it(`${project} uses scoped refreshes without appending global ticker frames`, async () => {
+      const { leader, follower } = await followingPair({ view: "overview", project });
+      try {
+        await relayBoardFrame(follower, "50", {
+          seq: "50", kind: "note", plan: "P9", subject: "E1", summary: "Foreign activity",
+        });
+        assert.equal(follower.refreshes(), 1, "new project membership uses a scoped read");
+        assert.deepEqual(follower.tickerEvents, []);
+        assert.equal(follower.state.watermark, "50", "global stream delivery advances its cursor");
+      } finally {
+        leader.stream.stopStream(); follower.stream.stopStream();
+      }
+    });
+  }
 });

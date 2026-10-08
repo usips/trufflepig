@@ -1,3 +1,5 @@
+import { boardReadScope, boardProjectSelector } from "./board_routing.js";
+
 export function createBoardReader(context) {
   const {
     state, dom, views, board, jsonFetch, apiVersion, readOp, snapshotSeq, minimumSeq, cursorFromRoute,
@@ -6,7 +8,7 @@ export function createBoardReader(context) {
   const { el, add, title, panel, planId, actorName, stamp } = dom;
   const {
     renderOverview, renderAttention, renderClaims, feedbackPage, searchPage, editorPage, entryPage,
-    entriesPage, diffPage, sanitizedMarkup, renderPlan,
+    entriesPage, diffPage, sanitizedMarkup, renderPlan, projectChips,
   } = views;
   // Newest-first paging over the descending Entries window: one read
   // per page, following the server's next-before cursor.
@@ -19,12 +21,25 @@ export function createBoardReader(context) {
   }
   async function fetchRoute(route, signal, forceSnapshot) {
     const replies = [];
+    let projects = state.projects || [], projectRecords = null;
     const readReply = async op => {
-      const reply = await board(op, signal);
+      signal?.throwIfAborted();
+      const project = Object.hasOwn(op, "scope") ? boardProjectSelector(route.project) : undefined;
+      let reply;
+      try { reply = await board(op, signal, project); }
+      catch (error) { if (projectRecords) error.projects = projectRecords; throw error; }
+      signal?.throwIfAborted();
       if (snapshotSeq(reply) === null) throw new Error("A board read is missing its snapshot sequence.");
       replies.push(reply); return reply;
     };
     const read = async op => (await readReply(op)).data;
+    if (state.projects === null || route.view === "overview" || forceSnapshot) {
+      projectRecords = await read(readOp("projects"));
+      if (!Array.isArray(projectRecords)) {
+        throw new Error("Board reply is missing its projects collection.");
+      }
+      projects = projectRecords;
+    }
     const renderedReply = async (kind, ref) => {
       const result = await jsonFetch(`/api/v1/render/${kind}/${encodeURIComponent(ref)}`, { signal });
       if (result.api !== apiVersion || (kind === "plan"
@@ -38,22 +53,26 @@ export function createBoardReader(context) {
     };
     const readOverview = async (page = {}) => {
       const reply = await readReply(readOp("overview",
-        { scope: "all", after: page.after || null, through: page.through || null, limit: 50 }));
+        { scope: boardReadScope(route.project), after: page.after || null,
+          through: page.through || null, limit: 50 }));
       const watermark = snapshotSeq(reply);
       const after = String(BigInt(watermark) > 20n ? BigInt(watermark) - 20n : 0n);
-      const feed = await read(readOp("feed", { scope: "all", plan: null, after, through: watermark, limit: 20 }));
+      const feed = await read(readOp("feed", {
+        scope: boardReadScope(route.project), plan: null, after, through: watermark, limit: 20,
+      }));
       return { ...reply.data, events: feed.events };
     };
     const readAttention = (page = {}) => read(readOp("attention",
-      { scope: "all", after: cursorFromRoute(page, true), through: page.through || null, limit: 50 }));
+      { scope: boardReadScope(route.project), after: cursorFromRoute(page, true),
+        through: page.through || null, limit: 50 }));
     const readClaims = (plan, after, through, ownStale = false) => read(readOp("claims", {
-      plan, own_stale: ownStale, scope: "all",
+      plan, own_stale: ownStale, scope: boardReadScope(route.project),
       after: after ? parseBoardJson(after) : null, through: through || null, limit: 50,
     }));
     let page, overview = null, attention = null;
     if (route.view === "overview") {
       [overview, attention] = await Promise.all([readOverview(route), readAttention()]);
-      page = renderOverview(overview, attention, route);
+      page = renderOverview(overview, attention, route, projects);
     } else if (route.view === "attention") {
       attention = await readAttention(route); page = renderAttention(attention, route);
     } else if (route.view === "claims") {
@@ -105,9 +124,11 @@ export function createBoardReader(context) {
           const current = view.plan ? view : await read(readOp("show", { target: planId(route.ref) }));
           page = editorPage(route.view, { ...current, revision: view.plan ? view.revision : view });
         } else if (!view.plan) {
+          const current = await read(readOp("show", { target: planId(route.ref) }));
           page = add(el("div"),
             title(`Plan revision · ${view.id}`,
               `${view.source} · ${actorName(view.actor)} · ${stamp(view.created_at)}`),
+            projectChips(current.repo_keys, projects),
             panel("", sanitizedMarkup(await renderedReply("plan", route.ref))));
         } else {
           const [rendered, extra] = await Promise.all([
@@ -123,16 +144,18 @@ export function createBoardReader(context) {
                   readClaims(view.plan.id, route.claimAfter, route.claimThrough || view.through),
                 ]).then(([tasks, claims]) => ({ tasks, claims })) : Promise.resolve(null),
           ]);
-          page = renderPlan(view, rendered, extra, route);
+          page = renderPlan(view, rendered, extra, route, projects);
         }
       }
     } else throw new Error("This board page does not exist.");
-    if (route.view !== "overview" && (forceSnapshot || state.watermark === null)) {
+    if (route.view !== "overview"
+      && (forceSnapshot || state.watermark === null || state.overview === null)) {
       overview = await readOverview();
       if (!attention) attention = await readAttention();
     }
     const times = replies.map(reply => reply.data?.server_now).filter(time => Number.isFinite(time));
-    return { page, overview, attention, serverNow: times.length ? Math.max(...times) : null,
+    return { page, overview, attention, projects: projectRecords,
+      serverNow: times.length ? Math.max(...times) : null,
       watermark: minimumSeq(replies), warnings: replies.flatMap(reply => reply.warnings) };
   }
 

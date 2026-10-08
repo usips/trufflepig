@@ -5,7 +5,7 @@ export function createPlanPage(context) {
   const {
     state, dom, board, jsonFetch, navigate, scheduleRefresh, submitMutation, notice, apiVersion,
     entryRecord, collection, permitted, nextAfter, pageParams, queryFilters, postKinds, entryKinds,
-    entryCard, taskCard, workingCard, postForm, taskDetails,
+    entryCard, taskCard, workingCard, postForm, taskDetails, projectChips,
   } = context;
   const {
     el, add, button, routeUrl, link, refLink, badge, actorName, shortActor, stamp, timeNode, age,
@@ -66,7 +66,7 @@ export function createPlanPage(context) {
       if (markers.childElementCount) element.append(markers);
     }
   }
-  function renderPlan(view, rendered, extra, route) {
+  function renderPlan(view, rendered, extra, route, projects) {
     const plan = view.plan;
     const page = el("div");
     const actions = el("div", "actions");
@@ -80,6 +80,7 @@ export function createPlanPage(context) {
         `Revision ${plan.head_revision} · Owner ${plan.owner_user}${plan.steward ? ` · Steward ${plan.steward}` : ""}`,
         actions
       ),
+      projectChips(view.repo_keys, projects),
       planTabs(plan.id, route.tab || "ssot")
     );
     const tab = route.tab || "ssot";

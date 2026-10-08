@@ -75,6 +75,7 @@ function boardReply(op, data, seq) {
 }
 
 function boardData(op) {
+  if (op === "projects") return [];
   if (op === "overview") return { plans: [], through: null, server_now: 1700000000 };
   if (op === "feed") return { events: [] };
   if (op === "attention") return { entries: [] };

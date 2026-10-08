@@ -27,7 +27,8 @@ export function createBoardDom(state) {
       : ["plan", "entry"].includes(view) ? params.ref
       : view === "edit" ? `edit/${params.ref}` : view;
     const query = new URLSearchParams();
-    for (const [key, value] of Object.entries(params)) {
+    const fields = { project: state.route?.project || "", ...params };
+    for (const [key, value] of Object.entries(fields)) {
       if (!["view", "ref"].includes(key) && value !== undefined && value !== null && value !== "") {
         query.set(key, value);
       }

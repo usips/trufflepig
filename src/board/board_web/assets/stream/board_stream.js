@@ -5,10 +5,9 @@ import { STREAM_CHANNEL_NAME, STREAM_LOCK_NAME, createStreamElection } from "./s
 // bootstrap announces this label rather than a generic reconnect warning.
 export const BOARD_AUTH_EXPIRED_MESSAGE = "Authorization expired. Run `trufflepig board web`.";
 
-// Delivery always advances the watermark, ticker, and seen mark; only the
-// page re-fetch is gated. Feedback lists only feedback-kind events, and a
-// plan-filtered search only its plan; a query-only search cannot exclude any
-// event, so it refetches like every other route.
+// Delivery advances the watermark and seen mark. Project membership comes
+// from scoped reads, so global frames never enter a selected project's ticker.
+// Unknown plans still trigger reads to discover newly linked project work.
 export function routeRefreshesOn(route, event) {
   if (route?.view === "feedback") return event?.kind === "feedback";
   if (route?.view === "search") return !route.plan || String(event?.plan || "") === route.plan;
@@ -51,7 +50,7 @@ export function createBoardStream(context) {
     state.streamFailures = 0;
     state.watermark = frame.id;
     noteSeen?.(frame.id);
-    addTickerEvent(event);
+    if (!state.route?.project) addTickerEvent(event);
     if (routeRefreshesOn(state.route, event)) scheduleRefresh();
     return false;
   }

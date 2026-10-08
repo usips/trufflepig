@@ -46,7 +46,7 @@ const freshness = document.getElementById("freshness");
 const draftStores = createDraftStores();
 const state = {
   route: routeFromLocation(), generation: 0, navigation: 0, request: null, loadedAt: 0, clockOffsetMs: 0,
-  overview: null, attention: null, watermark: null, stream: null,
+  overview: null, attention: null, projects: null, watermark: null, stream: null,
   streamGeneration: 0, reconnect: null, streamFailures: 0,
   refreshTimer: null, refreshing: false, refreshAgain: false, drafts: draftStores.drafts, globalRefresh: null,
   resyncing: false, formDrafts: draftStores.formDrafts, formStatuses: draftStores.formStatuses,
@@ -73,7 +73,10 @@ const loop = createBoardRenderLoop({
   getToken: () => token, isExpired: () => expired, enterExpired, notice, setConnection, noteSeen,
   wiring,
 });
-const { navigate } = createBoardRouting({ state, routeUrl, notice, load: loop.loadRoute });
+const { navigate, adoptRoute, updateProjectSelector } = createBoardRouting({
+  state, routeUrl, notice, load: loop.loadRoute,
+});
+wiring.updateProjectSelector = updateProjectSelector;
 const views = createBoardViews({
   state, dom, notice, apiVersion, navigate, postKinds, entryKinds, columns,
   board: loop.board, jsonFetch: loop.jsonFetch, scheduleRefresh: loop.scheduleRefresh,
@@ -177,10 +180,11 @@ document.addEventListener("click", event => {
   history.pushState({}, "", target.pathname + target.search + target.hash);
   const next = routeFromLocation();
   if (routeUrl(next.view, { ...next, heading: "" }) === routeUrl(state.route.view, { ...state.route, heading: "" })) {
-    state.route = next; document.getElementById(next.heading)?.scrollIntoView?.({ block: "start" }); return;
+    adoptRoute(next);
+    document.getElementById(next.heading)?.scrollIntoView?.({ block: "start" }); return;
   }
   state.navigation++;
-  state.route = routeFromLocation(); notice(""); void loop.loadRoute(true);
+  adoptRoute(next); notice(""); void loop.loadRoute(true);
 });
 window.addEventListener("hashchange", () => {
   // Tabs with expired or absent sessions adopt offered tokens.
@@ -191,15 +195,15 @@ window.addEventListener("hashchange", () => {
     token = adoption; expired = false;
     try { sessionStorage.setItem(TOKEN_KEY, token); } catch (_) { /* In-memory auth still works. */ }
     history.replaceState(history.state, "", location.pathname + location.search);
-    state.navigation++; state.route = routeFromLocation(); void loop.loadRoute(true); return;
+    state.navigation++; adoptRoute(routeFromLocation()); void loop.loadRoute(true); return;
   }
   const stray = expired ? null : offeredTokenFromHash(location.hash);
   if (stray !== null) {
     if (stray !== token) { pendingToken = stray; notice(TOKEN_MISMATCH_NOTICE, "error"); }
     history.replaceState(history.state, "", location.pathname + location.search);
-    state.navigation++; state.route = routeFromLocation(); void loop.loadRoute(true); return;
+    state.navigation++; adoptRoute(routeFromLocation()); void loop.loadRoute(true); return;
   }
-  state.navigation++; state.route = routeFromLocation(); void loop.loadRoute(true);
+  state.navigation++; adoptRoute(routeFromLocation()); void loop.loadRoute(true);
 });
 window.addEventListener("pagehide", () => { stopStream(); state.request?.abort(); state.globalRefresh?.abort(); });
 window.addEventListener("pageshow", event => { if (event.persisted) void loop.loadRoute(false, true); });

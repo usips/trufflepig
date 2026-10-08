@@ -15,7 +15,26 @@ export function createBoardViews(context) {
   const {
     entryCard, eventList, workingCard, taskCard, attentionItems, attentionCard,
   } = createBoardCards({ state, dom, entryRecord, collection });
-  function renderOverview(data, attention, route) {
+  function projectChips(repoKeys, projects = state.projects || []) {
+    if (!Array.isArray(repoKeys)) return null;
+    const chips = el("div", "row wrap small");
+    if (!repoKeys.length) {
+      chips.append(link("Unscoped", "overview", { project: "unscoped" }, "badge"));
+    }
+    for (const project of projects) {
+      if (!project.repo_keys.some(key => repoKeys.includes(key))) continue;
+      const unavailable = project.unavailable || [];
+      const chip = link(project.name, "overview", { project: project.id }, "badge project-chip");
+      chip.dataset.project = project.id;
+      if (unavailable.length) {
+        chip.dataset.kind = "stale"; chip.textContent += " · unavailable";
+        chip.title = `Unavailable members: ${unavailable.map(member => member.name).join(", ")}`;
+      }
+      chips.append(chip);
+    }
+    return chips.childElementCount ? chips : null;
+  }
+  function renderOverview(data, attention, route, projects) {
     const page = el("div");
     // The 202 is only a queue receipt; the terminal result arrives as an
     // `ingest` stream frame carrying the 202's ticket (see board_web_main.js
@@ -68,6 +87,7 @@ export function createBoardViews(context) {
       const heading = add(el("div", "lane-heading"), refLink(plan.id),
         link(plan.title, "plan", { ref: plan.id }),
         el("span", "badge", `Revision ${plan.head_revision}`),
+        projectChips(item.repo_keys, projects),
         el("span", "count", `${(item.tasks || []).length} tasks`));
       const grid = el("div", "lane-columns");
       for (const column of columns) {
@@ -85,7 +105,8 @@ export function createBoardViews(context) {
       lanes.append(lane);
     }
     if (!plans.length) {
-      lanes.append(panel("Plans", add(el("div"), empty("No plans yet."),
+      const message = route.project ? "No plans in this scope." : "No plans yet.";
+      lanes.append(panel("Plans", add(el("div"), empty(message),
         link("Create the first plan", "new", {}, "button primary"))));
     }
     lanes.append(omitted(data.omitted, "plans") || el("span"));
@@ -239,9 +260,11 @@ export function createBoardViews(context) {
     if (data.next_after) page.append(link("Next claims", "claims", pageParams(route, data), "button"));
     return page;
   }
-  const details = createBoardDetails({ ...context, entryCard, taskCard, workingCard, postForm, taskDetails });
+  const details = createBoardDetails({
+    ...context, entryCard, taskCard, workingCard, postForm, taskDetails, projectChips,
+  });
   return {
     entryCard, eventList, workingCard, taskCard, attentionItems, attentionCard, renderOverview,
-    renderAttention, renderClaims, postForm, taskDetails, ...details,
+    renderAttention, renderClaims, postForm, taskDetails, projectChips, ...details,
   };
 }

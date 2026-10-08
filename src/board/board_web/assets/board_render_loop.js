@@ -1,4 +1,5 @@
 import { resyncSeenMark } from "./state/board_seen.js";
+import { boardReadScope, boardProjectSelector } from "./board_routing.js";
 
 export function createBoardRenderLoop({
   state, dom, main, apiVersion, seenStorage, seenKey,
@@ -12,6 +13,10 @@ export function createBoardRenderLoop({
 
   function errorMessage(error) { return error?.message || String(error); }
   function isAbort(error) { return error?.name === "AbortError"; }
+  function acceptProjects(projects) {
+    if (!projects) return;
+    state.projects = projects; wiring.updateProjectSelector?.(projects);
+  }
   function assertAuth() {
     if (!getToken()) throw new Error("Open the launch URL printed by trufflepig board web to authorize this tab.");
     if (!Number.isInteger(apiVersion) || apiVersion < 1) {
@@ -62,10 +67,10 @@ export function createBoardRenderLoop({
     }
     return JSON.stringify(value);
   }
-  async function board(op, signal) {
+  async function board(op, signal, project) {
     const reply = await jsonFetch("/api/v1/board", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: encodeBoardJson({ api: apiVersion, op }), signal,
+      body: encodeBoardJson({ api: apiVersion, op, ...(project ? { project } : {}) }), signal,
     });
     if (reply.api !== apiVersion || !reply.result || !Object.hasOwn(reply.result, "data")) {
       throw new Error("Board returned an incompatible reply.");
@@ -119,6 +124,9 @@ export function createBoardRenderLoop({
     state.refreshTimer = setTimeout(() => { state.refreshTimer = null; void loadRoute(false); }, 150);
   }
   function addTickerEvent(event) {
+    // Global stream frames have no repository membership. Scoped Feed reads
+    // supply their ticker; raw frames only trigger those reads.
+    if (state.route.project) return;
     if (!state.overview || !event?.seq) return;
     const events = state.overview.events || (state.overview.events = []);
     if (!events.some(item => String(item.seq) === String(event.seq))) events.unshift(event);
@@ -175,6 +183,7 @@ export function createBoardRenderLoop({
       if (generation !== state.generation) return;
       if (result.overview) state.overview = result.overview;
       if (result.attention) state.attention = result.attention;
+      acceptProjects(result.projects);
       if (result.serverNow !== null) state.clockOffsetMs = result.serverNow * 1000 - Date.now();
       const active = focus ? null : focusedControl(main);
       captureForms(main); restoreForms(result.page); main.replaceChildren(result.page); restoreFocus(main, active);
@@ -203,6 +212,7 @@ export function createBoardRenderLoop({
       }
     } catch (error) {
       if (isAbort(error) || generation !== state.generation) return;
+      acceptProjects(error.projects);
       if (!main.querySelector("form") || focus) {
         const box = panel("Board unavailable", add(el("div"), el("p", "", errorMessage(error)),
           focusKey(button("Try again", () => void loadRoute(true)), "try-again")), "callout");
@@ -219,15 +229,25 @@ export function createBoardRenderLoop({
   async function refreshOverview() {
     if (!getToken() || state.globalRefresh) return;
     const controller = new AbortController(); state.globalRefresh = controller;
+    const project = state.route.project || "", navigation = state.navigation;
     try {
       const overview = await board(
-        readOp("overview", { scope: "all", after: null, through: null, limit: 50 }),
-        controller.signal
+        readOp("overview", {
+          scope: boardReadScope(project), after: null, through: null, limit: 50,
+        }),
+        controller.signal, boardProjectSelector(project)
       );
+      if (controller.signal.aborted || navigation !== state.navigation
+        || project !== (state.route.project || "")) return;
       if (snapshotSeq(overview) === null) throw new Error("Overview is missing its snapshot sequence.");
       state.overview = { ...overview.data, events: state.overview?.events || [] };
       if (Number.isFinite(overview.data.server_now)) state.clockOffsetMs = overview.data.server_now * 1000 - Date.now();
-    } catch (error) { if (!isAbort(error) && !isExpired()) setConnection("Refresh failed", "error"); }
+    } catch (error) {
+      if (!controller.signal.aborted && navigation === state.navigation
+        && project === (state.route.project || "") && !isAbort(error) && !isExpired()) {
+        setConnection("Refresh failed", "error");
+      }
+    }
     finally { if (state.globalRefresh === controller) state.globalRefresh = null; }
   }
 

@@ -23,6 +23,12 @@
       <a href="/#/feedback" data-route="feedback">Feedback</a>
       <a href="/#/search" data-route="search">Search</a>
     </nav>
+    <label class="small" for="project">Project</label>
+    <select id="project" class="compact">
+      <option value="">All</option>
+      <option value="unscoped">Unscoped</option>
+    </select>
+    <span id="project-warning" class="badge" data-kind="stale" hidden></span>
     <a class="button primary compact" href="/#/new" data-route="new">New plan</a>
   </header>
   <div class="status-bar">
