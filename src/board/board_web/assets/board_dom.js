@@ -80,30 +80,42 @@ export function createBoardDom(state) {
     return `${actor.user}@${actor.host}/${actor.harness}/${actor.session}`;
   }
   function shortActor(actor) { return typeof actor === "object" && actor ? actor.harness : actorName(actor); }
-  function stamp(value) {
+  function timestampDate(value) {
+    if (typeof value !== "number" && typeof value !== "string"
+      || typeof value === "string" && !value.trim()) return null;
     const date = new Date(Number(value) * 1000);
-    return Number.isFinite(date.getTime()) ? date.toLocaleString() : "Unknown time";
+    return Number.isFinite(date.getTime()) ? date : null;
+  }
+  function stamp(value) {
+    const date = timestampDate(value);
+    if (!date) return "Unknown time";
+    const local = date.toLocaleString(undefined, {
+      year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+      second: "2-digit", timeZoneName: "longOffset",
+      ...(date.getMilliseconds() ? { fractionalSecondDigits: 3 } : {}),
+    });
+    return `${local} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`;
   }
   function timeNode(value) {
-    const item = el("time", "", stamp(value));
-    const date = new Date(Number(value) * 1000);
-    if (Number.isFinite(date.getTime())) item.dateTime = date.toISOString();
-    return item;
-  }
-  function age(value) {
-    const seconds = Math.max(0, Math.floor((Date.now() + state.clockOffsetMs) / 1000 - Number(value)));
-    if (!Number.isFinite(seconds)) return "unknown";
-    if (seconds < 60) return `${seconds}s ago`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-    return `${Math.floor(seconds / 86400)}d ago`;
-  }
-  function ageNode(value) {
-    const item = el("span", "", age(value));
-    item.dataset.age = value;
+    const item = el("time", "", age(value));
+    const date = timestampDate(value);
     item.title = stamp(value);
+    if (date) {
+      item.dateTime = date.toISOString(); item.dataset.timestamp = String(date.getTime() / 1000);
+    }
     return item;
   }
+  function age(value, offsetMs = state.clockOffsetMs) {
+    const date = timestampDate(value);
+    if (!date) return "Unknown time";
+    const delta = (Date.now() + (Number.isFinite(offsetMs) ? offsetMs : 0) - date.getTime()) / 1000;
+    const seconds = Math.floor(Math.abs(delta));
+    if (seconds < 1) return "now";
+    const unit = seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds / 60)}m`
+      : seconds < 86400 ? `${Math.floor(seconds / 3600)}h` : `${Math.floor(seconds / 86400)}d`;
+    return delta < 0 ? `in ${unit}` : `${unit} ago`;
+  }
+  function ageNode(value) { return timeNode(value); }
   function panel(title, body, className = "") {
     const item = el("section", `panel section ${className}`);
     if (title) item.append(el("h2", "", title));

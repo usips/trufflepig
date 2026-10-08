@@ -13,8 +13,8 @@ Markdown, and skip-link navigation. Read selection and Project chips follow the
 and batches at most four Entry Show reads to obtain each row's current permissions. Recent-call
 metadata renders literally; typed outbox entries/events display `(spooled, unverified)`.
 
-Overview refreshes every 15 seconds and claim ages tick locally each second: inbox renewal, claim
-expiry, and configuration changes can occur without advancing the event sequence. Entries views
+Overview refreshes every 15 seconds: inbox renewal, claim expiry, and configuration changes can
+occur without advancing the event sequence. Entries views
 page newest-first with a composite before-cursor; each refresh re-reads the page with one entries
 read, and there is no live tail or divider. The seen mark holds the highest delivered seq and
 badges newer ticker rows; it lives at `localStorage["trufflepig-board-seen:<board-id>"]`.
@@ -26,6 +26,13 @@ The ingest button holds the 202's ticket and completes from its matching `ingest
 receipt arriving before the 202 reply is cached by ticket and consumed immediately on reply,
 preserving its completion or failure notice. The button shows queued only while awaiting the
 receipt; it reports unknown after 30 seconds without a matching receipt.
+
+Board timestamps, including claim activity, revisions, commits, and freshness, display relative
+time and tick locally each second without a read. Semantic `time` elements retain ISO dates;
+hover titles show exact local dates, time through seconds, UTC offsets, and timezone names.
+Future dates use `in 1m`; invalid or missing dates show `Unknown time`. Server timestamps use the
+server clock offset; freshness uses the client clock. Shared timers stop on page hide and resume
+once on page show; restored and foregrounded pages update their relative text immediately.
 
 Form drafts and focus (by `data-focus-key`) survive live-region refreshes; connection announcements
 fire only on outage, authorization expiry, and restore. Editors retain the originally loaded

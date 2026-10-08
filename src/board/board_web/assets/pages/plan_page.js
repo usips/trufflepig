@@ -9,7 +9,7 @@ export function createPlanPage(context) {
     entryCard, taskCard, workingCard, postForm, taskDetails, doneTasks, projectChips,
   } = context;
   const {
-    el, add, button, routeUrl, link, refLink, badge, actorName, shortActor, stamp, timeNode, age,
+    el, add, button, routeUrl, link, refLink, badge, actorName, shortActor, timeNode, age,
     ageNode, panel, empty, omitted, title, field, formStatus, planId, focusKey, retainForm,
   } = dom;
   const { entriesPage } = createBoardEntries(context);
@@ -217,9 +217,9 @@ export function createPlanPage(context) {
       add(item,
         refLink(commit.oid, commit.oid, "mono", { plan: plan || commit.plans[0]?.plan_id, repo_key: commit.repo_key }),
         el("p", "", commit.subject),
-        el("p", "muted small",
-          `${commit.author} · ${stamp(commit.committed_at)} · ${commit.files} files · `
-            + `+${commit.insertions} −${commit.deletions}`));
+        add(el("p", "muted small"), el("span", "", `${commit.author} · `),
+          timeNode(commit.committed_at),
+          el("span", "", ` · ${commit.files} files · +${commit.insertions} −${commit.deletions}`)));
       if (commit.coauthors?.length) {
         item.append(add(el("p", "small coauthor-list"), commit.coauthors.map(author => {
           const label = `${author.model} · ${author.harness} · ${author.email}`;

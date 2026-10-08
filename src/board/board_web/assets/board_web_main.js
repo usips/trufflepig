@@ -62,7 +62,7 @@ const entryKinds = [
 ];
 
 const dom = createBoardDom(state);
-const { routeUrl, age } = dom;
+const { routeUrl, age, stamp } = dom;
 // The render loop reads views, reader, and stream outputs through this wiring
 // object: those factories close over loop functions at construction, so the
 // loop's back-references land here once construction finishes, before the
@@ -205,24 +205,50 @@ window.addEventListener("hashchange", () => {
   }
   state.navigation++; adoptRoute(routeFromLocation()); void loop.loadRoute(true);
 });
-window.addEventListener("pagehide", () => { stopStream(); state.request?.abort(); state.globalRefresh?.abort(); });
-window.addEventListener("pageshow", event => { if (event.persisted) void loop.loadRoute(false, true); });
-document.getElementById("refresh").addEventListener("click", () => void loop.loadRoute(false));
-setInterval(() => {
-  for (const item of document.querySelectorAll("[data-age]")) item.textContent = age(item.dataset.age);
-  freshness.textContent = state.loadedAt ? `Updated ${Math.floor((Date.now() - state.loadedAt) / 1000)}s ago` : "";
-}, 1000);
-setInterval(() => {
-  if (document.visibilityState !== "hidden") {
-    if (state.route.view !== "overview") void loop.refreshOverview();
-    loop.scheduleRefresh();
+let relativeTimer = null, idleRefreshTimer = null;
+function updateRelativeTimes() {
+  for (const item of document.querySelectorAll("time[data-timestamp]")) {
+    const text = age(item.dataset.timestamp);
+    if (item.textContent !== text) item.textContent = text;
   }
-}, 15000);
+  const text = state.loadedAt ? `Updated ${age(state.loadedAt / 1000, 0)}` : "";
+  if (freshness.textContent !== text) freshness.textContent = text;
+  if (state.loadedAt) {
+    const exact = new Date(state.loadedAt).toISOString();
+    if (freshness.dateTime !== exact) {
+      freshness.dateTime = exact; freshness.title = stamp(state.loadedAt / 1000);
+    }
+  }
+}
+function startRefreshTimers() {
+  updateRelativeTimes();
+  if (relativeTimer === null) relativeTimer = setInterval(updateRelativeTimes, 1000);
+  if (idleRefreshTimer === null) idleRefreshTimer = setInterval(() => {
+    if (document.visibilityState !== "hidden") {
+      if (state.route.view !== "overview") void loop.refreshOverview();
+      loop.scheduleRefresh();
+    }
+  }, 15000);
+}
+window.addEventListener("pagehide", () => {
+  clearInterval(relativeTimer); clearInterval(idleRefreshTimer);
+  relativeTimer = null; idleRefreshTimer = null;
+  clearTimeout(state.refreshTimer); state.refreshTimer = null;
+  stopStream(); state.request?.abort(); state.globalRefresh?.abort();
+});
+window.addEventListener("pageshow", event => {
+  startRefreshTimers();
+  if (event.persisted) void loop.loadRoute(false, true);
+});
+document.getElementById("refresh").addEventListener("click", () => void loop.loadRoute(false));
+startRefreshTimers();
 document.addEventListener("visibilitychange", () => {
   // A hidden tab yields its stream: a hidden leader's timers are throttled,
   // so it releases the lock and a visible tab takes over. Foregrounding
   // refreshes and rejoins the stream; a stale watermark resyncs by itself.
   if (document.visibilityState === "hidden") stopStream();
-  else if (document.visibilityState === "visible") loop.scheduleRefresh();
+  else if (document.visibilityState === "visible") {
+    updateRelativeTimes(); loop.scheduleRefresh();
+  }
 });
 void loop.loadRoute(true);

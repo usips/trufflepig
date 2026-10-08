@@ -6,7 +6,7 @@ export function createBoardReader(context) {
     state, dom, views, board, jsonFetch, apiVersion, readOp, snapshotSeq, minimumSeq, cursorFromRoute,
     parseBoardJson, queryFilters,
   } = context;
-  const { el, add, title, panel, planId, actorName, stamp } = dom;
+  const { el, add, title, panel, planId, actorName, timeNode } = dom;
   const {
     renderOverview, renderAttention, renderClaims, feedbackPage, searchPage, editorPage, entryPage,
     entriesPage, diffPage, sanitizedMarkup, renderPlan, renderDone, projectChips,
@@ -149,11 +149,11 @@ export function createBoardReader(context) {
           page = editorPage(route.view, { ...current, revision: view.plan ? view.revision : view });
         } else if (!view.plan) {
           const current = await read(readOp("show", { target: planId(route.ref) }));
-          const actorLine = `${view.source} · ${actorName(view.actor)} · ${stamp(view.created_at)}`;
+          const actorLine = `${view.source} · ${actorName(view.actor)} · `;
           const heading = title(`Plan revision · ${view.id}`, actorLine);
           const detail = heading.querySelector("p"); detail.textContent = "";
           add(detail, actorMark({ ...view, vendor: harnessVendor(view.actor?.harness) }),
-            el("span", "", actorLine));
+            el("span", "", actorLine), timeNode(view.created_at));
           page = add(el("div"),
             heading,
             projectChips(current.repo_keys, projects),
