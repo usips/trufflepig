@@ -92,12 +92,15 @@ fn claim_from_row(
         .map(ClaimEndReason::parse)
         .transpose()
         .map_err(|error| invalid("board_unavailable", error.to_string()))?;
+    let actor = actor_from_row(row, 2).map_err(sql_error)?;
+    let model: Option<String> = row.get(12).map_err(sql_error)?;
     Ok(StoredClaim {
         actor_id: row.get(0).map_err(sql_error)?,
         record: ClaimRecord {
             task: TaskId::new(plan, row_number(row, 1).map_err(sql_error)?)
                 .map_err(BoardError::from)?,
-            actor: actor_from_row(row, 2).map_err(sql_error)?,
+            vendor: claim_vendor(&actor.harness, model.as_deref()),
+            actor,
             entry: EntryId::new(row_number(row, 6).map_err(sql_error)?)
                 .map_err(BoardError::from)?,
             scope: EntryText::new(scope).map_err(BoardError::from)?,
@@ -106,7 +109,7 @@ fn claim_from_row(
             ended_at,
             end_reason,
             stale: ended_at.is_none() && last_active < now.saturating_sub(ttl.max(0)),
-            model: row.get(12).map_err(sql_error)?,
+            model,
             effort: row.get(13).map_err(sql_error)?,
             delegated_by: delegated_actor_from_row(row, 14).map_err(sql_error)?,
         },

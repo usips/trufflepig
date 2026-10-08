@@ -20,6 +20,10 @@ fn show_preserves_labor_and_uncovered_sections_while_trimming_the_body() {
         task: TaskId::new(plan, ordinal).unwrap(),
         actor: BoardActor::new("josh", "laptop", HarnessLabel::parse(harness).unwrap(), "s")
             .unwrap(),
+        vendor: claim_vendor(
+            &HarnessLabel::parse(harness).unwrap(),
+            Some("claimed-model"),
+        ),
         entry: EntryId::new(ordinal).unwrap(),
         scope: EntryText::new(scope).unwrap(),
         claimed_at: 100,

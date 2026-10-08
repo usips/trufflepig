@@ -159,6 +159,8 @@ fn commit_activity_uses_claimed_model_vendor_and_harness_fallback() {
         ("muse", Some("Grok 4"), Some("grok")),
         ("omp", Some("Gemini 3 Pro"), Some("gemini")),
         ("omp", Some("Qwen3"), Some("qwen")),
+        ("omp", Some("Muse Spark"), Some("muse")),
+        ("omp", Some("Llama 4 Maverick"), Some("muse")),
         ("codex", Some("unrecognized"), Some("codex")),
         ("claude", None, Some("claude")),
         ("cli", None, None),
@@ -213,8 +215,7 @@ fn muse_claim_refreshes_from_meta_com_coauthor() {
     let mut conn = database.connect();
     let holder = actor("josh", "muse", "one");
     let task = carved_task(&mut conn, &holder, 1000, "current");
-    // The hello model snapshot claims Muse; no vendor prefix matches it, so
-    // the claim vendor falls back to the muse harness.
+    // The model snapshot attributes the claim to Muse.
     conn.execute(
         "UPDATE entries SET model='Muse Spark' WHERE id=(SELECT entry_id FROM claims WHERE plan_id=?1 AND task_ordinal=?2)",
         params![sql_number(task.plan.get()), sql_number(task.ordinal)],

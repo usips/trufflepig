@@ -7,13 +7,13 @@ mod tests;
 use history_drills::HistoryDrillGate;
 pub use ssot_diff::{SsotDiff, SsotHunk, build_ssot_diff};
 
-use crate::board::board_actor::{HarnessLabel, claim_vendor};
+use crate::board::board_actor::HarnessLabel;
 use crate::board::board_ids::PlanRevision;
 use crate::board::board_protocol::{
     ClaimRecord, EntryRecord, FeedbackRecord, LinkedCommit, ManualCommitLink, PlanRecord,
     ProposalRecord, RepoScanTarget, ReviewEvidence, TaskRecord,
 };
-use crate::board::commit_trailers::attributed_to;
+use crate::board::commit_trailers::coauthors_match_claim;
 use crate::identity::GitOid;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -106,10 +106,7 @@ pub fn assemble_review(
                     || claim.task.plan != link.plan_id
                     || commit.committed_at < claim.claimed_at
                     || claim.ended_at.is_some_and(|end| commit.committed_at >= end)
-                    || attributed_to(
-                        commit,
-                        &claim_vendor(&claim.actor.harness, claim.model.as_deref()),
-                    )
+                    || coauthors_match_claim(&commit.coauthors, claim.vendor, &claim.actor.harness)
                 {
                     continue;
                 }

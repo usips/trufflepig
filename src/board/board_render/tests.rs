@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_actor::{BoardActor, HarnessLabel};
+use crate::board::board_actor::{AgentVendor, BoardActor, HarnessLabel, claim_vendor};
 use crate::board::board_ids::{BoardRef, EntryId, EventSeq, PlanId};
 use crate::board::board_protocol::ReadScope;
 use crate::board::board_protocol::*;
@@ -37,6 +37,7 @@ fn entry(seq: u64) -> EntryRecord {
         to: None,
         supersedes: None,
         actor: actor(),
+        vendor: AgentVendor::Codex,
         model: None,
         effort: None,
         repo_key: None,
@@ -57,6 +58,7 @@ fn inbox(advancing: bool) -> InboxReply {
             subject: BoardRef::Entry(EntryId::new(seq).unwrap()),
             to: None,
             actor: actor(),
+            vendor: AgentVendor::Codex,
             model: Some("gpt-6.1-sol".into()),
             effort: Some("xhigh".into()),
             summary: EntryText::new(format!(

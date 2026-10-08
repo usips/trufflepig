@@ -1,6 +1,7 @@
 //! Lease activity updates from board and matching commit evidence.
 
 use super::*;
+use crate::board::commit_trailers::coauthors_match_claim;
 
 pub(in crate::board::local_board) fn refresh_plan_claims(
     tx: &Transaction<'_>,
@@ -43,12 +44,11 @@ pub(in crate::board::local_board) fn refresh_commit_claims(
     let Some(holder) = active_claim(tx, task, now, 0)? else {
         return Ok(());
     };
-    let vendor = claim_vendor(&holder.record.actor.harness, holder.record.model.as_deref());
-    let matches = if coauthors.is_empty() {
-        vendor.is_human()
-    } else {
-        coauthors.iter().any(|coauthor| coauthor.harness == vendor)
-    };
+    let matches = coauthors_match_claim(
+        coauthors,
+        holder.record.vendor,
+        &holder.record.actor.harness,
+    );
     if matches && committed_at >= holder.record.claimed_at {
         tx.execute(
             "UPDATE claims SET last_active=max(last_active,?3) WHERE entry_id=?1 AND actor_id=?2 AND ended_at IS NULL",

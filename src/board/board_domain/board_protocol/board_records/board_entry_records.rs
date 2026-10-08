@@ -3,7 +3,7 @@ use super::{FeedbackRecord, LinkedCommit, ProposalRecord};
 use crate::board::board_domain::board_collections::EntryCursor;
 use crate::board::board_protocol::ReadScope;
 use crate::board::{
-    board_actor::{BoardActor, BoardRecipient},
+    board_actor::{AgentVendor, BoardActor, BoardRecipient},
     board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
     board_vocabulary::{EntryKind, EntryText, FeedbackState, ProposalState},
 };
@@ -44,6 +44,7 @@ pub struct EntryRecord {
     pub to: Option<BoardRecipient>,
     pub supersedes: Option<EntryId>,
     pub actor: BoardActor,
+    pub vendor: AgentVendor,
     pub model: Option<String>,
     pub effort: Option<String>,
     pub repo_key: Option<RepoKey>,
@@ -83,6 +84,7 @@ pub struct EventRecord {
     pub subject: BoardRef,
     pub to: Option<BoardRecipient>,
     pub actor: BoardActor,
+    pub vendor: AgentVendor,
     pub model: Option<String>,
     pub effort: Option<String>,
     pub summary: EntryText,

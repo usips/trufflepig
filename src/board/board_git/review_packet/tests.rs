@@ -6,7 +6,7 @@ mod warning_suppression;
 
 use super::*;
 use crate::board::{
-    board_actor::BoardActor,
+    board_actor::{AgentVendor, BoardActor, claim_vendor},
     board_ids::{EntryId, EventSeq, PlanId, RepoKey, TaskId},
     board_protocol::{
         CommitCoauthor, CommitPlanLink, ManualCommitLink, RevisionRecord, RevisionSource,

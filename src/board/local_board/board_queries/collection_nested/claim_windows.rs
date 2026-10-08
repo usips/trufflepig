@@ -2,6 +2,7 @@
 use rusqlite::{Connection, Row, params};
 
 use super::NESTED_PAGE_LIMIT;
+use crate::board::board_actor::claim_vendor;
 use crate::board::board_domain::board_collections::{ClaimCursor, ClaimPage, ClaimView};
 use crate::board::board_ids::{EntryId, EventSeq, PlanId, TaskId};
 use crate::board::board_protocol::{BoardReply, BoardResult, ClaimRecord, ReadScope};
@@ -157,10 +158,13 @@ pub(in crate::board::local_board) fn claim_window(
 fn active_claim_row(row: &Row<'_>, cutoff: i64) -> Result<ClaimRecord, BoardError> {
     let plan = PlanId::new(row_number(row, 0).map_err(sql_error)?).map_err(BoardError::from)?;
     let last_active: i64 = row.get(9).map_err(sql_error)?;
+    let actor = actor_from_row(row, 2).map_err(sql_error)?;
+    let model: Option<String> = row.get(10).map_err(sql_error)?;
     Ok(ClaimRecord {
         task: TaskId::new(plan, row_number(row, 1).map_err(sql_error)?)
             .map_err(BoardError::from)?,
-        actor: actor_from_row(row, 2).map_err(sql_error)?,
+        vendor: claim_vendor(&actor.harness, model.as_deref()),
+        actor,
         entry: EntryId::new(row_number(row, 6).map_err(sql_error)?).map_err(BoardError::from)?,
         scope: EntryText::new(row.get::<_, String>(7).map_err(sql_error)?)
             .map_err(BoardError::from)?,
@@ -169,7 +173,7 @@ fn active_claim_row(row: &Row<'_>, cutoff: i64) -> Result<ClaimRecord, BoardErro
         ended_at: None,
         end_reason: None,
         stale: last_active < cutoff,
-        model: row.get(10).map_err(sql_error)?,
+        model,
         effort: row.get(11).map_err(sql_error)?,
         delegated_by: delegated_actor_from_row(row, 13).map_err(sql_error)?,
     })

@@ -2,7 +2,7 @@
 use super::{EntryRecord, FeedbackRecord, LinkedCommit};
 use crate::board::board_domain::board_collections::{ClaimCursor, EntryCursor, TaskCeiling};
 use crate::board::{
-    board_actor::{BoardActor, BoardRecipient, HarnessLabel},
+    board_actor::{AgentVendor, BoardActor, BoardRecipient, HarnessLabel},
     board_ids::{EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
     board_vocabulary::{EntryText, PlanText, PlanTitle, ProposalState, TaskColumn},
 };
@@ -102,6 +102,7 @@ impl ClaimEndReason {
 pub struct ClaimRecord {
     pub task: TaskId,
     pub actor: BoardActor,
+    pub vendor: AgentVendor,
     pub entry: EntryId,
     pub scope: EntryText,
     pub claimed_at: i64,

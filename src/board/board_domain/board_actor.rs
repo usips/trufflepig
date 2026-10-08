@@ -5,6 +5,39 @@ use std::{fmt, str::FromStr};
 
 pub const ACTOR_COMPONENT_LIMIT: usize = 256;
 
+#[cfg(test)]
+mod tests;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentVendor {
+    Claude,
+    Codex,
+    Kimi,
+    Grok,
+    Gemini,
+    Qwen,
+    Muse,
+    Human,
+    Unknown,
+}
+
+impl AgentVendor {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Claude => "claude",
+            Self::Codex => "codex",
+            Self::Kimi => "kimi",
+            Self::Grok => "grok",
+            Self::Gemini => "gemini",
+            Self::Qwen => "qwen",
+            Self::Muse => "muse",
+            Self::Human => "human",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
 pub(crate) fn validate_actor_component(value: &str, component: &str) -> Result<()> {
     if value.is_empty()
         || value.len() > ACTOR_COMPONENT_LIMIT
@@ -56,28 +89,38 @@ impl HarnessLabel {
     }
 }
 /// Vendor attribution follows the claimed model, then the harness fallback.
-pub fn claim_vendor(harness: &HarnessLabel, model: Option<&str>) -> HarnessLabel {
+pub fn claim_vendor(harness: &HarnessLabel, model: Option<&str>) -> AgentVendor {
     if harness.is_cli() || harness.is_human() {
-        return HarnessLabel("human".to_owned());
+        return AgentVendor::Human;
     }
     let model = model.unwrap_or_default().trim().to_ascii_lowercase();
-    let label = if model.starts_with("claude") {
-        "claude"
+    if model.starts_with("claude") {
+        AgentVendor::Claude
     } else if model.starts_with("gpt") || model.starts_with("codex") || model.starts_with("chatgpt")
     {
-        "codex"
+        AgentVendor::Codex
     } else if model.starts_with("kimi") {
-        "kimi"
+        AgentVendor::Kimi
     } else if model.starts_with("grok") {
-        "grok"
+        AgentVendor::Grok
     } else if model.starts_with("gemini") {
-        "gemini"
+        AgentVendor::Gemini
     } else if model.starts_with("qwen") {
-        "qwen"
+        AgentVendor::Qwen
+    } else if model.starts_with("muse") || model.starts_with("llama") {
+        AgentVendor::Muse
     } else {
-        return harness.clone();
-    };
-    HarnessLabel(label.to_owned())
+        match harness.as_str() {
+            "claude" => AgentVendor::Claude,
+            "codex" => AgentVendor::Codex,
+            "kimi" => AgentVendor::Kimi,
+            "grok" => AgentVendor::Grok,
+            "gemini" => AgentVendor::Gemini,
+            "qwen" => AgentVendor::Qwen,
+            "muse" => AgentVendor::Muse,
+            _ => AgentVendor::Unknown,
+        }
+    }
 }
 
 impl fmt::Display for HarnessLabel {
@@ -231,46 +274,5 @@ impl TryFrom<String> for BoardRecipient {
 impl From<BoardRecipient> for String {
     fn from(value: BoardRecipient) -> Self {
         value.0
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn full_identity_round_trips_and_has_no_ambiguous_separators() {
-        let actor = BoardActor::parse("josh@laptop/codex/c1").unwrap();
-        assert_eq!(actor.identity(), "josh@laptop/codex/c1");
-        assert_eq!(
-            serde_json::from_str::<BoardActor>(&serde_json::to_string(&actor).unwrap()).unwrap(),
-            actor
-        );
-        for invalid in [
-            "josh@laptop/codex",
-            "josh@laptop/codex/c1/extra",
-            "@laptop/codex/c1",
-            "josh@laptop/codex/ ",
-        ] {
-            assert!(BoardActor::parse(invalid).is_err());
-        }
-        assert!(HarnessLabel::parse("human").unwrap().is_human());
-        assert!(HarnessLabel::parse("cli").unwrap().is_cli());
-        assert!(HarnessLabel::parse("Codex").is_err());
-        assert!(HarnessLabel::parse("git:person@example.com").is_ok());
-    }
-
-    #[test]
-    fn recipients_match_user_harness_or_complete_actor() {
-        let actor = BoardActor::parse("josh@laptop/codex/c1").unwrap();
-        assert!(BoardRecipient::parse("josh").unwrap().matches(&actor));
-        assert!(BoardRecipient::parse("codex").unwrap().matches(&actor));
-        assert!(BoardRecipient::for_actor(&actor).matches(&actor));
-        assert!(!BoardRecipient::parse("claude").unwrap().matches(&actor));
-        assert!(
-            !BoardRecipient::parse("josh@desk/codex/c1")
-                .unwrap()
-                .matches(&actor)
-        );
     }
 }

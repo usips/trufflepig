@@ -72,6 +72,7 @@ fn internal_collections_keep_frozen_bounds_without_cli_hints() {
             claim: ClaimRecord {
                 task: TaskId::new(plan, number).unwrap(),
                 actor: actor(),
+                vendor: AgentVendor::Codex,
                 entry: EntryId::new(200).unwrap(),
                 scope: EntryText::new("visible claim evidence ".repeat(150)).unwrap(),
                 claimed_at: 100,

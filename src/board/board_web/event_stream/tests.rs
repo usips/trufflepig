@@ -1,7 +1,7 @@
 use super::sequence_poller::WakeResult;
 use super::*;
 use crate::board::{
-    board_actor::{BoardActor, HarnessLabel},
+    board_actor::{AgentVendor, BoardActor, HarnessLabel},
     board_ids::{BoardRef, EntryId},
     board_vocabulary::{EntryKind, EntryText},
 };
@@ -25,6 +25,7 @@ fn event(seq: u64, summary: &str) -> EventRecord {
         to: None,
         actor: BoardActor::new("josh", "host", HarnessLabel::parse("codex").unwrap(), "s1")
             .unwrap(),
+        vendor: AgentVendor::Codex,
         model: None,
         effort: None,
         summary: EntryText::new(summary).unwrap(),

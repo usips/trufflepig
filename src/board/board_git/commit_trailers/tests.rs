@@ -38,6 +38,37 @@ fn meta_com_coauthors_map_to_one_muse_identity() {
 }
 
 #[test]
+fn unknown_claim_attribution_retains_exact_coauthor_identity() {
+    let first = parse_coauthor("First model <a@example.test>").unwrap();
+    let second = parse_coauthor("Second model <b@example.test>").unwrap();
+    assert!(coauthors_match_claim(
+        std::slice::from_ref(&first),
+        AgentVendor::Unknown,
+        &first.harness,
+    ));
+    assert!(!coauthors_match_claim(
+        std::slice::from_ref(&second),
+        AgentVendor::Unknown,
+        &first.harness,
+    ));
+    assert!(!coauthors_match_claim(
+        std::slice::from_ref(&first),
+        AgentVendor::Codex,
+        &HarnessLabel::parse("codex").unwrap(),
+    ));
+    assert!(coauthors_match_claim(
+        &[],
+        AgentVendor::Human,
+        &HarnessLabel::parse("cli").unwrap(),
+    ));
+    assert!(!coauthors_match_claim(
+        &[],
+        AgentVendor::Codex,
+        &HarnessLabel::parse("codex").unwrap(),
+    ));
+}
+
+#[test]
 fn invalid_utf8_record_is_skipped_without_losing_raw_count() {
     let key = RepoKey::from_roots([GitOid::parse(&"a".repeat(40)).unwrap()]).unwrap();
     let oid = "b".repeat(40);

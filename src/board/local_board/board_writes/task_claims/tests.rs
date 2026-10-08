@@ -6,6 +6,7 @@ mod claim_delegation_tests;
 mod claim_receipt_tests;
 mod claim_resume_entry_tests;
 mod claim_resume_race_tests;
+mod claim_vendor_tests;
 mod completed_task_tests;
 
 mod claim_resumption;

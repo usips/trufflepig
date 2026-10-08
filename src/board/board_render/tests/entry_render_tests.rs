@@ -87,6 +87,7 @@ fn claim_line_shows_the_lease_entry() {
         task: TaskId::new(plan, 3).unwrap(),
         actor: BoardActor::new("josh", "laptop", HarnessLabel::parse("codex").unwrap(), "s")
             .unwrap(),
+        vendor: AgentVendor::Codex,
         entry: EntryId::new(12).unwrap(),
         scope: EntryText::new("parser only").unwrap(),
         claimed_at: 100,

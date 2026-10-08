@@ -2,6 +2,7 @@
 mod reminder_reads;
 
 use super::*;
+use crate::board::board_actor::claim_vendor;
 pub(in crate::board::local_board) use reminder_reads::open_entries;
 #[cfg(test)]
 pub(super) use reminder_reads::reminder_predicate;
@@ -42,6 +43,8 @@ pub(in crate::board::local_board) fn entry(
             ));
         }
     };
+    let actor = actor_from_row(row, 5).map_err(sql_error)?;
+    let model: Option<String> = row.get(9).map_err(sql_error)?;
     let mut record = EntryRecord {
         id,
         via: row
@@ -75,8 +78,9 @@ pub(in crate::board::local_board) fn entry(
             .map(EntryId::new)
             .transpose()
             .map_err(BoardError::from)?,
-        actor: actor_from_row(row, 5).map_err(sql_error)?,
-        model: row.get(9).map_err(sql_error)?,
+        vendor: claim_vendor(&actor.harness, model.as_deref()),
+        actor,
+        model,
         effort: row.get(10).map_err(sql_error)?,
         repo_key: repo_key
             .as_deref()

@@ -12,7 +12,7 @@ use super::{
     BoardError, WriteContext, actor_from_row, invalid, max_seq, row_number, sql_error, sql_number,
     sqlite_u64,
 };
-use crate::board::board_actor::BoardRecipient;
+use crate::board::board_actor::{BoardRecipient, claim_vendor};
 use crate::board::board_ids::{BoardRef, EventSeq, PlanId};
 use crate::board::board_protocol::{
     BoardReply, BoardResult, EventRecord, FeedbackVia, InboxReply, InboxWait, ReadScope,
@@ -139,6 +139,8 @@ pub(super) fn inbox(
 fn event_row(row: &rusqlite::Row<'_>) -> Result<EventRecord, BoardError> {
     let to: Option<String> = row.get(4).map_err(sql_error)?;
     let plan: Option<i64> = row.get(1).map_err(sql_error)?;
+    let actor = actor_from_row(row, 5).map_err(sql_error)?;
+    let model: Option<String> = row.get(9).map_err(sql_error)?;
     Ok(EventRecord {
         via: row
             .get::<_, Option<String>>(13)
@@ -169,8 +171,9 @@ fn event_row(row: &rusqlite::Row<'_>) -> Result<EventRecord, BoardError> {
             .map(BoardRecipient::parse)
             .transpose()
             .map_err(BoardError::from)?,
-        actor: actor_from_row(row, 5).map_err(sql_error)?,
-        model: row.get(9).map_err(sql_error)?,
+        vendor: claim_vendor(&actor.harness, model.as_deref()),
+        actor,
+        model,
         effort: row.get(10).map_err(sql_error)?,
         summary: EntryText::new(row.get::<_, String>(11).map_err(sql_error)?)
             .map_err(BoardError::from)?,

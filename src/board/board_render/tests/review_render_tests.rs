@@ -35,6 +35,7 @@ fn default_review_budget_bounds_proposals_commits_tasks_and_claims() {
         packet.claims.push(ClaimRecord {
             task,
             actor: actor(),
+            vendor: AgentVendor::Codex,
             entry: EntryId::new(ordinal).unwrap(),
             scope: EntryText::new("verify concrete scope and evidence ".repeat(8)).unwrap(),
             claimed_at: ordinal as i64,

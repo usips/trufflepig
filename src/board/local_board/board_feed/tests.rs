@@ -1,5 +1,6 @@
 use crate::board::board_protocol::ReadScope;
 mod event_snapshot_tests;
+mod event_vendor_tests;
 mod feedback_gate_tests;
 mod inbox_planless_tests;
 mod inbox_reminder_cap_tests;

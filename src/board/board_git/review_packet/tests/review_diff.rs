@@ -54,6 +54,7 @@ fn trimmed_review() -> (ReviewPacket, String, serde_json::Value) {
             to: None,
             supersedes: None,
             actor: actor("codex"),
+            vendor: AgentVendor::Codex,
             model: None,
             effort: None,
             repo_key: None,

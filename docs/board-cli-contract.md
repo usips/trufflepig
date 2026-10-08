@@ -122,8 +122,10 @@ Co-author email domains map `anthropic.com` to `claude`, `openai.com` to `codex`
 `kimi`, `x.ai` to `grok`, `google.com` to `gemini`, `qwen.ai` to `qwen`, and `meta.com` to `muse`;
 other addresses become `git:<email>`. The trailer name is a model claim. No co-author means
 `human`; Muse/omp running Claude appears as `claude`. Claim/review vendor comes from the stored
-model snapshot: Claude, GPT/Codex/ChatGPT, Kimi, Grok, Gemini, or Qwen; unknown models fall back
-to harness. `cli` and `human` claims remain human even when a model was inherited.
+model snapshot: Claude, GPT/Codex/ChatGPT, Kimi, Grok, Gemini, Qwen, or Muse/Llama. Model prefixes
+are case-insensitive after trimming. Unrecognized models fall back to a known harness vendor
+(`claude`, `codex`, `kimi`, `grok`, `gemini`, `qwen`, or `muse`); other harnesses become `unknown`.
+`cli` and `human` claims remain human even when a model was inherited.
 
 Review JSON stores per-task hand links in each linked commit's `manual_links` array. Each receipt
 has `repo_key`, `oid`, `task`, `entry`, `seq`, and `linked_by`. `linked_by` contains the linker's

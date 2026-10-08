@@ -3,7 +3,7 @@
 mod tests;
 mod trailer_records;
 
-use crate::board::board_actor::HarnessLabel;
+use crate::board::board_actor::{AgentVendor, HarnessLabel};
 use crate::board::board_ids::RepoKey;
 use crate::board::board_protocol::{CommitCoauthor, LinkedCommit};
 use anyhow::{Context, Result, ensure};
@@ -109,26 +109,45 @@ pub fn parse_coauthor(value: &str) -> Result<CommitCoauthor> {
         !local.is_empty() && !domain.is_empty(),
         "board_scan: invalid coauthor email"
     );
-    let label = match domain.to_ascii_lowercase().as_str() {
-        "anthropic.com" => "claude",
-        "openai.com" => "codex",
-        "moonshot.ai" => "kimi",
-        "x.ai" => "grok",
-        "google.com" => "gemini",
-        "qwen.ai" => "qwen",
-        "meta.com" => "muse",
-        _ => "",
+    let vendor = match domain.to_ascii_lowercase().as_str() {
+        "anthropic.com" => AgentVendor::Claude,
+        "openai.com" => AgentVendor::Codex,
+        "moonshot.ai" => AgentVendor::Kimi,
+        "x.ai" => AgentVendor::Grok,
+        "google.com" => AgentVendor::Gemini,
+        "qwen.ai" => AgentVendor::Qwen,
+        "meta.com" => AgentVendor::Muse,
+        _ => AgentVendor::Unknown,
     };
-    let harness = if label.is_empty() {
+    let harness = if vendor == AgentVendor::Unknown {
         HarnessLabel::parse(&format!("git:{email}"))?
     } else {
-        HarnessLabel::parse(label)?
+        HarnessLabel::parse(vendor.as_str())?
     };
     Ok(CommitCoauthor {
         harness,
         model: model.to_owned(),
         email: email.to_owned(),
     })
+}
+
+/// Unknown vendors retain the claim's exact harness attribution identity.
+pub(crate) fn coauthors_match_claim(
+    coauthors: &[CommitCoauthor],
+    vendor: AgentVendor,
+    claimed_harness: &HarnessLabel,
+) -> bool {
+    if coauthors.is_empty() {
+        return vendor == AgentVendor::Human;
+    }
+    let label = if vendor == AgentVendor::Unknown {
+        claimed_harness.as_str()
+    } else {
+        vendor.as_str()
+    };
+    coauthors
+        .iter()
+        .any(|coauthor| coauthor.harness.as_str() == label)
 }
 
 pub fn attributed_to(commit: &LinkedCommit, agent: &HarnessLabel) -> bool {

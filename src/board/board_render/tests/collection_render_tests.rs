@@ -6,6 +6,7 @@ fn evidence(id: u64) -> EntryRecord {
         "id": format!("E{id}"), "plan": "P1", "kind": "progress",
         "body": "visible row evidence ".repeat(150), "to": null, "supersedes": null,
         "actor": {"user":"josh","host":"host","harness":"codex","session":"s"},
+        "vendor": "codex",
         "model": null, "effort": null, "repo_key": null, "state": null,
         "refs": [], "seq":10, "created_at":100
     }))
@@ -108,6 +109,7 @@ fn collection_attention_keeps_spooled_feedback_provenance_in_json_and_lines() {
     value["kind"] = serde_json::json!("feedback");
     value["state"] = serde_json::json!({"type":"feedback","state":"open"});
     value["actor"]["harness"] = serde_json::json!("human");
+    value["vendor"] = serde_json::json!("human");
     value["via"] = serde_json::json!("outbox");
     let entry: EntryRecord = serde_json::from_value(value).unwrap();
     let reply = BoardReply::new(
@@ -168,6 +170,7 @@ fn delegated_claims_render_the_holder_and_its_delegator() {
                 claim: ClaimRecord {
                     task: TaskId::new(plan, 3).unwrap(),
                     actor: actor(),
+                    vendor: AgentVendor::Codex,
                     entry: EntryId::new(200).unwrap(),
                     scope: EntryText::new("delegated lane").unwrap(),
                     claimed_at: 100,

@@ -16,6 +16,7 @@ fn commit_entry(commit: &LinkedCommit, session: &str) -> EntryRecord {
             session,
         )
         .unwrap(),
+        vendor: AgentVendor::Human,
         model: None,
         effort: None,
         repo_key: Some(commit.repo_key.clone()),

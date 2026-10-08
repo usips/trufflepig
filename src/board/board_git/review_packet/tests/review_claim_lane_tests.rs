@@ -6,6 +6,7 @@ fn review_uses_claim_intervals_and_coauthors_to_flag_crossed_lanes() {
     source.claims.push(ClaimRecord {
         task: TaskId::new(source.plan.id, 1).unwrap(),
         actor: actor("claude"),
+        vendor: AgentVendor::Claude,
         entry: EntryId::new(10).unwrap(),
         scope: EntryText::new("parser only").unwrap(),
         claimed_at: 110,
@@ -38,12 +39,15 @@ fn review_uses_claim_model_vendor_for_muse_omp_and_cli() {
     for (harness, model, vendor) in [
         ("muse", Some("claude-opus"), "claude"),
         ("omp", Some("gpt-6.1"), "codex"),
+        ("omp", Some("Muse Spark"), "muse"),
+        ("omp", Some("Llama 4 Maverick"), "muse"),
         ("cli", None, "human"),
     ] {
         let mut source = evidence();
         source.claims.push(ClaimRecord {
             task: TaskId::new(source.plan.id, 1).unwrap(),
             actor: actor(harness),
+            vendor: claim_vendor(&HarnessLabel::parse(harness).unwrap(), model),
             entry: EntryId::new(10).unwrap(),
             scope: EntryText::new("same vendor").unwrap(),
             claimed_at: 110,
