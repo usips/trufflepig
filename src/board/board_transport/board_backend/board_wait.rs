@@ -34,7 +34,7 @@ impl BoardHost {
         let mut reply = match self.handle_by(request, deadline) {
             Ok(reply) => reply,
             Err(error) if waiter_transient(&error) => {
-                let BoardOp::Inbox { after, .. } = &request.op else {
+                let BoardOp::Inbox { after, scope, .. } = &request.op else {
                     return Err(error);
                 };
                 let cursor = after.unwrap_or(EventSeq::new(0));
@@ -42,6 +42,7 @@ impl BoardHost {
                 return Ok(BoardReply::new(
                     format!("local:{}", config.db_path.display()),
                     BoardResult::Inbox(crate::board::board_protocol::InboxReply {
+                        scope: scope.clone(),
                         actor: request.actor.clone(),
                         cursor,
                         events: Vec::new(),
@@ -49,8 +50,6 @@ impl BoardHost {
                         latest: cursor,
                         scanned_through: cursor,
                         advancing: false,
-                        repo_key: None,
-                        all: false,
                         open_omitted: 0,
                         open_omitted_lower_bound: false,
                         query_truncated: false,

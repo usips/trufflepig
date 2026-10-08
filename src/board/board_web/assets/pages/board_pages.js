@@ -76,7 +76,7 @@ export function createBoardDetails(context) {
         }
       }
       if (known.size) fields.push(field("Repository", "repo_key", draft.repo_key, {
-        choices: [["", "No repository link (visible in every scope)"],
+        choices: [["", "No repository link"],
           ...[...known].map(([repoKey, label]) => [repoKey, label])],
         hint: "optional; scopes the plan to a registered repository",
       }));

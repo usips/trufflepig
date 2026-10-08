@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn database_failure_retains_report_and_post_commit_replay_removes_it_once() {
@@ -217,11 +218,10 @@ fn imported_feedback_sets_server_provenance_and_direct_feedback_does_not() {
             .import_feedback(&BoardRequest::new(
                 direct.actor,
                 BoardOp::Overview {
-                    repo_key: None,
-                    all: false,
+                    scope: ReadScope::All,
                     after: None,
                     through: None,
-                    limit: 200
+                    limit: 200,
                 }
             ))
             .is_err()

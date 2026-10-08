@@ -3,12 +3,13 @@ use rusqlite::{Connection, Row, params};
 
 use super::NESTED_PAGE_LIMIT;
 use crate::board::board_domain::board_collections::{ClaimCursor, ClaimPage, ClaimView};
-use crate::board::board_ids::{EntryId, EventSeq, PlanId, RepoKey, TaskId};
-use crate::board::board_protocol::{BoardReply, BoardResult, ClaimRecord};
+use crate::board::board_ids::{EntryId, EventSeq, PlanId, TaskId};
+use crate::board::board_protocol::{BoardReply, BoardResult, ClaimRecord, ReadScope};
 use crate::board::board_vocabulary::EntryText;
 use crate::board::local_board::board_queries::collection_reads::{
     claim_ttl, count, sequence_window, validate_limit,
 };
+use crate::board::local_board::board_queries::read_scope_sql::ScopeSql;
 use crate::board::local_board::{
     BoardError, WriteContext, actor_from_row, delegated_actor_from_row, invalid, require_plan,
     row_number, sql_error, sql_number,
@@ -20,8 +21,7 @@ pub(in crate::board::local_board) fn claims_page(
     ctx: &WriteContext,
     plan: Option<PlanId>,
     own_stale: bool,
-    repo_key: Option<&RepoKey>,
-    all: bool,
+    scope: &ReadScope,
     after: Option<ClaimCursor>,
     through: Option<EventSeq>,
     limit: usize,
@@ -29,7 +29,7 @@ pub(in crate::board::local_board) fn claims_page(
     Ok(BoardReply::new(
         "local",
         BoardResult::Claims(claim_window(
-            conn, ctx, plan, own_stale, repo_key, all, after, through, limit,
+            conn, ctx, plan, own_stale, scope, after, through, limit,
         )?),
     ))
 }
@@ -40,8 +40,7 @@ pub(in crate::board::local_board) fn claim_window(
     ctx: &WriteContext,
     plan: Option<PlanId>,
     own_stale: bool,
-    repo_key: Option<&RepoKey>,
-    all: bool,
+    scope: &ReadScope,
     after: Option<ClaimCursor>,
     through: Option<EventSeq>,
     limit: usize,
@@ -61,12 +60,16 @@ pub(in crate::board::local_board) fn claim_window(
     }
     let (_, through) = sequence_window(conn, None, through)?;
     let cutoff = ctx.now.saturating_sub(ctx.claim_ttl_secs.max(0));
-    let predicate = concat!(
-        "c.ended_at IS NULL AND (?1 IS NULL OR c.plan_id=?1) ",
-        "AND (NOT ?2 OR (a.user=?3 AND a.host=?4 AND a.harness=?5 AND c.last_active<?6)) ",
-        "AND (NOT ?2 OR ?7 OR NOT EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=c.plan_id) ",
-        "OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=c.plan_id AND scope.repo_key=?8)) ",
-        "AND (c.entry_id>?9 OR (c.entry_id=?9 AND c.id>?11)) AND e.seq<=?10"
+    let scope_sql = ScopeSql::new(scope)?;
+    let membership = ScopeSql::plan_predicate("c.plan_id", 7, 8);
+    let predicate = format!(
+        concat!(
+            "c.ended_at IS NULL AND (?1 IS NULL OR c.plan_id=?1) ",
+            "AND (NOT ?2 OR (a.user=?3 AND a.host=?4 AND a.harness=?5 AND c.last_active<?6)) ",
+            "AND {membership} ",
+            "AND (c.entry_id>?9 OR (c.entry_id=?9 AND c.id>?11)) AND e.seq<=?10"
+        ),
+        membership = membership
     );
     let parameters = params![
         plan.map(|plan| sql_number(plan.get())),
@@ -75,8 +78,8 @@ pub(in crate::board::local_board) fn claim_window(
         ctx.actor.host,
         ctx.actor.harness.as_str(),
         cutoff,
-        all,
-        repo_key.map(RepoKey::as_str),
+        scope_sql.kind,
+        scope_sql.keys_json,
         sql_number(after.map_or(0, |cursor| cursor.entry.get())),
         sql_number(through.get()),
         sql_number(after.map_or(0, |cursor| cursor.claim))
@@ -113,8 +116,8 @@ pub(in crate::board::local_board) fn claim_window(
             ctx.actor.host,
             ctx.actor.harness.as_str(),
             cutoff,
-            all,
-            repo_key.map(RepoKey::as_str),
+            scope_sql.kind,
+            scope_sql.keys_json,
             sql_number(after.map_or(0, |cursor| cursor.entry.get())),
             sql_number(through.get()),
             sql_number(after.map_or(0, |cursor| cursor.claim)),
@@ -140,8 +143,7 @@ pub(in crate::board::local_board) fn claim_window(
     Ok(ClaimPage {
         plan,
         own_stale,
-        repo_key: repo_key.cloned(),
-        all,
+        scope: scope.clone(),
         omitted: total.saturating_sub(claims.len()),
         claims,
         after,

@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn collection_attention_shared_feedback_respects_management_authority_before_limit() {
@@ -59,8 +60,7 @@ fn collection_attention_shared_feedback_respects_management_authority_before_lim
     let BoardResult::Attention(rest) = attention(
         board.reader.as_ref().expect("read connection"),
         &human,
-        None,
-        true,
+        &ReadScope::All,
         first.next_after,
         Some(first.through),
         200,

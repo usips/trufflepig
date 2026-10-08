@@ -60,6 +60,12 @@ impl BoardHost {
     ) -> Result<BoardReply> {
         check_deadline(deadline)?;
         request.validate()?;
+        if matches!(request.op, BoardOp::Projects) {
+            let config = self.config()?;
+            let projects = self.projects(&request.actor.host, deadline)?;
+            return crate::board::board_projects::project_reply(&config, projects, deadline)
+                .map_err(Into::into);
+        }
         if !imported
             && let BoardOp::LinkCommit {
                 oid,

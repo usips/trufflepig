@@ -127,7 +127,7 @@ mod tests {
     use super::*;
     use crate::board::{
         board_backend::BoardBackend,
-        board_protocol::{BoardOp, BoardRequest, BoardResult},
+        board_protocol::{BoardOp, BoardRequest, BoardResult, ReadScope},
         board_vocabulary::{PlanText, PlanTitle},
     };
 
@@ -141,8 +141,7 @@ mod tests {
 
     fn overview() -> BoardOp {
         BoardOp::Overview {
-            repo_key: None,
-            all: false,
+            scope: ReadScope::All,
             after: None,
             through: None,
             limit: 200,

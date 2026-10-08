@@ -1,6 +1,7 @@
 use super::*;
 use crate::board::board_actor::{BoardActor, HarnessLabel};
 use crate::board::board_ids::{BoardRef, EntryId, EventSeq, PlanId};
+use crate::board::board_protocol::ReadScope;
 use crate::board::board_protocol::*;
 use crate::board::board_vocabulary::{EntryKind, EntryText, ProposalState};
 use crate::board::review_packet::{ReviewPacket, SsotDiff};
@@ -65,6 +66,7 @@ fn inbox(advancing: bool) -> InboxReply {
         })
         .collect();
     InboxReply {
+        scope: ReadScope::All,
         actor: actor(),
         cursor: EventSeq::new(10),
         scanned_through: EventSeq::new(22),
@@ -73,8 +75,6 @@ fn inbox(advancing: bool) -> InboxReply {
         open: vec![entry(500)],
         open_omitted: 0,
         open_omitted_lower_bound: false,
-        repo_key: None,
-        all: true,
         latest: EventSeq::new(500),
         advancing,
         wait: InboxWait::None,

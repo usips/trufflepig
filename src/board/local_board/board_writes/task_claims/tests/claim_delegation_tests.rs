@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn delegated_claim_refreshes_on_holder_commits_not_delegator_commits() {
@@ -100,10 +101,9 @@ fn delegated_claim_refreshes_on_holder_commits_not_delegator_commits() {
         .handle(&BoardRequest::new(
             orchestrator,
             BoardOp::Claims {
+                scope: ReadScope::All,
                 plan: Some(task.plan),
                 own_stale: false,
-                repo_key: None,
-                all: true,
                 after: None,
                 through: None,
                 limit: 200,
@@ -200,10 +200,9 @@ fn delegated_claim_event_reaches_delegate_inbox_with_via_summary() {
         .handle(&BoardRequest::new(
             coder.clone(),
             BoardOp::Inbox {
+                scope: ReadScope::All,
                 after: None,
                 limit: 50,
-                repo_key: None,
-                all: false,
             },
         ))
         .unwrap();

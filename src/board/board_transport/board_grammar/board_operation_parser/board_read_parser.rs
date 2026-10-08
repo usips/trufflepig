@@ -1,4 +1,5 @@
 //! Read-only collection commands and typed continuation cursors.
+use crate::board::board_protocol::ReadScope;
 #[cfg(test)]
 mod tests;
 use super::{
@@ -30,8 +31,7 @@ pub(super) fn parse_read(
             } else {
                 check_flags(options, &["all", "after", "through"])?;
                 BoardOp::Overview {
-                    repo_key: None,
-                    all: options.board.all,
+                    scope: ReadScope::All,
                     after: options
                         .board
                         .after
@@ -63,6 +63,7 @@ pub(super) fn parse_read(
                 None => (None, None),
             };
             BoardOp::Feed {
+                scope: ReadScope::All,
                 plan,
                 after: event_after(options, positional)?,
                 through: through(options)?,
@@ -78,8 +79,7 @@ pub(super) fn parse_read(
                 "board attention [--all] [--after SEQ:E#] [--through SEQ]",
             )?;
             BoardOp::Attention {
-                repo_key: None,
-                all: options.board.all,
+                scope: ReadScope::All,
                 after: entry_after(options)?,
                 through: through(options)?,
                 limit: bounded_limit(options, 200)?,

@@ -1,11 +1,11 @@
 use super::*;
 
 #[test]
-fn api_6_router_gets_restart_hint() {
+fn api_7_router_gets_restart_hint() {
     let directory = scratch();
     let database = directory.path().join("board.sqlite3");
     let status = serde_json::json!({
-        "status": "ok", "board_api": 6, "board_db": database
+        "status": "ok", "board_api": 7, "board_db": database
     })
     .to_string();
     let mut gateway = FakeGateway {
@@ -19,7 +19,7 @@ fn api_6_router_gets_restart_hint() {
         &database,
         None,
     );
-    assert!(result.is_err(), "API 6 router must be refused: {result:?}");
+    assert!(result.is_err(), "API 7 router must be refused: {result:?}");
     let error = result.unwrap_err();
     assert!(
         error.to_string().starts_with("board_api_mismatch:"),

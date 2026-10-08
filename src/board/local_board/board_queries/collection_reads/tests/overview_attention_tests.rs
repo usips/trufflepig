@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn collection_attention_uses_actual_actor_and_keeps_own_feedback() {
@@ -96,8 +97,7 @@ fn collection_attention_uses_actual_actor_and_keeps_own_feedback() {
     let BoardResult::Attention(result) = attention(
         board.reader.as_ref().expect("read connection"),
         &ctx,
-        Some(&repo),
-        false,
+        &(ReadScope::Repo(repo.clone())),
         None,
         None,
         200,
@@ -126,8 +126,7 @@ fn collection_attention_uses_actual_actor_and_keeps_own_feedback() {
     let BoardResult::Attention(result) = attention(
         board.reader.as_ref().expect("read connection"),
         &ctx,
-        Some(&repo),
-        false,
+        &(ReadScope::Repo(repo.clone())),
         None,
         None,
         1,
@@ -143,8 +142,7 @@ fn collection_attention_uses_actual_actor_and_keeps_own_feedback() {
     let BoardResult::Attention(result) = attention(
         board.reader.as_ref().expect("read connection"),
         &ctx,
-        None,
-        true,
+        &ReadScope::All,
         None,
         None,
         200,
@@ -176,8 +174,7 @@ fn collection_attention_preserves_trusted_feedback_via_and_attribution() {
     let reply = attention(
         board.reader.as_ref().expect("read connection"),
         &ctx,
-        None,
-        true,
+        &ReadScope::All,
         None,
         None,
         200,

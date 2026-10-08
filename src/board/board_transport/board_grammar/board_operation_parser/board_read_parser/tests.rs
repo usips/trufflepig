@@ -60,21 +60,22 @@ fn board_collection_grammar_uses_frozen_typed_cursors_and_required_show_targets(
     );
     assert_eq!(through.unwrap().get(), 90);
     assert_eq!(limit, 200);
-    let BoardCommand::Op(BoardOp::Overview { limit, all, .. }) =
-        board_parse(&parse(&["board".into(), "show".into()]).unwrap(), None).unwrap()
+    let bare = parse(&["board".into(), "show".into()]).unwrap();
+    let BoardCommand::Op(BoardOp::Overview { limit, scope, .. }) =
+        board_parse(&bare, None).unwrap()
     else {
         panic!("overview");
     };
     assert_eq!(limit, 200);
-    assert!(!all);
-    let BoardCommand::Op(BoardOp::Overview { all, .. }) = board_parse(
-        &parse(&["board".into(), "show".into(), "--all".into()]).unwrap(),
-        None,
-    )
-    .unwrap() else {
+    assert!(!bare.board.all);
+    assert!(scope.is_all());
+    let global = parse(&["board".into(), "show".into(), "--all".into()]).unwrap();
+    let BoardCommand::Op(BoardOp::Overview { scope, .. }) = board_parse(&global, None).unwrap()
+    else {
         panic!("overview --all");
     };
-    assert!(all);
+    assert!(global.board.all);
+    assert!(scope.is_all());
 }
 
 #[test]

@@ -18,8 +18,10 @@ use std::path::PathBuf;
 mod board_op_addresses;
 mod board_op_validation;
 mod claim_fields;
+mod read_scope;
 
 pub use claim_fields::{ClaimDelegate, ClaimResume};
+pub use read_scope::ReadScope;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -81,8 +83,7 @@ pub enum BoardOp {
     Inbox {
         after: Option<EventSeq>,
         limit: usize,
-        repo_key: Option<RepoKey>,
-        all: bool,
+        scope: ReadScope,
     },
     AcknowledgeInbox {
         rendered_through: EventSeq,
@@ -95,23 +96,22 @@ pub enum BoardOp {
         plan: Option<PlanId>,
         limit: usize,
     },
+    Projects,
     Overview {
-        repo_key: Option<RepoKey>,
-        #[serde(default)]
-        all: bool,
+        scope: ReadScope,
         after: Option<PlanId>,
         through: Option<EventSeq>,
         limit: usize,
     },
     Attention {
-        repo_key: Option<RepoKey>,
-        all: bool,
+        scope: ReadScope,
         after: Option<EntryCursor>,
         through: Option<EventSeq>,
         limit: usize,
     },
     Feed {
         plan: Option<PlanId>,
+        scope: ReadScope,
         after: Option<EventSeq>,
         through: Option<EventSeq>,
         limit: usize,
@@ -145,8 +145,7 @@ pub enum BoardOp {
     Claims {
         plan: Option<PlanId>,
         own_stale: bool,
-        repo_key: Option<RepoKey>,
-        all: bool,
+        scope: ReadScope,
         after: Option<ClaimCursor>,
         through: Option<EventSeq>,
         limit: usize,

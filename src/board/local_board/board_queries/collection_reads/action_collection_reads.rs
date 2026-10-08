@@ -8,9 +8,10 @@ use super::{COLLECTION_LIMIT, claim_ttl, count, sequence_window, validate_limit}
 use crate::board::board_domain::board_collections::{
     AttentionReply, EntryCursor, OverviewReply, PlanOverview,
 };
-use crate::board::board_ids::{EventSeq, PlanId, RepoKey};
-use crate::board::board_protocol::{BoardReply, BoardResult};
+use crate::board::board_ids::{EventSeq, PlanId};
+use crate::board::board_protocol::{BoardReply, BoardResult, ReadScope};
 use crate::board::board_vocabulary::EntryKind;
+use crate::board::local_board::board_queries::read_scope_sql::{ScopeSql, plan_repo_keys};
 use crate::board::local_board::board_queries::{board_reads, collection_nested};
 use crate::board::local_board::{BoardError, WriteContext, sql_error, sql_number};
 
@@ -33,31 +34,32 @@ fn open_question(through: &str) -> String {
 pub(in crate::board::local_board) fn overview(
     conn: &Connection,
     ctx: &WriteContext,
-    repo_key: Option<&RepoKey>,
+    scope: &ReadScope,
     after: Option<PlanId>,
     through: Option<EventSeq>,
     limit: usize,
 ) -> Result<BoardReply, BoardError> {
     validate_limit(limit, COLLECTION_LIMIT)?;
     let (_, through) = sequence_window(conn, None, through)?;
-    let predicate = concat!(
-        "(?1 IS NULL OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=p.id AND scope.repo_key=?1) ",
-        "OR NOT EXISTS(SELECT 1 FROM plan_repos s WHERE s.plan_id=p.id)) ",
-        "AND p.id>?2 AND EXISTS(SELECT 1 FROM revisions initial ",
-        "WHERE initial.plan_id=p.id AND initial.number=1 AND initial.seq<=?3)"
+    let scope_sql = ScopeSql::new(scope)?;
+    let membership = ScopeSql::plan_predicate("p.id", 1, 2);
+    let predicate = format!(
+        "{membership} AND p.id>?3 AND EXISTS(SELECT 1 FROM revisions initial \
+         WHERE initial.plan_id=p.id AND initial.number=1 AND initial.seq<=?4)"
     );
     let mut statement = conn
         .prepare(&format!(
             concat!(
                 "SELECT p.id,p.title,p.owner_user,p.steward,p.head_revision,p.created_at FROM plans p ",
-                "WHERE {predicate} ORDER BY p.id LIMIT ?4"
+                "WHERE {predicate} ORDER BY p.id LIMIT ?5"
             ),
             predicate = predicate
         ))
         .map_err(sql_error)?;
     let mut rows = statement
         .query(params![
-            repo_key.map(RepoKey::as_str),
+            scope_sql.kind,
+            scope_sql.keys_json,
             sql_number(after.map_or(0, PlanId::get)),
             sql_number(through.get()),
             sql_number((limit + 1) as u64)
@@ -77,7 +79,8 @@ pub(in crate::board::local_board) fn overview(
         conn,
         &format!("SELECT count(*) FROM plans p WHERE {predicate}"),
         params![
-            repo_key.map(RepoKey::as_str),
+            scope_sql.kind,
+            scope_sql.keys_json,
             sql_number(after.map_or(0, PlanId::get)),
             sql_number(through.get())
         ],
@@ -95,8 +98,7 @@ pub(in crate::board::local_board) fn overview(
             ctx,
             Some(plan.id),
             false,
-            None,
-            true,
+            &ReadScope::All,
             None,
             Some(through),
             NESTED_LIMIT,
@@ -128,6 +130,7 @@ pub(in crate::board::local_board) fn overview(
             params![sql_number(plan.id.get()), sql_number(through.get())],
         )?;
         plans.push(PlanOverview {
+            repo_keys: plan_repo_keys(conn, plan.id)?,
             plan,
             tasks,
             task_ceiling,
@@ -144,7 +147,7 @@ pub(in crate::board::local_board) fn overview(
         BoardResult::Overview(OverviewReply {
             omitted: total.saturating_sub(plans.len()),
             plans,
-            repo_key: repo_key.cloned(),
+            scope: scope.clone(),
             server_now: ctx.now,
             claim_ttl_secs: claim_ttl(ctx),
             after,
@@ -157,8 +160,7 @@ pub(in crate::board::local_board) fn overview(
 pub(in crate::board::local_board) fn attention(
     conn: &Connection,
     ctx: &WriteContext,
-    repo_key: Option<&RepoKey>,
-    all: bool,
+    scope: &ReadScope,
     after: Option<EntryCursor>,
     through: Option<EventSeq>,
     limit: usize,
@@ -166,6 +168,7 @@ pub(in crate::board::local_board) fn attention(
     validate_limit(limit, COLLECTION_LIMIT)?;
     let (_, through) = sequence_window(conn, after.map(|cursor| cursor.seq), through)?;
     let predicate = attention_predicate();
+    let scope_sql = ScopeSql::new(scope)?;
     let identity = ctx.actor.identity();
     let parameters = params![
         ctx.actor.user,
@@ -173,8 +176,8 @@ pub(in crate::board::local_board) fn attention(
         ctx.actor.harness.as_str(),
         ctx.actor.session,
         identity,
-        all,
-        repo_key.map(RepoKey::as_str),
+        scope_sql.kind,
+        scope_sql.keys_json,
         sql_number(after.map_or(0, |cursor| cursor.seq.get())),
         sql_number(after.map_or(0, |cursor| cursor.entry.get())),
         sql_number(through.get())
@@ -194,8 +197,8 @@ pub(in crate::board::local_board) fn attention(
             ctx.actor.harness.as_str(),
             ctx.actor.session,
             identity,
-            all,
-            repo_key.map(RepoKey::as_str),
+            scope_sql.kind,
+            scope_sql.keys_json,
             sql_number(after.map_or(0, |cursor| cursor.seq.get())),
             sql_number(after.map_or(0, |cursor| cursor.entry.get())),
             sql_number(through.get()),
@@ -224,17 +227,8 @@ pub(in crate::board::local_board) fn attention(
     } else {
         None
     };
-    let claims = collection_nested::claim_window(
-        conn,
-        ctx,
-        None,
-        true,
-        repo_key,
-        all,
-        None,
-        Some(through),
-        limit,
-    )?;
+    let claims =
+        collection_nested::claim_window(conn, ctx, None, true, scope, None, Some(through), limit)?;
     let claims_omitted = claims.omitted;
     let claims_next_after = claims.next_after;
     let stale_claims = claims.claims;
@@ -265,8 +259,7 @@ pub(in crate::board::local_board) fn attention(
             stale_claims,
             claims_omitted,
             rebase_needed,
-            repo_key: repo_key.cloned(),
-            all,
+            scope: scope.clone(),
             server_now: ctx.now,
             claim_ttl_secs: claim_ttl(ctx),
             after,

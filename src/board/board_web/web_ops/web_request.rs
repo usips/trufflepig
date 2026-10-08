@@ -14,6 +14,8 @@ use std::time::Instant;
 pub(crate) struct WebRequest {
     pub api: u32,
     pub op: BoardOp,
+    #[serde(default)]
+    pub project: Option<String>,
 }
 
 impl WebRequest {
@@ -30,6 +32,7 @@ impl WebRequest {
             Some(
                 "overview"
                     | "repositories"
+                    | "projects"
                     | "show"
                     | "tasks"
                     | "claims"
@@ -74,11 +77,24 @@ impl WebRequest {
 
 pub(crate) fn execute(
     store: &WebStore,
-    request: WebRequest,
+    mut request: WebRequest,
     expires: Instant,
 ) -> Result<BoardReply, BoardError> {
     let config = store.config(expires)?;
-    let request = request.into_request(&config)?;
+    let project = request.project.take();
+    let mut request = request.into_request(&config)?;
+    if let Some(selector) = project {
+        crate::board::board_projects::validate_scope_selection(&mut request.op)?;
+        let projects = store.projects(&request.actor.host, expires)?;
+        crate::board::board_projects::select_scope(&mut request.op, &selector, &projects)?;
+    }
+    if matches!(request.op, BoardOp::Projects) {
+        let projects = store.projects(&request.actor.host, expires)?;
+        let deadline = crate::daemon::deadline::QueryDeadline::after(
+            expires.saturating_duration_since(Instant::now()),
+        );
+        return crate::board::board_projects::project_reply(&config, projects, deadline);
+    }
     let reply = if request.op.is_read_only() {
         store
             .readers

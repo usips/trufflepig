@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn git_coauthor_actor_round_trips_as_evidence_but_cannot_request() {
@@ -38,10 +39,9 @@ fn versioned_requests_round_trip_and_reject_mismatch() {
     let mut request = BoardRequest::new(
         actor,
         BoardOp::Inbox {
+            scope: ReadScope::All,
             after: Some(EventSeq::new(0)),
             limit: 20,
-            repo_key: None,
-            all: true,
         },
     );
     let decoded: BoardRequest =

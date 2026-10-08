@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn event_batches_return_stored_claim_snapshots_without_entry_joins() {
@@ -142,6 +143,7 @@ fn imported_feedback_provenance_reaches_normal_inbox_and_shared_event_feed() {
         EventSeq::new(0),
         board.max_seq().unwrap(),
         None,
+        &ReadScope::All,
         20,
     )
     .unwrap();

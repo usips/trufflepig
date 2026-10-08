@@ -86,10 +86,8 @@ fn config_reload_reaches_reader_ttl_and_attention_without_events() {
     assert_eq!(view.claims.len(), 1);
     assert!(view.claims.iter().all(|claim| !claim.stale));
     let attention = || {
-        serde_json::from_value(
-            serde_json::json!({"op":"attention","all":true,"repo_key":null,"limit":200}),
-        )
-        .unwrap()
+        serde_json::from_value(serde_json::json!({"op":"attention","scope":"all","limit":200}))
+            .unwrap()
     };
     let original = serde_json::to_value(read(&store, attention())).unwrap();
     assert!(

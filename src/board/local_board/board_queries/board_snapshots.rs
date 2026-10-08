@@ -21,7 +21,7 @@ impl LocalBoard {
             require_plan(&tx, plan)?;
         }
         let latest = max_seq(&tx)?;
-        let events = board_feed::read_events(&tx, after, latest, plan, limit)?;
+        let events = board_feed::read_events(&tx, after, latest, plan, &ReadScope::All, limit)?;
         tx.commit().map_err(sql_error)?;
         Ok((latest, events))
     }
@@ -49,9 +49,8 @@ impl LocalBoard {
             BoardOp::Inbox {
                 after,
                 limit,
-                repo_key,
-                all,
-            } => board_feed::inbox(&tx, &ctx, *after, *limit, repo_key.as_ref(), *all)?,
+                scope,
+            } => board_feed::inbox(&tx, &ctx, *after, *limit, scope)?,
             BoardOp::Show { target } => board_reads::show(&tx, &ctx, target)?,
             BoardOp::Search { query, plan, limit } => {
                 board_search::search(&tx, query, *plan, *limit)?
@@ -66,35 +65,25 @@ impl LocalBoard {
                 limit,
             } => collection_reads::feedback_page(&tx, *open_only, *after, *through, *limit)?,
             BoardOp::Overview {
-                repo_key,
+                scope,
                 after,
                 through,
                 limit,
                 ..
-            } => {
-                collection_reads::overview(&tx, &ctx, repo_key.as_ref(), *after, *through, *limit)?
-            }
+            } => collection_reads::overview(&tx, &ctx, scope, *after, *through, *limit)?,
             BoardOp::Attention {
-                repo_key,
-                all,
+                scope,
                 after,
                 through,
                 limit,
-            } => collection_reads::attention(
-                &tx,
-                &ctx,
-                repo_key.as_ref(),
-                *all,
-                *after,
-                *through,
-                *limit,
-            )?,
+            } => collection_reads::attention(&tx, &ctx, scope, *after, *through, *limit)?,
             BoardOp::Feed {
                 plan,
+                scope,
                 after,
                 through,
                 limit,
-            } => collection_reads::feed(&tx, *plan, *after, *through, *limit)?,
+            } => collection_reads::feed(&tx, *plan, scope, *after, *through, *limit)?,
             BoardOp::History {
                 plan,
                 after,
@@ -137,23 +126,20 @@ impl LocalBoard {
             BoardOp::Claims {
                 plan,
                 own_stale,
-                repo_key,
-                all,
+                scope,
                 after,
                 through,
                 limit,
             } => collection_nested::claims_page(
-                &tx,
-                &ctx,
-                *plan,
-                *own_stale,
-                repo_key.as_ref(),
-                *all,
-                *after,
-                *through,
-                *limit,
+                &tx, &ctx, *plan, *own_stale, scope, *after, *through, *limit,
             )?,
             BoardOp::Repositories { plan } => board_reads::repositories(&tx, *plan)?,
+            BoardOp::Projects => {
+                return Err(invalid(
+                    "invalid_options",
+                    "projects require the serving host",
+                ));
+            }
             _ => {
                 return Err(invalid(
                     "invalid_options",

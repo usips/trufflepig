@@ -4,6 +4,7 @@ use super::{
     board_syntax_validation::{check_flags, fixed_words, optional_text, recipient, word},
     board_task_claim_parser::{parse_claim, parse_task},
 };
+use crate::board::board_protocol::ReadScope;
 use crate::{
     board::{
         board_actor::HarnessLabel,
@@ -193,9 +194,8 @@ fn parse_inbox(options: &Arguments, index: usize) -> Result<BoardCommand> {
         .map(|value| value.parse::<EventSeq>())
         .transpose()?;
     Ok(BoardCommand::Op(BoardOp::Inbox {
+        scope: ReadScope::All,
         after,
         limit: options.limit,
-        repo_key: None,
-        all: options.board.all,
     }))
 }

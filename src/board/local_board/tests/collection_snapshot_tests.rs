@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn collection_dispatch_reports_snapshot_without_registering_reader_actor() {
@@ -18,20 +19,19 @@ fn collection_dispatch_reports_snapshot_without_registering_reader_actor() {
     let observer = actor("codex", "unregistered-reader");
     let operations = [
         BoardOp::Overview {
-            repo_key: None,
-            all: false,
+            scope: ReadScope::All,
             after: None,
             through: None,
             limit: 10,
         },
         BoardOp::Attention {
-            repo_key: None,
-            all: true,
+            scope: ReadScope::All,
             after: None,
             through: None,
             limit: 10,
         },
         BoardOp::Feed {
+            scope: ReadScope::All,
             plan: Some(plan),
             after: None,
             through: None,
@@ -64,10 +64,9 @@ fn collection_dispatch_reports_snapshot_without_registering_reader_actor() {
             limit: 10,
         },
         BoardOp::Claims {
+            scope: ReadScope::All,
             plan: Some(plan),
             own_stale: false,
-            repo_key: None,
-            all: false,
             after: None,
             through: None,
             limit: 10,

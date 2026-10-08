@@ -38,16 +38,16 @@ export function createBoardReader(context) {
     };
     const readOverview = async (page = {}) => {
       const reply = await readReply(readOp("overview",
-        { repo_key: null, after: page.after || null, through: page.through || null, limit: 50 }));
+        { scope: "all", after: page.after || null, through: page.through || null, limit: 50 }));
       const watermark = snapshotSeq(reply);
       const after = String(BigInt(watermark) > 20n ? BigInt(watermark) - 20n : 0n);
-      const feed = await read(readOp("feed", { plan: null, after, through: watermark, limit: 20 }));
+      const feed = await read(readOp("feed", { scope: "all", plan: null, after, through: watermark, limit: 20 }));
       return { ...reply.data, events: feed.events };
     };
     const readAttention = (page = {}) => read(readOp("attention",
-      { repo_key: null, all: true, after: cursorFromRoute(page, true), through: page.through || null, limit: 50 }));
+      { scope: "all", after: cursorFromRoute(page, true), through: page.through || null, limit: 50 }));
     const readClaims = (plan, after, through, ownStale = false) => read(readOp("claims", {
-      plan, own_stale: ownStale, repo_key: null, all: !plan || ownStale,
+      plan, own_stale: ownStale, scope: "all",
       after: after ? parseBoardJson(after) : null, through: through || null, limit: 50,
     }));
     let page, overview = null, attention = null;

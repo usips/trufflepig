@@ -215,7 +215,7 @@ fn next_hint(result: &BoardResult) -> Option<String> {
                 after.seq,
                 after.entry,
                 page.through,
-                if page.all { " --all" } else { "" }
+                if page.scope.is_all() { " --all" } else { "" }
             )
         }),
         BoardResult::Feedback(page) => page.next_after.map(|after| {

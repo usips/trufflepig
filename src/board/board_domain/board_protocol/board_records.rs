@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 mod board_entry_records;
 mod board_feedback_records;
 mod board_plan_records;
+mod board_project_records;
 mod board_repo_records;
 mod board_search_records;
 
@@ -24,6 +25,7 @@ pub use board_plan_records::{
     ClaimEndReason, ClaimRecord, ManualCommitLink, PlanRecord, PlanView, ProposalRecord,
     ReviewEvidence, RevisionDiff, RevisionRecord, RevisionSource, TaskRecord,
 };
+pub use board_project_records::{ProjectMemberRecord, ProjectRecord};
 pub use board_repo_records::{
     COAUTHOR_LIMIT, CommitCoauthor, CommitLinkResult, CommitPlanLink, LINK_LIMIT, LinkedCommit,
     RepoRegistration, RepoScanTarget,
@@ -85,6 +87,7 @@ pub enum BoardResult {
     Claims(ClaimPage),
     Feedback(FeedbackPage),
     Repositories(Vec<RepoScanTarget>),
+    Projects(Vec<ProjectRecord>),
     Registered(RepoRegistration),
     CommitsLinked(CommitLinkResult),
     Queued { import_key: FeedbackImportKey },

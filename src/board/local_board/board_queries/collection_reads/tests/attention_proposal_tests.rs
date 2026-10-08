@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn collection_attention_filters_current_proposal_authority_before_limit_and_count() {
@@ -84,8 +85,7 @@ fn collection_attention_filters_current_proposal_authority_before_limit_and_coun
     let BoardResult::Attention(rest) = attention(
         board.reader.as_ref().expect("read connection"),
         &human,
-        None,
-        true,
+        &ReadScope::All,
         decision.next_after,
         Some(decision.through),
         200,

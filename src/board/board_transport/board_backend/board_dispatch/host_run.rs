@@ -24,7 +24,19 @@ use anyhow::{Result, bail};
 use std::time::Duration;
 
 impl BoardHost {
-    /// Dispatches without workspace resolution, holding the writer only for backend work.
+    pub fn select_project_scope(
+        &self,
+        op: &mut BoardOp,
+        selector: &str,
+        actor_host: &str,
+        deadline: QueryDeadline,
+    ) -> Result<()> {
+        crate::board::board_projects::validate_scope_selection(op)?;
+        let projects = self.projects(actor_host, deadline)?;
+        crate::board::board_projects::select_scope(op, selector, &projects).map_err(Into::into)
+    }
+
+    /// Dispatches concrete reads and writes, holding the writer only for backend work.
     pub fn run(
         &self,
         options: &Arguments,
@@ -59,12 +71,11 @@ impl BoardHost {
         };
         let mut warnings = Vec::new();
         let register_write = op.registers_workspace();
-        let probe = if matches!(
-            &op,
-            BoardOp::Inbox { all: true, .. }
-                | BoardOp::LinkCommit { .. }
-                | BoardOp::UnlinkCommit { .. }
-        ) {
+        let probe = if (options.board.all && matches!(&op, BoardOp::Inbox { .. }))
+            || matches!(
+                &op,
+                BoardOp::LinkCommit { .. } | BoardOp::UnlinkCommit { .. }
+            ) {
             Ok(crate::board::repo_identity::RegistrationProbe {
                 registration: None,
                 warning: None,
@@ -171,7 +182,7 @@ impl BoardHost {
                 deadline.cap(Duration::from_secs(2)),
             );
         }
-        scope_read_repo_key(&mut op, registration.as_ref());
+        scope_read_repo_key(&mut op, registration.as_ref(), options.board.all);
         let mut request = BoardRequest::new(actor.clone(), op);
         if options.board.agent_model.is_some() || options.board.agent_effort.is_some() {
             request.claims = Some(AgentClaims {

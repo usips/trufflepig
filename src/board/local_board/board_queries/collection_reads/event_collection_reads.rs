@@ -8,7 +8,7 @@ use crate::board::board_domain::board_collections::{
     EntriesPage, EntryCursor, EventPage, HistoryPage, RevisionHistoryRecord,
 };
 use crate::board::board_ids::{EntryId, EventSeq, PlanId, PlanRevision, TaskId};
-use crate::board::board_protocol::{BoardReply, BoardResult, RevisionSource};
+use crate::board::board_protocol::{BoardReply, BoardResult, ReadScope, RevisionSource};
 use crate::board::board_vocabulary::{EntryKind, EntryText};
 use crate::board::local_board::board_queries::board_reads;
 use crate::board::local_board::{
@@ -21,6 +21,7 @@ const EVENT_LIMIT: usize = 500;
 pub(in crate::board::local_board) fn feed(
     conn: &Connection,
     plan: Option<PlanId>,
+    scope: &ReadScope,
     after: Option<EventSeq>,
     through: Option<EventSeq>,
     limit: usize,
@@ -30,7 +31,7 @@ pub(in crate::board::local_board) fn feed(
         require_plan(conn, plan)?;
     }
     let (after, through) = sequence_window(conn, after, through)?;
-    let mut events = board_feed::read_events(conn, after, through, plan, limit + 1)?;
+    let mut events = board_feed::read_events(conn, after, through, plan, scope, limit + 1)?;
     let next_after = if events.len() > limit {
         events.truncate(limit);
         events.last().map(|event| event.seq)
@@ -41,6 +42,7 @@ pub(in crate::board::local_board) fn feed(
         "local",
         BoardResult::Feed(EventPage {
             plan,
+            scope: scope.clone(),
             events,
             after,
             through,

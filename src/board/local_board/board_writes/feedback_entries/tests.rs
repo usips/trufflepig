@@ -1,3 +1,4 @@
+use crate::board::board_protocol::ReadScope;
 mod feedback_authority_tests;
 mod feedback_replay_tests;
 
@@ -122,8 +123,7 @@ fn feedback_metadata_is_retained_and_closure_reaches_sibling_sessions() {
     let inbox = BoardRequest::new(
         actor("original"),
         BoardOp::Inbox {
-            repo_key: None,
-            all: true,
+            scope: ReadScope::All,
             after: Some(crate::board::board_ids::EventSeq::new(closed.seq.get() - 1)),
             limit: 20,
         },
@@ -141,8 +141,7 @@ fn feedback_metadata_is_retained_and_closure_reaches_sibling_sessions() {
     let sibling = BoardRequest::new(
         actor("sibling-session"),
         BoardOp::Inbox {
-            repo_key: None,
-            all: true,
+            scope: ReadScope::All,
             after: Some(crate::board::board_ids::EventSeq::new(closed.seq.get() - 1)),
             limit: 20,
         },

@@ -4,6 +4,7 @@ use super::web_serve::{
     transient_accept_error, try_admit_drain,
 };
 use super::*;
+use crate::board::board_protocol::ReadScope;
 use crate::board::{
     board_ids::{BoardRef, EventSeq, RepoKey},
     board_protocol::{BOARD_API, BoardOp, BoardReply, BoardRequest, BoardResult, ClaimResume},
@@ -70,8 +71,7 @@ fn wait_ring_stopped(harness: &AcceptHarness) {
 
 fn overview() -> BoardOp {
     BoardOp::Overview {
-        repo_key: None,
-        all: false,
+        scope: ReadScope::All,
         after: None,
         through: None,
         limit: 200,
@@ -81,7 +81,11 @@ fn overview() -> BoardOp {
 fn read(store: &WebStore, op: BoardOp) -> BoardReply {
     web_ops::execute(
         store,
-        WebRequest { api: BOARD_API, op },
+        WebRequest {
+            api: BOARD_API,
+            op,
+            project: None,
+        },
         Instant::now() + Duration::from_secs(1),
     )
     .unwrap()
@@ -143,6 +147,7 @@ fn subscribe(streams: &EventStreams) -> TcpStream {
 }
 
 mod config_reload_tests;
+mod project_request_tests;
 mod serve_accept_tests;
 mod serve_shutdown_tests;
 mod stream_feed_tests;

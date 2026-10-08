@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn planless_events_stay_out_of_scoped_inboxes_but_own_feedback_outcomes_arrive() {
@@ -84,7 +85,7 @@ fn planless_events_stay_out_of_scoped_inboxes_but_own_feedback_outcomes_arrive()
             import_key: None,
         },
     );
-    let scoped_a = scoped_feed(&mut board, Some(repo_a.clone()), false, 100);
+    let scoped_a = scoped_feed(&mut board, ReadScope::Repo(repo_a.clone()), 100);
     assert!(
         !scoped_a
             .events
@@ -109,10 +110,9 @@ fn planless_events_stay_out_of_scoped_inboxes_but_own_feedback_outcomes_arrive()
         &mut board,
         "muse",
         BoardOp::Inbox {
+            scope: ReadScope::Repo(repo_b),
             after: Some(EventSeq::new(0)),
             limit: 100,
-            repo_key: Some(repo_b),
-            all: false,
         },
     ) else {
         panic!("missing inbox");
@@ -147,7 +147,7 @@ fn planless_events_stay_out_of_scoped_inboxes_but_own_feedback_outcomes_arrive()
             note: None,
         },
     );
-    let scoped_a = scoped_feed(&mut board, Some(repo_a.clone()), false, 100);
+    let scoped_a = scoped_feed(&mut board, ReadScope::Repo(repo_a.clone()), 100);
     assert!(
         scoped_a
             .events
@@ -162,7 +162,7 @@ fn planless_events_stay_out_of_scoped_inboxes_but_own_feedback_outcomes_arrive()
             .iter()
             .any(|event| event.kind == EntryKind::Hello)
     );
-    let global = scoped_feed(&mut board, Some(repo_a), true, 100);
+    let global = scoped_feed(&mut board, ReadScope::All, 100);
     assert!(
         global
             .events
@@ -193,7 +193,7 @@ fn hello_events_stay_out_of_every_inbox_including_all() {
             effort: None,
         },
     );
-    let global = scoped_feed(&mut board, None, true, 100);
+    let global = scoped_feed(&mut board, ReadScope::All, 100);
     assert!(
         global
             .events
@@ -249,10 +249,9 @@ fn feedback_outcomes_reach_new_sessions_of_the_reporting_harness() {
             .handle(&BoardRequest::new(
                 actor,
                 BoardOp::Inbox {
+                    scope: ReadScope::All,
                     after: Some(EventSeq::new(0)),
                     limit: 100,
-                    repo_key: None,
-                    all: false,
                 },
             ))
             .unwrap()

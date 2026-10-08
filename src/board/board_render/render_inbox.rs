@@ -30,7 +30,7 @@ pub(super) fn render_inbox(
         visible.events.truncate(count);
         visible.open.truncate(open_count);
         let rendered = visible.events.last().map(|event| event.seq);
-        let scope_flag = if inbox.all { " --all" } else { "" };
+        let scope_flag = if inbox.scope.is_all() { " --all" } else { "" };
         let next = if count < inbox.events.len() || inbox.query_truncated {
             if inbox.advancing {
                 format!("board inbox{scope_flag}")

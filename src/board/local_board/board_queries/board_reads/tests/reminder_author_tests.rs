@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn stale_proposal_reminders_stay_visible_only_to_their_author() {
@@ -49,10 +50,9 @@ fn stale_proposal_reminders_stay_visible_only_to_their_author() {
             .handle(&BoardRequest::new(
                 actor,
                 BoardOp::Inbox {
+                    scope: ReadScope::All,
                     after: Some(EventSeq::new(0)),
                     limit: 100,
-                    repo_key: None,
-                    all: true,
                 },
             ))
             .unwrap()

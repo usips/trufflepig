@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn unchanged_waiting_inbox_uses_sequence_gate_and_returns_empty_under_writer_lock() {
@@ -13,10 +14,9 @@ fn unchanged_waiting_inbox_uses_sequence_gate_and_returns_empty_under_writer_loc
     let request = BoardRequest::new(
         config.actor(None, Some("waiting-reader")).unwrap(),
         BoardOp::Inbox {
+            scope: ReadScope::All,
             after: Some(EventSeq::new(0)),
             limit: 20,
-            repo_key: None,
-            all: true,
         },
     );
     let reply = host
@@ -39,25 +39,31 @@ fn unchanged_waiting_inbox_uses_sequence_gate_and_returns_empty_under_writer_loc
     assert!(!waiter_transient(&anyhow::anyhow!(
         "invalid_body: text mentions timed_out"
     )));
-    let request = BoardRequest::new(
-        config.actor(None, Some("waiting-advancer")).unwrap(),
-        BoardOp::Inbox {
-            after: None,
-            limit: 20,
-            repo_key: None,
-            all: true,
-        },
-    );
-    let reply = host
-        .wait_inbox(&request, QueryDeadline::after(Duration::from_millis(50)))
-        .unwrap();
-    let BoardResult::Inbox(inbox) = reply.result else {
-        panic!("expected empty inbox");
-    };
-    assert_eq!(inbox.wait, InboxWait::Timeout);
-    assert!(inbox.events.is_empty());
-    assert!(!inbox.advancing);
-    assert_eq!(inbox.cursor, EventSeq::new(0));
+    for scope in [
+        ReadScope::Repo(RepoKey::parse(&"a".repeat(40)).unwrap()),
+        ReadScope::Keys(BTreeSet::new()),
+        ReadScope::Unscoped,
+    ] {
+        let request = BoardRequest::new(
+            config.actor(None, Some("waiting-advancer")).unwrap(),
+            BoardOp::Inbox {
+                scope: scope.clone(),
+                after: None,
+                limit: 20,
+            },
+        );
+        let reply = host
+            .wait_inbox(&request, QueryDeadline::after(Duration::from_millis(50)))
+            .unwrap();
+        let BoardResult::Inbox(inbox) = reply.result else {
+            panic!("expected empty inbox");
+        };
+        assert_eq!(inbox.wait, InboxWait::Timeout);
+        assert_eq!(inbox.scope, scope);
+        assert!(inbox.events.is_empty());
+        assert!(!inbox.advancing);
+        assert_eq!(inbox.cursor, EventSeq::new(0));
+    }
 }
 
 #[test]

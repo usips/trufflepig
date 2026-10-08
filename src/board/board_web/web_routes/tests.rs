@@ -79,7 +79,11 @@ fn render_fixture_with_ingest(reader: FeedReader, ingest: web_ops::IngestFlight)
 fn execute(fixture: &RenderFixture, op: BoardOp) -> BoardReply {
     web_ops::execute(
         &fixture.state.store,
-        WebRequest { api: BOARD_API, op },
+        WebRequest {
+            api: BOARD_API,
+            op,
+            project: None,
+        },
         Instant::now() + Duration::from_secs(5),
     )
     .unwrap()

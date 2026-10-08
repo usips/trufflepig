@@ -7,7 +7,8 @@ use super::board_ids::{
     EntryId, EventSeq, MAX_BOARD_NUMBER, PlanId, PlanRevision, RepoKey, TaskId,
 };
 use super::board_protocol::{
-    ClaimRecord, EntryRecord, EventRecord, FeedbackRecord, PlanRecord, RevisionSource, TaskRecord,
+    ClaimRecord, EntryRecord, EventRecord, FeedbackRecord, PlanRecord, ReadScope, RevisionSource,
+    TaskRecord,
 };
 use super::board_vocabulary::EntryText;
 use serde::{Deserialize, Serialize};
@@ -16,7 +17,7 @@ use serde::{Deserialize, Serialize};
 pub struct OverviewReply {
     pub plans: Vec<PlanOverview>,
     pub omitted: usize,
-    pub repo_key: Option<RepoKey>,
+    pub scope: ReadScope,
     pub server_now: i64,
     pub claim_ttl_secs: u64,
     pub after: Option<PlanId>,
@@ -27,6 +28,7 @@ pub struct OverviewReply {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PlanOverview {
     pub plan: PlanRecord,
+    pub repo_keys: Vec<RepoKey>,
     pub tasks: Vec<TaskRecord>,
     pub task_ceiling: TaskCeiling,
     pub claims: Vec<ClaimRecord>,
@@ -45,8 +47,7 @@ pub struct AttentionReply {
     pub stale_claims: Vec<ClaimView>,
     pub claims_omitted: usize,
     pub rebase_needed: Vec<EntryId>,
-    pub repo_key: Option<RepoKey>,
-    pub all: bool,
+    pub scope: ReadScope,
     pub server_now: i64,
     pub claim_ttl_secs: u64,
     pub after: Option<EntryCursor>,
@@ -58,6 +59,7 @@ pub struct AttentionReply {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EventPage {
     pub plan: Option<PlanId>,
+    pub scope: ReadScope,
     pub events: Vec<EventRecord>,
     pub after: EventSeq,
     pub through: EventSeq,
@@ -144,8 +146,7 @@ impl TaskCeiling {
 pub struct ClaimPage {
     pub plan: Option<PlanId>,
     pub own_stale: bool,
-    pub repo_key: Option<RepoKey>,
-    pub all: bool,
+    pub scope: ReadScope,
     pub claims: Vec<ClaimView>,
     pub after: Option<ClaimCursor>,
     pub through: EventSeq,

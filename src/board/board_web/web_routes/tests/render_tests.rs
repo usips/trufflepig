@@ -10,7 +10,17 @@ fn proposal_diff_preserves_all_lines_and_the_earlier_snapshot() {
     )
     .unwrap();
     let expires = Instant::now() + Duration::from_secs(5);
-    let execute = |op| web_ops::execute(&store, WebRequest { api: BOARD_API, op }, expires);
+    let execute = |op| {
+        web_ops::execute(
+            &store,
+            WebRequest {
+                api: BOARD_API,
+                op,
+                project: None,
+            },
+            expires,
+        )
+    };
     let created = execute(BoardOp::New {
         title: PlanTitle::new("Plan").unwrap(),
         body: PlanText::new("base\n").unwrap(),

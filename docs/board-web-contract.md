@@ -71,7 +71,7 @@ Mismatches fail `board_api_mismatch` without negotiation. Errors are
 | `GET /state/board_lru.js`, `/state/board_seen.js` | State modules |
 | `GET /state/board_web_token.js` | Token state module |
 | `POST /api/v1/challenge` | Unauthenticated ownership proof; Host/Origin/JSON checks apply |
-| `POST /api/v1/board` | `{ "api": BOARD_API, "op": BoardOp }`; typed `BoardReply` |
+| `POST /api/v1/board` | `{api: BOARD_API, op: BoardOp, project?: string}`; `BoardReply` |
 | `POST /api/v1/ingest` | `{ "api": BOARD_API }`; single-flight router ingest relay |
 | `GET /api/v1/render/plan/P7` or `P7@12` | `{api, revision, snapshot_seq, html, headings}` |
 | `GET /api/v1/render/diff/P7@10..12` | `{api, before, after, hunks, snapshot_seq}` |
@@ -79,10 +79,12 @@ Mismatches fail `board_api_mismatch` without negotiation. Errors are
 | `GET /api/v1/events?after=SEQ&plan=P7` | Authenticated SSE; plan filter optional |
 
 Render route targets decode only `%40` (to `@`); any other percent escape fails `invalid_options`.
+The optional top-level `project` selects a host Project for scoped reads; see the
+[read scope contract](board-projects.md#read-scopes) for resolution and conflicting-scope errors.
 
-The web allowlist exposes Overview, Repositories, Show, Tasks, Claims, Feed, Attention, History,
-Entries, Search, and FeedbackList reads; New, Post, TaskCreate, TaskMove, Accept, Reject, Edit,
-FeedbackClose, and FeedbackTriage writes. Browser Post kinds are only `note`, `answer`, `decision`,
+The web allowlist exposes Overview, Repositories, Projects, Show, Tasks, Claims, Feed, Attention,
+History, Entries, Search, and FeedbackList reads; New, Post, TaskCreate, TaskMove, Accept, Reject,
+Edit, FeedbackClose, and FeedbackTriage writes. Browser Post kinds are `note`, `answer`, `decision`,
 and `question`. Other typed operations fail `invalid_options: op not available over web`. Local
 reads remain available without a responsive router; a conflicting known database pin rejects private
 reads, writes, and streams.

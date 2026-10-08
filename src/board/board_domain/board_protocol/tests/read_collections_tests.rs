@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn read_contract_rejects_missing_show_target_and_invalid_claim_cursors() {
@@ -8,10 +9,9 @@ fn read_contract_rejects_missing_show_target_and_invalid_claim_cursors() {
     );
     for claim in [0, crate::board::board_ids::MAX_BOARD_NUMBER + 1] {
         let operation = BoardOp::Claims {
+            scope: ReadScope::All,
             plan: Some(PlanId::new(1).unwrap()),
             own_stale: false,
-            repo_key: None,
-            all: false,
             after: Some(ClaimCursor {
                 entry: EntryId::new(1).unwrap(),
                 claim,
@@ -88,14 +88,18 @@ fn task_read_contract_validates_ceilings_and_requires_captured_membership() {
 #[test]
 fn collection_operations_share_read_classification_and_bounds() {
     let cases = [
-        (serde_json::json!({"op": "overview", "limit": 1}), None, 200),
         (
-            serde_json::json!({"op": "attention", "all": false, "limit": 1}),
+            serde_json::json!({"op": "overview", "scope":"all", "limit": 1}),
             None,
             200,
         ),
         (
-            serde_json::json!({"op": "feed", "plan": "P1", "limit": 1}),
+            serde_json::json!({"op": "attention", "scope":"all", "limit": 1}),
+            None,
+            200,
+        ),
+        (
+            serde_json::json!({"op": "feed", "scope":"all", "plan": "P1", "limit": 1}),
             Some("P1"),
             500,
         ),
@@ -116,7 +120,7 @@ fn collection_operations_share_read_classification_and_bounds() {
         ),
         (
             serde_json::json!({"op": "claims", "plan": "P1", "own_stale": false,
-            "all": false, "limit": 1}),
+            "scope":"all", "limit": 1}),
             Some("P1"),
             200,
         ),
@@ -152,17 +156,16 @@ fn collection_operations_share_read_classification_and_bounds() {
         serde_json::json!({"op": "show", "target": "P1"}),
         serde_json::json!({"op": "review", "base": "P1@1"}),
         serde_json::json!({"op": "repositories", "plan": "P1"}),
-        serde_json::json!({"op": "inbox", "after": 0, "limit": 1, "all": false}),
+        serde_json::json!({"op": "inbox", "after": 0, "limit": 1, "scope":"all"}),
     ] {
         let operation: BoardOp = serde_json::from_value(encoded).unwrap();
         assert!(operation.is_read_only());
         operation.validate().unwrap();
     }
     let inbox = BoardOp::Inbox {
+        scope: ReadScope::All,
         after: None,
         limit: 1,
-        repo_key: None,
-        all: false,
     };
     assert!(!inbox.is_read_only());
 }

@@ -14,9 +14,8 @@ pub(super) fn apply_mutation(
         BoardOp::Inbox {
             after,
             limit,
-            repo_key,
-            all,
-        } => board_feed::inbox(tx, ctx, *after, *limit, repo_key.as_ref(), *all),
+            scope,
+        } => board_feed::inbox(tx, ctx, *after, *limit, scope),
         BoardOp::AcknowledgeInbox { rendered_through } => {
             board_feed::acknowledge(tx, ctx, *rendered_through)
         }
@@ -110,6 +109,7 @@ pub(super) fn apply_mutation(
         | BoardOp::Review { .. }
         | BoardOp::FeedbackList { .. }
         | BoardOp::Repositories { .. }
+        | BoardOp::Projects
         | BoardOp::Overview { .. }
         | BoardOp::Attention { .. }
         | BoardOp::Feed { .. }

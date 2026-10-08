@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn show_uses_read_connection_while_writer_transaction_is_held() {
@@ -75,10 +76,9 @@ fn readonly_dispatch_leaves_actors_sessions_and_claims_untouched() {
         .handle(&BoardRequest::new(
             actor("codex", "c1"),
             BoardOp::Inbox {
+                scope: ReadScope::All,
                 after: Some(EventSeq::new(0)),
                 limit: 20,
-                repo_key: None,
-                all: true,
             },
         ))
         .unwrap();
@@ -86,8 +86,7 @@ fn readonly_dispatch_leaves_actors_sessions_and_claims_untouched() {
         .handle(&BoardRequest::new(
             actor("new-harness", "never-written"),
             BoardOp::Overview {
-                repo_key: None,
-                all: false,
+                scope: ReadScope::All,
                 after: None,
                 through: None,
                 limit: 200,

@@ -2,6 +2,7 @@ use super::*;
 use crate::board::board_actor::{BoardActor, HarnessLabel};
 use crate::board::board_domain::board_collections::{EntryCursor, OverviewReply};
 use crate::board::board_protocol::BoardErrorCode;
+use crate::board::board_protocol::ReadScope;
 use crate::board::board_vocabulary::EntryKind;
 use crate::board::local_board::{LocalBoard, board_queries::collection_reads};
 use std::time::Duration;
@@ -115,7 +116,7 @@ fn tasks(
 }
 
 fn overview(conn: &Connection, after: Option<PlanId>, through: Option<EventSeq>) -> OverviewReply {
-    match collection_reads::overview(conn, &context(), None, after, through, 1)
+    match collection_reads::overview(conn, &context(), &ReadScope::All, after, through, 1)
         .unwrap()
         .result
     {

@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn collection_claims_preserve_duplicate_entry_ids_and_actual_actor_scope() {
@@ -35,7 +36,17 @@ fn collection_claims_preserve_duplicate_entry_ids_and_actual_actor_scope() {
         .expect("read connection")
         .transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)
         .unwrap();
-    let first = claim_window(&tx, &ctx, None, true, Some(&repo), false, None, None, 1).unwrap();
+    let first = claim_window(
+        &tx,
+        &ctx,
+        None,
+        true,
+        &(ReadScope::Repo(repo.clone())),
+        None,
+        None,
+        1,
+    )
+    .unwrap();
     assert_eq!(
         first.claims[0].cursor,
         ClaimCursor {
@@ -52,8 +63,7 @@ fn collection_claims_preserve_duplicate_entry_ids_and_actual_actor_scope() {
         &ctx,
         None,
         true,
-        Some(&repo),
-        false,
+        &(ReadScope::Repo(repo.clone())),
         first.next_after,
         Some(first.through),
         1,
@@ -72,8 +82,7 @@ fn collection_claims_preserve_duplicate_entry_ids_and_actual_actor_scope() {
         &ctx,
         None,
         true,
-        Some(&repo),
-        false,
+        &(ReadScope::Repo(repo.clone())),
         second.next_after,
         Some(first.through),
         1,
@@ -94,8 +103,7 @@ fn collection_claims_preserve_duplicate_entry_ids_and_actual_actor_scope() {
         &ctx,
         None,
         true,
-        Some(&repo),
-        false,
+        &(ReadScope::Repo(repo.clone())),
         None,
         Some(first.through),
         200,
@@ -107,8 +115,7 @@ fn collection_claims_preserve_duplicate_entry_ids_and_actual_actor_scope() {
         &ctx,
         Some(plan(1)),
         false,
-        None,
-        false,
+        &ReadScope::All,
         None,
         Some(first.through),
         200,
@@ -122,8 +129,7 @@ fn collection_claims_preserve_duplicate_entry_ids_and_actual_actor_scope() {
         &desktop,
         None,
         true,
-        None,
-        true,
+        &ReadScope::All,
         None,
         None,
         200,
@@ -137,8 +143,7 @@ fn collection_claims_preserve_duplicate_entry_ids_and_actual_actor_scope() {
             &ctx,
             None,
             false,
-            None,
-            true,
+            &ReadScope::All,
             None,
             None,
             1
@@ -153,8 +158,7 @@ fn collection_claims_preserve_duplicate_entry_ids_and_actual_actor_scope() {
             &ctx,
             None,
             true,
-            None,
-            true,
+            &ReadScope::All,
             Some(ClaimCursor {
                 entry: id(3),
                 claim: 0
@@ -188,8 +192,7 @@ fn collection_claims_show_sibling_session_stale_claims_for_resume() {
         &second,
         None,
         true,
-        None,
-        true,
+        &ReadScope::All,
         None,
         None,
         200,

@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn collection_feed_and_revision_history_use_bounded_sequence_windows() {
@@ -19,6 +20,7 @@ fn collection_feed_and_revision_history_use_bounded_sequence_windows() {
     let BoardResult::Feed(first) = feed(
         board.reader.as_ref().expect("read connection"),
         None,
+        &ReadScope::All,
         None,
         None,
         2,
@@ -34,6 +36,7 @@ fn collection_feed_and_revision_history_use_bounded_sequence_windows() {
     let BoardResult::Feed(second) = feed(
         board.reader.as_ref().expect("read connection"),
         Some(plan(1)),
+        &ReadScope::All,
         first.next_after,
         Some(first.through),
         500,
@@ -96,6 +99,7 @@ fn collection_pages_reject_invalid_bounds_and_unknown_filters() {
         feed(
             board.reader.as_ref().expect("read connection"),
             None,
+            &ReadScope::All,
             None,
             None,
             501
@@ -120,7 +124,7 @@ fn collection_pages_reject_invalid_bounds_and_unknown_filters() {
         overview(
             board.reader.as_ref().expect("read connection"),
             &context(),
-            None,
+            &ReadScope::All,
             None,
             None,
             0
@@ -133,8 +137,7 @@ fn collection_pages_reject_invalid_bounds_and_unknown_filters() {
         attention(
             board.reader.as_ref().expect("read connection"),
             &context(),
-            None,
-            true,
+            &ReadScope::All,
             None,
             None,
             201
@@ -147,6 +150,7 @@ fn collection_pages_reject_invalid_bounds_and_unknown_filters() {
         feed(
             board.reader.as_ref().expect("read connection"),
             None,
+            &ReadScope::All,
             None,
             Some(EventSeq::new(3)),
             1
@@ -159,6 +163,7 @@ fn collection_pages_reject_invalid_bounds_and_unknown_filters() {
         feed(
             board.reader.as_ref().expect("read connection"),
             None,
+            &ReadScope::All,
             Some(EventSeq::new(2)),
             Some(EventSeq::new(1)),
             1

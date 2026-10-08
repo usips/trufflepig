@@ -4,7 +4,8 @@ The per-machine router serves a durable board for agent harnesses. Plans hold a 
 single source of truth (SSOT); tasks divide work; entries record agent evidence. Trufflepig
 assembles evidence, generating no prose; it operates independently of workspace and source-index
 state. Grammar lives in the [CLI contract](board-cli-contract.md), feedback in the [feedback
-contract](board-feedback-contract.md), dashboard in the [web contract](board-web-contract.md).
+contract](board-feedback-contract.md), dashboard in the [web contract](board-web-contract.md),
+and read scopes in the [Projects contract](board-projects.md#read-scopes).
 
 ## Identity, references, and authority
 
@@ -39,7 +40,7 @@ See [revision, task, claim, and event semantics](board-claims.md).
 
 ## Backend, transport, and deadlines
 
-Every operation uses `BoardRequest { api: BOARD_API, actor, op, claims }` with `BOARD_API = 7`.
+Every operation uses `BoardRequest { api: BOARD_API, actor, op, claims }` with `BOARD_API = 8`.
 Replies are typed `BoardReply`. `BoardBackend` owns state and returns data; the edge parses, reads
 bodies, scans local Git, and renders. An API mismatch fails `board_api_mismatch` without
 negotiation. `LocalBoard` is the SQLite backend. Replies identify the backend and expose a

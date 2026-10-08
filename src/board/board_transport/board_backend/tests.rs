@@ -9,3 +9,4 @@ mod board_configuration_tests;
 mod board_registration_tests;
 mod board_wait_tests;
 mod board_writer_tests;
+mod project_scope_host_tests;

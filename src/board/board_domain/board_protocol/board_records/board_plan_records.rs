@@ -129,6 +129,7 @@ pub struct ProposalRecord {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PlanView {
     pub plan: PlanRecord,
+    pub repo_keys: Vec<RepoKey>,
     pub revision: RevisionRecord,
     pub tasks: Vec<TaskRecord>,
     pub task_ceiling: TaskCeiling,

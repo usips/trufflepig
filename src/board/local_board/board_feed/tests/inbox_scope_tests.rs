@@ -141,7 +141,7 @@ fn inbox_scope_keeps_repo_news_addressed_messages_and_own_feedback_outcomes() {
             note: None,
         },
     );
-    let inbox = scoped_feed(&mut board, Some(repo.clone()), false, 100);
+    let inbox = scoped_feed(&mut board, ReadScope::Repo(repo.clone()), 100);
     assert!(
         inbox
             .events
@@ -153,14 +153,14 @@ fn inbox_scope_keeps_repo_news_addressed_messages_and_own_feedback_outcomes() {
             .events
             .iter()
             .any(|event| event.summary.as_str() == "unlinked plan news"),
-        "a plan with no repository link is global and appears in every scope"
+        "a plan with no repository link appears in each Repo scope"
     );
     assert!(
         inbox
             .events
             .iter()
             .any(|event| event.kind == EntryKind::Create && event.plan == Some(second)),
-        "an unlinked plan's creation is visible in every scoped inbox"
+        "an unlinked plan's creation is visible in each Repo inbox"
     );
     assert!(
         !inbox
@@ -191,32 +191,41 @@ fn inbox_scope_keeps_repo_news_addressed_messages_and_own_feedback_outcomes() {
     assert_eq!(inbox.open.len(), 2);
     assert_eq!(inbox.open[0].body.as_str(), "caller repo reminder");
     assert_eq!(inbox.open[1].body.as_str(), "unlinked reminder");
-    let all = scoped_feed(&mut board, Some(repo), true, 100);
+    let all = scoped_feed(&mut board, ReadScope::All, 100);
     assert!(
         all.events
             .iter()
             .any(|event| event.summary.as_str() == "foreign repo news")
     );
     assert_eq!(all.open.len(), 3);
-    let without_repo = scoped_feed(&mut board, None, false, 100);
+    let unscoped = scoped_feed(&mut board, ReadScope::Unscoped, 100);
     assert!(
-        !without_repo
+        !unscoped
             .events
             .iter()
             .any(|event| event.summary.as_str() == "caller repo news")
     );
     assert!(
-        without_repo
+        unscoped
             .events
             .iter()
             .any(|event| event.summary.as_str() == "unlinked plan news")
     );
     assert!(
-        without_repo
+        unscoped
             .events
             .iter()
-            .any(|event| event.summary.as_str() == "foreign direct message")
+            .all(|event| event.plan == Some(second))
     );
+    assert!(
+        !unscoped
+            .events
+            .iter()
+            .any(|event| event.summary.as_str() == "foreign direct message"
+                || event.subject == BoardRef::Entry(report.entry))
+    );
+    assert_eq!(unscoped.open.len(), 1);
+    assert_eq!(unscoped.open[0].body.as_str(), "unlinked reminder");
 }
 
 #[test]
@@ -271,6 +280,6 @@ fn mixed_plan_commit_event_is_visible_via_its_same_sequence_entries() {
             params![sql_number(seq), actor_id],
         )
         .unwrap();
-    let inbox = scoped_feed(&mut board, Some(repo), false, 100);
+    let inbox = scoped_feed(&mut board, ReadScope::Repo(repo), 100);
     assert!(inbox.events.iter().any(|event| event.seq.get() == seq));
 }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn proposal_reminders_read_currency_as_of_through() {
@@ -57,8 +58,7 @@ fn proposal_reminders_read_currency_as_of_through() {
         open_entries(
             &board.conn,
             &foreign,
-            None,
-            true,
+            &ReadScope::All,
             20,
             EventSeq::new(through),
         )

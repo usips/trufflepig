@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 fn evidence(id: u64) -> EntryRecord {
     serde_json::from_value(serde_json::json!({
@@ -112,14 +113,13 @@ fn collection_attention_keeps_spooled_feedback_provenance_in_json_and_lines() {
     let reply = BoardReply::new(
         "local",
         BoardResult::Attention(AttentionReply {
+            scope: ReadScope::All,
             actor: entry.actor.clone(),
             entries: vec![entry],
             entries_omitted: 0,
             stale_claims: Vec::new(),
             claims_omitted: 0,
             rebase_needed: Vec::new(),
-            repo_key: None,
-            all: true,
             server_now: 100,
             claim_ttl_secs: 60,
             after: None,
@@ -161,10 +161,9 @@ fn delegated_claims_render_the_holder_and_its_delegator() {
     let reply = BoardReply::new(
         "local",
         BoardResult::Claims(ClaimPage {
+            scope: ReadScope::All,
             plan: Some(plan),
             own_stale: false,
-            repo_key: None,
-            all: true,
             claims: vec![ClaimView {
                 claim: ClaimRecord {
                     task: TaskId::new(plan, 3).unwrap(),

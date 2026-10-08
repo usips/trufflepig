@@ -221,7 +221,7 @@ export function createBoardRenderLoop({
     const controller = new AbortController(); state.globalRefresh = controller;
     try {
       const overview = await board(
-        readOp("overview", { repo_key: null, after: null, through: null, limit: 50 }),
+        readOp("overview", { scope: "all", after: null, through: null, limit: 50 }),
         controller.signal
       );
       if (snapshotSeq(overview) === null) throw new Error("Overview is missing its snapshot sequence.");

@@ -1,11 +1,12 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 fn attention_through(
     conn: &Connection,
     ctx: &WriteContext,
     through: Option<EventSeq>,
 ) -> AttentionReply {
-    match attention(conn, ctx, None, true, None, through, 200)
+    match attention(conn, ctx, &ReadScope::All, None, through, 200)
         .unwrap()
         .result
     {

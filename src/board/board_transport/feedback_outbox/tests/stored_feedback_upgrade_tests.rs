@@ -35,7 +35,7 @@ const SAVED_M1_FEEDBACK: &str = r#"{
 
 #[test]
 fn saved_m1_feedback_import_preserves_content_provenance_and_permanent_replay_key() {
-    assert_eq!(BOARD_API, 7);
+    assert_eq!(BOARD_API, 8);
     let directory = scratch();
     let config = crate::board::BoardConfig::for_database(directory.path().join("board.sqlite3"));
     let mut backend = LocalBoard::open(&config).unwrap();

@@ -1,5 +1,6 @@
 use super::*;
 use crate::board::board_ids::TaskId;
+use crate::board::board_protocol::ReadScope;
 use crate::board::board_vocabulary::{PlanTitle, TaskColumn};
 
 fn large_entries() -> Vec<EntryRecord> {
@@ -19,6 +20,7 @@ fn feed_prefix_preserves_boundary_actor_and_outbox_warning() {
     let mut reply = BoardReply::new(
         "local",
         BoardResult::Feed(EventPage {
+            scope: ReadScope::All,
             plan: Some(PlanId::new(7).unwrap()),
             events,
             after: EventSeq::new(10),
@@ -98,10 +100,9 @@ fn internal_collections_keep_frozen_bounds_without_cli_hints() {
             omitted: 7,
         }),
         BoardResult::Claims(ClaimPage {
+            scope: ReadScope::All,
             plan: Some(plan),
             own_stale: false,
-            repo_key: None,
-            all: true,
             claims,
             after: Some(ClaimCursor {
                 entry: EntryId::new(200).unwrap(),
@@ -190,7 +191,9 @@ fn overview_nested_fallback_keeps_task_membership_ceiling() {
     let mut reply = BoardReply::new(
         "local",
         BoardResult::Overview(OverviewReply {
+            scope: ReadScope::All,
             plans: vec![PlanOverview {
+                repo_keys: Vec::new(),
                 plan: PlanRecord {
                     id: plan,
                     title: PlanTitle::new("Trial").unwrap(),
@@ -209,7 +212,6 @@ fn overview_nested_fallback_keeps_task_membership_ceiling() {
                 claims_omitted: 6,
             }],
             omitted: 7,
-            repo_key: None,
             server_now: 100,
             claim_ttl_secs: 60,
             after: Some(PlanId::new(6).unwrap()),

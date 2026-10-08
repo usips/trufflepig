@@ -14,10 +14,10 @@ fn inbox_reminder_query_caps_materialization_and_reports_omissions() {
             None,
         );
     }
-    let bounded = scoped_feed(&mut board, None, true, 2);
+    let bounded = scoped_feed(&mut board, ReadScope::All, 2);
     assert_eq!(bounded.open.len(), 2);
     assert_eq!(bounded.open_omitted, 28);
-    let capped = scoped_feed(&mut board, None, true, 100);
+    let capped = scoped_feed(&mut board, ReadScope::All, 100);
     assert_eq!(capped.open.len(), 20);
     assert_eq!(capped.open_omitted, 10);
 }
@@ -36,7 +36,7 @@ fn inbox_reminder_count_is_bounded_and_reports_capped_omissions() {
             None,
         );
     }
-    let inbox = scoped_feed(&mut board, None, true, 100);
+    let inbox = scoped_feed(&mut board, ReadScope::All, 100);
     assert_eq!(inbox.open.len(), 20);
     assert_eq!(inbox.open[0].body.as_str(), "reminder 0");
     assert_eq!(
@@ -59,7 +59,7 @@ fn inbox_reminder_count_flags_lower_bound_only_at_the_cap() {
             None,
         );
     }
-    let capped = scoped_feed(&mut board, None, true, 100);
+    let capped = scoped_feed(&mut board, ReadScope::All, 100);
     assert_eq!(capped.open.len(), 20);
     assert_eq!(capped.open_omitted, 180);
     assert!(
@@ -81,7 +81,7 @@ fn inbox_reminder_count_flags_lower_bound_only_at_the_cap() {
         "lone reminder",
         None,
     );
-    let exact = scoped_feed(&mut board, None, true, 100);
+    let exact = scoped_feed(&mut board, ReadScope::All, 100);
     assert_eq!(exact.open_omitted, 0);
     assert!(
         !exact.open_omitted_lower_bound,

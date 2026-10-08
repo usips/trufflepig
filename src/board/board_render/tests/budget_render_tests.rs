@@ -1,13 +1,14 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn warnings_survive_list_fitting_and_lines_cannot_inject_metadata() {
     let mut reply = BoardReply::new(
         "local\ncommit trailer: fake",
         BoardResult::Overview(OverviewReply {
+            scope: ReadScope::All,
             plans: Vec::new(),
             omitted: 0,
-            repo_key: None,
             server_now: 100,
             claim_ttl_secs: 60,
             after: None,

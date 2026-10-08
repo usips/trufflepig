@@ -1,8 +1,11 @@
 //! Serving-host projects derived from registered workspaces and read-only Git identity.
 //! Resolution never creates board storage or persists project information.
 
+pub(crate) mod project_read_helpers;
 #[cfg(test)]
 mod tests;
+
+pub(crate) use project_read_helpers::{project_reply, select_scope, validate_scope_selection};
 
 use super::{
     board_config::BoardConfig, board_ids::RepoKey, board_protocol::BoardError,

@@ -1,6 +1,8 @@
 //! Immutable plan revisions and the current plan view.
 
+use super::super::read_scope_sql::plan_repo_keys;
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 pub(super) fn plan(conn: &Connection, id: PlanId) -> Result<PlanRecord, BoardError> {
     let mut statement = conn
@@ -89,8 +91,7 @@ pub(super) fn plan_view(
         ctx,
         Some(id),
         false,
-        None,
-        true,
+        &ReadScope::All,
         None,
         Some(through),
         200,
@@ -164,6 +165,7 @@ pub(super) fn plan_view(
     let mut entries = recent;
     entries.extend(extras);
     Ok(PlanView {
+        repo_keys: plan_repo_keys(conn, plan.id)?,
         plan,
         revision,
         tasks,

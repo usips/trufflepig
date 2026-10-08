@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn attention_entry_query_drives_from_the_kind_index() {
@@ -130,8 +131,7 @@ fn attention_mixes_kinds_across_states_with_exact_omitted_counts() {
     let BoardResult::Attention(second) = attention(
         reader,
         &human,
-        None,
-        true,
+        &ReadScope::All,
         first.next_after,
         Some(first.through),
         2,
@@ -146,8 +146,7 @@ fn attention_mixes_kinds_across_states_with_exact_omitted_counts() {
     let BoardResult::Attention(third) = attention(
         reader,
         &human,
-        None,
-        true,
+        &ReadScope::All,
         second.next_after,
         Some(second.through),
         2,

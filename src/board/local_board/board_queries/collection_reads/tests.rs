@@ -1,5 +1,6 @@
 use super::*;
 use crate::board::board_actor::BoardActor;
+use crate::board::board_protocol::ReadScope;
 use crate::board::board_protocol::{BoardErrorCode, EntryState};
 use crate::board::board_vocabulary::ProposalState;
 use crate::board::local_board::LocalBoard;
@@ -221,9 +222,20 @@ fn attention_page(
     all: bool,
     limit: usize,
 ) -> AttentionReply {
-    match attention(conn, ctx, repo, all, None, None, limit)
-        .unwrap()
-        .result
+    match attention(
+        conn,
+        ctx,
+        &(if all {
+            ReadScope::All
+        } else {
+            repo.map_or(ReadScope::All, |key| ReadScope::Repo(key.clone()))
+        }),
+        None,
+        None,
+        limit,
+    )
+    .unwrap()
+    .result
     {
         BoardResult::Attention(page) => page,
         other => panic!("unexpected {other:?}"),

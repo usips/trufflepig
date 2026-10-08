@@ -18,6 +18,7 @@ mod web_serve;
 use super::{
     board_backend::BoardBackend,
     board_config::{BoardConfig, BoardConfigCache},
+    board_projects::{ProjectResolver, ResolvedProject},
     board_protocol::{BoardError, BoardErrorCode},
     local_board::LocalBoard,
 };
@@ -57,6 +58,7 @@ const PUBLIC_SEEN: &str = include_str!("board_web/assets/state/board_seen.js");
 pub(crate) struct WebStore {
     config: Mutex<BoardConfigCache>,
     writer: Mutex<Option<LocalBoard>>,
+    projects: Mutex<ProjectResolver>,
     readers: ReaderPool,
     runtime: PathBuf,
 }
@@ -81,6 +83,7 @@ impl WebStore {
         Ok(Self {
             config: Mutex::new(cache),
             writer: Mutex::new(Some(writer)),
+            projects: Mutex::new(ProjectResolver::default()),
             readers,
             runtime,
         })
@@ -91,6 +94,19 @@ impl WebStore {
         crate::system::validate_board_database(&self.runtime, &config.db_path)
             .map_err(BoardError::from)?;
         Ok(config)
+    }
+
+    pub(crate) fn projects(
+        &self,
+        host: &str,
+        expires: Instant,
+    ) -> Result<Vec<ResolvedProject>, BoardError> {
+        let config = self.config(expires)?;
+        let mut projects = lock_until(&self.projects, expires)?;
+        let deadline = crate::daemon::deadline::QueryDeadline::after(
+            expires.saturating_duration_since(Instant::now()),
+        );
+        projects.resolve(&config, host, deadline)
     }
 
     fn with_writer<T>(

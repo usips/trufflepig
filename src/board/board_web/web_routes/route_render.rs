@@ -45,6 +45,7 @@ pub(super) fn render_plan(
         &state.store,
         WebRequest {
             api: BOARD_API,
+            project: None,
             op: BoardOp::Show { target },
         },
         expires,
@@ -75,6 +76,7 @@ pub(super) fn render_diff(
         &state.store,
         WebRequest {
             api: BOARD_API,
+            project: None,
             op: BoardOp::Show { target },
         },
         expires,
@@ -99,6 +101,7 @@ pub(super) fn render_proposal(
             &state.store,
             WebRequest {
                 api: BOARD_API,
+                project: None,
                 op: BoardOp::Show { target },
             },
             expires,

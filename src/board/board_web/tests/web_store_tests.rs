@@ -160,6 +160,7 @@ fn changed_router_marker_refuses_web_writes_after_startup() {
         &store,
         WebRequest {
             api: BOARD_API,
+            project: None,
             op: BoardOp::New {
                 title: PlanTitle::new("must not commit").unwrap(),
                 body: PlanText::new("").unwrap(),

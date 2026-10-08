@@ -34,6 +34,7 @@ fn show_preserves_labor_and_uncovered_sections_while_trimming_the_body() {
     recent.kind = EntryKind::Progress;
     recent.body = EntryText::new("recent long evidence ".repeat(150)).unwrap();
     let view = PlanView {
+        repo_keys: Vec::new(),
         plan: PlanRecord {
             id: plan,
             title: PlanTitle::new("Trial").unwrap(),
@@ -129,6 +130,7 @@ fn plan_trim_keeps_newest_entries_behind_a_before_cursor() {
         })
         .to_vec();
     let view = PlanView {
+        repo_keys: Vec::new(),
         plan: PlanRecord {
             id: plan,
             title: PlanTitle::new("Trial").unwrap(),

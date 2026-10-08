@@ -1,4 +1,5 @@
 use super::super::*;
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn board_transport_preserves_markdown_body_text_flags_and_feedback_key() {
@@ -329,8 +330,7 @@ fn board_inbox_all_scope_survives_router_normalization() {
         command,
         crate::board::board_grammar::BoardCommand::Op(
             crate::board::board_protocol::BoardOp::Inbox {
-                all: true,
-                repo_key: None,
+                scope: ReadScope::All,
                 ..
             }
         )

@@ -1,3 +1,4 @@
+use crate::board::board_protocol::ReadScope;
 mod event_snapshot_tests;
 mod feedback_gate_tests;
 mod inbox_planless_tests;
@@ -8,7 +9,7 @@ mod inbox_watermark_tests;
 use super::*;
 use crate::board::board_actor::{BoardActor, HarnessLabel};
 use crate::board::board_backend::BoardBackend;
-use crate::board::board_ids::TaskId;
+use crate::board::board_ids::{RepoKey, TaskId};
 use crate::board::board_protocol::{BoardOp, BoardRequest};
 use crate::board::board_vocabulary::{EntryKind, PlanText, PlanTitle};
 use crate::board::local_board::LocalBoard;
@@ -77,10 +78,9 @@ fn feed(board: &mut LocalBoard, after: Option<EventSeq>, limit: usize) -> InboxR
         board,
         "codex",
         BoardOp::Inbox {
+            scope: ReadScope::All,
             after,
             limit,
-            repo_key: None,
-            all: true,
         },
     ) {
         BoardResult::Inbox(inbox) => inbox,
@@ -88,20 +88,14 @@ fn feed(board: &mut LocalBoard, after: Option<EventSeq>, limit: usize) -> InboxR
     }
 }
 
-fn scoped_feed(
-    board: &mut LocalBoard,
-    repo_key: Option<RepoKey>,
-    all: bool,
-    limit: usize,
-) -> InboxReply {
+fn scoped_feed(board: &mut LocalBoard, scope: ReadScope, limit: usize) -> InboxReply {
     match call(
         board,
         "codex",
         BoardOp::Inbox {
+            scope,
             after: Some(EventSeq::new(0)),
             limit,
-            repo_key,
-            all,
         },
     ) {
         BoardResult::Inbox(inbox) => inbox,

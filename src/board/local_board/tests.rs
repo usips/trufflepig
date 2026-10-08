@@ -2,6 +2,7 @@ mod board_identity_tests;
 mod collection_snapshot_tests;
 mod commit_transaction_tests;
 mod connection_lifecycle_tests;
+mod project_scope_read_tests;
 mod query_only_dispatch_tests;
 
 use super::*;

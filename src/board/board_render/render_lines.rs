@@ -172,6 +172,28 @@ pub(super) fn lines_result(result: &BoardResult) -> String {
                 .unwrap();
             }
         }
+        BoardResult::Projects(projects) => {
+            for project in projects {
+                writeln!(
+                    text,
+                    "project {}\t{}\tplans={}\tunavailable={}",
+                    cell(&project.id),
+                    cell(&project.name),
+                    project.plan_count,
+                    project.unavailable.len()
+                )
+                .unwrap();
+                for member in &project.unavailable {
+                    writeln!(
+                        text,
+                        "unavailable {}\t{}",
+                        cell(&member.name),
+                        cell(&member.root)
+                    )
+                    .unwrap();
+                }
+            }
+        }
         BoardResult::Registered(repository) => writeln!(
             text,
             "registered {}\t{}",

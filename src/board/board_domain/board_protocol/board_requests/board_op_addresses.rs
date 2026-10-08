@@ -1,5 +1,5 @@
 //! Read classification and plan attribution for every board operation.
-use super::BoardOp;
+use super::{BoardOp, ReadScope};
 use crate::board::board_ids::PlanId;
 
 impl BoardOp {
@@ -12,6 +12,7 @@ impl BoardOp {
                 | Self::Review { .. }
                 | Self::FeedbackList { .. }
                 | Self::Repositories { .. }
+                | Self::Projects
                 | Self::Overview { .. }
                 | Self::Attention { .. }
                 | Self::Feed { .. }
@@ -20,6 +21,18 @@ impl BoardOp {
                 | Self::Tasks { .. }
                 | Self::Claims { .. }
         )
+    }
+
+    /// Concrete scopes are accepted only by these collection reads.
+    pub fn read_scope_mut(&mut self) -> Option<&mut ReadScope> {
+        match self {
+            Self::Inbox { scope, .. }
+            | Self::Overview { scope, .. }
+            | Self::Attention { scope, .. }
+            | Self::Claims { scope, .. }
+            | Self::Feed { scope, .. } => Some(scope),
+            _ => None,
+        }
     }
 
     /// Workspace writes register the caller's repository; commit link edits

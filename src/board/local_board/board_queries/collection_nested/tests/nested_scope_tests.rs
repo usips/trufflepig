@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn collection_overview_pages_freeze_initial_revision_membership() {
@@ -58,8 +59,7 @@ fn collection_attention_pages_preserve_siblings_and_claim_cursors() {
     let BoardResult::Attention(first) = collection_reads::attention(
         board.reader.as_ref().expect("read connection"),
         &context(),
-        None,
-        true,
+        &ReadScope::All,
         None,
         None,
         1,
@@ -85,8 +85,7 @@ fn collection_attention_pages_preserve_siblings_and_claim_cursors() {
     let BoardResult::Attention(second) = collection_reads::attention(
         board.reader.as_ref().expect("read connection"),
         &context(),
-        None,
-        true,
+        &ReadScope::All,
         first.next_after,
         Some(first.through),
         1,
@@ -100,8 +99,7 @@ fn collection_attention_pages_preserve_siblings_and_claim_cursors() {
     let BoardResult::Attention(third) = collection_reads::attention(
         board.reader.as_ref().expect("read connection"),
         &context(),
-        None,
-        true,
+        &ReadScope::All,
         second.next_after,
         Some(first.through),
         1,
@@ -119,8 +117,7 @@ fn collection_attention_pages_preserve_siblings_and_claim_cursors() {
         &context(),
         None,
         true,
-        None,
-        true,
+        &ReadScope::All,
         first.claims_next_after,
         Some(first.through),
         1,

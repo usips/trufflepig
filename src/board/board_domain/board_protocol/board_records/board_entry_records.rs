@@ -1,6 +1,7 @@
 //! Entries, inbox events, and mutation addresses.
 use super::{FeedbackRecord, LinkedCommit, ProposalRecord};
 use crate::board::board_domain::board_collections::EntryCursor;
+use crate::board::board_protocol::ReadScope;
 use crate::board::{
     board_actor::{BoardActor, BoardRecipient},
     board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
@@ -110,8 +111,7 @@ pub struct InboxReply {
     /// True when the reminder count hit its cap, so the omitted total is a lower bound.
     #[serde(default)]
     pub open_omitted_lower_bound: bool,
-    pub repo_key: Option<RepoKey>,
-    pub all: bool,
+    pub scope: ReadScope,
     pub latest: EventSeq,
     pub advancing: bool,
     pub wait: InboxWait,

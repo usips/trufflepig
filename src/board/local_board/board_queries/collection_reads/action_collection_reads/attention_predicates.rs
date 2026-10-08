@@ -2,11 +2,12 @@
 use super::*;
 
 /// Attention predicate over `entries e JOIN actors a` (?1 user, ?2 host, ?3 harness,
-/// ?4 session, ?5 identity, ?6 all, ?7 repo_key, ?8 after seq, ?9 after entry, ?10 through).
+/// ?4 session, ?5 identity, ?6 scope kind, ?7 JSON keys, ?8 after seq, ?9 entry, ?10 through).
 /// The kind prefix drives the scan from `entries_kind_state`; own unaddressed questions
 /// stay out of "Needs you" and proposal currency reads the head as of ?10.
 pub(in crate::board::local_board::board_queries::collection_reads) fn attention_predicate() -> String
 {
+    let strict_scope = ScopeSql::strict_plan_predicate("e.plan_id", 6, 7);
     let exact_author = "a.user=?1 AND a.host=?2 AND a.harness=?3 AND a.session=?4";
     let head_at_through = concat!(
         "(SELECT max(number) FROM revisions head_at WHERE head_at.plan_id=p.plan_id ",
@@ -41,11 +42,12 @@ pub(in crate::board::local_board::board_queries::collection_reads) fn attention_
             "AND (e.to_whom IS NULL OR e.to_whom IN (?1,?3,?5))) ",
             "OR ((({open_question} AND (NOT ({exact_author}) OR e.to_whom IN (?1,?3,?5))) OR (({open_feedback}) AND (e.plan_id IS NULL AND a.user=?1 AND ?3='human'))) ",
             "AND (e.to_whom IS NULL OR e.to_whom IN (?1,?3,?5)) ",
-            "AND (?6 OR NOT EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id) ",
-            "OR e.to_whom IN (?1,?3,?5) OR e.repo_key=?7 ",
-            "OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id AND scope.repo_key=?7)))) ",
-            "AND (e.seq>?8 OR (e.seq=?8 AND e.id>?9)) AND e.seq<=?10"
+            "AND (?6<>1 OR NOT EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id) ",
+            "OR e.to_whom IN (?1,?3,?5) OR e.repo_key IN(SELECT value FROM json_each(?7)) ",
+            "OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id AND scope.repo_key IN(SELECT value FROM json_each(?7)))))) ",
+            "AND {strict_scope} AND (e.seq>?8 OR (e.seq=?8 AND e.id>?9)) AND e.seq<=?10"
         ),
+        strict_scope = strict_scope,
         exact_author = exact_author,
         open_feedback = open_feedback,
         stale_proposal = stale_proposal,

@@ -6,15 +6,16 @@ mod tests;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use super::board_queries::board_reads;
+use super::board_queries::read_scope_sql::ScopeSql;
 use super::board_writes::task_claims;
 use super::{
     BoardError, WriteContext, actor_from_row, invalid, max_seq, row_number, sql_error, sql_number,
     sqlite_u64,
 };
 use crate::board::board_actor::BoardRecipient;
-use crate::board::board_ids::{BoardRef, EventSeq, PlanId, RepoKey};
+use crate::board::board_ids::{BoardRef, EventSeq, PlanId};
 use crate::board::board_protocol::{
-    BoardReply, BoardResult, EventRecord, FeedbackVia, InboxReply, InboxWait,
+    BoardReply, BoardResult, EventRecord, FeedbackVia, InboxReply, InboxWait, ReadScope,
 };
 use crate::board::board_vocabulary::EntryText;
 
@@ -30,11 +31,11 @@ const EVENT_SELECT: &str = concat!(
 const RELEVANT_EVENT: &str = concat!(
     "e.kind<>'hello' AND e.actor_id<>?1 ",
     "AND (((e.kind IN ('claim','task') OR e.to_whom IS NULL OR e.to_whom IN (?3,?4,?5)) ",
-    "AND (?7 OR (e.plan_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id)) ",
+    "AND (?7<>1 OR (e.plan_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id)) ",
     "OR e.to_whom IN (?3,?4,?5) ",
-    "OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id AND scope.repo_key=?8) ",
+    "OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id AND scope.repo_key IN(SELECT value FROM json_each(?8))) ",
     "OR EXISTS(SELECT 1 FROM entries evidence JOIN plan_repos scope ON scope.plan_id=evidence.plan_id ",
-    "WHERE evidence.seq=e.seq AND scope.repo_key=?8))) ",
+    "WHERE evidence.seq=e.seq AND scope.repo_key IN(SELECT value FROM json_each(?8))))) ",
     "OR (e.kind='feedback' AND EXISTS(SELECT 1 FROM entries report JOIN actors author ON author.id=report.actor_id ",
     "WHERE report.kind='feedback' AND author.user=?3 AND author.harness=?4 AND 'E'||report.id=e.subject ",
     "AND (e.to_whom IS NULL OR e.to_whom IN (?3,?4,?5) ",
@@ -46,8 +47,7 @@ pub(super) fn inbox(
     ctx: &WriteContext,
     after: Option<EventSeq>,
     limit: usize,
-    repo_key: Option<&RepoKey>,
-    all: bool,
+    scope: &ReadScope,
 ) -> Result<BoardReply, BoardError> {
     if !(1..=2000).contains(&limit) {
         return Err(invalid("invalid_options", "inbox limit must be 1..2000"));
@@ -78,8 +78,11 @@ pub(super) fn inbox(
         limit
     };
     let order = if first { "DESC" } else { "ASC" };
+    let scope_sql = ScopeSql::new(scope)?;
+    let membership = ScopeSql::event_predicate(7, 8);
     let sql = format!(
-        "{EVENT_SELECT} WHERE {RELEVANT_EVENT} AND e.seq>?2 ORDER BY e.seq {order} LIMIT ?6"
+        "{EVENT_SELECT} WHERE ({RELEVANT_EVENT}) AND (?7<2 OR {membership}) \
+         AND e.seq>?2 ORDER BY e.seq {order} LIMIT ?6"
     );
     let mut statement = tx.prepare(&sql).map_err(sql_error)?;
     let mut rows = statement
@@ -90,8 +93,8 @@ pub(super) fn inbox(
             ctx.actor.harness.as_str(),
             ctx.actor.identity(),
             sql_number(count as u64 + 1),
-            all,
-            repo_key.map(RepoKey::as_str),
+            scope_sql.kind,
+            scope_sql.keys_json,
         ])
         .map_err(sql_error)?;
     let mut events = Vec::with_capacity(count + 1);
@@ -113,7 +116,7 @@ pub(super) fn inbox(
         next.map_or(latest, |event| EventSeq::new(event.seq.get() - 1))
     };
     let (open, open_omitted, open_omitted_lower_bound) =
-        board_reads::open_entries(tx, ctx, repo_key, all, limit.min(20), latest)?;
+        board_reads::open_entries(tx, ctx, scope, limit.min(20), latest)?;
     Ok(BoardReply::new(
         "local",
         BoardResult::Inbox(InboxReply {
@@ -125,8 +128,7 @@ pub(super) fn inbox(
             open,
             open_omitted,
             open_omitted_lower_bound,
-            repo_key: repo_key.cloned(),
-            all,
+            scope: scope.clone(),
             latest,
             advancing: after.is_none(),
             wait: InboxWait::None,
@@ -181,6 +183,7 @@ pub(super) fn read_events(
     after: EventSeq,
     through: EventSeq,
     plan: Option<PlanId>,
+    scope: &ReadScope,
     limit: usize,
 ) -> Result<Vec<EventRecord>, BoardError> {
     if !(1..=501).contains(&limit) {
@@ -189,14 +192,20 @@ pub(super) fn read_events(
             "event batch limit must be 1..501",
         ));
     }
+    let scope_sql = ScopeSql::new(scope)?;
+    let membership = ScopeSql::event_predicate(5, 6);
+    let requested_plan = ScopeSql::plan_predicate("?3", 5, 6);
     let mut statement = conn
         .prepare(&format!(
             concat!(
                 "{EVENT_SELECT} WHERE e.seq>?1 AND e.seq<=?2 ",
                 "AND (?3 IS NULL OR e.plan_id=?3 OR EXISTS(SELECT 1 FROM entries evidence ",
-                "WHERE evidence.seq=e.seq AND evidence.plan_id=?3)) ORDER BY e.seq LIMIT ?4"
+                "WHERE evidence.seq=e.seq AND evidence.plan_id=?3)) ",
+                "AND (?3 IS NULL OR {requested_plan}) AND {membership} ORDER BY e.seq LIMIT ?4"
             ),
-            EVENT_SELECT = EVENT_SELECT
+            EVENT_SELECT = EVENT_SELECT,
+            membership = membership,
+            requested_plan = requested_plan,
         ))
         .map_err(sql_error)?;
     let mut rows = statement
@@ -204,7 +213,9 @@ pub(super) fn read_events(
             sql_number(after.get()),
             sql_number(through.get()),
             plan.map(|id| sql_number(id.get())),
-            limit as i64
+            limit as i64,
+            scope_sql.kind,
+            scope_sql.keys_json
         ])
         .map_err(sql_error)?;
     let mut events = Vec::with_capacity(limit);
