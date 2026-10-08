@@ -76,9 +76,12 @@ sources fail explicitly. In-place concurrent writes may produce an unmatched
 buffer, which also fails the revision check.
 
 `show path:a-b` explicitly reads current coordinates without claiming indexed
-freshness. Paths are root-relative. Reject absolute paths, traversal, and symlink
-escapes; verify the opened file remains within the root. A path-like filename
-containing separators used by the CLI is reversibly escaped rather than guessed.
+freshness. Paths are relative to the selected root (the selected workspace member
+when a workspace is active). Reject absolute paths, traversal, and symlink escapes;
+verify the opened file remains within the root. If a missing path exists relative to
+the invocation subdirectory, report the equivalent root-relative spelling. A
+path-like filename containing separators used by the CLI is reversibly escaped
+rather than guessed.
 
 Only the current graph is retained. `ctx <handle>` requires the handle's index
 generation and source revision to match the current graph; otherwise return

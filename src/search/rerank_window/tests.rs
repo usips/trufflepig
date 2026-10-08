@@ -48,6 +48,7 @@ fn bare_hit(path: &str, kind: &str, start: usize, end: usize) -> Hit {
         target: None,
         repeats: None,
         snippet: None,
+        differs: false,
     }
 }
 

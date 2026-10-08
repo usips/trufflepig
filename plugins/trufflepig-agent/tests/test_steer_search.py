@@ -420,26 +420,35 @@ class HookTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
 
     def test_subagents_receive_search_context_at_start(self):
-        payload = {"hook_event_name": "SubagentStart", "session_id": "s1", "cwd": str(self.repo / "crates"),
-                   "agent_id": "a1", "agent_type": "Explore", "transcript_path": "/dev/null"}
+        payload = {"hook_event_name": "SubagentStart", "session_id": "abc123",
+                   "cwd": str(self.repo / "crates"), "agent_id": "agent-abc123",
+                   "agent_type": "Explore", "transcript_path": "/home/user/.claude/projects/project/abc123.jsonl"}
         env_file = Path(self.scratch.name) / "claude.env"
+        env_file.write_text("export TRUFFLEPIG_CLAUDE_SESSION=abc123\n")
         result = subprocess.run([sys.executable, str(PLUGIN / "hooks/claude-session.py")], input=json.dumps(payload),
                                 env=dict(self.env, CLAUDE_ENV_FILE=str(env_file)), capture_output=True, text=True)
         output = json.loads(result.stdout)["hookSpecificOutput"]
         self.assertEqual(output["hookEventName"], "SubagentStart")
+        self.assertIn("TRUFFLEPIG_SESSION=claude-agent-", output["additionalContext"])
+        self.assertIn("including `board hello`", output["additionalContext"])
         self.assertIn("trufflepig-agent show 'sym:Name'", output["additionalContext"])
         self.assertIn("Only an unpublished linked-worktree home in a workspace can serve from its member's parent index",
                       output["additionalContext"])
         self.assertNotIn("briefing subagents", output["additionalContext"])
-        self.assertFalse(env_file.exists(), "subagents must not rewrite the session environment")
+        self.assertEqual(env_file.read_text(), "export TRUFFLEPIG_CLAUDE_SESSION=abc123\n",
+                         "subagents must not rewrite the parent's session environment")
         payload["cwd"] = self.scratch.name
         result = subprocess.run([sys.executable, str(PLUGIN / "hooks/claude-session.py")], input=json.dumps(payload),
                                 env=self.env, capture_output=True, text=True)
-        self.assertEqual(result.stdout, "")
+        unindexed = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("TRUFFLEPIG_SESSION=claude-agent-", unindexed)
+        self.assertNotIn("trufflepig-agent show 'sym:Name'", unindexed)
         result = subprocess.run([sys.executable, str(PLUGIN / "hooks/claude-session.py")],
                                 input=json.dumps(dict(payload, cwd=str(self.repo))),
                                 env=dict(self.env, TRUFFLEPIG_AGENT_STEER="off"), capture_output=True, text=True)
-        self.assertEqual(result.stdout, "")
+        steered_off = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("TRUFFLEPIG_SESSION=claude-agent-", steered_off)
+        self.assertNotIn("trufflepig-agent show 'sym:Name'", steered_off)
 
     def test_session_context_only_inside_indexed_checkouts(self):
         env_file = Path(self.scratch.name) / "claude.env"

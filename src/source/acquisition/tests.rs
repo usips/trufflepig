@@ -68,3 +68,67 @@ fn owned_source_metadata_cannot_replace_verified_identity() {
     .unwrap_err();
     assert!(error.to_string().contains("invalid_metadata"));
 }
+
+#[test]
+fn member_root_relative_path_reads_suggest_invocation_relative_files() {
+    let root = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let invocation = root.path().join("src/addons/USIPS/EphyraChat");
+    let file = invocation.join("Service/LegacyImport/ImportRunner.php");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let body = (1..=90).map(|line| format!("{line}\n")).collect::<String>();
+    std::fs::write(&file, body).unwrap();
+    let store = Store::open(root.path(), cache.path()).unwrap();
+    let origin = InvocationDirectory::within(root.path(), &invocation);
+
+    let error = acquire(
+        &store,
+        "path:Service/LegacyImport/ImportRunner.php:72-73",
+        None,
+        &origin,
+    )
+    .err()
+    .unwrap()
+    .to_string();
+    assert!(error.starts_with("source_unavailable:"));
+    assert!(
+        error.contains(
+            "path:src/addons/USIPS/EphyraChat/Service/LegacyImport/ImportRunner.php:72-73"
+        )
+    );
+
+    let source = acquire(
+        &store,
+        "path:src/addons/USIPS/EphyraChat/Service/LegacyImport/ImportRunner.php:72-73",
+        None,
+        &origin,
+    )
+    .unwrap();
+    assert_eq!(
+        source.path,
+        "src/addons/USIPS/EphyraChat/Service/LegacyImport/ImportRunner.php"
+    );
+    assert_eq!(
+        &source.bytes[source.span.start..source.span.end],
+        b"72\n73\n"
+    );
+}
+
+#[test]
+fn member_relative_path_hint_never_follows_symlink_candidates() {
+    let root = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let invocation = root.path().join("src/addons/USIPS/EphyraChat");
+    std::fs::create_dir_all(&invocation).unwrap();
+    let outside = tempfile::NamedTempFile::new().unwrap();
+    std::os::unix::fs::symlink(outside.path(), invocation.join("Unsafe.php")).unwrap();
+    let store = Store::open(root.path(), cache.path()).unwrap();
+    let origin = InvocationDirectory::within(root.path(), &invocation);
+
+    let error = acquire(&store, "path:Unsafe.php", None, &origin)
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(error.starts_with("source_unavailable:"));
+    assert!(!error.contains("use `path:"));
+}

@@ -100,6 +100,7 @@ fn blame_rejects_stale_live_handles_and_moved_head() {
         target: None,
         repeats: None,
         snippet: None,
+        differs: false,
     };
     let id = results::save_entries(
         &store,

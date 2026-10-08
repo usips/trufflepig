@@ -111,6 +111,7 @@ fn workspace_pages_use_absolute_file_locators_and_compact_coverage() -> Result<(
         target: None,
         repeats: None,
         snippet: None,
+        differs: false,
     };
     let set = WorkspaceSet {
         workspace: "test".into(),

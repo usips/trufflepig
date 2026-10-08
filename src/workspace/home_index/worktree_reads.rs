@@ -42,7 +42,7 @@ impl ParentFallback {
     /// Completes a parent-index answer from worktree bytes: `sym:` re-extracts
     /// changed files, and `map` of a changed file re-extracts it. Returns the
     /// changed files it found, for the answer's differing count.
-    pub(in crate::workspace) fn complete_answer(
+    pub(crate) fn complete_answer(
         &mut self,
         store: &Store,
         request: (&str, &[String], &Query, &InvocationDirectory),
@@ -61,6 +61,9 @@ impl ParentFallback {
                 });
             if changed && let Some(hits) = reextracted_map(store, path) {
                 found.hits = hits;
+                if let Some(coverage) = found.coverage.as_object_mut() {
+                    coverage.remove("no_indexed_path");
+                }
                 return Ok(HashSet::from([path.clone()]));
             }
         } else if verb == "search" && query.exact {
@@ -257,6 +260,7 @@ fn definition_hit(path: &str, bytes: &[u8], revision: &str, definition: Definiti
         target: None,
         repeats: None,
         snippet: None,
+        differs: false,
     }
 }
 

@@ -77,7 +77,7 @@ describe("board relative timestamps", () => {
         const item = createBoardDom({ clockOffsetMs: 0 }).timeNode(${timestamp});
         console.log(JSON.stringify({ title: item.title, dateTime: item.dateTime }));`;
       return JSON.parse(execFileSync(process.execPath,
-        ["--experimental-default-type=module", "--input-type=module", "-e", source], {
+        ["--input-type=module", "-e", source], {
           env: { ...process.env, LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8", TZ: timezone },
           encoding: "utf8",
         }));

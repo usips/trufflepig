@@ -150,8 +150,9 @@ available when history is unavailable. `hist` uses captured first-parent history
 one published working-tree generation under `--uncommitted`. `diff` compares a
 commit with its first parent; only explicit targets permit budgeted source hunks.
 Historical changes require `show HANDLE --side before|after` for exact source.
-`path:` selectors are root-relative. `sym:` uses exact live symbol occurrences;
-ambiguous matches return selectable handles. The [history contract](history-contract.md)
+`path:` selectors use the selected root or workspace member; missing paths found
+under the invocation subdirectory report root-relative spellings. `sym:` uses exact live
+symbol occurrences; ambiguous matches return selectable handles. The [history contract](history-contract.md)
 defines correspondence limits, immutable reads, resource exclusions, and coverage.
 
 ## Diagnostics and sessions
@@ -175,8 +176,7 @@ overlap labels, and incomplete-window limits.
 
 ## Cache and daemon
 
-The [runtime contract](runtime-contract.md) defines cache ownership, daemon
-lifecycle, systemd upgrades, and sandbox spool transport.
+See the [runtime contract](runtime-contract.md) for cache ownership, daemon lifecycle, upgrades, and sandbox spool transport.
 
 ## Optional semantic retrieval
 

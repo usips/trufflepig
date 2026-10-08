@@ -9,6 +9,14 @@ Use `trufflepig-agent` for project discovery and navigation. It supplies compact
 output, session attribution, and audit records. User instructions take precedence;
 ordinary search tools remain available for a specific unsupported need or failure.
 
+Agent shells can have a shorter `PATH` than interactive shells. The installer
+places the wrapper at `~/.local/bin/trufflepig-agent` by default and does not
+edit shell startup files. If `command -v trufflepig-agent` returns no path, use
+`"$HOME/.local/bin/trufflepig-agent"` as the command prefix in each tool call.
+When installation used `--bin DIR`, use `"DIR/trufflepig-agent"` instead. An
+explicit path works in initial shells and delegated agent shells without a
+persistent `PATH` change.
+
 ## Replacing shell searches
 
 | Instead of | Run |
@@ -72,19 +80,19 @@ Outside a workspace, run from the project root so a subdirectory does not become
 an accidental separate index. Retain that scope for follow-up calls.
 
 A linked worktree is its own checkout: run from it (`cd DIR && trufflepig-agent
-...` or `--root DIR`). Only workspace queries from an unpublished linked-worktree
-home can fall back to the member's published parent index while its own index
-warms. The footer reads like `lunatic@wt warming → served from lunatic index
-(3 files differ)`. A `differs` hit can retain coordinates from the parent index.
-`show` re-extracts a changed file from current worktree bytes when possible; if
-re-extraction fails, it can retain parent-index bytes marked unverified. Check
-`verified` and `source` before claiming that shown bytes are current. An exact
-`sym:` miss with no parent-index candidate refreshes divergence and checks at
+...` or `--root DIR`). Workspace-home and standalone reads can fall back to its
+published parent index through the default cache while its index warms. The
+footer reads like `lunatic@wt warming → served from lunatic index (3 files differ)`.
+A `differs` hit can retain parent coordinates. `show` re-extracts changed files;
+explicit paths read current bytes pre-index; `refs` stays index-only. Failed
+re-extraction may show unverified parent bytes; check `verified` and `source`.
+An exact `sym:` miss with no parent-index candidate refreshes divergence and checks at
 most 64 changed files. If more than 64 paths changed, Git probing fails, or a
 changed file remains unchecked, coverage is partial and truncated, so absence
 is not exhaustive and home does not widen.
-Other fallback reads can reuse cached divergence for up to five seconds. Without
-a published parent index, the footer says `warming (no parent index)`. See the
+Fallback reads reuse divergence for five seconds; `show`/`ctx` handles keep parent identity.
+`more` pages survive parent republishes. Without a parent, the footer says
+`warming (no parent index)`. See the
 [workspace contract](https://github.com/usips/trufflepig/blob/master/docs/workspace-contract.md) and
 [index contract](https://github.com/usips/trufflepig/blob/master/docs/index-contract.md).
 

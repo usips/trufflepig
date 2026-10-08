@@ -1,3 +1,4 @@
+mod local_access_tests;
 mod no_daemon_tests;
 mod router_api_version_tests;
 mod router_probe_cache_tests;
@@ -12,6 +13,7 @@ struct FakeGateway {
     replies: VecDeque<Result<Option<String>>>,
     requests: Vec<Vec<String>>,
     ensured: usize,
+    socket_denied: bool,
 }
 impl BoardGateway for FakeGateway {
     fn request(&mut self, args: &[String], _: &RequestContext) -> Result<Option<String>> {
@@ -21,6 +23,13 @@ impl BoardGateway for FakeGateway {
     fn ensure(&mut self) -> Result<()> {
         self.ensured += 1;
         Ok(())
+    }
+    fn probe_socket(&mut self, _: &Path) -> std::io::Result<()> {
+        if self.socket_denied {
+            Err(std::io::ErrorKind::PermissionDenied.into())
+        } else {
+            Err(std::io::ErrorKind::ConnectionRefused.into())
+        }
     }
 }
 

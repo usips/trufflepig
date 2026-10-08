@@ -13,6 +13,7 @@ fn vendor_attribution_uses_email_domain_and_retains_model_claim() {
         ("google.com", "gemini"),
         ("qwen.ai", "qwen"),
         ("meta.com", "muse"),
+        ("muse.ai", "muse"),
     ] {
         let coauthor = parse_coauthor(&format!("Model claim <agent@{domain}>")).unwrap();
         assert_eq!(coauthor.harness.as_str(), label);
@@ -28,13 +29,34 @@ fn vendor_attribution_uses_email_domain_and_retains_model_claim() {
 }
 
 #[test]
-fn meta_com_coauthors_map_to_one_muse_identity() {
-    // Both Muse addresses seen in the wild share one harness identity.
-    for email in ["noreply@meta.com", "muse-spark@meta.com"] {
+fn muse_coauthor_domains_map_by_domain_without_using_the_name() {
+    for email in ["noreply@meta.com", "muse-spark@meta.com", "noreply@muse.ai"] {
         let coauthor = parse_coauthor(&format!("Muse Spark <{email}>")).unwrap();
         assert_eq!(coauthor.harness.as_str(), "muse", "{email}");
         assert_eq!(coauthor.email, email);
     }
+
+    assert_eq!(
+        parse_coauthor("Claude <noreply@muse.ai>")
+            .unwrap()
+            .harness
+            .as_str(),
+        "muse"
+    );
+    assert_eq!(
+        parse_coauthor("Muse Spark <agent@example.test>")
+            .unwrap()
+            .harness
+            .as_str(),
+        "git:agent@example.test"
+    );
+    assert_eq!(
+        parse_coauthor("Muse Spark <agent@muse.ai.attacker.test>")
+            .unwrap()
+            .harness
+            .as_str(),
+        "git:agent@muse.ai.attacker.test"
+    );
 }
 
 #[test]

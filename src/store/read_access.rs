@@ -3,7 +3,7 @@
 use super::{Store, StoreAccess, encode_path};
 use crate::daemon::deadline::QueryDeadline;
 use anyhow::{Context, Result, bail, ensure};
-use rusqlite::{Connection, OpenFlags, OptionalExtension};
+use rusqlite::{Connection, Error as SqliteError, ErrorCode, OpenFlags, OptionalExtension};
 use std::{path::Path, time::Duration};
 
 /// Longest a reader waits on a SQLite lock (capped by its query deadline).
@@ -95,6 +95,16 @@ impl Store {
 /// Whether `error` is [`Store::open_read`]'s unpublished-index answer.
 pub fn is_index_warming(error: &anyhow::Error) -> bool {
     error.to_string().starts_with("index_warming:")
+}
+
+/// Whether SQLite returned its specific `CANTOPEN` result while opening an index.
+/// Callers decide whether a separately verified parent is safe to use.
+pub fn is_index_cannot_open(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause.downcast_ref::<SqliteError>().is_some_and(|error| {
+            matches!(error, SqliteError::SqliteFailure(failure, _) if failure.code == ErrorCode::CannotOpen)
+        })
+    })
 }
 
 /// The recorded root and generation; an index whose schema is still being

@@ -57,6 +57,13 @@ pub struct Hit {
     /// identical occurrences; absent otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repeats: Option<usize>,
+    /// The hit is from a parent index whose worktree file has changed.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub differs: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 /// One trimmed source line (at most 120 characters) previewing a hit. It locates
@@ -119,6 +126,9 @@ pub(crate) fn compact_hit(
     }
     if let Some(repeats) = hit.repeats {
         value.insert("repeats".into(), repeats.into());
+    }
+    if hit.differs {
+        value.insert("differs".into(), true.into());
     }
     if let Some(target) = &hit.target {
         value.insert("target".into(), compact_target(target, root, names)?);

@@ -68,6 +68,7 @@ pub(super) fn resolve(store: &Store, value: &str) -> Result<Selection> {
                 target: None,
                 repeats: None,
                 snippet: None,
+                differs: false,
             })
         })?;
         let mut hits = Vec::with_capacity(16);

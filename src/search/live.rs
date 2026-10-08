@@ -129,6 +129,7 @@ pub(super) fn live_regex(
                     &[],
                     "",
                 ),
+                differs: false,
             });
         }
     }

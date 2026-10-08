@@ -70,12 +70,19 @@ pub(in crate::board::local_board) fn new_plan(
         None,
         title.as_str(),
     )?;
-    Ok(ctx.change_reply(
+    let mut reply = ctx.change_reply(
         entry,
         Some(plan),
         Some(PlanRevision { plan, revision: 1 }),
         None,
-    ))
+    );
+    if steward.is_none() && ctx.actor.harness.as_str() != "human" {
+        reply.warnings.push(format!(
+            "{plan} has no steward; only owner {} acting as human can accept or reject proposals or edit this plan. Creating a plan does not grant approval authority. For a new plan, explicitly delegate with board new --steward {} TITLE",
+            ctx.actor.user, ctx.actor.harness
+        ));
+    }
+    Ok(reply)
 }
 
 pub(in crate::board::local_board) fn propose(

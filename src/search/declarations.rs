@@ -11,7 +11,10 @@ use crate::{
 };
 use anyhow::Result;
 use rusqlite::params;
-use std::{cmp::Reverse, path::Path};
+use std::{
+    cmp::Reverse,
+    path::{Path, PathBuf},
+};
 
 /// Root-relative directory a command was invoked from (empty at the root).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -36,6 +39,11 @@ impl InvocationDirectory {
                 )
             })
             .unwrap_or_default()
+    }
+
+    /// Invocation directory relative to the selected root.
+    pub(crate) fn member_relative_path(&self) -> Result<PathBuf> {
+        crate::store::decode_path(&self.0)
     }
 
     /// Leading directory components shared with `path`'s directory.

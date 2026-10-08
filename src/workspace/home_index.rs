@@ -13,13 +13,16 @@ mod worktree_reads;
 use super::member_root::{MemberRoot, linked_root_of_member};
 use crate::{
     daemon::deadline::{QueryDeadline, TIMED_OUT},
-    store::{Store, is_index_warming},
+    store::{Store, is_index_cannot_open, is_index_warming},
 };
-use anyhow::Result;
-pub(super) use hit_verification::{DifferingFiles, WorktreeHashes};
-pub(super) use parent_show::{acquire_home_read, reextracted_entry};
+use anyhow::{Context, Result, ensure};
+pub(super) use hit_verification::DifferingFiles;
+pub(crate) use hit_verification::WorktreeHashes;
+pub(super) use parent_show::acquire_home_read;
+pub(crate) use parent_show::{acquire_through_parent, reextracted_entry};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{path::Path, time::Duration};
+use std::{os::unix::fs::MetadataExt, path::Path, time::Duration};
 pub(super) use worktree_divergence::WorktreeDivergence;
 
 /// How long a daemon-backed query waits for the home member's first publication
@@ -57,16 +60,87 @@ pub(super) enum HomeIndexSource {
 }
 
 /// A parent member's published index reading a warming worktree's bytes.
-pub(super) struct ParentIndexView {
+pub(crate) struct ParentIndexView {
     pub store: Store,
     pub fallback: ParentFallback,
 }
 
 /// What a parent-index answer must disclose and repair for its worktree.
-pub(super) struct ParentFallback {
+pub(crate) struct ParentFallback {
     pub divergence: WorktreeDivergence,
     /// `MEMBER index`, the index that answered.
     pub served_from: String,
+}
+
+/// Immutable index identity attached to result sets answered by a parent.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub(crate) struct ParentIndexIdentity {
+    pub root: String,
+    pub index_epoch: String,
+    pub generation: i64,
+    pub served_from: String,
+    pub worktree_root: String,
+    pub worktree_device: u64,
+    pub worktree_inode: u64,
+}
+
+impl ParentIndexIdentity {
+    pub(crate) fn validate_publication(&self, store: &Store) -> Result<()> {
+        let publication = store
+            .publication()?
+            .context("stale_result: saved parent index is unpublished; search again")?;
+        ensure!(
+            publication.root == self.root
+                && publication.index_epoch == self.index_epoch
+                && publication.generation == self.generation,
+            "stale_result: parent index changed; search again"
+        );
+        Ok(())
+    }
+
+    pub(crate) fn capture(store: &Store, fallback: &ParentFallback) -> Result<Self> {
+        let publication = store
+            .publication()?
+            .context("stale_result: parent index has no published identity")?;
+        let worktree = store.root.metadata()?;
+        Ok(Self {
+            root: crate::store::encode_path(store.index_root()),
+            index_epoch: publication.index_epoch,
+            generation: publication.generation,
+            served_from: fallback.served_from.clone(),
+            worktree_root: crate::store::encode_path(&store.root),
+            worktree_device: worktree.dev(),
+            worktree_inode: worktree.ino(),
+        })
+    }
+}
+
+/// Uses a published main-checkout index for a standalone linked worktree only
+/// when its caller already selected the worktree's default cache. A custom
+/// cache remains isolated and is never guessed from Git metadata.
+pub(crate) fn standalone_parent_view(
+    root: &Path,
+    cache: &Path,
+    deadline: QueryDeadline,
+) -> Option<ParentIndexView> {
+    let root = root.canonicalize().ok()?;
+    let default_cache = crate::cli::cache_path(&root, None).ok()?;
+    if cache != default_cache {
+        return None;
+    }
+    let member = super::member_root::standalone_worktree(&root)?;
+    std::fs::create_dir_all(cache).ok()?;
+    crate::system::sweep::record_cache_root(cache, &root);
+    match resolve_home_index(
+        &member,
+        cache,
+        None,
+        HomeIndexPolicy::AwaitDaemon(Duration::ZERO),
+        deadline,
+    ) {
+        HomeIndexSource::Parent(view) => Some(view),
+        _ => None,
+    }
 }
 
 /// Opens the index that answers for `member` under `policy`. Only a linked
@@ -115,9 +189,13 @@ fn resolve(
         HomeIndexPolicy::AwaitDaemon(_) => Duration::ZERO,
     };
     let until = std::time::Instant::now() + wait;
+    let mut cannot_open = None;
     loop {
         match Store::open_read(&member.root, member_cache, deadline) {
             Err(error) if is_index_warming(&error) => {}
+            Err(error) if is_index_cannot_open(&error) && member.worktree.is_some() => {
+                cannot_open = Some(error);
+            }
             opened => return Ok(HomeIndexSource::Own(opened?)),
         }
         if member.worktree.is_some()
@@ -126,6 +204,13 @@ fn resolve(
             return Ok(HomeIndexSource::Parent(view));
         }
         if std::time::Instant::now() >= until {
+            if let Some(error) = cannot_open {
+                return Ok(HomeIndexSource::Unavailable {
+                    reason: format!(
+                        "index_cache_unavailable: could not open the linked worktree index; check cache permissions or run `trufflepig index`: {error:#}"
+                    ),
+                });
+            }
             return Ok(HomeIndexSource::Warming {
                 reason: member.worktree.is_some().then_some(NO_PARENT_INDEX),
             });
@@ -166,7 +251,7 @@ fn parent_view(
 impl ParentFallback {
     /// Records the fallback on a member's coverage row: `state: parent_fallback`,
     /// the home's own state, the answering index, and what differs.
-    pub(super) fn describe(&self, row: &mut Value, differing: &DifferingFiles, hits: usize) {
+    pub(crate) fn describe(&self, row: &mut Value, differing: &DifferingFiles, hits: usize) {
         row["state"] = "parent_fallback".into();
         row["home_state"] = "warming".into();
         row["served_from"] = self.served_from.clone().into();

@@ -1,5 +1,6 @@
 """Core installer contracts: links, runtimes, and config stores."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -24,6 +25,39 @@ class AgentInstallTests(AgentInstallCase):
                                 env=dict(self.env, TRUFFLEPIG_BINARY="/nonexistent"), capture_output=True)
         self.assertEqual(result.returncode, 127, result.stderr)
         self.assertNotIn(b"ModuleNotFoundError", result.stderr)
+
+    def test_installed_wrapper_runs_by_absolute_path_outside_shell_path(self):
+        result = self.install("--codex")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        wrapper = self.root / ".local/bin/trufflepig-agent"
+        fake_cli = self.root / "fake trufflepig"
+        fake_cli.write_text(f'''#!{sys.executable}
+import json
+import os
+import sys
+from pathlib import Path
+Path(os.environ["CAPTURE"]).write_text(json.dumps(sys.argv[1:]))
+print(json.dumps({{"hits": [], "truncated": False}}))
+''')
+        fake_cli.chmod(0o755)
+        capture = self.root / "forwarded-arguments.json"
+        path = os.pathsep.join((str(Path(sys.executable).parent), "/usr/bin", "/bin"))
+        self.assertNotIn(str(wrapper.parent), path.split(os.pathsep))
+        env = dict(self.env, PATH=path, TRUFFLEPIG_BINARY=str(fake_cli),
+                   TRUFFLEPIG_AGENT_HARNESS="codex", TRUFFLEPIG_SESSION="install-test-session",
+                   CAPTURE=str(capture))
+        result = subprocess.run([str(wrapper), "search", "installed-wrapper-probe"],
+                                env=env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        forwarded = json.loads(capture.read_text())
+        self.assertIn("search", forwarded)
+        self.assertIn("installed-wrapper-probe", forwarded)
+        self.assertIn("--session", forwarded)
+        self.assertIn("install-test-session", forwarded)
+
+        for profile in (".profile", ".bash_profile", ".bashrc", ".zprofile", ".zshrc"):
+            self.assertFalse((self.root / profile).exists(), profile)
 
     def test_unmanaged_skill_prevents_partial_installation(self):
         skill = self.root / ".agents/skills/trufflepig-code-search"

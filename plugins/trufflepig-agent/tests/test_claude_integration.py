@@ -153,6 +153,63 @@ class ClaudeIntegrationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertIn("attribution unavailable", result.stderr)
 
+    def test_subagent_identity_context_uses_session_and_agent_ids(self):
+        payload = {"hook_event_name": "SubagentStart", "session_id": "abc123",
+                   "agent_id": "agent-abc123", "agent_type": "Explore",
+                   "transcript_path": "/home/user/.claude/projects/project/abc123.jsonl",
+                   "cwd": str(self.root)}
+        env_file = self.root / "parent-session.env"
+        env_file.write_text("export TRUFFLEPIG_CLAUDE_SESSION=abc123\n")
+        env = dict(self.env, CLAUDE_ENV_FILE=str(env_file), TRUFFLEPIG_AGENT_STEER="off")
+        result = subprocess.run([str(PLUGIN / "hooks/claude-session.py")], input=json.dumps(payload),
+                                env=env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertEqual(context.count("TRUFFLEPIG_SESSION="), 2)
+        self.assertIn("including `board hello`", context)
+        self.assertIn("trufflepig-agent board hello MODEL", context)
+        self.assertNotIn("Use `trufflepig-agent` via Bash for code search", context)
+        self.assertEqual(env_file.read_text(), "export TRUFFLEPIG_CLAUDE_SESSION=abc123\n")
+
+        same = subprocess.run([str(PLUGIN / "hooks/claude-session.py")], input=json.dumps(payload),
+                              env=env, capture_output=True, text=True)
+        self.assertEqual(json.loads(same.stdout)["hookSpecificOutput"]["additionalContext"], context)
+        different_agent = dict(payload, agent_id="agent-def456")
+        changed = subprocess.run([str(PLUGIN / "hooks/claude-session.py")], input=json.dumps(different_agent),
+                                 env=env, capture_output=True, text=True)
+        changed_context = json.loads(changed.stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertNotEqual(changed_context, context)
+        self.assertEqual(env_file.read_text(), "export TRUFFLEPIG_CLAUDE_SESSION=abc123\n")
+        changed_session = dict(payload, session_id="def456")
+        changed = subprocess.run([str(PLUGIN / "hooks/claude-session.py")], input=json.dumps(changed_session),
+                                 env=env, capture_output=True, text=True)
+        self.assertNotEqual(
+            json.loads(changed.stdout)["hookSpecificOutput"]["additionalContext"], context
+        )
+        self.assertEqual(env_file.read_text(), "export TRUFFLEPIG_CLAUDE_SESSION=abc123\n")
+
+    def test_subagent_without_ids_warns_against_shared_parent_attribution(self):
+        base = {"hook_event_name": "SubagentStart", "session_id": "abc123",
+                "agent_id": "agent-abc123", "agent_type": "Explore",
+                "transcript_path": "/home/user/.claude/projects/project/abc123.jsonl",
+                "cwd": str(self.root)}
+        env_file = self.root / "parent-session.env"
+        env_file.write_text("export TRUFFLEPIG_CLAUDE_SESSION=abc123\n")
+        env = dict(self.env, CLAUDE_ENV_FILE=str(env_file), TRUFFLEPIG_AGENT_STEER="off")
+
+        for field in ("session_id", "agent_id"):
+            payload = dict(base)
+            del payload[field]
+            result = subprocess.run([str(PLUGIN / "hooks/claude-session.py")], input=json.dumps(payload),
+                                    env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+            self.assertIn("attribution is unavailable", context)
+            self.assertIn("ask the parent for a unique TRUFFLEPIG_SESSION override", context)
+            self.assertIn("Do not run `trufflepig-agent board hello`", context)
+            self.assertNotIn("TRUFFLEPIG_SESSION=claude-agent-", context)
+            self.assertEqual(env_file.read_text(), "export TRUFFLEPIG_CLAUDE_SESSION=abc123\n")
+
 
 if __name__ == "__main__":
     unittest.main()

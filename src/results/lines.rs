@@ -39,6 +39,9 @@ pub(crate) fn entry_line(entry: &ResultEntry, member: Option<&str>, detail: HitD
             if let Some(repeats) = hit.repeats {
                 let _ = write!(line, "\t×{repeats}");
             }
+            if hit.differs {
+                line.push_str("\tdiffers");
+            }
             if detail.snippets
                 && let Some(snippet) = &hit.snippet
             {
@@ -112,6 +115,16 @@ pub(crate) fn single_repo_coverage(coverage: &Value) -> String {
     }
     if let Some(endpoint) = coverage["endpoint"].as_str() {
         parts.push(format!("endpoint {endpoint}"));
+    }
+    if coverage["state"] == "parent_fallback" {
+        if let Some(served_from) = coverage["served_from"].as_str() {
+            parts.push(format!("worktree index warming; served from {served_from}"));
+        }
+        if let Some(differing_hits) = coverage["differing_hits"].as_u64()
+            && differing_hits > 0
+        {
+            parts.push(format!("{differing_hits} differing hits"));
+        }
     }
     if let Some(diagnosis) = coverage["filter_diagnosis"].as_str() {
         parts.push(diagnosis.to_owned());
@@ -191,6 +204,7 @@ mod tests {
                 line: 4,
                 text: "fn run() {".into(),
             }),
+            differs: false,
         })
     }
 

@@ -44,6 +44,7 @@ impl ReextractedDefinition {
             target: None,
             repeats: None,
             snippet: None,
+            differs: false,
         }
     }
 }
@@ -136,6 +137,7 @@ mod tests {
             target: None,
             repeats: None,
             snippet: None,
+            differs: false,
         }
     }
 

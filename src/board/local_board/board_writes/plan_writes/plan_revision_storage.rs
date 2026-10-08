@@ -95,9 +95,27 @@ pub(super) fn require_authority(
     if can_accept(tx, &ctx.actor, plan)? {
         Ok(())
     } else {
+        let (owner, steward): (String, Option<String>) = tx
+            .query_row(
+                "SELECT owner_user,steward FROM plans WHERE id=?1",
+                [sql_number(plan.get())],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(sql_error)?;
+        let guidance = match steward {
+            Some(steward) => format!(
+                "ask owner {owner} acting as human or steward {steward} under that user to make this decision"
+            ),
+            None => format!(
+                "no steward is assigned; ask owner {owner} acting as human to make this decision. Creating a plan does not grant approval authority; new plans can explicitly delegate with board new --steward HARNESS TITLE"
+            ),
+        };
         Err(invalid(
             "invalid_actor",
-            format!("{} is not the owner or steward of {plan}", ctx.actor),
+            format!(
+                "{} is not the owner or steward of {plan}; {guidance}",
+                ctx.actor
+            ),
         ))
     }
 }

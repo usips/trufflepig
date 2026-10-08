@@ -82,27 +82,26 @@ or discover unrelated siblings.
 
 ## Retrieval and output
 
-A query without a selector searches the home member when the invocation is
-inside one. An unpublished linked-worktree home answers at once from its
-member's published index (`src/workspace/home_index.rs`, below); otherwise a
-daemon-backed query waits up to eight seconds. Home without hits widens to all members; warming,
-unavailable, and incomplete homes do not. The page records the scope; lines append it to coverage.
-Outside any member, queries search all members. `in:NAME` and `--member NAME`
-select a member; `ws:home` selects home and `ws:all` selects the whole
-workspace, and explicit selectors never widen. Selectors do not establish
-dependency, import, or compiler-resolution relationships.
+Unscoped queries inside a member search home. An unpublished linked-worktree home answers immediately
+from its member's published index (`src/workspace/home_index.rs`); standalone queries use the same
+fallback through the default cache. Standalone custom caches remain isolated. Otherwise daemon queries
+wait up to eight seconds. Empty home results widen to all members; warming, unavailable, and incomplete
+homes do not. Pages record scope; lines append it to coverage. Outside members, queries search all members.
+`in:NAME` and `--member NAME` select a member; `ws:home` selects home and `ws:all` selects the workspace.
+Explicit selectors never widen or establish dependency, import, or compiler-resolution relationships.
 
-A parent-index answer reads worktree bytes; its row has `state: parent_fallback`, `home_state`,
-`served_from`, `differs` (`null` when unknown), and `differing_hits`. Lines read `MEMBER@WT warming
-→ served from MEMBER index (N files differ)`, `(1 file differs)`, `(no files differ)`, or
-`(differences unknown)`; changed-file hits ([index](index-contract.md)) end in `differs`. `sym:`,
-`map FILE`, and `show` re-extract changed files (`served_from: MEMBER index; re-extracted in
-worktree`). Without a published parent, home reads `MEMBER@WT warming (no parent index)`. An exact
-`sym:` miss without a parent-index candidate refreshes divergence and examines at most 64 changed
-files. More than 64 changed paths, a failed Git probe, or an unchecked changed file makes coverage
-partial and truncated: absence is not exhaustive and home does not widen. Other fallback reads can
-reuse cached divergence for up to five seconds. Without an index, reads (including `show path:`)
-answer `index_warming` unless `--no-daemon` indexes first.
+Parent answers read worktree bytes. Coverage records `state: parent_fallback`, `home_state`, `served_from`,
+`differs` (`null` when unknown), and `differing_hits`. Lines read `MEMBER@WT warming → served from MEMBER index`
+with `(N files differ)`, `(1 file differs)`, `(no files differ)`, or `(differences unknown)`. Changed-file hits
+([index](index-contract.md)) end in `differs`. `sym:`, `map FILE`, and `show` re-extract changed files
+(`served_from: MEMBER index; re-extracted in worktree`). Without a parent, home reads `MEMBER@WT warming
+(no parent index)`. An exact `sym:` miss without a parent candidate refreshes divergence and examines up to
+64 changed files. More paths, a failed Git probe, or an unchecked file makes coverage partial and truncated;
+absence is not exhaustive and home does not widen. Other reads may reuse divergence for five seconds.
+Standalone fallback handles retain the parent publication identity; `show` and `ctx` reject changed publications.
+`more` pages immutable worktree result snapshots across parent republishes, but rejects replaced worktrees.
+Explicit `show path:` reads current bytes even when the index is warming or unavailable. `search`, `map`,
+`refs`, and `sym:` require an index and return `index_warming` without one unless `--no-daemon` indexes first.
 
 Each member produces its existing ranked candidate list. Retrieval collapses
 each lane to one representative occurrence per file, then fuses file ranks with

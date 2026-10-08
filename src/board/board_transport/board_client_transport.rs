@@ -10,6 +10,8 @@ use std::{
     time::SystemTime,
 };
 
+mod local_access;
+
 /// Retains the router capability only while this transport serves requests.
 #[derive(Default)]
 pub(crate) struct BoardClientTransport {
@@ -19,6 +21,12 @@ pub(crate) struct BoardClientTransport {
 trait BoardGateway {
     fn request(&mut self, args: &[String], context: &RequestContext) -> Result<Option<String>>;
     fn ensure(&mut self) -> Result<()>;
+
+    /// Checks whether the known router socket is denied after normal routing
+    /// has already tried both the socket and sandbox spool.
+    fn probe_socket(&mut self, path: &Path) -> std::io::Result<()> {
+        local_access::probe_socket(path)
+    }
 }
 
 struct SystemGateway;
@@ -80,6 +88,9 @@ impl BoardClientTransport {
             };
             let mut recent = false;
             if status.is_none() {
+                if let Some(error) = local_access::denied_router_socket(gateway, runtime, load)? {
+                    return failed_request(command, options, context, load, spool, error);
+                }
                 recent = runtime.is_some_and(|runtime| {
                     crate::system::board_router_recently_unavailable(runtime, SystemTime::now())
                 });
@@ -134,6 +145,9 @@ impl BoardClientTransport {
                 Ok(reply)
             }
             Ok(None) => {
+                if let Some(error) = local_access::denied_router_socket(gateway, runtime, load)? {
+                    return failed_request(command, options, context, load, spool, error);
+                }
                 if let Some(runtime) = runtime {
                     let _ =
                         crate::system::mark_board_router_unavailable(runtime, SystemTime::now());
@@ -223,14 +237,14 @@ fn local_reply(
         if let Some(runtime) = runtime {
             crate::system::validate_board_database(runtime, &config.db_path)?;
         }
-        refuse_stale_storage_beside_router(command, options, context, &config, spool)?;
-        return run_local(command, options, context, &config, spool);
+        refuse_stale_storage_beside_router(command, options, context, &config, runtime, spool)?;
+        return run_local(command, options, context, &config, runtime, spool);
     }
     let config = load()?;
     if let Some(runtime) = runtime {
         crate::system::validate_board_database(runtime, &config.db_path)?;
     }
-    run_local(command, options, context, &config, spool)
+    run_local(command, options, context, &config, runtime, spool)
 }
 
 /// Opens read-only beside a live router, so missing or stale storage refuses
@@ -240,6 +254,7 @@ fn refuse_stale_storage_beside_router(
     options: &Arguments,
     context: &RequestContext,
     config: &BoardConfig,
+    runtime: Option<&Path>,
     spool: &Path,
 ) -> Result<()> {
     use crate::board::local_board::LocalBoard;
@@ -250,15 +265,14 @@ fn refuse_stale_storage_beside_router(
         {
             bail!("board_unavailable: router owns migration")
         }
-        Err(error) => crate::board::unavailable_or_queue(
-            command,
-            options,
-            context,
-            config,
-            spool,
-            error.into(),
-        )
-        .map(|_| ()),
+        Err(error) => {
+            let error = anyhow::Error::from(error);
+            if local_access::is_storage_access_failure(&error) {
+                return Err(local_access::storage_access_advice(error, config, runtime));
+            }
+            crate::board::unavailable_or_queue(command, options, context, config, spool, error)
+                .map(|_| ())
+        }
     }
 }
 
@@ -267,10 +281,20 @@ fn run_local(
     options: &Arguments,
     context: &RequestContext,
     config: &BoardConfig,
+    runtime: Option<&Path>,
     spool: &Path,
 ) -> Result<String> {
     match BoardHost::with_config(config.clone()).run(options, context, QueryDeadline::start()) {
         Ok(reply) => Ok(reply),
+        Err(error)
+            if local_access::is_storage_access_failure(&error)
+                && !matches!(
+                    command,
+                    BoardCommand::Op(crate::board::BoardOp::Feedback { .. })
+                ) =>
+        {
+            Err(local_access::storage_access_advice(error, config, runtime))
+        }
         Err(error) => {
             crate::board::unavailable_or_queue(command, options, context, config, spool, error)
         }

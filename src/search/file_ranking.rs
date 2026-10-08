@@ -219,6 +219,7 @@ mod tests {
             target: None,
             repeats: None,
             snippet: None,
+            differs: false,
         }
     }
 

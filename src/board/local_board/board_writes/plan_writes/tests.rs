@@ -3,6 +3,7 @@ use crate::board::board_backend::BoardBackend;
 use crate::board::board_ids::PlanRevision;
 use std::time::Duration;
 
+mod approval_guidance;
 mod decision_events;
 mod proposal_lifecycle;
 

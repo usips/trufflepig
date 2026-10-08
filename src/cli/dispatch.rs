@@ -3,11 +3,12 @@ use super::{Arguments, emission, request_context, validate};
 use crate::{
     daemon::deadline::QueryDeadline,
     output::OutputBudget,
-    results, search, source,
-    store::{Store, is_index_warming},
+    store::{Store, is_index_cannot_open, is_index_warming},
 };
 use anyhow::{Context, Result, bail, ensure};
 use std::path::Path;
+
+mod standalone_worktree_reads;
 
 pub fn local(
     root: &Path,
@@ -157,24 +158,26 @@ fn local_dispatch(
             ),
         };
     }
-    let mut store = if matches!(verb, "show" | "more" | "ctx" | "search" | "refs" | "map") {
-        read_store(root, cache, options, daemon_running, &mut deadline)?
-    } else if verb == "status" {
-        match Store::open_read(root, cache, deadline) {
-            Err(error) if is_index_warming(&error) => {
-                if deadline.expired() {
-                    bail!(
-                        "{}: query deadline expired",
-                        crate::daemon::deadline::TIMED_OUT
-                    );
+    let (mut store, mut parent_fallback) =
+        if matches!(verb, "show" | "more" | "ctx" | "search" | "refs" | "map") {
+            read_store(root, cache, options, daemon_running, &mut deadline)?
+        } else if verb == "status" {
+            let store = match Store::open_read(root, cache, deadline) {
+                Err(error) if is_index_warming(&error) => {
+                    if deadline.expired() {
+                        bail!(
+                            "{}: query deadline expired",
+                            crate::daemon::deadline::TIMED_OUT
+                        );
+                    }
+                    return warming_status(root, cache, daemon_running, &budget);
                 }
-                return warming_status(root, cache, daemon_running, &budget);
-            }
-            opened => opened?,
-        }
-    } else {
-        Store::open(root, cache)?
-    };
+                opened => opened?,
+            };
+            (store, None)
+        } else {
+            (Store::open(root, cache)?, None)
+        };
     let argument = || {
         options
             .words
@@ -270,40 +273,11 @@ fn local_dispatch(
         "index"|"init"=>{let coverage=store.index()?;budget.render(&serde_json::json!({"generation":store.generation()?,"coverage":coverage}))},
         "doctor"=>budget.render(&crate::probes::doctor(&store, cache, session)?),
         "status"=>budget.render(&serde_json::json!({"generation":store.generation()?,"coverage":store.coverage()?,"semantic_feature":cfg!(feature="semantic"),"tokenizer":"o200k_base"})),
-        "show"=>source::show_with_side(&store,&source::acquisition::show_target(&options.words).context("usage: command requires an explicit argument")?,options.side.as_deref().map(source::SourceSide::parse).transpose()?,&page_budget),
-        "more"=>results::more(&store,argument()?,options.limit,&page_budget),
-        "ctx"=>search::context(&store,argument()?,&budget),
+        "show"=>standalone_worktree_reads::show_read(root,cache,store,parent_fallback.take(),options,&page_budget,deadline),
+        "more"=>standalone_worktree_reads::more_read(&store,argument()?,options.limit,&page_budget),
+        "ctx"=>standalone_worktree_reads::context_read(root,cache,&store,argument()?,deadline,&budget),
         "search" | "refs" | "map" => {
-            let set=match verb {
-                "refs"=>search::references(&store,&search::reference_query(&options.words[1..].join(" "))?)?,
-                "map"=>{let set=search::map(&store,options.words.get(1).map(String::as_str).unwrap_or(""))?;if let Some(miss)=search::map_miss(&set){bail!("{miss}")}set},
-                "search"=>{
-                    let text=options.words[1..].join(" ");
-                    if text.starts_with("refs:"){search::references(&store,&search::reference_query(&text)?)?}
-                    else{{
-                        let mut trace = if options.diagnostics == "off" { search::telemetry::RetrievalTrace::disabled() } else { search::telemetry::RetrievalTrace::default() };
-                        let query = search::Query::parse(&text)?;
-                        let preparation_error = if options.sem && !options.no_daemon && !query.exact && !query.regex {
-                            preparation_manager.and_then(|manager| manager.schedule(root, cache).err())
-                        } else { None };
-                        let mut result = search::search_with_session(&store,&query,options.sem,options.rerank,cache,session,&mut trace);
-                        if let (Some(error), Ok(set)) = (preparation_error, &mut result) {
-                            set.coverage["semantic_preparation_error"] = error.to_string().into();
-                        }
-                        let mut event = crate::diagnostics::RequestEvent::new(context.clone(), crate::diagnostics::Operation::Search, if result.is_ok() { crate::diagnostics::Outcome::Success } else { crate::diagnostics::Outcome::Failure });
-                        event.stage = crate::diagnostics::EventStage::Server;
-                        event.retrieval = Some(trace);
-                        if options.diagnostics != "off" {
-                            if let Some(queue) = log_queue { queue.record(event); }
-                            else { crate::diagnostics::best_effort_record(cache, emission::diagnostics_mode(options), event); }
-                        }
-                        result?
-                    }}
-                }
-                _=>unreachable!(),
-            };
-            let id=results::save(&store,set)?;
-            results::page(&store,&id,0,options.limit,&page_budget)
+            standalone_worktree_reads::retrieve_read(root,cache,&store,parent_fallback.take(),verb,options,session,context,log_queue,preparation_manager,&page_budget)
         }
         _ => bail!("invalid_command: unknown command {verb}; use search for queries"),
     };
@@ -317,21 +291,19 @@ fn local_dispatch(
     Ok(response)
 }
 
-/// The query-only store for a read verb. Only a client that no daemon serves
-/// (or `--no-daemon`) reconciles in the request: searches first, and any read
-/// of an unpublished index, paused off `deadline` so only the query spends its
-/// budget. Without `--no-daemon` it never waits for the writer lease: a daemon
-/// that started scanning meanwhile leaves the index warming. An unpublished
-/// index answers `index_warming` for searches and `sym:` reads; `more`, `ctx`,
-/// handle, and path reads use an empty unpublished view that writes nothing.
+/// Opens a query-only store, reconciling index-backed reads when no daemon serves
+/// them. Reconciliation pauses the query deadline and only `--no-daemon` waits
+/// for the writer lease. Paths and saved results can use an unpublished view;
+/// saved parent handles reopen their exact owner independently of this view.
 fn read_store(
     root: &Path,
     cache: &Path,
     options: &Arguments,
     daemon_running: bool,
     deadline: &mut QueryDeadline,
-) -> Result<Store> {
+) -> Result<(Store, Option<crate::workspace::ParentFallback>)> {
     let verb = options.words.first().map_or("status", String::as_str);
+    let reads_without_index = standalone_worktree_reads::can_read_without_index(options);
     let reconciles = !daemon_running && (options.no_daemon || !crate::daemon::running(cache));
     let reconcile = || -> Result<()> {
         let mut store = Store::open(root, cache)?;
@@ -346,25 +318,37 @@ fn read_store(
         deadline.pause_during(reconcile)?;
     }
     let opened = match Store::open_read(root, cache, *deadline) {
-        Err(error) if is_index_warming(&error) && reconciles => {
+        Err(error) if is_index_warming(&error) && reconciles && !reads_without_index => {
             deadline.pause_during(reconcile)?;
             Store::open_read(root, cache, *deadline)
         }
         opened => opened,
     };
     match opened {
+        Ok(store) => Ok((store, None)),
         Err(error)
-            if is_index_warming(&error)
-                && !matches!(verb, "search" | "refs" | "map")
-                && !options
-                    .words
-                    .get(1)
-                    .is_some_and(|target| target.starts_with("sym:")) =>
-        {
+            if reads_without_index && (is_index_warming(&error) || is_index_cannot_open(&error)) => {
             std::fs::create_dir_all(cache)?;
-            Store::unpublished(root, cache)
+            Ok((Store::unpublished(root, cache)?, None))
         }
-        opened => opened,
+        Err(error) if standalone_worktree_reads::can_use_parent(root, cache, options, &error) => {
+            if let Some(view) = crate::workspace::standalone_parent_view(
+                root, cache, *deadline,
+            ) {
+                return Ok((view.store, Some(view.fallback)));
+            }
+            if is_index_cannot_open(&error) {
+                Err(error).context(
+                    "index_cache_unavailable: could not open the linked-worktree index and no published parent index is available; check cache permissions or run `trufflepig index`",
+                )
+            } else {
+                Err(error)
+            }
+        }
+        Err(error) if is_index_cannot_open(&error) => Err(error).context(
+            "index_cache_unavailable: could not open the index; check cache permissions or run `trufflepig index`",
+        ),
+        Err(error) => Err(error),
     }
 }
 
@@ -400,6 +384,7 @@ fn ensure_semantic_check_arity(options: &Arguments) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{search, source};
     use std::time::{Duration, Instant};
 
     #[test]
@@ -412,7 +397,8 @@ mod tests {
         let started = Instant::now();
         let options =
             super::super::parse(&["--no-daemon".to_owned(), "search".to_owned()]).unwrap();
-        let store = read_store(root.path(), cache.path(), &options, false, &mut deadline).unwrap();
+        let (store, _) =
+            read_store(root.path(), cache.path(), &options, false, &mut deadline).unwrap();
         assert!(
             started.elapsed() > budget,
             "reconcile finished within the budget"
@@ -456,18 +442,30 @@ mod tests {
         assert_eq!(answered, Ok(Some(true)));
     }
 
-    /// Inside a daemon, non-search reads of an unpublished index write nothing.
+    /// Direct path reads need no publication, with or without a serving daemon.
     #[test]
     fn warming_path_reads_leave_the_index_untouched() {
         let root = tempfile::tempdir().unwrap();
         let cache = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("lib.rs"), "pub fn early() {}\n").unwrap();
         let mut deadline = QueryDeadline::start();
-        let options = words(&["show", "lib.rs"]);
-        let store = read_store(root.path(), cache.path(), &options, true, &mut deadline).unwrap();
-        let shown = source::show(&store, "lib.rs", &OutputBudget::new(2_000).unwrap()).unwrap();
-        assert!(shown.contains("pub fn early()"), "{shown}");
-        assert!(!cache.path().join("index.sqlite3").exists());
+        for (args, daemon_running) in [
+            (vec!["show", "lib.rs"], true),
+            (vec!["show", "lib.rs"], false),
+            (vec!["--no-daemon", "show", "lib.rs"], false),
+        ] {
+            let (store, _) = read_store(
+                root.path(),
+                cache.path(),
+                &words(&args),
+                daemon_running,
+                &mut deadline,
+            )
+            .unwrap();
+            let shown = source::show(&store, "lib.rs", &OutputBudget::new(2_000).unwrap()).unwrap();
+            assert!(shown.contains("pub fn early()"), "{shown}");
+            assert!(!cache.path().join("index.sqlite3").exists());
+        }
         let error = read_store(
             root.path(),
             cache.path(),

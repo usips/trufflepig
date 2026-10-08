@@ -112,6 +112,48 @@ fn coverage_line(text: &str) -> &str {
 }
 
 #[test]
+fn unpublished_workspace_path_cursor_survives_index_publication() {
+    let fixture = Fixture::new();
+    let root = fixture.root.path().join("engine");
+    let body = (1..=240)
+        .map(|line| format!("current_line_{line:03}\n"))
+        .collect::<String>();
+    fs::write(root.join("long.txt"), body).unwrap();
+    let first = fixture.json(
+        "engine",
+        &["--budget", "350", "show", "path:long.txt:1-240"],
+    );
+    assert_eq!(first["source"], "current_file", "{first}");
+    let cursor = first["next"].as_str().expect("long read must paginate");
+    let cache = fixture.member_cache("engine");
+    assert!(!cache.join("index.sqlite3").exists());
+
+    let mut store = Store::open(&root, &cache).unwrap();
+    store.index().unwrap();
+    assert!(store.generation().unwrap() > 0);
+    drop(store);
+    let continued = fixture.json("engine", &["show", cursor]);
+    assert_eq!(continued["verified"], true, "{continued}");
+    assert!(
+        continued["lines"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("current_line_")
+    );
+    let handle = cursor
+        .strip_prefix("read:")
+        .unwrap()
+        .rsplit_once('@')
+        .unwrap()
+        .0;
+    let error = fixture
+        .run("engine", &["ctx", handle])
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("stale_result"), "{error}");
+}
+
+#[test]
 fn warming_worktree_answers_from_parent_index_with_exact_footer() {
     let seeded = SeededWorktree::new();
     let text = seeded.search(&["--format", "lines", "search", "SharedThing"]);

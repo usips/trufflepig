@@ -5,5 +5,6 @@ mod daemon_routing_tests;
 mod grammar_tests;
 mod spool_fallback_fixture;
 mod spool_fallback_tests;
+mod standalone_parent_tests;
 mod transport_tests;
 mod workspace_list_tests;

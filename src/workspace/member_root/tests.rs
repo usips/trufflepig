@@ -52,6 +52,24 @@ fn member_root_label_is_worktree_basename() {
 }
 
 #[test]
+fn standalone_worktree_requires_a_linked_checkout_of_its_git_parent() {
+    let (scratch, member) = repository();
+    let worktree = scratch.path().join("wt-standalone");
+    git(
+        &member.root,
+        &["worktree", "add", "--detach", worktree.to_str().unwrap()],
+    );
+    let worktree = worktree.canonicalize().unwrap();
+    let standalone = standalone_worktree(&worktree).unwrap();
+    assert!(standalone.is_home);
+    assert_eq!(standalone.member.root, member.root);
+    assert_eq!(standalone.root, worktree);
+    assert!(standalone.verify_identity().is_ok());
+    assert!(standalone_worktree(&member.root).is_none());
+    assert!(standalone_worktree(scratch.path()).is_none());
+}
+
+#[test]
 fn home_root_substitutes_external_and_in_repo_worktrees() {
     let (scratch, member) = repository();
     let external = scratch.path().join("wt-external");

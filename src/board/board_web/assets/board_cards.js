@@ -35,9 +35,17 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
   }
   function eventList(events) {
     const list = el("ol", "event-list");
+    const activity = (events || []).map(event => {
+      const sequence = String(event.seq);
+      return { event, sequence: /^(0|[1-9]\d*)$/.test(sequence) ? BigInt(sequence) : null };
+    });
+    const ordered = activity.every(item => item.sequence !== null)
+      ? activity.sort((left, right) => left.sequence > right.sequence ? -1
+        : left.sequence < right.sequence ? 1 : 0).map(item => item.event)
+      : (events || []);
     const fresh = event => state.seenAtOpen !== null && /^(0|[1-9]\d*)$/.test(String(event.seq))
       && BigInt(String(event.seq)) > BigInt(state.seenAtOpen);
-    for (const event of events || []) {
+    for (const event of ordered) {
       const item = el("li", "event-row");
       focusKey(item, `event:${event.seq}`);
       add(item, fresh(event) ? badge("new") : null, badge(event.kind), refLink(event.subject),

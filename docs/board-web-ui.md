@@ -48,6 +48,8 @@ horizontal scrolling. Below it, Needs you precedes plan lanes on narrow screens.
 
 Needs you cards and Latest activity summaries preview at most 280 Unicode codepoints. Their entry
 links retain access to the complete body, and entry pages display that body without truncation.
+Latest activity displays newest events first, ordered by sequence for snapshots and live updates.
+Display sorting preserves the source event order and pagination cursors.
 
 Overview prioritizes `todo`, `doing`, `review`, and `blocked` tasks in ordinal order within the
 [collection bounds](board-cli-contract.md#collection-bounds). `tasks_omitted` counts additional

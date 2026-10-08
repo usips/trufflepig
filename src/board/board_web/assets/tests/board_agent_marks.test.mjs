@@ -16,12 +16,13 @@ test("every_actor_site_renders_a_mark", async () => {
   const actual = {}, expected = {};
   for (const [site, node] of await actorSiteNodes()) {
     actual[site] = node.querySelectorAll(".agent-mark").map(mark => mark.dataset.vendor);
-    expected[site] = MARK_VENDORS;
+    expected[site] = site === "ticker" ? [...MARK_VENDORS].reverse() : MARK_VENDORS;
   }
   assert.deepEqual(actual, expected, "each actor site renders all nine vendor marks");
   for (const [site, node] of await actorSiteNodes()) {
     assert.deepEqual(node.querySelectorAll(".agent-mark").map(mark =>
-      mark.querySelector("text").textContent), MARK_GLYPHS, `${site} has the vendor glyphs`);
+      mark.querySelector("text").textContent),
+    site === "ticker" ? [...MARK_GLYPHS].reverse() : MARK_GLYPHS, `${site} has the vendor glyphs`);
   }
   const markers = (await actorSiteNodes()).get("plan claim markers")
     .querySelectorAll('.badge[data-kind="claimed"]');

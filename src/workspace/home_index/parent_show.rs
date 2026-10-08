@@ -21,7 +21,7 @@ use std::path::Path;
 
 /// How a parent-index `show` reached bytes other than the verified indexed ones.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::workspace) enum ParentRead {
+pub(crate) enum ParentRead {
     /// The same definition re-extracted from current worktree bytes.
     Reextracted,
     /// The parent index's stored bytes: the worktree file is binary or its
@@ -31,7 +31,7 @@ pub(in crate::workspace) enum ParentRead {
 
 impl ParentRead {
     /// Names the read's provenance in a `show` response's metadata.
-    pub(in crate::workspace) fn annotate(self, member: &str, metadata: &mut Value) {
+    pub(crate) fn annotate(self, member: &str, metadata: &mut Value) {
         metadata["served_from"] = match self {
             Self::Reextracted => format!("{member} index; re-extracted in worktree"),
             Self::Indexed => {
@@ -58,7 +58,10 @@ pub(in crate::workspace) fn acquire_home_read(
     let (target, side, origin) = request;
     let policy = HomeIndexPolicy::AwaitDaemon(std::time::Duration::ZERO);
     let mut resolved = resolve_home_index(member, cache, explicit_cache, policy, *deadline);
-    if no_daemon && matches!(resolved, HomeIndexSource::Warming { .. }) {
+    if no_daemon
+        && target.starts_with("sym:")
+        && matches!(resolved, HomeIndexSource::Warming { .. })
+    {
         // `--no-daemon` indexes in the foreground, outside the query deadline.
         deadline.pause_during(|| Store::open(&member.root, cache)?.index())?;
         let policy = HomeIndexPolicy::IndexInline;
@@ -73,6 +76,9 @@ pub(in crate::workspace) fn acquire_home_read(
             let (source, read) = acquire_through_parent(&mut view, target, side, origin)?;
             Ok((view.store, source, read))
         }
+        HomeIndexSource::Warming { .. } if !target.starts_with("sym:") => {
+            acquire_current_path(member, cache, target, side, origin)
+        }
         HomeIndexSource::Warming { reason } => anyhow::bail!(
             "index_warming: {} has no published index yet{}; retry shortly",
             member.display_name(),
@@ -80,15 +86,32 @@ pub(in crate::workspace) fn acquire_home_read(
                 .map(|reason| format!(" ({reason})"))
                 .unwrap_or_default()
         ),
+        HomeIndexSource::Unavailable { .. } if !target.starts_with("sym:") => {
+            acquire_current_path(member, cache, target, side, origin)
+        }
         HomeIndexSource::Unavailable { reason } => anyhow::bail!(reason),
     }
+}
+
+/// Reads an explicit path directly when no published graph can answer it.
+fn acquire_current_path(
+    member: &MemberRoot,
+    cache: &Path,
+    target: &str,
+    side: Option<SourceSide>,
+    origin: &InvocationDirectory,
+) -> Result<(Store, AcquiredSource, Option<ParentRead>)> {
+    std::fs::create_dir_all(cache)?;
+    let store = Store::unpublished(&member.root, cache)?;
+    let source = acquisition::acquire(&store, target, side, origin)?;
+    Ok((store, source, None))
 }
 
 /// `show TARGET` through a parent index. A `sym:` read ranks the parent's
 /// definitions brought up to the worktree ([`ParentFallback::worktree_symbols`])
 /// and shows the best as `acquisition::read_symbol` does; a shown row whose
 /// file changed is re-read from worktree bytes ([`reextracted_entry`]).
-fn acquire_through_parent(
+pub(crate) fn acquire_through_parent(
     view: &mut ParentIndexView,
     target: &str,
     side: Option<SourceSide>,
@@ -147,7 +170,7 @@ fn acquire_through_parent(
 /// same-name, same-kind definition nearest its recorded line from current
 /// bytes, or the index's own bytes when the worktree file cannot be extracted.
 /// `None` when the worktree file no longer defines it.
-pub(in crate::workspace) fn reextracted_entry(
+pub(crate) fn reextracted_entry(
     store: &Store,
     handle: &str,
     entry: &ResultEntry,

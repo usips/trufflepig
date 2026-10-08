@@ -137,6 +137,35 @@ pub(crate) fn linked_root_of_member(member: &Member, candidate: &Path) -> Option
     (member_common_dir(member) == Some(common)).then_some(candidate)
 }
 
+/// Captures a linked worktree as a home member of its main checkout.
+/// Standalone reads use this only after Git identifies their shared common dir.
+pub(crate) fn standalone_worktree(start: &Path) -> Option<MemberRoot> {
+    let root = start.canonicalize().ok()?;
+    let parent = crate::store::linked_worktree_main_checkout(&root)?
+        .canonicalize()
+        .ok()?;
+    let metadata = fs::metadata(&parent).ok()?;
+    let name = parent
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| super::config::valid_name(name))
+        .unwrap_or("checkout")
+        .to_owned();
+    let member = Member {
+        name,
+        root: parent,
+        identity: Some(MemberIdentity {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        }),
+    };
+    member.verify_identity().ok()?;
+    let mut linked = MemberRoot::linked(&member, root.clone()).ok()?;
+    linked.is_home = true;
+    linked_root_of_member(&member, &root)?;
+    Some(linked)
+}
+
 /// Resolves the home member for `start`, substituting a linked worktree.
 pub(crate) fn home_root(members: &[Member], start: &Path) -> Result<Option<MemberRoot>> {
     let start = start.canonicalize().unwrap_or_else(|_| start.to_path_buf());

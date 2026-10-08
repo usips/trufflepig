@@ -110,6 +110,7 @@ pub(super) fn hit_row(row: &Row<'_>) -> rusqlite::Result<Hit> {
         target: None,
         repeats: None,
         snippet: None,
+        differs: false,
     })
 }
 
@@ -528,6 +529,7 @@ fn file_hits(store: &Store, query: &Query, paths: &BoundPathFilter) -> Result<La
                 target: None,
                 repeats: None,
                 snippet: None,
+                differs: false,
             },
         };
         candidates.push(candidate);

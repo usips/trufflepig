@@ -58,12 +58,13 @@ impl MemberSnapshot {
             .identity
             .as_ref()
             .context("member_unavailable: original root identity is missing")?;
-        let index_identity =
-            store
-                .conn
-                .query_row("SELECT value FROM meta WHERE key='index_epoch'", [], |r| {
-                    r.get(0)
-                })?;
+        let index_identity = store
+            .conn
+            .query_row("SELECT value FROM meta WHERE key='index_epoch'", [], |r| {
+                r.get(0)
+            })
+            .optional()?
+            .unwrap_or_else(|| "unpublished".to_owned());
         Ok(Self {
             name: member.name().to_owned(),
             root: encode_path(&member.root),
@@ -116,6 +117,11 @@ impl MemberSnapshot {
             "member_unavailable: result owner was replaced"
         );
         let cache = decode_path(&self.cache)?;
+        if self.generation == 0 {
+            // A path read can own immutable bytes without any graph publication.
+            // Keep this owner unpublished even if the worktree indexes later.
+            return Store::unpublished(&member.root, &cache);
+        }
         let store = if let Some(parent) = &self.parent_index {
             ensure!(
                 encode_path(&member.member.root) == parent.root,

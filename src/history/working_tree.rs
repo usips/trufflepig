@@ -123,6 +123,7 @@ pub(super) fn since_uncommitted(
                         resolution: Some(correspondence), candidates: Vec::new(), target: None,
                         repeats: None,
                         snippet: None,
+                        differs: false,
                     }))?;
                 }
             }

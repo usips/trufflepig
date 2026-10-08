@@ -121,6 +121,23 @@ it("activity_summary_is_compact_and_keeps_full_entry", () => {
     .querySelector(".entry-body").textContent, body);
 });
 
+it("latest activity renders newest first without mutating source events", () => {
+  const { data, overview } = harness();
+  const older = { seq: "9007199254740991", kind: "note", subject: "E1",
+    summary: "Older", actor: "josh", created_at: 1 };
+  const newest = { seq: "9007199254740993", kind: "note", subject: "E3",
+    summary: "Newest", actor: "josh", created_at: 3 };
+  const middle = { seq: "9007199254740992", kind: "note", subject: "E2",
+    summary: "Middle", actor: "josh", created_at: 2 };
+  data.events = [older, newest, middle];
+
+  const rows = overview().querySelector(".ticker").querySelectorAll(".event-row");
+  assert.deepEqual(rows.map(row => row.dataset.focusKey), [
+    `event:${newest.seq}`, `event:${middle.seq}`, `event:${older.seq}`,
+  ]);
+  assert.deepEqual(data.events, [older, newest, middle]);
+});
+
 it("Done choices survive refresh before a native toggle event is delivered", async () => {
   const { main, overview, loop } = harness();
   main.append(overview());

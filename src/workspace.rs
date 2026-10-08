@@ -18,6 +18,10 @@ use anyhow::{Context, Result, bail, ensure};
 use config::WorkspaceConfig;
 pub(crate) use coordinator::apply_config;
 pub use coordinator::run;
+pub(crate) use home_index::{
+    ParentFallback, ParentIndexIdentity, ParentIndexView, WorktreeHashes, acquire_through_parent,
+    reextracted_entry, standalone_parent_view,
+};
 use member_root::MemberRoot;
 use result_cache::WorkspaceResults;
 use serde_json::{Value, json};

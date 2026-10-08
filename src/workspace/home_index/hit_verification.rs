@@ -21,7 +21,7 @@ const MAX_VERIFIED_FILES: usize = 128;
 /// One query's worktree hash checks: each file is hashed at most once, and at
 /// most [`MAX_VERIFIED_FILES`] files are hashed in all.
 #[derive(Debug, Default)]
-pub(in crate::workspace) struct WorktreeHashes {
+pub(crate) struct WorktreeHashes {
     matched: HashMap<String, bool>,
 }
 
@@ -68,13 +68,13 @@ fn reads_current_bytes(hit: &Hit) -> bool {
 
 /// Files of one parent-index answer whose worktree bytes differ from the index.
 #[derive(Debug, Default)]
-pub(in crate::workspace) struct DifferingFiles {
+pub(crate) struct DifferingFiles {
     paths: HashSet<String>,
 }
 
 impl DifferingFiles {
     /// Whether `hit` shows index bytes its worktree file no longer has.
-    pub(in crate::workspace) fn flags(&self, hit: &Hit) -> bool {
+    pub(crate) fn flags(&self, hit: &Hit) -> bool {
         !reads_current_bytes(hit) && self.paths.contains(&hit.path)
     }
 }
@@ -83,7 +83,7 @@ impl ParentFallback {
     /// Files among `hits` whose worktree bytes differ, plus `changed` files an
     /// answer already re-read. Files beyond the hash budget fall back to the
     /// Git divergence and count as differing when it is incomplete.
-    pub(in crate::workspace) fn check_hits(
+    pub(crate) fn check_hits(
         &self,
         root: &Path,
         hits: &[Hit],
@@ -108,7 +108,7 @@ impl ParentFallback {
 
     /// Files known to differ: the Git divergence plus files whose hits failed
     /// the hash check; `None` when the divergence is incomplete.
-    pub(super) fn known_differing(&self, differing: &DifferingFiles) -> Option<usize> {
+    pub(crate) fn known_differing(&self, differing: &DifferingFiles) -> Option<usize> {
         self.divergence.complete.then(|| {
             let extra = differing
                 .paths

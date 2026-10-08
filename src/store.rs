@@ -25,7 +25,7 @@ mod worktree_seed_source;
 use crate::{identity::ContentRevision, results::ResultSetStore};
 use anyhow::{Context, Result};
 pub use paths::{decode_path, encode_path};
-pub use read_access::is_index_warming;
+pub use read_access::{is_index_cannot_open, is_index_warming};
 use rusqlite::Connection;
 pub(crate) use scan::{MAX_SOURCE_BYTES, extraction_cache_version};
 pub use seed::{SeedOutcome, ensure_seeded, read_seed_outcome};

@@ -80,8 +80,18 @@ truncated coverage cannot establish absence. It also reminds the main agent to
 brief subagents the same way.
 `SessionStart` context does not reach subagents, so the same script, registered
 for `SubagentStart`, returns that guidance (without the briefing reminder) as the
-subagent's `additionalContext`.
-Outside indexed checkouts, or with steering `off`, both print nothing.
+subagent's `additionalContext`. Claude's `SubagentStart` payload carries the parent
+`session_id` and a unique `agent_id`. The hook derives a stable per-agent token from
+both and tells the subagent to prefix every Trufflepig command, including `board hello`,
+with `TRUFFLEPIG_SESSION='<token>'`. The wrapper's explicit environment override wins
+over the inherited parent session, while each command keeps the same child identity.
+`SubagentStart` cannot write `CLAUDE_ENV_FILE`; the override is command-local and does
+not replace the parent's session export.
+Outside indexed checkouts, or with steering `off`, code-search guidance is omitted.
+Subagent identity guidance is still returned whenever Claude supplies both IDs. If either
+ID is missing, the hook marks attribution unavailable and tells the child to obtain a unique
+`TRUFFLEPIG_SESSION` from its parent before making board calls; it must not reuse the parent's
+identity for `board hello` or other identity-sensitive writes.
 
 The installer merges `PreToolUse` and `PostToolUse` hooks with matcher `Bash`
 and a `PreToolUse` hook with matcher `Agent`, all running

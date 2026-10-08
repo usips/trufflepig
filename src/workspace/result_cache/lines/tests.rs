@@ -126,6 +126,7 @@ fn differing_hit_lines_end_with_differs() {
             target: None,
             repeats: None,
             snippet: None,
+            differs: false,
         }),
         worktree_differs: differs,
     };

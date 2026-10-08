@@ -185,6 +185,7 @@ fn directory_outline(store: &Store, paths: &BoundPathFilter) -> Result<Vec<Hit>>
                 target: None,
                 repeats: None,
                 snippet: None,
+                differs: false,
             });
         }
         let Some(item) = row.get::<_, Option<String>>(4)? else {

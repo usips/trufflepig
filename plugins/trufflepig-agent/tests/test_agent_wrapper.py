@@ -125,14 +125,17 @@ sys.exit(int(os.environ.get("EXIT", "0")))
         sessions = {s["session"]: s["calls"] for s in json.loads(result.stdout)["sessions"]}
         self.assertEqual(sessions, {"thread-one": 2, "thread-two": 1})
 
-    def test_claude_hook_session_beats_inherited_codex_markers(self):
-        self.env.update(CLAUDECODE="1", TRUFFLEPIG_CLAUDE_SESSION="claude-session",
+    def test_claude_agent_override_beats_inherited_parent_session(self):
+        self.env.update(CLAUDECODE="1", TRUFFLEPIG_CLAUDE_SESSION="parent-session",
+                        CLAUDE_CODE_SESSION_ID="parent-session",
                         CLAUDE_SESSION_ID="not-a-documented-shell-session")
         self.run_wrapper("search", "x")
-        self.assertEqual(self.record("claude")["session"], "claude-session")
-        self.env["TRUFFLEPIG_SESSION"] = "explicit"
+        self.assertEqual(self.record("claude")["session"], "parent-session")
+        self.env["TRUFFLEPIG_SESSION"] = "claude-agent-stable"
         self.run_wrapper("search", "y")
-        self.assertEqual(self.record("claude")["session"], "explicit")
+        self.assertEqual(self.record("claude")["session"], "claude-agent-stable")
+        self.run_wrapper("search", "y-again")
+        self.assertEqual(self.record("claude")["session"], "claude-agent-stable")
         self.run_wrapper("--session", "cli-session", "search", "z")
         self.assertEqual(self.record("claude")["session"], "cli-session")
 

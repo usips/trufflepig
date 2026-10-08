@@ -99,7 +99,7 @@ pub(crate) fn acquire(
     if target.starts_with("sym:") {
         return symbol::acquire_symbol(store, target, origin);
     }
-    acquire_path(store, target)
+    acquire_path(store, target, origin)
 }
 
 fn acquire_handle(store: &Store, handle: &str, side: Option<SourceSide>) -> Result<AcquiredSource> {
@@ -223,20 +223,41 @@ fn acquire_historical(
     })
 }
 
-fn acquire_path(store: &Store, target: &str) -> Result<AcquiredSource> {
+fn acquire_path(
+    store: &Store,
+    target: &str,
+    origin: &InvocationDirectory,
+) -> Result<AcquiredSource> {
     let target = target.strip_prefix("path:").unwrap_or(target);
-    let (path, lines) = match target.rsplit_once(':') {
+    let (path, lines, range) = match target.rsplit_once(':') {
         Some((path, range)) if range.contains('-') => {
             let (first, last) = range.split_once('-').expect("range separator");
-            (path, (first.parse::<usize>()?, last.parse::<usize>()?))
+            (
+                path,
+                (first.parse::<usize>()?, last.parse::<usize>()?),
+                Some(range),
+            )
         }
-        _ => (target, (1, usize::MAX)),
+        _ => (target, (1, usize::MAX), None),
     };
-    let bytes = read_contained(
-        &store.root,
-        &crate::store::decode_path(path)?,
-        MAX_READ_BYTES,
-    )?;
+    let relative = crate::store::decode_path(path)?;
+    let bytes = match read_contained(&store.root, &relative, MAX_READ_BYTES) {
+        Ok(bytes) => bytes,
+        Err(error) if error.to_string().starts_with("source_unavailable:") => {
+            let invocation_relative = origin.member_relative_path()?.join(&relative);
+            if invocation_relative != relative
+                && read_contained(&store.root, &invocation_relative, MAX_READ_BYTES).is_ok()
+            {
+                let suggested = crate::store::encode_path(&invocation_relative);
+                let range = range.map_or_else(String::new, |range| format!(":{range}"));
+                anyhow::bail!(
+                    "{error}; path values are relative to the selected member root; use `path:{suggested}{range}`"
+                );
+            }
+            return Err(error);
+        }
+        Err(error) => return Err(error),
+    };
     let revision = ContentRevision::of(&bytes);
     let (start, end) = current_span(&bytes, lines.0, lines.1)?;
     let (start_line, end_line) = super::line_span(&bytes, start, end);
@@ -257,6 +278,7 @@ fn acquire_path(store: &Store, target: &str) -> Result<AcquiredSource> {
         target: None,
         repeats: None,
         snippet: None,
+        differs: false,
     };
     let set = results::save_entries(
         store,

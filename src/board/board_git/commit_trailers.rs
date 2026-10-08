@@ -116,7 +116,7 @@ pub fn parse_coauthor(value: &str) -> Result<CommitCoauthor> {
         "x.ai" => AgentVendor::Grok,
         "google.com" => AgentVendor::Gemini,
         "qwen.ai" => AgentVendor::Qwen,
-        "meta.com" => AgentVendor::Muse,
+        "meta.com" | "muse.ai" => AgentVendor::Muse,
         _ => AgentVendor::Unknown,
     };
     let harness = if vendor == AgentVendor::Unknown {
