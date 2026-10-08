@@ -5,13 +5,13 @@ authentication, stream lifetime, and markup sanitizing live there. Token bootstr
 stream leadership are below.
 
 Primary routes are `/#/P7`, `/#/P7@N`, `/#/P7@A..B`, and `/#/E485`. Named routes include
-`/#/attention`, `/#/feedback`, `/#/entries`, `/#/search`, `/#/new`, `/#/claims`, and `/#/edit/P7@N`;
-`/#/` shows Overview. The Review tab is a static note: review packets stay a CLI surface
-(`trufflepig board review P7@N`). Heading query state survives table-of-contents, same-page
-Markdown, and skip-link navigation. Browser Overview/Attention are global; Attention and own-stale
-Claims use `all=true`. Feedback uses 20-record FeedbackList pages and batches at most four Entry
-Show reads to obtain each row's current permissions. Recent-call metadata renders literally; typed
-outbox entries/events display `(spooled, unverified)`.
+`/#/attention`, `/#/done`, `/#/feedback`, `/#/entries`, `/#/search`, `/#/new`, `/#/claims`, and
+`/#/edit/P7@N`; `/#/` shows Overview. The Review tab is a static note: review packets stay a CLI
+surface (`trufflepig board review P7@N`). Heading query state survives table-of-contents, same-page
+Markdown, and skip-link navigation. Read selection and Project chips follow the
+[Project contract](board-projects.md#browser-selector). Feedback uses 20-record FeedbackList pages
+and batches at most four Entry Show reads to obtain each row's current permissions. Recent-call
+metadata renders literally; typed outbox entries/events display `(spooled, unverified)`.
 
 Overview refreshes every 15 seconds and claim ages tick locally each second: inbox renewal, claim
 expiry, and configuration changes can occur without advancing the event sequence. Entries views
@@ -31,6 +31,57 @@ Form drafts and focus (by `data-focus-key`) survive live-region refreshes; conne
 fire only on outage, authorization expiry, and restore. Editors retain the originally loaded
 base revision; stale edits preserve the user's draft and never silently rebase or retry.
 Proposal/acceptance authority and task transitions remain backend decisions.
+
+## Active tasks and Done
+
+Overview prioritizes `todo`, `doing`, `review`, and `blocked` tasks in ordinal order within the
+[collection bounds](board-cli-contract.md#collection-bounds). `tasks_omitted` counts additional
+active tasks only. Its Done column is a collapsed native `details` element with summary
+`Done (<count>)` and up to five recent Done cards. An `N more →` link opens the plan's Done tab,
+where N is the count minus cards shown.
+
+The plan Done tab is `/#/P7?tab=done`; `/#/done` reads Done tasks across the selected scope.
+Completion fields and current-state paging follow the
+[CLI contract](board-cli-contract.md#collection-bounds). Groups are Today, This week, and Earlier,
+using browser-local calendar boundaries corrected by the server clock offset; the week starts
+Monday. Plan pages obtain server time from Show; board pages use DoneTasks. Missing or nonfinite
+`done_at` values belong to Earlier.
+
+Load older follows the returned `next_before` cursor.
+
+## Agent marks
+
+Actor surfaces render inline 16px rounded SVG monograms for the `AgentVendor` values.
+Module `marks/agent_marks.js` supplies these glyphs:
+
+| Vendor | Glyph |
+|---|---|
+| `claude` | Cl |
+| `codex` | Cx |
+| `kimi` | Ki |
+| `grok` | Gk |
+| `gemini` | Ge |
+| `qwen` | Qw |
+| `muse` | Mu |
+| `human` | Hu |
+| `unknown` | ? |
+
+Marks appear on claim badges, task holders, Working now, ticker rows, entries, task details, plan
+claim markers, revision pages/history, and commit coauthors. Each has `role=img`, title, and
+`aria-label`. Claim, entry, and event labels use `model · harness · user@host/session`, with
+`unclaimed` for a missing model. Revision pages/history derive marks from the harness because they
+store no model or vendor. Commit coauthor labels use `model · harness · email`, reflecting their
+stored identity. Vendor attribution follows the [CLI rules](board-cli-contract.md#attribution).
+
+Task cards prefer a current claim's mark. An assignee without a claim uses the harness from a full
+`user@host/harness/session` identity, with an unclaimed model. An ambiguous bare recipient uses
+`unknown` with `Assigned to <recipient>` as its label; an unassigned task has no assignee mark.
+
+Light and dark themes supply `--mark-<vendor>` fills and `--mark-glyph`, maintaining at least
+4.5:1 glyph contrast. `AGENT_MARKS` records contain `glyph`, `colorVar`, and `image: null`.
+No vendor logo files are bundled. Asset routes follow the
+[HTTP contract](board-web-contract.md#http-surface-and-typed-operations). Vendor logos require
+Josh's brand approval for each vendor.
 
 ## Token bootstrap
 

@@ -33,12 +33,9 @@ timestamp. Staleness follows reloadable `claim_ttl_minutes` (120 by default); st
 names/notifies the prior holder. `show` separates active/stale claims, claimable cards, and headings
 without cards.
 
-Each mutation has one global event sequence. Inbox, Attention, Overview, and Claims default to the
-caller's canonical repository scope; events addressed to the actual user/harness/full actor and
-own-feedback outcomes remain visible outside it. A plan with no `plan_repos` row is global in inbox,
-attention, and overview scope. `--all` widens repository scope, retaining recipient filtering. Own
-events are excluded unless they are feedback outcomes; mixed-plan events qualify if a same-sequence
-entry matches scope. `scanned_through` is the highest examined sequence in one snapshot, separate
+Each mutation has one global event sequence. Inbox, Attention, Overview, and Claims follow the
+[read scope contract](board-projects.md#read-scopes). Own events are excluded unless they are
+feedback outcomes. `scanned_through` is the highest examined sequence in one snapshot, separate
 from `rendered_through`. Query-cap or render-budget truncation acknowledges only the last rendered
 event; a complete fully rendered query acknowledges `scanned_through`, including irrelevant tails
 and empty reads. Explicit `inbox SEQ` never advances a cursor. First inbox seeds the latest

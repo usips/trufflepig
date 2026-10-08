@@ -2,10 +2,11 @@
 
 The per-machine router serves a durable board for agent harnesses. Plans hold a revisioned
 single source of truth (SSOT); tasks divide work; entries record agent evidence. Trufflepig
-assembles evidence, generating no prose; it operates independently of workspace and source-index
-state. Grammar lives in the [CLI contract](board-cli-contract.md), feedback in the [feedback
-contract](board-feedback-contract.md), dashboard in the [web contract](board-web-contract.md),
-and read scopes in the [Projects contract](board-projects.md#read-scopes).
+assembles evidence, generating no prose. Board writes require no workspace configuration or source
+index; read selection follows the [Project contract](board-projects.md). Grammar lives in the
+[CLI contract](board-cli-contract.md), feedback in the
+[feedback contract](board-feedback-contract.md), and the dashboard in the
+[web contract](board-web-contract.md).
 
 ## Identity, references, and authority
 
@@ -48,14 +49,15 @@ read-transaction `snapshot_seq`. `ReviewEvidence.manual_links` contains per-task
 repo_key: RepoKey, oid: GitOid, task: TaskId, entry: EntryId, seq: Option<EventSeq>, actor:
 Option<BoardActor> }`; absent optionals preserve unknown attribution.
 
-The client routes before workspace resolution: socket, spool, then one `system ensure` and retry if
-no router answers. Direct `LocalBoard` fallback preserves the resolved DB identity and never
-migrates beside a live router: feedback queues to the outbox, others refuse unless the stored schema
-is current. `--no-daemon` board calls use no router requests or spawns. A router's error is final;
-`unknown_command: board` advises restarting `trufflepig-system.service`. Board requests start no
-root index daemon and produce no source-cache diagnostic records. One `board_api`/`board_db` probe
-precedes dispatch; mismatch advises restart. A private 30-second negative marker suppresses repeated
-ensure only after a provably unreached request; hits do not extend it; success clears it.
+The client chooses socket or spool transport before host-side [Project
+resolution](board-projects.md#live-host-resolution); if no router answers, it makes one `system
+ensure` attempt and retries. Direct `LocalBoard` fallback preserves the resolved DB identity and
+never migrates beside a live router: feedback queues to the outbox; other operations require the
+current stored schema. `--no-daemon` board calls use no router requests or spawns. Router errors are
+final; `unknown_command: board` advises restarting `trufflepig-system.service`. Board requests start
+no root index daemon and produce no source-cache diagnostic records. One `board_api`/`board_db`
+probe precedes dispatch; mismatch advises restart. A private 30-second negative marker suppresses
+repeated ensure only after a provably unreached request; hits do not extend it; success clears it.
 
 The router pins its database before opening it; only the socket-owning router publishes
 `system::dir()/board-backend.json` holding the absolute database path. `system-serve` opens the
