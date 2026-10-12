@@ -31,10 +31,10 @@ a `Bash(trufflepig-agent *)` permission, and narrow sandbox runtime access while
 preserving existing settings. See [Claude integration](claude-code.md)
 for discovery, session lifecycle, permissions, verification, and removal.
 
-`--grok` links both skills into `$GROK_HOME/skills` (default `~/.grok/skills`);
-see [Grok integration](grok.md). `--gemini` links both into Gemini's user skills
-directory; see [Gemini integration](gemini.md). `--muse` refreshes both managed
-user copies through `muse skills install`; rerun it after source updates.
+`--grok` and `--gemini` link both skills; see [Grok](grok.md) and [Gemini](gemini.md) integration.
+`--muse` refreshes managed copies through `muse skills install`; rerun after source updates.
+`--kimi` links both under `$KIMI_CODE_HOME/skills` (default `~/.kimi-code/skills`).
+See [Kimi K3 Board setup](skills/trufflepig-plan-board/references/kimi.md).
 
 `--codex` symlinks both skills into `~/.agents/skills`, with automatic selection enabled.
 `--project DIR` installs into `DIR/.agents/skills`; avoid installing the same skill at both

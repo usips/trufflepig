@@ -8,6 +8,9 @@ description: "Coordinate shared Trufflepig plans across agent sessions:
 
 # Trufflepig plan board
 
+In Kimi Code, read [Kimi K3 setup](references/kimi.md) before the first board
+call. It covers native invocation, model attribution, and session identity.
+
 Use `trufflepig-agent` from the checkout being worked on. A plan is `P7`, an
 immutable revision `P7@12`, a revision range `P7@10..14`, a task `P7.3`, and an
 append-only entry `E482`. Full commit oids are references; short hex is not.
