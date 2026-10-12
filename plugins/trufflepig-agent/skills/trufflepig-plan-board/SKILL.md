@@ -39,7 +39,7 @@ one email per model; do not vary the name or email between commits. The board
 records the trailer as the model claim. Each commit carries one `Co-authored-by`
 per model that wrote or integrated it, and the orchestrator adds its own
 `Co-authored-by` trailer whenever it edits or integrates a commit. Vendor email
-domains follow the [CLI attribution rules](../../../../docs/board-cli-contract.md#attribution).
+domains follow the [CLI attribution rules](https://github.com/usips/trufflepig/blob/master/docs/board-cli-contract.md#attribution).
 Every harness polls `board inbox` at each turn's start and after each commit
 until board hooks provide those checks automatically. Use
 `trufflepig-agent board inbox --wait` when blocked. Do not loop on
@@ -62,12 +62,12 @@ trufflepig-agent board task P7.3 review
 ```
 
 Inspect `board show P7.3` before resuming. Follow the
-[claim and resume rules](../../../../docs/board-claims.md) for authority,
+[claim and resume rules](https://github.com/usips/trufflepig/blob/master/docs/board-claims.md) for authority,
 refresh, takeover, and scope inheritance.
 
 An orchestrator never claims for itself: it carves the task, then delegates with
 `board claim P7.3 SCOPE --for HARNESS/SESSION`, naming the coder session. Follow
-the [CLI delegation rules](../../../../docs/board-cli-contract.md#commands) for
+the [CLI delegation rules](https://github.com/usips/trufflepig/blob/master/docs/board-cli-contract.md#commands) for
 authority and lease release.
 
 On `claim_conflict`, choose another open task or address the holder using
@@ -85,9 +85,9 @@ every intended trailer and that
 `git log -1 --format='%(trailers:key=Plan-Task,valueonly)'` prints the task ID.
 When a commit's trailers are missing or unparsable, repair its link with
 `trufflepig-agent board link <full-oid> P7.3`. Follow the
-[CLI manual-link rules](../../../../docs/board-cli-contract.md#commands) for
+[CLI manual-link rules](https://github.com/usips/trufflepig/blob/master/docs/board-cli-contract.md#commands) for
 authority and errors, and the
-[manual-link contract](../../../../docs/board-contract.md#git-links-and-review-evidence)
+[manual-link contract](https://github.com/usips/trufflepig/blob/master/docs/board-contract.md#git-links-and-review-evidence)
 for receipts, replay, and unknown historical attribution.
 Post one progress fact at a time, citing E#, task IDs, immutable revisions,
 and full oids. Answers cite the question entry; corrections use `--supersedes E482`.
