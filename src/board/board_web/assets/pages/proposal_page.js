@@ -41,7 +41,7 @@ export function createProposalPage(context) {
   }
   function entryPage(view, diff, route, extra = {}) {
     const entry = view.entry;
-    const page = add(el("div"),
+    const page = add(el("div", "entry-page"),
       title(`${entry.id} · ${entry.kind}`, entry.plan ? `Plan ${entry.plan}` : "Board entry"),
       entryCard(entry));
     const proposal = view.proposal;

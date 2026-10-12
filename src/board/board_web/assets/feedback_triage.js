@@ -62,10 +62,12 @@ export function createBoardFeedback(context) {
     }
     page.append(tabs);
     const records = collection(data, "feedback");
+    const cards = el("div", "entry-list section");
     for (const record of records) {
       const card = entryCard(record, { actions: feedbackControls(entryViews.get(record.entry.id)) });
-      add(card, badge(record.kind), feedbackMetadata(record)); page.append(card);
+      add(card, badge(record.kind), feedbackMetadata(record)); cards.append(card);
     }
+    if (records.length) page.append(cards);
     if (!records.length) page.append(empty("No feedback in this view."));
     page.append(omitted(data?.omitted, "feedback reports") || el("span"));
     const cursor = nextAfter(data);

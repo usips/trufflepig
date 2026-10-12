@@ -156,8 +156,9 @@ export function createPlanPage(context) {
         { plan: plan.id, after: JSON.stringify(view.claims_next_after), through: view.through }, "small")
       : null;
     aside.append(panel("Tasks", add(el("div"), asideCards,
-      link("Manage tasks", "plan", { ref: plan.id, tab: "tasks", claimThrough: view.through }, "small"),
-      moreTasks, moreClaims)));
+      add(el("div", "entry-refs"),
+        link("Manage tasks", "plan", { ref: plan.id, tab: "tasks", claimThrough: view.through }, "small"),
+        moreTasks, moreClaims))));
     add(layout, body, aside); page.append(layout);
     const entries = view.entries || [];
     if (entries.length) {
@@ -167,7 +168,7 @@ export function createPlanPage(context) {
     return page;
   }
   function historyPage(data, plan) {
-    const selector = el("form", "filters");
+    const selector = el("form", "filters revision-filters");
     const from = field("From revision", "from", "1", { type: "number", required: true });
     const to = field("To revision", "to", String(plan.head_revision), { type: "number", required: true });
     for (const input of [from.input, to.input]) {
