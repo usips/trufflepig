@@ -44,6 +44,8 @@ def detect_harness() -> str:
     explicit = os.environ.get("TRUFFLEPIG_AGENT_HARNESS")
     if explicit:
         return explicit
+    if os.environ.get("GEMINI_CLI") == "1":
+        return "gemini"
     if os.environ.get("GROK_SESSION_ID"):
         return "grok"
     # omp's shell tool exports CLAUDECODE=1 alongside OMPCODE=1, so omp must be
@@ -102,9 +104,17 @@ def resolve_session(harness: str, cwd: str) -> str:
     explicit = os.environ.get("TRUFFLEPIG_SESSION")
     if explicit:
         return explicit
-    keys = {"grok": ("GROK_SESSION_ID",), "omp": ("TRUFFLEPIG_OMP_SESSION",), "claude": ("TRUFFLEPIG_CLAUDE_SESSION",),
-            "codex": ("CODEX_THREAD_ID", "CODEX_SESSION_ID"),
-            "kimi": ("KIMI_SESSION_ID",), "muse": ("MUSE_SESSION_ID",)}
+    # Gemini's shell does not export its hook-only session ID; use it only when
+    # an integration supplies it to this process.
+    keys = {
+        "gemini": ("GEMINI_SESSION_ID",),
+        "grok": ("GROK_SESSION_ID",),
+        "omp": ("TRUFFLEPIG_OMP_SESSION",),
+        "claude": ("TRUFFLEPIG_CLAUDE_SESSION",),
+        "codex": ("CODEX_THREAD_ID", "CODEX_SESSION_ID"),
+        "kimi": ("KIMI_SESSION_ID",),
+        "muse": ("MUSE_SESSION_ID",),
+    }
     for key in (*keys.get(harness, ()), "AGENT_SESSION_ID"):
         if os.environ.get(key):
             return os.environ[key]

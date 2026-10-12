@@ -179,7 +179,7 @@ def require_current_router(runtime: Path, *, allow_absent: bool = False, managed
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bin", type=Path, default=Path.home() / ".local/bin")
-    for flag in ("codex", "claude", "grok", "kimi", "muse", "kimi-hooks", "omp", "systemd", "board", "commands"):
+    for flag in ("codex", "claude", "gemini", "grok", "kimi", "muse", "kimi-hooks", "omp", "systemd", "board", "commands"):
         parser.add_argument(f"--{flag}", action="store_true")
     parser.add_argument("--omp-agent-dir", type=Path, help="explicit omp agent directory")
     parser.add_argument("--project", type=Path, action="append", default=[])
@@ -188,13 +188,13 @@ def main() -> int:
                         help="search steering mode recorded for the selected harnesses")
     parser.add_argument("--check", type=Path, metavar="ROOT", help="search and read a file through the installed wrapper")
     args = parser.parse_args()
-    if not any((args.codex, args.claude, args.grok, args.kimi, args.muse, args.kimi_hooks, args.omp, args.systemd, args.board,
+    if not any((args.codex, args.claude, args.gemini, args.grok, args.kimi, args.muse, args.kimi_hooks, args.omp, args.systemd, args.board,
                 args.commands, args.project, args.check)):
         args.kimi = args.muse = True
     if args.omp_agent_dir and not args.omp:
         parser.error("--omp-agent-dir requires --omp")
-    if args.runtime_dir and not (args.codex or args.claude or args.grok):
-        parser.error("--runtime-dir requires --codex, --claude, or --grok")
+    if args.runtime_dir and not (args.codex or args.claude or args.gemini or args.grok):
+        parser.error("--runtime-dir requires --codex, --claude, --gemini, or --grok")
     steer_harnesses = [name for name in ("claude", "kimi", "muse") if getattr(args, name)]
     if args.steer and not steer_harnesses:
         parser.error("--steer requires --claude, --kimi, or --muse")
@@ -207,7 +207,7 @@ def main() -> int:
         settings = json.loads(config_path.read_text())
         if not isinstance(settings, dict):
             raise ValueError(f"expected an object in {config_path}")
-    if args.codex or args.claude or args.grok:
+    if args.codex or args.claude or args.gemini or args.grok:
         runtime = (args.runtime_dir or Path(settings.get("runtime_dir") or
                    Path.home() / ".cache/codex-tmp/trufflepig-agent")).resolve()
         if runtime == Path("/tmp") or Path("/tmp") in runtime.parents:
@@ -249,12 +249,12 @@ def main() -> int:
             runtime, None if link_plan.claude_plugin else args.bin / "trufflepig-agent-steer")
     for source, destination in link_plan.links:
         link(source, destination)
-    if args.codex or args.claude or args.grok:
+    if args.codex or args.claude or args.gemini or args.grok:
         runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
         print(f"agent runtime: {runtime}")
         if not args.systemd:
             print(f"router must use spool: {spool} (--systemd configures it)")
-    if args.codex or args.claude or args.grok or args.steer:
+    if args.codex or args.claude or args.gemini or args.grok or args.steer:
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(json.dumps(settings, indent=2) + "\n")
     if args.steer:

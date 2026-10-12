@@ -1,7 +1,7 @@
 # Trufflepig agent integration
 
 Shared search and plan board skills with an audited CLI wrapper for Codex, Claude Code,
-Grok Build, Kimi Code, Muse Code, and omp. The [plan board
+Grok Build, Gemini CLI, Kimi Code, Muse Code, and omp. The [plan board
 skill](skills/trufflepig-plan-board/SKILL.md) coordinates claims, revisions, commits, and
 feedback; the [web contract](../../docs/board-web-contract.md) defines the dashboard. The
 search skill makes Trufflepig the default for project discovery, with targeted fallbacks for
@@ -20,7 +20,7 @@ Router absence or activation failure rolls back; only unmanaged preflight permit
 ```sh
 plugins/trufflepig-agent/install.sh --codex --systemd --check "$PWD"
 plugins/trufflepig-agent/install.sh --claude --check "$PWD"
-plugins/trufflepig-agent/install.sh --grok --check "$PWD"
+plugins/trufflepig-agent/install.sh --grok --gemini --muse --check "$PWD"
 plugins/trufflepig-agent/install.sh --project ~/Source/lunatic
 plugins/trufflepig-agent/install.sh --omp --check "$PWD"
 plugins/trufflepig-agent/install.sh --kimi --muse --kimi-hooks --systemd
@@ -31,8 +31,10 @@ a `Bash(trufflepig-agent *)` permission, and narrow sandbox runtime access while
 preserving existing settings. See [Claude integration](claude-code.md)
 for discovery, session lifecycle, permissions, verification, and removal.
 
-`--grok` installs both skills into `$GROK_HOME/skills` (default
-`~/.grok/skills`). See [Grok integration](grok.md) for discovery and verification.
+`--grok` links both skills into `$GROK_HOME/skills` (default `~/.grok/skills`);
+see [Grok integration](grok.md). `--gemini` links both into Gemini's user skills
+directory; see [Gemini integration](gemini.md). `--muse` refreshes both managed
+user copies through `muse skills install`; rerun it after source updates.
 
 `--codex` symlinks both skills into `~/.agents/skills`, with automatic selection enabled.
 `--project DIR` installs into `DIR/.agents/skills`; avoid installing the same skill at both
@@ -57,7 +59,7 @@ It builds one Cargo target with an installed nightly and returns bounded JSON
 with compilation provenance and source spans. The symlink installation includes
 the helper and its reference; no additional wrapper or daemon setup is needed.
 
-Codex, Claude, and Grok installers configure a data-only `agent-runtime.json` under
+Codex, Claude, Grok, and Gemini configure a data-only `agent-runtime.json` under
 `$XDG_CONFIG_HOME/trufflepig` (default `~/.config/trufflepig`). `runtime_dir` defaults to
 `~/.cache/codex-tmp/trufflepig-agent`; `--runtime-dir DIR` selects another disk-backed
 directory the sandbox permits writing. `spool_dir` is its `spool` child. The wrapper supplies
@@ -119,11 +121,9 @@ attach a complete dependency neighborhood to each search result. The
 candidate, and unresolved relationships across Rust, TypeScript/JavaScript, C#,
 PHP, Luau, and DreamMaker. Docs/config remain text-searchable.
 
-For example, DreamMaker `special_bucket` records explicit inheritance but its
-context may have `target: null`. Read the declaration and search the named parent.
-Context can also spend its budget on unresolved calls; prefer a narrower symbol
-or explicit target search over repeatedly increasing the budget. Neither behavior
-establishes compiler-equivalent binding resolution or automatic parent delivery.
+For DreamMaker inheritance with `target: null`, read the declaration and search
+the named parent. When unresolved calls exhaust context, narrow the symbol or
+search an explicit target; this does not establish compiler-equivalent binding.
 
 ## Attribution and audit
 
@@ -181,7 +181,7 @@ or the command ends with `# tp-fallback: reason`; it nudges the rest, including 
 which `install.sh --steer MODE` records for the selected Claude, Kimi, or Muse
 installation. Symbol, body, and outline commands are suggested only for Rust,
 TypeScript, JavaScript, C#, PHP, Luau, and DreamMaker; other files get `re:` equivalents.
-Codex, Grok, and omp do not install steering hooks and report steering as `off`.
+Codex, Grok, Gemini, and omp do not install steering hooks and report steering as `off`.
 
 `trufflepig-audit --adoption` compares Trufflepig navigation calls with the
 ordinary searches the hook observed, split into main agent and subagents, with

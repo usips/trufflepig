@@ -31,6 +31,9 @@ class AgentLinkPlan:
             links.extend((skill, kimi_home / "skills" / skill.name) for skill in skills)
         if args.codex:
             links.extend((skill, Path.home() / ".agents/skills" / skill.name) for skill in skills)
+        if args.gemini:
+            gemini_home = Path(os.environ.get("GEMINI_CLI_HOME") or Path.home()).expanduser().absolute()
+            links.extend((skill, gemini_home / ".gemini/skills" / skill.name) for skill in skills)
         if args.grok:
             grok_home = Path(os.environ.get("GROK_HOME") or Path.home() / ".grok").expanduser().absolute()
             links.extend((skill, grok_home / "skills" / skill.name) for skill in skills)
