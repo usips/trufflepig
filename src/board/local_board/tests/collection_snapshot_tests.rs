@@ -21,6 +21,7 @@ fn collection_dispatch_reports_snapshot_without_registering_reader_actor() {
         BoardOp::Overview {
             scope: ReadScope::All,
             after: None,
+            active_only: false,
             through: None,
             limit: 10,
         },

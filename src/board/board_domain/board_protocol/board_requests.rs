@@ -1,7 +1,7 @@
 //! Versioned backend requests and operation addresses.
 use super::{
-    BOARD_API, ClaimCursor, EntryCursor, FeedbackMetadata, LinkedCommit, RepoRegistration,
-    TaskCeiling, TaskCursor, TaskOrder, validate_claim,
+    BOARD_API, ClaimCursor, EntryCursor, FeedbackMetadata, LinkedCommit, OverviewCursor,
+    RepoRegistration, TaskCeiling, TaskCursor, TaskOrder, validate_claim,
 };
 use crate::board::{
     board_actor::{BoardActor, BoardRecipient, HarnessLabel},
@@ -99,7 +99,9 @@ pub enum BoardOp {
     Projects,
     Overview {
         scope: ReadScope,
-        after: Option<PlanId>,
+        after: Option<OverviewCursor>,
+        #[serde(default)]
+        active_only: bool,
         through: Option<EventSeq>,
         limit: usize,
     },

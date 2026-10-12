@@ -71,8 +71,9 @@ export function createBoardReader(context) {
     };
     const readOverview = async (page = {}) => {
       const reply = await readReply(readOp("overview",
-        { scope: boardReadScope(route.project), after: page.after || null,
-          through: page.through || null, limit: 50 }));
+        { scope: boardReadScope(route.project), after: cursorFromRoute(page, true),
+          through: page.through || null, limit: 50,
+          active_only: (page.showInactive ?? route.showInactive) !== "1" }));
       const watermark = snapshotSeq(reply);
       const after = String(BigInt(watermark) > 20n ? BigInt(watermark) - 20n : 0n);
       const feed = await read(readOp("feed", {

@@ -125,6 +125,7 @@ fn host_reads_existing_board_without_initializing_or_waiting_for_writer() {
         BoardOp::Overview {
             scope: ReadScope::All,
             after: None,
+            active_only: false,
             through: None,
             limit: 200,
         },
@@ -189,6 +190,7 @@ fn host_bootstraps_writable_legacy_storage_but_keeps_readonly_initialization_err
         BoardOp::Overview {
             scope: ReadScope::All,
             after: None,
+            active_only: false,
             through: None,
             limit: 200,
         },

@@ -5,8 +5,14 @@ use crate::board::board_protocol::ReadScope;
 fn collection_overview_pages_freeze_initial_revision_membership() {
     let (_directory, board) = database();
     let first = overview(board.reader.as_ref().expect("read connection"), None, None);
-    assert_eq!(first.plans[0].plan.id, plan(1));
-    assert_eq!(first.next_after, Some(plan(1)));
+    assert_eq!(first.plans[0].plan.id, plan(2));
+    assert_eq!(
+        first.next_after,
+        Some(OverviewCursor {
+            seq: EventSeq::new(2),
+            plan: plan(2),
+        })
+    );
     assert_eq!(first.omitted, 1);
     board
         .conn
@@ -27,7 +33,7 @@ fn collection_overview_pages_freeze_initial_revision_membership() {
         first.next_after,
         Some(first.through),
     );
-    assert_eq!(second.plans[0].plan.id, plan(2));
+    assert_eq!(second.plans[0].plan.id, plan(1));
     assert_eq!(second.next_after, None);
     assert_eq!(second.omitted, 0);
     entry(&board.conn, 4, 4, "question");

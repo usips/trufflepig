@@ -38,6 +38,7 @@ export function createBoardViews(context) {
   }
   function renderOverview(data, attention, route, projects) {
     const page = el("div", "overview-page");
+    const showInactive = route.showInactive === "1";
     // The 202 is only a queue receipt; the terminal result arrives as an
     // `ingest` stream frame carrying the 202's ticket (see board_web_main.js
     // onIngest), so the control stays busy until its own frame or a timeout.
@@ -77,6 +78,30 @@ export function createBoardViews(context) {
     }, "compact"), "overview:ingest");
     if (state.ingestPending) { ingest.disabled = true; ingest.setAttribute("aria-busy", "true"); }
     add(page, title("Board", "Shared plans and the work happening now.", ingest));
+    const filter = el("details", "overview-filter");
+    filter.open = state.overviewFiltersOpen === true;
+    filter.addEventListener("toggle", () => { state.overviewFiltersOpen = filter.open; });
+    const filterSummary = el("summary", "", "Filters");
+    filterSummary.dataset.focusKey = "overview:filters";
+    filter.append(filterSummary);
+    const filterChoice = el("label", "overview-filter-choice");
+    const filterCheckbox = el("input");
+    filterCheckbox.type = "checkbox";
+    filterCheckbox.checked = showInactive;
+    focusKey(filterCheckbox, "overview:show-inactive");
+    filterCheckbox.addEventListener("change", event => {
+      navigate("overview", {
+        ...route, after: "", through: "", showInactive: event.target.checked ? "1" : "0",
+      }, false, false);
+    });
+    filterChoice.append(filterCheckbox, el("span", "", "Show plans without active tasks"));
+    filter.append(filterChoice);
+    const filterStatus = el("p", "overview-filter-status",
+      showInactive ? "Showing all plans, sorted by most recently updated."
+        : "Showing plans with active tasks, sorted by most recently updated.");
+    filterStatus.setAttribute("role", "status");
+    filterStatus.setAttribute("aria-live", "polite");
+    add(page, add(el("div", "overview-filter-tools"), filter, filterStatus));
     const plans = collection(data, "plans");
     const claims = (data.working || plans.flatMap(item => item.claims || [])).filter(claim => !claim.ended_at);
     const tasksById = new Map(plans.flatMap(item => (item.tasks || []).map(task => [task.id, task])));
@@ -112,9 +137,12 @@ export function createBoardViews(context) {
       lanes.append(lane);
     }
     if (!plans.length) {
-      const message = route.project ? "No plans in this scope." : "No plans yet.";
-      lanes.append(panel("Plans", add(el("div"), empty(message),
-        link("Create the first plan", "new", {}, "button primary"))));
+      const message = showInactive
+        ? (route.project ? "No plans in this scope." : "No plans yet.")
+        : (route.project ? "No plans in this scope have active tasks." : "No plans with active tasks.");
+      lanes.append(panel(showInactive ? "Plans" : "Active plans", add(el("div"), empty(message),
+        showInactive ? link("Create the first plan", "new", {}, "button primary")
+          : el("p", "small muted", "Use Filters to show plans without active tasks."))));
     }
     lanes.append(omitted(data.omitted, "plans") || el("span"));
     if (data.next_after) lanes.append(link("Next plans", "overview", pageParams(route, data), "button"));

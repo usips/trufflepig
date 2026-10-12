@@ -126,6 +126,7 @@ fn collection_pages_reject_invalid_bounds_and_unknown_filters() {
             &context(),
             &ReadScope::All,
             None,
+            false,
             None,
             0
         )

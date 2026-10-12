@@ -11,18 +11,18 @@ fn project_ids_and_reserved_unscoped_keep_distinct_scopes() {
             let reads = [
                 (
                     vec!["board", "show", "--project", &fixture.project_ids[0]],
-                    vec!["P1", "P2"],
+                    vec!["P2", "P1"],
                 ),
                 (vec!["board", "show", "--project", "unscoped"], vec!["P4"]),
-                (vec!["board", "show"], vec!["P1", "P4"]),
-                (vec!["board", "show", "--all"], vec!["P1", "P2", "P3", "P4"]),
+                (vec!["board", "show"], vec!["P4", "P1"]),
+                (vec!["board", "show", "--all"], vec!["P4", "P3", "P2", "P1"]),
             ];
             for (words, expected) in reads {
                 let output = fixture.run(&fixture.repos[0].root, &words).unwrap();
                 assert_eq!(overview_plan_ids(&output), expected, "{words:?}");
             }
             let output = fixture.run(&fixture.root, &["board", "show"]).unwrap();
-            assert_eq!(overview_plan_ids(&output), ["P1", "P2", "P3", "P4"]);
+            assert_eq!(overview_plan_ids(&output), ["P4", "P3", "P2", "P1"]);
         },
     );
 }

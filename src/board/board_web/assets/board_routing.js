@@ -19,6 +19,18 @@ function savedProject() {
   try { return sessionStorage.getItem(projectSessionKey()) || ""; }
   catch (_) { return ""; }
 }
+function overviewFilterSessionKey() {
+  const boardId = document.querySelector('meta[name="board-id"]')?.content || "board";
+  return `trufflepig-board-show-inactive:${boardId}`;
+}
+function saveOverviewFilter(value) {
+  try { sessionStorage.setItem(overviewFilterSessionKey(), value === "1" ? "1" : "0"); }
+  catch (_) { /* The URL still carries the filter choice. */ }
+}
+function savedOverviewFilter() {
+  try { return sessionStorage.getItem(overviewFilterSessionKey()) === "1" ? "1" : "0"; }
+  catch (_) { return "0"; }
+}
 
 export function boardReadScope(project) { return project === "unscoped" ? "unscoped" : "all"; }
 export function boardProjectSelector(project) {
@@ -31,9 +43,13 @@ export function routeFromLocation() {
   const route = Object.fromEntries([
     "tab", "q", "plan", "kind", "harness", "user", "host", "task", "after", "through", "state",
     "heading", "oid", "repo", "taskAfter", "taskCeiling", "claimAfter", "repliesAfter",
-    "backrefsAfter", "own_stale", "taskThrough", "claimThrough", "repliesThrough",
+    "backrefsAfter", "own_stale", "taskThrough", "claimThrough", "repliesThrough", "showInactive",
     "backrefsThrough", "before", "project",
   ].map(key => [key, query.get(key) || ""]));
+  route.showInactive = query.has("showInactive")
+    ? (query.get("showInactive") === "1" ? "1" : "0")
+    : savedOverviewFilter();
+  saveOverviewFilter(route.showInactive);
   const launchQuery = new URLSearchParams(location.search || "");
   route.project = query.has("project") ? query.get("project")
     : launchQuery.has("project") ? launchQuery.get("project") : savedProject();
@@ -83,7 +99,7 @@ export function createBoardRouting({ state, routeUrl, notice, load }) {
     if (next.project || changed) history.replaceState(history.state, "", routeUrl(next.view, next));
     updateProjectSelector(state.projects);
   }
-  function navigate(view, params = {}, replace = false) {
+  function navigate(view, params = {}, replace = false, focus = true) {
     const project = Object.hasOwn(params, "project") ? params.project : state.route.project;
     const fields = { ...params, project: project || "" };
     if ((project || "") !== (state.route.project || "")) {
@@ -94,7 +110,7 @@ export function createBoardRouting({ state, routeUrl, notice, load }) {
     state.navigation++;
     adoptRoute(routeFromLocation());
     notice("");
-    void load(true);
+    void load(focus);
   }
   document.getElementById("project")?.addEventListener("change", event => {
     navigate(state.route.view, { ...state.route, project: event.target.value });

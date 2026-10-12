@@ -4,16 +4,18 @@ mod attention_predicates;
 pub(super) use attention_predicates::attention_predicate;
 use rusqlite::{Connection, params};
 
-use super::{COLLECTION_LIMIT, claim_ttl, count, sequence_window, validate_limit};
+use super::{ACTIVE_TASKS, COLLECTION_LIMIT, claim_ttl, count, sequence_window, validate_limit};
 use crate::board::board_domain::board_collections::{
-    AttentionReply, EntryCursor, OverviewReply, PlanOverview,
+    AttentionReply, EntryCursor, OverviewCursor, OverviewReply, PlanOverview,
 };
-use crate::board::board_ids::{EventSeq, PlanId};
+use crate::board::board_ids::EventSeq;
 use crate::board::board_protocol::{BoardReply, BoardResult, ReadScope};
 use crate::board::board_vocabulary::EntryKind;
 use crate::board::local_board::board_queries::read_scope_sql::{ScopeSql, plan_repo_keys};
 use crate::board::local_board::board_queries::{board_reads, collection_nested};
-use crate::board::local_board::{BoardError, WriteContext, sql_error, sql_number};
+use crate::board::local_board::{
+    BoardError, WriteContext, invalid, row_number, sql_error, sql_number,
+};
 
 const NESTED_LIMIT: usize = 20;
 
@@ -35,59 +37,92 @@ pub(in crate::board::local_board) fn overview(
     conn: &Connection,
     ctx: &WriteContext,
     scope: &ReadScope,
-    after: Option<PlanId>,
+    after: Option<OverviewCursor>,
+    active_only: bool,
     through: Option<EventSeq>,
     limit: usize,
 ) -> Result<BoardReply, BoardError> {
     validate_limit(limit, COLLECTION_LIMIT)?;
     let (_, through) = sequence_window(conn, None, through)?;
+    if let Some(after) = after {
+        after.validate().map_err(BoardError::from)?;
+        if after.seq > through {
+            return Err(invalid(
+                "invalid_reference",
+                "overview cursor exceeds through",
+            ));
+        }
+    }
     let scope_sql = ScopeSql::new(scope)?;
     let membership = ScopeSql::plan_predicate("p.id", 1, 2);
-    let predicate = format!(
-        "{membership} AND p.id>?3 AND EXISTS(SELECT 1 FROM revisions initial \
-         WHERE initial.plan_id=p.id AND initial.number=1 AND initial.seq<=?4)"
+    let active_filter = if active_only {
+        format!("AND EXISTS(SELECT 1 FROM tasks t WHERE t.plan_id=p.id AND {ACTIVE_TASKS})")
+    } else {
+        String::new()
+    };
+    let candidates = format!(
+        concat!(
+            "WITH candidates AS (SELECT p.id,p.title,p.owner_user,p.steward,p.head_revision,p.created_at,",
+            "coalesce((SELECT max(e.seq) FROM events e WHERE e.plan_id=p.id AND e.seq<=?5),",
+            "(SELECT initial.seq FROM revisions initial WHERE initial.plan_id=p.id AND initial.number=1 ",
+            "AND initial.seq<=?5)) AS activity_seq FROM plans p WHERE {membership} ",
+            "AND EXISTS(SELECT 1 FROM revisions initial WHERE initial.plan_id=p.id ",
+            "AND initial.number=1 AND initial.seq<=?5) {active_filter}) "
+        ),
+        membership = membership,
+        active_filter = active_filter,
     );
+    let keyset = "(?3=0 OR activity_seq<?3 OR (activity_seq=?3 AND id<?4))";
     let mut statement = conn
         .prepare(&format!(
             concat!(
-                "SELECT p.id,p.title,p.owner_user,p.steward,p.head_revision,p.created_at FROM plans p ",
-                "WHERE {predicate} ORDER BY p.id LIMIT ?5"
+                "{candidates} SELECT id,title,owner_user,steward,head_revision,created_at,activity_seq ",
+                "FROM candidates WHERE {keyset} ORDER BY activity_seq DESC,id DESC LIMIT ?6"
             ),
-            predicate = predicate
+            candidates = candidates,
+            keyset = keyset,
         ))
         .map_err(sql_error)?;
     let mut rows = statement
         .query(params![
             scope_sql.kind,
             scope_sql.keys_json,
-            sql_number(after.map_or(0, PlanId::get)),
+            sql_number(after.map_or(0, |cursor| cursor.seq.get())),
+            sql_number(after.map_or(0, |cursor| cursor.plan.get())),
             sql_number(through.get()),
             sql_number((limit + 1) as u64)
         ])
         .map_err(sql_error)?;
     let mut records = Vec::with_capacity(limit + 1);
     while let Some(row) = rows.next().map_err(sql_error)? {
-        records.push(board_reads::plan_row(row)?);
+        records.push((
+            board_reads::plan_row(row)?,
+            EventSeq::new(row_number(row, 6).map_err(sql_error)?),
+        ));
     }
     let next_after = if records.len() > limit {
         records.truncate(limit);
-        records.last().map(|plan| plan.id)
+        records.last().map(|(plan, seq)| OverviewCursor {
+            seq: *seq,
+            plan: plan.id,
+        })
     } else {
         None
     };
     let total = count(
         conn,
-        &format!("SELECT count(*) FROM plans p WHERE {predicate}"),
+        &format!("{candidates} SELECT count(*) FROM candidates WHERE {keyset}"),
         params![
             scope_sql.kind,
             scope_sql.keys_json,
-            sql_number(after.map_or(0, PlanId::get)),
+            sql_number(after.map_or(0, |cursor| cursor.seq.get())),
+            sql_number(after.map_or(0, |cursor| cursor.plan.get())),
             sql_number(through.get())
         ],
     )?;
     let mut plans = Vec::with_capacity(records.len());
     let open_question = open_question("?2");
-    for plan in records {
+    for (plan, updated_seq) in records {
         let tasks = collection_nested::overview_task_window(conn, plan.id, NESTED_LIMIT)?;
         let tasks_omitted = tasks.omitted;
         let task_ceiling = tasks.ceiling;
@@ -133,6 +168,7 @@ pub(in crate::board::local_board) fn overview(
         plans.push(PlanOverview {
             repo_keys: plan_repo_keys(conn, plan.id)?,
             plan,
+            updated_seq,
             tasks,
             task_ceiling,
             done_count,

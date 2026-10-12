@@ -21,7 +21,7 @@ board search TEXT… [--plan P7] [-n LIMIT]
 board web [P7 | P7@N | E482]
 board [inbox] [SEQ] [--wait] [--all | --project NAME|ID]
 board show [P7 | P7.3 | P7@12 | P7@10.. | P7@10..14 | E482]
-board show [--all | --project NAME|ID] [--after P7] [--through SEQ] [-n LIMIT]
+board show [--all | --project NAME|ID] [--after SEQ:P7] [--through SEQ] [-n LIMIT]
 board projects
 board new TITLE… [--steward HARNESS] [--body FILE|-]
 board claim P7.3 [SCOPE…] [--resume[=E#]] [--for HARNESS/SESSION]
@@ -57,6 +57,8 @@ the delegated lease by moving the task.
 `--project` selects collection Show, Inbox, or Attention; targeted Show rejects it. `--project`
 and `--all` are mutually exclusive. Selection follows the [project read
 scopes](board-projects.md#read-scopes), and continuation hints retain the supplied selector.
+Overview pages sort by latest plan event first and continue with the `SEQ:P7` cursor shown in the
+reply. Reuse the same `--through` value across pages.
 
 Grammar/metadata preflight precedes file or stdin reads; `--body -` reads stdin. Grammar errors
 begin `usage: board` or `usage: feedback`. Free text stays raw in `--board-text`; internal
@@ -94,7 +96,7 @@ Retain returned `through` and feedback `--open`. Each typed reply carries these 
 | Feed | 500 events; ascending `seq`, scalar `next_after`, fixed `through` |
 | History | 200 revision metadata records without bodies; same sequence cursor |
 | Entries | 200 entries; descending `(seq,id)` newest-first; `next_before: {seq,entry}` |
-| Overview | 200 plans; `PlanId` cursor; 20 tasks and 20 active claims each, omitted counts |
+| Overview | 200 plans by latest event; `{seq,plan}` cursor; 20 tasks and 20 active claims each, omitted counts |
 | Attention | 200 entries and 200 own stale claims; entry/claim cursors, omitted counts |
 | Tasks | 200 cards; `TaskId` cursor, captured `TaskCeiling`, and omitted count |
 | DoneTasks | 200 current Done tasks; descending `(seq,plan,ordinal)`, `next_before: {seq,id}` |

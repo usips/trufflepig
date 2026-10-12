@@ -21,6 +21,16 @@ impl BoardOp {
             Self::Claims {
                 after: Some(after), ..
             } => after.validate()?,
+            Self::Overview {
+                after: Some(after),
+                through,
+                ..
+            } => {
+                after.validate()?;
+                if through.is_some_and(|through| after.seq > through) {
+                    bail!("invalid_reference: overview cursor exceeds through");
+                }
+            }
             Self::DoneTasks {
                 before: Some(before),
                 ..

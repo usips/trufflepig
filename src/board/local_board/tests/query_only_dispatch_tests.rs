@@ -88,6 +88,7 @@ fn readonly_dispatch_leaves_actors_sessions_and_claims_untouched() {
             BoardOp::Overview {
                 scope: ReadScope::All,
                 after: None,
+                active_only: false,
                 through: None,
                 limit: 200,
             },

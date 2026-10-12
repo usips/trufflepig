@@ -4,10 +4,10 @@ mod done_grammar_tests;
 #[test]
 fn board_collection_grammar_uses_frozen_typed_cursors_and_required_show_targets() {
     use crate::board::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
-    use crate::board::board_protocol::{BoardOp, EntryCursor};
+    use crate::board::board_protocol::{BoardOp, EntryCursor, OverviewCursor};
     let examples = [
         vec!["board", "show"],
-        vec!["board", "show", "--after=P7", "--through=90", "-n3"],
+        vec!["board", "show", "--after=12:P7", "--through=90", "-n3"],
         vec!["board", "show", "--all"],
         vec!["board", "show", "E512"],
         vec!["board", "show", "P7.3"],
@@ -70,6 +70,27 @@ fn board_collection_grammar_uses_frozen_typed_cursors_and_required_show_targets(
     assert_eq!(limit, 200);
     assert!(!bare.board.all);
     assert!(scope.is_all());
+    let continuation = parse(&[
+        "board".into(),
+        "show".into(),
+        "--after=12:P7".into(),
+        "--through=90".into(),
+    ])
+    .unwrap();
+    let BoardCommand::Op(BoardOp::Overview {
+        after, active_only, ..
+    }) = board_parse(&continuation, None).unwrap()
+    else {
+        panic!("overview continuation");
+    };
+    assert_eq!(
+        after,
+        Some(OverviewCursor {
+            seq: "12".parse().unwrap(),
+            plan: "P7".parse().unwrap(),
+        })
+    );
+    assert!(!active_only);
     let global = parse(&["board".into(), "show".into(), "--all".into()]).unwrap();
     let BoardCommand::Op(BoardOp::Overview { scope, .. }) = board_parse(&global, None).unwrap()
     else {

@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::board_domain::board_collections::OverviewCursor;
 use crate::board::board_ids::TaskId;
 use crate::board::board_protocol::ReadScope;
 use crate::board::board_vocabulary::{PlanTitle, TaskColumn};
@@ -184,6 +185,7 @@ fn internal_collections_keep_frozen_bounds_without_cli_hints() {
 #[test]
 fn overview_nested_fallback_keeps_task_membership_ceiling() {
     let plan = PlanId::new(7).unwrap();
+    let next_plan = PlanId::new(8).unwrap();
     let tasks = (1..31)
         .map(|ordinal| TaskRecord {
             id: TaskId::new(plan, ordinal).unwrap(),
@@ -195,37 +197,76 @@ fn overview_nested_fallback_keeps_task_membership_ceiling() {
             done_at: None,
         })
         .collect();
+    let repo_key = (1..100)
+        .map(|root| format!("{root:040x}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let second_plan = PlanOverview {
+        repo_keys: vec![crate::board::board_ids::RepoKey::parse(&repo_key).unwrap()],
+        updated_seq: EventSeq::new(18),
+        plan: PlanRecord {
+            id: next_plan,
+            title: PlanTitle::new("Next").unwrap(),
+            owner_user: "josh".into(),
+            steward: None,
+            head_revision: 1,
+            created_at: 101,
+        },
+        tasks: Vec::new(),
+        task_ceiling: TaskCeiling {
+            plan: next_plan,
+            ordinal: 0,
+        },
+        done_count: 0,
+        recent_done: Vec::new(),
+        claims: Vec::new(),
+        open_questions: 0,
+        open_proposals: 0,
+        open_feedback: 0,
+        tasks_omitted: 0,
+        claims_omitted: 0,
+    };
     let mut reply = BoardReply::new(
         "local",
         BoardResult::Overview(OverviewReply {
             scope: ReadScope::All,
-            plans: vec![PlanOverview {
-                repo_keys: Vec::new(),
-                plan: PlanRecord {
-                    id: plan,
-                    title: PlanTitle::new("Trial").unwrap(),
-                    owner_user: "josh".into(),
-                    steward: None,
-                    head_revision: 1,
-                    created_at: 100,
+            plans: vec![
+                PlanOverview {
+                    repo_keys: Vec::new(),
+                    updated_seq: EventSeq::new(20),
+                    plan: PlanRecord {
+                        id: plan,
+                        title: PlanTitle::new("Trial").unwrap(),
+                        owner_user: "josh".into(),
+                        steward: None,
+                        head_revision: 1,
+                        created_at: 100,
+                    },
+                    tasks,
+                    task_ceiling: TaskCeiling { plan, ordinal: 30 },
+                    done_count: 0,
+                    recent_done: Vec::new(),
+                    claims: Vec::new(),
+                    open_questions: 2,
+                    open_proposals: 3,
+                    open_feedback: 4,
+                    tasks_omitted: 5,
+                    claims_omitted: 6,
                 },
-                tasks,
-                task_ceiling: TaskCeiling { plan, ordinal: 30 },
-                done_count: 0,
-                recent_done: Vec::new(),
-                claims: Vec::new(),
-                open_questions: 2,
-                open_proposals: 3,
-                open_feedback: 4,
-                tasks_omitted: 5,
-                claims_omitted: 6,
-            }],
+                second_plan,
+            ],
             omitted: 7,
             server_now: 100,
             claim_ttl_secs: 60,
-            after: Some(PlanId::new(6).unwrap()),
+            after: Some(OverviewCursor {
+                seq: EventSeq::new(6),
+                plan: PlanId::new(6).unwrap(),
+            }),
             through: EventSeq::new(70),
-            next_after: Some(plan),
+            next_after: Some(OverviewCursor {
+                seq: EventSeq::new(18),
+                plan: next_plan,
+            }),
         }),
     );
     reply.snapshot_seq = Some(EventSeq::new(100));
@@ -234,10 +275,22 @@ fn overview_nested_fallback_keeps_task_membership_ceiling() {
     let value: serde_json::Value = serde_json::from_str(&rendered.text).unwrap();
     let page: OverviewReply = serde_json::from_value(value["result"]["data"].clone()).unwrap();
     assert_eq!(value["snapshot_seq"], 100);
-    assert_eq!(page.after, Some(PlanId::new(6).unwrap()));
+    assert_eq!(
+        page.after,
+        Some(OverviewCursor {
+            seq: EventSeq::new(6),
+            plan: PlanId::new(6).unwrap(),
+        })
+    );
     assert_eq!(page.through, EventSeq::new(70));
-    assert_eq!(page.next_after, Some(plan));
-    assert_eq!(page.omitted, 7);
+    assert_eq!(
+        page.next_after,
+        Some(OverviewCursor {
+            seq: EventSeq::new(20),
+            plan,
+        })
+    );
+    assert_eq!(page.omitted, 8);
     assert_eq!(page.plans.len(), 1);
     assert_eq!(
         page.plans[0].task_ceiling,
@@ -251,7 +304,7 @@ fn overview_nested_fallback_keeps_task_membership_ceiling() {
         value["next"]
             .as_str()
             .unwrap()
-            .starts_with("board show --after P7 --through 70")
+            .starts_with("board show --after 20:P7 --through 70")
     );
     assert!(budget.fits(&rendered.text));
 }

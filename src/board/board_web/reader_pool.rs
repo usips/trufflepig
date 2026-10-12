@@ -143,6 +143,7 @@ mod tests {
         BoardOp::Overview {
             scope: ReadScope::All,
             after: None,
+            active_only: false,
             through: None,
             limit: 200,
         }

@@ -9,6 +9,7 @@ installDomShim();
 beforeEach(() => resetDomShim());
 
 function harness() {
+  const navigations = [];
   const state = {
     route: { view: "overview" }, clockOffsetMs: 0, seenAtOpen: null, navigation: 0,
     formDrafts: new Map(), formStatuses: new Map(), pendingForms: new Set(),
@@ -21,7 +22,8 @@ function harness() {
     collection: (data, key) => data?.[key] || [], entryRecord: value => value?.entry || value,
     permitted: () => false, pageParams: route => route, nextAfter: () => null,
     queryFilters: () => ({}), postKinds: [], entryKinds: [], errorMessage: error => error.message,
-    board: noop, jsonFetch: noop, navigate: noop, scheduleRefresh: noop, notice: noop,
+    board: noop, jsonFetch: noop, navigate: (...args) => navigations.push(args),
+    scheduleRefresh: noop, notice: noop,
   });
   const data = { plans: [{
     plan: { id: "P7", title: "Readable board", head_revision: 1 }, tasks: [], claims: [],
@@ -41,7 +43,7 @@ function harness() {
     getToken: () => "fixture", isExpired: () => false, enterExpired: noop,
     notice: noop, setConnection: noop, noteSeen: noop, wiring,
   });
-  return { state, dom, views, data, overview, main, wiring, loop };
+  return { state, dom, views, data, overview, main, wiring, loop, navigations };
 }
 
 it("closed_done_is_a_compact_footer", () => {
@@ -76,6 +78,51 @@ it("a completed plan has a compact empty state and accurate active counts", () =
   assert.ok(overview().querySelectorAll("a").some(node => node.textContent === "Browse all tasks"));
   data.plans[0].tasks = [];
   assert.ok(overview().querySelector(".lane-columns"), "omitted active work is not described as empty");
+});
+
+it("overview filters persist in the route and reset plan paging when toggled", () => {
+  const { state, overview, navigations } = harness();
+  state.route = { view: "overview", after: JSON.stringify({ seq: "80", plan: "P8" }), through: "100" };
+  const page = overview(), filter = page.querySelector("input"), label = filter.parentElement;
+  const disclosure = page.querySelector("details");
+  const summary = disclosure.querySelector("summary");
+  assert.ok(summary.textContent.includes("Filters"));
+  assert.equal(summary.dataset.focusKey, "overview:filters");
+  assert.equal(summary.attributes.has("tabindex"), false, "the native summary remains a tab stop");
+  assert.equal(filter.dataset.focusKey, "overview:show-inactive");
+  assert.equal(filter.checked, false);
+  assert.equal(label.children[1].textContent, "Show plans without active tasks");
+  assert.equal(page.querySelector(".overview-filter-status").textContent,
+    "Showing plans with active tasks, sorted by most recently updated.");
+  disclosure.open = true;
+  disclosure.listeners.get("toggle")[0]();
+  assert.equal(state.overviewFiltersOpen, true);
+  filter.checked = true;
+  filter.listeners.get("change")[0]({ target: filter });
+  assert.deepEqual(navigations[0], ["overview", {
+    view: "overview", after: "", through: "", showInactive: "1",
+  }, false, false], "filter changes preserve the focused checkbox while reloading the overview");
+  state.route = { view: "overview", showInactive: "1" };
+  const allPlans = overview();
+  assert.equal(allPlans.querySelector("details").open, true,
+    "the filter disclosure remains open across the navigation rerender");
+  assert.equal(overview().querySelector("details").open, true,
+    "the filter disclosure remains open across a refresh rerender");
+  assert.equal(allPlans.querySelector("input").checked, true);
+  assert.equal(allPlans.querySelector(".overview-filter-status").textContent,
+    "Showing all plans, sorted by most recently updated.");
+});
+
+it("the active-plan empty state leaves a visible recovery filter", () => {
+  const { state, data, overview } = harness();
+  data.plans = [];
+  const activeOnly = overview();
+  assert.equal(activeOnly.querySelector(".empty").textContent, "No plans with active tasks.");
+  assert.ok(activeOnly.querySelector("input"), "the filter stays available when no active plans match");
+  assert.equal(activeOnly.querySelector(".overview-filter-status").textContent,
+    "Showing plans with active tasks, sorted by most recently updated.");
+  state.route = { view: "overview", showInactive: "1" };
+  assert.equal(overview().querySelector(".empty").textContent, "No plans yet.");
 });
 
 it("Working now leads with the task and scope and retains the exact actor identity", () => {

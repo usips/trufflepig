@@ -21,14 +21,33 @@ pub struct OverviewReply {
     pub scope: ReadScope,
     pub server_now: i64,
     pub claim_ttl_secs: u64,
-    pub after: Option<PlanId>,
+    pub after: Option<OverviewCursor>,
     pub through: EventSeq,
-    pub next_after: Option<PlanId>,
+    pub next_after: Option<OverviewCursor>,
+}
+
+/// Update sequence and plan id form a descending overview page key.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OverviewCursor {
+    pub seq: EventSeq,
+    pub plan: PlanId,
+}
+
+impl OverviewCursor {
+    pub fn validate(self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.seq.get() > 0,
+            "invalid_reference: overview cursor sequence must be positive"
+        );
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PlanOverview {
     pub plan: PlanRecord,
+    pub updated_seq: EventSeq,
     pub repo_keys: Vec<RepoKey>,
     pub tasks: Vec<TaskRecord>,
     pub task_ceiling: TaskCeiling,

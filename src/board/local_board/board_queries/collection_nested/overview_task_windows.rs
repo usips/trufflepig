@@ -2,7 +2,6 @@
 //! Done tasks never consume the active window's capacity.
 use super::*;
 
-const ACTIVE_TASKS: &str = "t.column_name IN ('todo','doing','review','blocked')";
 const RECENT_DONE_LIMIT: usize = 5;
 
 pub(in crate::board::local_board) struct OverviewTaskWindow {

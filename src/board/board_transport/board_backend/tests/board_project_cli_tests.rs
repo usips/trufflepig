@@ -161,7 +161,7 @@ fn show_project_lists_only_member_repo_plans() {
                 &["board", "show", "--project", "W1"],
             )
             .expect("board show --project must accept a registered workspace name");
-        assert_eq!(overview_plan_ids(&output), ["P1", "P2"]);
+        assert_eq!(overview_plan_ids(&output), ["P2", "P1"]);
     });
 }
 

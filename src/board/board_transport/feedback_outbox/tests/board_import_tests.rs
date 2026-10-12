@@ -220,6 +220,7 @@ fn imported_feedback_sets_server_provenance_and_direct_feedback_does_not() {
                 BoardOp::Overview {
                     scope: ReadScope::All,
                     after: None,
+                    active_only: false,
                     through: None,
                     limit: 200,
                 }

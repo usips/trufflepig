@@ -7,7 +7,7 @@ use super::{
     board_syntax_validation::{check_flags, fixed_words, word},
 };
 use crate::board::board_ids::{BoardRef, EventSeq, PlanId};
-use crate::board::board_protocol::{BoardOp, EntryCursor, TaskCursor, TaskOrder};
+use crate::board::board_protocol::{BoardOp, EntryCursor, OverviewCursor, TaskCursor, TaskOrder};
 use crate::board::board_vocabulary::TaskColumn;
 use crate::cli::Arguments;
 use anyhow::{Context, Result, bail, ensure};
@@ -37,8 +37,17 @@ pub(super) fn parse_read(
                         .board
                         .after
                         .as_deref()
-                        .map(str::parse::<PlanId>)
+                        .map(|cursor| {
+                            let (seq, plan) = cursor
+                                .split_once(':')
+                                .context("invalid_reference: overview cursor must be SEQ:P7")?;
+                            Ok::<_, anyhow::Error>(OverviewCursor {
+                                seq: seq.parse()?,
+                                plan: plan.parse::<PlanId>()?,
+                            })
+                        })
                         .transpose()?,
+                    active_only: false,
                     through: through(options)?,
                     limit: bounded_limit(options, 200)?,
                 }

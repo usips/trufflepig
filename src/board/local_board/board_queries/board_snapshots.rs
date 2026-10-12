@@ -67,10 +67,18 @@ impl LocalBoard {
             BoardOp::Overview {
                 scope,
                 after,
+                active_only,
                 through,
                 limit,
-                ..
-            } => collection_reads::overview(&tx, &ctx, scope, *after, *through, *limit)?,
+            } => collection_reads::overview(
+                &tx,
+                &ctx,
+                scope,
+                *after,
+                *active_only,
+                *through,
+                *limit,
+            )?,
             BoardOp::Attention {
                 scope,
                 after,

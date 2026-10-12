@@ -50,6 +50,7 @@ fn scoped_reads_fill_the_caller_repository_and_all_stays_global() {
         BoardOp::Overview {
             scope: ReadScope::All,
             after: None,
+            active_only: false,
             through: None,
             limit: 20,
         },
@@ -85,6 +86,7 @@ fn scoped_reads_fill_the_caller_repository_and_all_stays_global() {
         BoardOp::Overview {
             scope: ReadScope::All,
             after: None,
+            active_only: false,
             through: None,
             limit: 20,
         },

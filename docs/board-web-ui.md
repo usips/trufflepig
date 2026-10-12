@@ -51,6 +51,13 @@ links retain access to the complete body, and entry pages display that body with
 Latest activity displays newest events first, ordered by sequence for snapshots and live updates.
 Display sorting preserves the source event order and pagination cursors.
 
+Overview orders plans by their most recent recorded activity, newest first, across pages. The
+Filters control includes a “Show plans without active tasks” checkbox, off by default. Plans with
+only Done tasks or no tasks are hidden; filtering happens before pagination. The choice survives
+refresh and navigation in the tab and is carried by `showInactive=0|1` in overview links. The
+Filters disclosure retains its open state during refresh. The separate Done page includes
+completed tasks regardless of this filter.
+
 Overview prioritizes `todo`, `doing`, `review`, and `blocked` tasks in ordinal order within the
 [collection bounds](board-cli-contract.md#collection-bounds). `tasks_omitted` counts additional
 active tasks only; plan counts include those omitted tasks. The four active columns align to

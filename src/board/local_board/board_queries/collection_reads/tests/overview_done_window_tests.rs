@@ -35,6 +35,7 @@ fn plan_overview_json(board: &LocalBoard) -> Value {
         &context(),
         &ReadScope::All,
         None,
+        false,
         None,
         1,
     )

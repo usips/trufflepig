@@ -18,6 +18,7 @@ fn overview_with_recent_done() -> BoardReply {
         BoardResult::Overview(OverviewReply {
             plans: vec![PlanOverview {
                 repo_keys: Vec::new(),
+                updated_seq: EventSeq::new(70),
                 plan: PlanRecord {
                     id: plan,
                     title: PlanTitle::new("Trial").unwrap(),

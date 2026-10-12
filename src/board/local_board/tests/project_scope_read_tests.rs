@@ -132,7 +132,7 @@ fn repo_scope_retains_addressed_messages_and_own_feedback() {
             .iter()
             .map(|row| row.plan.id)
             .collect::<Vec<_>>(),
-        vec![fixture.plans[0], fixture.plans[3]]
+        vec![fixture.plans[3], fixture.plans[0]]
     );
     let reply = fixture.read(
         scope.clone(),

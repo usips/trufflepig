@@ -11,7 +11,7 @@ use rusqlite::{Connection, Row, params};
 #[cfg(test)]
 use super::super::WriteContext;
 use super::super::{BoardError, invalid, require_plan, row_number, sql_error, sql_number};
-use super::collection_reads::{count, sequence_window, validate_limit};
+use super::collection_reads::{ACTIVE_TASKS, count, sequence_window, validate_limit};
 use crate::board::board_actor::BoardRecipient;
 #[cfg(test)]
 use crate::board::board_domain::board_collections::ClaimCursor;

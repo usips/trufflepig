@@ -22,7 +22,7 @@ pub use board_requests::{
 
 use anyhow::{Result, bail};
 
-pub const BOARD_API: u32 = 8;
+pub const BOARD_API: u32 = 9;
 
 fn validate_claim(value: &str, field: &str) -> Result<()> {
     if value.trim().is_empty() || value.len() > 256 || value.chars().any(char::is_control) {

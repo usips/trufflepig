@@ -149,6 +149,7 @@ fn host_project_selection_uses_id_first_and_rejects_sorted_name_ambiguity() {
     let mut op = BoardOp::Overview {
         scope: ReadScope::All,
         after: None,
+        active_only: false,
         through: None,
         limit: 10,
     };
@@ -176,6 +177,7 @@ fn host_project_selection_uses_id_first_and_rejects_sorted_name_ambiguity() {
     let mut explicit = BoardOp::Overview {
         scope: ReadScope::Unscoped,
         after: None,
+        active_only: false,
         through: None,
         limit: 10,
     };

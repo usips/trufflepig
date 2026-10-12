@@ -1,7 +1,8 @@
 //! Prefix fitting preserves each collection's continuation and membership boundary.
 use super::{BoardOmitted, fit_items, render_complete, require_fits};
 use crate::board::board_protocol::{
-    BoardReply, BoardResult, EntryCursor, EntryRecord, ReadScope, TaskCursor, TaskOrder, TaskRecord,
+    BoardReply, BoardResult, EntryCursor, EntryRecord, OverviewCursor, ReadScope, TaskCursor,
+    TaskOrder, TaskRecord,
 };
 use crate::board::board_render::RenderedBoard;
 use crate::board::board_render::render_scope_hints::cli_scope_flag;
@@ -77,10 +78,13 @@ fn prefix(
         BoardResult::Overview(page) => {
             omitted.plans = page.plans.len() - count;
             if omitted.plans > 0 {
-                page.next_after = page
-                    .plans
-                    .get(count.wrapping_sub(1))
-                    .map(|plan| plan.plan.id);
+                page.next_after =
+                    page.plans
+                        .get(count.wrapping_sub(1))
+                        .map(|plan| OverviewCursor {
+                            seq: plan.updated_seq,
+                            plan: plan.plan.id,
+                        });
             }
             page.plans.truncate(count);
             page.omitted += omitted.plans;
@@ -241,7 +245,9 @@ fn next_hint(result: &BoardResult, project: Option<&str>) -> Option<String> {
         }),
         BoardResult::Overview(page) => page.next_after.map(|after| {
             format!(
-                "board show --after {after} --through {}{}",
+                "board show --after {}:{} --through {}{}",
+                after.seq,
+                after.plan,
                 page.through,
                 cli_scope_flag(&page.scope, project)
             )

@@ -45,13 +45,19 @@ See [revision, task, claim, and event semantics](board-claims.md).
 
 ## Backend, transport, and deadlines
 
-Every operation uses `BoardRequest { api: BOARD_API, actor, op, claims }` with `BOARD_API = 8`.
+Every operation uses `BoardRequest { api: BOARD_API, actor, op, claims }` with `BOARD_API = 9`.
 Replies are typed `BoardReply`. `BoardBackend` owns state and returns data; the edge parses, reads
 bodies, scans local Git, and renders. An API mismatch fails `board_api_mismatch` without
 negotiation. `LocalBoard` is the SQLite backend. Replies identify the backend and expose a
 read-transaction `snapshot_seq`. `ReviewEvidence.manual_links` contains per-task `ManualCommitLink {
 repo_key: RepoKey, oid: GitOid, task: TaskId, entry: EntryId, seq: Option<EventSeq>, actor:
 Option<BoardActor> }`; absent optionals preserve unknown attribution.
+
+Overview pages order plans by their latest event sequence at `through`, newest first, with plan ID
+descending as the tie-breaker. `OverviewCursor { seq, plan }` carries both parts of that key, and
+each overview row exposes its bounded `updated_seq` for budget-truncated continuations; keep the
+returned `through` for every continuation. The optional `active_only` request field defaults to
+false and removes plans without a current active task before the result is counted and paged.
 
 The client chooses socket or spool transport before host-side [Project
 resolution](board-projects.md#live-host-resolution); if no router answers, it makes one `system
