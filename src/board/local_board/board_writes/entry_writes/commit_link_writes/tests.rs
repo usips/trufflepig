@@ -528,3 +528,40 @@ fn overlapping_claim_windows_stay_unassigned_even_when_only_one_vendor_matches()
     scan(&mut board, commit.clone());
     assert_eq!(claim_for(&board, commit.oid, task), None);
 }
+
+#[test]
+fn scan_refreshes_matching_claim_activity_at_commit_time() {
+    let directory = crate::board::board_test_support::scratch("board-commit-activity-");
+    let mut board = LocalBoard::open_path(
+        &directory.path().join("board.sqlite3"),
+        Duration::from_secs(120),
+    )
+    .unwrap();
+    let plan = create_plan(&mut board, "Commit activity");
+    let (task, _claim) = add_task(&mut board, plan, 1, "codex");
+    set_claim_window(&board, task, 1000, None);
+    board
+        .conn
+        .execute(
+            "UPDATE claims SET last_active=1000 WHERE plan_id=?1 AND task_ordinal=?2",
+            params![task.plan.get() as i64, task.ordinal as i64],
+        )
+        .unwrap();
+    let commit = linked_commit(
+        'c',
+        1500,
+        &[task],
+        vec![coauthor("codex", "gpt-6.1-sol")],
+        Vec::new(),
+    );
+    assert_eq!(scan(&mut board, commit).inserted, 1);
+    let last_active: i64 = board
+        .conn
+        .query_row(
+            "SELECT last_active FROM claims WHERE plan_id=?1 AND task_ordinal=?2",
+            params![task.plan.get() as i64, task.ordinal as i64],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(last_active, 1500);
+}

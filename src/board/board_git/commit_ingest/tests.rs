@@ -9,7 +9,7 @@ mod warning_subjects;
 use super::*;
 use crate::board::board_ids::EventSeq;
 use crate::board::board_protocol::{
-    ActorOrigin, BoardError, BoardReply, CommitLinkResult, WorkerAddress,
+    ActorOrigin, BoardError, BoardErrorCode, BoardReply, CommitLinkResult, WorkerAddress,
 };
 use crate::board::repo_identity::tests::GitFixture;
 use crate::identity::GitOid;
@@ -22,6 +22,7 @@ struct TestBackend {
     request_actors: Vec<BoardActor>,
     request_origins: Vec<Option<ActorOrigin>>,
     fail_next_link: bool,
+    rejected_oids: BTreeSet<GitOid>,
     unknown_plans: Vec<PlanId>,
     unknown_workers: Vec<WorkerAddress>,
     scan_errors: Vec<Option<String>>,
@@ -41,6 +42,15 @@ impl BoardBackend for TestBackend {
                     return Err(
                         anyhow::anyhow!("board_unavailable: injected linking failure").into(),
                     );
+                }
+                if let Some(commit) = commits
+                    .iter()
+                    .find(|commit| self.rejected_oids.contains(&commit.oid))
+                {
+                    return Err(BoardError::new(
+                        BoardErrorCode::InvalidOptions,
+                        format!("fixture rejects commit {}", commit.oid),
+                    ));
                 }
                 self.linked.extend(commits.iter().cloned());
                 BoardResult::CommitsLinked(CommitLinkResult {

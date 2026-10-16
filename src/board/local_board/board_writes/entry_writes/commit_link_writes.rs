@@ -29,7 +29,7 @@ pub(in crate::board::local_board) fn link_commits(
 
     let mut result = CommitLinkResult::default();
     for commit in commits {
-        let (valid_links, task_ids) = validate_links(tx, commit, &mut result)?;
+        let valid_links = validate_links(tx, commit, &mut result)?;
         if valid_links.is_empty() {
             continue;
         }
@@ -46,6 +46,9 @@ pub(in crate::board::local_board) fn link_commits(
         let mut event_plans = BTreeSet::new();
         let mut changed = false;
         for (plan, tasks) in valid_links {
+            if !plan_link_restorable(tx, commit, plan, &tasks)? {
+                continue;
+            }
             let entry = ensure_scan_plan_link(tx, ctx, commit, plan)?;
             if entry.1 {
                 changed = true;
@@ -98,6 +101,14 @@ pub(in crate::board::local_board) fn link_commits(
                     )
                     .map_err(sql_error)?;
                 if inserted > 0 {
+                    task_claims::refresh_commit_claims(
+                        tx,
+                        plan,
+                        ordinal,
+                        &commit.coauthors,
+                        commit.committed_at,
+                        ctx.now,
+                    )?;
                     changed = true;
                 }
             }
@@ -106,7 +117,7 @@ pub(in crate::board::local_board) fn link_commits(
         if changed {
             let entry = first_entry.expect("valid commit links have a plan entry");
             let plan = (event_plans.len() == 1).then(|| *event_plans.first().expect("one plan"));
-            let summary = linked_commit_summary(tx, commit, &task_ids)?;
+            let summary = linked_commit_summary(tx, commit)?;
             insert_event(
                 tx,
                 ctx,
@@ -171,7 +182,7 @@ fn validate_links(
     tx: &Transaction<'_>,
     commit: &LinkedCommit,
     result: &mut CommitLinkResult,
-) -> Result<(BTreeMap<PlanId, BTreeSet<u64>>, Vec<TaskId>), BoardError> {
+) -> Result<BTreeMap<PlanId, BTreeSet<u64>>, BoardError> {
     let mut requested = commit.plans.clone();
     requested.extend(commit.worker_refs.iter().map(|worker| {
         crate::board::board_protocol::CommitPlanLink {
@@ -210,15 +221,27 @@ fn validate_links(
             }
         }
     }
-    let task_ids = valid
-        .iter()
-        .flat_map(|(plan, ordinals)| {
-            ordinals
-                .iter()
-                .filter_map(|ordinal| TaskId::new(*plan, *ordinal).ok())
-        })
-        .collect();
-    Ok((valid, task_ids))
+    Ok(valid)
+}
+
+/// Plan-only trailers always link; a plan named by task trailers links only
+/// while one of those tasks is not suppressed by an unlink receipt.
+fn plan_link_restorable(
+    tx: &Transaction<'_>,
+    commit: &LinkedCommit,
+    plan: PlanId,
+    ordinals: &BTreeSet<u64>,
+) -> Result<bool, BoardError> {
+    if ordinals.is_empty() {
+        return Ok(true);
+    }
+    for ordinal in ordinals {
+        let task = TaskId::new(plan, *ordinal).map_err(BoardError::from)?;
+        if !task_link_suppressed(tx, &commit.repo_key, commit.oid, task)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Creates the System-authored plan entry only when the plan link is new.
@@ -410,7 +433,6 @@ fn worker_refs_match_claim(
 fn linked_commit_summary(
     tx: &Transaction<'_>,
     commit: &LinkedCommit,
-    task_ids: &[TaskId],
 ) -> Result<String, BoardError> {
     let (coauthors_json, linked_tasks): (String, Vec<(TaskId, Option<i64>)>) = {
         let coauthors: String = tx
@@ -446,12 +468,9 @@ fn linked_commit_summary(
             .map_err(|error| invalid("board_unavailable", error.to_string()))?;
     let mut model_names = BTreeSet::new();
     model_names.extend(coauthors.iter().map(|author| author.model.as_str()));
-    let mut associations = BTreeSet::new();
-    associations.extend(linked_tasks.iter().map(|(task, _)| *task));
-    associations.extend(task_ids.iter().copied());
-    let task_text = associations
+    let task_text = linked_tasks
         .iter()
-        .map(ToString::to_string)
+        .map(|(task, _)| task.to_string())
         .collect::<Vec<_>>()
         .join(", ");
     let model_text = model_names.into_iter().collect::<Vec<_>>().join(", ");

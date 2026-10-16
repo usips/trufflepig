@@ -67,5 +67,6 @@ responsible lead actor for evidence, not the proven writer.
 
 `Plan-Worker: P7.3/HANDLE` may add a worker reference independently of inferred claim links. An
 unknown handle is retained and warns; a known handle resolves only to that task's worker on its
-compatible claim interval. Manual commit links remain durable receipts. Historical actors and
+compatible claim interval. A commit keeps at most 256 worker references; extra trailers warn and
+their task links still link. Manual commit links remain durable receipts. Historical actors and
 coauthor snapshots are never rewritten.

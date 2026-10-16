@@ -135,16 +135,16 @@ dropping it. A parsed `Plan-Task` whose plan is not among the commit's `Plan` tr
 `plan_task_without_plan` and stays unlinked. Body-free grep matches `^(Plan|Plan-Task):\s*P\d`
 case-insensitively; empty plan trailer fields warn `misplaced_trailers`, never link. Subject matches
 are skipped even when bodies match. Grep is capped at 1 s, reserving 1 s for stats and 500 ms for
-final checks; failure warns `trailer_check_skipped`. Warnings stay separate from fatal errors. Task
-links across plans/windows suppress exact oid-keyed warnings per repo, including cache. Other
-diagnostics stay; review omits linked commits from `unlinked`. Caches retain raw warnings and
-unknown refs. Scans support Git 2.43 separately from history's gate. Repeated ingestion creates no
-duplicate link/entry/event; rebasing creates a new oid and evidence. Untrailered commits are not
-ingested; `board link OID P7.3` repairs one. Manual task links atomically write a canonical `commit`
-event and store its sequence in `commit_tasks.link_seq`; a plan-level scan entry may be reused.
-Exact manual retries return the original task receipt across callers and reopens. Existing scanned
-task links stay `source=scan` and are no-op dedupes; a `source=manual` link without a receipt fails
-`invalid_state`. External trailers retain all distinct matching plan tasks; unknown tasks preserve
+final checks; failure warns `trailer_check_skipped`. Warnings are not fatal; a rejected commit warns
+and is skipped. Task links across plans/windows suppress exact oid-keyed warnings per repo and
+cache. Other diagnostics stay; review omits linked commits from `unlinked`. Caches retain raw
+warnings and unknown refs. Scans support Git 2.43 separately from history's gate. Repeated
+ingestion creates no duplicate link/entry/event; rebasing creates a new oid and evidence.
+Untrailered commits are not ingested; `board link OID P7.3` repairs one. Manual task links
+atomically write a canonical `commit` event and store its sequence in `commit_tasks.link_seq`; a
+plan-level scan entry may be reused. Exact manual retries return the original task receipt across
+callers and reopens. Existing scanned task links stay `source=scan` and are no-op dedupes; a
+`source=manual` link without a receipt fails `invalid_state`. External trailers retain all distinct matching plan tasks; unknown tasks preserve
 the plan link and diagnostics. Co-author trailers and model snapshots attribute to vendors per the
 [CLI attribution rules](board-cli-contract.md#attribution).
 
@@ -156,8 +156,8 @@ nullable historical receipts remain `link_seq=unknown`. Ambiguous oid/task match
 `invalid_reference`. While absent, retries return the protected entry/sequence across authorized
 callers and reopens without another event. Unknown links without receipts fail `invalid_reference`.
 A current relink gets fresh unlink evidence. Unlink reads stored identity and registers no
-repository. It does not suppress trailers: changed tips can trigger metadata ingestion that restores
-scanned links.
+repository. Later ingestion skips the suppressed task link; a plan named only through suppressed
+tasks stays unlinked, while plan-only trailers still link. A manual relink restores both.
 
 Ingest runs explicitly, before review within `min(5 s, remaining - 3 s)`, and every 60 s from router
 idle on a separate thread only when the DB exists. Review assembles SSOT diff, entries, tasks,

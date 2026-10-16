@@ -2,7 +2,8 @@
 use super::{ParsedCommit, parse_coauthor};
 use crate::board::board_ids::{PlanId, RepoKey, TaskId};
 use crate::board::board_protocol::{
-    COAUTHOR_LIMIT, CommitCoauthor, CommitPlanLink, LINK_LIMIT, LinkedCommit, WorkerAddress,
+    COAUTHOR_LIMIT, CommitCoauthor, CommitPlanLink, LINK_LIMIT, LinkedCommit, WORKER_REF_LIMIT,
+    WorkerAddress,
 };
 use crate::identity::GitOid;
 use anyhow::{Context, Result, ensure};
@@ -117,33 +118,34 @@ fn worker_addresses(
     tasks: &mut BTreeSet<TaskId>,
     warnings: &mut Vec<String>,
 ) -> Vec<WorkerAddress> {
-    let mut addresses = Vec::with_capacity(values.len());
+    let mut addresses = Vec::with_capacity(values.len().min(WORKER_REF_LIMIT));
     let mut malformed = 0usize;
     let mut first_malformed: Option<anyhow::Error> = None;
+    let mut overflow = 0usize;
     for value in values {
         let task_value = value.split_once('/').map_or(value, |(task, _)| task);
         if let Ok(task) = task_value.parse::<TaskId>() {
             plans.insert(task.plan);
             tasks.insert(task);
         }
-        let address = match value.parse::<WorkerAddress>() {
-            Ok(address) => Some(address),
+        match value.parse::<WorkerAddress>() {
+            Ok(address) if addresses.contains(&address) => {}
+            Ok(_) if addresses.len() >= WORKER_REF_LIMIT => overflow += 1,
+            Ok(address) => addresses.push(address),
             Err(error) => {
+                malformed += 1;
                 first_malformed.get_or_insert(error);
-                None
             }
-        };
-        if let Some(address) = address {
-            if !addresses.contains(&address) {
-                addresses.push(address);
-            }
-        } else {
-            malformed += 1;
         }
     }
     if let Some(error) = first_malformed {
         warnings.push(format!(
             "skipped {malformed} malformed Plan-Worker trailer(s): {error:#}"
+        ));
+    }
+    if overflow > 0 {
+        warnings.push(format!(
+            "skipped {overflow} Plan-Worker trailer(s) past the {WORKER_REF_LIMIT} limit"
         ));
     }
     addresses

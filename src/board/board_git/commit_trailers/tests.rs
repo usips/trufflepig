@@ -1,6 +1,6 @@
 use super::*;
 use crate::board::board_ids::PlanId;
-use crate::board::board_protocol::{CommitPlanLink, WorkerAddress};
+use crate::board::board_protocol::{CommitPlanLink, WORKER_REF_LIMIT, WorkerAddress};
 use crate::identity::GitOid;
 
 #[test]
@@ -308,6 +308,36 @@ fn malformed_plan_worker_handle_keeps_valid_task_link() {
     assert!(parsed.records[0].commit.worker_refs.is_empty());
     assert_eq!(parsed.warnings.len(), 1, "{:?}", parsed.warnings);
     assert!(parsed.warnings[0].contains("Plan-Worker"));
+}
+
+#[test]
+fn plan_worker_trailers_past_the_reference_limit_keep_the_first_addresses() {
+    let key = RepoKey::from_roots([GitOid::parse(&"a".repeat(40)).unwrap()]).unwrap();
+    let oid = "b".repeat(40);
+    let workers = (0..=WORKER_REF_LIMIT)
+        .map(|index| format!("Plan-Worker: P7.3/agent-{index}"))
+        .collect::<Vec<_>>()
+        .join("\u{1d}");
+    let bytes =
+        format!("\0{oid}\01700000000\0Fixture <f@example.test>\0worker task\0\0\0{workers}\0\0\n");
+    let parsed = parse_log(bytes.as_bytes(), &key).unwrap();
+    let record = &parsed.records[0];
+    assert_eq!(record.commit.worker_refs.len(), WORKER_REF_LIMIT);
+    assert_eq!(
+        record.commit.plans,
+        vec![CommitPlanLink {
+            plan_id: PlanId::new(7).unwrap(),
+            task_ordinal: Some(3),
+        }]
+    );
+    assert_eq!(parsed.warnings.len(), 1, "{:?}", parsed.warnings);
+    assert!(
+        parsed.warnings[0].contains(&format!(
+            "skipped 1 Plan-Worker trailer(s) past the {WORKER_REF_LIMIT} limit"
+        )),
+        "{:?}",
+        parsed.warnings
+    );
 }
 
 #[test]

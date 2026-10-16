@@ -83,6 +83,39 @@ fn unknown_plan_worker_handle_warns_and_keeps_its_task_link() {
 }
 
 #[test]
+fn rejected_commit_warns_and_later_commits_still_link() {
+    let fixture = GitFixture::new();
+    fixture.commit("root");
+    let rejected = fixture.commit(&linked_message("rejected"));
+    let accepted = fixture.commit(&linked_message("accepted"));
+    let target = target(&fixture);
+    let mut backend = TestBackend {
+        rejected_oids: BTreeSet::from([rejected]),
+        ..TestBackend::default()
+    };
+    let report = RepoIngestor::default()
+        .ingest(&mut backend, &actor(), &[target], Duration::from_secs(5))
+        .unwrap();
+    assert_eq!(
+        backend
+            .linked
+            .iter()
+            .map(|commit| commit.oid)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([accepted])
+    );
+    assert_eq!(report.completed.len(), 1);
+    assert!(
+        report
+            .errors
+            .iter()
+            .any(|error| error.contains(&rejected.to_string()) && error.contains("invalid_options")),
+        "{:?}",
+        report.errors
+    );
+}
+
+#[test]
 fn malformed_commit_is_isolated_and_valid_metadata_is_bounded() {
     let fixture = GitFixture::new();
     fixture.commit("root");

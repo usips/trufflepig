@@ -197,7 +197,7 @@ impl RepoIngestor {
             return Ok(());
         }
         report.scanned += 1;
-        let scan = scan_log(registration, &tips, since, true, deadline)?;
+        let mut scan = scan_log(registration, &tips, since, true, deadline)?;
         let commits: Vec<LinkedCommit> = scan
             .records
             .into_iter()
@@ -212,6 +212,7 @@ impl RepoIngestor {
             "ingest",
         )?;
         for commit in commits {
+            let oid = commit.oid;
             let request = BoardRequest::system(
                 system_actor.clone(),
                 BoardOp::LinkCommits {
@@ -219,7 +220,15 @@ impl RepoIngestor {
                 },
             )
             .with_system_origin("ingest")?;
-            let reply = backend.handle(&request)?;
+            let reply = match backend.handle(&request) {
+                Ok(reply) => reply,
+                Err(error) if error.code.is_domain_answer() => {
+                    scan.warnings
+                        .push(format!("board_scan: commit {oid} rejected: {error}"));
+                    continue;
+                }
+                Err(error) => return Err(error.into()),
+            };
             let BoardResult::CommitsLinked(linked) = reply.result else {
                 anyhow::bail!("board_scan: unexpected commit-link reply");
             };

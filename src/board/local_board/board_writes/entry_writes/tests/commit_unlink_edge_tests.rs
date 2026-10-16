@@ -39,11 +39,28 @@ fn unlink_scan_link_stays_suppressed_after_reingest() {
         manual_link_count(&board, "SELECT COUNT(*) FROM commit_tasks"),
         0
     );
+    let commit_entries =
+        manual_link_count(&board, "SELECT COUNT(*) FROM entries WHERE kind='commit'");
+    let commit_events =
+        manual_link_count(&board, "SELECT COUNT(*) FROM events WHERE kind='commit'");
     board.handle(&request).unwrap();
     assert_eq!(
         manual_link_count(&board, "SELECT COUNT(*) FROM commit_tasks"),
         0,
         "a task link with an unlink receipt stays suppressed"
+    );
+    assert_eq!(
+        manual_link_count(&board, "SELECT COUNT(*) FROM commit_plans"),
+        0,
+        "trailers naming only suppressed tasks do not restore the plan link"
+    );
+    assert_eq!(
+        manual_link_count(&board, "SELECT COUNT(*) FROM entries WHERE kind='commit'"),
+        commit_entries
+    );
+    assert_eq!(
+        manual_link_count(&board, "SELECT COUNT(*) FROM events WHERE kind='commit'"),
+        commit_events
     );
     let second = unlink_change(board.handle(&unlink_request(owner, task)).unwrap());
     assert!(second.deduplicated);
@@ -51,6 +68,57 @@ fn unlink_scan_link_stays_suppressed_after_reingest() {
     assert_eq!(
         manual_link_count(&board, "SELECT COUNT(*) FROM entries WHERE kind='unlinked'"),
         1
+    );
+}
+
+#[test]
+fn plan_only_trailer_still_links_after_task_unlink() {
+    let directory = crate::board::board_test_support::scratch("board-unlink-");
+    let mut board = LocalBoard::open_path(
+        &directory.path().join("board.sqlite3"),
+        Duration::from_secs(120),
+    )
+    .unwrap();
+    let (owner, task) = manual_link_plan(&mut board);
+    let mut scanned = manual_link_resolution();
+    scanned.plans = vec![CommitPlanLink {
+        plan_id: task.plan,
+        task_ordinal: Some(task.ordinal),
+    }];
+    board
+        .handle(&BoardRequest::new(
+            owner.clone(),
+            BoardOp::LinkCommits {
+                commits: vec![scanned.clone()],
+            },
+        ))
+        .unwrap();
+    board.handle(&unlink_request(owner.clone(), task)).unwrap();
+    let commit_entries =
+        manual_link_count(&board, "SELECT COUNT(*) FROM entries WHERE kind='commit'");
+    scanned.plans = vec![CommitPlanLink {
+        plan_id: task.plan,
+        task_ordinal: None,
+    }];
+    board
+        .handle(&BoardRequest::new(
+            owner,
+            BoardOp::LinkCommits {
+                commits: vec![scanned],
+            },
+        ))
+        .unwrap();
+    assert_eq!(
+        manual_link_count(&board, "SELECT COUNT(*) FROM commit_plans"),
+        1
+    );
+    assert_eq!(
+        manual_link_count(&board, "SELECT COUNT(*) FROM commit_tasks"),
+        0
+    );
+    assert_eq!(
+        manual_link_count(&board, "SELECT COUNT(*) FROM entries WHERE kind='commit'"),
+        commit_entries + 1
     );
 }
 

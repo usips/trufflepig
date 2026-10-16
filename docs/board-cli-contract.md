@@ -111,8 +111,8 @@ historical attribution follow the
 `board unlink OID P7.3` removes one stored task link using owner or `link` authority. It requires a
 full commit oid, uses stored repository identity without reading Git, and
 does not register the caller's repository. Unknown or ambiguous links are `invalid_reference`. Audit
-receipts, retries, and subsequent trailer ingestion follow the [board
-contract](board-contract.md#git-links-and-review-evidence).
+receipts, retries, and later trailer ingestion (which skips suppressed task links) follow the
+[board contract](board-contract.md#git-links-and-review-evidence).
 
 ## Collection bounds
 
