@@ -78,6 +78,7 @@ vocabulary!(EntryKind, "invalid_kind", {
     Note => "note", Progress => "progress", Review => "review", Question => "question",
     Answer => "answer", Decision => "decision", Divergence => "divergence", Claim => "claim",
     Commit => "commit", Unlinked => "unlinked", Feedback => "feedback", Task => "task", Hello => "hello",
+    Bye => "bye", Grant => "grant", Revoke => "revoke", WorkerAdd => "worker_add", WorkerEnd => "worker_end",
     Create => "create", Proposal => "proposal", Accept => "accept", Reject => "reject", Direct => "direct",
 });
 impl EntryKind {
@@ -106,6 +107,18 @@ vocabulary!(FeedbackKind, "invalid_kind", {
 });
 vocabulary!(FeedbackState, "invalid_state", {
     Open => "open", Triaged => "triaged", Fixed => "fixed", Wontfix => "wontfix", Duplicate => "duplicate",
+});
+
+vocabulary!(AuthorityRole, "invalid_role", {
+    Triage => "triage", Release => "release", Link => "link", Assign => "assign", Decide => "decide",
+});
+
+vocabulary!(WorkerRole, "invalid_role", {
+    Code => "code", Review => "review", Test => "test", Research => "research",
+});
+
+vocabulary!(WorkerEndReason, "invalid_state", {
+    Done => "done", Failed => "failed", Stopped => "stopped", ClaimEnded => "claim_ended",
 });
 impl FeedbackState {
     pub fn is_closed(self) -> bool {

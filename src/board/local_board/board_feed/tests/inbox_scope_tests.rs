@@ -11,7 +11,6 @@ fn inbox_scope_keeps_repo_news_addressed_messages_and_own_feedback_outcomes() {
         BoardOp::New {
             title: PlanTitle::new("Unlinked plan").unwrap(),
             body: PlanText::new("").unwrap(),
-            steward: None,
             repo_key: None,
         },
     ) else {
@@ -24,7 +23,6 @@ fn inbox_scope_keeps_repo_news_addressed_messages_and_own_feedback_outcomes() {
         BoardOp::New {
             title: PlanTitle::new("Foreign repository plan").unwrap(),
             body: PlanText::new("").unwrap(),
-            steward: None,
             repo_key: None,
         },
     ) else {

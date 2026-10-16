@@ -358,6 +358,64 @@ fn board_text_is_always_raw_and_payload_is_separate() {
 }
 
 #[test]
+fn board_pending_waits_for_slow_existing_router_without_startup() -> anyhow::Result<()> {
+    use std::{
+        io::{Read, Write},
+        os::unix::net::UnixListener,
+        thread,
+        time::Duration,
+    };
+
+    let directory = tempfile::tempdir()?;
+    let socket_path = directory.path().join(crate::daemon::SOCKET_NAME);
+    let listener = UnixListener::bind(&socket_path)?;
+    let responder = thread::spawn(move || -> std::io::Result<()> {
+        let (mut stream, _) = listener.accept()?;
+        let mut header = [0; 4];
+        stream.read_exact(&mut header)?;
+        let request_len = u32::from_be_bytes(header) as usize;
+        let mut request = vec![0; request_len];
+        stream.read_exact(&mut request)?;
+
+        thread::sleep(Duration::from_millis(750));
+        let response = br#"{"status":"success","output":"pending notices"}"#;
+        stream.write_all(&(response.len() as u32).to_be_bytes())?;
+        stream.write_all(response)?;
+        Ok(())
+    });
+
+    let args = ["board", "pending"].map(str::to_owned);
+    let context = crate::diagnostics::RequestContext::new(None, None);
+    let output = super::super::client_command::request_pending(&args, &context, false, || {
+        Some(directory.path().to_owned())
+    });
+    let responder_result = responder.join().expect("router responder thread panicked");
+    assert_eq!(output?, "pending notices");
+    responder_result?;
+
+    let absent = tempfile::tempdir()?;
+    let absent_socket = absent.path().join(crate::daemon::SOCKET_NAME);
+    let error = super::super::client_command::request_pending(&args, &context, false, || {
+        Some(absent.path().to_owned())
+    })
+    .unwrap_err()
+    .to_string();
+    assert!(
+        error.contains("board_unavailable: no running router"),
+        "{error}"
+    );
+    assert!(!absent_socket.exists(), "pending must not start a router");
+
+    let error = super::super::client_command::request_pending(&args, &context, true, || {
+        panic!("--no-daemon must be rejected before resolving the router")
+    })
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("board pending requires an existing router"));
+    Ok(())
+}
+
+#[test]
 fn board_edges_reject_search_flags_and_ignore_budget_text_after_separator() {
     use crate::board::board_grammar::parse as board_parse;
     for flag in [
@@ -460,10 +518,10 @@ fn board_web_and_foreground_server_validate_without_workspace_dispatch() {
         let options = parse(&["board".into(), "web".into(), target.into()]).unwrap();
         assert!(board_parse(&options, None).is_err(), "{target}");
     }
-    for address in ["127.0.0.1:0", "[::1]:0"] {
+    for address in ["127.0.0.1:0", "[::1]:0", "0.0.0.0:0", "192.168.4.9:7341"] {
         let options = parse(&["board-serve".into(), format!("--listen={address}")]).unwrap();
         validate(&options).unwrap();
-        assert_eq!(options.listen.unwrap().port(), 0);
+        assert_eq!(options.listen.unwrap(), address.parse().unwrap());
     }
     let defaults = parse(&["board-serve".into()]).unwrap();
     validate(&defaults).unwrap();
@@ -472,8 +530,10 @@ fn board_web_and_foreground_server_validate_without_workspace_dispatch() {
         "127.0.0.1:7341".parse().unwrap()
     );
     for words in [
-        vec!["board-serve", "--listen=0.0.0.0:7341"],
         vec!["board-serve", "--listen=[::]:7341"],
+        vec!["board-serve", "--listen=10.0.0.1:7341"],
+        vec!["board-serve", "--listen=172.16.0.1:7341"],
+        vec!["board-serve", "--listen=192.0.2.1:7341"],
         vec!["board-serve", "--no-daemon"],
         vec!["board-serve", "--sem"],
         vec!["board-serve", "extra"],

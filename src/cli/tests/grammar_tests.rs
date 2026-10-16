@@ -20,12 +20,45 @@ fn board_defaults_allocate_review_space_and_preserve_explicit_budgets() {
 }
 
 #[test]
+fn board_serve_listen_uses_the_shared_web_bind_allowlist() {
+    for address in [
+        "127.0.0.1:0",
+        "[::1]:0",
+        "0.0.0.0:0",
+        "192.168.0.1:7341",
+        "192.168.255.255:7341",
+    ] {
+        let options = parse(&["board-serve".into(), "--listen".into(), address.into()]).unwrap();
+        validate(&options).unwrap_or_else(|error| panic!("{address}: {error}"));
+    }
+
+    for address in [
+        "[::]:0",
+        "10.1.2.3:7341",
+        "172.16.0.1:7341",
+        "172.31.255.254:7341",
+        "192.0.2.1:7341",
+        "8.8.8.8:7341",
+    ] {
+        let options = parse(&["board-serve".into(), "--listen".into(), address.into()]).unwrap();
+        let error = validate(&options).unwrap_err().to_string();
+        assert!(error.starts_with("invalid_options:"), "{address}: {error}");
+    }
+
+    let default = parse(&["board-serve".into()]).unwrap();
+    validate(&default).unwrap();
+    assert_eq!(
+        default.board_listen_address(),
+        "127.0.0.1:7341".parse().unwrap()
+    );
+}
+
+#[test]
 fn board_flags_are_rejected_on_source_search_verbs() {
     for flag in [
         "--body=plan.md",
         "--to=codex",
         "--supersedes=E480",
-        "--steward=claude",
         "--plan=P7",
         "--scope=parser",
         "--section=Grammar",
@@ -41,20 +74,44 @@ fn board_flags_are_rejected_on_source_search_verbs() {
         let error = validate(&options).unwrap_err().to_string();
         assert!(error.starts_with("invalid_options:"), "{flag}: {error}");
     }
+    assert!(
+        parse(&[
+            "board".into(),
+            "new".into(),
+            "Parser plan".into(),
+            "--steward".into(),
+            "claude".into(),
+        ])
+        .is_err()
+    );
 }
 
 #[test]
-fn board_grammar_accepts_every_m1_command_and_skill_example() {
+fn board_grammar_accepts_current_commands_and_skill_examples() {
     use crate::board::board_grammar::{BoardCommand, parse as board_parse};
     use crate::board::board_protocol::BoardOp;
     let examples: &[(&[&str], Option<&str>, &str)] = &[
         (&["board", "hello", "gpt-6.1-sol", "xhigh"], None, "hello"),
+        (
+            &[
+                "board",
+                "hello",
+                "gpt-6-luna",
+                "xhigh",
+                "--worker",
+                "P7.3/parser",
+            ],
+            None,
+            "hello",
+        ),
         (&["board", "hello", "exact-model-id"], None, "hello"),
         (&["board"], None, "inbox"),
         (&["board", "inbox"], None, "inbox"),
         (&["board", "inbox", "--wait"], None, "inbox"),
         (&["board", "inbox", "5120", "--wait"], None, "inbox"),
         (&["board", "5120"], None, "inbox"),
+        (&["board", "pending"], None, "pending"),
+        (&["board", "pending", "5120"], None, "pending"),
         (&["board", "show"], None, "overview"),
         (&["board", "show", "P7"], None, "show"),
         (&["board", "show", "P7@12"], None, "show"),
@@ -68,6 +125,11 @@ fn board_grammar_accepts_every_m1_command_and_skill_example() {
                 "P7.3",
                 "parser + tests; excludes review packet",
             ],
+            None,
+            "claim_task",
+        ),
+        (
+            &["board", "claim", "P7.3", "parser lane", "--for", "codex/c1"],
             None,
             "claim_task",
         ),
@@ -92,6 +154,42 @@ fn board_grammar_accepts_every_m1_command_and_skill_example() {
                 "P7.3",
                 "progress",
                 "Parser accepts P7@12; tests pass",
+            ],
+            None,
+            "post",
+        ),
+        (
+            &[
+                "board",
+                "post",
+                "P7.3",
+                "progress",
+                "Implemented the parser",
+                "--head",
+                "0123456789abcdef0123456789abcdef01234567",
+                "--step",
+                "2/3",
+                "--tests",
+                "9223/0",
+                "--gate",
+                "cargo=running",
+                "--gate",
+                "grammar=pass",
+                "--eta",
+                "1h",
+            ],
+            None,
+            "post",
+        ),
+        (
+            &[
+                "board",
+                "post",
+                "P7.3",
+                "review",
+                "Checked the parser",
+                "--verdict",
+                "findings=2",
             ],
             None,
             "post",
@@ -193,19 +291,67 @@ fn board_grammar_accepts_every_m1_command_and_skill_example() {
             "edit",
         ),
         (
-            &[
-                "board",
-                "new",
-                "Parser plan",
-                "--steward",
-                "claude",
-                "--body",
-                "plan.md",
-            ],
+            &["board", "new", "Parser plan", "--body", "plan.md"],
             Some("# Grammar"),
             "new",
         ),
         (&["board", "new", "Empty plan"], None, "new"),
+        (
+            &[
+                "board",
+                "grant",
+                "P7",
+                "triage,release",
+                "--to",
+                "codex",
+                "--for",
+                "2h",
+                "temporary access",
+            ],
+            None,
+            "grant",
+        ),
+        (
+            &["board", "grant", "--board", "triage", "--to", "codex"],
+            None,
+            "grant",
+        ),
+        (&["board", "revoke", "E512"], None, "revoke"),
+        (&["board", "bye"], None, "bye"),
+        (
+            &[
+                "board",
+                "worker",
+                "P7.3",
+                "add",
+                "parser",
+                "--role",
+                "code",
+                "--model",
+                "gpt-6-luna",
+                "--scope",
+                "grammar tests",
+                "--files",
+                "src/parser.rs",
+                "--files",
+                "tests/parser.rs",
+            ],
+            None,
+            "worker_add",
+        ),
+        (
+            &[
+                "board",
+                "worker",
+                "P7.3",
+                "end",
+                "parser",
+                "done",
+                "parser tests pass",
+            ],
+            None,
+            "worker_end",
+        ),
         (&["board", "ingest"], None, "ingest"),
         (
             &[
@@ -299,6 +445,140 @@ fn board_grammar_accepts_every_m1_command_and_skill_example() {
         };
         assert_eq!(actual, *expected, "{words:?}");
     }
+}
+
+#[test]
+fn board_v10_grammar_builds_typed_evidence_and_worker_operations() {
+    use crate::board::board_grammar::{BoardCommand, parse as board_parse};
+    use crate::board::board_protocol::{
+        BoardOp, GateStatus, ProgressStep, ProgressTests, ReviewVerdict, WorkerEndReason,
+        WorkerRole,
+    };
+
+    let args = [
+        "board",
+        "post",
+        "P7.3",
+        "progress",
+        "parser is half done",
+        "--head",
+        "0123456789abcdef0123456789abcdef01234567",
+        "--step",
+        "2/4",
+        "--tests",
+        "9223/1",
+        "--gate",
+        "cargo=running",
+        "--gate",
+        "browser=pass",
+        "--eta",
+        "2h",
+    ]
+    .map(str::to_owned);
+    let options = parse(&args).unwrap();
+    let BoardCommand::Op(BoardOp::Post {
+        progress: Some(progress),
+        verdict: None,
+        ..
+    }) = board_parse(&options, None).unwrap()
+    else {
+        panic!("expected progress evidence");
+    };
+    assert_eq!(
+        progress.head.unwrap().as_str(),
+        "0123456789abcdef0123456789abcdef01234567"
+    );
+    assert_eq!(
+        progress.step,
+        Some(ProgressStep {
+            current: 2,
+            total: 4
+        })
+    );
+    assert_eq!(
+        progress.tests,
+        Some(ProgressTests {
+            passed: 9223,
+            failed: 1
+        })
+    );
+    assert_eq!(progress.gates[0].status, GateStatus::Running);
+    assert_eq!(progress.gates[1].status, GateStatus::Pass);
+    assert_eq!(progress.eta_secs, Some(7_200));
+
+    let args = [
+        "board",
+        "post",
+        "P7.3",
+        "review",
+        "checked implementation",
+        "--verdict",
+        "blocking=1",
+    ]
+    .map(str::to_owned);
+    let options = parse(&args).unwrap();
+    let BoardCommand::Op(BoardOp::Post {
+        verdict: Some(verdict),
+        ..
+    }) = board_parse(&options, None).unwrap()
+    else {
+        panic!("expected review verdict");
+    };
+    assert_eq!(verdict, ReviewVerdict::Blocking(1));
+
+    let args = [
+        "board",
+        "worker",
+        "P7.3",
+        "add",
+        "parser",
+        "--role",
+        "code",
+        "--model",
+        "gpt-6-luna",
+        "--scope",
+        "grammar tests",
+        "--files",
+        "src/parser.rs",
+        "--files",
+        "tests/parser.rs",
+    ]
+    .map(str::to_owned);
+    let options = parse(&args).unwrap();
+    let BoardCommand::Op(BoardOp::WorkerAdd {
+        role,
+        effort,
+        files,
+        ..
+    }) = board_parse(&options, None).unwrap()
+    else {
+        panic!("expected worker add");
+    };
+    assert_eq!(role, WorkerRole::Code);
+    assert_eq!(effort, None);
+    assert_eq!(
+        files,
+        vec!["src/parser.rs".to_owned(), "tests/parser.rs".to_owned()]
+    );
+
+    let args = [
+        "board",
+        "worker",
+        "P7.3",
+        "end",
+        "parser",
+        "failed",
+        "parser failed",
+    ]
+    .map(str::to_owned);
+    let options = parse(&args).unwrap();
+    assert!(matches!(
+        board_parse(&options, None).unwrap(),
+        BoardCommand::Op(BoardOp::WorkerEnd {
+            state: WorkerEndReason::Failed,
+            ..
+        })
+    ));
 }
 
 #[test]

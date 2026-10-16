@@ -106,7 +106,6 @@ fn scoped_reads_fill_the_caller_repository_and_all_stays_global() {
     let mut write = BoardOp::New {
         title: PlanTitle::new("writes keep their own repo link").unwrap(),
         body: PlanText::new("").unwrap(),
-        steward: None,
         repo_key: None,
     };
     scope_read_repo_key(&mut write, Some(&registration), false);

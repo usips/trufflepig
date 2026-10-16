@@ -10,7 +10,6 @@ fn normalized_markdown_and_body_preserve_client_context_and_ssot() {
     );
     let mut options = fixture.options(&["board", "new", "--", "- Edge", "plan"]);
     options.board.body = Some(PathBuf::from("client-only.md"));
-    options.board.steward = Some("codex".into());
     options.client = Some("human".into());
     options.session = Some("forged-session".into());
     let body = "# Edge acceptance\n\n- Keep markdown intact\n\u{001b}[31mtext\n";
@@ -29,6 +28,45 @@ fn normalized_markdown_and_body_preserve_client_context_and_ssot() {
             QueryDeadline::start(),
         )
         .unwrap();
+
+    let human = fixture.actor("human", "grant-session");
+    let grant_options = fixture.options(&[
+        "board",
+        "grant",
+        "P1",
+        "decide",
+        "--to",
+        "codex/actual-session",
+    ]);
+    let forwarded = board_grammar::normalize_args(&[], &grant_options, None).unwrap();
+    let grant_options = cli::parse(&forwarded).unwrap();
+    let grant_context = RequestContext::with_origin(
+        Some("grant-session".into()),
+        Some("human".into()),
+        Some(crate::board::board_protocol::ActorOrigin::from_actor(
+            &human,
+        )),
+    );
+    let grant_response = fixture
+        .host
+        .run(&grant_options, &grant_context, QueryDeadline::start())
+        .unwrap();
+    let grant_reply: Value = serde_json::from_str(&grant_response).unwrap();
+    let grant_entry = data(&grant_reply)["entry"].as_str().unwrap();
+    let grant_entry = grant_entry
+        .strip_prefix('E')
+        .unwrap()
+        .parse::<i64>()
+        .unwrap();
+    let origin: (String, String) = rusqlite::Connection::open(&fixture.config.db_path)
+        .unwrap()
+        .query_row(
+            "SELECT origin_harness, origin_session FROM entries WHERE id=?1",
+            [grant_entry],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(origin, ("human".into(), "grant-session".into()));
 
     let shown = fixture.run(&["board", "show", "P1"], "codex", "actual-session");
     let view = data(&shown);

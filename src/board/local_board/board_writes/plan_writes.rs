@@ -1,4 +1,4 @@
-//! Immutable plan revisions, proposals, and owner or steward decisions.
+//! Immutable plan revisions, proposals, and authorized decisions.
 
 #[cfg(test)]
 mod tests;
@@ -21,7 +21,6 @@ pub(in crate::board::local_board) fn new_plan(
     ctx: &WriteContext,
     title: &PlanTitle,
     body: &PlanText,
-    steward: Option<&HarnessLabel>,
     repo_key: Option<&RepoKey>,
 ) -> Result<BoardReply, BoardError> {
     if let Some(repo_key) = repo_key {
@@ -41,11 +40,10 @@ pub(in crate::board::local_board) fn new_plan(
     }
     let id: u64 = tx
         .query_row(
-            "INSERT INTO plans(title,owner_user,steward,head_revision,created_at) VALUES(?1,?2,?3,1,?4) RETURNING id",
+            "INSERT INTO plans(title,owner_user,head_revision,created_at) VALUES(?1,?2,1,?3) RETURNING id",
             params![
                 title.as_str(),
                 ctx.actor.user,
-                steward.map(HarnessLabel::as_str),
                 ctx.now
             ],
             |r| row_number(r, 0),
@@ -70,18 +68,12 @@ pub(in crate::board::local_board) fn new_plan(
         None,
         title.as_str(),
     )?;
-    let mut reply = ctx.change_reply(
+    let reply = ctx.change_reply(
         entry,
         Some(plan),
         Some(PlanRevision { plan, revision: 1 }),
         None,
     );
-    if steward.is_none() && ctx.actor.harness.as_str() != "human" {
-        reply.warnings.push(format!(
-            "{plan} has no steward; only owner {} acting as human can accept or reject proposals or edit this plan. Creating a plan does not grant approval authority. For a new plan, explicitly delegate with board new --steward {} TITLE",
-            ctx.actor.user, ctx.actor.harness
-        ));
-    }
     Ok(reply)
 }
 
@@ -148,7 +140,8 @@ pub(in crate::board::local_board) fn edit(
     body: &PlanText,
     summary: &EntryText,
 ) -> Result<BoardReply, BoardError> {
-    require_authority(tx, ctx, base.plan)?;
+    let authorized = ctx.with_authority(require_authority(tx, ctx, base.plan)?);
+    let ctx = &authorized;
     advance_head(tx, base)?;
     let number = base.revision + 1;
     let entry = mutation_entry(

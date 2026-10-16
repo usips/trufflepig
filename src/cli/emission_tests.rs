@@ -123,6 +123,36 @@ fn emission_budget_error_is_empty_on_stdout_and_actionable_on_stderr() {
 }
 
 #[test]
+fn budget_retry_hint_uses_effective_budget_and_respects_maximum() {
+    let scratch = tempfile::tempdir().unwrap();
+    std::fs::create_dir(scratch.path().join("root")).unwrap();
+    let cache = scratch.path().join("cache");
+
+    let default_board_show = args(&cache, &["board", "show", "P10"]);
+    assert_eq!(super::parse(&default_board_show).unwrap().budget, 4_000);
+    assert_eq!(
+        super::emission::retry_hint_for_args(&default_board_show, 600),
+        "retry with -b 8000"
+    );
+
+    let explicit_board_budget = args(&cache, &["--budget", "1000", "board", "show", "P10"]);
+    assert_eq!(
+        super::emission::retry_hint_for_args(&explicit_board_budget, 600),
+        "retry with -b 2000"
+    );
+
+    let maximum = super::MAX_BUDGET;
+    assert_eq!(
+        super::emission::retry_hint(maximum - 1),
+        format!("retry with -b {maximum}")
+    );
+    assert_eq!(
+        super::emission::retry_hint(maximum),
+        format!("maximum budget is {maximum}; narrow the request")
+    );
+}
+
+#[test]
 fn emission_unknown_command_is_usage_failure() {
     let scratch = tempfile::tempdir().unwrap();
     std::fs::create_dir(scratch.path().join("root")).unwrap();

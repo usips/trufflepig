@@ -85,6 +85,62 @@ fn metadata_excludes_raw_queries_and_audit_joins_request_stages() {
 }
 
 #[test]
+fn native_actor_session_records_without_a_diagnostic_baseline() {
+    let temp = tempfile::tempdir().unwrap();
+    let log = DiagnosticStore::open(temp.path(), DiagnosticsMode::Metadata).unwrap();
+    let origin = crate::board::board_protocol::ActorOrigin {
+        harness: crate::board::board_actor::HarnessLabel::parse("codex").unwrap(),
+        session: "native-thread-9".into(),
+        peer_ip: None,
+    };
+    let context = RequestContext::with_diagnostic_session(
+        Some("native-thread-9".into()),
+        Some("codex".into()),
+        Some(origin),
+        None,
+    );
+
+    let request = RequestEvent::new(context, Operation::Search, Outcome::Success);
+    assert_eq!(log.record(&request).unwrap(), RecordStatus::Recorded);
+    assert_eq!(log.audit(None).unwrap().retained_requests, 1);
+
+    let retained = std::fs::read_to_string(log.segments().unwrap().remove(0)).unwrap();
+    let stored: serde_json::Value = serde_json::from_str(retained.trim()).unwrap();
+    assert!(
+        stored["context"]
+            .as_object()
+            .unwrap()
+            .contains_key("diagnostic_session")
+    );
+    assert!(stored["context"]["diagnostic_session"].is_null());
+    let retained: RequestEvent = serde_json::from_value(stored).unwrap();
+    assert_eq!(retained.context.session.as_deref(), Some("native-thread-9"));
+    assert_eq!(retained.context.diagnostic_session, None);
+    assert_eq!(
+        retained
+            .context
+            .origin
+            .as_ref()
+            .map(|origin| origin.session.as_str()),
+        Some("native-thread-9")
+    );
+}
+
+#[test]
+fn explicit_unknown_diagnostic_session_stays_invalidated() {
+    let temp = tempfile::tempdir().unwrap();
+    let log = DiagnosticStore::open(temp.path(), DiagnosticsMode::Metadata).unwrap();
+    let request = RequestEvent::new(
+        RequestContext::new(Some("missing-baseline".into()), Some("codex".into())),
+        Operation::Search,
+        Outcome::Success,
+    );
+
+    assert_eq!(log.record(&request).unwrap(), RecordStatus::Invalidated);
+    assert!(log.segments().unwrap().is_empty());
+}
+
+#[test]
 fn incomplete_receipts_never_count_source_as_viewed() {
     let temp = tempfile::tempdir().unwrap();
     let log = DiagnosticStore::open(temp.path(), DiagnosticsMode::Detailed).unwrap();
@@ -149,7 +205,8 @@ fn ledger_requires_matching_preimage_revision_and_overlapping_source_span() {
     let session = "explicit-session";
     let mut delivered = event();
     delivered.receipt = Some(emit_response(&mut Vec::new(), "source").unwrap());
-    delivered.context.session = Some(session.into());
+    delivered.context.session = Some("native-actor-session".into());
+    delivered.context.diagnostic_session = Some(session.into());
     let identity = EmittedIdentity {
         owner_root: None,
         member: None,
@@ -169,6 +226,21 @@ fn ledger_requires_matching_preimage_revision_and_overlapping_source_span() {
         "changes":[{"path":"lib.rs","before_revision":"before","category":"modified",
             "source_changes":{"changes":[{"before":{"start":20,"end":30}}]}}]
     }}]});
+    let mut legacy = delivered.clone();
+    legacy.context.session = Some(session.into());
+    legacy.context.diagnostic_session = None;
+    let mut legacy = serde_json::to_value(&legacy).unwrap();
+    legacy["context"]
+        .as_object_mut()
+        .unwrap()
+        .remove("diagnostic_session");
+    let legacy: RequestEvent = serde_json::from_value(legacy).unwrap();
+    assert_eq!(legacy.context.diagnostic_session.as_deref(), Some(session));
+    assert_eq!(
+        super::ledger::compare(&report, &[&legacy]).preimage_source_viewed,
+        1,
+        "legacy stored events keep session-scoped ledger evidence"
+    );
     let ledger = super::ledger::compare(&report, &[&delivered]);
     assert_eq!(ledger.preimage_source_viewed, 1);
     assert_eq!(ledger.changed_spans_source_viewed, 0);

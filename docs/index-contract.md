@@ -71,17 +71,17 @@ staged, unstaged, untracked) plus the parent's uncommitted and untracked files;
 each Git probe is bounded to 2 s and a result is reused for 5 s
 (`src/workspace/home_index/worktree_divergence.rs`). A hit's file also differs
 when its worktree bytes no longer hash to the indexed revision; one query
-hashes each file once and at most 128 files, and files beyond that fall back to
-the divergence (`home_index/hit_verification.rs`). Hits read from current bytes
-(`re:`, re-extraction) never differ; re-read files count as differing. A
-definition in such a file is re-extracted from worktree bytes (up to 64 files
-per `sym:` answer, which also adds definitions found only in divergent files;
-`show sym:` does the same whenever any file diverges, so it agrees with
-search); when they cannot be extracted (binary, or
-failed extraction), `show` serves the parent index's stored bytes with
-`verified: false` and `source: parent_index`. File changes between
-extraction and publication may leave an indexed revision behind disk; `show`'s buffer check
-prevents applying it to current bytes. Reconciliation eventually catches up.
+hashes each file once and at most 128 files (`home_index/hit_verification.rs`).
+Plain and `sym:` searches re-run normal retrieval against at most 64 changed
+files without publishing an index. Parent fallback also examines divergent
+files and refreshes discovery on a miss; own-index reads verify returned
+candidates (`src/search/current_candidate_reads.rs`). Removed matches disappear;
+current references, lexical evidence, and snippets retain current coordinates.
+Unchecked or unextractable paths make coverage partial and truncated. Stale
+semantic candidates become current-source representatives with semantic coverage
+marked unverified. Current-byte hits never differ; re-read files count as differing.
+`show sym:` and `map FILE` re-extract divergent files; failed extraction can
+serve parent bytes with `verified: false` and `source: parent_index`.
 Through a root's own index, a stale `sym:` read waits up to 3 s for a daemon
 republish, then answers from current bytes with `freshness: unpublished`
 (`src/source/acquisition/stale_symbol.rs`). Only a client no daemon serves (or

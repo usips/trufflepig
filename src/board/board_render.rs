@@ -5,8 +5,10 @@ mod render_diff;
 mod render_entry;
 mod render_inbox;
 mod render_lines;
+mod render_pending;
 mod render_review;
 mod render_scope_hints;
+mod render_task;
 mod search_render;
 #[cfg(test)]
 mod tests;
@@ -21,6 +23,8 @@ use render_diff::render_diff;
 use render_entry::{render_entry, render_plan};
 use render_inbox::render_inbox;
 use render_lines::{cell, claim_line, diff_lines, entry_line, footer, lines_result, recipient};
+use render_pending::render_pending;
+use render_task::render_task;
 
 use super::board_ids::EventSeq;
 use super::board_protocol::{BOARD_API, BoardReply, BoardResult};
@@ -54,6 +58,8 @@ pub(crate) fn render_cli_reply(
         BoardResult::Search(result) => search_render::render(reply, result, budget),
         BoardResult::Entry(view) => render_entry(reply, view, budget),
         BoardResult::Plan(view) => render_plan(reply, view, budget),
+        BoardResult::TaskView(view) => render_task(reply, view, budget),
+        BoardResult::Pending(pending) => render_pending(reply, pending, budget),
         BoardResult::Overview(_)
         | BoardResult::Attention(_)
         | BoardResult::Feed(_)

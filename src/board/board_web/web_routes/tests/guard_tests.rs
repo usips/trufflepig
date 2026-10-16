@@ -38,7 +38,7 @@ fn slow_pre_auth_drip_is_cut_at_five_seconds_total_from_accept() {
         // restart the hold, so the cut still comes at five seconds total.
         let _ = dripper.write_all(b"E");
     });
-    handle(server, accepted_at, &fixture.state);
+    handle_local(server, accepted_at, &fixture.state);
     let mut reply = String::new();
     client.read_to_string(&mut reply).unwrap();
     producer.join().unwrap();

@@ -112,6 +112,15 @@ fn claim_from_row(
             model,
             effort: row.get(13).map_err(sql_error)?,
             delegated_by: delegated_actor_from_row(row, 14).map_err(sql_error)?,
+            workers: Vec::new(),
+            workers_omitted: 0,
+            progress: None,
+            open_questions: 0,
+            oldest_open_question: None,
+            oldest_open_question_at: None,
+            commit_count: 0,
+            latest_commit: None,
+            latest_commit_at: None,
         },
     })
 }

@@ -4,12 +4,9 @@ use crate::board::board_protocol::{BoardError, BoardErrorCode};
 fn link_diagnostics_fixture() -> (EdgeFixture, String) {
     let fixture = EdgeFixture::new();
     fixture.seed_repo();
-    fixture.run(
-        &["board", "new", "Link diagnostics", "--steward", "codex"],
-        "human",
-        "owner",
-    );
+    fixture.run(&["board", "new", "Link diagnostics"], "human", "owner");
     fixture.run(&["board", "task", "P1", "Linked lane"], "human", "owner");
+    fixture.grant_plan_role("P1", "link", "codex", "owner");
     let oid = git(&fixture.root, &["rev-parse", "HEAD"]);
     (fixture, oid)
 }
@@ -113,7 +110,7 @@ fn manual_link_replay_returns_its_own_task_event_sequence() {
 }
 
 #[test]
-fn manual_link_cli_rejection_explains_the_human_client_flag() {
+fn manual_link_cli_rejection_explains_missing_link_authority() {
     let (fixture, oid) = link_diagnostics_fixture();
     let error = fixture
         .run_options(
@@ -128,7 +125,7 @@ fn manual_link_cli_rejection_explains_the_human_client_flag() {
         BoardErrorCode::InvalidActor,
     );
     assert!(
-        error.to_string().contains("pass --client human"),
+        error.to_string().contains("ask its owner to grant link"),
         "{error:#}"
     );
     assert_eq!(fixture.scalar("SELECT COUNT(*) FROM commit_plans"), 0);

@@ -78,13 +78,13 @@ fn populated_v1_duplicate_checkout_paths_keep_first_key_and_all_evidence() {
         ("repo_paths", 1),
         ("repos", 2),
         ("plans", 2),
-        ("entries", 5),
+        ("entries", 7),
         ("revisions", 2),
         ("claims", 2),
         ("commits", 2),
         ("commit_plans", 2),
         ("commit_tasks", 2),
-        ("events", 4),
+        ("events", 6),
     ] {
         assert_eq!(
             conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |row| row
@@ -110,6 +110,33 @@ fn populated_v1_duplicate_checkout_paths_keep_first_key_and_all_evidence() {
         ))
         .unwrap(),
         duplicate.as_str()
+    );
+    assert_eq!(
+        conn.query_row("SELECT count(*) FROM authority_grants", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .unwrap(),
+        2,
+        "each legacy steward is represented by a migration grant"
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT user,host,harness,session FROM actors WHERE id=1",
+            [],
+            |row| Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        )
+        .unwrap(),
+        (
+            "josh".into(),
+            "host".into(),
+            "codex".into(),
+            "session".into()
+        )
     );
     assert!(
         conn.execute(

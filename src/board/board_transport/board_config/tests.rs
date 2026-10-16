@@ -62,6 +62,17 @@ fn strict_config_rejects_unknown_fields_and_invalid_ttl() {
         config.actor(Some("codex"), Some("c1")).unwrap().identity(),
         "josh@laptop/codex/c1"
     );
+    assert_eq!(
+        config
+            .actor(Some("human"), Some("manual-session"))
+            .unwrap()
+            .identity(),
+        "josh@laptop/human/manual-session"
+    );
+    assert_eq!(
+        config.system_actor().unwrap().identity(),
+        "josh@laptop/system/maintenance"
+    );
     assert_eq!(config.actor(None, None).unwrap().harness.as_str(), "cli");
 }
 

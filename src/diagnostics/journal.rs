@@ -90,7 +90,7 @@ impl DiagnosticStore {
         if event.context.created_unix_micros <= forgotten as u64 {
             return Ok(RecordStatus::Invalidated);
         }
-        if let Some(session) = &event.context.session {
+        if let Some(session) = &event.context.diagnostic_session {
             let exists: bool = self.conn.query_row(
                 "SELECT EXISTS(SELECT 1 FROM diagnostic_sessions WHERE id=?1)",
                 [session],

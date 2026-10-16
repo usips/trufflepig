@@ -1,4 +1,4 @@
-//! Rotating loopback token file: O_NOFOLLOW, owner-only, atomically published.
+//! Rotating local/LAN token file: O_NOFOLLOW, owner-only, atomically published.
 //! Rotation writes a fresh token beside the destination and renames it over
 //! any planted entry; reads never create files or mint secrets.
 

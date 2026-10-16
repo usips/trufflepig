@@ -4,12 +4,9 @@ use super::*;
 fn unlink_cli_from_an_unrelated_checkout_preserves_registrations() {
     let fixture = EdgeFixture::new();
     fixture.seed_repo();
-    fixture.run(
-        &["board", "new", "Manual unlink", "--steward", "codex"],
-        "human",
-        "owner",
-    );
+    fixture.run(&["board", "new", "Manual unlink"], "human", "owner");
     fixture.run(&["board", "task", "P1", "Repair lane"], "human", "owner");
+    fixture.grant_plan_role("P1", "link", "codex", "owner");
     let oid = git(&fixture.root, &["rev-parse", "HEAD"]);
     fixture.run(&["board", "link", &oid, "P1.1"], "human", "owner");
     let other = fixture.root.parent().unwrap().join("unrelated");
@@ -110,12 +107,44 @@ fn unlink_scanned_cli_link_returns_only_after_changed_tips_are_ingested() {
     );
     std::fs::write(fixture.root.join("next.txt"), "next work\n").unwrap();
     git(&fixture.root, &["add", "next.txt"]);
-    git(&fixture.root, &["commit", "-m", "Advance branch"]);
+    git(
+        &fixture.root,
+        &[
+            "commit",
+            "-m",
+            "Advance branch\n\nPlan: P1\nPlan-Task: P1.1\nCo-authored-by: Model Claim <noreply@openai.com>",
+        ],
+    );
+    let next_oid = git(&fixture.root, &["rev-parse", "HEAD"]);
     fixture.run(&["board", "ingest"], "human", "owner");
     assert_eq!(
         fixture.scalar("SELECT COUNT(*) FROM commit_tasks WHERE source='scan'"),
+        1,
+        "new valid scan metadata links while the explicitly unlinked commit stays suppressed"
+    );
+    assert_eq!(
+        fixture.scalar(&format!(
+            "SELECT COUNT(*) FROM commit_tasks WHERE source='scan' AND oid='{next_oid}'"
+        )),
         1
     );
+    assert_eq!(
+        fixture.scalar(&format!(
+            "SELECT COUNT(*) FROM commit_tasks WHERE source='scan' AND oid='{oid}'"
+        )),
+        0
+    );
+    let coauthors: String = Connection::open(&fixture.config.db_path)
+        .unwrap()
+        .query_row(
+            "SELECT coauthors FROM commits WHERE oid=?1",
+            [&next_oid],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let coauthors: Vec<Value> = serde_json::from_str(&coauthors).unwrap();
+    assert_eq!(coauthors[0]["harness"], "codex");
+    assert_eq!(coauthors[0]["email"], "noreply@openai.com");
     assert_eq!(
         fixture.scalar("SELECT COUNT(*) FROM events WHERE kind='unlinked'"),
         1

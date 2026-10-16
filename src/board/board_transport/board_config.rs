@@ -112,6 +112,10 @@ impl BoardConfig {
         )
     }
 
+    pub(crate) fn system_actor(&self) -> Result<BoardActor> {
+        BoardActor::system(&self.user, &self.host)
+    }
+
     pub fn claim_ttl_seconds(&self) -> i64 {
         (self.claim_ttl_minutes * 60) as i64
     }

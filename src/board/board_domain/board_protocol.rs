@@ -1,28 +1,43 @@
 //! Versioned, typed board operations and evidence returned by the backend.
+mod board_authority;
 mod board_errors;
+mod board_identity;
+mod board_progress;
 mod board_records;
 mod board_requests;
+mod board_verdict;
 #[cfg(test)]
 mod tests;
 
 pub use super::board_collections::*;
+pub use crate::board::board_vocabulary::{AuthorityRole, WorkerEndReason, WorkerRole};
+pub use board_authority::AuthoritySource;
 pub use board_errors::{BoardError, BoardErrorCode, leading_error_code};
+pub use board_identity::{ActorOrigin, WorkerAddress, WorkerHandle};
+pub use board_progress::{
+    GateStatus, PROGRESS_ETA_LIMIT_SECS, PROGRESS_GATE_LIMIT, PROGRESS_GATE_NAME_LIMIT,
+    ProgressEvidence, ProgressFact, ProgressGateFact, ProgressGateInput, ProgressHead,
+    ProgressInput, ProgressStep, ProgressTests,
+};
 pub use board_records::{
     BoardChange, BoardReply, BoardResult, BoardSearchHit, BoardSearchReply, BoardSearchSource,
-    COAUTHOR_LIMIT, ClaimEndReason, ClaimRecord, CommitCoauthor, CommitLinkResult, CommitPlanLink,
-    EntryRecord, EntryState, EntryView, EventRecord, FeedbackMetadata, FeedbackRecord, FeedbackVia,
-    InboxReply, InboxWait, LINK_LIMIT, LinkedCommit, ManualCommitLink, PlanRecord, PlanView,
-    ProjectMemberRecord, ProjectRecord, ProposalRecord, RecentCall, RepoRegistration,
-    RepoScanTarget, ReviewEvidence, RevisionDiff, RevisionRecord, RevisionSource, SessionRecord,
-    TaskRecord,
+    COAUTHOR_LIMIT, ClaimEndReason, ClaimRecord, CommitClaimBasis, CommitClaimLink, CommitCoauthor,
+    CommitLinkResult, CommitPlanLink, EntryRecord, EntryState, EntryView, EventRecord,
+    FeedbackMetadata, FeedbackRecord, FeedbackVia, GrantRecord, GrantSource, InboxReply, InboxWait,
+    LINK_LIMIT, LinkedCommit, ManualCommitLink, PendingNotice, PendingNoticeKind,
+    PendingNoticeReason, PendingReply, PlanRecord, PlanView, ProjectMemberRecord, ProjectRecord,
+    ProposalRecord, RecentCall, RepoRegistration, RepoScanTarget, ReviewEvidence, RevisionDiff,
+    RevisionRecord, RevisionSource, SessionRecord, TaskRecord, TaskView, WORKER_REF_LIMIT,
+    WorkerRecord,
 };
 pub use board_requests::{
     AgentClaims, BoardOp, BoardRequest, ClaimDelegate, ClaimResume, ReadScope,
 };
+pub use board_verdict::ReviewVerdict;
 
 use anyhow::{Result, bail};
 
-pub const BOARD_API: u32 = 9;
+pub const BOARD_API: u32 = 11;
 
 fn validate_claim(value: &str, field: &str) -> Result<()> {
     if value.trim().is_empty() || value.len() > 256 || value.chars().any(char::is_control) {

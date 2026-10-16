@@ -247,3 +247,15 @@ fn unavailable_response_has_typed_retry_after_and_private_headers() {
     let precomputed = unavailable_response(5, b"{}");
     assert_eq!(reply.as_bytes(), precomputed.as_slice());
 }
+
+#[test]
+fn precomputed_refusal_has_the_common_security_headers() {
+    let response =
+        String::from_utf8(fixed_json_response(403, b"{}")).expect("fixed JSON response is UTF-8");
+    assert!(response.starts_with("HTTP/1.1 403 Forbidden\r\n"));
+    assert!(response.contains("X-Content-Type-Options: nosniff\r\n"));
+    assert!(response.contains("Referrer-Policy: no-referrer\r\n"));
+    assert!(response.contains("Content-Security-Policy:"));
+    assert!(response.contains("Cache-Control: no-store\r\n"));
+    assert!(response.ends_with("\r\n\r\n{}"));
+}

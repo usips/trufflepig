@@ -3,6 +3,21 @@
 use super::*;
 use crate::board::board_transport::board_client_transport::BoardClientTransport;
 
+pub(super) fn request_pending(
+    args: &[String],
+    context: &crate::diagnostics::RequestContext,
+    no_daemon: bool,
+    system_dir: impl FnOnce() -> Option<PathBuf>,
+) -> Result<String> {
+    if no_daemon {
+        anyhow::bail!("invalid_options: board pending requires an existing router");
+    }
+    let directory =
+        system_dir().context("board_unavailable: no running router for pending notices")?;
+    crate::daemon::request(&directory, args, context)?
+        .context("board_unavailable: no running router for pending notices")
+}
+
 #[derive(Default)]
 pub(super) struct ClientCommand {
     board: BoardClientTransport,
@@ -53,6 +68,14 @@ impl ClientCommand {
                 unreachable!("web grammar produces a web command");
             };
             return crate::board::board_web::link(target);
+        }
+        if verb == "board" && options.words.get(1).is_some_and(|word| word == "pending") {
+            let crate::board::board_grammar::BoardCommand::Op(_) =
+                crate::board::board_grammar::parse(&options, None)?
+            else {
+                unreachable!("pending grammar produces an operation");
+            };
+            return request_pending(args, context, options.no_daemon, crate::system::dir);
         }
         if matches!(verb, "board" | "feedback") {
             return self.board.run(args, &options, context);

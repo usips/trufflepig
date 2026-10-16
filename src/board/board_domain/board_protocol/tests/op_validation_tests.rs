@@ -8,6 +8,8 @@ fn internal_entry_kinds_and_open_feedback_cannot_be_posted_or_closed() {
         body: EntryText::new("scope").unwrap(),
         to: None,
         supersedes: None,
+        progress: None,
+        verdict: None,
     };
     assert!(
         post.validate()
@@ -26,6 +28,36 @@ fn internal_entry_kinds_and_open_feedback_cannot_be_posted_or_closed() {
             .unwrap_err()
             .to_string()
             .starts_with("invalid_state:")
+    );
+}
+
+#[test]
+fn progress_and_verdict_are_bound_to_their_entry_kinds() {
+    let target = BoardRef::Plan(PlanId::new(1).unwrap());
+    let progress_on_note = BoardOp::Post {
+        target,
+        kind: EntryKind::Note,
+        body: EntryText::new("note").unwrap(),
+        to: None,
+        supersedes: None,
+        progress: Some(ProgressInput::default()),
+        verdict: None,
+    };
+    assert!(progress_on_note.validate().is_err());
+
+    let verdict_on_review = BoardOp::Post {
+        target,
+        kind: EntryKind::Review,
+        body: EntryText::new("review").unwrap(),
+        to: None,
+        supersedes: None,
+        progress: None,
+        verdict: Some(ReviewVerdict::Clean),
+    };
+    assert!(verdict_on_review.validate().is_ok());
+    assert_eq!(
+        ClaimEndReason::parse("session_ended").unwrap(),
+        ClaimEndReason::SessionEnded
     );
 }
 

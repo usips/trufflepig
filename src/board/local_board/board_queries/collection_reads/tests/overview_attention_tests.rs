@@ -2,7 +2,7 @@ use super::*;
 use crate::board::board_protocol::ReadScope;
 
 #[test]
-fn collection_attention_uses_actual_actor_and_keeps_own_feedback() {
+fn collection_attention_uses_actual_actor_and_excludes_feedback() {
     let (_directory, board) = database();
     let repo = register_repositories(&board.conn);
     for ordinal in 1..=4 {
@@ -114,13 +114,13 @@ fn collection_attention_uses_actual_actor_and_keeps_own_feedback() {
             .iter()
             .map(|entry| entry.id)
             .collect::<Vec<_>>(),
-        vec![id(3), id(5), id(7), id(9), id(10)]
+        vec![id(3), id(5), id(9), id(10)]
     );
     assert_eq!(result.stale_claims.len(), 1);
     assert_eq!(result.stale_claims[0].claim.task.ordinal, 1);
     assert_eq!(result.rebase_needed, vec![id(9), id(10)]);
     assert_eq!(
-        result.entries[3].state,
+        result.entries[2].state,
         Some(EntryState::Proposal(ProposalState::Open))
     );
     let BoardResult::Attention(result) = attention(
@@ -137,7 +137,7 @@ fn collection_attention_uses_actual_actor_and_keeps_own_feedback() {
         panic!("attention");
     };
     assert_eq!(result.entries.len(), 1);
-    assert_eq!(result.entries_omitted, 4);
+    assert_eq!(result.entries_omitted, 3);
     assert_eq!(result.claims_omitted, 0);
     let BoardResult::Attention(result) = attention(
         board.reader.as_ref().expect("read connection"),
@@ -157,7 +157,7 @@ fn collection_attention_uses_actual_actor_and_keeps_own_feedback() {
 }
 
 #[test]
-fn collection_attention_preserves_trusted_feedback_via_and_attribution() {
+fn collection_attention_excludes_trusted_feedback() {
     let (_directory, board) = database();
     board
         .conn
@@ -180,20 +180,10 @@ fn collection_attention_preserves_trusted_feedback_via_and_attribution() {
         200,
     )
     .unwrap();
-    let value = serde_json::to_value(&reply).unwrap();
-    assert_eq!(value["result"]["data"]["entries"][0]["via"], "outbox");
-    assert_eq!(
-        value["result"]["data"]["entries"][0]["actor"]["harness"],
-        "human"
-    );
-    let rendered = crate::board::board_render::render_reply(
-        &reply,
-        &crate::output::OutputBudget::new(3000)
-            .unwrap()
-            .with_format(crate::output::OutputFormat::Lines),
-    )
-    .unwrap();
-    assert!(rendered.text.contains("via=outbox spooled unverified"));
+    let BoardResult::Attention(attention) = reply.result else {
+        panic!("attention");
+    };
+    assert!(attention.entries.is_empty());
     assert_eq!(board.conn.total_changes(), changes);
     assert_eq!(
         board

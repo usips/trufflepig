@@ -4,6 +4,7 @@ use crate::board::board_domain::board_collections::{ClaimCursor, EntryCursor, Ta
 use crate::board::{
     board_actor::{AgentVendor, BoardActor, BoardRecipient, HarnessLabel},
     board_ids::{EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
+    board_protocol::{GrantRecord, ProgressEvidence, WorkerRecord},
     board_vocabulary::{EntryText, PlanText, PlanTitle, ProposalState, TaskColumn},
 };
 use crate::identity::GitOid;
@@ -15,7 +16,6 @@ pub struct PlanRecord {
     pub id: PlanId,
     pub title: PlanTitle,
     pub owner_user: String,
-    pub steward: Option<HarnessLabel>,
     pub head_revision: u64,
     pub created_at: i64,
 }
@@ -75,6 +75,7 @@ pub enum ClaimEndReason {
     TakenOver,
     Reassigned,
     Resumed,
+    SessionEnded,
 }
 
 impl ClaimEndReason {
@@ -84,6 +85,7 @@ impl ClaimEndReason {
             "taken_over" => Ok(Self::TakenOver),
             "reassigned" => Ok(Self::Reassigned),
             "resumed" => Ok(Self::Resumed),
+            "session_ended" => Ok(Self::SessionEnded),
             _ => bail!("invalid_state: unknown claim end reason '{value}'"),
         }
     }
@@ -94,6 +96,7 @@ impl ClaimEndReason {
             Self::TakenOver => "taken_over",
             Self::Reassigned => "reassigned",
             Self::Resumed => "resumed",
+            Self::SessionEnded => "session_ended",
         }
     }
 }
@@ -114,6 +117,24 @@ pub struct ClaimRecord {
     pub effort: Option<String>,
     #[serde(default)]
     pub delegated_by: Option<BoardActor>,
+    #[serde(default)]
+    pub workers: Vec<WorkerRecord>,
+    #[serde(default)]
+    pub workers_omitted: usize,
+    #[serde(default)]
+    pub progress: Option<ProgressEvidence>,
+    #[serde(default)]
+    pub open_questions: usize,
+    #[serde(default)]
+    pub oldest_open_question: Option<EntryId>,
+    #[serde(default)]
+    pub oldest_open_question_at: Option<i64>,
+    #[serde(default)]
+    pub commit_count: usize,
+    #[serde(default)]
+    pub latest_commit: Option<GitOid>,
+    #[serde(default)]
+    pub latest_commit_at: Option<i64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -134,6 +155,10 @@ pub struct PlanView {
     pub repo_keys: Vec<RepoKey>,
     pub revision: RevisionRecord,
     pub tasks: Vec<TaskRecord>,
+    #[serde(default)]
+    pub grants: Vec<GrantRecord>,
+    #[serde(default)]
+    pub can_manage_grants: bool,
     pub task_ceiling: TaskCeiling,
     pub claims: Vec<ClaimRecord>,
     pub entries: Vec<EntryRecord>,

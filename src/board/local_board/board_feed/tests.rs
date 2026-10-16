@@ -6,6 +6,7 @@ mod inbox_planless_tests;
 mod inbox_reminder_cap_tests;
 mod inbox_scope_tests;
 mod inbox_watermark_tests;
+mod pending_task_question_tests;
 
 use super::*;
 use crate::board::board_actor::{BoardActor, HarnessLabel};
@@ -44,7 +45,6 @@ fn plan(board: &mut LocalBoard) -> PlanId {
         BoardOp::New {
             title: PlanTitle::new("Trial").unwrap(),
             body: PlanText::new("# Scope").unwrap(),
-            steward: None,
             repo_key: None,
         },
     ) {
@@ -70,6 +70,8 @@ fn post(
             body: EntryText::new(body).unwrap(),
             to: to.map(|value| BoardRecipient::parse(value).unwrap()),
             supersedes: None,
+            progress: None,
+            verdict: None,
         },
     );
 }

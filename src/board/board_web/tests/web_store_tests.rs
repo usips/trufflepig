@@ -45,7 +45,6 @@ fn web_new_plan_links_a_chosen_repository_and_lists_repository_keys() {
         BoardOp::New {
             title: PlanTitle::new("Web plan").unwrap(),
             body: PlanText::new("").unwrap(),
-            steward: None,
             repo_key: Some(repo.clone()),
         },
     );
@@ -87,7 +86,6 @@ fn standalone_web_store_reads_and_writes_without_a_router() {
         BoardOp::New {
             title: PlanTitle::new("Local board").unwrap(),
             body: PlanText::new("ready\n").unwrap(),
-            steward: None,
             repo_key: None,
         },
     );
@@ -117,7 +115,6 @@ fn panicked_web_write_rolls_back_and_reopens_before_next_write() {
             BoardOp::New {
                 title: PlanTitle::new("Uncommitted").unwrap(),
                 body: PlanText::new("must disappear\n").unwrap(),
-                steward: None,
                 repo_key: None,
             },
         )
@@ -131,7 +128,6 @@ fn panicked_web_write_rolls_back_and_reopens_before_next_write() {
         BoardOp::New {
             title: PlanTitle::new("Recovered").unwrap(),
             body: PlanText::new("durable\n").unwrap(),
-            steward: None,
             repo_key: None,
         },
     );
@@ -164,10 +160,10 @@ fn changed_router_marker_refuses_web_writes_after_startup() {
             op: BoardOp::New {
                 title: PlanTitle::new("must not commit").unwrap(),
                 body: PlanText::new("").unwrap(),
-                steward: None,
                 repo_key: None,
             },
         },
+        "127.0.0.1".parse().unwrap(),
         Instant::now() + Duration::from_secs(1),
     )
     .unwrap_err();

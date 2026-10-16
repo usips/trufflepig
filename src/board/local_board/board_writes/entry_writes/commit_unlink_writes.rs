@@ -9,7 +9,9 @@ pub(in crate::board::local_board) fn unlink_commit(
     oid: GitOid,
     task: TaskId,
 ) -> Result<BoardReply, BoardError> {
-    require_link_authority(tx, &ctx.actor, task.plan)?;
+    let authorized =
+        ctx.with_authority(require_link_authority(tx, &ctx.actor, task.plan, ctx.now)?);
+    let ctx = &authorized;
     let Some(repo) = linked_repository(tx, oid, task)? else {
         return replay_unlink(tx, oid, task)?.ok_or_else(|| {
             invalid(

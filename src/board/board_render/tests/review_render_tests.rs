@@ -46,6 +46,15 @@ fn default_review_budget_bounds_proposals_commits_tasks_and_claims() {
             model: Some("claimed-model".into()),
             effort: Some("xhigh".into()),
             delegated_by: None,
+            workers: Vec::new(),
+            workers_omitted: 0,
+            progress: None,
+            open_questions: 0,
+            oldest_open_question: None,
+            oldest_open_question_at: None,
+            commit_count: 0,
+            latest_commit: None,
+            latest_commit_at: None,
         });
         let linked = review_commit(100 + ordinal);
         packet.crossed.push(CrossedCommit {

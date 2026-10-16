@@ -2,6 +2,24 @@ use crate::cli::parse;
 mod done_grammar_tests;
 
 #[test]
+fn pending_grammar_builds_a_bounded_notice_cursor() {
+    use crate::board::board_grammar::{BoardCommand, parse as board_parse};
+    use crate::board::board_protocol::BoardOp;
+
+    let args = ["board", "pending", "0"].map(str::to_owned);
+    let options = parse(&args).unwrap();
+    let BoardCommand::Op(BoardOp::Pending { after, limit }) = board_parse(&options, None).unwrap()
+    else {
+        panic!("expected pending notices");
+    };
+    assert_eq!(after.unwrap().get(), 0);
+    assert!((1..=200).contains(&limit));
+
+    let args = ["board", "pending", "18446744073709551615"].map(str::to_owned);
+    assert!(board_parse(&parse(&args).unwrap(), None).is_err());
+}
+
+#[test]
 fn board_collection_grammar_uses_frozen_typed_cursors_and_required_show_targets() {
     use crate::board::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
     use crate::board::board_protocol::{BoardOp, EntryCursor, OverviewCursor};

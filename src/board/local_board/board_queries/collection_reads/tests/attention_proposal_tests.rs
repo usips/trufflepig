@@ -61,6 +61,7 @@ fn collection_attention_filters_current_proposal_authority_before_limit_and_coun
             "UPDATE plans SET owner_user='other' WHERE id=2;"
         )
     ).unwrap();
+    grant_all_to_claude(&board.conn, plan(1));
     let ordinary = attention_page(
         board.reader.as_ref().expect("read connection"),
         &context(),
@@ -96,17 +97,17 @@ fn collection_attention_filters_current_proposal_authority_before_limit_and_coun
         panic!("attention");
     };
     assert_eq!(attention_ids(&rest), vec![id(4), id(5)]);
-    let steward = authority_actor("josh", "laptop", "claude", "s2");
+    let claude = authority_actor("josh", "laptop", "claude", "s2");
     assert_eq!(
         attention_ids(&attention_page(
             board.reader.as_ref().expect("read connection"),
-            &steward,
+            &claude,
             None,
             true,
             200
         )),
         vec![id(3), id(4)],
-        "the steward's own user-and-harness question leaves Needs you"
+        "the grant recipient's own user-and-harness question leaves Needs you"
     );
     let foreign_human = authority_actor("other", "laptop", "human", "h1");
     assert_eq!(
@@ -164,6 +165,7 @@ fn collection_attention_stale_proposals_require_exact_author_for_rebase() {
             "INSERT INTO revisions VALUES(1,2,'one','accept',5,1,5);"
         ))
         .unwrap();
+    grant_all_to_claude(&board.conn, plan(1));
     let own = attention_page(
         board.reader.as_ref().expect("read connection"),
         &context(),
@@ -188,10 +190,10 @@ fn collection_attention_stale_proposals_require_exact_author_for_rebase() {
         )),
         vec![id(5)]
     );
-    let steward = authority_actor("josh", "laptop", "claude", "s2");
+    let claude = authority_actor("josh", "laptop", "claude", "s2");
     let own = attention_page(
         board.reader.as_ref().expect("read connection"),
-        &steward,
+        &claude,
         None,
         true,
         200,
@@ -199,7 +201,7 @@ fn collection_attention_stale_proposals_require_exact_author_for_rebase() {
     assert_eq!(
         attention_ids(&own),
         vec![id(4)],
-        "the steward's own user-and-harness question leaves Needs you"
+        "the grant recipient's own user-and-harness question leaves Needs you"
     );
     assert_eq!(own.rebase_needed, vec![id(4)]);
     let other_session = authority_actor("josh", "laptop", "claude", "s3");

@@ -1,15 +1,54 @@
 """Exercise the wrapper boundary using an executable stand-in for the CLI."""
+import importlib.util
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
+from importlib.machinery import SourceFileLoader
+from unittest.mock import patch
 
 PLUGIN = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PLUGIN / "bin"))
 from trufflepig_audit_response import parse_lines_response  # noqa: E402
+from trufflepig_board_notices import pending_after  # noqa: E402
+
+
+class HarnessResolutionTests(unittest.TestCase):
+    def setUp(self):
+        loader = SourceFileLoader("trufflepig_agent_wrapper_test", str(PLUGIN / "bin/trufflepig-agent"))
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        self.wrapper = importlib.util.module_from_spec(spec)
+        loader.exec_module(self.wrapper)
+
+    def test_native_environment_priority_matches_rust_and_beats_claims(self):
+        with patch.dict(os.environ, {
+            "GROK_SESSION_ID": "grok-session", "OMPCODE": "1", "CLAUDECODE": "1",
+            "CODEX_THREAD_ID": "codex-thread", "TRUFFLEPIG_AGENT_HARNESS": "kimi",
+        }, clear=True):
+            self.assertEqual(self.wrapper.detect_native_harness(), "grok")
+            self.assertEqual(self.wrapper.detect_harness("human"), "grok")
+        with patch.dict(os.environ, {"OMPCODE": "1", "CLAUDECODE": "1"}, clear=True):
+            self.assertEqual(self.wrapper.detect_native_harness(), "omp")
+
+    def test_nearest_process_fallback_precedes_wrapper_hint(self):
+        processes = {
+            "/proc/101/comm": "python\n", "/proc/101/stat": "101 (python) S 202 0\n",
+            "/proc/202/comm": "codex\n", "/proc/202/stat": "202 (codex) S 303 0\n",
+            "/proc/303/comm": "claude\n", "/proc/303/stat": "303 (claude) S 1 0\n",
+        }
+
+        def read_text(path, *args, **kwargs):
+            return processes[str(path)]
+
+        with (patch.dict(os.environ, {"TRUFFLEPIG_AGENT_HARNESS": "kimi"}, clear=True),
+              patch.object(self.wrapper.os, "getppid", return_value=101),
+              patch.object(self.wrapper.Path, "read_text", autospec=True, side_effect=read_text)):
+            self.assertEqual(self.wrapper.detect_native_harness(), "codex")
+            self.assertEqual(self.wrapper.detect_harness("claude"), "codex")
 
 
 class NextFooterTests(unittest.TestCase):
@@ -93,10 +132,23 @@ class AgentWrapperTests(unittest.TestCase):
         self.fake.write_text('''#!/usr/bin/env python3
 import json, os, sys
 from pathlib import Path
-Path(os.environ["CAPTURE"]).write_text(json.dumps({"argv": sys.argv[1:], "spool": os.environ.get("TRUFFLEPIG_SPOOL_DIR")}))
-sys.stdout.buffer.write(os.environ.get("RESPONSE", '{"hits":[],"truncated":false}\\n').encode())
-sys.stderr.buffer.write(os.environ.get("STDERR", "").encode())
-sys.exit(int(os.environ.get("EXIT", "0")))
+argv = sys.argv[1:]
+pending = ("--json" in argv and "--limit" in argv and
+           any(argv[index:index + 2] == ["board", "pending"] for index in range(len(argv) - 1)))
+if pending:
+    with Path(os.environ["CAPTURE"] + ".pending").open("a") as handle:
+        handle.write(json.dumps(argv) + "\\n")
+    stdout = os.environ.get("PENDING_RESPONSE", '{"api":10,"result":{"result":"pending","data":{"notices":[],"after":null,"through":0,"server_now":0,"generation":"0000000000000000","omitted":0}}}\\n')
+    stderr = os.environ.get("PENDING_STDERR", "")
+    exit_code = int(os.environ.get("PENDING_EXIT", "0"))
+else:
+    Path(os.environ["CAPTURE"]).write_text(json.dumps({"argv": argv, "spool": os.environ.get("TRUFFLEPIG_SPOOL_DIR")}))
+    stdout = os.environ.get("RESPONSE", '{"hits":[],"truncated":false}\\n')
+    stderr = os.environ.get("STDERR", "")
+    exit_code = int(os.environ.get("EXIT", "0"))
+sys.stdout.buffer.write(stdout.encode())
+sys.stderr.buffer.write(stderr.encode())
+sys.exit(exit_code)
 ''')
         self.fake.chmod(0o755)
         self.env.update(TRUFFLEPIG_BINARY=str(self.fake), CAPTURE=str(self.root / "capture.json"))
@@ -111,6 +163,10 @@ sys.exit(int(os.environ.get("EXIT", "0")))
 
     def capture(self):
         return json.loads((self.root / "capture.json").read_text())
+
+    def pending_calls(self):
+        path = self.root / "capture.json.pending"
+        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
     def test_thread_groups_directories_and_separates_threads(self):
         other = self.root / "other directory"
@@ -131,6 +187,7 @@ sys.exit(int(os.environ.get("EXIT", "0")))
                         CLAUDE_SESSION_ID="not-a-documented-shell-session")
         self.run_wrapper("search", "x")
         self.assertEqual(self.record("claude")["session"], "parent-session")
+        self.assertNotIn("--session", self.capture()["argv"])
         self.env["TRUFFLEPIG_SESSION"] = "claude-agent-stable"
         self.run_wrapper("search", "y")
         self.assertEqual(self.record("claude")["session"], "claude-agent-stable")
@@ -139,17 +196,22 @@ sys.exit(int(os.environ.get("EXIT", "0")))
         self.run_wrapper("--session", "cli-session", "search", "z")
         self.assertEqual(self.record("claude")["session"], "cli-session")
 
-    def test_claude_without_hook_has_visible_fallback_identity(self):
+    def test_claude_without_session_source_remains_unattributed(self):
         self.env["CLAUDE_CODE_CHILD_SESSION"] = "1"
         self.run_wrapper("search", "x")
-        self.assertTrue(self.record("claude")["session"].startswith("claude-"))
+        self.assertIsNone(self.record("claude")["session"])
+        self.assertNotIn("--session", self.capture()["argv"])
+        self.assertEqual(self.pending_calls(), [])
 
     def test_grok_session_and_explicit_override(self):
         self.env["GROK_SESSION_ID"] = "grok-session"
         self.assertEqual(self.run_wrapper("search", "x").returncode, 0)
         self.assertEqual(self.record("grok")["session"], "grok-session")
+        self.assertNotIn("--session", self.capture()["argv"])
         self.run_wrapper("--session", "explicit-session", "search", "y")
         self.assertEqual(self.record("grok")["session"], "explicit-session")
+        argv = self.capture()["argv"]
+        self.assertEqual(argv[argv.index("--session") + 1], "explicit-session")
 
     def test_flags_after_command_and_cli_attribution_win(self):
         self.env.update(TRUFFLEPIG_AGENT_HARNESS="muse", TRUFFLEPIG_SESSION="env-session")
@@ -159,15 +221,126 @@ sys.exit(int(os.environ.get("EXIT", "0")))
         argv = self.capture()["argv"]
         self.assertNotIn("--format", argv)
         self.assertEqual(argv[-len(args):], args)
-        self.assertEqual(self.record("custom")["session"], "cli-session")
-        self.assertEqual(self.record("custom")["args"], [args[1]])
+        self.assertEqual(self.record("codex")["session"], "cli-session")
+        self.assertEqual(self.record("codex")["claimed_client"], "custom")
+        self.assertEqual(self.record("codex")["args"], [args[1]])
+
+    def test_explicit_client_claim_is_preserved_inside_observed_harness(self):
+        result = self.run_wrapper("--client", "human", "search", "x")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        argv = self.capture()["argv"]
+        client_index = argv.index("--client")
+        self.assertEqual(argv[client_index + 1], "human")
+        self.assertEqual(self.record("codex")["harness"], "codex")
+        self.assertEqual(self.record("codex")["claimed_client"], "human")
 
     def test_environment_overrides_detection(self):
         self.env.update(TRUFFLEPIG_AGENT_HARNESS="kimi", TRUFFLEPIG_SESSION="explicit")
         self.run_wrapper("search", "x")
+        self.assertEqual(self.record("codex")["session"], "explicit")
+        self.assertNotIn("--session", self.capture()["argv"])
+        self.assertNotIn("--session", self.pending_calls()[0])
+
+    def test_wrapper_harness_hint_is_used_without_native_markers(self):
+        del self.env["CODEX_THREAD_ID"]
+        self.env.update(TRUFFLEPIG_AGENT_HARNESS="kimi", TRUFFLEPIG_SESSION="explicit")
+        self.run_wrapper("search", "x")
         self.assertEqual(self.record("kimi")["session"], "explicit")
 
-    def test_session_hook_marker_is_read_back_for_its_directory(self):
+    def test_passive_notice_adds_bounded_json_and_uses_a_separate_watermark(self):
+        now = int(time.time())
+        pending = {
+            "notices": [{"seq": 24, "kind": "entry", "reason": "question",
+                         "entry": {"id": "E24", "plan": "P7", "kind": "question",
+                                   "body": "PRIVATE_BOARD_BODY", "refs": ["P7.3"],
+                                   "model": "gpt-6-luna", "created_at": now - 120}}],
+            "after": None, "through": 25, "server_now": now,
+            "generation": "dddddddddddddddd", "omitted": 0,
+        }
+        self.env.update(RESPONSE='{"status":"ok","hits":[],"truncated":false}\n',
+                        PENDING_RESPONSE=json.dumps({"api": 10, "result": {
+                            "result": "pending", "data": pending}}) + "\n")
+        result = self.run_wrapper("--json", "search", "needle")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        self.assertEqual(output["hits"], [])
+        metadata = output["board_pending"]
+        self.assertEqual(metadata["notices"], [{"seq": 24, "kind": "question",
+                                                "entry_id": "E24", "task": "P7.3"}])
+        self.assertNotIn("PRIVATE_BOARD_BODY", result.stdout.decode())
+        self.assertLessEqual(len(json.dumps(metadata).encode()), 384)
+        self.assertEqual(pending_after("codex/thread-one", self.root / "state/trufflepig/board-notices"), 25)
+        calls = self.pending_calls()
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][-2:], ["board", "pending"])
+        self.assertEqual(calls[0][calls[0].index("--limit") + 1], "8")
+        self.assertNotIn("--session", calls[0])
+        self.assertNotIn("--session", self.capture()["argv"])
+
+        second = self.run_wrapper("--json", "search", "again")
+        self.assertEqual(json.loads(second.stdout), {"status": "ok", "hits": [], "truncated": False})
+        self.assertEqual(len(self.pending_calls()), 1)
+
+    def test_lines_notice_uses_one_fixed_safe_footer(self):
+        pending = {"notices": [{"seq": 9, "kind": "entry", "reason": "claim",
+                                "entry": {"id": "E9", "kind": "claim", "body": "private"}}],
+                   "after": None, "through": 9, "server_now": 1000,
+                   "generation": "eeeeeeeeeeeeeeee", "omitted": 0}
+        self.env.update(RESPONSE="Search finished", PENDING_RESPONSE=json.dumps({"api": 10,
+                        "result": {"result": "pending", "data": pending}}))
+        result = self.run_wrapper("search", "needle")
+        self.assertEqual(result.stdout,
+                         b"Search finished\nboard: 1 pending notice; run trufflepig-agent board pending\n")
+        self.assertNotIn(b"private", result.stdout)
+
+    def test_empty_success_can_carry_notice_footer(self):
+        pending = {"notices": [{"seq": 9, "kind": "event", "reason": "worker",
+                                "event": {"seq": 9, "kind": "worker", "summary": "private"}}],
+                   "after": None, "through": 9, "server_now": 1000,
+                   "generation": "ffffffffffffffff", "omitted": 0}
+        self.env.update(RESPONSE="", PENDING_RESPONSE=json.dumps({"api": 10,
+                        "result": {"result": "pending", "data": pending}}))
+        result = self.run_wrapper("search", "quiet")
+        self.assertEqual(result.stdout,
+                         b"board: 1 pending notice; run trufflepig-agent board pending\n")
+
+    def test_pending_failure_or_primary_help_preserves_output(self):
+        self.env.update(RESPONSE='{"status":"ok","hits":[]}\n', PENDING_EXIT="3",
+                        PENDING_STDERR="private router failure\n")
+        result = self.run_wrapper("--json", "search", "needle")
+        self.assertEqual((result.returncode, result.stdout, result.stderr),
+                         (0, b'{"status":"ok","hits":[]}\n', b""))
+        self.assertEqual(len(self.pending_calls()), 1)
+
+        self.env.pop("PENDING_EXIT")
+        self.env.pop("PENDING_STDERR")
+        (self.root / "capture.json.pending").unlink()
+        help_result = self.run_wrapper("--help")
+        self.assertEqual(help_result.stdout, b'{"status":"ok","hits":[]}\n')
+        self.assertEqual(self.pending_calls(), [])
+
+    def test_failed_primary_never_attempts_pending(self):
+        self.env.update(RESPONSE='{"error":"bad flag"}\n', STDERR="diagnostic\n", EXIT="2")
+        result = self.run_wrapper("search", "x")
+        self.assertEqual((result.returncode, result.stdout, result.stderr),
+                         (2, b'{"error":"bad flag"}\n', b"diagnostic\n"))
+        self.assertEqual(self.pending_calls(), [])
+
+    def test_invalid_json_success_is_preserved_without_text_footer(self):
+        self.env["RESPONSE"] = '{"partial":\n'
+        result = self.run_wrapper("--json", "search", "x")
+        self.assertEqual((result.returncode, result.stdout, result.stderr),
+                         (0, b'{"partial":\n', b""))
+        self.assertEqual(self.pending_calls(), [])
+
+    def test_existing_json_notice_metadata_is_preserved_without_repolling(self):
+        response = '{"status":"ok","board_pending":{"existing":true}}\n'
+        self.env["RESPONSE"] = response
+        result = self.run_wrapper("--json", "search", "x")
+        self.assertEqual(result.stdout, response.encode())
+        self.assertEqual(self.pending_calls(), [])
+
+    def test_session_hook_markers_do_not_create_actor_identity(self):
         # The hook also tries to start the daemon; a shim keeps that inert.
         shim = self.root / "shim/trufflepig"
         shim.parent.mkdir()
@@ -181,16 +354,18 @@ sys.exit(int(os.environ.get("EXIT", "0")))
         del self.env["CODEX_THREAD_ID"]
         self.env["KIMI_CODE_HOME"] = str(self.root / "kimi")
         self.run_wrapper("search", "x")
-        self.assertEqual(self.record("kimi")["session"], "kimi-session")
+        self.assertIsNone(self.record("kimi")["session"])
         other = self.root / "other directory"
         other.mkdir()
         self.run_wrapper("search", "x", cwd=other)
-        self.assertTrue(self.record("kimi")["session"].startswith("kimi-"))
-        self.assertNotEqual(self.record("kimi")["session"], "kimi-session")
+        self.assertIsNone(self.record("kimi")["session"])
         subprocess.run(["sh", str(PLUGIN / "hooks/session-start.sh"), "kimi", "end"],
                        input=payload, env=hook_env, capture_output=True, text=True)
         self.run_wrapper("search", "y")
-        self.assertNotEqual(self.record("kimi")["session"], "kimi-session")
+        self.assertIsNone(self.record("kimi")["session"])
+        self.env["KIMI_SESSION_ID"] = "native-kimi-session"
+        self.run_wrapper("search", "z")
+        self.assertEqual(self.record("kimi")["session"], "native-kimi-session")
 
     def test_codex_session_fallback_and_harness_isolation(self):
         del self.env["CODEX_THREAD_ID"]

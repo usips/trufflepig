@@ -28,6 +28,7 @@ fn claim_record_carries_vendor() {
             BoardOp::Hello {
                 model: "Kimi K2".into(),
                 effort: None,
+                worker: None,
             },
         ))
         .unwrap();
@@ -74,6 +75,7 @@ fn delegated_vendor_records_use_each_evidence_actor() {
                 BoardOp::Hello {
                     model: model.into(),
                     effort: Some("max".into()),
+                    worker: None,
                 },
             ))
             .unwrap();

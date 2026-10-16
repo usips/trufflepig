@@ -18,10 +18,11 @@ pub const LOG_FORMAT: &str = concat!(
     "--format=%x00%H%x00%ct%x00%an <%ae>%x00%s%x00",
     "%(trailers:key=Plan,unfold,separator=%x1d)%x00",
     "%(trailers:key=Plan-Task,unfold,separator=%x1d)%x00",
+    "%(trailers:key=Plan-Worker,unfold,separator=%x1d)%x00",
     "%(trailers:key=Co-authored-by,unfold,separator=%x1d)%x00"
 );
 
-const RECORD_FIELDS: usize = 8;
+const RECORD_FIELDS: usize = 9;
 
 #[derive(Clone, Debug)]
 pub struct ParsedCommit {
@@ -148,6 +149,15 @@ pub(crate) fn coauthors_match_claim(
     coauthors
         .iter()
         .any(|coauthor| coauthor.harness.as_str() == label)
+}
+
+/// A vendor marker is evidence only when the imported snapshot names a coauthor.
+pub(crate) fn coauthors_prove_claim(
+    coauthors: &[CommitCoauthor],
+    vendor: AgentVendor,
+    claimed_harness: &HarnessLabel,
+) -> bool {
+    !coauthors.is_empty() && coauthors_match_claim(coauthors, vendor, claimed_harness)
 }
 
 pub fn attributed_to(commit: &LinkedCommit, agent: &HarnessLabel) -> bool {

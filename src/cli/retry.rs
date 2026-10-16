@@ -31,7 +31,7 @@ impl RetryScope {
             "board" => match options.words.get(1).map(String::as_str) {
                 Some(
                     "show" | "review" | "ingest" | "feed" | "attention" | "history" | "search"
-                    | "web",
+                    | "web" | "pending",
                 ) => Self::Read,
                 Some("inbox") if options.words.get(2).is_some() => Self::Read,
                 Some(word) if word.parse::<u64>().is_ok() => Self::Read,
@@ -123,7 +123,7 @@ pub(super) fn run_with_retry(
         Err(error) => match RetryPolicy::classify(scope, &error, started.elapsed()) {
             RetryPolicy::Retry(delay) => {
                 std::thread::sleep(delay);
-                let fresh = RequestContext::new(context.session.clone(), context.client.clone());
+                let fresh = context.next_attempt();
                 command.run(args, &fresh)
             }
             RetryPolicy::Fail => Err(error),

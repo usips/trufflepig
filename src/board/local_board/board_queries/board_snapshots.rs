@@ -44,6 +44,8 @@ impl LocalBoard {
             seq: EventSeq::new(0),
             claim_ttl_secs: self.claim_ttl_secs,
             via: None,
+            origin: request.origin.clone(),
+            authority: None,
         };
         let mut reply = match &request.op {
             BoardOp::Inbox {
@@ -51,6 +53,7 @@ impl LocalBoard {
                 limit,
                 scope,
             } => board_feed::inbox(&tx, &ctx, *after, *limit, scope)?,
+            BoardOp::Pending { after, limit } => board_feed::pending(&tx, &ctx, *after, *limit)?,
             BoardOp::Show { target } => board_reads::show(&tx, &ctx, target)?,
             BoardOp::Search { query, plan, limit } => {
                 board_search::search(&tx, query, *plan, *limit)?

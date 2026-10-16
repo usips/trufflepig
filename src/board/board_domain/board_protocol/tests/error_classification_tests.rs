@@ -133,3 +133,16 @@ fn typed_errors_preserve_domain_prefixes_and_database_lock_classification() {
     let unavailable = BoardError::from(anyhow::anyhow!("unable to open database file"));
     assert_eq!(unavailable.code, BoardErrorCode::BoardUnavailable);
 }
+
+#[test]
+fn invalid_worker_is_a_domain_error() {
+    let error = BoardError::from(anyhow::anyhow!(
+        "invalid_worker: worker handle helper was already used"
+    ));
+    assert_eq!(error.code, BoardErrorCode::InvalidWorker);
+    assert_eq!(
+        error.to_string(),
+        "invalid_worker: worker handle helper was already used"
+    );
+    assert!(error.code.is_domain_answer());
+}

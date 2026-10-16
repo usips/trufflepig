@@ -16,7 +16,7 @@ fn entry_and_event_vendor_use_stored_model_snapshots() {
         ("omp", Some("Muse Spark"), "muse"),
         ("omp", Some("Llama 4 Maverick"), "muse"),
         ("human", Some("gpt-6.1-sol"), "human"),
-        ("cli", Some("Claude Sonnet 4.5"), "human"),
+        ("cli", Some("Claude Sonnet 4.5"), "unknown"),
         ("omp", None, "unknown"),
     ]
     .into_iter()
@@ -37,6 +37,8 @@ fn entry_and_event_vendor_use_stored_model_snapshots() {
                 body: EntryText::new(format!("vendor snapshot {index}")).unwrap(),
                 to: None,
                 supersedes: None,
+                progress: None,
+                verdict: None,
             },
         );
         request.claims = Some(AgentClaims {
@@ -52,6 +54,7 @@ fn entry_and_event_vendor_use_stored_model_snapshots() {
                 BoardOp::Hello {
                     model: "Grok replacement model".into(),
                     effort: None,
+                    worker: None,
                 },
             ))
             .unwrap();

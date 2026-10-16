@@ -18,13 +18,13 @@ fn proposal_diff_preserves_all_lines_and_the_earlier_snapshot() {
                 op,
                 project: None,
             },
+            "127.0.0.1".parse().unwrap(),
             expires,
         )
     };
     let created = execute(BoardOp::New {
         title: PlanTitle::new("Plan").unwrap(),
         body: PlanText::new("base\n").unwrap(),
-        steward: None,
         repo_key: None,
     })
     .unwrap();
@@ -60,7 +60,6 @@ fn proposal_diff_preserves_all_lines_and_the_earlier_snapshot() {
             execute(BoardOp::New {
                 title: PlanTitle::new("Intervening event").unwrap(),
                 body: PlanText::new("").unwrap(),
-                steward: None,
                 repo_key: None,
             })?;
         } else {
@@ -144,6 +143,72 @@ fn render_proposal_accepts_a_literal_entry_target() {
     let reply = render_get(&fixture, &format!("/api/v1/render/proposal/{entry}"));
     assert!(reply.starts_with("HTTP/1.1 200 "), "{reply}");
     assert!(reply.contains(&format!("\"entry\":\"{entry}\"")), "{reply}");
+}
+
+#[test]
+fn board_writes_persist_the_socket_peer_instead_of_forwarded_headers() {
+    let fixture = render_fixture();
+    let created = authed_post(
+        &fixture,
+        "/api/v1/board",
+        &serde_json::json!({
+            "api": BOARD_API,
+            "op": BoardOp::New {
+                title: PlanTitle::new("Peer origin").unwrap(),
+                body: PlanText::new("").unwrap(),
+                repo_key: None,
+            },
+        }),
+    );
+    assert!(created.starts_with("HTTP/1.1 200 "), "{created}");
+    let created: BoardReply =
+        serde_json::from_str(created.split_once("\r\n\r\n").unwrap().1).unwrap();
+    let BoardResult::Change(created) = created.result else {
+        panic!("expected plan receipt")
+    };
+    let plan = created.plan.unwrap();
+
+    let posted = authed_post(
+        &fixture,
+        "/api/v1/board",
+        &serde_json::json!({
+            "api": BOARD_API,
+            "op": BoardOp::Post {
+                target: BoardRef::Plan(plan),
+                kind: crate::board::board_vocabulary::EntryKind::Note,
+                body: EntryText::new("peer provenance").unwrap(),
+                to: None,
+                supersedes: None,
+                progress: None,
+                verdict: None,
+            },
+        }),
+    );
+    assert!(posted.starts_with("HTTP/1.1 200 "), "{posted}");
+    let posted: BoardReply =
+        serde_json::from_str(posted.split_once("\r\n\r\n").unwrap().1).unwrap();
+    let BoardResult::Change(posted) = posted.result else {
+        panic!("expected post receipt")
+    };
+
+    let entry = execute(
+        &fixture,
+        BoardOp::Show {
+            target: BoardRef::Entry(posted.entry),
+        },
+    );
+    let BoardResult::Entry(entry) = entry.result else {
+        panic!("expected persisted entry")
+    };
+    assert_eq!(
+        entry
+            .entry
+            .origin
+            .as_ref()
+            .and_then(|origin| origin.peer_ip),
+        Some("127.0.0.1".parse().unwrap()),
+        "persisted peer provenance must come from the socket, not X-Forwarded-For"
+    );
 }
 
 #[test]

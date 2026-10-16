@@ -1,4 +1,4 @@
-//! Owner and steward acceptance or rejection of proposals.
+//! Authorized acceptance or rejection of plan proposals.
 
 use super::*;
 
@@ -9,7 +9,7 @@ pub(in crate::board::local_board) fn accept(
     note: Option<&EntryText>,
 ) -> Result<BoardReply, BoardError> {
     let (plan, base, body, state, author) = proposal_data(tx, proposal)?;
-    require_authority(tx, ctx, plan)?;
+    let decision_ctx = ctx.with_authority(require_authority(tx, ctx, plan)?);
     if state != "open" {
         return Err(invalid(
             "invalid_state",
@@ -23,7 +23,7 @@ pub(in crate::board::local_board) fn accept(
         decision_summary("accepted", proposal, &author, note.map(EntryText::as_str));
     let entry = mutation_entry(
         tx,
-        ctx,
+        &decision_ctx,
         plan,
         EntryKind::Accept,
         &summary,
@@ -32,7 +32,7 @@ pub(in crate::board::local_board) fn accept(
     )?;
     insert_revision(
         tx,
-        ctx,
+        &decision_ctx,
         plan,
         base.revision + 1,
         &body,
@@ -55,14 +55,14 @@ pub(in crate::board::local_board) fn accept(
     .map_err(sql_error)?;
     insert_event(
         tx,
-        ctx,
+        &decision_ctx,
         Some(plan),
         EntryKind::Accept,
         &entry.to_string(),
         None,
         &event_summary,
     )?;
-    Ok(ctx.change_reply(
+    Ok(decision_ctx.change_reply(
         entry,
         Some(plan),
         Some(PlanRevision {
@@ -80,7 +80,7 @@ pub(in crate::board::local_board) fn reject(
     reason: &EntryText,
 ) -> Result<BoardReply, BoardError> {
     let (plan, _, _, state, author) = proposal_data(tx, proposal)?;
-    require_authority(tx, ctx, plan)?;
+    let decision_ctx = ctx.with_authority(require_authority(tx, ctx, plan)?);
     if state != "open" {
         return Err(invalid(
             "invalid_state",
@@ -90,7 +90,7 @@ pub(in crate::board::local_board) fn reject(
     let event_summary = decision_summary("rejected", proposal, &author, Some(reason.as_str()));
     let entry = mutation_entry(
         tx,
-        ctx,
+        &decision_ctx,
         plan,
         EntryKind::Reject,
         reason.as_str(),
@@ -109,14 +109,14 @@ pub(in crate::board::local_board) fn reject(
     .map_err(sql_error)?;
     insert_event(
         tx,
-        ctx,
+        &decision_ctx,
         Some(plan),
         EntryKind::Reject,
         &entry.to_string(),
         None,
         &event_summary,
     )?;
-    Ok(ctx.change_reply(entry, Some(plan), None, None))
+    Ok(decision_ctx.change_reply(entry, Some(plan), None, None))
 }
 
 fn decision_summary(action: &str, proposal: EntryId, author: &str, detail: Option<&str>) -> String {

@@ -38,6 +38,8 @@ fn task_receipts_replay_their_own_events_across_callers_and_reopen() {
         ))
         .unwrap();
     let second_task = TaskId::new(first_task.plan, 2).unwrap();
+    let sequence_before_links =
+        manual_link_count(&board, "SELECT COALESCE(MAX(seq),0) FROM events") as u64;
 
     let first = change(
         board
@@ -50,8 +52,8 @@ fn task_receipts_replay_their_own_events_across_callers_and_reopen() {
             .handle(&manual_request(second_caller.clone(), second_task))
             .unwrap(),
     );
-    assert_eq!(first.seq, EventSeq::new(4));
-    assert_eq!(second.seq, EventSeq::new(5));
+    assert_eq!(first.seq, EventSeq::new(sequence_before_links + 1));
+    assert_eq!(second.seq, EventSeq::new(sequence_before_links + 2));
     assert!(!first.deduplicated);
     assert_eq!(first.entry, second.entry, "the plan keeps one commit entry");
     assert!(!second.deduplicated);
@@ -67,7 +69,6 @@ fn task_receipts_replay_their_own_events_across_callers_and_reopen() {
     assert!(second_replay.deduplicated);
     assert_eq!(second_replay.entry, second.entry);
     assert_eq!(second_replay.seq, second.seq);
-    assert_eq!(second_replay.seq, EventSeq::new(5));
     assert_eq!(
         manual_link_count(&reopened, "SELECT COUNT(*) FROM events"),
         events_before_replay
@@ -80,7 +81,7 @@ fn task_receipts_replay_their_own_events_across_callers_and_reopen() {
     );
     assert!(replay.deduplicated);
     assert_eq!(replay.entry, first.entry);
-    assert_eq!(replay.seq, EventSeq::new(4));
+    assert_eq!(replay.seq, first.seq);
     assert_eq!(
         manual_link_count(&reopened, "SELECT COUNT(*) FROM events"),
         events_before_replay
@@ -100,6 +101,7 @@ fn concurrent_same_task_links_share_one_manual_receipt() {
     let path = directory.path().join("board.sqlite3");
     let mut setup = LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap();
     let (owner, task) = manual_link_plan(&mut setup);
+    let events_before_links = manual_link_count(&setup, "SELECT COUNT(*) FROM events");
     drop(setup);
 
     let mut first_board = LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap();
@@ -128,7 +130,7 @@ fn concurrent_same_task_links_share_one_manual_receipt() {
     let reopened = LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap();
     assert_eq!(
         manual_link_count(&reopened, "SELECT COUNT(*) FROM events"),
-        3
+        events_before_links + 1
     );
     assert_eq!(
         manual_link_count(

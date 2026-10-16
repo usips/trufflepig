@@ -36,7 +36,7 @@ fn early_errors_send_their_reply_before_closing_on_unread_input() {
         let (server, _) = listener.accept().unwrap();
         client.write_all(&bytes).unwrap();
         client.shutdown(Shutdown::Write).unwrap();
-        handle(server, Instant::now(), &fixture.state);
+        handle_local(server, Instant::now(), &fixture.state);
         let mut reply = Vec::new();
         client.read_to_end(&mut reply).unwrap();
         let reply = String::from_utf8(reply).unwrap();
@@ -88,7 +88,7 @@ fn queue_full_refusal_delivers_the_busy_reply_before_closing() {
     let busy =
         http_wire::unavailable_response(1, crate::board::board_web::web_serve::QUEUE_FULL_BODY);
     let drains = std::sync::Arc::new(crate::board::board_web::web_serve::RefusalDrains::default());
-    crate::board::board_web::web_serve::refuse_queue_full(server, &busy, &drains);
+    crate::board::board_web::web_serve::refuse_connection(server, &busy, &drains);
     peek_until(&mut client, b"daemon_busy");
     // A reset may already have destroyed the connection; the body read below
     // is the assertion.

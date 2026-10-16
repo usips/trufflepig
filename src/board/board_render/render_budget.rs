@@ -20,6 +20,28 @@ pub(super) struct BoardOmitted {
     pub(super) plans: usize,
     pub(super) feedback: usize,
     pub(super) body_lines: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub(super) claims: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub(super) grants: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub(super) commits: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub(super) commit_worker_refs: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub(super) commit_claim_links: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub(super) notices: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub(super) workers: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub(super) worker_files: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub(super) progress_gates: usize,
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
 }
 
 #[derive(Serialize)]
@@ -70,6 +92,30 @@ pub(super) fn render_complete(
         omitted.feedback,
         omitted.body_lines
     )?;
+    if omitted.claims > 0
+        || omitted.grants > 0
+        || omitted.commits > 0
+        || omitted.commit_worker_refs > 0
+        || omitted.commit_claim_links > 0
+        || omitted.notices > 0
+        || omitted.workers > 0
+        || omitted.worker_files > 0
+        || omitted.progress_gates > 0
+    {
+        writeln!(
+            text,
+            "nested omitted: claims={} grants={} commits={} commit_worker_refs={} commit_claim_links={} notices={} workers={} worker_files={} progress_gates={}",
+            omitted.claims,
+            omitted.grants,
+            omitted.commits,
+            omitted.commit_worker_refs,
+            omitted.commit_claim_links,
+            omitted.notices,
+            omitted.workers,
+            omitted.worker_files,
+            omitted.progress_gates
+        )?;
+    }
     if let Some(next) = next {
         writeln!(text, "next: {next}")?;
     }
@@ -80,6 +126,7 @@ pub(super) fn render_complete(
 pub(super) fn reply_plan(reply: &BoardReply) -> Option<PlanId> {
     match &reply.result {
         BoardResult::Plan(view) => Some(view.plan.id),
+        BoardResult::TaskView(view) => Some(view.task.id.plan),
         BoardResult::Entry(view) => view.entry.plan,
         BoardResult::Revision(revision) => Some(revision.id.plan),
         BoardResult::Diff(diff) => Some(diff.before.id.plan),

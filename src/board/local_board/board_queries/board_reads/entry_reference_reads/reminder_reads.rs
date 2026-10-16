@@ -1,5 +1,8 @@
 //! Open-reminder predicate and capped reminder totals.
 use super::*;
+use crate::board::local_board::board_queries::board_reads::recipient_predicates::{
+    addressed_to_actor_sql, task_entry_sql, task_owner_human_question_sql,
+};
 use crate::board::local_board::board_queries::read_scope_sql::ScopeSql;
 
 /// Reminder totals are exact up to this cap; larger backlogs report a lower bound.
@@ -11,6 +14,19 @@ const OPEN_REMINDER_COUNT_CAP: u64 = 200;
 /// of the same harness keeps its reminders; proposal currency is as of ?6.
 pub(in crate::board::local_board::board_queries::board_reads) fn reminder_predicate() -> String {
     let strict_scope = ScopeSql::strict_plan_predicate("e.plan_id", 4, 5);
+    let addressed = addressed_to_actor_sql("e.to_whom", "?1", "?2", "?3");
+    let task_entry = task_entry_sql("e.id");
+    let task_owner = task_owner_human_question_sql("e.id", "?1", "?2");
+    let own_task_question = format!(
+        concat!(
+            "(e.kind='question' AND {task_entry} AND EXISTS(SELECT 1 FROM actors asker ",
+            "WHERE asker.id=e.actor_id AND asker.user||'@'||asker.host||'/'||asker.harness||'/'||asker.session=?3))"
+        ),
+        task_entry = task_entry,
+    );
+    let recipient = format!(
+        "({addressed} OR (e.to_whom IS NULL AND NOT ({task_entry})) OR (e.kind='question' AND {task_owner}))"
+    );
     format!(
         concat!(
             "e.kind IN ('question','proposal','feedback') ",
@@ -19,15 +35,18 @@ pub(in crate::board::local_board::board_queries::board_reads) fn reminder_predic
             "WHERE head_at.plan_id=p.plan_id AND head_at.seq<=?6) OR EXISTS(SELECT 1 FROM actors author ",
             "WHERE author.id=e.actor_id AND author.user=?1 AND author.harness=?2))) ",
             "OR (e.kind='feedback' AND e.state IN ('open','triaged')) OR ({OPEN_QUESTION}))) ",
-            "AND (e.to_whom IS NULL OR e.to_whom IN (?1,?2,?3)) ",
+            "AND {recipient} AND NOT {own_task_question} ",
             "AND (?4<>1 OR NOT EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id) ",
-            "OR e.to_whom IN (?1,?2,?3) ",
+            "OR {addressed} ",
             "OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id AND scope.repo_key IN(SELECT value FROM json_each(?5))) ",
             "OR (e.kind='feedback' AND EXISTS(SELECT 1 FROM actors author WHERE author.id=e.actor_id ",
             "AND author.user=?1 AND author.harness=?2))) AND {strict_scope}"
         ),
         OPEN_QUESTION = OPEN_QUESTION,
-        strict_scope = strict_scope
+        strict_scope = strict_scope,
+        recipient = recipient,
+        addressed = addressed,
+        own_task_question = own_task_question,
     )
 }
 

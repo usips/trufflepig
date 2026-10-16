@@ -1,9 +1,11 @@
 mod database_opening_tests;
 mod manual_link_migration_tests;
 mod repository_migration_tests;
+mod schema_eleven_tests;
 mod schema_nine_tests;
 mod schema_refusal_tests;
 mod schema_repair_tests;
+mod schema_ten_tests;
 
 pub(super) use schema_refusal_tests::upgrade_schema_before_lock;
 
@@ -60,6 +62,14 @@ fn shipped_migration_steps_are_byte_pinned() {
         pin(SCHEMA_V9),
         "9e78780cdd2f2cb7510f5d048982cf5026e5ca2ba626c9866ecd3631387e94d2"
     );
+    assert_eq!(
+        pin(SCHEMA_V10),
+        "9deb97568fef879a0d6ad14b33b6fb38092f612d9903eae94c6bd087802530af"
+    );
+    assert_eq!(
+        pin(SCHEMA_V11),
+        "617a1c1e99f3e8307d0bd8e7bbffe7f29c9b5984f8d46be72d1e6b5a0e583624"
+    );
 }
 
 #[test]
@@ -106,9 +116,9 @@ fn populated_v1_migration_preserves_durable_evidence() {
         .unwrap();
     assert_eq!(version, SCHEMA_VERSION);
     for (table, count) in [
-        ("actors", 1),
+        ("actors", 2),
         ("agent_sessions", 1),
-        ("entries", 3),
+        ("entries", 4),
         ("entry_refs", 1),
         ("revisions", 1),
         ("proposals", 1),
@@ -119,7 +129,7 @@ fn populated_v1_migration_preserves_durable_evidence() {
         ("commit_tasks", 1),
         ("board_feedback", 1),
         ("feedback_imports", 1),
-        ("events", 2),
+        ("events", 3),
     ] {
         assert_eq!(
             conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |row| row
@@ -133,6 +143,42 @@ fn populated_v1_migration_preserves_durable_evidence() {
         conn.query_row("SELECT body FROM texts", [], |row| row.get::<_, String>(0))
             .unwrap(),
         "original SSOT"
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT user,host,harness,session FROM actors WHERE id=1",
+            [],
+            |row| Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        )
+        .unwrap(),
+        (
+            "josh".into(),
+            "host".into(),
+            "codex".into(),
+            "session".into()
+        )
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT id,plan_id,kind,body,actor_id,seq,created_at FROM entries WHERE id=1",
+            [],
+            |row| Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, i64>(6)?,
+            ))
+        )
+        .unwrap(),
+        (1, 1, "decision".to_owned(), "created".to_owned(), 1, 1, 10)
     );
     assert_eq!(
         conn.query_row("SELECT task_ordinal FROM commit_tasks", [], |row| row
@@ -182,23 +228,24 @@ fn populated_v1_migration_preserves_durable_evidence() {
         .unwrap(),
         (7, 10, 20)
     );
-    let receipt: crate::board::board_protocol::BoardReply = serde_json::from_str(
-        &conn
-            .query_row("SELECT reply_json FROM operation_dedupes", [], |row| {
-                row.get::<_, String>(0)
-            })
-            .unwrap(),
-    )
-    .unwrap();
-    // The v4 step stamps the wire API current at migration time; dispatch
-    // upgrades older stamps to the current API when replaying receipts.
-    assert_eq!(receipt.api, 3);
-    let crate::board::board_protocol::BoardResult::Change(change) = receipt.result else {
-        panic!("lost legacy receipt");
-    };
-    assert_eq!(change.entry.get(), 1);
-    assert_eq!(change.seq.get(), 1);
-    assert_eq!(change.revision.unwrap().to_string(), "P1@1");
+    assert_eq!(
+        conn.query_row("SELECT count(*) FROM operation_dedupes", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .unwrap(),
+        0,
+        "API 11 discards operation receipts with the older wire shape"
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT import_key,entry_id FROM feedback_imports",
+            [],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        )
+        .unwrap(),
+        ("import".to_owned(), 3),
+        "permanent feedback identity survives operation receipt invalidation"
+    );
     assert!(
         conn.prepare("PRAGMA foreign_key_check")
             .unwrap()

@@ -1,4 +1,5 @@
-//! Bounded local observations with explicit sessions and delivery evidence.
+//! Bounded local observations keep diagnostic baselines separate from actor identity.
+//! Native actor sessions do not become diagnostic baselines implicitly.
 
 mod appender;
 mod audit;

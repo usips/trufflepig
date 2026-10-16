@@ -12,6 +12,7 @@ mod repository_writes;
 
 use crate::board::board_actor::BoardRecipient;
 use crate::board::board_vocabulary::EntryText;
+pub(in crate::board::local_board) use commit_link_writes::backfill_commit_claim_links;
 pub(in crate::board::local_board) use commit_link_writes::{link_commit, link_commits};
 pub(in crate::board::local_board) use commit_unlink_writes::unlink_commit;
 pub(in crate::board::local_board) use repository_writes::{
@@ -23,9 +24,13 @@ pub(in crate::board::local_board) fn hello(
     ctx: &WriteContext,
     model: &str,
     effort: Option<&str>,
+    worker: Option<&WorkerAddress>,
 ) -> Result<BoardReply, BoardError> {
+    if let Some(worker) = worker {
+        task_claims::bind_worker(tx, ctx, worker, model, effort)?;
+    }
     tx.execute(
-        "UPDATE agent_sessions SET model=?2,effort=?3,last_seen=?4 WHERE actor_id=?1",
+        "UPDATE agent_sessions SET model=?2,effort=?3,last_seen=?4,ended_at=NULL WHERE actor_id=?1",
         params![ctx.actor_id, model, effort, ctx.now],
     )
     .map_err(sql_error)?;
@@ -38,6 +43,8 @@ pub(in crate::board::local_board) fn hello(
         seq: ctx.seq,
         claim_ttl_secs: ctx.claim_ttl_secs,
         via: None,
+        origin: ctx.origin.clone(),
+        authority: None,
     };
     let body = effort.map_or_else(|| model.to_owned(), |effort| format!("{model}/{effort}"));
     let entry = insert_entry(
@@ -78,6 +85,7 @@ pub(in crate::board::local_board) fn hello(
             cursor: EventSeq::new(sqlite_u64(cursor.unwrap_or(0))?),
             first_seen,
             last_seen,
+            worker: worker.cloned(),
         }),
     ))
 }
@@ -90,11 +98,20 @@ pub(in crate::board::local_board) fn post(
     body: &EntryText,
     to: Option<&BoardRecipient>,
     supersedes: Option<EntryId>,
+    progress: Option<&ProgressInput>,
+    verdict: Option<&ReviewVerdict>,
+    trusted_head: Option<&crate::identity::GitOid>,
 ) -> Result<BoardReply, BoardError> {
     let plan = target
         .plan_id()
         .ok_or_else(|| invalid("invalid_reference", "post requires a plan or task"))?;
     require_plan(tx, plan)?;
+    if (progress.is_some() || verdict.is_some()) && !matches!(target, BoardRef::Task(_)) {
+        return Err(invalid(
+            "invalid_options",
+            "structured progress and verdict require a task",
+        ));
+    }
     if let BoardRef::Task(task) = target {
         let exists: bool = tx
             .query_row(
@@ -116,6 +133,16 @@ pub(in crate::board::local_board) fn post(
             ));
         }
     }
+    let to = to
+        .map(|recipient| recipient.normalize_for_caller(&ctx.actor))
+        .or_else(|| {
+            if kind == EntryKind::Question {
+                if let BoardRef::Task(task) = target {
+                    return BoardRecipient::parse(&task.to_string()).ok();
+                }
+            }
+            None
+        });
     let entry = insert_entry(
         tx,
         ctx,
@@ -123,7 +150,7 @@ pub(in crate::board::local_board) fn post(
             plan_id: Some(plan),
             kind,
             body: body.as_str().to_owned(),
-            to_whom: to.cloned(),
+            to_whom: to.clone(),
             supersedes,
             repo_key: None,
             state: None,
@@ -136,13 +163,31 @@ pub(in crate::board::local_board) fn post(
         )
         .map_err(sql_error)?;
     }
+    if let BoardRef::Task(task) = target {
+        task_claims::attach_worker_post(tx, ctx, *task, entry)?;
+        let binding = board_queries::worker_reads::active_worker_binding(tx, ctx.actor_id, *task)?;
+        if let Some(progress) = progress {
+            super::progress_evidence::write_progress(
+                tx,
+                ctx,
+                entry,
+                *task,
+                binding.as_ref().map(|value| &value.address),
+                progress,
+                trusted_head,
+            )?;
+        }
+        if let Some(verdict) = verdict {
+            super::progress_evidence::write_verdict(tx, ctx, entry, *task, verdict)?;
+        }
+    }
     insert_event(
         tx,
         ctx,
         Some(plan),
         kind,
         &entry.to_string(),
-        to,
+        to.as_ref(),
         body.as_str(),
     )?;
     Ok(ctx.change_reply(

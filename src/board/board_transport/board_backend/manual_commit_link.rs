@@ -25,7 +25,11 @@ impl BoardHost {
         let config = self.config()?;
         let mut reader =
             LocalBoard::open_read_with_timeout(&config, deadline.cap(Duration::from_secs(5)))?;
-        reader.require_commit_link_authority(&request.actor, task.plan)?;
+        reader.require_commit_link_authority(
+            &request.actor,
+            task.plan,
+            super::super::super::local_board::unix_now()?,
+        )?;
         if targets.is_empty() {
             return Err(BoardError::new(
                 BoardErrorCode::InvalidReference,

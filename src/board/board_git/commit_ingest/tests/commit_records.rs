@@ -34,6 +34,18 @@ fn native_trailers_link_case_insensitively_and_exclude_body_mentions() {
             .collect::<BTreeSet<_>>(),
         BTreeSet::from([linked, folded, spaced])
     );
+    assert_eq!(backend.requests, 3, "one backend write per linked commit");
+    assert!(
+        backend
+            .request_actors
+            .iter()
+            .all(|actor| actor.harness.is_system() && actor.session == "ingest")
+    );
+    assert!(backend.request_origins.iter().all(|origin| {
+        origin
+            .as_ref()
+            .is_some_and(|origin| origin.harness.as_str() == "system" && origin.session == "ingest")
+    }));
     let linked = backend
         .linked
         .iter()
@@ -43,6 +55,31 @@ fn native_trailers_link_case_insensitively_and_exclude_body_mentions() {
     assert_eq!(linked.coauthors[0].harness.as_str(), "codex");
     assert_eq!(linked.files, 1);
     assert_eq!(linked.insertions, 2);
+}
+
+#[test]
+fn unknown_plan_worker_handle_warns_and_keeps_its_task_link() {
+    let fixture = GitFixture::new();
+    fixture.commit("root");
+    fixture.commit("worker work\n\nPlan-Worker: P7.3/agent-1");
+    let target = target(&fixture);
+    let mut backend = TestBackend {
+        unknown_workers: vec![
+            crate::board::board_protocol::WorkerAddress::parse("P7.3/agent-1").unwrap(),
+        ],
+        ..TestBackend::default()
+    };
+    let report = RepoIngestor::default()
+        .ingest(&mut backend, &actor(), &[target], Duration::from_secs(5))
+        .unwrap();
+    assert_eq!(backend.linked.len(), 1);
+    assert_eq!(backend.linked[0].plans[0].task_ordinal, Some(3));
+    assert_eq!(backend.linked[0].worker_refs[0].to_string(), "P7.3/agent-1");
+    assert!(
+        report.errors.iter().any(|warning| {
+            warning.contains("P7.3/agent-1") && warning.contains("unknown worker")
+        })
+    );
 }
 
 #[test]

@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn local_board_commit_batch_is_atomic_idempotent_and_emits_one_event() {
+fn local_board_commit_scan_events_are_per_commit_atomic_and_idempotent() {
     let (mut board, path) = database();
     let author = actor("human", "h1");
     let plan = new_plan(&mut board, author.clone(), "Trial").plan.unwrap();
@@ -25,29 +25,46 @@ fn local_board_commit_batch_is_atomic_idempotent_and_emits_one_event() {
             plan_id: plan,
             task_ordinal: None,
         }],
+        worker_refs: Vec::new(),
+        claim_links: Vec::new(),
     };
-    let request = BoardRequest::new(
-        author,
-        BoardOp::LinkCommits {
-            commits: vec![
-                commit("2222222222222222222222222222222222222222"),
-                commit("3333333333333333333333333333333333333333"),
-            ],
-        },
-    );
+    let commits = vec![
+        commit("2222222222222222222222222222222222222222"),
+        commit("3333333333333333333333333333333333333333"),
+    ];
     let before = board.max_seq().unwrap().get();
-    let linked = board.handle(&request).unwrap();
-    let BoardResult::CommitsLinked(linked) = linked.result else {
-        panic!("links");
-    };
-    assert_eq!(linked.inserted, 2);
-    assert_eq!(board.max_seq().unwrap().get(), before + 1);
-    let linked = board.handle(&request).unwrap();
-    let BoardResult::CommitsLinked(linked) = linked.result else {
-        panic!("links");
-    };
-    assert_eq!(linked.inserted, 0);
-    assert_eq!(board.max_seq().unwrap().get(), before + 1);
+    for commit in &commits {
+        let request = BoardRequest::system(
+            BoardActor::system("josh", "laptop").unwrap(),
+            BoardOp::LinkCommits {
+                commits: vec![commit.clone()],
+            },
+        )
+        .with_system_origin("ingest")
+        .unwrap();
+        let linked = board.handle(&request).unwrap();
+        let BoardResult::CommitsLinked(linked) = linked.result else {
+            panic!("links");
+        };
+        assert_eq!(linked.inserted, 1);
+    }
+    assert_eq!(board.max_seq().unwrap().get(), before + 2);
+    for commit in &commits {
+        let request = BoardRequest::system(
+            BoardActor::system("josh", "laptop").unwrap(),
+            BoardOp::LinkCommits {
+                commits: vec![commit.clone()],
+            },
+        )
+        .with_system_origin("ingest")
+        .unwrap();
+        let linked = board.handle(&request).unwrap();
+        let BoardResult::CommitsLinked(linked) = linked.result else {
+            panic!("links");
+        };
+        assert_eq!(linked.inserted, 0);
+    }
+    assert_eq!(board.max_seq().unwrap().get(), before + 2);
     drop(board);
     std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }

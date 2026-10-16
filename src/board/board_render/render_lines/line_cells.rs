@@ -1,7 +1,8 @@
 //! Escaped cells keep user-authored text inside controlled line-format grammar.
 
-use crate::board::board_actor::{BoardActor, BoardRecipient};
+use crate::board::board_actor::{AgentVendor, BoardActor, BoardRecipient};
 use crate::board::board_ids::PlanId;
+use crate::board::board_protocol::{ActorOrigin, AuthoritySource};
 use std::fmt::Write;
 
 pub(in crate::board::board_render) fn author(
@@ -20,6 +21,37 @@ pub(in crate::board::board_render) fn author(
 pub(in crate::board::board_render) fn recipient(to: &Option<BoardRecipient>) -> String {
     to.as_ref()
         .map_or_else(String::new, |to| format!(" (to {})", cell(to.as_str())))
+}
+
+pub(in crate::board::board_render) fn source_suffix(
+    origin: Option<&ActorOrigin>,
+    authority: Option<&AuthoritySource>,
+) -> String {
+    let mut suffix = String::new();
+    if let Some(origin) = origin {
+        write!(
+            suffix,
+            "\torigin={}/{}",
+            cell(origin.harness.as_str()),
+            cell(&origin.session)
+        )
+        .unwrap();
+        if let Some(peer_ip) = origin.peer_ip {
+            write!(suffix, "\tpeer_ip={}", cell(&peer_ip.to_string())).unwrap();
+        }
+    }
+    if let Some(authority) = authority {
+        write!(suffix, "\tauthority={}", cell(&authority.to_string())).unwrap();
+    }
+    suffix
+}
+
+pub(in crate::board::board_render) fn vendor_suffix(vendor: AgentVendor) -> &'static str {
+    if vendor == AgentVendor::System {
+        "\tvendor=system"
+    } else {
+        ""
+    }
 }
 
 pub(in crate::board::board_render) fn footer(

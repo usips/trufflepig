@@ -1,8 +1,9 @@
 //! Portable repository registration and linked commit evidence.
 use crate::{
     board::{
-        board_actor::HarnessLabel,
-        board_ids::{PlanId, RepoKey, TaskId},
+        board_actor::{BoardActor, HarnessLabel},
+        board_ids::{EntryId, PlanId, RepoKey, TaskId},
+        board_protocol::WorkerAddress,
     },
     identity::GitOid,
 };
@@ -13,6 +14,8 @@ use std::path::PathBuf;
 pub const COAUTHOR_LIMIT: usize = 64;
 /// Maximum plan links per linked commit; the scanner and wire agree.
 pub const LINK_LIMIT: usize = 256;
+/// Maximum worker handles carried by one linked commit.
+pub const WORKER_REF_LIMIT: usize = 256;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RepoRegistration {
@@ -50,6 +53,21 @@ pub struct CommitPlanLink {
     pub task_ordinal: Option<u64>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CommitClaimBasis {
+    ClaimWindow,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CommitClaimLink {
+    pub task: TaskId,
+    pub claim: EntryId,
+    pub basis: CommitClaimBasis,
+    pub actor: Option<BoardActor>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LinkedCommit {
     pub repo_key: RepoKey,
@@ -62,6 +80,10 @@ pub struct LinkedCommit {
     pub insertions: u64,
     pub deletions: u64,
     pub plans: Vec<CommitPlanLink>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub worker_refs: Vec<WorkerAddress>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub claim_links: Vec<CommitClaimLink>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -69,4 +91,6 @@ pub struct CommitLinkResult {
     pub inserted: u64,
     pub unknown_plans: Vec<PlanId>,
     pub unknown_tasks: Vec<TaskId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unknown_workers: Vec<WorkerAddress>,
 }

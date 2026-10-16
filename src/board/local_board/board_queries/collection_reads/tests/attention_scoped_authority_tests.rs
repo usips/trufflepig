@@ -36,6 +36,7 @@ fn collection_attention_scoped_shows_authority_decisions_without_repo_scope() {
     board.conn.execute_batch(
         "INSERT INTO proposals VALUES(3,1,1,'one','open',NULL,NULL); UPDATE entries SET state='open' WHERE id=4;"
     ).unwrap();
+    grant_all_to_claude(&board.conn, plan(1));
     let human = authority_actor("josh", "laptop", "human", "h1");
     let scoped = attention_page(
         board.reader.as_ref().expect("read connection"),
@@ -46,23 +47,23 @@ fn collection_attention_scoped_shows_authority_decisions_without_repo_scope() {
     );
     assert_eq!(
         attention_ids(&scoped),
-        vec![id(3), id(4), id(5)],
+        vec![id(3), id(5)],
         "an unaddressed question on an unlinked plan is global in scoped attention"
     );
     assert_eq!(scoped.entries_omitted, 0);
     assert_eq!(scoped.next_after, None);
-    let steward = authority_actor("josh", "laptop", "claude", "s2");
+    let claude = authority_actor("josh", "laptop", "claude", "s2");
     assert_eq!(
         attention_ids(&attention_page(
             board.reader.as_ref().expect("read connection"),
-            &steward,
+            &claude,
             None,
             false,
             200
         )),
-        vec![id(3), id(4), id(5)]
+        vec![id(3), id(5)]
     );
-    for actor in [human, steward] {
+    for actor in [human, claude] {
         assert_eq!(
             attention_ids(&attention_page(
                 board.reader.as_ref().expect("read connection"),
@@ -71,7 +72,7 @@ fn collection_attention_scoped_shows_authority_decisions_without_repo_scope() {
                 true,
                 200
             )),
-            vec![id(3), id(4), id(5)]
+            vec![id(3), id(5)]
         );
     }
 }
@@ -112,9 +113,10 @@ fn collection_attention_scoped_hides_authority_decisions_from_foreign_actors() {
     board.conn.execute_batch(
         "INSERT INTO proposals VALUES(3,1,1,'one','open',NULL,NULL); UPDATE entries SET state='open' WHERE id=4;"
     ).unwrap();
+    grant_all_to_claude(&board.conn, plan(1));
     let foreign_human = authority_actor("other", "laptop", "human", "h1");
-    let foreign_steward = authority_actor("other", "laptop", "claude", "s2");
-    for actor in [&foreign_human, &foreign_steward] {
+    let foreign_claude = authority_actor("other", "laptop", "claude", "s2");
+    for actor in [&foreign_human, &foreign_claude] {
         assert_eq!(
             attention_ids(&attention_page(
                 board.reader.as_ref().expect("read connection"),
@@ -127,7 +129,7 @@ fn collection_attention_scoped_hides_authority_decisions_from_foreign_actors() {
             "authority decisions stay hidden, but an unlinked plan's question is global"
         );
     }
-    for actor in [foreign_human, foreign_steward] {
+    for actor in [foreign_human, foreign_claude] {
         assert_eq!(
             attention_ids(&attention_page(
                 board.reader.as_ref().expect("read connection"),

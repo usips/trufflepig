@@ -20,6 +20,8 @@ impl ResolvedDelegate {
             seq: ctx.seq,
             claim_ttl_secs: ctx.claim_ttl_secs,
             via: ctx.via,
+            origin: ctx.origin.clone(),
+            authority: ctx.authority.clone(),
         }
     }
 }

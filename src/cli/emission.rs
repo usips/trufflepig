@@ -38,19 +38,38 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
     }
     let fallback = fallback_options(args);
     let options = parsed.as_ref().unwrap_or(&fallback);
-    let context = request_context(options);
+    let (context, context_error) = match request_context(options) {
+        Ok(context) => (context, None),
+        Err(error) => (
+            crate::diagnostics::RequestContext::new(
+                options.session.clone(),
+                options.client.clone(),
+            ),
+            Some(format!("{error:#}")),
+        ),
+    };
     let skip_recording = matches!(
         operation(options),
         Operation::ForgetLogs | Operation::Board | Operation::Feedback
     );
-    let diagnostic_location =
-        (!skip_recording).then(|| crate::workspace::diagnostic_location(options));
+    let diagnostic_location = (context_error.is_none() && !skip_recording)
+        .then(|| crate::workspace::diagnostic_location(options));
     let mut operation = operation(options);
     let (response, outcome, mut exit_code) = match &parsed {
         Ok(options) if options.words.len() == 1 && options.words[0] == "help" => {
             operation = Operation::Help;
             let help = Arguments::command().render_long_help().to_string();
             (help, Outcome::Success, 0)
+        }
+        Ok(_) if context_error.is_some() => {
+            let message = context_error.expect("checked client identity error");
+            let stderr_message = message.replace(['\n', '\r'], " ");
+            let _ = writeln!(stderr, "{stderr_message}");
+            (
+                render(options.budget, &json!({"error":message})),
+                Outcome::InvalidInput,
+                2,
+            )
         }
         Ok(_) => match super::retry::run_with_retry(args, options, &context) {
             Ok(text) => (text, Outcome::Success, 0),
@@ -59,7 +78,10 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
                 let outcome = error_outcome(&message);
                 let stderr_message = message.replace(['\n', '\r'], " ");
                 let stderr_message = if stderr_message.contains("budget_too_small") {
-                    format!("{stderr_message}; {}", retry_hint(options.budget))
+                    format!(
+                        "{stderr_message}; {}",
+                        retry_hint_for_args(args, options.budget)
+                    )
                 } else {
                     stderr_message
                 };
@@ -232,17 +254,26 @@ fn error_outcome(message: &str) -> Outcome {
     }
 }
 
-fn retry_budget(current: usize) -> usize {
-    current.saturating_mul(2).max(2_000).min(1_000_000)
+fn retry_budget(current: usize) -> Option<usize> {
+    let maximum = super::MAX_BUDGET;
+    (current < maximum).then(|| current.saturating_mul(2).max(2_000).min(maximum))
 }
 
-fn retry_hint(current: usize) -> String {
-    let suggestion = retry_budget(current);
-    if suggestion > current {
-        format!("retry with -b {suggestion}")
-    } else {
-        "maximum budget is 1000000; narrow the request".into()
+pub(super) fn retry_hint(current: usize) -> String {
+    match retry_budget(current) {
+        Some(suggestion) => format!("retry with -b {suggestion}"),
+        None => format!(
+            "maximum budget is {}; narrow the request",
+            super::MAX_BUDGET
+        ),
     }
+}
+
+pub(super) fn retry_hint_for_args(args: &[String], fallback_budget: usize) -> String {
+    let effective_budget = super::parse(args)
+        .map(|options| options.budget)
+        .unwrap_or(fallback_budget);
+    retry_hint(effective_budget)
 }
 
 fn render(limit: usize, value: &Value) -> String {

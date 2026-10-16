@@ -25,12 +25,13 @@ pub(in crate::board::local_board) fn close_feedback(
             format!("{entry} is not feedback"),
         ));
     }
-    if !can_manage_feedback(tx, &ctx.actor, &report)? {
-        return Err(invalid(
+    let authority = feedback_authority(tx, &ctx.actor, &report, ctx.now)?.ok_or_else(|| {
+        invalid(
             "invalid_actor",
-            "feedback triage requires the owner human or plan steward",
-        ));
-    }
+            "feedback triage requires its exact reporter or triage authority",
+        )
+    })?;
+    let authority_ctx = ctx.with_authority(authority);
     let current: String = tx
         .query_row(
             "SELECT state FROM entries WHERE id=?1",
@@ -63,7 +64,7 @@ pub(in crate::board::local_board) fn close_feedback(
     let recipient = BoardRecipient::for_actor(&report.actor);
     let closure = insert_entry(
         tx,
-        ctx,
+        &authority_ctx,
         &EntryDraft {
             plan_id: report.plan,
             kind: EntryKind::Decision,
@@ -83,12 +84,12 @@ pub(in crate::board::local_board) fn close_feedback(
     .map_err(sql_error)?;
     insert_event(
         tx,
-        ctx,
+        &authority_ctx,
         report.plan,
         EntryKind::Feedback,
         &entry.to_string(),
         Some(&recipient),
         &summary,
     )?;
-    Ok(ctx.change_reply(closure, report.plan, None, None))
+    Ok(authority_ctx.change_reply(closure, report.plan, None, None))
 }

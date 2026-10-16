@@ -234,7 +234,7 @@ window.addEventListener("pagehide", () => {
   clearInterval(relativeTimer); clearInterval(idleRefreshTimer);
   relativeTimer = null; idleRefreshTimer = null;
   clearTimeout(state.refreshTimer); state.refreshTimer = null;
-  stopStream(); state.request?.abort(); state.globalRefresh?.abort();
+  stopStream(); state.request?.abort(); state.globalRefresh?.abort(); loop.abortFeedbackCount();
 });
 window.addEventListener("pageshow", event => {
   startRefreshTimers();

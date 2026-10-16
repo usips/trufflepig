@@ -1,9 +1,9 @@
-import { actorMark } from "./marks/agent_marks.js";
+import { actorAttribution } from "./marks/agent_marks.js";
 
 export function createBoardEntries(context) {
   const { state, dom, navigate, entryRecord, collection, entryKinds, nextAfter, pageParams } = context;
   const {
-    el, add, refLink, badge, actorName, timeNode, empty, omitted, title, field, focusKey, retainForm,
+    el, add, refLink, badge, timeNode, empty, omitted, title, field, focusKey, retainForm,
     link,
   } = dom;
   function filtersForm(route, includePlan = true) {
@@ -30,7 +30,7 @@ export function createBoardEntries(context) {
     const entry = entryRecord(record), row = el("tr", "entry-row"); row.dataset.entryId = entry.id;
     const cells = Array.from({ length: 7 }, () => el("td"));
     add(cells[0], refLink(entry.id), el("br"), timeNode(entry.created_at));
-    add(cells[1], actorMark(entry), el("span", "", actorName(entry.actor)),
+    add(cells[1], actorAttribution(entry),
       entry.via === "outbox" ? el("span", "provenance", " (spooled, unverified)") : null);
     cells[2].textContent = [entry.model, entry.effort].filter(Boolean).join(" · ") || "—";
     add(cells[3], badge(entry.kind), entry.state ? badge(entry.state.state) : null);

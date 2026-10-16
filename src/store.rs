@@ -1,5 +1,6 @@
 //! A per-root WAL index published atomically from an on-disk staging database.
 
+pub(crate) mod current_source;
 mod inheritance;
 #[cfg(test)]
 mod inheritance_cache_tests;

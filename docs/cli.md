@@ -106,9 +106,9 @@ trufflepig show path:src/main.rs:1-20
 trufflepig show 'sym:refill_tokens file:src/'
 ```
 
-`show 'sym:NAME'` (optional `file:`, `lang:`, `kind:`, quoted or not) reads the
-best-ranked definition as a verified handle read. `refs` lists occurrence sites and
-`map` outlines a file or prefix; ranking, filters, and JSON fields are in the
+`show 'sym:NAME'` (optional `file:`, `lang:`, `kind:`, quoted or not) reads the best-ranked
+definition as a verified handle read. `refs` lists occurrence sites; `map` outlines a file or prefix.
+Ranking, filters, and JSON fields are in the
 [navigation contract](navigation-contract.md).
 
 A handle is a 32-character result-set ID plus a one-based ordinal. A pagination
@@ -123,10 +123,10 @@ the definition from the current bytes, marked `verified: false` and
 `freshness: unpublished`, once a serving daemon has had 3 s to republish.
 `stale_result` means the graph generation changed and `ctx` needs a fresh handle.
 
-Paths in responses percent-encode raw filename bytes. Paste the encoded path
-unchanged into `show`, including `%20` for a space, `%25` for `%`, and `%3A` for
-`:`, so filename punctuation cannot become a line-range separator. Traversal,
-absolute paths, and symlinks are rejected.
+Paths are percent-encoded; paste them unchanged into `show` (`%20`, `%25`, and `%3A` escape
+filename punctuation). `file:` and `path:` accept root-relative project paths; absolute paths report
+`invalid_path` because search and reads stay within project roots. Use the harness file reader for external
+inputs. Traversal and symlinks are rejected.
 
 ## Historical navigation
 
@@ -166,13 +166,13 @@ trufflepig audit SESSION_ID
 trufflepig forget-logs
 ```
 
-Pass `--session ID` on each assigned request, or set `TRUFFLEPIG_SESSION` in the
-client environment. A session is not inferred from a process or daemon. Optional
-`--client NAME` labels the caller. Diagnostics default to bounded metadata;
-`--diagnostics detailed` additionally records bounded raw search queries, and
-`--diagnostics off` disables request recording. `audit` reports retained summaries.
-See [diagnostics](diagnostics-contract.md) for delivery evidence, retention,
-overlap labels, and incomplete-window limits.
+Diagnostic logs use explicit `--session ID` or `TRUFFLEPIG_SESSION`; they do not
+infer sessions from processes or daemons. Board origins use the native harness
+session rules in the [board contract](board-contract.md#identity-references-and-authority).
+Optional `--client NAME` labels the caller. Diagnostics default to bounded metadata;
+`--diagnostics detailed` records bounded raw queries, and `--diagnostics off`
+disables request recording. `audit` reports retained summaries.
+See [diagnostics](diagnostics-contract.md) for delivery evidence, retention, overlap labels, and incomplete-window limits.
 
 ## Cache and daemon
 

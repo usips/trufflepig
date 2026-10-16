@@ -93,9 +93,9 @@ Explicit selectors never widen or establish dependency, import, or compiler-reso
 Parent answers read worktree bytes. Coverage records `state: parent_fallback`, `home_state`, `served_from`,
 `differs` (`null` when unknown), and `differing_hits`. Lines read `MEMBER@WT warming → served from MEMBER index`
 with `(N files differ)`, `(1 file differs)`, `(no files differ)`, or `(differences unknown)`. Changed-file hits
-([index](index-contract.md)) end in `differs`. `sym:`, `map FILE`, and `show` re-extract changed files
+([index](index-contract.md)) end in `differs` until read from current bytes. Plain search, `sym:`, `map FILE`, and `show` re-extract changed files
 (`served_from: MEMBER index; re-extracted in worktree`). Without a parent, home reads `MEMBER@WT warming
-(no parent index)`. An exact `sym:` miss without a parent candidate refreshes divergence and examines up to
+(no parent index)`. A plain or `sym:` miss without a parent candidate refreshes divergence and examines up to
 64 changed files. More paths, a failed Git probe, or an unchecked file makes coverage partial and truncated;
 absence is not exhaustive and home does not widen. Other reads may reuse divergence for five seconds.
 Standalone fallback handles retain the parent publication identity; `show` and `ctx` reject changed publications.
@@ -113,10 +113,10 @@ Every emitted hit includes its member name. The page's `members` mapping
 resolves represented names to percent-encoded canonical roots. Coverage
 distinguishes unavailable members and retained candidate counts from exhaustive
 match counts. A member is `partial` only when files could not be examined,
-counted as `unsearched` by kind (`walk_error`, `read_error`, `fact_limit`; up to
-five fact-limited paths in `issues.unsearched_paths`); excluded binary or
-oversized files, parse failures, and semantic or rerank status remain in
-`issues`. Lines read `MEMBER complete` or `MEMBER partial (N unsearched: KIND)`
+counted as `unsearched` by kind (`walk_error`, `read_error`, `fact_limit`,
+`worktree_reextraction`, `current_source_recheck`); only fact-limit paths have
+the five-path sample in `issues.unsearched_paths`. Exclusions, parse failures,
+and semantic/rerank status remain in `issues`. Lines read `MEMBER complete` or `MEMBER partial (N unsearched: KIND)`
 and omit lanes never configured. Each member receives an equal share of the
 retained candidate/byte ceiling; omissions are explicit rather than exhaustive
 counts. Unpublished members report `warming`, unavailable ones a 120-character

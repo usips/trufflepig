@@ -10,11 +10,12 @@ use serde_json::{Value, json};
 /// Excluded (binary, oversized) files, parse failures (still lexically
 /// searchable), and semantic lane status do not make lexical coverage partial;
 /// they stay in `issues`.
-const UNSEARCHED: [(&str, &str); 4] = [
+const UNSEARCHED: [(&str, &str); 5] = [
     ("walk_failures", "walk_error"),
     ("truncated_files", "fact_limit"),
     ("live_read_failures", "read_error"),
     ("live_walk_failures", "walk_error"),
+    ("current_source_unsearched", "current_source_recheck"),
 ];
 /// Paths listed for unsearched files with a recorded index status.
 const UNSEARCHED_PATH_LIMIT: i64 = 5;
@@ -80,6 +81,9 @@ pub(super) fn coverage_issues(coverage: &Value) -> Value {
         "semantic_preparation_error",
         "rerank_status",
         "rerank_reason",
+        "current_source_recheck",
+        "current_source_semantic",
+        "worktree_semantic",
     ] {
         if let Some(value) = coverage.get(key) {
             issues.insert(key.into(), value.clone());

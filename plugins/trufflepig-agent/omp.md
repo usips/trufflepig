@@ -45,11 +45,10 @@ and existing shell environment values are preserved. This requires omp's
 extension API to support returning revised `tool_call` input.
 
 The wrapper detects omp from `OMPCODE=1` before `CLAUDECODE=1`, which omp also
-exports. It reads the injected session identifier independently of cwd; no
-per-directory marker is used for omp. Separate sessions do not overwrite each
-other's attribution. Without the extension, attribution falls back to a
-visibly synthetic harness/directory/day identifier. Explicit CLI `--session`
-and `TRUFFLEPIG_SESSION` override the injected session identifier.
+exports. The CLI uses the injected `TRUFFLEPIG_OMP_SESSION` as the native omp
+session. Explicit CLI `--session` and `TRUFFLEPIG_SESSION` override that actor
+session. If no provider or explicit session source supplies an ID, identity
+remains unattributed; no cwd-derived session is created.
 
 ## Execution
 

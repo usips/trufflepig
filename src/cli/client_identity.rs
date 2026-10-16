@@ -1,0 +1,355 @@
+//! Resolves caller identity in the client process before request transport.
+use super::Arguments;
+use anyhow::Result;
+use std::{collections::HashMap, path::PathBuf};
+
+pub fn request_context(options: &Arguments) -> Result<crate::diagnostics::RequestContext> {
+    let environment = std::env::vars_os()
+        .map(|(key, value)| {
+            (
+                key.to_string_lossy().into_owned(),
+                value.to_string_lossy().into_owned(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    resolved_request_context(options, &environment, &process_ancestor_names())
+}
+
+fn resolved_request_context(
+    options: &Arguments,
+    environment: &HashMap<String, String>,
+    ancestors: &[String],
+) -> Result<crate::diagnostics::RequestContext> {
+    use crate::board::board_actor::{HarnessLabel, validate_actor_component};
+
+    let detected = native_harness(environment).or_else(|| process_harness(ancestors));
+    let fallback = nonempty(environment.get("TRUFFLEPIG_AGENT_HARNESS"));
+    if detected.is_none()
+        && fallback
+            .as_deref()
+            .is_some_and(|harness| matches!(harness, "human" | "cli" | "system"))
+    {
+        anyhow::bail!(
+            "invalid_client: TRUFFLEPIG_AGENT_HARNESS cannot name reserved client identities"
+        );
+    }
+    let observed = detected.or(fallback);
+    if observed.as_deref() == Some("system") || options.client.as_deref() == Some("system") {
+        anyhow::bail!("invalid_client: system is reserved for trusted internal board requests");
+    }
+    if observed.is_some()
+        && options
+            .client
+            .as_deref()
+            .is_some_and(|client| matches!(client, "human" | "cli"))
+    {
+        anyhow::bail!(
+            "invalid_client: a detected harness cannot be overridden with --client human or --client cli"
+        );
+    }
+
+    let client = options.client.clone().or_else(|| observed.clone());
+    if let Some(client) = client.as_deref() {
+        HarnessLabel::parse(client)?;
+    }
+    let wrapper_session = nonempty(environment.get("TRUFFLEPIG_SESSION"));
+    let provider_session = observed
+        .as_deref()
+        .and_then(|harness| native_session(environment, harness));
+    let agent_session = nonempty(environment.get("AGENT_SESSION_ID"));
+    let session = options
+        .session
+        .clone()
+        .or_else(|| wrapper_session.clone())
+        .or_else(|| provider_session.clone())
+        .or_else(|| agent_session.clone());
+    if let Some(session) = session.as_deref() {
+        validate_actor_component(session, "session")?;
+    }
+    let origin = observed
+        .as_deref()
+        .map(
+            |harness| -> Result<crate::board::board_protocol::ActorOrigin> {
+                let origin_session = provider_session
+                    .clone()
+                    .or_else(|| wrapper_session.clone())
+                    .or_else(|| agent_session.clone())
+                    .unwrap_or_else(|| "unattributed".to_owned());
+                validate_actor_component(&origin_session, "session")?;
+                Ok(crate::board::board_protocol::ActorOrigin {
+                    harness: HarnessLabel::parse(harness)?,
+                    session: origin_session,
+                    peer_ip: None,
+                })
+            },
+        )
+        .transpose()?;
+    let diagnostic_session = options
+        .session
+        .clone()
+        .or_else(|| nonempty(environment.get("TRUFFLEPIG_SESSION")));
+    Ok(crate::diagnostics::RequestContext::with_diagnostic_session(
+        session,
+        client,
+        origin,
+        diagnostic_session,
+    ))
+}
+
+fn nonempty(value: Option<&String>) -> Option<String> {
+    value.filter(|value| !value.is_empty()).cloned()
+}
+
+fn native_harness(environment: &HashMap<String, String>) -> Option<String> {
+    let has = |key: &str, value: &str| environment.get(key).is_some_and(|found| found == value);
+    if has("GEMINI_CLI", "1") {
+        Some("gemini".to_owned())
+    } else if nonempty(environment.get("GROK_SESSION_ID")).is_some() {
+        Some("grok".to_owned())
+    } else if has("OMPCODE", "1") {
+        Some("omp".to_owned())
+    } else if has("CLAUDECODE", "1") || has("CLAUDE_CODE_CHILD_SESSION", "1") {
+        Some("claude".to_owned())
+    } else if ["CODEX_THREAD_ID", "CODEX_SESSION_ID", "CODEX_VERSION"]
+        .iter()
+        .any(|key| nonempty(environment.get(*key)).is_some())
+    {
+        Some("codex".to_owned())
+    } else if environment
+        .keys()
+        .any(|key| key.to_ascii_uppercase().contains("KIMI"))
+    {
+        Some("kimi".to_owned())
+    } else if environment
+        .keys()
+        .any(|key| key.to_ascii_uppercase().contains("MUSE"))
+    {
+        Some("muse".to_owned())
+    } else {
+        None
+    }
+}
+
+fn process_harness(ancestors: &[String]) -> Option<String> {
+    ancestors
+        .iter()
+        .find_map(|comm| {
+            let lowered = comm.to_ascii_lowercase();
+            if lowered == "grok" || lowered.starts_with("grok-") {
+                Some("grok")
+            } else if lowered == "claude" {
+                Some("claude")
+            } else if lowered == "codex" || lowered.starts_with("codex-") {
+                Some("codex")
+            } else if lowered == "omp" {
+                Some("omp")
+            } else if lowered.starts_with("kimi") {
+                Some("kimi")
+            } else if lowered.starts_with("muse") {
+                Some("muse")
+            } else {
+                None
+            }
+        })
+        .map(str::to_owned)
+}
+
+fn native_session(environment: &HashMap<String, String>, harness: &str) -> Option<String> {
+    let keys: &[&str] = match harness {
+        "gemini" => &["GEMINI_SESSION_ID"],
+        "grok" => &["GROK_SESSION_ID"],
+        "omp" => &["TRUFFLEPIG_OMP_SESSION"],
+        "claude" => &["TRUFFLEPIG_CLAUDE_SESSION"],
+        "codex" => &["CODEX_THREAD_ID", "CODEX_SESSION_ID"],
+        "kimi" => &["KIMI_SESSION_ID"],
+        "muse" => &["MUSE_SESSION_ID"],
+        _ => &[],
+    };
+    keys.iter().find_map(|key| nonempty(environment.get(*key)))
+}
+
+fn process_ancestor_names() -> Vec<String> {
+    #[cfg(target_os = "linux")]
+    {
+        let mut names = Vec::with_capacity(12);
+        let Ok(stat) = std::fs::read_to_string("/proc/self/stat") else {
+            return names;
+        };
+        let Some(mut pid) = parent_pid(&stat) else {
+            return names;
+        };
+        for _ in 0..12 {
+            let base = PathBuf::from(format!("/proc/{pid}"));
+            let Ok(comm) = std::fs::read_to_string(base.join("comm")) else {
+                break;
+            };
+            names.push(comm.trim().to_owned());
+            let Ok(stat) = std::fs::read_to_string(base.join("stat")) else {
+                break;
+            };
+            let Some(parent) = parent_pid(&stat) else {
+                break;
+            };
+            if parent <= 1 || parent == pid {
+                break;
+            }
+            pid = parent;
+        }
+        names
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Vec::new()
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn parent_pid(stat: &str) -> Option<u32> {
+    stat.rsplit_once(')')?
+        .1
+        .split_whitespace()
+        .nth(1)?
+        .parse()
+        .ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn arguments(args: &[&str]) -> Arguments {
+        crate::cli::parse(
+            &args
+                .iter()
+                .map(|value| (*value).to_owned())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap()
+    }
+
+    fn environment(values: &[(&str, &str)]) -> HashMap<String, String> {
+        values
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn native_markers_precede_wrapper_hints_and_keep_omp_before_claude() {
+        let environment = environment(&[
+            ("TRUFFLEPIG_AGENT_HARNESS", "claude"),
+            ("OMPCODE", "1"),
+            ("CLAUDECODE", "1"),
+            ("TRUFFLEPIG_OMP_SESSION", "omp-session"),
+            ("TRUFFLEPIG_SESSION", "explicit-session"),
+        ]);
+        let context = resolved_request_context(&arguments(&[]), &environment, &[]).unwrap();
+        assert_eq!(context.client.as_deref(), Some("omp"));
+        assert_eq!(context.session.as_deref(), Some("explicit-session"));
+        assert_eq!(
+            context.diagnostic_session.as_deref(),
+            Some("explicit-session")
+        );
+        let origin = context.origin.unwrap();
+        assert_eq!(origin.harness.as_str(), "omp");
+        assert_eq!(origin.session, "omp-session");
+    }
+
+    #[test]
+    fn detected_harness_rejects_human_cli_and_system_claims() {
+        let environment = environment(&[("CODEX_THREAD_ID", "thread-7")]);
+        for client in ["human", "cli", "system"] {
+            let error =
+                resolved_request_context(&arguments(&["--client", client]), &environment, &[])
+                    .unwrap_err();
+            assert!(error.to_string().starts_with("invalid_client:"));
+        }
+    }
+
+    #[test]
+    fn reserved_fallback_harnesses_are_rejected_without_native_detection() {
+        for harness in ["human", "cli", "system"] {
+            let environment = environment(&[("TRUFFLEPIG_AGENT_HARNESS", harness)]);
+            let error = resolved_request_context(&arguments(&[]), &environment, &[]).unwrap_err();
+            assert!(error.to_string().starts_with("invalid_client:"));
+        }
+    }
+
+    #[test]
+    fn native_detection_precedes_a_reserved_fallback_harness() {
+        let environment = environment(&[
+            ("CODEX_THREAD_ID", "thread-11"),
+            ("TRUFFLEPIG_AGENT_HARNESS", "system"),
+        ]);
+        let context = resolved_request_context(&arguments(&[]), &environment, &[]).unwrap();
+        assert_eq!(context.client.as_deref(), Some("codex"));
+        assert_eq!(context.origin.unwrap().harness.as_str(), "codex");
+    }
+
+    #[test]
+    fn explicit_human_and_cli_clients_are_allowed_without_observed_harness() {
+        let environment = environment(&[]);
+        for client in ["human", "cli"] {
+            let context =
+                resolved_request_context(&arguments(&["--client", client]), &environment, &[])
+                    .unwrap();
+            assert_eq!(context.client.as_deref(), Some(client));
+            assert!(context.origin.is_none());
+        }
+    }
+
+    #[test]
+    fn observed_origin_is_preserved_separately_from_an_explicit_client_claim() {
+        let environment = environment(&[
+            ("CODEX_VERSION", "1.0"),
+            ("TRUFFLEPIG_AGENT_HARNESS", "muse"),
+            ("CODEX_THREAD_ID", "thread-9"),
+        ]);
+        let context =
+            resolved_request_context(&arguments(&["--client", "muse"]), &environment, &[]).unwrap();
+        assert_eq!(context.client.as_deref(), Some("muse"));
+        assert_eq!(context.session.as_deref(), Some("thread-9"));
+        let origin = context.origin.unwrap();
+        assert_eq!(origin.harness.as_str(), "codex");
+        assert_eq!(origin.session, "thread-9");
+    }
+
+    #[test]
+    fn native_origin_session_survives_a_claimed_actor_session_override() {
+        let environment = environment(&[("CODEX_THREAD_ID", "native-thread-9")]);
+        let context = resolved_request_context(
+            &arguments(&["--client", "muse", "--session", "claimed-session"]),
+            &environment,
+            &[],
+        )
+        .unwrap();
+        assert_eq!(context.client.as_deref(), Some("muse"));
+        assert_eq!(context.session.as_deref(), Some("claimed-session"));
+        assert_eq!(
+            context.diagnostic_session.as_deref(),
+            Some("claimed-session")
+        );
+        let origin = context.origin.unwrap();
+        assert_eq!(origin.harness.as_str(), "codex");
+        assert_eq!(origin.session, "native-thread-9");
+    }
+
+    #[test]
+    fn process_ancestors_are_checked_before_wrapper_hints() {
+        let environment = environment(&[("TRUFFLEPIG_AGENT_HARNESS", "muse")]);
+        let ancestors = ["bash".to_owned(), "Claude".to_owned()];
+        let context = resolved_request_context(&arguments(&[]), &environment, &ancestors).unwrap();
+        assert_eq!(context.client.as_deref(), Some("claude"));
+        assert_eq!(context.origin.unwrap().harness.as_str(), "claude");
+    }
+
+    #[test]
+    fn detected_harness_without_a_session_keeps_its_origin_unattributed() {
+        let environment = environment(&[("CLAUDECODE", "1")]);
+        let context = resolved_request_context(&arguments(&[]), &environment, &[]).unwrap();
+        assert_eq!(context.client.as_deref(), Some("claude"));
+        assert_eq!(context.session, None);
+        assert_eq!(context.diagnostic_session, None);
+        assert_eq!(context.origin.unwrap().session, "unattributed");
+    }
+}

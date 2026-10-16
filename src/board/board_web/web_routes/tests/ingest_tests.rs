@@ -35,6 +35,7 @@ fn ingest_202_and_receipt_carry_the_same_flight_ticket() {
             server,
             StreamRequest::parse(None, None, None).unwrap(),
             fixture.state.streams.reserve().unwrap(),
+            None,
         )
         .unwrap();
     read_until(&mut subscriber, "\r\n\r\n");
@@ -128,6 +129,7 @@ fn rerun_after_a_slow_first_scan_still_succeeds() {
             server,
             StreamRequest::parse(None, None, None).unwrap(),
             fixture.state.streams.reserve().unwrap(),
+            None,
         )
         .unwrap();
     let mut transcript = read_until(&mut subscriber, "\r\n\r\n");

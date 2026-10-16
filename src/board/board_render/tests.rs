@@ -14,6 +14,7 @@ mod entry_render_tests;
 mod inbox_render_tests;
 mod overview_done_budget_tests;
 mod review_render_tests;
+mod task_render_tests;
 mod view_boundary_render_tests;
 mod view_render_tests;
 
@@ -30,6 +31,8 @@ fn actor() -> BoardActor {
 fn entry(seq: u64) -> EntryRecord {
     EntryRecord {
         via: None,
+        origin: None,
+        authority: None,
         id: EntryId::new(seq).unwrap(),
         plan: Some(PlanId::new(7).unwrap()),
         kind: EntryKind::Question,
@@ -43,6 +46,7 @@ fn entry(seq: u64) -> EntryRecord {
         repo_key: None,
         state: None,
         refs: Vec::new(),
+        verdict: None,
         seq: EventSeq::new(seq),
         created_at: 100,
     }
@@ -52,6 +56,8 @@ fn inbox(advancing: bool) -> InboxReply {
     let events = (11..23)
         .map(|seq| EventRecord {
             via: None,
+            origin: None,
+            authority: None,
             seq: EventSeq::new(seq),
             plan: Some(PlanId::new(7).unwrap()),
             kind: EntryKind::Progress,
@@ -95,7 +101,6 @@ fn review_packet() -> ReviewPacket {
             id: plan,
             title: PlanTitle::new("Review trial").unwrap(),
             owner_user: "josh".into(),
-            steward: None,
             head_revision: 2,
             created_at: 100,
         },
@@ -133,6 +138,8 @@ fn review_commit(number: u64) -> super::super::review_packet::ReviewCommit {
             committed_at: number as i64,
             author: "Josh".into(),
             coauthors: Vec::new(),
+            worker_refs: Vec::new(),
+            claim_links: Vec::new(),
             files: 1,
             insertions: 5,
             deletions: 2,

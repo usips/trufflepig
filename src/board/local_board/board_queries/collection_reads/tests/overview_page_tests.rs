@@ -80,8 +80,8 @@ fn collection_overview_scoped_scope_keeps_unlinked_plans() {
     board
         .conn
         .execute(
-            "INSERT INTO plans(id,title,owner_user,steward,head_revision,created_at) \
-             VALUES(3,'Three','josh',NULL,1,1)",
+            "INSERT INTO plans(id,title,owner_user,head_revision,created_at) \
+             VALUES(3,'Three','josh',1,1)",
             [],
         )
         .unwrap();

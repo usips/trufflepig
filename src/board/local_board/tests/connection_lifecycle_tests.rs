@@ -52,6 +52,17 @@ fn local_board_concurrent_first_open_serializes_migration() {
         .map(|handle| handle.join().unwrap())
         .collect();
     assert_ne!(ids[0], ids[1]);
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    assert_eq!(
+        conn.query_row(
+            "SELECT value FROM board_meta WHERE key='v10_claim_backfill'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap(),
+        "complete"
+    );
+    drop(conn);
     std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
 
@@ -97,6 +108,8 @@ fn local_board_preserves_readonly_directory_and_private_file_modes() {
                 body: EntryText::new("blocked write").unwrap(),
                 to: None,
                 supersedes: None,
+                progress: None,
+                verdict: None,
             },
         ))
         .unwrap_err();

@@ -1,5 +1,5 @@
 //! Bounded collection pages retain their sequence boundaries in line output.
-use super::{author, cell, claim_line, entry_line};
+use super::{author, cell, claim_line, entry_line, source_suffix, vendor_suffix};
 use crate::board::board_protocol::{BoardResult, FeedbackVia};
 use std::fmt::Write;
 
@@ -50,9 +50,11 @@ pub(super) fn lines(text: &mut String, result: &BoardResult) {
         BoardResult::Feed(page) => {
             writeln!(text, "feed after={} through={}", page.after, page.through).unwrap();
             for event in &page.events {
+                let source = source_suffix(event.origin.as_ref(), event.authority.as_ref());
+                let vendor = vendor_suffix(event.vendor);
                 writeln!(
                     text,
-                    "{}\t{}\t{}\t{}\t{}{}",
+                    "{}\t{}\t{}\t{}\t{}{}{}{}",
                     event.seq,
                     event.subject,
                     event.kind,
@@ -65,7 +67,9 @@ pub(super) fn lines(text: &mut String, result: &BoardResult) {
                     match event.via {
                         Some(FeedbackVia::Outbox) => "\tvia=outbox spooled unverified",
                         None => "",
-                    }
+                    },
+                    vendor,
+                    source
                 )
                 .unwrap();
             }

@@ -1,6 +1,8 @@
 //! Serialized mutation dispatch and replay handling.
 
 mod mutation_ops;
+#[cfg(test)]
+mod tests;
 
 use super::*;
 
@@ -47,6 +49,13 @@ impl LocalBoard {
             .map_err(sql_error)?;
         let now = unix_now()?;
         let actor_id = ensure_actor(&tx, &request.actor, now)?;
+        if !matches!(&request.op, BoardOp::Bye) {
+            tx.execute(
+                "UPDATE agent_sessions SET ended_at=NULL WHERE actor_id=?1",
+                [actor_id],
+            )
+            .map_err(sql_error)?;
+        }
         if let Some(claims) = &request.claims {
             tx.execute(
                 "UPDATE agent_sessions SET model=COALESCE(?2,model),effort=COALESCE(?3,effort) WHERE actor_id=?1",
@@ -75,6 +84,8 @@ impl LocalBoard {
             seq: EventSeq::new(seq),
             claim_ttl_secs: self.claim_ttl_secs,
             via: imported.then_some(FeedbackVia::Outbox),
+            origin: request.origin.clone(),
+            authority: None,
         };
         let dedupable = is_dedupable(&request.op);
         let import_key = match &request.op {
@@ -111,8 +122,8 @@ impl LocalBoard {
                 if reply.api < BOARD_API {
                     reply.api = BOARD_API;
                 }
-                if receipt_current(&tx, request, &reply)? {
-                    if let BoardResult::Change(change) = &mut reply.result {
+                if receipt_current(&tx, &ctx, request, &reply)? {
+                    let plan = if let BoardResult::Change(change) = &mut reply.result {
                         change.deduplicated = true;
                         if let Some(import_key) = import_key {
                             board_writes::feedback_entries::remember_import(
@@ -121,11 +132,12 @@ impl LocalBoard {
                                 change.entry,
                             )?;
                         }
-                        if let Some(plan) = change.plan {
-                            board_writes::task_claims::refresh_plan_claims(
-                                &tx, actor_id, plan, now,
-                            )?;
-                        }
+                        change.plan
+                    } else {
+                        None
+                    };
+                    if let Some(plan) = plan {
+                        refresh_mutation_activity(&tx, &ctx, plan, request, &reply)?;
                     }
                     reply.backend = format!("local:{}", self.path.display());
                     tx.commit().map_err(sql_error)?;
@@ -148,7 +160,7 @@ impl LocalBoard {
                 _ => request.op.plan_id(),
             };
             if let Some(plan) = plan {
-                board_writes::task_claims::refresh_plan_claims(&tx, actor_id, plan, now)?;
+                refresh_mutation_activity(&tx, &ctx, plan, request, &reply)?;
             }
             let events: i64 = tx
                 .query_row(
@@ -198,6 +210,57 @@ impl LocalBoard {
         }
         tx.commit().map_err(sql_error)?;
         Ok(reply)
+    }
+}
+
+fn refresh_mutation_activity(
+    tx: &Transaction<'_>,
+    ctx: &WriteContext,
+    plan: PlanId,
+    request: &BoardRequest,
+    reply: &BoardReply,
+) -> Result<(), BoardError> {
+    let Some(task) = task_post_target(request) else {
+        return board_writes::task_claims::refresh_plan_claims(tx, ctx.actor_id, plan, ctx.now);
+    };
+    let binding = board_queries::worker_reads::active_worker_binding(tx, ctx.actor_id, task)?;
+    if let Some(binding) = binding {
+        tx.execute(
+            "UPDATE claim_workers SET last_active=max(last_active,?3) WHERE id=?1 AND claim_id=?2 AND ended_at IS NULL",
+            params![binding.worker_id, binding.claim_id, ctx.now],
+        )
+        .map_err(sql_error)?;
+        tx.execute(
+            "UPDATE claims SET last_active=max(last_active,?2) WHERE id=?1 AND ended_at IS NULL",
+            params![binding.claim_id, ctx.now],
+        )
+        .map_err(sql_error)?;
+        return Ok(());
+    }
+
+    if let BoardResult::Change(change) = &reply.result {
+        let worker_id: Option<Option<i64>> = tx
+            .query_row(
+                "SELECT worker_id FROM entries WHERE id=?1",
+                [sql_number(change.entry.get())],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(sql_error)?;
+        if worker_id.is_none() || worker_id.flatten().is_some() {
+            return Ok(());
+        }
+    }
+    board_writes::task_claims::refresh_plan_claims(tx, ctx.actor_id, plan, ctx.now)
+}
+
+fn task_post_target(request: &BoardRequest) -> Option<TaskId> {
+    match &request.op {
+        BoardOp::Post {
+            target: BoardRef::Task(task),
+            ..
+        } => Some(*task),
+        _ => None,
     }
 }
 

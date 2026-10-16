@@ -47,6 +47,8 @@ fn context() -> WriteContext {
         seq: EventSeq::new(0),
         claim_ttl_secs: 20,
         via: None,
+        origin: None,
+        authority: None,
     }
 }
 

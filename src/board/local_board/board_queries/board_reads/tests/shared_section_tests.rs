@@ -12,7 +12,6 @@ fn shared_sections_follow_rendered_heading_titles_and_task_coverage() {
         BoardOp::New {
             title: PlanTitle::new("Heading coverage").unwrap(),
             body: PlanText::new(body).unwrap(),
-            steward: None,
             repo_key: None,
         },
     ) else {

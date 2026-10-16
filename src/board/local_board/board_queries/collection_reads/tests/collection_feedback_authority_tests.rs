@@ -1,8 +1,7 @@
 use super::*;
-use crate::board::board_protocol::ReadScope;
 
 #[test]
-fn collection_attention_shared_feedback_respects_management_authority_before_limit() {
+fn collection_attention_excludes_feedback_and_feedback_page_keeps_active_reports() {
     let (_directory, board) = database();
     let repo = register_repositories(&board.conn);
     for (entry, plan, reporter, to) in [
@@ -38,81 +37,41 @@ fn collection_attention_shared_feedback_respects_management_authority_before_lim
         .conn
         .execute("UPDATE entries SET repo_key=?1 WHERE id=5", [repo.as_str()])
         .unwrap();
-    let ordinary = attention_page(
-        board.reader.as_ref().expect("read connection"),
-        &context(),
-        None,
-        true,
-        1,
-    );
-    assert_eq!(attention_ids(&ordinary), vec![id(8)]);
-    assert_eq!(ordinary.entries_omitted, 0);
-    let human = authority_actor("josh", "laptop", "human", "h1");
-    let first = attention_page(
-        board.reader.as_ref().expect("read connection"),
-        &human,
-        None,
-        true,
-        1,
-    );
-    assert_eq!(attention_ids(&first), vec![id(3)]);
-    assert_eq!(first.entries_omitted, 2);
-    let BoardResult::Attention(rest) = attention(
-        board.reader.as_ref().expect("read connection"),
-        &human,
-        &ReadScope::All,
-        first.next_after,
-        Some(first.through),
-        200,
-    )
-    .unwrap()
-    .result
-    else {
-        panic!("attention");
-    };
-    assert_eq!(attention_ids(&rest), vec![id(4), id(5)]);
+    for entry in 3..=10 {
+        board
+            .conn
+            .execute(
+                concat!(
+                    "INSERT INTO board_feedback(entry_id,feedback_kind,version,build_id,cwd,steer_mode,",
+                    "recent_calls_json) VALUES(?1,'missing','v1','build1','src','plan','[]')"
+                ),
+                [entry],
+            )
+            .unwrap();
+    }
+    grant_all_to_claude(&board.conn, plan(1));
+    let reader = board.reader.as_ref().expect("read connection");
     assert_eq!(
-        attention_ids(&attention_page(
-            board.reader.as_ref().expect("read connection"),
-            &human,
-            Some(&repo),
-            false,
-            200
-        )),
-        vec![id(3), id(4), id(5)]
+        feedback(reader, true, None, None, 200)
+            .feedback
+            .iter()
+            .map(|report| report.entry.id)
+            .collect::<Vec<_>>(),
+        vec![id(3), id(4), id(5), id(6), id(7), id(8), id(10)],
+        "open and triaged feedback stays available through FeedbackList"
     );
-    let steward = authority_actor("josh", "laptop", "claude", "s2");
-    assert_eq!(
-        attention_ids(&attention_page(
-            board.reader.as_ref().expect("read connection"),
-            &steward,
-            None,
-            true,
-            200
-        )),
-        vec![id(3), id(4), id(5)]
-    );
-    let foreign_human = authority_actor("other", "laptop", "human", "h1");
-    assert_eq!(
-        attention_ids(&attention_page(
-            board.reader.as_ref().expect("read connection"),
-            &foreign_human,
-            None,
-            true,
-            200
-        )),
-        vec![id(6), id(7)]
-    );
-    let foreign_steward = authority_actor("other", "laptop", "claude", "s2");
-    assert!(
-        attention_page(
-            board.reader.as_ref().expect("read connection"),
-            &foreign_steward,
-            None,
-            true,
-            200
-        )
-        .entries
-        .is_empty()
-    );
+    for actor in [
+        context(),
+        authority_actor("josh", "laptop", "human", "h1"),
+        authority_actor("josh", "laptop", "claude", "s2"),
+        authority_actor("other", "laptop", "human", "h1"),
+        authority_actor("other", "laptop", "claude", "s2"),
+    ] {
+        assert!(
+            attention_page(reader, &actor, None, true, 200)
+                .entries
+                .is_empty(),
+            "feedback stays off Needs you regardless of authority"
+        );
+    }
 }

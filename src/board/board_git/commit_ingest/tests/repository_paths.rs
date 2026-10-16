@@ -50,7 +50,7 @@ fn branch_and_main_and_linked_detached_commits_are_all_scanned() {
         .ingest(&mut backend, &actor(), &[target], Duration::from_secs(5))
         .unwrap();
     assert_eq!(report.skipped, 1);
-    assert_eq!(backend.requests, 1);
+    assert_eq!(backend.requests, 3, "one backend write per linked commit");
 }
 
 #[test]

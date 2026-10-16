@@ -71,7 +71,7 @@ fn queue_full_flood_caps_concurrent_drain_threads() {
         client
             .write_all(b"GET /api/v1/board HTTP/1.1\r\nHost: x")
             .unwrap();
-        refuse_queue_full(server, &busy, &drains);
+        refuse_connection(server, &busy, &drains);
         held.push(client);
     }
     let peak = drains.max();

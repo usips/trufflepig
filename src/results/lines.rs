@@ -99,6 +99,12 @@ pub(crate) fn single_repo_coverage(coverage: &Value) -> String {
             parts.push(format!("{} {value}", key.trim_end_matches("_files")));
         }
     }
+    let unsearched = count("current_source_unsearched");
+    if unsearched > 0 {
+        parts.push(format!(
+            "partial ({unsearched} unsearched: current_source_recheck)"
+        ));
+    }
     for (label, key, reason) in [
         ("semantic", "semantic_status", "semantic_reason"),
         ("rerank", "rerank_status", "rerank_reason"),

@@ -10,7 +10,7 @@ use crate::board::{
 use anyhow::{Context, Result, ensure};
 use std::{
     io::{self, Write},
-    net::{SocketAddr, TcpStream},
+    net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream},
     time::{Duration, Instant},
 };
 
@@ -18,7 +18,7 @@ use std::{
 /// nonce to the unauthenticated challenge route and check the HMAC proof.
 pub(super) fn probe(address: SocketAddr, guard: &WebGuard, expires: Instant) -> Result<()> {
     let nonce = ChallengeNonce::generate().context("board_unavailable: web challenge failed")?;
-    let mut socket = TcpStream::connect_timeout(&address, remaining(expires)?)?;
+    let mut socket = TcpStream::connect_timeout(&probe_address(address), remaining(expires)?)?;
     let body = serde_json::to_vec(&serde_json::json!({
         "api": BOARD_API,
         "nonce": nonce.to_hex(),
@@ -54,6 +54,14 @@ pub(super) fn probe(address: SocketAddr, guard: &WebGuard, expires: Instant) -> 
         "board_unavailable: web listener failed the ownership challenge"
     );
     Ok(())
+}
+
+pub(super) fn probe_address(address: SocketAddr) -> SocketAddr {
+    if matches!(address.ip(), IpAddr::V4(ip) if ip.is_unspecified()) {
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), address.port())
+    } else {
+        address
+    }
 }
 
 fn remaining(expires: Instant) -> io::Result<Duration> {

@@ -35,7 +35,7 @@ export function createBoardReader(context) {
     if (ceiling?.plan !== view.plan.id || ordinal > BigInt(ceiling.ordinal)) {
       throw new Error("This task is outside the captured plan task window.");
     }
-    return { after: String(ordinal - 1n), through: view.through, ceiling };
+    return { after: `${view.plan.id}.${ordinal - 1n}`, through: view.through, ceiling };
   }
   async function fetchRoute(route, signal, forceSnapshot) {
     const replies = [];
@@ -175,7 +175,13 @@ export function createBoardReader(context) {
                     ...taskWindow(route, view), limit: 50,
                   })),
                   readClaims(view.plan.id, route.claimAfter, route.claimThrough || view.through),
-                ]).then(([tasks, claims]) => ({ tasks, claims })) : Promise.resolve(null),
+                  route.task ? read(readOp("show", { target: route.task })) : Promise.resolve(null),
+                ]).then(([tasks, claims, taskView]) => {
+                  if (route.task && taskView?.task?.id !== route.task) {
+                    throw new Error("Board reply is missing the selected task detail.");
+                  }
+                  return { tasks, claims, taskView };
+                }) : Promise.resolve(null),
           ]);
           if (route.tab === "done") doneClock(view);
           page = renderPlan(view, rendered, extra, route, projects);

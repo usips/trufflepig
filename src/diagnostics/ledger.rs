@@ -70,7 +70,9 @@ pub(super) fn compare(sessions: &Value, deliveries: &[&RequestEvent]) -> Observa
             ledger.changed_preimage_files += 1;
             let matches = deliveries
                 .iter()
-                .filter(|event| event.context.session.as_deref() == session["session"].as_str())
+                .filter(|event| {
+                    event.context.diagnostic_session.as_deref() == session["session"].as_str()
+                })
                 .filter(|event| {
                     let start = report["before_capture_interval"][0]
                         .as_u64()

@@ -16,13 +16,14 @@ pub fn local(
     options: &Arguments,
     daemon_running: bool,
 ) -> Result<String> {
+    let context = request_context(options)?;
     local_with_session(
         root,
         cache,
         options,
         daemon_running,
         &mut crate::semantic::SemanticSession::default(),
-        &request_context(options),
+        &context,
         None,
         None,
         QueryDeadline::start(),

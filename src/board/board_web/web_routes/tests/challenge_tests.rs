@@ -33,7 +33,7 @@ fn challenge_route_keeps_method_and_origin_checks_without_a_token() {
         fixture.authority
     )
     .unwrap();
-    handle(server, Instant::now(), &fixture.state);
+    handle_local(server, Instant::now(), &fixture.state);
     let mut reply = String::new();
     client.read_to_string(&mut reply).unwrap();
     assert!(reply.starts_with("HTTP/1.1 405 "), "{reply}");

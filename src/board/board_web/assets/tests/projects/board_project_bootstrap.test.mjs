@@ -39,9 +39,54 @@ it("header_select_drives_all_overview_panels_and_scoped_wire", async () => {
   const selected = scopedCalls(calls).filter(request => request.project === "w1");
   assert.deepEqual(new Set(selected.map(request => request.op.op)),
     new Set(["overview", "attention", "feed"]));
-  assert.ok(selected.every(request => request.api === 8 && request.op.scope === "all"));
+    assert.ok(selected.every(request => request.api === 11 && request.op.scope === "all"));
   assert.match(location.hash, /project=w1/);
   assert.equal(sessionStorage.getItem("trufflepig-board-project:project-fixture"), "w1");
+});
+
+it("feedback_badge_stays_global_across_project_and_route_switches", async () => {
+  const html = await readFile(new URL("../../index.html", import.meta.url), "utf8");
+  assert.match(html, /href="\/#\/feedback" data-route="feedback">Feedback\s*<span id="feedback-count"/);
+  assert.match(html, /href="\/#\/attention" data-route="attention">Needs you\s*<span id="attention-count"/);
+  const { calls, setHash, listeners } = setupProjectPage();
+  await loadProjectPage();
+  const badge = document.getElementById("feedback-count");
+  const summaryCalls = () => calls.filter(request => request.op.op === "feedback_list" && request.op.limit === 1);
+  assert.equal(await waitFor(() => summaryCalls().length >= 1 && badge.textContent === "10"), true);
+  assert.equal(badge.hidden, false);
+
+  chooseProject("w1");
+  assert.equal(await waitFor(() => laneIds().join() === "swimlane:P1" && summaryCalls().length >= 2), true);
+  assert.equal(badge.textContent, "10");
+  assert.ok(summaryCalls().every(request => request.project === undefined), "feedback counts stay global");
+
+  setHash("#/attention?project=w1");
+  for (const listener of listeners.get("hashchange") || []) listener({});
+  assert.equal(await waitFor(() => textOf(document.getElementById("main")).includes("Needs you")), true);
+  assert.equal(await waitFor(() => summaryCalls().length >= 3), true);
+  assert.equal(badge.textContent, "10");
+
+  setHash("#/feedback?project=w1");
+  for (const listener of listeners.get("hashchange") || []) listener({});
+  assert.equal(await waitFor(() => textOf(document.getElementById("main")).includes("Reports that improve the board and code search")), true);
+  assert.equal(await waitFor(() => summaryCalls().length >= 4), true);
+  assert.equal(badge.textContent, "10");
+  assert.ok(calls.filter(request => request.op.op === "feedback_list")
+    .every(request => request.project === undefined));
+});
+
+it("feedback_badge_shows_unknown_when_its_count_read_fails", async () => {
+  setupProjectPage({ handler: request => request.op.op === "feedback_list" && request.op.limit === 1
+    ? { ok: false, status: 503, text: async () => JSON.stringify({
+      error: { code: "board_unavailable", message: "feedback count unavailable" },
+    }) }
+    : responseFor(request) });
+  await loadProjectPage();
+  const badge = document.getElementById("feedback-count");
+  assert.equal(await waitFor(() => badge.textContent === "?" && !badge.hidden), true);
+  assert.equal(badge.title, "Open feedback count unavailable");
+  assert.equal(await waitFor(() => laneIds().length > 0), true);
+  assert.match(textOf(document.getElementById("main")), /P1 plan/);
 });
 
 it("unavailable_projects_have_header_and_plan_warning_chips", async () => {

@@ -62,3 +62,53 @@ fn projects_grammar_accepts_a_registry_read_without_a_target() {
             .starts_with("usage: board projects")
     );
 }
+
+#[test]
+fn v10_repeated_progress_and_worker_flags_survive_router_normalization() {
+    let commands = [
+        vec![
+            "board",
+            "post",
+            "P7.3",
+            "progress",
+            "parser work",
+            "--head",
+            "0123456789abcdef0123456789abcdef01234567",
+            "--step",
+            "1/2",
+            "--tests",
+            "20/0",
+            "--gate",
+            "cargo=running",
+            "--gate",
+            "grammar=pass",
+        ],
+        vec![
+            "board",
+            "worker",
+            "P7.3",
+            "add",
+            "parser",
+            "--role",
+            "code",
+            "--model",
+            "gpt-6-luna",
+            "--scope",
+            "grammar",
+            "--files",
+            "src/parser.rs",
+            "--files",
+            "tests/parser.rs",
+        ],
+    ];
+    for command in commands {
+        let args = command.into_iter().map(str::to_owned).collect::<Vec<_>>();
+        let options = parse(&args).unwrap();
+        let original = board_parse(&options, None).unwrap();
+        let forwarded = normalize_args(&args, &options, None).unwrap();
+        assert_eq!(
+            board_parse(&parse(&forwarded).unwrap(), None).unwrap(),
+            original
+        );
+    }
+}

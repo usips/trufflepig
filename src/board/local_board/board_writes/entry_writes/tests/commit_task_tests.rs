@@ -21,7 +21,6 @@ fn commit_tasks_retain_all_valid_links_and_unknown_task_falls_back() {
             BoardOp::New {
                 title: PlanTitle::new("Commit links").unwrap(),
                 body: PlanText::new("Commit links").unwrap(),
-                steward: None,
                 repo_key: None,
             },
         ))
@@ -69,6 +68,8 @@ fn commit_tasks_retain_all_valid_links_and_unknown_task_falls_back() {
                 task_ordinal: Some(99),
             },
         ],
+        worker_refs: Vec::new(),
+        claim_links: Vec::new(),
     };
     let request = BoardRequest::new(
         actor,

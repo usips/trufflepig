@@ -93,6 +93,25 @@ pub(crate) fn unavailable_response(retry_after_seconds: u32, body: &[u8]) -> Vec
         body.len(),
     )
     .expect("fixed JSON response headers are valid");
+    response_bytes(header, body)
+}
+
+/// Precompute a fixed JSON response with the shared response security headers.
+pub(crate) fn fixed_json_response(status: u16, body: &[u8]) -> Vec<u8> {
+    let header = encode_headers(
+        ResponseHeaders {
+            status,
+            content_type: "application/json",
+            retry_after_seconds: None,
+            allow: None,
+        },
+        body.len(),
+    )
+    .expect("fixed JSON response headers are valid");
+    response_bytes(header, body)
+}
+
+fn response_bytes(header: String, body: &[u8]) -> Vec<u8> {
     let mut response = Vec::with_capacity(header.len() + body.len());
     response.extend_from_slice(header.as_bytes());
     response.extend_from_slice(body);

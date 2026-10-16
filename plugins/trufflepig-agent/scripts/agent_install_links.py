@@ -46,6 +46,12 @@ class AgentLinkPlan:
         if args.claude and not claude_plugin:
             links.extend((skill, claude_home() / "skills" / skill.name) for skill in skills)
             links.append((plugin / "hooks/claude-session.py", args.bin / "trufflepig-claude-session"))
+        if args.claude:
+            links.extend((plugin / "hooks" / source, args.bin / destination) for source, destination in (
+                ("claude-hooks.py", "trufflepig-claude-hooks"),
+                ("trufflepig_identity.py", "trufflepig_identity.py")))
+            links.append((plugin / "bin/trufflepig_board_notices.py",
+                          args.bin / "trufflepig_board_notices.py"))
         if args.omp:
             agent_dir = omp_agent_dir(args.omp_agent_dir)
             links.extend((skill, agent_dir / "skills" / skill.name) for skill in skills)

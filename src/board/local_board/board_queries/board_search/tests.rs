@@ -53,7 +53,6 @@ fn plan(board: &mut LocalBoard, title: &str, body: &str) -> PlanId {
         BoardOp::New {
             title: PlanTitle::new(title).unwrap(),
             body: PlanText::new(body).unwrap(),
-            steward: None,
             repo_key: None,
         },
     )
@@ -70,6 +69,8 @@ fn post(board: &mut LocalBoard, plan: PlanId, body: &str) -> EntryId {
             body: EntryText::new(body).unwrap(),
             to: None,
             supersedes: None,
+            progress: None,
+            verdict: None,
         },
     )
     .entry

@@ -17,7 +17,6 @@ fn event_streams_share_a_dedicated_connection_outside_the_reader_pool() {
             BoardOp::New {
                 title: PlanTitle::new(title).unwrap(),
                 body: PlanText::new("seed\n").unwrap(),
-                steward: None,
                 repo_key: None,
             },
         );
@@ -58,7 +57,6 @@ fn event_streams_share_a_dedicated_connection_outside_the_reader_pool() {
         BoardOp::New {
             title: PlanTitle::new("Live plan").unwrap(),
             body: PlanText::new("live\n").unwrap(),
-            steward: None,
             repo_key: None,
         },
     );

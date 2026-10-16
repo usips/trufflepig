@@ -17,9 +17,9 @@ pub struct BoardOptions {
     /// Entry corrected by this post or replaced by this proposal.
     #[arg(long)]
     pub supersedes: Option<String>,
-    /// Harness entrusted with accepting plan proposals.
-    #[arg(long)]
-    pub steward: Option<String>,
+    /// Board-wide authority scope for a grant.
+    #[arg(long = "board")]
+    pub board_scope: Option<String>,
     /// Attach feedback to a plan.
     #[arg(long)]
     pub plan: Option<String>,
@@ -29,9 +29,42 @@ pub struct BoardOptions {
     /// Resume an idle claim for the same user, host, and harness; `E#` takes over that exact claim entry.
     #[arg(long, num_args = 0..=1, require_equals = true, value_name = "E#")]
     pub resume: Option<Option<String>>,
-    /// Claim on behalf of HARNESS/SESSION under the caller's user and host.
-    #[arg(long = "for", value_name = "HARNESS/SESSION")]
-    pub delegate: Option<String>,
+    /// Delegated claim target or grant duration, according to the subcommand.
+    #[arg(long = "for", value_name = "TARGET|DURATION")]
+    pub for_value: Option<String>,
+    /// Worker task role.
+    #[arg(long = "role")]
+    pub worker_role: Option<String>,
+    /// Worker model claim.
+    #[arg(long)]
+    pub model: Option<String>,
+    /// Worker effort claim.
+    #[arg(long)]
+    pub effort: Option<String>,
+    /// Worker address for a hello operation.
+    #[arg(long)]
+    pub worker: Option<String>,
+    /// Repeated files covered by a worker.
+    #[arg(long = "files", action = clap::ArgAction::Append)]
+    pub files: Vec<String>,
+    /// Full Git object ID reported by progress.
+    #[arg(long)]
+    pub head: Option<String>,
+    /// Current/total progress step.
+    #[arg(long)]
+    pub step: Option<String>,
+    /// Passed/failed test counts.
+    #[arg(long)]
+    pub tests: Option<String>,
+    /// Repeated named gate outcomes.
+    #[arg(long = "gate", action = clap::ArgAction::Append)]
+    pub gates: Vec<String>,
+    /// Relative ETA duration.
+    #[arg(long)]
+    pub eta: Option<String>,
+    /// Review verdict.
+    #[arg(long)]
+    pub verdict: Option<String>,
     /// Plan heading covered by a new claimed task.
     #[arg(long)]
     pub section: Option<String>,
@@ -110,11 +143,20 @@ impl BoardOptions {
             ),
             ("--to", self.to.clone()),
             ("--supersedes", self.supersedes.clone()),
-            ("--steward", self.steward.clone()),
+            ("--board", self.board_scope.clone()),
             ("--plan", self.plan.clone()),
             ("--scope", self.scope.clone()),
             ("--section", self.section.clone()),
-            ("--for", self.delegate.clone()),
+            ("--for", self.for_value.clone()),
+            ("--role", self.worker_role.clone()),
+            ("--model", self.model.clone()),
+            ("--effort", self.effort.clone()),
+            ("--worker", self.worker.clone()),
+            ("--head", self.head.clone()),
+            ("--step", self.step.clone()),
+            ("--tests", self.tests.clone()),
+            ("--eta", self.eta.clone()),
+            ("--verdict", self.verdict.clone()),
             ("--after", self.after.clone()),
             ("--through", self.through.clone()),
             ("--project", self.project.clone()),
@@ -127,6 +169,12 @@ impl BoardOptions {
             if let Some(value) = value {
                 args.push(format!("{flag}={value}"));
             }
+        }
+        for gate in &self.gates {
+            args.push(format!("--gate={gate}"));
+        }
+        for file in &self.files {
+            args.push(format!("--files={file}"));
         }
         if self.open {
             args.push("--open".into());
@@ -145,7 +193,7 @@ impl BoardOptions {
         self.body.is_some()
             || self.to.is_some()
             || self.supersedes.is_some()
-            || self.steward.is_some()
+            || self.board_scope.is_some()
             || self.plan.is_some()
             || self.scope.is_some()
             || self.section.is_some()
@@ -155,7 +203,18 @@ impl BoardOptions {
             || self.all
             || self.project.is_some()
             || self.resume.is_some()
-            || self.delegate.is_some()
+            || self.for_value.is_some()
+            || self.worker_role.is_some()
+            || self.model.is_some()
+            || self.effort.is_some()
+            || self.worker.is_some()
+            || !self.files.is_empty()
+            || self.head.is_some()
+            || self.step.is_some()
+            || self.tests.is_some()
+            || !self.gates.is_empty()
+            || self.eta.is_some()
+            || self.verdict.is_some()
             || self.board_text.is_some()
             || self.board_payload.is_some()
             || self.agent_model.is_some()

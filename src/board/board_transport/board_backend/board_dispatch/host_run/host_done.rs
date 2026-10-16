@@ -82,7 +82,6 @@ mod tests {
                         BoardOp::New {
                             title: PlanTitle::new(title).unwrap(),
                             body: PlanText::new("").unwrap(),
-                            steward: None,
                             repo_key: None,
                         },
                     ))

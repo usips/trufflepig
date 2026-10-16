@@ -12,7 +12,7 @@ PLUGIN = Path(__file__).resolve().parents[1]
 
 
 def marker_key(cwd: Path) -> str:
-    # Pinned independently of the wrapper: omp's synthetic fallback id embeds it.
+    # Match the hook path only to plant a stale, non-identity marker fixture.
     return hashlib.sha256(str(cwd).encode()).hexdigest()[:12]
 
 
@@ -87,7 +87,7 @@ sys.stdout.write('{"hits":[],"truncated":false}\\n')
         del self.env["TRUFFLEPIG_SESSION"]
         del self.env["TRUFFLEPIG_OMP_SESSION"]
         self.run_wrapper("search", "x", cwd=cwd)
-        self.assertTrue(self.record()["session"].startswith("omp-"))
+        self.assertIsNone(self.record()["session"])
 
     def test_custom_agent_directory_and_profile(self):
         cases = [
@@ -116,13 +116,16 @@ sys.stdout.write('{"hits":[],"truncated":false}\\n')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((explicit / "extensions/trufflepig-session.ts").exists())
 
-    def test_omp_fallback_identity_without_marker(self):
+    def test_omp_without_session_source_remains_unattributed(self):
         cwd = self.root / "empty dir"
         cwd.mkdir()
         self.env["OMPCODE"] = "1"
         self.run_wrapper("search", "x", cwd=cwd)
-        session = self.record()["session"]
-        self.assertTrue(session.startswith("omp-" + marker_key(cwd) + "-"), session)
+        self.assertIsNone(self.record()["session"])
+        other = self.root / "other dir"
+        other.mkdir()
+        self.run_wrapper("search", "x", cwd=other)
+        self.assertIsNone(self.record()["session"])
 
     @unittest.skipUnless(shutil.which("bun"), "bun runs the TypeScript extension")
     def test_extension_attributes_cross_directory_calls_and_session_switch(self):

@@ -73,6 +73,7 @@ fn populated_m1_feedback_uuid_replay_survives_schema_and_dedupe_upgrade() {
         .unwrap();
     drop(legacy);
     let mut board = LocalBoard::open_path(&path, Duration::from_secs(1800)).unwrap();
+    let import_key = key.to_string();
     let request = BoardRequest::new(
         actor("restarted"),
         BoardOp::Feedback {
@@ -95,13 +96,23 @@ fn populated_m1_feedback_uuid_replay_survives_schema_and_dedupe_upgrade() {
     assert_eq!(replayed.seq.get(), 1);
     assert_eq!(board.max_seq().unwrap().get(), 1);
     assert_eq!(read_feedback(&board.conn, false).unwrap().len(), 1);
-    let hashes: Vec<String> = board
+    let imported_entry: i64 = board
         .conn
-        .prepare("SELECT dedupe_key FROM operation_dedupes")
-        .unwrap()
-        .query_map([], |row| row.get(0))
-        .unwrap()
-        .collect::<rusqlite::Result<_>>()
+        .query_row(
+            "SELECT entry_id FROM feedback_imports WHERE import_key=?1",
+            [import_key],
+            |row| row.get(0),
+        )
         .unwrap();
-    assert_eq!(hashes, ["legacy-request-hash"]);
+    assert_eq!(imported_entry, 1);
+    assert_eq!(
+        board
+            .conn
+            .query_row("SELECT count(*) FROM operation_dedupes", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap(),
+        0,
+        "legacy wire receipts are discarded while permanent import keys remain"
+    );
 }

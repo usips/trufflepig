@@ -88,7 +88,7 @@ describe("board draft stores", () => {
     const mode = "edit";
     const base = "P1@3";
     const key = mode === "new" ? "new" : `${mode}:${base}`;
-    drafts.set(key, { title: "", body: "unsaved plan text", summary: "", steward: "", repo_key: "", base });
+    drafts.set(key, { title: "", body: "unsaved plan text", summary: "", repo_key: "", base });
     for (let tab = 0; tab < 2; tab++) {
       for (let index = 0; index < 40; index++) formDrafts.set(`tab-${tab}:form-${index}`, index);
     }

@@ -58,12 +58,16 @@ fn worktree_matches(root: &Path, path: &str, revision: Option<&str>) -> bool {
         .is_some_and(|bytes| ContentRevision::of(&bytes) == expected)
 }
 
-/// Hits read from current worktree bytes (live regex, re-extraction).
+/// Hits whose provenance records a read from current source bytes.
 fn reads_current_bytes(hit: &Hit) -> bool {
-    matches!(
-        hit.provenance.as_deref(),
-        Some("live_regex" | "reextracted")
-    )
+    hit.provenance.as_deref() == Some("live_regex") || is_reextracted_worktree_hit(hit)
+}
+
+/// Current-source search candidates keep their ordinary lane after this prefix.
+pub(crate) fn is_reextracted_worktree_hit(hit: &Hit) -> bool {
+    hit.provenance.as_deref().is_some_and(|provenance| {
+        provenance == "reextracted" || provenance.starts_with("worktree_current:")
+    })
 }
 
 /// Files of one parent-index answer whose worktree bytes differ from the index.

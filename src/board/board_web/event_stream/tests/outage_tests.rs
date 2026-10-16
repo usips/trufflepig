@@ -83,6 +83,7 @@ fn outage_between_reservation_and_spawn_answers_503() {
             server,
             StreamRequest::parse(None, None, None).unwrap(),
             permit,
+            None,
         )
         .unwrap();
     let mut response = String::new();
@@ -109,6 +110,7 @@ fn dropped_poller_between_reservation_and_spawn_answers_503() {
             server,
             StreamRequest::parse(None, None, None).unwrap(),
             permit,
+            None,
         )
         .unwrap();
     let mut response = String::new();

@@ -30,14 +30,44 @@ fn other_actor_cannot_release_or_reassign_held_card() {
 }
 
 #[test]
-fn owner_steward_reassignment_ends_claim_and_assigns_recipient() {
+fn task_creator_and_assignee_has_no_admin_authority_without_a_grant() {
     let database = ClaimDatabase::new();
     let mut conn = database.connect();
+    let creator = actor("josh", "codex", "creator");
+    let creator_recipient = BoardRecipient::for_actor(&creator);
+    let created = write(&mut conn, &creator, 1000, |tx, ctx| {
+        create_task(
+            tx,
+            ctx,
+            PlanId::new(1).unwrap(),
+            &PlanTitle::new("unassigned card").unwrap(),
+            Some(&creator_recipient),
+            None,
+        )
+    })
+    .unwrap();
+    let BoardResult::Change(change) = created.result else {
+        panic!("expected task creation change")
+    };
+    let task = change.task.unwrap();
+    let recipient = BoardRecipient::parse("muse").unwrap();
+    let error = write(&mut conn, &creator, 1010, |tx, ctx| {
+        move_task(tx, ctx, task, TaskColumn::Doing, Some(&recipient))
+    })
+    .unwrap_err();
+    assert!(error.to_string().starts_with("invalid_actor:"), "{error}");
+}
+
+#[test]
+fn assign_grant_reassignment_ends_claim_and_assigns_recipient() {
+    let database = ClaimDatabase::new();
+    let mut conn = database.connect();
+    grant_legacy_claude(&conn);
     let task = carved_task(&mut conn, &actor("josh", "codex", "one"), 1000, "exclusive");
     let recipient = BoardRecipient::parse("muse").unwrap();
     write(
         &mut conn,
-        &actor("josh", "claude", "steward"),
+        &actor("josh", "claude", "grant"),
         1050,
         |tx, ctx| move_task(tx, ctx, task, TaskColumn::Doing, Some(&recipient)),
     )
@@ -123,15 +153,16 @@ fn doing_without_recipient_records_callers_exclusive_claim() {
 fn reassigned_card_reserves_claim_and_move_for_recipient() {
     let database = ClaimDatabase::new();
     let mut conn = database.connect();
+    grant_legacy_claude(&conn);
     let original = actor("josh", "codex", "one");
     let task = carved_task(&mut conn, &original, 1000, "exclusive");
     let recipient = BoardRecipient::parse("muse").unwrap();
-    let steward = actor("josh", "claude", "steward");
-    write(&mut conn, &steward, 1050, |tx, ctx| {
+    let grant_holder = actor("josh", "claude", "grant");
+    write(&mut conn, &grant_holder, 1050, |tx, ctx| {
         move_task(tx, ctx, task, TaskColumn::Doing, Some(&recipient))
     })
     .unwrap();
-    for privileged in [&steward, &actor("josh", "human", "owner")] {
+    for privileged in [&grant_holder, &actor("josh", "human", "owner")] {
         assert!(claim(&mut conn, privileged, 1051, task, "steal assignment").is_err());
     }
     for unauthorized in [

@@ -36,7 +36,9 @@ Pages:
 \n\
 Plans:
   board hello MODEL [EFFORT]  identify this session
+  board hello MODEL [EFFORT] --worker P7.3/HANDLE  identify a worker session
   board inbox [SEQ] [--wait]  plan events and questions
+  board pending [SEQ]         bounded inbox notices without service startup
   board show [P7|P7.3|P7@12|E512]  bounded overview or one plan, task, revision, or entry
   board done [P7] [--project NAME|ID]  recent completed tasks; --after SEQ:P7.N pages older
   board feed [P7] [SEQ]      frozen event pages
@@ -46,7 +48,12 @@ Plans:
   board web [TARGET]        print the running console URL
   board-serve [--listen 127.0.0.1:7341]  serve the board console
   board claim P7.3 SCOPE...  claim a task before working
-  board post P7 KIND TEXT...  post progress or ask a question
+  board post P7 KIND TEXT...  post progress, review verdicts, or ask a question
+  board worker P7.3 add HANDLE --role ROLE --model MODEL --scope TEXT --files PATH
+  board worker P7.3 end HANDLE done|failed|stopped [NOTE...]
+  board grant P7 ROLE[,ROLE...] --to WHO [--for DURATION] [NOTE...]
+  board grant --board triage --to WHO
+  board revoke E# | board bye
   board task P7.3 COLUMN    move a task and release its claim
   board propose P7@12 --body FILE SUMMARY...  propose a plan revision
   board review P7@12 [AGENT]  assemble review evidence
@@ -120,7 +127,7 @@ pub struct Arguments {
     /// Internal marker preserving an implicitly selected root when forwarding.
     #[arg(long, hide = true)]
     pub implicit_root: bool,
-    /// Loopback HTTP address for the foreground board server.
+    /// Board HTTP bind address: loopback, 192.168/16, or 0.0.0.0 for LAN access.
     #[arg(long)]
     pub listen: Option<std::net::SocketAddr>,
     /// Override the cache directory.
@@ -277,7 +284,7 @@ impl Arguments {
         self.words.first().map(String::as_str) == Some("show")
     }
 
-    /// Foreground board HTTP binding; loopback is enforced before serving.
+    /// Foreground board HTTP binding; unsupported addresses are rejected before serving.
     pub fn board_listen_address(&self) -> std::net::SocketAddr {
         self.listen
             .unwrap_or_else(|| std::net::SocketAddr::from(([127, 0, 0, 1], 7341)))
@@ -321,8 +328,8 @@ pub(super) fn validate(options: &Arguments) -> Result<()> {
             bail!("usage: board-serve [--listen 127.0.0.1:7341]");
         }
         let address = options.board_listen_address();
-        if !address.ip().is_loopback() {
-            bail!("invalid_options: board-serve must listen on a loopback address");
+        if crate::board::board_web::web_guard::require_supported_bind_address(address).is_err() {
+            bail!("invalid_options: unsupported board-serve bind address");
         }
     }
     if options.json && options.format != "json" {

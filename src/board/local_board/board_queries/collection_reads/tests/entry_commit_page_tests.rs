@@ -13,11 +13,11 @@ fn collection_entries_page_shared_sequence_commits_without_skips() {
     let actor = BoardActor::new(
         "josh",
         "laptop",
-        HarnessLabel::parse("codex").unwrap(),
-        "s1",
+        HarnessLabel::parse("system").unwrap(),
+        "ingest",
     )
     .unwrap();
-    let commits = (0..120u32)
+    let commits: Vec<LinkedCommit> = (0..120u32)
         .map(|number| LinkedCommit {
             repo_key: repo_key.clone(),
             oid: GitOid::parse(&format!("{number:040x}")).unwrap(),
@@ -36,16 +36,37 @@ fn collection_entries_page_shared_sequence_commits_without_skips() {
                 plan_id: plan(1),
                 task_ordinal: None,
             }],
+            worker_refs: Vec::new(),
+            claim_links: Vec::new(),
         })
         .collect();
-    let reply = board
-        .handle(&BoardRequest::new(actor, BoardOp::LinkCommits { commits }))
+    let sequence_before: i64 = board
+        .conn
+        .query_row("SELECT COALESCE(MAX(seq),0) FROM events", [], |row| {
+            row.get(0)
+        })
         .unwrap();
-    let BoardResult::CommitsLinked(linked) = reply.result else {
-        panic!("links");
-    };
-    assert_eq!(linked.inserted, 120);
-    assert!(linked.unknown_plans.is_empty());
+    let mut inserted = 0;
+    for commit in commits {
+        let reply = board
+            .handle(
+                &BoardRequest::system(
+                    actor.clone(),
+                    BoardOp::LinkCommits {
+                        commits: vec![commit],
+                    },
+                )
+                .with_system_origin("ingest")
+                .unwrap(),
+            )
+            .unwrap();
+        let BoardResult::CommitsLinked(linked) = reply.result else {
+            panic!("links");
+        };
+        inserted += linked.inserted;
+        assert!(linked.unknown_plans.is_empty());
+    }
+    assert_eq!(inserted, 120);
     let (minimum, maximum, total): (i64, i64, i64) = board
         .conn
         .query_row(
@@ -54,7 +75,10 @@ fn collection_entries_page_shared_sequence_commits_without_skips() {
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .unwrap();
-    assert_eq!((minimum, maximum, total), (3, 3, 120));
+    assert_eq!(
+        (minimum, maximum, total),
+        (sequence_before + 1, sequence_before + 120, 120)
+    );
     let reader = board.reader.as_ref().expect("read connection");
     let mut before = None;
     let mut through = None;

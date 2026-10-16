@@ -52,7 +52,6 @@ fn evidence() -> ReviewEvidence {
             id: plan,
             title: PlanTitle::new("Trial").unwrap(),
             owner_user: "josh".into(),
-            steward: None,
             head_revision: 2,
             created_at: 100,
         },
@@ -90,5 +89,7 @@ fn commit(harness: &str, time: i64) -> LinkedCommit {
             plan_id: PlanId::new(7).unwrap(),
             task_ordinal: Some(1),
         }],
+        worker_refs: Vec::new(),
+        claim_links: Vec::new(),
     }
 }

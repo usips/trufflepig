@@ -6,6 +6,7 @@ export const AGENT_MARKS = {
   gemini: { glyph: "Ge", colorVar: "--mark-gemini", image: null },
   qwen: { glyph: "Qw", colorVar: "--mark-qwen", image: null },
   muse: { glyph: "Mu", colorVar: "--mark-muse", image: null },
+  system: { glyph: "Sy", colorVar: "--mark-system", fallbackColor: "#6b7280", image: null },
   human: { glyph: "Hu", colorVar: "--mark-human", image: null },
   unknown: { glyph: "?", colorVar: "--mark-unknown", image: null },
 };
@@ -13,7 +14,6 @@ export const AGENT_MARKS = {
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 
 export function harnessVendor(harness) {
-  if (harness === "cli") return "human";
   return Object.hasOwn(AGENT_MARKS, harness) ? harness : "unknown";
 }
 
@@ -42,7 +42,10 @@ export function agentMark(vendor, label) {
   image.dataset.vendor = key;
   const title = svgElement("title", {}); title.textContent = accessibleLabel;
   const square = svgElement("rect", {
-    width: 16, height: 16, rx: 3, fill: `var(${mark.colorVar})`,
+    width: 16, height: 16, rx: 3,
+    fill: mark.fallbackColor
+      ? `var(${mark.colorVar}, ${mark.fallbackColor})`
+      : `var(${mark.colorVar})`,
   });
   const glyph = svgElement("text", {
     x: 8, y: 8, "text-anchor": "middle", "dominant-baseline": "central",
@@ -60,6 +63,45 @@ export function actorMark(record) {
     + `/${actor.session || "unknown"}`;
   return agentMark(record.vendor,
     `${record.model || "unclaimed"} · ${actor.harness || "unknown"} · ${identity}`);
+}
+
+export function actorAttribution(record) {
+  const actor = record.actor;
+  const attribution = document.createElement("span");
+  attribution.className = "actor-attribution";
+
+  const actualActor = document.createElement("span");
+  actualActor.className = "actor-attribution-actor";
+  actualActor.append(actorMark(record));
+  const identity = document.createElement("span");
+  identity.className = "actor-attribution-identity";
+  identity.textContent = actor
+    ? typeof actor === "string"
+      ? actor
+      : `${actor.user || "unknown"}@${actor.host || "unknown"}`
+        + `/${actor.harness || "unknown"}/${actor.session || "unknown"}`
+    : "Unknown actor";
+  actualActor.append(identity);
+  attribution.append(actualActor);
+
+  if (record.origin) {
+    const origin = document.createElement("span");
+    origin.className = "actor-attribution-origin muted small";
+    origin.title = "Observed origin";
+    origin.textContent = ` · origin ${record.origin.harness}/${record.origin.session}`;
+    if (record.origin.peer_ip) origin.textContent += ` · peer IP ${record.origin.peer_ip}`;
+    attribution.append(origin);
+  }
+
+  if (record.authority !== null && record.authority !== undefined) {
+    const authority = document.createElement("span");
+    authority.className = "actor-attribution-authority muted small";
+    authority.title = "Authority source";
+    authority.textContent = ` · authority ${record.authority}`;
+    attribution.append(authority);
+  }
+
+  return attribution;
 }
 
 export function recipientMark(recipient) {

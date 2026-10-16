@@ -227,7 +227,11 @@ fn read_source(root: &Path, relative: &Path) -> (Option<Vec<u8>>, &'static str, 
     (Some(source), "read", length)
 }
 
-fn insert_facts(tx: &Transaction<'_>, file_id: i64, extraction: &Extraction) -> Result<()> {
+pub(super) fn insert_facts(
+    tx: &Transaction<'_>,
+    file_id: i64,
+    extraction: &Extraction,
+) -> Result<()> {
     let mut ids = Vec::with_capacity(extraction.definitions.len());
     for definition in &extraction.definitions {
         tx.execute("INSERT INTO definitions(file_id,name,kind,start,end,container) VALUES(?1,?2,?3,?4,?5,?6)", params![file_id, definition.name, definition.kind, definition.start as i64, definition.end as i64, definition.container])?;

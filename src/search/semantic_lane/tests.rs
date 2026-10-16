@@ -175,7 +175,7 @@ fn semantic_cache_failure_preserves_lexical_hits() {
 fn semantic_region_limit_is_per_file() -> anyhow::Result<()> {
     const MANY_REGIONS: usize = 10_001;
     let source = vec![b'x'; MANY_REGIONS];
-    let (_root, cache, mut store) = fixture(&[("many.txt", &source)]);
+    let (root, cache, mut store) = fixture(&[("many.txt", &source)]);
     let vector = unit_vector(0);
     cache_vector(cache.path(), std::str::from_utf8(&source)?, &vector);
     cache_vector(cache.path(), "x", &vector);
@@ -225,6 +225,7 @@ fn semantic_region_limit_is_per_file() -> anyhow::Result<()> {
     )?;
     transaction.commit()?;
 
+    std::fs::write(root.path().join("other.txt"), b"y")?;
     let result = prepared_search(&store, cache.path(), "semantic intent", vector);
     let semantic_paths = result
         .hits

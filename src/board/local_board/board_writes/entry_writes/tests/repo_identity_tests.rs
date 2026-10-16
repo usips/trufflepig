@@ -20,7 +20,6 @@ fn common_directory_keeps_plan_links_when_root_set_extends() {
             BoardOp::New {
                 title: PlanTitle::new("Extend").unwrap(),
                 body: PlanText::new("Extend").unwrap(),
-                steward: None,
                 repo_key: None,
             },
         ))
@@ -55,6 +54,8 @@ fn common_directory_keeps_plan_links_when_root_set_extends() {
                         plan_id: plan,
                         task_ordinal: None,
                     }],
+                    worker_refs: Vec::new(),
+                    claim_links: Vec::new(),
                 }],
             },
         ))

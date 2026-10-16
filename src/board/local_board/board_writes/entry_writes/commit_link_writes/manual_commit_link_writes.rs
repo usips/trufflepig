@@ -15,7 +15,7 @@ pub(in crate::board::local_board) fn link_commit(
     commit: &LinkedCommit,
 ) -> Result<BoardReply, BoardError> {
     let plan = task.plan;
-    require_link_authority(tx, &ctx.actor, plan)?;
+    let link_ctx = ctx.with_authority(require_link_authority(tx, &ctx.actor, plan, ctx.now)?);
     let task_exists: bool = tx
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM tasks WHERE plan_id=?1 AND ordinal=?2)",
@@ -59,7 +59,7 @@ pub(in crate::board::local_board) fn link_commit(
     }
     let plan_entry = match existing_entry {
         Some(entry) => entry,
-        None => record_plan_link(tx, ctx, commit, plan)?,
+        None => record_plan_link(tx, &link_ctx, commit, plan)?,
     };
     tx.execute(
         "INSERT OR IGNORE INTO plan_repos(plan_id,repo_key) VALUES(?1,?2)",
@@ -87,11 +87,11 @@ pub(in crate::board::local_board) fn link_commit(
         task.ordinal,
         &commit.coauthors,
         commit.committed_at,
-        ctx.now,
+        link_ctx.now,
     )?;
     insert_event(
         tx,
-        ctx,
+        &link_ctx,
         Some(plan),
         EntryKind::Commit,
         &plan_entry.entry.to_string(),
@@ -109,7 +109,7 @@ pub(in crate::board::local_board) fn link_commit(
                 commit.oid.as_str(),
                 sql_number(plan.get()),
                 sql_number(task.ordinal),
-                sql_number(ctx.seq.get())
+                sql_number(link_ctx.seq.get())
             ],
         )
         .map_err(sql_error)?;
@@ -123,7 +123,7 @@ pub(in crate::board::local_board) fn link_commit(
         "local",
         BoardResult::Change(BoardChange {
             entry: plan_entry.entry,
-            seq: ctx.seq,
+            seq: link_ctx.seq,
             plan: Some(plan),
             revision: None,
             task: Some(task),

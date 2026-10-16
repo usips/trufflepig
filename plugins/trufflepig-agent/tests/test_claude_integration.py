@@ -38,6 +38,16 @@ class ClaudeIntegrationTests(unittest.TestCase):
         original = {"model": "user-selected", "permissions": {"deny": ["Bash(rm *)"]},
                     "hooks": {"SessionStart": [{"matcher": "resume", "hooks": [
                         {"type": "command", "command": "existing-hook"}]}],
+                        "PreToolUse": [{"matcher": "Bash", "hooks": [
+                            {"type": "command", "command": "existing-pre-hook"}]}],
+                        "PostToolUse": [{"matcher": "Bash", "hooks": [
+                            {"type": "command", "command": "existing-post-hook"}]}],
+                        "PostToolUseFailure": [{"hooks": [
+                            {"type": "command", "command": "existing-failure-hook"}]}],
+                        "SessionEnd": [{"hooks": [
+                            {"type": "command", "command": "existing-end-hook"}]}],
+                        "SubagentStop": [{"hooks": [
+                            {"type": "command", "command": "existing-subagent-hook"}]}],
                         "Stop": [{"hooks": [{"type": "command", "command": "other-hook"}]}]},
                     "sandbox": {"enabled": True, "filesystem": {"allowWrite": ["/existing"]}}}
         path.write_text(json.dumps(original))
@@ -51,9 +61,27 @@ class ClaudeIntegrationTests(unittest.TestCase):
         self.assertEqual(settings["hooks"]["Stop"], original["hooks"]["Stop"])
         steer = shlex.quote(str(self.root / ".local/bin/trufflepig-agent-steer")) + " claude"
         steer_hooks = [{"type": "command", "command": steer, "timeout": 5}]
-        self.assertEqual(settings["hooks"]["PreToolUse"], [{"matcher": "Bash", "hooks": steer_hooks},
-                                                           {"matcher": "Agent", "hooks": steer_hooks}])
-        self.assertEqual(settings["hooks"]["PostToolUse"], [{"matcher": "Bash", "hooks": steer_hooks}])
+        identity = shlex.quote(str(self.root / ".local/bin/trufflepig-claude-hooks"))
+        identity_hook = lambda timeout: {"type": "command", "command": identity, "timeout": timeout}
+        self.assertEqual(settings["hooks"]["PreToolUse"], [
+            {"matcher": "Bash", "hooks": [
+                *original["hooks"]["PreToolUse"][0]["hooks"],
+                *steer_hooks,
+                identity_hook(5),
+            ]},
+            {"matcher": "Agent", "hooks": steer_hooks},
+        ])
+        self.assertEqual(settings["hooks"]["PostToolUse"], [
+            {"matcher": "Bash", "hooks": [
+                *original["hooks"]["PostToolUse"][0]["hooks"], *steer_hooks]},
+            {"hooks": [identity_hook(5)]},
+        ])
+        self.assertEqual(settings["hooks"]["PostToolUseFailure"], [
+            {"hooks": [*original["hooks"]["PostToolUseFailure"][0]["hooks"], identity_hook(5)]}])
+        self.assertEqual(settings["hooks"]["SessionEnd"], [
+            {"hooks": [*original["hooks"]["SessionEnd"][0]["hooks"], identity_hook(1)]}])
+        self.assertEqual(settings["hooks"]["SubagentStop"], [
+            {"hooks": [*original["hooks"]["SubagentStop"][0]["hooks"], identity_hook(1)]}])
         session = shlex.quote(str(self.root / ".local/bin/trufflepig-claude-session"))
         self.assertEqual(settings["hooks"]["SubagentStart"], [{"hooks": [
             {"type": "command", "command": session, "timeout": 5}]}])
@@ -69,6 +97,12 @@ class ClaudeIntegrationTests(unittest.TestCase):
         # The SessionStart hook command must resolve to an installed executable.
         hook = self.root / ".local/bin/trufflepig-claude-session"
         self.assertEqual(hook.resolve(), PLUGIN / "hooks/claude-session.py")
+        self.assertEqual((self.root / ".local/bin/trufflepig-claude-hooks").resolve(),
+                         PLUGIN / "hooks/claude-hooks.py")
+        self.assertEqual((self.root / ".local/bin/trufflepig_identity.py").resolve(),
+                         PLUGIN / "hooks/trufflepig_identity.py")
+        self.assertEqual((self.root / ".local/bin/trufflepig_board_notices.py").resolve(),
+                         PLUGIN / "bin/trufflepig_board_notices.py")
 
     def test_steer_mode_is_recorded_per_harness(self):
         result = subprocess.run([str(PLUGIN / "install.sh"), "--claude", "--steer", "strict"],
@@ -87,6 +121,8 @@ class ClaudeIntegrationTests(unittest.TestCase):
         result = self.install()
         self.assertEqual(result.returncode, 0, result.stderr)
         settings = json.loads((config / "settings.json").read_text())
+        self.assertNotIn("SessionStart", settings["hooks"])
+        self.assertNotIn("SubagentStart", settings["hooks"])
         self.assertEqual(settings["hooks"], {})
         self.assertEqual(settings["permissions"]["allow"], ["Bash(trufflepig-agent *)"])
         self.assertFalse((config / "skills/trufflepig-code-search").exists())
@@ -96,8 +132,10 @@ class ClaudeIntegrationTests(unittest.TestCase):
         manifest = json.loads((PLUGIN / "hooks/hooks.json").read_text())
         commands = [hook["command"] for groups in manifest["hooks"].values()
                     for group in groups for hook in group["hooks"]]
-        self.assertEqual(len(commands), 5)
-        self.assertEqual(set(manifest["hooks"]), {"SessionStart", "SubagentStart", "PreToolUse", "PostToolUse"})
+        self.assertEqual(len(commands), 10)
+        self.assertEqual(set(manifest["hooks"]), {
+            "SessionStart", "SubagentStart", "PreToolUse", "PostToolUse",
+            "PostToolUseFailure", "SessionEnd", "SubagentStop"})
         self.assertEqual([g["matcher"] for g in manifest["hooks"]["PreToolUse"]], ["Bash", "Agent"])
         for command in commands:
             script = shlex.split(command.replace("${CLAUDE_PLUGIN_ROOT}", str(PLUGIN)))[0]

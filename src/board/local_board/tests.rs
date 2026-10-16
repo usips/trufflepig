@@ -6,6 +6,8 @@ mod project_scope_read_tests;
 mod query_only_dispatch_tests;
 
 use super::*;
+use crate::board::board_actor::BoardRecipient;
+use crate::board::board_protocol::AuthorityRole;
 use crate::board::board_vocabulary::{EntryText, PlanText, PlanTitle};
 
 fn actor(harness: &str, session: &str) -> BoardActor {
@@ -35,7 +37,6 @@ fn new_plan(board: &mut LocalBoard, author: BoardActor, title: &str) -> BoardCha
             BoardOp::New {
                 title: PlanTitle::new(title).unwrap(),
                 body: PlanText::new("# Scope\noriginal").unwrap(),
-                steward: Some(HarnessLabel::parse("claude").unwrap()),
                 repo_key: None,
             },
         ))
@@ -52,6 +53,18 @@ fn local_board_immutable_revisions_cas_and_owner_authority() {
     let created = new_plan(&mut board, actor("human", "h1"), "Trial");
     let plan = created.plan.unwrap();
     assert_eq!(created.revision.unwrap().to_string(), "P1@1");
+    board
+        .handle(&BoardRequest::new(
+            actor("human", "h1"),
+            BoardOp::Grant {
+                plan: Some(plan),
+                roles: vec![AuthorityRole::Decide],
+                grantee: BoardRecipient::parse("claude").unwrap(),
+                expires_in: None,
+                note: None,
+            },
+        ))
+        .unwrap();
     let base = crate::board::board_ids::PlanRevision::new(plan, 1).unwrap();
     let proposed = board
         .handle(&BoardRequest::new(
@@ -133,6 +146,8 @@ fn local_board_dedupe_distinguishes_target_and_snapshots_claims() {
         body: EntryText::new("same body").unwrap(),
         to: None,
         supersedes: None,
+        progress: None,
+        verdict: None,
     };
     let mut first_request = BoardRequest::new(author.clone(), op(p1));
     first_request.claims = Some(AgentClaims {
@@ -173,7 +188,6 @@ fn local_board_replay_upgrades_receipts_stamped_with_an_older_api() {
         BoardOp::New {
             title: PlanTitle::new("Trial").unwrap(),
             body: PlanText::new("# Scope").unwrap(),
-            steward: None,
             repo_key: None,
         },
     );

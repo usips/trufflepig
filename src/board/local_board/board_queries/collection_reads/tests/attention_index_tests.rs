@@ -126,8 +126,8 @@ fn attention_mixes_kinds_across_states_with_exact_omitted_counts() {
     let reader = board.reader.as_ref().expect("read connection");
     let human = authority_actor("josh", "laptop", "human", "h1");
     let first = attention_page(reader, &human, None, true, 2);
-    assert_eq!(attention_ids(&first), vec![id(3), id(5)]);
-    assert_eq!(first.entries_omitted, 3);
+    assert_eq!(attention_ids(&first), vec![id(3), id(8)]);
+    assert_eq!(first.entries_omitted, 1);
     let BoardResult::Attention(second) = attention(
         reader,
         &human,
@@ -141,31 +141,13 @@ fn attention_mixes_kinds_across_states_with_exact_omitted_counts() {
     else {
         panic!("attention");
     };
-    assert_eq!(attention_ids(&second), vec![id(6), id(8)]);
-    assert_eq!(second.entries_omitted, 1);
-    let BoardResult::Attention(third) = attention(
-        reader,
-        &human,
-        &ReadScope::All,
-        second.next_after,
-        Some(second.through),
-        2,
-    )
-    .unwrap()
-    .result
-    else {
-        panic!("attention");
-    };
-    assert_eq!(attention_ids(&third), vec![id(12)]);
-    assert_eq!(third.entries_omitted, 0);
-    assert_eq!(third.next_after, None);
+    assert_eq!(attention_ids(&second), vec![id(12)]);
+    assert_eq!(second.entries_omitted, 0);
+    assert_eq!(second.next_after, None);
     let full = attention_page(reader, &human, None, true, 200);
-    assert_eq!(
-        attention_ids(&full),
-        vec![id(3), id(5), id(6), id(8), id(12)]
-    );
+    assert_eq!(attention_ids(&full), vec![id(3), id(8), id(12)]);
     assert_eq!(full.entries_omitted, 0);
     let ordinary = attention_page(reader, &context(), None, true, 200);
-    assert_eq!(attention_ids(&ordinary), vec![id(3), id(6), id(12)]);
+    assert_eq!(attention_ids(&ordinary), vec![id(3), id(12)]);
     assert_eq!(ordinary.entries_omitted, 0);
 }

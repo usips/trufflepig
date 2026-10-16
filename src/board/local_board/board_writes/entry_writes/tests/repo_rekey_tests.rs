@@ -20,7 +20,6 @@ fn common_directory_rekeys_when_unrelated_repository_replaces_content() {
             BoardOp::New {
                 title: PlanTitle::new("Rekey").unwrap(),
                 body: PlanText::new("Rekey").unwrap(),
-                steward: None,
                 repo_key: None,
             },
         ))
@@ -55,6 +54,8 @@ fn common_directory_rekeys_when_unrelated_repository_replaces_content() {
                         plan_id: plan,
                         task_ordinal: None,
                     }],
+                    worker_refs: Vec::new(),
+                    claim_links: Vec::new(),
                 }],
             },
         ))
@@ -161,7 +162,6 @@ fn disjoint_roots_rekey_starts_without_copied_plan_links() {
             BoardOp::New {
                 title: PlanTitle::new("Rekeyed links").unwrap(),
                 body: PlanText::new("Rekeyed links").unwrap(),
-                steward: None,
                 repo_key: None,
             },
         ))

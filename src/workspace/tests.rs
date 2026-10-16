@@ -197,7 +197,7 @@ fn search_all_with_deadline(
         &cache,
         &WorkspaceResults::open(&cache).unwrap(),
         &options,
-        &cli::request_context(&options),
+        &cli::request_context(&options).unwrap(),
         &mut crate::semantic::SemanticSession::default(),
         deadline,
     )

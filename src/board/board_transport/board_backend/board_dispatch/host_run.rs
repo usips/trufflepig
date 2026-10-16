@@ -64,6 +64,7 @@ impl BoardHost {
                     inserted: report.inserted,
                     unknown_plans: report.unknown_plans,
                     unknown_tasks: report.unknown_tasks,
+                    unknown_workers: report.unknown_workers,
                 }),
             );
             reply.warnings = report.errors;
@@ -75,7 +76,7 @@ impl BoardHost {
         let probe = if (options.board.all && matches!(&op, BoardOp::Inbox { .. }))
             || matches!(
                 &op,
-                BoardOp::LinkCommit { .. } | BoardOp::UnlinkCommit { .. }
+                BoardOp::LinkCommit { .. } | BoardOp::UnlinkCommit { .. } | BoardOp::Pending { .. }
             ) {
             Ok(crate::board::repo_identity::RegistrationProbe {
                 registration: None,
@@ -118,7 +119,8 @@ impl BoardHost {
         if let Some(proposed) = registration.clone() {
             if register_write {
                 match self.handle_by(
-                    &BoardRequest::new(
+                    &origin_request(
+                        context,
                         actor.clone(),
                         BoardOp::RegisterRepo {
                             registration: proposed,
@@ -195,7 +197,7 @@ impl BoardHost {
             }
         }
         scope_read_repo_key(&mut op, registration.as_ref(), options.board.all);
-        let mut request = BoardRequest::new(actor.clone(), op);
+        let mut request = origin_request(context, actor.clone(), op);
         if options.board.agent_model.is_some() || options.board.agent_effort.is_some() {
             request.claims = Some(AgentClaims {
                 model: options.board.agent_model.clone(),
@@ -219,7 +221,11 @@ impl BoardHost {
                 }
             }
             if let Err(error) = self.handle_by(
-                &BoardRequest::new(actor.clone(), BoardOp::RegisterRepo { registration }),
+                &origin_request(
+                    context,
+                    actor.clone(),
+                    BoardOp::RegisterRepo { registration },
+                ),
                 deadline,
             ) {
                 warnings.push(format!("repository registration: {error:#}"));
@@ -230,7 +236,11 @@ impl BoardHost {
         if matches!(&request.op, BoardOp::Inbox { after: None, .. }) {
             if let Some(rendered_through) = rendered.acknowledge_seq {
                 if let Err(error) = self.handle_by(
-                    &BoardRequest::new(actor, BoardOp::AcknowledgeInbox { rendered_through }),
+                    &origin_request(
+                        context,
+                        actor,
+                        BoardOp::AcknowledgeInbox { rendered_through },
+                    ),
                     deadline,
                 ) {
                     if !(options.wait && !inbox_has_events(&reply) && waiter_transient(&error)) {
@@ -241,4 +251,14 @@ impl BoardHost {
         }
         Ok(rendered.text)
     }
+}
+
+fn origin_request(
+    context: &RequestContext,
+    actor: crate::board::board_actor::BoardActor,
+    op: BoardOp,
+) -> BoardRequest {
+    let mut request = BoardRequest::new(actor, op);
+    request.origin = context.origin.clone();
+    request
 }

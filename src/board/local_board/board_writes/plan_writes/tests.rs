@@ -1,6 +1,8 @@
 use super::*;
+use crate::board::board_actor::BoardRecipient;
 use crate::board::board_backend::BoardBackend;
 use crate::board::board_ids::PlanRevision;
+use crate::board::board_protocol::AuthorityRole;
 use std::time::Duration;
 
 mod approval_guidance;
@@ -41,7 +43,6 @@ fn plan(board: &mut LocalBoard) -> PlanId {
         BoardOp::New {
             title: PlanTitle::new("Trial").unwrap(),
             body: PlanText::new("# Scope\noriginal").unwrap(),
-            steward: Some(HarnessLabel::parse("claude").unwrap()),
             repo_key: None,
         },
     )
@@ -98,7 +99,6 @@ fn new_plan_links_a_chosen_repository_and_rejects_unknown_keys() {
         BoardOp::New {
             title: PlanTitle::new("Linked plan").unwrap(),
             body: PlanText::new("").unwrap(),
-            steward: None,
             repo_key: Some(repo.clone()),
         },
     );
@@ -127,7 +127,6 @@ fn new_plan_links_a_chosen_repository_and_rejects_unknown_keys() {
             BoardOp::New {
                 title: PlanTitle::new("Unknown repository").unwrap(),
                 body: PlanText::new("").unwrap(),
-                steward: None,
                 repo_key: Some(unknown),
             },
         ))
@@ -141,14 +140,15 @@ fn new_plan_links_a_chosen_repository_and_rejects_unknown_keys() {
 }
 
 #[test]
-fn direct_edits_enforce_owner_and_steward_authority_atomically() {
+fn direct_edits_enforce_owner_and_granted_decide_authority_atomically() {
     let (_directory, mut board) = database();
     let plan = plan(&mut board);
+    let grant = grant_decide(&mut board, plan, "claude");
     let base = PlanRevision::new(plan, 1).unwrap();
     for denied in [
         actor("josh", "codex", "same-owner"),
         actor("other", "human", "other-owner"),
-        actor("other", "claude", "other-steward"),
+        actor("other", "claude", "different-user"),
     ] {
         let before = snapshot(&board, plan);
         let error = board
@@ -175,5 +175,32 @@ fn direct_edits_enforce_owner_and_steward_authority_atomically() {
             },
         );
         assert_eq!(edited.revision.unwrap().revision, revision + 1);
+        if harness == "claude" {
+            let authority: (String, Option<i64>) = board
+                .conn
+                .query_row(
+                    "SELECT authority_basis,authority_entry FROM entries WHERE id=?1",
+                    [sql_number(edited.entry.get())],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!(authority.0, "grant");
+            assert_eq!(authority.1, Some(i64::try_from(grant.get()).unwrap()));
+        }
     }
+}
+
+fn grant_decide(board: &mut LocalBoard, plan: PlanId, grantee: &str) -> EntryId {
+    call(
+        board,
+        actor("josh", "human", "owner"),
+        BoardOp::Grant {
+            plan: Some(plan),
+            roles: vec![AuthorityRole::Decide],
+            grantee: BoardRecipient::parse(grantee).unwrap(),
+            expires_in: None,
+            note: None,
+        },
+    )
+    .entry
 }

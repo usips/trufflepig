@@ -120,7 +120,6 @@ fn review_commits_keep_coauthors_and_links_to_other_plans() {
         BoardOp::New {
             title: PlanTitle::new("Other plan").unwrap(),
             body: PlanText::new("Other scope").unwrap(),
-            steward: None,
             repo_key: None,
         },
     ) else {
@@ -175,6 +174,8 @@ fn review_commits_keep_coauthors_and_links_to_other_plans() {
                 task_ordinal: None,
             },
         ],
+        worker_refs: Vec::new(),
+        claim_links: Vec::new(),
     };
     call(
         &mut board,

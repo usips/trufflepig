@@ -8,7 +8,9 @@ mod warning_subjects;
 
 use super::*;
 use crate::board::board_ids::EventSeq;
-use crate::board::board_protocol::{BoardError, BoardReply, CommitLinkResult};
+use crate::board::board_protocol::{
+    ActorOrigin, BoardError, BoardReply, CommitLinkResult, WorkerAddress,
+};
 use crate::board::repo_identity::tests::GitFixture;
 use crate::identity::GitOid;
 use std::collections::BTreeSet;
@@ -17,8 +19,11 @@ use std::collections::BTreeSet;
 struct TestBackend {
     linked: Vec<LinkedCommit>,
     requests: usize,
+    request_actors: Vec<BoardActor>,
+    request_origins: Vec<Option<ActorOrigin>>,
     fail_next_link: bool,
     unknown_plans: Vec<PlanId>,
+    unknown_workers: Vec<WorkerAddress>,
     scan_errors: Vec<Option<String>>,
     forgotten: usize,
     fail_forget: bool,
@@ -29,6 +34,8 @@ impl BoardBackend for TestBackend {
         let result = match &request.op {
             BoardOp::LinkCommits { commits } => {
                 self.requests += 1;
+                self.request_actors.push(request.actor.clone());
+                self.request_origins.push(request.origin.clone());
                 if self.fail_next_link {
                     self.fail_next_link = false;
                     return Err(
@@ -40,6 +47,7 @@ impl BoardBackend for TestBackend {
                     inserted: commits.len() as u64,
                     unknown_plans: self.unknown_plans.clone(),
                     unknown_tasks: Vec::new(),
+                    unknown_workers: self.unknown_workers.clone(),
                 })
             }
             BoardOp::ForgetRepoPath { .. } => {

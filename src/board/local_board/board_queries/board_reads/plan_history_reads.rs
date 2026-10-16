@@ -17,19 +17,13 @@ pub(super) fn plan(conn: &Connection, id: PlanId) -> Result<PlanRecord, BoardErr
 }
 
 pub(in crate::board::local_board) fn plan_row(row: &Row<'_>) -> Result<PlanRecord, BoardError> {
-    let steward: Option<String> = row.get(3).map_err(sql_error)?;
     Ok(PlanRecord {
         id: PlanId::new(row_number(row, 0).map_err(sql_error)?).map_err(BoardError::from)?,
         title: PlanTitle::new(row.get::<_, String>(1).map_err(sql_error)?)
             .map_err(BoardError::from)?,
         owner_user: row.get(2).map_err(sql_error)?,
-        steward: steward
-            .as_deref()
-            .map(HarnessLabel::parse)
-            .transpose()
-            .map_err(BoardError::from)?,
-        head_revision: row_number(row, 4).map_err(sql_error)?,
-        created_at: row.get(5).map_err(sql_error)?,
+        head_revision: row_number(row, 3).map_err(sql_error)?,
+        created_at: row.get(4).map_err(sql_error)?,
     })
 }
 
@@ -166,6 +160,10 @@ pub(super) fn plan_view(
     let mut entries = recent;
     entries.extend(extras);
     Ok(PlanView {
+        grants: crate::board::local_board::board_authority::read_grants(conn, Some(id))?,
+        can_manage_grants: crate::board::local_board::board_authority::can_manage_grants(
+            conn, &ctx.actor, id,
+        )?,
         repo_keys: plan_repo_keys(conn, plan.id)?,
         plan,
         revision,

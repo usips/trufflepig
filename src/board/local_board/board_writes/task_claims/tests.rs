@@ -8,6 +8,7 @@ mod claim_resume_entry_tests;
 mod claim_resume_race_tests;
 mod claim_vendor_tests;
 mod completed_task_tests;
+mod worker_lifecycle_tests;
 
 mod claim_resumption;
 
@@ -37,8 +38,8 @@ impl ClaimDatabase {
         let conn = database.connect();
         conn.execute(
             concat!(
-                "INSERT INTO plans(id,title,owner_user,steward,head_revision,next_task,created_at) ",
-                "VALUES(1,'Plan','josh','claude',1,0,100)"
+                "INSERT INTO plans(id,title,owner_user,head_revision,next_task,created_at) ",
+                "VALUES(1,'Plan','josh',1,0,100)"
             ),
             [],
         )
@@ -63,6 +64,45 @@ fn actor(user: &str, harness: &str, session: &str) -> BoardActor {
     .unwrap()
 }
 
+fn grant_legacy_claude(conn: &Connection) {
+    conn.execute(
+        "INSERT OR IGNORE INTO actors(user,host,harness,session) VALUES('system','board-v10','system','migration')",
+        [],
+    )
+    .unwrap();
+    let system_actor: i64 = conn
+        .query_row(
+            "SELECT id FROM actors WHERE user='system' AND host='board-v10' AND harness='system' AND session='migration'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let seq: i64 = conn
+        .query_row(
+            "SELECT max(max_entry,max_event) FROM (SELECT COALESCE(MAX(seq),0) AS max_entry FROM entries), (SELECT COALESCE(MAX(seq),0) AS max_event FROM events)",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let entry: i64 = conn
+        .query_row(
+            "INSERT INTO entries(plan_id,kind,body,to_whom,actor_id,seq,created_at,authority_basis) VALUES(1,'grant','migration fixture: all roles to claude','claude',?1,?2,100,'owner') RETURNING id",
+            rusqlite::params![system_actor, seq + 1],
+            |row| row.get(0),
+        )
+        .unwrap();
+    conn.execute(
+        "INSERT INTO events(seq,plan_id,kind,subject,to_whom,actor_id,summary,created_at,authority_basis) VALUES(?1,1,'grant',?2,'claude',?3,'migration fixture: all roles to claude',100,'owner')",
+        rusqlite::params![seq + 1, format!("E{entry}"), system_actor],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO authority_grants(entry_id,plan_id,owner_user,roles_json,grantee,granted_at,expires_at,revoked_by_entry,source) VALUES(?1,1,'josh','[\"triage\",\"release\",\"link\",\"assign\",\"decide\"]','claude',100,NULL,NULL,'migration')",
+        [entry],
+    )
+    .unwrap();
+}
+
 fn write(
     conn: &mut Connection,
     actor: &BoardActor,
@@ -82,6 +122,8 @@ fn write(
         seq: EventSeq::new(crate::board::local_board::max_seq(&tx).unwrap().get() + 1),
         claim_ttl_secs: 120,
         via: None,
+        origin: None,
+        authority: None,
     };
     let reply = operation(&tx, &ctx)?;
     tx.commit().unwrap();

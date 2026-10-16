@@ -8,31 +8,35 @@ impl LocalBoard {
         &mut self,
         actor: &BoardActor,
         plan: PlanId,
-    ) -> Result<(), BoardError> {
+        now: i64,
+    ) -> Result<AuthoritySource, BoardError> {
         let tx = self.conn.transaction().map_err(sql_error)?;
-        require_link_authority(&tx, actor, plan)
+        require_link_authority(&tx, actor, plan, now)
     }
 }
 
-/// A plan's owner links by hand or through its steward harness; every other
-/// actor is rejected.
+/// Resolves the actor's current link authority for a plan.
 pub(in crate::board::local_board) fn require_link_authority(
     tx: &Transaction<'_>,
     actor: &BoardActor,
     plan: PlanId,
-) -> Result<(), BoardError> {
-    if can_accept(tx, actor, plan)? {
-        return Ok(());
-    }
-    let hint = if actor.harness.as_str() == "cli" {
-        "; pass --client human"
-    } else {
-        ""
-    };
-    Err(invalid(
-        "invalid_actor",
-        format!("changing commit links for {plan} requires its owner by hand or its steward{hint}"),
-    ))
+    now: i64,
+) -> Result<AuthoritySource, BoardError> {
+    super::super::super::board_authority::authority_for(
+        tx,
+        actor,
+        Some(plan),
+        AuthorityRole::Link,
+        now,
+    )?
+    .ok_or_else(|| {
+        invalid(
+            "invalid_actor",
+            format!(
+                "changing commit links for {plan} requires link authority; ask its owner to grant link"
+            ),
+        )
+    })
 }
 
 /// The shared plan-level commit entry and its original entry sequence.

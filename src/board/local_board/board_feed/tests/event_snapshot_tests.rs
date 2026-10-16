@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::ReadScope;
+use crate::board::board_protocol::{ActorOrigin, ReadScope};
 
 #[test]
 fn event_batches_return_stored_claim_snapshots_without_entry_joins() {
@@ -25,6 +25,8 @@ fn event_batches_return_stored_claim_snapshots_without_entry_joins() {
         seq: EventSeq::new(2),
         claim_ttl_secs: 120,
         via: None,
+        origin: None,
+        authority: None,
     };
     crate::board::local_board::insert_event(
         &tx,
@@ -73,6 +75,47 @@ fn event_batches_return_stored_claim_snapshots_without_entry_joins() {
             .read_event_batch(EventSeq::new(0), Some(plan), 502)
             .is_err()
     );
+}
+
+#[test]
+fn entry_and_event_origin_round_trip_the_observed_peer_ip() {
+    let (_directory, mut board) = database();
+    let plan = plan(&mut board);
+    let actor = BoardActor::new(
+        "josh",
+        "laptop",
+        HarnessLabel::parse("codex").unwrap(),
+        "peer-origin-session",
+    )
+    .unwrap();
+    let peer_ip = "192.168.12.34".parse().unwrap();
+    let mut request = BoardRequest::new(
+        actor,
+        BoardOp::Post {
+            target: BoardRef::Plan(plan),
+            kind: EntryKind::Note,
+            body: crate::board::board_vocabulary::EntryText::new("peer-addressed evidence")
+                .unwrap(),
+            to: None,
+            supersedes: None,
+            progress: None,
+            verdict: None,
+        },
+    );
+    request.observe_peer_ip(peer_ip);
+    let BoardResult::Change(change) = board.handle(&request).unwrap().result else {
+        panic!("post should create an entry")
+    };
+    let entry =
+        crate::board::local_board::board_queries::board_reads::entry(&board.conn, change.entry)
+            .unwrap();
+    assert_eq!(entry.origin.unwrap().peer_ip, Some(peer_ip));
+
+    let (_, events) = board
+        .read_event_batch(EventSeq::new(1), Some(plan), 501)
+        .unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].origin.as_ref().unwrap().peer_ip, Some(peer_ip));
 }
 
 #[test]

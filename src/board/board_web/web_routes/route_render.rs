@@ -9,7 +9,7 @@ use crate::board::{
     board_protocol::{BOARD_API, BoardError, BoardOp, BoardReply, BoardResult},
     review_packet::build_ssot_diff,
 };
-use std::time::Instant;
+use std::{net::IpAddr, time::Instant};
 
 /// Percent-decode a render-route suffix: only `%40` decodes, to the `@` of a
 /// revision target; strict BoardRef parsing rejects every other byte.
@@ -35,6 +35,7 @@ pub(super) fn decode_render_target(raw: &str) -> Result<String, BoardError> {
 pub(super) fn render_plan(
     state: &BoardWebState,
     target: &str,
+    peer_ip: IpAddr,
     expires: Instant,
 ) -> Result<serde_json::Value, BoardError> {
     let target = BoardRef::parse(target).map_err(BoardError::from)?;
@@ -48,6 +49,7 @@ pub(super) fn render_plan(
             project: None,
             op: BoardOp::Show { target },
         },
+        peer_ip,
         expires,
     )?;
     let revision = match &reply.result {
@@ -66,6 +68,7 @@ pub(super) fn render_plan(
 pub(super) fn render_diff(
     state: &BoardWebState,
     target: &str,
+    peer_ip: IpAddr,
     expires: Instant,
 ) -> Result<serde_json::Value, BoardError> {
     let target = BoardRef::parse(target).map_err(BoardError::from)?;
@@ -79,6 +82,7 @@ pub(super) fn render_diff(
             project: None,
             op: BoardOp::Show { target },
         },
+        peer_ip,
         expires,
     )?;
     let BoardResult::Diff(diff) = &reply.result else {
@@ -94,6 +98,7 @@ pub(super) fn render_diff(
 pub(super) fn render_proposal(
     state: &BoardWebState,
     target: &str,
+    peer_ip: IpAddr,
     expires: Instant,
 ) -> Result<serde_json::Value, BoardError> {
     proposal_diff(target, |target| {
@@ -104,6 +109,7 @@ pub(super) fn render_proposal(
                 project: None,
                 op: BoardOp::Show { target },
             },
+            peer_ip,
             expires,
         )
     })

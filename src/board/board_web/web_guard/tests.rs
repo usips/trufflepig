@@ -1,6 +1,7 @@
 mod authorize_tests;
 mod bind_challenge_tests;
 mod host_origin_tests;
+mod peer_ip_tests;
 mod token_security;
 
 use super::*;

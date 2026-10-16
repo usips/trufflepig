@@ -14,6 +14,19 @@ fn rejects_traversal_and_symlink_components() {
 }
 
 #[test]
+fn absolute_source_paths_explain_supported_readers() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("local.rs");
+    std::fs::write(&path, "fn local() {}\n").unwrap();
+    let error = read_contained(temp.path(), &path, 4096)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("root-relative"), "{error}");
+    assert!(error.contains("harness file reader"), "{error}");
+    assert!(read_contained(temp.path(), Path::new("local.rs"), 4096).is_ok());
+}
+
+#[test]
 fn original_bom_crlf_and_invalid_bytes() {
     let bytes = b"\xef\xbb\xbffirst\r\n\xffsecond\r\n";
     assert_eq!(current_span(bytes, 2, 2).unwrap(), (10, 19));

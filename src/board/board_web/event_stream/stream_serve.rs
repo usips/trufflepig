@@ -1,4 +1,5 @@
 //! One stream thread per subscriber: replay, ingest frames, and keepalive.
+use super::super::http_audit::HttpAudit;
 use super::{
     AHEAD_CURSOR_GRACE, EventStreams, KEEPALIVE_INTERVAL, Resync, SEND_DEADLINE, StreamRequest,
     event_frame,
@@ -14,11 +15,20 @@ use std::{
 };
 
 impl EventStreams {
-    pub(super) fn serve(&self, mut socket: TcpStream, request: StreamRequest) -> io::Result<()> {
+    pub(super) fn serve(
+        &self,
+        mut socket: TcpStream,
+        request: StreamRequest,
+        mut audit: Option<HttpAudit>,
+    ) -> io::Result<()> {
         // A poller lost between reserve and serve still answers: an empty
         // reply would read as a dropped connection, not a retryable outage.
         if !self.wake.available() {
-            return unavailable_reply(&mut socket);
+            let result = unavailable_reply(&mut socket);
+            if let Some(audit) = audit.as_mut() {
+                audit.finish(if result.is_ok() { 503 } else { 500 });
+            }
+            return result;
         }
         if let Some(plan) = request.plan {
             // Unknown plans are rejected before any 200: a 200-then-close
@@ -30,12 +40,16 @@ impl EventStreams {
                         "error": { "code": error.code.as_str(), "message": error.message }
                     }))
                     .map_err(io::Error::other)?;
-                    super::super::http_wire::send_response(
+                    let result = super::super::http_wire::send_response(
                         &mut socket,
                         404,
                         "application/json",
                         &body,
-                    )?;
+                    );
+                    if let Some(audit) = audit.as_mut() {
+                        audit.finish(if result.is_ok() { 404 } else { 500 });
+                    }
+                    result?;
                     return Ok(());
                 }
                 _ => {}
@@ -44,6 +58,9 @@ impl EventStreams {
         socket.set_nodelay(true)?;
         socket.set_read_timeout(Some(Duration::from_millis(1)))?;
         stream_socket::send(&mut socket, stream_socket::RESPONSE_HEADERS, SEND_DEADLINE)?;
+        if let Some(audit) = audit.as_mut() {
+            audit.finish(200);
+        }
         // The lease keeps relevance reads alive; the poke wakes the filler to
         // annotate the window before this subscriber's first drain needs it.
         let _plan_lease = request.plan.map(|plan| {

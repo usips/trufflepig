@@ -8,14 +8,23 @@ use crate::board::board_web::web_guard::{BoardWebToken, WebGuard};
 use crate::board::board_web::{WebStore, web_ops};
 use crate::board::{
     board_config::{BoardConfig, BoardConfigCache},
-    board_ids::{EventSeq, PlanId, PlanRevision},
+    board_ids::{BoardRef, EventSeq, PlanId, PlanRevision},
     board_protocol::{BoardOp, BoardReply, BoardRequest, BoardResult},
     board_vocabulary::{EntryText, PlanText, PlanTitle},
 };
 use std::io::{Read, Write};
-use std::net::{Shutdown, TcpListener};
+use std::net::{Shutdown, TcpListener, TcpStream};
 use std::sync::Arc;
 use std::time::Duration;
+
+#[test]
+fn task_and_grant_modules_are_public_assets() {
+    for path in ["/board_task_view.js", "/board_grants.js"] {
+        let (kind, source) = public_asset(path).expect("UI imports must have public routes");
+        assert_eq!(kind, "text/javascript; charset=utf-8");
+        assert!(source.contains("export"));
+    }
+}
 
 struct RenderFixture {
     _directory: tempfile::TempDir,
@@ -84,6 +93,7 @@ fn execute(fixture: &RenderFixture, op: BoardOp) -> BoardReply {
             op,
             project: None,
         },
+        "127.0.0.1".parse().unwrap(),
         Instant::now() + Duration::from_secs(5),
     )
     .unwrap()
@@ -95,7 +105,6 @@ fn create_plan(fixture: &RenderFixture) -> PlanId {
         BoardOp::New {
             title: PlanTitle::new("Plan").unwrap(),
             body: PlanText::new("base\n").unwrap(),
-            steward: None,
             repo_key: None,
         },
     );
@@ -117,7 +126,7 @@ fn render_get(fixture: &RenderFixture, path: &str) -> String {
     )
     .unwrap();
     client.shutdown(Shutdown::Write).unwrap();
-    handle(server, Instant::now(), &fixture.state);
+    handle_local(server, Instant::now(), &fixture.state);
     let mut reply = String::new();
     client.read_to_string(&mut reply).unwrap();
     reply
@@ -135,6 +144,7 @@ fn authed_post(fixture: &RenderFixture, path: &str, body: &serde_json::Value) ->
             "Host: {}\r\n",
             "Origin: http://{}\r\n",
             "X-Board-Token: {}\r\n",
+            "X-Forwarded-For: 203.0.113.10\r\n",
             "Content-Type: application/json\r\n",
             "Content-Length: {}\r\n\r\n{body}"
         ),
@@ -147,7 +157,7 @@ fn authed_post(fixture: &RenderFixture, path: &str, body: &serde_json::Value) ->
     )
     .unwrap();
     client.shutdown(Shutdown::Write).unwrap();
-    handle(server, Instant::now(), &fixture.state);
+    handle_local(server, Instant::now(), &fixture.state);
     let mut reply = String::new();
     client.read_to_string(&mut reply).unwrap();
     reply
@@ -211,7 +221,7 @@ fn challenge_post(fixture: &RenderFixture, body: &serde_json::Value) -> String {
         body = body
     )
     .unwrap();
-    handle(server, Instant::now(), &fixture.state);
+    handle_local(server, Instant::now(), &fixture.state);
     let mut reply = String::new();
     client.read_to_string(&mut reply).unwrap();
     reply
@@ -228,10 +238,15 @@ fn wrong_host_get(fixture: &RenderFixture, path: &str) -> String {
     )
     .unwrap();
     client.shutdown(Shutdown::Write).unwrap();
-    handle(server, Instant::now(), &fixture.state);
+    handle_local(server, Instant::now(), &fixture.state);
     let mut reply = String::new();
     client.read_to_string(&mut reply).unwrap();
     reply
+}
+
+fn handle_local(stream: TcpStream, accepted_at: Instant, state: &Arc<BoardWebState>) {
+    let peer_ip = stream.peer_addr().unwrap().ip();
+    handle(stream, accepted_at, state, peer_ip);
 }
 
 mod asset_tests;

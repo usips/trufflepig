@@ -20,7 +20,6 @@ fn manual_link_plan(board: &mut LocalBoard) -> (BoardActor, TaskId) {
             BoardOp::New {
                 title: PlanTitle::new("Manual links").unwrap(),
                 body: PlanText::new("Manual links").unwrap(),
-                steward: Some(HarnessLabel::parse("codex").unwrap()),
                 repo_key: None,
             },
         ))
@@ -29,6 +28,18 @@ fn manual_link_plan(board: &mut LocalBoard) -> (BoardActor, TaskId) {
         panic!("plan result")
     };
     let plan = change.plan.unwrap();
+    board
+        .handle(&BoardRequest::new(
+            owner.clone(),
+            BoardOp::Grant {
+                plan: Some(plan),
+                roles: vec![AuthorityRole::Link],
+                grantee: BoardRecipient::parse("codex").unwrap(),
+                expires_in: None,
+                note: None,
+            },
+        ))
+        .unwrap();
     board
         .handle(&BoardRequest::new(
             owner.clone(),
@@ -56,6 +67,8 @@ fn manual_link_resolution() -> LinkedCommit {
         insertions: 2,
         deletions: 3,
         plans: Vec::new(),
+        worker_refs: Vec::new(),
+        claim_links: Vec::new(),
     }
 }
 

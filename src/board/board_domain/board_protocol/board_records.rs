@@ -11,26 +11,36 @@ use serde::{Deserialize, Serialize};
 
 mod board_entry_records;
 mod board_feedback_records;
+mod board_grant_records;
+mod board_pending_records;
 mod board_plan_records;
 mod board_project_records;
 mod board_repo_records;
 mod board_search_records;
+mod board_task_records;
+mod board_worker_records;
 
 pub use board_entry_records::{
     BoardChange, EntryRecord, EntryState, EntryView, EventRecord, FeedbackVia, InboxReply,
     InboxWait,
 };
 pub use board_feedback_records::{FeedbackMetadata, FeedbackRecord, RecentCall};
+pub use board_grant_records::{GrantRecord, GrantSource};
+pub use board_pending_records::{
+    PendingNotice, PendingNoticeKind, PendingNoticeReason, PendingReply,
+};
 pub use board_plan_records::{
     ClaimEndReason, ClaimRecord, ManualCommitLink, PlanRecord, PlanView, ProposalRecord,
     ReviewEvidence, RevisionDiff, RevisionRecord, RevisionSource, TaskRecord,
 };
 pub use board_project_records::{ProjectMemberRecord, ProjectRecord};
 pub use board_repo_records::{
-    COAUTHOR_LIMIT, CommitCoauthor, CommitLinkResult, CommitPlanLink, LINK_LIMIT, LinkedCommit,
-    RepoRegistration, RepoScanTarget,
+    COAUTHOR_LIMIT, CommitClaimBasis, CommitClaimLink, CommitCoauthor, CommitLinkResult,
+    CommitPlanLink, LINK_LIMIT, LinkedCommit, RepoRegistration, RepoScanTarget, WORKER_REF_LIMIT,
 };
 pub use board_search_records::{BoardSearchHit, BoardSearchReply, BoardSearchSource};
+pub use board_task_records::TaskView;
+pub use board_worker_records::WorkerRecord;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -84,8 +94,10 @@ pub enum BoardResult {
     History(HistoryPage),
     Entries(EntriesPage),
     Tasks(TaskPage),
+    TaskView(TaskView),
     DoneTasks(DoneTasksPage),
     Claims(ClaimPage),
+    Pending(PendingReply),
     Feedback(FeedbackPage),
     Repositories(Vec<RepoScanTarget>),
     Projects(Vec<ProjectRecord>),
@@ -101,6 +113,8 @@ pub struct SessionRecord {
     pub actor: BoardActor,
     pub model: Option<String>,
     pub effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker: Option<super::WorkerAddress>,
     pub cursor: EventSeq,
     pub first_seen: i64,
     pub last_seen: i64,

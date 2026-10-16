@@ -18,6 +18,7 @@ pub enum AgentVendor {
     Gemini,
     Qwen,
     Muse,
+    System,
     Human,
     Unknown,
 }
@@ -32,6 +33,7 @@ impl AgentVendor {
             Self::Gemini => "gemini",
             Self::Qwen => "qwen",
             Self::Muse => "muse",
+            Self::System => "system",
             Self::Human => "human",
             Self::Unknown => "unknown",
         }
@@ -87,11 +89,20 @@ impl HarnessLabel {
     pub fn is_cli(&self) -> bool {
         self.as_str() == "cli"
     }
+    pub fn is_system(&self) -> bool {
+        self.as_str() == "system"
+    }
 }
 /// Vendor attribution follows the claimed model, then the harness fallback.
 pub fn claim_vendor(harness: &HarnessLabel, model: Option<&str>) -> AgentVendor {
-    if harness.is_cli() || harness.is_human() {
+    if harness.is_human() {
         return AgentVendor::Human;
+    }
+    if harness.is_system() {
+        return AgentVendor::System;
+    }
+    if harness.is_cli() {
+        return AgentVendor::Unknown;
     }
     let model = model.unwrap_or_default().trim().to_ascii_lowercase();
     if model.starts_with("claude") {
@@ -169,6 +180,10 @@ impl BoardActor {
         actor.validate()?;
         Ok(actor)
     }
+    /// Constructs the service identity used only for trusted maintenance requests.
+    pub(crate) fn system(user: impl Into<String>, host: impl Into<String>) -> Result<Self> {
+        Self::new(user, host, HarnessLabel::parse("system")?, "maintenance")
+    }
     pub fn validate(&self) -> Result<()> {
         validate_actor_component(&self.user, "user")?;
         validate_actor_component(&self.host, "host")?;
@@ -233,7 +248,15 @@ impl<'de> Deserialize<'de> for BoardActor {
 pub struct BoardRecipient(String);
 impl BoardRecipient {
     pub fn parse(value: &str) -> Result<Self> {
-        if value.contains('/') {
+        if crate::board::board_ids::TaskId::parse(value).is_ok() {
+            return Ok(Self(value.to_owned()));
+        }
+        if let Some((harness, session)) = value.split_once('/')
+            && !session.contains('/')
+        {
+            HarnessLabel::parse(harness)?;
+            validate_actor_component(session, "recipient session")?;
+        } else if value.contains('/') {
             BoardActor::parse(value)?;
         } else if value.starts_with("git:") {
             HarnessLabel::parse(value)?;
@@ -248,10 +271,27 @@ impl BoardRecipient {
     pub fn for_actor(actor: &BoardActor) -> Self {
         Self(actor.identity())
     }
+    /// Expands a harness/session shorthand within the caller's user/host scope.
+    pub fn normalize_for_caller(&self, caller: &BoardActor) -> Self {
+        let Some((harness, session)) = self.as_str().split_once('/') else {
+            return self.clone();
+        };
+        if session.contains('/') {
+            return self.clone();
+        }
+        Self(format!(
+            "{}@{}/{harness}/{session}",
+            caller.user, caller.host
+        ))
+    }
     pub fn matches(&self, actor: &BoardActor) -> bool {
-        self.as_str() == actor.user
-            || self.as_str() == actor.harness.as_str()
-            || self.as_str() == actor.identity()
+        let recipient = self.as_str();
+        recipient == actor.user
+            || recipient == actor.harness.as_str()
+            || recipient == actor.identity()
+            || recipient.split_once('/').is_some_and(|(harness, session)| {
+                harness == actor.harness.as_str() && session == actor.session
+            })
     }
 }
 impl fmt::Display for BoardRecipient {

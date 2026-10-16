@@ -8,7 +8,7 @@ fn invalid_permit_handoff_releases_capacity_without_spawning() {
     let server_addr = server.local_addr().unwrap();
     let request = StreamRequest::parse(None, None, None).unwrap();
     let refusal = streams
-        .spawn(server, request, other.reserve().unwrap())
+        .spawn(server, request, other.reserve().unwrap(), None)
         .unwrap_err();
     assert_eq!(refusal.error.kind(), io::ErrorKind::InvalidInput);
     assert_eq!(refusal.socket.local_addr().unwrap(), server_addr);

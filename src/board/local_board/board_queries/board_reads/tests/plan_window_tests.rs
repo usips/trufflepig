@@ -113,6 +113,8 @@ fn plan_windows_omit_oldest_entries_behind_a_before_cursor() {
         seq: EventSeq::new(0),
         claim_ttl_secs: 20,
         via: None,
+        origin: None,
+        authority: None,
     };
     let view = plan_view(&board.conn, &ctx, PlanId::new(1).unwrap()).unwrap();
     assert_eq!(view.entries.len(), 200);
@@ -180,6 +182,8 @@ fn plan_view_pages_past_open_extras_from_the_recent_window() {
         seq: EventSeq::new(0),
         claim_ttl_secs: 20,
         via: None,
+        origin: None,
+        authority: None,
     };
     let plan = PlanId::new(1).unwrap();
     let view = plan_view(&board.conn, &ctx, plan).unwrap();

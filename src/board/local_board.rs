@@ -1,5 +1,6 @@
 //! SQLite-backed board state, serialized mutations, and immutable evidence.
 
+mod board_authority;
 mod board_database;
 mod board_evidence;
 mod board_feed;
@@ -23,6 +24,9 @@ use super::board_ids::{
 };
 use super::board_protocol::*;
 use super::board_vocabulary::EntryKind;
+#[cfg(test)]
+use board_authority::authority_for;
+use board_authority::{write_grant, write_revoke};
 pub use board_database::SCHEMA_VERSION;
 #[cfg(test)]
 pub(crate) use board_database::seed_storage_schema;
@@ -62,6 +66,7 @@ impl BoardBackend for LocalBoard {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct WriteContext {
     pub actor_id: i64,
     pub actor: BoardActor,
@@ -71,9 +76,17 @@ pub(super) struct WriteContext {
     pub seq: EventSeq,
     pub claim_ttl_secs: i64,
     pub via: Option<FeedbackVia>,
+    pub origin: Option<ActorOrigin>,
+    pub authority: Option<AuthoritySource>,
 }
 
 impl WriteContext {
+    pub(in crate::board) fn with_authority(&self, source: AuthoritySource) -> Self {
+        Self {
+            authority: Some(source),
+            ..self.clone()
+        }
+    }
     fn change_reply(
         &self,
         entry: EntryId,

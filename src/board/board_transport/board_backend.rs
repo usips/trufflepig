@@ -6,6 +6,7 @@ mod board_wait;
 mod board_writer;
 mod linked_commit_reads;
 mod manual_commit_link;
+mod progress_head;
 #[cfg(test)]
 mod tests;
 

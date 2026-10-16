@@ -98,6 +98,15 @@ fn claim_line_shows_the_lease_entry() {
         model: Some("claimed-model".into()),
         effort: Some("xhigh".into()),
         delegated_by: None,
+        workers: Vec::new(),
+        workers_omitted: 0,
+        progress: None,
+        open_questions: 0,
+        oldest_open_question: None,
+        oldest_open_question_at: None,
+        commit_count: 0,
+        latest_commit: None,
+        latest_commit_at: None,
     };
     let mut rendered = String::new();
     claim_line(&mut rendered, &claim);

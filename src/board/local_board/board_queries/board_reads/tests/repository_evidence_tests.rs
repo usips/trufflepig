@@ -10,7 +10,6 @@ fn repositories_keep_all_plan_links_each_path_and_the_oldest_plan_boundary() {
         BoardOp::New {
             title: PlanTitle::new("Other plan").unwrap(),
             body: PlanText::new("Other scope").unwrap(),
-            steward: None,
             repo_key: None,
         },
     ) else {

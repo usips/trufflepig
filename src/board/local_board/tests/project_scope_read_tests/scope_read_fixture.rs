@@ -52,6 +52,8 @@ impl ScopeFixture {
                         body: EntryText::new(format!("addressed question {plan}")).unwrap(),
                         to: Some(BoardRecipient::parse("codex").unwrap()),
                         supersedes: None,
+                        progress: None,
+                        verdict: None,
                     },
                 ))
                 .unwrap();

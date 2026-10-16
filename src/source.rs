@@ -14,6 +14,11 @@ use std::{
 pub const MAX_READ_BYTES: usize = 16 * 1024 * 1024;
 
 pub fn read_contained(root: &Path, relative: &Path, limit: usize) -> Result<Vec<u8>> {
+    if relative.is_absolute() {
+        bail!(
+            "invalid_path: absolute paths are unsupported; use a root-relative path for indexed files, or your harness file reader for external files"
+        );
+    }
     let parts = relative.components().collect::<Vec<_>>();
     if parts.is_empty() || parts.iter().any(|p| !matches!(p, Component::Normal(_))) {
         bail!("invalid_path: use a root-relative path without parent components");

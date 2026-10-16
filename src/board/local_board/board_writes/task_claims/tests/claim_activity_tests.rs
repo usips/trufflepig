@@ -151,21 +151,21 @@ fn delayed_commit_activity_keeps_silent_claim_stale() {
 fn commit_activity_uses_claimed_model_vendor_and_harness_fallback() {
     let database = ClaimDatabase::new();
     let mut conn = database.connect();
-    for (index, (harness, model, vendor)) in [
-        ("muse", Some("Claude Sonnet 4.5"), Some("claude")),
-        ("omp", Some("gpt-6.1-sol"), Some("codex")),
-        ("muse", Some("Codex"), Some("codex")),
-        ("muse", Some("Kimi K2"), Some("kimi")),
-        ("muse", Some("Grok 4"), Some("grok")),
-        ("omp", Some("Gemini 3 Pro"), Some("gemini")),
-        ("omp", Some("Qwen3"), Some("qwen")),
-        ("omp", Some("Muse Spark"), Some("muse")),
-        ("omp", Some("Llama 4 Maverick"), Some("muse")),
-        ("codex", Some("unrecognized"), Some("codex")),
-        ("claude", None, Some("claude")),
-        ("cli", None, None),
-        ("cli", Some("gpt-6.1-sol"), None),
-        ("human", Some("Claude Sonnet 4.5"), None),
+    for (index, (harness, model, vendor, expected_last_active)) in [
+        ("muse", Some("Claude Sonnet 4.5"), Some("claude"), 1050),
+        ("omp", Some("gpt-6.1-sol"), Some("codex"), 1050),
+        ("muse", Some("Codex"), Some("codex"), 1050),
+        ("muse", Some("Kimi K2"), Some("kimi"), 1050),
+        ("muse", Some("Grok 4"), Some("grok"), 1050),
+        ("omp", Some("Gemini 3 Pro"), Some("gemini"), 1050),
+        ("omp", Some("Qwen3"), Some("qwen"), 1050),
+        ("omp", Some("Muse Spark"), Some("muse"), 1050),
+        ("omp", Some("Llama 4 Maverick"), Some("muse"), 1050),
+        ("codex", Some("unrecognized"), Some("codex"), 1050),
+        ("claude", None, Some("claude"), 1050),
+        ("cli", None, None, 1000),
+        ("cli", Some("gpt-6.1-sol"), None, 1000),
+        ("human", Some("Claude Sonnet 4.5"), None, 1050),
     ]
     .into_iter()
     .enumerate()
@@ -203,7 +203,7 @@ fn commit_activity_uses_claimed_model_vendor_and_harness_fallback() {
                 .find(|claim| claim.task == task)
                 .unwrap()
                 .last_active,
-            1050,
+            expected_last_active,
             "{harness} / {model:?}"
         );
     }

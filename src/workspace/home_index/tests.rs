@@ -97,7 +97,7 @@ fn search_without_waiting(fixture: &Fixture, root: &Path, words: &[&str]) -> Str
         &cache,
         &WorkspaceResults::open(&cache).unwrap(),
         &options,
-        &cli::request_context(&options),
+        &cli::request_context(&options).unwrap(),
         &mut crate::semantic::SemanticSession::default(),
         QueryDeadline::start(),
         HomeIndexPolicy::AwaitDaemon(Duration::ZERO),
@@ -162,22 +162,22 @@ fn warming_worktree_answers_from_parent_index_with_exact_footer() {
         "engine@wt-l1 warming → served from engine index (2 files differ); scope home (ws:all adds 2 members)"
     );
     let hit = text.lines().next().unwrap();
-    assert!(hit.contains("\tengine/lib.rs:1-1"), "{text}");
-    assert!(hit.ends_with("\tdiffers"), "{text}");
+    assert!(hit.contains("\tengine/lib.rs:3-3"), "{text}");
+    assert!(!hit.ends_with("\tdiffers"), "{text}");
     let page = seeded.search_json(&["search", "SharedThing"]);
     let hits = page["hits"].as_array().unwrap();
     assert!(
         hits.iter().all(|hit| hit["member"] == "engine"),
         "no sibling-member hits: {page}"
     );
-    assert_eq!(hits[0]["differs"], true);
+    assert_ne!(hits[0]["differs"], true);
     let coverage = &page["coverage"][0];
     assert_eq!(coverage["state"], "parent_fallback");
     assert_eq!(coverage["home_state"], "warming");
     assert_eq!(coverage["served_from"], "engine index");
     assert_eq!(coverage["differs"], 2);
-    assert_eq!(coverage["differing_hits"], 1);
-    // `sym:` re-extracts the changed file, so its hit is current and unflagged.
+    assert_eq!(coverage["differing_hits"], 0);
+    // Exact and plain searches re-evaluate changed files from current bytes.
     let current = seeded.search(&["--format", "lines", "search", "sym:SharedThing"]);
     let hit = current.lines().next().unwrap();
     assert!(hit.contains("\tengine/lib.rs:3-3"), "{current}");
@@ -252,6 +252,90 @@ fn parent_answer_reads_worktree_bytes_and_worktree_only_symbols() {
         serde_json::from_str(&seeded.show(&["show", "sym:untouched_helper"]).unwrap()).unwrap();
     assert_eq!(shown["path"], "only.rs", "{shown}");
     assert_eq!(shown["definitions"], 2);
+}
+
+#[test]
+fn plain_identifier_search_reextracts_changed_worktree_definitions() {
+    let seeded = SeededWorktree::new();
+
+    let unchanged = seeded.search_json(&["search", "untouched_helper", "in:engine"]);
+    let unchanged_hits = unchanged["hits"].as_array().unwrap();
+    assert_eq!(unchanged_hits.len(), 1, "{unchanged}");
+    assert!(
+        unchanged_hits[0]["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("/other.rs"),
+        "{unchanged}"
+    );
+    assert_ne!(unchanged_hits[0]["differs"], true, "{unchanged}");
+
+    let existing = seeded.search_json(&["search", "SharedThing", "in:engine"]);
+    let existing_hits = existing["hits"].as_array().unwrap();
+    assert_eq!(existing_hits.len(), 1, "{existing}");
+    assert_eq!(existing_hits[0]["name"], "SharedThing", "{existing}");
+
+    let concept = seeded.search_json(&["search", "SharedThing struct file:lib.rs", "in:engine"]);
+    assert!(!concept["hits"].as_array().unwrap().is_empty(), "{concept}");
+
+    fs::write(
+        seeded.worktree.join("lib.rs"),
+        "// lexicalneedlemarker\npub struct ReplacementThing;\npub fn added_in_worktree() { let _ = WorktreeOnlySymbol; }\n",
+    )
+    .unwrap();
+
+    let removed = seeded.search_json(&["search", "SharedThing", "in:engine"]);
+    assert!(removed["hits"].as_array().unwrap().is_empty(), "{removed}");
+
+    let added = seeded.search_json(&["search", "ReplacementThing", "in:engine"]);
+    let added_hits = added["hits"].as_array().unwrap();
+    assert!(
+        added_hits
+            .iter()
+            .any(|hit| hit["name"] == "ReplacementThing"),
+        "{added}"
+    );
+    assert!(
+        added_hits
+            .iter()
+            .all(|hit| hit["file"].as_str().unwrap().ends_with("/lib.rs"))
+    );
+
+    let reference = seeded.search_json(&["search", "WorktreeOnlySymbol file:lib.rs", "in:engine"]);
+    assert_eq!(
+        reference["hits"].as_array().unwrap().len(),
+        1,
+        "{reference}"
+    );
+    assert!(
+        reference["hits"][0]["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("/lib.rs"),
+        "{reference}"
+    );
+    assert_ne!(reference["hits"][0]["differs"], true, "{reference}");
+
+    let lexical = seeded.search_json(&["search", "lexicalneedlemarker", "in:engine"]);
+    let lexical_hits = lexical["hits"].as_array().unwrap();
+    assert_eq!(lexical_hits.len(), 1, "{lexical}");
+    assert_ne!(lexical_hits[0]["differs"], true, "{lexical}");
+    assert!(
+        lexical_hits[0]["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("/lib.rs")
+    );
+
+    let filename = seeded.search_json(&["search", "lib lang:rust file:lib.rs", "in:engine"]);
+    assert!(
+        filename["hits"].as_array().is_some_and(|hits| {
+            hits.iter().any(|hit| {
+                hit["file"].as_str().unwrap().ends_with("/lib.rs") && hit["name"] != "SharedThing"
+            })
+        }),
+        "{filename}"
+    );
 }
 
 #[test]
@@ -547,10 +631,9 @@ fn hash_check_catches_changes_git_divergence_misses() {
             .starts_with("engine@wt-l3 warming → served from engine index (1 file differs)"),
         "{text}"
     );
-    assert!(
-        text.lines().next().unwrap().ends_with("\tdiffers"),
-        "{text}"
-    );
+    let hit = text.lines().next().unwrap();
+    assert!(hit.contains("\tengine/lib.rs:4-4"), "{text}");
+    assert!(!hit.ends_with("\tdiffers"), "{text}");
     let symbol = search_without_waiting(
         &fixture,
         &worktree,

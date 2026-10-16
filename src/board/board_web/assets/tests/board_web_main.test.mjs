@@ -40,7 +40,7 @@ function boardReply(op, data, seq = "40") {
   return {
     ok: true, status: 200,
     text: async () => JSON.stringify({
-      api: 8, result: { result: op, data }, snapshot_seq: seq, warnings: [],
+      api: 11, result: { result: op, data }, snapshot_seq: seq, warnings: [],
     }),
   };
 }
@@ -50,6 +50,7 @@ function boardData(op) {
   if (op === "overview") return { plans: [], through: null, server_now: 1700000000 };
   if (op === "feed") return { events: [] };
   if (op === "attention") return { entries: [] };
+  if (op === "feedback_list") return { feedback: [], omitted: 0 };
   throw new Error(`unexpected board op ${op}`);
 }
 
@@ -66,12 +67,13 @@ function seedShell() {
     item.setAttribute("name", name); item.setAttribute("content", content);
     item.content = content; document.body.append(item);
   };
-  meta("board-api", "8"); meta("board-id", "board-test");
+  meta("board-api", "11"); meta("board-id", "board-test");
   const main = document.createElement("main");
   main.id = "main"; main.setAttribute("tabindex", "-1"); document.body.append(main);
   for (const [tag, id] of [
     ["span", "connection"], ["span", "connection-announce"], ["span", "freshness"],
     ["div", "notice"], ["button", "refresh"], ["span", "attention-count"],
+    ["span", "feedback-count"],
   ]) {
     const item = document.createElement(tag);
     item.id = id; document.body.append(item);
@@ -144,6 +146,9 @@ describe("board_web_main bootstrap", () => {
     assert.equal(sessionStorage.getItem(TOKEN_KEY), T2);
     assert.equal(await waitFor(() => fetchCalls.some(call => call.token === T2)), true);
     assert.equal(await waitFor(() => localStorage.getItem(SEEN_KEY) === "40"), true);
+    const feedbackCount = document.getElementById("feedback-count");
+    assert.equal(await waitFor(() => feedbackCount.textContent === "0"), true);
+    assert.equal(feedbackCount.hidden, true);
   });
 
   it("the offered token never lingers in the URL", async () => {

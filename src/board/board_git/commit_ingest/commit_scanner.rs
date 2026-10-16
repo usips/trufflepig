@@ -18,7 +18,7 @@ const TIP_LIMIT: usize = 4096;
 const AUXILIARY_BUDGET: Duration = Duration::from_secs(1);
 const FINAL_SCAN_RESERVE: Duration = Duration::from_millis(500);
 
-const GREP_PATTERN: &str = "^Plan(-Task)?[[:space:]]*:";
+const GREP_PATTERN: &str = "^Plan(-Task|-Worker)?[[:space:]]*:";
 
 #[cfg(test)]
 thread_local! {

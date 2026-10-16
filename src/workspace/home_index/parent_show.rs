@@ -3,8 +3,8 @@
 //! bytes cannot be extracted falls back to the parent index's stored bytes,
 //! marked unverified. Reads never create or write an index.
 use super::{
-    HomeIndexPolicy, HomeIndexSource, ParentIndexView, WorktreeHashes, resolve_home_index,
-    worktree_reads::unextractable,
+    HomeIndexPolicy, HomeIndexSource, ParentIndexView, WorktreeHashes, is_reextracted_worktree_hit,
+    resolve_home_index, worktree_reads::unextractable,
 };
 use crate::{
     daemon::deadline::QueryDeadline,
@@ -16,6 +16,7 @@ use crate::{
     workspace::member_root::MemberRoot,
 };
 use anyhow::{Context, Result};
+use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
 use std::path::Path;
 
@@ -148,7 +149,7 @@ pub(crate) fn acquire_through_parent(
     found.hits = symbols.hits;
     let read = std::cell::Cell::new(None);
     let source = acquisition::read_symbol(store, &query, found, origin, |handle, hit| {
-        let reextracted = hit.provenance.as_deref() == Some("reextracted");
+        let reextracted = is_reextracted_worktree_hit(&hit);
         let entry = ResultEntry::LiveSource(hit);
         match acquisition::acquire_entry(store, handle, entry.clone(), None) {
             Ok(source) => {
@@ -209,20 +210,39 @@ pub(crate) fn reextracted_entry(
 
 /// The parent index's stored bytes for `hit`, unverified against the worktree.
 fn indexed_source(store: &Store, handle: &str, hit: &Hit) -> Result<AcquiredSource> {
-    let revision = hit
-        .revision
-        .as_deref()
-        .context("source_excluded: no indexed source revision")?;
-    let bytes: Vec<u8> = store.conn.query_row(
-        "SELECT bytes FROM contents WHERE revision=?1",
-        [revision],
-        |row| row.get(0),
+    let (revision, bytes): (String, Vec<u8>) = store.conn.query_row(
+        "SELECT f.revision,c.bytes FROM files f JOIN contents c ON c.revision=f.revision
+         WHERE f.path=?1 AND f.revision IS NOT NULL",
+        [&hit.path],
+        |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
-    let span = ByteSpan::new(hit.start, hit.end)?.validate(bytes.len())?;
+    let span = if hit.revision.as_deref() == Some(revision.as_str()) {
+        ByteSpan::new(hit.start, hit.end)?.validate(bytes.len())?
+    } else {
+        let definition = store
+            .conn
+            .query_row(
+                "SELECT d.start,d.end FROM definitions d JOIN files f ON f.id=d.file_id
+                 WHERE f.path=?1 AND d.name=?2 AND d.kind=?3
+                 ORDER BY ABS(d.start-?4),d.start LIMIT 1",
+                params![hit.path, hit.name, hit.kind, hit.start as i64],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)? as usize,
+                        row.get::<_, i64>(1)? as usize,
+                    ))
+                },
+            )
+            .optional()?;
+        match definition {
+            Some((start, end)) => ByteSpan::new(start, end)?.validate(bytes.len())?,
+            None => ByteSpan::new(0, bytes.len())?,
+        }
+    };
     Ok(AcquiredSource {
         bytes,
         path: hit.path.clone(),
-        revision: ContentRevision::parse(revision)?,
+        revision: ContentRevision::parse(&revision)?,
         span,
         verified: false,
         handle: handle.to_owned(),

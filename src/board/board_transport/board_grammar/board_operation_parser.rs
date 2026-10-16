@@ -11,6 +11,7 @@ mod board_feedback_parser;
 mod board_read_parser;
 mod board_syntax_validation;
 mod board_task_claim_parser;
+mod board_v10_parser;
 
 use board_command_parser::parse_board;
 use board_feedback_parser::parse_feedback;

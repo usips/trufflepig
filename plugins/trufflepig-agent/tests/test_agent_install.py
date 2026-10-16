@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 import unittest
+from unittest.mock import patch
 
 from agent_install_case import PLUGIN, AgentInstallCase
 
@@ -37,7 +38,10 @@ import json
 import os
 import sys
 from pathlib import Path
-Path(os.environ["CAPTURE"]).write_text(json.dumps(sys.argv[1:]))
+capture = Path(os.environ["CAPTURE"])
+calls = json.loads(capture.read_text()) if capture.exists() else []
+calls.append({{"args": sys.argv[1:], "session": os.environ.get("TRUFFLEPIG_SESSION")}})
+capture.write_text(json.dumps(calls))
 print(json.dumps({{"hits": [], "truncated": False}}))
 ''')
         fake_cli.chmod(0o755)
@@ -50,11 +54,19 @@ print(json.dumps({{"hits": [], "truncated": False}}))
         result = subprocess.run([str(wrapper), "search", "installed-wrapper-probe"],
                                 env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        forwarded = json.loads(capture.read_text())
-        self.assertIn("search", forwarded)
-        self.assertIn("installed-wrapper-probe", forwarded)
-        self.assertIn("--session", forwarded)
-        self.assertIn("install-test-session", forwarded)
+        calls = json.loads(capture.read_text())
+        forwarded = next(call for call in calls if "search" in call["args"])
+        self.assertIn("installed-wrapper-probe", forwarded["args"])
+        self.assertIn("--client", forwarded["args"])
+        self.assertIn("codex", forwarded["args"])
+        self.assertNotIn("--session", forwarded["args"])
+        self.assertEqual(forwarded["session"], "install-test-session")
+        self.assertTrue(any(call["args"][-2:] == ["board", "pending"] for call in calls))
+
+        audit = self.root / "state/trufflepig/agent-audit/codex.jsonl"
+        records = [json.loads(line) for line in audit.read_text().splitlines()]
+        search_record = next(record for record in records if record["verb"] == "search")
+        self.assertEqual(search_record["session"], "install-test-session")
 
         for profile in (".profile", ".bash_profile", ".bashrc", ".zprofile", ".zshrc"):
             self.assertFalse((self.root / profile).exists(), profile)
@@ -101,6 +113,24 @@ print(json.dumps({{"hits": [], "truncated": False}}))
                                  "--wrapper", str(fake), str(self.root)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 2)
         self.assertIn("member daemons", result.stderr)
+
+    def test_claude_check_verifies_hooks_and_current_service_without_restart(self):
+        module = self.load_installer("install_claude_check_contract")
+        runtime = self.root / "checked-runtime"
+        applied_services = []
+        completed = subprocess.CompletedProcess(["check_agent.py"], 0, "", "")
+        with patch.dict(os.environ, self.env), \
+                patch.object(sys, "argv", ["install.sh", "--claude", "--check", str(self.root)]), \
+                patch.object(module.shutil, "which", return_value="/test/bin/trufflepig"), \
+                patch.object(module, "require_board_api") as require_api, \
+                patch.object(module, "system_runtime_path", return_value=runtime), \
+                patch.object(module, "require_current_router") as require_router, \
+                patch.object(module, "apply_units", side_effect=lambda *args: applied_services.append(args)), \
+                patch.object(module.subprocess, "run", return_value=completed):
+            self.assertEqual(module.main(), 0)
+        require_api.assert_called_once_with("/test/bin/trufflepig")
+        require_router.assert_called_once_with(runtime, require_schema=True)
+        self.assertEqual(applied_services, [])
 
 
 if __name__ == "__main__":

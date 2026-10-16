@@ -7,13 +7,14 @@ pub(in crate::board::local_board) use feedback_imports::{imported_reply, remembe
 pub(in crate::board::local_board) use feedback_transitions::close_feedback;
 
 use super::super::{
-    EntryDraft, WriteContext, can_accept, insert_entry, insert_event, invalid, read_entry,
-    require_plan, sql_error, sqlite_id, sqlite_u64,
+    EntryDraft, WriteContext, insert_entry, insert_event, invalid, read_entry, require_plan,
+    sql_error, sqlite_id, sqlite_u64,
 };
 use crate::board::board_actor::{BoardActor, BoardRecipient};
 use crate::board::board_ids::EntryId;
 use crate::board::board_protocol::{
-    BoardChange, BoardError, BoardOp, BoardReply, BoardResult, EntryRecord,
+    AuthorityRole, AuthoritySource, BoardChange, BoardError, BoardOp, BoardReply, BoardResult,
+    EntryRecord,
 };
 #[cfg(test)]
 use crate::board::board_protocol::{FeedbackMetadata, FeedbackRecord};
@@ -60,9 +61,10 @@ pub(in crate::board::local_board) fn write_feedback(
         Some(body) => format!("{}\n\n{}", summary.as_str(), body.as_str()),
         None => summary.as_str().to_owned(),
     };
+    let report_ctx = ctx.with_authority(AuthoritySource::Reporter);
     let entry = insert_entry(
         tx,
-        ctx,
+        &report_ctx,
         &EntryDraft {
             plan_id: *plan,
             kind: EntryKind::Feedback,
@@ -104,7 +106,7 @@ pub(in crate::board::local_board) fn write_feedback(
     }
     insert_event(
         tx,
-        ctx,
+        &report_ctx,
         *plan,
         EntryKind::Feedback,
         &entry.to_string(),
@@ -154,14 +156,31 @@ pub(in crate::board::local_board) fn can_manage_feedback(
     conn: &Connection,
     actor: &BoardActor,
     report: &EntryRecord,
+    now: i64,
 ) -> Result<bool, BoardError> {
+    Ok(feedback_authority(conn, actor, report, now)?.is_some())
+}
+
+pub(in crate::board::local_board) fn feedback_authority(
+    conn: &Connection,
+    actor: &BoardActor,
+    report: &EntryRecord,
+    now: i64,
+) -> Result<Option<AuthoritySource>, BoardError> {
     if report.kind != EntryKind::Feedback {
-        return Ok(false);
+        return Ok(None);
     }
-    match report.plan {
-        Some(plan) => can_accept(conn, actor, plan),
-        None => Ok(actor.user == report.actor.user && actor.harness.is_human()),
+    if actor == &report.actor {
+        return Ok(Some(AuthoritySource::Reporter));
     }
+    super::super::board_authority::authority_for_feedback(
+        conn,
+        actor,
+        report.plan,
+        &report.actor.user,
+        AuthorityRole::Triage,
+        now,
+    )
 }
 
 fn truncate_entry_summary(text: &mut String) {

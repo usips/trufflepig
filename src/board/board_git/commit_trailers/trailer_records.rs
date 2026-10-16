@@ -2,7 +2,7 @@
 use super::{ParsedCommit, parse_coauthor};
 use crate::board::board_ids::{PlanId, RepoKey, TaskId};
 use crate::board::board_protocol::{
-    COAUTHOR_LIMIT, CommitCoauthor, CommitPlanLink, LINK_LIMIT, LinkedCommit,
+    COAUTHOR_LIMIT, CommitCoauthor, CommitPlanLink, LINK_LIMIT, LinkedCommit, WorkerAddress,
 };
 use crate::identity::GitOid;
 use anyhow::{Context, Result, ensure};
@@ -23,13 +23,16 @@ pub(super) fn parse_record(fields: &[&[u8]], repo_key: &RepoKey) -> Result<Parse
     let subject = lossy_field(fields[3], "subject", &mut warnings);
     let plan_field = lossy_field(fields[4], "Plan trailer", &mut warnings);
     let task_field = lossy_field(fields[5], "Plan-Task trailer", &mut warnings);
-    let coauthor_field = lossy_field(fields[6], "Co-authored-by trailer", &mut warnings);
-    let shortstat_field = lossy_field(fields[7], "shortstat", &mut warnings);
+    let worker_field = lossy_field(fields[6], "Plan-Worker trailer", &mut warnings);
+    let coauthor_field = lossy_field(fields[7], "Co-authored-by trailer", &mut warnings);
+    let shortstat_field = lossy_field(fields[8], "shortstat", &mut warnings);
     let raw_plans = trailer_values(&plan_field, "Plan")?;
-    let has_plan_trailer = !raw_plans.is_empty();
     let raw_tasks = trailer_values(&task_field, "Plan-Task")?;
-    let plans: BTreeSet<PlanId> = trailer_ids(raw_plans, "Plan", &mut warnings);
-    let tasks: BTreeSet<TaskId> = trailer_ids(raw_tasks, "Plan-Task", &mut warnings);
+    let raw_workers = trailer_values(&worker_field, "Plan-Worker")?;
+    let has_plan_trailer = !raw_plans.is_empty();
+    let mut plans: BTreeSet<PlanId> = trailer_ids(raw_plans, "Plan", &mut warnings);
+    let mut tasks: BTreeSet<TaskId> = trailer_ids(raw_tasks, "Plan-Task", &mut warnings);
+    let worker_refs = worker_addresses(raw_workers, &mut plans, &mut tasks, &mut warnings);
     if tasks.iter().any(|task| !plans.contains(&task.plan)) {
         warnings.push("plan_task_without_plan".to_owned());
     }
@@ -99,9 +102,51 @@ pub(super) fn parse_record(fields: &[&[u8]], repo_key: &RepoKey) -> Result<Parse
                 insertions,
                 deletions,
                 plans: links,
+                worker_refs,
+                claim_links: Vec::new(),
             },
         },
     })
+}
+
+/// A syntactically valid task in a malformed worker trailer still identifies a
+/// task link; only valid addresses are persisted as worker metadata.
+fn worker_addresses(
+    values: Vec<&str>,
+    plans: &mut BTreeSet<PlanId>,
+    tasks: &mut BTreeSet<TaskId>,
+    warnings: &mut Vec<String>,
+) -> Vec<WorkerAddress> {
+    let mut addresses = Vec::with_capacity(values.len());
+    let mut malformed = 0usize;
+    let mut first_malformed: Option<anyhow::Error> = None;
+    for value in values {
+        let task_value = value.split_once('/').map_or(value, |(task, _)| task);
+        if let Ok(task) = task_value.parse::<TaskId>() {
+            plans.insert(task.plan);
+            tasks.insert(task);
+        }
+        let address = match value.parse::<WorkerAddress>() {
+            Ok(address) => Some(address),
+            Err(error) => {
+                first_malformed.get_or_insert(error);
+                None
+            }
+        };
+        if let Some(address) = address {
+            if !addresses.contains(&address) {
+                addresses.push(address);
+            }
+        } else {
+            malformed += 1;
+        }
+    }
+    if let Some(error) = first_malformed {
+        warnings.push(format!(
+            "skipped {malformed} malformed Plan-Worker trailer(s): {error:#}"
+        ));
+    }
+    addresses
 }
 
 /// Metadata fields decode lossily so one bad byte never drops a record.

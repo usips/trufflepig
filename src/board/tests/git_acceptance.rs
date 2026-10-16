@@ -7,11 +7,7 @@ use super::*;
 fn ingest_crossed_claim() -> (EdgeFixture, String) {
     let fixture = EdgeFixture::new();
     fixture.seed_repo();
-    fixture.run(
-        &["board", "new", "Git acceptance", "--steward", "codex"],
-        "human",
-        "owner",
-    );
+    fixture.run(&["board", "new", "Git acceptance"], "human", "owner");
     fixture.run(&["board", "task", "P1", "Parser lane"], "human", "owner");
     fixture.run(
         &["board", "hello", "claude-opus", "high"],
@@ -120,22 +116,32 @@ fn unrecognized_git_coauthor_ingests_and_reply_evidence_round_trips() {
     let crate::board::board_protocol::BoardResult::Plan(view) = decoded.result else {
         panic!("expected plan view");
     };
+    let scanned_entry = view
+        .entries
+        .iter()
+        .find(|entry| entry.kind == crate::board::board_vocabulary::EntryKind::Commit)
+        .expect("scan should create a commit entry");
+    assert!(scanned_entry.actor.harness.is_system());
+    assert_eq!(scanned_entry.actor.session, "ingest");
     assert!(
-        view.entries
-            .iter()
-            .any(|entry| entry.actor.harness.as_str() == "git:alice@example.com")
+        scanned_entry
+            .origin
+            .as_ref()
+            .is_some_and(|origin| { origin.harness.is_system() && origin.session == "ingest" })
     );
+    assert!(view.commits.iter().any(|commit| {
+        commit.coauthors.iter().any(|coauthor| {
+            coauthor.email == "alice@example.com"
+                && coauthor.harness.as_str() == "git:alice@example.com"
+        })
+    }));
 }
 
 #[test]
 fn misplaced_trailers_surface_in_ingest_warnings_and_review_scan_errors() {
     let fixture = EdgeFixture::new();
     fixture.seed_repo();
-    fixture.run(
-        &["board", "new", "Misplaced trailers", "--steward", "codex"],
-        "human",
-        "owner",
-    );
+    fixture.run(&["board", "new", "Misplaced trailers"], "human", "owner");
     fixture.run(&["board", "task", "P1", "Trailer lane"], "human", "owner");
     // The W5-H1 shape: blank lines between trailers, so Git parses only the
     // final paragraph (the co-author) and ignores both plan trailers.

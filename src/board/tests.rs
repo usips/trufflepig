@@ -99,6 +99,31 @@ impl EdgeFixture {
         .unwrap()
     }
 
+    fn grant_plan_role(
+        &self,
+        plan: &str,
+        role: &str,
+        grantee: &str,
+        grantor_session: &str,
+    ) -> Value {
+        let options = self.options(&["board", "grant", plan, role, "--to", grantee]);
+        let forwarded = board_grammar::normalize_args(&[], &options, None).unwrap();
+        let options = cli::parse(&forwarded).unwrap();
+        let actor = self.actor("human", grantor_session);
+        let context = RequestContext::with_origin(
+            Some(grantor_session.to_owned()),
+            Some("human".to_owned()),
+            Some(crate::board::board_protocol::ActorOrigin::from_actor(
+                &actor,
+            )),
+        );
+        let response = self
+            .host
+            .run(&options, &context, QueryDeadline::start())
+            .unwrap();
+        serde_json::from_str(&response).unwrap()
+    }
+
     fn cursor(&self, harness: &str, session: &str) -> u64 {
         let conn = Connection::open(&self.config.db_path).unwrap();
         conn.query_row(

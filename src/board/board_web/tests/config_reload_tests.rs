@@ -19,7 +19,6 @@ fn config_reload_reaches_reader_ttl_and_attention_without_events() {
         BoardOp::New {
             title: PlanTitle::new("Trial").unwrap(),
             body: PlanText::new("old\n").unwrap(),
-            steward: None,
             repo_key: None,
         },
     );

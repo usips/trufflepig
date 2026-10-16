@@ -60,6 +60,8 @@ impl BoardHost {
     ) -> Result<BoardReply> {
         check_deadline(deadline)?;
         request.validate()?;
+        let verified = self.verify_progress_head(request, deadline)?;
+        let request = verified.as_ref().unwrap_or(request);
         if matches!(request.op, BoardOp::Projects) {
             let config = self.config()?;
             let projects = self.projects(&request.actor.host, deadline)?;
@@ -91,6 +93,9 @@ impl BoardHost {
                     if !config.db_path.exists()
                         || LocalBoard::needs_writable_initialization(&error) =>
                 {
+                    if matches!(request.op, BoardOp::Pending { .. }) {
+                        return Err(error.into());
+                    }
                     if LocalBoard::needs_writable_initialization(&error)
                         && !board_storage_owner_writable(&config.db_path)
                     {

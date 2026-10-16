@@ -2,6 +2,8 @@
 mod board_api_probe;
 mod client_command;
 use client_command::ClientCommand;
+mod client_identity;
+pub use client_identity::request_context;
 mod dispatch;
 pub mod emission;
 mod emitted_evidence;
@@ -43,18 +45,8 @@ pub fn run(args: &[String]) -> Result<String> {
         return answer;
     }
     let options = parse(args)?;
-    let context = request_context(&options);
+    let context = request_context(&options)?;
     run_with_context(args, &context)
-}
-
-pub fn request_context(options: &Arguments) -> crate::diagnostics::RequestContext {
-    crate::diagnostics::RequestContext::new(
-        options
-            .session
-            .clone()
-            .or_else(|| std::env::var("TRUFFLEPIG_SESSION").ok()),
-        options.client.clone(),
-    )
 }
 
 /// Runs a client command, through the system router when the verb routes there.

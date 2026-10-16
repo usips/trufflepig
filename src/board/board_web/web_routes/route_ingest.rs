@@ -11,7 +11,7 @@ use std::{net::TcpStream, sync::Arc, time::Instant};
 /// 202 immediately with the flight ticket; one router scan runs at a time,
 /// its completion published to stream subscribers as an `ingest` frame, and
 /// mid-scan POSTs take the next ticket and rerun once per dirty flag.
-pub(super) fn ingest_accepted(mut stream: TcpStream, state: &Arc<BoardWebState>) {
+pub(super) fn ingest_accepted(mut stream: TcpStream, state: &Arc<BoardWebState>) -> u16 {
     let claim = state.ingest.begin();
     if claim.leads {
         let relay_state = Arc::clone(state);
@@ -42,7 +42,7 @@ pub(super) fn ingest_accepted(mut stream: TcpStream, state: &Arc<BoardWebState>)
                 "board_unavailable",
                 "ingest relay unavailable",
             );
-            return;
+            return 503;
         }
     }
     let body = serde_json::to_vec(&serde_json::json!({
@@ -50,6 +50,7 @@ pub(super) fn ingest_accepted(mut stream: TcpStream, state: &Arc<BoardWebState>)
     }))
     .expect("queued serialization cannot fail");
     let _ = http_wire::send_response(&mut stream, 202, "application/json", &body);
+    202
 }
 
 /// Relay outcomes keep the board error envelope so subscribers render a

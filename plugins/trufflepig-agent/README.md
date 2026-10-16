@@ -67,7 +67,7 @@ that spool to the CLI, and `--systemd` installs it in the router's environment. 
 callers set `TRUFFLEPIG_SPOOL_DIR` to the same path. Index databases keep normal cache locations.
 
 `--systemd` installs the router; opt-in `--board` installs the foreground dashboard
-on a stable loopback port (see the [web contract](../../docs/board-web-contract.md)). Both pin
+on a stable loopback port; optional LAN access follows the [web security contract](../../docs/board-web-security.md). Both pin
 the same absolute board database and system runtime/token directory. Reinstalling the router
 restarts it and starts the board only if it was running; `trufflepig board web` prints the
 current bootstrap URL. Router restarts include all service-owned children. `--check ROOT`
@@ -127,15 +127,15 @@ search an explicit target; this does not establish compiler-equivalent binding.
 
 ## Attribution and audit
 
-`trufflepig-agent` injects compact lines output, client, session, and detailed diagnostics
-unless explicitly supplied. Codex markers identify the harness; `CODEX_THREAD_ID` groups its
-calls across working directories, with `CODEX_SESSION_ID` as a fallback. Explicit CLI
-`--client`/`--session` win over `TRUFFLEPIG_AGENT_HARNESS`/`TRUFFLEPIG_SESSION`, which win
-over detection. Claude attribution uses its session environment hook as described in
-[Claude integration](claude-code.md). [omp integration](omp.md) supplies session identity in
-each shell invocation. Kimi/Muse retain their own session variables and session-start
-markers; a marker older than twelve hours is ignored. Without session information,
-attribution falls back to a harness/directory/day identifier.
+`trufflepig-agent` defaults line output, detailed diagnostics, and a client label. Native markers
+and process ancestry select the harness before the fallback hint; detected harnesses cannot claim
+`human` or `cli`. Board actor session precedence is CLI `--session`, `TRUFFLEPIG_SESSION`, native
+provider ID, then `AGENT_SESSION_ID`; absent all, the actor session is unattributed. Origin preserves
+the observed harness/session despite a CLI session claim. Diagnostic baselines come only from
+explicit `--session` or `TRUFFLEPIG_SESSION`. Codex prefers `CODEX_THREAD_ID` over
+`CODEX_SESSION_ID`; Claude/omp/OpenCode integrations supply provider IDs per call. Kimi/Muse harness markers
+and ancestry detect the harness, but session-start markers do not supply actor identity. No
+cwd/date ID is synthesized. See [Claude integration](claude-code.md) and [omp integration](omp.md).
 
 Each call logs arguments, exit code, latency, byte count, coverage, truncation, and struggle
 signals. Board/feedback text is redacted. Logs use `$TRUFFLEPIG_AGENT_LOG_DIR`, otherwise

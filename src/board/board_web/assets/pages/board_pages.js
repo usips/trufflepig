@@ -51,7 +51,7 @@ export function createBoardDetails(context) {
     const base = revision?.id || "";
     const key = mode === "new" ? "new" : `${mode}:${base}`;
     const draft = state.drafts.get(key)
-      || { title: "", body: revision?.body || "", summary: "", steward: "", repo_key: "", base };
+      || { title: "", body: revision?.body || "", summary: "", repo_key: "", base };
     const page = add(el("div"), title(
       mode === "new" ? "New plan" : "Edit plan",
       base
@@ -65,8 +65,7 @@ export function createBoardDetails(context) {
       multiline: true, className: "ssot-editor", maxLength: 32768, hint: "Markdown, up to 32 KiB",
     });
     fields.push(body);
-    if (mode === "new") fields.push(field("Steward harness", "steward", draft.steward, { hint: "optional" }));
-    else fields.push(field("Change summary", "summary", draft.summary, { required: true, maxLength: 4096 }));
+    if (mode !== "new") fields.push(field("Change summary", "summary", draft.summary, { required: true, maxLength: 4096 }));
     if (mode === "new" && repositories.length) {
       const known = new Map();
       for (const target of repositories) {
@@ -110,12 +109,12 @@ export function createBoardDetails(context) {
       const op = mode === "new"
         ? {
           op: "new", title: values.title, body: values.body,
-          steward: values.steward || null, repo_key: values.repo_key || null,
+          repo_key: values.repo_key || null,
         }
         : { op: mode, base: draft.base, body: values.body, summary: values.summary };
       void submitMutation(form, op, (reply, current) => {
         state.drafts.delete(key);
-        Object.assign(draft, { title: "", body: revision?.body || "", summary: "", steward: "", repo_key: "" });
+        Object.assign(draft, { title: "", body: revision?.body || "", summary: "", repo_key: "" });
         for (const item of fields) item.input.value = draft[item.input.name] || "";
         if (!current) return;
         notice("Plan saved.", "success");

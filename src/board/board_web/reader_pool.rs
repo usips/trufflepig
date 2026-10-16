@@ -234,7 +234,6 @@ mod tests {
             BoardOp::New {
                 title: PlanTitle::new("forbidden write").unwrap(),
                 body: PlanText::new("").unwrap(),
-                steward: None,
                 repo_key: None,
             },
         );

@@ -41,6 +41,9 @@ function dataFor(request) {
   if (op.op === "projects") return projectRecords;
   if (op.op === "overview") return { plans: rows, through: "100", server_now: 1700000000 };
   if (op.op === "attention") return { entries: rows.map(entry), through: "100" };
+  if (op.op === "feedback_list") return op.limit === 1
+    ? { feedback: [{}], omitted: 9, through: "100", open_only: true }
+    : { feedback: [], omitted: 0, through: "100", open_only: op.open_only };
   if (op.op === "feed") return { events: rows.map(event), through: "100" };
   if (op.op === "claims") return { claims: rows.map(item => ({ claim: claim(item.plan.id) })) };
   if (op.op === "repositories") {
@@ -70,14 +73,14 @@ export function setupProjectPage({ hash = "#/", storedProject = "", handler } = 
   resetDomShim();
   globalThis.setInterval = () => 0;
   let url = new URL(`https://board.test/${hash}`);
-  for (const [name, content] of [["board-api", "8"], ["board-id", "project-fixture"]]) {
+  for (const [name, content] of [["board-api", "11"], ["board-id", "project-fixture"]]) {
     const meta = document.createElement("meta");
     meta.setAttribute("name", name); meta.content = content; document.body.append(meta);
   }
   for (const [tag, id] of [
     ["main", "main"], ["select", "project"], ["span", "project-warning"], ["span", "connection"],
     ["span", "connection-announce"], ["span", "freshness"], ["div", "notice"],
-    ["button", "refresh"], ["span", "attention-count"],
+    ["button", "refresh"], ["span", "attention-count"], ["span", "feedback-count"],
   ]) {
     const node = document.createElement(tag); node.id = id;
     if (id === "main") node.setAttribute("tabindex", "-1");
@@ -105,7 +108,7 @@ export function setupProjectPage({ hash = "#/", storedProject = "", handler } = 
     if (String(address).includes("/api/v1/events")) return new Promise(() => {});
     if (String(address).includes("/api/v1/render/")) {
       return { ok: true, status: 200, text: async () => JSON.stringify({
-        api: 8, html: "", headings: [], snapshot_seq: "100",
+        api: 11, html: "", headings: [], snapshot_seq: "100",
       }) };
     }
     const request = JSON.parse(options.body); calls.push(request);

@@ -53,7 +53,7 @@ pub(super) fn populated_v1(directory: &tempfile::TempDir) -> (PathBuf, Vec<i64>)
         params![revision_hash, revision_body, proposal_hash, proposal_body],
     )
     .unwrap();
-    conn.execute_batch(r#"
+    let fixture = r#"
 INSERT INTO actors(id,user,host,harness,session) VALUES(1,'josh','host','human','search-test');
 INSERT INTO agent_sessions(actor_id,cursor_seq,first_seen,last_seen) VALUES(1,2,1,5);
 INSERT INTO plans(id,title,owner_user,head_revision,next_task,created_at)
@@ -84,7 +84,10 @@ INSERT INTO commits VALUES('repo','0123456789012345678901234567890123456789','re
  '[]',1,'[]',2,1);
 INSERT INTO commit_plans VALUES('repo','0123456789012345678901234567890123456789',1,1,1);
 INSERT INTO feedback_imports(import_key,entry_id) VALUES('retained import',5);
-"#).unwrap();
+"#;
+    let valid_repo_key = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    conn.execute_batch(&fixture.replace("'repo'", &format!("'{valid_repo_key}'")))
+        .unwrap();
     conn.execute(
         concat!(
             "INSERT INTO revisions(plan_id,number,text_hash,source,entry_id,actor_id,seq) ",

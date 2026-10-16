@@ -1,5 +1,7 @@
 //! Deterministic exact, lexical and live-regex retrieval from one index snapshot.
 mod concept_query;
+mod current_bytes;
+mod current_candidate_reads;
 mod declarations;
 mod file_ranking;
 mod import_trail;
@@ -29,6 +31,7 @@ pub use path_filter::{BoundPathFilter, PathFilter};
 pub use rerank_window::RerankScorer;
 
 use concept_query::ConceptQuery;
+pub(crate) use current_bytes::{search_file as search_current_file, semantic_representative};
 use file_ranking::FusionPolicy;
 use path_prior::PathPrior;
 
@@ -291,6 +294,9 @@ pub fn search_prepared(
             &mut coverage,
             trace,
         );
+    }
+    if generation > 0 && store.root == store.index_root() && !query.regex && !query.text.is_empty() {
+        current_candidate_reads::recheck(store, query, &mut hits, &mut coverage, &mut truncated)?;
     }
     trace.snapshot(generation, &coverage);
     let mut seen = HashSet::with_capacity(hits.len());

@@ -1,11 +1,19 @@
 use super::*;
 
 #[test]
-fn refuses_non_loopback_before_loading_any_live_token() {
+fn refuses_unsupported_bind_addresses_before_loading_any_live_token() {
     let directory = crate::board::board_test_support::scratch("web-loopback-");
     let runtime = directory.path().join("runtime");
     std::fs::create_dir_all(&runtime).unwrap();
-    for address in ["0.0.0.0:0", "[::]:0", "192.0.2.1:0", "127.0.0.2:0"] {
+    for address in [
+        "[::]:0",
+        "192.0.2.1:0",
+        "127.0.0.2:0",
+        "10.0.0.1:0",
+        "172.31.255.254:0",
+        "192.167.255.255:0",
+        "192.169.0.1:0",
+    ] {
         assert!(
             super::super::super::web_endpoint::bind_listener(&runtime, address.parse().unwrap())
                 .is_err()
@@ -23,6 +31,21 @@ fn refuses_non_loopback_before_loading_any_live_token() {
     let directory = crate::board::board_test_support::scratch("web-guard-port-zero-");
     let token = BoardWebToken::rotate_at(&directory.path().join("token")).unwrap();
     assert!(WebGuard::with_token("127.0.0.1:0".parse().unwrap(), token).is_err());
+}
+
+#[test]
+fn bind_allowlist_accepts_only_loopback_wildcard_and_192_168_ipv4() {
+    for address in [
+        "127.0.0.1:0",
+        "[::1]:0",
+        "192.168.0.0:0",
+        "192.168.255.255:0",
+        "0.0.0.0:0",
+    ] {
+        require_supported_bind_address(address.parse().unwrap()).unwrap();
+    }
+    let scoped = std::net::SocketAddrV6::new(std::net::Ipv6Addr::LOCALHOST, 0, 0, 1);
+    assert!(require_supported_bind_address(SocketAddr::V6(scoped)).is_err());
 }
 
 #[test]

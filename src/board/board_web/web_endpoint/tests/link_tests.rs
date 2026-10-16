@@ -24,6 +24,24 @@ fn web_link_uses_actual_ephemeral_listener_and_bootstrap_reference() {
 }
 
 #[test]
+fn wildcard_link_targets_loopback_and_keeps_the_actual_bind_for_ownership_proof() {
+    let (_directory, runtime, config) = fixture();
+    let (address, worker) =
+        listening_fixture_on(&runtime, &config, "0.0.0.0:0".parse().unwrap(), BOARD_API);
+    assert_eq!(
+        endpoint_probe::probe_address(address).to_string(),
+        format!("127.0.0.1:{}", address.port())
+    );
+    let url = link_at(&runtime, &config, None).unwrap();
+    worker.join().unwrap();
+
+    assert!(url.starts_with(&format!("http://127.0.0.1:{}/#token=", address.port())));
+    let bytes = fs::read(runtime.join(ENDPOINT_FILE)).unwrap();
+    let endpoint: WebEndpoint = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(endpoint.address, address);
+}
+
+#[test]
 fn web_link_refuses_stale_endpoint_and_database_mismatch() {
     let (_directory, runtime, config) = fixture();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();

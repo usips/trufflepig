@@ -4,6 +4,7 @@ use crate::board::board_backend::BoardBackend;
 use crate::board::board_ids::{PlanId, RepoKey, TaskId};
 use crate::board::board_protocol::{
     BoardOp, BoardRequest, BoardResult, LinkedCommit, RepoRegistration, RepoScanTarget,
+    WorkerAddress,
 };
 use crate::board::commit_trailers::attributed_to;
 use anyhow::{Result, ensure};
@@ -28,6 +29,7 @@ pub struct IngestReport {
     pub inserted: u64,
     pub unknown_plans: Vec<PlanId>,
     pub unknown_tasks: Vec<TaskId>,
+    pub unknown_workers: Vec<WorkerAddress>,
     pub completed: Vec<RepoRegistration>,
     pub errors: Vec<String>,
 }
@@ -51,6 +53,7 @@ struct CompletedScan {
     stamp: ScanStamp,
     unknown_plans: Vec<PlanId>,
     unknown_tasks: Vec<TaskId>,
+    unknown_workers: Vec<WorkerAddress>,
     warnings: Vec<String>,
 }
 
@@ -85,8 +88,8 @@ impl RepoIngestor {
             {
                 let first_missing = self.missing.entry(key.clone()).or_insert_with(Instant::now);
                 if first_missing.elapsed() >= MISSING_REPOSITORY_GRACE {
-                    match backend.handle(&BoardRequest::new(
-                        actor.clone(),
+                    match backend.handle(&scan_maintenance_request(
+                        actor,
                         BoardOp::ForgetRepoPath {
                             repo_key: target.registration.repo_key.clone(),
                             host: actor.host.clone(),
@@ -133,6 +136,11 @@ impl RepoIngestor {
         report.unknown_plans.dedup();
         report.unknown_tasks.sort_unstable();
         report.unknown_tasks.dedup();
+        let mut seen_workers =
+            std::collections::HashSet::with_capacity(report.unknown_workers.len());
+        report
+            .unknown_workers
+            .retain(|worker| seen_workers.insert(worker.clone()));
         let mut seen = std::collections::HashSet::with_capacity(report.errors.len());
         report.errors.retain(|error| seen.insert(error.clone()));
         Ok(report)
@@ -172,6 +180,15 @@ impl RepoIngestor {
             report
                 .unknown_tasks
                 .extend_from_slice(&completed.unknown_tasks);
+            report
+                .unknown_workers
+                .extend_from_slice(&completed.unknown_workers);
+            report.errors.extend(
+                completed
+                    .unknown_workers
+                    .iter()
+                    .map(|worker| format!("board_scan: {worker}: unknown worker handle")),
+            );
             let mut warnings = completed.warnings.clone();
             suppress_linked_warnings(backend, &registration.repo_key, &mut warnings)?;
             report.errors.extend(warnings);
@@ -181,19 +198,41 @@ impl RepoIngestor {
         }
         report.scanned += 1;
         let scan = scan_log(registration, &tips, since, true, deadline)?;
-        let commits = scan
+        let commits: Vec<LinkedCommit> = scan
             .records
             .into_iter()
             .filter(|record| !record.commit.plans.is_empty())
             .map(|record| record.commit)
             .collect();
-        let reply = backend.handle(&BoardRequest::new(
-            actor.clone(),
-            BoardOp::LinkCommits { commits },
-        ))?;
-        let BoardResult::CommitsLinked(result) = reply.result else {
-            anyhow::bail!("board_scan: unexpected commit-link reply");
-        };
+        let mut result = crate::board::board_protocol::CommitLinkResult::default();
+        let system_actor = BoardActor::new(
+            actor.user.clone(),
+            actor.host.clone(),
+            HarnessLabel::parse("system")?,
+            "ingest",
+        )?;
+        for commit in commits {
+            let request = BoardRequest::system(
+                system_actor.clone(),
+                BoardOp::LinkCommits {
+                    commits: vec![commit],
+                },
+            )
+            .with_system_origin("ingest")?;
+            let reply = backend.handle(&request)?;
+            let BoardResult::CommitsLinked(linked) = reply.result else {
+                anyhow::bail!("board_scan: unexpected commit-link reply");
+            };
+            result.inserted += linked.inserted;
+            result.unknown_plans.extend(linked.unknown_plans);
+            result.unknown_tasks.extend(linked.unknown_tasks);
+            result.unknown_workers.extend(linked.unknown_workers);
+        }
+        let mut seen_workers =
+            std::collections::HashSet::with_capacity(result.unknown_workers.len());
+        result
+            .unknown_workers
+            .retain(|worker| seen_workers.insert(worker.clone()));
         report.inserted += result.inserted;
         report
             .unknown_plans
@@ -201,6 +240,15 @@ impl RepoIngestor {
         report
             .unknown_tasks
             .extend_from_slice(&result.unknown_tasks);
+        report
+            .unknown_workers
+            .extend_from_slice(&result.unknown_workers);
+        report.errors.extend(
+            result
+                .unknown_workers
+                .iter()
+                .map(|worker| format!("board_scan: {worker}: unknown worker handle")),
+        );
         let mut warnings = scan.warnings.clone();
         suppress_linked_warnings(backend, &registration.repo_key, &mut warnings)?;
         report.errors.extend(warnings);
@@ -220,6 +268,7 @@ impl RepoIngestor {
                 stamp,
                 unknown_plans: result.unknown_plans,
                 unknown_tasks: result.unknown_tasks,
+                unknown_workers: result.unknown_workers,
                 warnings: scan.warnings,
             },
         );
@@ -233,8 +282,8 @@ fn record_scan(
     registration: &RepoRegistration,
     error: Option<String>,
 ) -> Result<()> {
-    let reply = backend.handle(&BoardRequest::new(
-        actor.clone(),
+    let reply = backend.handle(&scan_maintenance_request(
+        actor,
         BoardOp::RecordScan {
             repo_key: registration.repo_key.clone(),
             host: registration.host.clone(),
@@ -247,6 +296,14 @@ fn record_scan(
         "board_scan: unexpected scan-status reply"
     );
     Ok(())
+}
+
+fn scan_maintenance_request(actor: &BoardActor, op: BoardOp) -> BoardRequest {
+    if actor.harness.is_system() {
+        BoardRequest::system(actor.clone(), op)
+    } else {
+        BoardRequest::new(actor.clone(), op)
+    }
 }
 
 pub fn find_unlinked(

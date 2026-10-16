@@ -4,7 +4,7 @@
  --danger:#a72c38;--warning:#825000;--shadow:0 1px 3px #172c3910;
  --mark-glyph:#fff;--mark-claude:#7b3f25;--mark-codex:#205a49;--mark-kimi:#174e78;
  --mark-grok:#303f4b;--mark-gemini:#574194;--mark-qwen:#5f3787;--mark-muse:#7a2862;
- --mark-human:#48555f;--mark-unknown:#62626a}
+ --mark-human:#48555f;--mark-system:#6b7280;--mark-unknown:#62626a}
 
 *{box-sizing:border-box}
 body{margin:0}
@@ -226,7 +226,7 @@ nav a{padding:.4rem .5rem;white-space:nowrap;font-size:.83rem}
  --danger:#f199a0;--warning:#e5c583;--shadow:none;
  --mark-glyph:#17232a;--mark-claude:#eabda0;--mark-codex:#94d5b8;--mark-kimi:#9dc9ec;
  --mark-grok:#bacad6;--mark-gemini:#c5b3ed;--mark-qwen:#d4b4ef;--mark-muse:#e7b1d7;
- --mark-human:#bcc7ce;--mark-unknown:#c7c7ce}
+ --mark-human:#bcc7ce;--mark-system:#c7c7ce;--mark-unknown:#c7c7ce}
 .primary{color:#172820;background:#8cd8b5}
 .primary:hover:not(:disabled){background:#afe8cb;color:#172820}
 .brand-mark{color:#172820}
@@ -278,3 +278,39 @@ nav a{padding:.4rem .5rem;white-space:nowrap;font-size:.83rem}
  align-items:start;gap:.7rem}
 .task-status-strip .task-card{margin:0}
 .task-status-strip>a{grid-column:1/-1;margin-top:.25rem}
+.actor-attribution{display:inline-flex;align-items:center;gap:.2rem .35rem;flex-wrap:wrap;min-width:0;
+ max-width:100%;overflow-wrap:anywhere;vertical-align:middle}
+.actor-attribution-actor{display:inline-flex;align-items:center;gap:.25rem;min-width:0;max-width:100%}
+.actor-attribution-identity{min-width:0;overflow-wrap:anywhere;word-break:break-word}
+.actor-attribution-origin,.actor-attribution-authority{min-width:0;overflow-wrap:anywhere;word-break:break-word}
+.task-view-detail{border-top:1px solid var(--line);margin-top:.8rem;padding-top:.75rem;min-width:0}
+.task-view-detail h3{font-size:.95rem;margin:.2rem 0 .45rem}
+.task-view-detail h4{font-size:.84rem;margin:.7rem 0 .35rem}
+.task-claim-history{margin:.55rem 0}
+.task-claim-history>summary{cursor:pointer;color:var(--muted);font-size:.8rem}
+.claim-history-list,.task-entry-list,.task-commit-list{list-style:none;margin:.25rem 0;padding:0;min-width:0}
+.claim-history-row,.task-commit-row{display:flex;align-items:center;gap:.35rem .65rem;flex-wrap:wrap;
+ padding:.45rem 0;border-bottom:1px solid var(--line);min-width:0;overflow-wrap:anywhere}
+.task-commit-row{display:block}
+.task-commit-row>*{min-width:0;max-width:100%;overflow-wrap:anywhere}
+.task-commit-subject,.task-latest-commit{margin:.2rem 0}
+.task-commit-workers,.task-commit-claims{align-items:center}
+.task-view-entries,.task-view-commits{margin-top:.7rem;min-width:0}
+.task-view-entries>.task-entry-list{display:grid;gap:.45rem}
+.task-view-entries .entry-card{min-width:0;padding:.65rem}
+.task-view-commits .coauthor-list{margin:.35rem 0;display:flex;gap:.3rem .6rem;flex-wrap:wrap}
+.task-view-commits .coauthor{display:inline-flex;gap:.25rem;align-items:center;min-width:0;overflow-wrap:anywhere}
+.grant-panel{min-width:0}
+.grant-list{display:grid;gap:.5rem;min-width:0}
+.grant-row{border:1px solid var(--line);border-radius:7px;padding:.65rem;min-width:0;overflow-wrap:anywhere}
+.grant-heading,.grant-roles{display:flex;align-items:center;gap:.3rem .55rem;flex-wrap:wrap;min-width:0}
+.grant-grantee{overflow-wrap:anywhere;word-break:break-word}
+.grant-row p{margin:.25rem 0}
+.grant-revoke-form{margin-top:.4rem}
+.grant-form{border-top:1px solid var(--line);margin-top:.75rem;padding-top:.75rem;min-width:0}
+.grant-role-picker{display:flex;gap:.3rem .7rem;flex-wrap:wrap;min-width:0;border:1px solid var(--line);
+ border-radius:6px;margin:0 0 .8rem;padding:.55rem .7rem}
+.grant-role-picker legend{padding:0 .2rem;font-size:.82rem;font-weight:600}
+.grant-role-choice{display:inline-flex;align-items:center;gap:.3rem;text-transform:capitalize;font-size:.8rem}
+.grant-role-choice input{margin:0}
+.grant-readonly{margin:.65rem 0 0}

@@ -6,7 +6,12 @@ mod tests;
 mod claim_activity;
 mod claim_history;
 mod claim_holders;
+mod session_lifecycle;
+mod worker_lifecycle;
 
+use super::super::board_queries::worker_reads::{
+    active_bound_worker_for_actor, active_worker_binding, worker_for_address,
+};
 pub(in crate::board::local_board) use claim_activity::{
     refresh_commit_claims, refresh_inbox_claims, refresh_plan_claims,
 };
@@ -14,6 +19,10 @@ pub(in crate::board::local_board) use claim_history::{
     active_claim, read_claims_window, read_tasks,
 };
 use claim_holders::{claim_conflict, resolve_delegate};
+pub(in crate::board::local_board) use session_lifecycle::bye;
+pub(in crate::board::local_board) use worker_lifecycle::{
+    add_worker, attach_worker_post, bind_worker, end_worker, end_workers_for_claim,
+};
 
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 
@@ -67,6 +76,40 @@ pub(in crate::board::local_board) fn claim_task(
             "invalid_state",
             format!("{task} is done and cannot be claimed"),
         ));
+    }
+    if super::task_writes::is_bound_worker(tx, task, ctx.actor_id)? {
+        let holder = active_claim(tx, task, ctx.now, ctx.claim_ttl_secs)?;
+        let already_lead = holder
+            .as_ref()
+            .is_some_and(|claim| claim.actor_id == ctx.actor_id);
+        if !already_lead {
+            let assignee: Option<String> = tx
+                .query_row(
+                    "SELECT assignee FROM tasks WHERE plan_id=?1 AND ordinal=?2",
+                    params![sql_number(task.plan.get()), sql_number(task.ordinal)],
+                    |row| row.get(0),
+                )
+                .map_err(sql_error)?;
+            let assigned_to_actor = assignee
+                .as_deref()
+                .map(BoardRecipient::parse)
+                .transpose()
+                .map_err(BoardError::from)?
+                .is_some_and(|recipient| recipient.matches(&ctx.actor));
+            let assign_authority = super::super::board_authority::authority_for(
+                tx,
+                &ctx.actor,
+                Some(task.plan),
+                crate::board::board_protocol::AuthorityRole::Assign,
+                ctx.now,
+            )?;
+            if !assigned_to_actor && assign_authority.is_none() {
+                return Err(invalid(
+                    "invalid_actor",
+                    "a bound worker needs separate claim, assignee, or assign authority to claim the lead task",
+                ));
+            }
+        }
     }
     let delegation = match delegate {
         Some(target) => Some(resolve_delegate(tx, ctx, task, target)?),
@@ -290,6 +333,7 @@ pub(in crate::board::local_board) fn end_claim(
     now: i64,
     reason: ClaimEndReason,
 ) -> Result<(), BoardError> {
+    end_workers_for_claim(tx, task, now)?;
     tx.execute(
         "UPDATE claims SET ended_at=?3,end_reason=?4 WHERE plan_id=?1 AND task_ordinal=?2 AND ended_at IS NULL",
         params![sql_number(task.plan.get()), sql_number(task.ordinal), now, reason.as_str()],

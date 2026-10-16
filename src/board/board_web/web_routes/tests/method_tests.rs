@@ -19,7 +19,7 @@ fn method_refusals_list_the_permitted_methods() {
     )
     .unwrap();
     client.shutdown(Shutdown::Write).unwrap();
-    handle(server, Instant::now(), &fixture.state);
+    handle_local(server, Instant::now(), &fixture.state);
     let mut reply = String::new();
     client.read_to_string(&mut reply).unwrap();
     assert!(reply.starts_with("HTTP/1.1 405 "), "{reply}");

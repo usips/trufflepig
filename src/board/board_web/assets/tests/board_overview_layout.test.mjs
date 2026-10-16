@@ -128,7 +128,8 @@ it("the active-plan empty state leaves a visible recovery filter", () => {
 it("Working now leads with the task and scope and retains the exact actor identity", () => {
   const { data, overview } = harness();
   const actor = { user: "josh", host: "archlinux", harness: "codex", session: "full-session-id" };
-  const claim = { task: "P7.26", actor, scope: "src/deep/VeryLongFilename.js + geometry", last_active: 1 };
+  const claim = { task: "P7.26", actor, vendor: "codex",
+    scope: "src/deep/VeryLongFilename.js + geometry", last_active: 1 };
   data.working = [claim];
   data.plans[0].tasks = [{ id: claim.task, title: "Make active work readable", column: "doing" }];
   const page = overview(), card = page.querySelector(".working-card");
@@ -137,7 +138,11 @@ it("Working now leads with the task and scope and retains the exact actor identi
   assert.ok(page.children.indexOf(working) < page.children.indexOf(layout));
   assert.equal(card.querySelector(".working-task").textContent, "Make active work readable");
   assert.equal(card.querySelector(".working-scope").textContent, claim.scope);
-  assert.equal(card.querySelector(".working-identity").title, "josh@archlinux/codex/full-session-id");
+  const actorIdentity = card.querySelector(".working-meta").querySelector(".actor-attribution-identity");
+  assert.equal(actorIdentity.textContent, "josh@archlinux/codex/full-session-id");
+  const actorMark = card.querySelector(".working-meta").querySelector(".agent-mark");
+  assert.equal(actorMark.dataset.vendor, "codex");
+  assert.match(actorMark.attributes.get("aria-label"), /josh@archlinux\/full-session-id/);
 });
 
 it("Needs you bounds Unicode previews while the entry keeps the complete body", () => {

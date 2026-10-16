@@ -2,12 +2,14 @@
 use super::super::board_config::BoardConfigCache;
 use super::event_stream::SequencePoller;
 use super::{
-    BoardWebState, WebStore, bootstrap_line, http_wire, open_stream_feed,
+    BoardWebState, WebStore, bootstrap_line,
+    http_audit::record_unparsed,
+    http_wire, open_stream_feed,
     published_endpoint::PublishedEndpoint,
     serve_lock::{self, ServeLock},
     signal_shutdown,
     web_endpoint::{self, EndpointGuard},
-    web_guard::WebGuard,
+    web_guard::{WebGuard, allowed_peer_ip, normalize_peer_ip},
     web_ops, web_routes,
 };
 use crate::daemon::{PoolSize, RequestPool};
@@ -119,6 +121,8 @@ pub(super) fn transient_accept_error(error: &io::Error) -> bool {
 
 pub(super) const QUEUE_FULL_BODY: &[u8] =
     br#"{"error":{"code":"daemon_busy","message":"board web queue is full"}}"#;
+const PEER_REFUSED_BODY: &[u8] =
+    br#"{"error":{"code":"forbidden","message":"peer is not allowed"}}"#;
 
 /// At most this many refusal-drain threads run at once; past the cap a
 /// refusal closes at once instead of draining unread input.
@@ -174,14 +178,18 @@ impl Drop for DrainGuard {
     }
 }
 
-/// Refuses a connection the pool cannot take: one nonblocking busy write,
+/// Refuses a connection without parsing it: one nonblocking response write,
 /// then a short-lived thread drains unread input after shutting down the
-/// write side, so the client reads the reply instead of a reset. The
-/// accept loop never blocks on a refused connection.
-pub(super) fn refuse_queue_full(mut refusal: TcpStream, busy: &[u8], drains: &Arc<RefusalDrains>) {
+/// write side, so the client reads the reply instead of a reset. The accept
+/// loop never blocks on a refused connection.
+pub(super) fn refuse_connection(
+    mut refusal: TcpStream,
+    response: &[u8],
+    drains: &Arc<RefusalDrains>,
+) {
     // One nonblocking attempt never holds up accepting the next connection.
     if refusal.set_nonblocking(true).is_ok() {
-        let _ = refusal.write(busy);
+        let _ = refusal.write(response);
     }
     // Past the cap the socket drops here: an immediate close with
     // the busy bytes already written, and no drain thread at all.
@@ -210,6 +218,7 @@ pub(super) fn serve_connections(
 ) -> Result<()> {
     let pool = RequestPool::new("board-http", WEB_POOL)?;
     let busy = http_wire::unavailable_response(1, QUEUE_FULL_BODY);
+    let forbidden = http_wire::fixed_json_response(403, PEER_REFUSED_BODY);
     let drains = Arc::new(RefusalDrains::default());
     let mut incoming = incoming.into_iter();
     loop {
@@ -235,14 +244,28 @@ pub(super) fn serve_connections(
             }
             Err(error) => return Err(error.into()),
         };
+        let peer_ip = match stream.peer_addr() {
+            Ok(peer) => normalize_peer_ip(peer.ip()),
+            Err(_) => {
+                record_unparsed(None, 403);
+                refuse_connection(stream, &forbidden, &drains);
+                continue;
+            }
+        };
+        if !allowed_peer_ip(peer_ip) {
+            record_unparsed(Some(peer_ip), 403);
+            refuse_connection(stream, &forbidden, &drains);
+            continue;
+        }
         let accepted_at = Instant::now();
         let refusal = stream.try_clone().ok();
         let state = Arc::clone(state);
-        let job = Box::new(move || web_routes::handle(stream, accepted_at, &state));
+        let job = Box::new(move || web_routes::handle(stream, accepted_at, &state, peer_ip));
         if let Err(job) = pool.submit(job) {
             drop(job);
+            record_unparsed(Some(peer_ip), 503);
             if let Some(refusal) = refusal {
-                refuse_queue_full(refusal, &busy, &drains);
+                refuse_connection(refusal, &busy, &drains);
             }
         }
     }

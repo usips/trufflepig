@@ -1,7 +1,9 @@
 # Local board web contract
 
 The board dashboard is a local human interface to the [durable board](board-contract.md).
-`trufflepig board-serve` runs in the foreground; `--listen` selects a `127.0.0.1` or `::1` address.
+`trufflepig board-serve` runs in the foreground. `--listen` accepts loopback, an IPv4 address in
+`192.168.0.0/16`, or `0.0.0.0` for LAN access; other bind addresses fail. Connections are restricted
+to loopback and `192.168.0.0/16` regardless of binding. The default remains loopback.
 The installed unit passes `--listen 127.0.0.1:0`: a port-0 bind retakes the port recorded in
 `system::dir()/board-web.port` (plain decimal, 0600, re-recorded at every bind and never removed
 on exit), falling back to an ephemeral port after any recorded-port bind error. It reports
@@ -14,42 +16,8 @@ system runtime directory; installation and standalone startup reject a conflicti
 
 ## Authority and bootstrap
 
-Public HTML, JavaScript, and CSS contain no board records or token. `board-serve` prints the full
-bootstrap URL `http://AUTHORITY/#token=TOKEN` only when stdout is a terminal, and otherwise the
-origin plus advice to run `trufflepig board web`, which prints the fresh URL. The fragment stays
-outside the HTTP request; the browser's token bootstrap and adoption rules live in the [board web
-UI contract](board-web-ui.md#token-bootstrap). CLI
-bootstrap links `/?ref=REF#token=TOKEN` (REF `P7`, `P7@N`, or `E485`) convert to a hash route and
-drop the reference query/token. Every private JSON, render, ingest, and event-stream request
-supplies `X-Board-Token` (browser streams use `fetch` streaming to send it). The server atomically
-publishes API/address/database, without a token, in owned regular 0600
-`system::dir()/board-web.json`, removed on shutdown (drop guard plus SIGTERM/SIGINT/SIGHUP/SIGQUIT).
-
-`board web [P7|P7@N|E#]` validates that descriptor and the configured/known DB, verifies the
-listener's owner through `/proc/net/tcp{,6}`, and proves token possession before printing the
-listener URL. The proof never sends the token: the client POSTs a random nonce to the
-unauthenticated `POST /api/v1/challenge` route, which answers hexadecimal HMAC-SHA256(key =
-token, `trufflepig-board-listener-proof-v1` NUL ‖ nonce ‖ listener address); the client checks
-that proof against the token it reads locally. The challenge route keeps the Host, Origin, and
-JSON body checks. Missing, stale, or mismatched endpoints advise `board-serve`; `board web` opens
-no browser and creates no token.
-
-The token is 256 CSPRNG bits (64 hexadecimal characters) stored at `system::dir()/board-web.token`.
-`board-serve` rotates it on every start — 32 fresh bytes written with `O_NOFOLLOW`/0600 discipline
-and atomically renamed over any previous or planted entry — so a leaked token dies with the service
-that published it. Unsafe or malformed files are replaced, never written through; candidate
-filenames use an independent UUID, never secret bytes, and the parent directory is synced. Runtime
-resolution follows the [runtime contract](runtime-contract.md) system directory; authentication
-compares tokens in constant time.
-
-`Host` accepts only `localhost`, `127.0.0.1`, or `[::1]` with the actual bound port, including an
-ephemeral port; port 80 uses its canonical omitted form. Every POST requires `Origin: http://HOST`
-matching that validated request Host; a supplied GET Origin must also match. Host and Origin↔Host
-comparisons are case-insensitive; aliases cannot cross. There is no CORS permission; private
-replies, the shell, and static assets send `Cache-Control: no-store`. Request
-actor/model/effort/claims fields are rejected — the server captures configured `user@host/human/web`
-identity with no agent claims; the backend enforces owner-user plus human/steward authority and
-revision CAS.
+The [web security contract](board-web-security.md) defines peer admission, Host/Origin checks,
+token bootstrap, listener ownership proof, IP provenance, and HTTP access records.
 
 ## HTTP surface and typed operations
 
@@ -70,7 +38,7 @@ Mismatches fail `board_api_mismatch` without negotiation. Errors are
 | `GET /pages/done_page.js` | Completed-task page module |
 | `GET /stream/board_stream.js`, `/stream/stream_parse.js` | Stream modules |
 | `GET /stream/stream_election.js` | Stream modules |
-| `GET /feedback_triage.js`, `/board_reader.js`, `/board_entries.js` | UI modules |
+| `GET /feedback_triage.js`, `/board_reader.js`, `/board_entries.js`, `/board_task_view.js`, `/board_grants.js` | UI modules |
 | `GET /state/board_lru.js`, `/state/board_seen.js` | State modules |
 | `GET /state/board_web_token.js` | Token state module |
 | `POST /api/v1/challenge` | Unauthenticated ownership proof; Host/Origin/JSON checks apply |
@@ -85,12 +53,11 @@ Render route targets decode only `%40` (to `@`); any other percent escape fails 
 The optional top-level `project` selects a host Project for scoped reads; see the
 [read scope contract](board-projects.md#read-scopes) for resolution and conflicting-scope errors.
 
-The web allowlist exposes Overview, Repositories, Projects, Show, Tasks, DoneTasks, Claims, Feed,
-Attention, History, Entries, Search, and FeedbackList reads; New, Post, TaskCreate, TaskMove,
-Accept, Reject, Edit, FeedbackClose, and FeedbackTriage writes. Browser Post kinds are `note`,
-`answer`, `decision`, and `question`. Other operations fail
-`invalid_options: op not available over web`. Local reads remain available without a responsive
-router; a conflicting known database pin rejects private reads, writes, and streams.
+The web allowlist exposes Overview, Repositories, Projects, Show, Tasks, DoneTasks, Claims, Feed, Attention, History, Entries, Search, and FeedbackList reads.
+It allows New, Post, TaskCreate, TaskMove, Accept, Reject, Edit, FeedbackClose, FeedbackTriage, Grant, and Revoke writes; Browser Post kinds are `note`, `answer`, `decision`, and `question`.
+TaskCreate requires Assign for another recipient, including harness-wide recipients; exact self-assignment to the caller's normalized actor identity is ordinary creation.
+`board bye` ends the caller's lead claims and worker node while other actors' claims and worker nodes remain active. Other operations fail `invalid_options: op not available over web`.
+Local reads remain available without a responsive router; a conflicting known database pin rejects private reads, writes, and streams.
 
 POST ingest probes router API/database identity and relays without spawning a router; an
 unavailable router is an error. Single-flight, it answers 202 with `ingest:"queued"` plus a
@@ -135,6 +102,12 @@ and linked-commit detail; closed proposals and superseded entries remain readabl
 with `references: E#` recover reverse links; adding kind `answer` selects replies. Proposal diff
 rendering returns complete shared-source hunks and the minimum of its immutable entry/base read
 watermarks, preserving the snapshot/subscription race bound.
+
+## Board navigation
+
+Needs you contains addressed questions, proposals needing decisions or new bases, and stale claims.
+Feedback lists open and triaged reports globally by default. Its independent navigation badge counts
+those reports, stays hidden at zero, and displays `?` when its count read fails.
 
 ## Bounded HTTP transport
 

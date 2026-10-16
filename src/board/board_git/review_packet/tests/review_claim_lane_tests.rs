@@ -17,6 +17,15 @@ fn review_uses_claim_intervals_and_coauthors_to_flag_crossed_lanes() {
         model: Some("opus".into()),
         effort: None,
         delegated_by: None,
+        workers: Vec::new(),
+        workers_omitted: 0,
+        progress: None,
+        open_questions: 0,
+        oldest_open_question: None,
+        oldest_open_question_at: None,
+        commit_count: 0,
+        latest_commit: None,
+        latest_commit_at: None,
     });
     source.commits = vec![
         commit("codex", 120),
@@ -35,13 +44,12 @@ fn review_uses_claim_intervals_and_coauthors_to_flag_crossed_lanes() {
 }
 
 #[test]
-fn review_uses_claim_model_vendor_for_muse_omp_and_cli() {
+fn review_uses_claim_model_vendor_for_muse_and_omp() {
     for (harness, model, vendor) in [
         ("muse", Some("claude-opus"), "claude"),
         ("omp", Some("gpt-6.1"), "codex"),
         ("omp", Some("Muse Spark"), "muse"),
         ("omp", Some("Llama 4 Maverick"), "muse"),
-        ("cli", None, "human"),
     ] {
         let mut source = evidence();
         source.claims.push(ClaimRecord {
@@ -58,11 +66,17 @@ fn review_uses_claim_model_vendor_for_muse_omp_and_cli() {
             model: model.map(str::to_owned),
             effort: None,
             delegated_by: None,
+            workers: Vec::new(),
+            workers_omitted: 0,
+            progress: None,
+            open_questions: 0,
+            oldest_open_question: None,
+            oldest_open_question_at: None,
+            commit_count: 0,
+            latest_commit: None,
+            latest_commit_at: None,
         });
-        let mut same = commit(vendor, 120);
-        if vendor == "human" {
-            same.coauthors.clear();
-        }
+        let same = commit(vendor, 120);
         source.commits.push(same);
         let packet = assemble_review(&source, None, &[], Vec::new(), Vec::new());
         assert!(

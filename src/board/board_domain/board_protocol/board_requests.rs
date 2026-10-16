@@ -1,16 +1,18 @@
 //! Versioned backend requests and operation addresses.
 use super::{
-    BOARD_API, ClaimCursor, EntryCursor, FeedbackMetadata, LinkedCommit, OverviewCursor,
-    RepoRegistration, TaskCeiling, TaskCursor, TaskOrder, validate_claim,
+    ActorOrigin, AuthorityRole, BOARD_API, ClaimCursor, EntryCursor, FeedbackMetadata,
+    LinkedCommit, OverviewCursor, ProgressInput, RepoRegistration, ReviewVerdict, TaskCeiling,
+    TaskCursor, TaskOrder, WorkerAddress, WorkerHandle, validate_claim,
 };
 use crate::board::{
     board_actor::{BoardActor, BoardRecipient, HarnessLabel},
     board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
     board_vocabulary::{
         EntryKind, EntryText, FeedbackImportKey, FeedbackKind, FeedbackState, PlanText, PlanTitle,
-        TaskColumn,
+        TaskColumn, WorkerEndReason, WorkerRole,
     },
 };
+use crate::identity::GitOid;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -28,9 +30,17 @@ pub use read_scope::ReadScope;
 pub struct BoardRequest {
     pub api: u32,
     pub actor: BoardActor,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<ActorOrigin>,
     pub op: BoardOp,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claims: Option<AgentClaims>,
+    #[serde(skip)]
+    pub(crate) trusted_internal: bool,
+    #[serde(skip)]
+    pub(crate) trusted_head: Option<GitOid>,
+    #[serde(skip)]
+    observed_peer_ip: Option<std::net::IpAddr>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -45,9 +55,44 @@ impl BoardRequest {
         Self {
             api: BOARD_API,
             actor,
+            origin: None,
             op,
             claims: None,
+            trusted_internal: false,
+            trusted_head: None,
+            observed_peer_ip: None,
         }
+    }
+
+    pub(crate) fn system(actor: BoardActor, op: BoardOp) -> Self {
+        let origin = Some(ActorOrigin::from_actor(&actor));
+        Self {
+            api: BOARD_API,
+            actor,
+            origin,
+            op,
+            claims: None,
+            trusted_internal: true,
+            trusted_head: None,
+            observed_peer_ip: None,
+        }
+    }
+
+    pub(crate) fn observe_peer_ip(&mut self, peer_ip: std::net::IpAddr) {
+        if self.origin.is_none() {
+            self.origin = Some(ActorOrigin::from_actor(&self.actor));
+        }
+        let origin = self.origin.as_mut().expect("origin was initialized");
+        origin.peer_ip = Some(peer_ip);
+        self.observed_peer_ip = Some(peer_ip);
+    }
+
+    pub(crate) fn with_system_origin(mut self, session: impl Into<String>) -> Result<Self> {
+        if !self.trusted_internal {
+            bail!("invalid_actor: a system origin requires a trusted internal request");
+        }
+        self.origin = Some(ActorOrigin::system(session)?);
+        Ok(self)
     }
 
     pub fn validate(&self) -> Result<()> {
@@ -58,8 +103,38 @@ impl BoardRequest {
             );
         }
         self.actor.validate()?;
+        if self.actor.harness.is_system() != self.trusted_internal {
+            bail!("invalid_actor: system actor requires a trusted internal request");
+        }
         if self.actor.harness.as_str().starts_with("git:") {
             bail!("invalid_actor: git co-author labels cannot act as request harnesses");
+        }
+        if let Some(origin) = &self.origin {
+            origin.validate_for_request(self.trusted_internal)?;
+            if let Some(peer_ip) = origin.peer_ip {
+                if self.observed_peer_ip != Some(peer_ip) {
+                    bail!("invalid_origin: peer IP must be observed by the server");
+                }
+            }
+        }
+        if let Some(head) = self.trusted_head {
+            match &self.op {
+                BoardOp::Post {
+                    progress: Some(progress),
+                    ..
+                } if progress.head == Some(head) => {}
+                _ => bail!("invalid_progress: trusted head must match the progress OID"),
+            }
+        }
+        if matches!(
+            &self.op,
+            BoardOp::WorkerEnd {
+                state: WorkerEndReason::ClaimEnded,
+                ..
+            }
+        ) && !self.trusted_internal
+        {
+            bail!("invalid_worker: claim_ended is reserved for trusted internal requests");
         }
         if let Some(claims) = &self.claims {
             if let Some(model) = &claims.model {
@@ -79,6 +154,8 @@ pub enum BoardOp {
     Hello {
         model: String,
         effort: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        worker: Option<WorkerAddress>,
     },
     Inbox {
         after: Option<EventSeq>,
@@ -163,7 +240,6 @@ pub enum BoardOp {
     New {
         title: PlanTitle,
         body: PlanText,
-        steward: Option<HarnessLabel>,
         repo_key: Option<RepoKey>,
     },
     Post {
@@ -172,6 +248,39 @@ pub enum BoardOp {
         body: EntryText,
         to: Option<BoardRecipient>,
         supersedes: Option<EntryId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        progress: Option<ProgressInput>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        verdict: Option<ReviewVerdict>,
+    },
+    Grant {
+        plan: Option<PlanId>,
+        roles: Vec<AuthorityRole>,
+        grantee: BoardRecipient,
+        expires_in: Option<u64>,
+        note: Option<EntryText>,
+    },
+    Revoke {
+        entry: EntryId,
+    },
+    Bye,
+    Pending {
+        after: Option<EventSeq>,
+        limit: usize,
+    },
+    WorkerAdd {
+        task: TaskId,
+        handle: WorkerHandle,
+        role: WorkerRole,
+        model: String,
+        effort: Option<String>,
+        scope: EntryText,
+        files: Vec<String>,
+    },
+    WorkerEnd {
+        worker: WorkerAddress,
+        state: WorkerEndReason,
+        note: Option<EntryText>,
     },
     TaskCreate {
         plan: PlanId,

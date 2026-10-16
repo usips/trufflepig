@@ -10,6 +10,7 @@ mod repository_evidence_tests;
 mod review_manual_link_tests;
 mod review_window_tests;
 mod shared_section_tests;
+mod task_view_tests;
 
 use super::*;
 use crate::board::board_actor::BoardActor;
@@ -47,7 +48,6 @@ fn new_plan(board: &mut LocalBoard) -> PlanId {
         BoardOp::New {
             title: PlanTitle::new("Trial").unwrap(),
             body: PlanText::new("# Covered\n# Uncovered\n```\n# Not a section\n```\n").unwrap(),
-            steward: None,
             repo_key: None,
         },
     ) {
@@ -72,6 +72,8 @@ fn post(
             body: EntryText::new(body).unwrap(),
             to: None,
             supersedes: None,
+            progress: None,
+            verdict: None,
         },
     ) {
         BoardResult::Change(change) => change.entry,

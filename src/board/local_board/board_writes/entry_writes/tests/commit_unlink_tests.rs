@@ -115,7 +115,7 @@ fn unlink_removes_task_link_and_writes_event() {
 }
 
 #[test]
-fn unlink_requires_owner_human_or_steward() {
+fn unlink_requires_owner_or_link_grant() {
     let directory = crate::board::board_test_support::scratch("board-unlink-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
@@ -149,8 +149,8 @@ fn unlink_requires_owner_human_or_steward() {
         manual_link_count(&board, "SELECT COUNT(*) FROM commit_tasks"),
         1
     );
-    let steward = manual_link_actor("fixture", "codex");
-    board.handle(&unlink_request(steward, task)).unwrap();
+    let granted = manual_link_actor("fixture", "codex");
+    board.handle(&unlink_request(granted, task)).unwrap();
     for actor in denied {
         let error = board.handle(&unlink_request(actor, task)).unwrap_err();
         assert_eq!(
@@ -182,9 +182,9 @@ fn unlink_replay_is_idempotent() {
     let events = manual_link_count(&board, "SELECT COUNT(*) FROM events");
     drop(board);
     let mut reopened = LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap();
-    let mut steward = manual_link_actor("fixture", "codex");
-    steward.session = "different-session".into();
-    let replay = unlink_change(reopened.handle(&unlink_request(steward, task)).unwrap());
+    let mut granted = manual_link_actor("fixture", "codex");
+    granted.session = "different-session".into();
+    let replay = unlink_change(reopened.handle(&unlink_request(granted, task)).unwrap());
     assert!(replay.deduplicated);
     assert_eq!((replay.entry, replay.seq), (first.entry, first.seq));
     assert_eq!(

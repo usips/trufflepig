@@ -127,7 +127,8 @@ pub(in crate::board::local_board) fn claim_window(
         .map_err(sql_error)?;
     let mut claims = Vec::with_capacity((limit + 1).min(total));
     while let Some(row) = rows.next().map_err(sql_error)? {
-        let claim = active_claim_row(row, cutoff)?;
+        let mut claim = active_claim_row(row, cutoff)?;
+        super::super::claim_evidence::hydrate_claim(conn, ctx, &mut claim, through)?;
         let cursor = ClaimCursor {
             entry: claim.entry,
             claim: row_number(row, 12).map_err(sql_error)?,
@@ -176,5 +177,14 @@ fn active_claim_row(row: &Row<'_>, cutoff: i64) -> Result<ClaimRecord, BoardErro
         model,
         effort: row.get(11).map_err(sql_error)?,
         delegated_by: delegated_actor_from_row(row, 13).map_err(sql_error)?,
+        workers: Vec::new(),
+        workers_omitted: 0,
+        progress: None,
+        open_questions: 0,
+        oldest_open_question: None,
+        oldest_open_question_at: None,
+        commit_count: 0,
+        latest_commit: None,
+        latest_commit_at: None,
     })
 }

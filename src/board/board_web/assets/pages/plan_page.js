@@ -1,6 +1,7 @@
 import { createBoardEntries } from "../board_entries.js";
+import { createBoardGrantPanel } from "../board_grants.js";
 import { decodeBoardFragment } from "../board_dom.js";
-import { actorMark, agentMark, harnessVendor } from "../marks/agent_marks.js";
+import { actorAttribution, actorMark, agentMark, harnessVendor } from "../marks/agent_marks.js";
 
 export function createPlanPage(context) {
   const {
@@ -13,6 +14,7 @@ export function createPlanPage(context) {
     ageNode, panel, empty, omitted, title, field, formStatus, planId, focusKey, retainForm,
   } = dom;
   const { entriesPage } = createBoardEntries(context);
+  const { grantPanel } = createBoardGrantPanel(context);
   function planTabs(ref, selected) {
     const tabs = el("nav", "tabs"); tabs.setAttribute("aria-label", "Plan sections");
     for (const [key, label] of [
@@ -44,9 +46,11 @@ export function createPlanPage(context) {
         if (claim) {
           const marker = badge(claim.stale ? "stale" : "claimed");
           marker.textContent = "";
-          add(marker, actorMark(claim), el("span", "",
-            [actorName(claim.actor), claim.model, claim.effort, claim.stale ? "stale" : null]
-              .filter(Boolean).join(" · ")));
+          const source = view.entries?.find(entry => entry?.id === claim.entry);
+          add(marker, actorAttribution({ ...claim,
+            origin: source?.origin, authority: source?.authority,
+          }), el("span", "",
+            [claim.model, claim.effort, claim.stale ? "stale" : null].filter(Boolean).join(" · ")));
           markers.append(marker);
         } else {
           markers.append(badge(task.column));
@@ -80,11 +84,12 @@ export function createPlanPage(context) {
       page,
       title(
         `${plan.id} · ${plan.title}`,
-        `Revision ${plan.head_revision} · Owner ${plan.owner_user}${plan.steward ? ` · Steward ${plan.steward}` : ""}`,
+        `Revision ${plan.head_revision} · Owner ${plan.owner_user}`,
         actions
       ),
       projectChips(view.repo_keys, projects),
-      planTabs(plan.id, route.tab || "ssot")
+      planTabs(plan.id, route.tab || "ssot"),
+      grantPanel(view)
     );
     const tab = route.tab || "ssot";
     if (tab === "done") return add(page, doneTasks(extra, route));
@@ -94,6 +99,9 @@ export function createPlanPage(context) {
         ...view, tasks: tasks.tasks, claims: claims.claims.map(item => item.claim),
         tasks_omitted: tasks.omitted, claims_omitted: claims.omitted,
         claims_partial: Boolean(claims.after), claims_through: claims.through,
+        task_view: extra.taskView, server_now: claims.server_now,
+        claim_ttl_secs: claims.claim_ttl_secs,
+        entries: [...(extra.taskView?.entries || []), ...(view.entries || [])],
       }, rendered.headings);
       if (tasks.next_after) {
         details.append(link("Next tasks", "plan", {
@@ -102,7 +110,9 @@ export function createPlanPage(context) {
         }, "button"));
       }
       page.append(panel("Tasks", details));
-      const claimList = add(el("div", "working-strip"), claims.claims.map(item => workingCard(item.claim)));
+      const claimList = add(el("div", "working-strip"), claims.claims.map(item => workingCard(item.claim, null, {
+        now: claims.server_now, ttlSecs: claims.claim_ttl_secs, entries: view.entries,
+      })));
       if (claims.next_after) {
         claimList.append(link("Next claims", "plan",
           { ...route, claimAfter: JSON.stringify(claims.next_after), claimThrough: claims.through }, "button"));
@@ -112,6 +122,7 @@ export function createPlanPage(context) {
     if (tab === "entries") {
       const statusCards = view.tasks.slice(0, 8).map(task => taskCard(task, view.claims, {
         claimsOmitted: view.claims_omitted, claimAfter: view.claims_next_after, through: view.through,
+        now: view.server_now, ttlSecs: view.claim_ttl_secs, entries: view.entries,
       }));
       const statusPanel = panel("Task status", add(el("div", "task-status-strip"), statusCards,
         link("Manage tasks", "plan", { ref: plan.id, tab: "tasks" }, "small")));
@@ -146,6 +157,7 @@ export function createPlanPage(context) {
     if (toc.childElementCount) aside.append(panel("On this page", toc, "toc-panel"));
     const asideCards = (view.tasks || []).slice(0, 8).map(task => taskCard(task, view.claims, {
       claimsOmitted: view.claims_omitted, claimAfter: view.claims_next_after, through: view.through,
+      now: view.server_now, ttlSecs: view.claim_ttl_secs, entries: view.entries,
     }));
     const moreTasks = view.tasks_next_after ? link("More tasks", "plan", {
       ref: plan.id, tab: "tasks", taskAfter: view.tasks_next_after, taskThrough: view.through,

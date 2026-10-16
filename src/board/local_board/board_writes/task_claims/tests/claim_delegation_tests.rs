@@ -14,6 +14,7 @@ fn delegated_claim_refreshes_on_holder_commits_not_delegator_commits() {
             BoardOp::Hello {
                 model: "Codex".into(),
                 effort: Some("xhigh".into()),
+                worker: None,
             },
         ))
         .unwrap();
@@ -135,6 +136,7 @@ fn delegated_claim_event_reaches_delegate_inbox_with_via_summary() {
             BoardOp::Hello {
                 model: "Codex".into(),
                 effort: Some("xhigh".into()),
+                worker: None,
             },
         ))
         .unwrap();

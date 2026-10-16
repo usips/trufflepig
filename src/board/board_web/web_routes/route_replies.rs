@@ -6,11 +6,12 @@ use std::net::TcpStream;
 pub(super) fn send_json_result(
     stream: &mut TcpStream,
     result: Result<impl serde::Serialize, BoardError>,
-) {
+) -> u16 {
     match result {
         Ok(value) => match serde_json::to_vec(&value) {
             Ok(body) => {
                 let _ = http_wire::send_response(stream, 200, "application/json", &body);
+                200
             }
             Err(error) => send_error(stream, 503, "board_unavailable", &error.to_string()),
         },
@@ -18,7 +19,7 @@ pub(super) fn send_json_result(
     }
 }
 
-pub(super) fn send_board_error(stream: &mut TcpStream, error: BoardError) {
+pub(super) fn send_board_error(stream: &mut TcpStream, error: BoardError) -> u16 {
     let status = match error.code {
         BoardErrorCode::StaleRevision | BoardErrorCode::ClaimConflict => 409,
         BoardErrorCode::BoardUnavailable
@@ -27,10 +28,10 @@ pub(super) fn send_board_error(stream: &mut TcpStream, error: BoardError) {
         | BoardErrorCode::BoardRemoteUnsupported => 503,
         _ => 400,
     };
-    send_error(stream, status, error.code.as_str(), &error.message);
+    send_error(stream, status, error.code.as_str(), &error.message)
 }
 
-pub(super) fn send_http_error(stream: &mut TcpStream, error: HttpError) {
+pub(super) fn send_http_error(stream: &mut TcpStream, error: HttpError) -> u16 {
     let code = match error.status {
         403 => "forbidden",
         408 => "timed_out",
@@ -44,12 +45,12 @@ pub(super) fn send_http_error(stream: &mut TcpStream, error: HttpError) {
         )
         .expect("error serialization cannot fail");
         let _ = http_wire::send_method_refusal(stream, &body, error.allow.unwrap_or("GET, POST"));
-        return;
+        return error.status;
     }
-    send_error(stream, error.status, code, error.message);
+    send_error(stream, error.status, code, error.message)
 }
 
-pub(super) fn send_error(stream: &mut TcpStream, status: u16, code: &str, message: &str) {
+pub(super) fn send_error(stream: &mut TcpStream, status: u16, code: &str, message: &str) -> u16 {
     let body =
         serde_json::to_vec(&serde_json::json!({ "error": { "code": code, "message": message } }))
             .expect("error serialization cannot fail");
@@ -58,4 +59,5 @@ pub(super) fn send_error(stream: &mut TcpStream, status: u16, code: &str, messag
     } else {
         let _ = http_wire::send_response(stream, status, "application/json", &body);
     }
+    status
 }

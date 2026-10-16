@@ -18,8 +18,9 @@ use crate::{
 use anyhow::{Context, Result, ensure};
 pub(super) use hit_verification::DifferingFiles;
 pub(crate) use hit_verification::WorktreeHashes;
+pub(crate) use hit_verification::is_reextracted_worktree_hit;
 pub(super) use parent_show::acquire_home_read;
-pub(crate) use parent_show::{acquire_through_parent, reextracted_entry};
+pub(crate) use parent_show::{ParentRead, acquire_through_parent, reextracted_entry};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{os::unix::fs::MetadataExt, path::Path, time::Duration};

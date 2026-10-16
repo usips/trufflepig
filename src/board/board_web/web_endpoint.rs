@@ -1,4 +1,4 @@
-//! Secure discovery of the actual loopback listener, checked before printing links.
+//! Secure discovery of the actual local or LAN listener, checked before printing links.
 mod endpoint_probe;
 mod listener_owner;
 mod port_file;
@@ -94,7 +94,7 @@ pub(super) fn published_origin(runtime: &Path) -> Option<String> {
 /// an unusable recorded port falls back to ephemeral with a one-line notice.
 /// Every successful bind re-records its actual port for the next start.
 pub(super) fn bind_listener(runtime: &Path, requested: SocketAddr) -> std::io::Result<TcpListener> {
-    super::web_guard::require_loopback(requested)?;
+    super::web_guard::require_supported_bind_address(requested)?;
     let persisted = (requested.port() == 0)
         .then(|| port_file::read(runtime))
         .flatten()

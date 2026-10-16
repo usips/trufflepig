@@ -1,6 +1,6 @@
 use super::published_endpoint::{PublishedEndpoint, remove_published_endpoint};
 use super::web_serve::{
-    REFUSAL_DRAIN_LIMIT, RefusalDrains, refuse_queue_full, serve_connections,
+    REFUSAL_DRAIN_LIMIT, RefusalDrains, refuse_connection, serve_connections,
     transient_accept_error, try_admit_drain,
 };
 use super::*;
@@ -87,6 +87,7 @@ fn read(store: &WebStore, op: BoardOp) -> BoardReply {
             op,
             project: None,
         },
+        "127.0.0.1".parse().unwrap(),
         Instant::now() + Duration::from_secs(1),
     )
     .unwrap()
@@ -142,6 +143,7 @@ fn subscribe(streams: &EventStreams) -> TcpStream {
             server,
             event_stream::StreamRequest::parse(None, None, None).unwrap(),
             streams.reserve().unwrap(),
+            None,
         )
         .unwrap();
     client

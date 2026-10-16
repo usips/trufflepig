@@ -15,6 +15,8 @@ fn plan_only_commit(repo_key: RepoKey, oid: &str, plan: PlanId, committed_at: i6
             plan_id: plan,
             task_ordinal: None,
         }],
+        worker_refs: Vec::new(),
+        claim_links: Vec::new(),
     }
 }
 
@@ -71,13 +73,23 @@ fn review_keeps_manual_linkers_outside_entry_filters_and_marks_unknown_history()
         BoardOp::New {
             title: PlanTitle::new("Manual review evidence").unwrap(),
             body: PlanText::new("Manual review evidence").unwrap(),
-            steward: Some(HarnessLabel::parse("codex").unwrap()),
             repo_key: None,
         },
     ) else {
         panic!("plan creation failed")
     };
     let plan = created.plan.unwrap();
+    call(
+        &mut board,
+        "human",
+        BoardOp::Grant {
+            plan: Some(plan),
+            roles: vec![AuthorityRole::Link],
+            grantee: BoardRecipient::parse("codex").unwrap(),
+            expires_in: None,
+            note: None,
+        },
+    );
     call(
         &mut board,
         "human",
@@ -132,7 +144,7 @@ fn review_keeps_manual_linkers_outside_entry_filters_and_marks_unknown_history()
     scan_plan_only(&mut board, after_base.clone());
     let (_, after_seq) = repair_task_link(
         &mut board,
-        reviewer("codex", "steward-linker"),
+        reviewer("codex", "granted-linker"),
         task,
         &after_base,
     );
@@ -268,7 +280,7 @@ fn review_keeps_manual_linkers_outside_entry_filters_and_marks_unknown_history()
     assert_eq!(after.seq, Some(after_seq));
     assert_eq!(
         after.actor.as_ref(),
-        Some(&reviewer("codex", "steward-linker"))
+        Some(&reviewer("codex", "granted-linker"))
     );
     assert!(after.seq.unwrap() > all_review.base.seq);
 

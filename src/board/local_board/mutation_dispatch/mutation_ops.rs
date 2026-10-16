@@ -8,9 +8,11 @@ pub(super) fn apply_mutation(
     request: &BoardRequest,
 ) -> Result<BoardReply, BoardError> {
     match &request.op {
-        BoardOp::Hello { model, effort } => {
-            board_writes::entry_writes::hello(tx, ctx, model, effort.as_deref())
-        }
+        BoardOp::Hello {
+            model,
+            effort,
+            worker,
+        } => board_writes::entry_writes::hello(tx, ctx, model, effort.as_deref(), worker.as_ref()),
         BoardOp::Inbox {
             after,
             limit,
@@ -22,25 +24,55 @@ pub(super) fn apply_mutation(
         BoardOp::New {
             title,
             body,
-            steward,
             repo_key,
-        } => board_writes::plan_writes::new_plan(
-            tx,
-            ctx,
-            title,
-            body,
-            steward.as_ref(),
-            repo_key.as_ref(),
-        ),
+        } => board_writes::plan_writes::new_plan(tx, ctx, title, body, repo_key.as_ref()),
         BoardOp::Post {
             target,
             kind,
             body,
             to,
             supersedes,
-        } => {
-            board_writes::entry_writes::post(tx, ctx, target, *kind, body, to.as_ref(), *supersedes)
-        }
+            progress,
+            verdict,
+        } => board_writes::entry_writes::post(
+            tx,
+            ctx,
+            target,
+            *kind,
+            body,
+            to.as_ref(),
+            *supersedes,
+            progress.as_ref(),
+            verdict.as_ref(),
+            request.trusted_head.as_ref(),
+        ),
+        BoardOp::Grant { .. } => write_grant(tx, ctx, &request.op),
+        BoardOp::Revoke { .. } => write_revoke(tx, ctx, &request.op),
+        BoardOp::Bye => board_writes::task_claims::bye(tx, ctx),
+        BoardOp::WorkerAdd {
+            task,
+            handle,
+            role,
+            model,
+            effort,
+            scope,
+            files,
+        } => board_writes::task_claims::add_worker(
+            tx,
+            ctx,
+            *task,
+            handle,
+            *role,
+            model,
+            effort.as_deref(),
+            scope,
+            files,
+        ),
+        BoardOp::WorkerEnd {
+            worker,
+            state,
+            note,
+        } => board_writes::task_claims::end_worker(tx, ctx, worker, *state, note.as_ref()),
         BoardOp::TaskCreate {
             plan,
             title,
@@ -105,6 +137,7 @@ pub(super) fn apply_mutation(
             board_writes::entry_writes::register_repo(tx, ctx, registration)
         }
         BoardOp::Show { .. }
+        | BoardOp::Pending { .. }
         | BoardOp::Search { .. }
         | BoardOp::Review { .. }
         | BoardOp::FeedbackList { .. }

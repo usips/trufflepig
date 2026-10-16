@@ -7,11 +7,14 @@ the board contract.
 ## Filing, states, and metadata
 
 File feedback only when failed, confusing, wrong, or missing Trufflepig behavior forces a
-workaround. Its body records commands tried, observed result, workaround, and what would help. A
-report is an entry, with optional plan and states `open`, `triaged`, `fixed`, `wontfix`, or
-`duplicate`; closing records an event for the reporting session. Triage moves open to triaged;
-terminal states never reopen. Plan feedback decisions require owner-user human/steward authority;
-global feedback requires reporter-user human. Stored metadata includes version/build ID,
+workaround. Use the canonical report fields below. A report is an entry, with optional plan and
+states `open`, `triaged`, `fixed`, `wontfix`, or `duplicate`; closing records an event. Terminal
+states never reopen. The exact full-identity reporter may triage or close their report; matching
+harness or session alone does not establish ownership. Other callers need `triage` authority: a
+plan owner acting as human has it intrinsically, and agents need a grant. A planless report can be
+managed only by a board-wide triage grant scoped to the grantor's owner user.
+Plan-scoped grants and human-only grant administration are defined in the
+[board contract](board-contract.md#identity-references-and-authority). Stored metadata includes version/build ID,
 actor/claims, repo key and relative cwd, steering mode, and the last five audited wrapper calls.
 Recent calls carry abbreviated args, exit/error prefix, truncation/coverage, at most 2048 encoded
 bytes, and no source response bodies. Summary and body together fit the 4096-byte entry cap. Audit
@@ -19,6 +22,20 @@ redaction omits board body, scope, section, model, and recent-call text. Absolut
 unless enriched relative to a verified Git root. Feedback dedupe ignores
 actor/session/claims/cwd/import UUID and keys kind, summary, body, and plan for ten minutes across
 callers.
+
+## Report fields
+
+Use this four-field body for a filed failure:
+
+```text
+Tried: <exact commands>
+Observed: <error or brief result>
+Fallback: <workaround used>
+Needed: <capability or recovery hint>
+```
+
+Keep the body within 4 KiB. The wrapper adds bounded call metadata; do not copy source output into
+the report. Agent skills link here instead of carrying a second template.
 
 ## Outbox and spool
 

@@ -89,7 +89,7 @@ pub(super) fn parse_claim(options: &Arguments, payload: &BoardTextPayload) -> Re
             }
             let delegate = options
                 .board
-                .delegate
+                .for_value
                 .as_deref()
                 .map(ClaimDelegate::parse)
                 .transpose()?;

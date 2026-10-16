@@ -1,6 +1,7 @@
 mod scope_read_fixture;
 
 use super::*;
+use crate::board::board_vocabulary::EntryKind;
 use scope_read_fixture::ScopeFixture;
 use serde_json::json;
 
@@ -149,7 +150,37 @@ fn repo_scope_retains_addressed_messages_and_own_feedback() {
             .iter()
             .any(|row| row.plan == Some(fixture.plans[2]))
     );
-    assert!(attention.entries.iter().any(|row| row.plan.is_none()));
+    assert!(
+        attention
+            .entries
+            .iter()
+            .all(|row| row.kind != EntryKind::Feedback),
+        "feedback stays out of Needs you"
+    );
+
+    let reply = fixture
+        .board
+        .handle(&BoardRequest::new(
+            actor("codex", "reader"),
+            BoardOp::FeedbackList {
+                open_only: false,
+                after: None,
+                through: None,
+                limit: 100,
+            },
+        ))
+        .unwrap();
+    let BoardResult::Feedback(feedback) = reply.result else {
+        panic!("feedback result");
+    };
+    let addressed_feedback = format!("owned feedback {}", fixture.plans[0]);
+    assert!(feedback.feedback.iter().any(|report| {
+        report.entry.plan == Some(fixture.plans[0])
+            && report.entry.body.as_str() == addressed_feedback.as_str()
+    }));
+    assert!(feedback.feedback.iter().any(|report| {
+        report.entry.plan.is_none() && report.entry.body.as_str() == "planless owned feedback"
+    }));
     let reply = fixture.read(scope, json!({"op":"inbox", "after":0, "limit":100}));
     let BoardResult::Inbox(inbox) = reply.result else {
         panic!("inbox result");
@@ -189,16 +220,26 @@ fn shared_commit_event_respects_requested_plan_scope_intersection() {
                 plan_id: fixture.plans[index],
                 task_ordinal: None,
             }],
+            worker_refs: Vec::new(),
+            claim_links: Vec::new(),
         })
         .into_iter()
-        .collect();
-    fixture
-        .board
-        .handle(&BoardRequest::new(
-            actor("human", "owner"),
-            BoardOp::LinkCommits { commits },
-        ))
+        .collect::<Vec<_>>();
+    for commit in commits {
+        let request = BoardRequest::system(
+            BoardActor::system("josh", "laptop").unwrap(),
+            BoardOp::LinkCommits {
+                commits: vec![commit],
+            },
+        )
+        .with_system_origin("ingest")
         .unwrap();
+        fixture.board.handle(&request).unwrap();
+    }
+    assert_eq!(
+        fixture.board.max_seq().unwrap(),
+        EventSeq::new(start.get() + 2)
+    );
     let scope = json!({"keys":[fixture.keys[0]]});
     for (plan, count) in [
         (None, 1),

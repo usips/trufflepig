@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 
 BOARD_VERBS = {"board", "feedback"}
-BOARD_SUBVERBS = {"hello", "new", "show", "post", "claim", "task", "propose", "edit", "accept", "reject", "inbox", "review", "ingest", "projects", "done"}
+BOARD_SUBVERBS = {"hello", "new", "show", "post", "claim", "task", "propose", "edit", "accept", "reject", "inbox", "review", "ingest", "projects", "done", "grant", "revoke", "bye", "pending", "worker"}
 FEEDBACK_REPORT_KINDS = {"blocked", "confused", "wrong", "missing"}
 FEEDBACK_SUBVERBS = FEEDBACK_REPORT_KINDS | {"ls", "close"}
 RECENT_CALL_LIMIT = 5
@@ -15,7 +15,9 @@ RECENT_CALL_BYTES = 2048
 AUDIT_TAIL_BYTES = 64 * 1024
 BOARD_REFERENCE = re.compile(r"(?:P[1-9][0-9]*(?:\.[1-9][0-9]*|@[1-9][0-9]*(?:\.\.[1-9][0-9]*)?|@[1-9][0-9]*\.\.)?|E[1-9][0-9]*)\Z")
 AUDIT_OPTIONS = {"--format", "--diagnostics", "--budget", "-b", "--limit", "-n"}
-PRIVATE_OPTIONS = {"--body", "--scope", "--section", "--board-text", "--recent-calls", "--agent-model", "--agent-effort"}
+PRIVATE_OPTIONS = {"--body", "--scope", "--section", "--board-text", "--recent-calls", "--agent-model", "--agent-effort",
+                  "--to", "--for", "--role", "--model", "--effort", "--files", "--head", "--step",
+                  "--tests", "--gate", "--eta", "--verdict", "--worker", "--after", "--through"}
 COVERAGE_FIELDS = {"state", "partial", "truncated", "semantic_status", "rerank_status", "parse_failures"}
 
 

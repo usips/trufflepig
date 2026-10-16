@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn v9_drops_backfill_index() {
+fn v10_drops_backfill_index_and_preserves_manual_link_history() {
     let directory = directory();
     let path = directory.path().join("board.sqlite3");
     manual_link_migration_tests::seed_manual_link_history(&path);
@@ -22,31 +22,28 @@ fn v9_drops_backfill_index() {
         )
         .unwrap();
     assert!(backfill_index_exists(&legacy));
-    let schema_before = durable_schema_objects(&legacy);
     let evidence_before = DurableLinkSnapshot::read(&legacy);
     drop(legacy);
 
     let (migrated, _) = open(&path).unwrap();
     assert!(
         !backfill_index_exists(&migrated),
-        "schema v9 must drop the backfill-only events_manual_commit_lookup index"
+        "schema v10 must drop the backfill-only events_manual_commit_lookup index"
     );
-    assert_eq!(schema_version(&migrated), 9);
-    assert_eq!(durable_schema_objects(&migrated), schema_before);
+    assert_eq!(schema_version(&migrated), 11);
     assert_eq!(DurableLinkSnapshot::read(&migrated), evidence_before);
     assert_integrity(&migrated);
     drop(migrated);
 
     let (reopened, _) = open(&path).unwrap();
-    assert_eq!(schema_version(&reopened), 9);
+    assert_eq!(schema_version(&reopened), 11);
     assert!(!backfill_index_exists(&reopened));
-    assert_eq!(durable_schema_objects(&reopened), schema_before);
     assert_eq!(DurableLinkSnapshot::read(&reopened), evidence_before);
     assert_integrity(&reopened);
 }
 
 #[test]
-fn fresh_schema_nine_keeps_durable_indexes_and_integrity() {
+fn fresh_schema_eleven_keeps_durable_indexes_and_integrity() {
     let directory = directory();
     let path = directory.path().join("board.sqlite3");
     let (connection, _) = open(&path).unwrap();
@@ -54,8 +51,8 @@ fn fresh_schema_nine_keeps_durable_indexes_and_integrity() {
         !backfill_index_exists(&connection),
         "fresh databases must not retain the manual-link backfill index"
     );
-    assert_eq!(schema_version(&connection), 9);
-    assert_eq!(SCHEMA_VERSION, 9);
+    assert_eq!(schema_version(&connection), 11);
+    assert_eq!(SCHEMA_VERSION, 11);
     let indexes = connection
         .prepare("SELECT name FROM sqlite_schema WHERE type='index' AND tbl_name='events'")
         .unwrap()
@@ -81,19 +78,6 @@ fn backfill_index_exists(connection: &Connection) -> bool {
             [],
             |row| row.get(0),
         )
-        .unwrap()
-}
-
-fn durable_schema_objects(connection: &Connection) -> Vec<(String, String, String)> {
-    connection
-        .prepare(
-            "SELECT type,name,coalesce(sql,'') FROM sqlite_schema
-             WHERE name<>'events_manual_commit_lookup' ORDER BY type,name",
-        )
-        .unwrap()
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
-        .unwrap()
-        .collect::<rusqlite::Result<Vec<_>>>()
         .unwrap()
 }
 

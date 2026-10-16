@@ -71,7 +71,7 @@ fn entry_feedback_detail_preserves_metadata_and_shared_management_authority() {
         assert!(owner_view.can_triage && owner_view.can_close);
         assert!(owner_view.linked_commit.is_none());
         let reporter_view = view(&mut board, reporter.clone(), change.entry);
-        assert!(!reporter_view.can_triage && !reporter_view.can_close);
+        assert!(reporter_view.can_triage && reporter_view.can_close);
         let foreign_view = view(&mut board, foreign.clone(), change.entry);
         assert!(!foreign_view.can_triage && !foreign_view.can_close);
         assert_eq!(foreign_view.feedback.as_ref().unwrap().metadata, metadata);

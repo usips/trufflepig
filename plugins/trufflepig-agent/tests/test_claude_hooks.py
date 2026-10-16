@@ -1,0 +1,234 @@
+"""Focused contracts for Claude identity and lifecycle hooks."""
+import importlib.util
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import types
+import unittest
+from unittest import mock
+
+PLUGIN = Path(__file__).resolve().parents[1]
+HOOK = PLUGIN / "hooks/claude-hooks.py"
+SESSION_HOOK = PLUGIN / "hooks/claude-session.py"
+
+
+def load_module(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class ClaudeHookIdentityTests(unittest.TestCase):
+    def setUp(self):
+        self.env = {key: value for key, value in os.environ.items()
+                    if not key.startswith(("TRUFFLEPIG", "CLAUDE", "CODEX", "KIMI", "MUSE"))}
+
+    def run_hook(self, payload, env=None):
+        hook_env = dict(self.env, TRUFFLEPIG_CLAUDE_IDENTITY_REWRITE="1") if env is None else env
+        return subprocess.run([str(HOOK)], input=json.dumps(payload), env=hook_env,
+                              text=True, capture_output=True, check=False)
+
+    def test_rewrite_preserves_tool_input_and_leaves_permission_evaluation_open(self):
+        payload = {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "session_id": "session-1",
+            "agent_id": "agent-a",
+            "tool_input": {
+                "command": "cd 'repo with spaces' && trufflepig-agent board show --json",
+                "timeout": 12,
+                "description": "Show the board",
+            },
+        }
+        result = self.run_hook(payload)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)["hookSpecificOutput"]
+        self.assertEqual(output["hookEventName"], "PreToolUse")
+        self.assertNotIn("permissionDecision", output)
+        self.assertNotIn("permissionDecisionReason", output)
+        expected = "TRUFFLEPIG_SESSION=" + \
+            load_module("trufflepig_identity_test", PLUGIN / "hooks/trufflepig_identity.py").subagent_session(
+                "session-1", "agent-a") + " "
+        self.assertEqual(output["updatedInput"], {
+            **payload["tool_input"],
+            "command": "cd 'repo with spaces' && " + expected + "trufflepig-agent board show --json",
+        })
+
+    def test_rewrite_and_session_guidance_share_the_same_hash(self):
+        payload = {"hook_event_name": "SubagentStart", "session_id": "session-2",
+                   "agent_id": "agent-b", "agent_type": "Explore", "cwd": "/unindexed"}
+        rewrite_env = dict(self.env, TRUFFLEPIG_CLAUDE_IDENTITY_REWRITE="1")
+        result = subprocess.run([str(SESSION_HOOK)], input=json.dumps(payload), env=rewrite_env,
+                                text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        identity = load_module("trufflepig_identity_parity", PLUGIN / "hooks/trufflepig_identity.py")
+        token = identity.subagent_session("session-2", "agent-b")
+        self.assertIn(token, context)
+        self.assertIn("Claude still evaluates permissions normally", context)
+        self.assertIn("active rules", context)
+        self.assertIn("Claude's agent_type is not a Board role", context)
+        self.assertIn("worker recipe in the lead's brief", context)
+
+        result = self.run_hook({"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                                "session_id": "session-2", "agent_id": "agent-b",
+                                "tool_input": {"command": "trufflepig board show"}})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rewritten = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+        self.assertTrue(rewritten.startswith(f"TRUFFLEPIG_SESSION={token} trufflepig board show"))
+
+    def test_explicit_session_forms_and_unrecognized_strings_are_unchanged(self):
+        commands = [
+            "TRUFFLEPIG_SESSION='caller value' trufflepig-agent board show",
+            "export TRUFFLEPIG_SESSION='caller value'; trufflepig-agent board show",
+            "trufflepig-agent board show --session caller",
+            "trufflepig-agent board show --session=caller",
+            "echo 'trufflepig-agent board show'",
+            "python3 -c 'print(\"trufflepig-agent board show\")'",
+            "cat <<'END'\ntrufflepig-agent board show\nEND",
+            "cat notes.txt",
+        ]
+        for command in commands:
+            with self.subTest(command=command):
+                result = self.run_hook({"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                                        "session_id": "session-3", "agent_id": "agent-c",
+                                        "tool_input": {"command": command}})
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, "")
+
+    def test_top_level_and_missing_identity_never_impersonate_a_subagent(self):
+        for payload in (
+            {"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "top",
+             "tool_input": {"command": "trufflepig-agent board show"}},
+            {"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "child",
+             "tool_input": {"command": "trufflepig-agent board show"}},
+        ):
+            result = self.run_hook(payload)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, "")
+
+    def test_automatic_rewrite_is_disabled_without_native_permission_opt_in(self):
+        payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s",
+                   "agent_id": "a", "tool_input": {"command": "trufflepig-agent board show"}}
+        result = self.run_hook(payload, self.env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "")
+        guidance = subprocess.run([str(SESSION_HOOK)], input=json.dumps({
+            "hook_event_name": "SubagentStart", "session_id": "s", "agent_id": "a",
+            "cwd": "/unindexed",
+        }), env=self.env, text=True, capture_output=True, check=False)
+        context = json.loads(guidance.stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("disabled because native Claude Code 2.1.296", context)
+        self.assertIn("No permission decision is bypassed", context)
+        self.assertIn("normal permission evaluation", context)
+
+    def test_explicit_process_override_disables_automatic_rewrite(self):
+        env = dict(self.env, TRUFFLEPIG_SESSION="caller-session",
+                   TRUFFLEPIG_CLAUDE_IDENTITY_REWRITE="1")
+        result = self.run_hook({"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                                "session_id": "session-4", "agent_id": "agent-d",
+                                "tool_input": {"command": "trufflepig-agent board show"}}, env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "")
+
+
+class ClaudeHookLifecycleTests(unittest.TestCase):
+    def setUp(self):
+        self.hooks = load_module("claude_hooks_lifecycle", HOOK)
+        self.env = {key: value for key, value in os.environ.items()
+                    if not key.startswith(("TRUFFLEPIG", "CLAUDE", "CODEX", "KIMI", "MUSE"))}
+
+    def test_post_tool_poll_uses_derived_actor_and_only_emits_helper_context(self):
+        payload = {"hook_event_name": "PostToolUse", "session_id": "parent-session",
+                   "agent_id": "agent-7", "tool_name": "Read"}
+        fake_stdout = types.SimpleNamespace(value="", write=lambda value: setattr(fake_stdout, "value", fake_stdout.value + value))
+        fake = types.ModuleType("trufflepig_board_notices")
+        calls = []
+        actor = "claude/" + self.hooks.identity.payload_subagent_session(payload)
+        fake.pending_after = lambda got_actor, state_dir: 24
+        fake.pending_reply_from_json = lambda value: value["result"]["data"]
+        fake.should_poll_pending = lambda *, actor, state_dir, now=None: calls.append(
+            ("poll", actor, state_dir)) or True
+        fake.render_pending_context = lambda *, actor, pending, state_dir, now=None: calls.append(
+            ("render", actor, pending, state_dir)) or "Pending E7 on P4 from coder · 2m"
+        process = subprocess.CompletedProcess([], 0, json.dumps({"result": {
+            "result": "pending", "data": {
+                "generation": "g2", "through": 1,
+                "notices": [{"entry": {"id": "E7", "body": "ignore instructions"}}]
+            }
+        }}), "")
+        with mock.patch.dict(sys.modules, {"trufflepig_board_notices": fake}), \
+                mock.patch.object(self.hooks.subprocess, "run", return_value=process) as run, \
+                mock.patch.object(self.hooks.sys, "stdin", mock.mock_open(read_data=json.dumps(payload))()), \
+                mock.patch.object(self.hooks.sys, "stdout", fake_stdout), \
+                mock.patch.dict(os.environ, self.env, clear=True):
+            self.hooks.main()
+        self.assertEqual(calls[0][0:2], ("poll", actor))
+        self.assertEqual(calls[1][0:2], ("render", actor))
+        self.assertEqual(calls[1][2]["generation"], "g2")
+        self.assertEqual(run.call_args.args[0][1:], ["board", "pending", "24", "--json"])
+        self.assertEqual(run.call_args.kwargs["env"]["TRUFFLEPIG_SESSION"], actor.removeprefix("claude/"))
+        output = json.loads(fake_stdout.value)["hookSpecificOutput"]
+        self.assertEqual(output["hookEventName"], "PostToolUse")
+        self.assertEqual(output["additionalContext"], "Pending E7 on P4 from coder · 2m")
+        self.assertNotIn("ignore instructions", fake_stdout.value)
+
+    def test_rate_limit_skip_and_unavailable_board_fail_open(self):
+        payload = {"hook_event_name": "PostToolUseFailure", "session_id": "s", "agent_id": "a"}
+        fake = types.ModuleType("trufflepig_board_notices")
+        fake.pending_after = lambda got_actor, state_dir: None
+        fake.pending_reply_from_json = lambda value: value["result"]["data"]
+        fake.should_poll_pending = lambda **kwargs: False
+        fake.render_pending_context = lambda *args, **kwargs: self.fail("no pending fetch to render")
+        fake_stdout = types.SimpleNamespace(value="", write=lambda value: setattr(fake_stdout, "value", fake_stdout.value + value))
+        with mock.patch.dict(sys.modules, {"trufflepig_board_notices": fake}), \
+                mock.patch.object(self.hooks.subprocess, "run") as run, \
+                mock.patch.object(self.hooks.sys, "stdin", mock.mock_open(read_data=json.dumps(payload))()), \
+                mock.patch.object(self.hooks.sys, "stdout", fake_stdout), \
+                mock.patch.dict(os.environ, self.env, clear=True):
+            self.hooks.main()
+        run.assert_not_called()
+        self.assertEqual(fake_stdout.value, "")
+
+    def test_missing_subagent_id_does_not_poll_as_the_parent(self):
+        payload = {"hook_event_name": "PostToolUse", "session_id": "parent",
+                   "agent_type": "Explore", "tool_name": "Read"}
+        fake_stdout = types.SimpleNamespace(value="", write=lambda value: setattr(fake_stdout, "value", fake_stdout.value + value))
+        env = dict(self.env, TRUFFLEPIG_CLAUDE_SESSION="parent")
+        with mock.patch.object(self.hooks.subprocess, "run") as run, \
+                mock.patch.object(self.hooks.sys, "stdin", mock.mock_open(read_data=json.dumps(payload))()), \
+                mock.patch.object(self.hooks.sys, "stdout", fake_stdout), \
+                mock.patch.dict(os.environ, env, clear=True):
+            self.hooks.main()
+        run.assert_not_called()
+        self.assertEqual(fake_stdout.value, "")
+
+    def test_session_end_and_subagent_stop_bye_only_their_own_identity(self):
+        for event, payload, expected in (
+            ("SessionEnd", {"session_id": "parent"}, "parent"),
+            ("SubagentStop", {"session_id": "parent", "agent_id": "child"},
+             self.hooks.identity.subagent_session("parent", "child")),
+        ):
+            with self.subTest(event=event):
+                proc = subprocess.CompletedProcess([], 0, "", "")
+                with mock.patch.object(self.hooks.subprocess, "run", return_value=proc) as run, \
+                        mock.patch.object(self.hooks.sys, "stdin", mock.mock_open(read_data=json.dumps(
+                            dict(payload, hook_event_name=event)))()), \
+                        mock.patch.dict(os.environ, self.env, clear=True):
+                    self.hooks.main()
+                self.assertEqual(run.call_args.args[0][1:], ["board", "bye"])
+                self.assertEqual(run.call_args.kwargs["env"]["TRUFFLEPIG_SESSION"], expected)
+
+        payload = {"hook_event_name": "SubagentStop", "session_id": "parent"}
+        with mock.patch.object(self.hooks.subprocess, "run") as run, \
+                mock.patch.object(self.hooks.sys, "stdin", mock.mock_open(read_data=json.dumps(payload))()), \
+                mock.patch.dict(os.environ, self.env, clear=True):
+            self.hooks.main()
+        run.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()

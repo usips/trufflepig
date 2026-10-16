@@ -1,6 +1,7 @@
 //! Event route: stream subscriptions and cursor query parsing.
 use super::super::{
     event_stream::{EventStreams, StreamPermit, StreamRequest},
+    http_audit::HttpAudit,
     http_wire::HttpRequest,
 };
 use super::invalid;
@@ -15,10 +16,11 @@ pub(super) fn stream_subscription(
     mut stream: TcpStream,
     prepared: Result<(StreamRequest, StreamPermit), BoardError>,
     streams: &EventStreams,
-) {
+    audit: HttpAudit,
+) -> u16 {
     match prepared {
         Ok((request, permit)) => {
-            if let Err(refusal) = streams.spawn(stream, request, permit) {
+            if let Err(mut refusal) = streams.spawn(stream, request, permit, Some(audit)) {
                 let mut socket = refusal.socket;
                 send_error(
                     &mut socket,
@@ -26,9 +28,20 @@ pub(super) fn stream_subscription(
                     "board_unavailable",
                     &format!("event stream spawn failed: {}", refusal.error),
                 );
+                if let Some(mut audit) = refusal.audit.take() {
+                    audit.finish(503);
+                }
+                503
+            } else {
+                200
             }
         }
-        Err(error) => send_board_error(&mut stream, error),
+        Err(error) => {
+            let status = send_board_error(&mut stream, error);
+            let mut audit = audit;
+            audit.finish(status);
+            status
+        }
     }
 }
 

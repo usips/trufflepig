@@ -1,7 +1,8 @@
 import { createBoardDetails } from "./pages/board_pages.js";
+import { createBoardTaskView } from "./board_task_view.js";
 import { createBoardCards } from "./board_cards.js";
 import { createDonePage } from "./pages/done_page.js";
-import { actorMark, recipientMark } from "./marks/agent_marks.js";
+import { actorAttribution, recipientMark } from "./marks/agent_marks.js";
 import { INGEST_TIMEOUT_MS, INGEST_UNKNOWN_MESSAGE, completeIngest, resolveIngestEvent } from "./board_ingest.js";
 
 export function createBoardViews(context) {
@@ -15,8 +16,10 @@ export function createBoardViews(context) {
     ageNode, panel, empty, omitted, title, field, formStatus, planId, focusKey, retainForm,
   } = dom;
   const {
-    entryCard, eventList, workingCard, taskCard, attentionItems, attentionCard, doneFooter,
+    entryCard, eventList, workingCard, taskCard, workerTree, claimSignals,
+    attentionItems, attentionCard, doneFooter,
   } = createBoardCards({ state, dom, entryRecord, collection });
+  const { taskViewDetails } = createBoardTaskView({ dom, entryCard, workerTree, claimSignals });
   function projectChips(repoKeys, projects = state.projects || []) {
     if (!Array.isArray(repoKeys)) return null;
     const chips = el("div", "row wrap small");
@@ -106,7 +109,9 @@ export function createBoardViews(context) {
     const claims = (data.working || plans.flatMap(item => item.claims || [])).filter(claim => !claim.ended_at);
     const tasksById = new Map(plans.flatMap(item => (item.tasks || []).map(task => [task.id, task])));
     if (claims.length) add(page, panel("Working now", add(el("div", "working-strip"),
-      claims.map(claim => workingCard(claim, tasksById.get(claim.task)))), "working-panel"));
+      claims.map(claim => workingCard(claim, tasksById.get(claim.task), {
+        now: data.server_now, ttlSecs: data.claim_ttl_secs, entries: data.entries,
+      }))), "working-panel"));
     const layout = el("div", "overview-layout");
     const lanes = el("div");
     for (const item of plans) {
@@ -125,7 +130,8 @@ export function createBoardViews(context) {
         const tasks = activeTasks.filter(task => task.column === column);
         const cell = add(el("div", "lane-column"), el("div", "column-name", `${column} · ${tasks.length}`));
         add(cell, tasks.map(task => taskCard(task, item.claims,
-          { claimsOmitted: item.claims_omitted, plan: plan.id, through: data.through })));
+          { claimsOmitted: item.claims_omitted, plan: plan.id, through: data.through,
+            now: data.server_now, ttlSecs: data.claim_ttl_secs, entries: data.entries })));
         if (!tasks.length) cell.append(el("div", "small muted", "—"));
         grid.append(cell);
       }
@@ -158,8 +164,8 @@ export function createBoardViews(context) {
     return page;
   }
   function renderAttention(data, route) {
-    const page = add(el("div"), title("Needs you", "Proposals, questions, and feedback addressed to you."));
-    const groups = [["proposals", "Proposals"], ["questions", "Questions"], ["feedback", "Feedback"]];
+    const page = add(el("div"), title("Needs you", "Addressed questions, proposals needing decisions or new bases, and stale claims."));
+    const groups = [["proposals", "Proposals"], ["questions", "Questions"]];
     for (const [key, label] of groups) {
       const records = collection(data, "entries").filter(record => entryRecord(record).kind === key.replace(/s$/, ""));
       page.append(panel(label, records.length
@@ -172,7 +178,9 @@ export function createBoardViews(context) {
     }
     if (data.stale_claims?.length) {
       page.append(panel("Stale claims",
-        add(el("div", "working-strip"), data.stale_claims.map(item => workingCard(item.claim)))));
+        add(el("div", "working-strip"), data.stale_claims.map(item => workingCard(item.claim, null, {
+          now: data.server_now, ttlSecs: data.claim_ttl_secs, entries: data.entries,
+        })))));
     }
     add(page, omitted(data.entries_omitted, "entries"), omitted(data.claims_omitted, "stale claims"));
     if (data.next_after) page.append(link("Next attention entries", "attention", pageParams(route, data), "button"));
@@ -212,10 +220,16 @@ export function createBoardViews(context) {
     return retainForm(form, `post:${target}:${defaults.question || ""}`);
   }
   function taskDetails(data, headings = []) {
-    const tasks = data.tasks || [], claims = data.claims || [];
+    const tasks = [...(data.tasks || [])], claims = data.claims || [];
+    const selectedView = data.task_view;
+    if (selectedView?.task && !tasks.some(task => task.id === selectedView.task.id)) {
+      tasks.unshift(selectedView.task);
+    }
     const content = el("div");
     for (const task of tasks) {
-      const claim = claims.find(item => item.task === task.id && !item.ended_at);
+      const taskView = selectedView?.task?.id === task.id ? selectedView : null;
+      const claim = taskView ? taskView.current_claim
+        : claims.find(item => item.task === task.id && !item.ended_at);
       const item = el("article", "task-detail");
       item.id = task.id;
       focusKey(item, `task-detail:${task.id}`);
@@ -229,20 +243,36 @@ export function createBoardViews(context) {
         }
         add(item, add(el("p"), el("span", "muted small", "Section: "), section));
       }
-      if (claim) add(item,
-        add(el("p", "small"), actorMark(claim), el("span", "", actorName(claim.actor))),
+      if (claim && !taskView) add(item,
+        add(el("p", "small"), actorAttribution({ ...claim,
+          origin: data.entries?.find(entry => entry?.id === claim.entry)?.origin,
+          authority: data.entries?.find(entry => entry?.id === claim.entry)?.authority,
+        })),
         claim.model || claim.effort ? el("p", "small", [claim.model, claim.effort].filter(Boolean).join(" · ")) : null,
         el("p", "small", claim.scope),
         add(el("p", "small muted"), el("span", "", "Last active "), ageNode(claim.last_active),
           claim.stale ? badge("stale") : null));
-      else if (task.assignee) item.append(add(el("p", "small muted"), recipientMark(task.assignee),
+      if (claim && !taskView) {
+        const signals = claimSignals(claim, { now: data.server_now, ttlSecs: data.claim_ttl_secs });
+        if (signals) item.append(signals);
+      }
+      else if (!taskView && task.assignee) item.append(add(el("p", "small muted"), recipientMark(task.assignee),
         el("span", "", `Assigned to ${task.assignee}`)));
-      if (!claim && (data.claims_omitted || data.claims_partial)) {
+      if (!taskView && !claim && (data.claims_omitted || data.claims_partial)) {
         item.append(link("Claim details omitted", "claims",
           { plan: data.plan.id, through: data.claims_through || data.through }, "small"));
       }
+      if (taskView) item.append(taskViewDetails(taskView));
       const controls = el("form", "actions");
+      if (claim?.stale) {
+        const release = focusKey(button("Release stale claim", () => {
+          void submitMutation(controls, { op: "task_move", task: task.id, column: "todo", to: null });
+        }, "compact"), `move:${task.id}:release-stale`);
+        release.append(el("span", "sr-only", ` ${task.id}`));
+        controls.append(release);
+      }
       for (const column of columns.filter(column => column !== task.column)) {
+        if (claim?.stale && column === "todo") continue;
         const move = focusKey(button(`Move to ${column}`, () => {
           void submitMutation(controls, { op: "task_move", task: task.id, column, to: null });
         }, "compact"), `move:${task.id}:${column}`);
@@ -292,7 +322,9 @@ export function createBoardViews(context) {
     const page = add(el("div"),
       title(route.own_stale === "1" ? "Your stale claims" : "Claims",
         route.plan ? `Plan ${route.plan}` : "Working agents across the board."),
-      add(el("div", "working-strip"), data.claims.map(item => workingCard(item.claim))),
+      add(el("div", "working-strip"), data.claims.map(item => workingCard(item.claim, null, {
+        now: data.server_now, ttlSecs: data.claim_ttl_secs, entries: data.entries,
+      }))),
       omitted(data.omitted, "claims"));
     if (data.next_after) page.append(link("Next claims", "claims", pageParams(route, data), "button"));
     return page;

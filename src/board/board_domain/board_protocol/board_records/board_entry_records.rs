@@ -1,7 +1,7 @@
 //! Entries, inbox events, and mutation addresses.
 use super::{FeedbackRecord, LinkedCommit, ProposalRecord};
 use crate::board::board_domain::board_collections::EntryCursor;
-use crate::board::board_protocol::ReadScope;
+use crate::board::board_protocol::{ActorOrigin, AuthoritySource, ReadScope, ReviewVerdict};
 use crate::board::{
     board_actor::{AgentVendor, BoardActor, BoardRecipient},
     board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
@@ -47,6 +47,12 @@ pub struct EntryRecord {
     pub vendor: AgentVendor,
     pub model: Option<String>,
     pub effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<ActorOrigin>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authority: Option<AuthoritySource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<ReviewVerdict>,
     pub repo_key: Option<RepoKey>,
     pub state: Option<EntryState>,
     pub refs: Vec<BoardRef>,
@@ -87,6 +93,10 @@ pub struct EventRecord {
     pub vendor: AgentVendor,
     pub model: Option<String>,
     pub effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<ActorOrigin>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authority: Option<AuthoritySource>,
     pub summary: EntryText,
     pub created_at: i64,
 }

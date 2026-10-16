@@ -1,7 +1,7 @@
 //! Parses board commands, including inbox and local commit ingestion.
 use super::{
     BoardCommand, BoardTextPayload, board_read_parser,
-    board_syntax_validation::{check_flags, fixed_words, optional_text, recipient, word},
+    board_syntax_validation::{check_flags, fixed_words, optional_text, word},
     board_task_claim_parser::{parse_claim, parse_task},
 };
 use crate::board::board_protocol::ReadScope;
@@ -10,7 +10,7 @@ use crate::{
         board_actor::HarnessLabel,
         board_ids::{BoardRef, EntryId, EventSeq, PlanRevision},
         board_protocol::BoardOp,
-        board_vocabulary::{EntryKind, EntryText, PlanText, PlanTitle},
+        board_vocabulary::{EntryText, PlanText, PlanTitle},
     },
     cli::Arguments,
 };
@@ -20,6 +20,9 @@ pub(super) fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Re
     let words = &options.words;
     let verb = words.get(1).map(String::as_str).unwrap_or("inbox");
     if let Some(op) = board_read_parser::parse_read(options, payload)? {
+        return Ok(BoardCommand::Op(op));
+    }
+    if let Some(op) = super::board_v10_parser::parse_v10(options, payload, verb)? {
         return Ok(BoardCommand::Op(op));
     }
     let op = match verb {
@@ -41,44 +44,13 @@ pub(super) fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Re
             }
             return Ok(BoardCommand::Web { target });
         }
-        "hello" => {
-            check_flags(options, &[])?;
-            fixed_words(options, 3, 4, "board hello MODEL [EFFORT]")?;
-            BoardOp::Hello {
-                model: word(options, 2, "board hello MODEL [EFFORT]")?.into(),
-                effort: words.get(3).cloned(),
-            }
-        }
         "inbox" => return parse_inbox(options, 2),
         "new" => {
-            check_flags(options, &["body", "steward", "text"])?;
+            check_flags(options, &["body", "text"])?;
             BoardOp::New {
                 title: PlanTitle::new(payload.text.clone())?,
                 body: PlanText::new(payload.body.clone().unwrap_or_default())?,
-                steward: options
-                    .board
-                    .steward
-                    .as_deref()
-                    .map(HarnessLabel::parse)
-                    .transpose()?,
                 repo_key: None,
-            }
-        }
-        "post" => {
-            check_flags(options, &["to", "supersedes", "text"])?;
-            let target = word(options, 2, "board post P7[.3] KIND TEXT")?.parse::<BoardRef>()?;
-            let kind = word(options, 3, "board post P7[.3] KIND TEXT")?.parse::<EntryKind>()?;
-            BoardOp::Post {
-                target,
-                kind,
-                body: EntryText::new(payload.text.clone())?,
-                to: recipient(options)?,
-                supersedes: options
-                    .board
-                    .supersedes
-                    .as_deref()
-                    .map(str::parse::<EntryId>)
-                    .transpose()?,
             }
         }
         "task" => parse_task(options, payload)?,
@@ -173,7 +145,7 @@ pub(super) fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Re
         value if value.parse::<u64>().is_ok() => return parse_inbox(options, 1),
         _ => bail!(concat!(
             "usage: board hello|inbox|show|done|feed|attention|history|search|web|claim|post|task|propose",
-            "|review|accept|reject|edit|new|ingest|link|unlink|projects"
+            "|review|accept|reject|edit|new|ingest|link|unlink|grant|revoke|bye|pending|worker|projects"
         )),
     };
     Ok(BoardCommand::Op(op))

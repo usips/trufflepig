@@ -1,14 +1,18 @@
 //! Commit metadata reads preserve every plan/task link and bound plan projections.
 use super::super::{
-    BoardError, actor_from_row, invalid, row_number, sql_error, sql_number, sqlite_u64,
+    BoardError, actor_from_row, delegated_actor_from_row, invalid, row_number, sql_error,
+    sql_number, sqlite_u64,
 };
 use crate::board::{
     board_ids::{EntryId, EventSeq, PlanId, RepoKey, TaskId},
-    board_protocol::{CommitPlanLink, LinkedCommit, ManualCommitLink},
+    board_protocol::{
+        CommitClaimBasis, CommitClaimLink, CommitPlanLink, LinkedCommit, ManualCommitLink,
+        WorkerAddress,
+    },
 };
 use rusqlite::{Connection, params};
 
-const COMMIT_COLUMNS: &str = "c.repo_key,c.oid,c.subject,c.committed_at,c.author,c.coauthors,c.files,c.insertions,c.deletions";
+const COMMIT_COLUMNS: &str = "c.repo_key,c.oid,c.subject,c.committed_at,c.author,c.coauthors,c.files,c.insertions,c.deletions,c.worker_refs_json";
 const PLAN_WINDOW: &str = concat!(
     "EXISTS(SELECT 1 FROM commit_plans p WHERE p.repo_key=c.repo_key AND p.oid=c.oid AND p.plan_id=?1) ",
     "AND c.committed_at>=?2 AND c.committed_at<=?3"
@@ -48,6 +52,65 @@ pub(in crate::board::local_board) fn linked_commits_all(
     end: i64,
 ) -> Result<Vec<LinkedCommit>, BoardError> {
     read_plan_window(conn, plan, start, end, -1, usize::MAX)
+}
+
+/// Reads only task-level links, newest first internally and chronological in the reply.
+pub(in crate::board::local_board) fn linked_commits_for_task(
+    conn: &Connection,
+    task: TaskId,
+    limit: usize,
+) -> Result<(Vec<LinkedCommit>, usize, Option<i64>), BoardError> {
+    let total: i64 = conn
+        .query_row(
+            concat!(
+                "SELECT COUNT(*) FROM commit_tasks t JOIN commits c ",
+                "ON c.repo_key=t.repo_key AND c.oid=t.oid ",
+                "WHERE t.plan_id=?1 AND t.task_ordinal=?2"
+            ),
+            params![sql_number(task.plan.get()), sql_number(task.ordinal)],
+            |row| row.get(0),
+        )
+        .map_err(sql_error)?;
+    let total = usize::try_from(total)
+        .map_err(|_| invalid("board_unavailable", "commit count exceeds platform range"))?;
+    let latest_at: Option<i64> = conn
+        .query_row(
+            concat!(
+                "SELECT MAX(c.committed_at) FROM commit_tasks t JOIN commits c ",
+                "ON c.repo_key=t.repo_key AND c.oid=t.oid ",
+                "WHERE t.plan_id=?1 AND t.task_ordinal=?2"
+            ),
+            params![sql_number(task.plan.get()), sql_number(task.ordinal)],
+            |row| row.get(0),
+        )
+        .map_err(sql_error)?;
+    let bound = i64::try_from(
+        limit
+            .checked_add(1)
+            .ok_or_else(|| invalid("invalid_options", "commit limit overflow"))?,
+    )
+    .map_err(|_| invalid("invalid_options", "commit limit exceeds SQLite range"))?;
+    let sql = format!(
+        "SELECT {COMMIT_COLUMNS} FROM commits c JOIN commit_tasks t ON t.repo_key=c.repo_key AND t.oid=c.oid WHERE t.plan_id=?1 AND t.task_ordinal=?2 ORDER BY c.committed_at DESC,c.repo_key DESC,c.oid DESC LIMIT ?3"
+    );
+    let mut statement = conn.prepare(&sql).map_err(sql_error)?;
+    let mut rows = statement
+        .query(params![
+            sql_number(task.plan.get()),
+            sql_number(task.ordinal),
+            bound
+        ])
+        .map_err(sql_error)?;
+    let mut commits = Vec::with_capacity(limit.min(200));
+    while let Some(row) = rows.next().map_err(sql_error)? {
+        if commits.len() == limit {
+            break;
+        }
+        commits.push(decode_commit(conn, row)?);
+    }
+    commits.reverse();
+    let omitted = total.saturating_sub(commits.len());
+    Ok((commits, omitted, latest_at))
 }
 
 pub(in crate::board::local_board) fn manual_commit_links_window(
@@ -202,6 +265,47 @@ fn decode_commit(conn: &Connection, row: &rusqlite::Row<'_>) -> Result<LinkedCom
         })
         .collect::<Result<Vec<_>, BoardError>>()?;
     let coauthors: String = row.get(5).map_err(sql_error)?;
+    let worker_refs: String = row.get(9).map_err(sql_error)?;
+    let mut claim_statement = conn
+        .prepare(concat!(
+            "SELECT t.plan_id,t.task_ordinal,t.claim_entry,t.attribution_basis,",
+            "a.user,a.host,a.harness,a.session FROM commit_tasks t ",
+            "LEFT JOIN actors a ON a.id=t.claim_actor_id ",
+            "WHERE t.repo_key=?1 AND t.oid=?2 AND t.claim_entry IS NOT NULL ",
+            "ORDER BY t.plan_id,t.task_ordinal"
+        ))
+        .map_err(sql_error)?;
+    let claim_rows = claim_statement
+        .query_map(params![repo_key.as_str(), oid.as_str()], |row| {
+            Ok((
+                row_number(row, 0)?,
+                row_number(row, 1)?,
+                row_number(row, 2)?,
+                row.get::<_, Option<String>>(3)?,
+                delegated_actor_from_row(row, 4)?,
+            ))
+        })
+        .map_err(sql_error)?;
+    let mut claim_links = Vec::new();
+    for claim_row in claim_rows {
+        let (plan, ordinal, entry, basis, actor) = claim_row.map_err(sql_error)?;
+        let basis = match basis.as_deref() {
+            Some("claim_window") => CommitClaimBasis::ClaimWindow,
+            other => {
+                return Err(invalid(
+                    "board_unavailable",
+                    format!("unknown commit attribution basis {other:?}"),
+                ));
+            }
+        };
+        claim_links.push(CommitClaimLink {
+            task: TaskId::new(PlanId::new(plan).map_err(BoardError::from)?, ordinal)
+                .map_err(BoardError::from)?,
+            claim: EntryId::new(entry).map_err(BoardError::from)?,
+            basis,
+            actor,
+        });
+    }
     Ok(LinkedCommit {
         repo_key,
         oid,
@@ -214,6 +318,9 @@ fn decode_commit(conn: &Connection, row: &rusqlite::Row<'_>) -> Result<LinkedCom
         insertions: row_number(row, 7).map_err(sql_error)?,
         deletions: row_number(row, 8).map_err(sql_error)?,
         plans,
+        worker_refs: serde_json::from_str::<Vec<WorkerAddress>>(&worker_refs)
+            .map_err(|error| invalid("board_unavailable", error.to_string()))?,
+        claim_links,
     })
 }
 
@@ -226,16 +333,17 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(concat!(
             "CREATE TABLE commits(repo_key TEXT,oid TEXT,subject TEXT,committed_at INTEGER,author TEXT,",
-            "coauthors TEXT,files INTEGER,insertions INTEGER,deletions INTEGER); ",
+            "coauthors TEXT,files INTEGER,insertions INTEGER,deletions INTEGER,worker_refs_json TEXT NOT NULL DEFAULT '[]'); ",
             "CREATE TABLE commit_plans(repo_key TEXT,oid TEXT,plan_id INTEGER,entry_id INTEGER); ",
-            "CREATE TABLE commit_tasks(repo_key TEXT,oid TEXT,plan_id INTEGER,task_ordinal INTEGER);"
+            "CREATE TABLE commit_tasks(repo_key TEXT,oid TEXT,plan_id INTEGER,task_ordinal INTEGER,claim_entry INTEGER,attribution_basis TEXT,claim_actor_id INTEGER); ",
+            "CREATE TABLE actors(id INTEGER PRIMARY KEY,user TEXT,host TEXT,harness TEXT,session TEXT);"
         ))
         .unwrap();
         let key = "a".repeat(40);
         for number in 1..=3 {
             let oid = format!("{number:040x}");
             conn.execute(
-                "INSERT INTO commits VALUES(?1,?2,?3,?4,'Fixture','[]',1,2,3)",
+                "INSERT INTO commits VALUES(?1,?2,?3,?4,'Fixture','[]',1,2,3,'[]')",
                 params![key, oid, format!("commit{number}"), number],
             )
             .unwrap();
@@ -253,11 +361,26 @@ mod tests {
         .unwrap();
         for task in [1, 2] {
             conn.execute(
-                "INSERT INTO commit_tasks VALUES(?1,?2,1,?3)",
+                "INSERT INTO commit_tasks VALUES(?1,?2,1,?3,NULL,NULL,NULL)",
                 params![key, first, task],
             )
             .unwrap();
         }
+        conn.execute(
+            "INSERT INTO actors VALUES(1,'fixture','host','codex','claim-session')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE commits SET worker_refs_json='[{\"task\":\"P1.1\",\"handle\":\"agent-1\"}]' WHERE oid=?1",
+            [&first],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE commit_tasks SET claim_entry=77,attribution_basis='claim_window',claim_actor_id=1 WHERE oid=?1 AND task_ordinal=1",
+            [&first],
+        )
+        .unwrap();
         let (commits, omitted) =
             linked_commits_bounded(&conn, PlanId::new(1).unwrap(), 0, 10, 2).unwrap();
         assert_eq!(
@@ -276,6 +399,27 @@ mod tests {
         assert_eq!(full.plans[1].task_ordinal, Some(2));
         assert_eq!(full.plans[2].plan_id, PlanId::new(2).unwrap());
         assert_eq!(full.insertions, 2);
+        assert_eq!(
+            full.worker_refs,
+            [WorkerAddress::parse("P1.1/agent-1").unwrap()]
+        );
+        assert_eq!(full.claim_links.len(), 1);
+        assert_eq!(
+            full.claim_links[0].task,
+            TaskId::new(PlanId::new(1).unwrap(), 1).unwrap()
+        );
+        assert_eq!(full.claim_links[0].claim, EntryId::new(77).unwrap());
+        assert_eq!(
+            full.claim_links[0].actor.as_ref().unwrap().session,
+            "claim-session"
+        );
+        let (task_commits, omitted, latest) =
+            linked_commits_for_task(&conn, TaskId::new(PlanId::new(1).unwrap(), 1).unwrap(), 1)
+                .unwrap();
+        assert_eq!(task_commits.len(), 1);
+        assert_eq!(task_commits[0].oid, first.parse().unwrap());
+        assert_eq!(omitted, 0);
+        assert_eq!(latest, Some(1));
         assert!(
             linked_commit_for_entry(&conn, EntryId::new(42).unwrap())
                 .unwrap()

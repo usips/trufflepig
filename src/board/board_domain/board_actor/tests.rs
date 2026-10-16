@@ -28,9 +28,10 @@ fn claim_vendor_preserves_model_priority_and_harness_fallback() {
         ("gemini", None, "gemini"),
         ("qwen", None, "qwen"),
         ("muse", None, "muse"),
-        ("cli", None, "human"),
-        ("cli", Some("gpt-6.1-sol"), "human"),
+        ("cli", None, "unknown"),
+        ("cli", Some("gpt-6.1-sol"), "unknown"),
         ("human", Some("Claude Sonnet 4.5"), "human"),
+        ("system", Some("Claude Sonnet 4.5"), "system"),
         ("omp", Some("unrecognized"), "unknown"),
         ("unrecognized", None, "unknown"),
     ] {
@@ -64,6 +65,13 @@ fn full_identity_round_trips_and_has_no_ambiguous_separators() {
     }
     assert!(HarnessLabel::parse("human").unwrap().is_human());
     assert!(HarnessLabel::parse("cli").unwrap().is_cli());
+    assert!(HarnessLabel::parse("system").unwrap().is_system());
+    assert_eq!(
+        BoardActor::system("trufflepig", "workstation")
+            .unwrap()
+            .identity(),
+        "trufflepig@workstation/system/maintenance"
+    );
     assert!(HarnessLabel::parse("Codex").is_err());
     assert!(HarnessLabel::parse("git:person@example.com").is_ok());
 }
@@ -74,7 +82,19 @@ fn recipients_match_user_harness_or_complete_actor() {
     assert!(BoardRecipient::parse("josh").unwrap().matches(&actor));
     assert!(BoardRecipient::parse("codex").unwrap().matches(&actor));
     assert!(BoardRecipient::for_actor(&actor).matches(&actor));
+    assert!(BoardRecipient::parse("codex/c1").unwrap().matches(&actor));
+    assert_eq!(
+        BoardRecipient::parse("codex/c1")
+            .unwrap()
+            .normalize_for_caller(&actor),
+        BoardRecipient::for_actor(&actor)
+    );
+    assert!(BoardRecipient::parse("P7.3").is_ok());
+    assert!(!BoardRecipient::parse("P7.3").unwrap().matches(&actor));
     assert!(!BoardRecipient::parse("claude").unwrap().matches(&actor));
+    assert!(!BoardRecipient::parse("codex/c2").unwrap().matches(&actor));
+    assert!(BoardRecipient::parse("codex/").is_err());
+    assert!(BoardRecipient::parse("codex/c1/extra").is_err());
     assert!(
         !BoardRecipient::parse("josh@desk/codex/c1")
             .unwrap()

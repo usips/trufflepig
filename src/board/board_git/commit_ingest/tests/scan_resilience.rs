@@ -165,7 +165,7 @@ fn capped_scan_links_bounded_records_without_advancing_digest() {
         assert_eq!(report.inserted, COMMIT_LIMIT as u64);
         assert_eq!(report.errors.len(), 1);
     }
-    assert_eq!(backend.requests, 2);
+    assert_eq!(backend.requests, 2 * COMMIT_LIMIT);
     assert!(ingestor.completed.is_empty());
 }
 

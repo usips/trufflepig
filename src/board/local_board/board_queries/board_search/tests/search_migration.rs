@@ -1,7 +1,14 @@
 use super::*;
 
+fn api11_counts(mut prior: Vec<i64>) -> Vec<i64> {
+    // `counts` stores operation_dedupes at index 10; API 11 invalidates its
+    // prior wire receipt shape while preserving permanent feedback imports.
+    prior[10] = 0;
+    prior
+}
+
 #[test]
-fn board_search_migrates_populated_v1_through_v2_v3_without_losing_rows() {
+fn board_search_migrates_populated_v1_through_v11_without_losing_rows() {
     let directory = crate::board::board_test_support::scratch("board-search-");
     let (path, before) = legacy_search_fixture::populated_v1(&directory);
     let mut board = LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap();
@@ -12,7 +19,10 @@ fn board_search_migrates_populated_v1_through_v2_v3_without_losing_rows() {
             .unwrap(),
         crate::board::SCHEMA_VERSION
     );
-    assert_eq!(legacy_search_fixture::counts(&board.conn), before);
+    assert_eq!(
+        legacy_search_fixture::counts(&board.conn),
+        api11_counts(before.clone())
+    );
     assert_eq!(
         board
             .conn
@@ -210,6 +220,9 @@ fn board_search_failed_v3_migration_rolls_back_rebuild_and_version_atomically() 
         .unwrap();
     drop(conn);
     let board = LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap();
-    assert_eq!(legacy_search_fixture::counts(&board.conn), before);
+    assert_eq!(
+        legacy_search_fixture::counts(&board.conn),
+        api11_counts(before)
+    );
     integrity(&board);
 }

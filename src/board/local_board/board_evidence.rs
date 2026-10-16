@@ -8,11 +8,13 @@ pub(in crate::board) fn insert_entry(
     entry: &EntryDraft,
 ) -> Result<EntryId, BoardError> {
     crate::board::board_vocabulary::EntryText::new(entry.body.clone()).map_err(BoardError::from)?;
+    let (authority_basis, authority_entry) = authority_audit_values(ctx.authority.as_ref())?;
     let id: u64 = tx
         .query_row(
             concat!(
                 "INSERT INTO entries(plan_id,kind,body,to_whom,supersedes,actor_id,model,effort,",
-                "repo_key,state,seq,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) ",
+                "repo_key,state,seq,created_at,origin_harness,origin_session,origin_ip,authority_basis,authority_entry) ",
+                "VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17) ",
                 "RETURNING id"
             ),
             params![
@@ -27,7 +29,14 @@ pub(in crate::board) fn insert_entry(
                 entry.repo_key.as_ref().map(RepoKey::as_str),
                 entry.state,
                 sql_number(ctx.seq.get()),
-                ctx.now
+                ctx.now,
+                ctx.origin.as_ref().map(|origin| origin.harness.as_str()),
+                ctx.origin.as_ref().map(|origin| origin.session.as_str()),
+                ctx.origin
+                    .as_ref()
+                    .and_then(|origin| origin.peer_ip.map(|ip| ip.to_string())),
+                authority_basis,
+                authority_entry
             ],
             |r| row_number(r, 0),
         )
@@ -56,10 +65,12 @@ pub(in crate::board) fn insert_event(
     summary: &str,
 ) -> Result<(), BoardError> {
     crate::board::board_vocabulary::EntryText::new(summary.to_owned()).map_err(BoardError::from)?;
+    let (authority_basis, authority_entry) = authority_audit_values(ctx.authority.as_ref())?;
     tx.execute(
         concat!(
-            "INSERT INTO events(seq,plan_id,kind,subject,to_whom,actor_id,summary,created_at,model,effort) ",
-            "VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)"
+            "INSERT INTO events(seq,plan_id,kind,subject,to_whom,actor_id,summary,created_at,model,effort,",
+            "origin_harness,origin_session,origin_ip,authority_basis,authority_entry) ",
+            "VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)"
         ),
         params![
             sql_number(ctx.seq.get()),
@@ -71,7 +82,14 @@ pub(in crate::board) fn insert_event(
             summary,
             ctx.now,
             ctx.model,
-            ctx.effort
+            ctx.effort,
+            ctx.origin.as_ref().map(|origin| origin.harness.as_str()),
+            ctx.origin.as_ref().map(|origin| origin.session.as_str()),
+            ctx.origin
+                .as_ref()
+                .and_then(|origin| origin.peer_ip.map(|ip| ip.to_string())),
+            authority_basis,
+            authority_entry
         ],
     )
     .map_err(sql_error)?;
@@ -83,17 +101,25 @@ pub(in crate::board) fn can_accept(
     actor: &BoardActor,
     plan: PlanId,
 ) -> Result<bool, BoardError> {
-    let (owner, steward): (String, Option<String>) = conn
-        .query_row(
-            "SELECT owner_user,steward FROM plans WHERE id=?1",
-            [sql_number(plan.get())],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .optional()
-        .map_err(sql_error)?
-        .ok_or_else(|| invalid("invalid_reference", format!("unknown plan {plan}")))?;
-    Ok(actor.user == owner
-        && (actor.harness.is_human() || steward.as_deref() == Some(actor.harness.as_str())))
+    let now = super::unix_now()?;
+    Ok(
+        super::board_authority::authority_for(conn, actor, Some(plan), AuthorityRole::Decide, now)?
+            .is_some(),
+    )
+}
+
+fn authority_audit_values(
+    source: Option<&AuthoritySource>,
+) -> Result<(Option<&'static str>, Option<i64>), BoardError> {
+    Ok(match source {
+        Some(AuthoritySource::Owner) => (Some("owner"), None),
+        Some(AuthoritySource::Grant(entry)) => (Some("grant"), Some(sqlite_id(entry.get())?)),
+        Some(AuthoritySource::Reporter) => (Some("reporter"), None),
+        Some(AuthoritySource::Stale) => (Some("stale"), None),
+        Some(AuthoritySource::Holder) => (Some("holder"), None),
+        Some(AuthoritySource::Delegator) => (Some("delegator"), None),
+        None => (None, None),
+    })
 }
 
 pub(in crate::board) fn require_plan(conn: &Connection, plan: PlanId) -> Result<(), BoardError> {

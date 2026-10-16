@@ -55,6 +55,26 @@ pub fn normalize_args(
 
 fn text_position(options: &Arguments) -> Option<usize> {
     let words = &options.words;
+    if matches!(
+        (
+            words.first().map(String::as_str),
+            words.get(1).map(String::as_str)
+        ),
+        (Some("board"), Some("grant"))
+    ) && words.get(2).is_some_and(|target| target.starts_with('P'))
+    {
+        return Some(4);
+    }
+    if matches!(
+        (
+            words.first().map(String::as_str),
+            words.get(1).map(String::as_str)
+        ),
+        (Some("board"), Some("worker"))
+    ) && words.get(3).map(String::as_str) == Some("end")
+    {
+        return Some(6);
+    }
     match (
         words.first().map(String::as_str),
         words.get(1).map(String::as_str),

@@ -22,16 +22,30 @@ another session's lease once idle ten minutes, while `--resume=E#` names the cur
 entry and takes over immediately; takeover ends the prior lease as `resumed`. The space form
 `--resume E5` is refused: `use --resume=E5`. Stale claims remain claimable. Carve retries dedupe
 only while their lease remains owned; after release or takeover, another carve creates a fresh task.
-Claiming a `done` task or moving it to `doing` is denied; owner human/steward may explicitly correct
-`done` to `todo`. `task P7.3 doing` without `--to` claims the caller using prior scope or title. An
-assigned `doing` card without a lease reserves nonprivileged claims/moves for its assignee. Owner
-human/steward may redirect/cancel assignments or move another holder's task; a holder may move its
-own card. Moving out of `doing` ends the claim; post a hand-off note before returning to `todo`.
+Claiming a `done` task or moving it to `doing` is denied. The current claim holder may move its own
+task. The actual delegator may release only a delegated claim, and any caller may release another
+actor's stale claim; these release paths may move only to `todo` or `blocked`. A `release` grant has
+the same limit and cannot move a delegated or stale claim to `review` or `done`. The plan owner acting
+as human has all roles intrinsically; an agent needs a `decide` grant to reopen a done task as todo
+and an `assign` grant to reassign a task or manage its workers. Task creation, assignment, and
+authorship alone grant no such authority. Moving out of `doing` ends the claim.
+Before handing work back, post progress and move the task to `todo`, unless the human requested a
+pause. `review` and `done` transitions retain their existing idempotent behavior.
+
+`task P7.3 doing` without `--to` claims the caller using prior scope or title. An assigned `doing`
+card without a lease reserves nonprivileged claims and moves for its assignee. Task-addressed entry
+and question delivery, read-time recipients, and Task Show projection follow the
+[worker evidence contract](board-workers.md). Exact-identity feedback ownership and grant boundaries
+live in the [feedback contract](board-feedback-contract.md) and
+[board contract](board-contract.md#identity-references-and-authority).
 Claimant writes on the plan and inbox calls refresh activity. Matching commit co-authors refresh
 only current leases with `claimed_at <= committed_at <= ingest time`, using the maximum activity
-timestamp. Staleness follows reloadable `claim_ttl_minutes` (120 by default); stale takeover
-names/notifies the prior holder. `show` separates active/stale claims, claimable cards, and headings
-without cards.
+timestamp. Staleness follows reloadable `claim_ttl_minutes` (120 by default); authorized takeover
+names/notifies the prior holder. Do not take over a live claim without an explicit authorized
+resume. Reminders include unanswered questions and identify questions left by an earlier task
+holder so the current holder can respond. `show` separates active/stale claims, claimable cards, and
+headings without cards; bounded Task Show detail is defined by the
+[CLI contract](board-cli-contract.md#collection-bounds).
 
 Each mutation has one global event sequence. Inbox, Attention, Overview, and Claims follow the
 [read scope contract](board-projects.md#read-scopes). Own events are excluded unless they are
@@ -42,7 +56,7 @@ and empty reads. Explicit `inbox SEQ` never advances a cursor. First inbox seeds
 `min(limit,20)` events in a 500-event scan window, then bounded open reminders. Reminder totals are
 exact up to 200 (a lower bound beyond), and stale-base proposals appear only in their author's
 reminders. Reminders never acknowledge events. Cursor acknowledgements and lease renewal create no
-events. Shared fallback session IDs share a cursor; use explicit `SEQ` to reread.
+events. The same full actor identity shares a cursor; use explicit `SEQ` to reread.
 
 Entry text is nonblank and at most 4096 UTF-8 bytes; SSOT/proposal text is at most 32768 bytes and
 may be empty. Plan titles are nonblank and at most 256 bytes. The serialized daemon frame is capped

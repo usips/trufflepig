@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Claude SessionStart/SubagentStart hook for session identity and search guidance."""
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -8,6 +7,7 @@ import shlex
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import trufflepig_identity as identity
 EVENTS = ("SessionStart", "SubagentStart")
 
 
@@ -26,17 +26,32 @@ def subagent_identity_context(payload: dict) -> str:
             "wrapper command with `TRUFFLEPIG_SESSION='<value>'`. Do not run `trufflepig-agent board hello` or "
             "an identity-sensitive board write with the inherited parent session."
         )
-    identity = hashlib.sha256(
-        f"{session}\0{agent}".encode("utf-8", "surrogatepass")
-    ).hexdigest()[:24]
-    override = f"claude-agent-{identity}"
-    quoted = shlex.quote(override)
+    override = identity.subagent_session(session, agent)
+    if override is None:
+        return "Trufflepig attribution is unavailable."
+    worker = (
+        "Follow the worker recipe in the lead's brief and use the handle, address, and role the lead registered. "
+        "Claude's agent_type is not a Board role, so do not infer or register a role from it. "
+        "When the brief provides a worker address, include it in `board hello` as `--worker PLAN/HANDLE`. "
+    )
+    if os.environ.get("TRUFFLEPIG_CLAUDE_IDENTITY_REWRITE", "").lower() in {"1", "true", "yes", "on"}:
+        return (
+            "Recognized direct `trufflepig-agent` and `trufflepig` Bash calls receive this subagent's "
+            "stable board identity automatically. Do not add a session override unless the lead explicitly "
+            "provides one. Claude still evaluates permissions normally; the rewritten environment-prefixed "
+            "command must be permitted by the active rules. " + worker
+            + "Calls through another shell, scripts, or unrecognized command forms need an explicit "
+            f"`TRUFFLEPIG_SESSION={override}` prefix, which also follows normal permission evaluation."
+        )
     return (
-        "For every Trufflepig command from this subagent, including `board hello`, prefix the command "
-        f"with `TRUFFLEPIG_SESSION={quoted}`; for example, "
-        f"`TRUFFLEPIG_SESSION={quoted} trufflepig-agent board hello MODEL`. "
-        "This stable per-agent override uses Claude's session_id and agent_id and leaves the parent "
-        "session environment unchanged."
+        "Automatic per-subagent command rewriting is disabled because native Claude Code 2.1.296 "
+        "permission checks rejected its rewritten command under `Bash(trufflepig-agent *)`. No permission "
+        "decision is bypassed. Manually prefix every Trufflepig command, including `board hello`, with "
+        f"`TRUFFLEPIG_SESSION={override}`; for example, "
+        f"`TRUFFLEPIG_SESSION={override} trufflepig-agent board hello MODEL`. "
+        "The prefix also follows normal permission evaluation and may prompt under the current allow rule. "
+        "Set `TRUFFLEPIG_CLAUDE_IDENTITY_REWRITE=1` only when your active rules permit the rewritten command. "
+        + worker
     )
 
 

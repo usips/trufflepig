@@ -104,6 +104,18 @@ pub(super) fn parse_read(
             fixed_words(options, 2, 2, "board projects")?;
             BoardOp::Projects
         }
+        "pending" => {
+            check_flags(options, &[])?;
+            fixed_words(options, 2, 3, "board pending [SEQ]")?;
+            BoardOp::Pending {
+                after: options
+                    .words
+                    .get(2)
+                    .map(|value| value.parse::<EventSeq>())
+                    .transpose()?,
+                limit: bounded_limit(options, 200)?,
+            }
+        }
         "feed" => {
             check_flags(options, &["after", "through"])?;
             fixed_words(

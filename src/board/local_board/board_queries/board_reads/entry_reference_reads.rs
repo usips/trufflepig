@@ -1,6 +1,7 @@
 //! Stored entries, references, and actionable entry views.
 mod reminder_reads;
 
+use super::recipient_predicates::{actor_origin_from_row, authority_from_row};
 use super::*;
 use crate::board::board_actor::claim_vendor;
 pub(in crate::board::local_board) use reminder_reads::open_entries;
@@ -14,7 +15,8 @@ pub(in crate::board::local_board) fn entry(
     let mut statement = conn.prepare(
         concat!(
             "SELECT e.plan_id,e.kind,e.body,e.to_whom,e.supersedes,a.user,a.host,a.harness,a.session,",
-            "e.model,e.effort,e.repo_key,coalesce(p.state,e.state),e.seq,e.created_at,e.via ",
+            "e.model,e.effort,e.repo_key,coalesce(p.state,e.state),e.seq,e.created_at,e.via,",
+            "e.origin_harness,e.origin_session,e.origin_ip,e.authority_basis,e.authority_entry ",
             "FROM entries e JOIN actors a ON a.id=e.actor_id LEFT JOIN proposals p ON p.entry_id=e.id WHERE e.id=?1"
         ),
     ).map_err(sql_error)?;
@@ -88,6 +90,11 @@ pub(in crate::board::local_board) fn entry(
             .transpose()
             .map_err(BoardError::from)?,
         state,
+        origin: actor_origin_from_row(row, 16, 17, 18)?,
+        authority: authority_from_row(row, 19, 20)?,
+        verdict: crate::board::local_board::board_queries::progress_reads::verdict_for_entry(
+            conn, id,
+        )?,
         refs: Vec::new(),
         seq: EventSeq::new(row_number(row, 13).map_err(sql_error)?),
         created_at: row.get(14).map_err(sql_error)?,
@@ -217,7 +224,7 @@ pub(in crate::board::local_board) fn entry_view(
         .map_err(sql_error)?;
     let feedback_authority =
         crate::board::local_board::board_writes::feedback_entries::can_manage_feedback(
-            conn, &ctx.actor, &entry,
+            conn, &ctx.actor, &entry, ctx.now,
         )?;
     let can_triage = feedback_authority
         && matches!(

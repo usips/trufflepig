@@ -91,6 +91,7 @@ fn unavailable_or_queue(
             enrich_feedback_cwd(metadata, &options.root, std::time::Duration::from_secs(2));
         }
         let mut request = BoardRequest::new(actor, op);
+        request.origin = context.origin.clone();
         if options.board.agent_model.is_some() || options.board.agent_effort.is_some() {
             request.claims = Some(board_protocol::AgentClaims {
                 model: options.board.agent_model.clone(),

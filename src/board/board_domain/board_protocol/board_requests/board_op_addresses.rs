@@ -7,6 +7,7 @@ impl BoardOp {
         matches!(
             self,
             Self::Inbox { after: Some(_), .. }
+                | Self::Pending { .. }
                 | Self::Show { .. }
                 | Self::Search { .. }
                 | Self::Review { .. }
@@ -43,7 +44,14 @@ impl BoardOp {
         !self.is_read_only()
             && !matches!(
                 self,
-                Self::Inbox { .. } | Self::LinkCommit { .. } | Self::UnlinkCommit { .. }
+                Self::Inbox { .. }
+                    | Self::Bye
+                    | Self::Grant { .. }
+                    | Self::Revoke { .. }
+                    | Self::WorkerAdd { .. }
+                    | Self::WorkerEnd { .. }
+                    | Self::LinkCommit { .. }
+                    | Self::UnlinkCommit { .. }
             )
     }
 
@@ -52,6 +60,13 @@ impl BoardOp {
             Self::Post { target, .. } | Self::Show { target } => target.plan_id(),
             Self::TaskCreate { plan, .. } | Self::CarveClaim { plan, .. } => Some(*plan),
             Self::TaskMove { task, .. } | Self::ClaimTask { task, .. } => Some(task.plan),
+            Self::WorkerAdd { task, .. } => Some(task.plan),
+            Self::WorkerEnd { worker, .. }
+            | Self::Hello {
+                worker: Some(worker),
+                ..
+            } => Some(worker.task.plan),
+            Self::Grant { plan, .. } => *plan,
             Self::Propose { base, .. } | Self::Edit { base, .. } | Self::Review { base, .. } => {
                 Some(base.plan)
             }

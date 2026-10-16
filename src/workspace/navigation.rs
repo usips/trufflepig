@@ -1,7 +1,7 @@
 //! Owner routing verifies recorded roots and source identities before every follow-up.
 use super::{
     WorkspaceConfig,
-    home_index::{acquire_home_read, reextracted_entry},
+    home_index::{ParentRead, acquire_home_read, is_reextracted_worktree_hit, reextracted_entry},
     member_cache, member_options,
     result_cache::{MemberSnapshot, OwnedEntry, WorkspaceResults, WorkspaceSet},
     selected_member,
@@ -103,6 +103,14 @@ fn read_within(
         }
         let mut metadata = metadata;
         let side = side.or(recorded_side);
+        let current_parent_hit = owner.parent_index.is_some()
+            && matches!(
+                &hit.entry,
+                ResultEntry::LiveSource(hit) if is_reextracted_worktree_hit(hit)
+            );
+        if current_parent_hit {
+            ParentRead::Reextracted.annotate(&owner.name, &mut metadata);
+        }
         let mut source = match acquisition::acquire_entry(&store, &handle, hit.entry.clone(), side)
         {
             // A parent-index definition whose worktree file changed re-reads current bytes.

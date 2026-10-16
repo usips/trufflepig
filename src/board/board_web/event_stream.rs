@@ -12,6 +12,7 @@ mod tests;
 
 pub use sequence_poller::{SequencePoller, SequenceWake};
 
+use super::http_audit::HttpAudit;
 use crate::board::{
     board_ids::{EventSeq, PlanId},
     board_protocol::{BoardError, BoardErrorCode, EventRecord},
@@ -109,6 +110,7 @@ impl Drop for StreamPermit {
 pub struct StreamRefusal {
     pub socket: TcpStream,
     pub error: io::Error,
+    pub(super) audit: Option<HttpAudit>,
 }
 
 impl EventStreams {
@@ -159,34 +161,59 @@ impl EventStreams {
 
     /// Moves the connection out of its HTTP worker; a failed handoff returns
     /// the socket so the caller can answer 503, releasing the permit's slot.
-    pub fn spawn(
+    pub(super) fn spawn(
         &self,
         socket: TcpStream,
         request: StreamRequest,
         permit: StreamPermit,
+        audit: Option<HttpAudit>,
     ) -> Result<(), StreamRefusal> {
         if !Arc::ptr_eq(&self.active, &permit.active) {
             return Err(StreamRefusal {
                 socket,
                 error: io::Error::new(io::ErrorKind::InvalidInput, "foreign stream permit"),
+                audit,
             });
         }
         let cloned = match socket.try_clone() {
             Ok(cloned) => cloned,
-            Err(error) => return Err(StreamRefusal { socket, error }),
+            Err(error) => {
+                return Err(StreamRefusal {
+                    socket,
+                    error,
+                    audit,
+                });
+            }
         };
         let streams = self.clone();
+        let mut failure_audit = audit;
+        let mut thread_audit = failure_audit.as_ref().map(HttpAudit::suspended);
+        if let Some(audit) = failure_audit.as_mut() {
+            audit.suspend();
+        }
         let spawned = thread::Builder::new()
             .name("board-event-stream".into())
             .spawn(move || {
                 let _permit = permit;
-                let _ = streams.serve(cloned, request);
+                if let Some(audit) = thread_audit.as_mut() {
+                    audit.activate();
+                }
+                let _ = streams.serve(cloned, request, thread_audit);
             });
         match spawned {
             // The thread owns the clone; the original closes on drop here.
             Ok(_) => Ok(()),
             // A failed spawn drops the closure with its clone and permit.
-            Err(error) => Err(StreamRefusal { socket, error }),
+            Err(error) => {
+                if let Some(audit) = failure_audit.as_mut() {
+                    audit.activate();
+                }
+                Err(StreamRefusal {
+                    socket,
+                    error,
+                    audit: failure_audit.take(),
+                })
+            }
         }
     }
 

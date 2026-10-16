@@ -23,7 +23,16 @@ fn listening_fixture(
     config: &BoardConfig,
     reply_api: u32,
 ) -> (SocketAddr, thread::JoinHandle<()>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listening_fixture_on(runtime, config, "127.0.0.1:0".parse().unwrap(), reply_api)
+}
+
+fn listening_fixture_on(
+    runtime: &Path,
+    config: &BoardConfig,
+    bind: SocketAddr,
+    reply_api: u32,
+) -> (SocketAddr, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind(bind).unwrap();
     let address = listener.local_addr().unwrap();
     let token = BoardWebToken::rotate_at(&runtime.join("board-web.token")).unwrap();
     let guard = WebGuard::with_token(address, token).unwrap();

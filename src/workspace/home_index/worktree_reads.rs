@@ -14,14 +14,19 @@ use crate::{
 use anyhow::{Result, ensure};
 use std::collections::HashSet;
 
-/// Most changed files re-extracted for one `sym:` answer.
-const MAX_REEXTRACTED_FILES: usize = 64;
+/// Most changed files re-evaluated for one search query.
+const MAX_RECHECKED_FILES: usize = 64;
 
-/// A parent `sym:` answer brought up to the worktree.
+/// Plain text and `sym:` queries can return stale indexed source candidates.
+fn rechecks_search_query(query: &Query) -> bool {
+    query.exact || (!query.regex && !query.text.is_empty())
+}
+
+/// A parent search answer brought up to the worktree.
 pub(super) struct WorktreeSymbols {
-    /// Ordered by `search::rank_definitions`, as index definitions are.
+    /// Current-source matches mixed with unchanged parent candidates.
     pub hits: Vec<Hit>,
-    /// Every changed file found: re-extracted, gone, or unextractable (whose
+    /// Every changed file found: rechecked, gone, or unextractable (whose
     /// parent hits stay, unverified).
     pub changed: HashSet<String>,
     /// False only when every changed path and parent candidate was examined.
@@ -30,6 +35,8 @@ pub(super) struct WorktreeSymbols {
     /// lower bound when discovery or hashing was incomplete.
     pub unsearched_paths: usize,
     pub unsearched_paths_exact: bool,
+    /// At least one current-file retrieval lane reached its candidate limit.
+    pub truncated: bool,
 }
 
 /// Worktree bytes exist but their definitions cannot be known.
@@ -39,9 +46,9 @@ pub(super) fn unextractable(error: &anyhow::Error) -> bool {
 }
 
 impl ParentFallback {
-    /// Completes a parent-index answer from worktree bytes: `sym:` re-extracts
-    /// changed files, and `map` of a changed file re-extracts it. Returns the
-    /// changed files it found, for the answer's differing count.
+    /// Completes a parent-index answer from worktree bytes: searches recheck
+    /// changed files, and `map` of a changed file re-extracts it.
+    /// Returns the changed files it found, for the answer's differing count.
     pub(crate) fn complete_answer(
         &mut self,
         store: &Store,
@@ -66,10 +73,19 @@ impl ParentFallback {
                 }
                 return Ok(HashSet::from([path.clone()]));
             }
-        } else if verb == "search" && query.exact {
+        } else if verb == "search" && rechecks_search_query(query) {
             let parent = std::mem::take(&mut found.hits);
             let symbols = self.worktree_symbols(store, query, parent, origin, hashes)?;
             found.hits = symbols.hits;
+            found.truncated |= symbols.truncated;
+            if !symbols.changed.is_empty() && found.coverage["rerank_status"] == "ready" {
+                found.coverage["rerank_status"] = "unavailable".into();
+                found.coverage["rerank_reason"] =
+                    "current-source replacements were not reranked".into();
+                if let Some(coverage) = found.coverage.as_object_mut() {
+                    coverage.remove("rerank_window");
+                }
+            }
             if symbols.incomplete {
                 found.truncated = true;
                 found.coverage["worktree_reextraction"] = serde_json::json!({
@@ -78,14 +94,25 @@ impl ParentFallback {
                     "unsearched_paths_exact": symbols.unsearched_paths_exact,
                 });
             }
+            if !symbols.changed.is_empty()
+                && matches!(
+                    found.coverage["semantic_status"].as_str(),
+                    Some("ready" | "partial")
+                )
+            {
+                found.coverage["worktree_semantic"] = serde_json::json!({
+                    "status": "unverified",
+                    "files": symbols.changed.len(),
+                });
+                found.coverage["semantic_status"] = "partial".into();
+            }
             return Ok(symbols.changed);
         }
         Ok(HashSet::new())
     }
 
-    /// Replaces `parent` hits in changed files with the definitions those files
-    /// hold now, and adds definitions that exist only in divergent files. At most
-    /// [`MAX_REEXTRACTED_FILES`] files are re-extracted, divergent files first,
+    /// Replaces `parent` hits in changed files with candidates those files hold
+    /// now. At most [`MAX_RECHECKED_FILES`] files are rechecked, divergent files first,
     /// then parent-hit files in rank order while the hash budget lasts.
     pub(super) fn worktree_symbols(
         &mut self,
@@ -97,9 +124,9 @@ impl ParentFallback {
     ) -> Result<WorktreeSymbols> {
         let root = &store.root;
         // A cached Git diff cannot see an edit or new file made since it was
-        // recorded. Exact misses have no parent hit whose revision can reveal
-        // that change, so refresh discovery only on that path.
-        if query.exact && parent.is_empty() {
+        // recorded. Search misses have no parent hit whose revision can reveal
+        // a recent addition, so refresh discovery on that path.
+        if rechecks_search_query(query) && parent.is_empty() {
             self.divergence = WorktreeDivergence::refresh(
                 store.index_root(),
                 root,
@@ -118,7 +145,7 @@ impl ParentFallback {
         let mut changed: Vec<&str> = divergent
             .iter()
             .copied()
-            .take(MAX_REEXTRACTED_FILES)
+            .take(MAX_RECHECKED_FILES)
             .collect();
         let mut selected: HashSet<String> = changed.iter().map(|path| (*path).to_owned()).collect();
         let mut incomplete = !self.divergence.complete || divergent.len() > changed.len();
@@ -126,7 +153,7 @@ impl ParentFallback {
         let mut unsearched_paths_exact = self.divergence.complete;
         let mut unsearched_changed_paths: HashSet<String> = divergent
             .iter()
-            .skip(MAX_REEXTRACTED_FILES)
+            .skip(MAX_RECHECKED_FILES)
             .map(|path| (*path).to_owned())
             .collect();
         for hit in &parent {
@@ -134,7 +161,7 @@ impl ParentFallback {
                 continue;
             }
             match hashes.check(root, &hit.path, hit.revision.as_deref()) {
-                Some(false) if changed.len() < MAX_REEXTRACTED_FILES => {
+                Some(false) if changed.len() < MAX_RECHECKED_FILES => {
                     selected.insert(hit.path.clone());
                     changed.push(&hit.path);
                 }
@@ -152,12 +179,17 @@ impl ParentFallback {
                 }
             }
         }
+        let changed_order: Vec<String> = changed.iter().map(|path| (*path).to_owned()).collect();
         let mut replaced = HashSet::with_capacity(changed.len());
         let mut unextractable_paths = HashSet::new();
-        let mut current = Vec::new();
+        let mut current_by_path = std::collections::HashMap::with_capacity(changed.len());
+        let mut truncated = false;
         for path in changed {
-            match file_definitions(store, path, query) {
-                Ok(hits) => current.extend(hits),
+            match current_file_hits(store, path, query, &parent) {
+                Ok((hits, file_truncated)) => {
+                    truncated |= file_truncated;
+                    current_by_path.insert(path.to_owned(), hits);
+                }
                 Err(error) if unextractable(&error) => {
                     unextractable_paths.insert(path.to_owned());
                     incomplete = true;
@@ -174,12 +206,25 @@ impl ParentFallback {
             }
             replaced.insert(path.to_owned());
         }
-        let mut hits: Vec<Hit> = parent
-            .into_iter()
-            .filter(|hit| !replaced.contains(&hit.path))
-            .chain(current)
-            .collect();
-        crate::search::rank_definitions(&mut hits, origin);
+        let mut emitted = HashSet::with_capacity(replaced.len());
+        let mut hits = Vec::with_capacity(parent.len());
+        for hit in parent {
+            if replaced.contains(&hit.path) {
+                if emitted.insert(hit.path.clone()) {
+                    hits.extend(current_by_path.remove(&hit.path).unwrap_or_default());
+                }
+            } else {
+                hits.push(hit);
+            }
+        }
+        for path in changed_order {
+            if replaced.contains(&path) && emitted.insert(path.clone()) {
+                hits.extend(current_by_path.remove(&path).unwrap_or_default());
+            }
+        }
+        if query.exact {
+            crate::search::rank_definitions(&mut hits, origin);
+        }
         replaced.extend(unextractable_paths);
         Ok(WorktreeSymbols {
             hits,
@@ -187,6 +232,7 @@ impl ParentFallback {
             incomplete,
             unsearched_paths,
             unsearched_paths_exact,
+            truncated,
         })
     }
 }
@@ -200,21 +246,35 @@ fn path_missing(error: &anyhow::Error) -> bool {
     })
 }
 
-/// Every definition named by `query` in the worktree file at `path`.
-fn file_definitions(store: &Store, path: &str, query: &Query) -> Result<Vec<Hit>> {
+/// Re-runs normal search lanes against one changed file's worktree bytes.
+fn current_file_hits(
+    store: &Store,
+    path: &str,
+    query: &Query,
+    parent: &[Hit],
+) -> Result<(Vec<Hit>, bool)> {
     let bytes = source::read_contained(&store.root, &decode_path(path)?, source::MAX_READ_BYTES)?;
     ensure!(
         !bytes.contains(&0),
         "source_excluded: {path} is binary; the index does not extract it"
     );
     let extraction = source::usable_extraction(path, crate::extract::extract(path, &bytes))?;
-    let revision = ContentRevision::of(&bytes).to_string();
-    Ok(extraction
-        .definitions
-        .into_iter()
-        .filter(|definition| crate::search::names_definition(query, path, definition))
-        .map(|definition| definition_hit(path, &bytes, &revision, definition))
-        .collect())
+    let (mut hits, truncated) =
+        crate::search::search_current_file(store, query, path, &bytes, &extraction)?;
+    let semantic = parent
+        .iter()
+        .any(|hit| hit.path == path && hit.provenance.as_deref() == Some("semantic"));
+    if semantic
+        && let Some(hit) = crate::search::semantic_representative(query, path, &bytes, &extraction)
+    {
+        hits.push(hit);
+    }
+    for hit in &mut hits {
+        if let Some(provenance) = &mut hit.provenance {
+            *provenance = format!("worktree_current:{provenance}");
+        }
+    }
+    Ok((hits, truncated))
 }
 
 /// Types and members of a changed file, extracted from its worktree bytes;

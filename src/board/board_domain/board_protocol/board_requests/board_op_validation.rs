@@ -3,8 +3,11 @@ use super::BoardOp;
 use crate::board::{
     board_actor::{HarnessLabel, validate_actor_component},
     board_ids::{BoardRef, MAX_BOARD_NUMBER, TaskId},
-    board_protocol::{COAUTHOR_LIMIT, LINK_LIMIT, TaskOrder, bounded_metadata, validate_claim},
-    board_vocabulary::ENTRY_TEXT_LIMIT,
+    board_protocol::{
+        COAUTHOR_LIMIT, LINK_LIMIT, PROGRESS_ETA_LIMIT_SECS, TaskOrder, WORKER_REF_LIMIT,
+        bounded_metadata, validate_claim,
+    },
+    board_vocabulary::{AuthorityRole, ENTRY_TEXT_LIMIT, EntryKind},
 };
 use anyhow::{Result, bail};
 
@@ -14,6 +17,7 @@ impl BoardOp {
             Self::Post { target, .. } | Self::Show { target } => target.validate()?,
             Self::TaskMove { task, .. }
             | Self::ClaimTask { task, .. }
+            | Self::WorkerAdd { task, .. }
             | Self::UnlinkCommit { task, .. } => task.validate()?,
             Self::Propose { base, .. } | Self::Edit { base, .. } | Self::Review { base, .. } => {
                 base.validate()?
@@ -52,12 +56,76 @@ impl BoardOp {
                 HarnessLabel::parse(delegate.harness.as_str())?;
                 validate_actor_component(&delegate.session, "session")?;
             }
-            Self::Hello { model, effort } => {
+            Self::Hello {
+                model,
+                effort,
+                worker,
+            } => {
                 validate_claim(model, "model")?;
                 if let Some(effort) = effort {
                     validate_claim(effort, "effort")?;
                 }
+                if let Some(worker) = worker {
+                    worker.validate()?;
+                }
             }
+            Self::Grant {
+                plan,
+                roles,
+                grantee: _,
+                expires_in,
+                note: _,
+            } => {
+                if roles.is_empty() {
+                    bail!("invalid_options: grant requires at least one role");
+                }
+                let mut unique = std::collections::HashSet::with_capacity(roles.len());
+                if roles.iter().any(|role| !unique.insert(*role)) {
+                    bail!("invalid_options: grant roles cannot repeat");
+                }
+                if plan.is_none() && roles.as_slice() != [AuthorityRole::Triage] {
+                    bail!("invalid_options: board-wide grants support only triage");
+                }
+                if expires_in
+                    .is_some_and(|seconds| seconds == 0 || seconds > PROGRESS_ETA_LIMIT_SECS)
+                {
+                    bail!("invalid_options: grant duration must be 1..=31536000 seconds");
+                }
+            }
+            Self::Pending { limit, .. } if !(1..=200).contains(limit) => {
+                bail!("invalid_options: pending limit must be 1..200");
+            }
+            Self::WorkerAdd {
+                handle,
+                model,
+                effort,
+                files,
+                ..
+            } => {
+                validate_claim(model, "model")?;
+                if let Some(effort) = effort {
+                    validate_claim(effort, "effort")?;
+                }
+                crate::board::board_protocol::WorkerHandle::parse(handle.as_str())?;
+                if files.is_empty() || files.len() > 256 {
+                    bail!("invalid_options: worker requires 1..256 file paths");
+                }
+                let mut unique = std::collections::HashSet::with_capacity(files.len());
+                for file in files {
+                    if file.trim().is_empty()
+                        || file.len() > 1024
+                        || file.chars().any(char::is_control)
+                    {
+                        bail!(
+                            "invalid_options: worker file paths must contain 1..1024 bytes without controls"
+                        );
+                    }
+                    if !unique.insert(file) {
+                        bail!("invalid_options: worker file paths cannot repeat");
+                    }
+                }
+            }
+            Self::WorkerEnd { worker, .. } => worker.validate()?,
             Self::Inbox { limit, .. } if *limit == 0 || *limit > 2000 => {
                 bail!("invalid_options: inbox limit must be 1..2000")
             }
@@ -154,12 +222,27 @@ impl BoardOp {
             } => {
                 bail!("invalid_options: claims requires a plan or own_stale");
             }
-            Self::Post { target, kind, .. } => {
+            Self::Post {
+                target,
+                kind,
+                progress,
+                verdict,
+                ..
+            } => {
                 if !matches!(target, BoardRef::Plan(_) | BoardRef::Task(_)) {
                     bail!("invalid_reference: post requires a plan or task");
                 }
                 if !kind.is_post_kind() {
                     bail!("invalid_kind: this entry kind cannot be posted");
+                }
+                if progress.is_some() && *kind != EntryKind::Progress {
+                    bail!("invalid_options: progress evidence requires a progress entry");
+                }
+                if let Some(progress) = progress {
+                    progress.validate()?;
+                }
+                if verdict.is_some() && *kind != EntryKind::Review {
+                    bail!("invalid_options: a review verdict requires a review entry");
                 }
             }
             Self::Show {
@@ -251,7 +334,10 @@ impl BoardOp {
 fn validate_commit_metadata(commit: &crate::board::board_protocol::LinkedCommit) -> Result<()> {
     bounded_metadata(&commit.subject, 1024, "commit subject")?;
     bounded_metadata(&commit.author, 1024, "commit author")?;
-    if commit.coauthors.len() > COAUTHOR_LIMIT || commit.plans.len() > LINK_LIMIT {
+    if commit.coauthors.len() > COAUTHOR_LIMIT
+        || commit.plans.len() > LINK_LIMIT
+        || commit.worker_refs.len() > WORKER_REF_LIMIT
+    {
         bail!("invalid_options: commit metadata exceeds collection limits");
     }
     for number in [commit.files, commit.insertions, commit.deletions] {
@@ -266,6 +352,23 @@ fn validate_commit_metadata(commit: &crate::board::board_protocol::LinkedCommit)
     for link in &commit.plans {
         if let Some(ordinal) = link.task_ordinal {
             TaskId::new(link.plan_id, ordinal)?;
+        }
+    }
+    let mut worker_refs = std::collections::HashSet::with_capacity(commit.worker_refs.len());
+    for worker in &commit.worker_refs {
+        worker.validate()?;
+        if !worker_refs.insert(worker) {
+            bail!("invalid_options: worker references cannot repeat on a commit");
+        }
+    }
+    let mut claim_links = std::collections::HashSet::with_capacity(commit.claim_links.len());
+    for link in &commit.claim_links {
+        link.task.validate()?;
+        if !claim_links.insert((link.task, link.claim)) {
+            bail!("invalid_options: claim links cannot repeat on a commit");
+        }
+        if let Some(actor) = &link.actor {
+            actor.validate()?;
         }
     }
     Ok(())

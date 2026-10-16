@@ -4,15 +4,17 @@ mod collection_lines;
 mod diff_lines;
 mod line_cells;
 mod record_lines;
+mod task_lines;
 
 pub(super) use diff_lines::diff_lines;
 pub(super) use line_cells::{cell, footer, recipient};
 pub(super) use record_lines::{claim_line, entry_line};
 
 use crate::board::board_protocol::{BoardResult, FeedbackVia, InboxWait};
-use line_cells::author;
+use line_cells::{author, source_suffix, vendor_suffix};
 use record_lines::{plan_lines, revision_lines};
 use std::fmt::Write;
+use task_lines::{pending_lines as render_pending_lines, task_lines as render_task_lines};
 
 pub(super) fn lines_result(result: &BoardResult) -> String {
     let mut text = String::new();
@@ -41,9 +43,11 @@ pub(super) fn lines_result(result: &BoardResult) -> String {
             .unwrap();
             writeln!(text, "scanned through: {}", inbox.scanned_through).unwrap();
             for event in &inbox.events {
+                let source = source_suffix(event.origin.as_ref(), event.authority.as_ref());
+                let vendor = vendor_suffix(event.vendor);
                 writeln!(
                     text,
-                    "{}\t{}\t{}\t{}\t{}\t{}{}{}",
+                    "{}\t{}\t{}\t{}\t{}\t{}{}{}{}{}",
                     event.seq,
                     event
                         .plan
@@ -60,7 +64,9 @@ pub(super) fn lines_result(result: &BoardResult) -> String {
                     match event.via {
                         Some(FeedbackVia::Outbox) => "\tvia=outbox spooled unverified",
                         None => "",
-                    }
+                    },
+                    vendor,
+                    source
                 )
                 .unwrap();
             }
@@ -153,6 +159,8 @@ pub(super) fn lines_result(result: &BoardResult) -> String {
                 entry_line(&mut text, &report.entry);
             }
         }
+        BoardResult::TaskView(view) => render_task_lines(&mut text, view),
+        BoardResult::Pending(pending) => render_pending_lines(&mut text, pending),
         BoardResult::Overview(_)
         | BoardResult::Attention(_)
         | BoardResult::Feed(_)

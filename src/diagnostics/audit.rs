@@ -109,7 +109,8 @@ impl DiagnosticStore {
                 if event.context.created_unix_micros <= forgotten as u64 {
                     continue;
                 }
-                if session.is_some_and(|id| event.context.session.as_deref() != Some(id)) {
+                if session.is_some_and(|id| event.context.diagnostic_session.as_deref() != Some(id))
+                {
                     continue;
                 }
                 if event.truncated {

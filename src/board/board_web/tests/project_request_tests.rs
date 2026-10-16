@@ -54,11 +54,16 @@ impl WebProjectFixture {
         let plans = std::array::from_fn(|index| {
             let request: WebRequest = serde_json::from_value(json!({
                 "api":BOARD_API, "op":{"op":"new", "title":format!("Plan {index}"),
-                "body":"", "steward":null, "repo_key":null}
+                "body":"", "repo_key":null}
             }))
             .unwrap();
-            let reply =
-                web_ops::execute(&store, request, Instant::now() + Duration::from_secs(5)).unwrap();
+            let reply = web_ops::execute(
+                &store,
+                request,
+                "127.0.0.1".parse().unwrap(),
+                Instant::now() + Duration::from_secs(5),
+            )
+            .unwrap();
             let BoardResult::Change(change) = reply.result else {
                 panic!("plan creation");
             };
@@ -91,6 +96,7 @@ impl WebProjectFixture {
         web_ops::execute(
             &self.store,
             request,
+            "127.0.0.1".parse().unwrap(),
             Instant::now() + Duration::from_secs(5),
         )
     }

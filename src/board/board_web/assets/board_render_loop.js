@@ -11,6 +11,59 @@ export function createBoardRenderLoop({
     saveForm, markFormSaved,
   } = dom;
 
+  let feedbackCountRequest = null;
+  let feedbackCountQueued = false;
+
+  function renderFeedbackCount(count) {
+    const label = document.getElementById("feedback-count");
+    if (!label) return;
+    if (count === null) {
+      label.textContent = "?";
+      label.hidden = false;
+      label.title = "Open feedback count unavailable";
+      label.setAttribute("aria-label", "Open feedback count unavailable");
+      return;
+    }
+    label.textContent = count;
+    label.hidden = count === "0";
+    label.title = `${count} open or triaged feedback reports`;
+    label.setAttribute("aria-label", `${count} open or triaged feedback reports`);
+  }
+
+  function refreshFeedbackCount() {
+    if (feedbackCountRequest) { feedbackCountQueued = true; return; }
+    const controller = new AbortController();
+    feedbackCountRequest = controller;
+    void (async () => {
+      try {
+        const reply = await board(readOp("feedback_list", {
+          open_only: true, after: null, through: null, limit: 1,
+        }), controller.signal);
+        const reports = reply.data?.feedback;
+        const omitted = String(reply.data?.omitted);
+        if (!Array.isArray(reports) || !/^(0|[1-9]\d*)$/.test(omitted)) {
+          throw new Error("Board reply is missing its feedback count.");
+        }
+        if (controller.signal.aborted) return;
+        renderFeedbackCount((BigInt(reports.length) + BigInt(omitted)).toString());
+      } catch (error) {
+        if (!controller.signal.aborted && !isAbort(error)) renderFeedbackCount(null);
+      } finally {
+        if (feedbackCountRequest === controller) feedbackCountRequest = null;
+        if (feedbackCountQueued) {
+          feedbackCountQueued = false;
+          refreshFeedbackCount();
+        }
+      }
+    })();
+  }
+
+  function abortFeedbackCount() {
+    feedbackCountQueued = false;
+    feedbackCountRequest?.abort();
+    feedbackCountRequest = null;
+  }
+
   function errorMessage(error) { return error?.message || String(error); }
   function isAbort(error) { return error?.name === "AbortError"; }
   function captureDoneDisclosures(root) {
@@ -177,6 +230,7 @@ export function createBoardRenderLoop({
     }
   }
   async function loadRoute(focus = false, forceSnapshot = false) {
+    refreshFeedbackCount();
     forceSnapshot ||= state.resyncing;
     if (state.refreshing && !focus && !forceSnapshot) { state.refreshAgain = true; return; }
     state.request?.abort();
@@ -270,5 +324,6 @@ export function createBoardRenderLoop({
     board, jsonFetch, privateFetch, parseBoardJson, readOp, snapshotSeq, minimumSeq,
     entryRecord, collection, permitted, nextAfter, cursorFromRoute, pageParams, queryFilters,
     errorMessage, scheduleRefresh, submitMutation, loadRoute, refreshOverview, addTickerEvent,
+    abortFeedbackCount,
   };
 }

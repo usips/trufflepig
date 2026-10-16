@@ -85,11 +85,7 @@ fn review_json_manual_links_names_hand_linker() {
 fn manual_link_repairs_an_untrailered_commit_through_host_resolution() {
     let fixture = EdgeFixture::new();
     fixture.seed_repo();
-    fixture.run(
-        &["board", "new", "Manual link", "--steward", "codex"],
-        "human",
-        "owner",
-    );
+    fixture.run(&["board", "new", "Manual link"], "human", "owner");
     fixture.run(&["board", "task", "P1", "Repair lane"], "human", "owner");
     std::fs::write(fixture.root.join("repair.txt"), "untrailered work\n").unwrap();
     git(&fixture.root, &["add", "repair.txt"]);

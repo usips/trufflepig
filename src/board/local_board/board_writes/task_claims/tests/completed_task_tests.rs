@@ -37,12 +37,13 @@ fn completed_card_cannot_be_reclaimed_or_reassigned_to_doing() {
 fn owner_authority_can_redirect_or_cancel_pending_assignment() {
     let database = ClaimDatabase::new();
     let mut conn = database.connect();
+    grant_legacy_claude(&conn);
     let holder = actor("josh", "codex", "one");
-    let steward = actor("josh", "claude", "steward");
-    for privileged in [&steward, &actor("josh", "human", "owner")] {
+    let grant_holder = actor("josh", "claude", "grant");
+    for privileged in [&grant_holder, &actor("josh", "human", "owner")] {
         let task = carved_task(&mut conn, &holder, 1000, "pending assignment");
         let recipient = BoardRecipient::parse("muse").unwrap();
-        write(&mut conn, &steward, 1050, |tx, ctx| {
+        write(&mut conn, &grant_holder, 1050, |tx, ctx| {
             move_task(tx, ctx, task, TaskColumn::Doing, Some(&recipient))
         })
         .unwrap();
@@ -77,9 +78,10 @@ fn owner_authority_can_redirect_or_cancel_pending_assignment() {
 fn explicit_owner_correction_reopens_done_to_todo_before_normal_claim() {
     let database = ClaimDatabase::new();
     let mut conn = database.connect();
+    grant_legacy_claude(&conn);
     let holder = actor("josh", "codex", "one");
     for privileged in [
-        actor("josh", "claude", "steward"),
+        actor("josh", "claude", "grant"),
         actor("josh", "human", "owner"),
     ] {
         let task = carved_task(&mut conn, &holder, 1000, "completed");

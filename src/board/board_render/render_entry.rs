@@ -1,4 +1,7 @@
 //! Plan and entry views preserve primary bodies while fitting related evidence.
+use super::render_task::{
+    commit_detail_counts, plan_claim_detail_counts, trim_commit_details, trim_plan_claim_details,
+};
 use super::{BoardOmitted, RenderedBoard, fit_items, render_complete, require_fits};
 use crate::board::board_protocol::{
     BoardReply, BoardResult, EntryCursor, EntryRecord, EntryView, PlanView,
@@ -6,6 +9,21 @@ use crate::board::board_protocol::{
 use crate::board::board_vocabulary::PlanText;
 use crate::output::OutputBudget;
 use anyhow::Result;
+
+#[derive(Clone, Copy)]
+struct PlanTrim {
+    lines: usize,
+    tasks: usize,
+    claims: usize,
+    grants: usize,
+    entries: usize,
+    commits: usize,
+    worker_files: usize,
+    progress_gates: usize,
+    workers: usize,
+    commit_worker_refs: usize,
+    commit_claim_links: usize,
+}
 
 pub(super) fn render_entry(
     reply: &BoardReply,
@@ -97,38 +115,73 @@ pub(super) fn render_plan(
         .as_str()
         .split_inclusive('\n')
         .collect::<Vec<_>>();
-    let render = |lines: usize, tasks: usize, claims: usize, entries: usize, commits: usize| {
+    let (max_files, max_gates, max_workers) = plan_claim_detail_counts(&view.claims);
+    let (max_commit_worker_refs, max_commit_claim_links) = commit_detail_counts(&view.commits);
+    let full = PlanTrim {
+        lines: body_lines.len(),
+        tasks: view.tasks.len(),
+        claims: view.claims.len(),
+        grants: view.grants.len(),
+        entries: view.entries.len(),
+        commits: view.commits.len(),
+        worker_files: max_files,
+        progress_gates: max_gates,
+        workers: max_workers,
+        commit_worker_refs: max_commit_worker_refs,
+        commit_claim_links: max_commit_claim_links,
+    };
+    let render = |trim: PlanTrim| {
         let mut visible = view.clone();
-        visible.tasks.truncate(tasks);
-        visible.claims.truncate(claims);
-        visible.entries.truncate(entries);
-        visible.commits.truncate(commits);
-        visible.tasks_omitted += view.tasks.len() - tasks;
-        visible.claims_omitted += view.claims.len() - claims;
-        visible.entries_omitted += view.entries.len() - entries;
-        visible.commits_omitted += view.commits.len() - commits;
-        if tasks < view.tasks.len() {
+        visible.tasks.truncate(trim.tasks);
+        visible.claims.truncate(trim.claims);
+        visible.grants.truncate(trim.grants);
+        visible.entries.truncate(trim.entries);
+        visible.commits.truncate(trim.commits);
+        let nested = trim_plan_claim_details(
+            &mut visible.claims,
+            trim.worker_files,
+            trim.progress_gates,
+            trim.workers,
+        );
+        let (commit_worker_refs, commit_claim_links) = trim_commit_details(
+            &mut visible.commits,
+            trim.commit_worker_refs,
+            trim.commit_claim_links,
+        );
+        visible.tasks_omitted += view.tasks.len() - trim.tasks;
+        visible.claims_omitted += view.claims.len() - trim.claims;
+        visible.entries_omitted += view.entries.len() - trim.entries;
+        visible.commits_omitted += view.commits.len() - trim.commits;
+        if trim.tasks < view.tasks.len() {
             visible.tasks_next_after = visible.tasks.last().map(|task| task.id);
         }
-        if claims < view.claims.len() {
+        if trim.claims < view.claims.len() {
             visible.claims_next_after = None;
         }
-        if entries < view.entries.len() {
+        if trim.entries < view.entries.len() {
             visible.entries_next_before = visible.entries.last().map(|entry| EntryCursor {
                 seq: entry.seq,
                 entry: entry.id,
             });
         }
-        visible.revision.body = PlanText::new(body_lines[..lines].concat())?;
+        visible.revision.body = PlanText::new(body_lines[..trim.lines].concat())?;
         let mut candidate = reply.clone();
         candidate.result = BoardResult::Plan(visible);
-        let next =
-            (lines < body_lines.len()).then(|| format!("board show {} -b 32768", view.revision.id));
+        let next = (trim.lines < body_lines.len())
+            .then(|| format!("board show {} -b 32768", view.revision.id));
         render_complete(
             &candidate,
             BoardOmitted {
-                entries: view.entries.len() - entries,
-                body_lines: body_lines.len() - lines,
+                claims: view.claims.len() - trim.claims,
+                grants: view.grants.len() - trim.grants,
+                entries: view.entries.len() - trim.entries,
+                commits: view.commits.len() - trim.commits,
+                commit_worker_refs,
+                commit_claim_links,
+                body_lines: body_lines.len() - trim.lines,
+                workers: nested.workers,
+                worker_files: nested.worker_files,
+                progress_gates: nested.progress_gates,
                 ..BoardOmitted::default()
             },
             None,
@@ -136,22 +189,83 @@ pub(super) fn render_plan(
             budget,
         )
     };
+    // Keep worker and commit rows intact until their nested evidence is trimmed.
+    let mut trim = full;
+    trim.lines = 0;
+    trim.tasks = 0;
+    trim.claims = view.claims.len();
+    trim.grants = 0;
+    trim.entries = 0;
+    trim.commits = view.commits.len();
+    trim.commit_worker_refs = fit_items(max_commit_worker_refs, budget, |count| {
+        render(PlanTrim {
+            commit_worker_refs: count,
+            ..trim
+        })
+    })?;
+    trim.commit_claim_links = fit_items(max_commit_claim_links, budget, |count| {
+        render(PlanTrim {
+            commit_claim_links: count,
+            ..trim
+        })
+    })?;
+    trim.worker_files = fit_items(max_files, budget, |count| {
+        render(PlanTrim {
+            worker_files: count,
+            ..trim
+        })
+    })?;
+    trim.progress_gates = fit_items(max_gates, budget, |count| {
+        render(PlanTrim {
+            progress_gates: count,
+            ..trim
+        })
+    })?;
+    trim.workers = fit_items(max_workers, budget, |count| {
+        render(PlanTrim {
+            workers: count,
+            ..trim
+        })
+    })?;
     // Claim and task summaries stay useful before the immutable body is expanded.
-    let claims = fit_items(view.claims.len(), budget, |count| render(0, 0, count, 0, 0))?;
-    let tasks = fit_items(view.tasks.len(), budget, |count| {
-        render(0, count, claims, 0, 0)
+    trim.claims = fit_items(view.claims.len(), budget, |count| {
+        render(PlanTrim {
+            claims: count,
+            ..trim
+        })
     })?;
-    let lines = fit_items(body_lines.len(), budget, |count| {
-        render(count, tasks, claims, 0, 0)
+    trim.grants = fit_items(view.grants.len(), budget, |count| {
+        render(PlanTrim {
+            grants: count,
+            ..trim
+        })
     })?;
-    let entries = fit_items(view.entries.len(), budget, |count| {
-        render(lines, tasks, claims, count, 0)
+    trim.tasks = fit_items(view.tasks.len(), budget, |count| {
+        render(PlanTrim {
+            tasks: count,
+            ..trim
+        })
     })?;
-    let commits = fit_items(view.commits.len(), budget, |count| {
-        render(lines, tasks, claims, entries, count)
+    trim.lines = fit_items(body_lines.len(), budget, |count| {
+        render(PlanTrim {
+            lines: count,
+            ..trim
+        })
+    })?;
+    trim.entries = fit_items(view.entries.len(), budget, |count| {
+        render(PlanTrim {
+            entries: count,
+            ..trim
+        })
+    })?;
+    trim.commits = fit_items(view.commits.len(), budget, |count| {
+        render(PlanTrim {
+            commits: count,
+            ..trim
+        })
     })?;
     Ok(RenderedBoard {
-        text: require_fits(render(lines, tasks, claims, entries, commits)?, budget)?,
+        text: require_fits(render(trim)?, budget)?,
         acknowledge_seq: None,
     })
 }

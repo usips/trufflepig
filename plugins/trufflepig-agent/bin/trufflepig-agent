@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -18,19 +19,27 @@ from pathlib import Path
 from trufflepig_runtime import client_environment, fallback_root, steering_mode
 from trufflepig_audit_response import coverage_summary, parse_lines_response
 from trufflepig_board_audit import BOARD_VERBS, FEEDBACK_REPORT_KINDS, PRIVATE_OPTIONS, audit_arguments, audit_options, error_prefix, recent_calls
+from trufflepig_board_notices import (claim_pending_notices, pending_after,
+                                     pending_metadata, pending_reply_from_json,
+                                     should_poll_pending)
 
 SLOW_SECONDS = 3.0
 RECENT_LIMIT = 8
-SESSION_MARKER_MAX_AGE = 12 * 3600
+PENDING_LIMIT = 8
+PENDING_TIMEOUT_SECONDS = 2.5
 TRUFFLEPIG = os.environ.get("TRUFFLEPIG_BINARY", "trufflepig")
 FLAGS_WITH_VALUES = {
     "--root", "--workspace", "--member", "--cache", "-b", "--budget", "-n",
     "--limit", "--history-cache", "--target", "--side", "--ignore-revs-file",
     "--diagnostics", "--session", "--client", "--format",
-    "--body", "--plan", "--steward", "--to", "--supersedes", "--scope", "--section",
-    "--for", "--project",
+    "--body", "--plan", "--to", "--supersedes", "--scope", "--section",
+    "--for", "--project", "--after", "--through", "--worker", "--role", "--model", "--effort",
+    "--files", "--head", "--step", "--tests", "--gate", "--eta", "--verdict",
     "--agent-model", "--agent-effort", "--recent-calls", "--board-text",
 }
+HARNESS_LABEL = re.compile(r"[a-z][a-z0-9_-]{0,31}\Z")
+
+
 def state_dir() -> Path:
     base = os.environ.get("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state")
     return Path(base) / "trufflepig"
@@ -40,10 +49,8 @@ def log_dir() -> Path:
     return Path(os.environ.get("TRUFFLEPIG_AGENT_LOG_DIR") or state_dir() / "agent-audit")
 
 
-def detect_harness() -> str:
-    explicit = os.environ.get("TRUFFLEPIG_AGENT_HARNESS")
-    if explicit:
-        return explicit
+def detect_native_harness() -> str | None:
+    """Match the Rust actor resolver's observed environment/process priority."""
     if os.environ.get("GEMINI_CLI") == "1":
         return "gemini"
     if os.environ.get("GROK_SESSION_ID"):
@@ -58,12 +65,10 @@ def detect_harness() -> str:
         return "claude"
     if any(os.environ.get(key) for key in ("CODEX_THREAD_ID", "CODEX_SESSION_ID", "CODEX_VERSION")):
         return "codex"
-    for key in os.environ:
-        upper = key.upper()
-        if "KIMI" in upper:
-            return "kimi"
-        if "MUSE" in upper:
-            return "muse"
+    if any("KIMI" in key.upper() for key in os.environ):
+        return "kimi"
+    if any("MUSE" in key.upper() for key in os.environ):
+        return "muse"
     # Walk parent processes and look for a known harness executable name.
     pid = os.getppid()
     for _ in range(12):
@@ -93,18 +98,28 @@ def detect_harness() -> str:
             break
         if pid <= 1:
             break
-    return "unknown"
+    return None
+
+
+def detect_harness(explicit_client: str | None = None) -> str:
+    """Resolve observed identity before wrapper hints and user client claims."""
+    native = detect_native_harness()
+    if native:
+        return native
+    hint = os.environ.get("TRUFFLEPIG_AGENT_HARNESS", "")
+    if HARNESS_LABEL.fullmatch(hint):
+        return hint
+    if isinstance(explicit_client, str) and HARNESS_LABEL.fullmatch(explicit_client):
+        return explicit_client
+    return "cli"
 
 
 def cwd_key(cwd: str) -> str:
-    """Per-directory marker name shared with hooks/session-start.sh (Kimi, Muse).
-
-    SHA-256 truncated to 12 hex digits; the hook computes the same digest.
-    """
+    """Return a bounded directory key for local recent-query state."""
     return hashlib.sha256(cwd.encode()).hexdigest()[:12]
 
 
-def resolve_session(harness: str, cwd: str) -> str:
+def resolve_session(harness: str) -> str | None:
     explicit = os.environ.get("TRUFFLEPIG_SESSION")
     if explicit:
         return explicit
@@ -123,22 +138,7 @@ def resolve_session(harness: str, cwd: str) -> str:
     for key in (*keys.get(harness, ()), "AGENT_SESSION_ID"):
         if os.environ.get(key):
             return os.environ[key]
-    # Kimi and Muse session hooks write one marker per cwd; Claude and omp
-    # arrive through their environment variables above and never read one.
-    # A marker older than the age limit is a leftover from a harness that no
-    # longer runs its SessionEnd hook, so it is ignored rather than reused.
-    key = cwd_key(cwd)
-    if harness == "omp":
-        return f"{harness}-{key}-{time.strftime('%Y%m%d')}"
-    marker = state_dir() / "agent-sessions" / harness / key
-    try:
-        fresh = time.time() - marker.stat().st_mtime < SESSION_MARKER_MAX_AGE
-        session = marker.read_text().strip() if fresh else ""
-        if session:
-            return session
-    except OSError:
-        pass
-    return f"{harness}-{key}-{time.strftime('%Y%m%d')}"
+    return None
 
 
 def split_args(argv: list[str]) -> tuple[list[str], str, list[str], dict[str, str]]:
@@ -185,22 +185,125 @@ def recent_fingerprints(path: Path) -> list[str]:
         return []
 
 
+def board_notice_state_dir(harness: str) -> Path:
+    """Use the same Claude state directory as Claude's PostToolUse hooks."""
+    suffix = "claude-notices" if harness == "claude" else "board-notices"
+    return state_dir() / suffix
+
+
+def successful_output(stdout: bytes, stderr: bytes, exit_code: int,
+                      argv: list[str], verb: str, words: list[str]) -> dict | None:
+    """Return a successful object response, or None for errors/help/text output."""
+    if exit_code != 0 or "--help" in argv or "-h" in argv:
+        return None
+    if "--version" in argv or words[:1] == ["help"]:
+        return None
+    wants_json = "--json" in argv or any(
+        arg == "--format=json" or
+        (arg == "--format" and index + 1 < len(argv) and argv[index + 1] == "json")
+        for index, arg in enumerate(argv))
+    if not stdout.strip():
+        if wants_json or error_prefix(stderr.decode("utf-8", "replace")):
+            return None
+        return {"_text_output": True}
+    try:
+        parsed = json.loads(stdout)
+    except (ValueError, UnicodeDecodeError):
+        if wants_json:
+            return None
+        lowered = stdout.lstrip().lower()
+        if lowered.startswith((b"usage:", b"error:", b"help:")):
+            return None
+        if error_prefix(stderr.decode("utf-8", "replace")):
+            return None
+        return {"_text_output": True}
+    if not isinstance(parsed, dict) or parsed.get("error") is not None:
+        return None
+    if parsed.get("status") not in (None, "ok"):
+        return None
+    result = parsed.get("result")
+    if isinstance(result, dict) and result.get("result") in ("error", "failed"):
+        return None
+    return parsed
+
+
+def poll_board_notices(harness: str, session: str,
+                       explicit_session: str | None = None) -> tuple[dict, list[dict]] | None:
+    """Make one bounded Pending request and reserve newly addressed notices."""
+    actor = f"{harness}/{session}"
+    state = board_notice_state_dir(harness)
+    try:
+        if not should_poll_pending(actor=actor, state_dir=state):
+            return None
+        after = pending_after(actor, state)
+        command = [TRUFFLEPIG, "--json", "--client", harness,
+                   "--limit", str(PENDING_LIMIT)]
+        if explicit_session is not None:
+            command.extend(["--session", explicit_session])
+        command.extend(["board", "pending"])
+        if after is not None:
+            command.append(str(after))
+        result = subprocess.run(command, capture_output=True, check=False,
+                                 env=client_environment(), timeout=PENDING_TIMEOUT_SECONDS)
+        if result.returncode != 0:
+            return None
+        response = json.loads(result.stdout)
+        pending = pending_reply_from_json(response)
+        if pending is None:
+            return None
+        notices = claim_pending_notices(actor=actor, pending=pending, state_dir=state)
+        return (pending, notices) if notices else None
+    except (OSError, ValueError, UnicodeDecodeError, subprocess.TimeoutExpired):
+        return None
+
+
+def append_pending_output(stdout: bytes, parsed: dict,
+                          pending: dict, notices: list[dict]) -> bytes:
+    """Attach a small JSON projection or one fixed line footer."""
+    metadata = pending_metadata(pending=pending, notices=notices)
+    if metadata is None:
+        return stdout
+    if "_text_output" not in parsed:
+        if "board_pending" in parsed:
+            return stdout
+        parsed["board_pending"] = metadata
+        newline = b"\n" if stdout.endswith(b"\n") else b""
+        try:
+            encoded = json.dumps(parsed, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        except (TypeError, ValueError, UnicodeEncodeError):
+            return stdout
+        return encoded + newline
+    count = len(notices)
+    footer = (f"board: {count} pending notice{'s' if count != 1 else ''}; "
+              "run trufflepig-agent board pending\n").encode("utf-8")
+    return stdout + (b"" if not stdout or stdout.endswith(b"\n") else b"\n") + footer
+
+
 def main() -> int:
     argv = sys.argv[1:]
     cwd = os.getcwd()
-    harness = detect_harness()
-    session = resolve_session(harness, cwd)
     options, verb, words, values = split_args(argv)
-    harness = values.get("--client", harness)
-    session = values.get("--session", session)
+    native_harness = detect_native_harness()
+    claimed_client_arg = values.get("--client")
+    claimed_client = (claimed_client_arg if isinstance(claimed_client_arg, str)
+                      and HARNESS_LABEL.fullmatch(claimed_client_arg) else None)
+    hint = os.environ.get("TRUFFLEPIG_AGENT_HARNESS", "")
+    if native_harness:
+        harness, identity_source = native_harness, "observed"
+    elif HARNESS_LABEL.fullmatch(hint):
+        harness, identity_source = hint, "wrapper_hint"
+    elif claimed_client is not None:
+        harness, identity_source = claimed_client, "client_claim"
+    else:
+        harness, identity_source = "cli", "cli"
+    session = (values["--session"] if "--session" in values
+               else resolve_session(harness))
     private_audit = verb in BOARD_VERBS or bool(PRIVATE_OPTIONS & values.keys())
     injected: list[str] = []
     if "--json" not in options and "--format" not in values:
         injected.extend(["--format", "lines"])
     if "--client" not in values:
         injected.extend(["--client", harness])
-    if "--session" not in values:
-        injected.extend(["--session", session])
     if "--diagnostics" not in values:
         injected.extend(["--diagnostics", os.environ.get("TRUFFLEPIG_AGENT_DIAGNOSTICS", "detailed")])
     runtime = fallback_root()
@@ -210,7 +313,7 @@ def main() -> int:
             if flag not in values and os.environ.get(key):
                 injected.extend([flag, os.environ[key]])
     feedback_report = verb == "feedback" and len(words) > 1 and words[1] in FEEDBACK_REPORT_KINDS
-    if feedback_report and "--recent-calls" not in values:
+    if feedback_report and session and "--recent-calls" not in values:
         injected.extend(["--recent-calls", recent_calls([log_dir(), runtime / "agent-audit"], harness, session)])
     command = [TRUFFLEPIG, *injected, *argv]
     environment = client_environment()
@@ -228,11 +331,6 @@ def main() -> int:
         stderr = f"trufflepig-agent: {TRUFFLEPIG} not found on PATH\n".encode()
     elapsed = time.monotonic() - started
 
-    sys.stdout.buffer.write(stdout)
-    sys.stdout.buffer.flush()
-    sys.stderr.buffer.write(stderr)
-    sys.stderr.buffer.flush()
-
     response: dict = {}
     if stdout.lstrip().startswith(b"{"):
         try:
@@ -244,6 +342,21 @@ def main() -> int:
     elif stdout.strip():
         response = parse_lines_response(stdout)
 
+    visible_stdout = stdout
+    is_pending_query = verb == "board" and len(words) > 1 and words[1] == "pending"
+    parsed_success = successful_output(stdout, stderr, exit_code, argv, verb, words)
+    if (session and parsed_success is not None and not is_pending_query
+            and "board_pending" not in parsed_success):
+        pending_result = poll_board_notices(harness, session, values.get("--session"))
+        if pending_result is not None:
+            pending, notices = pending_result
+            visible_stdout = append_pending_output(stdout, parsed_success, pending, notices)
+
+    sys.stdout.buffer.write(visible_stdout)
+    sys.stdout.buffer.flush()
+    sys.stderr.buffer.write(stderr)
+    sys.stderr.buffer.flush()
+
     hits = response.get("hits")
     hit_count = len(hits) if isinstance(hits, list) else None
     status = response.get("status") or ("ok" if exit_code == 0 else "error")
@@ -254,13 +367,18 @@ def main() -> int:
     coverage = coverage_summary(response)
 
     fingerprint = hashlib.blake2s(" ".join([verb, *words[1:]]).encode(), digest_size=8).hexdigest()
-    recent_path = state_dir() / "agent-recent" / harness / f"{cwd_key(cwd)}-{session}"
+    recent_path = (state_dir() / "agent-recent" / harness / f"{cwd_key(cwd)}-{session}"
+                   if session else None)
     audit_fallback = runtime / "agent-audit"
-    recent_fallback = runtime / "agent-recent" / recent_path.parent.name / recent_path.name
-    try:
-        recent = recent_path.read_text().split()[-RECENT_LIMIT:]
-    except OSError:
-        recent = recent_fingerprints(recent_fallback)
+    recent_fallback = (runtime / "agent-recent" / recent_path.parent.name / recent_path.name
+                       if recent_path is not None else None)
+    if recent_path is not None:
+        try:
+            recent = recent_path.read_text().split()[-RECENT_LIMIT:]
+        except OSError:
+            recent = recent_fingerprints(recent_fallback)
+    else:
+        recent = []
     repeat_count = recent.count(fingerprint)
 
     signals: list[str] = []
@@ -290,6 +408,9 @@ def main() -> int:
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "ts_ns": time.time_ns(),
         "harness": harness,
+        "origin_harness": harness,
+        "identity_source": identity_source,
+        "claimed_client": claimed_client,
         "session": session,
         "cwd": cwd,
         "verb": verb,
@@ -329,7 +450,8 @@ def main() -> int:
                 return fallback_error
 
     audit_error = with_fallback(append_audit, log_dir(), audit_fallback)
-    with_fallback(write_recent, recent_path, recent_fallback)
+    if recent_path is not None and recent_fallback is not None:
+        with_fallback(write_recent, recent_path, recent_fallback)
     if audit_error is not None:
         sys.stderr.write(f"trufflepig-agent: audit log unavailable: {audit_error}\n")
     return exit_code

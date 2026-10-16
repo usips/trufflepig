@@ -1,31 +1,60 @@
 use super::*;
 use crate::board::board_ids::TaskId;
-use crate::board::board_vocabulary::TaskColumn;
+use crate::board::board_protocol::ClaimResume;
+use crate::board::board_vocabulary::{EntryText, TaskColumn};
 use crate::board::local_board::board_queries::collection_nested;
+use crate::board::local_board::board_writes::task_claims::claim_task;
 use crate::board::local_board::board_writes::task_writes::move_task;
 use serde_json::{Value, json};
 
 fn move_seeded_task(board: &LocalBoard, ordinal: u64, column: TaskColumn, seq: u64, now: i64) {
     let mut ctx = context();
-    ctx.actor_id = 3;
-    ctx.actor = BoardActor::new(
-        "josh",
-        "laptop",
-        HarnessLabel::parse("claude").unwrap(),
-        "s2",
-    )
-    .unwrap();
-    ctx.seq = EventSeq::new(seq);
-    ctx.now = now;
     let tx = board.conn.unchecked_transaction().unwrap();
-    move_task(
+    let card = crate::board::local_board::board_writes::task_writes::require_task(
         &tx,
-        &ctx,
         TaskId::new(plan(1), ordinal).unwrap(),
-        column,
-        None,
     )
     .unwrap();
+    let reopening_done = card.column == TaskColumn::Done && column == TaskColumn::Todo;
+    ctx.actor = if reopening_done {
+        BoardActor::new(
+            "josh",
+            "laptop",
+            HarnessLabel::parse("human").unwrap(),
+            "owner",
+        )
+        .unwrap()
+    } else {
+        BoardActor::new(
+            "josh",
+            "laptop",
+            HarnessLabel::parse("claude").unwrap(),
+            "s2",
+        )
+        .unwrap()
+    };
+    ctx.actor_id = crate::board::local_board::ensure_actor(&tx, &ctx.actor, now).unwrap();
+    ctx.seq = EventSeq::new(
+        seq.max(
+            crate::board::local_board::max_seq(&tx)
+                .unwrap()
+                .get()
+                .saturating_add(1),
+        ),
+    );
+    ctx.now = now;
+    let task = TaskId::new(plan(1), ordinal).unwrap();
+    if !reopening_done {
+        let scope = EntryText::new("overview fixture ownership").unwrap();
+        claim_task(&tx, &ctx, task, Some(&scope), ClaimResume::No, None).unwrap();
+        ctx.seq = EventSeq::new(
+            crate::board::local_board::max_seq(&tx)
+                .unwrap()
+                .get()
+                .saturating_add(1),
+        );
+    }
+    move_task(&tx, &ctx, task, column, None).unwrap();
     tx.commit().unwrap();
 }
 
@@ -166,7 +195,15 @@ fn task_done_at_tracks_completion_and_clears_when_reopened() {
     move_seeded_task(&board, 1, TaskColumn::Done, 4, 600);
     let overview = plan_overview_json(&board);
     assert_eq!(overview["recent_done"][0]["done_at"], json!(600));
-    assert_eq!(overview["recent_done"][0]["seq"], json!(4));
+    let done_seq: i64 = board
+        .conn
+        .query_row(
+            "SELECT seq FROM tasks WHERE plan_id=1 AND ordinal=1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(overview["recent_done"][0]["seq"], json!(done_seq));
 
     move_seeded_task(&board, 1, TaskColumn::Todo, 5, 650);
     let overview = plan_overview_json(&board);
@@ -192,11 +229,19 @@ fn recent_done_breaks_sequence_ties_by_ordinal() {
     seed_task(&board.conn, 1);
     seed_task(&board.conn, 2);
     move_seeded_task(&board, 1, TaskColumn::Done, 3, 600);
+    let tied_seq: i64 = board
+        .conn
+        .query_row(
+            "SELECT seq FROM tasks WHERE plan_id=1 AND ordinal=1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
     board
         .conn
         .execute(
-            "UPDATE tasks SET column_name='done',seq=3 WHERE ordinal=2",
-            [],
+            "UPDATE tasks SET column_name='done',seq=?1 WHERE ordinal=2",
+            [tied_seq],
         )
         .unwrap();
 

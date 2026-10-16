@@ -18,13 +18,13 @@ import time
 import uuid
 
 PLUGIN = Path(__file__).resolve().parents[1]
-BOARD_API = 9
-BOARD_SCHEMA = 9
+BOARD_API = 11
+BOARD_SCHEMA = 11
 ROUTER_READY_TIMEOUT_SECONDS = 10
 sys.path.insert(0, str(PLUGIN / "bin"))
 from trufflepig_runtime import runtime_config_path
 from agent_install_links import AgentLinkPlan, link
-from claude_install import claude_home, prepare_settings, write_settings
+from claude_install import claude_home, check_claude_hooks, prepare_settings, write_settings
 from board_service_pin import validate_router_database
 from systemd_units import (apply_units, board_database_path, render_service, service_text,
                            system_runtime_path)
@@ -187,7 +187,8 @@ def main() -> int:
     parser.add_argument("--runtime-dir", type=Path, help="disk-backed, sandbox-writable agent runtime")
     parser.add_argument("--steer", choices=("off", "nudge", "block", "strict"),
                         help="search steering mode recorded for the selected harnesses")
-    parser.add_argument("--check", type=Path, metavar="ROOT", help="search and read a file through the installed wrapper")
+    parser.add_argument("--check", type=Path, metavar="ROOT",
+                        help="smoke search/source access; with --claude also check hooks and current Board service")
     args = parser.parse_args()
     if not any((args.codex, args.claude, args.gemini, args.grok, args.kimi, args.muse, args.kimi_hooks, args.omp, args.opencode, args.systemd, args.board,
                 args.commands, args.project, args.check)):
@@ -248,7 +249,8 @@ def main() -> int:
         claude_settings = prepare_settings(
             claude_settings_path,
             None if link_plan.claude_plugin else args.bin / "trufflepig-claude-session",
-            runtime, None if link_plan.claude_plugin else args.bin / "trufflepig-agent-steer")
+            runtime, None if link_plan.claude_plugin else args.bin / "trufflepig-agent-steer",
+            None if link_plan.claude_plugin else args.bin / "trufflepig-claude-hooks")
     for source, destination in link_plan.links:
         link(source, destination)
     if runtime_harness:
@@ -289,6 +291,14 @@ def main() -> int:
                     args.systemd, args.board, unit_text, board_unit_text,
                     partial(require_current_router, require_schema=require_schema))
     if args.check:
+        if args.claude:
+            check_claude_hooks(claude_settings_path, args.bin,
+                               notices_helper=PLUGIN / "bin/trufflepig_board_notices.py",
+                               plugin_hooks=link_plan.claude_plugin)
+            if not binary:
+                raise ValueError("--claude --check requires trufflepig on PATH to verify Board service readiness")
+            require_board_api(binary)
+            require_current_router(system_runtime_path(binary), require_schema=True)
         subprocess.run([sys.executable, str(PLUGIN / "scripts/check_agent.py"),
                         "--wrapper", str(args.bin / "trufflepig-agent"), str(args.check.absolute())], check=True)
     return 0

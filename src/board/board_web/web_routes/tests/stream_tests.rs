@@ -38,7 +38,9 @@ fn refused_event_stream_spawn_answers_503_instead_of_silence() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
     let (server, _) = listener.accept().unwrap();
-    stream_subscription(server, Ok((request, permit)), &fixture.state.streams);
+    let peer_ip = server.peer_addr().unwrap().ip();
+    let audit = super::super::super::http_audit::HttpAudit::new(peer_ip);
+    stream_subscription(server, Ok((request, permit)), &fixture.state.streams, audit);
     let mut reply = String::new();
     client.read_to_string(&mut reply).unwrap();
     assert!(reply.starts_with("HTTP/1.1 503 "), "{reply}");
@@ -107,6 +109,7 @@ fn completed_ingest_relay_reaches_stream_subscribers() {
             server,
             StreamRequest::parse(None, None, None).unwrap(),
             fixture.state.streams.reserve().unwrap(),
+            None,
         )
         .unwrap();
     read_until(&mut subscriber, "\r\n\r\n");

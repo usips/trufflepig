@@ -1,36 +1,89 @@
 import { beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { installDomShim, resetDomShim } from "./support/dom_shim.mjs";
+import { AGENT_MARKS, actorAttribution, harnessVendor } from "../marks/agent_marks.js";
 import { actorSiteNodes, doneSiteNodes, markFixtures, markViews, MARK_VENDORS, MARK_GLYPHS }
   from "./support/agent_mark_sites.mjs";
 
 installDomShim();
 beforeEach(() => resetDomShim());
 
-function visibleText(node) {
-  if (node.tagName === "TITLE") return "";
-  return node.textContent + node.children.map(visibleText).join("");
-}
+test("system_is_a_vendor_and_unknown_harnesses_stay_unknown", () => {
+  assert.ok(Object.hasOwn(AGENT_MARKS, "system"));
+  assert.equal(harnessVendor("system"), "system");
+  assert.equal(harnessVendor("human"), "human", "only the explicit human harness maps to human");
+  assert.equal(harnessVendor("cli"), "unknown");
+  assert.equal(harnessVendor("future-harness"), "unknown");
+
+  const system = actorAttribution({
+    vendor: harnessVendor("system"),
+    actor: { user: "board", host: "local", harness: "system", session: "maintenance" },
+  }).querySelector(".agent-mark");
+  assert.equal(system.dataset.vendor, "system");
+  assert.equal(system.querySelector("text").textContent, "Sy");
+});
+
+test("actor_attribution_separates_actual_actor_origin_and_authority", () => {
+  const attribution = actorAttribution({
+    vendor: "codex",
+    model: "gpt-codex-fixture",
+    actor: { user: "alice", host: "workstation", harness: "codex", session: "actual-session" },
+    origin: { harness: "cli", session: "observed-session", peer_ip: "198.51.100.23" },
+    authority: "grant:E17",
+  });
+
+  const actualActor = attribution.querySelector(".actor-attribution-actor");
+  assert.equal(actualActor.querySelector(".agent-mark").dataset.vendor, "codex");
+  assert.equal(actualActor.querySelector(".actor-attribution-identity").textContent,
+    "alice@workstation/codex/actual-session");
+
+  const origin = attribution.querySelector(".actor-attribution-origin");
+  assert.equal(origin.textContent, " · origin cli/observed-session · peer IP 198.51.100.23");
+  assert.equal(origin.title, "Observed origin");
+  const authority = attribution.querySelector(".actor-attribution-authority");
+  assert.equal(authority.textContent, " · authority grant:E17");
+  assert.equal(authority.title, "Authority source");
+});
+
+test("legacy_origin_without_peer_ip_does_not_invent_an_address", () => {
+  const attribution = actorAttribution({
+    vendor: "unknown",
+    actor: null,
+    origin: { harness: "claude", session: "legacy-session" },
+  });
+
+  const origin = attribution.querySelector(".actor-attribution-origin");
+  assert.equal(origin.textContent, " · origin claude/legacy-session");
+  assert.equal(origin.textContent.includes("peer IP"), false);
+});
 
 test("every_actor_site_renders_a_mark", async () => {
   const actual = {}, expected = {};
   for (const [site, node] of await actorSiteNodes()) {
     actual[site] = node.querySelectorAll(".agent-mark").map(mark => mark.dataset.vendor);
-    expected[site] = site === "ticker" ? [...MARK_VENDORS].reverse() : MARK_VENDORS;
+    const vendors = ["claim badges", "Working now"].includes(site)
+      ? MARK_VENDORS.flatMap(vendor => [vendor, vendor]) : MARK_VENDORS;
+    expected[site] = site === "ticker" ? [...vendors].reverse() : vendors;
   }
   assert.deepEqual(actual, expected, "each actor site renders all nine vendor marks");
   for (const [site, node] of await actorSiteNodes()) {
     assert.deepEqual(node.querySelectorAll(".agent-mark").map(mark =>
       mark.querySelector("text").textContent),
-    site === "ticker" ? [...MARK_GLYPHS].reverse() : MARK_GLYPHS, `${site} has the vendor glyphs`);
+    (() => {
+      const glyphs = ["claim badges", "Working now"].includes(site)
+        ? MARK_GLYPHS.flatMap(glyph => [glyph, glyph]) : MARK_GLYPHS;
+      return site === "ticker" ? [...glyphs].reverse() : glyphs;
+    })(), `${site} has the vendor glyphs`);
   }
   const markers = (await actorSiteNodes()).get("plan claim markers")
     .querySelectorAll('.badge[data-kind="claimed"]');
   for (const [index, marker] of markers.entries()) {
     const vendor = MARK_VENDORS[index];
-    assert.equal(visibleText(marker), MARK_GLYPHS[index]
-      + `fixture@board.test/${vendor}/session-${index} · ${vendor}-fixture · max`,
-    "a claim marker replaces the status text with the actor label");
+    assert.equal(marker.querySelector(".actor-attribution-identity").textContent,
+      `fixture@board.test/${vendor}/session-${index}`,
+      "a claim marker preserves the complete actor identity");
+    assert.equal(marker.children.at(-1).textContent, `${vendor}-fixture · max`,
+      "a claim marker retains its model and effort");
   }
 });
 
@@ -86,7 +139,8 @@ test("no_image_requests_without_logo", async () => {
   };
   try {
     for (const [site, node] of await actorSiteNodes()) {
-      assert.equal(node.querySelectorAll(".agent-mark").length, 9, `${site} has nine inline marks`);
+      const count = ["claim badges", "Working now"].includes(site) ? 18 : 9;
+      assert.equal(node.querySelectorAll(".agent-mark").length, count, `${site} has inline marks for each rendered actor`);
       assert.equal(node.querySelectorAll("img,image").length, 0, `${site} makes no logo request`);
     }
     assert.equal(imagesCreated, 0);

@@ -95,7 +95,6 @@ fn show_lists_the_claim_entry_for_resume_targeting() {
             BoardOp::New {
                 title: PlanTitle::new("Claims").unwrap(),
                 body: crate::board::board_vocabulary::PlanText::new("# Scope").unwrap(),
-                steward: None,
                 repo_key: None,
             },
         ))
@@ -129,11 +128,7 @@ fn show_lists_the_claim_entry_for_resume_targeting() {
         .unwrap();
     let json = serde_json::to_value(&reply.result).unwrap();
     assert!(
-        json["data"]["claims"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|claim| claim["entry"] == carve.entry.to_string()),
-        "show exposes the claim entry id: {json}"
+        json["data"]["current_claim"]["entry"] == carve.entry.to_string(),
+        "task detail exposes the current claim entry id: {json}"
     );
 }

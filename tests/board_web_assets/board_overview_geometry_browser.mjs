@@ -1,7 +1,8 @@
 // Run against an existing, privately seeded Board Web listener; never starts a server.
 // CLI: node <script> --playwright <absolute module> --chromium <absolute executable>
 // --bootstrap-url-file <0600 URL file> --plan <P#> [--project <W#>].
-// Fixture: an active plan, at least two claims, long paths, and a long Needs you entry.
+// Fixture: an active plan, at least two claims, a live worker with a long file path,
+// and a long Needs you entry.
 import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -27,7 +28,8 @@ export async function board_overview_geometry(page, {
       : [...document.querySelectorAll(".swimlane")].find(node => node.querySelector(".lane-columns"));
     const grid = lane?.querySelector(".lane-columns"), done = lane?.querySelector(".lane-done");
     const working = document.querySelector(".working-panel"), layout = document.querySelector(".overview-layout");
-    const constrained = ".working-strip,.working-card,.lane-columns,.lane-column,.lane-done,.needs-rail,.attention-card,.event-row";
+    const constrained = ".working-strip,.working-card,.agent-tree,.agent-tree-row,.agent-attribution,.progress-fact,"
+      + ".task-card,.lane-columns,.lane-column,.lane-done,.needs-rail,.attention-card,.event-row";
     return {
       viewport: { width: innerWidth, clientWidth: document.documentElement.clientWidth,
         scrollWidth: document.documentElement.scrollWidth },
@@ -41,6 +43,9 @@ export async function board_overview_geometry(page, {
       workingCards: [...document.querySelectorAll(".working-card")].map(card => ({
         ...bounds(card), scope: bounds(card.querySelector(".working-scope")),
         task: bounds(card.querySelector(".working-task")),
+      })),
+      workerRows: [...document.querySelectorAll('.worker-row[data-state="live"]')].map(row => ({
+        ...bounds(row), files: bounds(row.querySelector(".agent-files")),
       })),
       previews: [...document.querySelectorAll(".attention-preview")].map(node => ({
         codepoints: Array.from(node.textContent).length, ...bounds(node),
@@ -69,10 +74,16 @@ export async function board_overview_geometry(page, {
     assert.ok(observation.working && observation.layout, "Working now must be prominent");
     assert.ok(observation.working.bottom <= observation.layout.top, "Working now must precede the plan layout");
     assert.ok(observation.workingCards.length >= 2, "Seed multiple claims to exercise wrapping");
+    assert.ok(observation.workerRows.length, "Seed a live worker with long file metadata");
     for (const card of observation.workingCards) {
       assert.ok(card.left >= -1 && card.right <= observation.viewport.clientWidth + 1,
         "Every working agent must fit without horizontal scrolling");
       assert.ok(card.scope?.height > 0 && card.task?.height > 0, "Task title and scope must be visible");
+    }
+    for (const worker of observation.workerRows) {
+      assert.ok(worker.left >= -1 && worker.right <= observation.viewport.clientWidth + 1,
+        "Every live worker must fit without horizontal scrolling");
+      assert.ok(worker.files?.height > 0, "Worker file scope must remain visible");
     }
     assert.ok(observation.previews.length, "Seed a long Needs you entry");
     assert.ok(observation.previews.every(preview => preview.codepoints <= 280));
@@ -157,7 +168,7 @@ async function runOverviewGeometryBrowser(options) {
     if (options.project) await page.locator("#project").selectOption(options.project);
     await page.waitForSelector(`[data-focus-key="swimlane:${options.planRef}"]`);
     for (const colorScheme of ["light", "dark"]) {
-      for (const width of [1440, 768, 390]) {
+      for (const width of [1440, 768, 320]) {
         console.log(JSON.stringify(await board_overview_geometry(page, {
           width, colorScheme, planRef: options.planRef,
         })));

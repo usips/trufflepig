@@ -70,10 +70,10 @@ impl BoardHost {
         plan: Option<crate::board::board_ids::PlanId>,
         deadline: QueryDeadline,
     ) -> Result<Vec<RepoScanTarget>> {
-        let reply = self.handle_by(
-            &BoardRequest::new(actor.clone(), BoardOp::Repositories { plan }),
-            deadline,
-        )?;
+        let system_actor = BoardActor::system(&actor.user, &actor.host)?;
+        let request = BoardRequest::system(system_actor, BoardOp::Repositories { plan })
+            .with_system_origin("ingest")?;
+        let reply = self.handle_by(&request, deadline)?;
         let BoardResult::Repositories(targets) = reply.result else {
             bail!("board_api_mismatch: repositories backend returned an unexpected result");
         };
@@ -92,8 +92,9 @@ impl BoardHost {
         Vec<RepoScanTarget>,
         crate::board::commit_ingest::IngestReport,
     )> {
+        let actor = BoardActor::system(&actor.user, &actor.host)?;
         let deadline = QueryDeadline::after(timeout);
-        let mut targets = self.repositories(actor, plan, deadline)?;
+        let mut targets = self.repositories(&actor, plan, deadline)?;
         let mut ingestor = match lock_before(&self.inner.ingestor, deadline, "ingest") {
             Ok(ingestor) => ingestor,
             Err(error) => {
@@ -108,7 +109,7 @@ impl BoardHost {
         };
         let report = ingestor.ingest(
             &mut BoardHostBackendAccess(self, deadline),
-            actor,
+            &actor,
             &targets,
             deadline.remaining(),
         )?;
@@ -237,9 +238,7 @@ impl BoardHost {
         import_due: bool,
     ) -> std::result::Result<Option<crate::board::feedback_outbox::ImportSummary>, BoardError> {
         let config = self.config().map_err(BoardError::from)?;
-        let actor = config
-            .actor(None, Some("maintenance"))
-            .map_err(BoardError::from)?;
+        let actor = config.system_actor().map_err(BoardError::from)?;
         let summary = if import_due {
             Some(crate::board::feedback_outbox::import_pending(
                 &crate::system::spool_dir(),

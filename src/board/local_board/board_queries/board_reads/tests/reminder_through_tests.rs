@@ -53,6 +53,8 @@ fn proposal_reminders_read_currency_as_of_through() {
         seq: EventSeq::new(0),
         claim_ttl_secs: 20,
         via: None,
+        origin: None,
+        authority: None,
     };
     let visible = |through: u64| {
         open_entries(

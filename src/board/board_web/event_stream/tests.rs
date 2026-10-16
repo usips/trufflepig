@@ -25,6 +25,8 @@ fn event(seq: u64, summary: &str) -> EventRecord {
         to: None,
         actor: BoardActor::new("josh", "host", HarnessLabel::parse("codex").unwrap(), "s1")
             .unwrap(),
+        origin: None,
+        authority: None,
         vendor: AgentVendor::Codex,
         model: None,
         effort: None,
@@ -200,7 +202,7 @@ fn wait_reads_quiet(count: impl Fn() -> usize, quiet: Duration) -> usize {
 fn spawn_request(streams: &EventStreams, request: StreamRequest) -> TcpStream {
     let (server, client) = socket_pair();
     streams
-        .spawn(server, request, streams.reserve().unwrap())
+        .spawn(server, request, streams.reserve().unwrap(), None)
         .unwrap();
     client
 }

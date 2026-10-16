@@ -130,7 +130,7 @@ fn manual_link_attempt(
 }
 
 #[test]
-fn manual_commit_link_authority_requires_owner_hand_or_steward() {
+fn manual_commit_link_authority_requires_owner_or_link_grant() {
     let directory = crate::board::board_test_support::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
@@ -160,7 +160,7 @@ fn manual_commit_link_authority_requires_owner_hand_or_steward() {
 }
 
 #[test]
-fn non_steward_agent_cannot_link() {
+fn agent_without_link_grant_cannot_link() {
     let directory = crate::board::board_test_support::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),

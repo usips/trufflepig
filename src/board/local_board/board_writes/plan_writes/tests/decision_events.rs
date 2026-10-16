@@ -52,6 +52,8 @@ fn proposal_decisions_broadcast_to_author_and_other_participants() {
             body: EntryText::new("private note for proposer").unwrap(),
             to: Some(BoardRecipient::parse("codex").unwrap()),
             supersedes: None,
+            progress: None,
+            verdict: None,
         },
     );
     for participant in [proposer.clone(), actor("other", "muse", "observer")] {

@@ -17,8 +17,8 @@ pub(super) fn database() -> (tempfile::TempDir, LocalBoard) {
         "INSERT INTO actors VALUES(1,'josh','laptop','codex','s1'),(2,'josh','desktop','codex','s1'),
  (3,'josh','laptop','claude','s2'),(4,'other','laptop','codex','s1');
          INSERT INTO agent_sessions(actor_id,cursor_seq,first_seen,last_seen) VALUES(1,17,1,1);
-         INSERT INTO plans(id,title,owner_user,steward,head_revision,created_at)
- VALUES(1,'One','josh','claude',1,1),(2,'Two','josh',NULL,1,1);
+         INSERT INTO plans(id,title,owner_user,head_revision,created_at)
+ VALUES(1,'One','josh',1,1),(2,'Two','josh',1,1);
          INSERT INTO texts VALUES('one','full original plan text');"
     ).unwrap();
     seed_entry(&board.conn, 1, 1, 1, "create", 3, None, "One");
@@ -48,7 +48,47 @@ pub(super) fn context() -> WriteContext {
         seq: EventSeq::new(0),
         claim_ttl_secs: 20,
         via: None,
+        origin: None,
+        authority: None,
     }
+}
+
+pub(super) fn grant_all_to_claude(conn: &Connection, plan: PlanId) {
+    let seq: i64 = conn
+        .query_row("SELECT COALESCE(MAX(seq),0)+1 FROM events", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let entry: i64 = conn
+        .query_row("SELECT COALESCE(MAX(id),0)+1 FROM entries", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let plan = i64::try_from(plan.get()).unwrap();
+    conn.execute(
+        concat!(
+            "INSERT INTO entries(id,plan_id,kind,body,to_whom,actor_id,seq,created_at,authority_basis) ",
+            "VALUES(?1,?2,'grant','fixture grant to claude','claude',1,?3,100,'owner')"
+        ),
+        params![entry, plan, seq],
+    )
+    .unwrap();
+    conn.execute(
+        concat!(
+            "INSERT INTO events(seq,plan_id,kind,subject,to_whom,actor_id,summary,created_at,authority_basis) ",
+            "VALUES(?1,?2,'grant',?3,'claude',1,'fixture grant to claude',100,'owner')"
+        ),
+        params![seq, plan, format!("E{entry}")],
+    )
+    .unwrap();
+    conn.execute(
+        concat!(
+            "INSERT INTO authority_grants(entry_id,plan_id,owner_user,roles_json,grantee,granted_at,source) ",
+            "VALUES(?1,?2,'josh','[\"triage\",\"release\",\"link\",\"assign\",\"decide\"]','claude',100,'owner')"
+        ),
+        params![entry, plan],
+    )
+    .unwrap();
 }
 
 pub(super) fn plan(number: u64) -> PlanId {

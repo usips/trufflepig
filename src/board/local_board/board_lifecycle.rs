@@ -25,12 +25,31 @@ impl LocalBoard {
         claim_ttl: Duration,
         timeout: Duration,
     ) -> Result<Self, BoardError> {
-        let (conn, path) = board_database::open_with_timeout(path, timeout)?;
+        let (mut conn, path) = board_database::open_with_timeout(path, timeout)?;
         let claim_ttl_secs = i64::try_from(claim_ttl.as_secs())
             .map_err(|_| invalid("invalid_options", "claim TTL is too large"))?;
         if claim_ttl_secs == 0 {
             return Err(invalid("invalid_options", "claim TTL must be positive"));
         }
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(sql_error)?;
+        let backfilled: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM board_meta WHERE key='v10_claim_backfill')",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(sql_error)?;
+        if !backfilled {
+            board_writes::entry_writes::backfill_commit_claim_links(&tx, unix_now()?)?;
+            tx.execute(
+                "INSERT INTO board_meta(key,value) VALUES('v10_claim_backfill','complete')",
+                [],
+            )
+            .map_err(sql_error)?;
+        }
+        tx.commit().map_err(sql_error)?;
         let (reader, _) = board_database::open_read_with_timeout(&path, timeout)?;
         Ok(Self {
             conn,

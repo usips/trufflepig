@@ -23,7 +23,6 @@ fn overview_with_recent_done() -> BoardReply {
                     id: plan,
                     title: PlanTitle::new("Trial").unwrap(),
                     owner_user: "josh".into(),
-                    steward: None,
                     head_revision: 1,
                     created_at: 100,
                 },

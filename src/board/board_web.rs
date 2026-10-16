@@ -1,6 +1,7 @@
-//! Loopback board HTTP service, with bounded workers and independent query readers.
+//! Local/LAN board HTTP service, with bounded workers and independent query readers.
 mod board_web_secrets;
 pub(crate) mod event_stream;
+mod http_audit;
 pub(crate) mod http_wire;
 pub(crate) mod plan_markup;
 mod published_endpoint;
@@ -40,6 +41,8 @@ const PUBLIC_OVERVIEW_STYLE: &str = include_str!("board_web/assets/styles/board_
 const PUBLIC_DOM: &str = include_str!("board_web/assets/board_dom.js");
 const PUBLIC_VIEWS: &str = include_str!("board_web/assets/board_views.js");
 const PUBLIC_CARDS: &str = include_str!("board_web/assets/board_cards.js");
+const PUBLIC_TASK_VIEW: &str = include_str!("board_web/assets/board_task_view.js");
+const PUBLIC_GRANTS: &str = include_str!("board_web/assets/board_grants.js");
 const PUBLIC_AGENT_MARKS: &str = include_str!("board_web/assets/marks/agent_marks.js");
 const PUBLIC_ROUTING: &str = include_str!("board_web/assets/board_routing.js");
 const PUBLIC_RENDER_LOOP: &str = include_str!("board_web/assets/board_render_loop.js");

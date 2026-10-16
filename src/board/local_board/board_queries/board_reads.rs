@@ -19,8 +19,10 @@ use crate::board::local_board::board_writes::task_claims;
 
 mod entry_reference_reads;
 mod plan_history_reads;
+pub(in crate::board::local_board) mod recipient_predicates;
 mod repository_reads;
 mod review_evidence_reads;
+mod task_view_reads;
 
 pub(in crate::board::local_board) use entry_reference_reads::{
     entries, entry, entry_view, open_entries,
@@ -29,10 +31,11 @@ pub(in crate::board::local_board) use plan_history_reads::plan_row;
 use plan_history_reads::{plan, plan_view, revision};
 pub(in crate::board::local_board) use repository_reads::repositories;
 pub(in crate::board::local_board) use review_evidence_reads::review;
+pub(in crate::board::local_board) use task_view_reads::task_view;
 
 const RECENT_ENTRIES: i64 = 20;
 const PLAN_ENTRY_CAP: u64 = 200;
-const PLAN_SELECT: &str = "SELECT id,title,owner_user,steward,head_revision,created_at FROM plans";
+const PLAN_SELECT: &str = "SELECT id,title,owner_user,head_revision,created_at FROM plans";
 const OPEN_QUESTION: &str = concat!(
     "e.kind='question' AND NOT EXISTS(SELECT 1 FROM entries answer JOIN entry_refs reference ",
     "ON reference.entry_id=answer.id WHERE answer.kind='answer' AND reference.target='E'||e.id) ",
@@ -46,19 +49,7 @@ pub(in crate::board::local_board) fn show(
 ) -> Result<BoardReply, BoardError> {
     let result = match target {
         BoardRef::Plan(plan) => BoardResult::Plan(plan_view(tx, ctx, *plan)?),
-        BoardRef::Task(task) => {
-            let exists: bool = tx
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM tasks WHERE plan_id=?1 AND ordinal=?2)",
-                    params![sql_number(task.plan.get()), sql_number(task.ordinal)],
-                    |row| row.get(0),
-                )
-                .map_err(sql_error)?;
-            if !exists {
-                return Err(invalid("invalid_reference", format!("unknown task {task}")));
-            }
-            BoardResult::Plan(plan_view(tx, ctx, task.plan)?)
-        }
+        BoardRef::Task(task) => BoardResult::TaskView(task_view(tx, ctx, *task)?),
         BoardRef::Entry(id) => BoardResult::Entry(entry_view(tx, ctx, *id)?),
         BoardRef::Revision(id) => BoardResult::Revision(revision(tx, *id)?),
         BoardRef::Span(span) => {

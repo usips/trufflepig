@@ -4,7 +4,7 @@ use crate::board::board_protocol::BoardErrorCode;
 use std::sync::{Arc, Barrier};
 
 #[test]
-fn unlink_scan_link_can_reappear_from_authoritative_ingestion() {
+fn unlink_scan_link_stays_suppressed_after_reingest() {
     let directory = crate::board::board_test_support::scratch("board-unlink-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
@@ -41,18 +41,16 @@ fn unlink_scan_link_can_reappear_from_authoritative_ingestion() {
     );
     board.handle(&request).unwrap();
     assert_eq!(
-        manual_link_count(
-            &board,
-            "SELECT COUNT(*) FROM commit_tasks WHERE source='scan'"
-        ),
-        1
+        manual_link_count(&board, "SELECT COUNT(*) FROM commit_tasks"),
+        0,
+        "a task link with an unlink receipt stays suppressed"
     );
     let second = unlink_change(board.handle(&unlink_request(owner, task)).unwrap());
-    assert!(!second.deduplicated);
-    assert!(second.seq > first.seq);
+    assert!(second.deduplicated);
+    assert_eq!((second.entry, second.seq), (first.entry, first.seq));
     assert_eq!(
-        manual_link_count(&board, "SELECT COUNT(*) FROM commit_tasks"),
-        0
+        manual_link_count(&board, "SELECT COUNT(*) FROM entries WHERE kind='unlinked'"),
+        1
     );
 }
 
@@ -117,6 +115,8 @@ fn unlink_receipt_cannot_be_forged_with_user_authored_refs() {
                 .unwrap(),
                 to: None,
                 supersedes: None,
+                progress: None,
+                verdict: None,
             },
         ))
         .unwrap();
@@ -128,6 +128,8 @@ fn unlink_receipt_cannot_be_forged_with_user_authored_refs() {
             body: EntryText::new("forged unlink receipt").unwrap(),
             to: None,
             supersedes: None,
+            progress: None,
+            verdict: None,
         },
     );
     assert_eq!(
@@ -149,6 +151,7 @@ fn unlink_concurrent_callers_share_one_durable_receipt() {
     let mut setup = LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap();
     let (owner, task) = manual_link_plan(&mut setup);
     setup.handle(&link_request(owner.clone(), task)).unwrap();
+    let events_before_unlink = manual_link_count(&setup, "SELECT COUNT(*) FROM events");
     drop(setup);
     let mut first_board = LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap();
     let mut second_board = LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap();
@@ -184,6 +187,6 @@ fn unlink_concurrent_callers_share_one_durable_receipt() {
     );
     assert_eq!(
         manual_link_count(&reopened, "SELECT COUNT(*) FROM events"),
-        4
+        events_before_unlink + 1
     );
 }

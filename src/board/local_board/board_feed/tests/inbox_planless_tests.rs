@@ -13,7 +13,6 @@ fn planless_events_stay_out_of_scoped_inboxes_but_own_feedback_outcomes_arrive()
         BoardOp::New {
             title: PlanTitle::new("Second repo plan").unwrap(),
             body: PlanText::new("# Scope").unwrap(),
-            steward: None,
             repo_key: None,
         },
     ) else {
@@ -55,6 +54,7 @@ fn planless_events_stay_out_of_scoped_inboxes_but_own_feedback_outcomes_arrive()
         BoardOp::Hello {
             model: "Codex".into(),
             effort: None,
+            worker: None,
         },
     );
     call(
@@ -63,6 +63,7 @@ fn planless_events_stay_out_of_scoped_inboxes_but_own_feedback_outcomes_arrive()
         BoardOp::Hello {
             model: "Muse".into(),
             effort: None,
+            worker: None,
         },
     );
     post(
@@ -191,6 +192,7 @@ fn hello_events_stay_out_of_every_inbox_including_all() {
         BoardOp::Hello {
             model: "Muse".into(),
             effort: None,
+            worker: None,
         },
     );
     let global = scoped_feed(&mut board, ReadScope::All, 100);
