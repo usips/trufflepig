@@ -53,6 +53,10 @@ fn claimed_spool_age_is_subtracted_from_each_tier_budget() {
         router_deadline.remaining() > Duration::from_secs(5),
         "22-second-old publication still fits the 28-second router budget"
     );
+    assert!(
+        router_deadline.remaining() <= Duration::from_secs(6),
+        "the 22-second publication age must be subtracted from the 28-second router budget"
+    );
 
     let root_dir = tempfile::tempdir().unwrap();
     let mut root_spool = SpoolServer::open(root_dir.path()).unwrap();

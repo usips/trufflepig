@@ -10,9 +10,13 @@ use super::spool::{ClaimedSpoolRequest, SpoolServer};
 use crate::diagnostics::RequestContext;
 use admission_refusal::{AdmissionRefusal, RefusalCause};
 use anyhow::{Context, Result};
-use ingress_frames::{CompleteFrame, FinishedFrame, FrameFailure, PendingFrame};
+use ingress_frames::{
+    CompleteFrame, FinishedFrame, FrameFailure, FramePoll, PendingFrame, hold_refused,
+    poll_refused, wait_for_ingress,
+};
 use std::any::Any;
 use std::io::ErrorKind;
+use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
@@ -27,7 +31,7 @@ mod root_work_limits;
 
 pub(super) use request_admission::RequestAdmission;
 
-/// Idle wait of the accept loop between polls of a nonblocking listener.
+/// Longest idle wait of the accept loop before it polls its peers again.
 const ACCEPT_POLL: Duration = Duration::from_millis(10);
 /// Time a request frame may take to arrive, and a reply to drain.
 const FRAME_TIMEOUT: Duration = Duration::from_secs(5);
@@ -200,18 +204,10 @@ fn accept_until_stopped<H: DaemonHandler>(
 ) -> Result<()> {
     let capacity = admission.pending_frame_capacity();
     let mut pending: Vec<PendingFrame> = Vec::with_capacity(capacity);
+    let mut refused: Vec<PendingFrame> = Vec::with_capacity(capacity);
     while !state.stopping() {
-        let mut made_progress = false;
-        let mut index = 0;
-        while index < pending.len() {
-            if pending[index].poll() {
-                let finished = pending.swap_remove(index).finish();
-                dispatch_finished_frame(finished, handler, admission, state);
-                made_progress = true;
-            } else {
-                index += 1;
-            }
-        }
+        let mut made_progress = poll_pending(&mut pending, handler, admission, state);
+        made_progress |= poll_refused(&mut refused);
 
         for _ in 0..ACCEPTS_PER_TURN {
             match socket.listener.accept() {
@@ -227,6 +223,7 @@ fn accept_until_stopped<H: DaemonHandler>(
                         )
                         .with_active_verb(snapshot.active_verb);
                         refuse_busy_nonblocking(&stream, refusal);
+                        hold_refused(&mut refused, stream, capacity);
                         continue;
                     }
                     let deadline = QueryDeadline::after(accepted_budget);
@@ -243,10 +240,46 @@ fn accept_until_stopped<H: DaemonHandler>(
             }
         }
         if !made_progress {
+            wait_for_ingress(&socket.listener, &pending, &refused, ACCEPT_POLL);
+        }
+    }
+    // Frames accepted before the stop still get their answers. The listener takes
+    // no new connections here, and each frame ends within its own budget.
+    while !pending.is_empty() || !refused.is_empty() {
+        let progressed =
+            poll_pending(&mut pending, handler, admission, state) | poll_refused(&mut refused);
+        if !progressed {
             std::thread::sleep(ACCEPT_POLL);
         }
     }
     Ok(())
+}
+
+/// Polls each pending frame once, dispatching those that finish. Reports whether
+/// any peer made progress, so an idle turn is the only turn that waits.
+fn poll_pending<H: DaemonHandler>(
+    pending: &mut Vec<PendingFrame>,
+    handler: &Arc<H>,
+    admission: &Arc<RequestAdmission>,
+    state: &Arc<ServerState>,
+) -> bool {
+    let mut progressed = false;
+    let mut index = 0;
+    while index < pending.len() {
+        match pending[index].poll() {
+            FramePoll::Idle => index += 1,
+            FramePoll::Progressed => {
+                progressed = true;
+                index += 1;
+            }
+            FramePoll::Finished => {
+                progressed = true;
+                let finished = pending.swap_remove(index).finish();
+                dispatch_finished_frame(finished, handler, admission, state);
+            }
+        }
+    }
+    progressed
 }
 
 fn dispatch_finished_frame<H: DaemonHandler>(
@@ -366,6 +399,7 @@ fn write_bounded_reply(
 }
 
 /// Writes one small overload reply without holding the accept loop on a peer.
+/// The write side then closes, so the peer reads a complete reply.
 fn refuse_busy_nonblocking(stream: &UnixStream, refusal: AdmissionRefusal<'_>) {
     refusal.log();
     let reply = DaemonReply::Failure {
@@ -378,6 +412,7 @@ fn refuse_busy_nonblocking(stream: &UnixStream, refusal: AdmissionRefusal<'_>) {
     }
     let mut writer = stream;
     let _ = std::io::Write::write(&mut writer, &encoded);
+    let _ = stream.shutdown(Shutdown::Write);
 }
 
 fn write_refusal(stream: &UnixStream, refusal: AdmissionRefusal<'_>) {
@@ -644,7 +679,7 @@ fn run_connection_request<H: DaemonHandler>(
             },
         )
     };
-    let result = if result.is_ok() && bounded_query_class(class) && deadline.expired() {
+    let result = if result.is_ok() && discards_late_result(class, &deadline) {
         Err(anyhow::anyhow!(
             "timed_out: query deadline expired or peer closed"
         ))
@@ -677,6 +712,29 @@ fn bounded_query_class(class: RequestClass) -> bool {
                     | "session"
                     | "audit"
                     | "semantic"
+            ))
+}
+
+/// Whether a successful result that finished after its deadline becomes `timed_out`.
+/// Only handlers that observe the deadline while working discard late results; the
+/// others finish regardless, and their results still fit the router and client budgets.
+/// A withdrawn request (peer or spool claim gone) never gets its late result.
+fn discards_late_result(class: RequestClass, deadline: &QueryDeadline) -> bool {
+    bounded_query_class(class)
+        && deadline.expired()
+        && (deadline_observing_class(class) || deadline.cancelled())
+}
+
+/// Bounded classes whose handlers take the query deadline cooperatively
+/// (`docs/runtime-contract.md`). History, doctor, session, audit, and
+/// `semantic status` run without it.
+fn deadline_observing_class(class: RequestClass) -> bool {
+    class.lane == RequestLane::Regex
+        || class.lane == RequestLane::Semantic
+        || (class.lane == RequestLane::Query
+            && matches!(
+                class.verb,
+                "search" | "show" | "more" | "ctx" | "refs" | "map" | "status"
             ))
 }
 
@@ -774,12 +832,11 @@ pub(super) fn dispatch_spooled<H: DaemonHandler>(
                             },
                         )
                     };
-                    let result =
-                        if result.is_ok() && bounded_query_class(class) && deadline.expired() {
-                            Err(anyhow::anyhow!("timed_out: query deadline expired"))
-                        } else {
-                            result
-                        };
+                    let result = if result.is_ok() && discards_late_result(class, &deadline) {
+                        Err(anyhow::anyhow!("timed_out: query deadline expired"))
+                    } else {
+                        result
+                    };
                     let result = normalize_owned_query_timeout(class, result, &deadline);
                     claimed.answer_result(result);
                 }

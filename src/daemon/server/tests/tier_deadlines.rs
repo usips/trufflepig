@@ -63,16 +63,56 @@ fn start_budget_server(tier: AdmissionTier, budget: Duration, reply: Reply) -> B
 }
 
 fn query_reply(cache: PathBuf) -> Result<DaemonReply> {
+    query_words(cache, &["status"])
+}
+
+fn query_words(cache: PathBuf, words: &[&str]) -> Result<DaemonReply> {
     let mut stream = UnixStream::connect(cache.join(SOCKET_NAME))?;
     stream.set_read_timeout(Some(Duration::from_secs(3)))?;
     protocol::write_request(
         &mut stream,
         &DaemonRequest::Arguments {
             context: RequestContext::new(None, None),
-            args: vec!["status".to_owned()],
+            args: words.iter().map(|word| (*word).to_owned()).collect(),
         },
     )?;
     Ok(protocol::read_reply(&mut stream)?)
+}
+
+/// A root-tier server whose handler only succeeds after its deadline has passed.
+fn late_success_server() -> BudgetServer {
+    start_budget_server(
+        AdmissionTier::Root,
+        Duration::from_millis(300),
+        Box::new(|request| {
+            while !request.deadline.time_expired() {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Ok("late success".to_owned())
+        }),
+    )
+}
+
+#[test]
+fn late_success_of_a_history_verb_still_reaches_the_client() {
+    let mut root = late_success_server();
+    let reply = query_words(root.cache.clone(), &["blame", "src/lib.rs"]).unwrap();
+    assert!(
+        matches!(&reply, DaemonReply::Success { output } if output == "late success"),
+        "history verbs do not observe the deadline; their finished result must arrive"
+    );
+    stop_budget_server(&mut root);
+}
+
+#[test]
+fn late_success_of_a_regex_search_becomes_timed_out() {
+    let mut root = late_success_server();
+    let reply = query_words(root.cache.clone(), &["search", "re:late"]).unwrap();
+    let DaemonReply::Failure { message } = reply else {
+        panic!("regex work honours its deadline and must not deliver a late success");
+    };
+    assert!(message.starts_with("timed_out:"), "{message}");
+    stop_budget_server(&mut root);
 }
 
 fn stop_budget_server(server: &mut BudgetServer) {

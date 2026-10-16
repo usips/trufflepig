@@ -81,6 +81,9 @@ probes while idle. `semantic status` reports root preparation state; `semantic w
 status` reports shared-worker residency.
 Every daemon assembles frames incrementally without blocking its accept loop,
 with pending capacity 128 at the router and 64 at a root daemon or coordinator.
+The loop waits on socket readiness only when no peer made progress. A connection
+refused at capacity gets `daemon_busy`, and its request is read for up to 200 ms
+before the socket closes, so the peer reads the refusal.
 An incomplete frame expires after 5 s with `timed_out: phase=reading_frame`;
 two ingress workers decode and classify complete frames, and classification may
 perform I/O (`src/daemon/server.rs`, `src/daemon/server/ingress_frames.rs`).
@@ -120,10 +123,17 @@ the original read budget; workspace member slices share the original 20 s deadli
 The accepted budgets and pending-frame limits are set in `src/daemon/server.rs`.
 This does not make every interactive read verb deadline-preemptible: the current
 history dispatch calls `History::open`/`index` without `QueryDeadline`. Explicit
-`index` and `init` maintenance runs uncapped once started. A spooled request's
-accepted-tier budget is reduced by its publication age; if it has expired, the
-router reports `timed_out` before classification.
-`stop` releases the socket, drains accepted work for up to
+`index` and `init` maintenance runs uncapped once started. A bounded result that
+finishes after its deadline becomes `timed_out` only for verbs whose handlers observe
+the deadline: `search` (every lane), `show`, `more`, `ctx`, `refs`, `map`, and `status`.
+`hist`, `since`, `diff`, `blame`, `hist-status`, `doctor`, `session`, `audit`, and
+`semantic status` deliver a late success, which the router and client budgets may still
+carry (`src/daemon/server.rs:discards_late_result`). A bounded request whose peer or
+spool claim was withdrawn reports `timed_out` in every case.
+A spooled request's accepted-tier budget is reduced by its publication age; if it has
+expired, the router reports `timed_out` before classification.
+`stop` stops accepting connections, finishes frames already accepted (each within its
+5 s frame budget), releases the socket, and drains accepted work for up to
 28 s, then rejects queued work and returns so the daemon process exits; requests
 still running at that point may lose their reply. Liveness checks connect to the
 socket (`src/daemon.rs:running`) and never touch the startup lock. `system

@@ -395,11 +395,11 @@ fn old_spooled_request_waiting_in_a_lane_never_reaches_the_handler() {
         args: vec!["search".to_owned(), "sym:expired".to_owned()],
     };
     std::fs::write(&request_path, serde_json::to_vec(&request).unwrap()).unwrap();
+    // About 2 s of the 20 s root budget remain: classification passes, then the
+    // request expires while it waits behind the blocked worker.
     File::open(&request_path)
         .unwrap()
-        .set_modified(
-            SystemTime::now() - QueryDeadline::start().remaining() - Duration::from_secs(21),
-        )
+        .set_modified(SystemTime::now() - Duration::from_secs(18))
         .unwrap();
 
     let admission = Arc::new(
@@ -435,13 +435,16 @@ fn old_spooled_request_waiting_in_a_lane_never_reaches_the_handler() {
         reconcile: quiet(),
     });
     super::super::dispatch_spooled(&mut spool, &handler, &admission);
+    // Keep the only worker blocked until the request's own budget has passed.
+    std::thread::sleep(Duration::from_millis(2500));
     release.send(()).unwrap();
     assert!(admission.drain(Duration::from_secs(1)));
     assert_eq!(calls.load(Ordering::Acquire), 0);
     let reply: DaemonReply = serde_json::from_slice(&std::fs::read(reply_path).unwrap()).unwrap();
     assert!(matches!(
         reply,
-        DaemonReply::Failure { message } if message.starts_with("timed_out:")
+        DaemonReply::Failure { message }
+            if message.starts_with("timed_out: spooled request expired before dispatch")
     ));
     admission.shutdown();
 }
