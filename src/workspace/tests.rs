@@ -92,6 +92,13 @@ fn unknown_workspace_command_is_rejected() {
 #[test]
 fn duplicate_paths_route_show_and_context_to_the_recorded_member() {
     let fixture = Fixture::new();
+    Store::open(
+        &fixture.root.path().join("pack"),
+        &fixture.member_cache("pack"),
+    )
+    .unwrap()
+    .index()
+    .unwrap();
     let handle = fixture.handle("pack");
     let shown = fixture.json("upstream", &["show", &handle]);
     assert_eq!(shown["member"], "pack");

@@ -34,6 +34,7 @@ fn actual_no_daemon_worktree_read_serves_parent_hit_promptly_under_held_lease() 
         .unwrap();
     lease.lock_exclusive().unwrap();
 
+    let _budget = crate::output::OutputBudget::new(600).unwrap();
     let started = Instant::now();
     let output = fixture
         .run_at(
