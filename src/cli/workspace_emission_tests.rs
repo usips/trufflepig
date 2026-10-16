@@ -1,7 +1,7 @@
 use super::{emission::execute, run};
 use crate::{
     diagnostics::{DiagnosticStore, DiagnosticsMode, EventStage, RequestEvent},
-    store::encode_path,
+    store::{Store, encode_path},
     workspace::{config::WorkspaceConfig, member_cache},
 };
 use serde_json::Value;
@@ -31,11 +31,19 @@ impl Fixture {
         }
         let config = root.path().join("trufflepig.workspace.toml");
         fs::write(&config, "[workspace]\nname='emission-test'\n[members.engine]\npath='engine'\n[members.pack]\npath='pack'\n").unwrap();
-        Self {
+        let fixture = Self {
             root,
             cache,
             config,
+        };
+        for member in ["engine", "pack"] {
+            let member_root = fixture.root.path().join(member);
+            Store::open(&member_root, &fixture.member_cache(member))
+                .unwrap()
+                .index()
+                .unwrap();
         }
+        fixture
     }
 
     fn args(&self, extra: &[&str]) -> Vec<String> {
@@ -113,6 +121,7 @@ fn deliveries(cache: &Path, expected: usize) -> Vec<RequestEvent> {
 #[test]
 fn workspace_page_emission_records_foreign_identity_and_one_final_receipt() {
     let fixture = Fixture::new();
+    DiagnosticStore::open(&fixture.member_cache("engine"), DiagnosticsMode::Metadata).unwrap();
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     assert_eq!(
         execute(
@@ -311,6 +320,7 @@ fn workspace_ancestor_does_not_redirect_explicit_subtree_diagnostics() {
 #[test]
 fn lines_format_records_emitted_handles_and_token_receipt() {
     let fixture = Fixture::new();
+    DiagnosticStore::open(&fixture.member_cache("engine"), DiagnosticsMode::Metadata).unwrap();
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     assert_eq!(
         execute(

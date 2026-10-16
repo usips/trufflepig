@@ -462,9 +462,14 @@ fn no_daemon_read_serves_parent_hit_promptly_while_child_writer_is_held() -> Res
         "sym:WorktreeOnlySymbol".into(),
     ])?;
 
+    let _budget = crate::output::OutputBudget::new(options.budget)?;
     let started = Instant::now();
     let output = crate::cli::local(&fixture.worktree, &fixture.child_cache, &options, false)?;
-    assert!(started.elapsed() < Duration::from_secs(1), "{output}");
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < Duration::from_secs(1),
+        "parent cache hit took {elapsed:?}: {output}"
+    );
     let response = json(output)?;
     assert_eq!(
         response["coverage"]["parent_index"]["generation"], fixture.parent_generation,
