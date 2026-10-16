@@ -262,3 +262,98 @@ fn startup_refuses_a_stale_file_after_the_migration_wait() {
         "the probe must not migrate"
     );
 }
+
+#[test]
+fn startup_polls_through_router_reply_timeouts_while_it_migrates() {
+    let directory = crate::board::board_test_support::scratch("web-probe-");
+    let database = directory.path().join("busy.sqlite3");
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    connection
+        .pragma_update(None, "user_version", SCHEMA_VERSION - 1)
+        .unwrap();
+    drop(connection);
+    let status = serde_json::json!({
+        "status": "ok", "board_api": BOARD_API, "board_db": database,
+        "schema_file": SCHEMA_VERSION, "schema_supported": SCHEMA_VERSION,
+    })
+    .to_string();
+    let started = std::time::Instant::now();
+    let mut polls = 0;
+    startup_probe(&database, Duration::from_secs(5), &mut |_, deadline| {
+        polls += 1;
+        assert!(deadline.remaining() <= STATUS_PROBE_BOUND, "poll {polls}");
+        if polls <= 2 {
+            return Err(router_reply_timeout());
+        }
+        Ok(Some(status.clone()))
+    })
+    .unwrap();
+    assert_eq!(polls, 3);
+    assert!(started.elapsed() < Duration::from_secs(5));
+}
+
+#[test]
+fn startup_reports_a_busy_router_past_the_migration_wait_as_migrating() {
+    let directory = crate::board::board_test_support::scratch("web-probe-");
+    let database = directory.path().join("stuck.sqlite3");
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    connection
+        .pragma_update(None, "user_version", SCHEMA_VERSION - 1)
+        .unwrap();
+    drop(connection);
+    let mut polls = 0;
+    let error = startup_probe(&database, Duration::from_millis(700), &mut |_, deadline| {
+        polls += 1;
+        assert!(!deadline.expired());
+        assert!(deadline.remaining() <= STATUS_PROBE_BOUND);
+        Err(router_reply_timeout())
+    })
+    .unwrap_err();
+    assert_eq!(error.code, BoardErrorCode::BoardUnavailable);
+    assert!(
+        error
+            .message
+            .contains("router is migrating; check `systemctl --user status trufflepig-system`"),
+        "{error}"
+    );
+    assert!(
+        polls >= 2,
+        "a busy router is polled until the wait ends: {polls}"
+    );
+    assert_eq!(
+        local_schema_version(&database).unwrap(),
+        Some(SCHEMA_VERSION - 1),
+        "the probe must not migrate"
+    );
+}
+
+#[test]
+fn startup_keeps_other_router_failures_fatal_on_the_first_probe() {
+    let directory = crate::board::board_test_support::scratch("web-probe-");
+    let database = directory.path().join("refused.sqlite3");
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    connection
+        .pragma_update(None, "user_version", SCHEMA_VERSION - 1)
+        .unwrap();
+    drop(connection);
+    for error in [
+        unavailable("router socket permission denied"),
+        BoardError::from(anyhow::anyhow!("timed_out: phase=connecting")),
+    ] {
+        let mut polls = 0;
+        let failure = startup_probe(&database, Duration::from_millis(700), &mut |_, _| {
+            polls += 1;
+            Err(error.clone())
+        })
+        .unwrap_err();
+        assert_eq!(failure, error);
+        assert_eq!(polls, 1, "{error}");
+    }
+}
+
+fn router_reply_timeout() -> BoardError {
+    BoardError::from(anyhow::Error::new(crate::daemon::DaemonReplyTimeout::new(
+        Duration::from_millis(500),
+        Duration::from_millis(500),
+    )))
+}

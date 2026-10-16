@@ -70,7 +70,8 @@ Startup never migrates an existing database. It opens the writer only when a sam
 `system status` confirms `schema_file` equals `schema_supported` at the schema this binary
 supports, when the file already holds that schema, or when no database exists yet; a stale file
 waits up to 30 s, polling every 500 ms, for a concurrently-starting router to migrate it, then
-refuses. An answering router gets `router is migrating`, a silent one gets `system ensure` advice;
+refuses. A router that answers, or accepts the probe but does not reply within the poll, gets
+`router is migrating`; no router gets `system ensure` advice;
 a newer schema is unsupported — a reachable router disagreeing on API or database identity is
 fatal. Read dispatch uses the shared `BoardOp::is_read_only` classifier, regardless of HTTP method.
 Startup opens the writer before four query-only readers; a dedicated stream-feed reader

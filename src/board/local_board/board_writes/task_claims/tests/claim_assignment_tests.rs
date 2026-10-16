@@ -304,9 +304,21 @@ fn plain_release_moves_reject_revoked_expired_and_wrong_plan_assign_grants() {
             unclaimed_review_task(&mut conn, &assignee, "expired grant to todo"),
             unclaimed_review_task(&mut conn, &assignee, "expired grant to blocked"),
         ];
+        let boundary = unclaimed_review_task(&mut conn, &assignee, "expired grant boundary");
         let grant = create_assign_grant(&mut conn, &grantor, &assigner, plan, 1015, Some(5));
         assert_exact_assign_grant(&conn, grant, plan, &assigner, Some(1020), None);
-        assert_invalid_assign_cannot_plain_release(&mut conn, &assigner, &assignee, tasks, 1021);
+        // expires_at is exclusive: the grant authorizes a plain release at 1019 but not 1020.
+        write(&mut conn, &assigner, 1019, |tx, ctx| {
+            move_task(tx, ctx, boundary, TaskColumn::Todo, None)
+        })
+        .unwrap();
+        let card = read_tasks(&conn, plan)
+            .unwrap()
+            .into_iter()
+            .find(|card| card.id == boundary)
+            .unwrap();
+        assert_eq!(card.column, TaskColumn::Todo);
+        assert_invalid_assign_cannot_plain_release(&mut conn, &assigner, &assignee, tasks, 1020);
     }
 
     {

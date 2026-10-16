@@ -4,7 +4,7 @@ use crate::board::{
     SCHEMA_VERSION,
     board_protocol::{BOARD_API, BoardError, BoardErrorCode},
 };
-use crate::daemon::deadline::QueryDeadline;
+use crate::daemon::{DaemonReplyTimeout, deadline::QueryDeadline};
 use std::{path::Path, time::Duration};
 
 type RouterExchange<'a> =
@@ -18,7 +18,8 @@ const ROUTER_MIGRATION_POLL: Duration = Duration::from_millis(500);
 /// Startup opens the database only when a same-API router confirms its schema,
 /// the file holds the supported schema, or a new database may bootstrap; an
 /// answered router error is fatal. A stale file waits up to `wait` for a
-/// starting router to migrate it; a newer file refuses at once.
+/// starting router to migrate it, polling through busy replies; a newer file
+/// refuses at once.
 pub(super) fn startup_probe(
     database: &Path,
     wait: Duration,
@@ -30,8 +31,7 @@ pub(super) fn startup_probe(
     // Startup probes use an independent budget; ordinary web request deadlines
     // do not cap migration waits. A zero `wait` still probes once.
     let initial = QueryDeadline::after(ROUTER_MIGRATION_POLL);
-    let status = probe_router(database, initial, exchange)?;
-    answered |= status.is_some();
+    let status = startup_poll(database, initial, exchange, &mut answered)?;
     if status.is_some_and(|status| router_confirms_schema(&status)) {
         return Ok(());
     }
@@ -63,8 +63,7 @@ pub(super) fn startup_probe(
                 if poll.expired() {
                     continue;
                 }
-                let status = probe_router(database, poll, exchange)?;
-                answered |= status.is_some();
+                let status = startup_poll(database, poll, exchange, &mut answered)?;
                 if status.is_some_and(|status| router_confirms_schema(&status)) {
                     return Ok(());
                 }
@@ -76,6 +75,34 @@ pub(super) fn startup_probe(
             }
         }
     }
+}
+
+/// One startup probe. A bound router whose reply timed out is busy, usually
+/// migrating, so it counts as answered and the caller keeps waiting; other
+/// errors stay fatal.
+fn startup_poll(
+    database: &Path,
+    deadline: QueryDeadline,
+    exchange: &mut RouterExchange<'_>,
+    answered: &mut bool,
+) -> Result<Option<serde_json::Value>, BoardError> {
+    match probe_router(database, deadline, exchange) {
+        Ok(status) => {
+            *answered |= status.is_some();
+            Ok(status)
+        }
+        Err(error) if reply_timed_out(&error) => {
+            *answered = true;
+            Ok(None)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// The exchange carries a reply-wait timeout as the daemon's own reply-timeout
+/// text, the same form `DaemonReplyTimeout::from_message` parses on the wire.
+fn reply_timed_out(error: &BoardError) -> bool {
+    DaemonReplyTimeout::from_message(&error.message).is_some()
 }
 
 /// A same-API router confirms the schema only once its database file holds the
