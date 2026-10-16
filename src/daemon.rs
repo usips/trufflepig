@@ -36,7 +36,7 @@ pub const CLIENT_REPLY_WAIT: Duration = Duration::from_secs(30);
 /// [`CLIENT_REPLY_WAIT`] so the client receives the forwarding failure.
 pub const PROXY_REPLY_WAIT: Duration = Duration::from_secs(28);
 const REQUEST_WRITE_WAIT: Duration = Duration::from_secs(5);
-const RUNNING_PROBE_WAIT: Duration = Duration::from_millis(100);
+pub(crate) const RUNNING_PROBE_WAIT: Duration = Duration::from_millis(100);
 
 /// Maximum encoded JSON request size, excluding its length prefix.
 pub(crate) const MAX_DAEMON_REQUEST_BYTES: usize = protocol::REQUEST_LIMIT;

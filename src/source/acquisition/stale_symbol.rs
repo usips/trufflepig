@@ -2,12 +2,17 @@
 //! serving daemon to republish, then locate the definition in current bytes.
 use super::{AcquiredSource, acquire_entry};
 use crate::{
+    daemon::deadline::QueryDeadline,
     results::{self, Hit, ResultEntry},
     store::Store,
 };
 use anyhow::{Result, bail};
 use rusqlite::OptionalExtension;
-use std::time::{Duration, Instant};
+use std::{
+    path::Path,
+    thread,
+    time::{Duration, Instant},
+};
 
 /// Longest a stale `sym:` read waits for a serving daemon to republish.
 const REPUBLISH_WAIT: Duration = Duration::from_secs(3);
@@ -31,7 +36,7 @@ pub(super) fn acquire_symbol_entry(
         Err(error) if is_stale_source(&error) => error,
         read => return read,
     };
-    let republished = await_republish(store, seen);
+    let republished = await_republish(store, seen)?;
     // Binary or unextractable current bytes leave the stale answer standing.
     let mut source = match acquire_reextracted(store, &hit) {
         Ok(Some(source)) => source,
@@ -62,18 +67,79 @@ fn is_stale_source(error: &anyhow::Error) -> bool {
 
 /// Waits while a daemon serves this index for a generation after `seen`. A
 /// worktree read through a parent's index is never fixed by a republish.
-fn await_republish(store: &Store, seen: i64) -> bool {
-    if store.root != store.index_root() || !crate::daemon::running(store.index_cache()) {
-        return false;
+fn await_republish(store: &Store, seen: i64) -> Result<bool> {
+    if store.root != store.index_root() {
+        return Ok(false);
+    }
+    let serving = match store.query_deadline() {
+        Some(deadline) => running_for_republish(store.index_cache(), deadline)?,
+        None => crate::daemon::running(store.index_cache()),
+    };
+    if !serving {
+        return Ok(false);
     }
     let started = Instant::now();
-    while started.elapsed() < REPUBLISH_WAIT {
-        std::thread::sleep(REPUBLISH_POLL);
-        if store.generation().is_ok_and(|generation| generation > seen) {
-            return true;
+    loop {
+        if let Some(deadline) = store.query_deadline() {
+            check_query_deadline(deadline)?;
+        }
+        let remaining = REPUBLISH_WAIT.saturating_sub(started.elapsed());
+        if remaining.is_zero() {
+            return Ok(false);
+        }
+        let wait = store
+            .query_deadline()
+            .map_or(REPUBLISH_POLL.min(remaining), |deadline| {
+                deadline.cap(REPUBLISH_POLL.min(remaining))
+            });
+        if wait.is_zero() {
+            return Err(query_timeout_error());
+        }
+        thread::sleep(wait);
+        if let Some(deadline) = store.query_deadline() {
+            check_query_deadline(deadline)?;
+        }
+        if store.generation()? > seen {
+            return Ok(true);
         }
     }
-    false
+}
+
+/// Keeps the daemon liveness probe shorter than the query while preserving
+/// `running`'s conservative treatment of a busy serving socket.
+fn running_for_republish(cache: &Path, deadline: &QueryDeadline) -> Result<bool> {
+    check_query_deadline(deadline)?;
+    let probe_deadline = deadline.capped(crate::daemon::RUNNING_PROBE_WAIT);
+    liveness_probe_result(crate::daemon::running_by(cache, &probe_deadline), deadline)
+}
+
+fn liveness_probe_result(result: Result<bool>, deadline: &QueryDeadline) -> Result<bool> {
+    match result {
+        Ok(serving) => {
+            check_query_deadline(deadline)?;
+            Ok(serving)
+        }
+        Err(error) if crate::daemon::deadline::is_timed_out(&error) && !deadline.expired() => {
+            Ok(true)
+        }
+        Err(error) if crate::daemon::deadline::is_timed_out(&error) => Err(error),
+        Err(_) if deadline.expired() => Err(query_timeout_error()),
+        Err(_) => Ok(false),
+    }
+}
+
+fn check_query_deadline(deadline: &QueryDeadline) -> Result<()> {
+    if deadline.expired() {
+        return Err(query_timeout_error());
+    }
+    Ok(())
+}
+
+fn query_timeout_error() -> anyhow::Error {
+    anyhow::anyhow!(
+        "{}: stale symbol republish wait",
+        crate::daemon::deadline::TIMED_OUT
+    )
 }
 
 /// `hit`'s definition in its original container, located in the file's current
@@ -104,113 +170,4 @@ fn acquire_reextracted(store: &Store, hit: &Hit) -> Result<Option<AcquiredSource
 }
 
 #[cfg(test)]
-mod tests {
-    use super::super::acquire;
-    use crate::search::InvocationDirectory;
-    use crate::source::line_span;
-    use crate::{output::OutputBudget, store::Store};
-
-    #[test]
-    fn sym_read_falls_back_to_current_bytes() {
-        let root = tempfile::tempdir().unwrap();
-        let cache = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("lib.rs"), "fn target() {}\n").unwrap();
-        let mut store = Store::open(root.path(), cache.path()).unwrap();
-        store.index().unwrap();
-        let published = acquire(&store, "sym:target", None, &InvocationDirectory::root()).unwrap();
-        assert!(published.verified);
-        std::fs::write(
-            root.path().join("lib.rs"),
-            "// moved down\n\nfn target() -> u8 { 1 }\n",
-        )
-        .unwrap();
-
-        let current = acquire(&store, "sym:target", None, &InvocationDirectory::root()).unwrap();
-        assert!(!current.verified);
-        assert_eq!(current.freshness, Some("unpublished"));
-        assert_eq!(
-            &current.bytes[current.span.start..current.span.end],
-            b"fn target() -> u8 { 1 }"
-        );
-        assert_eq!(
-            current
-                .definitions
-                .as_ref()
-                .map(|selection| selection.declarations),
-            Some(1)
-        );
-        let rendered: serde_json::Value = serde_json::from_str(
-            &crate::source::show(&store, "sym:target", &OutputBudget::new(4_000).unwrap()).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(rendered["freshness"], "unpublished");
-        assert_eq!(rendered["verified"], false);
-        assert_eq!(rendered["lines"][0]["line"], 3);
-        // Handles stay immutable: the published read's handle is stale now.
-        let error = acquire(
-            &store,
-            &published.handle,
-            None,
-            &InvocationDirectory::root(),
-        )
-        .err()
-        .unwrap();
-        assert!(error.to_string().starts_with("stale_source:"), "{error:#}");
-
-        std::fs::write(root.path().join("lib.rs"), b"fn target() {}\0").unwrap();
-        let binary = acquire(&store, "sym:target", None, &InvocationDirectory::root())
-            .err()
-            .unwrap();
-        let message = format!("{binary:#}");
-        assert!(message.starts_with("stale_source:"), "{message}");
-        assert!(message.contains("source_excluded"), "{message}");
-
-        std::fs::write(
-            root.path().join("lib.rs"),
-            "// moved down\n\nfn target() -> u8 { 1 }\n",
-        )
-        .unwrap();
-        store.index().unwrap();
-        let republished =
-            acquire(&store, "sym:target", None, &InvocationDirectory::root()).unwrap();
-        assert!(republished.verified);
-        assert_eq!(republished.freshness, None);
-    }
-
-    #[test]
-    fn stale_qualified_symbol_stays_in_the_selected_method_container() {
-        let root = tempfile::tempdir().unwrap();
-        let cache = tempfile::tempdir().unwrap();
-        std::fs::write(
-            root.path().join("lib.rs"),
-            "struct A;\nimpl A {\n    fn open() { 10 }\n}\nstruct B;\nimpl B {\n    fn open() { 20 }\n}\n",
-        )
-        .unwrap();
-        let mut store = Store::open(root.path(), cache.path()).unwrap();
-        store.index().unwrap();
-        let original = acquire(&store, "sym:A::open", None, &InvocationDirectory::root()).unwrap();
-        assert!(original.verified);
-        assert_eq!(
-            &original.bytes[original.span.start..original.span.end],
-            b"fn open() { 10 }"
-        );
-
-        // Put B's same-named method at A's old line; nearest-name lookup alone
-        // would return this body for the still-qualified `sym:A::open` query.
-        std::fs::write(
-            root.path().join("lib.rs"),
-            "struct B;\nimpl B {\n    fn open() { 99 }\n}\nstruct A;\nimpl A {\n    fn open() { 11 }\n}\n",
-        )
-        .unwrap();
-        let current = acquire(&store, "sym:A::open", None, &InvocationDirectory::root()).unwrap();
-        assert!(!current.verified);
-        assert_eq!(current.freshness, Some("unpublished"));
-        let body = &current.bytes[current.span.start..current.span.end];
-        assert_eq!(body, b"fn open() { 11 }");
-        assert!(!body.windows(2).any(|window| window == b"99"));
-        assert_eq!(
-            line_span(&current.bytes, current.span.start, current.span.end).0,
-            7
-        );
-    }
-}
+mod tests;
