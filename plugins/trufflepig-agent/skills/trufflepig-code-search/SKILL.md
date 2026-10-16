@@ -171,11 +171,11 @@ For assigned plan work, take the plan ID and task from the brief, then read the
 reviewer steps, session binding, progress cadence, and review verdicts. Include
 the plan ID in relevant feedback; do not claim another worker's task.
 
-Report a Trufflepig failure only when it forces a workaround. Use the canonical
-four-field body, categories, and 4 KiB limit in `docs/board-feedback-contract.md`
-in the Trufflepig checkout; do not copy a second template here. The wrapper adds
-bounded call metadata, never source output. Feedback may queue for import. If
-reporting fails, state that once and continue the necessary fallback.
+Report a Trufflepig failure only when it forces a workaround. Use the four-field
+body, categories, and 4 KiB limit in the
+[feedback contract](https://github.com/usips/trufflepig/blob/master/docs/board-feedback-contract.md#report-fields);
+do not copy a second template here. The wrapper adds call metadata,
+never source output. If reporting fails, state that once and continue the fallback.
 
 For a complete empty search, refine terms or try one exact/regex search before
 a targeted fallback. `warming` with a `served from` footer is an answer. Reads allow

@@ -27,10 +27,15 @@ trufflepig-agent board pending
 
 Use the provider's actual model ID and effort for other configurations.
 `kimi-code/k3` is a CLI configuration alias; `k3` is the provider model ID.
-Follow repository attribution rules for commit trailers and include every
-contributing model with its actual co-author identity.
+For that model the commit trailer is `Co-authored-by: k3 <noreply@moonshot.ai>`.
+Include every contributing model with its actual co-author identity.
 
 `board pending` is read-only: it neither acknowledges activity nor renews the
 claim. Do not poll it on every turn. File Trufflepig feedback only when a
-failure forces a workaround; use the canonical body and limits in
-`docs/board-feedback-contract.md` in the Trufflepig checkout.
+failure forces a workaround; use the canonical body and limits in the
+[feedback contract](https://github.com/usips/trufflepig/blob/master/docs/board-feedback-contract.md).
+
+Use `board web` when the user requests the web board. Its bootstrap URL contains
+a secret token; do not store it in files, commits, feedback, or audit notes.
+On `board_unavailable` or an API mismatch, report the error once. Do not loop,
+silently switch identity, or restart services during ordinary Board work.
