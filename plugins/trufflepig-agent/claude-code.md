@@ -94,8 +94,9 @@ identity for `board hello` or other identity-sensitive writes.
 
 The installer merges search steering on `PreToolUse`/`PostToolUse` Bash and
 `PreToolUse` Agent hooks, then adds `claude-hooks.py` for Bash identity rewriting,
-all-tool post-use notices, and session/subagent cleanup. Identity rewriting runs
-after Bash search steering, which retains the original command for classification.
+all-tool post-use notices, and session/subagent cleanup. Identity rewriting and Bash
+search steering are parallel `PreToolUse` hooks; each receives the original command,
+so steering classifies the pre-rewrite input.
 Tool hooks fire inside subagents too; their payloads carry `agent_id` and
 `agent_type`, which audit records retain. Deny reasons and `additionalContext`
 reach the model; plain `PreToolUse` stdout does not, so nudges wait for `PostToolUse`.

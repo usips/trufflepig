@@ -72,6 +72,7 @@ class ClaudeHookIdentityTests(unittest.TestCase):
         self.assertIn("active rules", context)
         self.assertIn("Claude's agent_type is not a Board role", context)
         self.assertIn("worker recipe in the lead's brief", context)
+        self.assertIn("`--worker TASK/HANDLE` (e.g. P7.3/parser)", context)
 
         result = self.run_hook({"hook_event_name": "PreToolUse", "tool_name": "Bash",
                                 "session_id": "session-2", "agent_id": "agent-b",
@@ -171,6 +172,7 @@ class ClaudeHookLifecycleTests(unittest.TestCase):
         self.assertEqual(calls[1][2]["generation"], "g2")
         self.assertEqual(run.call_args.args[0][1:], ["board", "pending", "24", "--json"])
         self.assertEqual(run.call_args.kwargs["env"]["TRUFFLEPIG_SESSION"], actor.removeprefix("claude/"))
+        self.assertEqual(run.call_args.kwargs["env"]["TRUFFLEPIG_AGENT_HOOK"], "1")
         output = json.loads(fake_stdout.value)["hookSpecificOutput"]
         self.assertEqual(output["hookEventName"], "PostToolUse")
         self.assertEqual(output["additionalContext"], "Pending E7 on P4 from coder · 2m")
@@ -221,6 +223,7 @@ class ClaudeHookLifecycleTests(unittest.TestCase):
                     self.hooks.main()
                 self.assertEqual(run.call_args.args[0][1:], ["board", "bye"])
                 self.assertEqual(run.call_args.kwargs["env"]["TRUFFLEPIG_SESSION"], expected)
+                self.assertEqual(run.call_args.kwargs["env"]["TRUFFLEPIG_AGENT_HOOK"], "1")
 
         payload = {"hook_event_name": "SubagentStop", "session_id": "parent"}
         with mock.patch.object(self.hooks.subprocess, "run") as run, \

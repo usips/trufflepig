@@ -7,7 +7,7 @@ from pathlib import Path
 import pwd
 import subprocess
 
-from router_identity import RouterIdentityConflict, require_router_exclusive
+from router_identity import RouterIdentityConflict, require_router_exclusive, require_unit_owner
 
 PLUGIN = Path(__file__).resolve().parents[1]
 SUPPORTED_UNIT_STATES = frozenset(("enabled", "enabled-runtime", "disabled", "static", "not-found"))
@@ -161,10 +161,13 @@ def apply_units(binary: str, unit_directory: Path, router_runtime: Path, managed
                 install_router: bool, install_board: bool,
                 unit_text: str | None, board_unit_text: str | None, check_router) -> None:
     """Write requested units; restore configuration on failure and defer conflicted restarts."""
-    require_router_exclusive(
+    owners = require_router_exclusive(
         router_runtime,
         "resolve the conflict, then rerun the installer with `--systemd`",
     )
+    if managed_router:
+        # A stray listener makes the unit crash-loop while the installer reports success.
+        require_unit_owner(router_runtime, owners)
     previous_active = {name: unit_active(name)
                        for name in ("trufflepig-system.service", "trufflepig-board.service")}
     board_was_active = previous_active["trufflepig-board.service"]

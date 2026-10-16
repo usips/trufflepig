@@ -83,10 +83,10 @@ def should_poll_pending(*, actor: str, state_dir: Path,
     current = time.time() if now is None else now
     try:
         with _locked_state(state_dir) as state:
-            _prune_state(state, current)
             previous = state["polls"].get(actor)
             if isinstance(previous, (int, float)) and current - previous < POLL_INTERVAL_SECONDS:
                 return False
+            _prune_state(state, current)
             state["polls"][actor] = current
             _trim_mapping(state["polls"], MAX_ACTORS)
             return True
@@ -222,8 +222,11 @@ def _locked_state(state_dir: Path) -> Iterator[dict]:
         fcntl.flock(lock_fd, fcntl.LOCK_EX)
         state = _read_state(directory / "notices.json")
         _normalize_state(state)
+        loaded = _encode_state(state)
         yield state
-        _write_state(directory, state)
+        # Read-only callers and rate-limited polls leave the state file untouched.
+        if _encode_state(state) != loaded:
+            _write_state(directory, state)
     finally:
         fcntl.flock(lock_fd, fcntl.LOCK_UN)
         os.close(lock_fd)
@@ -249,13 +252,17 @@ def _read_state(path: Path) -> dict:
         os.close(fd)
 
 
+def _encode_state(state: dict) -> bytes:
+    return json.dumps(state, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+
+
 def _write_state(directory: Path, state: dict) -> None:
-    payload = json.dumps(state, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    payload = _encode_state(state)
     if len(payload) > MAX_STATE_BYTES:
         state["seen"] = state["seen"][-MAX_SEEN_NOTICES // 2:]
         _trim_mapping(state["polls"], MAX_ACTORS // 2)
         _trim_mapping(state["watermarks"], MAX_ACTORS // 2)
-        payload = json.dumps(state, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+        payload = _encode_state(state)
     if len(payload) > MAX_STATE_BYTES:
         raise OSError("notice state cache exceeds its size limit")
     fd, temporary = tempfile.mkstemp(prefix=".notices-", dir=directory)

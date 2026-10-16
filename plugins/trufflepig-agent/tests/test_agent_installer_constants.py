@@ -52,6 +52,18 @@ class AgentInstallerConstantsTests(AgentRealRouterCase):
     def test_router_only_install_with_actual_refused_parent(self):
         self.assert_real_router_only_install(refused_parent=True)
 
+    def test_systemd_install_refuses_actual_router_outside_the_unit(self):
+        module = self.load_installer("install_actual_stray_router")
+        status = self.start_real_router(self.real_trufflepig_binary(), module)
+        self.assertEqual(status["schema_file"], module.BOARD_SCHEMA)
+        self.service_shims()
+        # The unit reports no MainPID, so the listening router is a stray outside trufflepig-system.service.
+        self.env["SERVICE_MAIN_PID"] = "0"
+        result = self.run_installer_main("--systemd", router_timeout=0.05)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("runs outside trufflepig-system.service", result.stderr)
+        self.assertFalse(any(self.enabled_units().values()))
+
 
 if __name__ == "__main__":
     unittest.main()

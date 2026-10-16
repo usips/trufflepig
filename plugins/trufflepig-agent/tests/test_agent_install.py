@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -114,12 +115,19 @@ print(json.dumps({{"hits": [], "truncated": False}}))
         self.assertEqual(result.returncode, 2)
         self.assertIn("member daemons", result.stderr)
 
-    def test_claude_check_verifies_hooks_and_current_service_without_restart(self):
+    def run_claude_check(self):
+        """Run `install.sh --claude --check` in-process; return the patched router check and unit calls."""
         module = self.load_installer("install_claude_check_contract")
         runtime = self.root / "checked-runtime"
         applied_services = []
         completed = subprocess.CompletedProcess(["check_agent.py"], 0, "", "")
-        with patch.dict(os.environ, self.env), \
+        # An inherited developer CLAUDE_CONFIG_DIR must neither receive the settings write nor leak in.
+        developer = tempfile.TemporaryDirectory(prefix="developer-claude-")
+        self.addCleanup(developer.cleanup)
+        developer_settings = Path(developer.name) / "settings.json"
+        developer_settings.write_text('{"model": "developer"}\n')
+        with patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": developer.name}), \
+                patch.dict(os.environ, self.env, clear=True), \
                 patch.object(sys, "argv", ["install.sh", "--claude", "--check", str(self.root)]), \
                 patch.object(module.shutil, "which", return_value="/test/bin/trufflepig"), \
                 patch.object(module, "require_board_api") as require_api, \
@@ -128,9 +136,22 @@ print(json.dumps({{"hits": [], "truncated": False}}))
                 patch.object(module, "apply_units", side_effect=lambda *args: applied_services.append(args)), \
                 patch.object(module.subprocess, "run", return_value=completed):
             self.assertEqual(module.main(), 0)
+        self.assertEqual(developer_settings.read_text(), '{"model": "developer"}\n')
+        self.assertTrue((self.root / "claude-config/settings.json").is_file())
         require_api.assert_called_once_with("/test/bin/trufflepig")
-        require_router.assert_called_once_with(runtime, require_schema=True)
         self.assertEqual(applied_services, [])
+        return require_router, runtime
+
+    def test_claude_check_verifies_hooks_and_current_service_without_restart(self):
+        require_router, runtime = self.run_claude_check()
+        require_router.assert_called_once_with(runtime, require_schema=True, managed_unit=False)
+
+    def test_claude_check_requires_unit_ownership_when_the_unit_file_exists(self):
+        unit = self.root / "config/systemd/user/trufflepig-system.service"
+        unit.parent.mkdir(parents=True)
+        unit.write_text("installed unit\n")
+        require_router, runtime = self.run_claude_check()
+        require_router.assert_called_once_with(runtime, require_schema=True, managed_unit=True)
 
 
 if __name__ == "__main__":

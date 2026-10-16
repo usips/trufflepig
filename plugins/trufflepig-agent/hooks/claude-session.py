@@ -32,7 +32,8 @@ def subagent_identity_context(payload: dict) -> str:
     worker = (
         "Follow the worker recipe in the lead's brief and use the handle, address, and role the lead registered. "
         "Claude's agent_type is not a Board role, so do not infer or register a role from it. "
-        "When the brief provides a worker address, include it in `board hello` as `--worker PLAN/HANDLE`. "
+        "When the brief provides a worker address, include it in `board hello` as "
+        "`--worker TASK/HANDLE` (e.g. P7.3/parser). "
     )
     if os.environ.get("TRUFFLEPIG_CLAUDE_IDENTITY_REWRITE", "").lower() in {"1", "true", "yes", "on"}:
         return (

@@ -31,6 +31,7 @@ class AgentInstallCase(unittest.TestCase):
         self.env = dict({k: v for k, v in os.environ.items()
                          if not k.startswith("TRUFFLEPIG") and k not in ("CLAUDE_CONFIG_DIR", "GROK_HOME", "XDG_RUNTIME_DIR")},
                         HOME=str(self.root), XDG_CONFIG_HOME=str(self.root / "config"), XDG_STATE_HOME=str(self.root / "state"),
+                        CLAUDE_CONFIG_DIR=str(self.root / "claude-config"),
                         TRUFFLEPIG_SYSTEM_DIR=str(self.root / "system-runtime"), TRUFFLEPIG_BOARD_DB=str(self.root / "data/board.sqlite3"),
                         INSTALLER_BOARD_API=str(CURRENT_ROUTER_STATUS["board_api"]))
 
@@ -55,7 +56,7 @@ class AgentInstallCase(unittest.TestCase):
         stdout = io.StringIO()
         stderr = io.StringIO()
         command = [str(PLUGIN / "install.sh"), *args]
-        with patch.dict(os.environ, self.env), patch.object(sys, "argv", command):
+        with patch.dict(os.environ, self.env, clear=True), patch.object(sys, "argv", command):
             with redirect_stdout(stdout), redirect_stderr(stderr):
                 try:
                     status = module.main()

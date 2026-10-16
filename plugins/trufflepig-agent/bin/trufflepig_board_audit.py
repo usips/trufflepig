@@ -7,9 +7,10 @@ from pathlib import Path
 import re
 
 BOARD_VERBS = {"board", "feedback"}
-BOARD_SUBVERBS = {"hello", "new", "show", "post", "claim", "task", "propose", "edit", "accept", "reject", "inbox", "review", "ingest", "projects", "done", "grant", "revoke", "bye", "pending", "worker"}
+BOARD_SUBVERBS = {"hello", "new", "show", "post", "claim", "task", "propose", "edit", "accept", "reject", "inbox", "review", "ingest", "projects", "done", "grant", "revoke", "bye", "pending", "worker",
+                  "feed", "attention", "history", "search", "web", "link", "unlink"}
 FEEDBACK_REPORT_KINDS = {"blocked", "confused", "wrong", "missing"}
-FEEDBACK_SUBVERBS = FEEDBACK_REPORT_KINDS | {"ls", "close"}
+FEEDBACK_SUBVERBS = FEEDBACK_REPORT_KINDS | {"ls", "triage", "close"}
 RECENT_CALL_LIMIT = 5
 RECENT_CALL_BYTES = 2048
 AUDIT_TAIL_BYTES = 64 * 1024

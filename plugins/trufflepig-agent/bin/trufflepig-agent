@@ -35,9 +35,11 @@ FLAGS_WITH_VALUES = {
     "--body", "--plan", "--to", "--supersedes", "--scope", "--section",
     "--for", "--project", "--after", "--through", "--worker", "--role", "--model", "--effort",
     "--files", "--head", "--step", "--tests", "--gate", "--eta", "--verdict",
-    "--agent-model", "--agent-effort", "--recent-calls", "--board-text",
+    "--agent-model", "--agent-effort", "--recent-calls", "--board-text", "--board",
 }
 HARNESS_LABEL = re.compile(r"[a-z][a-z0-9_-]{0,31}\Z")
+# Board subverbs the lifecycle hooks run; audited as "hook:VERB" so agent recent-call lists skip them.
+HOOK_BOARD_VERBS = {"pending", "bye"}
 
 
 def state_dir() -> Path:
@@ -49,27 +51,54 @@ def log_dir() -> Path:
     return Path(os.environ.get("TRUFFLEPIG_AGENT_LOG_DIR") or state_dir() / "agent-audit")
 
 
-def detect_native_harness() -> str | None:
-    """Match the Rust actor resolver's observed environment/process priority."""
+def native_markers() -> list[str]:
+    """Harnesses whose native environment markers are present, in priority order."""
+    marked = []
     if os.environ.get("GEMINI_CLI") == "1":
-        return "gemini"
+        marked.append("gemini")
     if os.environ.get("GROK_SESSION_ID"):
-        return "grok"
+        marked.append("grok")
     # omp's shell tool exports CLAUDECODE=1 alongside OMPCODE=1, so omp must be
-    # tested before Claude or every omp call would be attributed to Claude.
+    # ordered before Claude or every omp call would be attributed to Claude.
     if os.environ.get("OMPCODE") == "1":
-        return "omp"
+        marked.append("omp")
     if os.environ.get("OPENCODE") == "1":
-        return "opencode"
+        marked.append("opencode")
     if os.environ.get("CLAUDECODE") == "1" or os.environ.get("CLAUDE_CODE_CHILD_SESSION") == "1":
-        return "claude"
+        marked.append("claude")
     if any(os.environ.get(key) for key in ("CODEX_THREAD_ID", "CODEX_SESSION_ID", "CODEX_VERSION")):
+        marked.append("codex")
+    # Only the documented session variables mark Kimi and Muse; other names under
+    # those prefixes, such as API keys or model settings, do not.
+    if os.environ.get("KIMI_SESSION_ID"):
+        marked.append("kimi")
+    if os.environ.get("MUSE_SESSION_ID"):
+        marked.append("muse")
+    return marked
+
+
+def harness_for_process(comm: str) -> str | None:
+    lowered = comm.lower()
+    if lowered == "grok" or lowered.startswith("grok-"):
+        return "grok"
+    if lowered == "claude":
+        return "claude"
+    if lowered == "codex" or lowered.startswith("codex-"):
         return "codex"
-    if any("KIMI" in key.upper() for key in os.environ):
+    if lowered == "omp":
+        return "omp"
+    if lowered == "opencode":
+        return "opencode"
+    if lowered.startswith("kimi"):
         return "kimi"
-    if any("MUSE" in key.upper() for key in os.environ):
+    if lowered.startswith("muse"):
         return "muse"
-    # Walk parent processes and look for a known harness executable name.
+    return None
+
+
+def ancestor_comms() -> list[str]:
+    """Process names from the parent upward, bounded like the Rust resolver."""
+    names: list[str] = []
     pid = os.getppid()
     for _ in range(12):
         try:
@@ -77,28 +106,27 @@ def detect_native_harness() -> str | None:
             stat = Path(f"/proc/{pid}/stat").read_text()
         except OSError:
             break
-        lowered = comm.lower()
-        if lowered == "grok" or lowered.startswith("grok-"):
-            return "grok"
-        if lowered == "claude":
-            return "claude"
-        if lowered == "codex" or lowered.startswith("codex-"):
-            return "codex"
-        if lowered == "omp":
-            return "omp"
-        if lowered == "opencode":
-            return "opencode"
-        if lowered.startswith("kimi"):
-            return "kimi"
-        if lowered.startswith("muse"):
-            return "muse"
+        names.append(comm)
         try:
             pid = int(stat.rsplit(")", 1)[1].split()[1])
         except (IndexError, ValueError):
             break
         if pid <= 1:
             break
-    return None
+    return names
+
+
+def detect_native_harness() -> str | None:
+    """Match the Rust resolver: the nearest ancestor naming a marked harness wins,
+    then the first marker in priority order, then the nearest recognized ancestor."""
+    marked = native_markers()
+    ancestors = [harness for harness in map(harness_for_process, ancestor_comms()) if harness]
+    for harness in ancestors:
+        if harness in marked:
+            return harness
+    if marked:
+        return marked[0]
+    return ancestors[0] if ancestors else None
 
 
 def detect_harness(explicit_client: str | None = None) -> str:
@@ -189,6 +217,17 @@ def board_notice_state_dir(harness: str) -> Path:
     """Use the same Claude state directory as Claude's PostToolUse hooks."""
     suffix = "claude-notices" if harness == "claude" else "board-notices"
     return state_dir() / suffix
+
+
+def delivers_pending_notices(harness: str, values: dict[str, str]) -> bool:
+    """Only an explicit session may poll notices as a Claude actor.
+
+    Claude subagent shells inherit the parent's session, and PostToolUse hooks own
+    Claude delivery; an inherited session must not claim the parent's notices.
+    """
+    if harness != "claude":
+        return True
+    return bool(os.environ.get("TRUFFLEPIG_SESSION")) or "--session" in values
 
 
 def successful_output(stdout: bytes, stderr: bytes, exit_code: int,
@@ -344,8 +383,12 @@ def main() -> int:
 
     visible_stdout = stdout
     is_pending_query = verb == "board" and len(words) > 1 and words[1] == "pending"
+    hook_call = (os.environ.get("TRUFFLEPIG_AGENT_HOOK") == "1" and verb == "board"
+                 and len(words) > 1 and words[1] in HOOK_BOARD_VERBS)
+    audit_verb = f"hook:{words[1]}" if hook_call else verb
     parsed_success = successful_output(stdout, stderr, exit_code, argv, verb, words)
-    if (session and parsed_success is not None and not is_pending_query
+    if (session and parsed_success is not None and not is_pending_query and not hook_call
+            and delivers_pending_notices(harness, values)
             and "board_pending" not in parsed_success):
         pending_result = poll_board_notices(harness, session, values.get("--session"))
         if pending_result is not None:
@@ -413,7 +456,7 @@ def main() -> int:
         "claimed_client": claimed_client,
         "session": session,
         "cwd": cwd,
-        "verb": verb,
+        "verb": audit_verb,
         "args": audit_arguments(verb, words[1:]),
         "options": audit_options(verb, values),
         "exit_code": exit_code,

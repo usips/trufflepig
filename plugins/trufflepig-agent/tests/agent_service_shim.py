@@ -34,6 +34,10 @@ command, units = (words[0], words[1:]) if words else ("", [])
 def unknown(unit, status):
     sys.stderr.write(f"Unit {unit} could not be found.\n")
     sys.exit(status)
+if command == "show":
+    # Report the MainPID an installed unit would own; tests point it at their real router.
+    sys.stdout.write(os.environ.get("SERVICE_MAIN_PID", "0") + "\n")
+    sys.exit(0)
 if command == "is-active":
     if not (units_dir / units[0]).is_file() and units[0] not in units_state:
         unknown(units[0], 4)

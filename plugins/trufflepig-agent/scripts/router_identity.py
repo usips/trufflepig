@@ -4,8 +4,12 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import socket
+import subprocess
+from typing import Callable
 
 _LISTENING_FLAG = 0x10000
+UNIT_NAME = "trufflepig-system.service"
+Runner = Callable[[list[str]], str]
 
 
 class RouterIdentityConflict(ValueError):
@@ -134,3 +138,47 @@ def require_router_identity(runtime: Path, status: dict, advice: str, *,
         pid, path = next(iter(owners.items()))
         if path.endswith(" (deleted)"):
             raise _replaced_error(runtime, pid, path, advice)
+
+
+def require_managed_router(runtime: Path, status: dict, advice: str, *,
+                           runner: Runner | None = None, proc_root: Path = Path("/proc")) -> None:
+    """Identity for an installed user unit: the listener must belong to that unit."""
+    require_router_identity(runtime, status, advice, proc_root=proc_root)
+    require_unit_owner(runtime, require_router_exclusive(runtime, advice, proc_root=proc_root),
+                       runner=runner, proc_root=proc_root)
+
+
+def require_unit_owner(runtime: Path, owners: dict[int, str], *,
+                       runner: Runner | None = None, proc_root: Path = Path("/proc")) -> None:
+    """A single listener owner must be the unit's MainPID or run in the unit's cgroup."""
+    if len(owners) != 1:
+        return
+    (pid,) = owners
+    if pid == unit_main_pid(runner or _systemctl_stdout) or _in_unit_cgroup(proc_root / str(pid)):
+        return
+    raise RouterIdentityConflict(
+        f"router PID {pid} runs outside {UNIT_NAME} for runtime {runtime}; stop it with "
+        f"`trufflepig system stop` (or `kill {pid}`), then run `systemctl --user restart {UNIT_NAME}`"
+    )
+
+
+def unit_main_pid(runner: Runner) -> int | None:
+    """Return the unit's MainPID, or None when systemctl cannot report it."""
+    try:
+        text = runner(["systemctl", "--user", "show", "-p", "MainPID", "--value", UNIT_NAME]).strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return int(text) if text.isdecimal() else None
+
+
+def _in_unit_cgroup(process: Path) -> bool:
+    try:
+        lines = (process / "cgroup").read_text(encoding="ascii", errors="replace").splitlines()
+    except OSError:
+        return False
+    # Both cgroup v1 and v2 rows end with the group path; the unit is its last component.
+    return any(Path(line.rpartition(":")[2]).name == UNIT_NAME for line in lines)
+
+
+def _systemctl_stdout(command: list[str]) -> str:
+    return subprocess.run(command, capture_output=True, text=True, check=True).stdout

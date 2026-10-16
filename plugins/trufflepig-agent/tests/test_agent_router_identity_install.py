@@ -33,6 +33,7 @@ class AgentRouterIdentityInstallTests(unittest.TestCase):
         self.runtime = self.root / "runtime"
         self.enabled = {ROUTER: "disabled", BOARD: "disabled"}
         self.active = {ROUTER: True, BOARD: True}
+        self.main_pid = 4242
         self.commands = []
 
     def run_systemctl(self, command, **kwargs):
@@ -41,6 +42,8 @@ class AgentRouterIdentityInstallTests(unittest.TestCase):
         if command[:2] != ["systemctl", "--user"]:
             return subprocess.CompletedProcess(command, 0, "", "")
         verb = command[2]
+        if verb == "show":
+            return subprocess.CompletedProcess(command, 0, f"{self.main_pid}\n", "")
         if verb in ("is-active", "is-enabled"):
             name = command[3]
             value = ("active" if self.active[name] else "inactive") if verb == "is-active" \
@@ -88,6 +91,24 @@ class AgentRouterIdentityInstallTests(unittest.TestCase):
         run.assert_not_called()
         self.assertEqual(self.router_unit.read_text(), "previous router unit\n")
         self.assertEqual(self.board_unit.read_text(), "previous board unit\n")
+
+    def test_managed_stray_listener_fails_preflight_before_unit_mutations(self):
+        stray = 999999999
+        with patch.object(systemd_units, "require_router_exclusive", return_value={stray: "/opt/bin/trufflepig"}), \
+                patch.object(systemd_units, "unit_active") as unit_active, \
+                patch.object(systemd_units.subprocess, "run", side_effect=self.run_systemctl):
+            with self.assertRaisesRegex(RouterIdentityConflict, f"router PID {stray} runs outside {ROUTER}"):
+                self.apply(lambda *_args, **_kwargs: self.fail("readiness must not run"))
+        unit_active.assert_not_called()
+        self.assertEqual(self.commands, [["systemctl", "--user", "show", "-p", "MainPID", "--value", ROUTER]])
+        self.assertEqual(self.router_unit.read_text(), "previous router unit\n")
+
+    def test_managed_listener_owned_by_the_unit_passes_preflight(self):
+        with patch.object(systemd_units, "require_router_exclusive",
+                          return_value={self.main_pid: "/opt/bin/trufflepig"}), \
+                patch.object(systemd_units.subprocess, "run", side_effect=self.run_systemctl):
+            self.apply(lambda *_args, **_kwargs: None)
+        self.assertEqual(self.router_unit.read_text(), "new router unit\n")
 
     def test_postactivation_conflict_restores_config_without_restarting_active_units(self):
         conflict = RouterIdentityConflict("router identity changed during activation")

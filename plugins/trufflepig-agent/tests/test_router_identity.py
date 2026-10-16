@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from agent_install_case import CURRENT_ROUTER_STATUS, AgentInstallCase, installer
-from router_identity import RouterIdentityConflict, require_router_exclusive
+from router_identity import RouterIdentityConflict, require_managed_router, require_router_exclusive
 
 require_router_identity = installer.require_router_identity
 
@@ -133,6 +133,53 @@ class RouterIdentityTests(unittest.TestCase):
         require_router_identity(self.runtime, self.status(), self.advice,
                                 proc_root=self.proc / "unavailable")
 
+    def add_cgroup(self, pid, path):
+        (self.proc / str(pid) / "cgroup").write_text(f"0::{path}\n", encoding="ascii")
+
+    def test_managed_listener_owned_by_the_unit_main_process_is_accepted(self):
+        self.add_listener()
+        self.add_process(41, "1234")
+        commands = []
+
+        def runner(command):
+            commands.append(command)
+            return "41\n"
+
+        require_managed_router(self.runtime, self.status(), self.advice, runner=runner, proc_root=self.proc)
+        self.assertEqual(commands, [["systemctl", "--user", "show", "-p", "MainPID", "--value",
+                                     "trufflepig-system.service"]])
+
+    def test_managed_listener_inside_the_unit_cgroup_is_accepted(self):
+        self.add_listener()
+        self.add_process(41, "1234")
+        self.add_cgroup(41, "/user.slice/user@1000.service/app.slice/trufflepig-system.service")
+        require_managed_router(self.runtime, self.status(), self.advice,
+                               runner=lambda command: "77\n", proc_root=self.proc)
+
+    def test_stray_listener_outside_the_unit_is_rejected_with_recovery_steps(self):
+        self.add_listener()
+        self.add_process(41, "1234")
+        self.add_cgroup(41, "/user.slice/user@1000.service/app.slice/detached.service")
+        with self.assertRaises(RouterIdentityConflict) as caught:
+            require_managed_router(self.runtime, self.status(), self.advice,
+                                   runner=lambda command: "77\n", proc_root=self.proc)
+        message = str(caught.exception)
+        for detail in ("router PID 41 runs outside trufflepig-system.service", "trufflepig system stop",
+                       "kill 41", "systemctl --user restart trufflepig-system.service"):
+            self.assertIn(detail, message)
+        self.assertNotIn("system ensure", message)
+
+    def test_unreported_main_pid_leaves_only_the_unit_cgroup_as_identity(self):
+        self.add_listener()
+        self.add_process(41, "1234")
+
+        def unavailable(command):
+            raise OSError("systemctl unavailable")
+
+        with self.assertRaises(RouterIdentityConflict):
+            require_managed_router(self.runtime, self.status(), self.advice,
+                                   runner=unavailable, proc_root=self.proc)
+
 
 class RouterReadinessIdentityTests(AgentInstallCase):
     def test_ready_router_identity_is_checked_once_at_each_success_return(self):
@@ -147,6 +194,19 @@ class RouterReadinessIdentityTests(AgentInstallCase):
                 identity.assert_called_once_with(
                     runtime, CURRENT_ROUTER_STATUS,
                     "restart trufflepig-system.service with the current trufflepig binary")
+
+    def test_managed_unit_requires_its_own_listener_at_each_success_return(self):
+        module = self.load_installer("install_router_identity_managed")
+        runtime = Path(self.env["TRUFFLEPIG_SYSTEM_DIR"])
+        for require_schema in (False, True):
+            with self.subTest(require_schema=require_schema):
+                with patch.object(module, "router_endpoint_present", return_value=True), \
+                        patch.object(module, "router_status", return_value=CURRENT_ROUTER_STATUS), \
+                        patch.object(module, "require_managed_router") as managed, \
+                        patch.object(module, "require_router_identity") as identity:
+                    module.require_current_router(runtime, managed_unit=True, require_schema=require_schema)
+                managed.assert_called_once()
+                identity.assert_not_called()
 
     def test_stale_identity_cannot_return_ready(self):
         module = self.load_installer("install_router_identity_stale")

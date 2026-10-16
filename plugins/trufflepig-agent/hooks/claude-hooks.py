@@ -219,6 +219,7 @@ def pending_notification(payload: dict[str, object], event: str) -> None:
         return
     env = os.environ.copy()
     env["TRUFFLEPIG_SESSION"] = session
+    env["TRUFFLEPIG_AGENT_HOOK"] = "1"
     command = [executable, "board", "pending"]
     try:
         after = pending_after(actor, state)
@@ -266,6 +267,7 @@ def board_bye(payload: dict[str, object], event: str) -> None:
         return
     env = os.environ.copy()
     env["TRUFFLEPIG_SESSION"] = session
+    env["TRUFFLEPIG_AGENT_HOOK"] = "1"
     try:
         subprocess.run([executable, "board", "bye"], capture_output=True,
                        text=True, timeout=BYE_TIMEOUT, check=False, env=env)

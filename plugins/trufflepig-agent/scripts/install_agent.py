@@ -26,7 +26,7 @@ from trufflepig_runtime import runtime_config_path
 from agent_install_links import AgentLinkPlan, link
 from claude_install import claude_home, check_claude_hooks, prepare_settings, write_settings
 from board_service_pin import validate_router_database
-from router_identity import require_router_identity
+from router_identity import require_managed_router, require_router_identity
 from systemd_units import (apply_units, board_database_path, render_service, service_text,
                            system_runtime_path)
 
@@ -122,10 +122,19 @@ def router_endpoint_present(runtime: Path) -> bool:
     return True
 
 
+def check_router_identity(runtime: Path, status: dict, advice: str, *, managed: bool) -> None:
+    """A managed router's listener must belong to trufflepig-system.service."""
+    if managed:
+        require_managed_router(runtime, status, advice)
+    else:
+        require_router_identity(runtime, status, advice)
+
+
 def require_current_router(runtime: Path, *, allow_absent: bool = False, managed_restart: bool = False,
-                           require_schema: bool = True,
+                           managed_unit: bool = False, require_schema: bool = True,
                            timeout: float = ROUTER_READY_TIMEOUT_SECONDS) -> None:
     """Require the current API and, when requested, a migrated board database."""
+    managed = managed_restart or managed_unit
     advice = ("rerun plugins/trufflepig-agent/install.sh --systemd with the current trufflepig binary"
               if managed_restart else "restart trufflepig-system.service with the current trufflepig binary")
     if allow_absent and not router_endpoint_present(runtime):
@@ -154,14 +163,14 @@ def require_current_router(runtime: Path, *, allow_absent: bool = False, managed
         if not require_schema:
             if status.get("board_error"):
                 print(f"warning: router board_error: {status['board_error']}", file=sys.stderr)
-            require_router_identity(runtime, status, advice)
+            check_router_identity(runtime, status, advice, managed=managed)
             return
         supported = status.get("schema_supported")
         schema = status.get("schema_file")
         if supported != BOARD_SCHEMA:
             raise ValueError(f"router reports schema_supported {supported}, expected {BOARD_SCHEMA}; {advice}")
         if schema == BOARD_SCHEMA:
-            require_router_identity(runtime, status, advice)
+            check_router_identity(runtime, status, advice, managed=managed)
             return
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -301,7 +310,9 @@ def main() -> int:
             if not binary:
                 raise ValueError("--claude --check requires trufflepig on PATH to verify Board service readiness")
             require_board_api(binary)
-            require_current_router(system_runtime_path(binary), require_schema=True)
+            config_home = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+            managed_unit = (config_home / "systemd/user/trufflepig-system.service").exists()
+            require_current_router(system_runtime_path(binary), require_schema=True, managed_unit=managed_unit)
         subprocess.run([sys.executable, str(PLUGIN / "scripts/check_agent.py"),
                         "--wrapper", str(args.bin / "trufflepig-agent"), str(args.check.absolute())], check=True)
     return 0

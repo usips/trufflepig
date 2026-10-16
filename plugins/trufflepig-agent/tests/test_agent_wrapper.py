@@ -8,12 +8,14 @@ import sys
 import tempfile
 import time
 import unittest
+from contextlib import contextmanager
 from importlib.machinery import SourceFileLoader
 from unittest.mock import patch
 
 PLUGIN = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PLUGIN / "bin"))
 from trufflepig_audit_response import parse_lines_response  # noqa: E402
+from trufflepig_board_audit import audit_arguments  # noqa: E402
 from trufflepig_board_notices import pending_after  # noqa: E402
 
 
@@ -24,31 +26,70 @@ class HarnessResolutionTests(unittest.TestCase):
         self.wrapper = importlib.util.module_from_spec(spec)
         loader.exec_module(self.wrapper)
 
+    @contextmanager
+    def ancestry(self, names):
+        """Fake /proc so the parent chain is `names`, nearest first, then init."""
+        pids = [101 + index for index in range(len(names))]
+        processes = {}
+        for index, (pid, name) in enumerate(zip(pids, names)):
+            parent = pids[index + 1] if index + 1 < len(pids) else 1
+            processes[f"/proc/{pid}/comm"] = f"{name}\n"
+            processes[f"/proc/{pid}/stat"] = f"{pid} ({name}) S {parent} 0\n"
+
+        def read_text(path, *args, **kwargs):
+            if str(path) not in processes:
+                raise FileNotFoundError(str(path))
+            return processes[str(path)]
+
+        with (patch.object(self.wrapper.os, "getppid", return_value=pids[0] if pids else 1),
+              patch.object(self.wrapper.Path, "read_text", autospec=True, side_effect=read_text)):
+            yield
+
+    def native_detection(self, environment, names):
+        with patch.dict(os.environ, environment, clear=True), self.ancestry(names):
+            return self.wrapper.detect_native_harness()
+
     def test_native_environment_priority_matches_rust_and_beats_claims(self):
         with patch.dict(os.environ, {
             "GROK_SESSION_ID": "grok-session", "OMPCODE": "1", "CLAUDECODE": "1",
             "CODEX_THREAD_ID": "codex-thread", "TRUFFLEPIG_AGENT_HARNESS": "kimi",
-        }, clear=True):
+        }, clear=True), self.ancestry([]):
             self.assertEqual(self.wrapper.detect_native_harness(), "grok")
             self.assertEqual(self.wrapper.detect_harness("human"), "grok")
-        with patch.dict(os.environ, {"OMPCODE": "1", "CLAUDECODE": "1"}, clear=True):
+        with patch.dict(os.environ, {"OMPCODE": "1", "CLAUDECODE": "1"}, clear=True), self.ancestry([]):
             self.assertEqual(self.wrapper.detect_native_harness(), "omp")
 
     def test_nearest_process_fallback_precedes_wrapper_hint(self):
-        processes = {
-            "/proc/101/comm": "python\n", "/proc/101/stat": "101 (python) S 202 0\n",
-            "/proc/202/comm": "codex\n", "/proc/202/stat": "202 (codex) S 303 0\n",
-            "/proc/303/comm": "claude\n", "/proc/303/stat": "303 (claude) S 1 0\n",
-        }
-
-        def read_text(path, *args, **kwargs):
-            return processes[str(path)]
-
         with (patch.dict(os.environ, {"TRUFFLEPIG_AGENT_HARNESS": "kimi"}, clear=True),
-              patch.object(self.wrapper.os, "getppid", return_value=101),
-              patch.object(self.wrapper.Path, "read_text", autospec=True, side_effect=read_text)):
+              self.ancestry(["python", "codex", "claude"])):
             self.assertEqual(self.wrapper.detect_native_harness(), "codex")
             self.assertEqual(self.wrapper.detect_harness("claude"), "codex")
+
+    def test_nearest_marked_ancestor_decides_between_nested_harnesses(self):
+        environment = {"CLAUDECODE": "1", "TRUFFLEPIG_CLAUDE_SESSION": "claude-parent",
+                       "CODEX_THREAD_ID": "codex-child"}
+        self.assertEqual(self.native_detection(environment, ["bash", "codex", "claude"]), "codex")
+        self.assertEqual(self.native_detection(environment, ["bash", "claude", "codex"]), "claude")
+        with patch.dict(os.environ, environment, clear=True):
+            self.assertEqual(self.wrapper.resolve_session("codex"), "codex-child")
+            self.assertEqual(self.wrapper.resolve_session("claude"), "claude-parent")
+
+    def test_nested_markers_without_a_marked_ancestor_keep_the_fixed_order(self):
+        environment = {"CLAUDECODE": "1", "TRUFFLEPIG_CLAUDE_SESSION": "claude-parent",
+                       "CODEX_THREAD_ID": "codex-child"}
+        for names in ([], ["bash", "zsh"]):
+            with self.subTest(names=names):
+                self.assertEqual(self.native_detection(environment, names), "claude")
+
+    def test_unrelated_kimi_and_muse_variables_do_not_mark_a_shell(self):
+        environment = {"KIMI_API_KEY": "key", "MUSE_MODEL": "model"}
+        self.assertIsNone(self.native_detection(environment, []))
+        self.assertIsNone(self.native_detection(environment, ["bash", "zsh"]))
+
+    def test_documented_kimi_and_muse_session_markers_detect_their_harness(self):
+        self.assertEqual(self.native_detection({"KIMI_SESSION_ID": "kimi-7"}, []), "kimi")
+        self.assertEqual(self.native_detection({"MUSE_SESSION_ID": "muse-7"}, []), "muse")
+        self.assertEqual(self.native_detection({"KIMI_API_KEY": "key"}, ["bash", "kimi-cli"]), "kimi")
 
 
 class NextFooterTests(unittest.TestCase):
@@ -67,6 +108,16 @@ class NextFooterTests(unittest.TestCase):
             with self.subTest(footer=footer):
                 page = f"{handle}:1\tsrc/a.rs:3-9\trun\n  4: fn run() {{\ncoverage: indexed 3/3\n{footer}\n"
                 self.assertEqual(parse_lines_response(page.encode())["next"], cursor)
+
+
+class BoardAuditVocabularyTests(unittest.TestCase):
+    def test_every_board_subverb_keeps_its_structural_argument(self):
+        for verb in ("feed", "attention", "history", "search", "web", "link", "unlink"):
+            with self.subTest(verb=verb):
+                self.assertEqual(audit_arguments("board", [verb, "P7.3"]), [verb, "P7.3"])
+
+    def test_feedback_triage_keeps_entry_and_drops_note(self):
+        self.assertEqual(audit_arguments("feedback", ["triage", "E512", "private note"]), ["triage", "E512"])
 
 
 class CoverageLineTests(unittest.TestCase):
@@ -161,6 +212,12 @@ sys.exit(exit_code)
         base = base or self.root / "state/trufflepig/agent-audit"
         return json.loads((base / f"{harness}.jsonl").read_text().splitlines()[-1])
 
+    def last_record(self):
+        """The newest audit row, whichever harness file it landed in."""
+        logs = sorted((self.root / "state/trufflepig/agent-audit").glob("*.jsonl"),
+                      key=lambda path: path.stat().st_mtime_ns)
+        return json.loads(logs[-1].read_text().splitlines()[-1])
+
     def capture(self):
         return json.loads((self.root / "capture.json").read_text())
 
@@ -202,6 +259,35 @@ sys.exit(exit_code)
         self.assertIsNone(self.record("claude")["session"])
         self.assertNotIn("--session", self.capture()["argv"])
         self.assertEqual(self.pending_calls(), [])
+
+    def test_inherited_claude_session_never_claims_parent_notices(self):
+        self.env.update(CLAUDECODE="1", TRUFFLEPIG_CLAUDE_SESSION="parent-session")
+        self.run_wrapper("search", "x")
+        self.assertEqual(self.record("claude")["session"], "parent-session")
+        self.assertEqual(self.pending_calls(), [])
+        self.env["TRUFFLEPIG_SESSION"] = "claude-agent-stable"
+        self.run_wrapper("search", "y")
+        self.assertEqual(self.record("claude")["session"], "claude-agent-stable")
+        calls = self.pending_calls()
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn("--session", calls[0])
+
+    def test_hook_board_calls_are_audited_apart_and_skip_notice_polling(self):
+        self.env["TRUFFLEPIG_AGENT_HOOK"] = "1"
+        self.run_wrapper("board", "bye")
+        self.assertEqual(self.record("codex")["verb"], "hook:bye")
+        self.assertEqual(self.pending_calls(), [])
+        del self.env["TRUFFLEPIG_AGENT_HOOK"]
+        self.run_wrapper("search", "x")
+        self.run_wrapper("--board", "triage", "feedback", "blocked", "wrong")
+        argv = self.capture()["argv"]
+        recent = json.loads(argv[argv.index("--recent-calls") + 1])
+        self.assertEqual([call["verb"] for call in recent], ["search"])
+
+    def test_board_scope_flag_consumes_its_value(self):
+        self.run_wrapper("--board", "triage", "feedback", "blocked", "wrong")
+        self.assertEqual(self.record("codex")["verb"], "feedback")
+        self.assertIn("--recent-calls", self.capture()["argv"])
 
     def test_grok_session_and_explicit_override(self):
         self.env["GROK_SESSION_ID"] = "grok-session"
@@ -357,18 +443,19 @@ sys.exit(exit_code)
         del self.env["CODEX_THREAD_ID"]
         self.env["KIMI_CODE_HOME"] = str(self.root / "kimi")
         self.run_wrapper("search", "x")
-        self.assertIsNone(self.record("kimi")["session"])
+        self.assertIsNone(self.last_record()["session"])
         other = self.root / "other directory"
         other.mkdir()
         self.run_wrapper("search", "x", cwd=other)
-        self.assertIsNone(self.record("kimi")["session"])
+        self.assertIsNone(self.last_record()["session"])
         subprocess.run(["sh", str(PLUGIN / "hooks/session-start.sh"), "kimi", "end"],
                        input=payload, env=hook_env, capture_output=True, text=True)
         self.run_wrapper("search", "y")
-        self.assertIsNone(self.record("kimi")["session"])
+        self.assertIsNone(self.last_record()["session"])
         self.env["KIMI_SESSION_ID"] = "native-kimi-session"
         self.run_wrapper("search", "z")
-        self.assertEqual(self.record("kimi")["session"], "native-kimi-session")
+        self.assertEqual(self.last_record()["harness"], "kimi")
+        self.assertEqual(self.last_record()["session"], "native-kimi-session")
 
     def test_codex_session_fallback_and_harness_isolation(self):
         del self.env["CODEX_THREAD_ID"]

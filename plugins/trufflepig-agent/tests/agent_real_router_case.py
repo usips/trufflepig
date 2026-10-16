@@ -26,6 +26,8 @@ class AgentRealRouterCase(AgentInstallCase):
         with log_path.open("w") as log:
             router = subprocess.Popen([binary, "system-serve"], env=self.env,
                                       stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        # An installed unit adopting this router would own it as MainPID; the stray-router test clears it.
+        self.env["SERVICE_MAIN_PID"] = str(router.pid)
 
         def stop_router():
             if router.poll() is None:
