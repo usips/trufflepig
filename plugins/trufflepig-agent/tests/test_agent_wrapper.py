@@ -341,12 +341,14 @@ sys.exit(exit_code)
         self.assertEqual(self.pending_calls(), [])
 
     def test_session_hook_markers_do_not_create_actor_identity(self):
-        # The hook also tries to start the daemon; a shim keeps that inert.
-        shim = self.root / "shim/trufflepig"
-        shim.parent.mkdir()
-        shim.write_text("#!/bin/sh\nexit 0\n")
-        shim.chmod(0o755)
-        hook_env = dict(self.env, PATH=f"{shim.parent}:{self.env['PATH']}")
+        # The hook also starts the router through systemctl or the CLI; shims keep
+        # both inert so the test never starts the real user service.
+        shims = self.root / "shim"
+        shims.mkdir()
+        for name, status in (("systemctl", 1), ("trufflepig", 0)):
+            (shims / name).write_text(f"#!/bin/sh\nexit {status}\n")
+            (shims / name).chmod(0o755)
+        hook_env = dict(self.env, PATH=f"{shims}:{self.env['PATH']}")
         payload = json.dumps({"session_id": "kimi-session", "cwd": str(self.root)})
         hook = subprocess.run(["sh", str(PLUGIN / "hooks/session-start.sh"), "kimi", "start"],
                               input=payload, env=hook_env, capture_output=True, text=True)
