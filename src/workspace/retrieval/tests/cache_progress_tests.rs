@@ -41,7 +41,11 @@ fn actual_no_daemon_worktree_read_serves_parent_hit_promptly_under_held_lease() 
             &["--format", "json", "search", "sym:SharedThing"],
         )
         .unwrap();
-    assert!(started.elapsed() < Duration::from_secs(1), "{output}");
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < Duration::from_secs(1),
+        "held-lease parent fallback took {elapsed:?}: {output}"
+    );
     let response: serde_json::Value = serde_json::from_str(&output).unwrap();
     assert_eq!(response["hits"][0]["name"], "SharedThing", "{response}");
     assert!(
