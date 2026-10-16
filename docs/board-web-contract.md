@@ -90,8 +90,9 @@ filters by plan, kind, harness, user, host, task, and referenced entry, newest-f
 continues older, `after` pages ascending (legacy), never both. Retain whole composite cursors so
 same-sequence entries and same-entry claims are not skipped. Attention returns `next_after` for
 entries and `claims_next_after` for own stale claims; Tasks/Claims/Entries recover collections
-Plan Show omits. Ordinal Tasks start with null `after`/`through`/`ceiling`, capturing
-`{plan,ordinal}` in the same transaction as PlanView and each PlanOverview's `task_ceiling`;
+Plan Show omits. Attention pages open task questions by the same entry cursor as every other entry,
+so a walk shows each reminder once. Ordinal Tasks start with null `after`/`through`/`ceiling`,
+capturing `{plan,ordinal}` in the same transaction as PlanView and each PlanOverview's `task_ceiling`;
 ordinal zero freezes an empty plan. Continuations require the whole ceiling plus `after`/`through`:
 moved cards remain, newer ordinals stay out. Feedback preserves `open_only`; ordinal Tasks
 `after`/`through` without a captured ceiling is invalid. Recent-first Tasks and DoneTasks follow

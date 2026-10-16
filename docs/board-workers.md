@@ -25,8 +25,10 @@ The worker calls `board hello MODEL [EFFORT] --worker P7.3/HANDLE` in its own se
 requires the registered model and effort, matching user and host, and one active actor per worker
 and worker per actor. If native session identity is unavailable, set a unique `TRUFFLEPIG_SESSION`
 for that worker's lifetime. End a worker with `done`, `failed`, or `stopped`; ending its claim closes
-all its active workers as `claim_ended`. `board bye` ends the caller's session, releases its claims
-to `todo`, and stops only its own non-done worker node.
+all its active workers as `claim_ended`. The bound session sees each closure in `board pending`: an
+explicit end as its `worker_end` event, and a claim end as a `worker_end` entry addressed to it.
+`board bye` ends the caller's session, releases its claims to `todo`, and stops only its own
+non-done worker node.
 
 ## Task reads and addressed posts
 

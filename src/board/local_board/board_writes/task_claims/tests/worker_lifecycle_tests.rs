@@ -705,3 +705,90 @@ fn lead_bye_ends_its_claim_and_preserves_review_and_done_cards() {
         TaskColumn::Done
     );
 }
+
+#[test]
+fn holder_reclaiming_with_new_scope_keeps_its_bound_worker_active() {
+    let database = ClaimDatabase::new();
+    let mut conn = database.connect();
+    let holder = actor("josh", "codex", "lead");
+    let worker_actor = actor("josh", "muse", "worker-session");
+    let task = carved_task(&mut conn, &holder, 1000, "worker lane");
+    let address = register_worker(&mut conn, &holder, 1001, task, "helper");
+    bind(
+        &mut conn,
+        &worker_actor,
+        1002,
+        &address,
+        "worker-model",
+        Some("high"),
+    )
+    .unwrap();
+    let lease = claim_entry(&conn, task);
+
+    claim(&mut conn, &holder, 1010, task, "reshaped lane").unwrap();
+
+    assert_eq!(claim_entry(&conn, task), lease, "same lease after re-claim");
+    let scope: String = conn
+        .query_row(
+            "SELECT scope FROM claims WHERE plan_id=?1 AND task_ordinal=?2 AND ended_at IS NULL",
+            rusqlite::params![sql_number(task.plan.get()), sql_number(task.ordinal)],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(scope, "reshaped lane");
+    let worker = worker_for_address(&conn, &address).unwrap().unwrap();
+    assert_eq!(worker.ended_at, None, "re-claim must not end the worker");
+    assert_eq!(worker.record.state, None);
+}
+
+fn register_with_files(
+    conn: &mut Connection,
+    holder: &BoardActor,
+    task: TaskId,
+    handle: &str,
+    files: &[String],
+) -> Result<BoardReply, BoardError> {
+    let handle = WorkerHandle::parse(handle).unwrap();
+    write(conn, holder, 1001, |tx, ctx| {
+        add_worker(
+            tx,
+            ctx,
+            task,
+            &handle,
+            WorkerRole::Code,
+            "worker-model",
+            Some("high"),
+            &EntryText::new("implement the assigned files").unwrap(),
+            files,
+        )
+    })
+}
+
+#[test]
+fn worker_file_limits_are_64_paths_of_1024_bytes_at_registration() {
+    let database = ClaimDatabase::new();
+    let mut conn = database.connect();
+    let holder = actor("josh", "codex", "lead");
+    let task = carved_task(&mut conn, &holder, 1000, "file lane");
+    let distinct = |count: usize| -> Vec<String> {
+        (0..count)
+            .map(|index| format!("src/file{index}.rs"))
+            .collect()
+    };
+    let too_many = register_with_files(&mut conn, &holder, task, "many", &distinct(65));
+    assert!(
+        too_many
+            .unwrap_err()
+            .to_string()
+            .starts_with("invalid_options:")
+    );
+    let too_long = register_with_files(&mut conn, &holder, task, "long", &["a".repeat(1025)]);
+    assert!(
+        too_long
+            .unwrap_err()
+            .to_string()
+            .starts_with("invalid_options:")
+    );
+    register_with_files(&mut conn, &holder, task, "limits", &distinct(64)).unwrap();
+    register_with_files(&mut conn, &holder, task, "exact", &["b".repeat(1024)]).unwrap();
+}

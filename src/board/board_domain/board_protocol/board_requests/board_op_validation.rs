@@ -4,8 +4,8 @@ use crate::board::{
     board_actor::{HarnessLabel, validate_actor_component},
     board_ids::{BoardRef, MAX_BOARD_NUMBER, TaskId},
     board_protocol::{
-        COAUTHOR_LIMIT, LINK_LIMIT, PROGRESS_ETA_LIMIT_SECS, TaskOrder, WORKER_REF_LIMIT,
-        bounded_metadata, validate_claim,
+        COAUTHOR_LIMIT, LINK_LIMIT, PROGRESS_ETA_LIMIT_SECS, TaskOrder, WORKER_FILE_LIMIT,
+        WORKER_FILE_PATH_LIMIT, WORKER_REF_LIMIT, bounded_metadata, validate_claim,
     },
     board_vocabulary::{AuthorityRole, ENTRY_TEXT_LIMIT, EntryKind},
 };
@@ -107,17 +107,17 @@ impl BoardOp {
                     validate_claim(effort, "effort")?;
                 }
                 crate::board::board_protocol::WorkerHandle::parse(handle.as_str())?;
-                if files.is_empty() || files.len() > 256 {
-                    bail!("invalid_options: worker requires 1..256 file paths");
+                if files.is_empty() || files.len() > WORKER_FILE_LIMIT {
+                    bail!("invalid_options: worker requires 1..{WORKER_FILE_LIMIT} file paths");
                 }
                 let mut unique = std::collections::HashSet::with_capacity(files.len());
                 for file in files {
                     if file.trim().is_empty()
-                        || file.len() > 1024
+                        || file.len() > WORKER_FILE_PATH_LIMIT
                         || file.chars().any(char::is_control)
                     {
                         bail!(
-                            "invalid_options: worker file paths must contain 1..1024 bytes without controls"
+                            "invalid_options: worker file paths must be nonblank, at most {WORKER_FILE_PATH_LIMIT} bytes, and contain no control characters"
                         );
                     }
                     if !unique.insert(file) {

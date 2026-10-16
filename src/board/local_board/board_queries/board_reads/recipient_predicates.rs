@@ -176,7 +176,8 @@ pub(in crate::board::local_board) fn event_task_owner_human_sql(
     )
 }
 
-/// Matches a worker-lifecycle event to the session currently bound to its address.
+/// Matches a worker-lifecycle event to the session bound to its address. A `worker_end` stays
+/// visible to that session after the worker or its claim has closed.
 pub(in crate::board::local_board) fn worker_event_to_actor_sql(
     event: &str,
     user: &str,
@@ -188,7 +189,7 @@ pub(in crate::board::local_board) fn worker_event_to_actor_sql(
             "EXISTS(SELECT 1 FROM claim_workers task_worker JOIN claims task_claim ",
             "ON task_claim.id=task_worker.claim_id JOIN actors worker ON worker.id=task_worker.actor_id ",
             "WHERE {event}.subject='P'||task_worker.plan_id||'.'||task_worker.task_ordinal||'/'||task_worker.handle ",
-            "AND task_claim.ended_at IS NULL AND task_worker.ended_at IS NULL ",
+            "AND ({event}.kind='worker_end' OR (task_claim.ended_at IS NULL AND task_worker.ended_at IS NULL)) ",
             "AND worker.user||'@'||worker.host||'/'||worker.harness||'/'||worker.session={identity} ",
             "AND worker.user={user} AND worker.harness={harness})"
         ),

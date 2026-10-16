@@ -7,6 +7,11 @@ use crate::board::{
 };
 use serde::{Deserialize, Serialize};
 
+/// Maximum distinct file paths registered for one worker; wire and claim validation agree.
+pub const WORKER_FILE_LIMIT: usize = 64;
+/// Maximum UTF-8 bytes in one registered worker file path.
+pub const WORKER_FILE_PATH_LIMIT: usize = 1024;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkerRecord {

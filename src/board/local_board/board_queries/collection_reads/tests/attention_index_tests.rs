@@ -151,3 +151,53 @@ fn attention_mixes_kinds_across_states_with_exact_omitted_counts() {
     assert_eq!(attention_ids(&ordinary), vec![id(3), id(12)]);
     assert_eq!(ordinary.entries_omitted, 0);
 }
+
+#[test]
+fn attention_pages_each_open_task_question_once_across_cursors() {
+    let (_directory, board) = database();
+    seed_task(&board.conn, 1);
+    for entry in 3..=5 {
+        seed_entry(
+            &board.conn,
+            entry,
+            entry,
+            1,
+            "question",
+            3,
+            None,
+            "open task question",
+        );
+    }
+    board
+        .conn
+        .execute_batch("INSERT INTO entry_refs VALUES(3,'P1.1'),(4,'P1.1'),(5,'P1.1');")
+        .unwrap();
+    let reader = board.reader.as_ref().expect("read connection");
+    let human = authority_actor("josh", "laptop", "human", "h1");
+    let mut page = attention_page(reader, &human, None, true, 1);
+    let mut seen = attention_ids(&page);
+    let mut pages = 1;
+    while let Some(cursor) = page.next_after {
+        pages += 1;
+        assert!(
+            pages <= 3,
+            "attention paging must end after three open task questions: {seen:?}"
+        );
+        let BoardResult::Attention(next) = attention(
+            reader,
+            &human,
+            &ReadScope::All,
+            Some(cursor),
+            Some(page.through),
+            1,
+        )
+        .unwrap()
+        .result
+        else {
+            panic!("attention");
+        };
+        seen.extend(attention_ids(&next));
+        page = next;
+    }
+    assert_eq!(seen, vec![id(3), id(4), id(5)]);
+}

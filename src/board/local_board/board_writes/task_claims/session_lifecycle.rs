@@ -66,7 +66,7 @@ pub(in crate::board::local_board) fn bye(
     }
 
     for task in &tasks {
-        end_claim(tx, *task, ctx.now, ClaimEndReason::SessionEnded)?;
+        end_claim(tx, ctx, *task, ClaimEndReason::SessionEnded)?;
         tx.execute(
             "UPDATE tasks SET column_name=?3,seq=?4 WHERE plan_id=?1 AND ordinal=?2 AND column_name=?5",
             params![

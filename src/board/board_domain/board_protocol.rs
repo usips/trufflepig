@@ -27,8 +27,8 @@ pub use board_records::{
     LINK_LIMIT, LinkedCommit, ManualCommitLink, PendingNotice, PendingNoticeKind,
     PendingNoticeReason, PendingReply, PlanRecord, PlanView, ProjectMemberRecord, ProjectRecord,
     ProposalRecord, RecentCall, RepoRegistration, RepoScanTarget, ReviewEvidence, RevisionDiff,
-    RevisionRecord, RevisionSource, SessionRecord, TaskRecord, TaskView, WORKER_REF_LIMIT,
-    WorkerRecord,
+    RevisionRecord, RevisionSource, SessionRecord, TaskRecord, TaskView, WORKER_FILE_LIMIT,
+    WORKER_FILE_PATH_LIMIT, WORKER_REF_LIMIT, WorkerRecord,
 };
 pub use board_requests::{
     AgentClaims, BoardOp, BoardRequest, ClaimDelegate, ClaimResume, ReadScope,

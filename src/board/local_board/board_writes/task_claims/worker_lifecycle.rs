@@ -3,21 +3,19 @@
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::super::super::{
-    BoardError, EntryDraft, WriteContext, insert_entry, insert_event, invalid, row_number,
-    sql_error, sql_number,
+    BoardError, EntryDraft, WriteContext, actor_from_row, insert_entry, insert_event, invalid,
+    row_number, sql_error, sql_number,
 };
 use super::{
     active_bound_worker_for_actor, active_claim, active_worker_binding, worker_for_address,
 };
+use crate::board::board_actor::{BoardActor, BoardRecipient};
 use crate::board::board_ids::{EntryId, TaskId};
 use crate::board::board_protocol::{
-    AuthorityRole, AuthoritySource, BoardReply, WorkerAddress, WorkerEndReason, WorkerHandle,
-    WorkerRole,
+    AuthorityRole, AuthoritySource, BoardReply, WORKER_FILE_LIMIT, WORKER_FILE_PATH_LIMIT,
+    WorkerAddress, WorkerEndReason, WorkerHandle, WorkerRole,
 };
 use crate::board::board_vocabulary::{ENTRY_TEXT_LIMIT, EntryKind, EntryText};
-
-const WORKER_FILE_LIMIT: usize = 64;
-const WORKER_FILE_PATH_LIMIT: usize = 2048;
 
 pub(in crate::board::local_board) fn add_worker(
     tx: &Transaction<'_>,
@@ -341,21 +339,81 @@ pub(in crate::board::local_board) fn attach_worker_post(
     Ok(())
 }
 
+/// Ends the live claim's workers as `claim_ended`. Each bound worker also gets a `worker_end`
+/// entry addressed to its session, which `board pending` delivers after the lease closes.
 pub(in crate::board::local_board) fn end_workers_for_claim(
     tx: &Transaction<'_>,
+    ctx: &WriteContext,
     task: TaskId,
-    now: i64,
 ) -> Result<(), BoardError> {
+    let bound = bound_workers_for_live_claim(tx, task)?;
     tx.execute(
         concat!(
             "UPDATE claim_workers SET ended_at=?3,last_active=max(last_active,?3),end_reason='claim_ended' ",
             "WHERE claim_id=(SELECT id FROM claims WHERE plan_id=?1 AND task_ordinal=?2 AND ended_at IS NULL) ",
             "AND ended_at IS NULL"
         ),
-        params![sql_number(task.plan.get()), sql_number(task.ordinal), now],
+        params![sql_number(task.plan.get()), sql_number(task.ordinal), ctx.now],
     )
     .map_err(sql_error)?;
+    for (worker_id, handle, actor) in bound {
+        let address = WorkerAddress::new(
+            task,
+            WorkerHandle::parse(&handle).map_err(BoardError::from)?,
+        )
+        .map_err(BoardError::from)?;
+        let entry = insert_entry(
+            tx,
+            ctx,
+            &EntryDraft {
+                plan_id: Some(task.plan),
+                kind: EntryKind::WorkerEnd,
+                body: format!(
+                    "ended worker {address} as {}",
+                    WorkerEndReason::ClaimEnded.as_str()
+                ),
+                to_whom: Some(BoardRecipient::for_actor(&actor)),
+                supersedes: None,
+                repo_key: None,
+                state: None,
+            },
+        )?;
+        tx.execute(
+            "UPDATE entries SET worker_id=?2 WHERE id=?1",
+            params![sql_number(entry.get()), worker_id],
+        )
+        .map_err(sql_error)?;
+    }
     Ok(())
+}
+
+/// Bound workers of the task's live claim, read before that claim closes.
+fn bound_workers_for_live_claim(
+    tx: &Transaction<'_>,
+    task: TaskId,
+) -> Result<Vec<(i64, String, BoardActor)>, BoardError> {
+    let mut statement = tx
+        .prepare(concat!(
+            "SELECT w.id,w.handle,a.user,a.host,a.harness,a.session ",
+            "FROM claim_workers w JOIN claims c ON c.id=w.claim_id JOIN actors a ON a.id=w.actor_id ",
+            "WHERE c.plan_id=?1 AND c.task_ordinal=?2 AND c.ended_at IS NULL AND w.ended_at IS NULL ",
+            "ORDER BY w.id"
+        ))
+        .map_err(sql_error)?;
+    let rows = statement
+        .query_map(
+            params![sql_number(task.plan.get()), sql_number(task.ordinal)],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    actor_from_row(row, 2)?,
+                ))
+            },
+        )
+        .map_err(sql_error)?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(sql_error)
 }
 
 fn current_claim(
@@ -405,7 +463,7 @@ fn validate_worker_files(files: &[String]) -> Result<(), BoardError> {
     if files.is_empty() || files.len() > WORKER_FILE_LIMIT {
         return Err(invalid(
             "invalid_options",
-            format!("worker files must contain 1..{WORKER_FILE_LIMIT} paths"),
+            format!("worker requires 1..{WORKER_FILE_LIMIT} file paths"),
         ));
     }
     for (index, file) in files.iter().enumerate() {
@@ -415,7 +473,9 @@ fn validate_worker_files(files: &[String]) -> Result<(), BoardError> {
         {
             return Err(invalid(
                 "invalid_options",
-                "worker file paths must be nonblank, bounded, and contain no control characters",
+                format!(
+                    "worker file paths must be nonblank, at most {WORKER_FILE_PATH_LIMIT} bytes, and contain no control characters"
+                ),
             ));
         }
         if files[..index].contains(file) {

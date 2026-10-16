@@ -15,10 +15,12 @@ Task ordinals are allocated atomically per plan; columns are `todo`, `doing`, `r
 follows the [shared heading-title and anchor
 rules](board-web-contract.md#browser-state-and-safe-rendering). At most one unended claim exists per
 task. Active competing claims fail `claim_conflict` with holder identity, model, effort, and
-activity. Normal claims require scope. Claim views expose each lease's entry `E#`. `--resume`
-replaces only the same user/host/harness lease across sessions and inherits omitted scope: a bare
-`--resume` refreshes your own live claim in place (same entry, no new entry or event) or takes over
-another session's lease once idle ten minutes, while `--resume=E#` names the current unended claim
+activity. Normal claims require scope. Claim views expose each lease's entry `E#`. A claim by the
+session that already holds the lease replaces its scope in place: the entry, `claimed_at`, and bound
+workers stay, and no event is written. `--resume` replaces only the same user/host/harness lease
+across sessions and inherits omitted scope: a bare `--resume` refreshes your own live claim in place
+(same entry, no new entry or event) or takes over another session's lease once idle ten minutes,
+while `--resume=E#` names the current unended claim
 entry and takes over immediately; takeover ends the prior lease as `resumed`. The space form
 `--resume E5` is refused: `use --resume=E5`. Stale claims remain claimable. Carve retries dedupe
 only while their lease remains owned; after release or takeover, another carve creates a fresh task.

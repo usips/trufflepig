@@ -51,7 +51,6 @@ pub(in crate::board::local_board::board_queries::collection_reads) fn attention_
         head_at_through = head_at_through
     );
     let open_question = open_question("?10");
-    let task_open_question = format!("(({open_question}) AND ({task_entry}))");
     format!(
         concat!(
             "e.kind IN ('question','proposal') AND ((({exact_author}) ",
@@ -64,7 +63,7 @@ pub(in crate::board::local_board::board_queries::collection_reads) fn attention_
             "OR {addressed} OR e.repo_key IN(SELECT value FROM json_each(?7)) ",
             "OR EXISTS(SELECT 1 FROM plan_repos scope WHERE scope.plan_id=e.plan_id AND scope.repo_key IN(SELECT value FROM json_each(?7)))))) ",
             "AND {strict_scope} AND NOT ({own_task_question}) ",
-            "AND ((e.seq>?8 OR (e.seq=?8 AND e.id>?9)) OR {task_open_question}) AND e.seq<=?10"
+            "AND (e.seq>?8 OR (e.seq=?8 AND e.id>?9)) AND e.seq<=?10"
         ),
         strict_scope = strict_scope,
         exact_author = exact_author,
@@ -74,7 +73,6 @@ pub(in crate::board::local_board::board_queries::collection_reads) fn attention_
         addressed = addressed,
         task_owner = task_owner,
         question_recipient = question_recipient,
-        task_open_question = task_open_question,
         own_task_question = own_task_question,
     )
 }

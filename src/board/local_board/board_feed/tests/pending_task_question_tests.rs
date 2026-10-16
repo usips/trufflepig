@@ -1,7 +1,7 @@
 use super::*;
 use crate::board::board_actor::BoardRecipient;
 use crate::board::board_protocol::{
-    ClaimResume, PendingNoticeReason, WorkerAddress, WorkerHandle, WorkerRole,
+    ClaimResume, PendingNoticeReason, WorkerAddress, WorkerEndReason, WorkerHandle, WorkerRole,
 };
 
 fn create_task(board: &mut LocalBoard, plan: PlanId) -> TaskId {
@@ -393,4 +393,110 @@ fn explicit_task_question_recipients_override_dynamic_task_routing() {
     assert!(has_question(&worker, default_question));
 
     assert!(pending(&mut board, "muse", after).notices.is_empty());
+}
+
+/// Lead `codex` claims a task, adds worker `helper`, and `grok` binds to it.
+fn lead_with_bound_worker(board: &mut LocalBoard) -> (TaskId, WorkerAddress) {
+    let plan = plan(board);
+    let task = create_task(board, plan);
+    call(
+        board,
+        "codex",
+        BoardOp::ClaimTask {
+            task,
+            scope: Some(EntryText::new("lead work").unwrap()),
+            resume: ClaimResume::No,
+            delegate: None,
+        },
+    );
+    let handle = WorkerHandle::parse("helper").unwrap();
+    let address = WorkerAddress::new(task, handle.clone()).unwrap();
+    call(
+        board,
+        "codex",
+        BoardOp::WorkerAdd {
+            task,
+            handle,
+            role: WorkerRole::Code,
+            model: "worker model".into(),
+            effort: None,
+            scope: EntryText::new("worker scope").unwrap(),
+            files: vec!["src/task.rs".into()],
+        },
+    );
+    call(
+        board,
+        "grok",
+        BoardOp::Hello {
+            model: "worker model".into(),
+            effort: None,
+            worker: Some(address.clone()),
+        },
+    );
+    (task, address)
+}
+
+fn has_worker_end_entry_notice(reply: &PendingReply) -> bool {
+    reply.notices.iter().any(|notice| {
+        notice.reason == PendingNoticeReason::Worker
+            && notice.entry.as_ref().is_some_and(|entry| {
+                entry.kind == EntryKind::WorkerEnd && entry.body.as_str().contains("claim_ended")
+            })
+    })
+}
+
+#[test]
+fn explicit_worker_end_still_reaches_the_bound_worker() {
+    let (_directory, mut board) = database();
+    let (task, address) = lead_with_bound_worker(&mut board);
+    let after = board.max_seq().unwrap();
+    call(
+        &mut board,
+        "codex",
+        BoardOp::WorkerEnd {
+            worker: address,
+            state: WorkerEndReason::Done,
+            note: None,
+        },
+    );
+    let worker = pending(&mut board, "grok", after);
+    assert!(worker.notices.iter().any(|notice| {
+        notice.reason == PendingNoticeReason::Worker
+            && notice.event.as_ref().is_some_and(|event| {
+                event.kind == EntryKind::WorkerEnd && event.subject == BoardRef::Task(task)
+            })
+    }));
+}
+
+#[test]
+fn lead_release_notifies_the_bound_worker_that_its_claim_ended() {
+    let (_directory, mut board) = database();
+    let (task, _address) = lead_with_bound_worker(&mut board);
+    let after = board.max_seq().unwrap();
+    call(
+        &mut board,
+        "codex",
+        BoardOp::TaskMove {
+            task,
+            column: crate::board::board_vocabulary::TaskColumn::Todo,
+            to: None,
+        },
+    );
+    assert!(has_worker_end_entry_notice(&pending(
+        &mut board, "grok", after
+    )));
+    assert!(!has_worker_end_entry_notice(&pending(
+        &mut board, "codex", after
+    )));
+}
+
+#[test]
+fn lead_bye_notifies_the_bound_worker_that_its_claim_ended() {
+    let (_directory, mut board) = database();
+    let (_task, _address) = lead_with_bound_worker(&mut board);
+    let after = board.max_seq().unwrap();
+    call(&mut board, "codex", BoardOp::Bye);
+    assert!(has_worker_end_entry_notice(&pending(
+        &mut board, "grok", after
+    )));
 }

@@ -131,7 +131,7 @@ Retain returned `through` and feedback `--open`. Each typed reply carries these 
 | DoneTasks | 200 current Done tasks; descending `(seq,plan,ordinal)`, `next_before: {seq,id}` |
 | Claims | 200 claims; composite `{entry,claim}` cursor and omitted count |
 | Plan Show | 200 each tasks, active claims, entries, and commits, with omitted counts |
-| Pending | Read-only bounded notices; no cursor acknowledgement, claim renewal, or startup work |
+| Pending | Read-only bounded notices; when any are omitted, `next` is `board pending SEQ` for the newest shown notice past `after`; no cursor acknowledgement, claim renewal, or startup work |
 | Entry Show | 20 answer replies and 20 reverse references; cursors, `through`, omitted counts |
 | FeedbackList | 200 records; composite `(seq,entry)` cursor, fixed `through`, omitted count |
 | Search | 50 FTS hits, with truncation |

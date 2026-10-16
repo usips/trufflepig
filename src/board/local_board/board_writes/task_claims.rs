@@ -150,14 +150,14 @@ pub(in crate::board::local_board) fn claim_task(
             ));
         }
     }
-    if resume.is_resuming() && delegation.is_none() {
+    if delegation.is_none() && (resume.is_resuming() || scope.is_some()) {
         if let Some(holder) = holder
             .as_ref()
             .filter(|claim| claim.actor_id == ctx.actor_id)
         {
-            // The caller already holds the live lease: refresh it in place,
-            // keeping the original claim row, entry, and claimed_at. No event
-            // is written, so the receipt points at the claim entry's own seq.
+            // The caller already holds the lease: refresh it in place, keeping
+            // the claim row, entry, claimed_at, and bound workers. No event is
+            // written, so the receipt points at the claim entry's own seq.
             let entry = holder.record.entry;
             if let Some(text) = scope {
                 tx.execute(
@@ -228,7 +228,7 @@ pub(in crate::board::local_board) fn claim_task(
         } else {
             ClaimEndReason::TakenOver
         };
-        end_claim(tx, task, ctx.now, reason)?;
+        end_claim(tx, ctx, task, reason)?;
     }
     let entry = insert_entry(
         tx,
@@ -329,14 +329,14 @@ pub(in crate::board::local_board) fn claim_task(
 
 pub(in crate::board::local_board) fn end_claim(
     tx: &Transaction<'_>,
+    ctx: &WriteContext,
     task: TaskId,
-    now: i64,
     reason: ClaimEndReason,
 ) -> Result<(), BoardError> {
-    end_workers_for_claim(tx, task, now)?;
+    end_workers_for_claim(tx, ctx, task)?;
     tx.execute(
         "UPDATE claims SET ended_at=?3,end_reason=?4 WHERE plan_id=?1 AND task_ordinal=?2 AND ended_at IS NULL",
-        params![sql_number(task.plan.get()), sql_number(task.ordinal), now, reason.as_str()],
+        params![sql_number(task.plan.get()), sql_number(task.ordinal), ctx.now, reason.as_str()],
     ).map_err(sql_error)?;
     Ok(())
 }

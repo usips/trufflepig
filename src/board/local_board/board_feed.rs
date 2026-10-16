@@ -348,6 +348,7 @@ fn pending_candidates() -> String {
         triage_authority = triage_authority,
         addressed = addressed,
     );
+    let worker_end = format!("e.kind='worker_end' AND {addressed}", addressed = addressed);
     let question = format!(
         "e.kind='question' AND ({open_question}) AND {question_recipient}",
         open_question = open_question,
@@ -371,9 +372,10 @@ fn pending_candidates() -> String {
     format!(
         concat!(
             "SELECT e.seq AS seq,'entry' AS payload_kind,e.id AS payload_id,",
-            "CASE WHEN e.kind='question' THEN 'question' ELSE 'mention' END AS reason ",
+            "CASE WHEN e.kind='question' THEN 'question' WHEN e.kind='worker_end' THEN 'worker' ",
+            "ELSE 'mention' END AS reason ",
             "FROM entries e JOIN actors author ON author.id=e.actor_id ",
-            "WHERE e.actor_id<>?1 AND e.seq<=?9 AND ({question} OR {proposal} OR {feedback}) ",
+            "WHERE e.actor_id<>?1 AND e.seq<=?9 AND ({question} OR {proposal} OR {feedback} OR ({worker_end})) ",
             "AND (e.seq>?8 OR e.kind='question') ",
             "UNION ALL ",
             "SELECT e.seq AS seq,'event' AS payload_kind,NULL AS payload_id,",
@@ -387,6 +389,7 @@ fn pending_candidates() -> String {
         question = question,
         proposal = proposal,
         feedback = feedback,
+        worker_end = worker_end,
         event_addressed = event_addressed,
         worker_event = worker_event,
         event_task_q = event_task_q,

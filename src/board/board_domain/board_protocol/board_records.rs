@@ -40,7 +40,7 @@ pub use board_repo_records::{
 };
 pub use board_search_records::{BoardSearchHit, BoardSearchReply, BoardSearchSource};
 pub use board_task_records::TaskView;
-pub use board_worker_records::WorkerRecord;
+pub use board_worker_records::{WORKER_FILE_LIMIT, WORKER_FILE_PATH_LIMIT, WorkerRecord};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

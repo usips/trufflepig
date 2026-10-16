@@ -101,6 +101,10 @@ fn historical_claims_intersect_window_with_original_scope_and_snapshot() {
     let mut conn = database.connect();
     let holder = actor("josh", "codex", "one");
     let task = carved_task(&mut conn, &holder, 1000, "first scope");
+    write(&mut conn, &holder, 1050, |tx, ctx| {
+        move_task(tx, ctx, task, TaskColumn::Todo, None)
+    })
+    .unwrap();
     claim(&mut conn, &holder, 1050, task, "second scope").unwrap();
     let history = read_claims_window(&conn, task.plan, 1020, 1040, 1150, 120).unwrap();
     assert_eq!(history.len(), 1);

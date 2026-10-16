@@ -351,6 +351,78 @@ fn pending_budget_keeps_generation_and_counts_omitted_notices() {
     assert!(budget.fits(&rendered.text));
 }
 
+fn pending_question(seq: u64) -> PendingNotice {
+    let mut record = entry(seq);
+    record.body = EntryText::new(format!("open question {seq}")).unwrap();
+    PendingNotice {
+        seq: EventSeq::new(seq),
+        kind: PendingNoticeKind::Entry,
+        reason: PendingNoticeReason::Question,
+        entry: Some(record),
+        event: None,
+    }
+}
+
+fn render_pending_json(
+    notices: Vec<PendingNotice>,
+    after: Option<u64>,
+    omitted: usize,
+    budget: &OutputBudget,
+) -> Result<serde_json::Value, anyhow::Error> {
+    let reply = BoardReply::new(
+        "local",
+        BoardResult::Pending(PendingReply {
+            notices,
+            after: after.map(EventSeq::new),
+            through: EventSeq::new(30),
+            server_now: 200,
+            generation: "generation-42".into(),
+            omitted,
+        }),
+    );
+    let rendered = render_reply(&reply, budget)?;
+    Ok(serde_json::from_str(&rendered.text).unwrap())
+}
+
+#[test]
+fn pending_next_hint_resumes_after_new_notices_when_the_server_truncates() {
+    let budget = OutputBudget::new(4000).unwrap();
+    let truncated = render_pending_json(vec![pending_question(12)], Some(10), 4, &budget).unwrap();
+    assert_eq!(truncated["next"], "board pending 12");
+    let complete = render_pending_json(vec![pending_question(12)], Some(10), 0, &budget).unwrap();
+    assert!(complete["next"].is_null());
+}
+
+#[test]
+fn pending_next_hint_never_points_before_the_request_cursor() {
+    // New notice 25 sorts first; open reminders 10 and 12 follow it.
+    let notices = || {
+        vec![
+            pending_question(25),
+            pending_question(10),
+            pending_question(12),
+        ]
+    };
+    let mut visible_counts = Vec::new();
+    for limit in (60..=800).step_by(5) {
+        let budget = OutputBudget::new(limit).unwrap();
+        let Ok(value) = render_pending_json(notices(), Some(20), 0, &budget) else {
+            continue;
+        };
+        let visible = value["result"]["data"]["notices"].as_array().unwrap().len();
+        visible_counts.push(visible);
+        match visible {
+            // Only the new notice is past the cursor, so only it can be resumed from.
+            1 | 2 => assert_eq!(value["next"], "board pending 25", "budget {limit}"),
+            _ => assert!(value["next"].is_null(), "budget {limit}: {value}"),
+        }
+    }
+    assert!(
+        visible_counts.contains(&2),
+        "the budget sweep must cut between the new and reminder notices: {visible_counts:?}"
+    );
+}
+
 #[test]
 fn pending_lines_show_a_notice_without_one_payload_as_invalid() {
     let notice = PendingNotice {

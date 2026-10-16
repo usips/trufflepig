@@ -176,8 +176,8 @@ pub(in crate::board::local_board) fn move_task(
     if assign || column != TaskColumn::Doing {
         end_claim(
             tx,
+            ctx,
             task,
-            ctx.now,
             if assign {
                 ClaimEndReason::Reassigned
             } else {

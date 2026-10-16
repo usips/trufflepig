@@ -212,3 +212,25 @@ fn link_commit_wire_carries_only_the_oid_and_task() {
         "clients cannot inject a forged resolution"
     );
 }
+
+#[test]
+fn worker_file_limits_are_64_paths_of_1024_bytes_on_the_wire() {
+    let worker_add = |files: Vec<String>| BoardOp::WorkerAdd {
+        task: TaskId::new(PlanId::new(1).unwrap(), 1).unwrap(),
+        handle: WorkerHandle::parse("helper").unwrap(),
+        role: WorkerRole::Code,
+        model: "worker-model".to_owned(),
+        effort: None,
+        scope: EntryText::new("implement the assigned files").unwrap(),
+        files,
+    };
+    let distinct = |count: usize| -> Vec<String> {
+        (0..count)
+            .map(|index| format!("src/file{index}.rs"))
+            .collect()
+    };
+    assert!(worker_add(distinct(64)).validate().is_ok());
+    assert!(worker_add(distinct(65)).validate().is_err());
+    assert!(worker_add(vec!["a".repeat(1024)]).validate().is_ok());
+    assert!(worker_add(vec!["a".repeat(1025)]).validate().is_err());
+}
