@@ -30,13 +30,19 @@ pub(super) fn check(deadline: &QueryDeadline) -> Result<()> {
 
 pub(super) fn install(conn: &Connection, deadline: &QueryDeadline) -> Result<()> {
     check(deadline)?;
+    attach(conn, deadline)?;
+    check(deadline)
+}
+
+/// Installs the deadline's busy timeout and progress handler without checking expiry.
+pub(super) fn attach(conn: &Connection, deadline: &QueryDeadline) -> Result<()> {
     conn.busy_timeout(deadline.cap(SQLITE_BUSY_TIMEOUT))?;
     let progress_deadline = deadline.clone();
     conn.progress_handler(
         SQLITE_PROGRESS_STEPS,
         Some(move || progress_deadline.expired()),
     )?;
-    check(deadline)
+    Ok(())
 }
 
 pub(super) fn clear(conn: &Connection) -> Result<()> {

@@ -44,7 +44,8 @@ fn retain_fixture_sources(
     root: &Path,
     cache: &Path,
 ) -> IndexCheckpoint {
-    let mut checkpoint = IndexCheckpoint::open(&store.conn, root, cache, None).unwrap();
+    let budget = QueryDeadline::start();
+    let mut checkpoint = IndexCheckpoint::open(&store.conn, root, cache, Some(&budget)).unwrap();
     checkpoint.begin_pass().unwrap();
     for entry in fs::read_dir(root).unwrap() {
         let path = entry.unwrap().path();
@@ -112,9 +113,10 @@ fn index_until_polls_released_lease_but_available_attempt_returns_promptly() {
 }
 
 #[test]
-fn bounded_two_second_passes_reopen_and_reuse_extractions_until_publish() {
+fn bounded_slices_with_a_save_budget_reuse_retained_extractions_until_publish() {
     let (_directory, root, cache, _store) = fixture();
     const FILES: usize = 1024;
+    const SAVES_PER_SLICE: usize = 100;
     for number in 0..FILES {
         fs::write(
             root.join(format!("file-{number:04}.txt")),
@@ -123,136 +125,126 @@ fn bounded_two_second_passes_reopen_and_reuse_extractions_until_publish() {
         .unwrap();
     }
 
-    let budget = Duration::from_secs(2);
-    let mut first_count = None;
-    let mut last_count = None;
-    let mut observed_growth = false;
-    let mut observed_reuse = false;
-    let mut published = None;
-    let mut attempts = Vec::with_capacity(24);
-    let mut unexpected_errors = Vec::new();
-    let mut first_pass_published = false;
-    for attempt in 0..24 {
-        let retained_before = retained_file_count(&cache);
+    let slices = FILES.div_ceil(SAVES_PER_SLICE);
+    TEST_SAVE_BUDGET.set(Some(SAVES_PER_SLICE));
+    for slice in 1..=slices {
         let mut store = crate::store::Store::open(&root, &cache).unwrap();
-        let attempt_started = Instant::now();
-        let result = store.index_available_until(QueryDeadline::after(budget));
-        let elapsed = attempt_started.elapsed();
-        let result_detail = match result {
-            Ok(Some(coverage)) => {
-                first_pass_published |= attempt == 0;
-                let observed = coverage_observation(&coverage);
-                published = Some((store, coverage));
-                format!("published coverage={observed:?}")
-            }
-            Ok(None) => {
-                drop(store);
-                "deferred without publication".to_owned()
-            }
-            Err(error) => {
-                drop(store);
-                let chain = format!("{error:#}");
-                if !is_timed_out(&error) {
-                    unexpected_errors.push(chain.clone());
-                }
-                format!(
-                    "{} error-chain={chain}",
-                    if is_timed_out(&error) {
-                        "timed out"
-                    } else {
-                        "unexpected error"
-                    }
-                )
-            }
-        };
-        let retained = retained_file_count(&cache);
+        let result = store.index_until(QueryDeadline::start());
         let progress = crate::store::read_index_progress(&root, &cache);
-        let progress_detail = progress.as_ref().map_or_else(
-            || "none".to_owned(),
-            |progress| {
-                format!(
-                    "phase={:?} completed={} reused={} maintenance_required={}",
-                    progress.phase,
-                    progress.completed_files,
-                    progress.reused_files,
-                    progress.maintenance_required
-                )
-            },
-        );
-        attempts.push(format!(
-            "attempt={attempt} index_elapsed_ms={} retained_before={retained_before} retained_after={retained} progress=({progress_detail}) result=({result_detail})",
-            elapsed.as_millis()
-        ));
-
-        if attempt == 0 {
-            assert!(
-                !first_pass_published,
-                "the first two-second pass unexpectedly published all files:\n{}",
-                attempts.join("\n")
-            );
-            assert!(
-                retained > 0 && retained <= FILES,
-                "the first two-second pass must retain useful preparation; retained {retained}:\n{}",
-                attempts.join("\n")
-            );
-            first_count = Some(retained);
-            last_count = Some(retained);
-            assert!(
-                progress.is_some(),
-                "the first bounded pass must persist progress:\n{}",
-                attempts.join("\n")
-            );
+        if slice < slices {
+            let error = result
+                .err()
+                .expect("a slice stops once its save budget is spent");
+            assert!(is_timed_out(&error), "{error:#}");
+            assert_eq!(retained_file_count(&cache), slice * SAVES_PER_SLICE);
+            let progress = progress.expect("an interrupted slice persists progress");
+            assert_eq!(progress.reused_files, (slice - 1) * SAVES_PER_SLICE);
+            assert!(!progress.maintenance_required);
+            assert_eq!(store.generation().unwrap(), 0);
+        } else {
+            let coverage = result.unwrap().expect("the final slice publishes");
+            assert_eq!(coverage.total_files, FILES);
+            assert_eq!(store.generation().unwrap(), 1);
         }
-        assert!(
-            unexpected_errors.is_empty(),
-            "bounded attempts returned non-timeout errors {unexpected_errors:#?}:\n{}",
-            attempts.join("\n")
-        );
-
-        if published.is_some() {
-            break;
-        }
-        assert!(
-            retained >= last_count.expect("first pass initializes retained count"),
-            "retained extraction count regressed:\n{}",
-            attempts.join("\n")
-        );
-        let initial_count = first_count.expect("first pass initializes retained count");
-        observed_growth |= retained > initial_count;
-        last_count = Some(retained);
-        let progress = progress.expect("retained progress remains visible after Store closes");
-        assert!(
-            progress.completed_files >= initial_count,
-            "progress lost retained extractions:\n{}",
-            attempts.join("\n")
-        );
-        observed_reuse |= progress.reused_files > 0;
-        assert!(
-            !progress.maintenance_required,
-            "bounded trajectory entered maintenance-required:\n{}",
-            attempts.join("\n")
-        );
     }
+    TEST_SAVE_BUDGET.set(None);
+    assert!(crate::store::read_index_progress(&root, &cache).is_none());
+    assert!(!cache.join(CHECKPOINT_DIRECTORY).exists());
+}
 
-    let (store, coverage) = published.unwrap_or_else(|| {
-        panic!(
-            "two-second slices cumulatively publish within 24 attempts; trajectory:\n{}",
-            attempts.join("\n")
+#[test]
+fn one_stalled_slice_does_not_require_maintenance_when_the_next_slice_progresses() {
+    let (_directory, root, cache, store) = fixture();
+    fs::write(root.join("sample.rs"), "pub fn progressing() {}\n").unwrap();
+    let source = fs::read(root.join("sample.rs")).unwrap();
+    let path = crate::store::encode_path(Path::new("sample.rs"));
+    let revision = blake3::hash(&source).to_hex().to_string();
+    let extraction = crate::extract::extract(&path, &source);
+    let budget = QueryDeadline::start();
+
+    let mut stalled = IndexCheckpoint::open(&store.conn, &root, &cache, Some(&budget)).unwrap();
+    stalled.begin_pass().unwrap();
+    stalled.note_stalled_slice().unwrap();
+    assert!(!stalled.maintenance_required());
+    drop(stalled);
+
+    let mut progressing = IndexCheckpoint::open(&store.conn, &root, &cache, Some(&budget)).unwrap();
+    progressing.begin_pass().unwrap();
+    progressing
+        .completed_file(
+            &path,
+            Some(&revision),
+            "read",
+            source.len() as u64,
+            crate::store::scan::extraction_cache_version(),
+            &extraction,
         )
-    });
-    assert!(
-        observed_growth,
-        "later passes retain additional extractions:\n{}",
-        attempts.join("\n")
-    );
-    assert!(
-        observed_reuse,
-        "later passes reuse retained extractions:\n{}",
-        attempts.join("\n")
-    );
+        .unwrap();
+    progressing.note_stalled_slice().unwrap();
+    assert!(!progressing.maintenance_required());
+    assert_eq!(progressing.stalled_slices, 0);
+    for stalled in 1..=3 {
+        progressing.begin_pass().unwrap();
+        progressing.note_stalled_slice().unwrap();
+        assert_eq!(progressing.maintenance_required(), stalled == 3);
+    }
+}
+
+#[test]
+fn unbounded_reconcile_reads_retained_facts_and_commits_once_per_pass() {
+    let (_directory, root, cache, store) = fixture();
+    const FILES: usize = 300;
+    for number in 0..FILES {
+        fs::write(
+            root.join(format!("file-{number:03}.txt")),
+            format!("Retained observation {number}.\n"),
+        )
+        .unwrap();
+    }
+    drop(retain_fixture_sources(&store, &root, &cache));
+    assert_eq!(retained_file_count(&cache), FILES);
+
+    let mut checkpoint = IndexCheckpoint::open(&store.conn, &root, &cache, None).unwrap();
+    assert!(checkpoint.has_retained_facts());
+    assert!(!checkpoint.retains_new_extractions());
+    checkpoint.begin_pass().unwrap();
+    for number in 0..FILES {
+        checkpoint
+            .reused_file(&format!("file-{number:03}.txt"))
+            .unwrap();
+    }
+    checkpoint.pass_completed().unwrap();
+    assert_eq!(checkpoint.commit_count(), 1);
+    assert_eq!(retained_file_count(&cache), FILES);
+}
+
+#[test]
+fn bounded_read_of_unchanged_published_repo_writes_no_checkpoint() {
+    let (_directory, root, cache, mut store) = fixture();
+    const FILES: usize = 2_000;
+    for number in 0..FILES {
+        fs::write(
+            root.join(format!("item_{number:04}.rs")),
+            format!("pub fn item_{number}() {{}}\n"),
+        )
+        .unwrap();
+    }
+    store.index().unwrap();
+
+    let started = Instant::now();
+    let coverage = store
+        .index_until(QueryDeadline::start())
+        .unwrap()
+        .expect("an unchanged published repository reconciles within the request budget");
+    let elapsed = started.elapsed();
     assert_eq!(coverage.total_files, FILES);
     assert_eq!(store.generation().unwrap(), 1);
-    assert!(crate::store::read_index_progress(&root, &cache).is_none());
+    assert!(!cache.join(CHECKPOINT_DIRECTORY).exists());
+    // Smoke bound only: the baseline's per-file fsyncs exceeded the 20 s budget here.
+    assert!(
+        elapsed < Duration::from_secs(5),
+        "unchanged reconcile took {elapsed:?}"
+    );
 }
 
 #[test]
@@ -348,25 +340,29 @@ fn expired_resolver_records_maintenance_and_explicit_index_finishes_retained_wor
     }
     let checkpoint = retain_fixture_sources(&store, &root, &cache);
     drop(checkpoint);
-    let writer_lock = lease(&cache);
-    writer_lock.lock_exclusive().unwrap();
-    let deadline = QueryDeadline::after(Duration::from_secs(3));
-    let overrun = deadline.remaining() + Duration::from_millis(25);
-    let result = store.index_leased(
-        writer_lock,
-        |_| {
-            std::thread::sleep(overrun);
-            Ok(())
-        },
-        Some(&deadline),
-    );
-    let error = result.unwrap_err();
-    assert!(is_timed_out(&error), "{error:#}");
-    assert_eq!(retained_file_count(&cache), FILES);
+    // Each attempt reuses every retained file and saves nothing new, so it stalls.
+    for stalled in 1..=3 {
+        let writer_lock = lease(&cache);
+        writer_lock.lock_exclusive().unwrap();
+        let deadline = QueryDeadline::after(Duration::from_secs(2));
+        let overrun = deadline.remaining() + Duration::from_millis(25);
+        let result = store.index_leased(
+            writer_lock,
+            |_| {
+                std::thread::sleep(overrun);
+                Ok(())
+            },
+            Some(&deadline),
+        );
+        let error = result.unwrap_err();
+        assert!(is_timed_out(&error), "{error:#}");
+        assert_eq!(retained_file_count(&cache), FILES);
+        let progress = crate::store::read_index_progress(&root, &cache).unwrap();
+        assert_eq!(progress.maintenance_required, stalled == 3);
+        assert_eq!(progress.completed_files, FILES);
+    }
     let progress = crate::store::read_index_progress(&root, &cache).unwrap();
     assert_eq!(progress.phase, IndexProgressPhase::MaintenanceRequired);
-    assert!(progress.maintenance_required);
-    assert_eq!(progress.completed_files, FILES);
 
     let started = Instant::now();
     assert!(
@@ -424,7 +420,9 @@ fn corrupt_retained_contract_is_hidden_and_invalidated_before_reuse() {
         ("base_generation", "999"),
     ] {
         let (_directory, root, cache, store) = fixture();
-        let mut checkpoint = IndexCheckpoint::open(&store.conn, &root, &cache, None).unwrap();
+        let budget = QueryDeadline::start();
+        let mut checkpoint =
+            IndexCheckpoint::open(&store.conn, &root, &cache, Some(&budget)).unwrap();
         checkpoint.begin_pass().unwrap();
         checkpoint
             .completed_file(
@@ -523,9 +521,14 @@ fn committed_extraction_survives_mark_seen_failure_and_bounded_retry() {
     let revision = blake3::hash(source).to_hex().to_string();
     let mut extraction = crate::extract::extract(&path, source);
     extraction.status = "recovered".to_owned();
-    let mut checkpoint = IndexCheckpoint::open(&store.conn, &root, &cache, None).unwrap();
+    let budget = QueryDeadline::start();
+    let mut checkpoint = IndexCheckpoint::open(&store.conn, &root, &cache, Some(&budget)).unwrap();
     checkpoint.begin_pass().unwrap();
-    checkpoint.storage.fail_next_mark_seen_for_test();
+    checkpoint
+        .storage
+        .as_ref()
+        .unwrap()
+        .fail_next_mark_seen_for_test();
 
     let error = checkpoint
         .completed_file(
@@ -543,7 +546,15 @@ fn committed_extraction_survives_mark_seen_failure_and_bounded_retry() {
             .contains("injected checkpoint mark_seen failure")
     );
     assert_eq!(retained_file_count(&cache), 1);
-    assert_eq!(checkpoint.storage.completed_count().unwrap(), 1);
+    assert_eq!(
+        checkpoint
+            .storage
+            .as_ref()
+            .unwrap()
+            .completed_count()
+            .unwrap(),
+        1
+    );
     assert_eq!(checkpoint.progress.completed_files, 1);
     assert!(!checkpoint.maintenance_required());
     if let Some(progress) = crate::store::read_index_progress(&root, &cache) {
@@ -591,7 +602,9 @@ fn expired_setup_and_tiny_active_slices_do_not_poison_bounded_retries() {
             .unwrap();
         }
 
-        let mut checkpoint = IndexCheckpoint::open(&store.conn, &root, &cache, None).unwrap();
+        let budget = QueryDeadline::start();
+        let mut checkpoint =
+            IndexCheckpoint::open(&store.conn, &root, &cache, Some(&budget)).unwrap();
         checkpoint.begin_pass().unwrap();
         let deadline = QueryDeadline::after(Duration::from_millis(25));
         if active_slice {

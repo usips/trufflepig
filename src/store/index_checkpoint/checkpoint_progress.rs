@@ -48,6 +48,9 @@ pub(super) struct ProgressRecord {
     pub base_epoch: String,
     pub base_generation: i64,
     pub progress: IndexProgress,
+    /// Consecutive expired bounded slices that saved no new file.
+    #[serde(default)]
+    pub stalled_slices: u32,
 }
 
 pub fn read(root: &Path, cache: &Path) -> Option<IndexProgress> {

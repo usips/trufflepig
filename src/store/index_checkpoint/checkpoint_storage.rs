@@ -4,11 +4,25 @@ use crate::store::index_deadline;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, Error as SqliteError, ErrorCode, OptionalExtension, params};
 use std::path::Path;
+use std::time::{Duration, Instant};
 
+/// A bounded slice commits its open batch this often or after this many files.
+const COMMIT_INTERVAL: Duration = Duration::from_millis(250);
+const COMMIT_FILE_BATCH: usize = 256;
+
+/// The retained preparation database. Writes join one open transaction that is
+/// committed by [`Self::commit_if_due`] or [`Self::commit`]; the checkpoint is a
+/// disposable cache, so `synchronous=NORMAL` is sufficient.
 pub(super) struct CheckpointStorage {
     conn: Connection,
+    /// Bounded slices commit on a cadence; unbounded passes commit once per pass.
+    deadline: Option<QueryDeadline>,
+    transaction_started: Option<Instant>,
+    files_in_transaction: usize,
     #[cfg(test)]
     fail_next_mark_seen: std::cell::Cell<bool>,
+    #[cfg(test)]
+    commits: usize,
 }
 
 impl CheckpointStorage {
@@ -20,8 +34,8 @@ impl CheckpointStorage {
             conn.busy_timeout(index_deadline::SQLITE_DEFAULT_BUSY_TIMEOUT)?;
         }
         conn.execute_batch(
-            "PRAGMA journal_mode=DELETE;
-             PRAGMA synchronous=FULL;
+            "PRAGMA journal_mode=WAL;
+             PRAGMA synchronous=NORMAL;
              CREATE TABLE IF NOT EXISTS checkpoint_meta(
                  key TEXT PRIMARY KEY,
                  value TEXT NOT NULL
@@ -45,9 +59,66 @@ impl CheckpointStorage {
         drop(completed_files);
         Ok(Self {
             conn,
+            deadline: deadline.cloned(),
+            transaction_started: None,
+            files_in_transaction: 0,
             #[cfg(test)]
             fail_next_mark_seen: std::cell::Cell::new(false),
+            #[cfg(test)]
+            commits: 0,
         })
+    }
+
+    pub(super) fn is_bounded(&self) -> bool {
+        self.deadline.is_some()
+    }
+
+    /// Opens the batch transaction that the next write joins, if none is open.
+    fn begin(&mut self) -> Result<()> {
+        if self.conn.is_autocommit() {
+            self.conn.execute_batch("BEGIN")?;
+            self.transaction_started = Some(Instant::now());
+        }
+        Ok(())
+    }
+
+    /// Commits the open batch. A bounded deadline's progress handler is removed first
+    /// so that expiry cannot abort the COMMIT, then reattached for the rest of the slice.
+    pub(super) fn commit(&mut self) -> Result<()> {
+        if !self.conn.is_autocommit() {
+            if self.deadline.is_some() {
+                index_deadline::clear(&self.conn)?;
+            }
+            self.conn.execute_batch("COMMIT")?;
+            #[cfg(test)]
+            {
+                self.commits += 1;
+            }
+        }
+        self.transaction_started = None;
+        self.files_in_transaction = 0;
+        if let Some(deadline) = &self.deadline {
+            index_deadline::attach(&self.conn, deadline)?;
+        }
+        Ok(())
+    }
+
+    /// Commits a bounded batch that is old enough or large enough. Unbounded passes
+    /// keep one transaction until [`Self::commit`] at the end of the pass.
+    pub(super) fn commit_if_due(&mut self) -> Result<()> {
+        let due = self.files_in_transaction >= COMMIT_FILE_BATCH
+            || self
+                .transaction_started
+                .is_some_and(|started| started.elapsed() >= COMMIT_INTERVAL);
+        if self.deadline.is_some() && due {
+            self.commit()?;
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(super) fn commit_count(&self) -> usize {
+        self.commits
     }
 
     pub(super) fn metadata(&self, key: &str) -> Result<Option<String>> {
@@ -61,7 +132,8 @@ impl CheckpointStorage {
             .optional()?)
     }
 
-    pub(super) fn set_metadata(&self, key: &str, value: &str) -> Result<()> {
+    pub(super) fn set_metadata(&mut self, key: &str, value: &str) -> Result<()> {
+        self.begin()?;
         self.conn.execute(
             "INSERT INTO checkpoint_meta(key,value) VALUES(?1,?2)
              ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -111,13 +183,13 @@ impl CheckpointStorage {
         extraction: &Extraction,
     ) -> Result<bool> {
         let facts = serde_json::to_string(extraction).context("encode retained extraction")?;
-        let tx = self.conn.transaction()?;
-        let already_present: bool = tx.query_row(
+        self.begin()?;
+        let already_present: bool = self.conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM completed_files WHERE path=?1)",
             [path],
             |row| row.get(0),
         )?;
-        tx.execute(
+        self.conn.execute(
             "INSERT INTO completed_files(path,revision,source_status,bytes,extraction_version,facts)
              VALUES(?1,?2,?3,?4,?5,?6)
              ON CONFLICT(path) DO UPDATE SET revision=excluded.revision,
@@ -132,22 +204,24 @@ impl CheckpointStorage {
                 facts
             ],
         )?;
-        tx.commit()?;
         Ok(!already_present)
     }
 
-    pub(super) fn start_scan(&self) -> Result<()> {
+    pub(super) fn start_scan(&mut self) -> Result<()> {
+        self.begin()?;
         self.conn.execute("DELETE FROM scan_seen", [])?;
         Ok(())
     }
 
-    pub(super) fn mark_seen(&self, path: &str) -> Result<()> {
+    pub(super) fn mark_seen(&mut self, path: &str) -> Result<()> {
         #[cfg(test)]
         if self.fail_next_mark_seen.replace(false) {
             anyhow::bail!("injected checkpoint mark_seen failure");
         }
+        self.begin()?;
         self.conn
             .execute("INSERT OR IGNORE INTO scan_seen(path) VALUES(?1)", [path])?;
+        self.files_in_transaction += 1;
         Ok(())
     }
 
@@ -157,13 +231,12 @@ impl CheckpointStorage {
     }
 
     pub(super) fn finish_scan(&mut self) -> Result<()> {
-        let tx = self.conn.transaction()?;
-        tx.execute(
+        self.begin()?;
+        self.conn.execute(
             "DELETE FROM completed_files WHERE path NOT IN (SELECT path FROM scan_seen)",
             [],
         )?;
-        tx.execute("DELETE FROM scan_seen", [])?;
-        tx.commit()?;
+        self.conn.execute("DELETE FROM scan_seen", [])?;
         Ok(())
     }
 

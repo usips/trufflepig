@@ -46,7 +46,7 @@ windows, 4,096 observations, and 4 MiB of observation payloads. Sessions persist
 their own baseline fingerprints outside the replaceable live index; see [diagnostics](diagnostics-contract.md).
 
 An exclusive writer lease covers staging through publication. A checkpoint resumes
-only for a matching root, index contract, base epoch, and generation; mismatches reset (`src/store/index_checkpoint.rs`).
+only for a matching root, index contract, base epoch, and generation; mismatches reset (`src/store/index_checkpoint.rs`). A bounded slice commits its new extractions in batches of 250 ms or 256 files and at expiry; extractions served by the published index are reused, not copied. An unbounded reconcile reads retained extractions and writes none.
 
 Parsing cancellation retains lexical coverage and a parse-failure status. It
 publishes no structural facts represented as freshly parsed. The parser is reset
@@ -85,8 +85,8 @@ Through a root's own index, a stale `sym:` read waits up to 3 s for a daemon
 republish, then answers from current bytes with `freshness: unpublished`
 (`src/source/acquisition/stale_symbol.rs`). Inline prep uses at most 2 s per
 root/member, reserving 250 ms from the original read deadline. A published root or
-verified parent view remains usable while the writer lease is held. An eligible full
-slice that expires without new durable file facts reports `maintenance_required` with `index`/`init` guidance
+verified parent view remains usable while the writer lease is held. Three consecutive eligible full
+slices that expire without saving new durable file facts report `maintenance_required` with `index`/`init` guidance
 (`src/store/index_deadline.rs`).
 
 ## Semantic preparation

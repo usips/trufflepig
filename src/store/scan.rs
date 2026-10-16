@@ -120,20 +120,29 @@ fn stage_inner(
                     extraction
                 }
                 None => {
-                    let extraction = match (source.as_ref(), revision.as_ref()) {
+                    let (extraction, from_publication) = match (source.as_ref(), revision.as_ref())
+                    {
                         (Some(source), Some(revision)) => {
                             cached_extraction(previous, &path, revision, source, cache_version)?
                         }
-                        _ => Extraction {
-                            language: extract::language(&path).to_owned(),
-                            status: status.to_owned(),
-                            ..Extraction::default()
-                        },
+                        _ => (
+                            Extraction {
+                                language: extract::language(&path).to_owned(),
+                                status: status.to_owned(),
+                                ..Extraction::default()
+                            },
+                            false,
+                        ),
                     };
                     if let Some(deadline) = deadline {
                         index_deadline::check(deadline)?;
                     }
-                    if extraction.status != "cancelled" {
+                    if from_publication {
+                        checkpoint.publication_reused_file()?;
+                    } else if revision.is_some()
+                        && extraction.status != "cancelled"
+                        && checkpoint.retains_new_extractions()
+                    {
                         checkpoint.completed_file(
                             &path,
                             revision.as_deref(),
@@ -149,7 +158,7 @@ fn stage_inner(
         } else {
             match (source.as_ref(), revision.as_ref()) {
                 (Some(source), Some(revision)) => {
-                    cached_extraction(previous, &path, revision, source, cache_version)?
+                    cached_extraction(previous, &path, revision, source, cache_version)?.0
                 }
                 _ => Extraction {
                     language: extract::language(&path).to_owned(),
@@ -244,13 +253,14 @@ pub(crate) fn resolved_fingerprint(scan_fingerprint: &str, resolver_revision: &s
     fingerprint.finalize().to_hex().to_string()
 }
 
+/// The extraction for `source`, and whether the previous publication's extraction cache served it.
 fn cached_extraction(
     previous: &Connection,
     path: &str,
     revision: &str,
     source: &[u8],
     cache_version: i64,
-) -> Result<Extraction> {
+) -> Result<(Extraction, bool)> {
     let grammar = path.rsplit('.').next().unwrap_or("");
     let cached: Option<String> = previous
         .query_row(
@@ -259,12 +269,14 @@ fn cached_extraction(
             |row| row.get(0),
         )
         .optional()?;
+    let mut from_publication = cached.is_some();
     let mut extraction: Extraction = match cached.as_deref() {
         Some(facts) => serde_json::from_str(facts)?,
         None => extract::extract(path, source),
     };
     if extraction.status == "cancelled" && cached.is_some() {
         extraction = extract::extract(path, source);
+        from_publication = false;
     }
     if extraction.definitions.len() + extraction.occurrences.len() + extraction.relationships.len()
         > MAX_FACTS
@@ -274,7 +286,7 @@ fn cached_extraction(
         extraction.relationships.clear();
         extraction.status = "fact_limit".into();
     }
-    Ok(extraction)
+    Ok((extraction, from_publication))
 }
 
 fn insert_extraction_cache(

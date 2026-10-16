@@ -157,10 +157,8 @@ fn workspace_more_refreshes_saved_source_until_explicit_index_completes() -> Res
         1,
         &OutputBudget::new(4_096)?.with_format(OutputFormat::Lines),
     )?;
-    assert!(
-        lines.contains("index scanning (retained preparation:"),
-        "{lines}"
-    );
+    // The claim cancellation lands wherever the pass is, so any phase may be reported.
+    assert!(lines.contains("(retained preparation:"), "{lines}");
     assert!(!lines.contains("index_progress_source"), "{lines}");
 
     store.index()?;

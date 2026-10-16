@@ -113,10 +113,8 @@ fn standalone_more_refreshes_progress_after_explicit_index_without_mutating_resu
         1,
         &OutputBudget::new(4_096)?.with_format(OutputFormat::Lines),
     )?;
-    assert!(
-        lines.contains("index scanning (retained preparation:"),
-        "{lines}"
-    );
+    // The claim cancellation lands wherever the pass is, so any phase may be reported.
+    assert!(lines.contains("(retained preparation:"), "{lines}");
 
     store.index()?;
     assert!(read_index_progress(&root, &cache).is_none());

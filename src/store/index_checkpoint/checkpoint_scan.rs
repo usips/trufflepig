@@ -17,14 +17,17 @@ pub(super) fn stage(
     match result {
         Ok(result) => Ok(result),
         Err(error) => {
-            if deadline.is_some_and(QueryDeadline::expired) {
-                let deadline = deadline.unwrap();
-                if deadline.time_expired()
-                    && !deadline.cancelled()
-                    && index_deadline::is_deadline_interruption(&error)
+            // Files saved before the failure are valid facts; keep them for the next attempt.
+            let _ = checkpoint.commit();
+            match deadline.filter(|deadline| deadline.expired()) {
+                Some(deadline)
+                    if deadline.time_expired()
+                        && !deadline.cancelled()
+                        && index_deadline::is_deadline_interruption(&error) =>
                 {
                     let _ = checkpoint.note_budget_expired(deadline);
-                } else {
+                }
+                _ => {
                     let _ = checkpoint.record_progress();
                 }
             }
