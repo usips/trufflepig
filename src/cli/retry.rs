@@ -166,9 +166,9 @@ fn run_retry_loop(
                 {
                     let available = remaining();
                     let delay = retry_delay(request_id, attempts - 1, &error).max(minimum_delay);
-                    let reserve = retry_reserve(scope, &error);
+                    let reserve = retry_reserve(holds_fallback_time && busy_seen);
                     // Preserve enough time to make the next request useful and,
-                    // for an explicit read refusal, to fall back locally.
+                    // after a busy refusal, to fall back locally.
                     if delay.saturating_add(reserve) < available {
                         wait(delay);
                         // A scheduler delay can oversleep. The prior busy reply
@@ -215,9 +215,9 @@ fn attempt_deadline(read_deadline: &QueryDeadline, held_back: Duration) -> Query
     read_deadline.capped(read_deadline.remaining().saturating_sub(held_back))
 }
 
-fn retry_reserve(scope: RetryScope, error: &anyhow::Error) -> Duration {
+fn retry_reserve(holds_fallback_time: bool) -> Duration {
     USEFUL_ATTEMPT_FLOOR
-        + if scope == RetryScope::Read && is_explicit_busy(error) {
+        + if holds_fallback_time {
             BUSY_FALLBACK_RESERVE
         } else {
             Duration::ZERO
@@ -307,6 +307,15 @@ fn run_with_retry_deadline(
     };
     let scope = RetryScope::for_options(options);
     let fallback_available = super::client_command::has_busy_fallback(args);
+    if scope == RetryScope::Read
+        && fallback_available
+        && read_deadline.is_some()
+        && !options.no_daemon
+    {
+        // Keep first-use tokenizer setup outside transport attempts so a fresh
+        // process can render the local fallback inside its held deadline reserve.
+        let _ = crate::output::OutputBudget::new(options.budget)?;
+    }
     let mut command = super::ClientCommand::default();
     run_retry_loop(
         scope,

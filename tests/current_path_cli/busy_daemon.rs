@@ -43,6 +43,18 @@ impl BusyDaemon {
     }
 
     pub fn start(system_dir: &Path, reply: &'static str) -> Self {
+        Self::start_configured(system_dir, reply, false)
+    }
+
+    pub fn start_busy_then_hold(system_dir: &Path) -> Self {
+        Self::start_configured(system_dir, Self::busy_reply(), true)
+    }
+
+    fn start_configured(
+        system_dir: &Path,
+        reply: &'static str,
+        hold_after_first_busy: bool,
+    ) -> Self {
         let socket = system_dir.join("daemon.sock");
         assert!(!socket.exists(), "fixture socket already exists");
         let listener = UnixListener::bind(&socket).expect("bind fake busy router");
@@ -57,7 +69,14 @@ impl BusyDaemon {
             let deadline = Instant::now() + THREAD_DEADLINE;
             while !thread_stop.load(Ordering::Acquire) && Instant::now() < deadline {
                 match listener.accept() {
-                    Ok((stream, _)) => handle(stream, reply, &thread_requests),
+                    Ok((stream, _)) => handle(
+                        stream,
+                        reply,
+                        hold_after_first_busy,
+                        &thread_requests,
+                        &thread_stop,
+                        deadline,
+                    ),
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                         thread::sleep(Duration::from_millis(10));
                     }
@@ -227,7 +246,14 @@ impl Drop for BusyDaemon {
     }
 }
 
-fn handle(mut stream: UnixStream, reply: &str, requests: &Mutex<Vec<WireRequest>>) {
+fn handle(
+    mut stream: UnixStream,
+    reply: &str,
+    hold_after_first_busy: bool,
+    requests: &Mutex<Vec<WireRequest>>,
+    stop: &AtomicBool,
+    deadline: Instant,
+) {
     let timeout = Some(Duration::from_millis(300));
     let _ = stream.set_read_timeout(timeout);
     let _ = stream.set_write_timeout(timeout);
@@ -260,11 +286,38 @@ fn handle(mut stream: UnixStream, reply: &str, requests: &Mutex<Vec<WireRequest>
         .filter_map(serde_json::Value::as_str)
         .map(str::to_owned)
         .collect();
-    requests.lock().unwrap().push(WireRequest {
-        request_id: request_id.to_owned(),
-        args,
-    });
+    let attempt = {
+        let mut requests = requests.lock().unwrap();
+        requests.push(WireRequest {
+            request_id: request_id.to_owned(),
+            args,
+        });
+        requests.len()
+    };
+    if hold_after_first_busy && attempt > 1 {
+        hold_until_client_closes(&mut stream, stop, deadline);
+        return;
+    }
     write_frame(&mut stream, reply.as_bytes());
+}
+
+fn hold_until_client_closes(stream: &mut UnixStream, stop: &AtomicBool, deadline: Instant) {
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(100)));
+    let mut byte = [0_u8; 1];
+    while !stop.load(Ordering::Acquire) && Instant::now() < deadline {
+        match stream.read(&mut byte) {
+            Ok(0) => return,
+            Ok(_) => {}
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::TimedOut
+                        | std::io::ErrorKind::Interrupted
+                ) => {}
+            Err(_) => return,
+        }
+    }
 }
 
 fn write_frame(stream: &mut UnixStream, bytes: &[u8]) {

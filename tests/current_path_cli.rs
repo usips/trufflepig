@@ -7,7 +7,10 @@ mod current_path_cli {
 
 use current_path_cli::{busy_daemon::BusyDaemon, process_fixture::Fixture};
 use serde_json::Value;
-use std::{fs, time::Duration};
+use std::{
+    fs,
+    time::{Duration, Instant},
+};
 
 const BUSY_READ_ATTEMPTS: usize = 5;
 
@@ -127,6 +130,42 @@ fn isolated_router_reads_current_path_with_a_blocked_cache_file() {
     router.assert_running();
     assert_eq!(fixture.cache_snapshot(&blocked_cache), blocked_before);
     assert_eq!(fixture.default_cache_snapshot(), default_cache_before);
+}
+
+#[test]
+fn cold_process_held_busy_fallback_returns_current_path_within_shared_deadline() {
+    let fixture = Fixture::new();
+    let source = fixture.write_markdown_with_prefix("COLD_BUSY_FALLBACK_ACCEPTED", 12);
+    let _readonly = fixture.make_cache_readonly();
+    let cache_before = fixture.cache_snapshot(&fixture.cache);
+    let default_cache_before = fixture.default_cache_snapshot();
+    let mut busy = BusyDaemon::start_busy_then_hold(&fixture.system_dir);
+
+    let started = Instant::now();
+    let read = fixture.run_show(
+        "path:docs/guide.md",
+        &fixture.cache,
+        false,
+        Duration::from_secs(35),
+    );
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed <= Duration::from_secs(32),
+        "cold fallback exceeded the 30-second client budget allowance: {elapsed:?}"
+    );
+    assert_current_path(&read, "docs/guide.md");
+    assert_eq!(read["end"], source.len());
+    assert_eq!(read["lines"].as_array().unwrap().len(), 12);
+    assert_eq!(
+        read["lines"][0]["text"],
+        "# COLD_BUSY_FALLBACK_ACCEPTED row-001\n"
+    );
+    assert_request_attempts(&busy, "path:docs/guide.md", 2);
+    assert!(busy.all_request_ids_are_fresh());
+    assert!(busy.requests_preserve_root_and_cache(&fixture.root, &fixture.cache));
+    assert_eq!(fixture.cache_snapshot(&fixture.cache), cache_before);
+    assert_eq!(fixture.default_cache_snapshot(), default_cache_before);
+    busy.stop();
 }
 
 #[test]

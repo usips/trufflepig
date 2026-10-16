@@ -197,7 +197,7 @@ fn waiting_past_the_deadline_never_starts_another_attempt() {
 fn retry_reserve_skips_wait_when_delay_and_fallback_would_leave_no_useful_attempt() {
     let request_id = "near-boundary-read";
     let delay = retry_delay(request_id, 0, &busy());
-    let reserve = retry_reserve(RetryScope::Read, &busy());
+    let reserve = retry_reserve(true);
     let budget = QUICK + delay + reserve;
     let fake = run_fake(
         RetryScope::Read,
@@ -218,7 +218,7 @@ fn retry_reserve_skips_wait_when_delay_and_fallback_would_leave_no_useful_attemp
 fn oversleep_keeps_available_time_for_the_original_busy_fallback() {
     let request_id = "overslept-busy-read";
     let delay = retry_delay(request_id, 0, &busy());
-    let reserve = retry_reserve(RetryScope::Read, &busy());
+    let reserve = retry_reserve(true);
     let oversleep = Duration::from_millis(50);
     let budget = QUICK + delay + reserve + oversleep;
     let fake = run_fake_with_wait(
@@ -241,7 +241,7 @@ fn oversleep_keeps_available_time_for_the_original_busy_fallback() {
 fn unavailable_busy_fallback_returns_the_original_busy_error() {
     let request_id = "busy-without-fallback";
     let delay = retry_delay(request_id, 0, &busy());
-    let reserve = retry_reserve(RetryScope::Read, &busy());
+    let reserve = retry_reserve(false);
     let fake = run_fake(
         RetryScope::Read,
         request_id,
@@ -326,6 +326,75 @@ fn early_timeout_after_a_busy_retry_keeps_the_timeout_error() {
 }
 
 #[test]
+fn busy_seen_keeps_fallback_reserve_after_a_quick_typed_timeout() {
+    let request_id = "busy-then-quick-timeout-boundary";
+    let timeout = || {
+        anyhow::Error::new(DaemonReplyTimeout::new(
+            Duration::from_millis(1),
+            Duration::from_secs(20),
+        ))
+    };
+    let first_delay = retry_delay(request_id, 0, &busy());
+    let next_delay = retry_delay(request_id, 1, &timeout());
+    let budget = QUICK
+        + first_delay
+        + QUICK
+        + next_delay
+        + USEFUL_ATTEMPT_FLOOR
+        + Duration::from_millis(100);
+    let fake = run_fake(
+        RetryScope::Read,
+        request_id,
+        budget,
+        vec![(Err(busy()), QUICK), (Err(timeout()), QUICK)],
+        Some(Ok("must not run".into())),
+    );
+
+    let error = fake.result.unwrap_err();
+    assert!(error.downcast_ref::<DaemonReplyTimeout>().is_some());
+    assert_eq!(fake.attempts, 2);
+    assert_eq!(fake.waits, vec![first_delay]);
+    assert_eq!(fake.held_back, vec![Duration::ZERO, BUSY_FALLBACK_RESERVE]);
+    assert_eq!(fake.fallbacks, 0);
+}
+
+#[test]
+fn unbusy_quick_timeouts_can_use_the_same_boundary_budget() {
+    let request_id = "timeouts-without-busy-boundary";
+    let timeout = || {
+        anyhow::Error::new(DaemonReplyTimeout::new(
+            Duration::from_millis(1),
+            Duration::from_secs(20),
+        ))
+    };
+    let first_delay = retry_delay(request_id, 0, &timeout());
+    let next_delay = retry_delay(request_id, 1, &timeout());
+    let budget = QUICK
+        + first_delay
+        + QUICK
+        + next_delay
+        + USEFUL_ATTEMPT_FLOOR
+        + Duration::from_millis(100);
+    let fake = run_fake(
+        RetryScope::Read,
+        request_id,
+        budget,
+        vec![
+            (Err(timeout()), QUICK),
+            (Err(timeout()), QUICK),
+            (Ok("recovered".into()), QUICK),
+        ],
+        Some(Ok("unused fallback".into())),
+    );
+
+    assert_eq!(fake.result.unwrap(), "recovered");
+    assert_eq!(fake.attempts, 3);
+    assert_eq!(fake.waits, vec![first_delay, next_delay]);
+    assert_eq!(fake.held_back, vec![Duration::ZERO; 3]);
+    assert_eq!(fake.fallbacks, 0);
+}
+
+#[test]
 fn expired_busy_fallback_keeps_the_busy_reply_code() {
     let fake = run_fake(
         RetryScope::Read,
@@ -366,7 +435,7 @@ fn held_reserve_busy_retry_leaves_the_fallback_reserve() {
 
 fn assert_busy_fallback_child(child: &str, marker: &str) {
     let (_temp, mut command) = busy_fallback_child_command(child);
-    let output = run_retry_test_child(&mut command, Duration::from_secs(5));
+    let output = run_retry_test_child(&mut command, Duration::from_secs(6));
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -432,7 +501,7 @@ fn short_deadline_cli_busy_fallback_child() {
     if std::env::var_os("TRUFFLEPIG_RETRY_TEST_CHILD").is_none() {
         return;
     }
-    let requests = current_path_fallback_under_held_router(Duration::from_millis(700));
+    let requests = current_path_fallback_under_held_router(Duration::from_millis(1_500));
     assert_eq!(
         requests.len(),
         1,
@@ -450,7 +519,7 @@ fn held_reserve_cli_busy_fallback_child() {
     if std::env::var_os("TRUFFLEPIG_RETRY_TEST_CHILD").is_none() {
         return;
     }
-    let requests = current_path_fallback_under_held_router(Duration::from_millis(1_800));
+    let requests = current_path_fallback_under_held_router(Duration::from_secs(4));
     assert_eq!(
         requests.len(),
         2,
@@ -465,9 +534,6 @@ fn current_path_fallback_under_held_router(budget: Duration) -> Vec<Vec<String>>
     const REQUEST_LIMIT: usize = 64 * 1024;
     const BUSY_REPLY: &[u8] = br#"{"status":"failure","message":"daemon_busy: pool=router-query queue_depth=64 retry_after_ms=250"}"#;
 
-    // Building the process-wide o200k tokenizer costs more than the reserve in a
-    // fresh process; warm it so the timed fallback measures the reserve logic.
-    crate::output::OutputBudget::new(1_000).unwrap();
     let root = std::path::PathBuf::from(std::env::var_os("TRUFFLEPIG_RETRY_TEST_ROOT").unwrap());
     let cache = std::path::PathBuf::from(std::env::var_os("TRUFFLEPIG_RETRY_TEST_CACHE").unwrap());
     let system_dir = std::path::PathBuf::from(std::env::var_os("TRUFFLEPIG_SYSTEM_DIR").unwrap());
