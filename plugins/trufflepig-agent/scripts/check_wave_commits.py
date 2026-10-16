@@ -12,7 +12,7 @@ TRAILER = re.compile(r"^([A-Za-z0-9-]+):[ \t]*(.*)$")
 SUBJECT = re.compile(r"^[a-z][a-z0-9-]*(?:\([^()\s]+\))?!?: \S.*$")
 OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 HARNESSES = {"codex", "codex cli", "cli", "human", "claude", "claude code",
-             "kimi", "muse", "muse code", "omp", "chatgpt", "gemini", "grok", "qwen"}
+             "kimi", "muse", "muse code", "omp", "opencode", "chatgpt", "gemini", "grok", "qwen"}
 REASON = r"n/a \((?=[^();]*[A-Za-z])[^();]+\)"
 COUNT = rf"(?:\d+/\d+|{REASON})"
 SUITES = re.compile(

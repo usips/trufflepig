@@ -14,7 +14,7 @@ class GeminiAttributionTests(unittest.TestCase):
         self.scratch = tempfile.TemporaryDirectory(prefix="trufflepig-gemini-")
         self.addCleanup(self.scratch.cleanup)
         self.root = Path(self.scratch.name)
-        harness_prefixes = ("TRUFFLEPIG", "CODEX", "CLAUDE", "GROK", "KIMI", "MUSE", "GEMINI",
+        harness_prefixes = ("TRUFFLEPIG", "CODEX", "CLAUDE", "GROK", "KIMI", "MUSE", "OPENCODE", "GEMINI",
                             "AGENT_SESSION", "OMP", "PI_")
         self.env = {key: value for key, value in os.environ.items()
                     if not key.startswith(harness_prefixes)}

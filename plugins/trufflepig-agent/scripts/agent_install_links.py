@@ -34,6 +34,11 @@ class AgentLinkPlan:
         if args.gemini:
             gemini_home = Path(os.environ.get("GEMINI_CLI_HOME") or Path.home()).expanduser().absolute()
             links.extend((skill, gemini_home / ".gemini/skills" / skill.name) for skill in skills)
+        if args.opencode:
+            config_home = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+            opencode_dir = config_home.expanduser().absolute() / "opencode"
+            links.extend((skill, opencode_dir / "skills" / skill.name) for skill in skills)
+            links.append((plugin / "opencode/session.ts", opencode_dir / "plugins/trufflepig-session.ts"))
         if args.grok:
             grok_home = Path(os.environ.get("GROK_HOME") or Path.home() / ".grok").expanduser().absolute()
             links.extend((skill, grok_home / "skills" / skill.name) for skill in skills)

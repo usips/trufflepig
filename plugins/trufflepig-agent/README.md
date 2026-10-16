@@ -1,7 +1,7 @@
 # Trufflepig agent integration
 
 Shared search and plan board skills with an audited CLI wrapper for Codex, Claude Code,
-Grok Build, Gemini CLI, Kimi Code, Muse Code, and omp. The [plan board
+Grok Build, Gemini CLI, Kimi Code, Muse Code, omp, and OpenCode. The [plan board
 skill](skills/trufflepig-plan-board/SKILL.md) coordinates claims, revisions, commits, and
 feedback; the [web contract](../../docs/board-web-contract.md) defines the dashboard. The
 search skill makes Trufflepig the default for project discovery, with targeted fallbacks for
@@ -20,7 +20,7 @@ Router absence or activation failure rolls back; only unmanaged preflight permit
 ```sh
 plugins/trufflepig-agent/install.sh --codex --systemd --check "$PWD"
 plugins/trufflepig-agent/install.sh --claude --check "$PWD"
-plugins/trufflepig-agent/install.sh --grok --gemini --muse --check "$PWD"
+plugins/trufflepig-agent/install.sh --grok --gemini --opencode --muse --check "$PWD"
 plugins/trufflepig-agent/install.sh --project ~/Source/lunatic
 plugins/trufflepig-agent/install.sh --omp --check "$PWD"
 plugins/trufflepig-agent/install.sh --kimi --muse --kimi-hooks --systemd
@@ -31,7 +31,7 @@ a `Bash(trufflepig-agent *)` permission, and narrow sandbox runtime access while
 preserving existing settings. See [Claude integration](claude-code.md)
 for discovery, session lifecycle, permissions, verification, and removal.
 
-`--grok` and `--gemini` link both skills; see [Grok](grok.md) and [Gemini](gemini.md) integration.
+`--grok`, `--gemini`, `--opencode` link both skills: [Grok](grok.md), [Gemini](gemini.md), [OpenCode](opencode.md).
 `--muse` refreshes managed copies through `muse skills install`; rerun after source updates.
 `--kimi` links both under `$KIMI_CODE_HOME/skills` (default `~/.kimi-code/skills`).
 See [Kimi K3 Board setup](skills/trufflepig-plan-board/references/kimi.md).
@@ -59,7 +59,7 @@ It builds one Cargo target with an installed nightly and returns bounded JSON
 with compilation provenance and source spans. The symlink installation includes
 the helper and its reference; no additional wrapper or daemon setup is needed.
 
-Codex, Claude, Grok, and Gemini configure a data-only `agent-runtime.json` under
+Codex, Claude, Grok, Gemini, and OpenCode configure a data-only `agent-runtime.json` under
 `$XDG_CONFIG_HOME/trufflepig` (default `~/.config/trufflepig`). `runtime_dir` defaults to
 `~/.cache/codex-tmp/trufflepig-agent`; `--runtime-dir DIR` selects another disk-backed
 directory the sandbox permits writing. `spool_dir` is its `spool` child. The wrapper supplies
@@ -181,7 +181,7 @@ or the command ends with `# tp-fallback: reason`; it nudges the rest, including 
 which `install.sh --steer MODE` records for the selected Claude, Kimi, or Muse
 installation. Symbol, body, and outline commands are suggested only for Rust,
 TypeScript, JavaScript, C#, PHP, Luau, and DreamMaker; other files get `re:` equivalents.
-Codex, Grok, Gemini, and omp do not install steering hooks and report steering as `off`.
+Codex, Grok, Gemini, omp, and OpenCode do not install steering hooks and report steering as `off`.
 
 `trufflepig-audit --adoption` compares Trufflepig navigation calls with the
 ordinary searches the hook observed, split into main agent and subagents, with

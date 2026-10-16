@@ -21,7 +21,7 @@ class BoardWrapperTests(unittest.TestCase):
         self.addCleanup(self.scratch.cleanup)
         self.root = Path(self.scratch.name)
         self.env = {key: value for key, value in os.environ.items()
-                    if not key.startswith(("TRUFFLEPIG", "CODEX", "CLAUDE", "GROK", "KIMI", "MUSE", "OMP", "PI_", "AGENT_SESSION"))}
+                    if not key.startswith(("TRUFFLEPIG", "CODEX", "CLAUDE", "GROK", "KIMI", "MUSE", "OPENCODE", "OMP", "PI_", "AGENT_SESSION"))}
         self.env.update(HOME=str(self.root), XDG_STATE_HOME=str(self.root / "state"),
                         XDG_CONFIG_HOME=str(self.root / "config"), TMPDIR=str(self.root),
                         CODEX_THREAD_ID="board-session", CAPTURE=str(self.root / "capture"))
@@ -234,7 +234,7 @@ class BoardInstallTests(unittest.TestCase):
         self.addCleanup(self.scratch.cleanup)
         self.root = Path(self.scratch.name)
         self.env = {key: value for key, value in os.environ.items()
-                    if not key.startswith(("TRUFFLEPIG", "CLAUDE", "GROK", "KIMI", "MUSE", "OMP", "PI_"))}
+                    if not key.startswith(("TRUFFLEPIG", "CLAUDE", "GROK", "KIMI", "MUSE", "OPENCODE", "OMP", "PI_"))}
         self.env.update(HOME=str(self.root), XDG_CONFIG_HOME=str(self.root / "config"),
                         XDG_STATE_HOME=str(self.root / "state"), TMPDIR=str(self.root))
 

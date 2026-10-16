@@ -52,6 +52,8 @@ def detect_harness() -> str:
     # tested before Claude or every omp call would be attributed to Claude.
     if os.environ.get("OMPCODE") == "1":
         return "omp"
+    if os.environ.get("OPENCODE") == "1":
+        return "opencode"
     if os.environ.get("CLAUDECODE") == "1" or os.environ.get("CLAUDE_CODE_CHILD_SESSION") == "1":
         return "claude"
     if any(os.environ.get(key) for key in ("CODEX_THREAD_ID", "CODEX_SESSION_ID", "CODEX_VERSION")):
@@ -79,6 +81,8 @@ def detect_harness() -> str:
             return "codex"
         if lowered == "omp":
             return "omp"
+        if lowered == "opencode":
+            return "opencode"
         if lowered.startswith("kimi"):
             return "kimi"
         if lowered.startswith("muse"):
@@ -110,6 +114,7 @@ def resolve_session(harness: str, cwd: str) -> str:
         "gemini": ("GEMINI_SESSION_ID",),
         "grok": ("GROK_SESSION_ID",),
         "omp": ("TRUFFLEPIG_OMP_SESSION",),
+        "opencode": ("TRUFFLEPIG_OPENCODE_SESSION",),
         "claude": ("TRUFFLEPIG_CLAUDE_SESSION",),
         "codex": ("CODEX_THREAD_ID", "CODEX_SESSION_ID"),
         "kimi": ("KIMI_SESSION_ID",),
