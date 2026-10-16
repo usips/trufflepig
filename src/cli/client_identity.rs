@@ -108,6 +108,8 @@ fn native_harness(environment: &HashMap<String, String>) -> Option<String> {
         Some("grok".to_owned())
     } else if has("OMPCODE", "1") {
         Some("omp".to_owned())
+    } else if has("OPENCODE", "1") {
+        Some("opencode".to_owned())
     } else if has("CLAUDECODE", "1") || has("CLAUDE_CODE_CHILD_SESSION", "1") {
         Some("claude".to_owned())
     } else if ["CODEX_THREAD_ID", "CODEX_SESSION_ID", "CODEX_VERSION"]
@@ -143,6 +145,8 @@ fn process_harness(ancestors: &[String]) -> Option<String> {
                 Some("codex")
             } else if lowered == "omp" {
                 Some("omp")
+            } else if lowered == "opencode" {
+                Some("opencode")
             } else if lowered.starts_with("kimi") {
                 Some("kimi")
             } else if lowered.starts_with("muse") {
@@ -159,6 +163,7 @@ fn native_session(environment: &HashMap<String, String>, harness: &str) -> Optio
         "gemini" => &["GEMINI_SESSION_ID"],
         "grok" => &["GROK_SESSION_ID"],
         "omp" => &["TRUFFLEPIG_OMP_SESSION"],
+        "opencode" => &["TRUFFLEPIG_OPENCODE_SESSION"],
         "claude" => &["TRUFFLEPIG_CLAUDE_SESSION"],
         "codex" => &["CODEX_THREAD_ID", "CODEX_SESSION_ID"],
         "kimi" => &["KIMI_SESSION_ID"],
@@ -253,6 +258,25 @@ mod tests {
         let origin = context.origin.unwrap();
         assert_eq!(origin.harness.as_str(), "omp");
         assert_eq!(origin.session, "omp-session");
+    }
+
+    #[test]
+    fn opencode_marker_precedes_claude_and_supplies_its_plugin_session() {
+        let marked = environment(&[
+            ("OPENCODE", "1"),
+            ("CLAUDECODE", "1"),
+            ("TRUFFLEPIG_OPENCODE_SESSION", "ses_opencode"),
+        ]);
+        let context = resolved_request_context(&arguments(&[]), &marked, &[]).unwrap();
+        assert_eq!(context.client.as_deref(), Some("opencode"));
+        assert_eq!(context.session.as_deref(), Some("ses_opencode"));
+        assert_eq!(context.origin.unwrap().session, "ses_opencode");
+
+        let ancestors = ["bash".to_owned(), "opencode".to_owned()];
+        let context =
+            resolved_request_context(&arguments(&[]), &environment(&[]), &ancestors).unwrap();
+        assert_eq!(context.client.as_deref(), Some("opencode"));
+        assert_eq!(context.origin.unwrap().session, "unattributed");
     }
 
     #[test]

@@ -24,7 +24,7 @@ def load_module(name, path):
 class ClaudeHookIdentityTests(unittest.TestCase):
     def setUp(self):
         self.env = {key: value for key, value in os.environ.items()
-                    if not key.startswith(("TRUFFLEPIG", "CLAUDE", "CODEX", "KIMI", "MUSE"))}
+                    if not key.startswith(("TRUFFLEPIG", "CLAUDE", "CODEX", "KIMI", "MUSE", "OPENCODE"))}
 
     def run_hook(self, payload, env=None):
         hook_env = dict(self.env, TRUFFLEPIG_CLAUDE_IDENTITY_REWRITE="1") if env is None else env
@@ -139,7 +139,7 @@ class ClaudeHookLifecycleTests(unittest.TestCase):
     def setUp(self):
         self.hooks = load_module("claude_hooks_lifecycle", HOOK)
         self.env = {key: value for key, value in os.environ.items()
-                    if not key.startswith(("TRUFFLEPIG", "CLAUDE", "CODEX", "KIMI", "MUSE"))}
+                    if not key.startswith(("TRUFFLEPIG", "CLAUDE", "CODEX", "KIMI", "MUSE", "OPENCODE"))}
 
     def test_post_tool_poll_uses_derived_actor_and_only_emits_helper_context(self):
         payload = {"hook_event_name": "PostToolUse", "session_id": "parent-session",

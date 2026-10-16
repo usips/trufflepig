@@ -21,12 +21,12 @@ checkout. The model loads a skill through OpenCode's `skill` tool; selection
 remains its decision. OpenCode loads skills and plugins at startup, so restart
 it after installing. `opencode debug skill` lists the discovered locations.
 
-OpenCode exports `OPENCODE=1` to its shell tool, which the wrapper uses to
-identify the harness ahead of `CLAUDECODE`; an `opencode` ancestor process is
+OpenCode exports `OPENCODE=1` to its shell tool, which the wrapper and CLI use
+to identify the harness ahead of `CLAUDECODE`; an `opencode` ancestor process is
 the fallback. The shell tool does not export the session ID. The plugin's
 `shell.env` hook sets `TRUFFLEPIG_OPENCODE_SESSION` for each agent shell call,
 including subagent sessions, which have their own IDs. Terminal panes have no
-session ID. Without the plugin, set `TRUFFLEPIG_SESSION`
+session and stay unattributed. Without the plugin, set `TRUFFLEPIG_SESSION`
 explicitly when exact attribution matters.
 
 Inside OpenCode, run the wrapper smoke check to verify its actual permissions:
