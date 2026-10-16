@@ -189,7 +189,7 @@ pub(super) fn render_plan(
             budget,
         )
     };
-    // Keep worker and commit rows intact until their nested evidence is trimmed.
+    // Nested evidence is trimmed while every claim and commit row is present.
     let mut trim = full;
     trim.lines = 0;
     trim.tasks = 0;
@@ -227,6 +227,8 @@ pub(super) fn render_plan(
             ..trim
         })
     })?;
+    // Body, tasks and claims outrank commit rows, which take the leftover budget.
+    trim.commits = 0;
     // Claim and task summaries stay useful before the immutable body is expanded.
     trim.claims = fit_items(view.claims.len(), budget, |count| {
         render(PlanTrim {

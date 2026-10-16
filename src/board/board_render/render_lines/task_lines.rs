@@ -276,6 +276,7 @@ pub(super) fn pending_lines(text: &mut String, reply: &PendingReply) {
     )
     .unwrap();
     for notice in &reply.notices {
+        let reason = notice_reason_label(&notice.reason);
         match (&notice.entry, &notice.event) {
             (Some(entry), None) => {
                 writeln!(
@@ -286,12 +287,7 @@ pub(super) fn pending_lines(text: &mut String, reply: &PendingReply) {
                         crate::board::board_protocol::PendingNoticeKind::Entry => "entry",
                         crate::board::board_protocol::PendingNoticeKind::Event => "event",
                     },
-                    match notice.reason {
-                        crate::board::board_protocol::PendingNoticeReason::Mention => "mention",
-                        crate::board::board_protocol::PendingNoticeReason::Question => "question",
-                        crate::board::board_protocol::PendingNoticeReason::Claim => "claim",
-                        crate::board::board_protocol::PendingNoticeReason::Worker => "worker",
-                    }
+                    reason
                 )
                 .unwrap();
                 entry_line(text, entry);
@@ -300,19 +296,23 @@ pub(super) fn pending_lines(text: &mut String, reply: &PendingReply) {
                 writeln!(
                     text,
                     "{}\tkind=event reason={} payload=",
-                    notice.seq,
-                    match notice.reason {
-                        crate::board::board_protocol::PendingNoticeReason::Mention => "mention",
-                        crate::board::board_protocol::PendingNoticeReason::Question => "question",
-                        crate::board::board_protocol::PendingNoticeReason::Claim => "claim",
-                        crate::board::board_protocol::PendingNoticeReason::Worker => "worker",
-                    }
+                    notice.seq, reason
                 )
                 .unwrap();
                 event_line(text, event);
             }
-            _ => unreachable!("pending notice validation requires exactly one payload"),
+            // Board feed validation rejects these; a malformed router notice stays visible.
+            _ => writeln!(text, "{}\tkind=invalid reason={}", notice.seq, reason).unwrap(),
         }
+    }
+}
+
+fn notice_reason_label(reason: &crate::board::board_protocol::PendingNoticeReason) -> &'static str {
+    match reason {
+        crate::board::board_protocol::PendingNoticeReason::Mention => "mention",
+        crate::board::board_protocol::PendingNoticeReason::Question => "question",
+        crate::board::board_protocol::PendingNoticeReason::Claim => "claim",
+        crate::board::board_protocol::PendingNoticeReason::Worker => "worker",
     }
 }
 

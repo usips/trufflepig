@@ -131,6 +131,82 @@ fn show_preserves_labor_and_uncovered_sections_while_trimming_the_body() {
 }
 
 #[test]
+fn plan_budget_keeps_body_and_tasks_ahead_of_commit_rows() {
+    use crate::board::{
+        board_ids::{PlanRevision, TaskId},
+        board_vocabulary::{PlanText, PlanTitle, TaskColumn},
+    };
+    let plan = PlanId::new(7).unwrap();
+    let body = (1..=40)
+        .map(|line| format!("body fact {line}\n"))
+        .collect::<String>();
+    let view = PlanView {
+        repo_keys: Vec::new(),
+        plan: PlanRecord {
+            id: plan,
+            title: PlanTitle::new("Trial").unwrap(),
+            owner_user: "josh".into(),
+            head_revision: 1,
+            created_at: 100,
+        },
+        revision: RevisionRecord {
+            id: PlanRevision::new(plan, 1).unwrap(),
+            body: PlanText::new(body.clone()).unwrap(),
+            source: RevisionSource::Create,
+            entry: EntryId::new(1).unwrap(),
+            actor: actor(),
+            seq: EventSeq::new(1),
+            created_at: 100,
+        },
+        tasks: (1..=3)
+            .map(|ordinal| TaskRecord {
+                id: TaskId::new(plan, ordinal).unwrap(),
+                title: PlanTitle::new(format!("task {ordinal}")).unwrap(),
+                column: TaskColumn::Todo,
+                assignee: None,
+                section: None,
+                seq: EventSeq::new(ordinal),
+                done_at: None,
+            })
+            .collect(),
+        grants: Vec::new(),
+        can_manage_grants: false,
+        task_ceiling: TaskCeiling { plan, ordinal: 3 },
+        claims: Vec::new(),
+        entries: Vec::new(),
+        commits: (101..301)
+            .map(|number| review_commit(number).commit)
+            .collect(),
+        tasks_omitted: 0,
+        claims_omitted: 0,
+        entries_omitted: 0,
+        commits_omitted: 0,
+        tasks_next_after: None,
+        claims_next_after: None,
+        entries_next_before: None,
+        through: EventSeq::new(100),
+        can_edit: true,
+        server_now: 150,
+        claim_ttl_secs: 60,
+        sections_without_tasks: Vec::new(),
+    };
+    let budget = OutputBudget::new(8000)
+        .unwrap()
+        .with_format(OutputFormat::Json);
+    let rendered = render_reply(&BoardReply::new("local", BoardResult::Plan(view)), &budget)
+        .unwrap()
+        .text;
+    assert!(budget.fits(&rendered));
+    let value: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+    let data = &value["result"]["data"];
+    assert_eq!(data["revision"]["body"], body);
+    assert_eq!(data["tasks"].as_array().unwrap().len(), 3);
+    let shown = data["commits"].as_array().unwrap().len();
+    assert!(shown > 0 && shown < 200, "shown {shown} commits");
+    assert_eq!(value["omitted"]["commits"], 200 - shown);
+}
+
+#[test]
 fn plan_trim_keeps_newest_entries_behind_a_before_cursor() {
     use crate::board::{
         board_ids::PlanRevision,

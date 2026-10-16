@@ -11,6 +11,10 @@ The installed service binds `127.0.0.1:0` by default. To enable LAN access, run 
 `trufflepig-board.service`. A service drop-in survives installer refreshes. The stable-port
 file and descriptor follow the [web service contract](board-web-contract.md).
 
+LAN mode serves plain HTTP, so the board token (owner-level web access) and every board reply cross
+the network unencrypted. Use a non-loopback listener only on trusted networks. Restarting
+`board-serve` rotates the token and invalidates links from earlier starts.
+
 ## Authority and bootstrap
 
 Public HTML, JavaScript, and CSS contain no board records or token. `board-serve` prints the full

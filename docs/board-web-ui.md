@@ -42,9 +42,26 @@ Proposal/acceptance authority and task transitions remain backend decisions.
 ## Active tasks and Done
 
 Working now leads Overview with a wrapping grid of the returned current claims. Cards show the
-task title when it is present in the snapshot, the full claim scope, and compact harness/model
-metadata; hovering the identity shows its complete actor identity. Working now never requires
-horizontal scrolling. Below it, Needs you precedes plan lanes on narrow screens.
+task title when it is present in the snapshot, the full claim scope, the claimant's actor mark and
+`user@host/harness/session` identity, model and effort, and the claim's task agent tree. Working now
+never requires horizontal scrolling. Below it, Needs you precedes plan lanes on narrow screens; its
+stale-claim cards link to their tasks without release controls.
+
+The task agent tree lists the lead claim and its workers with role, state, handle, scope, files,
+last activity, review verdict, and progress. Its attribution adds the observed origin, peer IP, and
+authority source recorded on the claim's entry. Workers ended more than 30 minutes ago collapse under
+`Ended workers (N)`, and workers beyond the first 20 count as omitted.
+
+A plan's Tasks tab shows each claim with the same attribution. A stale claim offers `Release stale
+claim` (a `task_move` to `todo`) and omits the `todo` move control. A task reference such as
+`/#/P7?tab=tasks&task=P7.1` opens that task's detail: its agent tree, claim history, task entries,
+and task-linked commits, with omitted counts.
+
+Every plan page shows Plan grants below its tabs. Rows list roles, live, expired, or revoked status,
+grantee, owner scope, source, grant time, and expiry. Where the server reports `can_manage_grants`,
+managers see Revoke on unrevoked grants and a grant form for an exact session or harness-wide
+recipient with expiry, note, and role checkboxes; other sessions see a read-only note. Role
+checkboxes keep their checked state across live refreshes.
 
 Needs you cards and Latest activity summaries preview at most 280 Unicode codepoints. Their entry
 links retain access to the complete body, and entry pages display that body without truncation.

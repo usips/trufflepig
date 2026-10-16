@@ -166,27 +166,50 @@ export function createBoardDom(state) {
       item.textContent = message; item.className = `form-status ${tone}`;
     }
   }
+  // Checkboxes and radios sharing a name form one group whose draft is the list
+  // of checked values. A choice's value attribute is never rewritten.
+  function isChoice(input) { return input.type === "checkbox" || input.type === "radio"; }
+  function namedControls(form) {
+    return [...form.querySelectorAll("input,textarea,select")].filter(input => input.name);
+  }
+  function controlEntries(inputs) {
+    const entries = new Map();
+    for (const input of inputs) {
+      if (!isChoice(input)) { entries.set(input.name, input.value); continue; }
+      const checked = entries.get(input.name) || [];
+      if (input.checked) checked.push(input.value);
+      entries.set(input.name, checked);
+    }
+    return entries;
+  }
+  function setControl(input, value) {
+    if (isChoice(input)) input.checked = value.includes(input.value);
+    else input.value = value;
+  }
+  function sameDraftValue(left, right) {
+    if (!Array.isArray(left) || !Array.isArray(right)) return left === right;
+    return left.length === right.length && left.every((item, index) => item === right[index]);
+  }
   // Editors enter the stores on input; saved, empty and unchanged forms
   // stay out when refreshes or navigation capture the mounted controls.
   function saveForm(form) {
     const key = form.dataset.draftKey;
     if (!key || savedForms.has(form)) return;
     if (key.startsWith("editor:") && !editedForms.has(form)) return;
-    const inputs = [...form.querySelectorAll("input,textarea,select")]
-      .filter(input => input.name && !input.readOnly)
-      .map(input => [input.name, input.value]);
-    if (!inputs.length) return;
+    const entries = controlEntries(namedControls(form).filter(input => !input.readOnly));
+    if (!entries.size) return;
+    const draft = Object.fromEntries(entries);
     const prior = state.formDrafts.get(key);
-    if (prior && Object.keys(prior).length === inputs.length
-      && inputs.every(([name, value]) => prior[name] === value)) return;
-    state.formDrafts.set(key, Object.fromEntries(inputs));
+    if (prior && Object.keys(prior).length === entries.size
+      && Object.keys(draft).every(name => sameDraftValue(prior[name], draft[name]))) return;
+    state.formDrafts.set(key, draft);
   }
   function restoreForm(form) {
     const draft = state.formDrafts.get(form.dataset.draftKey);
     if (draft) {
       editedForms.add(form);
-      for (const input of form.querySelectorAll("input,textarea,select")) {
-        if (!input.readOnly && Object.hasOwn(draft, input.name)) input.value = draft[input.name];
+      for (const input of namedControls(form)) {
+        if (!input.readOnly && Object.hasOwn(draft, input.name)) setControl(input, draft[input.name]);
       }
     }
     const status = state.formStatuses.get(form.dataset.draftKey);
@@ -211,11 +234,11 @@ export function createBoardDom(state) {
   function captureForms(root) { for (const form of root.querySelectorAll("form")) saveForm(form); }
   function restoreForms(root) { for (const form of root.querySelectorAll("form")) restoreForm(form); }
   function syncForm(form, root) {
-    const values = new Map([...form.querySelectorAll("input,textarea,select")].map(input => [input.name, input.value]));
+    const values = controlEntries(namedControls(form));
     for (const current of root.querySelectorAll("form")) if (current.dataset.draftKey === form.dataset.draftKey) {
       if (savedForms.has(form)) { savedForms.add(current); editedForms.delete(current); }
-      for (const input of current.querySelectorAll("input,textarea,select")) {
-        if (values.has(input.name)) input.value = values.get(input.name);
+      for (const input of namedControls(current)) {
+        if (values.has(input.name)) setControl(input, values.get(input.name));
       }
     }
   }

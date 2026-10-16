@@ -352,6 +352,33 @@ fn pending_budget_keeps_generation_and_counts_omitted_notices() {
 }
 
 #[test]
+fn pending_lines_show_a_notice_without_one_payload_as_invalid() {
+    let notice = PendingNotice {
+        seq: EventSeq::new(12),
+        kind: PendingNoticeKind::Entry,
+        reason: PendingNoticeReason::Mention,
+        entry: None,
+        event: None,
+    };
+    let reply = BoardReply::new(
+        "local",
+        BoardResult::Pending(PendingReply {
+            notices: vec![notice],
+            after: None,
+            through: EventSeq::new(30),
+            server_now: 200,
+            generation: "generation-42".into(),
+            omitted: 0,
+        }),
+    );
+    let budget = OutputBudget::new(5000)
+        .unwrap()
+        .with_format(OutputFormat::Lines);
+    let rendered = render_reply(&reply, &budget).unwrap();
+    assert!(rendered.text.contains("12\tkind=invalid reason=mention"));
+}
+
+#[test]
 fn plan_lines_render_grant_rows_and_manage_permission() {
     let plan_id = PlanId::new(7).unwrap();
     let plan = PlanRecord {

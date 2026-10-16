@@ -56,7 +56,7 @@ The optional top-level `project` selects a host Project for scoped reads; see th
 The web allowlist exposes Overview, Repositories, Projects, Show, Tasks, DoneTasks, Claims, Feed, Attention, History, Entries, Search, and FeedbackList reads.
 It allows New, Post, TaskCreate, TaskMove, Accept, Reject, Edit, FeedbackClose, FeedbackTriage, Grant, and Revoke writes; Browser Post kinds are `note`, `answer`, `decision`, and `question`.
 TaskCreate requires Assign for another recipient, including harness-wide recipients; exact self-assignment to the caller's normalized actor identity is ordinary creation.
-`board bye` ends the caller's lead claims and worker node while other actors' claims and worker nodes remain active. Other operations fail `invalid_options: op not available over web`.
+Other operations, including CLI-only `board bye` ([worker lifecycle](board-workers.md)), fail `invalid_options: op not available over web`.
 Local reads remain available without a responsive router; a conflicting known database pin rejects private reads, writes, and streams.
 
 POST ingest probes router API/database identity and relays without spawning a router; an

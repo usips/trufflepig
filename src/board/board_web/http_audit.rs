@@ -1,5 +1,6 @@
 //! Bounded, structured audit records for Board HTTP interactions.
 use super::http_wire::{HttpMethod, HttpRequest};
+use std::io::Write;
 use std::net::IpAddr;
 
 #[derive(Clone, Copy, Debug)]
@@ -107,13 +108,14 @@ impl HttpAudit {
 
     pub(super) fn finish(&mut self, status: u16) {
         if !self.finished {
-            self.emit(status);
             self.finished = true;
+            self.emit(status);
         }
     }
 
+    // Audit output is best effort: a closed stderr must not panic the server.
     fn emit(&self, status: u16) {
-        eprintln!("{}", self.record(status));
+        let _ = writeln!(std::io::stderr().lock(), "{}", self.record(status));
     }
 
     fn record(&self, status: u16) -> serde_json::Value {
