@@ -1,5 +1,4 @@
 """omp installation, native directory resolution, and cwd-independent attribution."""
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -9,11 +8,6 @@ import tempfile
 import unittest
 
 PLUGIN = Path(__file__).resolve().parents[1]
-
-
-def marker_key(cwd: Path) -> str:
-    # Match the hook path only to plant a stale, non-identity marker fixture.
-    return hashlib.sha256(str(cwd).encode()).hexdigest()[:12]
 
 
 class OmpIntegrationTests(unittest.TestCase):
@@ -37,9 +31,6 @@ sys.stdout.write('{"hits":[],"truncated":false}\\n')
     def install(self):
         return subprocess.run([str(PLUGIN / "install.sh"), "--omp"],
                               env=self.env, text=True, capture_output=True)
-
-    def marker(self, cwd: Path) -> Path:
-        return self.root / "state/trufflepig/agent-sessions/omp" / marker_key(cwd)
 
     def record(self) -> dict:
         log = self.root / "state/trufflepig/agent-audit/omp.jsonl"
@@ -70,11 +61,9 @@ sys.stdout.write('{"hits":[],"truncated":false}\\n')
         self.assertEqual((unmanaged / "SKILL.md").read_text(), "not ours\n")
         self.assertFalse((self.root / ".omp/agent/extensions").exists())
 
-    def test_omp_session_environment_beats_claude_and_stale_marker(self):
+    def test_omp_session_environment_beats_claude(self):
         cwd = self.root / "repo dir"
         cwd.mkdir()
-        self.marker(cwd).parent.mkdir(parents=True)
-        self.marker(cwd).write_text("stale-session\n")
         self.env.update(OMPCODE="1", CLAUDECODE="1", TRUFFLEPIG_OMP_SESSION="omp-session-1")
         result = self.run_wrapper("search", "x", cwd=cwd)
         self.assertEqual(result.returncode, 0, result.stderr)

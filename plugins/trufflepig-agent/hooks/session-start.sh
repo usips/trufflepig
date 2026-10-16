@@ -1,23 +1,12 @@
 #!/usr/bin/env sh
-# Harness SessionStart/SessionEnd hook: records the harness session id for the
-# session's working directory so trufflepig-agent can tag every call with it.
-# Reads the hook JSON payload on stdin ({session_id, cwd, hook_event_name, ...}).
-# Usage: session-start.sh <kimi|muse> [start|end]
+# Harness SessionStart/SessionEnd hook: best-effort start of the per-user system
+# daemon. It writes no state; actor identity comes from the harness's native
+# session variable, TRUFFLEPIG_SESSION, or a call's --session claim.
+# Usage: session-start.sh <kimi|muse> [start|end]  (the harness name is informational)
 set -eu
-harness="${1:-unknown}"
 phase="${2:-start}"
-state="${XDG_STATE_HOME:-$HOME/.local/state}/trufflepig/agent-sessions/$harness"
-payload="$(cat)"
-session="$(printf '%s' "$payload" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("session_id") or d.get("sessionId") or "")' 2>/dev/null || true)"
-cwd="$(printf '%s' "$payload" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("cwd") or "")' 2>/dev/null || true)"
-[ -n "$cwd" ] || cwd="$PWD"
-# Key contract: cwd_key() in bin/trufflepig-agent.
-key="$(printf '%s' "$cwd" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.read().encode()).hexdigest()[:12])')"
-mkdir -p "$state"
-if [ "$phase" = "end" ]; then
-    rm -f "$state/$key"
-    exit 0
-fi
+# Drain the hook's JSON payload from stdin; its fields are not needed.
+cat >/dev/null
 # Best-effort: make sure the per-user system daemon runs (sandboxed harnesses
 # cannot spawn it themselves). Prefer the systemd user service installed by
 # `install.sh --systemd`, which also restarts the router after a crash; fall
@@ -29,5 +18,3 @@ if [ "$phase" = "start" ]; then
         command -v trufflepig >/dev/null 2>&1 && trufflepig system ensure >/dev/null 2>&1 || true
     fi
 fi
-[ -n "$session" ] || exit 0
-printf '%s\n' "$session" > "$state/$key"

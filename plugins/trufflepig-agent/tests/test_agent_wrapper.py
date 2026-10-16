@@ -353,6 +353,7 @@ sys.exit(exit_code)
         hook = subprocess.run(["sh", str(PLUGIN / "hooks/session-start.sh"), "kimi", "start"],
                               input=payload, env=hook_env, capture_output=True, text=True)
         self.assertEqual((hook.returncode, hook.stdout), (0, ""), hook.stderr)
+        self.assertFalse((self.root / "state/trufflepig/agent-sessions").exists())
         del self.env["CODEX_THREAD_ID"]
         self.env["KIMI_CODE_HOME"] = str(self.root / "kimi")
         self.run_wrapper("search", "x")

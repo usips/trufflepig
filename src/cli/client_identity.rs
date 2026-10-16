@@ -22,7 +22,7 @@ fn resolved_request_context(
 ) -> Result<crate::diagnostics::RequestContext> {
     use crate::board::board_actor::{HarnessLabel, validate_actor_component};
 
-    let detected = native_harness(environment).or_else(|| process_harness(ancestors));
+    let detected = native_harness(environment, ancestors).or_else(|| process_harness(ancestors));
     let fallback = nonempty(environment.get("TRUFFLEPIG_AGENT_HARNESS"));
     if detected.is_none()
         && fallback
@@ -100,62 +100,75 @@ fn nonempty(value: Option<&String>) -> Option<String> {
     value.filter(|value| !value.is_empty()).cloned()
 }
 
-fn native_harness(environment: &HashMap<String, String>) -> Option<String> {
+/// Chooses among the native markers present. A nested harness inherits its
+/// parent's markers, so the nearest ancestor naming a marked harness wins;
+/// without one, the first marker in this order decides.
+fn native_harness(environment: &HashMap<String, String>, ancestors: &[String]) -> Option<String> {
     let has = |key: &str, value: &str| environment.get(key).is_some_and(|found| found == value);
+    let present = |key: &str| nonempty(environment.get(key)).is_some();
+    let mut marked: Vec<&'static str> = Vec::with_capacity(8);
     if has("GEMINI_CLI", "1") {
-        Some("gemini".to_owned())
-    } else if nonempty(environment.get("GROK_SESSION_ID")).is_some() {
-        Some("grok".to_owned())
-    } else if has("OMPCODE", "1") {
-        Some("omp".to_owned())
-    } else if has("OPENCODE", "1") {
-        Some("opencode".to_owned())
-    } else if has("CLAUDECODE", "1") || has("CLAUDE_CODE_CHILD_SESSION", "1") {
-        Some("claude".to_owned())
-    } else if ["CODEX_THREAD_ID", "CODEX_SESSION_ID", "CODEX_VERSION"]
-        .iter()
-        .any(|key| nonempty(environment.get(*key)).is_some())
-    {
-        Some("codex".to_owned())
-    } else if environment
-        .keys()
-        .any(|key| key.to_ascii_uppercase().contains("KIMI"))
-    {
-        Some("kimi".to_owned())
-    } else if environment
-        .keys()
-        .any(|key| key.to_ascii_uppercase().contains("MUSE"))
-    {
-        Some("muse".to_owned())
-    } else {
-        None
+        marked.push("gemini");
     }
+    if present("GROK_SESSION_ID") {
+        marked.push("grok");
+    }
+    if has("OMPCODE", "1") {
+        marked.push("omp");
+    }
+    if has("OPENCODE", "1") {
+        marked.push("opencode");
+    }
+    if has("CLAUDECODE", "1") || has("CLAUDE_CODE_CHILD_SESSION", "1") {
+        marked.push("claude");
+    }
+    if ["CODEX_THREAD_ID", "CODEX_SESSION_ID", "CODEX_VERSION"]
+        .iter()
+        .any(|key| present(key))
+    {
+        marked.push("codex");
+    }
+    // Only the documented session variables mark Kimi and Muse; other names
+    // under those prefixes, such as API keys or model settings, do not.
+    if present("KIMI_SESSION_ID") {
+        marked.push("kimi");
+    }
+    if present("MUSE_SESSION_ID") {
+        marked.push("muse");
+    }
+    ancestors
+        .iter()
+        .find_map(|comm| harness_for_process(comm).filter(|harness| marked.contains(harness)))
+        .or_else(|| marked.first().copied())
+        .map(str::to_owned)
 }
 
 fn process_harness(ancestors: &[String]) -> Option<String> {
     ancestors
         .iter()
-        .find_map(|comm| {
-            let lowered = comm.to_ascii_lowercase();
-            if lowered == "grok" || lowered.starts_with("grok-") {
-                Some("grok")
-            } else if lowered == "claude" {
-                Some("claude")
-            } else if lowered == "codex" || lowered.starts_with("codex-") {
-                Some("codex")
-            } else if lowered == "omp" {
-                Some("omp")
-            } else if lowered == "opencode" {
-                Some("opencode")
-            } else if lowered.starts_with("kimi") {
-                Some("kimi")
-            } else if lowered.starts_with("muse") {
-                Some("muse")
-            } else {
-                None
-            }
-        })
+        .find_map(|comm| harness_for_process(comm))
         .map(str::to_owned)
+}
+
+fn harness_for_process(comm: &str) -> Option<&'static str> {
+    let lowered = comm.to_ascii_lowercase();
+    if lowered == "grok" || lowered.starts_with("grok-") {
+        Some("grok")
+    } else if lowered == "claude" {
+        Some("claude")
+    } else if lowered == "codex" || lowered.starts_with("codex-") {
+        Some("codex")
+    } else if lowered == "omp" {
+        Some("omp")
+    } else if lowered == "opencode" {
+        Some("opencode")
+    } else if lowered.starts_with("kimi") {
+        Some("kimi")
+    } else if lowered.starts_with("muse") {
+        Some("muse")
+    } else {
+        None
+    }
 }
 
 fn native_session(environment: &HashMap<String, String>, harness: &str) -> Option<String> {
@@ -375,5 +388,67 @@ mod tests {
         assert_eq!(context.session, None);
         assert_eq!(context.diagnostic_session, None);
         assert_eq!(context.origin.unwrap().session, "unattributed");
+    }
+
+    #[test]
+    fn nearest_ancestor_decides_between_nested_harness_markers() {
+        let environment = environment(&[
+            ("CLAUDECODE", "1"),
+            ("TRUFFLEPIG_CLAUDE_SESSION", "claude-parent"),
+            ("CODEX_THREAD_ID", "codex-child"),
+        ]);
+        let codex_inside_claude = ["bash".to_owned(), "codex".to_owned(), "claude".to_owned()];
+        let context =
+            resolved_request_context(&arguments(&[]), &environment, &codex_inside_claude).unwrap();
+        assert_eq!(context.client.as_deref(), Some("codex"));
+        assert_eq!(context.session.as_deref(), Some("codex-child"));
+        assert_eq!(context.origin.unwrap().session, "codex-child");
+
+        let claude_inside_codex = ["bash".to_owned(), "claude".to_owned(), "codex".to_owned()];
+        let context =
+            resolved_request_context(&arguments(&[]), &environment, &claude_inside_codex).unwrap();
+        assert_eq!(context.client.as_deref(), Some("claude"));
+        assert_eq!(context.session.as_deref(), Some("claude-parent"));
+        let origin = context.origin.unwrap();
+        assert_eq!(origin.harness.as_str(), "claude");
+        assert_eq!(origin.session, "claude-parent");
+    }
+
+    #[test]
+    fn nested_markers_without_a_marked_ancestor_keep_the_fixed_order() {
+        let environment = environment(&[
+            ("CLAUDECODE", "1"),
+            ("TRUFFLEPIG_CLAUDE_SESSION", "claude-parent"),
+            ("CODEX_THREAD_ID", "codex-child"),
+        ]);
+        for ancestors in [&[][..], &["bash".to_owned(), "zsh".to_owned()][..]] {
+            let context =
+                resolved_request_context(&arguments(&[]), &environment, ancestors).unwrap();
+            assert_eq!(context.client.as_deref(), Some("claude"));
+            assert_eq!(context.session.as_deref(), Some("claude-parent"));
+        }
+    }
+
+    #[test]
+    fn unrelated_kimi_and_muse_variables_do_not_mark_a_shell() {
+        let environment = environment(&[("KIMI_API_KEY", "key"), ("MUSE_MODEL", "model")]);
+        let context = resolved_request_context(&arguments(&[]), &environment, &[]).unwrap();
+        assert_eq!(context.client, None);
+        assert!(context.origin.is_none());
+    }
+
+    #[test]
+    fn documented_kimi_and_muse_session_markers_detect_their_harness() {
+        let kimi = environment(&[("KIMI_SESSION_ID", "kimi-7")]);
+        let context = resolved_request_context(&arguments(&[]), &kimi, &[]).unwrap();
+        assert_eq!(context.client.as_deref(), Some("kimi"));
+        assert_eq!(context.session.as_deref(), Some("kimi-7"));
+        assert_eq!(context.origin.unwrap().harness.as_str(), "kimi");
+
+        let muse = environment(&[("MUSE_SESSION_ID", "muse-7")]);
+        let context = resolved_request_context(&arguments(&[]), &muse, &[]).unwrap();
+        assert_eq!(context.client.as_deref(), Some("muse"));
+        assert_eq!(context.session.as_deref(), Some("muse-7"));
+        assert_eq!(context.origin.unwrap().harness.as_str(), "muse");
     }
 }

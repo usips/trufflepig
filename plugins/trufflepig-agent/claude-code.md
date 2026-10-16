@@ -58,8 +58,7 @@ See [Claude environment variables](https://code.claude.com/docs/en/env-vars).
 Identity can come from explicit CLI `--session` or `TRUFFLEPIG_SESSION`, the
 native harness session, or `AGENT_SESSION_ID`. If none is present, the wrapper
 preserves the missing identity; it does not synthesize a harness/directory/day
-token or read a shared cwd Kimi/Muse marker. Missing environment files or hook
-I/O errors do not block startup.
+token. Missing environment files or hook I/O errors do not block startup.
 
 ## Search guidance and steering
 

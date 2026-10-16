@@ -1,9 +1,10 @@
 # Append to $KIMI_CODE_HOME/config.toml (default ~/.kimi-code/config.toml).
 # `install.sh --kimi-hooks` does this for you between marker comments.
-# The session hooks let trufflepig-agent tag every call with Kimi's session id
-# so `trufflepig-audit` can group calls per session. The PreToolUse hook steers
-# Grep/Glob and shell rg/grep/find searches toward trufflepig-agent inside indexed
-# checkouts (pipe filters and log reads are ignored): it blocks (exit 2) until
+# The session hooks only start the per-user router, best effort; they record no
+# identity. Kimi's session id comes from KIMI_SESSION_ID when it is exported.
+# The PreToolUse hook steers Grep/Glob and shell rg/grep/find searches toward
+# trufflepig-agent inside indexed checkouts (pipe filters and log reads are
+# ignored): it blocks (exit 2) until
 # trufflepig-agent has been used from the directory, then allows. Set
 # TRUFFLEPIG_AGENT_STEER=strict|nudge|off (or `install.sh --kimi --steer MODE`).
 

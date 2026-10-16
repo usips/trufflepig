@@ -128,14 +128,16 @@ search an explicit target; this does not establish compiler-equivalent binding.
 ## Attribution and audit
 
 `trufflepig-agent` defaults line output, detailed diagnostics, and a client label. Native markers
-and process ancestry select the harness before the fallback hint; detected harnesses cannot claim
+and process ancestry select the harness before the fallback hint. When several native markers are
+present, as in a nested harness that inherits its parent's markers, the nearest ancestor naming a
+marked harness wins. Kimi and Muse markers are their session variables, `KIMI_SESSION_ID` and
+`MUSE_SESSION_ID`, not any variable with that prefix. Detected harnesses cannot claim
 `human` or `cli`. Board actor session precedence is CLI `--session`, `TRUFFLEPIG_SESSION`, native
 provider ID, then `AGENT_SESSION_ID`; absent all, the actor session is unattributed. Origin preserves
 the observed harness/session despite a CLI session claim. Diagnostic baselines come only from
 explicit `--session` or `TRUFFLEPIG_SESSION`. Codex prefers `CODEX_THREAD_ID` over
-`CODEX_SESSION_ID`; Claude/omp/OpenCode integrations supply provider IDs per call. Kimi/Muse harness markers
-and ancestry detect the harness, but session-start markers do not supply actor identity. No
-cwd/date ID is synthesized. See [Claude integration](claude-code.md) and [omp integration](omp.md).
+`CODEX_SESSION_ID`; Claude/omp/OpenCode integrations supply provider IDs per call. The session-start
+hook records no identity. No cwd/date ID is synthesized. See [Claude integration](claude-code.md) and [omp integration](omp.md).
 
 Each call logs arguments, exit code, latency, byte count, coverage, truncation, and struggle
 signals. Board/feedback text is redacted. Logs use `$TRUFFLEPIG_AGENT_LOG_DIR`, otherwise
@@ -160,7 +162,7 @@ Audit follow-through is a heuristic, not evidence of task success or measured to
 ## Other harness hooks
 
 Kimi's optional `--kimi-hooks` and the Muse manifest use `hooks/session-start.sh`
-for attribution and best-effort daemon startup.
+for best-effort daemon startup. The hook writes no session state.
 
 `hooks/steer-search.py` steers ordinary search in checkouts of registered workspace members,
 including linked worktrees. It classifies each shell search (`definition`, `body`, `outline`,

@@ -5,9 +5,9 @@ Kimi Code discovers this skill under `$KIMI_CODE_HOME/skills` (default
 from the work brief. Read the shared plan-board skill for coordinator, lead,
 worker, reviewer, progress, and feedback steps.
 
-Use Kimi's shell and the checkout's `trufflepig-agent` wrapper. A native
-environment marker key containing `KIMI` or a Kimi process ancestor detects the
-harness and takes priority over the fallback hint. Check the returned actor with
+Use Kimi's shell and the checkout's `trufflepig-agent` wrapper. `KIMI_SESSION_ID`
+or a Kimi process ancestor detects the harness and takes priority over the
+fallback hint. Check the returned actor with
 `trufflepig-agent board hello`; never use `--client human` or `--client cli`.
 If neither native signal is available, set `TRUFFLEPIG_AGENT_HARNESS=kimi` for
 that call. If Kimi does not expose a unique native session ID, set a unique
