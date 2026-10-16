@@ -5,7 +5,7 @@ use std::{os::unix::net::UnixStream, sync::Arc};
 #[test]
 fn ensure_does_not_spawn_when_its_deadline_is_already_expired() {
     let spawn_called = std::cell::Cell::new(false);
-    let error = super::ensure_until(QueryDeadline::after(Duration::ZERO), Duration::ZERO, || {
+    let error = super::ensure_until(QueryDeadline::after(Duration::ZERO), Duration::ZERO, |_| {
         spawn_called.set(true);
         Err(anyhow::anyhow!("unexpected router spawn"))
     })
@@ -28,7 +28,7 @@ fn ensure_does_not_spawn_after_the_request_peer_disconnects() {
     drop(client_peer);
 
     let spawn_called = std::cell::Cell::new(false);
-    let error = super::ensure_until(deadline, Duration::from_secs(30), || {
+    let error = super::ensure_until(deadline, Duration::from_secs(30), |_| {
         spawn_called.set(true);
         Err(anyhow::anyhow!("unexpected router spawn"))
     })
@@ -204,7 +204,7 @@ fn ensure_waits_for_a_slow_spawned_router() {
     let process = SlowRouterProcess(std::cell::Cell::new(None));
     let spawned_before = crate::background_process::spawned_count();
     let started = Instant::now();
-    super::ensure_with(Duration::from_secs(10), || {
+    super::ensure_with(Duration::from_secs(10), |_| {
         let mut command = Command::new(std::env::current_exe()?);
         command
             .env(SERVER, "1")

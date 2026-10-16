@@ -123,7 +123,7 @@ const ROUTER_STATUS_PROBE: Duration = Duration::from_millis(250);
 /// binds its socket before it migrates, so the wait covers migration. Board
 /// configuration resolves lazily inside the spawned router, never here.
 pub fn ensure() -> Result<()> {
-    ensure_with(ROUTER_START_WAIT, start_router)
+    ensure_by(QueryDeadline::after(ROUTER_START_WAIT))
 }
 
 /// Ensures a router under the caller's absolute request deadline.
@@ -134,13 +134,15 @@ pub(crate) fn ensure_by(deadline: QueryDeadline) -> Result<()> {
 
 /// Starts the router through the installed unit when it owns this runtime
 /// directory, else as a detached `system-serve`.
-fn start_router() -> Result<managed_unit::RouterStart<'static>> {
+fn start_router(deadline: QueryDeadline) -> Result<managed_unit::RouterStart<'static>> {
     let dir = dir().context("system_unavailable: no runtime dir")?;
     let unit = managed_unit::installed_unit_text()?;
+    let systemctl_deadline = deadline.clone();
     managed_unit::start_router_with(
         unit.as_deref(),
         &dir,
-        managed_unit::run_systemctl,
+        &deadline,
+        move |args| managed_unit::run_systemctl(args, &systemctl_deadline),
         spawn_router,
     )
 }
@@ -155,7 +157,7 @@ fn spawn_router() -> Result<BackgroundChild> {
 
 fn ensure_with<'run>(
     start_wait: Duration,
-    start: impl FnOnce() -> Result<managed_unit::RouterStart<'run>>,
+    start: impl FnOnce(QueryDeadline) -> Result<managed_unit::RouterStart<'run>>,
 ) -> Result<()> {
     let deadline = QueryDeadline::after(start_wait);
     ensure_until(deadline, start_wait, start)
@@ -166,7 +168,7 @@ fn ensure_with<'run>(
 fn ensure_until<'run>(
     deadline: QueryDeadline,
     start_wait: Duration,
-    start: impl FnOnce() -> Result<managed_unit::RouterStart<'run>>,
+    start: impl FnOnce(QueryDeadline) -> Result<managed_unit::RouterStart<'run>>,
 ) -> Result<()> {
     let ping = ["system".to_owned(), "status".to_owned()];
     let context = RequestContext::new(None, None);
@@ -186,7 +188,7 @@ fn ensure_until<'run>(
             )
         })?;
         ensure_router_starting(deadline.clone(), start_wait)?;
-        Some(start()?)
+        Some(start(deadline.clone())?)
     };
     let (child, mut unit) = match started {
         Some(managed_unit::RouterStart::Child(child)) => (Some(child), None),

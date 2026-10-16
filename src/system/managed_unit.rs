@@ -2,19 +2,21 @@
 //! when that unit owns the router runtime directory, so no detached router races
 //! the unit for the daemon lock, and watches the unit while it starts.
 
-use crate::background_process::BackgroundChild;
+use crate::process_capture::{self, CaptureError};
+use crate::{background_process::BackgroundChild, daemon::deadline::QueryDeadline};
 use anyhow::{Context, Result, anyhow};
 use std::{
     ffi::OsString,
     fs,
     io::ErrorKind,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
     time::{Duration, Instant},
 };
 
 /// The user unit that `install.sh --systemd` renders.
 pub(super) const UNIT_NAME: &str = "trufflepig-system.service";
+const SYSTEMCTL_OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
 
 /// Least spacing between `systemctl show` reads while a unit start is awaited.
 const UNIT_STATE_PROBE: Duration = Duration::from_millis(250);
@@ -153,29 +155,49 @@ fn environment_words(value: &str) -> Vec<String> {
 pub(super) fn start_router_with<'run>(
     unit: Option<&str>,
     dir: &Path,
+    deadline: &QueryDeadline,
     mut run: impl FnMut(&[&str]) -> Result<String, String> + 'run,
     spawn: impl FnOnce() -> Result<BackgroundChild>,
 ) -> Result<RouterStart<'run>> {
+    ensure_startup_deadline(deadline)?;
     let owned = unit.and_then(unit_system_dir);
     if owned.as_deref() != Some(dir) {
+        ensure_startup_deadline(deadline)?;
         return spawn().map(RouterStart::Child);
     }
     // A unit that crash-looped is refused by systemd's start limit until reset;
     // the reset itself is best-effort, and the start below reports any failure.
-    let _ = run(&["--user", "reset-failed", UNIT_NAME]);
-    run(&["--user", "start", UNIT_NAME]).map_err(|detail| {
+    ensure_startup_deadline(deadline)?;
+    let reset = run(&["--user", "reset-failed", UNIT_NAME]);
+    ensure_startup_deadline(deadline)?;
+    let _ = reset;
+    let started = run(&["--user", "start", UNIT_NAME]);
+    ensure_startup_deadline(deadline)?;
+    started.map_err(|detail| {
         anyhow!(
             "system_unavailable: {UNIT_NAME} owns {} but `systemctl --user start` failed: {detail}; start it with `systemctl --user start {UNIT_NAME}`",
             dir.display()
         )
     })?;
     // A failed baseline read is not a failed start; the first watch read sets it.
-    let restarts = read_unit_state(&mut run).ok().map(|state| state.restarts);
+    ensure_startup_deadline(deadline)?;
+    let baseline = read_unit_state(&mut run).ok();
+    ensure_startup_deadline(deadline)?;
+    let restarts = baseline.map(|state| state.restarts);
     Ok(RouterStart::Unit(UnitWatch {
         systemctl: Box::new(run),
         restarts,
         checked: Instant::now(),
     }))
+}
+
+fn ensure_startup_deadline(deadline: &QueryDeadline) -> Result<()> {
+    if deadline.expired() {
+        return Err(anyhow!(
+            "system_unavailable: router startup deadline expired"
+        ));
+    }
+    Ok(())
 }
 
 /// Reads the unit's `ActiveState` and `NRestarts` with `systemctl show`.
@@ -206,19 +228,29 @@ pub(super) fn parse_unit_state(show: &str) -> Result<UnitState> {
 
 /// Runs `systemctl` with `args` and returns its stdout; a failure carries stderr,
 /// or the spawn error.
-pub(super) fn run_systemctl(args: &[&str]) -> Result<String, String> {
-    let output = Command::new("systemctl")
-        .args(args)
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|error| error.to_string())?;
-    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    if output.status.success() {
+pub(super) fn run_systemctl(args: &[&str], deadline: &QueryDeadline) -> Result<String, String> {
+    let mut command = Command::new("systemctl");
+    command.args(args);
+    run_command_until(&mut command, deadline)
+}
+
+/// Runs one owned subprocess, draining both pipes while bounding its wait.
+pub(super) fn run_command_until(
+    command: &mut Command,
+    deadline: &QueryDeadline,
+) -> Result<String, String> {
+    let captured = process_capture::capture(command, None, deadline, SYSTEMCTL_OUTPUT_LIMIT)
+        .map_err(|error| match error {
+            CaptureError::TimedOut => "startup deadline expired".to_owned(),
+            other => other.to_string(),
+        })?;
+    let stdout = String::from_utf8_lossy(&captured.stdout).into_owned();
+    if captured.status.success() {
         return Ok(stdout);
     }
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+    let stderr = String::from_utf8_lossy(&captured.stderr).trim().to_owned();
     Err(if stderr.is_empty() {
-        output.status.to_string()
+        captured.status.to_string()
     } else {
         stderr
     })

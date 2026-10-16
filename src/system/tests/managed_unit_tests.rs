@@ -3,6 +3,7 @@ use std::{
     cell::{Cell, RefCell},
     collections::VecDeque,
     path::Path,
+    process::Command,
     time::{Duration, Instant},
 };
 
@@ -146,6 +147,7 @@ fn owned_unit_starts_through_systemd_without_a_detached_spawn() {
     let started = managed_unit::start_router_with(
         Some(&unit),
         Path::new(SYSTEM_DIR),
+        &QueryDeadline::after(Duration::from_secs(5)),
         |args| {
             commands.borrow_mut().push(args.join(" "));
             if args.contains(&"reset-failed") {
@@ -185,6 +187,7 @@ fn unit_watch_reads_once_per_probe_and_reports_failure_or_restart() {
     let managed_unit::RouterStart::Unit(mut watch) = managed_unit::start_router_with(
         Some(&unit),
         Path::new(SYSTEM_DIR),
+        &QueryDeadline::after(Duration::from_secs(5)),
         |args| systemctl.run(args),
         || panic!("the unit owns this router"),
     )
@@ -227,6 +230,7 @@ fn assert_detached_spawn(unit: Option<&str>) {
     let error = managed_unit::start_router_with(
         unit,
         Path::new(SYSTEM_DIR),
+        &QueryDeadline::after(Duration::from_secs(5)),
         |_| {
             runner_called.set(true);
             Ok(String::new())
@@ -249,6 +253,7 @@ fn failed_unit_start_is_a_typed_error_and_never_spawns_detached() {
     let error = managed_unit::start_router_with(
         Some(&unit),
         Path::new(SYSTEM_DIR),
+        &QueryDeadline::after(Duration::from_secs(5)),
         |args| {
             if args.contains(&"start") {
                 Err("Failed to connect to bus: No medium found".into())
@@ -272,5 +277,163 @@ fn failed_unit_start_is_a_typed_error_and_never_spawns_detached() {
         format!(
             "system_unavailable: trufflepig-system.service owns {SYSTEM_DIR} but `systemctl --user start` failed: Failed to connect to bus: No medium found; start it with `systemctl --user start trufflepig-system.service`"
         )
+    );
+}
+
+#[test]
+fn managed_startup_does_not_start_after_reset_consumes_deadline() {
+    let unit = rendered_unit(SYSTEM_DIR);
+    let deadline = QueryDeadline::after(Duration::from_millis(100));
+    let commands = RefCell::new(Vec::new());
+    let error = managed_unit::start_router_with(
+        Some(&unit),
+        Path::new(SYSTEM_DIR),
+        &deadline,
+        |args| {
+            commands.borrow_mut().push(args.join(" "));
+            std::thread::sleep(Duration::from_millis(150));
+            Err("reset failed after consuming the startup budget".into())
+        },
+        || panic!("an expired managed start must not fall back to a detached spawn"),
+    )
+    .err()
+    .expect("an expired reset phase stops managed startup");
+
+    assert!(format!("{error:#}").contains("startup deadline expired"));
+    assert_eq!(
+        *commands.borrow(),
+        ["--user reset-failed trufflepig-system.service"],
+        "reset failure is ignored only while the deadline remains live"
+    );
+}
+
+#[test]
+fn managed_startup_does_not_show_after_start_consumes_deadline() {
+    let unit = rendered_unit(SYSTEM_DIR);
+    let deadline = QueryDeadline::after(Duration::from_millis(100));
+    let commands = RefCell::new(Vec::new());
+    let error = managed_unit::start_router_with(
+        Some(&unit),
+        Path::new(SYSTEM_DIR),
+        &deadline,
+        |args| {
+            commands.borrow_mut().push(args.join(" "));
+            if args.contains(&"start") {
+                std::thread::sleep(Duration::from_millis(150));
+            }
+            Ok(String::new())
+        },
+        || panic!("an expired managed start must not fall back to a detached spawn"),
+    )
+    .err()
+    .expect("an expired start phase stops managed startup");
+
+    assert!(format!("{error:#}").contains("startup deadline expired"));
+    assert_eq!(
+        *commands.borrow(),
+        [
+            "--user reset-failed trufflepig-system.service",
+            "--user start trufflepig-system.service",
+        ],
+        "systemctl show must not start after the deadline"
+    );
+}
+
+#[test]
+fn systemctl_command_drains_output_while_waiting() {
+    let mut command = Command::new("sh");
+    command.args([
+        "-c",
+        "head -c 131072 /dev/zero; head -c 131072 /dev/zero >&2",
+    ]);
+    let output = managed_unit::run_command_until(
+        &mut command,
+        &QueryDeadline::after(Duration::from_secs(5)),
+    )
+    .expect("the command exits after both pipes are drained");
+
+    assert_eq!(output.len(), 131072);
+}
+
+#[test]
+fn systemctl_command_bounds_descendant_pipe_and_reaps_owned_child() {
+    let scratch = crate::board::board_test_support::scratch("systemctl-deadline-");
+    let pid_path = scratch.path().join("parent-pid");
+    let marker_path = scratch.path().join("descendant-survived");
+    let mut command = Command::new("sh");
+    command
+        .args([
+            "-c",
+            "printf '%s' \"$$\" > \"$TRUFFLEPIG_TEST_PID_FILE\"; (sleep 0.3; printf alive > \"$TRUFFLEPIG_TEST_MARKER_FILE\") & exit 0",
+        ])
+        .env("TRUFFLEPIG_TEST_PID_FILE", &pid_path)
+        .env("TRUFFLEPIG_TEST_MARKER_FILE", &marker_path);
+    let deadline = QueryDeadline::after(Duration::from_millis(100));
+    let started = Instant::now();
+    let error = managed_unit::run_command_until(&mut command, &deadline)
+        .expect_err("the descendant retains the owned process's output pipes");
+
+    assert!(error.contains("startup deadline expired"), "{error}");
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "bounded descendant cleanup took {:?}",
+        started.elapsed()
+    );
+    let child_pid = std::fs::read_to_string(pid_path)
+        .expect("the owned child recorded its process id")
+        .parse::<libc::pid_t>()
+        .expect("the child process id is numeric");
+    let mut status = 0;
+    // SAFETY: this test targets the exact child PID, which the command helper
+    // must already have waited for before returning from the timeout.
+    let waited = unsafe { libc::waitpid(child_pid, &mut status, libc::WNOHANG) };
+    assert_eq!(waited, -1, "the child is no longer waitable by this test");
+    assert_eq!(
+        std::io::Error::last_os_error().raw_os_error(),
+        Some(libc::ECHILD),
+        "the helper reaped its owned child"
+    );
+    std::thread::sleep(Duration::from_millis(400));
+    assert!(
+        !marker_path.exists(),
+        "the descendant was killed with the process group before it could write"
+    );
+}
+
+#[test]
+fn systemctl_command_kills_and_reaps_owned_child_when_deadline_expires() {
+    let scratch = crate::board::board_test_support::scratch("systemctl-child-");
+    let pid_path = scratch.path().join("pid");
+    let mut command = Command::new("sh");
+    command
+        .args([
+            "-c",
+            "printf '%s' \"$$\" > \"$TRUFFLEPIG_TEST_PID_FILE\"; exec sleep 5",
+        ])
+        .env("TRUFFLEPIG_TEST_PID_FILE", &pid_path);
+    let deadline = QueryDeadline::after(Duration::from_millis(100));
+    let started = Instant::now();
+    let error = managed_unit::run_command_until(&mut command, &deadline)
+        .expect_err("the owned process exceeds the startup deadline");
+
+    assert!(error.contains("startup deadline expired"), "{error}");
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "bounded command wait took {:?}",
+        started.elapsed()
+    );
+    let child_pid = std::fs::read_to_string(pid_path)
+        .expect("the child recorded its process id")
+        .parse::<libc::pid_t>()
+        .expect("the child process id is numeric");
+    let mut status = 0;
+    // SAFETY: this test targets the exact child PID, which the command helper
+    // must already have waited for before returning from the timeout.
+    let waited = unsafe { libc::waitpid(child_pid, &mut status, libc::WNOHANG) };
+    assert_eq!(waited, -1, "the child is no longer waitable by this test");
+    assert_eq!(
+        std::io::Error::last_os_error().raw_os_error(),
+        Some(libc::ECHILD),
+        "the helper reaped its owned child"
     );
 }

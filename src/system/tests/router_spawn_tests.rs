@@ -61,7 +61,7 @@ fn running_router_answers_without_the_long_wait() {
     }
     let spawned_before = crate::background_process::spawned_count();
     let started = Instant::now();
-    let ensured = ensure_with(ROUTER_START_WAIT, || {
+    let ensured = ensure_with(ROUTER_START_WAIT, |_| {
         panic!("an answering router needs no spawn")
     });
     let elapsed = started.elapsed();
@@ -146,10 +146,11 @@ fn managed_start_waits_for_the_unit_router_without_a_child() {
     let ensured = ensure_until(
         QueryDeadline::after(Duration::from_secs(10)),
         Duration::from_secs(10),
-        || {
+        |deadline| {
             managed_unit::start_router_with(
                 Some(&unit),
                 &runtime,
+                &deadline,
                 |args| {
                     if args.contains(&"start") {
                         *worker.borrow_mut() = Some(std::thread::spawn(|| {
@@ -194,10 +195,11 @@ fn unit_that_fails_at_startup_bails_before_the_deadline() {
     let error = ensure_until(
         QueryDeadline::after(Duration::from_secs(10)),
         Duration::from_secs(10),
-        || {
+        |deadline| {
             managed_unit::start_router_with(
                 Some(&unit),
                 &runtime,
+                &deadline,
                 |args| systemctl.run(args),
                 || panic!("the unit owns this router; no detached spawn"),
             )
@@ -230,10 +232,11 @@ fn unit_that_keeps_restarting_bails_once_nrestarts_passes_its_baseline() {
     let error = ensure_until(
         QueryDeadline::after(Duration::from_secs(10)),
         Duration::from_secs(10),
-        || {
+        |deadline| {
             managed_unit::start_router_with(
                 Some(&unit),
                 &runtime,
+                &deadline,
                 |args| systemctl.run(args),
                 || panic!("the unit owns this router; no detached spawn"),
             )

@@ -1,15 +1,16 @@
 //! Read-only Git plumbing with bounded subprocess lifetime and output.
 
-use crate::identity::GitOid;
-use anyhow::{Context, Result, bail, ensure};
+use crate::{
+    daemon::deadline::QueryDeadline,
+    identity::GitOid,
+    process_capture::{self, CaptureError},
+};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use std::ffi::{OsStr, OsString};
-use std::io::{Read, Write};
-use std::os::fd::AsRawFd;
 use std::os::unix::ffi::OsStringExt;
-use std::os::unix::process::CommandExt;
 use std::path::{Component, Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
+use std::process::Command;
+use std::time::Duration;
 
 pub const MAX_BLOB_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
@@ -408,29 +409,6 @@ fn filter_overrides(directory: &Path) -> Result<Vec<(OsString, &'static str)>> {
     Ok(overrides)
 }
 
-struct ProcessGroup(Child);
-
-impl Drop for ProcessGroup {
-    fn drop(&mut self) {
-        // Every subprocess is its own process group; descendants cannot retain pipes.
-        unsafe {
-            libc::kill(-(self.0.id() as i32), libc::SIGKILL);
-        }
-        let _ = self.0.wait();
-    }
-}
-
-fn nonblocking(pipe: &impl AsRawFd) -> Result<()> {
-    let descriptor = pipe.as_raw_fd();
-    let flags = unsafe { libc::fcntl(descriptor, libc::F_GETFL) };
-    ensure!(
-        flags >= 0
-            && unsafe { libc::fcntl(descriptor, libc::F_SETFL, flags | libc::O_NONBLOCK) } >= 0,
-        "configure Git pipe"
-    );
-    Ok(())
-}
-
 fn collect_process(
     mut command: Command,
     input: Option<&[u8]>,
@@ -438,108 +416,38 @@ fn collect_process(
     limit: usize,
     strict: bool,
 ) -> Result<Vec<u8>> {
-    command
-        .stdin(if input.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .process_group(0);
-    let mut child = ProcessGroup(command.spawn().context("start Git plumbing")?);
-    let mut stdout = child.0.stdout.take().context("Git stdout unavailable")?;
-    let mut stderr = child.0.stderr.take().context("Git stderr unavailable")?;
-    let mut stdin = child.0.stdin.take();
-    nonblocking(&stdout)?;
-    nonblocking(&stderr)?;
-    if let Some(pipe) = &stdin {
-        nonblocking(pipe)?;
-    }
-    let mut remaining = input.unwrap_or_default();
-    let mut output = Vec::with_capacity(8192.min(limit));
-    let mut errors = Vec::with_capacity(1024.min(limit));
-    let mut stdout_closed = false;
-    let mut stderr_closed = false;
-    let start = Instant::now();
-    loop {
-        ensure!(start.elapsed() < timeout, "Git plumbing timed out");
-        if let Some(pipe) = &mut stdin {
-            match pipe.write(remaining) {
-                Ok(count) => remaining = &remaining[count..],
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
-                Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => remaining = &[],
-                Err(error) => return Err(error.into()),
-            }
-            if remaining.is_empty() {
-                stdin = None;
-            }
-        }
-        drain_pipe(
-            &mut stdout,
-            &mut output,
-            &mut stdout_closed,
-            limit.saturating_sub(errors.len()),
-        )?;
-        drain_pipe(
-            &mut stderr,
-            &mut errors,
-            &mut stderr_closed,
-            limit.saturating_sub(output.len()),
-        )?;
-        if let Some(status) = child.0.try_wait()? {
-            if stdout_closed && stderr_closed {
-                if !status.success() {
-                    bail!(
-                        "Git plumbing failed: {}",
-                        String::from_utf8_lossy(&errors[..errors.len().min(2048)])
-                    );
+    let captured =
+        process_capture::capture(&mut command, input, &QueryDeadline::after(timeout), limit)
+            .map_err(|error| match error {
+                CaptureError::Spawn(source) => anyhow!(source).context("start Git plumbing"),
+                CaptureError::MissingPipe("stdout") => anyhow!("Git stdout unavailable"),
+                CaptureError::MissingPipe("stderr") => anyhow!("Git stderr unavailable"),
+                CaptureError::MissingPipe(_) => anyhow!("Git stdin unavailable"),
+                CaptureError::ConfigurePipe(source) => {
+                    anyhow!(source).context("configure Git pipe")
                 }
-                ensure!(
-                    !strict || errors.is_empty(),
-                    "Git plumbing warning prevents a complete scan: {}",
-                    String::from_utf8_lossy(&errors[..errors.len().min(2048)])
-                );
-                return Ok(output);
-            }
-        }
-        std::thread::sleep(Duration::from_millis(2));
+                CaptureError::Io(source) => anyhow!(source),
+                CaptureError::TimedOut => anyhow!("Git plumbing timed out"),
+                CaptureError::OutputLimit => anyhow!("Git output exceeds resource limit"),
+            })?;
+    if !captured.status.success() {
+        bail!(
+            "Git plumbing failed: {}",
+            String::from_utf8_lossy(&captured.stderr[..captured.stderr.len().min(2048)])
+        );
     }
-}
-
-fn drain_pipe(
-    pipe: &mut impl Read,
-    output: &mut Vec<u8>,
-    closed: &mut bool,
-    limit: usize,
-) -> Result<()> {
-    let mut buffer = [0; 8192];
-    // Bound work per tick so a continuously producing child cannot defeat timeout.
-    for _ in 0..32 {
-        match pipe.read(&mut buffer) {
-            Ok(0) => {
-                *closed = true;
-                break;
-            }
-            Ok(count) => {
-                ensure!(
-                    output.len().saturating_add(count) <= limit,
-                    "Git output exceeds resource limit"
-                );
-                output.reserve(count);
-                output.extend_from_slice(&buffer[..count]);
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
-            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-            Err(error) => return Err(error.into()),
-        }
-    }
-    Ok(())
+    ensure!(
+        !strict || captured.stderr.is_empty(),
+        "Git plumbing warning prevents a complete scan: {}",
+        String::from_utf8_lossy(&captured.stderr[..captured.stderr.len().min(2048)])
+    );
+    Ok(captured.stdout)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{io::Write, process::Stdio, time::Instant};
 
     #[test]
     fn bounded_git_rejects_symbolic_ref_writes_and_arbitrary_git_dirs() {

@@ -8,6 +8,7 @@ pub mod history;
 pub mod identity;
 pub mod output;
 pub mod probes;
+pub(crate) mod process_capture;
 pub mod results;
 pub mod search;
 pub mod semantic;
