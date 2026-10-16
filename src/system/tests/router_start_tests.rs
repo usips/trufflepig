@@ -54,6 +54,7 @@ fn ensure_reports_a_running_router_despite_unresolvable_board_database() {
             .env("TRUFFLEPIG_BOARD_DB", "relative.sqlite3")
             .env("TRUFFLEPIG_SYSTEM_DIR", directory.path().join("runtime"))
             .env("TRUFFLEPIG_SPOOL_DIR", directory.path().join("spool"))
+            .env("XDG_CONFIG_HOME", directory.path().join("config"))
             .args([
                 "system::tests::router_start_tests::ensure_reports_a_running_router_despite_unresolvable_board_database",
                 "--exact",
@@ -210,7 +211,7 @@ fn ensure_waits_for_a_slow_spawned_router() {
             .args([TEST, "--exact", "--nocapture"]);
         let child = spawn_background(&mut command)?;
         process.0.set(Some(child.id()));
-        Ok(child)
+        Ok(managed_unit::RouterStart::Child(child))
     })
     .unwrap();
     assert_eq!(
@@ -267,7 +268,7 @@ fn ensure_gives_up_after_the_cap() {
     let cap = Duration::from_millis(300);
     let _worker = std::thread::spawn(crate::system::serve);
     let started = Instant::now();
-    let error = super::ensure_with(cap, super::spawn_router).unwrap_err();
+    let error = super::ensure_with(cap, super::start_router).unwrap_err();
     assert!(
         error
             .to_string()

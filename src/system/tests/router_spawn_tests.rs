@@ -83,7 +83,7 @@ fn initial_status_probe_leaves_time_for_spawn() {
     // A fresh but undrained spool must not consume the whole startup cap.
     let _spool = daemon::spool::SpoolServer::open(&spool_dir()).unwrap();
     let spawned_before = crate::background_process::spawned_count();
-    let _error = ensure_with(Duration::from_secs(2), spawn_router).unwrap_err();
+    let _error = ensure_with(Duration::from_secs(2), start_router).unwrap_err();
     assert_eq!(
         crate::background_process::spawned_count() - spawned_before,
         1,
@@ -119,4 +119,134 @@ fn status_probe_uses_spool_without_a_runtime_directory() {
     stopped.store(true, Ordering::Release);
     worker.join().unwrap();
     assert_eq!(reply.unwrap().as_deref(), Some("spool router is ready"));
+}
+
+fn unit_owning(runtime: &std::path::Path) -> String {
+    format!(
+        "[Service]\nEnvironment=\"TRUFFLEPIG_SYSTEM_DIR={}\"\n",
+        runtime.display()
+    )
+}
+
+#[test]
+fn managed_start_waits_for_the_unit_router_without_a_child() {
+    if isolated_router_test("managed_start_waits_for_the_unit_router_without_a_child") {
+        return;
+    }
+    let runtime = dir().unwrap();
+    let unit = unit_owning(&runtime);
+    // The first baseline read fails, which is not a failed start; the router
+    // binds 600 ms after the unit start, so the watch reads `activating` first.
+    let systemctl = super::managed_unit_tests::FakeSystemctl::new([
+        Err("Failed to connect to bus"),
+        Ok("ActiveState=activating\nNRestarts=0"),
+    ]);
+    let worker = std::cell::RefCell::new(None);
+    let spawned_before = crate::background_process::spawned_count();
+    let ensured = ensure_until(
+        QueryDeadline::after(Duration::from_secs(10)),
+        Duration::from_secs(10),
+        || {
+            managed_unit::start_router_with(
+                Some(&unit),
+                &runtime,
+                |args| {
+                    if args.contains(&"start") {
+                        *worker.borrow_mut() = Some(std::thread::spawn(|| {
+                            std::thread::sleep(Duration::from_millis(600));
+                            serve()
+                        }));
+                    }
+                    systemctl.run(args)
+                },
+                || panic!("the unit owns this router; no detached spawn"),
+            )
+        },
+    );
+    let spawned = crate::background_process::spawned_count() - spawned_before;
+    ensured.unwrap();
+    assert_eq!(spawned, 0, "a unit-owned start spawns no detached router");
+    assert!(
+        systemctl.show_count() >= 1,
+        "the watch read the unit while it was activating"
+    );
+    daemon::stop(&runtime).unwrap();
+    worker
+        .into_inner()
+        .expect("the unit start ran the router")
+        .join()
+        .unwrap()
+        .unwrap();
+}
+
+#[test]
+fn unit_that_fails_at_startup_bails_before_the_deadline() {
+    if isolated_router_test("unit_that_fails_at_startup_bails_before_the_deadline") {
+        return;
+    }
+    let runtime = dir().unwrap();
+    let unit = unit_owning(&runtime);
+    let systemctl = super::managed_unit_tests::FakeSystemctl::new([
+        Ok("ActiveState=activating\nNRestarts=0"),
+        Ok("ActiveState=failed\nNRestarts=0"),
+    ]);
+    let started = Instant::now();
+    let error = ensure_until(
+        QueryDeadline::after(Duration::from_secs(10)),
+        Duration::from_secs(10),
+        || {
+            managed_unit::start_router_with(
+                Some(&unit),
+                &runtime,
+                |args| systemctl.run(args),
+                || panic!("the unit owns this router; no detached spawn"),
+            )
+        },
+    )
+    .unwrap_err();
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < Duration::from_secs(5),
+        "a failed unit bails before the 10 s deadline: {elapsed:?}"
+    );
+    assert_eq!(
+        format!("{error:#}"),
+        "system_unavailable: trufflepig-system.service did not start (ActiveState=failed, NRestarts=0); see `journalctl --user -u trufflepig-system.service`"
+    );
+}
+
+#[test]
+fn unit_that_keeps_restarting_bails_once_nrestarts_passes_its_baseline() {
+    if isolated_router_test("unit_that_keeps_restarting_bails_once_nrestarts_passes_its_baseline") {
+        return;
+    }
+    let runtime = dir().unwrap();
+    let unit = unit_owning(&runtime);
+    let systemctl = super::managed_unit_tests::FakeSystemctl::new([
+        Ok("ActiveState=activating\nNRestarts=0"),
+        Ok("ActiveState=activating\nNRestarts=1"),
+    ]);
+    let started = Instant::now();
+    let error = ensure_until(
+        QueryDeadline::after(Duration::from_secs(10)),
+        Duration::from_secs(10),
+        || {
+            managed_unit::start_router_with(
+                Some(&unit),
+                &runtime,
+                |args| systemctl.run(args),
+                || panic!("the unit owns this router; no detached spawn"),
+            )
+        },
+    )
+    .unwrap_err();
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < Duration::from_secs(5),
+        "a crash-looping unit bails before the 10 s deadline: {elapsed:?}"
+    );
+    assert!(
+        format!("{error:#}").contains("(ActiveState=activating, NRestarts=1)"),
+        "{error:#}"
+    );
 }

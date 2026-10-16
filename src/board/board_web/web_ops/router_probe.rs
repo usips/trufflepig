@@ -48,7 +48,7 @@ pub(super) fn startup_probe(
                         ));
                     }
                     return Err(unavailable(format!(
-                        "board database schema version {version} awaits migration to {SCHEMA_VERSION}; start trufflepig system ensure with the current binary"
+                        "board database schema version {version} awaits migration to {SCHEMA_VERSION}; run `trufflepig system ensure` with the current binary"
                     )));
                 }
                 let pause = migration_deadline.cap(ROUTER_MIGRATION_POLL);
@@ -183,7 +183,7 @@ pub(super) fn ingest_via(
     // Ingestion runs on the router, which owns migration; schema is not consulted.
     if probe_router(database, deadline.clone(), exchange)?.is_none() {
         return Err(unavailable(
-            "router is unavailable; start trufflepig system ensure",
+            "router is unavailable; run `trufflepig system ensure`",
         ));
     }
     if deadline.expired() {

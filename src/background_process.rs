@@ -40,7 +40,7 @@ impl BackgroundOwner {
         match self {
             Self::Command => "rerun the command with the current trufflepig binary",
             Self::SystemRouter => {
-                "restart the owning unit with `systemctl --user restart trufflepig-system.service`; if detached, stop this router with `trufflepig system stop` and run `trufflepig system ensure`"
+                "restart the owning unit with `systemctl --user restart trufflepig-system.service`; if detached, stop the detached router with `trufflepig system stop`, then run `trufflepig system ensure` (which starts the managed unit when it is installed)"
             }
             Self::RootDaemon => {
                 "restart the owning systemd unit, or stop the detached root daemon for this cache and retry with the current trufflepig binary"

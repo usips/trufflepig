@@ -30,11 +30,14 @@ every step, and with no absolute candidate there is no directory
 For source operations, the router forwards requests to the owning workspace coordinator or per-root
 daemon, starting a missing target and proxying the reply within 28 s
 (`src/daemon.rs:PROXY_REPLY_WAIT`), spawn wait included. Router replies, including
-`timed_out` errors, remain answers. An unreachable router, a `daemon_unavailable`
-reply (the owner could not be reached or started), or a locally expired
-file-spool deadline falls back to the per-root/coordinator path, then local
-dispatch (`src/cli.rs:run_with_context`). Daemons issue their
-own sub-requests (workspace owner verbs, member `semantic` commands) directly
+`timed_out` errors, remain answers. An unreachable router gets one `system ensure`
+attempt within the client's 30 s budget, then one retry (`src/cli/client_command.rs`).
+That attempt starts the router through the installed unit when the unit owns the
+router directory, else as a detached `system-serve` (`src/system/managed_unit.rs`).
+A request still unanswered, a `daemon_unavailable` reply (the owner could not be
+reached or started), or a locally expired file-spool deadline falls back to the
+per-root/coordinator path, then local dispatch (`src/cli.rs:run_with_context`). Daemons
+issue their own sub-requests (workspace owner verbs, member `semantic` commands) directly
 (`src/cli.rs:run_direct`), never through the router that may still be proxying
 the request, and wait for them only within the request's query deadline. `stop`,
 `index`, `init`, `ws`, `semantic status`, `semantic-check`, the `*-serve` verbs, and
@@ -43,10 +46,11 @@ stop` shuts it down, `system status` reports if it runs, `system prune` evicts
 caches for vanished roots immediately, and `system-serve` serves it in the
 foreground. The agent plugin ships a systemd user unit (`install.sh
 --systemd`) that keeps the router running and restarts it on failure. Service stop/restart
-includes its child daemons so binary upgrades do not retain old processes; its
-session-start hook starts that service, or straps a detached router when the unit is
-absent. Installation treats a refused Unix-socket connection as an absent unmanaged
-router; managed service readiness still requires a live compatible reply
+includes its child daemons so binary upgrades do not retain old processes. The
+session-start hook starts that service when it is enabled, else runs `system ensure`.
+`system ensure` starts a detached router only when no installed unit owns the router
+directory, as with an isolated `TRUFFLEPIG_SYSTEM_DIR` router. Installation treats a
+refused Unix-socket connection as an absent unmanaged router; managed service readiness still requires a live compatible reply
 (`plugins/trufflepig-agent/scripts/install_agent.py:router_endpoint_present`).
 A sandbox whose seccomp filter denies unix-socket connects (Muse's does) cannot
 reach any socket. Its read-only cache can block indexed `--no-daemon` operations;
@@ -137,9 +141,15 @@ expired, the router reports `timed_out` before classification.
 28 s, then rejects queued work and returns so the daemon process exits; requests
 still running at that point may lose their reply. Liveness checks connect to the
 socket (`src/daemon.rs:running`) and never touch the startup lock. `system
-ensure` uses one absolute 120 s startup deadline for status probes, spawn, and
+ensure` uses one absolute 120 s startup deadline for status probes, the start, and
 socket/spool polling. Its initial status probe waits at most 250 ms; a bound
-router then gets the remaining startup budget without a second spawn. Polling
+router then gets the remaining startup budget without a second start. A unit-owned
+start runs `systemctl --user reset-failed` (failure ignored) then `systemctl --user
+start`; a start failure is `system_unavailable` and never falls back to a detached
+spawn. Without a child handle the poll reads `ActiveState` and `NRestarts` through `systemctl
+--user show` at most every 250 ms, and a `failed` or `inactive` unit, or a restart count above its
+start baseline, fails at once with `system_unavailable` unless the router answers; failed reads are
+ignored. Polling
 uses the spool even when no socket runtime directory resolves. It starts no
 probe or process after expiry and reports
 `system_unavailable: router still starting after 120 s`. Clients allow at most
@@ -168,8 +178,11 @@ On Linux, `router_binary_replaced` identifies the owning process, executable, an
 cache (`src/background_process.rs`). Repair only that owner. Rerun a replaced
 foreground command with the current binary. Restart the router's owning unit with
 `systemctl --user restart trufflepig-system.service`, or for a detached router run
-`system stop` then `system ensure`. For a root or coordinator owner, restart its
-unit or stop its detached daemon with that root and cache before retrying. Very long cache paths can exceed Unix socket limits; use a shorter
+`trufflepig system stop` then `trufflepig system ensure`. A detached router holding the
+daemon lock while the unit is installed blocks the unit: stop it with `trufflepig system
+stop` (or kill its PID), then run `systemctl --user restart trufflepig-system.service`.
+For a root or coordinator owner, restart its unit or stop its detached daemon with that
+root and cache before retrying. Very long cache paths can exceed Unix socket limits; use a shorter
 `--cache` path. Watcher fallback and resource limits are documented in the
 [index contract](index-contract.md).
 

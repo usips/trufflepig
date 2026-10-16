@@ -1,4 +1,5 @@
 mod board_marker_tests;
+mod managed_unit_tests;
 mod router_spawn_tests;
 mod router_start_tests;
 mod router_status_tests;

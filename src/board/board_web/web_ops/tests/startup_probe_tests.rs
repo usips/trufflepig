@@ -237,7 +237,7 @@ fn startup_refuses_a_stale_file_after_the_migration_wait() {
     for (answered, advice) in [
         (
             None,
-            "start trufflepig system ensure with the current binary",
+            "run `trufflepig system ensure` with the current binary",
         ),
         (
             Some(unmigrated.clone()),

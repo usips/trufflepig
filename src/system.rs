@@ -2,6 +2,7 @@
 //! Each request is proxied on its own worker, bounded by `daemon::PROXY_REPLY_WAIT`.
 
 mod board_runtime;
+mod managed_unit;
 mod route;
 pub mod sweep;
 
@@ -122,13 +123,26 @@ const ROUTER_STATUS_PROBE: Duration = Duration::from_millis(250);
 /// binds its socket before it migrates, so the wait covers migration. Board
 /// configuration resolves lazily inside the spawned router, never here.
 pub fn ensure() -> Result<()> {
-    ensure_with(ROUTER_START_WAIT, spawn_router)
+    ensure_with(ROUTER_START_WAIT, start_router)
 }
 
 /// Ensures a router under the caller's absolute request deadline.
 pub(crate) fn ensure_by(deadline: QueryDeadline) -> Result<()> {
     let start_wait = deadline.cap(ROUTER_START_WAIT);
-    ensure_until(deadline.capped(ROUTER_START_WAIT), start_wait, spawn_router)
+    ensure_until(deadline.capped(ROUTER_START_WAIT), start_wait, start_router)
+}
+
+/// Starts the router through the installed unit when it owns this runtime
+/// directory, else as a detached `system-serve`.
+fn start_router() -> Result<managed_unit::RouterStart<'static>> {
+    let dir = dir().context("system_unavailable: no runtime dir")?;
+    let unit = managed_unit::installed_unit_text()?;
+    managed_unit::start_router_with(
+        unit.as_deref(),
+        &dir,
+        managed_unit::run_systemctl,
+        spawn_router,
+    )
 }
 
 fn spawn_router() -> Result<BackgroundChild> {
@@ -139,18 +153,20 @@ fn spawn_router() -> Result<BackgroundChild> {
     spawn_background_for(&mut command, &executable, "system router", &cache)
 }
 
-fn ensure_with(
+fn ensure_with<'run>(
     start_wait: Duration,
-    spawn: impl FnOnce() -> Result<BackgroundChild>,
+    start: impl FnOnce() -> Result<managed_unit::RouterStart<'run>>,
 ) -> Result<()> {
     let deadline = QueryDeadline::after(start_wait);
-    ensure_until(deadline, start_wait, spawn)
+    ensure_until(deadline, start_wait, start)
 }
 
-fn ensure_until(
+/// Starts the router with `start`, then polls its status. A detached child is
+/// watched for exit; an installed unit is watched through its systemd state.
+fn ensure_until<'run>(
     deadline: QueryDeadline,
     start_wait: Duration,
-    spawn: impl FnOnce() -> Result<BackgroundChild>,
+    start: impl FnOnce() -> Result<managed_unit::RouterStart<'run>>,
 ) -> Result<()> {
     let ping = ["system".to_owned(), "status".to_owned()];
     let context = RequestContext::new(None, None);
@@ -159,7 +175,7 @@ fn ensure_until(
     }
     ensure_router_starting(deadline.clone(), start_wait)?;
     let dir = dir().context("system_unavailable: no runtime dir")?;
-    let child = if daemon::running_by(&dir, &deadline)? {
+    let started = if daemon::running_by(&dir, &deadline)? {
         None
     } else {
         ensure_router_starting(deadline.clone(), start_wait)?;
@@ -170,7 +186,12 @@ fn ensure_until(
             )
         })?;
         ensure_router_starting(deadline.clone(), start_wait)?;
-        Some(spawn()?)
+        Some(start()?)
+    };
+    let (child, mut unit) = match started {
+        Some(managed_unit::RouterStart::Child(child)) => (Some(child), None),
+        Some(managed_unit::RouterStart::Unit(unit)) => (None, Some(unit)),
+        None => (None, None),
     };
     loop {
         ensure_router_starting(deadline.clone(), start_wait)?;
@@ -187,6 +208,13 @@ fn ensure_until(
                 "system_unavailable: system router for cache {} did not start",
                 dir.display()
             );
+        }
+        // A unit that failed or crash-loops has no child to exit, so its state
+        // decides the start; a router that already answers is left to the poll.
+        if let Some(state) = unit.as_mut().and_then(|unit| unit.failure(Instant::now()))
+            && !daemon::running_by(&dir, &deadline)?
+        {
+            return Err(managed_unit::did_not_start(&state));
         }
         std::thread::sleep(Duration::from_millis(25).min(deadline.remaining()));
     }
