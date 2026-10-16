@@ -2,7 +2,10 @@
 
 use super::{dir, record_board_database};
 use crate::{
-    background_process::{BackgroundChild, spawn_background},
+    background_process::{
+        BackgroundChild, BackgroundOwner, background_executable_replaced,
+        current_background_executable, spawn_background_for,
+    },
     cli::normalized_args,
     daemon::{self, deadline::QueryDeadline},
     diagnostics::RequestContext,
@@ -31,7 +34,20 @@ pub(super) fn route(
             "status": "ok",
             "board_api": crate::board::BOARD_API,
             "schema_supported": crate::board::SCHEMA_VERSION,
+            "process_id": std::process::id(),
         });
+        match std::env::current_exe() {
+            Ok(executable) => {
+                status["executable"] = serde_json::json!(executable.display().to_string());
+                status["executable_replaced"] =
+                    serde_json::json!(background_executable_replaced(&executable));
+            }
+            Err(error) => {
+                status["executable"] = serde_json::Value::Null;
+                status["executable_replaced"] = serde_json::Value::Null;
+                status["executable_error"] = serde_json::json!(error.to_string());
+            }
+        }
         // Board fields are best-effort: status must outlive a broken board
         // configuration, an unwritable pin, or an absent database.
         match board.database_path() {
@@ -61,16 +77,36 @@ pub(super) fn route(
             refuse_router_stop(&cache)?;
             return daemon::stop(&cache);
         }
-        if let Some(reply) = daemon::request_by(&cache, &args, &context, forwarding)? {
+        if let Some(reply) = daemon::request_by(&cache, &args, &context, forwarding.clone())? {
             return Ok(reply);
         }
         let mut server = options.clone();
         server.words = vec!["workspace-serve".into()];
         server.member = None;
-        let mut command = Command::new(std::env::current_exe()?);
+        fs::create_dir_all(&cache).map_err(|error| {
+            let context = anyhow::Error::new(error).context(format!(
+                "daemon_cache_create_failed: cannot create workspace daemon cache {}",
+                cache.display()
+            ));
+            crate::store::index_cache_unavailable(&cache, context)
+        })?;
+        let executable = current_background_executable(&cache, BackgroundOwner::SystemRouter)?;
+        let mut command = Command::new(&executable);
         command.args(normalized_args(&server, &server.root));
-        let child = spawn_background(&mut command)?;
-        return forward_spawned(&cache, &args, &context, &child, forwarding);
+        ensure!(
+            !forwarding.expired(),
+            "{}: query deadline expired",
+            daemon::deadline::TIMED_OUT
+        );
+        let child = spawn_background_for(&mut command, &executable, "workspace daemon", &cache)?;
+        return forward_spawned(
+            &cache,
+            &args,
+            &context,
+            &child,
+            forwarding,
+            "workspace daemon",
+        );
     }
     let root = options
         .root
@@ -81,10 +117,16 @@ pub(super) fn route(
         refuse_router_stop(&cache)?;
         return daemon::stop(&cache);
     }
-    if let Some(reply) = daemon::request_by(&cache, &args, &context, forwarding)? {
+    if let Some(reply) = daemon::request_by(&cache, &args, &context, forwarding.clone())? {
         return Ok(reply);
     }
-    fs::create_dir_all(&cache)?;
+    fs::create_dir_all(&cache).map_err(|error| {
+        let context = anyhow::Error::new(error).context(format!(
+            "daemon_cache_create_failed: cannot create root daemon cache {}",
+            cache.display()
+        ));
+        crate::store::index_cache_unavailable(&cache, context)
+    })?;
     let history_cache = options.resolved_history_cache.clone().or_else(|| {
         crate::history::worker::resolve_cache(
             &root,
@@ -93,7 +135,8 @@ pub(super) fn route(
         )
         .ok()
     });
-    let mut command = Command::new(std::env::current_exe()?);
+    let executable = current_background_executable(&cache, BackgroundOwner::SystemRouter)?;
+    let mut command = Command::new(&executable);
     if let Some(history_cache) = history_cache {
         command.arg("--resolved-history-cache").arg(history_cache);
     }
@@ -101,15 +144,19 @@ pub(super) fn route(
         .arg("--no-workspace")
         .arg("--diagnostics")
         .arg(&options.diagnostics);
-    let child = spawn_background(
-        command
-            .arg("--root")
-            .arg(&root)
-            .arg("--cache")
-            .arg(&cache)
-            .arg("serve"),
-    )?;
-    forward_spawned(&cache, &args, &context, &child, forwarding)
+    command
+        .arg("--root")
+        .arg(&root)
+        .arg("--cache")
+        .arg(&cache)
+        .arg("serve");
+    ensure!(
+        !forwarding.expired(),
+        "{}: query deadline expired",
+        daemon::deadline::TIMED_OUT
+    );
+    let child = spawn_background_for(&mut command, &executable, "root daemon", &cache)?;
+    forward_spawned(&cache, &args, &context, &child, forwarding, "root daemon")
 }
 
 /// Best-effort read of the board database's storage schema; absent or
@@ -138,16 +185,30 @@ fn forward_spawned(
     context: &RequestContext,
     child: &BackgroundChild,
     forwarding: QueryDeadline,
+    role: &str,
 ) -> Result<String> {
+    ensure!(
+        !forwarding.expired(),
+        "{}: query deadline expired",
+        daemon::deadline::TIMED_OUT
+    );
     let deadline = Instant::now() + forwarding.cap(Duration::from_secs(3));
     while Instant::now() < deadline {
-        if let Some(reply) = daemon::request_by(cache, args, context, forwarding)? {
+        if let Some(reply) = daemon::request_by(cache, args, context, forwarding.clone())? {
             return Ok(reply);
         }
-        if daemon::spawn_failed(child, cache) {
+        if child.exited() && !daemon::running_by(cache, &forwarding)? {
             break;
         }
-        std::thread::sleep(Duration::from_millis(25));
+        std::thread::sleep(Duration::from_millis(25).min(forwarding.remaining()));
     }
-    bail!("daemon_unavailable: target did not start")
+    ensure!(
+        !forwarding.expired(),
+        "{}: query deadline expired",
+        daemon::deadline::TIMED_OUT
+    );
+    bail!(
+        "daemon_unavailable: {role} for cache {} did not start",
+        cache.display()
+    )
 }

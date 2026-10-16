@@ -386,18 +386,26 @@ fn board_pending_waits_for_slow_existing_router_without_startup() -> anyhow::Res
 
     let args = ["board", "pending"].map(str::to_owned);
     let context = crate::diagnostics::RequestContext::new(None, None);
-    let output = super::super::client_command::request_pending(&args, &context, false, || {
-        Some(directory.path().to_owned())
-    });
+    let output = super::super::client_command::request_pending(
+        &args,
+        &context,
+        false,
+        || Some(directory.path().to_owned()),
+        crate::daemon::deadline::QueryDeadline::after(Duration::from_secs(2)),
+    );
     let responder_result = responder.join().expect("router responder thread panicked");
     assert_eq!(output?, "pending notices");
     responder_result?;
 
     let absent = tempfile::tempdir()?;
     let absent_socket = absent.path().join(crate::daemon::SOCKET_NAME);
-    let error = super::super::client_command::request_pending(&args, &context, false, || {
-        Some(absent.path().to_owned())
-    })
+    let error = super::super::client_command::request_pending(
+        &args,
+        &context,
+        false,
+        || Some(absent.path().to_owned()),
+        crate::daemon::deadline::QueryDeadline::after(Duration::from_secs(1)),
+    )
     .unwrap_err()
     .to_string();
     assert!(
@@ -406,12 +414,87 @@ fn board_pending_waits_for_slow_existing_router_without_startup() -> anyhow::Res
     );
     assert!(!absent_socket.exists(), "pending must not start a router");
 
-    let error = super::super::client_command::request_pending(&args, &context, true, || {
-        panic!("--no-daemon must be rejected before resolving the router")
-    })
+    let error = super::super::client_command::request_pending(
+        &args,
+        &context,
+        true,
+        || panic!("--no-daemon must be rejected before resolving the router"),
+        crate::daemon::deadline::QueryDeadline::after(Duration::from_secs(1)),
+    )
     .unwrap_err()
     .to_string();
     assert!(error.contains("board pending requires an existing router"));
+    Ok(())
+}
+
+#[test]
+fn board_pending_does_not_contact_a_router_after_its_deadline() -> anyhow::Result<()> {
+    use std::{
+        io::{Read, Write},
+        os::unix::net::UnixListener,
+        thread,
+        time::{Duration, Instant},
+    };
+
+    let directory = tempfile::tempdir()?;
+    let socket_path = directory.path().join(crate::daemon::SOCKET_NAME);
+    let listener = UnixListener::bind(&socket_path)?;
+    listener.set_nonblocking(true)?;
+    let responder = thread::spawn(move || -> std::io::Result<bool> {
+        let expires = Instant::now() + Duration::from_millis(500);
+        loop {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    let mut header = [0; 4];
+                    stream.read_exact(&mut header)?;
+                    let mut request = vec![0; u32::from_be_bytes(header) as usize];
+                    stream.read_exact(&mut request)?;
+                    let response = br#"{"status":"success","output":"pending notices"}"#;
+                    stream.write_all(&(response.len() as u32).to_be_bytes())?;
+                    stream.write_all(response)?;
+                    return Ok(true);
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    if Instant::now() >= expires {
+                        return Ok(false);
+                    }
+                    thread::sleep(Duration::from_millis(1));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    });
+    let args = ["board", "pending"].map(str::to_owned);
+    let context = crate::diagnostics::RequestContext::new(None, None);
+
+    let error = super::super::client_command::request_pending(
+        &args,
+        &context,
+        false,
+        || Some(directory.path().to_owned()),
+        crate::daemon::deadline::QueryDeadline::after(std::time::Duration::ZERO),
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().starts_with("timed_out:"), "{error:#}");
+    assert!(
+        !responder
+            .join()
+            .expect("router responder thread panicked")?,
+        "an expired pending request must not connect"
+    );
+    Ok(())
+}
+
+#[test]
+fn contextual_board_api_probe_exits_before_client_dispatch() -> anyhow::Result<()> {
+    let args = ["--board-api-version".to_owned()];
+    let context = crate::diagnostics::RequestContext::new(None, None);
+
+    assert_eq!(
+        crate::cli::run_with_context(&args, &context)?,
+        format!("{}\n", crate::board::board_protocol::BOARD_API)
+    );
     Ok(())
 }
 

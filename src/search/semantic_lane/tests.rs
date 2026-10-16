@@ -1,5 +1,6 @@
 #[cfg(feature = "semantic")]
 use crate::{
+    daemon::deadline::QueryDeadline,
     search::{self, Query},
     semantic::{
         DIMENSIONS, Embedding, SemanticSession,
@@ -51,6 +52,7 @@ fn prepared_search(
         Some(vector),
         None,
         &mut crate::search::telemetry::RetrievalTrace::disabled(),
+        &QueryDeadline::start(),
     )
     .unwrap()
 }
@@ -266,6 +268,7 @@ fn no_daemon_search_uses_cached_query_and_source_vectors_without_model() -> anyh
         cache.path(),
         &mut session,
         &mut crate::search::telemetry::RetrievalTrace::disabled(),
+        &QueryDeadline::start(),
     )?;
     assert!(
         result.hits.iter().any(|hit| {

@@ -13,7 +13,7 @@ impl BoardHost {
         base: &PlanRevision,
         agent: Option<&HarnessLabel>,
         budget: &OutputBudget,
-        deadline: QueryDeadline,
+        deadline: &QueryDeadline,
         mut warnings: Vec<String>,
     ) -> Result<String> {
         let scan_budget = deadline
@@ -30,7 +30,8 @@ impl BoardHost {
                 },
             )
         } else {
-            match self.ingest(&request.actor, Some(base.plan), scan_budget) {
+            let scan_deadline = deadline.capped(scan_budget);
+            match self.ingest(&request.actor, Some(base.plan), &scan_deadline) {
                 Ok(result) => result,
                 Err(error) => (
                     self.repositories(&request.actor, Some(base.plan), deadline)?,
@@ -75,7 +76,7 @@ impl BoardHost {
                     Ok(mut scan) => {
                         unlinked.extend(scan.commits);
                         if let Err(error) = crate::board::commit_ingest::suppress_linked_warnings(
-                            &BoardHostBackendAccess(self, deadline),
+                            &BoardHostBackendAccess(self, deadline.clone()),
                             &target.registration.repo_key,
                             &mut scan.warnings,
                         ) {

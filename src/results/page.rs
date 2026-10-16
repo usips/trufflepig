@@ -5,6 +5,7 @@
 
 use super::{HitDetail, StoredResultSet, compact_entry_for_page, lines, load_entries};
 use crate::{
+    daemon::deadline::TIMED_OUT,
     identity::ResultCursor,
     output::{OutputBudget, OutputFormat},
     store::Store,
@@ -63,7 +64,8 @@ pub fn page(
     limit: usize,
     budget: &OutputBudget,
 ) -> Result<String> {
-    let set = load_entries(store, id)?;
+    let mut set = load_entries(store, id)?;
+    refresh_index_progress(store, &mut set)?;
     if offset > set.hits.len() {
         bail!("invalid_cursor: offset outside result set");
     }
@@ -173,6 +175,29 @@ pub fn page(
     bail!("budget_too_small: no hit and pagination envelope fit; increase --budget")
 }
 
+fn refresh_index_progress(store: &Store, set: &mut StoredResultSet) -> Result<()> {
+    if store
+        .query_deadline()
+        .is_some_and(|deadline| deadline.expired())
+    {
+        bail!("{TIMED_OUT}: query deadline expired");
+    }
+    if let Some(coverage) = set.coverage.as_object_mut() {
+        coverage.remove("index_progress");
+    }
+    let progress = crate::store::read_index_progress(&store.root, store.results_cache());
+    if store
+        .query_deadline()
+        .is_some_and(|deadline| deadline.expired())
+    {
+        bail!("{TIMED_OUT}: query deadline expired");
+    }
+    if let (Some(progress), Some(coverage)) = (progress, set.coverage.as_object_mut()) {
+        coverage.insert("index_progress".into(), serde_json::to_value(progress)?);
+    }
+    Ok(())
+}
+
 fn page_value(
     set: &StoredResultSet,
     id: &str,
@@ -221,3 +246,6 @@ pub fn more(store: &Store, cursor: &str, limit: usize, budget: &OutputBudget) ->
         budget,
     )
 }
+
+#[cfg(test)]
+mod tests;

@@ -61,9 +61,10 @@ fn spool_claims_each_request_once_until_answered() {
     // A later maintenance tick sees the claim, not a second pending request.
     assert!(server.claim().is_empty());
     assert!(dir.join(format!("{}.claimed", context.request_id)).exists());
-    claimed.pop().unwrap().refuse(DAEMON_BUSY);
+    let refusal = "daemon_busy: synthetic refusal";
+    claimed.pop().unwrap().refuse(refusal);
     let error = client.join().unwrap().unwrap_err();
-    assert!(error.to_string().contains(DAEMON_BUSY), "{error:#}");
+    assert!(error.to_string().contains(refusal), "{error:#}");
 }
 
 #[test]

@@ -1,4 +1,5 @@
-use super::{Coverage, encode_path, regions};
+use super::{Coverage, encode_path, index_checkpoint::IndexCheckpoint, index_deadline, regions};
+use crate::daemon::deadline::QueryDeadline;
 use crate::extract::{self, Extraction};
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
@@ -14,6 +15,41 @@ pub(super) fn stage(
     root: &Path,
     cache: &Path,
 ) -> Result<(Coverage, String)> {
+    stage_inner(conn, previous, root, cache, None, None)
+}
+
+pub(super) fn stage_until(
+    conn: &mut Connection,
+    previous: &Connection,
+    root: &Path,
+    cache: &Path,
+    deadline: &QueryDeadline,
+) -> Result<(Coverage, String)> {
+    stage_inner(conn, previous, root, cache, Some(deadline), None)
+}
+
+pub(super) fn stage_checkpointed(
+    conn: &mut Connection,
+    previous: &Connection,
+    root: &Path,
+    cache: &Path,
+    checkpoint: &mut IndexCheckpoint,
+    deadline: Option<&QueryDeadline>,
+) -> Result<(Coverage, String)> {
+    stage_inner(conn, previous, root, cache, deadline, Some(checkpoint))
+}
+
+fn stage_inner(
+    conn: &mut Connection,
+    previous: &Connection,
+    root: &Path,
+    cache: &Path,
+    deadline: Option<&QueryDeadline>,
+    mut checkpoint: Option<&mut IndexCheckpoint>,
+) -> Result<(Coverage, String)> {
+    if let Some(deadline) = deadline {
+        index_deadline::check(deadline)?;
+    }
     let mut coverage = Coverage::default();
     let mut fingerprint = blake3::Hasher::new();
     fingerprint.update(b"trufflepig-schema-1-extraction");
@@ -41,6 +77,9 @@ pub(super) fn stage(
     });
     let transaction = conn.transaction()?;
     for entry in walker.build() {
+        if let Some(deadline) = deadline {
+            index_deadline::check(deadline)?;
+        }
         let entry = match entry {
             Ok(entry) => entry,
             Err(_) => {
@@ -55,6 +94,9 @@ pub(super) fn stage(
         let relative = entry.path().strip_prefix(root)?;
         let path = encode_path(relative);
         let (source, status, length) = read_source(root, relative);
+        if let Some(deadline) = deadline {
+            index_deadline::check(deadline)?;
+        }
         let revision = source
             .as_ref()
             .map(|source| blake3::hash(source).to_hex().to_string());
@@ -65,21 +107,60 @@ pub(super) fn stage(
         if let Some(revision) = &revision {
             fingerprint.update(revision.as_bytes());
         }
-        let extraction = match (source.as_ref(), revision.as_ref()) {
-            (Some(source), Some(revision)) => cached_extraction(
-                previous,
-                &transaction,
+        let extraction = if let Some(checkpoint) = checkpoint.as_deref_mut() {
+            match checkpoint.extraction(
                 &path,
-                revision,
-                source,
+                revision.as_deref(),
+                status,
+                length,
                 cache_version,
-            )?,
-            _ => Extraction {
-                language: extract::language(&path).to_owned(),
-                status: status.to_owned(),
-                ..Extraction::default()
-            },
+            )? {
+                Some(extraction) => {
+                    checkpoint.reused_file(&path)?;
+                    extraction
+                }
+                None => {
+                    let extraction = match (source.as_ref(), revision.as_ref()) {
+                        (Some(source), Some(revision)) => {
+                            cached_extraction(previous, &path, revision, source, cache_version)?
+                        }
+                        _ => Extraction {
+                            language: extract::language(&path).to_owned(),
+                            status: status.to_owned(),
+                            ..Extraction::default()
+                        },
+                    };
+                    if let Some(deadline) = deadline {
+                        index_deadline::check(deadline)?;
+                    }
+                    if extraction.status != "cancelled" {
+                        checkpoint.completed_file(
+                            &path,
+                            revision.as_deref(),
+                            status,
+                            length,
+                            cache_version,
+                            &extraction,
+                        )?;
+                    }
+                    extraction
+                }
+            }
+        } else {
+            match (source.as_ref(), revision.as_ref()) {
+                (Some(source), Some(revision)) => {
+                    cached_extraction(previous, &path, revision, source, cache_version)?
+                }
+                _ => Extraction {
+                    language: extract::language(&path).to_owned(),
+                    status: status.to_owned(),
+                    ..Extraction::default()
+                },
+            }
         };
+        if let Some(deadline) = deadline {
+            index_deadline::check(deadline)?;
+        }
         if extraction.status == "fact_limit" {
             coverage.truncated_files += 1;
         }
@@ -108,6 +189,9 @@ pub(super) fn stage(
         )?;
         let file_id = transaction.last_insert_rowid();
         if let (Some(source), Some(revision)) = (source.as_ref(), revision.as_ref()) {
+            if extraction.status != "cancelled" {
+                insert_extraction_cache(&transaction, revision, &path, cache_version, &extraction)?;
+            }
             transaction.execute(
                 "INSERT OR IGNORE INTO contents VALUES(?1,?2)",
                 params![revision, source],
@@ -128,7 +212,15 @@ pub(super) fn stage(
         }
     }
     fingerprint.update(&coverage.walk_failures.to_le_bytes());
+    if let Some(deadline) = deadline {
+        index_deadline::check(deadline)?;
+    }
     transaction.commit()?;
+    if let Some(checkpoint) = checkpoint.as_deref_mut() {
+        if coverage.walk_failures == 0 {
+            checkpoint.pass_completed()?;
+        }
+    }
     Ok((coverage, fingerprint.finalize().to_hex().to_string()))
 }
 
@@ -154,7 +246,6 @@ pub(crate) fn resolved_fingerprint(scan_fingerprint: &str, resolver_revision: &s
 
 fn cached_extraction(
     previous: &Connection,
-    staged: &Transaction<'_>,
     path: &str,
     revision: &str,
     source: &[u8],
@@ -183,18 +274,27 @@ fn cached_extraction(
         extraction.relationships.clear();
         extraction.status = "fact_limit".into();
     }
-    if extraction.status != "cancelled" {
-        staged.execute(
-            "INSERT OR IGNORE INTO extraction_cache VALUES(?1,?2,?3,?4)",
-            params![
-                revision,
-                grammar,
-                cache_version,
-                serde_json::to_string(&extraction)?
-            ],
-        )?;
-    }
     Ok(extraction)
+}
+
+fn insert_extraction_cache(
+    staged: &Transaction<'_>,
+    revision: &str,
+    path: &str,
+    cache_version: i64,
+    extraction: &Extraction,
+) -> Result<()> {
+    let grammar = path.rsplit('.').next().unwrap_or("");
+    staged.execute(
+        "INSERT OR IGNORE INTO extraction_cache VALUES(?1,?2,?3,?4)",
+        params![
+            revision,
+            grammar,
+            cache_version,
+            serde_json::to_string(extraction)?
+        ],
+    )?;
+    Ok(())
 }
 
 fn read_source(root: &Path, relative: &Path) -> (Option<Vec<u8>>, &'static str, u64) {

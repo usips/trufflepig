@@ -59,10 +59,7 @@ fn assert_remote_timeout(message: &str) -> Result<()> {
     let result = run_with_context(&args(), &context);
     let routed_request = router.finish()?;
     let direct_request = root.finish()?;
-    assert_eq!(
-        result.unwrap_err().to_string(),
-        format!("daemon: {message}")
-    );
+    assert_eq!(result.unwrap_err().to_string(), message);
     assert!(
         routed_request.is_some(),
         "the system router must answer the command"

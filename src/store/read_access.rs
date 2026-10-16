@@ -21,9 +21,21 @@ impl Store {
             .canonicalize()
             .context("canonicalize repository root")?;
         ensure!(root.is_dir(), "repository root is not a directory");
-        let Ok(cache) = cache.canonicalize() else {
-            bail!(INDEX_WARMING);
+        let cache = match cache.canonicalize() {
+            Ok(cache) => cache,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                bail!(INDEX_WARMING);
+            }
+            Err(error) => {
+                return Err(super::index_cache_unavailable(cache, error.into()));
+            }
         };
+        if !cache.is_dir() {
+            return Err(super::index_cache_unavailable(
+                &cache,
+                std::io::Error::from(std::io::ErrorKind::NotADirectory).into(),
+            ));
+        }
         let database = cache.join("index.sqlite3");
         ensure!(database.is_file(), INDEX_WARMING);
         let conn = Connection::open_with_flags(
@@ -32,7 +44,11 @@ impl Store {
         )?;
         conn.busy_timeout(deadline.cap(READ_BUSY_TIMEOUT))?;
         conn.execute_batch("PRAGMA query_only=ON; PRAGMA cache_size=-2048;")?;
-        conn.progress_handler(DEADLINE_CHECK_STEPS, Some(move || deadline.expired()))?;
+        let handler_deadline = deadline.clone();
+        conn.progress_handler(
+            DEADLINE_CHECK_STEPS,
+            Some(move || handler_deadline.expired()),
+        )?;
         let (stored_root, generation) =
             published_state(&conn).map_err(|error| deadline.classify(error))?;
         ensure!(
@@ -48,19 +64,25 @@ impl Store {
             cache,
             result_sets: std::cell::OnceCell::new(),
             access: StoreAccess::Reader,
+            query_deadline: Some(deadline.clone()),
         })
     }
 
-    /// An empty view of an index that has no publication yet: an in-memory
-    /// schema at generation 0, so handle, `more`, and path reads work (saving
-    /// result sets in `cache`) without touching `index.sqlite3` or waiting on
-    /// its writer.
+    /// A generation-0 in-memory view for reads that need no published index.
+    /// Current-path reads need no result set; explicit result sets are saved
+    /// in `cache` when that optional write is available.
     pub fn unpublished(root: &Path, cache: &Path) -> Result<Self> {
         let root = root
             .canonicalize()
             .context("canonicalize repository root")?;
         ensure!(root.is_dir(), "repository root is not a directory");
-        let cache = cache.canonicalize().context("canonicalize cache")?;
+        let cache = match cache.canonicalize() {
+            Ok(cache) => cache,
+            Err(_) if cache.is_absolute() => cache.to_path_buf(),
+            Err(_) => std::env::current_dir()
+                .context("resolve relative cache")?
+                .join(cache),
+        };
         let conn = Connection::open_in_memory()?;
         super::schema::create(&conn)?;
         super::publish::create_journal(&conn)?;
@@ -72,6 +94,7 @@ impl Store {
             cache,
             result_sets: std::cell::OnceCell::new(),
             access: StoreAccess::Reader,
+            query_deadline: None,
         })
     }
 

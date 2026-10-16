@@ -83,7 +83,7 @@ impl ProjectResolver {
         host: &str,
         deadline: QueryDeadline,
     ) -> Result<Vec<ResolvedProject>, BoardError> {
-        check_deadline(deadline)?;
+        check_deadline(&deadline)?;
         config.ensure_local().map_err(BoardError::from)?;
         let registry = self
             .registry
@@ -109,7 +109,7 @@ impl ProjectResolver {
                     .iter()
                     .all(|(path, stamp)| file_stamp(path) == *stamp)
             {
-                check_deadline(deadline)?;
+                check_deadline(&deadline)?;
                 return Ok(cached.projects.clone());
             }
         }
@@ -119,7 +119,7 @@ impl ProjectResolver {
             .transpose()
             .map_err(BoardError::from)?
             .unwrap_or_default();
-        check_deadline(deadline)?;
+        check_deadline(&deadline)?;
         let configs = workspaces
             .iter()
             .map(|workspace| {
@@ -134,17 +134,17 @@ impl ProjectResolver {
             .transpose()?;
         let mut projects = Vec::with_capacity(workspaces.len());
         for workspace in workspaces {
-            check_deadline(deadline)?;
+            check_deadline(&deadline)?;
             projects.push(self.resolve_workspace(
                 workspace,
                 reader.as_ref(),
                 config,
                 host,
-                deadline,
+                &deadline,
             )?);
         }
         disambiguate_names(&mut projects);
-        check_deadline(deadline)?;
+        check_deadline(&deadline)?;
         self.cached = Some(CachedProjects {
             registry: registry_stamp,
             configs,
@@ -164,7 +164,7 @@ impl ProjectResolver {
         reader: Option<&LocalBoard>,
         config: &BoardConfig,
         host: &str,
-        deadline: QueryDeadline,
+        deadline: &QueryDeadline,
     ) -> Result<ResolvedProject, BoardError> {
         let mut project = Project {
             id: workspace.id,
@@ -211,7 +211,7 @@ impl ProjectResolver {
         reader: Option<&LocalBoard>,
         config: &BoardConfig,
         host: &str,
-        deadline: QueryDeadline,
+        deadline: &QueryDeadline,
     ) -> Result<Option<RepoKey>, BoardError> {
         let common_dir = common_dir_bounded(root, deadline.cap(PROJECT_GIT_TIMEOUT));
         check_deadline(deadline)?;
@@ -261,7 +261,7 @@ fn file_stamp(path: &Path) -> FileStamp {
     }
 }
 
-fn check_deadline(deadline: QueryDeadline) -> Result<(), BoardError> {
+fn check_deadline(deadline: &QueryDeadline) -> Result<(), BoardError> {
     if deadline.expired() {
         return Err(BoardError::from(anyhow::anyhow!(
             "timed_out: project resolution deadline expired"

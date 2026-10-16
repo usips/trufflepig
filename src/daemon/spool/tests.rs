@@ -29,6 +29,54 @@ fn request_publication_does_not_rename_after_temp_write_expires_deadline() {
 }
 
 #[test]
+fn claimed_spool_age_is_subtracted_from_each_tier_budget() {
+    let request_bytes = serde_json::to_vec(&DaemonRequest::Arguments {
+        context: crate::diagnostics::RequestContext::new(None, None),
+        args: vec!["status".to_owned()],
+    })
+    .unwrap();
+    let publication_age = Duration::from_secs(22);
+
+    let router_dir = tempfile::tempdir().unwrap();
+    let mut router_spool = SpoolServer::open(router_dir.path()).unwrap();
+    let router_request = router_dir
+        .path()
+        .join(format!("{}.request", uuid::Uuid::new_v4()));
+    fs::write(&router_request, &request_bytes).unwrap();
+    File::open(&router_request)
+        .unwrap()
+        .set_modified(SystemTime::now() - publication_age)
+        .unwrap();
+    let router_claim = router_spool.claim().pop().unwrap();
+    let router_deadline = router_claim.deadline(Duration::from_secs(28));
+    assert!(
+        router_deadline.remaining() > Duration::from_secs(5),
+        "22-second-old publication still fits the 28-second router budget"
+    );
+
+    let root_dir = tempfile::tempdir().unwrap();
+    let mut root_spool = SpoolServer::open(root_dir.path()).unwrap();
+    let root_request = root_dir
+        .path()
+        .join(format!("{}.request", uuid::Uuid::new_v4()));
+    fs::write(&root_request, request_bytes).unwrap();
+    File::open(&root_request)
+        .unwrap()
+        .set_modified(SystemTime::now() - publication_age)
+        .unwrap();
+    let root_claim = root_spool.claim().pop().unwrap();
+    let root_deadline = root_claim.deadline(Duration::from_secs(20));
+    assert!(
+        root_deadline.time_expired(),
+        "22-second-old publication is beyond the 20-second root budget"
+    );
+    assert!(
+        root_claim.is_claimed(),
+        "expiry does not discard claim ownership"
+    );
+}
+
+#[test]
 fn router_restart_and_orphan_sweep_preserve_durable_feedback() {
     let dir = tempfile::tempdir().unwrap();
     let id = uuid::Uuid::new_v4();

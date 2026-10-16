@@ -7,6 +7,8 @@ from pathlib import Path
 import pwd
 import subprocess
 
+from router_identity import RouterIdentityConflict, require_router_exclusive
+
 PLUGIN = Path(__file__).resolve().parents[1]
 SUPPORTED_UNIT_STATES = frozenset(("enabled", "enabled-runtime", "disabled", "static", "not-found"))
 MASKED_UNIT_STATES = frozenset(("masked", "masked-runtime"))
@@ -126,7 +128,7 @@ class UnitRollback:
         return stopped
 
     def restore(self, unit_directory, previous_units, previous_active,
-                previous_enablement, activation_attempts):
+                previous_enablement, activation_attempts, *, skip_active_restarts=False):
         for name, previous in previous_units.items():
             path = unit_directory / name
             if previous is None:
@@ -136,7 +138,14 @@ class UnitRollback:
         self.systemctl("daemon-reload")
         for name, was_active in previous_active.items():
             if was_active:
-                self.systemctl("restart", name)
+                if skip_active_restarts:
+                    command = f"systemctl --user restart {name}"
+                    self.errors.append(
+                        f"skipped restart of {name} while router identity is conflicted; "
+                        f"after clearing the listed router PIDs, run `{command}`"
+                    )
+                else:
+                    self.systemctl("restart", name)
         stopped_units = set()
         for name in activation_attempts:
             if self.restore_enablement(name, previous_enablement[name], previous_active[name]):
@@ -151,7 +160,11 @@ class UnitRollback:
 def apply_units(binary: str, unit_directory: Path, router_runtime: Path, managed_router: bool,
                 install_router: bool, install_board: bool,
                 unit_text: str | None, board_unit_text: str | None, check_router) -> None:
-    """Write and enable the requested user units; on failure restore the prior unit state."""
+    """Write requested units; restore configuration on failure and defer conflicted restarts."""
+    require_router_exclusive(
+        router_runtime,
+        "resolve the conflict, then rerun the installer with `--systemd`",
+    )
     previous_active = {name: unit_active(name)
                        for name in ("trufflepig-system.service", "trufflepig-board.service")}
     board_was_active = previous_active["trufflepig-board.service"]
@@ -201,6 +214,12 @@ def apply_units(binary: str, unit_directory: Path, router_runtime: Path, managed
             subprocess.run(["systemctl", "--user", "enable", "--now", "trufflepig-board.service"], check=True)
             print(f"systemd board service: {unit_directory / 'trufflepig-board.service'}")
             print("board bootstrap URL: run `trufflepig board web`")
+    except RouterIdentityConflict as error:
+        rollback = UnitRollback()
+        rollback.restore(unit_directory, previous_units, previous_active,
+                         previous_enablement, activation_attempts, skip_active_restarts=True)
+        error.rollback_errors = tuple(rollback.errors)
+        raise
     except Exception as error:
         rollback = UnitRollback()
         rollback.restore(unit_directory, previous_units, previous_active,

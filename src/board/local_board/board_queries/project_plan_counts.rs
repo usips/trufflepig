@@ -9,10 +9,11 @@ impl LocalBoard {
     pub(crate) fn repo_set_plan_counts(
         &mut self,
         sets: &[&BTreeSet<RepoKey>],
-        deadline: QueryDeadline,
+        deadline: &QueryDeadline,
     ) -> Result<(EventSeq, Vec<usize>), BoardError> {
         let conn = self.reader.as_mut().unwrap_or(&mut self.conn);
-        conn.progress_handler(1000, Some(move || deadline.expired()))
+        let progress_deadline = deadline.clone();
+        conn.progress_handler(1000, Some(move || progress_deadline.expired()))
             .map_err(sql_error)?;
         let result =
             (|| {

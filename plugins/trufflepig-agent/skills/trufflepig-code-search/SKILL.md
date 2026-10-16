@@ -81,13 +81,15 @@ Use `ws:all` to search every member or `in:MEMBER` for a named dependency.
 Outside a workspace, run from the project root so a subdirectory does not become
 an accidental separate index. Retain that scope for follow-up calls.
 
-A linked worktree is its own checkout: run from it (`cd DIR && trufflepig-agent
-...` or `--root DIR`). Workspace-home and standalone reads can fall back to its
-published parent index through the default cache while its index warms. The
-footer reads like `lunatic@wt warming → served from lunatic index (3 files differ)`.
-A `differs` hit can retain parent coordinates. `show` re-extracts changed files;
-explicit paths read current bytes pre-index; `refs` stays index-only. Failed
-re-extraction may show unverified parent bytes; check `verified` and `source`.
+A linked worktree is its own checkout: run from it (`cd DIR && trufflepig-agent ...`
+or `--root DIR`). Standalone parent reads use the main checkout's default cache even with
+custom `--cache`, which holds worktree results and divergence. Workspace parent reads use the
+configured member cache under the workspace base; worktree results/divergence stay separate.
+Index-based parent reads need a writable selected result cache. Explicit current paths read bytes
+without a cache; `refs` stays index-only. The footer reads like
+`lunatic@wt warming → served from lunatic index (3 files differ)`. A `differs` hit
+can retain parent coordinates. `show` re-extracts changed files; failed
+re-extraction may show unverified parent bytes, so check `verified` and `source`.
 An exact `sym:` miss with no parent-index candidate refreshes divergence and checks at
 most 64 changed files. If more than 64 paths changed, Git probing fails, or a
 changed file remains unchecked, coverage is partial and truncated, so absence
@@ -175,13 +177,24 @@ in the Trufflepig checkout; do not copy a second template here. The wrapper adds
 bounded call metadata, never source output. Feedback may queue for import. If
 reporting fails, state that once and continue the necessary fallback.
 
-For a complete empty search, refine terms or try one exact/regex search before a
-targeted fallback. `warming` with a `served from` footer is an answer. Fall back
-for unavailable service, inaccessible cache, or unsupported search; do not repeat
-the same failing query or silently change workspace/cache identity. Report daemon
-flag rejection for runtime repair; do not strip flags or restart services.
+For a complete empty search, refine terms or try one exact/regex search before
+a targeted fallback. `warming` with a `served from` footer is an answer. Reads allow
+at most five attempts within one shared 30 s client budget, including startup,
+transport, backoff, and local fallback. Board/feedback contention-only writes
+allow at most two attempts on typed busy/locked errors; other writes run once.
+`show FILE`, `show path:FILE`, and `read:path:` continuations use one local
+current-file fallback after retries exhaust on explicit `daemon_busy`, or
+immediately on pre-dispatch `index_cache_unavailable`. Timeouts, database locks,
+and ambiguous transport errors never trigger it. Other busy searches allow at
+most one manual retry after service/load clears; if still busy, report the limit
+and use the documented bounded fallback. For unavailable service, inaccessible
+cache, or unsupported needs, state the limit and use one bounded fallback; if a
+needed file remains unreadable, use the harness's bounded exact-file reader and report
+persistent failure with feedback. Do not loop or switch workspace/cache identity.
+Report daemon flag rejection or `router_binary_replaced` for runtime repair; do
+not strip flags or restart services. For cache-free current bytes, use
+`--no-daemon show path:FILE[:START-END]`; opaque `read:path:` continuations stay
+stateless across processes. See the [CLI contract](https://github.com/usips/trufflepig/blob/master/docs/cli.md) and [runtime contract](https://github.com/usips/trufflepig/blob/master/docs/runtime-contract.md).
 
-Read a whole file only when the task needs it after locating it. This skill does
-not replace editing tools, builds, tests, Git operations, or known instruction
-files. History uses `hist`, `since`, `diff`, or `blame` with Git 2.55+ and local
-objects; live search does not require history.
+Read whole files only when needed after locating them. This skill does not replace editing, builds, tests, Git, or
+reads of known instruction files. History uses `hist`, `since`, `diff`, or `blame` with Git 2.55+ and local objects; live search needs no history.

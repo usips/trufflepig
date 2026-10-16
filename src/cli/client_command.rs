@@ -8,13 +8,19 @@ pub(super) fn request_pending(
     context: &crate::diagnostics::RequestContext,
     no_daemon: bool,
     system_dir: impl FnOnce() -> Option<PathBuf>,
+    deadline: crate::daemon::deadline::QueryDeadline,
 ) -> Result<String> {
     if no_daemon {
         anyhow::bail!("invalid_options: board pending requires an existing router");
     }
     let directory =
         system_dir().context("board_unavailable: no running router for pending notices")?;
-    crate::daemon::request(&directory, args, context)?
+    anyhow::ensure!(
+        !deadline.expired(),
+        "{}: board pending request deadline expired",
+        crate::daemon::deadline::TIMED_OUT
+    );
+    crate::daemon::request_by(&directory, args, context, deadline)?
         .context("board_unavailable: no running router for pending notices")
 }
 
@@ -28,6 +34,7 @@ impl ClientCommand {
         &mut self,
         args: &[String],
         context: &crate::diagnostics::RequestContext,
+        deadline: crate::daemon::deadline::QueryDeadline,
     ) -> Result<String> {
         if let Some(answer) = board_api_probe::probe_board_api(args) {
             return answer;
@@ -75,10 +82,16 @@ impl ClientCommand {
             else {
                 unreachable!("pending grammar produces an operation");
             };
-            return request_pending(args, context, options.no_daemon, crate::system::dir);
+            return request_pending(
+                args,
+                context,
+                options.no_daemon,
+                crate::system::dir,
+                deadline,
+            );
         }
         if matches!(verb, "board" | "feedback") {
-            return self.board.run(args, &options, context);
+            return self.board.run(args, &options, context, deadline);
         }
         if system_routes(&options, verb)
             && let Ok(root) = options.root.canonicalize()
@@ -95,29 +108,83 @@ impl ClientCommand {
             {
                 forwarded.push("--wait".into());
             }
-            let routed =
-                crate::system::request(&forwarded, context).and_then(|reply| match reply {
+            let routed = crate::system::request_by(&forwarded, context, deadline.clone()).and_then(
+                |reply| match reply {
                     Some(reply) => Ok(Some(reply)),
-                    None => {
-                        let _ = crate::system::ensure();
-                        crate::system::request(&forwarded, context)
+                    None if !deadline.expired() => {
+                        let _ = crate::system::ensure_by(deadline.clone());
+                        crate::system::request_by(&forwarded, context, deadline.clone())
                     }
-                });
+                    None => Ok(None),
+                },
+            );
             match routed {
                 Ok(Some(reply)) => {
                     return system_reply(&applied, &root, verb, config.as_ref(), reply);
                 }
-                // An unavailable owner or locally expired spool wait leaves direct
-                // execution; other router errors remain answers.
-                Err(error)
+                Err(error) => {
+                    if let Some(fallback_options) = index_cache_fallback_options(args, &error) {
+                        return super::direct_with_deadline(&fallback_options, context, deadline);
+                    }
+                    // An unavailable owner or locally expired spool wait leaves direct
+                    // execution; other router errors remain answers.
                     if !daemon::spool::is_local_spool_timeout(&error)
-                        && !format!("{error:#}").contains("daemon_unavailable") =>
-                {
-                    return Err(error);
+                        && !format!("{error:#}").contains("daemon_unavailable")
+                    {
+                        return Err(error);
+                    }
                 }
                 _ => {}
             }
         }
-        direct(&options, context, CLIENT_REPLY_WAIT)
+        super::direct_with_deadline(&options, context, deadline)
+    }
+
+    pub(super) fn run_after_busy_exhaustion(
+        &mut self,
+        args: &[String],
+        context: &crate::diagnostics::RequestContext,
+        deadline: crate::daemon::deadline::QueryDeadline,
+    ) -> Option<Result<String>> {
+        let options = local_path_show_fallback_options(args)?;
+        Some(super::direct_with_deadline(&options, context, deadline))
     }
 }
+
+fn local_path_show_fallback_options(args: &[String]) -> Option<Arguments> {
+    let mut options = parse(args).ok()?;
+    validate(&options).ok()?;
+    if options.words.first().is_none_or(|verb| verb != "show")
+        || !options
+            .words
+            .get(1)
+            .is_some_and(|target| crate::source::acquisition::is_current_path_target(target))
+    {
+        return None;
+    }
+    options.no_daemon = true;
+    Some(options)
+}
+
+fn index_cache_fallback_options(args: &[String], error: &anyhow::Error) -> Option<Arguments> {
+    let has_timeout = crate::daemon::DaemonReplyTimeout::from_error(error).is_some()
+        || error.chain().any(|cause| {
+            crate::board::board_protocol::leading_error_code(&cause.to_string())
+                .is_some_and(|(code, _)| matches!(code, "timed_out" | "daemon_reply_timeout"))
+        });
+    if has_timeout {
+        return None;
+    }
+    let is_cache_refusal = error.chain().any(|cause| {
+        crate::board::board_protocol::leading_error_code(&cause.to_string())
+            .is_some_and(|(code, _)| code == "index_cache_unavailable")
+    });
+    if is_cache_refusal {
+        local_path_show_fallback_options(args)
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests;

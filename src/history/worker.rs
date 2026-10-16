@@ -6,15 +6,18 @@ mod tests;
 pub use heartbeat::Heartbeat;
 
 use super::{History, git::GitRepository};
+use crate::background_process::{
+    BackgroundChild, BackgroundOwner, current_background_executable, spawn_background_for,
+};
 use anyhow::{Context, Result, bail};
 use fs2::FileExt;
 use notify::{EventKind, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
-use std::os::unix::{ffi::OsStrExt, fs::PermissionsExt, process::CommandExt};
+use std::os::unix::{ffi::OsStrExt, fs::PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::mpsc::{Receiver, sync_channel};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -167,22 +170,22 @@ pub fn start(root: &Path, cache: &Path) -> Result<()> {
         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => return Ok(()),
         Err(error) => return Err(error).context("inspect history worker lock"),
     }
-    let mut child = Command::new(std::env::current_exe()?)
+
+    let canonical_cache = cache.canonicalize()?;
+    let executable = current_background_executable(&canonical_cache, BackgroundOwner::RootDaemon)?;
+    spawn_worker(&executable, root, &canonical_cache)?;
+    Ok(())
+}
+
+fn spawn_worker(executable: &Path, root: &Path, cache: &Path) -> Result<BackgroundChild> {
+    let mut command = Command::new(executable);
+    command
         .arg("--root")
         .arg(root)
         .arg("--history-cache")
-        .arg(cache.canonicalize()?)
-        .arg("history-serve")
-        .process_group(0)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .context("start history worker")?;
-    std::thread::spawn(move || {
-        let _ = child.wait();
-    });
-    Ok(())
+        .arg(cache)
+        .arg("history-serve");
+    spawn_background_for(&mut command, executable, "history worker", cache)
 }
 
 fn active_roots(cache: &Path, now_ms: u64) -> Result<Vec<PathBuf>> {

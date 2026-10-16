@@ -1,6 +1,9 @@
 //! A per-root WAL index published atomically from an on-disk staging database.
 
+mod cache_access;
 pub(crate) mod current_source;
+mod index_checkpoint;
+mod index_deadline;
 mod inheritance;
 #[cfg(test)]
 mod inheritance_cache_tests;
@@ -23,16 +26,26 @@ mod seed_tests;
 mod tests;
 mod worktree_seed_source;
 
+use crate::daemon::deadline::QueryDeadline;
 use crate::{identity::ContentRevision, results::ResultSetStore};
 use anyhow::{Context, Result};
+pub use cache_access::{
+    index_cache_unavailable, is_index_cache_unavailable, preflight_results_cache,
+};
+pub use index_checkpoint::{IndexProgress, IndexProgressPhase, read_index_progress};
 pub use paths::{decode_path, encode_path};
 pub use read_access::{is_index_cannot_open, is_index_warming};
 use rusqlite::Connection;
 pub(crate) use scan::{MAX_SOURCE_BYTES, extraction_cache_version};
-pub use seed::{SeedOutcome, ensure_seeded, read_seed_outcome};
+pub use seed::{SeedOutcome, ensure_seeded, ensure_seeded_until, read_seed_outcome};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 pub(crate) use worktree_seed_source::linked_worktree_main_checkout;
+
+pub use index_deadline::inline_maintenance_deadline;
+
+const INDEX_LEASE_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Coverage {
@@ -103,6 +116,7 @@ pub struct Store {
     cache: PathBuf,
     /// Cache holding this store's `results.sqlite3`.
     results_cache: PathBuf,
+    query_deadline: Option<QueryDeadline>,
     result_sets: std::cell::OnceCell<ResultSetStore>,
     access: StoreAccess,
 }
@@ -115,47 +129,94 @@ enum StoreAccess {
 
 impl Store {
     pub fn open(root: &Path, cache: &Path) -> Result<Self> {
+        Self::open_inner(root, cache, None)
+    }
+
+    /// Opens a writer for query-scoped reconciliation with the supplied deadline.
+    pub fn open_for_reconcile(root: &Path, cache: &Path, deadline: QueryDeadline) -> Result<Self> {
+        Self::open_inner(root, cache, Some(deadline))
+    }
+
+    fn open_inner(root: &Path, cache: &Path, deadline: Option<QueryDeadline>) -> Result<Self> {
+        if let Some(deadline) = &deadline {
+            index_deadline::check(deadline)?;
+        }
         let root = root
             .canonicalize()
             .context("canonicalize repository root")?;
         anyhow::ensure!(root.is_dir(), "repository root is not a directory");
-        std::fs::create_dir_all(cache)?;
-        let cache = cache.canonicalize()?;
+        std::fs::create_dir_all(cache)
+            .map_err(|error| cache_access::index_cache_unavailable(cache, error.into()))?;
+        let cache = cache
+            .canonicalize()
+            .map_err(|error| cache_access::index_cache_unavailable(cache, error.into()))?;
         anyhow::ensure!(
             !root.starts_with(&cache),
             "cache must not contain the repository root"
         );
-        let conn = Connection::open(cache.join("index.sqlite3"))?;
-        conn.busy_timeout(std::time::Duration::from_secs(30))?;
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA cache_size=-8192; PRAGMA foreign_keys=ON;")?;
-        schema::create(&conn)?;
-        publish::create_journal(&conn)?;
-        conn.execute(
-            "INSERT OR IGNORE INTO meta(key,value) VALUES('index_epoch',?1)",
-            [uuid::Uuid::new_v4().to_string()],
-        )?;
-        let stored_root: Option<String> = conn
-            .query_row("SELECT value FROM meta WHERE key='root'", [], |row| {
-                row.get(0)
-            })
-            .optional()?;
-        let encoded_root = encode_path(&root);
-        anyhow::ensure!(
-            stored_root
-                .as_ref()
-                .is_none_or(|stored| stored == &encoded_root),
-            "cache belongs to another repository root"
-        );
-        conn.execute(
-            "INSERT OR IGNORE INTO meta(key,value) VALUES('root',?1)",
-            [&encoded_root],
-        )?;
+        if let Some(deadline) = &deadline {
+            index_deadline::check(deadline)?;
+        }
+        let conn = Connection::open(cache.join("index.sqlite3"))
+            .map_err(|error| cache_access::index_cache_unavailable(&cache, error.into()))?;
+        let initialized = (|| -> Result<()> {
+            if let Some(deadline) = &deadline {
+                index_deadline::install(&conn, deadline)?;
+            } else {
+                conn.busy_timeout(index_deadline::SQLITE_DEFAULT_BUSY_TIMEOUT)?;
+            }
+            conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA cache_size=-8192; PRAGMA foreign_keys=ON;")?;
+            schema::create(&conn)?;
+            publish::create_journal(&conn)?;
+            conn.execute(
+                "INSERT OR IGNORE INTO meta(key,value) VALUES('index_epoch',?1)",
+                [uuid::Uuid::new_v4().to_string()],
+            )?;
+            let stored_root: Option<String> = conn
+                .query_row("SELECT value FROM meta WHERE key='root'", [], |row| {
+                    row.get(0)
+                })
+                .optional()?;
+            let encoded_root = encode_path(&root);
+            anyhow::ensure!(
+                stored_root
+                    .as_ref()
+                    .is_none_or(|stored| stored == &encoded_root),
+                "cache belongs to another repository root"
+            );
+            conn.execute(
+                "INSERT OR IGNORE INTO meta(key,value) VALUES('root',?1)",
+                [&encoded_root],
+            )?;
+            if let Some(deadline) = &deadline {
+                index_deadline::check(deadline)?;
+            }
+            Ok(())
+        })();
+        let initialized = if deadline.is_some() {
+            match (initialized, index_deadline::clear(&conn)) {
+                (Err(primary), _) => Err(primary),
+                (Ok(()), Err(cleanup)) => Err(cleanup.into()),
+                (Ok(()), Ok(())) => Ok(()),
+            }
+        } else {
+            initialized
+        };
+        let initialized = initialized.map_err(|error| {
+            let error = cache_access::index_cache_unavailable(&cache, error);
+            match &deadline {
+                Some(deadline) => index_deadline::classify(deadline, error),
+                None => error,
+            }
+        });
+        initialized?;
         Ok(Self {
             conn,
             index_root: root.clone(),
             root,
             results_cache: cache.clone(),
             cache,
+            query_deadline: deadline,
             result_sets: std::cell::OnceCell::new(),
             access: StoreAccess::Writer,
         })
@@ -177,13 +238,30 @@ impl Store {
         &self.results_cache
     }
 
+    /// Makes result-cache reads and writes part of the same bounded query.
+    pub fn with_query_deadline(mut self, deadline: QueryDeadline) -> Self {
+        self.query_deadline = Some(deadline);
+        self.result_sets = std::cell::OnceCell::new();
+        self
+    }
+
+    /// Returns the caller's unchanged deadline when this store serves a query.
+    pub fn query_deadline(&self) -> Option<&QueryDeadline> {
+        self.query_deadline.as_ref()
+    }
+
     /// Result sets live in `<results cache>/results.sqlite3`, never in the index,
     /// so saving them never waits behind a publication.
     pub fn result_sets(&self) -> Result<&ResultSetStore> {
         if let Some(opened) = self.result_sets.get() {
             return Ok(opened);
         }
-        let opened = ResultSetStore::open(&self.results_cache)?;
+        cache_access::preflight_results_cache(&self.results_cache, self.query_deadline.as_ref())?;
+        let opened = match &self.query_deadline {
+            Some(deadline) => ResultSetStore::open_with_deadline(&self.results_cache, deadline),
+            None => ResultSetStore::open(&self.results_cache),
+        }
+        .map_err(|error| cache_access::index_cache_unavailable(&self.results_cache, error))?;
         Ok(self.result_sets.get_or_init(|| opened))
     }
 
@@ -284,19 +362,91 @@ impl Store {
         );
         let writer_lock = self.writer_lease_file()?;
         match fs2::FileExt::try_lock_exclusive(&writer_lock) {
-            Ok(()) => self.index_leased(writer_lock, resolve_all).map(Some),
+            Ok(()) => self.index_leased(writer_lock, resolve_all, None),
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
-            Err(error) => Err(error.into()),
+            Err(error) => Err(cache_access::index_cache_unavailable(
+                &self.cache,
+                error.into(),
+            )),
+        }
+    }
+
+    /// Reconciles within one request deadline, polling briefly for the writer lease.
+    pub fn index_until(&mut self, deadline: QueryDeadline) -> Result<Option<Coverage>> {
+        self.index_with_deadline(deadline, true)
+    }
+
+    /// Makes one bounded indexing attempt without waiting for another writer.
+    pub fn index_available_until(&mut self, deadline: QueryDeadline) -> Result<Option<Coverage>> {
+        self.index_with_deadline(deadline, false)
+    }
+
+    fn index_with_deadline(
+        &mut self,
+        deadline: QueryDeadline,
+        wait_for_writer: bool,
+    ) -> Result<Option<Coverage>> {
+        anyhow::ensure!(
+            self.access == StoreAccess::Writer,
+            "read_only_store: indexing requires Store::open_for_reconcile"
+        );
+        index_deadline::check(&deadline)?;
+        let writer_lock = self
+            .writer_lease_file()
+            .map_err(|error| index_deadline::classify(&deadline, error))?;
+        loop {
+            index_deadline::check(&deadline)?;
+            match fs2::FileExt::try_lock_exclusive(&writer_lock) {
+                Ok(()) => {
+                    if let Err(error) = index_deadline::install(&self.conn, &deadline) {
+                        let _ = index_deadline::clear(&self.conn);
+                        return Err(index_deadline::classify(
+                            &deadline,
+                            cache_access::index_cache_unavailable(&self.cache, error),
+                        ));
+                    }
+                    let result = self
+                        .index_leased(writer_lock, resolve_all, Some(&deadline))
+                        .map_err(|error| {
+                            index_deadline::classify(
+                                &deadline,
+                                cache_access::index_cache_unavailable(&self.cache, error),
+                            )
+                        });
+                    let clear = index_deadline::clear(&self.conn);
+                    return match (result, clear) {
+                        (Err(error), _) => Err(error),
+                        (Ok(_), Err(error)) => Err(index_deadline::classify(
+                            &deadline,
+                            cache_access::index_cache_unavailable(&self.cache, error.into()),
+                        )),
+                        (Ok(coverage), Ok(())) => Ok(coverage),
+                    };
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    if !wait_for_writer {
+                        return Ok(None);
+                    }
+                    std::thread::sleep(deadline.cap(INDEX_LEASE_POLL_INTERVAL));
+                }
+                Err(error) => {
+                    return Err(index_deadline::classify(
+                        &deadline,
+                        cache_access::index_cache_unavailable(&self.cache, error.into()),
+                    ));
+                }
+            }
         }
     }
 
     fn writer_lease_file(&self) -> Result<std::fs::File> {
-        Ok(std::fs::OpenOptions::new()
+        std::fs::OpenOptions::new()
             .create(true)
             .truncate(false)
             .read(true)
             .write(true)
-            .open(self.cache.join("index.lock"))?)
+            .open(self.cache.join("index.lock"))
+            .map_err(|error| cache_access::index_cache_unavailable(&self.cache, error.into()))
     }
 
     fn index_with_resolver(
@@ -304,8 +454,10 @@ impl Store {
         resolve_staged: impl FnOnce(&mut Connection) -> Result<()>,
     ) -> Result<Coverage> {
         let writer_lock = self.writer_lease_file()?;
-        fs2::FileExt::lock_exclusive(&writer_lock)?;
-        self.index_leased(writer_lock, resolve_staged)
+        fs2::FileExt::lock_exclusive(&writer_lock)
+            .map_err(|error| cache_access::index_cache_unavailable(&self.cache, error.into()))?;
+        self.index_leased(writer_lock, resolve_staged, None)?
+            .context("explicit indexing did not produce a publication")
     }
 
     /// Stages and publishes while `_writer_lock` holds the writer lease.
@@ -313,31 +465,99 @@ impl Store {
         &mut self,
         _writer_lock: std::fs::File,
         resolve_staged: impl FnOnce(&mut Connection) -> Result<()>,
-    ) -> Result<Coverage> {
-        // The writer lease makes any previous staging directory an interrupted scan.
-        for entry in std::fs::read_dir(&self.cache)? {
-            let entry = entry?;
-            if entry.file_type()?.is_dir()
-                && entry
-                    .file_name()
-                    .to_str()
-                    .is_some_and(|name| name.starts_with("stage-"))
-            {
-                std::fs::remove_dir_all(entry.path())?;
+        deadline: Option<&QueryDeadline>,
+    ) -> Result<Option<Coverage>> {
+        let mut checkpoint = index_checkpoint::IndexCheckpoint::open(
+            &self.conn,
+            &self.index_root,
+            &self.cache,
+            deadline,
+        )?;
+        if let Err(error) = index_checkpoint::cleanup_stale_stages(&self.cache, deadline) {
+            if deadline.is_some_and(QueryDeadline::expired) {
+                record_index_interruption(&mut checkpoint, deadline.unwrap(), false, Some(&error));
+            }
+            return Err(error);
+        }
+        if deadline.is_some() && checkpoint.maintenance_required() {
+            return Ok(None);
+        }
+        let use_checkpoint = deadline.is_some() || checkpoint.has_retained_facts();
+        if use_checkpoint {
+            if let Err(error) = checkpoint.begin_pass() {
+                if deadline.is_some_and(QueryDeadline::expired) {
+                    record_index_interruption(
+                        &mut checkpoint,
+                        deadline.unwrap(),
+                        false,
+                        Some(&error),
+                    );
+                }
+                return Err(error);
             }
         }
-        let directory = tempfile::Builder::new()
-            .prefix("stage-")
-            .tempdir_in(&self.cache)?;
+        if let Some(deadline) = deadline {
+            if let Err(error) = index_deadline::check(deadline) {
+                record_index_interruption(&mut checkpoint, deadline, false, None);
+                return Err(error);
+            }
+        }
+        let staged_setup = (|| -> Result<_> {
+            let directory = tempfile::Builder::new()
+                .prefix("stage-")
+                .tempdir_in(&self.cache)?;
+            let staged_path = directory.path().join("index.sqlite3");
+            let staged = Connection::open(&staged_path)?;
+            if let Some(deadline) = deadline {
+                index_deadline::install(&staged, deadline)?;
+                index_deadline::check(deadline)?;
+            }
+            staged.execute_batch(
+                "PRAGMA journal_mode=DELETE; PRAGMA synchronous=OFF; PRAGMA cache_size=-4096;",
+            )?;
+            schema::create(&staged)?;
+            if let Some(deadline) = deadline {
+                index_deadline::check(deadline)?;
+            }
+            let capture_started_ms = publish::timestamp_ms()?;
+            Ok((directory, staged, capture_started_ms))
+        })();
+        let (directory, mut staged, capture_started_ms) = match staged_setup {
+            Ok(setup) => setup,
+            Err(error) => {
+                if deadline.is_some_and(QueryDeadline::expired) {
+                    record_index_interruption(
+                        &mut checkpoint,
+                        deadline.unwrap(),
+                        false,
+                        Some(&error),
+                    );
+                }
+                return Err(error);
+            }
+        };
+        if let Some(deadline) = deadline {
+            checkpoint.start_bounded_slice(deadline);
+        }
         let staged_path = directory.path().join("index.sqlite3");
-        let mut staged = Connection::open(&staged_path)?;
-        staged.execute_batch(
-            "PRAGMA journal_mode=DELETE; PRAGMA synchronous=OFF; PRAGMA cache_size=-4096;",
-        )?;
-        schema::create(&staged)?;
-        let capture_started_ms = publish::timestamp_ms()?;
-        let (coverage, scan_fingerprint) =
-            scan::stage(&mut staged, &self.conn, &self.index_root, &self.cache)?;
+        let (coverage, scan_fingerprint) = if use_checkpoint {
+            index_checkpoint::stage(
+                &mut checkpoint,
+                &mut staged,
+                &self.conn,
+                &self.index_root,
+                &self.cache,
+                deadline,
+            )?
+        } else {
+            scan::stage(&mut staged, &self.conn, &self.index_root, &self.cache)?
+        };
+        if let Some(deadline) = deadline {
+            if let Err(error) = index_deadline::check(deadline) {
+                record_index_interruption(&mut checkpoint, deadline, true, None);
+                return Err(error);
+            }
+        }
         let fingerprint =
             scan::resolved_fingerprint(&scan_fingerprint, php_resolver::SHARED_RESOLVER_REVISION);
         let capture_completed_ms = publish::timestamp_ms()?.max(capture_started_ms);
@@ -348,35 +568,132 @@ impl Store {
                 [],
                 |row| row.get(0),
             )
-            .optional()?;
-        if previous.as_deref() == Some(&fingerprint)
-            && self.coverage()?.walk_failures == coverage.walk_failures
-            && self.publication()?.is_some()
-        {
-            return Ok(coverage);
+            .optional()
+            .map_err(|error| {
+                let error = anyhow::Error::from(error);
+                if deadline.is_some_and(QueryDeadline::expired) {
+                    record_index_interruption(
+                        &mut checkpoint,
+                        deadline.unwrap(),
+                        true,
+                        Some(&error),
+                    );
+                }
+                error
+            })?;
+        let unchanged = if previous.as_deref() == Some(&fingerprint) {
+            (|| -> Result<bool> {
+                Ok(self.coverage()?.walk_failures == coverage.walk_failures
+                    && self.publication()?.is_some())
+            })()
+        } else {
+            Ok(false)
+        };
+        let unchanged = match unchanged {
+            Ok(unchanged) => unchanged,
+            Err(error) => {
+                if deadline.is_some_and(QueryDeadline::expired) {
+                    record_index_interruption(
+                        &mut checkpoint,
+                        deadline.unwrap(),
+                        true,
+                        Some(&error),
+                    );
+                }
+                return Err(error);
+            }
+        };
+        if unchanged {
+            let _ = checkpoint.mark_complete();
+            return Ok(Some(coverage));
         }
-        resolve_staged(&mut staged)?;
+        checkpoint.set_finalizing()?;
+        if let Err(error) = resolve_staged(&mut staged) {
+            if deadline.is_some_and(QueryDeadline::expired) {
+                record_index_interruption(&mut checkpoint, deadline.unwrap(), true, Some(&error));
+            }
+            return Err(error);
+        }
+        if let Some(deadline) = deadline {
+            if let Err(error) = index_deadline::check(deadline) {
+                record_index_interruption(&mut checkpoint, deadline, true, None);
+                return Err(error);
+            }
+        }
         drop(staged);
-        let publication = Publication {
-            index_epoch: self.conn.query_row(
+        let publication_identity = (|| -> Result<(String, i64)> {
+            let index_epoch = self.conn.query_row(
                 "SELECT value FROM meta WHERE key='index_epoch'",
                 [],
                 |row| row.get(0),
-            )?,
-            generation: self.generation()? + 1,
+            )?;
+            Ok((index_epoch, self.generation()? + 1))
+        })();
+        let (index_epoch, generation) = match publication_identity {
+            Ok(identity) => identity,
+            Err(error) => {
+                if deadline.is_some_and(QueryDeadline::expired) {
+                    record_index_interruption(
+                        &mut checkpoint,
+                        deadline.unwrap(),
+                        true,
+                        Some(&error),
+                    );
+                }
+                return Err(error);
+            }
+        };
+        let publication = Publication {
+            index_epoch,
+            generation,
             root: encode_path(&self.index_root),
             capture_started_ms,
             capture_completed_ms,
         };
-        publish::publish(
+        if let Some(deadline) = deadline {
+            if let Err(error) = index_deadline::check(deadline) {
+                record_index_interruption(&mut checkpoint, deadline, true, None);
+                return Err(error);
+            }
+            if let Err(error) = index_deadline::install(&self.conn, deadline) {
+                if deadline.expired() {
+                    record_index_interruption(&mut checkpoint, deadline, true, Some(&error));
+                }
+                return Err(error);
+            }
+        }
+        if let Err(error) = publish::publish(
             &mut self.conn,
             &staged_path,
             &coverage,
             &fingerprint,
             &publication,
-        )?;
-        Ok(coverage)
+        ) {
+            if deadline.is_some_and(QueryDeadline::expired) {
+                record_index_interruption(&mut checkpoint, deadline.unwrap(), true, Some(&error));
+            }
+            return Err(error);
+        }
+        let _ = checkpoint.mark_complete();
+        Ok(Some(coverage))
     }
+}
+
+fn record_index_interruption(
+    checkpoint: &mut index_checkpoint::IndexCheckpoint,
+    deadline: &QueryDeadline,
+    _finalization: bool,
+    cause: Option<&anyhow::Error>,
+) {
+    let exhausted = deadline.time_expired()
+        && !deadline.cancelled()
+        && cause.is_none_or(index_deadline::is_deadline_interruption);
+    let update = if exhausted {
+        checkpoint.note_budget_expired(deadline)
+    } else {
+        checkpoint.record_progress()
+    };
+    let _ = update;
 }
 
 /// The full resolver pass over a staged index.

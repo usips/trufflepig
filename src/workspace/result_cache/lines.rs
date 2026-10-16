@@ -3,7 +3,10 @@
 //! fallback and failure state visible; only detail reasons are folded away.
 
 use super::OwnedEntry;
-use crate::results::{ResultEntry, lines::unconfigured};
+use crate::results::{
+    ResultEntry,
+    lines::{index_progress_summary, unconfigured},
+};
 use serde_json::Value;
 use std::collections::HashSet;
 
@@ -56,6 +59,10 @@ pub(crate) fn member_coverage_summary(values: &[Value]) -> String {
                 None => format!("{name} {state}"),
             },
         };
+        if let Some(progress) = value.get("index_progress").and_then(index_progress_summary) {
+            part.push_str("; ");
+            part.push_str(&progress);
+        }
         if value["truncated"].as_bool().unwrap_or(false) {
             part.push_str(" truncated");
         }
@@ -175,6 +182,7 @@ pub(crate) fn compact_coverage(values: &[Value]) -> Vec<Value> {
                 "partial",
                 "unsearched",
                 "unsearched_kinds",
+                "index_progress",
                 "issues",
             ]
             .into_iter()

@@ -1,6 +1,8 @@
 //! Verify published-index candidates against bounded current-source snapshots.
 use super::{Query, search_current_file, semantic_representative};
 use crate::{
+    daemon::deadline::{QueryDeadline, TIMED_OUT},
+    extract::Extraction,
     identity::ContentRevision,
     results::Hit,
     source,
@@ -19,6 +21,36 @@ pub(super) fn recheck(
     hits: &mut Vec<Hit>,
     coverage: &mut serde_json::Value,
     truncated: &mut bool,
+    deadline: &QueryDeadline,
+) -> Result<()> {
+    recheck_with_current_search(
+        store,
+        query,
+        hits,
+        coverage,
+        truncated,
+        deadline,
+        |store, query, path, bytes, extraction, deadline| {
+            search_current_file(store, query, path, bytes, extraction, deadline)
+        },
+    )
+}
+
+fn recheck_with_current_search(
+    store: &Store,
+    query: &Query,
+    hits: &mut Vec<Hit>,
+    coverage: &mut serde_json::Value,
+    truncated: &mut bool,
+    deadline: &QueryDeadline,
+    mut current_search: impl FnMut(
+        &Store,
+        &Query,
+        &str,
+        &[u8],
+        &Extraction,
+        &QueryDeadline,
+    ) -> Result<(Vec<Hit>, bool)>,
 ) -> Result<()> {
     let mut checked = HashSet::with_capacity(hits.len().min(MAX_CHECKED_FILES));
     let mut replacements = HashMap::with_capacity(MAX_REEXTRACTED_FILES.min(hits.len()));
@@ -26,6 +58,9 @@ pub(super) fn recheck(
     let mut reextracted = 0;
     let mut semantic_unverified = 0;
     for hit in hits.iter() {
+        if deadline.expired() {
+            anyhow::bail!("{TIMED_OUT}: current-source recheck deadline expired");
+        }
         let Some(revision) = hit.revision.as_deref() else {
             continue;
         };
@@ -61,7 +96,7 @@ pub(super) fn recheck(
             source::usable_extraction(&hit.path, crate::extract::extract(&hit.path, &bytes))
                 .and_then(|extraction| {
                     let (mut current, incomplete) =
-                        search_current_file(store, query, &hit.path, &bytes, &extraction)?;
+                        current_search(store, query, &hit.path, &bytes, &extraction, deadline)?;
                     let semantic = hits.iter().any(|candidate| {
                         candidate.path == hit.path
                             && candidate.provenance.as_deref() == Some("semantic")
@@ -80,6 +115,11 @@ pub(super) fn recheck(
             Ok((current, incomplete)) => {
                 *truncated |= incomplete;
                 replacements.insert(hit.path.as_str(), current);
+            }
+            Err(error) if current_search_timed_out(&error) => {
+                return Err(
+                    error.context(format!("{TIMED_OUT}: current-source recheck interrupted"))
+                );
             }
             Err(_) => {
                 unverified.insert(hit.path.as_str());
@@ -130,6 +170,15 @@ pub(super) fn recheck(
     }
     *hits = current_hits;
     Ok(())
+}
+
+fn current_search_timed_out(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .to_string()
+            .strip_prefix(TIMED_OUT)
+            .is_some_and(|rest| rest.starts_with(':'))
+    })
 }
 
 fn missing(error: &anyhow::Error) -> bool {

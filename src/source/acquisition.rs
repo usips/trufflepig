@@ -1,14 +1,15 @@
 //! Acquire and verify one immutable identity before rendering its remaining byte range.
-use super::{MAX_READ_BYTES, current_span, read_contained};
+use super::{MAX_READ_BYTES, read_contained};
 use crate::{
     identity::{ByteSpan, ContentRevision, ResultHandle},
-    results::{self, HistoricalSource, Hit, ResultEntry},
+    results::{self, HistoricalSource, ResultEntry},
     search::InvocationDirectory,
     store::Store,
 };
 use anyhow::{Context, Result, bail, ensure};
 use std::path::Component;
 
+mod path_read;
 mod symbol;
 #[cfg(test)]
 mod tests;
@@ -64,6 +65,16 @@ pub(crate) fn acquire(
         let (identity, offset) = cursor
             .rsplit_once('@')
             .context("invalid_cursor: expected read:HANDLE@BYTE_OFFSET")?;
+        if identity.starts_with("path:") {
+            ensure!(
+                side.is_none(),
+                "invalid_side: current path continuations have no historical side"
+            );
+            let offset = offset
+                .parse::<usize>()
+                .context("invalid_cursor: invalid byte offset")?;
+            return path_read::acquire_path_continuation(store, identity, offset);
+        }
         let (handle, recorded_side) = match identity.rsplit_once(':') {
             Some((handle, value @ ("before" | "after"))) => {
                 (handle, Some(SourceSide::parse(value)?))
@@ -85,11 +96,7 @@ pub(crate) fn acquire(
         source.span.start = offset;
         return Ok(source);
     }
-    if target.parse::<ResultHandle>().is_ok()
-        || target
-            .rsplit_once(':')
-            .is_some_and(|(id, _)| uuid::Uuid::parse_str(id).is_ok())
-    {
+    if is_result_handle_target(target) {
         return acquire_handle(store, target, side);
     }
     ensure!(
@@ -99,7 +106,46 @@ pub(crate) fn acquire(
     if target.starts_with("sym:") {
         return symbol::acquire_symbol(store, target, origin);
     }
-    acquire_path(store, target, origin)
+    path_read::acquire_path(store, target, origin)
+}
+
+/// Whether `target` names a current file read eligible for a local fallback.
+pub(crate) fn is_current_path_target(target: &str) -> bool {
+    if target.starts_with("sym:") {
+        return false;
+    }
+    if target.starts_with("read:") {
+        return target.starts_with("read:path:");
+    }
+    !is_result_handle_target(target)
+}
+
+/// Acquires current path bytes without using the optional result-set cache.
+pub(crate) fn acquire_current_path_without_cache(
+    store: &Store,
+    target: &str,
+    side: Option<SourceSide>,
+    origin: &InvocationDirectory,
+) -> Result<AcquiredSource> {
+    ensure!(
+        is_current_path_target(target),
+        "invalid_target: cache-independent reads require a current path target"
+    );
+    ensure!(
+        side.is_none(),
+        "invalid_side: current path reads have no historical side"
+    );
+    if target.starts_with("read:path:") {
+        return acquire(store, target, side, origin);
+    }
+    path_read::acquire_path_without_result_storage(store, target, origin)
+}
+
+fn is_result_handle_target(target: &str) -> bool {
+    target.parse::<ResultHandle>().is_ok()
+        || target
+            .rsplit_once(':')
+            .is_some_and(|(id, _)| uuid::Uuid::parse_str(id).is_ok())
 }
 
 fn acquire_handle(store: &Store, handle: &str, side: Option<SourceSide>) -> Result<AcquiredSource> {
@@ -218,84 +264,6 @@ fn acquire_historical(
         handle: handle.into(),
         side: Some(side),
         historical: Some(identity),
-        definitions: None,
-        freshness: None,
-    })
-}
-
-fn acquire_path(
-    store: &Store,
-    target: &str,
-    origin: &InvocationDirectory,
-) -> Result<AcquiredSource> {
-    let target = target.strip_prefix("path:").unwrap_or(target);
-    let (path, lines, range) = match target.rsplit_once(':') {
-        Some((path, range)) if range.contains('-') => {
-            let (first, last) = range.split_once('-').expect("range separator");
-            (
-                path,
-                (first.parse::<usize>()?, last.parse::<usize>()?),
-                Some(range),
-            )
-        }
-        _ => (target, (1, usize::MAX), None),
-    };
-    let relative = crate::store::decode_path(path)?;
-    let bytes = match read_contained(&store.root, &relative, MAX_READ_BYTES) {
-        Ok(bytes) => bytes,
-        Err(error) if error.to_string().starts_with("source_unavailable:") => {
-            let invocation_relative = origin.member_relative_path()?.join(&relative);
-            if invocation_relative != relative
-                && read_contained(&store.root, &invocation_relative, MAX_READ_BYTES).is_ok()
-            {
-                let suggested = crate::store::encode_path(&invocation_relative);
-                let range = range.map_or_else(String::new, |range| format!(":{range}"));
-                anyhow::bail!(
-                    "{error}; path values are relative to the selected member root; use `path:{suggested}{range}`"
-                );
-            }
-            return Err(error);
-        }
-        Err(error) => return Err(error),
-    };
-    let revision = ContentRevision::of(&bytes);
-    let (start, end) = current_span(&bytes, lines.0, lines.1)?;
-    let (start_line, end_line) = super::line_span(&bytes, start, end);
-    let hit = Hit {
-        handle: String::new(),
-        path: path.into(),
-        revision: Some(revision.to_string()),
-        start,
-        end,
-        start_line,
-        end_line,
-        name: path.into(),
-        kind: "source_read".into(),
-        container: None,
-        provenance: Some("explicit_path_read".into()),
-        resolution: None,
-        candidates: Vec::new(),
-        target: None,
-        repeats: None,
-        snippet: None,
-        differs: false,
-    };
-    let set = results::save_entries(
-        store,
-        store.generation()?,
-        serde_json::json!({}),
-        vec![ResultEntry::LiveSource(hit)],
-        false,
-    )?;
-    Ok(AcquiredSource {
-        bytes,
-        path: path.into(),
-        revision,
-        span: ByteSpan::new(start, end)?,
-        verified: false,
-        handle: format!("{set}:1"),
-        side: None,
-        historical: None,
         definitions: None,
         freshness: None,
     })

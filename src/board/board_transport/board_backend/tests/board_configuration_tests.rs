@@ -41,7 +41,7 @@ fn configuration_ttl_refresh_changes_existing_writer_claim_policy() {
             repo_key: None,
         },
     );
-    let reply = host.handle_by(&create, QueryDeadline::start()).unwrap();
+    let reply = host.handle_by(&create, &QueryDeadline::start()).unwrap();
     let BoardResult::Change(change) = reply.result else {
         panic!("expected plan");
     };
@@ -57,7 +57,7 @@ fn configuration_ttl_refresh_changes_existing_writer_claim_policy() {
                     section: None,
                 },
             ),
-            QueryDeadline::start(),
+            &QueryDeadline::start(),
         )
         .unwrap();
     let BoardResult::Change(change) = reply.result else {
@@ -80,7 +80,7 @@ fn configuration_ttl_refresh_changes_existing_writer_claim_policy() {
             delegate: None,
         },
     );
-    host.handle_by(&request, QueryDeadline::start()).unwrap();
+    host.handle_by(&request, &QueryDeadline::start()).unwrap();
 }
 
 #[test]

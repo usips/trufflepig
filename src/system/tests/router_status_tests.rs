@@ -4,6 +4,7 @@ use super::*;
 fn router_status_reports_supported_and_file_schema_versions() {
     let directory = crate::board::board_test_support::scratch("board-status-");
     let database = directory.path().join("board.sqlite3");
+    let executable = std::env::current_exe().unwrap();
     let config = crate::board::BoardConfig::for_database(&database);
     drop(crate::board::local_board::LocalBoard::open(&config).unwrap());
     let router = SystemRouter {
@@ -21,6 +22,13 @@ fn router_status_reports_supported_and_file_schema_versions() {
         .unwrap();
     let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
     assert_eq!(status["status"], "ok");
+    assert_eq!(status["process_id"], serde_json::json!(std::process::id()));
+    assert_eq!(
+        status["executable"],
+        serde_json::json!(executable.display().to_string())
+    );
+    assert_eq!(status["executable_replaced"], serde_json::json!(false));
+    assert!(status["executable_error"].is_null());
     assert_eq!(status["board_api"], crate::board::BOARD_API);
     assert_eq!(status["board_db"], serde_json::json!(database));
     assert_eq!(status["schema_supported"], crate::board::SCHEMA_VERSION);

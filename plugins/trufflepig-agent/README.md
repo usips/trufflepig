@@ -99,12 +99,12 @@ Do not work around mismatches by stripping flags. The wrapper preserves CLI
 errors rather than negotiating with old versions. Requests interrupted by an
 upgrade may need retrying after the service is healthy.
 
-If socket access is denied, the wrapper uses the configured router spool.
-Check that the service has the same `TRUFFLEPIG_SPOOL_DIR`, that its `heartbeat`
-is fresh, and that the harness can write that directory. A stale or absent heartbeat
-means the router is unavailable. `--no-daemon` requires writable index/cache
-access and is not the normal sandbox workaround. Do not place indexes, audit
-fallbacks, or spool traffic on RAM-backed `/tmp`.
+If socket access is denied, the wrapper uses the configured router spool. The
+service and harness must share `TRUFFLEPIG_SPOOL_DIR`; the harness needs write
+access and a fresh `heartbeat`. `--no-daemon` skips the router. Index-backed
+searches need a usable index and selected result cache; `show path:FILE[:START-END]`
+and opaque `read:path:` continuations read current bytes without either. Keep
+indexes, audit fallbacks, and spools off RAM-backed `/tmp`.
 
 ## Search and relationship limits
 

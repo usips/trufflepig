@@ -1,6 +1,8 @@
 //! Backend request runs: CLI commands onto the board host.
 mod host_done;
 mod host_review;
+#[cfg(test)]
+mod tests;
 use super::super::{
     BoardHost,
     board_wait::{inbox_has_events, waiter_transient},
@@ -17,7 +19,7 @@ use crate::{
         board_render::{render_cli_reply, render_reply},
     },
     cli::Arguments,
-    daemon::deadline::QueryDeadline,
+    daemon::deadline::{QUERY_DEADLINE, QueryDeadline},
     diagnostics::RequestContext,
     output::OutputBudget,
 };
@@ -30,7 +32,7 @@ impl BoardHost {
         op: &mut BoardOp,
         selector: &str,
         actor_host: &str,
-        deadline: QueryDeadline,
+        deadline: &QueryDeadline,
     ) -> Result<()> {
         crate::board::board_projects::validate_scope_selection(op)?;
         let projects = self.projects(actor_host, deadline)?;
@@ -44,8 +46,9 @@ impl BoardHost {
         context: &RequestContext,
         deadline: QueryDeadline,
     ) -> Result<String> {
-        check_deadline(deadline)?;
+        check_deadline(&deadline)?;
         let command = board_grammar::parse(options, None)?;
+        let deadline = local_read_deadline(&command, deadline);
         if matches!(&command, BoardCommand::Web { .. }) {
             bail!("invalid_options: board web must run on the client");
         }
@@ -53,11 +56,9 @@ impl BoardHost {
         let actor = config.actor(context.client.as_deref(), context.session.as_deref())?;
         let budget = OutputBudget::new(options.budget)?.with_format(options.output_format());
         let BoardCommand::Op(mut op) = command else {
-            let (targets, report) = self.ingest(
-                &actor,
-                None,
-                deadline.remaining().saturating_sub(Duration::from_secs(2)),
-            )?;
+            let scan_deadline =
+                deadline.capped(deadline.remaining().saturating_sub(Duration::from_secs(2)));
+            let (targets, report) = self.ingest(&actor, None, &scan_deadline)?;
             let mut reply = BoardReply::new(
                 format!("local:{}", config.db_path.display()),
                 BoardResult::CommitsLinked(CommitLinkResult {
@@ -84,7 +85,7 @@ impl BoardHost {
                 status: None,
             })
         } else {
-            lock_before(&self.inner.registrations, deadline, "repository identity").and_then(
+            lock_before(&self.inner.registrations, &deadline, "repository identity").and_then(
                 |mut cache| {
                     cache.register(
                         &options.root,
@@ -126,7 +127,7 @@ impl BoardHost {
                             registration: proposed,
                         },
                     ),
-                    deadline,
+                    &deadline,
                 ) {
                     Ok(reply) => match reply.result {
                         BoardResult::Registered(effective) => registration = Some(effective),
@@ -144,7 +145,7 @@ impl BoardHost {
                 }
             } else {
                 // Reads use the durable identity without modifying registration rows.
-                match self.repositories(&actor, None, deadline) {
+                match self.repositories(&actor, None, &deadline) {
                     Ok(targets) => {
                         if let Some(target) = targets.iter().find(|target| {
                             target.registration.common_dir == proposed.common_dir
@@ -186,13 +187,13 @@ impl BoardHost {
             );
         }
         if let Some(selector) = options.board.project.as_deref() {
-            if !self.validate_done_project(&op, selector, &actor.host, deadline)? {
+            if !self.validate_done_project(&op, selector, &actor.host, &deadline)? {
                 if selector == "unscoped" {
                     *op.read_scope_mut()
                         .context("invalid_options: --project requires a scoped read")? =
                         ReadScope::Unscoped;
                 } else {
-                    self.select_project_scope(&mut op, selector, &actor.host, deadline)?;
+                    self.select_project_scope(&mut op, selector, &actor.host, &deadline)?;
                 }
             }
         }
@@ -206,12 +207,12 @@ impl BoardHost {
         }
         request.validate()?;
         if let BoardOp::Review { base, agent } = &request.op {
-            return self.run_review(&request, base, agent.as_ref(), &budget, deadline, warnings);
+            return self.run_review(&request, base, agent.as_ref(), &budget, &deadline, warnings);
         }
         let mut reply = if options.wait && matches!(&request.op, BoardOp::Inbox { .. }) {
-            self.wait_inbox(&request, deadline)?
+            self.wait_inbox(&request, &deadline)?
         } else {
-            self.handle_by(&request, deadline)?
+            self.handle_by(&request, &deadline)?
         };
         if let Some(mut registration) = registration.filter(|_| register_write) {
             // New/proposal decisions reveal their plan only after the transaction.
@@ -226,7 +227,7 @@ impl BoardHost {
                     actor.clone(),
                     BoardOp::RegisterRepo { registration },
                 ),
-                deadline,
+                &deadline,
             ) {
                 warnings.push(format!("repository registration: {error:#}"));
             }
@@ -241,7 +242,7 @@ impl BoardHost {
                         actor,
                         BoardOp::AcknowledgeInbox { rendered_through },
                     ),
-                    deadline,
+                    &deadline,
                 ) {
                     if !(options.wait && !inbox_has_events(&reply) && waiter_transient(&error)) {
                         return Err(error);
@@ -250,6 +251,13 @@ impl BoardHost {
             }
         }
         Ok(rendered.text)
+    }
+}
+
+fn local_read_deadline(command: &BoardCommand, deadline: QueryDeadline) -> QueryDeadline {
+    match command {
+        BoardCommand::Op(op) if op.is_read_only() => deadline.capped(QUERY_DEADLINE),
+        _ => deadline,
     }
 }
 

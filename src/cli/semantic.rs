@@ -2,6 +2,7 @@
 
 use super::Arguments;
 use crate::{
+    daemon::deadline::QueryDeadline,
     output::OutputBudget,
     semantic::{preparation, worker},
     workspace::{self, config::WorkspaceConfig},
@@ -199,9 +200,8 @@ pub(crate) fn workspace(
     config: &WorkspaceConfig,
     options: &Arguments,
     context: &crate::diagnostics::RequestContext,
-    reply_wait: Duration,
+    deadline: &QueryDeadline,
 ) -> Result<String> {
-    let replying = crate::daemon::deadline::QueryDeadline::after(reply_wait);
     let command = options
         .words
         .get(1)
@@ -215,7 +215,11 @@ pub(crate) fn workspace(
     let mut values = Vec::with_capacity(members.len());
     for member in &members {
         member.verify_identity()?;
-        let cache = workspace::member_cache(member, options.cache.as_deref())?;
+        let cache = if command == "status" {
+            workspace::member_cache_until(member, options.cache.as_deref(), deadline)?
+        } else {
+            workspace::member_cache(member, options.cache.as_deref())?
+        };
         let mut local = options.clone();
         local.root = member.root.clone();
         local.cache = Some(cache.clone());
@@ -234,7 +238,7 @@ pub(crate) fn workspace(
         let output = crate::cli::run_direct(
             &crate::cli::normalized_args(&local, &local.root),
             context,
-            replying.remaining(),
+            deadline.clone(),
         )?;
         let mut value: Value = serde_json::from_str(&output)?;
         value["member"] = member.name().into();

@@ -69,7 +69,7 @@ impl HostProjectFixture {
         }))
         .unwrap();
         self.host
-            .handle_by(&request, QueryDeadline::start())
+            .handle_by(&request, &QueryDeadline::start())
             .unwrap()
     }
 
@@ -89,7 +89,7 @@ impl HostProjectFixture {
                         repo_key: None,
                     },
                 ),
-                QueryDeadline::start(),
+                &QueryDeadline::start(),
             )
             .unwrap();
         let BoardResult::Change(change) = reply.result else {

@@ -19,8 +19,13 @@ pub(crate) struct BoardClientTransport {
 }
 
 trait BoardGateway {
-    fn request(&mut self, args: &[String], context: &RequestContext) -> Result<Option<String>>;
-    fn ensure(&mut self) -> Result<()>;
+    fn request(
+        &mut self,
+        args: &[String],
+        context: &RequestContext,
+        deadline: &QueryDeadline,
+    ) -> Result<Option<String>>;
+    fn ensure(&mut self, deadline: &QueryDeadline) -> Result<()>;
 
     /// Checks whether the known router socket is denied after normal routing
     /// has already tried both the socket and sandbox spool.
@@ -31,11 +36,16 @@ trait BoardGateway {
 
 struct SystemGateway;
 impl BoardGateway for SystemGateway {
-    fn request(&mut self, args: &[String], context: &RequestContext) -> Result<Option<String>> {
-        crate::system::request(args, context)
+    fn request(
+        &mut self,
+        args: &[String],
+        context: &RequestContext,
+        deadline: &QueryDeadline,
+    ) -> Result<Option<String>> {
+        crate::system::request_by(args, context, deadline.clone())
     }
-    fn ensure(&mut self) -> Result<()> {
-        crate::system::ensure()
+    fn ensure(&mut self, deadline: &QueryDeadline) -> Result<()> {
+        crate::system::ensure_by(deadline.clone())
     }
 }
 
@@ -45,6 +55,7 @@ impl BoardClientTransport {
         args: &[String],
         options: &Arguments,
         context: &RequestContext,
+        deadline: QueryDeadline,
     ) -> Result<String> {
         let forwarded = crate::board::prepare_client(args, options)?;
         let options = crate::cli::parse(&forwarded)?;
@@ -64,6 +75,7 @@ impl BoardClientTransport {
             &mut BoardConfig::load,
             crate::system::dir().as_deref(),
             &crate::system::spool_dir(),
+            &deadline,
         )
     }
     fn run_prepared(
@@ -76,27 +88,63 @@ impl BoardClientTransport {
         load: &mut dyn FnMut() -> Result<BoardConfig>,
         runtime: Option<&Path>,
         spool: &Path,
+        deadline: &QueryDeadline,
+    ) -> Result<String> {
+        match self.run_prepared_inner(
+            forwarded, options, command, context, gateway, load, runtime, spool, deadline,
+        ) {
+            Err(error)
+                if matches!(
+                    command,
+                    BoardCommand::Op(crate::board::BoardOp::Feedback { .. })
+                ) && error
+                    .downcast_ref::<BoardRequestDeadlineExpired>()
+                    .is_some() =>
+            {
+                failed_request(command, options, context, load, spool, error)
+            }
+            result => result,
+        }
+    }
+
+    fn run_prepared_inner(
+        &mut self,
+        forwarded: &[String],
+        options: &Arguments,
+        command: &BoardCommand,
+        context: &RequestContext,
+        gateway: &mut dyn BoardGateway,
+        load: &mut dyn FnMut() -> Result<BoardConfig>,
+        runtime: Option<&Path>,
+        spool: &Path,
+        deadline: &QueryDeadline,
     ) -> Result<String> {
         if options.no_daemon {
-            return local_reply(options, command, context, load, runtime, spool);
+            return local_reply(options, command, context, load, runtime, spool, deadline);
         }
+        check_deadline(deadline)?;
         if self.probed_api.is_none() {
             let ping = ["system".to_owned(), "status".to_owned()];
-            let mut status = match gateway.request(&ping, context) {
+            let mut status = match gateway.request(&ping, context, deadline) {
                 Ok(status) => status,
                 Err(error) => return failed_request(command, options, context, load, spool, error),
             };
             let mut recent = false;
             if status.is_none() {
-                if let Some(error) = local_access::denied_router_socket(gateway, runtime, load)? {
+                check_deadline(deadline)?;
+                let denied = local_access::denied_router_socket(gateway, runtime, load)?;
+                check_deadline(deadline)?;
+                if let Some(error) = denied {
                     return failed_request(command, options, context, load, spool, error);
                 }
                 recent = runtime.is_some_and(|runtime| {
                     crate::system::board_router_recently_unavailable(runtime, SystemTime::now())
                 });
                 if !recent {
-                    let _ = gateway.ensure();
-                    status = match gateway.request(&ping, context) {
+                    check_deadline(deadline)?;
+                    let _ = gateway.ensure(deadline);
+                    check_deadline(deadline)?;
+                    status = match gateway.request(&ping, context, deadline) {
                         Ok(status) => status,
                         Err(error) => {
                             return failed_request(command, options, context, load, spool, error);
@@ -105,6 +153,7 @@ impl BoardClientTransport {
                 }
             }
             let Some(status) = status else {
+                check_deadline(deadline)?;
                 if !recent {
                     if let Some(runtime) = runtime {
                         let _ = crate::system::mark_board_router_unavailable(
@@ -113,7 +162,7 @@ impl BoardClientTransport {
                         );
                     }
                 }
-                return local_reply(options, command, context, load, runtime, spool);
+                return local_reply(options, command, context, load, runtime, spool, deadline);
             };
             let (reported, database) = parse_probe(&status)?;
             self.probed_api = Some(reported);
@@ -126,6 +175,7 @@ impl BoardClientTransport {
                 reported = reported,
                 BOARD_API = BOARD_API
             );
+            check_deadline(deadline)?;
             if let Some(runtime) = runtime {
                 let _ = crate::system::record_board_database(runtime, &database);
                 crate::system::clear_board_router_unavailable(runtime);
@@ -137,7 +187,8 @@ impl BoardClientTransport {
             self.probed_api
                 .expect("successful probe retains the router API")
         );
-        match gateway.request(forwarded, context) {
+        check_deadline(deadline)?;
+        match gateway.request(forwarded, context, deadline) {
             Ok(Some(reply)) => {
                 if let Some(runtime) = runtime {
                     crate::system::clear_board_router_unavailable(runtime);
@@ -145,18 +196,44 @@ impl BoardClientTransport {
                 Ok(reply)
             }
             Ok(None) => {
-                if let Some(error) = local_access::denied_router_socket(gateway, runtime, load)? {
+                check_deadline(deadline)?;
+                let denied = local_access::denied_router_socket(gateway, runtime, load)?;
+                check_deadline(deadline)?;
+                if let Some(error) = denied {
                     return failed_request(command, options, context, load, spool, error);
                 }
                 if let Some(runtime) = runtime {
                     let _ =
                         crate::system::mark_board_router_unavailable(runtime, SystemTime::now());
                 }
-                local_reply(options, command, context, load, runtime, spool)
+                local_reply(options, command, context, load, runtime, spool, deadline)
             }
             Err(error) => failed_request(command, options, context, load, spool, error),
         }
     }
+}
+
+#[derive(Debug)]
+struct BoardRequestDeadlineExpired;
+
+impl std::fmt::Display for BoardRequestDeadlineExpired {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("board request deadline expired")
+    }
+}
+
+impl std::error::Error for BoardRequestDeadlineExpired {}
+
+fn check_deadline(deadline: &QueryDeadline) -> Result<()> {
+    if deadline.expired() {
+        return Err(
+            anyhow::Error::new(BoardRequestDeadlineExpired).context(format!(
+                "{}: board request deadline expired",
+                crate::daemon::deadline::TIMED_OUT
+            )),
+        );
+    }
+    Ok(())
 }
 
 fn failed_request(
@@ -215,7 +292,9 @@ fn local_reply(
     load: &mut dyn FnMut() -> Result<BoardConfig>,
     runtime: Option<&Path>,
     spool: &Path,
+    deadline: &QueryDeadline,
 ) -> Result<String> {
+    check_deadline(deadline)?;
     // A live router owns migration: feedback queues for it to import while
     // other operations run without migrating and refuse stale storage only.
     if runtime.is_some_and(|runtime| crate::daemon::running(runtime)) {
@@ -223,7 +302,9 @@ fn local_reply(
             command,
             BoardCommand::Op(crate::board::BoardOp::Feedback { .. })
         ) {
+            check_deadline(deadline)?;
             let config = load()?;
+            check_deadline(deadline)?;
             return crate::board::unavailable_or_queue(
                 command,
                 options,
@@ -233,18 +314,25 @@ fn local_reply(
                 anyhow::anyhow!("board_unavailable: router owns migration"),
             );
         }
+        check_deadline(deadline)?;
         let config = load()?;
+        check_deadline(deadline)?;
         if let Some(runtime) = runtime {
             crate::system::validate_board_database(runtime, &config.db_path)?;
         }
-        refuse_stale_storage_beside_router(command, options, context, &config, runtime, spool)?;
-        return run_local(command, options, context, &config, runtime, spool);
+        check_deadline(deadline)?;
+        refuse_stale_storage_beside_router(
+            command, options, context, &config, runtime, spool, deadline,
+        )?;
+        return run_local(command, options, context, &config, runtime, spool, deadline);
     }
+    check_deadline(deadline)?;
     let config = load()?;
+    check_deadline(deadline)?;
     if let Some(runtime) = runtime {
         crate::system::validate_board_database(runtime, &config.db_path)?;
     }
-    run_local(command, options, context, &config, runtime, spool)
+    run_local(command, options, context, &config, runtime, spool, deadline)
 }
 
 /// Opens read-only beside a live router, so missing or stale storage refuses
@@ -256,9 +344,15 @@ fn refuse_stale_storage_beside_router(
     config: &BoardConfig,
     runtime: Option<&Path>,
     spool: &Path,
+    deadline: &QueryDeadline,
 ) -> Result<()> {
     use crate::board::local_board::LocalBoard;
-    match LocalBoard::open_read_with_timeout(config, std::time::Duration::from_secs(5)) {
+    check_deadline(deadline)?;
+    let timeout = deadline.cap(std::time::Duration::from_secs(5));
+    check_deadline(deadline)?;
+    let result = LocalBoard::open_read_with_timeout(config, timeout);
+    check_deadline(deadline)?;
+    match result {
         Ok(_) => Ok(()),
         Err(error)
             if !config.db_path.exists() || LocalBoard::needs_writable_initialization(&error) =>
@@ -283,8 +377,10 @@ fn run_local(
     config: &BoardConfig,
     runtime: Option<&Path>,
     spool: &Path,
+    deadline: &QueryDeadline,
 ) -> Result<String> {
-    match BoardHost::with_config(config.clone()).run(options, context, QueryDeadline::start()) {
+    check_deadline(deadline)?;
+    match BoardHost::with_config(config.clone()).run(options, context, deadline.clone()) {
         Ok(reply) => Ok(reply),
         Err(error)
             if local_access::is_storage_access_failure(&error)

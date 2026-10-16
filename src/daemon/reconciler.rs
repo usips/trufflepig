@@ -1,7 +1,6 @@
 //! The maintenance thread: watches the root, schedules reconciliation, detects a
 //! vanished root, drains the spool, and runs idle work. Requests never wait on it.
-use super::pool::RequestPool;
-use super::server::{DaemonHandler, ServerState};
+use super::server::{DaemonHandler, RequestAdmission, ServerState};
 use super::spool::SpoolServer;
 use notify::{EventKind, RecursiveMode, Watcher};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -132,7 +131,7 @@ pub(super) struct Maintenance {
 pub(super) fn run<H: DaemonHandler>(
     mut maintenance: Maintenance,
     handler: &Arc<H>,
-    pool: &Arc<RequestPool>,
+    admission: &Arc<RequestAdmission>,
     state: &ServerState,
 ) {
     let dirty = Arc::new(AtomicBool::new(false));
@@ -180,7 +179,7 @@ pub(super) fn run<H: DaemonHandler>(
             schedule.completed();
         }
         if let Some(spool) = &mut maintenance.spool {
-            super::server::dispatch_spooled(spool, handler, pool);
+            super::server::dispatch_spooled(spool, handler, admission);
         }
         if survive(state, || handler.idle()).is_none() {
             return;

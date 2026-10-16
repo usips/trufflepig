@@ -11,8 +11,11 @@ use crate::{
         test_fixture::{Fixture, git},
     },
 };
+use fs2::FileExt;
 use serde_json::Value;
-use std::{fs, path::Path, path::PathBuf, time::Duration};
+use std::{fs, fs::OpenOptions, path::Path, path::PathBuf, time::Duration};
+
+mod member_cache_reads;
 
 /// A worktree of `engine` whose cache is only seeded: `lib.rs` edited so
 /// `SharedThing` moves down, untracked `only.rs` defining `WorktreeOnlySymbol`,
@@ -30,7 +33,9 @@ impl SeededWorktree {
         fs::write(engine.join("other.rs"), "pub fn untouched_helper() {}\n").unwrap();
         git(&engine, &["add", "."]);
         git(&engine, &["commit", "-q", "-m", "other"]);
-        fixture.json("engine", &["search", "sym:SharedThing", "ws:all"]);
+        let engine_cache = fixture.member_cache("engine");
+        let mut store = Store::open(&engine, &engine_cache).unwrap();
+        store.index().unwrap();
         let elsewhere = tempfile::tempdir().unwrap();
         let worktree = fixture.worktree("engine", &elsewhere.path().join("wt-l1"));
         fs::write(
@@ -57,6 +62,19 @@ impl SeededWorktree {
         let engine = config.members.iter().find(|m| m.name == "engine").unwrap();
         let root = MemberRoot::linked(engine, self.worktree.clone()).unwrap();
         member_cache(&root, Some(self.fixture.cache.path())).unwrap()
+    }
+
+    fn hold_writer(&self) -> fs::File {
+        let cache = self.worktree_cache();
+        let writer = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(cache.join("index.lock"))
+            .unwrap();
+        writer.lock_exclusive().unwrap();
+        writer
     }
 
     /// Searches from the worktree as a daemon-backed query that does not wait.
@@ -91,15 +109,16 @@ fn search_without_waiting(fixture: &Fixture, root: &Path, words: &[&str]) -> Str
     let options = cli::parse(&args).unwrap();
     let config = WorkspaceConfig::load(&fixture.config).unwrap();
     let cache = cache_path(&config, Some(fixture.cache.path())).unwrap();
-    WorkspaceResults::create(&cache).unwrap();
+    let deadline = QueryDeadline::start();
+    WorkspaceResults::create(&cache, &deadline).unwrap();
     retrieval::search_with_policy(
         &config,
         &cache,
-        &WorkspaceResults::open(&cache).unwrap(),
+        &WorkspaceResults::open(&cache, &deadline).unwrap(),
         &options,
         &cli::request_context(&options).unwrap(),
         &mut crate::semantic::SemanticSession::default(),
-        QueryDeadline::start(),
+        deadline,
         HomeIndexPolicy::AwaitDaemon(Duration::ZERO),
     )
     .unwrap()
@@ -133,7 +152,13 @@ fn unpublished_workspace_path_cursor_survives_index_publication() {
     assert!(store.generation().unwrap() > 0);
     drop(store);
     let continued = fixture.json("engine", &["show", cursor]);
-    assert_eq!(continued["verified"], true, "{continued}");
+    let offset = cursor.rsplit_once('@').unwrap().1.parse::<u64>().unwrap();
+    assert_eq!(continued["source"], "current_file", "{continued}");
+    assert_eq!(continued["path"], "long.txt", "{continued}");
+    assert_eq!(continued["verified"], false, "{continued}");
+    assert_eq!(continued["revision"], first["revision"], "{continued}");
+    assert_eq!(continued["start"], offset, "{continued}");
+    assert_eq!(continued["end"], first["end"], "{continued}");
     assert!(
         continued["lines"][0]["text"]
             .as_str()
@@ -150,7 +175,10 @@ fn unpublished_workspace_path_cursor_survives_index_publication() {
         .run("engine", &["ctx", handle])
         .unwrap_err()
         .to_string();
-    assert!(error.contains("stale_result"), "{error}");
+    assert!(
+        error.starts_with("invalid_handle: context requires a live result handle"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -197,6 +225,7 @@ fn warming_worktree_answers_from_parent_index_with_exact_footer() {
 #[test]
 fn parent_answer_reads_worktree_bytes_and_worktree_only_symbols() {
     let seeded = SeededWorktree::new();
+    let _writer_lease = seeded.hold_writer();
     let live = seeded.search_json(&["search", "re:worktree_marker"]);
     assert_eq!(live["hits"][0]["member"], "engine", "{live}");
     let only = seeded.search_json(&["search", "sym:WorktreeOnlySymbol"]);
@@ -341,6 +370,7 @@ fn plain_identifier_search_reextracts_changed_worktree_definitions() {
 #[test]
 fn exact_parent_miss_refreshes_cached_worktree_discovery() {
     let seeded = SeededWorktree::new();
+    let _writer_lease = seeded.hold_writer();
     let warm = seeded.search_json(&["search", "sym:SharedThing"]);
     assert_eq!(warm["coverage"][0]["state"], "parent_fallback");
     assert!(seeded.worktree_cache().join("divergence.json").is_file());
@@ -426,6 +456,7 @@ fn exact_symbol_reextraction_cap_reports_incomplete_coverage() {
 #[test]
 fn show_symbol_in_changed_file_returns_worktree_span() {
     let seeded = SeededWorktree::new();
+    let _writer_lease = seeded.hold_writer();
     let text = seeded
         .show(&["--format", "lines", "show", "sym:SharedThing"])
         .unwrap();
@@ -621,11 +652,26 @@ fn hash_check_catches_changes_git_divergence_misses() {
     git(&engine, &["commit", "-q", "-am", "move"]);
     let elsewhere = tempfile::tempdir().unwrap();
     let worktree = fixture.worktree("engine", &elsewhere.path().join("wt-l3"));
+    let result_cache =
+        crate::workspace::hashed_member_cache(&worktree, Some(fixture.cache.path())).unwrap();
+    assert!(!result_cache.exists(), "worktree result cache starts cold");
     let text = search_without_waiting(
         &fixture,
         &worktree,
         &["--format", "lines", "search", "SharedThing"],
     );
+    assert!(result_cache.is_dir(), "{result_cache:?}");
+    let seed = crate::store::read_seed_outcome(&result_cache).expect("worktree seed is recorded");
+    assert_eq!(seed["outcome"], "seeded", "{seed}");
+    assert!(
+        seed["extraction_rows"]
+            .as_u64()
+            .is_some_and(|rows| rows > 0),
+        "parent extraction facts were copied: {seed}"
+    );
+    let worktree_store = Store::open(&worktree, &result_cache).unwrap();
+    assert_eq!(worktree_store.generation().unwrap(), 0);
+    assert!(worktree_store.publication().unwrap().is_none());
     assert!(
         coverage_line(&text)
             .starts_with("engine@wt-l3 warming → served from engine index (1 file differs)"),

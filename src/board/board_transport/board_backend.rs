@@ -92,12 +92,12 @@ impl BoardHost {
     }
 
     /// Resolves serving-host workspaces without acquiring or initializing a board writer.
-    pub fn projects(&self, host: &str, deadline: QueryDeadline) -> Result<Vec<ResolvedProject>> {
+    pub fn projects(&self, host: &str, deadline: &QueryDeadline) -> Result<Vec<ResolvedProject>> {
         check_deadline(deadline)?;
         let config = self.config()?;
         let mut projects = board_writer::lock_before(&self.inner.projects, deadline, "projects")?;
         projects
-            .resolve(&config, host, deadline)
+            .resolve(&config, host, deadline.clone())
             .map_err(Into::into)
     }
 
@@ -145,7 +145,7 @@ impl BoardHost {
         Some((config.snapshot(), config.needs_refresh(Instant::now())))
     }
 
-    pub(super) fn max_seq_by(&self, deadline: QueryDeadline) -> Result<EventSeq> {
+    pub(super) fn max_seq_by(&self, deadline: &QueryDeadline) -> Result<EventSeq> {
         check_deadline(deadline)?;
         let config = self.config()?;
         if !config.db_path.exists() {

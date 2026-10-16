@@ -13,9 +13,9 @@ mod worktree_reads;
 use super::member_root::{MemberRoot, linked_root_of_member};
 use crate::{
     daemon::deadline::{QueryDeadline, TIMED_OUT},
-    store::{Store, is_index_cannot_open, is_index_warming},
+    store::{Store, is_index_cache_unavailable, is_index_cannot_open, is_index_warming},
 };
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 pub(super) use hit_verification::DifferingFiles;
 pub(crate) use hit_verification::WorktreeHashes;
 pub(crate) use hit_verification::is_reextracted_worktree_hit;
@@ -35,8 +35,8 @@ pub(super) const NO_PARENT_INDEX: &str = "no parent index";
 /// How a query obtains a member's index.
 #[derive(Clone, Copy, Debug)]
 pub(super) enum HomeIndexPolicy {
-    /// `--no-daemon`: the caller indexed the member in-process (outside the
-    /// query deadline), so its own index is read without waiting.
+    /// `--no-daemon`: the caller reconciles the member within the query
+    /// deadline, then reads its own publication without waiting.
     IndexInline,
     /// Read what daemons have published; the home member waits up to this long.
     AwaitDaemon(Duration),
@@ -116,21 +116,19 @@ impl ParentIndexIdentity {
     }
 }
 
-/// Uses a published main-checkout index for a standalone linked worktree only
-/// when its caller already selected the worktree's default cache. A custom
-/// cache remains isolated and is never guessed from Git metadata.
+/// Uses a published main-checkout index for a standalone linked worktree, with
+/// results stored in its selected cache. The parent index uses the default cache.
 pub(crate) fn standalone_parent_view(
     root: &Path,
     cache: &Path,
     deadline: QueryDeadline,
 ) -> Option<ParentIndexView> {
-    let root = root.canonicalize().ok()?;
-    let default_cache = crate::cli::cache_path(&root, None).ok()?;
-    if cache != default_cache {
+    if deadline.expired() {
         return None;
     }
+    let root = root.canonicalize().ok()?;
     let member = super::member_root::standalone_worktree(&root)?;
-    std::fs::create_dir_all(cache).ok()?;
+    let _ = std::fs::create_dir_all(cache);
     crate::system::sweep::record_cache_root(cache, &root);
     match resolve_home_index(
         &member,
@@ -153,7 +151,13 @@ pub(super) fn resolve_home_index(
     policy: HomeIndexPolicy,
     deadline: QueryDeadline,
 ) -> HomeIndexSource {
-    match resolve(member, member_cache, explicit_cache, policy, deadline) {
+    match resolve(
+        member,
+        member_cache,
+        explicit_cache,
+        policy,
+        deadline.clone(),
+    ) {
         Ok(source) => source,
         // A deadline interrupt stays recognizable however much context wraps it.
         Err(error) => HomeIndexSource::Unavailable {
@@ -192,15 +196,24 @@ fn resolve(
     let until = std::time::Instant::now() + wait;
     let mut cannot_open = None;
     loop {
-        match Store::open_read(&member.root, member_cache, deadline) {
+        if deadline.expired() {
+            bail!("{TIMED_OUT}: query deadline expired");
+        }
+        match Store::open_read(&member.root, member_cache, deadline.clone()) {
             Err(error) if is_index_warming(&error) => {}
-            Err(error) if is_index_cannot_open(&error) && member.worktree.is_some() => {
+            Err(error)
+                if (is_index_cannot_open(&error) || is_index_cache_unavailable(&error))
+                    && member.worktree.is_some() =>
+            {
                 cannot_open = Some(error);
             }
             opened => return Ok(HomeIndexSource::Own(opened?)),
         }
+        if deadline.expired() {
+            bail!("{TIMED_OUT}: query deadline expired");
+        }
         if member.worktree.is_some()
-            && let Some(view) = parent_view(member, member_cache, explicit_cache, deadline)
+            && let Some(view) = parent_view(member, member_cache, explicit_cache, deadline.clone())
         {
             return Ok(HomeIndexSource::Parent(view));
         }
@@ -216,7 +229,7 @@ fn resolve(
                 reason: member.worktree.is_some().then_some(NO_PARENT_INDEX),
             });
         }
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(deadline.cap(Duration::from_millis(100)));
     }
 }
 
@@ -228,6 +241,9 @@ fn parent_view(
     explicit_cache: Option<&Path>,
     deadline: QueryDeadline,
 ) -> Option<ParentIndexView> {
+    if deadline.expired() {
+        return None;
+    }
     let parent_root = &member.member.root;
     let parent_cache = super::hashed_member_cache(parent_root, explicit_cache).ok()?;
     let parent = Store::open_read(parent_root, &parent_cache, deadline).ok()?;

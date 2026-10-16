@@ -27,8 +27,12 @@ task. The actual delegator may release only a delegated claim, and any caller ma
 actor's stale claim; these release paths may move only to `todo` or `blocked`. A `release` grant has
 the same limit and cannot move a delegated or stale claim to `review` or `done`. The plan owner acting
 as human has all roles intrinsically; an agent needs a `decide` grant to reopen a done task as todo
-and an `assign` grant to reassign a task or manage its workers. Task creation, assignment, and
-authorship alone grant no such authority. Moving out of `doing` ends the claim.
+and an `assign` grant to reassign a task, move an unclaimed non-done task to `todo` or `blocked` without
+changing its assignee, or manage its workers. A plain move under an assign grant cannot release
+another actor's active claim; an authorized `--to` reassignment can end it as reassigned. Assign
+authority alone does not authorize moves into `review` or `done`; those moves require the active claim
+holder. Task creation, assignment, and authorship alone grant no such authority. Moving out of `doing`
+ends the claim.
 Before handing work back, post progress and move the task to `todo`, unless the human requested a
 pause. `review` and `done` transitions retain their existing idempotent behavior.
 

@@ -1,3 +1,4 @@
+mod reply_timeout_tests;
 mod spool_transport_tests;
 
 use super::reconciler::{
@@ -139,6 +140,7 @@ fn daemon_connect_unreachability_includes_sandbox_permission_denial() {
     assert!(unreachable(ErrorKind::NotFound));
     assert!(unreachable(ErrorKind::ConnectionRefused));
     assert!(unreachable(ErrorKind::PermissionDenied));
+    assert!(unreachable(ErrorKind::NotADirectory));
     assert!(!unreachable(ErrorKind::ConnectionReset));
     assert!(!unreachable(ErrorKind::TimedOut));
 }

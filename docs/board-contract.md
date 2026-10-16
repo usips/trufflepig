@@ -44,11 +44,11 @@ them.
 The plan owner's user acting as human has all five roles and alone can grant or revoke. Agent grants
 default to one full harness/session identity, do not expire unless requested, and may cover a harness
 only for the grantor's owner user. `triage` manages feedback; `release` returns delegated or stale
-claims only to todo or blocked; `link` manages commit associations; `assign` reassigns tasks and
-manages workers; `decide` controls direct plan edits, proposal decisions, and agent reopening of done
-tasks. A task creator or assignee gains no administrative authority. Board-wide grants cover only
-triage of planless feedback by the grantor's owner user. See the [CLI contract](board-cli-contract.md#commands)
-for grant syntax and the [claim contract](board-claims.md) for task transitions.
+claims only to todo or blocked; `link` manages commit associations; `assign` reassigns tasks, moves
+unclaimed non-done tasks to todo or blocked while preserving assignees, and manages workers;
+`decide` controls direct plan edits, proposal decisions, and agent reopening of done tasks. Task
+creators and assignees gain no administrative authority. Board-wide grants cover only triage of
+planless feedback by the grantor's owner user; see [grants](board-cli-contract.md#commands) and [task transitions](board-claims.md).
 
 ## Backend, transport, and deadlines
 
@@ -95,14 +95,14 @@ before waiting. Inbox waits at most `min(15 s, remaining query deadline - 2 s)`,
 writes and polling the database once per second for fallback writers. Timeout or temporary poll
 lock/deadline returns an empty inbox without cursor acknowledgement; read-only polling checks
 persisted max-seq once per second, reading inbox only on change. Six waiters may occupy the
-16-worker router pool; a seventh returns `wait: busy`. The query deadline is 20 s; transport bounds
-follow the [runtime contract](runtime-contract.md).
+16-worker router pool; a seventh returns `wait: busy`. Read-only Board work caps local execution
+at 20 s after parsing; writes and `ingest` keep the incoming deadline (see [runtime contract](runtime-contract.md)).
 
-Calls to `show`, `review`, `ingest`, explicit-cursor inbox, and feedback listing use the transient
-retry set. Writes and cursor-advancing inbox retry only typed daemon busy or database lock errors,
-proving no write happened. Retry decisions use typed error codes/SQLite BUSY or LOCKED codes, never
-error-like prose. Write dedupe lasts ten minutes and keys actor/kind plus normalized
-target/body/parameters; feedback has a global content key. Repeats return the original result.
+Read-only Board calls (`show`, `review`, explicit-cursor inbox, feedback listing) use
+transient retries. `ingest`, other writes, and cursor-advancing inbox allow at most
+two attempts, and only for typed `daemon_busy` or database-lock errors proving no write happened.
+Retry uses typed codes, never prose. Write dedupe lasts ten minutes, keyed by actor/kind and
+normalized target/body/parameters; feedback has a global content key. Repeats return the original result.
 
 Stable error prefixes: `stale_revision`, `claim_conflict`, `board_unavailable`, `schema_newer`,
 `invalid_reference`, `invalid_kind`, `invalid_body`, `invalid_actor`, `invalid_state`,

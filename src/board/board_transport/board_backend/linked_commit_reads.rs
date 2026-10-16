@@ -13,7 +13,7 @@ impl BoardHost {
         &self,
         repo_key: &RepoKey,
         oids: &[GitOid],
-        deadline: QueryDeadline,
+        deadline: &QueryDeadline,
     ) -> Result<BTreeSet<GitOid>> {
         check_deadline(deadline)?;
         if oids.is_empty() {

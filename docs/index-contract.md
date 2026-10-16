@@ -2,12 +2,12 @@
 
 ## Storage and identity
 
-SQLite WAL with FTS5 (`<cache>/index.sqlite3`) holds source revisions,
-definitions, occurrences, relationships, and lexical documents. Immutable result
-sets live in a separate `<cache>/results.sqlite3` (`src/results/result_set_store.rs`),
-so saving a query's results never waits behind a publication. Source occurrence
-identity includes root, path, revision, and span; content identity is separate
-and supports reuse without merging distinct definitions or overrides.
+SQLite WAL with FTS5 (`<cache>/index.sqlite3`) holds source revisions, definitions,
+occurrences, relationships, and lexical documents. Immutable result sets use a separate
+`<cache>/results.sqlite3` (`src/results/result_set_store.rs`), so saving query results
+never waits behind publication. Index-backed reads preflight the selected writable
+result cache before parent lookup. Occurrence identity is root/path/revision/span;
+content identity supports reuse without merging distinct definitions or overrides.
 
 Ordinary indexes retain exact identifiers. Separate FTS columns contain expanded
 snake/camel identifiers, body text, and path terms. All eligible file content is
@@ -17,20 +17,19 @@ containing symbol attached. File records expose resource exclusions.
 
 ## File ranking
 
-Ordinary queries collapse each retrieval lane to its best region per file and
-fuse lanes by weighted reciprocal rank; the
-[ranking contract](ranking-contract.md) defines lanes, weights, evidence tiers
-and the path prior. `sym:` and `re:` retain occurrences. Pages maximize file
-references before adding optional symbol names.
+Ordinary queries collapse each retrieval lane to its best region per file and fuse
+lanes by weighted reciprocal rank; the [ranking contract](ranking-contract.md)
+defines lanes, weights, evidence tiers, and the path prior. `sym:` and `re:` retain
+occurrences. Pages maximize file references before adding optional symbol names.
 
 ## Coherent publication
 
 1. Reconcile the working tree, including untracked eligible files. Filesystem
    metadata and Git status are hints; content hashing establishes revision.
-2. Read eligible files into bounded buffers and reuse unchanged extraction by
-   content revision, grammar extension, and extraction version. One extraction
-   worker stages the full current file set on disk; cancelled extraction is
-   retried. Resource bounds and failures remain visible.
+2. Read each current eligible file into bounded buffers on every pass. Reuse
+   durable extraction only when path, revision, source status, byte length, and
+   extraction version match. One worker stages the complete current file set;
+   cancelled extraction is retried. Resource bounds and failures remain visible.
 3. Build the staged symbol universe and recompute relationship resolution,
    including references in unchanged callers whose targets changed.
 4. Publish source revisions, definitions, occurrences, relationships, and FTS
@@ -46,8 +45,8 @@ limits are exceeded. The observation journal retains at most 256 generation
 windows, 4,096 observations, and 4 MiB of observation payloads. Sessions persist
 their own baseline fingerprints outside the replaceable live index; see [diagnostics](diagnostics-contract.md).
 
-An exclusive writer lease covers staging through publication. The next lease
-holder removes abandoned staging directories from interrupted indexing.
+An exclusive writer lease covers staging through publication. A checkpoint resumes
+only for a matching root, index contract, base epoch, and generation; mismatches reset (`src/store/index_checkpoint.rs`).
 
 Parsing cancellation retains lexical coverage and a parse-failure status. It
 publishes no structural facts represented as freshly parsed. The parser is reset
@@ -59,9 +58,9 @@ candidate retrieval and graph joins. Readers are query-only
 (`src/store/read_access.rs:open_read`): they open the index read-only, run no
 schema or metadata writes, wait at most 2 s on a lock, and are interrupted when
 the request's 20 s query deadline (`src/daemon/deadline.rs`) expires, answering
-`timed_out`; in-request reconciliation (`--no-daemon`, an unpublished index)
-pauses that clock. A missing index or generation 0 answers `index_warming`. Only
-indexing, sessions, and the reconciler open the writer (`Store::open`). A reader
+`timed_out`; inline work uses that original deadline without pausing it. A missing
+index or generation 0 answers `index_warming`. Only indexing, sessions, and the
+reconciler open the writer (`Store::open`). A reader
 may read a linked worktree's current bytes through its parent member's index
 (root-relative paths address the same files); its result sets are saved in the
 worktree's own cache, and `show` verifies those bytes against indexed revisions.
@@ -84,10 +83,11 @@ marked unverified. Current-byte hits never differ; re-read files count as differ
 serve parent bytes with `verified: false` and `source: parent_index`.
 Through a root's own index, a stale `sym:` read waits up to 3 s for a daemon
 republish, then answers from current bytes with `freshness: unpublished`
-(`src/source/acquisition/stale_symbol.rs`). Only a client no daemon serves (or
-`--no-daemon`) reconciles an unpublished index in the request, never waiting for
-the writer lease without `--no-daemon` (`src/cli/dispatch.rs:read_store`); else
-searches and `sym:` answer `index_warming`, other reads use `Store::unpublished`.
+(`src/source/acquisition/stale_symbol.rs`). Inline prep uses at most 2 s per
+root/member, reserving 250 ms from the original read deadline. A published root or
+verified parent view remains usable while the writer lease is held. An eligible full
+slice that expires without new durable file facts reports `maintenance_required` with `index`/`init` guidance
+(`src/store/index_deadline.rs`).
 
 ## Semantic preparation
 
@@ -111,12 +111,12 @@ a length-prefixed JSON Unix socket protocol. Worktrees keep separate databases,
 seeded from the member's (or main checkout's) cache as a warm start
 (`src/store/seed.rs`): the seed copies content-addressed extraction facts and
 embeddings but never a publication, so the first reconcile publishes generation 1
-for the worktree root. Until then, workspace-home queries and standalone reads through the default
-cache can answer from the member's published index when the worktree shares its Git common directory
-with that member ([workspace](workspace-contract.md#retrieval-and-output)). Standalone custom caches
-remain isolated. Seeding writes nothing to stdout or stderr; an attempt that does work is recorded in the
-worktree cache's `seed-outcome.json`, which `ws status` reports. A linked worktree's `.git` file is never indexed as
-source. A per-root daemon exits on its own when its root
+for the worktree root. Workspace parent reads use the configured member cache under
+the selected workspace base; standalone parent reads use the main checkout's default
+cache even when explicit `--cache` holds worktree results and divergence
+([workspace](workspace-contract.md#retrieval-and-output)). A seed attempt that does
+work is recorded in the worktree cache's `seed-outcome.json`, which `ws status`
+reports. A linked worktree's `.git` file is never indexed as source. A per-root daemon exits on its own when its root
 disappears, and the router evicts the cache (see [cli](cli.md#cache-and-daemon)).
 A stale socket does not permit a second writer while the startup lock is held.
 Requests carry client-created UUIDs and explicit session/client context.
@@ -166,11 +166,12 @@ reads at most 2 MiB per source file, retains at most 50,000 extracted facts per
 file, and divides lexical coverage into regions of at most 4,096 raw bytes.
 Sources containing NUL or exceeding the read cap remain file records with an
 exclusion reason. General current-source reads have a separate 16 MiB cap.
-Stage files live under the selected cache directory and are removed on completion.
-Result and embedding retention limits are
-specified in the [retrieval](retrieval-contract.md) and
-[semantic](semantic-contract.md) contracts. Measure cold and warm cost before
-changing storage architecture.
+Stage files live in the selected cache; completion clears progress and removes them, while interruptions may retain a valid checkpoint.
+Progress (`scanning`, `finalizing`, `maintenance_required`) shows completed/reused counts and `index` guidance; status/pages/`more` refresh it from the verified root and selected cache.
+Saved results omit phases; refresh is read-only and skips seed/index (`src/workspace/result_cache/index_progress_source.rs`, `src/results/page.rs`, `src/workspace/result_cache.rs`).
+Result and embedding retention limits are in the [retrieval](retrieval-contract.md) and
+[semantic](semantic-contract.md) contracts. Measure cold and warm cost before changing
+storage architecture.
 
 The socket is `daemon.sock` inside the per-root cache; a short explicit cache
 path avoids Unix socket path-length limits. Requests carry a
@@ -179,10 +180,9 @@ handshake yet; stop the daemon before replacing its binary. Automatic startup
 spawns a child process and falls back to coherent local access if needed; it does
 not establish detached service lifecycle guarantees.
 
-Local `--no-daemon` searches reconcile synchronously for the live index and
-launch no background process. Semantic search uses cached vectors only; an
-explicit foreground `semantic prepare` acquires the root preparation lease and
-performs preparation locally. Metadata/status reads do not force reconciliation.
+`--no-daemon` uses no background process. Index-backed reads may use bounded inline
+preparation; explicit foreground `index`/`init` finish indexing. Semantic search uses cached vectors only;
+`semantic prepare` acquires the root lease and runs locally. Metadata/status do not reconcile.
 
 ## Bounded diagnostics probes
 

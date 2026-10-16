@@ -4,6 +4,7 @@
 //! the indexed revision ([`WorktreeHashes`]).
 use super::{ParentFallback, WorktreeDivergence, hit_verification::WorktreeHashes};
 use crate::{
+    daemon::deadline::{QueryDeadline, TIMED_OUT},
     extract::Definition,
     identity::ContentRevision,
     results::{Hit, ResultSet},
@@ -55,7 +56,9 @@ impl ParentFallback {
         request: (&str, &[String], &Query, &InvocationDirectory),
         found: &mut ResultSet,
         hashes: &mut WorktreeHashes,
+        deadline: &QueryDeadline,
     ) -> Result<HashSet<String>> {
+        check_deadline(deadline)?;
         let (verb, words, query, origin) = request;
         if verb == "map" {
             let Some(path) = words.get(1) else {
@@ -67,6 +70,7 @@ impl ParentFallback {
                     hashes.check(&store.root, path, hit.revision.as_deref()) == Some(false)
                 });
             if changed && let Some(hits) = reextracted_map(store, path) {
+                check_deadline(deadline)?;
                 found.hits = hits;
                 if let Some(coverage) = found.coverage.as_object_mut() {
                     coverage.remove("no_indexed_path");
@@ -75,7 +79,7 @@ impl ParentFallback {
             }
         } else if verb == "search" && rechecks_search_query(query) {
             let parent = std::mem::take(&mut found.hits);
-            let symbols = self.worktree_symbols(store, query, parent, origin, hashes)?;
+            let symbols = self.worktree_symbols(store, query, parent, origin, hashes, deadline)?;
             found.hits = symbols.hits;
             found.truncated |= symbols.truncated;
             if !symbols.changed.is_empty() && found.coverage["rerank_status"] == "ready" {
@@ -121,7 +125,9 @@ impl ParentFallback {
         parent: Vec<Hit>,
         origin: &InvocationDirectory,
         hashes: &mut WorktreeHashes,
+        deadline: &QueryDeadline,
     ) -> Result<WorktreeSymbols> {
+        check_deadline(deadline)?;
         let root = &store.root;
         // A cached Git diff cannot see an edit or new file made since it was
         // recorded. Search misses have no parent hit whose revision can reveal
@@ -185,7 +191,8 @@ impl ParentFallback {
         let mut current_by_path = std::collections::HashMap::with_capacity(changed.len());
         let mut truncated = false;
         for path in changed {
-            match current_file_hits(store, path, query, &parent) {
+            check_deadline(deadline)?;
+            match current_file_hits(store, path, query, &parent, deadline) {
                 Ok((hits, file_truncated)) => {
                     truncated |= file_truncated;
                     current_by_path.insert(path.to_owned(), hits);
@@ -252,15 +259,18 @@ fn current_file_hits(
     path: &str,
     query: &Query,
     parent: &[Hit],
+    deadline: &QueryDeadline,
 ) -> Result<(Vec<Hit>, bool)> {
+    check_deadline(deadline)?;
     let bytes = source::read_contained(&store.root, &decode_path(path)?, source::MAX_READ_BYTES)?;
     ensure!(
         !bytes.contains(&0),
         "source_excluded: {path} is binary; the index does not extract it"
     );
     let extraction = source::usable_extraction(path, crate::extract::extract(path, &bytes))?;
+    check_deadline(deadline)?;
     let (mut hits, truncated) =
-        crate::search::search_current_file(store, query, path, &bytes, &extraction)?;
+        crate::search::search_current_file(store, query, path, &bytes, &extraction, deadline)?;
     let semantic = parent
         .iter()
         .any(|hit| hit.path == path && hit.provenance.as_deref() == Some("semantic"));
@@ -275,6 +285,13 @@ fn current_file_hits(
         }
     }
     Ok((hits, truncated))
+}
+
+fn check_deadline(deadline: &QueryDeadline) -> Result<()> {
+    if deadline.expired() {
+        anyhow::bail!("{TIMED_OUT}: worktree re-extraction deadline expired");
+    }
+    Ok(())
 }
 
 /// Types and members of a changed file, extracted from its worktree bytes;

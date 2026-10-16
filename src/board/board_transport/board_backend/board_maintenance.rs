@@ -68,7 +68,7 @@ impl BoardHost {
         &self,
         actor: &BoardActor,
         plan: Option<crate::board::board_ids::PlanId>,
-        deadline: QueryDeadline,
+        deadline: &QueryDeadline,
     ) -> Result<Vec<RepoScanTarget>> {
         let system_actor = BoardActor::system(&actor.user, &actor.host)?;
         let request = BoardRequest::system(system_actor, BoardOp::Repositories { plan })
@@ -87,13 +87,12 @@ impl BoardHost {
         &self,
         actor: &BoardActor,
         plan: Option<crate::board::board_ids::PlanId>,
-        timeout: Duration,
+        deadline: &QueryDeadline,
     ) -> Result<(
         Vec<RepoScanTarget>,
         crate::board::commit_ingest::IngestReport,
     )> {
         let actor = BoardActor::system(&actor.user, &actor.host)?;
-        let deadline = QueryDeadline::after(timeout);
         let mut targets = self.repositories(&actor, plan, deadline)?;
         let mut ingestor = match lock_before(&self.inner.ingestor, deadline, "ingest") {
             Ok(ingestor) => ingestor,
@@ -108,7 +107,7 @@ impl BoardHost {
             }
         };
         let report = ingestor.ingest(
-            &mut BoardHostBackendAccess(self, deadline),
+            &mut BoardHostBackendAccess(self, deadline.clone()),
             &actor,
             &targets,
             deadline.remaining(),
@@ -248,7 +247,8 @@ impl BoardHost {
             None
         };
         if ingest_due && config.db_path.is_file() {
-            self.ingest(&actor, None, Duration::from_secs(15))
+            let deadline = QueryDeadline::after(Duration::from_secs(15));
+            self.ingest(&actor, None, &deadline)
                 .map_err(BoardError::from)?;
         }
         Ok(summary)

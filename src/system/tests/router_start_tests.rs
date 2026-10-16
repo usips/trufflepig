@@ -1,4 +1,48 @@
 use super::*;
+use crate::background_process::spawn_background;
+use std::{os::unix::net::UnixStream, sync::Arc};
+
+#[test]
+fn ensure_does_not_spawn_when_its_deadline_is_already_expired() {
+    let spawn_called = std::cell::Cell::new(false);
+    let error = super::ensure_until(QueryDeadline::after(Duration::ZERO), Duration::ZERO, || {
+        spawn_called.set(true);
+        Err(anyhow::anyhow!("unexpected router spawn"))
+    })
+    .unwrap_err();
+
+    assert!(
+        !spawn_called.get(),
+        "expired ensure must not spawn a router"
+    );
+    assert!(
+        format!("{error:#}").starts_with("system_unavailable: router still starting after"),
+        "{error:#}"
+    );
+}
+
+#[test]
+fn ensure_does_not_spawn_after_the_request_peer_disconnects() {
+    let (daemon_peer, client_peer) = UnixStream::pair().unwrap();
+    let deadline = QueryDeadline::after(Duration::from_secs(30)).with_peer(Arc::new(daemon_peer));
+    drop(client_peer);
+
+    let spawn_called = std::cell::Cell::new(false);
+    let error = super::ensure_until(deadline, Duration::from_secs(30), || {
+        spawn_called.set(true);
+        Err(anyhow::anyhow!("unexpected router spawn"))
+    })
+    .unwrap_err();
+
+    assert!(
+        !spawn_called.get(),
+        "cancelled ensure must not spawn a router"
+    );
+    assert!(
+        format!("{error:#}").starts_with("system_unavailable: router still starting after"),
+        "{error:#}"
+    );
+}
 
 #[test]
 fn ensure_reports_a_running_router_despite_unresolvable_board_database() {

@@ -12,12 +12,17 @@ mod test_fixture;
 mod workspace_list;
 mod worktree_cache;
 use crate::{
-    cli::Arguments, diagnostics::RequestContext, output::OutputBudget, store::encode_path,
+    cli::Arguments,
+    daemon::deadline::{QueryDeadline, TIMED_OUT},
+    diagnostics::RequestContext,
+    output::OutputBudget,
+    search::InvocationDirectory,
+    store::{Store, encode_path},
 };
 use anyhow::{Context, Result, bail, ensure};
 use config::WorkspaceConfig;
-pub(crate) use coordinator::apply_config;
 pub use coordinator::run;
+pub(crate) use coordinator::{apply_config, run_with_deadline};
 pub(crate) use home_index::{
     ParentFallback, ParentIndexIdentity, ParentIndexView, WorktreeHashes, acquire_through_parent,
     reextracted_entry, standalone_parent_view,
@@ -72,6 +77,21 @@ pub fn member_cache(member: &MemberRoot, explicit: Option<&Path>) -> Result<Path
     }
     hashed_member_cache(&member.root, explicit)
 }
+/// Cache directory for a member read, prepared within its accepted request budget.
+pub(super) fn member_cache_until(
+    member: &MemberRoot,
+    explicit: Option<&Path>,
+    deadline: &QueryDeadline,
+) -> Result<PathBuf> {
+    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    let cache = if member.worktree.is_some() {
+        worktree_cache::ensure_until(&member.member.root, &member.root, explicit, deadline)
+    } else {
+        hashed_member_cache(&member.root, explicit)
+    }?;
+    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    Ok(cache)
+}
 fn hashed_member_cache(root: &Path, explicit: Option<&Path>) -> Result<PathBuf> {
     if let Some(base) = explicit {
         return Ok(base
@@ -105,7 +125,7 @@ pub(crate) fn diagnostic_location(
         if let Some(member) = member {
             return Ok((
                 member.root.clone(),
-                member_cache(&member, options.cache.as_deref())?,
+                hashed_member_cache(&member.root, options.cache.as_deref())?,
                 Some(config.id.clone()),
                 Some(member.name().to_owned()),
             ));
@@ -122,10 +142,44 @@ pub(crate) fn diagnostic_location(
     Ok((root, cache, None, None))
 }
 
-fn member_options(options: &Arguments, member: &MemberRoot) -> Result<Arguments> {
+fn is_local_query(options: &Arguments) -> bool {
+    match options.words.first().map(String::as_str) {
+        None => true,
+        Some("semantic") => {
+            let command = options.words.get(1).map(String::as_str);
+            command == Some("status")
+                || command == Some("worker")
+                    && options.words.get(2).is_some_and(|word| word == "status")
+        }
+        Some(
+            "search" | "refs" | "map" | "show" | "more" | "ctx" | "status" | "doctor" | "hist"
+            | "hist-status" | "since" | "diff" | "blame" | "session" | "audit" | "ws",
+        ) => true,
+        _ => false,
+    }
+}
+
+fn local_execution_deadline(options: &Arguments, incoming: &QueryDeadline) -> QueryDeadline {
+    if is_local_query(options) {
+        incoming.capped(crate::daemon::deadline::QUERY_DEADLINE)
+    } else {
+        incoming.clone()
+    }
+}
+
+fn member_options(
+    options: &Arguments,
+    member: &MemberRoot,
+    deadline: &QueryDeadline,
+) -> Result<Arguments> {
     let mut local = options.clone();
     local.root = member.root.clone();
-    local.cache = Some(member_cache(member, options.cache.as_deref())?);
+    let cache = if is_local_query(options) {
+        member_cache_until(member, options.cache.as_deref(), deadline)?
+    } else {
+        member_cache(member, options.cache.as_deref())?
+    };
+    local.cache = Some(cache);
     local.resolved_history_cache = crate::history::worker::resolve_cache(
         &member.root,
         options
@@ -157,6 +211,60 @@ fn selected_member(config: &WorkspaceConfig, options: &Arguments) -> Result<Memb
         .home_root(&start)?
         .context("member_required: select --member for an owner-scoped command")
 }
+
+/// Reads a current path without opening or creating the workspace result cache.
+pub(super) fn current_path_show(
+    config: &WorkspaceConfig,
+    options: &Arguments,
+    deadline: &QueryDeadline,
+) -> Result<Option<String>> {
+    if options.words.first().is_none_or(|verb| verb != "show") {
+        return Ok(None);
+    }
+    let Some(target) = crate::source::acquisition::show_target(&options.words) else {
+        return Ok(None);
+    };
+    if !crate::source::acquisition::is_current_path_target(&target) {
+        return Ok(None);
+    }
+    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    let member = selected_member(config, options)?;
+    member.verify_identity()?;
+    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+
+    // This calculates the final cache path without the worktree helper's mkdir/seed side effects.
+    let cache = hashed_member_cache(&member.root, options.cache.as_deref())?;
+    let store = Store::unpublished(&member.root, &cache)?;
+    let invocation = options.root.canonicalize()?;
+    let origin = InvocationDirectory::within(&member.root, &invocation);
+    let side = options
+        .side
+        .as_deref()
+        .map(crate::source::SourceSide::parse)
+        .transpose()?;
+    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    let acquired = crate::source::acquisition::acquire_current_path_without_cache(
+        &store, &target, side, &origin,
+    )
+    .map_err(|error| deadline.classify(error))?;
+    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+
+    let mut metadata = json!({
+        "workspace": config.name,
+        "member": member.name(),
+        "repository": encode_path(&member.root),
+    });
+    if let Some(label) = &member.worktree {
+        metadata["worktree"] = label.clone().into();
+    }
+    let budget = OutputBudget::new(options.budget)?.with_format(options.output_format());
+    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    let rendered = crate::source::render_owned(acquired, &budget, &metadata)
+        .map_err(|error| deadline.classify(error))?;
+    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    Ok(Some(rendered))
+}
+
 /// Runs one workspace command against an existing coordinator cache.
 /// `deadline` bounds query work from the moment the request was accepted.
 pub(crate) fn local(
@@ -167,20 +275,25 @@ pub(crate) fn local(
     session: &mut crate::semantic::SemanticSession,
     deadline: crate::daemon::deadline::QueryDeadline,
 ) -> Result<String> {
+    let incoming_deadline = deadline;
+    let local_deadline = local_execution_deadline(options, &incoming_deadline);
     session.set_no_daemon(options.no_daemon);
     let verb = options
         .words
         .first()
         .map(String::as_str)
         .unwrap_or("status");
+    if let Some(rendered) = current_path_show(config, options, &local_deadline)? {
+        return Ok(rendered);
+    }
     let budget = OutputBudget::new(options.budget)?;
     if verb == "semantic" {
-        return crate::cli::semantic::workspace(config, options, context, deadline.remaining());
+        return crate::cli::semantic::workspace(config, options, context, &incoming_deadline);
     }
     if verb == "ws" {
-        return inspect(config, options, &budget);
+        return inspect(config, options, &budget, &local_deadline);
     }
-    let results = WorkspaceResults::open(cache)?;
+    let results = WorkspaceResults::open(cache, &local_deadline)?;
     let page_budget = OutputBudget::new(options.budget)?.with_format(options.output_format());
     match verb {
         "more" => results.more(
@@ -197,7 +310,7 @@ pub(crate) fn local(
         | "audit" | "forget-logs" | "semantic-check" => {
             let member = selected_member(config, options)?;
             member.verify_identity()?;
-            let mut local = member_options(options, &member)?;
+            let mut local = member_options(options, &member, &local_deadline)?;
             local.budget = 1_000_000;
             let mut args = crate::cli::normalized_args(&local, &local.root);
             if options.wait {
@@ -207,7 +320,7 @@ pub(crate) fn local(
             let mut value: Value = serde_json::from_str(&crate::cli::run_direct(
                 &args,
                 context,
-                deadline.remaining(),
+                incoming_deadline.clone(),
             )?)?;
             // Owner commands budget their payload again after adding mandatory provenance.
             value["member"] = member.name().into();
@@ -221,13 +334,24 @@ pub(crate) fn local(
         "serve" | "history-serve" | "workspace-serve" => {
             bail!("invalid_command: internal server command")
         }
-        "search" | "refs" | "map" => {
-            retrieval::search(config, cache, &results, options, context, session, deadline)
-        }
+        "search" | "refs" | "map" => retrieval::search(
+            config,
+            cache,
+            &results,
+            options,
+            context,
+            session,
+            local_deadline,
+        ),
         _ => bail!("invalid_command: unknown command {verb}; use search for queries"),
     }
 }
-fn inspect(config: &WorkspaceConfig, options: &Arguments, budget: &OutputBudget) -> Result<String> {
+fn inspect(
+    config: &WorkspaceConfig,
+    options: &Arguments,
+    budget: &OutputBudget,
+    deadline: &QueryDeadline,
+) -> Result<String> {
     let command = options.words.get(1).map(String::as_str).unwrap_or("show");
     ensure!(
         matches!(command, "show" | "status"),
@@ -237,7 +361,8 @@ fn inspect(config: &WorkspaceConfig, options: &Arguments, budget: &OutputBudget)
     let roots = config.member_roots(&start)?;
     let mut members = Vec::with_capacity(roots.len());
     for member in &roots {
-        let cache = member_cache(member, options.cache.as_deref())?;
+        ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+        let cache = hashed_member_cache(&member.root, options.cache.as_deref())?;
         let mut value = json!({"member":member.name(),"root":encode_path(&member.root),"available":member.verify_identity().is_ok()});
         if let Some(label) = &member.worktree {
             value["worktree"] = label.clone().into();
@@ -251,11 +376,14 @@ fn inspect(config: &WorkspaceConfig, options: &Arguments, budget: &OutputBudget)
             && member.verify_identity().is_ok()
             && cache.join("index.sqlite3").exists()
         {
-            let deadline = crate::daemon::deadline::QueryDeadline::start();
-            match crate::store::Store::open_read(&member.root, &cache, deadline) {
+            match crate::store::Store::open_read(&member.root, &cache, deadline.clone()) {
                 Ok(store) => {
+                    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
                     value["generation"] = store.generation()?.into();
                     value["coverage"] = serde_json::to_value(store.coverage()?)?;
+                }
+                Err(error) if deadline.expired() => {
+                    return Err(error.context(format!("{TIMED_OUT}: query deadline expired")));
                 }
                 Err(error) if crate::store::is_index_warming(&error) => {
                     value["generation"] = 0.into();
@@ -266,6 +394,7 @@ fn inspect(config: &WorkspaceConfig, options: &Arguments, budget: &OutputBudget)
         }
         members.push(value);
     }
+    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
     let home = config.home_root(&start)?;
     budget.render(&json!({"workspace":config.name,"config":encode_path(&config.path),"home":home.as_ref().map(MemberRoot::name),"members":members}))
 }

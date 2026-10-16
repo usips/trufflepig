@@ -105,6 +105,62 @@ fn member_summary_names_unsearched_kinds() {
 }
 
 #[test]
+fn member_summary_renders_index_progress_and_maintenance_guidance() {
+    let finalizing = json!({
+        "member": "lunatic",
+        "state": "searched",
+        "partial": false,
+        "index_progress": {
+            "phase": "finalizing",
+            "completed_files": 17,
+            "reused_files": 5,
+            "maintenance_required": false
+        }
+    });
+    let summary = member_coverage_summary(&[finalizing]);
+    assert_eq!(
+        summary,
+        "lunatic complete; index finalizing (retained preparation: 17 files; reused 5 extracts)"
+    );
+    assert!(summary.len() < 120, "progress summary should stay concise");
+
+    let maintenance = json!({
+        "member": "tales",
+        "state": "warming",
+        "index_progress": {
+            "phase": "maintenance_required",
+            "completed_files": 23,
+            "reused_files": 8,
+            "maintenance_required": true
+        }
+    });
+    assert_eq!(
+        member_coverage_summary(&[maintenance]),
+        "tales warming; index maintenance required (retained preparation: 23 files; reused 8 extracts); run `trufflepig index`"
+    );
+}
+
+#[test]
+fn compact_coverage_preserves_only_present_structured_index_progress() {
+    let progress = json!({
+        "phase": "scanning",
+        "completed_files": 17,
+        "reused_files": 5,
+        "maintenance_required": false
+    });
+    let compact = compact_coverage(&[json!({
+        "member": "lunatic",
+        "index_progress": progress,
+        "unlisted": "drop this detail"
+    })]);
+    assert_eq!(compact[0]["index_progress"], progress);
+    assert!(compact[0].get("unlisted").is_none());
+
+    let without_progress = compact_coverage(&[json!({ "member": "lunatic" })]);
+    assert!(without_progress[0].get("index_progress").is_none());
+}
+
+#[test]
 fn differing_hit_lines_end_with_differs() {
     let hit = |handle: &str, differs: bool| OwnedEntry {
         owner: 0,

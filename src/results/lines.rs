@@ -99,11 +99,22 @@ pub(crate) fn single_repo_coverage(coverage: &Value) -> String {
             parts.push(format!("{} {value}", key.trim_end_matches("_files")));
         }
     }
+    let mut partial = Vec::with_capacity(3);
     let unsearched = count("current_source_unsearched");
     if unsearched > 0 {
-        parts.push(format!(
-            "partial ({unsearched} unsearched: current_source_recheck)"
-        ));
+        partial.push(format!("{unsearched} unsearched: current_source_recheck"));
+    }
+    for (key, label) in [
+        ("live_read_failures", "read_error"),
+        ("live_walk_failures", "walk_error"),
+    ] {
+        let value = count(key);
+        if value > 0 {
+            partial.push(format!("{label} {value}"));
+        }
+    }
+    if !partial.is_empty() {
+        parts.push(format!("partial ({})", partial.join("; ")));
     }
     for (label, key, reason) in [
         ("semantic", "semantic_status", "semantic_reason"),
@@ -122,6 +133,12 @@ pub(crate) fn single_repo_coverage(coverage: &Value) -> String {
     if let Some(endpoint) = coverage["endpoint"].as_str() {
         parts.push(format!("endpoint {endpoint}"));
     }
+    if let Some(progress) = coverage
+        .get("index_progress")
+        .and_then(index_progress_summary)
+    {
+        parts.push(progress);
+    }
     if coverage["state"] == "parent_fallback" {
         if let Some(served_from) = coverage["served_from"].as_str() {
             parts.push(format!("worktree index warming; served from {served_from}"));
@@ -137,6 +154,26 @@ pub(crate) fn single_repo_coverage(coverage: &Value) -> String {
     }
     parts.extend(crate::search::reference_summary(coverage));
     parts.join("; ")
+}
+
+/// Summarizes retained index preparation without presenting it as published
+/// coverage. Progress is present only while a preparation remains incomplete.
+pub(crate) fn index_progress_summary(progress: &Value) -> Option<String> {
+    let phase = progress.get("phase")?.as_str()?;
+    let completed = progress.get("completed_files")?.as_u64()?;
+    let reused = progress.get("reused_files")?.as_u64()?;
+    let maintenance_required = progress.get("maintenance_required")?.as_bool()?;
+    let detail = format!("retained preparation: {completed} files; reused {reused} extracts");
+    if maintenance_required || phase == "maintenance_required" {
+        return Some(format!(
+            "index maintenance required ({detail}); run `trufflepig index`"
+        ));
+    }
+    match phase {
+        "scanning" => Some(format!("index scanning ({detail})")),
+        "finalizing" => Some(format!("index finalizing ({detail})")),
+        _ => None,
+    }
 }
 
 /// Renders a page: the entries, the coverage line, then the footer.
@@ -263,6 +300,73 @@ mod tests {
         assert_eq!(
             single_repo_coverage(&coverage),
             "indexed 11/12; excluded 1; rerank unavailable"
+        );
+    }
+
+    #[test]
+    fn single_repo_coverage_renders_present_index_progress_only() {
+        let scanning = json!({
+            "total_files": 12,
+            "indexed_files": 11,
+            "index_progress": {
+                "phase": "scanning",
+                "completed_files": 17,
+                "reused_files": 5,
+                "maintenance_required": false
+            }
+        });
+        let summary = single_repo_coverage(&scanning);
+        assert_eq!(
+            summary,
+            "indexed 11/12; index scanning (retained preparation: 17 files; reused 5 extracts)"
+        );
+        assert!(summary.len() < 120, "progress summary should stay concise");
+
+        let finalizing = json!({
+            "total_files": 12,
+            "indexed_files": 11,
+            "index_progress": {
+                "phase": "finalizing",
+                "completed_files": 17,
+                "reused_files": 5,
+                "maintenance_required": false
+            }
+        });
+        assert_eq!(
+            single_repo_coverage(&finalizing),
+            "indexed 11/12; index finalizing (retained preparation: 17 files; reused 5 extracts)"
+        );
+
+        let maintenance = json!({
+            "total_files": 12,
+            "indexed_files": 11,
+            "index_progress": {
+                "phase": "maintenance_required",
+                "completed_files": 17,
+                "reused_files": 5,
+                "maintenance_required": true
+            }
+        });
+        assert_eq!(
+            single_repo_coverage(&maintenance),
+            "indexed 11/12; index maintenance required (retained preparation: 17 files; reused 5 extracts); run `trufflepig index`"
+        );
+
+        let complete = json!({ "total_files": 12, "indexed_files": 12 });
+        assert_eq!(single_repo_coverage(&complete), "indexed 12/12");
+    }
+
+    #[test]
+    fn live_read_and_walk_failures_mark_even_fully_indexed_coverage_partial() {
+        let coverage = json!({
+            "total_files": 12,
+            "indexed_files": 12,
+            "live_read_failures": 2,
+            "live_walk_failures": 3,
+        });
+        assert_eq!(
+            single_repo_coverage(&coverage),
+            "indexed 12/12; partial (read_error 2; walk_error 3)"
         );
     }
 

@@ -1,5 +1,10 @@
 //! The per-root index daemon: query workers read the published index while the
 //! maintenance thread reconciles, schedules preparation, and runs probes.
+mod request_classification;
+pub(crate) use request_classification::{
+    ClassifiedDaemonRequest, classify as classify_daemon_request,
+};
+
 use super::{Arguments, dispatch::local_with_session, emission, parse};
 use crate::{
     daemon::{self, AcceptedRequest, DaemonHandler},

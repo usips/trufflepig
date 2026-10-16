@@ -71,6 +71,34 @@ fn worker_lock_excludes_duplicates_and_releases_on_exit() -> Result<()> {
 }
 
 #[test]
+fn missing_worker_executable_preserves_io_cause_and_history_context() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let root = directory.path().join("repository-root");
+    let cache = directory.path().join("history-cache");
+    fs::create_dir(&root)?;
+    fs::create_dir(&cache)?;
+    let executable = directory.path().join("missing-history-worker");
+
+    let error = match spawn_worker(&executable, &root, &cache) {
+        Ok(_) => panic!("missing history worker executable unexpectedly started"),
+        Err(error) => error,
+    };
+    assert!(
+        error
+            .chain()
+            .filter_map(|cause| cause.downcast_ref::<std::io::Error>())
+            .any(|cause| cause.kind() == std::io::ErrorKind::NotFound),
+        "{error:#}"
+    );
+    let message = format!("{error:#}");
+    assert!(message.contains("background_spawn_failed:"), "{message}");
+    assert!(message.contains("history worker"), "{message}");
+    assert!(message.contains("missing-history-worker"), "{message}");
+    assert!(message.contains("history-cache"), "{message}");
+    Ok(())
+}
+
+#[test]
 fn worker_exit_unlocks_despite_an_inherited_file_description() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let owner = worker_lock(directory.path())?;

@@ -18,7 +18,10 @@ pub use scheduler::{FairScheduler, RequestClass, RootIdent, ScheduledRequest};
 pub use status::{WorkerState, WorkerStatus};
 
 use super::Embedding;
-use crate::{background_process::spawn_background, semantic::runtime_config::InferenceConfig};
+use crate::{
+    background_process::{BackgroundOwner, current_background_executable, spawn_background_for},
+    semantic::runtime_config::InferenceConfig,
+};
 use anyhow::{Context, Result, bail, ensure};
 pub use client::{RERANK_DEADLINE, rerank_query};
 use client::{configure_io, connect};
@@ -118,10 +121,11 @@ pub fn ensure_started(cache_identity: &Path) -> Result<WorkerStatus> {
 }
 
 fn start_worker(cache_identity: &Path, config: &InferenceConfig, cache: &Path) -> Result<()> {
-    let executable = env::var_os("TRUFFLEPIG_WORKER_BINARY")
-        .map(PathBuf::from)
-        .unwrap_or(env::current_exe()?);
-    let mut command = Command::new(executable);
+    let executable = match env::var_os("TRUFFLEPIG_WORKER_BINARY") {
+        Some(executable) => PathBuf::from(executable),
+        None => current_background_executable(cache, BackgroundOwner::InferenceClient)?,
+    };
+    let mut command = Command::new(&executable);
     command.arg(WORKER_COMMAND);
     command.env("TRUFFLEPIG_WORKER_CACHE", &cache);
     command.env("TRUFFLEPIG_WORKER_ROOT", cache_identity);
@@ -134,7 +138,12 @@ fn start_worker(cache_identity: &Path, config: &InferenceConfig, cache: &Path) -
     if let Some(runtime) = config.runtime_library.as_deref() {
         command.env("ORT_DYLIB_PATH", runtime);
     }
-    spawn_background(&mut command).context("start semantic inference worker")?;
+    spawn_background_for(
+        &mut command,
+        &executable,
+        "semantic inference worker",
+        cache,
+    )?;
     Ok(())
 }
 

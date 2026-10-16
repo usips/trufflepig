@@ -1,0 +1,636 @@
+use super::*;
+
+use crate::daemon::deadline::{QueryDeadline, is_timed_out};
+use fs2::FileExt;
+use rusqlite::Connection;
+use std::fs::{self, OpenOptions};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf, crate::store::Store) {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("root");
+    let cache = directory.path().join("cache");
+    fs::create_dir(&root).unwrap();
+    let store = crate::store::Store::open(&root, &cache).unwrap();
+    (directory, root, cache, store)
+}
+
+fn retained_file_count(cache: &Path) -> usize {
+    let path = cache.join(CHECKPOINT_DIRECTORY).join(CHECKPOINT_DATABASE);
+    if !path.exists() {
+        return 0;
+    }
+    let connection = Connection::open(path).unwrap();
+    connection
+        .query_row("SELECT count(*) FROM completed_files", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .unwrap() as usize
+}
+
+fn lease(cache: &Path) -> std::fs::File {
+    OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(cache.join("index.lock"))
+        .unwrap()
+}
+
+fn retain_fixture_sources(
+    store: &crate::store::Store,
+    root: &Path,
+    cache: &Path,
+) -> IndexCheckpoint {
+    let mut checkpoint = IndexCheckpoint::open(&store.conn, root, cache, None).unwrap();
+    checkpoint.begin_pass().unwrap();
+    for entry in fs::read_dir(root).unwrap() {
+        let path = entry.unwrap().path();
+        let bytes = fs::read(&path).unwrap();
+        let relative = path.strip_prefix(root).unwrap();
+        let path = crate::store::encode_path(relative);
+        let revision = blake3::hash(&bytes).to_hex().to_string();
+        let extraction = crate::extract::extract(&path, &bytes);
+        checkpoint
+            .completed_file(
+                &path,
+                Some(&revision),
+                "read",
+                bytes.len() as u64,
+                crate::store::scan::extraction_cache_version(),
+                &extraction,
+            )
+            .unwrap();
+    }
+    checkpoint.pass_completed().unwrap();
+    checkpoint
+}
+
+fn coverage_observation(coverage: &crate::store::Coverage) -> (usize, usize, usize, u64) {
+    (
+        coverage.total_files,
+        coverage.indexed_files,
+        coverage.walk_failures,
+        coverage.indexed_bytes,
+    )
+}
+
+#[test]
+fn index_until_polls_released_lease_but_available_attempt_returns_promptly() {
+    let (_directory, root, cache, mut store) = fixture();
+    fs::write(root.join("one.rs"), "pub fn retained() {}\n").unwrap();
+    store.index().unwrap();
+    let original = store.publication().unwrap().unwrap();
+    fs::write(root.join("one.rs"), "pub fn changed() {}\n").unwrap();
+
+    let held = lease(&cache);
+    held.lock_exclusive().unwrap();
+    let started = Instant::now();
+    let skipped = store
+        .index_available_until(QueryDeadline::after(Duration::from_secs(1)))
+        .unwrap();
+    assert!(skipped.is_none());
+    assert!(started.elapsed() < Duration::from_millis(100));
+    assert_eq!(store.publication().unwrap().unwrap(), original);
+    drop(held);
+
+    let held = lease(&cache);
+    held.lock_exclusive().unwrap();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(75));
+        drop(held);
+    });
+    let started = Instant::now();
+    let indexed = store
+        .index_until(QueryDeadline::after(Duration::from_secs(2)))
+        .unwrap();
+    assert!(indexed.is_some());
+    assert!(started.elapsed() >= Duration::from_millis(50));
+    assert_eq!(store.generation().unwrap(), original.generation + 1);
+}
+
+#[test]
+fn bounded_two_second_passes_reopen_and_reuse_extractions_until_publish() {
+    let (_directory, root, cache, _store) = fixture();
+    const FILES: usize = 1024;
+    for number in 0..FILES {
+        fs::write(
+            root.join(format!("file-{number:04}.txt")),
+            format!("A small retained text observation, file {number}.\n"),
+        )
+        .unwrap();
+    }
+
+    let budget = Duration::from_secs(2);
+    let mut first_count = None;
+    let mut last_count = None;
+    let mut observed_growth = false;
+    let mut observed_reuse = false;
+    let mut published = None;
+    let mut attempts = Vec::with_capacity(24);
+    let mut unexpected_errors = Vec::new();
+    let mut first_pass_published = false;
+    for attempt in 0..24 {
+        let retained_before = retained_file_count(&cache);
+        let mut store = crate::store::Store::open(&root, &cache).unwrap();
+        let attempt_started = Instant::now();
+        let result = store.index_available_until(QueryDeadline::after(budget));
+        let elapsed = attempt_started.elapsed();
+        let result_detail = match result {
+            Ok(Some(coverage)) => {
+                first_pass_published |= attempt == 0;
+                let observed = coverage_observation(&coverage);
+                published = Some((store, coverage));
+                format!("published coverage={observed:?}")
+            }
+            Ok(None) => {
+                drop(store);
+                "deferred without publication".to_owned()
+            }
+            Err(error) => {
+                drop(store);
+                let chain = format!("{error:#}");
+                if !is_timed_out(&error) {
+                    unexpected_errors.push(chain.clone());
+                }
+                format!(
+                    "{} error-chain={chain}",
+                    if is_timed_out(&error) {
+                        "timed out"
+                    } else {
+                        "unexpected error"
+                    }
+                )
+            }
+        };
+        let retained = retained_file_count(&cache);
+        let progress = crate::store::read_index_progress(&root, &cache);
+        let progress_detail = progress.as_ref().map_or_else(
+            || "none".to_owned(),
+            |progress| {
+                format!(
+                    "phase={:?} completed={} reused={} maintenance_required={}",
+                    progress.phase,
+                    progress.completed_files,
+                    progress.reused_files,
+                    progress.maintenance_required
+                )
+            },
+        );
+        attempts.push(format!(
+            "attempt={attempt} index_elapsed_ms={} retained_before={retained_before} retained_after={retained} progress=({progress_detail}) result=({result_detail})",
+            elapsed.as_millis()
+        ));
+
+        if attempt == 0 {
+            assert!(
+                !first_pass_published,
+                "the first two-second pass unexpectedly published all files:\n{}",
+                attempts.join("\n")
+            );
+            assert!(
+                retained > 0 && retained <= FILES,
+                "the first two-second pass must retain useful preparation; retained {retained}:\n{}",
+                attempts.join("\n")
+            );
+            first_count = Some(retained);
+            last_count = Some(retained);
+            assert!(
+                progress.is_some(),
+                "the first bounded pass must persist progress:\n{}",
+                attempts.join("\n")
+            );
+        }
+        assert!(
+            unexpected_errors.is_empty(),
+            "bounded attempts returned non-timeout errors {unexpected_errors:#?}:\n{}",
+            attempts.join("\n")
+        );
+
+        if published.is_some() {
+            break;
+        }
+        assert!(
+            retained >= last_count.expect("first pass initializes retained count"),
+            "retained extraction count regressed:\n{}",
+            attempts.join("\n")
+        );
+        let initial_count = first_count.expect("first pass initializes retained count");
+        observed_growth |= retained > initial_count;
+        last_count = Some(retained);
+        let progress = progress.expect("retained progress remains visible after Store closes");
+        assert!(
+            progress.completed_files >= initial_count,
+            "progress lost retained extractions:\n{}",
+            attempts.join("\n")
+        );
+        observed_reuse |= progress.reused_files > 0;
+        assert!(
+            !progress.maintenance_required,
+            "bounded trajectory entered maintenance-required:\n{}",
+            attempts.join("\n")
+        );
+    }
+
+    let (store, coverage) = published.unwrap_or_else(|| {
+        panic!(
+            "two-second slices cumulatively publish within 24 attempts; trajectory:\n{}",
+            attempts.join("\n")
+        )
+    });
+    assert!(
+        observed_growth,
+        "later passes retain additional extractions:\n{}",
+        attempts.join("\n")
+    );
+    assert!(
+        observed_reuse,
+        "later passes reuse retained extractions:\n{}",
+        attempts.join("\n")
+    );
+    assert_eq!(coverage.total_files, FILES);
+    assert_eq!(store.generation().unwrap(), 1);
+    assert!(crate::store::read_index_progress(&root, &cache).is_none());
+}
+
+#[test]
+fn resumed_scan_invalidates_changed_and_deleted_completed_sources() {
+    let (_directory, root, cache, mut store) = fixture();
+    fs::write(
+        root.join("a_changed.rs"),
+        "pub fn stale_changed_name() {}\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("b_deleted.rs"),
+        "pub fn stale_deleted_name() {}\n",
+    )
+    .unwrap();
+    let initial_coverage = store.index().unwrap();
+    let initial_publication = store.publication().unwrap().unwrap();
+    let original_generation = store.generation().unwrap();
+    drop(retain_fixture_sources(&store, &root, &cache));
+    assert_eq!(retained_file_count(&cache), 2);
+    for number in 0..1_024 {
+        fs::write(
+            root.join(format!("later-{number:04}.txt")),
+            format!("A later text observation, file {number}.\n"),
+        )
+        .unwrap();
+    }
+
+    match store.index_available_until(QueryDeadline::after(Duration::from_millis(150))) {
+        Err(error) => assert!(is_timed_out(&error), "{error:#}"),
+        Ok(None) => {}
+        Ok(Some(_)) => panic!("fixture must outlast one bounded pass"),
+    }
+    assert!(retained_file_count(&cache) >= 2);
+    assert_eq!(store.generation().unwrap(), original_generation);
+    assert_eq!(store.publication().unwrap().unwrap(), initial_publication);
+    assert_eq!(
+        coverage_observation(&store.coverage().unwrap()),
+        coverage_observation(&initial_coverage)
+    );
+    assert!(crate::store::read_index_progress(&root, &cache).is_some());
+
+    fs::write(
+        root.join("a_changed.rs"),
+        "pub fn fresh_changed_name() {}\n",
+    )
+    .unwrap();
+    fs::remove_file(root.join("b_deleted.rs")).unwrap();
+    assert_eq!(store.publication().unwrap().unwrap(), initial_publication);
+    drop(store);
+    let mut store = crate::store::Store::open(&root, &cache).unwrap();
+    let coverage = store.index().unwrap();
+    assert_eq!(coverage.total_files, 1_025);
+    assert_eq!(store.generation().unwrap(), original_generation + 1);
+    let fresh: i64 = store
+        .conn
+        .query_row(
+            "SELECT count(*) FROM definitions WHERE name='fresh_changed_name'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let stale_changed: i64 = store
+        .conn
+        .query_row(
+            "SELECT count(*) FROM definitions WHERE name='stale_changed_name'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let stale_deleted: i64 = store
+        .conn
+        .query_row(
+            "SELECT count(*) FROM definitions WHERE name='stale_deleted_name'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!((fresh, stale_changed, stale_deleted), (1, 0, 0));
+    assert!(crate::store::read_index_progress(&root, &cache).is_none());
+}
+
+#[test]
+fn expired_resolver_records_maintenance_and_explicit_index_finishes_retained_work() {
+    let (_directory, root, cache, mut store) = fixture();
+    const FILES: usize = 96;
+    for number in 0..FILES {
+        fs::write(
+            root.join(format!("file-{number:03}.txt")),
+            format!("Retained observation {number}.\n"),
+        )
+        .unwrap();
+    }
+    let checkpoint = retain_fixture_sources(&store, &root, &cache);
+    drop(checkpoint);
+    let writer_lock = lease(&cache);
+    writer_lock.lock_exclusive().unwrap();
+    let deadline = QueryDeadline::after(Duration::from_secs(3));
+    let overrun = deadline.remaining() + Duration::from_millis(25);
+    let result = store.index_leased(
+        writer_lock,
+        |_| {
+            std::thread::sleep(overrun);
+            Ok(())
+        },
+        Some(&deadline),
+    );
+    let error = result.unwrap_err();
+    assert!(is_timed_out(&error), "{error:#}");
+    assert_eq!(retained_file_count(&cache), FILES);
+    let progress = crate::store::read_index_progress(&root, &cache).unwrap();
+    assert_eq!(progress.phase, IndexProgressPhase::MaintenanceRequired);
+    assert!(progress.maintenance_required);
+    assert_eq!(progress.completed_files, FILES);
+
+    let started = Instant::now();
+    assert!(
+        store
+            .index_available_until(QueryDeadline::after(Duration::from_secs(1)))
+            .unwrap()
+            .is_none()
+    );
+    assert!(started.elapsed() < Duration::from_millis(500));
+    assert_eq!(store.generation().unwrap(), 0);
+
+    let coverage = store.index().unwrap();
+    assert_eq!(coverage.total_files, FILES);
+    assert_eq!(store.generation().unwrap(), 1);
+    assert!(crate::store::read_index_progress(&root, &cache).is_none());
+}
+
+#[test]
+fn caller_cancellation_keeps_resumable_progress_without_maintenance_poison() {
+    let (directory, root, cache, mut store) = fixture();
+    fs::write(root.join("sample.rs"), "pub fn recoverable() {}\n").unwrap();
+    let claim = directory.path().join("claim");
+    fs::write(&claim, "active").unwrap();
+    let deadline = QueryDeadline::after(Duration::from_secs(3)).with_claim_path(claim.clone());
+    let writer_lock = lease(&cache);
+    writer_lock.lock_exclusive().unwrap();
+    let result = store.index_leased(
+        writer_lock,
+        |_| {
+            fs::remove_file(&claim)?;
+            Ok(())
+        },
+        Some(&deadline),
+    );
+    let error = result.unwrap_err();
+    assert!(is_timed_out(&error), "{error:#}");
+    let progress = crate::store::read_index_progress(&root, &cache).unwrap();
+    assert!(!progress.maintenance_required);
+
+    let coverage = store
+        .index_available_until(QueryDeadline::after(Duration::from_secs(1)))
+        .unwrap()
+        .expect("a caller cancellation does not suppress the next bounded attempt");
+    assert_eq!(coverage.total_files, 1);
+    assert_eq!(store.generation().unwrap(), 1);
+    assert!(crate::store::read_index_progress(&root, &cache).is_none());
+}
+
+#[test]
+fn corrupt_retained_contract_is_hidden_and_invalidated_before_reuse() {
+    for (key, value) in [
+        ("root", "corrupt-root"),
+        ("contract", "corrupt-contract"),
+        ("base_epoch", "corrupt-epoch"),
+        ("base_generation", "999"),
+    ] {
+        let (_directory, root, cache, store) = fixture();
+        let mut checkpoint = IndexCheckpoint::open(&store.conn, &root, &cache, None).unwrap();
+        checkpoint.begin_pass().unwrap();
+        checkpoint
+            .completed_file(
+                "sample.rs",
+                Some("revision"),
+                "read",
+                1,
+                crate::store::scan::extraction_cache_version(),
+                &Extraction::default(),
+            )
+            .unwrap();
+        checkpoint.pass_completed().unwrap();
+        drop(checkpoint);
+        assert!(crate::store::read_index_progress(&root, &cache).is_some());
+
+        let stage = cache.join(CHECKPOINT_DIRECTORY).join(CHECKPOINT_DATABASE);
+        Connection::open(&stage)
+            .unwrap()
+            .execute(
+                "UPDATE checkpoint_meta SET value=?1 WHERE key=?2",
+                rusqlite::params![value, key],
+            )
+            .unwrap();
+        assert!(crate::store::read_index_progress(&root, &cache).is_none());
+
+        let checkpoint = IndexCheckpoint::open(&store.conn, &root, &cache, None).unwrap();
+        assert!(!checkpoint.has_retained_facts(), "mismatch for {key}");
+        assert_eq!(retained_file_count(&cache), 0, "mismatch for {key}");
+    }
+}
+
+#[test]
+fn corrupt_retained_database_is_discarded_and_explicit_index_recovers() {
+    let (_directory, root, cache, mut store) = fixture();
+    fs::write(root.join("sample.rs"), "pub fn recovered() {}\n").unwrap();
+    let checkpoint = retain_fixture_sources(&store, &root, &cache);
+    drop(checkpoint);
+    fs::write(
+        cache.join(CHECKPOINT_DIRECTORY).join(CHECKPOINT_DATABASE),
+        b"not a sqlite database",
+    )
+    .unwrap();
+
+    assert!(crate::store::read_index_progress(&root, &cache).is_none());
+    let coverage = store.index().unwrap();
+    assert_eq!(coverage.total_files, 1);
+    let recovered: i64 = store
+        .conn
+        .query_row(
+            "SELECT count(*) FROM definitions WHERE name='recovered'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(recovered, 1);
+    assert_eq!(retained_file_count(&cache), 0);
+}
+
+#[test]
+fn missing_completed_file_column_is_discarded_and_explicit_index_recovers() {
+    let (_directory, root, cache, mut store) = fixture();
+    fs::write(root.join("sample.rs"), "pub fn recovered() {}\n").unwrap();
+    drop(retain_fixture_sources(&store, &root, &cache));
+
+    let stage = cache.join(CHECKPOINT_DIRECTORY).join(CHECKPOINT_DATABASE);
+    Connection::open(&stage)
+        .unwrap()
+        .execute_batch(
+            "DROP TABLE completed_files;
+             CREATE TABLE completed_files(path TEXT PRIMARY KEY, facts TEXT NOT NULL);
+             INSERT INTO completed_files(path, facts) VALUES('sample.rs', '{}');",
+        )
+        .unwrap();
+    assert_eq!(retained_file_count(&cache), 1);
+
+    let coverage = store.index().unwrap();
+    assert_eq!(coverage.total_files, 1);
+    let recovered: i64 = store
+        .conn
+        .query_row(
+            "SELECT count(*) FROM definitions WHERE name='recovered'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(recovered, 1);
+    assert_eq!(retained_file_count(&cache), 0);
+}
+
+#[test]
+fn committed_extraction_survives_mark_seen_failure_and_bounded_retry() {
+    let (_directory, root, cache, store) = fixture();
+    let source = b"pub fn retry_after_mark_seen() {}\n";
+    fs::write(root.join("sample.rs"), source).unwrap();
+    let path = crate::store::encode_path(Path::new("sample.rs"));
+    let revision = blake3::hash(source).to_hex().to_string();
+    let mut extraction = crate::extract::extract(&path, source);
+    extraction.status = "recovered".to_owned();
+    let mut checkpoint = IndexCheckpoint::open(&store.conn, &root, &cache, None).unwrap();
+    checkpoint.begin_pass().unwrap();
+    checkpoint.storage.fail_next_mark_seen_for_test();
+
+    let error = checkpoint
+        .completed_file(
+            &path,
+            Some(&revision),
+            "read",
+            source.len() as u64,
+            crate::store::scan::extraction_cache_version(),
+            &extraction,
+        )
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("injected checkpoint mark_seen failure")
+    );
+    assert_eq!(retained_file_count(&cache), 1);
+    assert_eq!(checkpoint.storage.completed_count().unwrap(), 1);
+    assert_eq!(checkpoint.progress.completed_files, 1);
+    assert!(!checkpoint.maintenance_required());
+    if let Some(progress) = crate::store::read_index_progress(&root, &cache) {
+        assert!(!progress.maintenance_required);
+    }
+    drop(checkpoint);
+
+    let mut retry = crate::store::Store::open(&root, &cache).unwrap();
+    let coverage = retry
+        .index_available_until(QueryDeadline::after(Duration::from_secs(2)))
+        .unwrap()
+        .expect("a fresh bounded request reuses the committed extraction and publishes");
+    assert_eq!(coverage.total_files, 1);
+    let recovered: i64 = retry
+        .conn
+        .query_row(
+            "SELECT count(*) FROM definitions WHERE name='retry_after_mark_seen'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(recovered, 1);
+    let retained_status: String = retry
+        .conn
+        .query_row("SELECT status FROM files WHERE path=?1", [&path], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(retained_status, "recovered");
+    assert_eq!(retry.generation().unwrap(), 1);
+    assert_eq!(retained_file_count(&cache), 0);
+    assert!(crate::store::read_index_progress(&root, &cache).is_none());
+}
+
+#[test]
+fn expired_setup_and_tiny_active_slices_do_not_poison_bounded_retries() {
+    const FILES: usize = 4;
+    for active_slice in [false, true] {
+        let (_directory, root, cache, store) = fixture();
+        for number in 0..FILES {
+            fs::write(
+                root.join(format!("file-{number:04}.txt")),
+                format!("A retryable tiny-slice observation, file {number}.\n"),
+            )
+            .unwrap();
+        }
+
+        let mut checkpoint = IndexCheckpoint::open(&store.conn, &root, &cache, None).unwrap();
+        checkpoint.begin_pass().unwrap();
+        let deadline = QueryDeadline::after(Duration::from_millis(25));
+        if active_slice {
+            checkpoint.start_bounded_slice(&deadline);
+        }
+        std::thread::sleep(Duration::from_millis(30));
+        assert!(deadline.time_expired(), "the tiny deadline must expire");
+        checkpoint.note_budget_expired(&deadline).unwrap();
+        assert!(!checkpoint.maintenance_required());
+        let progress = crate::store::read_index_progress(&root, &cache)
+            .expect("the expired interruption persists progress");
+        assert!(!progress.maintenance_required);
+        drop(checkpoint);
+        drop(store);
+
+        let mut retry = crate::store::Store::open(&root, &cache).unwrap();
+        let coverage = retry
+            .index_available_until(QueryDeadline::after(Duration::from_secs(2)))
+            .unwrap()
+            .expect("a fresh bounded two-second request publishes the small fixture");
+        assert_eq!(coverage.total_files, FILES);
+        assert_eq!(retry.generation().unwrap(), 1);
+    }
+}
+
+#[test]
+fn bounded_attempt_removes_obsolete_stage_directories() {
+    let (_directory, root, cache, mut store) = fixture();
+    fs::write(root.join("sample.rs"), "pub fn staged() {}\n").unwrap();
+    let obsolete = cache.join("stage-abandoned");
+    fs::create_dir(&obsolete).unwrap();
+    fs::write(obsolete.join("partial.sqlite3"), "incomplete").unwrap();
+
+    assert!(
+        store
+            .index_available_until(QueryDeadline::after(Duration::from_secs(2)))
+            .unwrap()
+            .is_some()
+    );
+    assert!(!obsolete.exists());
+    assert_eq!(store.generation().unwrap(), 1);
+}

@@ -59,7 +59,10 @@ pub(in crate::board::local_board) fn move_task(
         && holder.is_none()
         && card.assignee.is_some()
         && !assigned_to_actor;
-    let assign_authority = if to.is_some() || cancel_pending_assignment {
+    let assign_for_plain_release =
+        to.is_none() && holder.is_none() && !assigned_to_actor && release_column;
+    let assign_authority = if to.is_some() || cancel_pending_assignment || assign_for_plain_release
+    {
         super::super::super::board_authority::authority_for(
             tx,
             &ctx.actor,
@@ -152,7 +155,9 @@ pub(in crate::board::local_board) fn move_task(
         require_assignee(&card, &ctx.actor, task)?;
         return Err(invalid(
             "invalid_actor",
-            format!("{task} requires its assignee or task authority to move"),
+            format!(
+                "{task} requires its assignee or assign authority to move; use --to to assign a recipient"
+            ),
         ));
     }
 

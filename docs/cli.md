@@ -123,10 +123,10 @@ the definition from the current bytes, marked `verified: false` and
 `freshness: unpublished`, once a serving daemon has had 3 s to republish.
 `stale_result` means the graph generation changed and `ctx` needs a fresh handle.
 
-Paths are percent-encoded; paste them unchanged into `show` (`%20`, `%25`, and `%3A` escape
-filename punctuation). `file:` and `path:` accept root-relative project paths; absolute paths report
-`invalid_path` because search and reads stay within project roots. Use the harness file reader for external
-inputs. Traversal and symlinks are rejected.
+Paths are percent-encoded; paste them unchanged into `show` (`%20`, `%25`, `%3A`). `file:` and `path:` accept root-relative paths; absolute paths report `invalid_path`.
+`show path:FILE[:START-END]` reads contained current bytes, including unindexed Markdown, without an index, writable cache, or saved result set; `--no-daemon` bypasses the daemon.
+JSON marks `source:"current_file"` and `verified:false`. Reads show at most 200 rows. Opaque stateless `read:path:` cursors bind the selected root/member, range, and revision across processes; revision changes return `stale_source`.
+Parent components and symlinks are rejected. Persistent `daemon_busy` retries and current-path fallback are bounded; see the [runtime contract](runtime-contract.md#cache-and-daemon). Use the harness file reader for external inputs.
 
 ## Historical navigation
 

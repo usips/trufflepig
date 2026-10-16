@@ -79,11 +79,7 @@ impl WebStore {
     fn open_at(mut cache: BoardConfigCache, runtime: PathBuf) -> Result<Self> {
         let config = cache.get(Instant::now())?;
         crate::system::validate_board_database(&runtime, &config.db_path)?;
-        web_ops::check_router_identity(
-            &runtime,
-            &config.db_path,
-            Instant::now() + http_wire::REQUEST_TIMEOUT,
-        )?;
+        web_ops::check_router_identity(&runtime, &config.db_path)?;
         let writer = LocalBoard::open(&config)?;
         let readers = ReaderPool::new(&config)?;
         Ok(Self {

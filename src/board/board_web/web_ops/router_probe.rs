@@ -5,10 +5,7 @@ use crate::board::{
     board_protocol::{BOARD_API, BoardError, BoardErrorCode},
 };
 use crate::daemon::deadline::QueryDeadline;
-use std::{
-    path::Path,
-    time::{Duration, Instant},
-};
+use std::{path::Path, time::Duration};
 
 type RouterExchange<'a> =
     dyn FnMut(&[String], QueryDeadline) -> Result<Option<String>, BoardError> + 'a;
@@ -24,29 +21,27 @@ const ROUTER_MIGRATION_POLL: Duration = Duration::from_millis(500);
 /// starting router to migrate it; a newer file refuses at once.
 pub(super) fn startup_probe(
     database: &Path,
-    deadline: QueryDeadline,
     wait: Duration,
     exchange: &mut RouterExchange<'_>,
 ) -> Result<(), BoardError> {
-    let started = Instant::now();
+    let migration_deadline = QueryDeadline::after(wait);
     let mut answered = false;
+
+    // Startup probes use an independent budget; ordinary web request deadlines
+    // do not cap migration waits. A zero `wait` still probes once.
+    let initial = QueryDeadline::after(ROUTER_MIGRATION_POLL);
+    let status = probe_router(database, initial, exchange)?;
+    answered |= status.is_some();
+    if status.is_some_and(|status| router_confirms_schema(&status)) {
+        return Ok(());
+    }
+
     loop {
-        // The startup wait outlives the request deadline; each poll stays bounded.
-        let poll = if deadline.expired() {
-            QueryDeadline::after(ROUTER_MIGRATION_POLL)
-        } else {
-            deadline
-        };
-        let status = probe_router(database, poll, exchange)?;
-        answered |= status.is_some();
-        if status.is_some_and(|status| router_confirms_schema(&status)) {
-            return Ok(());
-        }
         match local_schema_version(database)? {
             None => return Ok(()),
             Some(version) if version == SCHEMA_VERSION => return Ok(()),
             Some(version) if version < SCHEMA_VERSION => {
-                if started.elapsed() >= wait {
+                if migration_deadline.expired() {
                     if answered {
                         return Err(unavailable(
                             "router is migrating; check `systemctl --user status trufflepig-system`",
@@ -56,9 +51,23 @@ pub(super) fn startup_probe(
                         "board database schema version {version} awaits migration to {SCHEMA_VERSION}; start trufflepig system ensure with the current binary"
                     )));
                 }
-                std::thread::sleep(
-                    ROUTER_MIGRATION_POLL.min(wait.saturating_sub(started.elapsed())),
-                );
+                let pause = migration_deadline.cap(ROUTER_MIGRATION_POLL);
+                if pause.is_zero() {
+                    continue;
+                }
+                std::thread::sleep(pause);
+                if migration_deadline.expired() {
+                    continue;
+                }
+                let poll = migration_deadline.capped(ROUTER_MIGRATION_POLL);
+                if poll.expired() {
+                    continue;
+                }
+                let status = probe_router(database, poll, exchange)?;
+                answered |= status.is_some();
+                if status.is_some_and(|status| router_confirms_schema(&status)) {
+                    return Ok(());
+                }
             }
             Some(version) => {
                 return Err(unavailable(format!(
@@ -145,7 +154,7 @@ pub(super) fn ingest_via(
     exchange: &mut RouterExchange<'_>,
 ) -> Result<serde_json::Value, BoardError> {
     // Ingestion runs on the router, which owns migration; schema is not consulted.
-    if probe_router(database, deadline, exchange)?.is_none() {
+    if probe_router(database, deadline.clone(), exchange)?.is_none() {
         return Err(unavailable(
             "router is unavailable; start trufflepig system ensure",
         ));

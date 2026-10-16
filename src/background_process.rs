@@ -1,11 +1,121 @@
+use anyhow::{Context, Result};
 use std::os::unix::process::CommandExt;
 #[cfg(test)]
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{
-    io,
+    error::Error,
+    fmt, io,
+    os::unix::ffi::OsStrExt,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::mpsc,
 };
+
+#[cfg(test)]
+mod tests;
+
+const DELETED_EXECUTABLE_SUFFIX: &[u8] = b" (deleted)";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BackgroundOwner {
+    Command,
+    SystemRouter,
+    RootDaemon,
+    WorkspaceCoordinator,
+    InferenceClient,
+}
+
+impl BackgroundOwner {
+    fn role(self) -> &'static str {
+        match self {
+            Self::Command => "command",
+            Self::SystemRouter => "system router",
+            Self::RootDaemon => "root daemon",
+            Self::WorkspaceCoordinator => "workspace coordinator",
+            Self::InferenceClient => "inference client",
+        }
+    }
+
+    fn recovery(self) -> &'static str {
+        match self {
+            Self::Command => "rerun the command with the current trufflepig binary",
+            Self::SystemRouter => {
+                "restart the owning unit with `systemctl --user restart trufflepig-system.service`; if detached, stop this router with `trufflepig system stop` and run `trufflepig system ensure`"
+            }
+            Self::RootDaemon => {
+                "restart the owning systemd unit, or stop the detached root daemon for this cache and retry with the current trufflepig binary"
+            }
+            Self::WorkspaceCoordinator => {
+                "restart the owning systemd unit, or stop the detached workspace coordinator for this cache and retry with the current trufflepig binary"
+            }
+            Self::InferenceClient => {
+                "restart the process through its owning systemd unit, or rerun the caller with the current trufflepig binary"
+            }
+        }
+    }
+}
+
+/// A background owner cannot spawn children from a replaced executable inode.
+#[derive(Debug)]
+pub(crate) struct ReplacedExecutable {
+    pub(crate) executable: PathBuf,
+    pub(crate) cache: PathBuf,
+    pub(crate) owner: BackgroundOwner,
+}
+
+impl fmt::Display for ReplacedExecutable {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "router_binary_replaced: executable {} for cache {} was deleted after the {} started; {}",
+            self.executable.display(),
+            self.cache.display(),
+            self.owner.role(),
+            self.owner.recovery(),
+        )
+    }
+}
+
+impl Error for ReplacedExecutable {}
+
+/// Returns the process executable for child spawns, with owner-specific advice.
+pub(crate) fn current_background_executable(
+    cache: &Path,
+    owner: BackgroundOwner,
+) -> Result<PathBuf> {
+    let executable = std::env::current_exe().with_context(|| {
+        format!(
+            "background_executable_unavailable: cannot determine executable owned by {} for cache {}",
+            owner.role(),
+            cache.display()
+        )
+    })?;
+    validate_background_executable(executable, cache, owner)
+}
+
+/// Returns whether the raw Linux executable path carries the kernel suffix.
+pub(crate) fn background_executable_replaced(executable: &Path) -> bool {
+    executable
+        .as_os_str()
+        .as_bytes()
+        .ends_with(DELETED_EXECUTABLE_SUFFIX)
+}
+
+fn validate_background_executable(
+    executable: PathBuf,
+    cache: &Path,
+    owner: BackgroundOwner,
+) -> Result<PathBuf> {
+    if background_executable_replaced(&executable) {
+        return Err(ReplacedExecutable {
+            executable,
+            cache: cache.to_owned(),
+            owner,
+        }
+        .into());
+    }
+    Ok(executable)
+}
 
 /// Background spawns this process performed; tests assert a waiting client
 /// spawns no second daemon.
@@ -64,27 +174,18 @@ pub(crate) fn spawn_background(command: &mut Command) -> io::Result<BackgroundCh
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::spawn_background;
-    use std::process::Command;
-
-    #[test]
-    fn background_child_owns_process_group_and_is_reaped() {
-        let mut command = Command::new("sleep");
-        command.arg("60");
-        let child = spawn_background(&mut command).expect("spawn background child");
-        let child_pid = child.id() as libc::pid_t;
-        let child_group = unsafe { libc::getpgid(child_pid) };
-        let caller_group = unsafe { libc::getpgrp() };
-        assert_eq!(child_group, child_pid);
-        assert_ne!(child_group, caller_group);
-        assert!(!child.exited());
-        assert_eq!(unsafe { libc::kill(child_pid, libc::SIGKILL) }, 0);
-        let started = std::time::Instant::now();
-        while !child.exited() {
-            assert!(started.elapsed() < std::time::Duration::from_secs(5));
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-    }
+/// Spawns a background process with role and cache details in failures.
+pub(crate) fn spawn_background_for(
+    command: &mut Command,
+    executable: &Path,
+    role: &str,
+    cache: &Path,
+) -> Result<BackgroundChild> {
+    spawn_background(command).with_context(|| {
+        format!(
+            "background_spawn_failed: cannot start {role} executable {} for cache {}",
+            executable.display(),
+            cache.display()
+        )
+    })
 }

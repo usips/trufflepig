@@ -1,26 +1,32 @@
 use super::*;
 
+mod retry_loop_tests;
+
 const QUICK: Duration = Duration::from_millis(50);
 
 fn io(kind: ErrorKind) -> anyhow::Error {
     anyhow::Error::new(std::io::Error::from(kind)).context("read daemon frame length")
 }
 
+fn terminal_io_timeout(kind: ErrorKind, phase: &str) -> anyhow::Error {
+    let message = match phase {
+        "connecting" => "daemon connect deadline expired",
+        _ => "daemon request write deadline expired",
+    };
+    anyhow::Error::new(std::io::Error::new(kind, message))
+        .context(format!("timed_out: phase={phase}"))
+}
+
+fn busy() -> anyhow::Error {
+    anyhow::anyhow!("daemon: daemon_busy: worker pool is full")
+}
+
 #[test]
-fn retry_policy_retries_transient_read_failures_once_classified() {
-    let retried = [
-        (io(ErrorKind::WouldBlock), Duration::ZERO),
-        (io(ErrorKind::TimedOut), Duration::ZERO),
-        (
-            anyhow::anyhow!(
-                "daemon: read daemon frame length: Resource temporarily unavailable (os error 11)"
-            ),
-            Duration::ZERO,
-        ),
-        (
-            anyhow::anyhow!("daemon: daemon: {}", crate::daemon::DAEMON_BUSY),
-            CONTENTION_RETRY_DELAY,
-        ),
+fn retry_policy_classifies_only_safe_transient_read_failures() {
+    let retry = [
+        (io(ErrorKind::WouldBlock), CONTENTION_RETRY_DELAY),
+        (io(ErrorKind::TimedOut), CONTENTION_RETRY_DELAY),
+        (busy(), CONTENTION_RETRY_DELAY),
         (
             anyhow::anyhow!("database is locked: Error code 5"),
             CONTENTION_RETRY_DELAY,
@@ -34,62 +40,101 @@ fn retry_policy_retries_transient_read_failures_once_classified() {
             anyhow::anyhow!("daemon: index_warming: initial index is not published"),
             WARMING_RETRY_DELAY,
         ),
+        (
+            anyhow::Error::new(DaemonReplyTimeout::new(
+                Duration::from_secs(1),
+                Duration::from_secs(20),
+            )),
+            CONTENTION_RETRY_DELAY,
+        ),
     ];
-    for (error, delay) in &retried {
-        for verb in ["search", "refs", "map", "show", "more", "ctx", "status"] {
-            assert_eq!(
-                RetryPolicy::classify(RetryScope::Read, error, QUICK),
-                RetryPolicy::Retry(*delay),
-                "{verb}: {error:#}"
-            );
-        }
-    }
-    for _ in ["index", "session", "forget-logs", "stop", "semantic"] {
+    for (error, delay) in &retry {
         assert_eq!(
-            RetryPolicy::classify(RetryScope::Never, &retried[0].0, QUICK),
-            RetryPolicy::Fail
+            RetryPolicy::classify(RetryScope::Read, error, QUICK),
+            RetryPolicy::Retry(*delay),
+            "{error:#}"
         );
     }
-    for answer in [
-        "timed_out: query deadline expired",
-        "stale_source: source revision changed",
-        "no_definition: no indexed definition named `x`",
-        "invalid_command: unknown command next",
+    for error in [io(ErrorKind::WouldBlock), io(ErrorKind::TimedOut)] {
+        assert_eq!(
+            RetryPolicy::classify(RetryScope::Read, &error, FAST_TRANSPORT_FAILURE),
+            RetryPolicy::Fail,
+            "{error:#}"
+        );
+    }
+    for error in [
+        anyhow::anyhow!("timed_out: query deadline expired"),
+        anyhow::anyhow!("daemon: Resource temporarily unavailable (os error 11)"),
+        anyhow::anyhow!("daemon: timed out waiting for reply (os error 110)"),
+        anyhow::anyhow!("stale_source: source revision changed"),
+        anyhow::anyhow!("no_definition: no indexed definition named `x`"),
+        anyhow::anyhow!("invalid_command: unknown command next"),
     ] {
         assert_eq!(
-            RetryPolicy::classify(
-                RetryScope::Read,
-                &anyhow::anyhow!("daemon: {answer}"),
-                QUICK
-            ),
+            RetryPolicy::classify(RetryScope::Read, &error, QUICK),
             RetryPolicy::Fail,
-            "{answer}"
+            "{error:#}"
         );
     }
 }
 
 #[test]
-fn board_writes_do_not_replay_ambiguous_transport_failures() {
+fn contention_only_replays_only_explicit_contention() {
     for error in [
         io(ErrorKind::BrokenPipe),
         io(ErrorKind::TimedOut),
-        anyhow::anyhow!("index_warming: unavailable"),
+        anyhow::Error::new(DaemonReplyTimeout::new(
+            Duration::from_secs(1),
+            Duration::from_secs(20),
+        )),
     ] {
         assert_eq!(
             RetryPolicy::classify(RetryScope::ContentionOnly, &error, QUICK),
             RetryPolicy::Fail
         );
     }
-    for message in [crate::daemon::DAEMON_BUSY, "database is locked"] {
+    for error in [busy(), anyhow::anyhow!("database is locked")] {
         assert_eq!(
-            RetryPolicy::classify(RetryScope::ContentionOnly, &anyhow::anyhow!(message), QUICK),
+            RetryPolicy::classify(RetryScope::ContentionOnly, &error, QUICK),
             RetryPolicy::Retry(CONTENTION_RETRY_DELAY)
         );
     }
 }
 
 #[test]
-fn busy_replies_retry_by_code_independent_of_explanation() {
+fn leading_timeout_answers_override_typed_io_retries() {
+    let direct = terminal_io_timeout(ErrorKind::TimedOut, "writing_request");
+    let daemon_wrapped = terminal_io_timeout(ErrorKind::TimedOut, "connecting")
+        .context("daemon: daemon: timed_out: phase=connecting")
+        .context("retry loop received a relay error");
+
+    for error in [&direct, &daemon_wrapped] {
+        for scope in [
+            RetryScope::Read,
+            RetryScope::ContentionOnly,
+            RetryScope::Never,
+        ] {
+            assert_eq!(
+                RetryPolicy::classify(scope, error, QUICK),
+                RetryPolicy::Fail,
+                "scope={scope:?} error={error:#}"
+            );
+        }
+    }
+
+    let quoted_timeout = anyhow::Error::new(std::io::Error::new(
+        ErrorKind::TimedOut,
+        "daemon request write deadline expired",
+    ))
+    .context("invalid_body: submitted text says timed_out: phase=writing_request");
+    assert_eq!(
+        RetryPolicy::classify(RetryScope::Read, &quoted_timeout, QUICK),
+        RetryPolicy::Retry(CONTENTION_RETRY_DELAY)
+    );
+}
+
+#[test]
+fn busy_replies_retry_by_leading_code_independent_of_explanation() {
     for message in [
         "daemon_busy: isolated injected queue refusal",
         "daemon: daemon_busy: worker pool is full",
@@ -98,7 +143,7 @@ fn busy_replies_retry_by_code_independent_of_explanation() {
         let error = anyhow::anyhow!(message).context("route request through system router");
         for scope in [RetryScope::Read, RetryScope::ContentionOnly] {
             assert_eq!(
-                RetryPolicy::classify(scope, &error, crate::daemon::PROXY_REPLY_WAIT),
+                RetryPolicy::classify(scope, &error, FAST_TRANSPORT_FAILURE),
                 RetryPolicy::Retry(CONTENTION_RETRY_DELAY),
                 "{message}"
             );
@@ -108,6 +153,28 @@ fn busy_replies_retry_by_code_independent_of_explanation() {
             RetryPolicy::Fail
         );
     }
+}
+
+#[test]
+fn busy_retry_hint_requires_a_leading_busy_code() {
+    let hint = anyhow::anyhow!(
+        "daemon: daemon_busy: pool=root queue_depth=64 retry_after_ms=725 hint=retry_with_bounded_backoff"
+    );
+    assert_eq!(busy_retry_after(&hint), Some(Duration::from_millis(725)));
+    for diagnostic in [
+        "invalid_body: submitted text says daemon_busy: retry_after_ms=725",
+        "daemon: invalid_options: daemon_busy: retry_after_ms=725",
+    ] {
+        assert_eq!(busy_retry_after(&anyhow::anyhow!(diagnostic)), None);
+    }
+    let wrapped =
+        anyhow::anyhow!("daemon_busy: retry_after_ms=725").context("invalid_body: outer error");
+    assert_eq!(busy_retry_after(&wrapped), None);
+    assert!(!is_explicit_busy(&wrapped));
+    assert_eq!(
+        RetryPolicy::classify(RetryScope::Read, &wrapped, QUICK),
+        RetryPolicy::Fail
+    );
 }
 
 #[test]
@@ -167,7 +234,6 @@ fn board_scope_preserves_cursor_and_write_safety() {
     for words in [
         vec!["board", "show", "P1"],
         vec!["board", "review", "P1@1"],
-        vec!["board", "ingest"],
         vec!["board", "inbox", "8"],
         vec!["board", "pending"],
         vec!["feedback", "ls"],
@@ -177,6 +243,7 @@ fn board_scope_preserves_cursor_and_write_safety() {
     for words in [
         vec!["board"],
         vec!["board", "inbox"],
+        vec!["board", "ingest"],
         vec!["board", "post", "P1", "note", "body"],
         vec!["feedback", "blocked", "summary"],
     ] {
@@ -188,21 +255,14 @@ fn board_scope_preserves_cursor_and_write_safety() {
 }
 
 #[test]
-fn retry_policy_never_retries_a_full_reply_wait() {
-    let waited = crate::daemon::PROXY_REPLY_WAIT;
-    for error in [
-        io(ErrorKind::WouldBlock),
-        anyhow::anyhow!("daemon: Resource temporarily unavailable (os error 11)"),
-    ] {
-        assert_eq!(
-            RetryPolicy::classify(RetryScope::Read, &error, waited),
-            RetryPolicy::Fail
-        );
-    }
-    // An explicit busy reply is retried however long it took to arrive.
-    let busy = anyhow::anyhow!("daemon: {}", crate::daemon::DAEMON_BUSY);
+fn a_full_reply_wait_is_not_a_fast_transport_retry() {
+    let error = io(ErrorKind::WouldBlock);
     assert_eq!(
-        RetryPolicy::classify(RetryScope::Read, &busy, waited),
+        RetryPolicy::classify(RetryScope::Read, &error, crate::daemon::PROXY_REPLY_WAIT),
+        RetryPolicy::Fail
+    );
+    assert_eq!(
+        RetryPolicy::classify(RetryScope::Read, &busy(), crate::daemon::PROXY_REPLY_WAIT),
         RetryPolicy::Retry(CONTENTION_RETRY_DELAY)
     );
 }

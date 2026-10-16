@@ -8,7 +8,12 @@ use std::path::PathBuf;
 use std::sync::Barrier;
 use std::time::Instant;
 
+mod admission_refusal_tests;
+mod cross_root_admission_tests;
 mod failures;
+mod frame_ingress;
+mod request_lanes;
+mod tier_deadlines;
 
 type Reply = Box<dyn Fn(&AcceptedRequest) -> Result<String> + Send + Sync>;
 type Reconcile = Box<dyn Fn() -> Result<()> + Send + Sync>;
@@ -45,6 +50,15 @@ struct Served {
 
 impl Served {
     fn start(watching: bool, pool: PoolSize, handler: TestDaemon) -> Self {
+        Self::start_tier(AdmissionTier::Root, watching, pool, handler)
+    }
+
+    fn start_tier(
+        tier: AdmissionTier,
+        watching: bool,
+        pool: PoolSize,
+        handler: TestDaemon,
+    ) -> Self {
         let scratch = scratch();
         let root = scratch.path().join("repo");
         let cache = scratch.path().join("cache");
@@ -55,6 +69,7 @@ impl Served {
                 name: "test",
                 watching,
                 pool,
+                tier,
                 spool: None,
             };
             serve(&serve_root, &serve_cache, profile, handler)
@@ -236,6 +251,7 @@ fn router_answers_spooled_requests_on_its_workers() {
             name: "test-router",
             watching: false,
             pool: WIDE,
+            tier: AdmissionTier::Router,
             spool: Some(&serve_spool),
         };
         let handler = TestDaemon {

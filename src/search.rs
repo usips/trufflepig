@@ -124,6 +124,7 @@ pub fn search(
     cache: &std::path::Path,
 ) -> Result<ResultSet> {
     // Query inference precedes the snapshot. Candidate vectors use source bodies from that snapshot.
+    let deadline = crate::daemon::deadline::QueryDeadline::start();
     let mut session = crate::semantic::SemanticSession::default();
     search_with_session(
         store,
@@ -133,6 +134,7 @@ pub fn search(
         cache,
         &mut session,
         &mut telemetry::RetrievalTrace::disabled(),
+        &deadline,
     )
 }
 
@@ -144,6 +146,7 @@ pub fn search_with_session(
     cache: &std::path::Path,
     session: &mut crate::semantic::SemanticSession,
     trace: &mut telemetry::RetrievalTrace,
+    deadline: &crate::daemon::deadline::QueryDeadline,
 ) -> Result<ResultSet> {
     use std::time::Instant;
     use telemetry::{Lane, LaneOutcome};
@@ -163,7 +166,7 @@ pub fn search_with_session(
     let preparation_us = trace.query_preparation_us;
     let reranker =
         (rerank && !query.exact && !query.regex).then_some(&*session as &dyn RerankScorer);
-    let mut output = search_prepared(store, query, cache, prepared, reranker, trace);
+    let mut output = search_prepared(store, query, cache, prepared, reranker, trace, deadline);
     if let (Some(status), Ok(result)) = (&semantic_status, &mut output) {
         result.coverage["semantic_status"] = if status.starts_with("semantic_cache_locked:") {
             "partial"
@@ -195,6 +198,7 @@ pub fn search_prepared(
     semantic_query: Option<crate::semantic::Embedding>,
     reranker: Option<&dyn RerankScorer>,
     trace: &mut telemetry::RetrievalTrace,
+    deadline: &crate::daemon::deadline::QueryDeadline,
 ) -> Result<ResultSet> {
     use std::time::Instant;
     use telemetry::{Lane, LaneOutcome};
@@ -224,6 +228,7 @@ pub fn search_prepared(
             &mut hits,
             &mut coverage,
             &mut truncated,
+            deadline,
         );
         trace.record(
             Lane::LiveRegex,
@@ -295,8 +300,16 @@ pub fn search_prepared(
             trace,
         );
     }
-    if generation > 0 && store.root == store.index_root() && !query.regex && !query.text.is_empty() {
-        current_candidate_reads::recheck(store, query, &mut hits, &mut coverage, &mut truncated)?;
+    if generation > 0 && store.root == store.index_root() && !query.regex && !query.text.is_empty()
+    {
+        current_candidate_reads::recheck(
+            store,
+            query,
+            &mut hits,
+            &mut coverage,
+            &mut truncated,
+            deadline,
+        )?;
     }
     trace.snapshot(generation, &coverage);
     let mut seen = HashSet::with_capacity(hits.len());

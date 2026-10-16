@@ -4,7 +4,7 @@ use crate::{
     daemon::deadline::QueryDeadline,
     output::OutputBudget,
     results, search, source,
-    store::{Store, is_index_cannot_open, is_index_warming},
+    store::{Store, is_index_cache_unavailable, is_index_cannot_open, is_index_warming},
 };
 use anyhow::{Context, Result, bail, ensure};
 use std::{os::unix::fs::MetadataExt, path::Path};
@@ -21,6 +21,7 @@ pub(super) fn retrieve_read(
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
     preparation_manager: Option<&crate::semantic::preparation::PreparationManager>,
     budget: &OutputBudget,
+    deadline: &QueryDeadline,
 ) -> Result<String> {
     let parent_identity = fallback
         .as_ref()
@@ -66,6 +67,7 @@ pub(super) fn retrieve_read(
                 store.index_cache(),
                 session,
                 &mut trace,
+                deadline,
             );
             if let (Some(error), Ok(set)) = (preparation_error, &mut result) {
                 set.coverage["semantic_preparation_error"] = error.to_string().into();
@@ -106,6 +108,7 @@ pub(super) fn retrieve_read(
             (verb, request_words, request_query, &origin),
             &mut set,
             &mut hashes,
+            deadline,
         )?;
         let differing = fallback.check_hits(&store.root, &set.hits, &mut hashes, changed);
         let differing_hits = set.hits.iter().filter(|hit| differing.flags(hit)).count();
@@ -127,7 +130,8 @@ pub(super) fn retrieve_read(
         map_miss.get_or_insert_with(|| miss.to_owned());
         bail!(map_miss.expect("map miss was just set"));
     }
-    let id = results::save(store, set)?;
+    let id = results::save(store, set)
+        .map_err(|error| crate::store::index_cache_unavailable(store.results_cache(), error))?;
     results::page(store, &id, 0, options.limit, budget)
 }
 
@@ -152,7 +156,7 @@ pub(super) fn show_read(
         let mut view = crate::workspace::ParentIndexView { store, fallback };
         let identity = crate::workspace::ParentIndexIdentity::capture(&view.store, &view.fallback)?;
         let (mut source, read) =
-            crate::workspace::acquire_through_parent(&mut view, &target, side, &origin)?;
+            crate::workspace::acquire_through_parent(&mut view, &target, side, &origin, &deadline)?;
         source.handle = save_parent_identity(&view.store, &source.handle, &identity)?;
         let mut metadata = serde_json::json!({"served_from":identity.served_from.clone()});
         if let Some(read) = read {
@@ -279,15 +283,19 @@ fn parent_result_store_for_set(
         .context("stale_result: parent-index identity is invalid; search again")?;
     let member = validate_parent_worktree(root, &identity)?;
     let parent_root = member.member.root;
-    let default_cache = crate::cli::cache_path(root, None)?;
-    ensure!(
-        cache == default_cache,
-        "stale_result: saved parent index requires the default worktree cache; search again"
-    );
     let parent_cache = crate::cli::cache_path(&parent_root, None)?;
-    let parent = Store::open_read(&parent_root, &parent_cache, deadline).map_err(|_| {
-        anyhow::anyhow!("stale_result: saved parent index is no longer available; search again")
-    })?;
+    let parent =
+        Store::open_read(&parent_root, &parent_cache, deadline.clone()).map_err(|error| {
+            let error = super::classify_query_error(&deadline, error);
+            if crate::daemon::deadline::is_timed_out(&error) {
+                error
+            } else {
+                anyhow::anyhow!(
+                    "stale_result: saved parent index is no longer available; search again"
+                )
+                .context(error)
+            }
+        })?;
     identity.validate_publication(&parent)?;
     Ok(Some((parent.reading_from(root, cache)?, identity)))
 }
@@ -351,7 +359,8 @@ fn save_parent_identity(
     );
     set.coverage["parent_index"] = serde_json::to_value(identity)?;
     let new_set =
-        results::save_entries(store, set.generation, set.coverage, set.hits, set.truncated)?;
+        results::save_entries(store, set.generation, set.coverage, set.hits, set.truncated)
+            .map_err(|error| crate::store::index_cache_unavailable(store.results_cache(), error))?;
     Ok(format!("{new_set}:{}", parsed.ordinal))
 }
 
@@ -371,13 +380,11 @@ fn target_offset(target: &str) -> Result<Option<usize>> {
 
 /// New parent-index reads are limited to search, map, and symbol lookup.
 /// `refs` and `search refs:` retain their existing index-only behavior.
-pub(super) fn can_use_parent(
-    root: &Path,
-    cache: &Path,
-    options: &Arguments,
-    error: &anyhow::Error,
-) -> bool {
-    if !(is_index_warming(error) || is_index_cannot_open(error)) {
+pub(super) fn can_use_parent(options: &Arguments, error: &anyhow::Error) -> bool {
+    if !(is_index_warming(error)
+        || is_index_cache_unavailable(error)
+        || is_index_cannot_open(error))
+    {
         return false;
     }
     let supported = match options.words.first().map(String::as_str) {
@@ -387,7 +394,7 @@ pub(super) fn can_use_parent(
             .is_some_and(|target| target.starts_with("sym:")),
         _ => false,
     };
-    supported && crate::cli::cache_path(root, None).is_ok_and(|default| cache == default)
+    supported
 }
 
 pub(super) fn can_read_without_index(options: &Arguments) -> bool {

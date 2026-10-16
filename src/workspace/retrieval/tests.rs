@@ -1,6 +1,8 @@
 use super::member_coverage::*;
 use serde_json::json;
 
+mod cache_progress_tests;
+
 #[test]
 fn unavailable_lanes_surface_reasons_without_marking_lexical_coverage_partial() {
     let coverage = json!({

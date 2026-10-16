@@ -23,9 +23,9 @@ impl BoardHost {
     /// waiting clients queue while status never races migration; request paths
     /// call it lazily, and starters ignore failure to keep serving.
     pub(crate) fn ensure_writer(&self, deadline: QueryDeadline) -> Result<()> {
-        check_deadline(deadline)?;
+        check_deadline(&deadline)?;
         let config = self.config()?;
-        let mut backend = lock_before(&self.inner.backend, deadline, "writer")?;
+        let mut backend = lock_before(&self.inner.backend, &deadline, "writer")?;
         if backend.is_none() {
             *backend = Some(LocalBoard::open_with_timeout(
                 &config,
@@ -38,7 +38,7 @@ impl BoardHost {
     pub(super) fn handle_by(
         &self,
         request: &BoardRequest,
-        deadline: QueryDeadline,
+        deadline: &QueryDeadline,
     ) -> Result<BoardReply> {
         self.handle_by_mode(request, deadline, false)
     }
@@ -46,7 +46,7 @@ impl BoardHost {
     pub(super) fn handle_imported_by(
         &self,
         request: &BoardRequest,
-        deadline: QueryDeadline,
+        deadline: &QueryDeadline,
     ) -> Result<BoardReply> {
         ensure_feedback_import(request)?;
         self.handle_by_mode(request, deadline, true)
@@ -55,7 +55,7 @@ impl BoardHost {
     fn handle_by_mode(
         &self,
         request: &BoardRequest,
-        deadline: QueryDeadline,
+        deadline: &QueryDeadline,
         imported: bool,
     ) -> Result<BoardReply> {
         check_deadline(deadline)?;
@@ -101,7 +101,7 @@ impl BoardHost {
                     {
                         return Err(error.into());
                     }
-                    self.ensure_writer(deadline)?;
+                    self.ensure_writer(deadline.clone())?;
                     LocalBoard::open_read_with_timeout(
                         &config,
                         deadline.cap(Duration::from_secs(5)),
@@ -168,18 +168,18 @@ fn board_storage_owner_writable(database: &std::path::Path) -> bool {
 
 impl BoardBackend for BoardHostBackendAccess<'_> {
     fn handle(&mut self, request: &BoardRequest) -> std::result::Result<BoardReply, BoardError> {
-        self.0.handle_by(request, self.1).map_err(Into::into)
+        self.0.handle_by(request, &self.1).map_err(Into::into)
     }
     fn import_feedback(
         &mut self,
         request: &BoardRequest,
     ) -> std::result::Result<BoardReply, BoardError> {
         self.0
-            .handle_imported_by(request, self.1)
+            .handle_imported_by(request, &self.1)
             .map_err(Into::into)
     }
     fn max_seq(&self) -> std::result::Result<EventSeq, BoardError> {
-        self.0.max_seq_by(self.1).map_err(BoardError::from)
+        self.0.max_seq_by(&self.1).map_err(BoardError::from)
     }
     fn linked_commit_oids(
         &self,
@@ -187,7 +187,7 @@ impl BoardBackend for BoardHostBackendAccess<'_> {
         oids: &[crate::identity::GitOid],
     ) -> std::result::Result<std::collections::BTreeSet<crate::identity::GitOid>, BoardError> {
         self.0
-            .linked_commit_oids_by(repo_key, oids, self.1)
+            .linked_commit_oids_by(repo_key, oids, &self.1)
             .map_err(BoardError::from)
     }
 }
@@ -210,7 +210,7 @@ pub(crate) fn ensure_feedback_import(
     Ok(())
 }
 
-pub(super) fn check_deadline(deadline: QueryDeadline) -> Result<()> {
+pub(super) fn check_deadline(deadline: &QueryDeadline) -> Result<()> {
     if deadline.expired() {
         bail!("timed_out: board query deadline expired");
     }
@@ -228,7 +228,7 @@ pub(super) fn recover_lock<T: Default>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 pub(super) fn lock_before<'a, T: Default>(
     mutex: &'a Mutex<T>,
-    deadline: QueryDeadline,
+    deadline: &QueryDeadline,
     _label: &str,
 ) -> Result<MutexGuard<'a, T>> {
     loop {

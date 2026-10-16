@@ -3,6 +3,8 @@ use super::*;
 use crate::{cli, output::OutputBudget, store::Store};
 use std::fs;
 
+mod query_execution_deadline_tests;
+
 fn source_text(value: &Value) -> String {
     value["lines"]
         .as_array()
@@ -167,18 +169,31 @@ fn explicit_scopes_limit_members_and_unavailable_members_remain_visible() {
     );
 }
 
-/// Runs `search sym:SharedThing ws:all` (`--no-daemon`) from `engine` under `deadline`.
+/// Runs `search sym:SharedThing ws:all` (`--no-daemon`) from `engine` with a fresh deadline.
 fn search_all_with_deadline(
     fixture: &Fixture,
-    deadline: crate::daemon::deadline::QueryDeadline,
+    deadline_factory: impl FnOnce() -> crate::daemon::deadline::QueryDeadline,
 ) -> Result<String> {
+    let workspace_path = fixture
+        .config
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("workspace config path is not valid UTF-8"))?;
+    let engine_root = fixture.root.path().join("engine");
+    let engine_root = engine_root
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("engine root path is not valid UTF-8"))?;
+    let cache_path_arg = fixture
+        .cache
+        .path()
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("cache path is not valid UTF-8"))?;
     let args: Vec<String> = [
         "--workspace",
-        fixture.config.to_str().unwrap(),
+        workspace_path,
         "--root",
-        fixture.root.path().join("engine").to_str().unwrap(),
+        engine_root,
         "--cache",
-        fixture.cache.path().to_str().unwrap(),
+        cache_path_arg,
         "--no-daemon",
         "--diagnostics",
         "off",
@@ -188,16 +203,21 @@ fn search_all_with_deadline(
     ]
     .map(str::to_owned)
     .into();
-    let options = cli::parse(&args).unwrap();
-    let config = WorkspaceConfig::load(&fixture.config).unwrap();
-    let cache = cache_path(&config, Some(fixture.cache.path())).unwrap();
-    WorkspaceResults::create(&cache).unwrap();
+    let options = cli::parse(&args)?;
+    let config = WorkspaceConfig::load(&fixture.config)?;
+    let cache = cache_path(&config, Some(fixture.cache.path()))?;
+    let setup_deadline =
+        crate::daemon::deadline::QueryDeadline::after(std::time::Duration::from_secs(5));
+    WorkspaceResults::create(&cache, &setup_deadline)?;
+    let request_context = cli::request_context(&options)?;
+    let deadline = deadline_factory();
+    let results = WorkspaceResults::open(&cache, &deadline)?;
     retrieval::search(
         &config,
         &cache,
-        &WorkspaceResults::open(&cache).unwrap(),
+        &results,
         &options,
-        &cli::request_context(&options).unwrap(),
+        &request_context,
         &mut crate::semantic::SemanticSession::default(),
         deadline,
     )
@@ -206,45 +226,92 @@ fn search_all_with_deadline(
 #[test]
 fn expired_query_deadline_answers_timed_out() {
     let fixture = Fixture::new();
-    fixture.json("engine", &["search", "sym:SharedThing", "ws:all"]);
-    let error = search_all_with_deadline(
-        &fixture,
-        crate::daemon::deadline::QueryDeadline::after(std::time::Duration::ZERO),
-    )
+    let mut deadline_factory_invoked = false;
+    let error = search_all_with_deadline(&fixture, || {
+        deadline_factory_invoked = true;
+        crate::daemon::deadline::QueryDeadline::after(std::time::Duration::ZERO)
+    })
     .unwrap_err();
+    assert!(deadline_factory_invoked);
     assert!(crate::daemon::deadline::is_timed_out(&error), "{error:#}");
 }
 
 #[test]
-fn member_reconciles_do_not_spend_the_query_deadline() {
+fn member_reconciliation_uses_a_shared_slice_with_query_headroom() {
     let fixture = Fixture::new();
+    let mut selected_caches = Vec::with_capacity(3);
+    let mut _writer_leases = Vec::with_capacity(3);
     for member in ["engine", "pack", "upstream"] {
-        crate::daemon::deadline::write_slow_reconcile_fixture(
-            &fixture.root.path().join(member),
-            "unrelated",
+        let root = fixture.root.path().join(member);
+        let cache = super::hashed_member_cache(&root, Some(fixture.cache.path())).unwrap();
+        fs::create_dir_all(&cache).unwrap();
+        let lease = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(cache.join("index.lock"))
+            .unwrap();
+        fs2::FileExt::lock_exclusive(&lease).unwrap();
+        selected_caches.push((root, cache));
+        _writer_leases.push(lease);
+    }
+
+    let budget = std::time::Duration::from_millis(750);
+    let mut started = None;
+    let mut original_deadline = None;
+    let mut maintenance_window = None;
+    let error = search_all_with_deadline(&fixture, || {
+        let deadline = crate::daemon::deadline::QueryDeadline::after(budget);
+        started = Some(std::time::Instant::now());
+        maintenance_window = Some(crate::store::inline_maintenance_deadline(&deadline).remaining());
+        original_deadline = Some(deadline.clone());
+        deadline
+    })
+    .unwrap_err();
+    let elapsed = started.expect("deadline factory ran").elapsed();
+    let original_deadline = original_deadline.expect("original deadline was captured");
+    let maintenance_window = maintenance_window.expect("maintenance slice was captured");
+    assert_eq!(
+        error.to_string(),
+        "workspace_unavailable: no selected member has an available published index; inspect ws status or use --no-daemon"
+    );
+    assert!(
+        !original_deadline.expired(),
+        "member warming leaves the original response headroom: {error:#}"
+    );
+    let tolerance = std::time::Duration::from_millis(100);
+    assert!(
+        elapsed >= maintenance_window.saturating_sub(tolerance),
+        "the first member uses most of its shared maintenance window: {elapsed:?} vs {maintenance_window:?}"
+    );
+    assert!(
+        elapsed <= maintenance_window.saturating_add(tolerance) && elapsed < budget,
+        "later members do not renew the slice or consume the original response headroom: {elapsed:?} vs {maintenance_window:?}"
+    );
+
+    for (index, (root, cache)) in selected_caches.iter().enumerate() {
+        let database = cache.join("index.sqlite3");
+        if index == 0 {
+            assert!(database.is_file(), "first member setup ran: {database:?}");
+        } else {
+            assert!(
+                !database.exists(),
+                "later member got a renewed slice: {database:?}"
+            );
+        }
+        let error = Store::open_read(
+            root,
+            cache,
+            crate::daemon::deadline::QueryDeadline::after(std::time::Duration::from_millis(100)),
+        )
+        .err()
+        .expect("every writer-locked member remains unpublished");
+        assert!(
+            crate::store::is_index_warming(&error),
+            "published read remains warming for {root:?}: {error:#}"
         );
     }
-    // Three members' reconciles together outlast the budget; their queries do not.
-    let budget = std::time::Duration::from_millis(750);
-    let started = std::time::Instant::now();
-    let output = search_all_with_deadline(
-        &fixture,
-        crate::daemon::deadline::QueryDeadline::after(budget),
-    )
-    .unwrap();
-    assert!(
-        started.elapsed() > budget,
-        "reconciles finished within the budget"
-    );
-    let page: Value = serde_json::from_str(&output).unwrap();
-    let states: Vec<_> = page["coverage"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|member| member["state"].as_str().unwrap())
-        .collect();
-    assert_eq!(states, ["searched"; 3]);
-    assert_eq!(page["hits"].as_array().unwrap().len(), 3);
 }
 
 #[test]
@@ -324,15 +391,19 @@ fn explicit_read_continuations_survive_member_cache_eviction_and_pin_range() {
         .execute("DELETE FROM result_sets", [])
         .unwrap();
     drop(store);
-    let second = fixture.json("upstream", &["show", cursor]);
+    let second = fixture.json("upstream", &["--member", "pack", "show", cursor]);
     assert_eq!(second["member"], "pack");
+    assert_eq!(second["source"], "current_file", "{second}");
+    assert_eq!(second["verified"], false, "{second}");
     assert_eq!(second["revision"], first["revision"]);
+    let cursor_offset = cursor.rsplit_once('@').unwrap().1.parse::<u64>().unwrap();
+    assert_eq!(second["start"], cursor_offset, "{second}");
     assert_eq!(second["end"], first["end"]);
     assert!(source_text(&second).contains("original pack"));
     let bad_offset = format!("{}@0", cursor.rsplit_once('@').unwrap().0);
     assert!(
         fixture
-            .run("engine", &["show", &bad_offset])
+            .run("engine", &["--member", "pack", "show", &bad_offset])
             .unwrap_err()
             .to_string()
             .contains("invalid_cursor")
@@ -342,13 +413,11 @@ fn explicit_read_continuations_survive_member_cache_eviction_and_pin_range() {
         "// newer pack source\n",
     )
     .unwrap();
-    assert!(
-        fixture
-            .run("engine", &["show", cursor])
-            .unwrap_err()
-            .to_string()
-            .contains("stale_source")
-    );
+    let stale = fixture
+        .json_result("engine", &["--member", "pack", "show", cursor])
+        .unwrap_err()
+        .to_string();
+    assert!(stale.starts_with("stale_source:"), "{stale}");
 }
 
 #[test]

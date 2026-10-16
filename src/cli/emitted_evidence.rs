@@ -1,6 +1,7 @@
 //! Preserve only identities present in the final prepared JSON response.
 use crate::diagnostics::{Outcome, RequestEvent};
 use crate::{
+    daemon::deadline::QueryDeadline,
     identity::ResultHandle,
     results::{self, HistoricalSource, RESULTS_DATABASE, ResultEntry, ResultSetStore},
     store::encode_path,
@@ -8,58 +9,77 @@ use crate::{
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+const AUDIT_DEADLINE: Duration = Duration::from_millis(50);
+const AUDIT_BUSY_SLICE: Duration = Duration::from_millis(25);
+const AUDIT_CHECK_STEPS: i32 = 1_024;
 
 /// Immutable result lookup used by the final emission boundary.
 pub(super) struct SavedEntries {
     root: PathBuf,
     singleton: Option<ResultSetStore>,
     workspace: Option<Connection>,
+    deadline: QueryDeadline,
 }
 
 impl SavedEntries {
     pub(super) fn singleton(root: &Path, cache: &Path) -> Self {
+        let deadline = QueryDeadline::after(AUDIT_DEADLINE);
         let singleton = cache
             .join(RESULTS_DATABASE)
             .is_file()
-            .then(|| ResultSetStore::open(cache).ok())
+            .then(|| ResultSetStore::open_with_deadline(cache, &deadline).ok())
             .flatten();
         Self {
             root: root.to_owned(),
             singleton,
             workspace: None,
+            deadline,
         }
     }
 
     pub(super) fn workspace(root: &Path, cache: &Path) -> Self {
+        let deadline = QueryDeadline::after(AUDIT_DEADLINE);
         let workspace = cache
             .join("workspace.sqlite3")
             .is_file()
             .then(|| Connection::open(cache.join("workspace.sqlite3")).ok())
             .flatten();
+        let workspace = workspace.and_then(|connection| {
+            let handler_deadline = deadline.clone();
+            connection
+                .progress_handler(AUDIT_CHECK_STEPS, Some(move || handler_deadline.expired()))
+                .ok()
+                .map(|()| connection)
+        });
         Self {
             root: root.to_owned(),
             singleton: None,
             workspace,
+            deadline,
         }
     }
 
-    fn resolve(&self, handle: &str) -> Option<ResolvedEntry> {
-        let parsed: ResultHandle = handle.parse().ok()?;
+    fn resolve(&self, handle: &ResultHandle) -> Option<ResolvedEntry> {
+        if self.deadline.expired() {
+            return None;
+        }
         if let Some(connection) = &self.workspace {
-            if let Some(resolved) = resolve_workspace(connection, &parsed) {
+            if let Some(resolved) = resolve_workspace(connection, handle, &self.deadline) {
                 return Some(resolved);
             }
         }
         let set = self
             .singleton
             .as_ref()?
-            .load(&parsed.set.simple().to_string())
+            .load(&handle.set.simple().to_string())
             .ok()?;
-        let entry = set.hits.get(parsed.ordinal.checked_sub(1)?)?.clone();
+        let entry = set.hits.get(handle.ordinal.checked_sub(1)?)?.clone();
         Some(ResolvedEntry {
             owner_root: encode_path(&self.root),
             member: None,
-            member_rank: parsed.ordinal,
+            member_rank: handle.ordinal,
             entry,
         })
     }
@@ -91,7 +111,17 @@ struct WorkspacePayload {
     hits: Vec<WorkspaceOwnedEntry>,
 }
 
-fn resolve_workspace(connection: &Connection, handle: &ResultHandle) -> Option<ResolvedEntry> {
+fn resolve_workspace(
+    connection: &Connection,
+    handle: &ResultHandle,
+    deadline: &QueryDeadline,
+) -> Option<ResolvedEntry> {
+    if deadline.expired() {
+        return None;
+    }
+    connection
+        .busy_timeout(deadline.cap(AUDIT_BUSY_SLICE))
+        .ok()?;
     let payload: Option<String> = connection
         .query_row(
             "SELECT payload FROM workspace_results WHERE id=?1 AND expires>?2",
@@ -101,7 +131,13 @@ fn resolve_workspace(connection: &Connection, handle: &ResultHandle) -> Option<R
         .optional()
         .ok()?
         .flatten();
+    if deadline.expired() {
+        return None;
+    }
     let payload: WorkspacePayload = serde_json::from_str(&payload?).ok()?;
+    if deadline.expired() {
+        return None;
+    }
     let owned = payload.hits.get(handle.ordinal.checked_sub(1)?)?;
     let owner = payload.owners.get(owned.owner)?;
     Some(ResolvedEntry {
@@ -119,13 +155,43 @@ pub(super) fn capture_emitted(
     saved: Option<&SavedEntries>,
     requested_target: Option<&str>,
 ) {
+    let mut resolve = |handle: &ResultHandle| match saved {
+        Some(saved) => saved.resolve(handle).ok_or_else(|| {
+            if saved.deadline.expired() {
+                LookupFailure::Expired
+            } else {
+                LookupFailure::Unavailable
+            }
+        }),
+        None => Err(LookupFailure::Unavailable),
+    };
+    capture_emitted_with_resolver(root, response, event, requested_target, &mut resolve);
+}
+
+#[derive(Clone, Copy)]
+enum LookupFailure {
+    Expired,
+    Unavailable,
+}
+
+fn capture_emitted_with_resolver(
+    root: &Path,
+    response: &str,
+    event: &mut RequestEvent,
+    requested_target: Option<&str>,
+    resolve: &mut impl FnMut(&ResultHandle) -> Result<ResolvedEntry, LookupFailure>,
+) {
     let Ok(value) = serde_json::from_str::<Value>(response) else {
         // A lines page names its handles in the first column; coverage is not captured.
         for (rank, handle) in crate::output::lines::emitted_handles(response)
             .enumerate()
-            .take(128)
+            .take(129)
         {
-            if let Some(identity) = resolved_handle(saved, handle, false, Some(rank + 1)) {
+            if rank == 128 {
+                event.truncated = true;
+                break;
+            }
+            if let Some(identity) = resolved_handle(resolve, event, handle, false, Some(rank + 1)) {
                 event.emitted.push(identity);
             }
         }
@@ -145,12 +211,12 @@ pub(super) fn capture_emitted(
         .map(Vec::as_slice)
         .unwrap_or(&[]);
     for (rank, hit) in values.iter().enumerate().take(128) {
-        if let Some(identity) = resolved_identity(saved, hit, false, Some(rank + 1)) {
+        if let Some(identity) = resolved_identity(resolve, event, hit, false, Some(rank + 1)) {
             event.emitted.push(identity);
         }
     }
     if let Some(hit) = value.get("hit") {
-        if let Some(identity) = resolved_identity(saved, hit, false, None) {
+        if let Some(identity) = resolved_identity(resolve, event, hit, false, None) {
             event.emitted.push(identity);
         }
     }
@@ -160,7 +226,8 @@ pub(super) fn capture_emitted(
         }
         for edge in edges.iter().take(50) {
             for side in ["source", "target"] {
-                if let Some(identity) = resolved_identity(saved, &edge[side], false, None) {
+                if let Some(identity) = resolved_identity(resolve, event, &edge[side], false, None)
+                {
                     event.emitted.push(identity);
                 }
             }
@@ -170,7 +237,7 @@ pub(super) fn capture_emitted(
         event.truncated = true;
     }
     for hit in values.iter().take(64) {
-        if let Some(identity) = resolved_identity(saved, &hit["target"], false, None) {
+        if let Some(identity) = resolved_identity(resolve, event, &hit["target"], false, None) {
             event.emitted.push(identity);
         }
         if let Some(candidates) = hit["candidates"].as_array() {
@@ -178,13 +245,13 @@ pub(super) fn capture_emitted(
                 event.truncated = true;
             }
             for candidate in candidates.iter().take(32) {
-                if let Some(identity) = resolved_identity(saved, candidate, false, None) {
+                if let Some(identity) = resolved_identity(resolve, event, candidate, false, None) {
                     event.emitted.push(identity);
                 }
             }
         }
         for side in ["before", "after"] {
-            if let Some(identity) = resolved_side(saved, hit, side, false) {
+            if let Some(identity) = resolved_side(resolve, event, hit, side, false) {
                 event.emitted.push(identity);
             }
         }
@@ -197,7 +264,7 @@ pub(super) fn capture_emitted(
             if let Some(hit) = values.iter().find(|hit| hit["handle"] == hunk["handle"]) {
                 for side in ["before", "after"] {
                     if hunk[side]["text"].is_string() {
-                        if let Some(mut identity) = resolved_side(saved, hit, side, true) {
+                        if let Some(mut identity) = resolved_side(resolve, event, hit, side, true) {
                             identity.start_byte = hunk[side]["start"]
                                 .as_u64()
                                 .unwrap_or(identity.start_byte as u64)
@@ -207,6 +274,9 @@ pub(super) fn capture_emitted(
                                 .unwrap_or(identity.end_byte as u64)
                                 as usize;
                             event.emitted.push(identity);
+                        } else if !hit[side].is_object() {
+                            // Hunk text has no identity without its source side.
+                            event.truncated = true;
                         }
                     }
                 }
@@ -224,7 +294,7 @@ pub(super) fn capture_emitted(
         let requested = requested_target.and_then(base_handle);
         if let Some(mut identity) = requested
             .as_deref()
-            .and_then(|handle| resolved_handle(saved, handle, true, None))
+            .and_then(|handle| resolved_handle(resolve, event, handle, true, None))
             .or_else(|| {
                 // Explicit current path reads have no input handle. Their
                 // source body is still the final response's own identity.
@@ -252,7 +322,8 @@ pub(super) fn capture_emitted(
 }
 
 fn resolved_identity(
-    saved: Option<&SavedEntries>,
+    resolve: &mut impl FnMut(&ResultHandle) -> Result<ResolvedEntry, LookupFailure>,
+    event: &mut RequestEvent,
     value: &Value,
     source_body: bool,
     original_rank: Option<usize>,
@@ -261,22 +332,23 @@ fn resolved_identity(
         return None;
     }
     let handle = value["handle"].as_str()?;
-    resolved_handle(saved, handle, source_body, original_rank)
+    resolved_handle(resolve, event, handle, source_body, original_rank)
 }
 
 fn resolved_handle(
-    saved: Option<&SavedEntries>,
+    resolve: &mut impl FnMut(&ResultHandle) -> Result<ResolvedEntry, LookupFailure>,
+    event: &mut RequestEvent,
     handle: &str,
     source_body: bool,
     original_rank: Option<usize>,
 ) -> Option<crate::diagnostics::EmittedIdentity> {
-    let saved = saved?;
-    let resolved = saved.resolve(handle)?;
+    let resolved = resolve_entry(resolve, event, handle)?;
     identity_from_entry(&resolved, source_body, original_rank)
 }
 
 fn resolved_side(
-    saved: Option<&SavedEntries>,
+    resolve: &mut impl FnMut(&ResultHandle) -> Result<ResolvedEntry, LookupFailure>,
+    event: &mut RequestEvent,
     hit: &Value,
     side: &str,
     source_body: bool,
@@ -285,8 +357,7 @@ fn resolved_side(
     if !hit[side].is_object() {
         return None;
     }
-    let saved = saved?;
-    let resolved = saved.resolve(handle)?;
+    let resolved = resolve_entry(resolve, event, handle)?;
     let ResultEntry::Change(change) = &resolved.entry else {
         return identity_from_entry(&resolved, source_body, None);
     };
@@ -301,6 +372,23 @@ fn resolved_side(
         source_body,
         Some(resolved.member_rank),
     ))
+}
+
+fn resolve_entry(
+    resolve: &mut impl FnMut(&ResultHandle) -> Result<ResolvedEntry, LookupFailure>,
+    event: &mut RequestEvent,
+    handle: &str,
+) -> Option<ResolvedEntry> {
+    let Ok(handle) = handle.parse::<ResultHandle>() else {
+        return None;
+    };
+    match resolve(&handle) {
+        Ok(resolved) => Some(resolved),
+        Err(LookupFailure::Expired | LookupFailure::Unavailable) => {
+            event.truncated = true;
+            None
+        }
+    }
 }
 
 fn identity_from_entry(
@@ -379,151 +467,4 @@ fn direct_identity(repository: &str, value: &Value) -> Option<crate::diagnostics
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::diagnostics::{Operation, RequestContext};
-    use serde_json::json;
-
-    #[test]
-    fn diff_and_later_pages_preserve_preimage_identity() {
-        let root = tempfile::tempdir().unwrap();
-        let cache = tempfile::tempdir().unwrap();
-        let store = crate::store::Store::open(root.path(), cache.path()).unwrap();
-        let oid = crate::identity::GitOid::parse(&"a".repeat(40)).unwrap();
-        let revision = crate::identity::ContentRevision::of(b"historical source");
-        let id = results::save_entries(
-            &store,
-            1,
-            json!({}),
-            vec![ResultEntry::Change(crate::results::ChangeEntry {
-                handle: String::new(),
-                name: "alpha".into(),
-                status: "modified".into(),
-                before: Some(HistoricalSource {
-                    repository: encode_path(&root.path().join(".git")),
-                    commit: oid,
-                    blob: oid,
-                    revision,
-                    path: "a.rs".into(),
-                    span: crate::identity::ByteSpan::new(10, 40).unwrap(),
-                }),
-                after: None,
-                correspondence: "exact".into(),
-            })],
-            false,
-        )
-        .unwrap();
-        let handle = format!("{id}:1");
-        let source = json!({"repository":"/repo/.git","path":"a.rs","revision":revision,"commit":oid,"blob":oid,"span":{"start":10,"end":40}});
-        let response = json!({"hits":[{"entry":"change","handle":handle,"before":source}],"hunks":[{"handle":handle,"before":{"start":12,"end":18,"text":"secret source"}}]});
-        let mut event = RequestEvent::new(
-            RequestContext::new(None, None),
-            Operation::Diff,
-            Outcome::Success,
-        );
-        capture_emitted(
-            root.path(),
-            &response.to_string(),
-            &mut event,
-            Some(&SavedEntries::singleton(root.path(), cache.path())),
-            None,
-        );
-        assert_eq!(event.emitted.len(), 2);
-        assert_eq!(event.emitted[0].original_rank, Some(1));
-        assert_eq!(event.emitted[1].content_revision, revision.to_string());
-        assert_eq!(
-            (event.emitted[1].start_byte, event.emitted[1].end_byte),
-            (12, 18)
-        );
-        assert!(event.emitted[1].source_body);
-        assert_eq!(event.emitted[1].blob.as_deref(), Some(oid.as_str()));
-        assert!(
-            !serde_json::to_string(&event)
-                .unwrap()
-                .contains("secret source")
-        );
-    }
-
-    #[test]
-    fn candidate_metadata_and_capture_loss_are_explicit() {
-        let candidates: Vec<_> = (0..40)
-            .map(|n| json!({"path":"a.rs","revision":"rev","start":n,"end":n+1}))
-            .collect();
-        let response = json!({"hits":[{"path":"b.rs","revision":"rev2","start":0,"end":10,"candidates":candidates}]});
-        let mut event = RequestEvent::new(
-            RequestContext::new(None, None),
-            Operation::References,
-            Outcome::Success,
-        );
-        capture_emitted(
-            std::path::Path::new("/repo"),
-            &response.to_string(),
-            &mut event,
-            None,
-            None,
-        );
-        assert!(event.emitted.is_empty());
-    }
-
-    #[test]
-    fn saved_handles_supply_immutable_identity_and_unresolved_handles_are_ignored() {
-        let root = tempfile::tempdir().unwrap();
-        let cache = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("lib.rs"), "fn alpha() {}\n").unwrap();
-        let mut store = crate::store::Store::open(root.path(), cache.path()).unwrap();
-        store.index().unwrap();
-        let revision = crate::identity::ContentRevision::of(b"fn alpha() {}\n").to_string();
-        let id = results::save_entries(
-            &store,
-            1,
-            json!({}),
-            vec![ResultEntry::LiveSource(crate::results::Hit {
-                handle: String::new(),
-                path: "lib.rs".into(),
-                revision: Some(revision.clone()),
-                start: 3,
-                end: 8,
-                start_line: 1,
-                end_line: 1,
-                name: "alpha".into(),
-                kind: "function".into(),
-                container: None,
-                provenance: Some("exact_identifier".into()),
-                resolution: None,
-                candidates: Vec::new(),
-                target: None,
-                repeats: None,
-                snippet: None,
-                differs: false,
-            })],
-            false,
-        )
-        .unwrap();
-        let saved = SavedEntries::singleton(root.path(), cache.path());
-        let mut event = RequestEvent::new(
-            RequestContext::new(None, None),
-            Operation::Search,
-            Outcome::Success,
-        );
-        let response = json!({
-            "hits":[
-                {"handle":format!("{id}:1"),"file":"file:///wrong.rs","start_line":99,"end_line":99},
-                {"handle":"0123456789abcdef0123456789abcdef:1","file":"file:///unpersisted.rs","start_line":1,"end_line":1}
-            ]
-        });
-        capture_emitted(
-            root.path(),
-            &response.to_string(),
-            &mut event,
-            Some(&saved),
-            None,
-        );
-        assert_eq!(event.emitted.len(), 1);
-        assert_eq!(event.emitted[0].path, "lib.rs");
-        assert_eq!(event.emitted[0].content_revision, revision);
-        assert_eq!(
-            (event.emitted[0].start_byte, event.emitted[0].end_byte),
-            (3, 8)
-        );
-    }
-}
+mod tests;

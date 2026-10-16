@@ -45,17 +45,45 @@ fn full_pool_answers_daemon_busy() {
         protocol::write_request(&mut stream, &request).unwrap();
         stream
     };
-    let mut queued = raw("queued");
-    let mut refused = raw("refused");
-    match protocol::read_reply(&mut refused).unwrap() {
-        DaemonReply::Failure { message } => assert_eq!(message, DAEMON_BUSY),
-        DaemonReply::Success { output } => panic!("full pool answered {output}"),
+    let first = raw("candidate-one");
+    let second = raw("candidate-two");
+    let (reply_tx, reply_rx) = mpsc::channel();
+    for (label, mut stream) in [("candidate-one", first), ("candidate-two", second)] {
+        let reply_tx = reply_tx.clone();
+        std::thread::spawn(move || {
+            let reply = protocol::read_reply(&mut stream);
+            let _ = reply_tx.send((label, reply));
+        });
     }
+    drop(reply_tx);
+    let (refused_label, refused_reply) = reply_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("full query lane did not refuse a request");
+    let DaemonReply::Failure { message } = refused_reply.unwrap() else {
+        panic!("full pool answered {refused_label}");
+    };
+    assert!(message.starts_with("daemon_busy: "), "{message}");
+    assert!(
+        message.contains("pool=test-query queue_depth=1 queue_capacity=1"),
+        "{message}"
+    );
+    assert!(
+        message.contains("cause=queue_full retry_after_ms=250"),
+        "{message}"
+    );
+    assert!(
+        message.contains("hint=retry_with_bounded_backoff active_verb=unknown"),
+        "{message}"
+    );
     release.send(()).unwrap();
-    assert!(matches!(
-        protocol::read_reply(&mut queued).unwrap(),
-        DaemonReply::Success { output } if output == "queued"
-    ));
+    let (queued_label, queued_reply) = reply_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("queued query did not finish after release");
+    let DaemonReply::Success { output } = queued_reply.unwrap() else {
+        panic!("queued request {queued_label} did not succeed");
+    };
+    assert!(matches!(output.as_str(), "candidate-one" | "candidate-two"));
+    assert_ne!(queued_label, refused_label);
     assert_eq!(holder.join().unwrap().unwrap().as_deref(), Some("hold"));
     Arc::into_inner(served).unwrap().stop().unwrap();
 }
@@ -69,6 +97,7 @@ fn failed_initial_reconcile_stops_the_daemon_with_its_error() {
         name: "test",
         watching: false,
         pool: WIDE,
+        tier: AdmissionTier::Root,
         spool: None,
     };
     let handler = TestDaemon {
@@ -117,6 +146,7 @@ fn panicking_reconcile_stops_the_daemon() {
         name: "test",
         watching: false,
         pool: WIDE,
+        tier: AdmissionTier::Root,
         spool: None,
     };
     let handler = TestDaemon {
@@ -130,6 +160,25 @@ fn panicking_reconcile_stops_the_daemon() {
         "{error:#}"
     );
     assert!(!cache.join(SOCKET_NAME).exists(), "socket left for nobody");
+}
+
+#[test]
+fn expected_peer_disconnect_errors_are_quiet_and_unexpected_errors_remain_visible() {
+    for kind in [
+        ErrorKind::BrokenPipe,
+        ErrorKind::ConnectionReset,
+        ErrorKind::ConnectionAborted,
+        ErrorKind::NotConnected,
+        ErrorKind::UnexpectedEof,
+    ] {
+        let error = anyhow::Error::new(std::io::Error::from(kind));
+        assert!(peer_disconnected(&error), "{kind:?} should be quiet");
+    }
+    let unexpected = anyhow::Error::new(std::io::Error::new(
+        ErrorKind::Other,
+        "unexpected reply write failure",
+    ));
+    assert!(!peer_disconnected(&unexpected));
 }
 
 #[test]

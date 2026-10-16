@@ -50,7 +50,7 @@ fn running_router_answers_without_the_long_wait() {
     let context = RequestContext::new(None, None);
     let deadline = QueryDeadline::after(Duration::from_secs(3));
     loop {
-        if daemon::request_by(&runtime, &ping, &context, deadline)
+        if daemon::request_by(&runtime, &ping, &context, deadline.clone())
             .unwrap()
             .is_some()
         {

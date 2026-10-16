@@ -123,24 +123,67 @@ pub struct ClaimedSpoolRequest {
 }
 
 impl ClaimedSpoolRequest {
+    /// Reads and validates the arguments before assigning the request to a lane.
+    pub(crate) fn arguments(&self) -> Result<(crate::diagnostics::RequestContext, Vec<String>)> {
+        let request = fs::read(&self.claim)
+            .context("read spooled daemon request")
+            .and_then(|bytes| {
+                serde_json::from_slice::<DaemonRequest>(&bytes).context("decode spooled request")
+            })?;
+        request.validate()?;
+        match request {
+            DaemonRequest::Arguments { context, args } => Ok((context, args)),
+            DaemonRequest::Stop => bail!("spooled requests cannot stop a daemon"),
+        }
+    }
+
+    /// Whether the client still owns this queued claim.
+    pub(crate) fn is_claimed(&self) -> bool {
+        match fs::symlink_metadata(&self.claim) {
+            Err(error) if error.kind() == ErrorKind::NotFound => false,
+            _ => true,
+        }
+    }
+
+    /// Starts the accepted-age budget at request publication, including time
+    /// spent queued before this daemon claims the file.
+    pub(crate) fn deadline(&self, accepted_budget: Duration) -> QueryDeadline {
+        let budget = match fs::metadata(&self.claim) {
+            Ok(metadata) => match metadata.modified() {
+                Ok(modified) => {
+                    let age = SystemTime::now()
+                        .duration_since(modified)
+                        .unwrap_or(Duration::ZERO);
+                    accepted_budget.saturating_sub(age)
+                }
+                Err(error) => {
+                    eprintln!("trufflepig: could not inspect spooled request age: {error}");
+                    accepted_budget
+                }
+            },
+            Err(error) if error.kind() == ErrorKind::NotFound => Duration::ZERO,
+            Err(error) => {
+                eprintln!("trufflepig: could not inspect spooled request age: {error}");
+                accepted_budget
+            }
+        };
+        QueryDeadline::after(budget).with_claim_path(self.claim.clone())
+    }
+
+    /// Publishes a completed or pre-dispatch failure result.
+    pub(crate) fn answer_result(self, result: Result<String>) {
+        self.publish(DaemonReply::from_result(result));
+    }
+
     /// Decodes and validates the request, runs `handler`, and publishes its reply.
     pub fn answer(
         self,
         handler: impl FnOnce(crate::diagnostics::RequestContext, Vec<String>) -> Result<String>,
     ) {
-        let result = fs::read(&self.claim)
-            .context("read spooled daemon request")
-            .and_then(|bytes| {
-                serde_json::from_slice::<DaemonRequest>(&bytes).context("decode spooled request")
-            })
-            .and_then(|request| {
-                request.validate()?;
-                match request {
-                    DaemonRequest::Arguments { context, args } => handler(context, args),
-                    DaemonRequest::Stop => bail!("spooled requests cannot stop a daemon"),
-                }
-            });
-        self.publish(DaemonReply::from_result(result));
+        let result = self
+            .arguments()
+            .and_then(|(context, args)| handler(context, args));
+        self.answer_result(result);
     }
 
     /// Publishes a failure without running the request.

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{output::OutputBudget, results};
+use crate::{daemon::deadline::QueryDeadline, output::OutputBudget, results};
 
 pub(super) fn fixture(files: &[(&str, &[u8])]) -> (tempfile::TempDir, tempfile::TempDir, Store) {
     let root = tempfile::tempdir().unwrap();
@@ -414,6 +414,7 @@ fn rerank_gate_excludes_exact_and_regex_queries() {
             cache.path(),
             &mut session,
             &mut trace,
+            &QueryDeadline::start(),
         )
         .unwrap();
         assert!(

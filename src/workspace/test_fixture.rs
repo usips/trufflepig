@@ -114,7 +114,11 @@ impl Fixture {
     }
 
     pub fn json(&self, home: &str, words: &[&str]) -> Value {
-        serde_json::from_str(&self.run(home, words).unwrap()).unwrap()
+        self.json_result(home, words).unwrap()
+    }
+
+    pub fn json_result(&self, home: &str, words: &[&str]) -> Result<Value> {
+        Ok(serde_json::from_str(&self.run(home, words)?)?)
     }
 
     pub fn member_cache(&self, name: &str) -> PathBuf {

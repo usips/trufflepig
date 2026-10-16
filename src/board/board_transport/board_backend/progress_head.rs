@@ -12,7 +12,7 @@ impl BoardHost {
     pub(super) fn verify_progress_head(
         &self,
         request: &BoardRequest,
-        deadline: QueryDeadline,
+        deadline: &QueryDeadline,
     ) -> Result<Option<BoardRequest>> {
         let BoardOp::Post {
             target: BoardRef::Task(task),

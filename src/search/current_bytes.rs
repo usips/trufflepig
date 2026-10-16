@@ -1,6 +1,7 @@
 //! Re-run ordinary search lanes against bounded current-file snapshots.
 use super::{Query, search_prepared, telemetry::RetrievalTrace};
 use crate::{
+    daemon::deadline::QueryDeadline,
     extract::Extraction,
     identity::ContentRevision,
     results::Hit,
@@ -16,8 +17,10 @@ pub(crate) fn search_file(
     path: &str,
     bytes: &[u8],
     extraction: &Extraction,
+    deadline: &QueryDeadline,
 ) -> Result<(Vec<Hit>, bool)> {
-    let current = Store::unpublished(&parent.root, parent.results_cache())?;
+    let current = Store::unpublished(&parent.root, parent.results_cache())?
+        .with_query_deadline(deadline.clone());
     current_source::insert(&current, path, bytes, extraction)?;
     let mut trace = RetrievalTrace::disabled();
     let result = search_prepared(
@@ -27,6 +30,7 @@ pub(crate) fn search_file(
         None,
         None,
         &mut trace,
+        deadline,
     )?;
     Ok((result.hits, result.truncated))
 }

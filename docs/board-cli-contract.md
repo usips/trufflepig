@@ -54,6 +54,13 @@ feedback triage E512 [NOTE…]
 feedback close E512 fixed|wontfix|duplicate [NOTE…]
 ```
 
+An unclaimed non-done task can move to `todo` or `blocked` under its assignee's authority or with an
+`assign` grant; a plain move under that grant preserves the assignee and cannot end another actor's
+active claim.
+Supplying `--to` changes the recipient and requires `assign` authority. Assign alone does not
+authorize moves into `review` or `done`; those moves require the active claim holder, and reopening
+`done` to `todo` requires `decide` authority.
+
 Use `propose` by default for SSOT changes. `edit` makes a direct revision and
 requires `decide` authority; use it only when the human explicitly requests a direct edit.
 

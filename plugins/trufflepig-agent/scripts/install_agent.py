@@ -26,6 +26,7 @@ from trufflepig_runtime import runtime_config_path
 from agent_install_links import AgentLinkPlan, link
 from claude_install import claude_home, check_claude_hooks, prepare_settings, write_settings
 from board_service_pin import validate_router_database
+from router_identity import require_router_identity
 from systemd_units import (apply_units, board_database_path, render_service, service_text,
                            system_runtime_path)
 
@@ -153,12 +154,14 @@ def require_current_router(runtime: Path, *, allow_absent: bool = False, managed
         if not require_schema:
             if status.get("board_error"):
                 print(f"warning: router board_error: {status['board_error']}", file=sys.stderr)
+            require_router_identity(runtime, status, advice)
             return
         supported = status.get("schema_supported")
         schema = status.get("schema_file")
         if supported != BOARD_SCHEMA:
             raise ValueError(f"router reports schema_supported {supported}, expected {BOARD_SCHEMA}; {advice}")
         if schema == BOARD_SCHEMA:
+            require_router_identity(runtime, status, advice)
             return
         remaining = deadline - time.monotonic()
         if remaining <= 0:

@@ -105,7 +105,7 @@ pub(crate) fn execute(
         let deadline = crate::daemon::deadline::QueryDeadline::after(
             expires.saturating_duration_since(Instant::now()),
         );
-        return crate::board::board_projects::project_reply(&config, projects, deadline);
+        return crate::board::board_projects::project_reply(&config, projects, &deadline);
     }
     let reply = if request.op.is_read_only() {
         store

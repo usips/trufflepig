@@ -1,4 +1,23 @@
 use super::*;
+use crate::daemon::deadline::{QueryDeadline, TIMED_OUT, is_timed_out};
+use anyhow::{Result, bail};
+use std::path::Path;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LiveRegexCheckpoint {
+    BeforeCompile,
+    WalkEntry,
+    BeforeRead,
+    AfterRead,
+    BeforeMatchScan,
+    AfterMatchScan,
+    BeforeHash,
+    AfterHash,
+    BeforeExtract,
+    AfterExtract,
+    RegexMatch,
+    MatchBatch,
+}
 
 pub(super) fn live_regex(
     store: &Store,
@@ -8,8 +27,67 @@ pub(super) fn live_regex(
     hits: &mut Vec<Hit>,
     coverage: &mut serde_json::Value,
     truncated: &mut bool,
+    deadline: &QueryDeadline,
+) -> Result<()> {
+    live_regex_with_checkpoint(
+        store,
+        query,
+        paths,
+        cache,
+        hits,
+        coverage,
+        truncated,
+        &mut |_, checkpoint| check_live_deadline(deadline, checkpoint),
+    )
+}
+
+fn check_live_deadline(deadline: &QueryDeadline, checkpoint: LiveRegexCheckpoint) -> Result<()> {
+    let expired = match checkpoint {
+        LiveRegexCheckpoint::BeforeCompile
+        | LiveRegexCheckpoint::BeforeRead
+        | LiveRegexCheckpoint::MatchBatch => deadline.expired(),
+        _ => deadline.time_expired(),
+    };
+    if expired {
+        bail!("{TIMED_OUT}: live regex deadline expired or client disconnected");
+    }
+    Ok(())
+}
+
+fn live_regex_with_checkpoint(
+    store: &Store,
+    query: &Query,
+    paths: &BoundPathFilter,
+    cache: &std::path::Path,
+    hits: &mut Vec<Hit>,
+    coverage: &mut serde_json::Value,
+    truncated: &mut bool,
+    checkpoint: &mut impl FnMut(&Path, LiveRegexCheckpoint) -> Result<()>,
+) -> Result<()> {
+    let result = live_regex_scan(
+        store, query, paths, cache, hits, coverage, truncated, checkpoint,
+    );
+    match result {
+        Err(error) if is_timed_out(&error) => Err(error.context(format!(
+            "{TIMED_OUT}: live regex scan incomplete; discarded {} partial hits",
+            hits.len()
+        ))),
+        result => result,
+    }
+}
+
+fn live_regex_scan(
+    store: &Store,
+    query: &Query,
+    paths: &BoundPathFilter,
+    cache: &std::path::Path,
+    hits: &mut Vec<Hit>,
+    coverage: &mut serde_json::Value,
+    truncated: &mut bool,
+    checkpoint: &mut impl FnMut(&Path, LiveRegexCheckpoint) -> Result<()>,
 ) -> Result<()> {
     // Line anchors match at every line, as in grep.
+    checkpoint(&store.root, LiveRegexCheckpoint::BeforeCompile)?;
     let regex = regex::bytes::RegexBuilder::new(&query.text)
         .multi_line(true)
         .size_limit(8 * 1024 * 1024)
@@ -18,6 +96,7 @@ pub(super) fn live_regex(
     let mut excluded = 0usize;
     let mut walk_failures = 0usize;
     let mut checked = 0usize;
+    let mut match_iterations = 0usize;
     // Neither the index cache nor a worktree view's own cache is source.
     let caches = [cache, store.results_cache()]
         .map(|cache| cache.canonicalize().unwrap_or_else(|_| cache.to_owned()));
@@ -36,6 +115,11 @@ pub(super) fn live_regex(
                 ))
     });
     for entry in walker.build() {
+        let checkpoint_path = entry
+            .as_ref()
+            .map(|entry| entry.path())
+            .unwrap_or_else(|_| store.root.as_path());
+        checkpoint(checkpoint_path, LiveRegexCheckpoint::WalkEntry)?;
         let entry = match entry {
             Ok(entry) => entry,
             Err(_) => {
@@ -53,7 +137,10 @@ pub(super) fn live_regex(
             continue;
         }
         // Oversized and binary files are excluded by contract, not unsearched.
-        let source = match source::read_contained(&store.root, relative, source::MAX_READ_BYTES) {
+        checkpoint(entry.path(), LiveRegexCheckpoint::BeforeRead)?;
+        let read = source::read_contained(&store.root, relative, source::MAX_READ_BYTES);
+        checkpoint(entry.path(), LiveRegexCheckpoint::AfterRead)?;
+        let source = match read {
             Ok(bytes) => bytes,
             Err(error) if error.to_string().starts_with("source_excluded") => {
                 excluded += 1;
@@ -69,15 +156,32 @@ pub(super) fn live_regex(
             continue;
         }
         checked += 1;
+        checkpoint(entry.path(), LiveRegexCheckpoint::BeforeMatchScan)?;
+        let mut matches = regex.find_iter(&source);
+        let first_match = matches.next();
+        checkpoint(entry.path(), LiveRegexCheckpoint::AfterMatchScan)?;
+        let Some(first_match) = first_match else {
+            continue;
+        };
+        checkpoint(entry.path(), LiveRegexCheckpoint::BeforeHash)?;
         let revision = blake3::hash(&source).to_hex().to_string();
-        let extraction = if !query.kind.is_empty() && regex.is_match(&source) {
-            Some(crate::extract::extract(&path, &source))
-        } else {
+        checkpoint(entry.path(), LiveRegexCheckpoint::AfterHash)?;
+        let extraction = if query.kind.is_empty() {
             None
+        } else {
+            checkpoint(entry.path(), LiveRegexCheckpoint::BeforeExtract)?;
+            let extraction = Some(crate::extract::extract(&path, &source));
+            checkpoint(entry.path(), LiveRegexCheckpoint::AfterExtract)?;
+            extraction
         };
         // One hit per matching line: later matches on the same line add nothing.
         let mut previous_line = None;
-        for matched in regex.find_iter(&source) {
+        for matched in std::iter::once(first_match).chain(matches) {
+            checkpoint(entry.path(), LiveRegexCheckpoint::RegexMatch)?;
+            match_iterations += 1;
+            if match_iterations % 64 == 0 {
+                checkpoint(entry.path(), LiveRegexCheckpoint::MatchBatch)?;
+            }
             let (start_line, end_line) = source::line_span(&source, matched.start(), matched.end());
             if previous_line == Some(start_line) {
                 continue;
@@ -132,6 +236,9 @@ pub(super) fn live_regex(
                 differs: false,
             });
         }
+        if *truncated {
+            break;
+        }
     }
     coverage["live_checked_files"] = checked.into();
     coverage["live_read_failures"] = failures.into();
@@ -141,21 +248,4 @@ pub(super) fn live_regex(
 }
 
 #[cfg(test)]
-mod tests {
-    use crate::{search::Query, store::Store};
-
-    #[test]
-    fn binary_files_are_excluded_not_unsearched() {
-        let root = tempfile::tempdir().unwrap();
-        let cache = tempfile::tempdir().unwrap();
-        std::fs::write(root.path().join("lib.rs"), "fn needle() {}\n").unwrap();
-        std::fs::write(root.path().join("blob.bin"), b"needle\0\x01").unwrap();
-        let mut store = Store::open(root.path(), cache.path()).unwrap();
-        store.index().unwrap();
-        let query = Query::parse("re:needle").unwrap();
-        let found = crate::search::search(&store, &query, false, cache.path()).unwrap();
-        assert_eq!(found.hits.len(), 1);
-        assert_eq!(found.coverage["live_read_failures"], 0);
-        assert_eq!(found.coverage["live_excluded_files"], 1);
-    }
-}
+mod tests;

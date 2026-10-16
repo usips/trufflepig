@@ -1,6 +1,8 @@
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
+
+use super::DaemonReplyTimeout;
 
 pub(super) const REQUEST_LIMIT: usize = 64 * 1024;
 const RESPONSE_LIMIT: usize = 4 * 1024 * 1024;
@@ -45,7 +47,30 @@ impl DaemonReply {
         match result {
             Ok(output) => Self::Success { output },
             Err(error) => Self::Failure {
-                message: format!("{error:#}"),
+                message: if super::deadline::is_timed_out(&error) {
+                    format!("{error:#}")
+                } else {
+                    DaemonReplyTimeout::from_error(&error)
+                        .map(ToString::to_string)
+                        .unwrap_or_else(|| format!("{error:#}"))
+                },
+            },
+        }
+    }
+
+    pub(super) fn into_result(self) -> Result<String> {
+        match self {
+            Self::Success { output } => Ok(output),
+            Self::Failure { message } => match DaemonReplyTimeout::from_message(&message) {
+                Some(failure) => Err(failure.into()),
+                None => {
+                    let error = anyhow::Error::msg(message);
+                    if super::deadline::is_timed_out(&error) {
+                        Err(error)
+                    } else {
+                        bail!("daemon: {error}")
+                    }
+                }
             },
         }
     }

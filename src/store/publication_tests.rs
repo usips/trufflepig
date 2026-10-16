@@ -193,7 +193,7 @@ fn open_read_reports_unpublished_or_foreign_index() {
 fn open_read_interrupts_statements_after_its_deadline() {
     let (_directory, store) = published_fixture();
     let deadline = QueryDeadline::after(std::time::Duration::from_millis(200));
-    let reader = Store::open_read(&store.root, &store.cache, deadline).unwrap();
+    let reader = Store::open_read(&store.root, &store.cache, deadline.clone()).unwrap();
     std::thread::sleep(std::time::Duration::from_millis(250));
     let error = reader
         .conn
@@ -271,19 +271,33 @@ fn publish_while_query_never_locks() {
             while !stop.load(Ordering::Relaxed) {
                 publications += 1;
                 let body = format!("fn alpha() {{}}\nfn beta_{publications}() {{}}\n");
-                std::fs::write(writer.root.join("lib.rs"), body).unwrap();
+                let source = writer.root.join("lib.rs");
+                let mut staged = tempfile::NamedTempFile::new_in(&writer.root).unwrap();
+                std::io::Write::write_all(staged.as_file_mut(), body.as_bytes()).unwrap();
+                staged.persist(&source).unwrap();
                 writer.index().unwrap();
             }
             publications
         }
     });
-    let query = crate::search::Query::parse("sym:alpha").unwrap();
-    for _ in 0..60 {
-        let reader = Store::open_read(&root, &cache, QueryDeadline::start()).unwrap();
-        let found = crate::search::search(&reader, &query, false, &cache).unwrap();
-        assert!(!found.hits.is_empty());
-        crate::results::save(&reader, found).unwrap();
-    }
+    let read_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let query = crate::search::Query::parse("sym:alpha").unwrap();
+        for _ in 0..60 {
+            let reader = Store::open_read(&root, &cache, QueryDeadline::start()).unwrap();
+            let found = crate::search::search(&reader, &query, false, &cache).unwrap();
+            assert!(!found.hits.is_empty());
+            assert!(
+                found.hits.iter().all(|hit| hit.path == "lib.rs"),
+                "alpha matched an unexpected source path: {:?}",
+                found.hits
+            );
+            crate::results::save(&reader, found).unwrap();
+        }
+    }));
     stop.store(true, Ordering::Relaxed);
-    assert!(publishing.join().unwrap() > 1);
+    let publication_result = publishing.join();
+    if let Err(reader_panic) = read_result {
+        std::panic::resume_unwind(reader_panic);
+    }
+    assert!(publication_result.unwrap() > 1);
 }

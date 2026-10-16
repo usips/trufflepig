@@ -1,5 +1,6 @@
 use super::*;
 use crate::{
+    daemon::deadline::QueryDeadline,
     search::{self, Query},
     semantic::SemanticSession,
     store::Store,
@@ -24,6 +25,7 @@ fn observed(query: &str) -> (crate::results::ResultSet, RetrievalTrace) {
         cache.path(),
         &mut SemanticSession::default(),
         &mut trace,
+        &QueryDeadline::start(),
     )
     .unwrap();
     (result, trace)
@@ -139,6 +141,7 @@ fn retrieval_observations_retain_failed_lane_without_error_text() {
         cache.path(),
         &mut SemanticSession::default(),
         &mut trace,
+        &QueryDeadline::start(),
     );
     assert!(result.is_err());
     assert_eq!(trace.lanes.len(), 1);
@@ -167,6 +170,7 @@ fn retrieval_observations_identify_semantic_preparation_failure() {
         cache.path(),
         &mut SemanticSession::default(),
         &mut trace,
+        &QueryDeadline::start(),
     );
     assert_eq!(result.unwrap().coverage["semantic_status"], "unavailable");
     let semantic = trace

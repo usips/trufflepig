@@ -1,6 +1,9 @@
 use super::*;
 use crate::{
-    daemon::deadline::{QueryDeadline, is_timed_out},
+    daemon::{
+        RequestClass, RequestLane,
+        deadline::{QueryDeadline, is_timed_out},
+    },
     diagnostics::RequestContext,
     store::Store,
 };
@@ -92,4 +95,232 @@ fn root_daemon_honors_an_expired_accept_time_deadline() {
         .unwrap_err();
         assert!(is_timed_out(&error), "{words:?}: {error:#}");
     }
+}
+
+#[test]
+fn daemon_request_class_routes_flags_and_regex_queries_to_controlled_lanes() {
+    let class = |args: &[&str]| {
+        classify_daemon_request(&args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>())
+            .unwrap()
+            .class
+    };
+
+    assert_eq!(
+        class(&["--root", ".", "--budget", "300", "search", "symbol"]),
+        RequestClass {
+            lane: RequestLane::Query,
+            verb: "search",
+        }
+    );
+    assert_eq!(
+        class(&["search", "re:entity_transfer|sim.entity.transfer"]),
+        RequestClass {
+            lane: RequestLane::Regex,
+            verb: "search",
+        }
+    );
+    assert_eq!(
+        class(&["search", "file:src", "re:entity_transfer"]),
+        RequestClass {
+            lane: RequestLane::Regex,
+            verb: "search",
+        }
+    );
+    assert_eq!(
+        class(&["search", "structure:foo"]),
+        RequestClass {
+            lane: RequestLane::Query,
+            verb: "search",
+        }
+    );
+    assert_eq!(
+        class(&["hist-index", "--wait"]),
+        RequestClass {
+            lane: RequestLane::Maintenance,
+            verb: "hist-index",
+        }
+    );
+    for verb in [
+        "hist",
+        "since",
+        "diff",
+        "blame",
+        "hist-status",
+        "doctor",
+        "session",
+        "audit",
+    ] {
+        assert_eq!(
+            class(&[verb]),
+            RequestClass {
+                lane: RequestLane::Query,
+                verb,
+            }
+        );
+    }
+    assert_eq!(
+        class(&["semantic", "status"]),
+        RequestClass {
+            lane: RequestLane::Query,
+            verb: "semantic",
+        }
+    );
+    assert_eq!(
+        class(&["semantic", "prepare"]),
+        RequestClass {
+            lane: RequestLane::Maintenance,
+            verb: "semantic",
+        }
+    );
+    assert_eq!(
+        class(&["hold"]),
+        RequestClass {
+            lane: RequestLane::Query,
+            verb: "unknown",
+        }
+    );
+}
+
+fn workspace_classifier_fixture(
+    semantic: &str,
+) -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+    let scratch = tempfile::tempdir().unwrap();
+    for member in ["engine", "pack"] {
+        std::fs::create_dir(scratch.path().join(member)).unwrap();
+    }
+    let config = scratch.path().join("trufflepig.workspace.toml");
+    std::fs::write(
+        &config,
+        format!(
+            "[workspace]\nname='classification'\n{semantic}[members.engine]\npath='engine'\n[members.pack]\npath='pack'\n"
+        ),
+    )
+    .unwrap();
+    let engine = scratch.path().join("engine");
+    (scratch, config, engine)
+}
+
+fn classify_workspace(
+    config: &std::path::Path,
+    root: &std::path::Path,
+    words: &[&str],
+) -> crate::cli::ClassifiedDaemonRequest {
+    let mut args = vec![
+        "--workspace".to_owned(),
+        config.display().to_string(),
+        "--root".to_owned(),
+        root.display().to_string(),
+    ];
+    args.extend(words.iter().map(|word| (*word).to_owned()));
+    classify_daemon_request(&args).unwrap()
+}
+
+#[test]
+fn workspace_selector_position_preserves_lane_and_reserved_roots() {
+    let (_scratch, config, engine) = workspace_classifier_fixture("");
+    let prefix = classify_workspace(&config, &engine, &["search", "ws:all", "re:needle"]);
+    let suffix = classify_workspace(&config, &engine, &["search", "re:needle", "ws:all"]);
+    assert_eq!(prefix.class.lane, RequestLane::Regex);
+    assert_eq!(suffix.class.lane, RequestLane::Regex);
+    assert_eq!(prefix.roots, suffix.roots);
+    assert_eq!(prefix.roots.len(), 2);
+
+    let selected_prefix = classify_workspace(&config, &engine, &["search", "in:pack", "re:needle"]);
+    let selected_suffix = classify_workspace(&config, &engine, &["search", "re:needle", "in:pack"]);
+    assert_eq!(selected_prefix.class.lane, RequestLane::Regex);
+    assert_eq!(selected_prefix.roots, selected_suffix.roots);
+    assert_eq!(
+        selected_prefix.roots,
+        [config.parent().unwrap().join("pack")]
+    );
+}
+
+#[test]
+fn persistent_semantic_and_rerank_settings_use_the_semantic_lane() {
+    let (_scratch, config, engine) =
+        workspace_classifier_fixture("[semantic]\nenabled=true\nrerank=true\n");
+    assert_eq!(
+        classify_workspace(&config, &engine, &["search", "needle"])
+            .class
+            .lane,
+        RequestLane::Semantic
+    );
+    assert_eq!(
+        classify_workspace(&config, &engine, &["--no-sem", "search", "needle"])
+            .class
+            .lane,
+        RequestLane::Semantic,
+        "workspace rerank remains effective when semantic retrieval is disabled"
+    );
+    assert_eq!(
+        classify_workspace(
+            &config,
+            &engine,
+            &["--no-sem", "--no-rerank", "search", "needle"]
+        )
+        .class
+        .lane,
+        RequestLane::Query
+    );
+    assert_eq!(
+        classify_workspace(&config, &engine, &["search", "sym:needle"])
+            .class
+            .lane,
+        RequestLane::Query
+    );
+    assert_eq!(
+        classify_workspace(&config, &engine, &["search", "re:needle"])
+            .class
+            .lane,
+        RequestLane::Regex
+    );
+}
+
+#[test]
+fn semantic_prepare_reserves_every_effective_member_root_unless_selected() {
+    let scratch = tempfile::tempdir().unwrap();
+    let home_a = scratch.path().join("home-a");
+    let home_b = scratch.path().join("home-b");
+    let shared = scratch.path().join("shared");
+    for root in [&home_a, &home_b, &shared] {
+        std::fs::create_dir(root).unwrap();
+    }
+    let workspace_a = scratch.path().join("workspace-a.toml");
+    let workspace_b = scratch.path().join("workspace-b.toml");
+    for (config, name, home) in [
+        (&workspace_a, "first", "home-a"),
+        (&workspace_b, "second", "home-b"),
+    ] {
+        std::fs::write(
+            config,
+            format!(
+                "[workspace]\nname='{name}'\n[members.home]\npath='{home}'\n[members.engine]\npath='shared'\n"
+            ),
+        )
+        .unwrap();
+    }
+
+    let first = classify_workspace(&workspace_a, &home_a, &["semantic", "prepare"]);
+    let second = classify_workspace(&workspace_b, &home_b, &["semantic", "prepare"]);
+    let shared = shared.canonicalize().unwrap();
+    let home_a = home_a.canonicalize().unwrap();
+    let home_b = home_b.canonicalize().unwrap();
+    assert_eq!(first.class.lane, RequestLane::Maintenance);
+    assert_eq!(second.class.lane, RequestLane::Maintenance);
+    assert!(first.roots.contains(&shared));
+    assert!(second.roots.contains(&shared));
+    assert!(first.roots.contains(&home_a));
+    assert!(second.roots.contains(&home_b));
+    assert!(!first.roots.contains(&home_b));
+    assert!(!second.roots.contains(&home_a));
+
+    let selected = classify_workspace(
+        &workspace_a,
+        &home_a,
+        &["--member", "engine", "semantic", "prepare"],
+    );
+    assert_eq!(selected.roots, [shared]);
+
+    let ordinary_owner = classify_workspace(&workspace_a, &home_a, &["index"]);
+    assert_eq!(ordinary_owner.roots, [home_a]);
 }

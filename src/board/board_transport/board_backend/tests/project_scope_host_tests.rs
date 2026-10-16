@@ -55,7 +55,7 @@ fn projects_counts_shared_plans_once_without_mutating_storage() {
     };
     let before = counts();
     let reply = fixture.wire_projects();
-    let snapshot = fixture.host.max_seq_by(QueryDeadline::start()).unwrap();
+    let snapshot = fixture.host.max_seq_by(&QueryDeadline::start()).unwrap();
     assert_eq!(reply.snapshot_seq, Some(snapshot));
     let wire = serde_json::to_value(&reply).unwrap();
     assert_eq!(wire["result"]["result"], "projects");
@@ -155,7 +155,7 @@ fn host_project_selection_uses_id_first_and_rejects_sorted_name_ambiguity() {
     };
     let error = fixture
         .host
-        .select_project_scope(&mut op, "Shared", "fixture-host", QueryDeadline::start())
+        .select_project_scope(&mut op, "Shared", "fixture-host", &QueryDeadline::start())
         .unwrap_err();
     let mut ids = [first.id.clone(), second.id];
     ids.sort();
@@ -168,7 +168,7 @@ fn host_project_selection_uses_id_first_and_rejects_sorted_name_ambiguity() {
     );
     fixture
         .host
-        .select_project_scope(&mut op, &first.id, "fixture-host", QueryDeadline::start())
+        .select_project_scope(&mut op, &first.id, "fixture-host", &QueryDeadline::start())
         .unwrap();
     assert!(
         matches!(op, BoardOp::Overview { scope: ReadScope::Keys(ref keys), .. }
@@ -187,7 +187,7 @@ fn host_project_selection_uses_id_first_and_rejects_sorted_name_ambiguity() {
             &mut explicit,
             &first.id,
             "fixture-host",
-            QueryDeadline::start(),
+            &QueryDeadline::start(),
         )
         .unwrap_err();
     assert!(
@@ -202,7 +202,7 @@ fn host_project_selection_uses_id_first_and_rejects_sorted_name_ambiguity() {
             &mut unsupported,
             &first.id,
             "fixture-host",
-            QueryDeadline::start(),
+            &QueryDeadline::start(),
         )
         .unwrap_err();
     assert_eq!(

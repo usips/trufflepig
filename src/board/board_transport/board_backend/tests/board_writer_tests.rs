@@ -21,7 +21,7 @@ fn panicked_board_write_rolls_back_then_reopens_for_durable_writes() {
             },
         )
     };
-    host.handle_by(&create("Before panic"), QueryDeadline::start())
+    host.handle_by(&create("Before panic"), &QueryDeadline::start())
         .unwrap();
     host.inner
         .backend
@@ -31,12 +31,12 @@ fn panicked_board_write_rolls_back_then_reopens_for_durable_writes() {
         .unwrap()
         .inject_panic_after_write();
     let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        host.handle_by(&create("Rolled back"), QueryDeadline::start())
+        host.handle_by(&create("Rolled back"), &QueryDeadline::start())
             .unwrap();
     }));
     assert!(panic.is_err());
     assert!(host.inner.backend.is_poisoned());
-    host.handle_by(&create("After recovery"), QueryDeadline::start())
+    host.handle_by(&create("After recovery"), &QueryDeadline::start())
         .unwrap();
     assert!(!host.inner.backend.is_poisoned());
     let durable = rusqlite::Connection::open(database).unwrap();
@@ -85,7 +85,7 @@ fn poisoned_writer_reopens_durable_board_and_recovers_other_locks() {
     let create =
         crate::cli::parse(&["board".into(), "new".into(), "Recovered writer".into()]).unwrap();
     host.run(&create, &context, QueryDeadline::start()).unwrap();
-    drop(lock_before(&host.inner.ingestor, QueryDeadline::start(), "ingest").unwrap());
+    drop(lock_before(&host.inner.ingestor, &QueryDeadline::start(), "ingest").unwrap());
     assert!(!host.inner.backend.is_poisoned());
     assert!(!host.inner.config.is_poisoned());
     assert!(!host.inner.sequence.is_poisoned());
@@ -129,7 +129,7 @@ fn host_reads_existing_board_without_initializing_or_waiting_for_writer() {
         },
     );
     let started = Instant::now();
-    let reply = host.handle_by(&request, QueryDeadline::after(Duration::from_secs(1)));
+    let reply = host.handle_by(&request, &QueryDeadline::after(Duration::from_secs(1)));
     drop(held);
     std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700)).unwrap();
     let reply = reply.unwrap();
@@ -166,7 +166,7 @@ fn writer_lock_wait_respects_the_accepted_deadline() {
     let started = Instant::now();
     let result = lock_before(
         &writer,
-        QueryDeadline::after(Duration::from_millis(20)),
+        &QueryDeadline::after(Duration::from_millis(20)),
         "writer",
     );
     assert!(crate::daemon::deadline::is_timed_out(&result.unwrap_err()));
@@ -194,7 +194,7 @@ fn host_bootstraps_writable_legacy_storage_but_keeps_readonly_initialization_err
         },
     );
     let error = host
-        .handle_by(&request, QueryDeadline::start())
+        .handle_by(&request, &QueryDeadline::start())
         .unwrap_err();
     assert_eq!(
         error.downcast_ref::<BoardError>().map(|error| error.code),
@@ -202,13 +202,13 @@ fn host_bootstraps_writable_legacy_storage_but_keeps_readonly_initialization_err
     );
     assert!(host.inner.backend.lock().unwrap().is_none());
     std::fs::set_permissions(&config.db_path, std::fs::Permissions::from_mode(0o600)).unwrap();
-    host.handle_by(&request, QueryDeadline::start()).unwrap();
+    host.handle_by(&request, &QueryDeadline::start()).unwrap();
     let version: i64 = external
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
     assert!(version >= 2);
     let held = host.inner.backend.lock().unwrap();
-    host.handle_by(&request, QueryDeadline::after(Duration::from_millis(100)))
+    host.handle_by(&request, &QueryDeadline::after(Duration::from_millis(100)))
         .unwrap();
     assert_eq!(
         external

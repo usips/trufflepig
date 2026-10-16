@@ -17,6 +17,44 @@ pub(crate) struct PoolSize {
     pub queue: usize,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum RequestLane {
+    Query,
+    Maintenance,
+    Regex,
+    Semantic,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct RequestClass {
+    pub lane: RequestLane,
+    pub verb: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PoolSubmitCause {
+    Full,
+    Closed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct PoolSnapshot {
+    pub queue_depth: usize,
+    pub queue_capacity: usize,
+    pub active_verb: Option<&'static str>,
+}
+
+struct QueuedJob {
+    verb: Option<&'static str>,
+    job: PooledJob,
+}
+
+#[derive(Default)]
+struct PoolMetrics {
+    queue_depth: usize,
+    active_verbs: Vec<Option<&'static str>>,
+}
+
 /// Router: many clients, each request waits on a coordinator or root daemon.
 pub(crate) const ROUTER_POOL: PoolSize = PoolSize {
     workers: 16,
@@ -36,26 +74,34 @@ pub(crate) const ROOT_POOL: PoolSize = PoolSize {
 /// Threads sharing one bounded queue. Shutdown rejects queued work after the
 /// drain window and detaches any worker whose active request has not finished.
 pub(crate) struct RequestPool {
-    sender: Mutex<Option<mpsc::SyncSender<PooledJob>>>,
-    receiver: Arc<Mutex<mpsc::Receiver<PooledJob>>>,
+    name: String,
+    sender: Mutex<Option<mpsc::SyncSender<QueuedJob>>>,
+    receiver: Arc<Mutex<mpsc::Receiver<QueuedJob>>>,
     workers: Vec<JoinHandle<()>>,
     /// Jobs queued or running.
     pending: Arc<AtomicUsize>,
     shutting_down: Arc<AtomicBool>,
+    metrics: Arc<Mutex<PoolMetrics>>,
+    queue_capacity: usize,
 }
 
 impl RequestPool {
     pub fn new(name: &str, size: PoolSize) -> std::io::Result<Self> {
-        let (sender, receiver) = mpsc::sync_channel::<PooledJob>(size.queue);
+        let (sender, receiver) = mpsc::sync_channel::<QueuedJob>(size.queue);
         let receiver = Arc::new(Mutex::new(receiver));
         let pending = Arc::new(AtomicUsize::new(0));
         let shutting_down = Arc::new(AtomicBool::new(false));
+        let metrics = Arc::new(Mutex::new(PoolMetrics {
+            queue_depth: 0,
+            active_verbs: vec![None; size.workers.max(1)],
+        }));
         let mut workers = Vec::with_capacity(size.workers);
         for index in 0..size.workers.max(1) {
-            let (receiver, pending, shutting_down) = (
+            let (receiver, pending, shutting_down, metrics) = (
                 Arc::clone(&receiver),
                 Arc::clone(&pending),
                 Arc::clone(&shutting_down),
+                Arc::clone(&metrics),
             );
             workers.push(
                 std::thread::Builder::new()
@@ -68,49 +114,102 @@ impl RequestPool {
                             // The guard drops at the end of this statement, so
                             // jobs run without holding the queue lock.
                             let job = receiver.lock().map(|queue| queue.recv());
-                            let Ok(Ok(job)) = job else {
+                            let Ok(Ok(queued)) = job else {
                                 return;
                             };
+                            if let Ok(mut metrics) = metrics.lock() {
+                                metrics.queue_depth = metrics.queue_depth.saturating_sub(1);
+                                metrics.active_verbs[index] = queued.verb;
+                            }
                             if shutting_down.load(Ordering::Acquire) {
-                                drop(job);
+                                drop(queued);
+                                clear_active(&metrics, index);
                                 pending.fetch_sub(1, Ordering::AcqRel);
                                 return;
                             }
                             // Jobs answer their own panics; this keeps the worker.
-                            let _ = catch_unwind(AssertUnwindSafe(job));
+                            let _ = catch_unwind(AssertUnwindSafe(queued.job));
+                            clear_active(&metrics, index);
                             pending.fetch_sub(1, Ordering::AcqRel);
                         }
                     })?,
             );
         }
         Ok(Self {
+            name: name.to_owned(),
             sender: Mutex::new(Some(sender)),
             receiver,
             workers,
             pending,
             shutting_down,
+            metrics,
+            queue_capacity: size.queue,
         })
+    }
+
+    pub(crate) fn name(&self) -> &str {
+        &self.name
     }
 
     /// Queues `job`, handing it back when every worker is busy and the queue is full.
     pub fn submit(&self, job: PooledJob) -> Result<(), PooledJob> {
+        self.submit_inner(None, job).map_err(|(_, job)| job)
+    }
+
+    /// Queues daemon work with a stable request verb for pool diagnostics.
+    pub(crate) fn submit_labeled(
+        &self,
+        verb: &'static str,
+        job: PooledJob,
+    ) -> Result<(), (PoolSubmitCause, PooledJob)> {
+        self.submit_inner(Some(verb), job)
+    }
+
+    fn submit_inner(
+        &self,
+        verb: Option<&'static str>,
+        job: PooledJob,
+    ) -> Result<(), (PoolSubmitCause, PooledJob)> {
         let sender = self
             .sender
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
         if self.shutting_down.load(Ordering::Acquire) {
-            return Err(job);
+            return Err((PoolSubmitCause::Closed, job));
         }
         let Some(sender) = sender.as_ref() else {
-            return Err(job);
+            return Err((PoolSubmitCause::Closed, job));
         };
+        let mut metrics = self
+            .metrics
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
         self.pending.fetch_add(1, Ordering::AcqRel);
-        match sender.try_send(job) {
-            Ok(()) => Ok(()),
-            Err(mpsc::TrySendError::Full(job) | mpsc::TrySendError::Disconnected(job)) => {
-                self.pending.fetch_sub(1, Ordering::AcqRel);
-                Err(job)
+        match sender.try_send(QueuedJob { verb, job }) {
+            Ok(()) => {
+                metrics.queue_depth += 1;
+                Ok(())
             }
+            Err(mpsc::TrySendError::Full(queued)) => {
+                self.pending.fetch_sub(1, Ordering::AcqRel);
+                Err((PoolSubmitCause::Full, queued.job))
+            }
+            Err(mpsc::TrySendError::Disconnected(queued)) => {
+                self.pending.fetch_sub(1, Ordering::AcqRel);
+                Err((PoolSubmitCause::Closed, queued.job))
+            }
+        }
+    }
+
+    pub(crate) fn snapshot(&self) -> PoolSnapshot {
+        let metrics = self
+            .metrics
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        PoolSnapshot {
+            queue_depth: metrics.queue_depth,
+            queue_capacity: self.queue_capacity,
+            active_verb: metrics.active_verbs.iter().flatten().next().copied(),
         }
     }
 
@@ -141,8 +240,17 @@ impl RequestPool {
             .unwrap_or_else(|poison| poison.into_inner());
         while let Ok(job) = receiver.try_recv() {
             drop(job);
+            if let Ok(mut metrics) = self.metrics.lock() {
+                metrics.queue_depth = metrics.queue_depth.saturating_sub(1);
+            }
             self.pending.fetch_sub(1, Ordering::AcqRel);
         }
+    }
+}
+
+fn clear_active(metrics: &Mutex<PoolMetrics>, index: usize) {
+    if let Ok(mut metrics) = metrics.lock() {
+        metrics.active_verbs[index] = None;
     }
 }
 
@@ -200,6 +308,52 @@ mod tests {
             runs.try_recv().is_ok(),
             "queued job ran before the pool joined"
         );
+    }
+
+    #[test]
+    fn labeled_snapshot_separates_queued_jobs_from_active_work() {
+        let pool = RequestPool::new(
+            "snapshot-pool",
+            PoolSize {
+                workers: 1,
+                queue: 1,
+            },
+        )
+        .unwrap();
+        let (started, started_rx) = mpsc::channel();
+        let (release, release_rx) = mpsc::channel();
+        assert!(
+            pool.submit_labeled(
+                "hist-index",
+                Box::new(move || {
+                    started.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                }),
+            )
+            .is_ok()
+        );
+        started_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+
+        let active = pool.snapshot();
+        assert_eq!(active.queue_depth, 0);
+        assert_eq!(active.queue_capacity, 1);
+        assert_eq!(active.active_verb, Some("hist-index"));
+
+        assert!(pool.submit_labeled("queued", Box::new(|| {})).is_ok());
+        let queued = pool.snapshot();
+        assert_eq!(queued.queue_depth, 1);
+        assert_eq!(queued.queue_capacity, 1);
+        assert_eq!(queued.active_verb, Some("hist-index"));
+        let Err((cause, _job)) = pool.submit_labeled("overflow", Box::new(|| {})) else {
+            panic!("full pool accepted another job");
+        };
+        assert_eq!(cause, PoolSubmitCause::Full);
+
+        release.send(()).unwrap();
+        assert!(pool.drain(Duration::from_secs(1)));
+        let idle = pool.snapshot();
+        assert_eq!(idle.queue_depth, 0);
+        assert_eq!(idle.active_verb, None);
     }
 
     #[test]

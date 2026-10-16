@@ -82,32 +82,33 @@ or discover unrelated siblings.
 
 ## Retrieval and output
 
-Unscoped queries inside a member search home. An unpublished linked-worktree home answers immediately
-from its member's published index (`src/workspace/home_index.rs`); standalone queries use the same
-fallback through the default cache. Standalone custom caches remain isolated. Otherwise daemon queries
-wait up to eight seconds. Empty home results widen to all members; warming, unavailable, and incomplete
-homes do not. Pages record scope; lines append it to coverage. Outside members, queries search all members.
+Unscoped member queries search home. An unpublished linked-worktree home can answer from the member's
+published index (`src/workspace/home_index.rs`). Workspace parent reads use the configured member cache
+under the workspace base; worktree results and divergence remain separate. Standalone worktree parent
+reads can use a Git-verified index from the main checkout's default cache, even when `--cache` selects
+worktree results and divergence. Root mismatches fail closed; without a parent, daemon reads wait up to 8 s.
+Only complete empty home results widen; warming, unavailable, or incomplete homes do not. Pages record scope; lines append it to coverage.
+Outside members, queries search all members.
 `in:NAME` and `--member NAME` select a member; `ws:home` selects home and `ws:all` selects the workspace.
 Explicit selectors never widen or establish dependency, import, or compiler-resolution relationships.
 
-Parent answers read worktree bytes. Coverage records `state: parent_fallback`, `home_state`, `served_from`,
-`differs` (`null` when unknown), and `differing_hits`. Lines read `MEMBER@WT warming → served from MEMBER index`
+Parent answers read worktree bytes. Coverage records `state: parent_fallback`, `home_state`, `served_from`, `differs` (`null` when unknown), and `differing_hits`. Lines read `MEMBER@WT warming → served from MEMBER index`
 with `(N files differ)`, `(1 file differs)`, `(no files differ)`, or `(differences unknown)`. Changed-file hits
 ([index](index-contract.md)) end in `differs` until read from current bytes. Plain search, `sym:`, `map FILE`, and `show` re-extract changed files
-(`served_from: MEMBER index; re-extracted in worktree`). Without a parent, home reads `MEMBER@WT warming
-(no parent index)`. A plain or `sym:` miss without a parent candidate refreshes divergence and examines up to
+(`served_from: MEMBER index; re-extracted in worktree`). Without a parent, home reads `MEMBER@WT warming (no parent index)`. A plain or `sym:` miss without a parent candidate refreshes divergence and examines up to
 64 changed files. More paths, a failed Git probe, or an unchecked file makes coverage partial and truncated;
 absence is not exhaustive and home does not widen. Other reads may reuse divergence for five seconds.
-Standalone fallback handles retain the parent publication identity; `show` and `ctx` reject changed publications.
-`more` pages immutable worktree result snapshots across parent republishes, but rejects replaced worktrees.
-Explicit `show path:` reads current bytes even when the index is warming or unavailable. `search`, `map`,
-`refs`, and `sym:` require an index and return `index_warming` without one unless `--no-daemon` indexes first.
+Fallback handles pin the parent publication; `show`/`ctx` enforce it, while `more` keeps pages across republishes and rejects replaced worktrees. Explicit current-path `show path:` and `read:path:`
+continuations bypass selected-cache creation, marker, and seed; they work while the index warms or is
+unavailable. Index-based reads preflight the selected writable result cache before parent lookup;
+one at-most-2 s member slice covers cache registration, marker/seed, open, and indexing
+within the original query deadline. Skipped seeding does not block a usable published parent.
+`search`, `map`, `refs`, and `sym:` require an index; `refs` is index-only.
 
 Each member produces its existing ranked candidate list. Retrieval collapses
 each lane to one representative occurrence per file, then fuses file ranks with
 stable path and span tie breaks. The coordinator combines member file lanes with
-member provenance; raw scores from separate indexes are not compared. There is
-no elapsed-time lane omission.
+member provenance; raw scores from separate indexes are not compared. There is no elapsed-time lane omission.
 
 Every emitted hit includes its member name. The page's `members` mapping
 resolves represented names to percent-encoded canonical roots. Coverage
@@ -165,10 +166,10 @@ demand-starts a member daemon when none is running and
 reads published member databases without starting competing index writers. An
 existing member daemon is not asked to reconcile immediately; member freshness
 comes from its root watcher and periodic reconciliation. Unavailable members
-remain visible in coverage. `--no-daemon` performs federation and member
-indexing in the foreground and launches or contacts no background process,
-including the shared inference worker. An explicit foreground semantic
-preparation command holds the root preparation lease.
+remain visible in coverage. `--no-daemon` federates in the foreground with
+bounded per-member maintenance ([index contract](index-contract.md#coherent-publication));
+it launches or contacts no background process, including the shared inference
+worker. An explicit foreground semantic preparation command holds the root lease.
 
 Coordinator state lives under the normal cache base. `--cache DIRECTORY` selects
 an isolated workspace base containing coordinator state and separate member

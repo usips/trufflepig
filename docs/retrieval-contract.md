@@ -41,7 +41,11 @@ Resource-excluded files remain discoverable by path with their exclusion reason.
 Coverage describes indexed files, parser failures, semantic coverage, and result
 truncation separately. An interrupted or incomplete search cannot claim an
 exhaustive absence of hits. An empty complete search is successful; unavailable
-lanes and stale source are explicit responses. An empty filtered search adds
+lanes and stale source are explicit responses. A live `re:` scan interrupted by
+deadline or cancellation returns `timed_out`, reports an incomplete scan and the
+number of partial hits discarded, and never returns partial hits as a successful
+result. A completed scan preserves its hits, but persistence still obeys the
+original query deadline. An empty filtered search adds
 `filter_diagnosis` to coverage: how many indexed paths each `file:` value
 matched, with up to three nearest paths by name when it matched none,
 `lang:X matched 0 files`, and whether the filters only fail together or
@@ -119,13 +123,17 @@ Lifecycle fields such as creation/expiry times and random set identifiers are
 excluded from the deterministic-ranking guarantee. Source and metadata are
 clearly distinguishable; source excerpts do not become tool instructions.
 
-`show` emits at most 200 source rows per response. Its continuation retains the
-original revision and remaining byte range in the persisted result cache, even
-when the first read used an explicit current path. Follow `next` unchanged with
-`show`; edits produce `stale_source` instead of changing continuation identity.
+`show` emits at most 200 source rows per response. Indexed result handles and
+historical continuations keep source revision and remaining byte range in the
+result cache and follow its expiry and eviction limits.
+Cache-free current-path reads use an opaque stateless
+`read:path:` continuation bound to the selected root/member, source revision, and
+remaining byte range. It survives process boundaries without result-cache
+persistence; revision changes return `stale_source`. Pass the returned continuation
+to `show` unchanged.
 Historical continuations retain the exact commit/blob/path identity described in
-the [history contract](history-contract.md). They share result-cache expiry and
-eviction limits. Historical entries are invalid inputs to live `ctx`.
+the [history contract](history-contract.md). Historical entries are invalid inputs
+to live `ctx`.
 
 One client emission boundary handles successful responses, help, version, usage
 errors, execution errors, zero-budget silence, and broken pipes. Errors exit 2

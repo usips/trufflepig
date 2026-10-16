@@ -1,17 +1,19 @@
 //! Bounded workspace snapshots retain immutable entries independently of member caches.
+mod index_progress_source;
 mod lines;
 use super::{
     config::WorkspaceConfig,
     member_root::{MemberRoot, linked_root_of_member},
 };
 use crate::{
-    daemon::deadline::QueryDeadline,
+    daemon::deadline::{QueryDeadline, TIMED_OUT, is_timed_out},
     identity::{ResultCursor, ResultHandle},
     output::{OutputBudget, OutputFormat},
     results::{self, HitDetail, ResultEntry},
     store::{Store, decode_path, encode_path},
 };
 use anyhow::{Context, Result, bail, ensure};
+pub(super) use index_progress_source::IndexProgressSource;
 use lines::{compact_coverage, mark_worktree_differs, member_coverage_summary};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
@@ -19,7 +21,13 @@ use serde_json::{Value, json};
 use std::{
     os::unix::fs::{MetadataExt, PermissionsExt},
     path::Path,
+    thread,
+    time::Duration,
 };
+
+const WORKSPACE_SQL_BUSY_SLICE: Duration = Duration::from_millis(25);
+const WORKSPACE_BUSY_RETRY_PAUSE: Duration = Duration::from_millis(3);
+const WORKSPACE_PROGRESS_STEPS: i32 = 4_096;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MemberSnapshot {
@@ -58,6 +66,29 @@ impl MemberSnapshot {
             .identity
             .as_ref()
             .context("member_unavailable: original root identity is missing")?;
+        let deadline = store.query_deadline();
+        let check_deadline = || -> Result<()> {
+            if deadline.is_some_and(QueryDeadline::expired) {
+                bail!("{TIMED_OUT}: query deadline expired");
+            }
+            Ok(())
+        };
+        check_deadline()?;
+        if let Err(error) = std::fs::create_dir_all(cache) {
+            let error = crate::store::index_cache_unavailable(cache, error.into());
+            check_deadline()?;
+            return Err(error);
+        }
+        check_deadline()?;
+        let canonical_cache = match cache.canonicalize() {
+            Ok(cache) => cache,
+            Err(error) => {
+                let error = crate::store::index_cache_unavailable(cache, error.into());
+                check_deadline()?;
+                return Err(error);
+            }
+        };
+        check_deadline()?;
         let index_identity = store
             .conn
             .query_row("SELECT value FROM meta WHERE key='index_epoch'", [], |r| {
@@ -68,7 +99,7 @@ impl MemberSnapshot {
         Ok(Self {
             name: member.name().to_owned(),
             root: encode_path(&member.root),
-            cache: encode_path(&cache.canonicalize()?),
+            cache: encode_path(&canonical_cache),
             device: identity.device,
             inode: identity.inode,
             index_identity,
@@ -104,7 +135,7 @@ impl MemberSnapshot {
         Ok(owner)
     }
     /// Reopens the owner's index query-only; it must be the same index database.
-    pub fn open(&self, config: &WorkspaceConfig, deadline: QueryDeadline) -> Result<Store> {
+    pub fn open(&self, config: &WorkspaceConfig, deadline: &QueryDeadline) -> Result<Store> {
         let member = self.member_root(config)?;
         let metadata = member
             .root
@@ -120,7 +151,9 @@ impl MemberSnapshot {
         if self.generation == 0 {
             // A path read can own immutable bytes without any graph publication.
             // Keep this owner unpublished even if the worktree indexes later.
-            return Store::unpublished(&member.root, &cache);
+            return Ok(
+                Store::unpublished(&member.root, &cache)?.with_query_deadline(deadline.clone())
+            );
         }
         let store = if let Some(parent) = &self.parent_index {
             ensure!(
@@ -132,14 +165,14 @@ impl MemberSnapshot {
                 parent_cache.join("index.sqlite3").is_file(),
                 "member_unavailable: owning index was removed"
             );
-            Store::open_read(&member.member.root, &parent_cache, deadline)?
+            Store::open_read(&member.member.root, &parent_cache, deadline.clone())?
                 .reading_from(&member.root, &cache)?
         } else {
             ensure!(
                 cache.join("index.sqlite3").is_file(),
                 "member_unavailable: owning index was removed"
             );
-            Store::open_read(&member.root, &cache, deadline)?
+            Store::open_read(&member.root, &cache, deadline.clone())?
         };
         let current: Option<String> = store
             .conn
@@ -189,30 +222,54 @@ pub struct WorkspaceSet {
 }
 pub struct WorkspaceResults {
     pub(super) conn: Connection,
+    deadline: QueryDeadline,
 }
 impl WorkspaceResults {
     /// Creates the private cache and its schema; runs once per coordinator start
     /// (or local command), never per request.
-    pub fn create(cache: &Path) -> Result<()> {
+    pub fn create(cache: &Path, deadline: &QueryDeadline) -> Result<()> {
+        check_deadline(deadline)?;
         std::fs::create_dir_all(cache)?;
         std::fs::set_permissions(cache, std::fs::Permissions::from_mode(0o700))?;
-        let conn = Connection::open(cache.join("workspace.sqlite3"))?;
-        conn.busy_timeout(std::time::Duration::from_secs(5))?;
-        conn.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS workspace_results(id TEXT PRIMARY KEY, expires INTEGER NOT NULL, payload TEXT NOT NULL)")?;
+        let conn = Connection::open(cache.join("workspace.sqlite3"))
+            .map_err(|error| classify_db_error(deadline, error.into()))?;
+        install_deadline(&conn, deadline)?;
+        execute_workspace_sql(&conn, deadline, || {
+            conn.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS workspace_results(id TEXT PRIMARY KEY, expires INTEGER NOT NULL, payload TEXT NOT NULL)")
+        })?;
+        check_deadline(deadline)?;
         Ok(())
     }
     /// Opens the store [`Self::create`] made, running no DDL.
-    pub fn open(cache: &Path) -> Result<Self> {
+    pub fn open(cache: &Path, deadline: &QueryDeadline) -> Result<Self> {
+        check_deadline(deadline)?;
         let conn = Connection::open_with_flags(
             cache.join("workspace.sqlite3"),
             rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
-        .context("workspace_unavailable: workspace result store is missing")?;
-        conn.busy_timeout(std::time::Duration::from_secs(5))?;
-        conn.execute_batch("PRAGMA synchronous=FULL; PRAGMA journal_size_limit=4194304;")?;
-        Ok(Self { conn })
+        .map_err(|error| {
+            classify_db_error(
+                deadline,
+                anyhow::Error::new(error)
+                    .context("workspace_unavailable: workspace result store is missing"),
+            )
+        })?;
+        install_deadline(&conn, deadline)?;
+        execute_workspace_sql(&conn, deadline, || {
+            conn.execute_batch("PRAGMA synchronous=FULL; PRAGMA journal_size_limit=4194304;")
+        })?;
+        check_deadline(deadline)?;
+        Ok(Self {
+            conn,
+            deadline: deadline.clone(),
+        })
+    }
+    /// The absolute request budget used for all operations on this request's store handle.
+    pub fn deadline(&self) -> &QueryDeadline {
+        &self.deadline
     }
     pub fn save(&self, mut set: WorkspaceSet) -> Result<String> {
+        check_deadline(&self.deadline)?;
         let id = uuid::Uuid::new_v4().simple().to_string();
         set.truncated |= set.hits.len() > results::MAX_HITS;
         set.hits.truncate(results::MAX_HITS);
@@ -232,35 +289,66 @@ impl WorkspaceResults {
             payload.len() <= results::MAX_BYTES,
             "result_cache_unavailable: workspace metadata exceeds capacity"
         );
-        let tx = self.conn.unchecked_transaction()?;
-        tx.execute(
-            "DELETE FROM workspace_results WHERE expires<=?1",
-            [results::now()],
-        )?;
-        tx.execute(
-            "INSERT INTO workspace_results VALUES(?1,?2,?3)",
-            params![id, results::now() + 600, payload],
-        )?;
+        check_deadline(&self.deadline)?;
+        let tx = execute_workspace_sql(&self.conn, &self.deadline, || {
+            rusqlite::Transaction::new_unchecked(
+                &self.conn,
+                rusqlite::TransactionBehavior::Immediate,
+            )
+        })?;
+        execute_workspace_sql(&self.conn, &self.deadline, || {
+            tx.execute(
+                "DELETE FROM workspace_results WHERE expires<=?1",
+                [results::now()],
+            )
+        })?;
+        check_deadline(&self.deadline)?;
+        execute_workspace_sql(&self.conn, &self.deadline, || {
+            tx.execute(
+                "INSERT INTO workspace_results VALUES(?1,?2,?3)",
+                params![id, results::now() + 600, payload],
+            )
+        })?;
         loop {
-            let (count, bytes): (usize, usize) = tx.query_row("SELECT count(*),coalesce(sum(length(CAST(payload AS BLOB))),0) FROM workspace_results", [], |r| Ok((r.get::<_,i64>(0)? as usize,r.get::<_,i64>(1)? as usize)))?;
+            check_deadline(&self.deadline)?;
+            let (count, bytes): (usize, usize) = execute_workspace_sql(
+                &self.conn,
+                &self.deadline,
+                || {
+                    tx.query_row(
+                        "SELECT count(*),coalesce(sum(length(CAST(payload AS BLOB))),0) FROM workspace_results",
+                        [],
+                        |r| Ok((r.get::<_, i64>(0)? as usize, r.get::<_, i64>(1)? as usize)),
+                    )
+                },
+            )?;
             if count <= 50 && bytes <= results::MAX_BYTES {
                 break;
             }
-            tx.execute("DELETE FROM workspace_results WHERE id=(SELECT id FROM workspace_results WHERE id<>?1 ORDER BY expires,id LIMIT 1)", [&id])?;
+            execute_workspace_sql(&self.conn, &self.deadline, || {
+                tx.execute("DELETE FROM workspace_results WHERE id=(SELECT id FROM workspace_results WHERE id<>?1 ORDER BY expires,id LIMIT 1)", [&id])
+            })?;
         }
-        tx.commit()?;
+        check_deadline(&self.deadline)?;
+        // Retry COMMIT while RAII rollback remains available; after success, Drop sees autocommit.
+        execute_workspace_sql(&self.conn, &self.deadline, || tx.execute_batch("COMMIT"))?;
+        drop(tx);
+        check_deadline(&self.deadline)?;
         Ok(id)
     }
     pub fn load(&self, id: &str) -> Result<WorkspaceSet> {
+        check_deadline(&self.deadline)?;
         uuid::Uuid::parse_str(id).context("invalid_handle: invalid set identifier")?;
-        let payload: Option<String> = self
-            .conn
-            .query_row(
-                "SELECT payload FROM workspace_results WHERE id=?1 AND expires>?2",
-                params![id, results::now()],
-                |r| r.get(0),
-            )
-            .optional()?;
+        let payload: Option<String> = execute_workspace_sql(&self.conn, &self.deadline, || {
+            self.conn
+                .query_row(
+                    "SELECT payload FROM workspace_results WHERE id=?1 AND expires>?2",
+                    params![id, results::now()],
+                    |r| r.get(0),
+                )
+                .optional()
+        })?;
+        check_deadline(&self.deadline)?;
         let payload = payload
             .context("expired_result: workspace result expired or was evicted; search again")?;
         ensure!(
@@ -275,6 +363,7 @@ impl WorkspaceResults {
                 && set.hits.iter().all(|hit| hit.owner < set.owners.len()),
             "result_unavailable: invalid workspace ownership"
         );
+        check_deadline(&self.deadline)?;
         Ok(set)
     }
     pub fn entry(&self, handle: &str) -> Result<(WorkspaceSet, usize)> {
@@ -302,7 +391,9 @@ impl WorkspaceResults {
         limit: usize,
         budget: &OutputBudget,
     ) -> Result<String> {
-        let set = self.load(id)?;
+        let mut set = self.load(id)?;
+        check_deadline(&self.deadline)?;
+        refresh_index_progress(&mut set, &self.deadline)?;
         ensure!(
             offset <= set.hits.len(),
             "invalid_cursor: offset outside result set"
@@ -317,6 +408,7 @@ impl WorkspaceResults {
             coverage_line.push_str(&filter_diagnoses(&set.owners));
         }
         let render_detail = |count: usize, detail: HitDetail| -> Result<String> {
+            check_deadline(&self.deadline)?;
             match budget.format {
                 OutputFormat::Json => budget.encode(&page_value(&set, id, offset, count, detail)?),
                 OutputFormat::Lines => {
@@ -369,6 +461,100 @@ impl WorkspaceResults {
         }
         bail!("budget_too_small: workspace coverage and one result do not fit");
     }
+}
+
+fn check_deadline(deadline: &QueryDeadline) -> Result<()> {
+    if deadline.expired() {
+        bail!("{TIMED_OUT}: query deadline expired");
+    }
+    Ok(())
+}
+
+fn refresh_index_progress(set: &mut WorkspaceSet, deadline: &QueryDeadline) -> Result<()> {
+    check_deadline(deadline)?;
+    for owner in &mut set.owners {
+        if let Some(coverage) = owner.coverage.as_object_mut() {
+            coverage.remove("index_progress");
+            coverage.remove("index_progress_source");
+        }
+    }
+    for coverage in &mut set.coverage {
+        let source = coverage
+            .get("index_progress_source")
+            .cloned()
+            .and_then(|value| serde_json::from_value::<IndexProgressSource>(value).ok());
+        if let Some(values) = coverage.as_object_mut() {
+            values.remove("index_progress");
+            values.remove("index_progress_source");
+        }
+        let Some(source) = source else {
+            continue;
+        };
+        check_deadline(deadline)?;
+        let progress = source.read();
+        check_deadline(deadline)?;
+        if let (Some(progress), Some(values)) = (progress, coverage.as_object_mut()) {
+            values.insert("index_progress".into(), serde_json::to_value(progress)?);
+        }
+    }
+    check_deadline(deadline)
+}
+
+fn install_deadline(connection: &Connection, deadline: &QueryDeadline) -> Result<()> {
+    check_deadline(deadline)?;
+    connection.busy_timeout(deadline.cap(WORKSPACE_SQL_BUSY_SLICE))?;
+    let progress_deadline = deadline.clone();
+    connection.progress_handler(
+        WORKSPACE_PROGRESS_STEPS,
+        Some(move || progress_deadline.expired()),
+    )?;
+    check_deadline(deadline)
+}
+
+fn classify_db_error(deadline: &QueryDeadline, error: anyhow::Error) -> anyhow::Error {
+    let error = deadline.classify(error);
+    if deadline.expired() && !is_timed_out(&error) {
+        error.context(format!("{TIMED_OUT}: query deadline expired"))
+    } else {
+        error
+    }
+}
+
+fn execute_workspace_sql<T>(
+    connection: &Connection,
+    deadline: &QueryDeadline,
+    mut operation: impl FnMut() -> rusqlite::Result<T>,
+) -> Result<T> {
+    loop {
+        check_deadline(deadline)?;
+        connection
+            .busy_timeout(deadline.cap(WORKSPACE_SQL_BUSY_SLICE))
+            .map_err(|error| classify_db_error(deadline, error.into()))?;
+        match operation() {
+            Ok(value) => {
+                check_deadline(deadline)?;
+                return Ok(value);
+            }
+            Err(error) if is_sqlite_busy(&error) => {
+                check_deadline(deadline)?;
+                let pause = deadline.cap(WORKSPACE_BUSY_RETRY_PAUSE);
+                if pause.is_zero() {
+                    check_deadline(deadline)?;
+                    bail!("{TIMED_OUT}: query deadline expired");
+                }
+                thread::sleep(pause);
+            }
+            Err(error) => return Err(classify_db_error(deadline, error.into())),
+        }
+    }
+}
+
+fn is_sqlite_busy(error: &rusqlite::Error) -> bool {
+    matches!(
+        error,
+        rusqlite::Error::SqliteFailure(failure, _)
+            if failure.code == rusqlite::ErrorCode::DatabaseBusy
+    )
 }
 
 fn page_value(
@@ -444,5 +630,9 @@ fn refresh_retained_counts(set: &mut WorkspaceSet) {
     }
 }
 
+#[cfg(test)]
+mod deadline_tests;
+#[cfg(test)]
+mod progress_refresh_tests;
 #[cfg(test)]
 mod tests;

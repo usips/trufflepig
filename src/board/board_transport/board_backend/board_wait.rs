@@ -29,7 +29,7 @@ impl BoardHost {
     pub(super) fn wait_inbox(
         &self,
         request: &BoardRequest,
-        deadline: QueryDeadline,
+        deadline: &QueryDeadline,
     ) -> Result<BoardReply> {
         let mut reply = match self.handle_by(request, deadline) {
             Ok(reply) => reply,
@@ -103,7 +103,7 @@ impl BoardHost {
             }
             drop(observed);
             let polling = deadline.capped(Duration::from_millis(100));
-            let sequence = match self.max_seq_by(polling) {
+            let sequence = match self.max_seq_by(&polling) {
                 Ok(sequence) => sequence,
                 Err(error) if waiter_transient(&error) => {
                     set_wait(&mut reply, InboxWait::Timeout);
@@ -112,7 +112,7 @@ impl BoardHost {
                 Err(error) => return Err(error),
             };
             if sequence > known {
-                reply = match self.handle_by(request, polling) {
+                reply = match self.handle_by(request, &polling) {
                     Ok(reply) => reply,
                     Err(error) if waiter_transient(&error) => {
                         set_wait(&mut reply, InboxWait::Timeout);

@@ -11,7 +11,7 @@ impl BoardHost {
         op: &BoardOp,
         selector: &str,
         host: &str,
-        deadline: QueryDeadline,
+        deadline: &QueryDeadline,
     ) -> Result<bool> {
         let BoardOp::Tasks {
             plan,
@@ -108,7 +108,8 @@ mod tests {
             .unwrap();
             let host = BoardHost::with_config(config.clone());
             *host.inner.projects.lock().unwrap() = ProjectResolver::with_registry(registry);
-            let projects = host.projects(&actor.host, QueryDeadline::start()).unwrap();
+            let deadline = QueryDeadline::start();
+            let projects = host.projects(&actor.host, &deadline).unwrap();
             let project = &projects[0].project;
             let selected = project.repo_keys.iter().next().unwrap();
             let outside = RepoKey::parse(&"f".repeat(40)).unwrap();

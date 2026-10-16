@@ -3,11 +3,18 @@ use super::{Arguments, emission, request_context, validate};
 use crate::{
     daemon::deadline::QueryDeadline,
     output::OutputBudget,
-    store::{Store, is_index_cannot_open, is_index_warming},
+    store::{
+        IndexProgressPhase, Store, index_cache_unavailable, is_index_cache_unavailable,
+        is_index_cannot_open, is_index_warming, preflight_results_cache,
+    },
 };
 use anyhow::{Context, Result, bail, ensure};
 use std::path::Path;
 
+#[cfg(test)]
+mod cache_read_tests;
+#[cfg(test)]
+mod cache_recovery_tests;
 mod standalone_worktree_reads;
 
 pub fn local(
@@ -99,7 +106,7 @@ fn local_dispatch(
     context: &crate::diagnostics::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
     preparation_manager: Option<&crate::semantic::preparation::PreparationManager>,
-    mut deadline: QueryDeadline,
+    deadline: QueryDeadline,
 ) -> Result<String> {
     validate(options)?;
     session.set_no_daemon(options.no_daemon);
@@ -122,6 +129,52 @@ fn local_dispatch(
             "{}: query deadline expired",
             crate::daemon::deadline::TIMED_OUT
         );
+    }
+    if verb == "show"
+        && let Some(target) = crate::source::acquisition::show_target(&options.words)
+        && crate::source::acquisition::is_current_path_target(&target)
+    {
+        let side = options
+            .side
+            .as_deref()
+            .map(crate::source::SourceSide::parse)
+            .transpose()?;
+        if side.is_some() {
+            bail!("invalid_side: current path reads have no historical side");
+        }
+        if deadline.expired() {
+            bail!(
+                "{}: query deadline expired",
+                crate::daemon::deadline::TIMED_OUT
+            );
+        }
+        let store = Store::unpublished(root, cache).map_err(|error| deadline.classify(error))?;
+        if deadline.expired() {
+            bail!(
+                "{}: query deadline expired",
+                crate::daemon::deadline::TIMED_OUT
+            );
+        }
+        let origin = crate::search::InvocationDirectory::within(store.root.as_path(), root);
+        let acquired = crate::source::acquisition::acquire_current_path_without_cache(
+            &store, &target, side, &origin,
+        )
+        .map_err(|error| deadline.classify(error))?;
+        if deadline.expired() {
+            bail!(
+                "{}: query deadline expired",
+                crate::daemon::deadline::TIMED_OUT
+            );
+        }
+        let rendered = crate::source::render_owned(acquired, &page_budget, &serde_json::json!({}))
+            .map_err(|error| deadline.classify(error))?;
+        if deadline.expired() {
+            bail!(
+                "{}: query deadline expired",
+                crate::daemon::deadline::TIMED_OUT
+            );
+        }
+        return Ok(rendered);
     }
     if verb == "semantic" {
         return super::semantic::local(root, cache, options, preparation_manager);
@@ -161,9 +214,11 @@ fn local_dispatch(
     }
     let (mut store, mut parent_fallback) =
         if matches!(verb, "show" | "more" | "ctx" | "search" | "refs" | "map") {
-            read_store(root, cache, options, daemon_running, &mut deadline)?
+            read_store(root, cache, options, daemon_running, &deadline)?
         } else if verb == "status" {
-            let store = match Store::open_read(root, cache, deadline) {
+            let store = match Store::open_read(root, cache, deadline.clone())
+                .map_err(|error| classify_query_error(&deadline, error))
+            {
                 Err(error) if is_index_warming(&error) => {
                     if deadline.expired() {
                         bail!(
@@ -171,9 +226,23 @@ fn local_dispatch(
                             crate::daemon::deadline::TIMED_OUT
                         );
                     }
-                    return warming_status(root, cache, daemon_running, &budget);
+                    return warming_status(root, cache, &budget);
+                }
+                Err(error) if is_index_cache_unavailable(&error) => {
+                    return Err(index_cache_unavailable(cache, error));
                 }
                 opened => opened?,
+            };
+            (store, None)
+        } else if verb == "doctor" {
+            let store = match Store::open_read(root, cache, deadline.clone())
+                .map_err(|error| classify_query_error(&deadline, error))
+            {
+                Ok(store) => store,
+                Err(error) if is_index_warming(&error) => {
+                    Store::unpublished(root, cache)?.with_query_deadline(deadline.clone())
+                }
+                Err(error) => return Err(index_cache_unavailable(cache, error)),
             };
             (store, None)
         } else {
@@ -274,11 +343,11 @@ fn local_dispatch(
         "index"|"init"=>{let coverage=store.index()?;budget.render(&serde_json::json!({"generation":store.generation()?,"coverage":coverage}))},
         "doctor"=>budget.render(&crate::probes::doctor(&store, cache, session)?),
         "status"=>budget.render(&serde_json::json!({"generation":store.generation()?,"coverage":store.coverage()?,"semantic_feature":cfg!(feature="semantic"),"tokenizer":"o200k_base"})),
-        "show"=>standalone_worktree_reads::show_read(root,cache,store,parent_fallback.take(),options,&page_budget,deadline),
+        "show"=>standalone_worktree_reads::show_read(root,cache,store,parent_fallback.take(),options,&page_budget,deadline.clone()),
         "more"=>standalone_worktree_reads::more_read(&store,argument()?,options.limit,&page_budget),
-        "ctx"=>standalone_worktree_reads::context_read(root,cache,&store,argument()?,deadline,&budget),
+        "ctx"=>standalone_worktree_reads::context_read(root,cache,&store,argument()?,deadline.clone(),&budget),
         "search" | "refs" | "map" => {
-            standalone_worktree_reads::retrieve_read(root,cache,&store,parent_fallback.take(),verb,options,session,context,log_queue,preparation_manager,&page_budget)
+            standalone_worktree_reads::retrieve_read(root,cache,&store,parent_fallback.take(),verb,options,session,context,log_queue,preparation_manager,&page_budget,&deadline)
         }
         _ => bail!("invalid_command: unknown command {verb}; use search for queries"),
     };
@@ -292,83 +361,296 @@ fn local_dispatch(
     Ok(response)
 }
 
-/// Opens a query-only store, reconciling index-backed reads when no daemon serves
-/// them. Reconciliation pauses the query deadline and only `--no-daemon` waits
-/// for the writer lease. Paths and saved results can use an unpublished view;
-/// saved parent handles reopen their exact owner independently of this view.
+/// Opens a query-only store and reconciles index-backed local reads within the
+/// request deadline. Eligible linked-worktree reads try their verified parent first.
 fn read_store(
     root: &Path,
     cache: &Path,
     options: &Arguments,
     daemon_running: bool,
-    deadline: &mut QueryDeadline,
+    deadline: &QueryDeadline,
 ) -> Result<(Store, Option<crate::workspace::ParentFallback>)> {
     let verb = options.words.first().map_or("status", String::as_str);
-    let reads_without_index = standalone_worktree_reads::can_read_without_index(options);
-    let reconciles = !daemon_running && (options.no_daemon || !crate::daemon::running(cache));
-    let reconcile = || -> Result<()> {
-        let mut store = Store::open(root, cache)?;
-        if options.no_daemon {
-            store.index()?;
-        } else {
-            store.index_unless_leased()?;
-        }
-        Ok(())
-    };
-    if reconciles && matches!(verb, "search" | "refs" | "map") {
-        deadline.pause_during(reconcile)?;
+    if matches!(verb, "search" | "refs" | "map" | "show") {
+        preflight_results_cache(cache, Some(deadline))
+            .map_err(|error| classify_query_error(deadline, error))?;
     }
-    let opened = match Store::open_read(root, cache, *deadline) {
-        Err(error) if is_index_warming(&error) && reconciles && !reads_without_index => {
-            deadline.pause_during(reconcile)?;
-            Store::open_read(root, cache, *deadline)
+    let reads_without_index = standalone_worktree_reads::can_read_without_index(options);
+    let opened = Store::open_read(root, cache, deadline.clone())
+        .map_err(|error| classify_query_error(deadline, error));
+    let (opened_store, open_error) = match opened {
+        Ok(store) => (Some(store), None),
+        Err(error) => {
+            if reads_without_index
+                && (is_index_warming(&error)
+                    || is_index_cache_unavailable(&error)
+                    || is_index_cannot_open(&error))
+            {
+                return Ok((
+                    Store::unpublished(root, cache)?.with_query_deadline(deadline.clone()),
+                    None,
+                ));
+            }
+            (None, Some(error))
         }
-        opened => opened,
     };
-    match opened {
-        Ok(store) => Ok((store, None)),
-        Err(error)
-            if reads_without_index && (is_index_warming(&error) || is_index_cannot_open(&error)) => {
-            std::fs::create_dir_all(cache)?;
-            Ok((Store::unpublished(root, cache)?, None))
-        }
-        Err(error) if standalone_worktree_reads::can_use_parent(root, cache, options, &error) => {
-            if let Some(view) = crate::workspace::standalone_parent_view(
-                root, cache, *deadline,
-            ) {
-                return Ok((view.store, Some(view.fallback)));
-            }
-            if is_index_cannot_open(&error) {
-                Err(error).context(
-                    "index_cache_unavailable: could not open the linked-worktree index and no published parent index is available; check cache permissions or run `trufflepig index`",
-                )
-            } else {
-                Err(error)
-            }
-        }
-        Err(error) if is_index_cannot_open(&error) => Err(error).context(
-            "index_cache_unavailable: could not open the index; check cache permissions or run `trufflepig index`",
-        ),
-        Err(error) => Err(error),
+
+    let mut parent_view = open_error
+        .as_ref()
+        .and_then(|error| try_standalone_parent(root, cache, options, error, deadline));
+    if !options.no_daemon
+        && let Some(view) = parent_view.take()
+    {
+        return Ok((view.store, Some(view.fallback)));
+    }
+
+    let query_needs_fresh_local_index = matches!(verb, "search" | "refs" | "map")
+        || verb == "show"
+            && crate::source::acquisition::show_target(&options.words)
+                .is_some_and(|target| target.starts_with("sym:"));
+    let open_error_can_reconcile = open_error.as_ref().is_some_and(|error| {
+        is_index_warming(error) || is_index_cache_unavailable(error) || is_index_cannot_open(error)
+    });
+    let needs_reconcile = !reads_without_index
+        && ((query_needs_fresh_local_index && opened_store.is_some()) || open_error_can_reconcile);
+    if deadline.expired() {
+        bail!(
+            "{}: query deadline expired",
+            crate::daemon::deadline::TIMED_OUT
+        );
+    }
+    let reconciles = if !needs_reconcile || daemon_running {
+        false
+    } else if options.no_daemon {
+        true
+    } else {
+        !crate::daemon::running_by(cache, deadline)?
+    };
+    if reconciles {
+        let preserve_parent_response = verb == "show"
+            && crate::source::acquisition::show_target(&options.words)
+                .is_some_and(|target| target.starts_with("sym:"));
+        return reconcile_inline(
+            root,
+            cache,
+            deadline,
+            opened_store,
+            parent_view,
+            preserve_parent_response,
+        );
+    }
+
+    if opened_store.is_none()
+        && let Some(view) = parent_view.take()
+    {
+        return Ok((view.store, Some(view.fallback)));
+    }
+    match opened_store {
+        Some(store) => Ok((store, None)),
+        None => Err(index_cache_unavailable(
+            cache,
+            open_error.expect("a missing store has an open error"),
+        )),
     }
 }
 
-/// `status` of an unpublished index: generation 0, empty coverage, and
-/// `state: warming`, without writing to a daemon's index.
-fn warming_status(
+fn classify_query_error(deadline: &QueryDeadline, error: anyhow::Error) -> anyhow::Error {
+    let error = deadline.classify(error);
+    if deadline.expired() && !crate::daemon::deadline::is_timed_out(&error) {
+        error.context(format!(
+            "{}: query deadline expired",
+            crate::daemon::deadline::TIMED_OUT
+        ))
+    } else {
+        error
+    }
+}
+
+fn reconcile_inline(
     root: &Path,
     cache: &Path,
-    daemon_running: bool,
-    budget: &OutputBudget,
-) -> Result<String> {
-    if !daemon_running {
-        // Local status keeps creating the cache it reports on.
-        Store::open(root, cache)?;
+    deadline: &QueryDeadline,
+    own_view: Option<Store>,
+    mut parent_view: Option<crate::workspace::ParentIndexView>,
+    preserve_parent_response: bool,
+) -> Result<(Store, Option<crate::workspace::ParentFallback>)> {
+    if deadline.expired() {
+        bail!(
+            "{}: query deadline expired",
+            crate::daemon::deadline::TIMED_OUT
+        );
+    }
+    let maintenance = crate::store::inline_maintenance_deadline(deadline);
+    if own_view.is_none()
+        && let Some(parent) = parent_view.as_ref()
+    {
+        let _ = crate::store::ensure_seeded_until(
+            parent.store.index_cache(),
+            root,
+            cache,
+            &maintenance,
+        );
+        if deadline.expired() {
+            bail!(
+                "{}: query deadline expired",
+                crate::daemon::deadline::TIMED_OUT
+            );
+        }
+    }
+
+    if maintenance.expired() {
+        return available_or_warming(
+            root,
+            cache,
+            own_view,
+            parent_view,
+            "inline maintenance budget is exhausted",
+        );
+    }
+
+    let mut writer = match Store::open_for_reconcile(root, cache, maintenance.clone()) {
+        Ok(writer) => writer,
+        Err(error) if maintenance_slice_ended(&maintenance, deadline, &error) => {
+            return available_or_warming(
+                root,
+                cache,
+                own_view,
+                parent_view,
+                "inline maintenance budget expired before publication",
+            );
+        }
+        Err(error)
+            if (is_index_warming(&error) || is_index_cache_unavailable(&error))
+                && (own_view.is_some() || parent_view.is_some()) =>
+        {
+            return available_or_warming(
+                root,
+                cache,
+                own_view,
+                parent_view,
+                "inline maintenance could not acquire a writable view",
+            );
+        }
+        Err(error) => return Err(index_cache_unavailable(cache, error)),
+    };
+
+    let attempt = if own_view.is_some() || parent_view.is_some() {
+        writer.index_available_until(maintenance.clone())
+    } else {
+        writer.index_until(maintenance.clone())
+    };
+    match attempt {
+        Ok(Some(_)) => {
+            if preserve_parent_response && let Some(view) = parent_view.take() {
+                return Ok((view.store, Some(view.fallback)));
+            }
+            let store = Store::open_read(root, cache, deadline.clone())
+                .map_err(|error| classify_query_error(deadline, error))?;
+            Ok((store, None))
+        }
+        Ok(None) => available_or_warming(
+            root,
+            cache,
+            own_view,
+            parent_view,
+            "index preparation is still in progress or another writer holds the lease",
+        ),
+        Err(error) if maintenance_slice_ended(&maintenance, deadline, &error) => {
+            available_or_warming(
+                root,
+                cache,
+                own_view,
+                parent_view,
+                "inline maintenance budget expired before publication",
+            )
+        }
+        Err(error) if is_index_warming(&error) && (own_view.is_some() || parent_view.is_some()) => {
+            available_or_warming(
+                root,
+                cache,
+                own_view,
+                parent_view,
+                "index preparation is still in progress",
+            )
+        }
+        Err(error) => Err(index_cache_unavailable(cache, error)),
+    }
+}
+
+fn maintenance_slice_ended(
+    maintenance: &QueryDeadline,
+    original: &QueryDeadline,
+    error: &anyhow::Error,
+) -> bool {
+    crate::daemon::deadline::is_timed_out(error) && !original.expired() && maintenance.expired()
+}
+
+fn available_or_warming(
+    root: &Path,
+    cache: &Path,
+    own_view: Option<Store>,
+    parent_view: Option<crate::workspace::ParentIndexView>,
+    reason: &str,
+) -> Result<(Store, Option<crate::workspace::ParentFallback>)> {
+    if let Some(store) = own_view {
+        return Ok((store, None));
+    }
+    if let Some(view) = parent_view {
+        return Ok((view.store, Some(view.fallback)));
+    }
+    Err(index_warming_error(root, cache, reason))
+}
+
+fn index_warming_error(root: &Path, cache: &Path, reason: &str) -> anyhow::Error {
+    match crate::store::read_index_progress(root, cache) {
+        Some(progress) => {
+            let phase = match progress.phase {
+                IndexProgressPhase::Scanning => "scanning",
+                IndexProgressPhase::Finalizing => "finalizing",
+                IndexProgressPhase::MaintenanceRequired => "maintenance_required",
+            };
+            anyhow::anyhow!(
+                "index_warming: {reason}; progress phase={phase}, completed_files={}, reused_files={}, maintenance_required={}; {}; run `trufflepig index` to finish",
+                progress.completed_files,
+                progress.reused_files,
+                progress.maintenance_required,
+                progress.description(),
+            )
+        }
+        None => anyhow::anyhow!(
+            "index_warming: {reason}; no retained checkpoint progress; run `trufflepig index` to build the index"
+        ),
+    }
+}
+
+fn try_standalone_parent(
+    root: &Path,
+    cache: &Path,
+    options: &Arguments,
+    error: &anyhow::Error,
+    deadline: &QueryDeadline,
+) -> Option<crate::workspace::ParentIndexView> {
+    if deadline.expired() {
+        return None;
+    }
+    if !standalone_worktree_reads::can_use_parent(options, error) {
+        return None;
+    }
+    crate::workspace::standalone_parent_view(root, cache, deadline.clone())
+}
+
+/// `status` of an unpublished index without opening a writer or creating cache files.
+fn warming_status(root: &Path, cache: &Path, budget: &OutputBudget) -> Result<String> {
+    let index_progress = crate::store::read_index_progress(root, cache);
+    let mut coverage = serde_json::to_value(crate::store::Coverage::default())?;
+    if let Some(progress) = &index_progress {
+        coverage["index_progress"] = serde_json::to_value(progress)?;
     }
     budget.render(&serde_json::json!({
         "generation": 0,
-        "coverage": crate::store::Coverage::default(),
+        "coverage": coverage,
         "state": "warming",
+        "index_progress": index_progress,
         "semantic_feature": cfg!(feature = "semantic"),
         "tokenizer": "o200k_base",
     }))
@@ -385,31 +667,8 @@ fn ensure_semantic_check_arity(options: &Arguments) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{search, source};
-    use std::time::{Duration, Instant};
-
-    #[test]
-    fn slow_in_request_reconcile_leaves_the_query_budget_intact() {
-        let root = tempfile::tempdir().unwrap();
-        let cache = tempfile::tempdir().unwrap();
-        crate::daemon::deadline::write_slow_reconcile_fixture(root.path(), "alpha");
-        let budget = Duration::from_millis(100);
-        let mut deadline = QueryDeadline::after(budget);
-        let started = Instant::now();
-        let options =
-            super::super::parse(&["--no-daemon".to_owned(), "search".to_owned()]).unwrap();
-        let (store, _) =
-            read_store(root.path(), cache.path(), &options, false, &mut deadline).unwrap();
-        assert!(
-            started.elapsed() > budget,
-            "reconcile finished within the budget"
-        );
-        let query = search::Query::parse("sym:alpha").unwrap();
-        let found = search::search(&store, &query, false, cache.path())
-            .map_err(|error| deadline.classify(error))
-            .unwrap();
-        assert!(!found.hits.is_empty());
-    }
+    use crate::source;
+    use std::time::Duration;
 
     fn words(words: &[&str]) -> Arguments {
         super::super::parse(
@@ -421,26 +680,28 @@ mod tests {
         .unwrap()
     }
 
-    /// A daemon that took the writer lease after the client's liveness check
-    /// leaves the client answering `index_warming`, never waiting on the lease.
+    /// A cold reader polls a competing writer only within its maintenance slice.
     #[test]
-    fn client_reconcile_never_waits_behind_a_daemon_scan() {
+    fn client_reconcile_bounds_a_cold_wait_behind_a_daemon_scan() {
         let root = tempfile::tempdir().unwrap();
         let cache = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("lib.rs"), "pub fn leased() {}\n").unwrap();
         let lease = std::fs::File::create(cache.path().join("index.lock")).unwrap();
         fs2::FileExt::lock_exclusive(&lease).unwrap();
-        let (root_path, cache_path) = (root.path().to_owned(), cache.path().to_owned());
-        let (sender, receiver) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let mut deadline = QueryDeadline::start();
-            let options = words(&["search", "sym:leased"]);
-            let opened = read_store(&root_path, &cache_path, &options, false, &mut deadline);
-            let _ = sender.send(opened.err().map(|error| is_index_warming(&error)));
-        });
-        let answered = receiver.recv_timeout(Duration::from_secs(10));
+        let started = std::time::Instant::now();
+        let error = read_store(
+            root.path(),
+            cache.path(),
+            &words(&["--no-daemon", "search", "sym:leased"]),
+            false,
+            &QueryDeadline::start(),
+        )
+        .err()
+        .expect("a cold reader cannot publish while the writer lease is held");
+        assert!(is_index_warming(&error), "{error:#}");
+        assert!(error.to_string().contains("trufflepig index"), "{error:#}");
+        assert!(started.elapsed() < Duration::from_secs(3), "{error:#}");
         drop(lease);
-        assert_eq!(answered, Ok(Some(true)));
     }
 
     /// Direct path reads need no publication, with or without a serving daemon.

@@ -1,10 +1,14 @@
 //! Standalone linked-worktree reads keep parent and child result identities separate.
 
+mod cache_progress_tests;
+
 use anyhow::{Context, Result, ensure};
+use fs2::FileExt;
 use serde_json::Value;
 use std::{
     fs,
-    os::unix::fs::PermissionsExt,
+    fs::OpenOptions,
+    os::unix::{ffi::OsStrExt, fs::PermissionsExt},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
@@ -112,10 +116,18 @@ fn cold_parent_fallback_reads_current_worktree_without_child_publication() -> Re
     let cursor = path_read["next"]
         .as_str()
         .context("long current-file read must return a continuation")?;
-    let handle = read_handle(cursor)?;
+    assert!(cursor.starts_with("read:path:"), "{cursor}");
+    let (cursor_span, cursor_revision, cursor_offset) = stateless_cursor_parts(cursor)?;
     assert_eq!(
-        saved_generation(&fixture.worktree, &fixture.child_cache, &handle)?,
-        0
+        cursor_span,
+        path_cursor_span(&fixture.worktree, &path_read["start"], &path_read["end"])?
+    );
+    assert_eq!(cursor_revision, path_read["revision"].as_str().unwrap());
+    assert!(cursor_offset > path_read["start"].as_u64().unwrap() as usize);
+    assert_eq!(
+        path_read["lines"].as_array().unwrap().last().unwrap()["end"],
+        cursor_offset,
+        "cursor must start at the first unread byte: {path_read}"
     );
 
     let continued = json(invoke(
@@ -124,33 +136,36 @@ fn cold_parent_fallback_reads_current_worktree_without_child_publication() -> Re
         &["show", cursor],
         &[],
     )?)?;
-    assert_eq!(continued["verified"], true, "{continued}");
+    assert_eq!(continued["verified"], false, "{continued}");
+    assert_eq!(continued["source"], "current_file", "{continued}");
+    assert_eq!(continued["revision"], path_read["revision"], "{continued}");
+    assert_eq!(continued["start"], cursor_offset, "{continued}");
+    assert_eq!(continued["end"], path_read["end"], "{continued}");
     assert!(
         continued["lines"]
             .as_array()
             .unwrap()
             .first()
             .is_some_and(|line| {
-                line["text"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .contains("child_current_line_")
+                line["start"] == cursor_offset
+                    && line["text"].as_str().unwrap_or_default().contains(&format!(
+                        "child_current_line_{:03}",
+                        path_read["lines"].as_array().unwrap().len() + 1
+                    ))
             }),
-        "continuation must read the saved current worktree source: {continued}"
+        "continuation must advance to the next current worktree line: {continued}"
     );
-
-    let error = invoke(
-        &fixture.worktree,
-        &fixture.child_cache,
-        &["ctx", &handle],
-        &[],
-    )
-    .unwrap_err()
-    .to_string();
-    assert!(
-        error.contains("stale_result"),
-        "generation-zero path handles have no graph context: {error}"
-    );
+    if let Some(next) = continued["next"].as_str() {
+        let (next_span, next_revision, next_offset) = stateless_cursor_parts(next)?;
+        assert_eq!(next_span, cursor_span);
+        assert_eq!(next_revision, cursor_revision);
+        assert_eq!(
+            continued["lines"].as_array().unwrap().last().unwrap()["end"],
+            next_offset,
+            "next cursor must start at the first unread byte: {continued}"
+        );
+        assert!(next_offset > cursor_offset, "{continued}");
+    }
     fixture.assert_child_unpublished();
     assert_eq!(
         fixture.current_parent_generation()?,
@@ -198,9 +213,24 @@ fn saved_parent_handle_and_more_keep_parent_origin_after_child_publication() -> 
         &["show", "path:src/long.txt:1-240"],
         &["--budget".into(), "350".into()],
     )?)?;
+    assert_eq!(current["verified"], false, "{current}");
+    assert_eq!(current["source"], "current_file", "{current}");
     let current_cursor = current["next"]
         .as_str()
         .context("expected path continuation")?;
+    assert!(current_cursor.starts_with("read:path:"), "{current_cursor}");
+    let (cursor_span, cursor_revision, cursor_offset) = stateless_cursor_parts(current_cursor)?;
+    assert_eq!(
+        cursor_span,
+        path_cursor_span(&fixture.worktree, &current["start"], &current["end"])?
+    );
+    assert_eq!(cursor_revision, current["revision"].as_str().unwrap());
+    assert!(cursor_offset > current["start"].as_u64().unwrap() as usize);
+    assert_eq!(
+        current["lines"].as_array().unwrap().last().unwrap()["end"],
+        cursor_offset,
+        "cursor must start at the first unread byte: {current}"
+    );
 
     let mut child = crate::store::Store::open(&fixture.worktree, &fixture.child_cache)?;
     child.index()?;
@@ -218,15 +248,36 @@ fn saved_parent_handle_and_more_keep_parent_origin_after_child_publication() -> 
         &["show", current_cursor],
         &[],
     )?)?;
-    assert_eq!(continued["verified"], true, "{continued}");
-    assert_eq!(
-        saved_generation(
-            &fixture.worktree,
-            &fixture.child_cache,
-            &read_handle(current_cursor)?
-        )?,
-        0
+    assert_eq!(continued["verified"], false, "{continued}");
+    assert_eq!(continued["source"], "current_file", "{continued}");
+    assert_eq!(continued["revision"], current["revision"], "{continued}");
+    assert_eq!(continued["start"], cursor_offset, "{continued}");
+    assert_eq!(continued["end"], current["end"], "{continued}");
+    assert!(
+        continued["lines"]
+            .as_array()
+            .unwrap()
+            .first()
+            .is_some_and(|line| {
+                line["start"] == cursor_offset
+                    && line["text"].as_str().unwrap_or_default().contains(&format!(
+                        "child_current_line_{:03}",
+                        current["lines"].as_array().unwrap().len() + 1
+                    ))
+            }),
+        "continuation must advance to the next current worktree line: {continued}"
     );
+    if let Some(next) = continued["next"].as_str() {
+        let (next_span, next_revision, next_offset) = stateless_cursor_parts(next)?;
+        assert_eq!(next_span, cursor_span);
+        assert_eq!(next_revision, cursor_revision);
+        assert_eq!(
+            continued["lines"].as_array().unwrap().last().unwrap()["end"],
+            next_offset,
+            "next cursor must start at the first unread byte: {continued}"
+        );
+        assert!(next_offset > cursor_offset, "{continued}");
+    }
 
     let next = json(invoke(
         &fixture.worktree,
@@ -331,7 +382,36 @@ fn saved_parent_handle_and_more_keep_parent_origin_after_child_publication() -> 
         &["show", current_cursor],
         &[],
     )?)?;
-    assert_eq!(continued["verified"], true, "{continued}");
+    assert_eq!(continued["verified"], false, "{continued}");
+    assert_eq!(continued["source"], "current_file", "{continued}");
+    assert_eq!(continued["revision"], current["revision"], "{continued}");
+    assert_eq!(continued["start"], cursor_offset, "{continued}");
+    assert_eq!(continued["end"], current["end"], "{continued}");
+    assert!(
+        continued["lines"]
+            .as_array()
+            .unwrap()
+            .first()
+            .is_some_and(|line| {
+                line["start"] == cursor_offset
+                    && line["text"].as_str().unwrap_or_default().contains(&format!(
+                        "child_current_line_{:03}",
+                        current["lines"].as_array().unwrap().len() + 1
+                    ))
+            }),
+        "continuation must advance to the next current worktree line: {continued}"
+    );
+    if let Some(next) = continued["next"].as_str() {
+        let (next_span, next_revision, next_offset) = stateless_cursor_parts(next)?;
+        assert_eq!(next_span, cursor_span);
+        assert_eq!(next_revision, cursor_revision);
+        assert_eq!(
+            continued["lines"].as_array().unwrap().last().unwrap()["end"],
+            next_offset,
+            "next cursor must start at the first unread byte: {continued}"
+        );
+        assert!(next_offset > cursor_offset, "{continued}");
+    }
     fs::set_permissions(&child_database, fs::Permissions::from_mode(0o600))?;
 
     let moved = fixture.scratch.path().join("replaced-worktree");
@@ -354,26 +434,179 @@ fn saved_parent_handle_and_more_keep_parent_origin_after_child_publication() -> 
 }
 
 #[test]
-fn custom_cache_does_not_borrow_standalone_parent_index() -> Result<()> {
-    if !in_isolated_child("custom_cache_does_not_borrow_standalone_parent_index")? {
+fn no_daemon_read_serves_parent_hit_promptly_while_child_writer_is_held() -> Result<()> {
+    if !in_isolated_child("no_daemon_read_serves_parent_hit_promptly_while_child_writer_is_held")? {
+        return Ok(());
+    }
+
+    let fixture = WorktreeFixture::new()?;
+    fs::create_dir_all(&fixture.child_cache)?;
+    let lease = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(fixture.child_cache.join("index.lock"))?;
+    lease.lock_exclusive()?;
+    let options = crate::cli::parse(&[
+        "--root".into(),
+        fixture.worktree.display().to_string(),
+        "--cache".into(),
+        fixture.child_cache.display().to_string(),
+        "--no-daemon".into(),
+        "--format".into(),
+        "json".into(),
+        "--diagnostics".into(),
+        "off".into(),
+        "search".into(),
+        "sym:WorktreeOnlySymbol".into(),
+    ])?;
+
+    let started = Instant::now();
+    let output = crate::cli::local(&fixture.worktree, &fixture.child_cache, &options, false)?;
+    assert!(started.elapsed() < Duration::from_secs(1), "{output}");
+    let response = json(output)?;
+    assert_eq!(
+        response["coverage"]["parent_index"]["generation"], fixture.parent_generation,
+        "{response}"
+    );
+    assert!(
+        response["hits"]
+            .as_array()
+            .is_some_and(|hits| hits.iter().any(|hit| hit["name"] == "WorktreeOnlySymbol")),
+        "{response}"
+    );
+    assert_unpublished_index(&fixture.worktree, &fixture.child_cache)?;
+    drop(lease);
+    Ok(())
+}
+
+#[test]
+fn explicit_cache_reads_through_parent_and_keeps_selected_result_identity() -> Result<()> {
+    if !in_isolated_child("explicit_cache_reads_through_parent_and_keeps_selected_result_identity")?
+    {
         return Ok(());
     }
 
     let fixture = WorktreeFixture::new()?;
     let custom_cache = fixture.scratch.path().join("custom-worktree-cache");
     fs::create_dir_all(&custom_cache)?;
-    let error = invoke(
+    let explicit_cache = [
+        "--cache".to_owned(),
+        custom_cache.display().to_string(),
+        "--no-daemon".to_owned(),
+    ];
+    let search_options = [
+        explicit_cache[0].clone(),
+        explicit_cache[1].clone(),
+        explicit_cache[2].clone(),
+        "--limit".to_owned(),
+        "1".to_owned(),
+    ];
+    let search = json(invoke(
         &fixture.worktree,
         &custom_cache,
         &["search", "sym:WorktreeOnlySymbol"],
-        &["--cache".into(), custom_cache.display().to_string()],
+        &search_options,
+    )?)?;
+    assert!(
+        search["hits"]
+            .as_array()
+            .is_some_and(|hits| !hits.is_empty()),
+        "explicit-cache search reads through the verified parent: {search}"
+    );
+    assert_eq!(
+        search["coverage"]["parent_index"]["generation"],
+        fixture.parent_generation
+    );
+    let handle = search["hits"][0]["handle"]
+        .as_str()
+        .context("parent hit has no handle")?
+        .to_owned();
+    let cursor = search["next"]
+        .as_str()
+        .context("parent search must paginate")?
+        .to_owned();
+    assert_eq!(
+        saved_generation(&fixture.worktree, &custom_cache, &handle)?,
+        fixture.parent_generation,
+        "result handles use the selected cache and retain their parent generation"
+    );
+
+    let shown = json(invoke(
+        &fixture.worktree,
+        &custom_cache,
+        &["show", &handle],
+        &explicit_cache,
+    )?)?;
+    assert!(
+        shown["lines"].as_array().unwrap().iter().any(|line| {
+            line["text"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("WorktreeOnlySymbol")
+        }),
+        "saved parent show uses current worktree bytes: {shown}"
+    );
+
+    let next = json(invoke(
+        &fixture.worktree,
+        &custom_cache,
+        &["more", &cursor],
+        &explicit_cache,
+    )?)?;
+    assert_eq!(next["generation"], fixture.parent_generation, "{next}");
+    assert_eq!(
+        next["coverage"]["parent_index"]["generation"],
+        fixture.parent_generation
+    );
+    let context_error = invoke(
+        &fixture.worktree,
+        &custom_cache,
+        &["ctx", &handle],
+        &explicit_cache,
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(context_error.contains("stale_result"), "{context_error}");
+
+    let map = json(invoke(
+        &fixture.worktree,
+        &custom_cache,
+        &["map", "src/lib.rs"],
+        &explicit_cache,
+    )?)?;
+    assert_eq!(
+        map["coverage"]["parent_index"]["generation"],
+        fixture.parent_generation
+    );
+    assert!(
+        map["hits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|hit| hit["name"] == "worktree_only_helper"),
+        "explicit-cache map uses the parent index with worktree bytes: {map}"
+    );
+
+    let wrong_root_cache = fixture.scratch.path().join("wrong-root-cache");
+    let mut foreign = crate::store::Store::open(&fixture.main, &wrong_root_cache)?;
+    foreign.index()?;
+    drop(foreign);
+    let wrong_root_error = invoke(
+        &fixture.worktree,
+        &wrong_root_cache,
+        &["search", "sym:WorktreeOnlySymbol"],
+        &["--cache".into(), wrong_root_cache.display().to_string()],
     )
     .unwrap_err()
     .to_string();
     assert!(
-        error.contains("index_warming"),
-        "an explicit empty cache stays isolated: {error}"
+        wrong_root_error.contains("cache belongs to another repository root"),
+        "a custom cache with the wrong identity must not fall back to the parent: {wrong_root_error}"
     );
+
+    assert!(custom_cache.join("results.sqlite3").is_file());
     assert!(!custom_cache.join("index.sqlite3").exists());
     fixture.assert_child_unpublished();
     assert_eq!(
@@ -505,20 +738,70 @@ fn json(value: String) -> Result<Value> {
     Ok(serde_json::from_str(&value)?)
 }
 
-fn read_handle(cursor: &str) -> Result<String> {
-    let cursor = cursor
+fn stateless_cursor_parts(cursor: &str) -> Result<(&str, &str, usize)> {
+    let body = cursor
         .strip_prefix("read:")
-        .context("source continuation must use read:")?;
-    let (handle, _) = cursor
+        .context("stateless continuation must start with read:")?;
+    let (span_revision, offset) = body
         .rsplit_once('@')
-        .context("read cursor has no byte offset")?;
-    Ok(handle.to_owned())
+        .context("stateless continuation has no byte offset")?;
+    let (span, revision) = span_revision
+        .rsplit_once('@')
+        .context("stateless continuation has no source revision")?;
+    Ok((span, revision, offset.parse()?))
+}
+
+fn path_cursor_span(root: &Path, start: &Value, end: &Value) -> Result<String> {
+    let canonical_root = root.canonicalize()?;
+    let root_digest = blake3::hash(canonical_root.as_os_str().as_bytes()).to_hex();
+    Ok(format!(
+        "path:{root_digest}:src/long.txt:{}-{}",
+        start.as_u64().context("path read has no start byte")?,
+        end.as_u64().context("path read has no end byte")?,
+    ))
 }
 
 fn saved_generation(root: &Path, cache: &Path, handle: &str) -> Result<i64> {
     let parsed: crate::identity::ResultHandle = handle.parse()?;
     let store = crate::store::Store::unpublished(root, cache)?;
     Ok(crate::results::load_entries(&store, &parsed.set.simple().to_string())?.generation)
+}
+
+fn assert_unpublished_index(root: &Path, cache: &Path) -> Result<()> {
+    let index = cache.join("index.sqlite3");
+    ensure!(
+        index.is_file(),
+        "reconcile attempt should initialize the index schema"
+    );
+    let connection =
+        rusqlite::Connection::open_with_flags(&index, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let generation: String =
+        connection.query_row("SELECT value FROM meta WHERE key='generation'", [], |row| {
+            row.get(0)
+        })?;
+    ensure!(
+        generation == "0",
+        "held lease published generation {generation}"
+    );
+    let publication_count: i64 =
+        connection.query_row("SELECT count(*) FROM publication_windows", [], |row| {
+            row.get(0)
+        })?;
+    ensure!(
+        publication_count == 0,
+        "held lease wrote publication records"
+    );
+
+    let error = match crate::store::Store::open_read(
+        root,
+        cache,
+        crate::daemon::deadline::QueryDeadline::start(),
+    ) {
+        Ok(_) => anyhow::bail!("generation-zero index must be warming"),
+        Err(error) => error,
+    };
+    ensure!(crate::store::is_index_warming(&error), "{error:#}");
+    Ok(())
 }
 
 fn git(root: &Path, args: &[&str]) -> Result<()> {

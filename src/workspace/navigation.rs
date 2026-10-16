@@ -1,14 +1,14 @@
 //! Owner routing verifies recorded roots and source identities before every follow-up.
 use super::{
-    WorkspaceConfig,
+    WorkspaceConfig, hashed_member_cache,
     home_index::{ParentRead, acquire_home_read, is_reextracted_worktree_hit, reextracted_entry},
-    member_cache, member_options,
+    member_cache_until, member_options,
     result_cache::{MemberSnapshot, OwnedEntry, WorkspaceResults, WorkspaceSet},
     selected_member,
 };
 use crate::{
     cli::Arguments,
-    daemon::deadline::QueryDeadline,
+    daemon::deadline::{QueryDeadline, TIMED_OUT, is_timed_out},
     identity::ResultHandle,
     output::OutputBudget,
     results::{self, ResultEntry},
@@ -52,7 +52,7 @@ pub(super) fn read(
     options: &Arguments,
     budget: &OutputBudget,
 ) -> Result<String> {
-    let deadline = QueryDeadline::start();
+    let deadline = results.deadline();
     read_within(config, results, options, budget, deadline)
         .map_err(|error| deadline.classify(error))
 }
@@ -61,7 +61,7 @@ fn read_within(
     results: &WorkspaceResults,
     options: &Arguments,
     budget: &OutputBudget,
-    mut deadline: QueryDeadline,
+    deadline: &QueryDeadline,
 ) -> Result<String> {
     let target =
         &acquisition::show_target(&options.words).context("usage: show TARGET | ctx HANDLE")?;
@@ -140,7 +140,23 @@ fn read_within(
     );
     let member = selected_member(config, options)?;
     member.verify_identity()?;
-    let cache = member_cache(&member, options.cache.as_deref())?;
+    let maintenance_deadline = crate::store::inline_maintenance_deadline(deadline);
+    let cache = if member.worktree.is_some() {
+        let selected_cache = hashed_member_cache(&member.root, options.cache.as_deref())?;
+        match member_cache_until(&member, options.cache.as_deref(), &maintenance_deadline) {
+            Ok(cache) => cache,
+            Err(error) => {
+                ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+                if is_timed_out(&error) && maintenance_deadline.expired() {
+                    selected_cache
+                } else {
+                    return Err(error);
+                }
+            }
+        }
+    } else {
+        member_cache_until(&member, options.cache.as_deref(), deadline)?
+    };
     let origin =
         crate::search::InvocationDirectory::within(&member.root, &options.root.canonicalize()?);
     let (store, mut source, parent_read) = acquire_home_read(
@@ -149,7 +165,8 @@ fn read_within(
         options.cache.as_deref(),
         (target, side, &origin),
         options.no_daemon,
-        &mut deadline,
+        deadline,
+        &maintenance_deadline,
     )?;
     let (_, entry) = results::entry(&store, &source.handle)?;
     let owner = MemberSnapshot::capture(&member, &store, &cache, store.generation()?)?;
@@ -180,6 +197,7 @@ pub(super) fn history(
     options: &Arguments,
     budget: &OutputBudget,
 ) -> Result<String> {
+    let deadline = workspace_results.deadline();
     let selector = if matches!(options.words[0].as_str(), "hist" | "blame") {
         options.words.get(1)
     } else {
@@ -192,7 +210,6 @@ pub(super) fn history(
     let member = if let Some((set, index)) = &retained {
         let owner = &set.owners[set.hits[*index].owner];
         verify_selection(owner, options)?;
-        let deadline = QueryDeadline::start();
         owner
             .open(config, deadline)
             .map_err(|error| deadline.classify(error))?;
@@ -201,9 +218,9 @@ pub(super) fn history(
         selected_member(config, options)?
     };
     member.verify_identity()?;
-    let cache = member_cache(&member, options.cache.as_deref())?;
+    let cache = member_cache_until(&member, options.cache.as_deref(), deadline)?;
     let store = Store::open(&member.root, &cache)?;
-    let mut local = member_options(options, &member)?;
+    let mut local = member_options(options, &member, deadline)?;
     local.budget = 1_000_000;
     if let Some((set, index)) = &retained {
         let owned = &set.hits[*index];

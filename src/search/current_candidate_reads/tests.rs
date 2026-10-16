@@ -1,4 +1,6 @@
+use super::{recheck, recheck_with_current_search};
 use crate::{
+    daemon::deadline::{QueryDeadline, TIMED_OUT, is_timed_out},
     output::OutputBudget,
     results,
     search::{self, Query},
@@ -90,6 +92,7 @@ fn refreshed_candidates_do_not_claim_current_rerank_scores() {
         None,
         Some(&Scores),
         &mut search::telemetry::RetrievalTrace::disabled(),
+        &QueryDeadline::start(),
     )
     .unwrap();
     assert!(!result.hits.is_empty());
@@ -128,4 +131,86 @@ fn missing_candidates_disappear_and_unreadable_source_is_partial() {
         result.coverage["current_source_recheck"]["unsearched_paths"],
         1
     );
+}
+
+#[test]
+fn current_search_timeout_propagates_but_ordinary_failure_keeps_unverified_candidate() {
+    let old = b"pub struct OldName;";
+    let current = b"pub struct NewName;";
+    let (root, cache, store) = search::tests::fixture(&[("lib.rs", old)]);
+    let query = Query::parse("OldName file:lib.rs").unwrap();
+    let initial = search::search(&store, &query, false, cache.path()).unwrap();
+    assert!(!initial.hits.is_empty());
+    let mut timeout_hits = initial.hits.clone();
+    std::fs::write(root.path().join("lib.rs"), current).unwrap();
+    let mut timeout_coverage = serde_json::json!({});
+    let mut timeout_truncated = false;
+    let timeout = recheck_with_current_search(
+        &store,
+        &query,
+        &mut timeout_hits,
+        &mut timeout_coverage,
+        &mut timeout_truncated,
+        &QueryDeadline::start(),
+        |_, _, path, bytes, _, _| {
+            assert_eq!(path, "lib.rs");
+            assert_eq!(bytes, current);
+            Err(
+                anyhow::anyhow!("{TIMED_OUT}: current file search interrupted")
+                    .context("search_current_file"),
+            )
+        },
+    )
+    .unwrap_err();
+    assert!(is_timed_out(&timeout), "{timeout:#}");
+    assert!(timeout.to_string().starts_with(TIMED_OUT));
+
+    let mut ordinary_hits = initial.hits;
+    let mut coverage = serde_json::json!({});
+    let mut truncated = false;
+    recheck_with_current_search(
+        &store,
+        &query,
+        &mut ordinary_hits,
+        &mut coverage,
+        &mut truncated,
+        &QueryDeadline::start(),
+        |_, _, path, bytes, _, _| {
+            assert_eq!(path, "lib.rs");
+            assert_eq!(bytes, current);
+            Err(anyhow::anyhow!("ordinary current extraction failure"))
+        },
+    )
+    .unwrap();
+    assert!(truncated);
+    assert!(!ordinary_hits.is_empty());
+    assert!(ordinary_hits.iter().all(|hit| hit.differs));
+    assert_eq!(coverage["current_source_unsearched"], 1);
+    assert_eq!(coverage["current_source_recheck"]["status"], "incomplete");
+}
+
+#[test]
+fn expired_query_deadline_aborts_candidate_recheck() {
+    let (root, cache, store) = search::tests::fixture(&[("lib.rs", b"pub struct OldName;")]);
+    let query = Query::parse("OldName file:lib.rs").unwrap();
+    let initial = search::search(&store, &query, false, cache.path()).unwrap();
+    assert!(!initial.hits.is_empty());
+    std::fs::write(root.path().join("lib.rs"), b"pub struct NewName;").unwrap();
+    let mut hits = initial.hits;
+    let mut coverage = serde_json::json!({});
+    let mut truncated = false;
+
+    let error = recheck(
+        &store,
+        &query,
+        &mut hits,
+        &mut coverage,
+        &mut truncated,
+        &QueryDeadline::after(std::time::Duration::ZERO),
+    )
+    .unwrap_err();
+
+    assert!(is_timed_out(&error), "{error:#}");
+    assert!(error.to_string().starts_with(TIMED_OUT));
+    assert!(!hits.is_empty());
 }

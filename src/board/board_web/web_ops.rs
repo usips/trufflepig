@@ -13,21 +13,11 @@ use router_probe::{ROUTER_MIGRATION_WAIT, ingest_via, startup_probe};
 use std::{path::Path, time::Instant};
 pub(crate) use web_request::{WebRequest, execute};
 
-pub(super) fn check_router_identity(
-    runtime: &Path,
-    database: &Path,
-    expires: Instant,
-) -> Result<(), BoardError> {
+pub(super) fn check_router_identity(runtime: &Path, database: &Path) -> Result<(), BoardError> {
     let context = crate::diagnostics::RequestContext::new(Some("web".into()), Some("human".into()));
-    let deadline = QueryDeadline::after(expires.saturating_duration_since(Instant::now()));
-    startup_probe(
-        database,
-        deadline,
-        ROUTER_MIGRATION_WAIT,
-        &mut |args, deadline| {
-            crate::daemon::request_by(runtime, args, &context, deadline).map_err(BoardError::from)
-        },
-    )
+    startup_probe(database, ROUTER_MIGRATION_WAIT, &mut |args, deadline| {
+        crate::daemon::request_by(runtime, args, &context, deadline).map_err(BoardError::from)
+    })
 }
 
 pub(super) fn relay_ingest(

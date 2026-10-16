@@ -19,7 +19,7 @@ impl BoardHost {
         request: &BoardRequest,
         oid: GitOid,
         task: TaskId,
-        deadline: QueryDeadline,
+        deadline: &QueryDeadline,
     ) -> Result<BoardRequest> {
         let targets = self.repositories(&request.actor, Some(task.plan), deadline)?;
         let config = self.config()?;

@@ -66,7 +66,7 @@ pub(crate) fn select_project<'a>(
 pub(crate) fn project_reply(
     config: &BoardConfig,
     projects: Vec<ResolvedProject>,
-    deadline: QueryDeadline,
+    deadline: &QueryDeadline,
 ) -> Result<BoardReply, BoardError> {
     check_deadline(deadline)?;
     let present = match std::fs::symlink_metadata(&config.db_path) {
@@ -117,7 +117,7 @@ fn invalid(message: impl Into<String>) -> BoardError {
     BoardError::new(BoardErrorCode::InvalidOptions, message)
 }
 
-fn check_deadline(deadline: QueryDeadline) -> Result<(), BoardError> {
+fn check_deadline(deadline: &QueryDeadline) -> Result<(), BoardError> {
     if deadline.expired() {
         return Err(BoardError::new(
             BoardErrorCode::DaemonBusy,

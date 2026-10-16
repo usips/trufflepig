@@ -6,23 +6,28 @@ pub(crate) mod pool;
 mod protocol;
 mod reconciler;
 mod server;
+mod socket_connect;
 pub mod spool;
 #[cfg(test)]
 mod tests;
+mod transport_failure;
 
 use anyhow::{Context, Result, bail, ensure};
 use fs2::FileExt;
 use std::fs::{self, File, OpenOptions};
 use std::io::ErrorKind;
 use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
-use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::net::UnixListener;
+#[cfg(test)]
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use deadline::QueryDeadline;
-pub(crate) use pool::{PoolSize, RequestPool};
+pub(crate) use pool::{PoolSize, RequestClass, RequestLane, RequestPool};
 use protocol::{DaemonReply, DaemonRequest};
-pub use server::{AcceptedRequest, DAEMON_BUSY, DaemonHandler};
+pub use server::{AcceptedRequest, DaemonHandler};
+pub(crate) use transport_failure::{DaemonReplyTimeout, DeadlineRead, DeadlineWrite};
 
 pub(crate) const SOCKET_NAME: &str = "daemon.sock";
 /// Longest a client waits for any daemon reply, over the socket or the spool.
@@ -30,6 +35,8 @@ pub const CLIENT_REPLY_WAIT: Duration = Duration::from_secs(30);
 /// Longest a daemon waits on the daemon it forwards to; shorter than
 /// [`CLIENT_REPLY_WAIT`] so the client receives the forwarding failure.
 pub const PROXY_REPLY_WAIT: Duration = Duration::from_secs(28);
+const REQUEST_WRITE_WAIT: Duration = Duration::from_secs(5);
+const RUNNING_PROBE_WAIT: Duration = Duration::from_millis(100);
 
 /// Maximum encoded JSON request size, excluding its length prefix.
 pub(crate) const MAX_DAEMON_REQUEST_BYTES: usize = protocol::REQUEST_LIMIT;
@@ -64,7 +71,7 @@ pub fn request_by(
     context: &crate::diagnostics::RequestContext,
     deadline: QueryDeadline,
 ) -> Result<Option<String>> {
-    exchange(cache, &arguments(args, context), deadline.remaining())
+    exchange(cache, &arguments(args, context), deadline)
 }
 
 fn arguments(args: &[String], context: &crate::diagnostics::RequestContext) -> DaemonRequest {
@@ -76,24 +83,44 @@ fn arguments(args: &[String], context: &crate::diagnostics::RequestContext) -> D
 
 /// Stops a listening daemon through its authenticated-by-filesystem socket.
 pub fn stop(cache: &Path) -> Result<String> {
-    Ok(exchange(cache, &DaemonRequest::Stop, CLIENT_REPLY_WAIT)?
-        .unwrap_or_else(|| "{\"status\":\"not_running\"}".to_owned()))
+    Ok(exchange(
+        cache,
+        &DaemonRequest::Stop,
+        QueryDeadline::after(CLIENT_REPLY_WAIT),
+    )?
+    .unwrap_or_else(|| "{\"status\":\"not_running\"}".to_owned()))
 }
 
-/// Whether a daemon listens on `cache`'s socket. A connect probe never
-/// contends for the startup lock, so it cannot make a starting daemon exit;
-/// the daemon drops the connection unanswered.
+/// Whether a daemon listens on `cache`'s socket. Its 100 ms probe never
+/// contends for the startup lock; a timed-out probe conservatively reports
+/// that a busy daemon may still be running.
 pub fn running(cache: &Path) -> bool {
-    UnixStream::connect(cache.join(SOCKET_NAME)).is_ok()
+    match running_by(cache, &QueryDeadline::after(RUNNING_PROBE_WAIT)) {
+        Ok(is_running) => is_running,
+        Err(error) if connect_timed_out(&error) => true,
+        Err(_) => false,
+    }
 }
 
-/// Whether a daemon spawned for `cache` is gone with no other owner: a racing
-/// spawn exits on the startup lock while the winner still starts serving.
-pub(crate) fn spawn_failed(
-    child: &crate::background_process::BackgroundChild,
-    cache: &Path,
-) -> bool {
-    child.exited() && !running(cache)
+fn connect_timed_out(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|error| error.kind() == ErrorKind::TimedOut)
+    })
+}
+
+/// Checks for a daemon without treating an expired or cancelled connect as absence.
+pub(crate) fn running_by(cache: &Path, deadline: &QueryDeadline) -> Result<bool> {
+    let path = cache.join(SOCKET_NAME);
+    match socket_connect::connect_by(&path, deadline) {
+        Ok(_stream) => Ok(true),
+        Err(error) if unreachable(error.kind()) => Ok(false),
+        Err(error) if error.kind() == ErrorKind::TimedOut => {
+            Err(error).context("timed_out: phase=connecting")
+        }
+        Err(error) => Err(error).context("connect to repository daemon"),
+    }
 }
 
 /// Serves a per-root index daemon: watches `root`, reconciles on the
@@ -104,6 +131,7 @@ pub fn serve(root: &Path, cache: &Path, handler: impl DaemonHandler) -> Result<(
         name: "root",
         watching: true,
         pool: pool::ROOT_POOL,
+        tier: server::AdmissionTier::Root,
         spool: None,
     };
     server::serve(root, cache, profile, handler)
@@ -115,6 +143,7 @@ pub fn serve_coordinator(root: &Path, cache: &Path, handler: impl DaemonHandler)
         name: "coordinator",
         watching: false,
         pool: pool::COORDINATOR_POOL,
+        tier: server::AdmissionTier::Coordinator,
         spool: None,
     };
     server::serve(root, cache, profile, handler)
@@ -126,6 +155,7 @@ pub fn serve_router(dir: &Path, spool: &Path, handler: impl DaemonHandler) -> Re
         name: "router",
         watching: false,
         pool: pool::ROUTER_POOL,
+        tier: server::AdmissionTier::Router,
         spool: Some(spool),
     };
     server::serve(Path::new("/"), dir, profile, handler)
@@ -135,31 +165,73 @@ pub fn serve_router(dir: &Path, spool: &Path, handler: impl DaemonHandler) -> Re
 fn unreachable(kind: ErrorKind) -> bool {
     matches!(
         kind,
-        ErrorKind::NotFound | ErrorKind::ConnectionRefused | ErrorKind::PermissionDenied
+        ErrorKind::NotFound
+            | ErrorKind::NotADirectory
+            | ErrorKind::ConnectionRefused
+            | ErrorKind::PermissionDenied
     )
 }
 
-fn exchange(cache: &Path, request: &DaemonRequest, wait: Duration) -> Result<Option<String>> {
+fn exchange(
+    cache: &Path,
+    request: &DaemonRequest,
+    deadline: QueryDeadline,
+) -> Result<Option<String>> {
     request.validate()?;
+    let wait_budget = deadline.remaining();
     ensure!(
-        !wait.is_zero(),
-        "{}: no time left to wait for a daemon reply",
+        !wait_budget.is_zero(),
+        "{}: phase=connecting no time left to reach a daemon",
         deadline::TIMED_OUT
     );
-    let mut stream = match UnixStream::connect(cache.join(SOCKET_NAME)) {
+    let socket_path = cache.join(SOCKET_NAME);
+    let mut stream = match socket_connect::connect_by(&socket_path, &deadline) {
         Ok(stream) => stream,
         Err(error) if unreachable(error.kind()) => {
             return Ok(None);
         }
+        Err(error) if error.kind() == ErrorKind::TimedOut => {
+            return Err(error).context("timed_out: phase=connecting");
+        }
         Err(error) => return Err(error).context("connect to repository daemon"),
     };
-    stream.set_read_timeout(Some(wait))?;
-    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
-    protocol::write_request(&mut stream, request)?;
-    match protocol::read_reply(&mut stream)? {
-        DaemonReply::Success { output } => Ok(Some(output)),
-        DaemonReply::Failure { message } => bail!("daemon: {message}"),
+    ensure!(
+        !deadline.expired(),
+        "{}: phase=connecting deadline expired before request write",
+        deadline::TIMED_OUT
+    );
+    let write_deadline = deadline.capped(REQUEST_WRITE_WAIT);
+    {
+        let mut writer = DeadlineWrite::new(&mut stream, &write_deadline);
+        if let Err(error) = protocol::write_request(&mut writer, request) {
+            let timed_out = error.chain().any(|cause| {
+                cause.downcast_ref::<std::io::Error>().is_some_and(|error| {
+                    matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut)
+                })
+            });
+            if timed_out {
+                return Err(error).context("timed_out: phase=writing_request");
+            }
+            return Err(error);
+        }
     }
+    let reply_started = Instant::now();
+    let mut reader = DeadlineRead::new(&mut stream, &deadline);
+    let reply = match protocol::read_reply(&mut reader) {
+        Ok(reply) => reply,
+        Err(error) => {
+            let timed_out = error.chain().any(|cause| {
+                cause.downcast_ref::<std::io::Error>().is_some_and(|error| {
+                    matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut)
+                })
+            });
+            if timed_out {
+                return Err(DaemonReplyTimeout::new(reply_started.elapsed(), wait_budget).into());
+            }
+            return Err(error);
+        }
+    };
+    reply.into_result().map(Some)
 }
 
 struct DaemonSocket {
@@ -184,7 +256,7 @@ impl DaemonSocket {
         let path = cache.join(SOCKET_NAME);
         match fs::symlink_metadata(&path) {
             Ok(metadata) if metadata.file_type().is_socket() => {
-                match UnixStream::connect(&path) {
+                match socket_connect::connect_by(&path, &QueryDeadline::after(RUNNING_PROBE_WAIT)) {
                     Ok(_) => bail!("a listener already owns the repository socket"),
                     Err(error)
                         if matches!(

@@ -1,6 +1,14 @@
 use super::*;
-use crate::{daemon::deadline::is_timed_out, store::Store, workspace::config::WorkspaceConfig};
-use std::{sync::Arc, thread::JoinHandle};
+use crate::{
+    daemon::deadline::{QueryDeadline, is_timed_out},
+    store::Store,
+    workspace::config::WorkspaceConfig,
+};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    thread::JoinHandle,
+};
 
 /// Two indexed members plus a coordinator served on a test thread.
 struct ServedWorkspace {
@@ -34,7 +42,8 @@ impl ServedWorkspace {
             Store::open(&member.root, &cache).unwrap().index().unwrap();
         }
         let coordinator = cache_path(&config, Some(base.path())).unwrap();
-        WorkspaceResults::create(&coordinator).unwrap();
+        let deadline = QueryDeadline::start();
+        WorkspaceResults::create(&coordinator, &deadline).unwrap();
         let handler = WorkspaceCoordinator {
             config_path: config.path.clone(),
             config_id: config.id.clone(),
@@ -82,6 +91,23 @@ impl ServedWorkspace {
             .context("coordinator is not listening")
     }
 
+    fn options_with_cache(&self, cache: &Path, words: &[&str]) -> crate::cli::Arguments {
+        let mut args = vec![
+            "--workspace".to_owned(),
+            self.config.path.display().to_string(),
+            "--root".to_owned(),
+            self.root.path().join("engine").display().to_string(),
+            "--cache".to_owned(),
+            cache.display().to_string(),
+            "--budget".to_owned(),
+            "256".to_owned(),
+            "--diagnostics".to_owned(),
+            "off".to_owned(),
+        ];
+        args.extend(words.iter().map(|word| (*word).to_owned()));
+        crate::cli::parse(&args).unwrap()
+    }
+
     fn engine_cache(&self) -> PathBuf {
         member_cache(
             &MemberRoot::configured(&self.config.members[0]),
@@ -100,15 +126,68 @@ impl Drop for ServedWorkspace {
     }
 }
 
+/// Root daemons own reconciliation while coordinator reads use published member stores.
+struct MemberDaemons(Vec<(PathBuf, JoinHandle<Result<()>>)>);
+
+impl MemberDaemons {
+    fn start(workspace: &ServedWorkspace) -> Self {
+        let mut daemons = Self(Vec::with_capacity(workspace.config.members.len()));
+        for member in &workspace.config.members {
+            let member_root = MemberRoot::configured(member);
+            let cache = member_cache(&member_root, Some(workspace.base.path())).unwrap();
+            let args: Vec<String> = [
+                "--no-workspace",
+                "--diagnostics",
+                "off",
+                "--root",
+                member_root.root.to_str().unwrap(),
+                "--cache",
+                cache.to_str().unwrap(),
+                "serve",
+            ]
+            .map(str::to_owned)
+            .into();
+            let thread = std::thread::spawn(move || crate::cli::run(&args).map(|_| ()));
+            daemons.0.push((cache.clone(), thread));
+            let started = Instant::now();
+            while !cache.join("daemon.sock").exists() && !daemons.0.last().unwrap().1.is_finished()
+            {
+                assert!(
+                    started.elapsed() < Duration::from_secs(5),
+                    "member daemon for {} never bound",
+                    member_root.name()
+                );
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            assert!(
+                cache.join("daemon.sock").exists(),
+                "member daemon for {} exited before binding",
+                member_root.name()
+            );
+        }
+        daemons
+    }
+}
+
+impl Drop for MemberDaemons {
+    fn drop(&mut self) {
+        for (cache, _) in &self.0 {
+            let _ = daemon::stop(cache);
+        }
+        for (_, thread) in self.0.drain(..) {
+            let _ = thread.join();
+        }
+    }
+}
+
 #[test]
 fn coordinator_answers_parallel_clients() {
     let workspace = Arc::new(ServedWorkspace::start());
+    let _member_daemons = MemberDaemons::start(&workspace);
     let clients: Vec<_> = (0..10)
         .map(|_| {
             let workspace = Arc::clone(&workspace);
-            std::thread::spawn(move || {
-                workspace.ask(&["--no-daemon"], &["search", "sym:SharedThing", "ws:all"])
-            })
+            std::thread::spawn(move || workspace.ask(&[], &["search", "sym:SharedThing", "ws:all"]))
         })
         .collect();
     for client in clients {
@@ -122,6 +201,16 @@ fn coordinator_answers_parallel_clients() {
             .collect();
         assert!(members.contains(&"engine".to_owned()), "{reply}");
         assert!(members.contains(&"pack".to_owned()), "{reply}");
+        let coverage = reply["coverage"].as_array().expect("member coverage");
+        assert_eq!(coverage.len(), 2, "{reply}");
+        assert!(
+            coverage.iter().all(|member| member["state"] == "searched"),
+            "{reply}"
+        );
+        assert!(
+            coverage.iter().all(|member| member["partial"] == false),
+            "{reply}"
+        );
     }
 }
 
@@ -141,6 +230,104 @@ fn coordinator_deadline_starts_at_accept() {
         })
         .unwrap_err();
     assert!(is_timed_out(&error), "{error:#}");
+}
+
+#[test]
+fn current_path_show_and_continuation_bypass_a_blocked_workspace_cache() {
+    let workspace = ServedWorkspace::start();
+    let source_path = workspace.root.path().join("engine/large.rs");
+    let body = (0..240)
+        .map(|line| {
+            format!(
+                "pub fn row_{line:03}() {{ let value = \"{}\"; }}\n",
+                "payload ".repeat(20)
+            )
+        })
+        .collect::<String>();
+    std::fs::write(&source_path, body).unwrap();
+
+    // A regular file cannot contain either the coordinator or member cache directories.
+    let blocked_cache = workspace.base.path().join("blocked-cache");
+    std::fs::write(&blocked_cache, b"keep this cache path blocked").unwrap();
+    let config = WorkspaceConfig::load(&workspace.config.path).unwrap();
+    let coordinator_cache = cache_path(&config, Some(&blocked_cache)).unwrap();
+    let context = RequestContext::new(None, None);
+    let mut options = workspace.options_with_cache(&blocked_cache, &["show", "large.rs"]);
+    options.budget = 512;
+    options.no_daemon = true;
+
+    let first =
+        super::run_with_deadline(config.clone(), &options, &context, QueryDeadline::start())
+            .unwrap();
+    let first: serde_json::Value = serde_json::from_str(&first).unwrap();
+    assert_eq!(first["path"], "large.rs");
+    assert_eq!(first["source"], "current_file");
+    assert_eq!(first["verified"], false);
+    assert_eq!(first["member"], "engine");
+    assert_eq!(first["workspace"], "coordinated");
+    assert_eq!(
+        first["repository"],
+        crate::store::encode_path(&workspace.root.path().join("engine"))
+    );
+    assert!(first["truncated"].as_bool().unwrap(), "{first}");
+    let continuation = first["next"].as_str().expect("stateless continuation");
+    assert!(continuation.starts_with("read:path:"), "{continuation}");
+    let first_offset = continuation
+        .rsplit_once('@')
+        .unwrap()
+        .1
+        .parse::<u64>()
+        .unwrap();
+
+    // The normal client path also bypasses coordinator creation and forwarding.
+    options.words[1] = continuation.to_owned();
+    options.no_daemon = false;
+    let second =
+        super::run_with_deadline(config.clone(), &options, &context, QueryDeadline::start())
+            .unwrap();
+    let second: serde_json::Value = serde_json::from_str(&second).unwrap();
+    assert_eq!(second["start"].as_u64().unwrap(), first_offset, "{second}");
+    assert_eq!(second["member"], "engine");
+    let second_continuation = second["next"].as_str().expect("second continuation");
+    let second_offset = second_continuation
+        .rsplit_once('@')
+        .unwrap()
+        .1
+        .parse::<u64>()
+        .unwrap();
+
+    // A forwarded request also reaches local() before WorkspaceResults::open.
+    options.words[1] = second_continuation.to_owned();
+    let handler = WorkspaceCoordinator {
+        config_path: config.path.clone(),
+        config_id: config.id.clone(),
+        cache: coordinator_cache,
+    };
+    let third = handler
+        .request(AcceptedRequest {
+            context: RequestContext::new(None, None),
+            args: normalized_args(&options, &options.root),
+            deadline: QueryDeadline::start(),
+        })
+        .unwrap();
+    let third: serde_json::Value = serde_json::from_str(&third).unwrap();
+    assert_eq!(third["start"].as_u64().unwrap(), second_offset, "{third}");
+    assert_eq!(third["member"], "engine");
+    assert!(third["next"].as_str().is_some(), "{third}");
+
+    options.words[1] = "large.rs".into();
+    let expired = super::run_with_deadline(
+        config,
+        &options,
+        &context,
+        QueryDeadline::after(Duration::ZERO),
+    )
+    .unwrap_err();
+    assert!(is_timed_out(&expired), "{expired:#}");
+    assert_eq!(
+        std::fs::read(&blocked_cache).unwrap(),
+        b"keep this cache path blocked"
+    );
 }
 
 /// Owner verbs reach the member's root daemon directly; they never re-enter a

@@ -20,6 +20,9 @@ const GIT_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 const DIVERGENCE_REUSE_MS: u64 = 5_000;
 const DIVERGENCE_FILE: &str = "divergence.json";
 
+#[cfg(test)]
+mod tests;
+
 /// Root-relative, percent-encoded paths (as indexed) that may differ between a
 /// worktree and its parent's index.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -32,6 +35,7 @@ pub struct WorktreeDivergence {
 /// What a stored divergence was computed from; any change recomputes it.
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 struct DivergenceKey {
+    worktree_root: String,
     parent_head: String,
     worktree_head: String,
     parent_git_index: GitIndexStamp,
@@ -58,21 +62,28 @@ impl WorktreeDivergence {
         worktree_cache: &Path,
         parent_generation: i64,
     ) -> Self {
+        let canonical_worktree_root = worktree_root
+            .canonicalize()
+            .ok()
+            .map(|root| encode_path(&root));
         let (parent, worktree) = std::thread::scope(|scope| {
             let parent = scope.spawn(|| head_and_index(parent_root));
             (parent.join().ok().flatten(), head_and_index(worktree_root))
         });
-        let key = match (parent, worktree) {
-            (Some((parent_head, parent_git_index)), Some((worktree_head, worktree_git_index))) => {
-                DivergenceKey {
-                    parent_head,
-                    worktree_head,
-                    parent_git_index,
-                    worktree_git_index,
-                    parent_generation,
-                }
-            }
-            (parent, _) => {
+        let key = match (parent, worktree, canonical_worktree_root) {
+            (
+                Some((parent_head, parent_git_index)),
+                Some((worktree_head, worktree_git_index)),
+                Some(worktree_root),
+            ) => DivergenceKey {
+                worktree_root,
+                parent_head,
+                worktree_head,
+                parent_git_index,
+                worktree_git_index,
+                parent_generation,
+            },
+            (parent, _, _) => {
                 let parent_head = parent.map(|(head, _)| head);
                 let mut divergence = compute(parent_root, worktree_root, parent_head.as_deref());
                 divergence.complete = false;
@@ -109,21 +120,28 @@ impl WorktreeDivergence {
         worktree_cache: &Path,
         parent_generation: i64,
     ) -> Self {
+        let canonical_worktree_root = worktree_root
+            .canonicalize()
+            .ok()
+            .map(|root| encode_path(&root));
         let (parent, worktree) = std::thread::scope(|scope| {
             let parent = scope.spawn(|| head_and_index(parent_root));
             (parent.join().ok().flatten(), head_and_index(worktree_root))
         });
-        let key = match (parent, worktree) {
-            (Some((parent_head, parent_git_index)), Some((worktree_head, worktree_git_index))) => {
-                DivergenceKey {
-                    parent_head,
-                    worktree_head,
-                    parent_git_index,
-                    worktree_git_index,
-                    parent_generation,
-                }
-            }
-            (parent, _) => {
+        let key = match (parent, worktree, canonical_worktree_root) {
+            (
+                Some((parent_head, parent_git_index)),
+                Some((worktree_head, worktree_git_index)),
+                Some(worktree_root),
+            ) => DivergenceKey {
+                worktree_root,
+                parent_head,
+                worktree_head,
+                parent_git_index,
+                worktree_git_index,
+                parent_generation,
+            },
+            (parent, _, _) => {
                 let parent_head = parent.map(|(head, _)| head);
                 let mut divergence = compute(parent_root, worktree_root, parent_head.as_deref());
                 divergence.complete = false;

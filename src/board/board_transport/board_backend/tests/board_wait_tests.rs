@@ -20,7 +20,7 @@ fn unchanged_waiting_inbox_uses_sequence_gate_and_returns_empty_under_writer_loc
         },
     );
     let reply = host
-        .wait_inbox(&request, QueryDeadline::after(Duration::from_millis(2200)))
+        .wait_inbox(&request, &QueryDeadline::after(Duration::from_millis(2200)))
         .unwrap();
     let BoardResult::Inbox(inbox) = reply.result else {
         panic!("expected inbox");
@@ -53,7 +53,7 @@ fn unchanged_waiting_inbox_uses_sequence_gate_and_returns_empty_under_writer_loc
             },
         );
         let reply = host
-            .wait_inbox(&request, QueryDeadline::after(Duration::from_millis(50)))
+            .wait_inbox(&request, &QueryDeadline::after(Duration::from_millis(50)))
             .unwrap();
         let BoardResult::Inbox(inbox) = reply.result else {
             panic!("expected empty inbox");

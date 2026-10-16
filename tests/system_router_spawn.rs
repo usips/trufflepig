@@ -224,17 +224,35 @@ fn ensure_spawns_and_waits_for_a_real_router() {
         QueryDeadline::after(Duration::from_millis(100)),
     )
     .expect_err("the spawned router cannot answer status while migration is blocked");
+    let rendered = error.to_string();
+    assert!(rendered.starts_with("daemon_reply_timeout: "), "{rendered}");
+    let wait_ms = rendered
+        .split_whitespace()
+        .find_map(|field| field.strip_prefix("wait_ms=")?.parse::<u64>().ok())
+        .expect("reply timeout renders wait_ms");
+    let deadline_ms = rendered
+        .split_whitespace()
+        .find_map(|field| field.strip_prefix("deadline_ms=")?.parse::<u64>().ok())
+        .expect("reply timeout renders deadline_ms");
+    let retry_after_ms = rendered
+        .split_whitespace()
+        .find_map(|field| field.strip_prefix("retry_after_ms=")?.parse::<u64>().ok())
+        .expect("reply timeout renders retry_after_ms");
     assert!(
-        error.chain().any(|cause| {
-            cause.downcast_ref::<std::io::Error>().is_some_and(|io| {
-                matches!(
-                    io.kind(),
-                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                )
-            })
-        }),
-        "{error:#}"
+        rendered
+            .split_whitespace()
+            .any(|field| field == "phase=awaiting_reply"),
+        "{rendered}"
     );
+    assert!(
+        rendered
+            .split_whitespace()
+            .any(|field| field == "replay=read_only"),
+        "{rendered}"
+    );
+    assert_eq!(retry_after_ms, 250, "{rendered}");
+    assert!(deadline_ms <= 100, "{rendered}");
+    assert!(wait_ms >= deadline_ms, "{rendered}");
     assert!(
         ensuring.child().try_wait().unwrap().is_none(),
         "ensure waits while migration is blocked"
@@ -257,6 +275,7 @@ fn ensure_spawns_and_waits_for_a_real_router() {
     .expect("spawned router answers after ensure succeeds");
     let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
     assert_eq!(status["status"], "ok");
+    assert_eq!(status["process_id"], serde_json::json!(pid));
     assert_eq!(status["board_api"], BOARD_API);
     assert_eq!(status["schema_file"], SCHEMA_VERSION);
     assert_eq!(status["board_db"], serde_json::json!(database));

@@ -1,4 +1,5 @@
 use super::*;
+use crate::daemon::deadline::QueryDeadline;
 use crate::search::{Query, search_prepared, tests::fixture};
 use crate::search::{file_ranking::fuse_search_file_lanes, path_prior::PathPrior};
 use anyhow::bail;
@@ -70,6 +71,7 @@ fn rerank_reverses_only_the_scored_window() {
         None,
         Some(&scorer),
         &mut trace,
+        &QueryDeadline::start(),
     )
     .unwrap();
     let paths: Vec<_> = result.hits.iter().map(|hit| hit.path.clone()).collect();
@@ -97,6 +99,7 @@ fn rerank_failure_keeps_fused_order() {
         None,
         Some(&scorer),
         &mut trace,
+        &QueryDeadline::start(),
     )
     .unwrap();
     let paths: Vec<_> = result.hits.iter().map(|hit| hit.path.clone()).collect();
@@ -123,6 +126,7 @@ fn rerank_score_count_mismatch_keeps_fused_order() {
         None,
         Some(&scorer),
         &mut trace,
+        &QueryDeadline::start(),
     )
     .unwrap();
     let paths: Vec<_> = result.hits.iter().map(|hit| hit.path.clone()).collect();
@@ -153,6 +157,7 @@ fn rerank_non_finite_score_sinks_hit_below_scored_ones() {
         None,
         Some(&scorer),
         &mut trace,
+        &QueryDeadline::start(),
     )
     .unwrap();
     let paths: Vec<_> = result.hits.iter().map(|hit| hit.path.clone()).collect();
@@ -166,7 +171,16 @@ fn rerank_disabled_sets_no_coverage_keys() {
     let (_root, cache, store) = fixture(&[("a.md", b"marker\n")]);
     let query = Query::parse("marker").unwrap();
     let mut trace = RetrievalTrace::disabled();
-    let result = search_prepared(&store, &query, cache.path(), None, None, &mut trace).unwrap();
+    let result = search_prepared(
+        &store,
+        &query,
+        cache.path(),
+        None,
+        None,
+        &mut trace,
+        &QueryDeadline::start(),
+    )
+    .unwrap();
     assert!(result.coverage.get("rerank_status").is_none());
     assert!(result.coverage.get("rerank_reason").is_none());
     assert!(result.coverage.get("rerank_window").is_none());
@@ -244,7 +258,16 @@ fn rerank_orders_within_tiers_and_keeps_phrase_hits_first() {
     ]);
     let query = Query::parse("route default").unwrap();
     let mut trace = RetrievalTrace::disabled();
-    let fused = search_prepared(&store, &query, cache.path(), None, None, &mut trace).unwrap();
+    let fused = search_prepared(
+        &store,
+        &query,
+        cache.path(),
+        None,
+        None,
+        &mut trace,
+        &QueryDeadline::start(),
+    )
+    .unwrap();
     let fused: Vec<_> = fused.hits.iter().map(|hit| hit.path.as_str()).collect();
     assert_eq!(fused[0], "a.md");
     // The scorer prefers every non-phrase hit; only `a.md` holds the phrase.
@@ -266,6 +289,7 @@ fn rerank_orders_within_tiers_and_keeps_phrase_hits_first() {
         None,
         Some(&scorer),
         &mut trace,
+        &QueryDeadline::start(),
     )
     .unwrap();
     assert_eq!(result.hits[0].path, "a.md");
@@ -333,7 +357,16 @@ fn a_plain_word_definition_is_not_pinned_above_better_scored_hits() {
     ]);
     let query = Query::parse("spawn").unwrap();
     let mut trace = RetrievalTrace::disabled();
-    let fused = search_prepared(&store, &query, cache.path(), None, None, &mut trace).unwrap();
+    let fused = search_prepared(
+        &store,
+        &query,
+        cache.path(),
+        None,
+        None,
+        &mut trace,
+        &QueryDeadline::start(),
+    )
+    .unwrap();
     assert_eq!(fused.hits[0].path, "src/spawn.rs");
     assert_eq!(
         fused.hits[0].provenance.as_deref(),
@@ -352,6 +385,7 @@ fn a_plain_word_definition_is_not_pinned_above_better_scored_hits() {
         None,
         Some(&scorer),
         &mut trace,
+        &QueryDeadline::start(),
     )
     .unwrap();
     assert_eq!(result.hits[0].path, "src/queue.rs");

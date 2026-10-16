@@ -83,10 +83,7 @@ fn request_until(
                 let reply: DaemonReply = decoded?;
                 let _ = fs::remove_file(reply_path);
                 check_deadline(&deadline)?;
-                return match reply {
-                    DaemonReply::Success { output } => Ok(Some(output)),
-                    DaemonReply::Failure { message } => bail!("daemon: {message}"),
-                };
+                return reply.into_result().map(Some);
             }
             Err(error) if error.kind() == ErrorKind::NotFound => {}
             Err(error) => return Err(error).context("read spooled daemon reply"),
@@ -122,4 +119,7 @@ pub(super) fn check_deadline(deadline: &QueryDeadline) -> Result<()> {
 fn remove_pending_request(path: &Path) {
     let _ = fs::remove_file(path);
     let _ = fs::remove_file(temporary_path(path));
+    if let (Some(parent), Some(id)) = (path.parent(), request_id(path, "request")) {
+        let _ = fs::remove_file(parent.join(format!("{id}.claimed")));
+    }
 }

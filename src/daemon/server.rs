@@ -1,16 +1,16 @@
-//! Concurrent daemon serving: the calling thread only accepts, a [`RequestPool`]
-//! reads, dispatches, and answers each connection, and the maintenance thread
-//! (`reconciler.rs`) reconciles beside them. A full pool answers `daemon_busy`;
-//! a panicking request answers `internal_error` and a panicking reconcile stops
-//! the daemon, so a panic never leaves a socket nobody serves.
+//! A nonblocking accept loop assembles bounded frames before tier-specific pools run them.
+//! Per-root permits limit expensive work while a maintenance thread runs beside requests.
+//! Panics become failures or stop the daemon without stranding accepted sockets.
 use super::DaemonSocket;
 use super::deadline::QueryDeadline;
-use super::pool::{PoolSize, PooledJob, RequestPool};
+use super::pool::{PoolSize, PoolSubmitCause, PooledJob, RequestClass, RequestLane};
 use super::protocol::{self, DaemonReply, DaemonRequest};
 use super::reconciler::{self, Maintenance};
 use super::spool::{ClaimedSpoolRequest, SpoolServer};
 use crate::diagnostics::RequestContext;
+use admission_refusal::{AdmissionRefusal, RefusalCause};
 use anyhow::{Context, Result};
+use ingress_frames::{CompleteFrame, FinishedFrame, FrameFailure, PendingFrame};
 use std::any::Any;
 use std::io::ErrorKind;
 use std::os::unix::net::UnixStream;
@@ -18,23 +18,27 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-/// Reply to a request refused because every worker is busy and the queue is full.
-pub const DAEMON_BUSY: &str = "daemon_busy: retry";
+mod admission_refusal;
+mod ingress_frames;
+mod request_admission;
+mod root_work_limits;
+
+pub(super) use request_admission::RequestAdmission;
+
 /// Idle wait of the accept loop between polls of a nonblocking listener.
 const ACCEPT_POLL: Duration = Duration::from_millis(10);
 /// Time a request frame may take to arrive, and a reply to drain.
 const FRAME_TIMEOUT: Duration = Duration::from_secs(5);
+/// Leaves bounded headroom for a timeout failure after work has expired.
+const EXPIRED_REPLY_GRACE: Duration = Duration::from_millis(250);
+const ACCEPTS_PER_TURN: usize = 16;
 /// How long a stopping server waits for a reconcile in progress before returning.
 const MAINTENANCE_STOP_WAIT: Duration = Duration::from_secs(1);
 /// How long a stopping server lets accepted requests finish; their clients wait
 /// no longer than this for a forwarded reply anyway.
 const STOP_DRAIN: Duration = super::PROXY_REPLY_WAIT;
-/// How long a refusal waits for the request frame it discards, so the client
-/// finishes writing before reading `daemon_busy`.
-const REFUSAL_READ: Duration = Duration::from_millis(200);
-
 /// One accepted request; `deadline` starts when the connection is accepted.
 pub struct AcceptedRequest {
     pub context: RequestContext,
@@ -79,11 +83,36 @@ impl ServerState {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum AdmissionTier {
+    Router,
+    Coordinator,
+    Root,
+}
+
+impl AdmissionTier {
+    pub(super) const fn accepted_budget(self) -> Duration {
+        match self {
+            Self::Router => Duration::from_secs(28),
+            Self::Coordinator => Duration::from_secs(24),
+            Self::Root => super::deadline::QUERY_DEADLINE,
+        }
+    }
+
+    const fn pending_frame_capacity(self) -> usize {
+        match self {
+            Self::Root | Self::Coordinator => 64,
+            Self::Router => 128,
+        }
+    }
+}
+
 /// How one daemon tier serves.
 pub(super) struct ServeProfile<'a> {
     pub name: &'a str,
     pub watching: bool,
     pub pool: PoolSize,
+    pub tier: AdmissionTier,
     pub spool: Option<&'a Path>,
 }
 
@@ -105,11 +134,19 @@ pub(super) fn serve<H: DaemonHandler>(
     // Blocking startup work (router migration) runs after the bind, before the
     // accept loop, so waiting clients queue instead of spawning a second daemon.
     handler.on_bound();
-    let pool = Arc::new(RequestPool::new(profile.name, profile.pool)?);
+    let admission = Arc::new(RequestAdmission::new(
+        profile.name,
+        profile.tier,
+        profile.pool,
+    )?);
     let state = Arc::new(ServerState::default());
     let (finished, maintenance_done) = mpsc::channel::<()>();
     {
-        let (handler, pool, state) = (Arc::clone(&handler), Arc::clone(&pool), Arc::clone(&state));
+        let (handler, admission, state) = (
+            Arc::clone(&handler),
+            Arc::clone(&admission),
+            Arc::clone(&state),
+        );
         let maintenance = Maintenance {
             root,
             cache: cache.clone(),
@@ -119,18 +156,24 @@ pub(super) fn serve<H: DaemonHandler>(
         std::thread::Builder::new()
             .name(format!("{}-reconciler", profile.name))
             .spawn(move || {
-                reconciler::run(maintenance, &handler, &pool, &state);
+                reconciler::run(maintenance, &handler, &admission, &state);
                 drop(finished);
             })?;
     }
-    let accepted = accept_until_stopped(&socket, &handler, &pool, &state);
+    let accepted = accept_until_stopped(
+        &socket,
+        &handler,
+        &admission,
+        &state,
+        admission.accepted_budget(),
+    );
     // A reconcile in progress may outlive the server; its writer lease keeps the
     // index coherent until the daemon process exits.
     let _ = maintenance_done.recv_timeout(MAINTENANCE_STOP_WAIT);
     // A successor may bind now; requests already accepted still get replies.
     drop(socket);
-    let drained = pool.drain(STOP_DRAIN);
-    pool.shutdown();
+    let drained = admission.drain(STOP_DRAIN);
+    admission.shutdown();
     if !drained {
         eprintln!(
             "trufflepig: daemon request drain exceeded {STOP_DRAIN:?}; stopping with unfinished requests"
@@ -151,50 +194,274 @@ pub(super) fn serve<H: DaemonHandler>(
 fn accept_until_stopped<H: DaemonHandler>(
     socket: &DaemonSocket,
     handler: &Arc<H>,
-    pool: &Arc<RequestPool>,
+    admission: &Arc<RequestAdmission>,
     state: &Arc<ServerState>,
+    accepted_budget: Duration,
 ) -> Result<()> {
+    let capacity = admission.pending_frame_capacity();
+    let mut pending: Vec<PendingFrame> = Vec::with_capacity(capacity);
     while !state.stopping() {
-        match socket.listener.accept() {
-            Ok((stream, _)) => {
-                let deadline = QueryDeadline::start();
-                // Out of descriptors is as busy as a full queue.
-                let Ok(worker_stream) = stream.try_clone() else {
-                    refuse_busy(stream);
-                    continue;
-                };
-                let job: PooledJob = {
-                    let (handler, state) = (Arc::clone(handler), Arc::clone(state));
-                    Box::new(move || answer_connection(worker_stream, deadline, &*handler, &state))
-                };
-                if pool.submit(job).is_err() {
-                    refuse_busy(stream);
-                }
+        let mut made_progress = false;
+        let mut index = 0;
+        while index < pending.len() {
+            if pending[index].poll() {
+                let finished = pending.swap_remove(index).finish();
+                dispatch_finished_frame(finished, handler, admission, state);
+                made_progress = true;
+            } else {
+                index += 1;
             }
-            Err(error) if error.kind() == ErrorKind::WouldBlock => std::thread::sleep(ACCEPT_POLL),
-            Err(error) if error.kind() == ErrorKind::Interrupted => {}
-            Err(error) => return Err(error).context("accept daemon request"),
+        }
+
+        for _ in 0..ACCEPTS_PER_TURN {
+            match socket.listener.accept() {
+                Ok((stream, _)) => {
+                    made_progress = true;
+                    if pending.len() == capacity {
+                        let snapshot = admission.ingress().snapshot();
+                        let refusal = AdmissionRefusal::new(
+                            admission.ingress().name(),
+                            snapshot.queue_depth,
+                            snapshot.queue_capacity,
+                            RefusalCause::QueueFull,
+                        )
+                        .with_active_verb(snapshot.active_verb);
+                        refuse_busy_nonblocking(&stream, refusal);
+                        continue;
+                    }
+                    let deadline = QueryDeadline::after(accepted_budget);
+                    match PendingFrame::new(stream, deadline, FRAME_TIMEOUT) {
+                        Ok(frame) => pending.push(frame),
+                        Err(error) => eprintln!(
+                            "trufflepig: could not configure pending daemon frame: {error}"
+                        ),
+                    }
+                }
+                Err(error) if error.kind() == ErrorKind::WouldBlock => break,
+                Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+                Err(error) => return Err(error).context("accept daemon request"),
+            }
+        }
+        if !made_progress {
+            std::thread::sleep(ACCEPT_POLL);
         }
     }
     Ok(())
 }
 
+fn dispatch_finished_frame<H: DaemonHandler>(
+    finished: FinishedFrame,
+    handler: &Arc<H>,
+    admission: &Arc<RequestAdmission>,
+    state: &Arc<ServerState>,
+) {
+    let (stream, label, job): (UnixStream, &'static str, PooledJob) = match finished {
+        FinishedFrame::Complete(CompleteFrame {
+            stream,
+            bytes,
+            deadline,
+        }) => {
+            let (handler, admission, state) = (
+                Arc::clone(handler),
+                Arc::clone(admission),
+                Arc::clone(state),
+            );
+            let response_stream = match stream.try_clone() {
+                Ok(stream) => stream,
+                Err(error) => {
+                    let snapshot = admission.ingress().snapshot();
+                    let refusal = AdmissionRefusal::clone_failed(
+                        admission.ingress().name(),
+                        snapshot.queue_depth,
+                        snapshot.queue_capacity,
+                        &error,
+                    )
+                    .with_active_verb(snapshot.active_verb);
+                    refuse_busy_nonblocking(&stream, refusal);
+                    return;
+                }
+            };
+            let job: PooledJob = Box::new(move || {
+                intake_frame(
+                    Arc::new(response_stream),
+                    bytes,
+                    deadline,
+                    handler,
+                    &admission,
+                    &state,
+                )
+            });
+            (stream, "frame", job)
+        }
+        FinishedFrame::Failed(stream, failure) => {
+            let response_stream = match stream.try_clone() {
+                Ok(stream) => stream,
+                Err(_) => return,
+            };
+            let job: PooledJob = Box::new(move || handle_frame_failure(&response_stream, failure));
+            (stream, "frame-error", job)
+        }
+    };
+    if let Err((cause, _job)) = admission.ingress().submit_labeled(label, job) {
+        let snapshot = admission.ingress().snapshot();
+        refuse_busy_nonblocking(
+            &stream,
+            refusal_for_snapshot(admission.ingress().name(), snapshot, cause),
+        );
+    }
+}
+
 fn configure(stream: &UnixStream) -> std::io::Result<()> {
     stream.set_nonblocking(false)?;
-    stream.set_read_timeout(Some(FRAME_TIMEOUT))?;
     stream.set_write_timeout(Some(FRAME_TIMEOUT))
 }
 
-/// Reads (and discards) the request briefly, then answers `daemon_busy`;
-/// replying first would close the socket under a client still writing.
-fn refuse_busy(mut stream: UnixStream) {
-    let reply = DaemonReply::Failure {
-        message: DAEMON_BUSY.to_owned(),
-    };
-    if configure(&stream).is_ok() && stream.set_read_timeout(Some(REFUSAL_READ)).is_ok() {
-        let _ = protocol::read_request(&mut stream);
-        let _ = protocol::write_reply(&mut stream, &reply);
+struct BoundedFrameWriter<'a> {
+    stream: &'a UnixStream,
+    ends: Instant,
+    request_deadline: Option<&'a QueryDeadline>,
+}
+
+impl std::io::Write for BoundedFrameWriter<'_> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        let remaining = self.ends.saturating_duration_since(Instant::now());
+        let remaining = self
+            .request_deadline
+            .map_or(remaining, |deadline| remaining.min(deadline.remaining()));
+        if remaining.is_zero() {
+            return Err(std::io::Error::from(ErrorKind::TimedOut));
+        }
+        self.stream.set_write_timeout(Some(remaining))?;
+        let mut writer = self.stream;
+        let result = std::io::Write::write(&mut writer, bytes);
+        if Instant::now() >= self.ends || self.request_deadline.is_some_and(QueryDeadline::expired)
+        {
+            return Err(std::io::Error::from(ErrorKind::TimedOut));
+        }
+        result
     }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        if Instant::now() >= self.ends || self.request_deadline.is_some_and(QueryDeadline::expired)
+        {
+            return Err(std::io::Error::from(ErrorKind::TimedOut));
+        }
+        let mut writer = self.stream;
+        std::io::Write::flush(&mut writer)
+    }
+}
+
+fn write_bounded_reply(
+    stream: &UnixStream,
+    reply: &DaemonReply,
+    budget: Duration,
+    request_deadline: Option<&QueryDeadline>,
+) -> Result<()> {
+    let mut writer = BoundedFrameWriter {
+        stream,
+        ends: Instant::now() + budget,
+        request_deadline,
+    };
+    protocol::write_reply(&mut writer, reply)
+}
+
+/// Writes one small overload reply without holding the accept loop on a peer.
+fn refuse_busy_nonblocking(stream: &UnixStream, refusal: AdmissionRefusal<'_>) {
+    refusal.log();
+    let reply = DaemonReply::Failure {
+        message: refusal.message(),
+    };
+    let mut encoded = Vec::with_capacity(256);
+    if protocol::write_reply(&mut encoded, &reply).is_err() || stream.set_nonblocking(true).is_err()
+    {
+        return;
+    }
+    let mut writer = stream;
+    let _ = std::io::Write::write(&mut writer, &encoded);
+}
+
+fn write_refusal(stream: &UnixStream, refusal: AdmissionRefusal<'_>) {
+    refusal.log();
+    let reply = DaemonReply::Failure {
+        message: refusal.message(),
+    };
+    log_reply_failure(
+        "daemon refusal response failed",
+        write_bounded_reply(stream, &reply, FRAME_TIMEOUT, None),
+    );
+}
+
+fn write_refusal_shared(stream: &UnixStream, refusal: AdmissionRefusal<'_>) {
+    write_refusal(stream, refusal);
+}
+
+fn write_result(stream: &UnixStream, result: Result<String>) {
+    let budget = result
+        .as_ref()
+        .err()
+        .filter(|error| super::deadline::is_timed_out(error))
+        .map_or(FRAME_TIMEOUT, |_| EXPIRED_REPLY_GRACE);
+    let reply = DaemonReply::from_result(result);
+    log_reply_failure(
+        "daemon response failed",
+        write_bounded_reply(stream, &reply, budget, None),
+    );
+}
+
+/// Preserves a downstream reply timeout while making this expired bounded
+/// request's own deadline the leading terminal failure.
+fn normalize_owned_query_timeout(
+    class: RequestClass,
+    result: Result<String>,
+    deadline: &QueryDeadline,
+) -> Result<String> {
+    let expired_own_budget = bounded_query_class(class)
+        && deadline.time_expired()
+        && result
+            .as_ref()
+            .err()
+            .is_some_and(|error| super::DaemonReplyTimeout::from_error(error).is_some());
+    if expired_own_budget {
+        result.map_err(|error| error.context("timed_out: query deadline expired"))
+    } else {
+        result
+    }
+}
+
+fn log_reply_failure(prefix: &str, result: Result<()>) {
+    if let Err(error) = result
+        && !peer_disconnected(&error)
+    {
+        eprintln!("trufflepig: {prefix}: {error:#}");
+    }
+}
+
+fn peer_disconnected(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause.downcast_ref::<std::io::Error>().is_some_and(|error| {
+            matches!(
+                error.kind(),
+                ErrorKind::BrokenPipe
+                    | ErrorKind::ConnectionReset
+                    | ErrorKind::ConnectionAborted
+                    | ErrorKind::NotConnected
+                    | ErrorKind::UnexpectedEof
+            )
+        })
+    })
+}
+
+fn refusal_for_snapshot<'a>(
+    pool: &'a str,
+    snapshot: super::pool::PoolSnapshot,
+    cause: PoolSubmitCause,
+) -> AdmissionRefusal<'a> {
+    let cause = match cause {
+        PoolSubmitCause::Full => RefusalCause::QueueFull,
+        PoolSubmitCause::Closed => RefusalCause::PoolClosed,
+    };
+    AdmissionRefusal::new(pool, snapshot.queue_depth, snapshot.queue_capacity, cause)
+        .with_active_verb(snapshot.active_verb)
 }
 
 /// Runs one request, turning a panic into an `internal_error` reply.
@@ -221,67 +488,312 @@ fn closed_before_request(error: &anyhow::Error) -> bool {
     })
 }
 
-fn answer_connection(
-    mut stream: UnixStream,
-    deadline: QueryDeadline,
-    handler: &impl DaemonHandler,
-    state: &ServerState,
-) {
-    let request = configure(&stream)
-        .map_err(anyhow::Error::from)
-        .and_then(|()| protocol::read_request(&mut stream));
-    let result = match request {
-        Ok(DaemonRequest::Arguments { context, args }) => guarded_request(
-            handler,
-            AcceptedRequest {
-                context,
-                args,
-                deadline,
-            },
-        ),
-        Ok(DaemonRequest::Stop) => {
-            state.stop();
-            Ok("{\"status\":\"stopped\"}".to_owned())
+fn handle_frame_failure(stream: &UnixStream, failure: FrameFailure) {
+    match failure {
+        FrameFailure::TimedOut(_error) => {
+            if configure(stream).is_err() {
+                return;
+            }
+            let reply = DaemonReply::Failure {
+                message: "timed_out: phase=reading_frame".to_owned(),
+            };
+            log_reply_failure(
+                "daemon response failed",
+                write_bounded_reply(stream, &reply, EXPIRED_REPLY_GRACE, None),
+            );
         }
-        Err(error) if closed_before_request(&error) => return,
-        Err(error) => Err(error),
-    };
-    if let Err(error) = protocol::write_reply(&mut stream, &DaemonReply::from_result(result)) {
-        eprintln!("trufflepig: daemon response failed: {error:#}");
+        FrameFailure::InvalidLength(length) => {
+            if configure(stream).is_err() {
+                return;
+            }
+            write_result(
+                stream,
+                Err(
+                    anyhow::anyhow!("daemon frame exceeds {} bytes", protocol::REQUEST_LIMIT)
+                        .context(format!("invalid frame length {length}")),
+                ),
+            );
+        }
+        FrameFailure::Io(error) => {
+            let error = anyhow::Error::new(error).context("read daemon frame");
+            if !closed_before_request(&error) {
+                if configure(stream).is_err() {
+                    return;
+                }
+                write_result(stream, Err(error));
+            }
+        }
     }
 }
 
-/// Claims each pending spooled request and answers it on the pool.
+fn intake_frame<H: DaemonHandler>(
+    stream: Arc<UnixStream>,
+    bytes: Vec<u8>,
+    deadline: QueryDeadline,
+    handler: Arc<H>,
+    admission: &RequestAdmission,
+    state: &ServerState,
+) {
+    if let Err(error) = configure(&stream) {
+        write_result(&stream, Err(error.into()));
+        return;
+    }
+    let deadline = deadline.with_peer(Arc::clone(&stream));
+    if deadline.expired() {
+        write_result(
+            &stream,
+            Err(anyhow::anyhow!(
+                "timed_out: query deadline expired before decode"
+            )),
+        );
+        return;
+    }
+    let request = protocol::read_request(&mut std::io::Cursor::new(bytes));
+    match request {
+        Ok(DaemonRequest::Arguments { context, args }) => {
+            if deadline.expired() {
+                write_result(
+                    &stream,
+                    Err(anyhow::anyhow!(
+                        "timed_out: query deadline expired before classification"
+                    )),
+                );
+                return;
+            }
+            let classified = match crate::cli::classify_daemon_request(&args) {
+                Ok(classified) => classified,
+                Err(error) => {
+                    write_result(&stream, Err(error));
+                    return;
+                }
+            };
+            if deadline.expired() {
+                write_result(
+                    &stream,
+                    Err(anyhow::anyhow!(
+                        "timed_out: query deadline expired during classification"
+                    )),
+                );
+                return;
+            }
+            let class = classified.class;
+            let (_, pool) = admission.execution(class);
+            let permit = match admission.reserve_roots(class, &classified.roots) {
+                Ok(permit) => permit,
+                Err(limit) => {
+                    let snapshot = pool.snapshot();
+                    let refusal = AdmissionRefusal::new(
+                        pool.name(),
+                        snapshot.queue_depth,
+                        snapshot.queue_capacity,
+                        RefusalCause::RootLimit,
+                    )
+                    .with_active_verb(snapshot.active_verb)
+                    .with_root_limit(limit.outstanding, limit.limit);
+                    write_refusal_shared(&stream, refusal);
+                    return;
+                }
+            };
+            let job: PooledJob = {
+                let (handler, stream) = (Arc::clone(&handler), Arc::clone(&stream));
+                Box::new(move || {
+                    let _permit = permit;
+                    run_connection_request(stream, deadline, class, context, args, handler)
+                })
+            };
+            if let Err((cause, job)) = pool.submit_labeled(class.verb, job) {
+                drop(job);
+                let snapshot = pool.snapshot();
+                write_refusal_shared(&stream, refusal_for_snapshot(pool.name(), snapshot, cause));
+            }
+        }
+        Ok(DaemonRequest::Stop) => {
+            state.stop();
+            let reply = DaemonReply::Success {
+                output: "{\"status\":\"stopped\"}".to_owned(),
+            };
+            log_reply_failure(
+                "daemon response failed",
+                write_bounded_reply(&stream, &reply, FRAME_TIMEOUT, None),
+            );
+        }
+        Err(error) if closed_before_request(&error) => {}
+        Err(error) => write_result(&stream, Err(error)),
+    }
+}
+
+fn run_connection_request<H: DaemonHandler>(
+    stream: Arc<UnixStream>,
+    deadline: QueryDeadline,
+    class: RequestClass,
+    context: RequestContext,
+    args: Vec<String>,
+    handler: Arc<H>,
+) {
+    let result = if deadline.expired() {
+        Err(anyhow::anyhow!(
+            "timed_out: query deadline expired or peer closed"
+        ))
+    } else {
+        guarded_request(
+            &*handler,
+            AcceptedRequest {
+                context,
+                args,
+                deadline: deadline.clone(),
+            },
+        )
+    };
+    let result = if result.is_ok() && bounded_query_class(class) && deadline.expired() {
+        Err(anyhow::anyhow!(
+            "timed_out: query deadline expired or peer closed"
+        ))
+    } else {
+        result
+    };
+    let result = normalize_owned_query_timeout(class, result, &deadline);
+    write_result(&stream, result);
+}
+
+fn bounded_query_class(class: RequestClass) -> bool {
+    class.lane == RequestLane::Regex
+        || class.lane == RequestLane::Semantic
+        || (class.lane == RequestLane::Query
+            && matches!(
+                class.verb,
+                "search"
+                    | "show"
+                    | "more"
+                    | "ctx"
+                    | "refs"
+                    | "map"
+                    | "status"
+                    | "doctor"
+                    | "hist"
+                    | "since"
+                    | "diff"
+                    | "blame"
+                    | "hist-status"
+                    | "session"
+                    | "audit"
+                    | "semantic"
+            ))
+}
+
+/// Claims each pending spooled request, classifies it before admission, and
+/// checks client withdrawal before a queued request reaches the handler.
 pub(super) fn dispatch_spooled<H: DaemonHandler>(
     spool: &mut SpoolServer,
     handler: &Arc<H>,
-    pool: &Arc<RequestPool>,
+    admission: &Arc<RequestAdmission>,
 ) {
     for claimed in spool.claim() {
-        // Time queued behind busy workers belongs to this request's budget.
-        let deadline = QueryDeadline::start();
+        if !claimed.is_claimed() {
+            continue;
+        }
+        let deadline = claimed.deadline(admission.accepted_budget());
+        if deadline.time_expired() {
+            claimed.answer_result(Err(anyhow::anyhow!(
+                "timed_out: spooled request expired before classification"
+            )));
+            continue;
+        }
+        let (context, args) = match claimed.arguments() {
+            Ok(arguments) => arguments,
+            Err(error) => {
+                if claimed.is_claimed() {
+                    claimed.answer_result(Err(error));
+                }
+                continue;
+            }
+        };
+        if !claimed.is_claimed() {
+            continue;
+        }
+        if deadline.time_expired() {
+            claimed.answer_result(Err(anyhow::anyhow!(
+                "timed_out: spooled request expired before classification"
+            )));
+            continue;
+        }
+        let classified = match crate::cli::classify_daemon_request(&args) {
+            Ok(classified) => classified,
+            Err(error) => {
+                claimed.answer_result(Err(error));
+                continue;
+            }
+        };
+        if !claimed.is_claimed() {
+            continue;
+        }
+        if deadline.time_expired() {
+            claimed.answer_result(Err(anyhow::anyhow!(
+                "timed_out: spooled request expired during classification"
+            )));
+            continue;
+        }
+        let class = classified.class;
+        let (_, pool) = admission.execution(class);
+        let permit = match admission.reserve_roots(class, &classified.roots) {
+            Ok(permit) => permit,
+            Err(limit) => {
+                let snapshot = pool.snapshot();
+                let refusal = AdmissionRefusal::new(
+                    pool.name(),
+                    snapshot.queue_depth,
+                    snapshot.queue_capacity,
+                    RefusalCause::RootLimit,
+                )
+                .with_active_verb(snapshot.active_verb)
+                .with_root_limit(limit.outstanding, limit.limit);
+                refusal.log();
+                claimed.answer_result(Err(anyhow::anyhow!("{}", refusal.message())));
+                continue;
+            }
+        };
         let claimed = Arc::new(Mutex::new(Some(claimed)));
         let job: PooledJob = {
             let (handler, claimed) = (Arc::clone(handler), Arc::clone(&claimed));
             Box::new(move || {
+                let _permit = permit;
                 if let Some(claimed) = take_claim(&claimed) {
-                    claimed.answer(|context, args| {
+                    if !claimed.is_claimed() {
+                        return;
+                    }
+                    let result = if deadline.expired() {
+                        Err(anyhow::anyhow!(
+                            "timed_out: spooled request expired before dispatch"
+                        ))
+                    } else {
                         guarded_request(
                             &*handler,
                             AcceptedRequest {
                                 context,
                                 args,
-                                deadline,
+                                deadline: deadline.clone(),
                             },
                         )
-                    });
+                    };
+                    let result =
+                        if result.is_ok() && bounded_query_class(class) && deadline.expired() {
+                            Err(anyhow::anyhow!("timed_out: query deadline expired"))
+                        } else {
+                            result
+                        };
+                    let result = normalize_owned_query_timeout(class, result, &deadline);
+                    claimed.answer_result(result);
                 }
             })
         };
-        if pool.submit(job).is_err()
-            && let Some(claimed) = take_claim(&claimed)
-        {
-            claimed.refuse(DAEMON_BUSY);
+        if let Err((cause, job)) = pool.submit_labeled(class.verb, job) {
+            drop(job);
+            if let Some(claimed) = take_claim(&claimed)
+                && claimed.is_claimed()
+            {
+                let refusal = refusal_for_snapshot(pool.name(), pool.snapshot(), cause);
+                refusal.log();
+                claimed.answer_result(Err(anyhow::anyhow!("{}", refusal.message())));
+            }
         }
     }
 }

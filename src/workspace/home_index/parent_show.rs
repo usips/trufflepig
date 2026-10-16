@@ -1,13 +1,13 @@
-//! `show` for a home member answered through its parent's index: definitions
-//! in changed files are re-extracted from worktree bytes, and a file whose
-//! bytes cannot be extracted falls back to the parent index's stored bytes,
-//! marked unverified. Reads never create or write an index.
+//! `show` uses a member's own publication or a linked worktree's parent index.
+//! No-daemon symbol reads can seed the worktree cache and make one bounded
+//! indexing attempt. A parent view selected for the current response remains
+//! the source even when that attempt publishes the worktree's own index.
 use super::{
     HomeIndexPolicy, HomeIndexSource, ParentIndexView, WorktreeHashes, is_reextracted_worktree_hit,
     resolve_home_index, worktree_reads::unextractable,
 };
 use crate::{
-    daemon::deadline::QueryDeadline,
+    daemon::deadline::{QueryDeadline, TIMED_OUT, is_timed_out},
     identity::{ByteSpan, ContentRevision},
     results::{Hit, ResultEntry},
     search::{InvocationDirectory, Query},
@@ -15,7 +15,7 @@ use crate::{
     store::Store,
     workspace::member_root::MemberRoot,
 };
-use anyhow::{Context, Result};
+use anyhow::{Result, ensure};
 use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
 use std::path::Path;
@@ -44,29 +44,36 @@ impl ParentRead {
     }
 }
 
-/// `show TARGET` on a member without a result handle: through its own index or,
-/// while a worktree warms, its parent's ([`acquire_through_parent`]). With
-/// neither published, `--no-daemon` indexes the member first; otherwise the read
-/// answers `index_warming`.
+/// Reads `show TARGET` through the member's own publication or a warming
+/// worktree's parent publication. No-daemon symbol reads make one bounded
+/// inline indexing attempt while retaining any parent view already selected.
 pub(in crate::workspace) fn acquire_home_read(
     member: &MemberRoot,
     cache: &Path,
     explicit_cache: Option<&Path>,
     request: (&str, Option<SourceSide>, &InvocationDirectory),
     no_daemon: bool,
-    deadline: &mut QueryDeadline,
+    deadline: &QueryDeadline,
+    maintenance_deadline: &QueryDeadline,
 ) -> Result<(Store, AcquiredSource, Option<ParentRead>)> {
     let (target, side, origin) = request;
     let policy = HomeIndexPolicy::AwaitDaemon(std::time::Duration::ZERO);
-    let mut resolved = resolve_home_index(member, cache, explicit_cache, policy, *deadline);
-    if no_daemon
-        && target.starts_with("sym:")
-        && matches!(resolved, HomeIndexSource::Warming { .. })
-    {
-        // `--no-daemon` indexes in the foreground, outside the query deadline.
-        deadline.pause_during(|| Store::open(&member.root, cache)?.index())?;
-        let policy = HomeIndexPolicy::IndexInline;
-        resolved = resolve_home_index(member, cache, explicit_cache, policy, *deadline);
+    let mut resolved = resolve_home_index(member, cache, explicit_cache, policy, deadline.clone());
+    if no_daemon && target.starts_with("sym:") {
+        resolved = match resolved {
+            HomeIndexSource::Own(store) => HomeIndexSource::Own(store),
+            HomeIndexSource::Parent(view) => {
+                let _ =
+                    maintain_worktree_index(member, cache, deadline, maintenance_deadline, false)?;
+                HomeIndexSource::Parent(view)
+            }
+            HomeIndexSource::Warming { .. } => {
+                let _ =
+                    maintain_worktree_index(member, cache, deadline, maintenance_deadline, true)?;
+                resolve_home_index(member, cache, explicit_cache, policy, deadline.clone())
+            }
+            unavailable @ HomeIndexSource::Unavailable { .. } => unavailable,
+        };
     }
     match resolved {
         HomeIndexSource::Own(store) => {
@@ -74,11 +81,12 @@ pub(in crate::workspace) fn acquire_home_read(
             Ok((store, source, None))
         }
         HomeIndexSource::Parent(mut view) => {
-            let (source, read) = acquire_through_parent(&mut view, target, side, origin)?;
+            ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+            let (source, read) = acquire_through_parent(&mut view, target, side, origin, deadline)?;
             Ok((view.store, source, read))
         }
         HomeIndexSource::Warming { .. } if !target.starts_with("sym:") => {
-            acquire_current_path(member, cache, target, side, origin)
+            acquire_current_path(member, cache, target, side, origin, deadline)
         }
         HomeIndexSource::Warming { reason } => anyhow::bail!(
             "index_warming: {} has no published index yet{}; retry shortly",
@@ -88,9 +96,43 @@ pub(in crate::workspace) fn acquire_home_read(
                 .unwrap_or_default()
         ),
         HomeIndexSource::Unavailable { .. } if !target.starts_with("sym:") => {
-            acquire_current_path(member, cache, target, side, origin)
+            acquire_current_path(member, cache, target, side, origin, deadline)
         }
         HomeIndexSource::Unavailable { reason } => anyhow::bail!(reason),
+    }
+}
+
+fn maintain_worktree_index(
+    member: &MemberRoot,
+    cache: &Path,
+    deadline: &QueryDeadline,
+    maintenance_deadline: &QueryDeadline,
+    wait_for_writer: bool,
+) -> Result<Option<crate::store::Coverage>> {
+    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    if maintenance_deadline.expired() {
+        return Ok(None);
+    }
+    let attempt = Store::open_for_reconcile(&member.root, cache, maintenance_deadline.clone())
+        .and_then(|mut store| {
+            if wait_for_writer {
+                store.index_until(maintenance_deadline.clone())
+            } else {
+                store.index_available_until(maintenance_deadline.clone())
+            }
+        });
+    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    match attempt {
+        Ok(coverage) => Ok(coverage),
+        Err(error) => {
+            let error = maintenance_deadline.classify(error);
+            if is_timed_out(&error) && maintenance_deadline.expired() {
+                ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+                Ok(None)
+            } else {
+                Err(error)
+            }
+        }
     }
 }
 
@@ -101,9 +143,10 @@ fn acquire_current_path(
     target: &str,
     side: Option<SourceSide>,
     origin: &InvocationDirectory,
+    deadline: &QueryDeadline,
 ) -> Result<(Store, AcquiredSource, Option<ParentRead>)> {
     std::fs::create_dir_all(cache)?;
-    let store = Store::unpublished(&member.root, cache)?;
+    let store = Store::unpublished(&member.root, cache)?.with_query_deadline(deadline.clone());
     let source = acquisition::acquire(&store, target, side, origin)?;
     Ok((store, source, None))
 }
@@ -117,6 +160,7 @@ pub(crate) fn acquire_through_parent(
     target: &str,
     side: Option<SourceSide>,
     origin: &InvocationDirectory,
+    deadline: &QueryDeadline,
 ) -> Result<(AcquiredSource, Option<ParentRead>)> {
     // With divergent files a `sym:` read always consults the worktree, so it
     // agrees with `sym:` search even when the parent's definition verifies.
@@ -139,9 +183,9 @@ pub(crate) fn acquire_through_parent(
     let mut found = crate::search::definitions(store, &query, origin)?;
     let mut hashes = WorktreeHashes::default();
     let parent = std::mem::take(&mut found.hits);
-    let symbols = view
-        .fallback
-        .worktree_symbols(store, &query, parent, origin, &mut hashes)?;
+    let symbols =
+        view.fallback
+            .worktree_symbols(store, &query, parent, origin, &mut hashes, deadline)?;
     anyhow::ensure!(
         !symbols.incomplete || !symbols.hits.is_empty(),
         "worktree_search_incomplete: exact symbol lookup could not inspect every changed file"
