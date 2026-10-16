@@ -277,3 +277,18 @@ fn expired_local_socket_access_check_spools_feedback_once() {
     );
     assert!(!database.exists());
 }
+
+#[test]
+fn feedback_lookups_use_the_caller_budget_then_a_fixed_allowance() {
+    assert_eq!(
+        crate::board::feedback_lookup_wait(&QueryDeadline::after(Duration::from_secs(10))),
+        Duration::from_secs(2)
+    );
+    let short =
+        crate::board::feedback_lookup_wait(&QueryDeadline::after(Duration::from_millis(100)));
+    assert!(short <= Duration::from_millis(100), "{short:?}");
+    assert_eq!(
+        crate::board::feedback_lookup_wait(&QueryDeadline::after(Duration::ZERO)),
+        Duration::from_millis(250)
+    );
+}

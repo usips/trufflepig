@@ -151,6 +151,11 @@ impl ClientCommand {
     }
 }
 
+/// Whether a failed read can fall back to the local current-path reader.
+pub(super) fn has_busy_fallback(args: &[String]) -> bool {
+    local_path_show_fallback_options(args).is_some()
+}
+
 fn local_path_show_fallback_options(args: &[String]) -> Option<Arguments> {
     let mut options = parse(args).ok()?;
     validate(&options).ok()?;

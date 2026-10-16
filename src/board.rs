@@ -25,7 +25,7 @@ pub use board_config::BoardConfig;
 pub use board_protocol::{BOARD_API, BoardError, BoardOp, BoardReply, BoardRequest};
 pub use local_board::SCHEMA_VERSION;
 
-use crate::{cli::Arguments, diagnostics::RequestContext};
+use crate::{cli::Arguments, daemon::deadline::QueryDeadline, diagnostics::RequestContext};
 use anyhow::{Context, Result, bail, ensure};
 use board_grammar::BoardCommand;
 use std::io::Read;
@@ -64,12 +64,23 @@ fn read_body(options: &Arguments) -> Result<Option<String>> {
     Ok(Some(text))
 }
 
+/// Wait for a feedback repository or cwd lookup: up to 2 s within the caller's
+/// deadline, and a 250 ms allowance once that deadline has expired.
+pub(crate) fn feedback_lookup_wait(deadline: &QueryDeadline) -> std::time::Duration {
+    if deadline.expired() {
+        std::time::Duration::from_millis(250)
+    } else {
+        deadline.cap(std::time::Duration::from_secs(2))
+    }
+}
+
 fn unavailable_or_queue(
     command: &BoardCommand,
     options: &Arguments,
     context: &RequestContext,
     config: &BoardConfig,
     spool: &std::path::Path,
+    deadline: &QueryDeadline,
     error: anyhow::Error,
 ) -> Result<String> {
     let message = format!("{error:#}");
@@ -80,15 +91,13 @@ fn unavailable_or_queue(
         let actor = config.actor(context.client.as_deref(), context.session.as_deref())?;
         let mut op = op.clone();
         if let BoardOp::Feedback { metadata, plan, .. } = &mut op {
-            if let Ok(Some(registration)) = repo_identity::register_repository(
-                &options.root,
-                &actor.host,
-                *plan,
-                std::time::Duration::from_secs(2),
-            ) {
+            let wait = feedback_lookup_wait(deadline);
+            if let Ok(Some(registration)) =
+                repo_identity::register_repository(&options.root, &actor.host, *plan, wait)
+            {
                 metadata.repo_key = Some(registration.repo_key);
             }
-            enrich_feedback_cwd(metadata, &options.root, std::time::Duration::from_secs(2));
+            enrich_feedback_cwd(metadata, &options.root, wait);
         }
         let mut request = BoardRequest::new(actor, op);
         request.origin = context.origin.clone();

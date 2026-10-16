@@ -152,6 +152,7 @@ fn newer_schema_refusal_advises_upgrade() {
         &context,
         &config,
         directory.path(),
+        &crate::daemon::deadline::QueryDeadline::start(),
         error,
     )
     .unwrap_err();
@@ -180,6 +181,7 @@ fn schema_words_in_transport_prose_do_not_advise_upgrade() {
         &crate::diagnostics::RequestContext::new(None, None),
         &config,
         directory.path(),
+        &crate::daemon::deadline::QueryDeadline::start(),
         error,
     )
     .unwrap_err();

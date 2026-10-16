@@ -349,3 +349,58 @@ fn prepared_search_propagates_live_scan_cancellation_as_an_error() {
     let error = result.unwrap_err();
     assert!(error.to_string().starts_with(TIMED_OUT), "{error:#}");
 }
+
+#[test]
+fn peer_drop_is_polled_while_filters_reject_every_walked_file() {
+    let root = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    for file in 0..2_048 {
+        std::fs::write(root.path().join(format!("f{file}.rs")), "needle\n").unwrap();
+    }
+    let store = Store::open(root.path(), cache.path()).unwrap();
+    // Every file is Rust, so the typescript filter rejects each one before its read.
+    let query = Query::parse("re:needle lang:typescript").unwrap();
+    let paths = query.path.bind(&store.conn).unwrap();
+    let (client, server) = UnixStream::pair().unwrap();
+    let mut client = Some(client);
+    let deadline = QueryDeadline::start().with_peer(Arc::new(server));
+    let mut walked = 0;
+    let mut reads = 0;
+    let mut hits = Vec::new();
+    let mut coverage = serde_json::json!({});
+    let mut truncated = false;
+    let mut checkpoint = |_: &Path, stage: LiveRegexCheckpoint| {
+        match stage {
+            LiveRegexCheckpoint::WalkEntry => {
+                walked += 1;
+                if walked == 1 {
+                    drop(client.take());
+                }
+            }
+            LiveRegexCheckpoint::BeforeRead => reads += 1,
+            _ => {}
+        }
+        check_live_deadline(&deadline, stage)
+    };
+
+    let error = live_regex_with_checkpoint(
+        &store,
+        &query,
+        &paths,
+        cache.path(),
+        &mut hits,
+        &mut coverage,
+        &mut truncated,
+        &mut checkpoint,
+    )
+    .unwrap_err();
+    drop(checkpoint);
+
+    assert!(error.to_string().starts_with(TIMED_OUT), "{error:#}");
+    assert_eq!(reads, 0);
+    assert_eq!(
+        walked, 1024,
+        "the first walk poll must observe the peer drop"
+    );
+    assert!(hits.is_empty());
+}

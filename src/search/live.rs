@@ -7,6 +7,7 @@ use std::path::Path;
 enum LiveRegexCheckpoint {
     BeforeCompile,
     WalkEntry,
+    WalkBatch,
     BeforeRead,
     AfterRead,
     BeforeMatchScan,
@@ -44,6 +45,7 @@ pub(super) fn live_regex(
 fn check_live_deadline(deadline: &QueryDeadline, checkpoint: LiveRegexCheckpoint) -> Result<()> {
     let expired = match checkpoint {
         LiveRegexCheckpoint::BeforeCompile
+        | LiveRegexCheckpoint::WalkBatch
         | LiveRegexCheckpoint::BeforeRead
         | LiveRegexCheckpoint::MatchBatch => deadline.expired(),
         _ => deadline.time_expired(),
@@ -95,6 +97,7 @@ fn live_regex_scan(
     let mut failures = 0usize;
     let mut excluded = 0usize;
     let mut walk_failures = 0usize;
+    let mut walk_entries = 0usize;
     let mut checked = 0usize;
     let mut match_iterations = 0usize;
     // Neither the index cache nor a worktree view's own cache is source.
@@ -120,6 +123,11 @@ fn live_regex_scan(
             .map(|entry| entry.path())
             .unwrap_or_else(|_| store.root.as_path());
         checkpoint(checkpoint_path, LiveRegexCheckpoint::WalkEntry)?;
+        // Filter-rejected entries never reach a read, so poll the peer on a walk cadence too.
+        walk_entries += 1;
+        if walk_entries % 1024 == 0 {
+            checkpoint(checkpoint_path, LiveRegexCheckpoint::WalkBatch)?;
+        }
         let entry = match entry {
             Ok(entry) => entry,
             Err(_) => {

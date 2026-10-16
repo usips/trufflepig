@@ -17,6 +17,7 @@ use std::{
 struct FakeRun {
     result: Result<String>,
     attempts: usize,
+    held_back: Vec<Duration>,
     waits: Vec<Duration>,
     fallbacks: usize,
     fallback_remaining: Vec<Duration>,
@@ -44,6 +45,7 @@ fn run_fake_with_wait(
     let elapsed = Cell::new(Duration::ZERO);
     let attempts = Cell::new(0);
     let fallbacks = Cell::new(0);
+    let mut held_back = Vec::new();
     let mut waits = Vec::new();
     let mut fallback_remaining = Vec::new();
     let mut results = VecDeque::from(results);
@@ -51,6 +53,7 @@ fn run_fake_with_wait(
     let result = run_retry_loop(
         scope,
         request_id,
+        fallback.is_some(),
         || budget.saturating_sub(elapsed.get()),
         |delay| {
             waits.push(delay);
@@ -62,9 +65,13 @@ fn run_fake_with_wait(
             );
         },
         |invocation| match invocation {
-            RetryInvocation::Attempt(index) => {
+            RetryInvocation::Attempt {
+                index,
+                held_back: reserve,
+            } => {
                 assert_eq!(index, attempts.get());
                 attempts.set(index + 1);
+                held_back.push(reserve);
                 let (result, spent) = results.pop_front().expect("injected attempt result");
                 elapsed.set(elapsed.get().saturating_add(spent));
                 RetryOutput::Attempt(result, spent)
@@ -79,6 +86,7 @@ fn run_fake_with_wait(
     FakeRun {
         result,
         attempts: attempts.get(),
+        held_back,
         waits,
         fallbacks: fallbacks.get(),
         fallback_remaining,
@@ -250,7 +258,49 @@ fn unavailable_busy_fallback_returns_the_original_busy_error() {
 }
 
 #[test]
-fn timeout_after_a_started_busy_retry_does_not_use_busy_fallback() {
+fn timeout_at_the_held_back_reserve_uses_the_busy_fallback() {
+    let timeout = || {
+        anyhow::Error::new(DaemonReplyTimeout::new(
+            Duration::from_secs(1),
+            Duration::from_secs(20),
+        ))
+    };
+    let request_id = "busy-then-capped-timeout";
+    let budget = Duration::from_secs(20);
+    let delay = retry_delay(request_id, 0, &busy());
+    // A capped attempt spends everything except the reserve before it times out.
+    let capped_attempt = budget - QUICK - delay - BUSY_FALLBACK_RESERVE;
+    let fake = run_fake(
+        RetryScope::Read,
+        request_id,
+        budget,
+        vec![(Err(busy()), QUICK), (Err(timeout()), capped_attempt)],
+        Some(Ok("local recovery".into())),
+    );
+
+    assert_eq!(fake.result.unwrap(), "local recovery");
+    assert_eq!(fake.attempts, 2);
+    assert_eq!(fake.waits, vec![delay]);
+    assert_eq!(fake.held_back, vec![Duration::ZERO, BUSY_FALLBACK_RESERVE]);
+    assert_eq!(fake.fallbacks, 1);
+    assert!(fake.fallback_remaining[0] >= BUSY_FALLBACK_RESERVE);
+}
+
+#[test]
+fn attempt_deadline_leaves_the_busy_fallback_reserve_only_when_held_back() {
+    let read = QueryDeadline::after(Duration::from_secs(2));
+    let full = attempt_deadline(&read, Duration::ZERO);
+    assert!(full.remaining() > Duration::from_millis(1_900));
+    let capped = attempt_deadline(&read, BUSY_FALLBACK_RESERVE);
+    assert!(capped.remaining() <= Duration::from_millis(1_750));
+    assert!(capped.remaining() > Duration::from_millis(1_500));
+    assert!(read.remaining() > Duration::from_millis(1_900));
+    let spent = attempt_deadline(&QueryDeadline::after(Duration::ZERO), BUSY_FALLBACK_RESERVE);
+    assert!(spent.expired());
+}
+
+#[test]
+fn early_timeout_after_a_busy_retry_keeps_the_timeout_error() {
     let timeout = || {
         anyhow::Error::new(DaemonReplyTimeout::new(
             Duration::from_secs(1),
@@ -276,7 +326,61 @@ fn timeout_after_a_started_busy_retry_does_not_use_busy_fallback() {
 }
 
 #[test]
+fn expired_busy_fallback_keeps_the_busy_reply_code() {
+    let fake = run_fake(
+        RetryScope::Read,
+        "expired-busy-fallback",
+        QUICK + Duration::from_millis(5),
+        vec![(
+            Err(anyhow::anyhow!(
+                "daemon: daemon_busy: pool=root retry_after_ms=250"
+            )),
+            QUICK,
+        )],
+        Some(Err(anyhow::anyhow!("timed_out: query deadline expired"))),
+    );
+
+    let error = fake.result.unwrap_err();
+    assert_eq!(leading_board_code(&error), Some(BoardErrorCode::DaemonBusy));
+    assert!(format!("{error:#}").contains("timed_out: query deadline expired"));
+    assert!(format!("{error:#}").contains("retry_after_ms=250"));
+    assert_eq!(fake.attempts, 1);
+    assert_eq!(fake.fallbacks, 1);
+}
+
+#[test]
 fn short_cli_budget_uses_one_busy_router_attempt_then_current_path_bytes() {
+    assert_busy_fallback_child(
+        "short_deadline_cli_busy_fallback_child",
+        "SHORT_DEADLINE_FALLBACK_ACCEPTED",
+    );
+}
+
+#[test]
+fn held_reserve_busy_retry_leaves_the_fallback_reserve() {
+    assert_busy_fallback_child(
+        "held_reserve_cli_busy_fallback_child",
+        "HELD_RESERVE_FALLBACK_ACCEPTED",
+    );
+}
+
+fn assert_busy_fallback_child(child: &str, marker: &str) {
+    let (_temp, mut command) = busy_fallback_child_command(child);
+    let output = run_retry_test_child(&mut command, Duration::from_secs(5));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "isolated retry test child failed\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains(marker),
+        "isolated child did not report the accepted router and local fallback\nstdout: {stdout}\nstderr: {stderr}"
+    );
+}
+
+/// Builds a child process that runs `child` against isolated paths and a fake router socket.
+fn busy_fallback_child_command(child: &str) -> (tempfile::TempDir, Command) {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("root");
     let system_dir = temp.path().join("system");
@@ -317,30 +421,53 @@ fn short_cli_budget_uses_one_busy_router_attempt_then_current_path_bytes() {
         .env("TRUFFLEPIG_RETRY_TEST_CACHE", &cache)
         .env("TMPDIR", &scratch)
         .arg("--ignored")
-        .arg("short_deadline_cli_busy_fallback_child")
+        .arg(child)
         .arg("--nocapture");
-    let output = run_retry_test_child(&mut command, Duration::from_secs(5));
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        output.status.success(),
-        "isolated retry test child failed\nstdout: {stdout}\nstderr: {stderr}"
-    );
-    assert!(
-        stdout.contains("SHORT_DEADLINE_FALLBACK_ACCEPTED"),
-        "isolated child did not report the accepted router and local fallback\nstdout: {stdout}\nstderr: {stderr}"
-    );
+    (temp, command)
 }
 
 #[test]
 #[ignore = "invoked by short_cli_budget_uses_one_busy_router_attempt_then_current_path_bytes"]
 fn short_deadline_cli_busy_fallback_child() {
-    const REQUEST_LIMIT: usize = 64 * 1024;
-    const BUSY_REPLY: &[u8] = br#"{"status":"failure","message":"daemon_busy: pool=router-query queue_depth=64 retry_after_ms=250"}"#;
-
     if std::env::var_os("TRUFFLEPIG_RETRY_TEST_CHILD").is_none() {
         return;
     }
+    let requests = current_path_fallback_under_held_router(Duration::from_millis(700));
+    assert_eq!(
+        requests.len(),
+        1,
+        "a second transport attempt consumes the fallback window"
+    );
+    println!(
+        "SHORT_DEADLINE_FALLBACK_ACCEPTED requests={}",
+        requests.len()
+    );
+}
+
+#[test]
+#[ignore = "invoked by held_reserve_busy_retry_leaves_the_fallback_reserve"]
+fn held_reserve_cli_busy_fallback_child() {
+    if std::env::var_os("TRUFFLEPIG_RETRY_TEST_CHILD").is_none() {
+        return;
+    }
+    let requests = current_path_fallback_under_held_router(Duration::from_millis(1_800));
+    assert_eq!(
+        requests.len(),
+        2,
+        "the second attempt must run with the busy reserve held back"
+    );
+    println!("HELD_RESERVE_FALLBACK_ACCEPTED requests={}", requests.len());
+}
+
+/// Answers the first request busy and holds later sockets open, so only the
+/// client's own deadline or the local fallback can finish the command.
+fn current_path_fallback_under_held_router(budget: Duration) -> Vec<Vec<String>> {
+    const REQUEST_LIMIT: usize = 64 * 1024;
+    const BUSY_REPLY: &[u8] = br#"{"status":"failure","message":"daemon_busy: pool=router-query queue_depth=64 retry_after_ms=250"}"#;
+
+    // Building the process-wide o200k tokenizer costs more than the reserve in a
+    // fresh process; warm it so the timed fallback measures the reserve logic.
+    crate::output::OutputBudget::new(1_000).unwrap();
     let root = std::path::PathBuf::from(std::env::var_os("TRUFFLEPIG_RETRY_TEST_ROOT").unwrap());
     let cache = std::path::PathBuf::from(std::env::var_os("TRUFFLEPIG_RETRY_TEST_CACHE").unwrap());
     let system_dir = std::path::PathBuf::from(std::env::var_os("TRUFFLEPIG_SYSTEM_DIR").unwrap());
@@ -400,7 +527,7 @@ fn short_deadline_cli_busy_fallback_child() {
         &args,
         &options,
         &context,
-        Some(QueryDeadline::after(Duration::from_millis(700))),
+        Some(QueryDeadline::after(budget)),
     );
     stopping.store(true, Ordering::Release);
     router.join().expect("join retry test router");
@@ -414,22 +541,14 @@ fn short_deadline_cli_busy_fallback_child() {
         fs::read_to_string(cache).unwrap(),
         "preserve this cache file"
     );
-    let requests = requests.lock().unwrap();
-    assert_eq!(
-        requests.len(),
-        1,
-        "a second transport attempt consumes the fallback window"
-    );
+    let requests = requests.lock().unwrap().clone();
     assert!(
         requests[0]
             .iter()
             .any(|argument| argument == "path:docs/guide.md"),
         "router did not receive the current-path show request: {requests:?}"
     );
-    println!(
-        "SHORT_DEADLINE_FALLBACK_ACCEPTED requests={}",
-        requests.len()
-    );
+    requests
 }
 
 fn read_retry_request(

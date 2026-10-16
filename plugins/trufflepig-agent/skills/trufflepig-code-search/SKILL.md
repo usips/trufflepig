@@ -184,9 +184,9 @@ transport, backoff, and local fallback. Board/feedback contention-only writes
 allow at most two attempts on typed busy/locked errors; other writes run once.
 `show FILE`, `show path:FILE`, and `read:path:` continuations use one local
 current-file fallback after retries exhaust on explicit `daemon_busy`, or
-immediately on pre-dispatch `index_cache_unavailable`. Timeouts, database locks,
-and ambiguous transport errors never trigger it. Other busy searches allow at
-most one manual retry after service/load clears; if still busy, report the limit
+immediately on pre-dispatch `index_cache_unavailable`. A retry after busy keeps 250 ms for
+that fallback and falls back if it times out at its cap; other timeouts, database locks, and
+ambiguous errors do not. Other busy searches allow at most one manual retry after service/load clears; if still busy, report the limit
 and use the documented bounded fallback. For unavailable service, inaccessible
 cache, or unsupported needs, state the limit and use one bounded fallback; if a
 needed file remains unreadable, use the harness's bounded exact-file reader and report

@@ -116,7 +116,11 @@ fn has_leading_timeout_code(error: &anyhow::Error) -> bool {
 }
 
 enum RetryInvocation {
-    Attempt(usize),
+    /// `held_back` is budget the attempt must leave for the busy fallback.
+    Attempt {
+        index: usize,
+        held_back: Duration,
+    },
     BusyFallback,
 }
 
@@ -126,24 +130,36 @@ enum RetryOutput {
 }
 
 /// Runs an injected retry loop so its attempts, clock, waits, and fallback are testable.
+/// `fallback_available` is whether a read has a local busy fallback to hold time for.
 fn run_retry_loop(
     scope: RetryScope,
     request_id: &str,
+    fallback_available: bool,
     mut remaining: impl FnMut() -> Duration,
     mut wait: impl FnMut(Duration),
     mut invoke: impl FnMut(RetryInvocation) -> RetryOutput,
 ) -> Result<String> {
     let max_attempts = scope.max_attempts();
+    let holds_fallback_time = scope == RetryScope::Read && fallback_available;
     let mut attempts = 0;
+    let mut busy_seen = false;
     loop {
-        let RetryOutput::Attempt(result, elapsed) = invoke(RetryInvocation::Attempt(attempts))
-        else {
+        let held_back = if holds_fallback_time && busy_seen {
+            BUSY_FALLBACK_RESERVE
+        } else {
+            Duration::ZERO
+        };
+        let RetryOutput::Attempt(result, elapsed) = invoke(RetryInvocation::Attempt {
+            index: attempts,
+            held_back,
+        }) else {
             unreachable!("retry loop invokes an attempt before its fallback");
         };
         attempts += 1;
         match result {
             Ok(answer) => return Ok(answer),
             Err(error) => {
+                busy_seen |= is_explicit_busy(&error);
                 let policy = RetryPolicy::classify(scope, &error, elapsed);
                 if let RetryPolicy::Retry(minimum_delay) = policy
                     && attempts < max_attempts
@@ -163,18 +179,40 @@ fn run_retry_loop(
                     }
                 }
 
+                // A timeout counts only when this attempt's own capped deadline
+                // expired; a timeout relayed earlier keeps the error as the answer.
+                let capped_timeout = held_back > Duration::ZERO
+                    && is_timeout_answer(&error)
+                    && remaining() <= held_back;
                 if scope == RetryScope::Read
-                    && is_explicit_busy(&error)
+                    && (is_explicit_busy(&error) || capped_timeout)
                     && !remaining().is_zero()
                     && let RetryOutput::BusyFallback(Some(answer)) =
                         invoke(RetryInvocation::BusyFallback)
                 {
-                    return answer;
+                    return match answer {
+                        // The original reply still names the failure; the fallback
+                        // only explains why the local read could not finish.
+                        Err(fallback) if has_leading_timeout_code(&fallback) => {
+                            Err(error.context(format!("local fallback failed: {fallback:#}")))
+                        }
+                        answer => answer,
+                    };
                 }
                 return Err(error);
             }
         }
     }
+}
+
+/// Whether a failed attempt is a typed reply timeout or a leading `timed_out` answer.
+fn is_timeout_answer(error: &anyhow::Error) -> bool {
+    DaemonReplyTimeout::from_error(error).is_some() || has_leading_timeout_code(error)
+}
+
+/// One attempt's deadline: the shared read budget less the time held back for the fallback.
+fn attempt_deadline(read_deadline: &QueryDeadline, held_back: Duration) -> QueryDeadline {
+    read_deadline.capped(read_deadline.remaining().saturating_sub(held_back))
 }
 
 fn retry_reserve(scope: RetryScope, error: &anyhow::Error) -> Duration {
@@ -268,10 +306,12 @@ fn run_with_retry_deadline(
         args
     };
     let scope = RetryScope::for_options(options);
+    let fallback_available = super::client_command::has_busy_fallback(args);
     let mut command = super::ClientCommand::default();
     run_retry_loop(
         scope,
         &context.request_id,
+        fallback_available,
         || {
             read_deadline
                 .as_ref()
@@ -279,15 +319,16 @@ fn run_with_retry_deadline(
         },
         std::thread::sleep,
         |invocation| match invocation {
-            RetryInvocation::Attempt(attempt) => {
-                let attempt_context = if attempt == 0 {
+            RetryInvocation::Attempt { index, held_back } => {
+                let attempt_context = if index == 0 {
                     context.clone()
                 } else {
                     context.next_attempt()
                 };
-                let deadline = read_deadline
-                    .clone()
-                    .unwrap_or_else(|| QueryDeadline::after(super::CLIENT_REPLY_WAIT));
+                let deadline = read_deadline.as_ref().map_or_else(
+                    || QueryDeadline::after(super::CLIENT_REPLY_WAIT),
+                    |read_deadline| attempt_deadline(read_deadline, held_back),
+                );
                 let started = Instant::now();
                 RetryOutput::Attempt(
                     command.run(args, &attempt_context, deadline),

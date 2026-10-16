@@ -162,13 +162,17 @@ cause, bounded `retry_after_ms`, and a retry hint. Read retries
 cover explicit `daemon_busy`, database contention, dropped connections,
 `index_warming`, raw `WouldBlock`/`TimedOut` only when an attempt took under 5 s,
 and typed reply timeouts. A `daemon_reply_timeout: phase=awaiting_reply` can be
-retried when the shared budget leaves 1 s for a useful attempt after backoff; only an explicit
-busy read also preserves a 250 ms local-fallback reserve. A service `timed_out`
+retried when the shared budget leaves 1 s for a useful attempt after backoff. A service `timed_out`
 answer, including frame timeout, is final. Current-path `show` and
 `read:path:` continuation can fall back locally when cache opening fails before
 dispatch with `index_cache_unavailable`, or after retry exhaustion returns an
-explicit `daemon_busy`, within the read's deadline. Timeout, database-lock, and
-ambiguous transport errors never trigger that fallback. Board and feedback
+explicit `daemon_busy`, within the read's deadline. For such a read, once an explicit busy
+reply has been seen, each later attempt ends 250 ms before the shared deadline, keeping that
+local-fallback reserve. A later attempt that is still running when its own capped deadline
+expires (a `daemon_reply_timeout` or `timed_out` answer) also falls back within the reserve.
+Timeouts that arrive before the cap, database locks, and ambiguous transport errors never
+trigger it. If the fallback itself times out, the original reply is returned with
+the fallback failure as context. Board and feedback
 contention-only writes allow at most two attempts after explicit pre-dispatch
 busy or database contention; other writes have no retry guarantee
 (`src/cli/retry.rs`).

@@ -101,7 +101,7 @@ impl BoardClientTransport {
                     .downcast_ref::<BoardRequestDeadlineExpired>()
                     .is_some() =>
             {
-                failed_request(command, options, context, load, spool, error)
+                failed_request(command, options, context, load, spool, deadline, error)
             }
             result => result,
         }
@@ -127,7 +127,9 @@ impl BoardClientTransport {
             let ping = ["system".to_owned(), "status".to_owned()];
             let mut status = match gateway.request(&ping, context, deadline) {
                 Ok(status) => status,
-                Err(error) => return failed_request(command, options, context, load, spool, error),
+                Err(error) => {
+                    return failed_request(command, options, context, load, spool, deadline, error);
+                }
             };
             let mut recent = false;
             if status.is_none() {
@@ -135,7 +137,7 @@ impl BoardClientTransport {
                 let denied = local_access::denied_router_socket(gateway, runtime, load)?;
                 check_deadline(deadline)?;
                 if let Some(error) = denied {
-                    return failed_request(command, options, context, load, spool, error);
+                    return failed_request(command, options, context, load, spool, deadline, error);
                 }
                 recent = runtime.is_some_and(|runtime| {
                     crate::system::board_router_recently_unavailable(runtime, SystemTime::now())
@@ -147,7 +149,9 @@ impl BoardClientTransport {
                     status = match gateway.request(&ping, context, deadline) {
                         Ok(status) => status,
                         Err(error) => {
-                            return failed_request(command, options, context, load, spool, error);
+                            return failed_request(
+                                command, options, context, load, spool, deadline, error,
+                            );
                         }
                     };
                 }
@@ -200,7 +204,7 @@ impl BoardClientTransport {
                 let denied = local_access::denied_router_socket(gateway, runtime, load)?;
                 check_deadline(deadline)?;
                 if let Some(error) = denied {
-                    return failed_request(command, options, context, load, spool, error);
+                    return failed_request(command, options, context, load, spool, deadline, error);
                 }
                 if let Some(runtime) = runtime {
                     let _ =
@@ -208,7 +212,7 @@ impl BoardClientTransport {
                 }
                 local_reply(options, command, context, load, runtime, spool, deadline)
             }
-            Err(error) => failed_request(command, options, context, load, spool, error),
+            Err(error) => failed_request(command, options, context, load, spool, deadline, error),
         }
     }
 }
@@ -242,6 +246,7 @@ fn failed_request(
     context: &RequestContext,
     load: &mut dyn FnMut() -> Result<BoardConfig>,
     spool: &Path,
+    deadline: &QueryDeadline,
     error: anyhow::Error,
 ) -> Result<String> {
     if matches!(
@@ -249,7 +254,9 @@ fn failed_request(
         BoardCommand::Op(crate::board::BoardOp::Feedback { .. })
     ) {
         let config = load()?;
-        crate::board::unavailable_or_queue(command, options, context, &config, spool, error)
+        crate::board::unavailable_or_queue(
+            command, options, context, &config, spool, deadline, error,
+        )
     } else {
         Err(crate::board::schema_upgrade_advice(error))
     }
@@ -311,6 +318,7 @@ fn local_reply(
                 context,
                 &config,
                 spool,
+                deadline,
                 anyhow::anyhow!("board_unavailable: router owns migration"),
             );
         }
@@ -364,8 +372,10 @@ fn refuse_stale_storage_beside_router(
             if local_access::is_storage_access_failure(&error) {
                 return Err(local_access::storage_access_advice(error, config, runtime));
             }
-            crate::board::unavailable_or_queue(command, options, context, config, spool, error)
-                .map(|_| ())
+            crate::board::unavailable_or_queue(
+                command, options, context, config, spool, deadline, error,
+            )
+            .map(|_| ())
         }
     }
 }
@@ -391,9 +401,9 @@ fn run_local(
         {
             Err(local_access::storage_access_advice(error, config, runtime))
         }
-        Err(error) => {
-            crate::board::unavailable_or_queue(command, options, context, config, spool, error)
-        }
+        Err(error) => crate::board::unavailable_or_queue(
+            command, options, context, config, spool, deadline, error,
+        ),
     }
 }
 
