@@ -141,6 +141,36 @@ pub(in crate::board::local_board) fn receipt_current(
                 && current_model.as_deref() == Some(model.as_str())
                 && current_effort == *effort)
         }
+        BoardOp::Grant { .. } => {
+            let BoardResult::Change(change) = &reply.result else {
+                return Ok(false);
+            };
+            // A grant replays only while it still confers the authority it recorded.
+            tx.query_row(
+                concat!(
+                    "SELECT EXISTS(SELECT 1 FROM authority_grants WHERE entry_id=?1 ",
+                    "AND revoked_by_entry IS NULL AND (expires_at IS NULL OR expires_at>?2))"
+                ),
+                params![sql_number(change.entry.get()), ctx.now],
+                |row| row.get(0),
+            )
+            .map_err(sql_error)
+        }
+        BoardOp::WorkerAdd { .. } => {
+            let BoardResult::Change(change) = &reply.result else {
+                return Ok(false);
+            };
+            // A worker replays only while it is unended on the task's unended claim.
+            tx.query_row(
+                concat!(
+                    "SELECT EXISTS(SELECT 1 FROM claim_workers w JOIN claims c ON c.id=w.claim_id ",
+                    "WHERE w.entry_id=?1 AND w.ended_at IS NULL AND c.ended_at IS NULL)"
+                ),
+                [sql_number(change.entry.get())],
+                |row| row.get(0),
+            )
+            .map_err(sql_error)
+        }
         _ => Ok(true),
     }
 }

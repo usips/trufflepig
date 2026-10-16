@@ -32,6 +32,16 @@ pub(super) fn resolve_delegate(
     task: TaskId,
     target: &ClaimDelegate,
 ) -> Result<ResolvedDelegate, BoardError> {
+    // Raw requests skip the CLI parser, so the reserved-harness rule is repeated here.
+    if target.harness.is_reserved() {
+        return Err(invalid(
+            "invalid_options",
+            format!(
+                "{task} cannot be delegated to reserved harness {}",
+                target.harness
+            ),
+        ));
+    }
     let holder = target.holder(&ctx.actor).map_err(BoardError::from)?;
     let owner: String = tx
         .query_row(

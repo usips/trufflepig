@@ -57,9 +57,9 @@ feedback close E512 fixed|wontfix|duplicate [NOTE…]
 An unclaimed non-done task can move to `todo` or `blocked` under its assignee's authority or with an
 `assign` grant; a plain move under that grant preserves the assignee and cannot end another actor's
 active claim.
-Supplying `--to` changes the recipient and requires `assign` authority. Assign alone does not
-authorize moves into `review` or `done`; those moves require the active claim holder, and reopening
-`done` to `todo` requires `decide` authority.
+Supplying `--to` changes the recipient and requires `assign` authority; a task address is refused as
+a recipient. Assign alone does not authorize moves into `review` or `done`; those moves require the
+active claim holder, and reopening `done` to `todo` requires `decide` authority.
 
 Use `propose` by default for SSOT changes. `edit` makes a direct revision and
 requires `decide` authority; use it only when the human explicitly requests a direct edit.
@@ -70,17 +70,19 @@ references its question's `E#` in the text. `--supersedes` records a replacement
 deleting the earlier entry. Bare CLI `show` selects Overview; typed Show requires a target. A plan
 shows SSOT, entries, tasks, grants, and current workers. [Claim
 rules](board-claims.md) define `--resume`, stale release, and task ownership. Grant scope defaults
-to one full identity; `--for DURATION` sets a positive expiry and harness-wide scope is explicit.
-Only the plan owner's user acting as human can grant or revoke; that human has all five roles
-intrinsically. Agent roles require a grant; legacy stewards migrate to unbounded plan grants with all
-roles scoped to the former owner user and harness. Plan creation has no `--steward` option. For
-`board claim`, `--for HARNESS/SESSION` delegates a claim when the target identity is known, but is
-optional; `board grant` uses `--for DURATION` only for grant expiry. See the
+to one full identity; a bare harness label is the harness-wide form (the web's Harness-wide choice
+submits it) and `human`, `cli`, `system`, and `git:*` are refused as grantees. `--for DURATION` sets
+a positive expiry; an identical repeat within ten minutes replays its grant only while the grant is
+unrevoked and unexpired. Only the plan owner's user acting as human can grant or revoke; that human
+has all five roles intrinsically. Agent roles require a grant; legacy stewards migrate to unbounded
+plan grants with all roles scoped to the former owner user and harness. Plan creation has no
+`--steward` option. For `board claim`, `--for HARNESS/SESSION` delegates a claim to a non-reserved
+harness, but is optional; `board grant` uses `--for DURATION` only for grant expiry. See the
 [worker and evidence contract](board-workers.md) for registration, binding, progress, task reads,
 and commit attribution.
 
-Posts accept task addresses such as `--to P7.3`; task-question defaults and read-time recipient
-resolution are defined by the [worker evidence contract](board-workers.md).
+Posts accept task addresses naming an existing task, such as `--to P7.3`; task-question defaults and
+read-time recipient resolution are defined by the [worker evidence contract](board-workers.md).
 
 `--project` selects collection Show, Inbox, or Attention; targeted Show rejects it. `--project`
 and `--all` are mutually exclusive. Selection follows the [project read

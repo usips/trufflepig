@@ -296,3 +296,61 @@ fn unseen_delegate_gets_no_last_seen() {
         .unwrap();
     assert_eq!(last_seen, 0, "a delegate that never acted was never seen");
 }
+
+#[test]
+fn delegated_claim_revives_an_ended_holder_so_bye_releases_it() {
+    let database = ClaimDatabase::new();
+    let mut backend =
+        LocalBoard::open_path(&database.path, std::time::Duration::from_secs(120)).unwrap();
+    let orchestrator = actor("josh", "kimi", "orch");
+    let coder = actor("josh", "codex", "c7");
+    for request in [
+        BoardOp::Hello {
+            model: "Codex".into(),
+            effort: Some("xhigh".into()),
+            worker: None,
+        },
+        BoardOp::Bye,
+    ] {
+        backend
+            .handle(&BoardRequest::new(coder.clone(), request))
+            .unwrap();
+    }
+    let task = TaskId::new(PlanId::new(1).unwrap(), 1).unwrap();
+    backend
+        .handle(&BoardRequest::new(
+            orchestrator.clone(),
+            BoardOp::TaskCreate {
+                plan: task.plan,
+                title: PlanTitle::new("Revived lane").unwrap(),
+                to: None,
+                section: None,
+            },
+        ))
+        .unwrap();
+    backend
+        .handle(&BoardRequest::new(
+            orchestrator,
+            BoardOp::ClaimTask {
+                task,
+                scope: Some(EntryText::new("coder lane").unwrap()),
+                resume: ClaimResume::No,
+                delegate: Some(ClaimDelegate {
+                    harness: HarnessLabel::parse("codex").unwrap(),
+                    session: "c7".into(),
+                }),
+            },
+        ))
+        .unwrap();
+    backend
+        .handle(&BoardRequest::new(coder, BoardOp::Bye))
+        .unwrap();
+    let conn = database.connect();
+    let claims = read_claims_window(&conn, task.plan, i64::MIN, i64::MAX, i64::MAX, 120).unwrap();
+    assert_eq!(claims.len(), 1);
+    assert_eq!(claims[0].end_reason, Some(ClaimEndReason::SessionEnded));
+    assert_eq!(
+        read_tasks(&conn, task.plan).unwrap()[0].column,
+        TaskColumn::Todo
+    );
+}

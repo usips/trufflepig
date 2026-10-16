@@ -500,3 +500,37 @@ fn lead_bye_notifies_the_bound_worker_that_its_claim_ended() {
         &mut board, "grok", after
     )));
 }
+
+#[test]
+fn post_to_a_nonexistent_task_recipient_is_refused() {
+    let (_directory, mut board) = database();
+    let plan = plan(&mut board);
+    let task = create_task(&mut board, plan);
+    let missing = TaskId::new(plan, task.ordinal + 1).unwrap();
+    let before = board.max_seq().unwrap();
+    let error = board
+        .handle(&BoardRequest::new(
+            BoardActor::new(
+                "josh",
+                "laptop",
+                HarnessLabel::parse("claude").unwrap(),
+                "session1",
+            )
+            .unwrap(),
+            BoardOp::Post {
+                target: BoardRef::Task(task),
+                kind: EntryKind::Note,
+                body: EntryText::new("nudge the missing card").unwrap(),
+                to: Some(BoardRecipient::parse(&missing.to_string()).unwrap()),
+                supersedes: None,
+                progress: None,
+                verdict: None,
+            },
+        ))
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        crate::board::board_protocol::BoardErrorCode::InvalidReference
+    );
+    assert_eq!(board.max_seq().unwrap(), before);
+}

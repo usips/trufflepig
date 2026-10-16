@@ -147,6 +147,7 @@ pub(in crate::board) fn write_revoke(
             format!("{grant_entry} is not a grant entry"),
         )
     })?;
+    let grantee = BoardRecipient::parse(&grantee).map_err(BoardError::from)?;
     require_owner_human(&ctx.actor, &owner_user, "revoke grants")?;
     if let Some(revoked_by) = revoked_by {
         return Err(invalid(
@@ -170,7 +171,7 @@ pub(in crate::board) fn write_revoke(
             plan_id: plan,
             kind: EntryKind::Revoke,
             body: format!("revoked grant {grant_entry}"),
-            to_whom: Some(BoardRecipient::parse(&grantee).map_err(BoardError::from)?),
+            to_whom: Some(grantee.clone()),
             supersedes: Some(grant_entry_id),
             repo_key: None,
             state: None,
@@ -195,7 +196,7 @@ pub(in crate::board) fn write_revoke(
         plan,
         EntryKind::Revoke,
         &entry.to_string(),
-        None,
+        Some(&grantee),
         &summary,
     )?;
     Ok(owner_ctx.change_reply(entry, plan, None, None))

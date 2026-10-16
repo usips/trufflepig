@@ -1,6 +1,8 @@
 //! Central plan and board grant authority checks.
 
 mod authority_writes;
+#[cfg(test)]
+mod tests;
 
 pub(in crate::board) use authority_writes::{write_grant, write_revoke};
 
@@ -188,18 +190,26 @@ pub(in crate::board) fn authority_predicate_sql(
     )
 }
 
+/// A bare label is harness-wide scope; reserved harnesses can never match a grant.
 pub(in crate::board::local_board) fn validate_grantee(
     grantee: &BoardRecipient,
 ) -> Result<(), BoardError> {
-    if BoardActor::parse(grantee.as_str()).is_ok() || HarnessLabel::parse(grantee.as_str()).is_ok()
-    {
-        Ok(())
-    } else {
-        Err(invalid(
+    let harness = match BoardActor::parse(grantee.as_str()) {
+        Ok(actor) => actor.harness,
+        Err(_) => HarnessLabel::parse(grantee.as_str()).map_err(|_| {
+            invalid(
+                "invalid_options",
+                "grant target must be a full actor identity or harness label",
+            )
+        })?,
+    };
+    if harness.is_reserved() {
+        return Err(invalid(
             "invalid_options",
-            "grant target must be a full actor identity or harness label",
-        ))
+            format!("grant target cannot name reserved harness {harness}"),
+        ));
     }
+    Ok(())
 }
 
 fn parse_entry_id(id: i64) -> Result<EntryId, BoardError> {

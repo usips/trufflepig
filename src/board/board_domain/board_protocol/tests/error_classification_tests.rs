@@ -146,3 +146,22 @@ fn invalid_worker_is_a_domain_error() {
     );
     assert!(error.code.is_domain_answer());
 }
+
+#[test]
+fn unregistered_invalid_prefixes_are_domain_options() {
+    let error = BoardError::from(anyhow::anyhow!(
+        "invalid_role: role must be one of triage, release"
+    ));
+    assert_eq!(error.code, BoardErrorCode::InvalidOptions);
+    assert_eq!(
+        error.to_string(),
+        "invalid_options: role must be one of triage, release"
+    );
+    assert!(error.code.is_domain_answer());
+    assert_eq!(
+        BoardErrorCode::from_error(&anyhow::anyhow!("invalid_progress: step must be positive")),
+        Some(BoardErrorCode::InvalidOptions)
+    );
+    let unknown = BoardError::from(anyhow::anyhow!("unclassified_failure: detail"));
+    assert_eq!(unknown.code, BoardErrorCode::BoardUnavailable);
+}

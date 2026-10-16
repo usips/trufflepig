@@ -258,6 +258,14 @@ pub(in crate::board::local_board) fn claim_task(
             delegated_by
         ],
     ).map_err(sql_error)?;
+    if delegation.is_some() {
+        // A delegated lease makes its holder live again, so the holder's later bye releases it.
+        tx.execute(
+            "UPDATE agent_sessions SET ended_at=NULL WHERE actor_id=?1",
+            [ctx.actor_id],
+        )
+        .map_err(sql_error)?;
+    }
     let assignee = BoardRecipient::for_actor(&ctx.actor);
     tx.execute(
         "UPDATE tasks SET column_name='doing',assignee=?3,seq=?4 WHERE plan_id=?1 AND ordinal=?2",

@@ -25,6 +25,9 @@ impl ClaimDelegate {
             bail!("invalid_options: --for must be HARNESS/SESSION");
         }
         let harness = HarnessLabel::parse(harness).map_err(|_| malformed())?;
+        if harness.is_reserved() {
+            bail!("invalid_options: --for cannot delegate to a reserved harness");
+        }
         validate_actor_component(session, "session").map_err(|_| malformed())?;
         Ok(Self {
             harness,

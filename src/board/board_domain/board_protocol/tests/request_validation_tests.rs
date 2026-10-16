@@ -1,5 +1,21 @@
 use super::*;
-use crate::board::board_protocol::ReadScope;
+use crate::board::board_protocol::{ClaimDelegate, ReadScope};
+
+#[test]
+fn claim_delegates_refuse_reserved_harnesses() {
+    for value in [
+        "human/owner",
+        "cli/owner",
+        "system/owner",
+        "git:dev@example.invalid/owner",
+    ] {
+        let error = ClaimDelegate::parse(value).unwrap_err().to_string();
+        assert!(error.starts_with("invalid_options:"), "{value}: {error}");
+    }
+    let delegate = ClaimDelegate::parse("codex/c7").unwrap();
+    assert_eq!(delegate.harness.as_str(), "codex");
+    assert_eq!(delegate.session, "c7");
+}
 
 #[test]
 fn git_coauthor_actor_round_trips_as_evidence_but_cannot_request() {

@@ -12,6 +12,8 @@ pub(in crate::board::local_board) fn move_task(
     column: TaskColumn,
     to: Option<&BoardRecipient>,
 ) -> Result<BoardReply, BoardError> {
+    let normalized_to = normalized_task_recipient(to, &ctx.actor)?;
+    let to = normalized_to.as_ref();
     let card = require_task(tx, task)?;
     let holder = active_claim(tx, task, ctx.now, ctx.claim_ttl_secs)?;
     let holder_is_actor = holder

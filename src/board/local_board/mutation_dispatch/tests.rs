@@ -1,10 +1,11 @@
 use super::super::*;
-use crate::board::board_actor::{BoardActor, HarnessLabel};
+use crate::board::board_actor::{BoardActor, BoardRecipient, HarnessLabel};
 use crate::board::board_backend::BoardBackend;
-use crate::board::board_ids::{BoardRef, PlanId, TaskId};
+use crate::board::board_ids::{BoardRef, EntryId, PlanId, TaskId};
 use crate::board::board_protocol::{
-    BoardOp, BoardReply, BoardRequest, BoardResult, ClaimResume, ProgressInput, ProgressStep,
-    WorkerAddress, WorkerHandle, WorkerRole,
+    AuthorityRole, AuthoritySource, BoardErrorCode, BoardOp, BoardReply, BoardRequest, BoardResult,
+    ClaimResume, ProgressInput, ProgressStep, WorkerAddress, WorkerEndReason, WorkerHandle,
+    WorkerRole,
 };
 use crate::board::board_vocabulary::{EntryKind, EntryText, PlanText, PlanTitle};
 use std::time::Duration;
@@ -337,4 +338,113 @@ fn bound_worker_post_refreshes_only_its_parent_claim() {
     assert!(retry_activity.0 > 3);
     assert!(retry_activity.1 > 3);
     assert_eq!(retry_activity.2, 3);
+}
+
+fn grant_request(plan: PlanId, grantee: &BoardActor, expires_in: Option<u64>) -> BoardRequest {
+    BoardRequest::new(
+        actor("human", "owner"),
+        BoardOp::Grant {
+            plan: Some(plan),
+            roles: vec![AuthorityRole::Triage],
+            grantee: BoardRecipient::for_actor(grantee),
+            expires_in,
+            note: None,
+        },
+    )
+}
+
+fn live_triage_grant(board: &LocalBoard, plan: PlanId, grantee: &BoardActor) -> Option<EntryId> {
+    let now = unix_now().unwrap();
+    match super::super::board_authority::authority_for(
+        &board.conn,
+        grantee,
+        Some(plan),
+        AuthorityRole::Triage,
+        now,
+    )
+    .unwrap()
+    {
+        Some(AuthoritySource::Grant(entry)) => Some(entry),
+        _ => None,
+    }
+}
+
+#[test]
+fn revoked_grant_does_not_replay_for_an_identical_regrant() {
+    let (_directory, mut board) = database();
+    let plan = create_plan(&mut board);
+    let codex = actor("codex", "s1");
+    let request = grant_request(plan, &codex, None);
+    let first = change(board.handle(&request).unwrap()).entry;
+    board
+        .handle(&BoardRequest::new(
+            actor("human", "owner"),
+            BoardOp::Revoke { entry: first },
+        ))
+        .unwrap();
+    assert_eq!(live_triage_grant(&board, plan, &codex), None);
+
+    let regrant = change(board.handle(&request).unwrap());
+    assert!(!regrant.deduplicated);
+    assert_ne!(regrant.entry, first);
+    assert_eq!(live_triage_grant(&board, plan, &codex), Some(regrant.entry));
+}
+
+#[test]
+fn expired_grant_does_not_replay_for_an_identical_regrant() {
+    let (_directory, mut board) = database();
+    let plan = create_plan(&mut board);
+    let codex = actor("codex", "s1");
+    let request = grant_request(plan, &codex, Some(300));
+    let first = change(board.handle(&request).unwrap()).entry;
+    // There is no clock seam: moving the stored expiry into the past models
+    // time passing while the ten-minute dedupe row stays inside its window.
+    board
+        .conn
+        .execute(
+            "UPDATE authority_grants SET expires_at=?2 WHERE entry_id=?1",
+            rusqlite::params![i64::try_from(first.get()).unwrap(), unix_now().unwrap() - 1],
+        )
+        .unwrap();
+    assert_eq!(live_triage_grant(&board, plan, &codex), None);
+
+    let regrant = change(board.handle(&request).unwrap());
+    assert!(!regrant.deduplicated);
+    assert_ne!(regrant.entry, first);
+    assert_eq!(live_triage_grant(&board, plan, &codex), Some(regrant.entry));
+}
+
+#[test]
+fn worker_add_does_not_replay_after_its_worker_ends() {
+    let (_directory, mut board) = database();
+    let plan = create_plan(&mut board);
+    let task = create_task(&mut board, plan, "Ended worker");
+    let lead = actor("codex", "lead");
+    claim_task(&mut board, lead.clone(), task, "delegate implementation");
+    let handle = WorkerHandle::parse("helper").unwrap();
+    let add = BoardRequest::new(
+        lead.clone(),
+        BoardOp::WorkerAdd {
+            task,
+            handle: handle.clone(),
+            role: WorkerRole::Code,
+            model: "worker-model".to_owned(),
+            effort: Some("high".to_owned()),
+            scope: EntryText::new("implement the task").unwrap(),
+            files: vec!["src/example.rs".to_owned()],
+        },
+    );
+    board.handle(&add).unwrap();
+    board
+        .handle(&BoardRequest::new(
+            lead,
+            BoardOp::WorkerEnd {
+                worker: WorkerAddress::new(task, handle).unwrap(),
+                state: WorkerEndReason::Done,
+                note: None,
+            },
+        ))
+        .unwrap();
+    let error = board.handle(&add).unwrap_err();
+    assert_eq!(error.code, BoardErrorCode::InvalidWorker);
 }

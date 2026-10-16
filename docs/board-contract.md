@@ -106,11 +106,11 @@ normalized target/body/parameters; feedback has a global content key. Repeats re
 
 Stable error prefixes: `stale_revision`, `claim_conflict`, `board_unavailable`, `schema_newer`,
 `invalid_reference`, `invalid_kind`, `invalid_body`, `invalid_actor`, `invalid_state`,
-`invalid_options`, `board_api_mismatch`, and `board_remote_unsupported`. An unwritable fallback DB
-reports `board_unavailable` advising `system ensure`; feedback uses its
-[outbox](board-feedback-contract.md#outbox-and-spool). Newer storage refuses with typed
-`schema_newer`; socket and local client paths advise upgrading trufflepig, and feedback stays queued
-until storage is supported.
+`invalid_options`, `board_api_mismatch`, and `board_remote_unsupported`; other `invalid_*` prefixes
+map to `invalid_options`. An unwritable fallback DB reports `board_unavailable` advising
+`system ensure`; feedback uses its [outbox](board-feedback-contract.md#outbox-and-spool). Newer
+storage refuses with typed `schema_newer`; socket and local client paths advise upgrading
+trufflepig, and feedback stays queued until storage is supported.
 
 ## Git links and review evidence
 

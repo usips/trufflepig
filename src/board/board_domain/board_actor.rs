@@ -92,6 +92,10 @@ impl HarnessLabel {
     pub fn is_system(&self) -> bool {
         self.as_str() == "system"
     }
+    /// Human, CLI, system, and git labels that no request may act as or delegate to.
+    pub fn is_reserved(&self) -> bool {
+        self.is_human() || self.is_cli() || self.is_system() || self.as_str().starts_with("git:")
+    }
 }
 /// Vendor attribution follows the claimed model, then the harness fallback.
 pub fn claim_vendor(harness: &HarnessLabel, model: Option<&str>) -> AgentVendor {

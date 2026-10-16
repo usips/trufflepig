@@ -526,3 +526,81 @@ fn bound_worker_can_release_its_stale_parent_claim_and_end_all_workers() {
         .unwrap();
     assert_eq!(authority.as_deref(), Some("stale"));
 }
+
+#[test]
+fn task_move_recipients_expand_for_the_caller_and_refuse_task_addresses() {
+    let (_directory, mut board) = board();
+    let plan = create_plan(&mut board);
+    let owner = actor("human", "owner");
+    let mut create = |title: &str| {
+        change(
+            board
+                .handle(&BoardRequest::new(
+                    owner.clone(),
+                    BoardOp::TaskCreate {
+                        plan,
+                        title: PlanTitle::new(title).unwrap(),
+                        to: None,
+                        section: None,
+                    },
+                ))
+                .unwrap(),
+        )
+        .task
+        .unwrap()
+    };
+    let task = create("Routed card");
+    let other = create("Other card");
+    let error = board
+        .handle(&BoardRequest::new(
+            owner.clone(),
+            BoardOp::TaskMove {
+                task,
+                column: TaskColumn::Todo,
+                to: Some(BoardRecipient::parse(&other.to_string()).unwrap()),
+            },
+        ))
+        .unwrap_err();
+    assert_eq!(
+        error.code,
+        crate::board::board_protocol::BoardErrorCode::InvalidOptions
+    );
+    board
+        .handle(&BoardRequest::new(
+            owner,
+            BoardOp::TaskMove {
+                task,
+                column: TaskColumn::Todo,
+                to: Some(BoardRecipient::parse("codex/s1").unwrap()),
+            },
+        ))
+        .unwrap();
+    let codex = BoardActor::new(
+        "josh",
+        "laptop",
+        HarnessLabel::parse("codex").unwrap(),
+        "s1",
+    )
+    .unwrap();
+    let reply = board
+        .handle(&BoardRequest::new(
+            codex.clone(),
+            BoardOp::Inbox {
+                scope: crate::board::board_protocol::ReadScope::All,
+                after: None,
+                limit: 50,
+            },
+        ))
+        .unwrap();
+    let BoardResult::Inbox(inbox) = reply.result else {
+        panic!("expected inbox");
+    };
+    assert!(
+        inbox.events.iter().any(|event| {
+            event.subject.to_string() == task.to_string()
+                && event.to == Some(BoardRecipient::for_actor(&codex))
+        }),
+        "{:?}",
+        inbox.events
+    );
+}

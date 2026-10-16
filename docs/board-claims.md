@@ -34,7 +34,8 @@ changing its assignee, or manage its workers. A plain move under an assign grant
 another actor's active claim; an authorized `--to` reassignment can end it as reassigned. Assign
 authority alone does not authorize moves into `review` or `done`; those moves require the active claim
 holder. Task creation, assignment, and authorship alone grant no such authority. Moving out of `doing`
-ends the claim.
+ends the claim. Delegation never names the reserved `human`, `cli`, `system`, or `git:*` harnesses.
+A delegated claim revives its holder's ended session, so the holder's `bye` releases that claim.
 Before handing work back, post progress and move the task to `todo`, unless the human requested a
 pause. `review` and `done` transitions retain their existing idempotent behavior.
 

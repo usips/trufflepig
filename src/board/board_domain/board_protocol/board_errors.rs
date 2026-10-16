@@ -67,6 +67,8 @@ impl BoardErrorCode {
             "board_remote_unsupported" => Self::BoardRemoteUnsupported,
             "database is locked" => Self::DatabaseLocked,
             "daemon_busy" => Self::DaemonBusy,
+            // Vocabulary prefixes such as invalid_role are validation answers, not storage faults.
+            label if label.starts_with("invalid_") => Self::InvalidOptions,
             _ => return None,
         };
         Some((code, detail))

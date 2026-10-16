@@ -11,6 +11,7 @@ mod commit_unlink_writes;
 mod repository_writes;
 
 use crate::board::board_actor::BoardRecipient;
+use crate::board::board_ids::TaskId;
 use crate::board::board_vocabulary::EntryText;
 pub(in crate::board::local_board) use commit_link_writes::backfill_commit_claim_links;
 pub(in crate::board::local_board) use commit_link_writes::{link_commit, link_commits};
@@ -143,6 +144,12 @@ pub(in crate::board::local_board) fn post(
             }
             None
         });
+    if let Some(task) = to
+        .as_ref()
+        .and_then(|recipient| TaskId::parse(recipient.as_str()).ok())
+    {
+        super::task_writes::require_task(tx, task)?;
+    }
     let entry = insert_entry(
         tx,
         ctx,

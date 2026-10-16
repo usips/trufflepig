@@ -70,6 +70,23 @@ pub(in crate::board::local_board) fn require_assignee(
     Ok(())
 }
 
+/// Expands a task recipient for the caller and refuses task addresses, which no delivery matches.
+pub(super) fn normalized_task_recipient(
+    to: Option<&BoardRecipient>,
+    caller: &BoardActor,
+) -> Result<Option<BoardRecipient>, BoardError> {
+    let Some(recipient) = to.map(|recipient| recipient.normalize_for_caller(caller)) else {
+        return Ok(None);
+    };
+    if TaskId::parse(recipient.as_str()).is_ok() {
+        return Err(invalid(
+            "invalid_options",
+            "a task cannot be assigned to another task",
+        ));
+    }
+    Ok(Some(recipient))
+}
+
 pub(in crate::board::local_board) fn create_task(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
@@ -79,16 +96,7 @@ pub(in crate::board::local_board) fn create_task(
     section: Option<&str>,
 ) -> Result<BoardReply, BoardError> {
     require_plan(tx, plan)?;
-    let task_recipient = to.map(|recipient| recipient.normalize_for_caller(&ctx.actor));
-    if task_recipient
-        .as_ref()
-        .is_some_and(|recipient| TaskId::parse(recipient.as_str()).is_ok())
-    {
-        return Err(invalid(
-            "invalid_options",
-            "a task cannot be assigned to another task",
-        ));
-    }
+    let task_recipient = normalized_task_recipient(to, &ctx.actor)?;
     let self_assigned = task_recipient
         .as_ref()
         .is_some_and(|recipient| recipient == &BoardRecipient::for_actor(&ctx.actor));
