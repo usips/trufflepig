@@ -310,9 +310,9 @@ fn run_with_retry_deadline(
         && read_deadline.is_some()
         && !options.no_daemon
     {
-        // Keep first-use tokenizer setup outside transport attempts so a fresh
-        // process can render the local fallback inside its held deadline reserve.
-        let _ = crate::output::OutputBudget::new(options.budget)?;
+        // Build the tokenizer beside the attempts, so an immediately answered read
+        // does not pay for it. A fallback that needs it waits on the same one-time init.
+        std::thread::spawn(crate::output::prewarm_tokenizer);
     }
     let mut command = super::ClientCommand::default();
     run_retry_loop(

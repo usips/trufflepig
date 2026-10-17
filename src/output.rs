@@ -22,6 +22,11 @@ impl OutputFormat {
     }
 }
 
+/// Builds the shared o200k_base tokenizer ahead of its first budget.
+pub fn prewarm_tokenizer() {
+    let _ = tiktoken_rs::o200k_base_singleton();
+}
+
 pub struct OutputBudget {
     /// The process-wide o200k_base tokenizer, built once on first use and owned
     /// by `tiktoken_rs` for the life of the process (an interner-style static:
