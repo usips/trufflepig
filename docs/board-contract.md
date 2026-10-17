@@ -6,7 +6,7 @@ assembles evidence, generating no prose. Board writes require no workspace confi
 index; read selection follows the [Project contract](board-projects.md). Grammar, feedback, web
 access, and worker evidence live in the [CLI](board-cli-contract.md),
 [feedback](board-feedback-contract.md), [web](board-web-contract.md), and
-[worker evidence](board-workers.md) contracts.
+[worker evidence](board-workers.md) contracts. Plugin links here use `feat/trufflepig-board` until merge.
 
 ## Identity, references, and authority
 

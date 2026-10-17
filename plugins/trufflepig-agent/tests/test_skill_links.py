@@ -7,8 +7,9 @@ import unittest
 SKILLS = Path(__file__).resolve().parents[1] / "skills"
 MAX_GUIDE_LINES = 200
 CHECKOUT_PHRASE = "in the Trufflepig checkout"
-# Every docs/ reference must be a repository URL: `blob/master/docs/...`.
-CHECKOUT_DOCS_PATH = re.compile(r"(?<!blob/master/)docs/")
+# Every docs/ reference must be a repository URL: `blob/master/docs/...`, or
+# `blob/feat/trufflepig-board/docs/board-...` until the Board contracts merge.
+CHECKOUT_DOCS_PATH = re.compile(r"(?<!blob/master/)(?<!blob/feat/trufflepig-board/)docs/")
 
 
 def skill_markdown():

@@ -173,7 +173,7 @@ the plan ID in relevant feedback; do not claim another worker's task.
 
 Report a Trufflepig failure only when it forces a workaround. Use the four-field
 body, categories, and 4 KiB limit in the
-[feedback contract](https://github.com/usips/trufflepig/blob/master/docs/board-feedback-contract.md#report-fields);
+[feedback contract](https://github.com/usips/trufflepig/blob/feat/trufflepig-board/docs/board-feedback-contract.md#report-fields);
 do not copy a second template here. The wrapper adds call metadata,
 never source output. If reporting fails, state that once and continue the fallback.
 
