@@ -536,9 +536,6 @@ impl Store {
                 return Err(error);
             }
         };
-        if let Some(deadline) = deadline {
-            checkpoint.start_bounded_slice(deadline);
-        }
         let staged_path = directory.path().join("index.sqlite3");
         let (coverage, scan_fingerprint) = if use_checkpoint {
             index_checkpoint::stage(

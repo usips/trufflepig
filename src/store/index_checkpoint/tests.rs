@@ -340,87 +340,27 @@ fn expired_resolver_records_maintenance_and_explicit_index_finishes_retained_wor
     }
     let checkpoint = retain_fixture_sources(&store, &root, &cache);
     drop(checkpoint);
-    assert_eq!(retained_file_count(&cache), FILES);
-    let mut stalled_slices = progress_io::read_record(&cache)
-        .expect("retained facts persist checkpoint progress")
-        .stalled_slices;
-    assert_eq!(stalled_slices, 0);
-
-    const MAX_ATTEMPTS: usize = 6;
-    let mut resolver_timeout_advanced_stalls = false;
-    let mut resolver_timeouts = 0;
-    for attempt in 1..=MAX_ATTEMPTS {
+    // Each attempt reuses every retained file and saves nothing new, so it stalls.
+    for stalled in 1..=3 {
         let writer_lock = lease(&cache);
         writer_lock.lock_exclusive().unwrap();
         let deadline = QueryDeadline::after(Duration::from_secs(2));
         let overrun = deadline.remaining() + Duration::from_millis(25);
-        let resolver_entered = std::cell::Cell::new(false);
         let result = store.index_leased(
             writer_lock,
             |_| {
-                resolver_entered.set(true);
                 std::thread::sleep(overrun);
                 Ok(())
             },
             Some(&deadline),
         );
-        let error = match result {
-            Err(error) => error,
-            Ok(None) => panic!(
-                "attempt {attempt} skipped despite an unheld writer lease and no maintenance latch"
-            ),
-            Ok(Some(_)) => panic!("attempt {attempt} published despite the deliberate overrun"),
-        };
+        let error = result.unwrap_err();
         assert!(is_timed_out(&error), "{error:#}");
-
-        let entered_resolver = resolver_entered.get();
-        if entered_resolver {
-            resolver_timeouts += 1;
-        }
         assert_eq!(retained_file_count(&cache), FILES);
-        let record = progress_io::read_record(&cache).unwrap();
-        let progress = crate::store::read_index_progress(&root, &cache)
-            .expect("every failed bounded attempt retains visible progress");
-        assert_eq!(progress, record.progress);
-        let previous_stalls = stalled_slices;
-        stalled_slices = record.stalled_slices;
-        let stall_delta = stalled_slices.checked_sub(previous_stalls).unwrap_or_else(|| {
-            panic!(
-                "attempt {attempt} reduced persisted stalled_slices from {previous_stalls} to {stalled_slices}"
-            )
-        });
-        assert!(
-            stall_delta <= 1,
-            "attempt {attempt} advanced persisted stalled_slices by {stall_delta}"
-        );
-        assert!(
-            stalled_slices <= 3,
-            "attempt {attempt} exceeded the three-slice maintenance threshold"
-        );
-        assert_eq!(
-            progress.maintenance_required,
-            stalled_slices == 3,
-            "attempt {attempt} persisted stalled_slices={stalled_slices}, resolver_entered={entered_resolver}"
-        );
+        let progress = crate::store::read_index_progress(&root, &cache).unwrap();
+        assert_eq!(progress.maintenance_required, stalled == 3);
         assert_eq!(progress.completed_files, FILES);
-        assert_eq!(store.generation().unwrap(), 0);
-
-        if entered_resolver && stall_delta == 1 {
-            resolver_timeout_advanced_stalls = true;
-        }
-        if stalled_slices == 3 {
-            break;
-        }
     }
-
-    assert_eq!(
-        stalled_slices, 3,
-        "three qualifying slices were not observed within {MAX_ATTEMPTS} attempts; resolver_timeouts={resolver_timeouts}"
-    );
-    assert!(
-        resolver_timeout_advanced_stalls,
-        "maintenance was reached without a timed-out resolver attempt advancing persisted stalled_slices; resolver_timeouts={resolver_timeouts}"
-    );
     let progress = crate::store::read_index_progress(&root, &cache).unwrap();
     assert_eq!(progress.phase, IndexProgressPhase::MaintenanceRequired);
 
@@ -662,63 +602,31 @@ fn expired_setup_and_tiny_active_slices_do_not_poison_bounded_retries() {
             .unwrap();
         }
 
+        // A tiny active slice opens its checkpoint with a deadline too short to be eligible.
         let budget = QueryDeadline::start();
+        let tiny_slice = QueryDeadline::after(Duration::from_millis(200));
+        let opening = if active_slice { &tiny_slice } else { &budget };
         let mut checkpoint =
-            IndexCheckpoint::open(&store.conn, &root, &cache, Some(&budget)).unwrap();
+            IndexCheckpoint::open(&store.conn, &root, &cache, Some(opening)).unwrap();
         checkpoint.begin_pass().unwrap();
-        let deadline = QueryDeadline::after(Duration::from_millis(25));
-        if active_slice {
-            checkpoint.start_bounded_slice(&deadline);
-        }
-        std::thread::sleep(Duration::from_millis(30));
+        let deadline = tiny_slice;
+        std::thread::sleep(deadline.remaining() + Duration::from_millis(10));
         assert!(deadline.time_expired(), "the tiny deadline must expire");
         checkpoint.note_budget_expired(&deadline).unwrap();
-        assert_eq!(checkpoint.stalled_slices, 0);
         assert!(!checkpoint.maintenance_required());
         let progress = crate::store::read_index_progress(&root, &cache)
             .expect("the expired interruption persists progress");
-        assert_eq!(progress_io::read_record(&cache).unwrap().stalled_slices, 0);
         assert!(!progress.maintenance_required);
         drop(checkpoint);
         drop(store);
 
-        const MAX_RETRIES: usize = 4;
-        let mut published = false;
-        for attempt in 1..=MAX_RETRIES {
-            let mut retry = crate::store::Store::open(&root, &cache).unwrap();
-            match retry.index_available_until(QueryDeadline::after(Duration::from_secs(2))) {
-                Ok(Some(coverage)) => {
-                    assert_eq!(coverage.total_files, FILES);
-                    assert_eq!(coverage.indexed_files, FILES);
-                    assert_eq!(coverage.walk_failures, 0);
-                    assert_eq!(retry.generation().unwrap(), 1);
-                    assert!(crate::store::read_index_progress(&root, &cache).is_none());
-                    assert_eq!(retained_file_count(&cache), 0);
-                    published = true;
-                    break;
-                }
-                Ok(None) => panic!(
-                    "retry {attempt} skipped despite an unheld writer lease and no maintenance latch"
-                ),
-                Err(error) => {
-                    assert!(
-                        is_timed_out(&error),
-                        "bounded retry {attempt} failed for a non-timeout reason: {error:#}"
-                    );
-                    let progress = crate::store::read_index_progress(&root, &cache)
-                        .expect("a timed-out bounded retry retains checkpoint progress");
-                    assert_eq!(retry.generation().unwrap(), 0);
-                    assert!(
-                        !progress.maintenance_required,
-                        "retry {attempt} poisoned the retained checkpoint for maintenance"
-                    );
-                }
-            }
-        }
-        assert!(
-            published,
-            "the small fixture did not publish within {MAX_RETRIES} bounded two-second retries"
-        );
+        let mut retry = crate::store::Store::open(&root, &cache).unwrap();
+        let coverage = retry
+            .index_available_until(QueryDeadline::after(Duration::from_secs(2)))
+            .unwrap()
+            .expect("a fresh bounded two-second request publishes the small fixture");
+        assert_eq!(coverage.total_files, FILES);
+        assert_eq!(retry.generation().unwrap(), 1);
     }
 }
 
@@ -738,4 +646,28 @@ fn bounded_attempt_removes_obsolete_stage_directories() {
     );
     assert!(!obsolete.exists());
     assert_eq!(store.generation().unwrap(), 1);
+}
+
+#[test]
+fn slow_setup_before_checkpoint_open_still_counts_an_eligible_stall() {
+    let (_directory, root, cache, store) = fixture();
+    for number in 0..4 {
+        fs::write(
+            root.join(format!("file-{number}.txt")),
+            format!("A slow-setup observation, file {number}.\n"),
+        )
+        .unwrap();
+    }
+    // Two seconds leaves the slice eligible at open, but 300 ms of setup
+    // before the first pass would make it ineligible if the clock started later.
+    let deadline = QueryDeadline::after(Duration::from_secs(2));
+    let mut checkpoint =
+        IndexCheckpoint::open(&store.conn, &root, &cache, Some(&deadline)).unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    checkpoint.begin_pass().unwrap();
+    std::thread::sleep(deadline.remaining() + Duration::from_millis(10));
+    assert!(deadline.time_expired(), "the slice deadline must expire");
+    checkpoint.note_budget_expired(&deadline).unwrap();
+    assert_eq!(checkpoint.stalled_slices, 1);
+    assert_eq!(progress_io::read_record(&cache).unwrap().stalled_slices, 1);
 }

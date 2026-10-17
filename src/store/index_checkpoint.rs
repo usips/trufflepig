@@ -53,6 +53,11 @@ impl IndexCheckpoint {
         cache: &Path,
         deadline: Option<&QueryDeadline>,
     ) -> Result<Self> {
+        // The bounded slice starts here, so setup before the first pass counts against it.
+        let bounded_slice_started = deadline.map(|_| Instant::now());
+        let bounded_slice_eligible = deadline.is_some_and(|deadline| {
+            deadline.remaining() >= index_deadline::inline_maintenance_eligibility()
+        });
         if let Some(deadline) = deadline {
             index_deadline::check(deadline)?;
         }
@@ -130,8 +135,8 @@ impl IndexCheckpoint {
             new_files_this_pass: 0,
             retained_file_count,
             last_progress_write: Instant::now(),
-            bounded_slice_started: None,
-            bounded_slice_eligible: false,
+            bounded_slice_started,
+            bounded_slice_eligible,
         })
     }
 
@@ -162,12 +167,6 @@ impl IndexCheckpoint {
         self.progress.completed_files = self.retained_file_count;
         self.progress.maintenance_required = false;
         self.write_progress()
-    }
-
-    pub(super) fn start_bounded_slice(&mut self, deadline: &QueryDeadline) {
-        let eligibility = index_deadline::inline_maintenance_eligibility();
-        self.bounded_slice_eligible = deadline.remaining() >= eligibility;
-        self.bounded_slice_started = Some(Instant::now());
     }
 
     pub(super) fn extraction(
