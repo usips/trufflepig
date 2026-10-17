@@ -155,14 +155,6 @@ fn spawn_router() -> Result<BackgroundChild> {
     spawn_background_for(&mut command, &executable, "system router", &cache)
 }
 
-fn ensure_with<'run>(
-    start_wait: Duration,
-    start: impl FnOnce(QueryDeadline) -> Result<managed_unit::RouterStart<'run>>,
-) -> Result<()> {
-    let deadline = QueryDeadline::after(start_wait);
-    ensure_until(deadline, start_wait, start)
-}
-
 /// Starts the router with `start`, then polls its status. A detached child is
 /// watched for exit; an installed unit is watched through its systemd state.
 fn ensure_until<'run>(

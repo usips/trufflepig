@@ -18,16 +18,6 @@ pub(super) fn stage(
     stage_inner(conn, previous, root, cache, None, None)
 }
 
-pub(super) fn stage_until(
-    conn: &mut Connection,
-    previous: &Connection,
-    root: &Path,
-    cache: &Path,
-    deadline: &QueryDeadline,
-) -> Result<(Coverage, String)> {
-    stage_inner(conn, previous, root, cache, Some(deadline), None)
-}
-
 pub(super) fn stage_checkpointed(
     conn: &mut Connection,
     previous: &Connection,
