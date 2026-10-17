@@ -44,24 +44,26 @@ the request, and wait for them only within the request's query deadline. `stop`,
 `--no-daemon` requests never touch it. `system ensure` starts the router, `system
 stop` shuts it down, `system status` reports if it runs, `system prune` evicts
 caches for vanished roots immediately, and `system-serve` serves it in the
-foreground. The agent plugin ships a systemd user unit (`install.sh --systemd`) that keeps the router running
-and restarts it on failure. Service stop/restart covers only daemons the router spawned. Client-fallback daemons
-live in the caller's cgroup and survive it; stop each root as in [runtime
-recovery](../plugins/trufflepig-agent/README.md#runtime-recovery-and-upgrades) and find survivors with `system
-status`. The session-start hook starts that service when it is enabled, else runs `system ensure`. `system
-ensure` starts a detached router only when no installed unit owns the router directory, as with an isolated
-`TRUFFLEPIG_SYSTEM_DIR` router. Installation treats a refused Unix-socket connection as an absent unmanaged
-router; managed service readiness still requires a live compatible reply
-(`plugins/trufflepig-agent/scripts/install_agent.py:router_endpoint_present`). A sandbox whose seccomp filter
-denies unix-socket connects (Muse's does) cannot reach any socket. Its read-only cache can block indexed
-`--no-daemon` operations; explicit current-path reads bypass the index and cache. Other routed requests reach
-the router through its file spool. The router claims each `<request>.request` file in `$TRUFFLEPIG_SPOOL_DIR`,
-else `/tmp/trufflepig-<uid>/spool`, by renaming it to `<request>.claimed`, answers it on a worker with
-`<request>.reply`, and refreshes a `heartbeat` file every second; a client whose socket connect fails spools its
-request only while that heartbeat is under five seconds old, and otherwise leaves the request unspooled. The
-[Codex integration](../plugins/trufflepig-agent/README.md) configures a shared, disk-backed spool for its
-wrapper and router; do not use the legacy `/tmp` default on machines with RAM-backed temporary storage.
-Index-backed singleton commands start a per-root index daemon automatically.
+foreground. The agent plugin ships a systemd user unit (`install.sh
+--systemd`) that keeps the router running and restarts it on failure. Service stop/restart
+covers only router-spawned daemons. Client-fallback daemons survive it; stop each per root as described in
+[runtime recovery](../plugins/trufflepig-agent/README.md#runtime-recovery-and-upgrades). `system status` does not list them yet. The
+session-start hook starts that service when it is enabled, else runs `system ensure`.
+`system ensure` starts a detached router only when no installed unit owns the router
+directory, as with an isolated `TRUFFLEPIG_SYSTEM_DIR` router. Installation treats a
+refused Unix-socket connection as an absent unmanaged router; managed service readiness still requires a live compatible reply
+(`plugins/trufflepig-agent/scripts/install_agent.py:router_endpoint_present`).
+A sandbox whose seccomp filter denies unix-socket connects (Muse's does) cannot
+reach any socket. Its read-only cache can block indexed `--no-daemon` operations;
+explicit current-path reads bypass the index and cache. Other routed requests
+reach the router through its file spool. The router claims each `<request>.request`
+file in `$TRUFFLEPIG_SPOOL_DIR`, else `/tmp/trufflepig-<uid>/spool`, by renaming it
+to `<request>.claimed`, answers it on a worker with `<request>.reply`, and refreshes a `heartbeat`
+file every second; a client whose socket connect fails spools its request only while
+that heartbeat is under five seconds old, and otherwise leaves the request unspooled.
+The [Codex integration](../plugins/trufflepig-agent/README.md) configures a shared,
+disk-backed spool for its wrapper and router; do not use the legacy `/tmp` default
+on machines with RAM-backed temporary storage. Index-backed singleton commands start a per-root index daemon automatically.
 Index-backed workspace queries start a coordinator unless `--no-daemon` is set; `ws show` and `ws status` inspect
 locally. The coordinator starts member daemons when needed and reads their published
 indexes. Semantic requests may start the shared per-user inference worker when enabled.
