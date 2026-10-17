@@ -447,11 +447,12 @@ fn inline_member_index(
     if own_view.is_none()
         && let Some(parent) = parent_view.as_ref()
     {
-        let _ = crate::store::ensure_seeded_until(
+        let _ = crate::store::ensure_seeded_within(
             parent.store.index_cache(),
             &member.root,
             member_cache,
             &maintenance,
+            deadline,
         );
         if deadline.expired() {
             bail!("{TIMED_OUT}: query deadline expired");

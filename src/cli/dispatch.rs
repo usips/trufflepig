@@ -484,11 +484,12 @@ fn reconcile_inline(
     if own_view.is_none()
         && let Some(parent) = parent_view.as_ref()
     {
-        let _ = crate::store::ensure_seeded_until(
+        let _ = crate::store::ensure_seeded_within(
             parent.store.index_cache(),
             root,
             cache,
             &maintenance,
+            deadline,
         );
         if deadline.expired() {
             bail!(

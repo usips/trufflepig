@@ -236,3 +236,32 @@ fn small_valid_member_seed_is_published_with_extraction_facts() {
     assert_eq!(count_extractions(&fixture.worktree_cache), source_rows);
     assert!(!seed_path(&fixture.worktree_cache, INDEX_NAME).exists());
 }
+
+#[test]
+fn slice_expiry_during_seed_memoizes_while_the_caller_is_alive() {
+    let fixture = fixture();
+    let source_index = fixture.member_cache.join(INDEX_NAME);
+    let locked_source = Connection::open(&source_index).unwrap();
+    locked_source.busy_timeout(Duration::ZERO).unwrap();
+    locked_source
+        .execute_batch("PRAGMA journal_mode=DELETE; BEGIN EXCLUSIVE;")
+        .unwrap();
+
+    // The shared slice ends the copy while the request still has time left.
+    let slice = QueryDeadline::after(Duration::from_millis(100));
+    let caller = QueryDeadline::after(Duration::from_secs(5));
+    let outcome = ensure_seeded_within(
+        &fixture.member_cache,
+        &fixture.worktree_root,
+        &fixture.worktree_cache,
+        &slice,
+        &caller,
+    );
+
+    assert_eq!(outcome, SeedOutcome::Skipped("seed failed"));
+    assert!(slice.expired());
+    assert!(!caller.expired());
+    let diagnostic = read_seed_outcome(&fixture.worktree_cache).unwrap();
+    assert!(diagnostic["memo"].is_object(), "{diagnostic}");
+    drop(locked_source);
+}

@@ -116,10 +116,23 @@ pub fn ensure_seeded_until(
     worktree_cache: &Path,
     deadline: &QueryDeadline,
 ) -> SeedOutcome {
-    if deadline.expired() {
+    ensure_seeded_within(member_cache, worktree_root, worktree_cache, deadline, deadline)
+}
+
+/// Seeds within `slice`, a bound shared with other work, capped at two seconds.
+/// A skipped seed is memoized while `caller`, the request deadline, is unexpired,
+/// so a slice that ends the copy early does not force every request to repeat it.
+pub fn ensure_seeded_within(
+    member_cache: &Path,
+    worktree_root: &Path,
+    worktree_cache: &Path,
+    slice: &QueryDeadline,
+    caller: &QueryDeadline,
+) -> SeedOutcome {
+    if slice.expired() {
         return SeedOutcome::Skipped("seed deadline expired");
     }
-    let seed_deadline = deadline.capped(SEED_DEADLINE);
+    let seed_deadline = slice.capped(SEED_DEADLINE);
     if seed_deadline.expired() {
         return SeedOutcome::Skipped("seed deadline expired");
     }
@@ -151,7 +164,7 @@ pub fn ensure_seeded_until(
         MAX_SEED_SOURCE_BYTES,
         seed_deadline,
         identity.as_ref(),
-        Some(deadline),
+        Some(caller),
     )
 }
 
