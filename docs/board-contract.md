@@ -180,18 +180,18 @@ Storage defaults to `$XDG_DATA_HOME/trufflepig/board.sqlite3`, else the passwd h
 0700 applies only to board-created directories (a fresh account's missing `~/.local` and
 `~/.local/share` ancestors), and a pre-existing group/world-accessible parent is refused — open
 paths never chmod, read paths never modify the filesystem. The DB records its resolved path and uses
-forward `user_version` migrations; shipped steps 1–9 are immutable. Schema 10 upgrades v9 in one
-transaction. It preserves actor rows, entries, references, manual link receipts, session cursors,
-and claims without rewriting historical actors; clears API 9 dedupe replies; and appends a
-system-authored Grant entry/event for each legacy steward before dropping `plans.steward`. Each
-migrated grant carries all five roles, no expiry, and the former owner-user, harness, and plan
-scope. Origin, grant, worker, progress, verdict, and claim-attribution evidence is additive.
-Empty/relative DB overrides and newer schemas are refused. Board data is outside cache sweeps and `forget-logs`;
-entries and revisions remain durable. WAL requires local disk. Configuration is
-`~/.config/trufflepig/board.toml` with unknown fields denied: mode, user, host, url, token_file,
-claim_ttl_minutes, repos. Config checks cache for two seconds, backs off unchanged failures for
-60 seconds, and applies TTL changes to existing readers/writer. `mode = "remote"` fails
-`board_remote_unsupported` without a coordinator or local DB.
+forward `user_version` migrations; shipped steps 1–11 are immutable and byte-pinned. Schema 11 adds nullable
+`origin_ip` columns to `entries` and `events` and clears API dedupe replies. Schema 10 upgrades v9 in one
+transaction. It preserves actor rows, entries, references, manual link receipts, session cursors, and claims
+without rewriting historical actors; clears API 9 dedupe replies; and appends a system-authored Grant
+entry/event for each legacy steward before dropping `plans.steward`. Each migrated grant carries all five roles,
+no expiry, and the former owner-user, harness, and plan scope. Origin, grant, worker, progress, verdict, and
+claim-attribution evidence is additive. Empty/relative DB overrides and newer schemas are refused. Board data is
+outside cache sweeps and `forget-logs`; entries and revisions remain durable. WAL requires local disk.
+Configuration is `~/.config/trufflepig/board.toml` with unknown fields denied: mode, user, host, url,
+token_file, claim_ttl_minutes, repos. Config checks cache for two seconds, backs off unchanged failures for 60
+seconds, and applies TTL changes to existing readers/writer. `mode = "remote"` fails `board_remote_unsupported`
+without a coordinator or local DB.
 
 Board FTS5 indexes full entry and proposal text, revisions, and plan titles with stable per-target
 IDs; distinct targets stay separate. Plan filters precede the 50-hit cap; hits target `E#`, `P#@N`,
