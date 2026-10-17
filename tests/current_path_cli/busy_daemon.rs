@@ -23,6 +23,24 @@ pub struct WireRequest {
     pub args: Vec<String>,
 }
 
+/// Which accepted requests the fake router leaves unanswered until the client closes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HoldPolicy {
+    Never,
+    FromSecondAttempt,
+    Always,
+}
+
+impl HoldPolicy {
+    fn holds(self, attempt: usize) -> bool {
+        match self {
+            Self::Never => false,
+            Self::FromSecondAttempt => attempt > 1,
+            Self::Always => true,
+        }
+    }
+}
+
 pub struct BusyDaemon {
     stop: Arc<AtomicBool>,
     requests: Arc<Mutex<Vec<WireRequest>>>,
@@ -43,18 +61,19 @@ impl BusyDaemon {
     }
 
     pub fn start(system_dir: &Path, reply: &'static str) -> Self {
-        Self::start_configured(system_dir, reply, false)
+        Self::start_configured(system_dir, reply, HoldPolicy::Never)
     }
 
     pub fn start_busy_then_hold(system_dir: &Path) -> Self {
-        Self::start_configured(system_dir, Self::busy_reply(), true)
+        Self::start_configured(system_dir, Self::busy_reply(), HoldPolicy::FromSecondAttempt)
     }
 
-    fn start_configured(
-        system_dir: &Path,
-        reply: &'static str,
-        hold_after_first_busy: bool,
-    ) -> Self {
+    /// Accepts every request and never answers it.
+    pub fn start_silent(system_dir: &Path) -> Self {
+        Self::start_configured(system_dir, Self::busy_reply(), HoldPolicy::Always)
+    }
+
+    fn start_configured(system_dir: &Path, reply: &'static str, hold: HoldPolicy) -> Self {
         let socket = system_dir.join("daemon.sock");
         assert!(!socket.exists(), "fixture socket already exists");
         let listener = UnixListener::bind(&socket).expect("bind fake busy router");
@@ -72,7 +91,7 @@ impl BusyDaemon {
                     Ok((stream, _)) => handle(
                         stream,
                         reply,
-                        hold_after_first_busy,
+                        hold,
                         &thread_requests,
                         &thread_stop,
                         deadline,
@@ -249,7 +268,7 @@ impl Drop for BusyDaemon {
 fn handle(
     mut stream: UnixStream,
     reply: &str,
-    hold_after_first_busy: bool,
+    hold: HoldPolicy,
     requests: &Mutex<Vec<WireRequest>>,
     stop: &AtomicBool,
     deadline: Instant,
@@ -294,7 +313,7 @@ fn handle(
         });
         requests.len()
     };
-    if hold_after_first_busy && attempt > 1 {
+    if hold.holds(attempt) {
         hold_until_client_closes(&mut stream, stop, deadline);
         return;
     }

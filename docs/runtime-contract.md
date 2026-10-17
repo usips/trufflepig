@@ -166,11 +166,10 @@ retried when the shared budget leaves 1 s for a useful attempt after backoff. A 
 answer, including frame timeout, is final. Current-path `show` and
 `read:path:` continuation can fall back locally when cache opening fails before
 dispatch with `index_cache_unavailable`, or after retry exhaustion returns an
-explicit `daemon_busy`, within the read's deadline. For such a read, once an explicit busy
-reply has been seen, each later attempt ends 250 ms before the shared deadline, keeping that
-local-fallback reserve. A later attempt that is still running when its own capped deadline
-expires (a `daemon_reply_timeout` or `timed_out` answer) also falls back within the reserve.
-Timeouts that arrive before the cap, database locks, and ambiguous transport errors never
+explicit `daemon_busy`, within the read's deadline. For such a read, every attempt ends
+250 ms before the shared deadline from the first attempt, keeping that local-fallback reserve.
+An attempt still running when its own capped deadline expires (a `daemon_reply_timeout` or
+`timed_out` answer) falls back within the reserve. Timeouts that arrive before the cap, database locks, and ambiguous transport errors never
 trigger it. If the fallback itself times out, the original reply is returned with
 the fallback failure as context. Board and feedback
 contention-only writes allow at most two attempts after explicit pre-dispatch

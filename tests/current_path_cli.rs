@@ -169,6 +169,35 @@ fn cold_process_held_busy_fallback_returns_current_path_within_shared_deadline()
 }
 
 #[test]
+fn silent_router_current_path_read_returns_local_bytes_within_budget() {
+    let fixture = Fixture::new();
+    let source = fixture.write_markdown_with_prefix("SILENT_ROUTER_ACCEPTED", 12);
+    let mut silent = BusyDaemon::start_silent(&fixture.system_dir);
+
+    let started = Instant::now();
+    let read = fixture.run_show(
+        "path:docs/guide.md",
+        &fixture.cache,
+        false,
+        Duration::from_secs(35),
+    );
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed <= Duration::from_secs(32),
+        "silent router read exceeded the 30-second client budget allowance: {elapsed:?}"
+    );
+    assert_current_path(&read, "docs/guide.md");
+    assert_eq!(read["end"], source.len());
+    assert_eq!(read["lines"].as_array().unwrap().len(), 12);
+    assert_eq!(
+        read["lines"][0]["text"],
+        "# SILENT_ROUTER_ACCEPTED row-001\n"
+    );
+    assert_request_attempts(&silent, "path:docs/guide.md", 1);
+    silent.stop();
+}
+
+#[test]
 fn selected_workspace_member_reads_current_path_before_result_cache_open() {
     let fixture = Fixture::new();
     let (workspace, selected_root) = fixture.write_workspace();

@@ -281,7 +281,36 @@ fn timeout_at_the_held_back_reserve_uses_the_busy_fallback() {
     assert_eq!(fake.result.unwrap(), "local recovery");
     assert_eq!(fake.attempts, 2);
     assert_eq!(fake.waits, vec![delay]);
-    assert_eq!(fake.held_back, vec![Duration::ZERO, BUSY_FALLBACK_RESERVE]);
+    assert_eq!(
+        fake.held_back,
+        vec![BUSY_FALLBACK_RESERVE, BUSY_FALLBACK_RESERVE]
+    );
+    assert_eq!(fake.fallbacks, 1);
+    assert!(fake.fallback_remaining[0] >= BUSY_FALLBACK_RESERVE);
+}
+
+#[test]
+fn silent_first_attempt_at_the_reserve_uses_the_busy_fallback() {
+    let timeout = || {
+        anyhow::Error::new(DaemonReplyTimeout::new(
+            Duration::from_secs(1),
+            Duration::from_secs(20),
+        ))
+    };
+    let budget = Duration::from_secs(30);
+    // An accepted request that never answers spends everything except the reserve.
+    let silent_attempt = budget - BUSY_FALLBACK_RESERVE;
+    let fake = run_fake(
+        RetryScope::Read,
+        "silent-first-attempt",
+        budget,
+        vec![(Err(timeout()), silent_attempt)],
+        Some(Ok("local recovery".into())),
+    );
+
+    assert_eq!(fake.result.unwrap(), "local recovery");
+    assert_eq!(fake.attempts, 1);
+    assert_eq!(fake.held_back, vec![BUSY_FALLBACK_RESERVE]);
     assert_eq!(fake.fallbacks, 1);
     assert!(fake.fallback_remaining[0] >= BUSY_FALLBACK_RESERVE);
 }
@@ -354,7 +383,10 @@ fn busy_seen_keeps_fallback_reserve_after_a_quick_typed_timeout() {
     assert!(error.downcast_ref::<DaemonReplyTimeout>().is_some());
     assert_eq!(fake.attempts, 2);
     assert_eq!(fake.waits, vec![first_delay]);
-    assert_eq!(fake.held_back, vec![Duration::ZERO, BUSY_FALLBACK_RESERVE]);
+    assert_eq!(
+        fake.held_back,
+        vec![BUSY_FALLBACK_RESERVE, BUSY_FALLBACK_RESERVE]
+    );
     assert_eq!(fake.fallbacks, 0);
 }
 
@@ -384,7 +416,7 @@ fn unbusy_quick_timeouts_can_use_the_same_boundary_budget() {
             (Err(timeout()), QUICK),
             (Ok("recovered".into()), QUICK),
         ],
-        Some(Ok("unused fallback".into())),
+        None,
     );
 
     assert_eq!(fake.result.unwrap(), "recovered");

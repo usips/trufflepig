@@ -142,9 +142,8 @@ fn run_retry_loop(
     let max_attempts = scope.max_attempts();
     let holds_fallback_time = scope == RetryScope::Read && fallback_available;
     let mut attempts = 0;
-    let mut busy_seen = false;
     loop {
-        let held_back = if holds_fallback_time && busy_seen {
+        let held_back = if holds_fallback_time {
             BUSY_FALLBACK_RESERVE
         } else {
             Duration::ZERO
@@ -159,14 +158,13 @@ fn run_retry_loop(
         match result {
             Ok(answer) => return Ok(answer),
             Err(error) => {
-                busy_seen |= is_explicit_busy(&error);
                 let policy = RetryPolicy::classify(scope, &error, elapsed);
                 if let RetryPolicy::Retry(minimum_delay) = policy
                     && attempts < max_attempts
                 {
                     let available = remaining();
                     let delay = retry_delay(request_id, attempts - 1, &error).max(minimum_delay);
-                    let reserve = retry_reserve(holds_fallback_time && busy_seen);
+                    let reserve = retry_reserve(holds_fallback_time);
                     // Preserve enough time to make the next request useful and,
                     // after a busy refusal, to fall back locally.
                     if delay.saturating_add(reserve) < available {
