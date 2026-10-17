@@ -100,14 +100,17 @@ and releases unfinished work to `todo` unless the human requested a pause.
 Claude's SessionEnd and SubagentStop hooks run `board bye`, which stops the bound
 worker, ends the session's claims, and moves Doing tasks to `todo`. A resumed
 session keeps its identity, so check `board show P7.3` first. The lead re-claims
-with bare `--resume`, which inherits the prior scope; `--resume=E#` takes over
-immediately and needs an authorized takeover. A worker asks the lead instead of
-re-claiming. A stopped worker cannot rebind (`has ended`) and keeps its handle,
-so the lead registers a new one, then the worker runs `board hello` with it:
+with bare `--resume` only while the lease is live or idle, which inherits the
+prior scope; `--resume=E#` takes over immediately and needs an authorized
+takeover. An ended claim has no lease to resume: bare `--resume` fails with
+`invalid_state`, such as `P7.3 has no claim to resume`. After a `bye`, the lead
+claims afresh with a scope. A worker asks the lead instead of re-claiming. A
+stopped worker cannot rebind (`has ended`) and keeps its handle, so the lead
+registers a new one, then the worker runs `board hello` with it:
 
 ```sh
-trufflepig-agent board claim P7.3 --resume
-trufflepig-agent board worker P7.3 add parser-2 --role code --model gpt-6-luna --scope "parser and tests" --files src/parser.rs
+trufflepig-agent board claim P7.3 "parser and tests"
+trufflepig-agent board worker P7.3 add parser-2 --role code --model gpt-6-luna --effort xhigh --scope "parser and tests" --files src/parser.rs
 trufflepig-agent board hello gpt-6-luna xhigh --worker P7.3/parser-2
 ```
 
