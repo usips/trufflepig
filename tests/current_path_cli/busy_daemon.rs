@@ -65,7 +65,11 @@ impl BusyDaemon {
     }
 
     pub fn start_busy_then_hold(system_dir: &Path) -> Self {
-        Self::start_configured(system_dir, Self::busy_reply(), HoldPolicy::FromSecondAttempt)
+        Self::start_configured(
+            system_dir,
+            Self::busy_reply(),
+            HoldPolicy::FromSecondAttempt,
+        )
     }
 
     /// Accepts every request and never answers it.

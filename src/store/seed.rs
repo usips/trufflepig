@@ -116,7 +116,13 @@ pub fn ensure_seeded_until(
     worktree_cache: &Path,
     deadline: &QueryDeadline,
 ) -> SeedOutcome {
-    ensure_seeded_within(member_cache, worktree_root, worktree_cache, deadline, deadline)
+    ensure_seeded_within(
+        member_cache,
+        worktree_root,
+        worktree_cache,
+        deadline,
+        deadline,
+    )
 }
 
 /// Seeds within `slice`, a bound shared with other work, capped at two seconds.
