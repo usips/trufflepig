@@ -109,7 +109,7 @@ fn outstanding_limit(tier: AdmissionTier, lane: RequestLane) -> Option<usize> {
         RequestLane::Maintenance => Some(2),
         RequestLane::Regex => Some(3),
         RequestLane::Semantic => Some(2),
-        RequestLane::Query => None,
+        RequestLane::Query | RequestLane::Board => None,
     }
 }
 

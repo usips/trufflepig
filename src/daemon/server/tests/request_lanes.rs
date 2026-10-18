@@ -70,6 +70,73 @@ fn active_maintenance_does_not_hold_the_query_lane() {
 }
 
 #[test]
+fn full_query_lane_does_not_refuse_board_requests() {
+    let (entered, entries) = mpsc::channel();
+    let (release, released) = mpsc::channel();
+    let (entered, released) = (Mutex::new(entered), Mutex::new(released));
+    let held = AtomicUsize::new(0);
+    let served = Arc::new(Served::start(
+        false,
+        one_worker(),
+        TestDaemon {
+            reply: Box::new(move |request| {
+                if request.args.first().is_some_and(|verb| verb == "status")
+                    && held.fetch_add(1, Ordering::AcqRel) == 0
+                {
+                    entered.lock().unwrap().send(()).unwrap();
+                    released.lock().unwrap().recv().unwrap();
+                }
+                Ok(request.args.join("|"))
+            }),
+            reconcile: quiet(),
+        },
+    ));
+    let active = {
+        let served = Arc::clone(&served);
+        std::thread::spawn(move || served.ask(&["status"]))
+    };
+    entries.recv_timeout(Duration::from_secs(5)).unwrap();
+    let (results, replies) = mpsc::channel();
+    let candidates: Vec<_> = (0..2)
+        .map(|_| {
+            let (served, results) = (Arc::clone(&served), results.clone());
+            std::thread::spawn(move || {
+                let _ = results.send(served.ask(&["status"]));
+            })
+        })
+        .collect();
+    drop(results);
+    let refused = replies
+        .recv_timeout(Duration::from_secs(5))
+        .expect("query lane did not reach its bounded queue capacity");
+    assert!(
+        format!(
+            "{:#}",
+            refused.expect_err("a full query queue must refuse one")
+        )
+        .contains("daemon_busy"),
+    );
+
+    for args in [
+        &["board", "show", "P7"][..],
+        &["feedback", "ls"],
+        &["system", "status"],
+    ] {
+        assert_eq!(
+            served.ask(args).unwrap().as_deref(),
+            Some(args.join("|").as_str()),
+            "{args:?} waited behind the full query lane"
+        );
+    }
+    release.send(()).unwrap();
+    active.join().unwrap().unwrap();
+    for candidate in candidates {
+        candidate.join().unwrap();
+    }
+    Arc::into_inner(served).unwrap().stop().unwrap();
+}
+
+#[test]
 fn full_regex_lane_does_not_hold_the_ordinary_query_lane() {
     let (entered, entries) = mpsc::channel();
     let (release, released) = mpsc::channel();

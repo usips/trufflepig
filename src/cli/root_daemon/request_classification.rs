@@ -61,6 +61,7 @@ pub(crate) fn classify(args: &[String]) -> Result<ClassifiedDaemonRequest> {
         | "forget-logs"
         | "semantic-worker-serve" => RequestLane::Maintenance,
         "semantic" if semantic_work(&options.words) => RequestLane::Maintenance,
+        "board" | "feedback" | "system" => RequestLane::Board,
         _ => RequestLane::Query,
     };
     let roots = if lane == RequestLane::Maintenance {
@@ -112,6 +113,9 @@ fn safe_verb(verb: &str) -> &'static str {
         "session" => "session",
         "audit" => "audit",
         "doctor" => "doctor",
+        "board" => "board",
+        "feedback" => "feedback",
+        "system" => "system",
         _ => "unknown",
     }
 }

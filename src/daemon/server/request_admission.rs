@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 const FRAME_INGRESS_WORKERS: usize = 2;
 /// Bounds socket frame reads separately from request execution and routes work
-/// to tier-sized query, maintenance, regex, and semantic queues.
+/// to tier-sized query, maintenance, regex, semantic, and board queues.
 pub(in crate::daemon) struct RequestAdmission {
     tier: AdmissionTier,
     accepted_budget: Duration,
@@ -16,6 +16,7 @@ pub(in crate::daemon) struct RequestAdmission {
     maintenance: Arc<RequestPool>,
     regex: Arc<RequestPool>,
     semantic: Arc<RequestPool>,
+    board: Arc<RequestPool>,
     root_work_limits: RootWorkLimits,
 }
 
@@ -48,6 +49,10 @@ impl RequestAdmission {
                 &format!("{name}-semantic"),
                 lane_size(tier, RequestLane::Semantic),
             )?),
+            board: Arc::new(RequestPool::new(
+                &format!("{name}-board"),
+                lane_size(tier, RequestLane::Board),
+            )?),
             root_work_limits: RootWorkLimits::default(),
         })
     }
@@ -70,6 +75,7 @@ impl RequestAdmission {
             RequestLane::Maintenance => (self.maintenance.name(), &self.maintenance),
             RequestLane::Regex => (self.regex.name(), &self.regex),
             RequestLane::Semantic => (self.semantic.name(), &self.semantic),
+            RequestLane::Board => (self.board.name(), &self.board),
         }
     }
 
@@ -92,6 +98,7 @@ impl RequestAdmission {
             &self.maintenance,
             &self.regex,
             &self.semantic,
+            &self.board,
         ] {
             if !pool.drain(end.saturating_duration_since(Instant::now())) {
                 return false;
@@ -106,6 +113,7 @@ impl RequestAdmission {
         self.maintenance.shutdown();
         self.regex.shutdown();
         self.semantic.shutdown();
+        self.board.shutdown();
     }
 }
 
@@ -144,6 +152,15 @@ fn lane_size(tier: AdmissionTier, lane: RequestLane) -> PoolSize {
             queue: 8,
         },
         (AdmissionTier::Root, RequestLane::Semantic) => PoolSize {
+            workers: 1,
+            queue: 8,
+        },
+        // Only the router answers board commands; other tiers keep a minimal lane.
+        (AdmissionTier::Router, RequestLane::Board) => PoolSize {
+            workers: 4,
+            queue: 32,
+        },
+        (_, RequestLane::Board) => PoolSize {
             workers: 1,
             queue: 8,
         },

@@ -179,6 +179,19 @@ fn daemon_request_class_routes_flags_and_regex_queries_to_controlled_lanes() {
             verb: "unknown",
         }
     );
+    for (args, verb) in [
+        (&["board", "show", "P7"][..], "board"),
+        (&["feedback", "ls", "--open"][..], "feedback"),
+        (&["system", "status"][..], "system"),
+    ] {
+        assert_eq!(
+            class(args),
+            RequestClass {
+                lane: RequestLane::Board,
+                verb,
+            }
+        );
+    }
 }
 
 fn workspace_classifier_fixture(

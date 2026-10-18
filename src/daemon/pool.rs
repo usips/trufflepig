@@ -23,6 +23,10 @@ pub(crate) enum RequestLane {
     Maintenance,
     Regex,
     Semantic,
+    /// `board`, `feedback`, and the `system` status probe, which the router
+    /// answers in-process; a reserved lane keeps them available while source
+    /// proxies fill `Query`.
+    Board,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
