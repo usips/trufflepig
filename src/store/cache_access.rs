@@ -150,10 +150,13 @@ fn cache_refusal_cause(error: &anyhow::Error) -> bool {
             .downcast_ref::<io::Error>()
             .is_some_and(cache_refusal_io)
             || cause.downcast_ref::<SqliteError>().is_some_and(|error| {
+                // Scoped by the caller: only `index_cache_unavailable` reaches
+                // here, with the cache the failed open targeted.
                 matches!(
                     error,
                     SqliteError::SqliteFailure(failure, _)
                         if failure.code == ErrorCode::ReadOnly
+                            || failure.code == ErrorCode::CannotOpen
                 )
             })
     })

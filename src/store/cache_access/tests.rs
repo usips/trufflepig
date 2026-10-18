@@ -28,7 +28,6 @@ fn classifies_only_selected_cache_refusals() {
     }
 
     for sqlite_code in [
-        rusqlite::ffi::SQLITE_CANTOPEN,
         rusqlite::ffi::SQLITE_CORRUPT,
         rusqlite::ffi::SQLITE_NOTADB,
         rusqlite::ffi::SQLITE_BUSY,
@@ -52,6 +51,34 @@ fn classifies_only_selected_cache_refusals() {
         .into(),
     );
     assert!(is_index_cache_unavailable(&read_only), "{read_only:#}");
+}
+
+#[test]
+fn cannot_open_selected_cache_carries_recovery_hint() {
+    let cache = Path::new("/chosen/cache");
+    let error = index_cache_unavailable(
+        cache,
+        SqliteError::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
+            None,
+        )
+        .into(),
+    );
+    assert!(is_index_cache_unavailable(&error), "{error:#}");
+    let text = format!("{error:#}");
+    assert!(text.contains("/chosen/cache"), "{text}");
+    assert!(text.contains("--cache"), "{text}");
+    assert!(text.contains("XDG_CACHE_HOME"), "{text}");
+}
+
+#[test]
+fn bare_cannot_open_without_selected_cache_stays_untyped() {
+    let error: anyhow::Error = SqliteError::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
+        None,
+    )
+    .into();
+    assert!(!is_index_cache_unavailable(&error), "{error:#}");
 }
 
 #[test]
