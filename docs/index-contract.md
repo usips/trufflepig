@@ -79,8 +79,8 @@ current references, lexical evidence, and snippets retain current coordinates.
 Unchecked or unextractable paths make coverage partial and truncated. Stale
 semantic candidates become current-source representatives with semantic coverage
 marked unverified. Current-byte hits never differ; re-read files count as differing.
-`show sym:` and `map FILE` re-extract divergent files; failed extraction can
-serve parent bytes with `verified: false` and `source: parent_index`.
+`show sym:`, `map FILE`, and `show HANDLE` re-read divergent files (a file hit whole);
+failed extraction can serve parent bytes with `verified: false` and `source: parent_index`.
 Through a root's own index, a stale `sym:` read waits up to 3 s for a daemon
 republish, then answers from current bytes with `freshness: unpublished`
 (`src/source/acquisition/stale_symbol.rs`). Inline prep uses at most 2 s per

@@ -211,10 +211,10 @@ pub(crate) fn acquire_through_parent(
     Ok((source, read.get()))
 }
 
-/// Re-reads a parent-index definition hit whose worktree file changed: the
-/// same-name, same-kind definition nearest its recorded line from current
-/// bytes, or the index's own bytes when the worktree file cannot be extracted.
-/// `None` when the worktree file no longer defines it.
+/// Re-reads a parent-index hit whose worktree file changed: a whole-file hit as
+/// the current file, a definition as the same-name, same-kind definition
+/// nearest its recorded line, or the index's own bytes when the worktree file
+/// cannot be extracted. `None` when the worktree file no longer defines it.
 pub(crate) fn reextracted_entry(
     store: &Store,
     handle: &str,
@@ -223,10 +223,30 @@ pub(crate) fn reextracted_entry(
     let ResultEntry::LiveSource(hit) = entry else {
         return Ok(None);
     };
-    if matches!(hit.kind.as_str(), "region" | "file" | "source_read") {
+    let root = &store.root;
+    if names_whole_file(hit) {
+        let bytes = source::read_contained(
+            root,
+            &crate::store::decode_path(&hit.path)?,
+            source::MAX_READ_BYTES,
+        )?;
+        let source = AcquiredSource {
+            revision: ContentRevision::of(&bytes),
+            span: ByteSpan::new(0, bytes.len())?,
+            bytes,
+            path: hit.path.clone(),
+            verified: true,
+            handle: handle.to_owned(),
+            side: None,
+            historical: None,
+            definitions: None,
+            freshness: None,
+        };
+        return Ok(Some((source, ParentRead::Reextracted)));
+    }
+    if matches!(hit.kind.as_str(), "region" | "source_read") {
         return Ok(None);
     }
-    let root = &store.root;
     let current = match source::reextract_definition(root, hit) {
         Ok(Some(current)) => current,
         Ok(None) => return Ok(None),
@@ -250,6 +270,11 @@ pub(crate) fn reextracted_entry(
         freshness: None,
     };
     Ok(Some((source, ParentRead::Reextracted)))
+}
+
+/// A file hit, or the whole-file module definition the index names by path.
+fn names_whole_file(hit: &Hit) -> bool {
+    hit.kind == "file" || (hit.kind == "module" && hit.name == hit.path && hit.container.is_none())
 }
 
 /// The parent index's stored bytes for `hit`, unverified against the worktree.

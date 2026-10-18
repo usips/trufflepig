@@ -487,6 +487,42 @@ fn no_daemon_read_serves_parent_hit_promptly_while_child_writer_is_held() -> Res
 }
 
 #[test]
+fn parent_file_hit_handle_shows_changed_worktree_file() -> Result<()> {
+    if !in_isolated_child("parent_file_hit_handle_shows_changed_worktree_file")? {
+        return Ok(());
+    }
+
+    let fixture = WorktreeFixture::new()?;
+    let found = json(invoke(
+        &fixture.worktree,
+        &fixture.child_cache,
+        &["search", "file:src/lib.rs"],
+        &[],
+    )?)?;
+    let hit = &found["hits"][0];
+    assert_eq!(hit["differs"], true, "{found}");
+    let handle = hit["handle"].as_str().context("file hit has no handle")?;
+    let shown = json(invoke(
+        &fixture.worktree,
+        &fixture.child_cache,
+        &["show", handle],
+        &[],
+    )?)?;
+    assert_eq!(shown["verified"], true, "{shown}");
+    assert_eq!(
+        shown["served_from"], "main index; re-extracted in worktree",
+        "{shown}"
+    );
+    assert!(
+        shown["lines"][0]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("worktree_marker")),
+        "{shown}"
+    );
+    Ok(())
+}
+
+#[test]
 fn explicit_cache_reads_through_parent_and_keeps_selected_result_identity() -> Result<()> {
     if !in_isolated_child("explicit_cache_reads_through_parent_and_keeps_selected_result_identity")?
     {

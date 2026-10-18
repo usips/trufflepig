@@ -478,6 +478,31 @@ fn show_symbol_in_changed_file_returns_worktree_span() {
 }
 
 #[test]
+fn show_whole_file_hits_in_changed_file_read_worktree_bytes() {
+    let seeded = SeededWorktree::new();
+    let _writer_lease = seeded.hold_writer();
+    // The index names a file's whole-file module definition by its path.
+    for kind in ["kind:file", "kind:module"] {
+        let page = seeded.search_json(&["search", "file:lib.rs", kind]);
+        let hit = page["hits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|hit| hit["name"] == "lib.rs")
+            .unwrap_or_else(|| panic!("no whole-file hit: {page}"));
+        assert_eq!(hit["differs"], true, "{page}");
+        let handle = hit["handle"].as_str().unwrap();
+        let shown: Value = serde_json::from_str(&seeded.show(&["show", handle]).unwrap()).unwrap();
+        assert_eq!(
+            shown["served_from"],
+            "engine index; re-extracted in worktree"
+        );
+        assert_eq!(shown["verified"], true, "{shown}");
+        assert_eq!(shown["lines"][0]["text"], "// worktree edit\n", "{shown}");
+    }
+}
+
+#[test]
 fn parent_view_handles_survive_worktree_publication() {
     let seeded = SeededWorktree::new();
     let handle = |query: &str| -> String {
