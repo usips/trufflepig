@@ -188,6 +188,38 @@ mod tests {
     }
 
     #[test]
+    fn outstanding_limits_match_the_runtime_contract() {
+        let cases: [(AdmissionTier, RequestLane, Option<usize>); 15] = [
+            (AdmissionTier::Router, RequestLane::Maintenance, Some(2)),
+            (AdmissionTier::Router, RequestLane::Regex, Some(3)),
+            (AdmissionTier::Router, RequestLane::Semantic, Some(2)),
+            (AdmissionTier::Router, RequestLane::Query, None),
+            (AdmissionTier::Router, RequestLane::Board, None),
+            (
+                AdmissionTier::Coordinator,
+                RequestLane::Maintenance,
+                Some(2),
+            ),
+            (AdmissionTier::Coordinator, RequestLane::Regex, Some(3)),
+            (AdmissionTier::Coordinator, RequestLane::Semantic, Some(2)),
+            (AdmissionTier::Coordinator, RequestLane::Query, None),
+            (AdmissionTier::Coordinator, RequestLane::Board, None),
+            (AdmissionTier::Root, RequestLane::Maintenance, None),
+            (AdmissionTier::Root, RequestLane::Regex, None),
+            (AdmissionTier::Root, RequestLane::Semantic, None),
+            (AdmissionTier::Root, RequestLane::Query, None),
+            (AdmissionTier::Root, RequestLane::Board, None),
+        ];
+        for (tier, lane, expected) in cases {
+            assert_eq!(
+                outstanding_limit(tier, lane),
+                expected,
+                "outstanding_limit({tier:?}, {lane:?})"
+            );
+        }
+    }
+
+    #[test]
     fn root_lane_widths_remain_the_root_tier_limit() {
         let limits = RootWorkLimits::default();
         let a = root("a");
