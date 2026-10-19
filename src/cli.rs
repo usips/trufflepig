@@ -263,7 +263,10 @@ fn seed_linked_worktree_cache(root: &Path, cache: &Path) {
     if cache.join("index.sqlite3").exists() {
         return;
     }
-    let Some(main_checkout) = crate::store::linked_worktree_main_checkout(root) else {
+    let Some(main_checkout) = crate::store::linked_worktree_main_checkout(
+        root,
+        crate::workspace::member_root::GIT_PROBE_TIMEOUT,
+    ) else {
         return;
     };
     let Ok(member_cache) = cache_path(&main_checkout, None) else {

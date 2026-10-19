@@ -271,10 +271,12 @@ impl WorkspaceConfig {
     pub fn home_root(&self, start: &Path) -> Result<Option<MemberRoot>> {
         let start = resolve_path(start, &std::env::current_dir()?)?;
         Ok(
-            member_root::home_root(&self.members, &start)?.map(|mut home| {
-                home.is_home = true;
-                home
-            }),
+            member_root::home_root(&self.members, &start, member_root::GIT_PROBE_TIMEOUT)?.map(
+                |mut home| {
+                    home.is_home = true;
+                    home
+                },
+            ),
         )
     }
 

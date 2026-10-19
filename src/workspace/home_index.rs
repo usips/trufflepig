@@ -10,7 +10,7 @@ mod tests;
 mod worktree_divergence;
 mod worktree_reads;
 
-use super::member_root::{MemberRoot, linked_root_of_member};
+use super::member_root::{GIT_PROBE_TIMEOUT, MemberRoot, linked_root_of_member};
 use crate::{
     daemon::deadline::{QueryDeadline, TIMED_OUT},
     store::{Store, is_index_cache_unavailable, is_index_cannot_open, is_index_warming},
@@ -127,7 +127,7 @@ pub(crate) fn standalone_parent_view(
         return None;
     }
     let root = root.canonicalize().ok()?;
-    let member = super::member_root::standalone_worktree(&root)?;
+    let member = super::member_root::standalone_worktree(&root, deadline.cap(GIT_PROBE_TIMEOUT))?;
     let _ = std::fs::create_dir_all(cache);
     crate::system::sweep::record_cache_root(cache, &root);
     match resolve_home_index(
@@ -246,9 +246,10 @@ fn parent_view(
     }
     let parent_root = &member.member.root;
     let parent_cache = super::hashed_member_cache(parent_root, explicit_cache).ok()?;
+    let probe = deadline.cap(GIT_PROBE_TIMEOUT);
     let parent = Store::open_read(parent_root, &parent_cache, deadline).ok()?;
     // Only a linked worktree sharing the parent's Git common directory may read through it.
-    linked_root_of_member(&member.member, &member.root)?;
+    linked_root_of_member(&member.member, &member.root, probe)?;
     let store = parent.reading_from(&member.root, member_cache).ok()?;
     let divergence = WorktreeDivergence::load_or_compute(
         parent_root,

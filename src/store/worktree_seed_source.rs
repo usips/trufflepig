@@ -1,14 +1,17 @@
 //! Locates the main checkout whose cache seeds a linked Git worktree's index.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 /// Returns the main checkout of a linked worktree (`root/.git` is a file whose
 /// common directory is `<main>/.git`); `None` for plain roots and Git failures.
-pub(crate) fn linked_worktree_main_checkout(root: &Path) -> Option<PathBuf> {
+pub(crate) fn linked_worktree_main_checkout(root: &Path, timeout: Duration) -> Option<PathBuf> {
     if !root.join(".git").is_file() {
         return None;
     }
-    let common_dir = crate::history::git::common_dir(root).ok()?;
+    let common_dir = crate::history::git::common_dir_bounded(root, timeout).ok()?;
     if common_dir.file_name()? != ".git" {
         return None;
     }
@@ -24,6 +27,9 @@ mod tests {
     use super::linked_worktree_main_checkout;
     use std::fs;
     use std::path::Path;
+    use std::time::Duration;
+
+    const PROBE: Duration = Duration::from_secs(2);
 
     fn git(root: &Path, arguments: &[&str]) {
         let output = std::process::Command::new("git")
@@ -53,10 +59,10 @@ mod tests {
         let linked_arg = linked.to_str().unwrap();
         git(&main, &["worktree", "add", "-q", "--detach", linked_arg]);
         assert_eq!(
-            linked_worktree_main_checkout(&linked),
+            linked_worktree_main_checkout(&linked, PROBE),
             Some(main.canonicalize().unwrap())
         );
-        assert_eq!(linked_worktree_main_checkout(&main), None);
-        assert_eq!(linked_worktree_main_checkout(directory.path()), None);
+        assert_eq!(linked_worktree_main_checkout(&main, PROBE), None);
+        assert_eq!(linked_worktree_main_checkout(directory.path(), PROBE), None);
     }
 }

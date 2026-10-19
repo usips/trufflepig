@@ -60,13 +60,13 @@ fn standalone_worktree_requires_a_linked_checkout_of_its_git_parent() {
         &["worktree", "add", "--detach", worktree.to_str().unwrap()],
     );
     let worktree = worktree.canonicalize().unwrap();
-    let standalone = standalone_worktree(&worktree).unwrap();
+    let standalone = standalone_worktree(&worktree, GIT_PROBE_TIMEOUT).unwrap();
     assert!(standalone.is_home);
     assert_eq!(standalone.member.root, member.root);
     assert_eq!(standalone.root, worktree);
     assert!(standalone.verify_identity().is_ok());
-    assert!(standalone_worktree(&member.root).is_none());
-    assert!(standalone_worktree(scratch.path()).is_none());
+    assert!(standalone_worktree(&member.root, GIT_PROBE_TIMEOUT).is_none());
+    assert!(standalone_worktree(scratch.path(), GIT_PROBE_TIMEOUT).is_none());
 }
 
 #[test]
@@ -81,20 +81,28 @@ fn home_root_substitutes_external_and_in_repo_worktrees() {
         );
     }
     let members = vec![member.clone()];
-    let home = home_root(&members, &external.join("src")).unwrap().unwrap();
+    let home = home_root(&members, &external.join("src"), GIT_PROBE_TIMEOUT)
+        .unwrap()
+        .unwrap();
     assert_eq!(home.worktree.as_deref(), Some("wt-external"));
     assert_eq!(home.root, external.canonicalize().unwrap());
-    let home = home_root(&members, &inside).unwrap().unwrap();
+    let home = home_root(&members, &inside, GIT_PROBE_TIMEOUT)
+        .unwrap()
+        .unwrap();
     assert_eq!(home.worktree.as_deref(), Some("wt-inside"));
-    let home = home_root(&members, &member.root.join("lib.rs"))
+    let home = home_root(&members, &member.root.join("lib.rs"), GIT_PROBE_TIMEOUT)
         .unwrap()
         .unwrap();
     assert!(home.worktree.is_none());
     assert_eq!(home.root, member.root);
-    assert!(home_root(&members, scratch.path()).unwrap().is_none());
-    assert!(linked_root_of_member(&member, &member.root).is_none());
+    assert!(
+        home_root(&members, scratch.path(), GIT_PROBE_TIMEOUT)
+            .unwrap()
+            .is_none()
+    );
+    assert!(linked_root_of_member(&member, &member.root, GIT_PROBE_TIMEOUT).is_none());
     assert_eq!(
-        linked_root_of_member(&member, &external),
+        linked_root_of_member(&member, &external, GIT_PROBE_TIMEOUT),
         Some(external.canonicalize().unwrap())
     );
 }
@@ -114,8 +122,16 @@ fn home_root_ignores_unrelated_repositories_and_missing_git() {
         &["worktree", "add", "--detach", foreign.to_str().unwrap()],
     );
     let members = vec![member];
-    assert!(home_root(&members, &foreign).unwrap().is_none());
-    assert!(home_root(&members, &other).unwrap().is_none());
+    assert!(
+        home_root(&members, &foreign, GIT_PROBE_TIMEOUT)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        home_root(&members, &other, GIT_PROBE_TIMEOUT)
+            .unwrap()
+            .is_none()
+    );
     assert!(linked_worktree_top(&other).is_none());
     assert!(linked_worktree_top(scratch.path()).is_none());
 }
@@ -127,7 +143,31 @@ fn home_root_keeps_configured_root_for_nested_repository() {
     fs::create_dir_all(&nested).unwrap();
     git(&nested, &["init", "-q", "-b", "main"]);
     let members = vec![member.clone()];
-    let home = home_root(&members, &nested.join("src")).unwrap().unwrap();
+    let home = home_root(&members, &nested.join("src"), GIT_PROBE_TIMEOUT)
+        .unwrap()
+        .unwrap();
     assert!(home.worktree.is_none());
     assert_eq!(home.root, member.root);
+}
+
+#[test]
+fn expired_probe_budget_fails_parent_probes_closed() {
+    use crate::daemon::deadline::QueryDeadline;
+
+    assert_eq!(GIT_PROBE_TIMEOUT, Duration::from_secs(2));
+    let (scratch, member) = repository();
+    let worktree = scratch.path().join("wt-expired");
+    git(
+        &member.root,
+        &["worktree", "add", "--detach", worktree.to_str().unwrap()],
+    );
+    let worktree = worktree.canonicalize().unwrap();
+    let members = vec![member.clone()];
+    assert!(linked_root_of_member(&member, &worktree, GIT_PROBE_TIMEOUT).is_some());
+    let budget = QueryDeadline::after(Duration::ZERO).cap(GIT_PROBE_TIMEOUT);
+    assert_eq!(budget, Duration::ZERO);
+    assert!(linked_root_of_member(&member, &worktree, budget).is_none());
+    assert!(home_root(&members, &worktree, budget).unwrap().is_none());
+    assert!(standalone_worktree(&worktree, budget).is_none());
+    assert!(member_common_dir(&member, budget).is_some());
 }
