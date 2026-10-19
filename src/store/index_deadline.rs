@@ -51,6 +51,14 @@ pub(super) fn clear(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Removes the progress handler for a COMMIT that expiry must not abort while
+/// keeping the busy timeout capped by the slice deadline.
+pub(super) fn suspend_for_commit(conn: &Connection, deadline: &QueryDeadline) -> Result<()> {
+    conn.progress_handler(0, None::<fn() -> bool>)?;
+    conn.busy_timeout(deadline.cap(SQLITE_BUSY_TIMEOUT))?;
+    Ok(())
+}
+
 pub(super) fn classify(deadline: &QueryDeadline, error: anyhow::Error) -> anyhow::Error {
     let error = deadline.classify(error);
     if deadline.expired() && !is_timed_out(&error) {

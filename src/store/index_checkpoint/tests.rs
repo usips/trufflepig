@@ -671,3 +671,59 @@ fn slow_setup_before_checkpoint_open_still_counts_an_eligible_stall() {
     assert_eq!(checkpoint.stalled_slices, 1);
     assert_eq!(progress_io::read_record(&cache).unwrap().stalled_slices, 1);
 }
+
+#[test]
+fn commit_suspend_keeps_busy_timeout_within_slice_deadline() {
+    fn busy_timeout(connection: &Connection) -> i64 {
+        connection
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .unwrap()
+    }
+    let connection = Connection::open_in_memory().unwrap();
+    let fresh = QueryDeadline::start();
+    index_deadline::suspend_for_commit(&connection, &fresh).unwrap();
+    assert_eq!(busy_timeout(&connection), 2_000);
+    // An expired slice waits on nothing; clear() would restore a 30 s timeout here.
+    let exhausted = QueryDeadline::after(Duration::from_millis(50));
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(exhausted.time_expired());
+    index_deadline::suspend_for_commit(&connection, &exhausted).unwrap();
+    assert_eq!(busy_timeout(&connection), 0);
+}
+
+#[test]
+fn open_clamps_completed_files_to_retained_count() {
+    let (_directory, root, cache, store) = fixture();
+    fs::write(root.join("sample.rs"), "pub fn clamped() {}\n").unwrap();
+    drop(retain_fixture_sources(&store, &root, &cache));
+    assert_eq!(retained_file_count(&cache), 1);
+    // A crash can persist progress past the last batch commit.
+    let mut record = progress_io::read_record(&cache).expect("a retained pass writes progress");
+    record.progress.completed_files = 41;
+    progress_io::write(&cache, &record).unwrap();
+    let budget = QueryDeadline::start();
+    let checkpoint = IndexCheckpoint::open(&store.conn, &root, &cache, Some(&budget)).unwrap();
+    assert_eq!(checkpoint.progress.completed_files, 1);
+}
+
+#[test]
+fn unbounded_pass_resets_stalled_slices() {
+    let (_directory, root, cache, store) = fixture();
+    fs::write(root.join("sample.rs"), "pub fn maintained() {}\n").unwrap();
+    drop(retain_fixture_sources(&store, &root, &cache));
+    let budget = QueryDeadline::start();
+    let mut stalled = IndexCheckpoint::open(&store.conn, &root, &cache, Some(&budget)).unwrap();
+    stalled.begin_pass().unwrap();
+    for _ in 0..STALLED_SLICES_BEFORE_MAINTENANCE {
+        stalled.note_stalled_slice().unwrap();
+    }
+    assert!(stalled.maintenance_required());
+    assert_eq!(stalled.stalled_slices, STALLED_SLICES_BEFORE_MAINTENANCE);
+    drop(stalled);
+    let mut checkpoint = IndexCheckpoint::open(&store.conn, &root, &cache, None).unwrap();
+    assert!(checkpoint.has_retained_facts());
+    assert_eq!(checkpoint.stalled_slices, STALLED_SLICES_BEFORE_MAINTENANCE);
+    checkpoint.begin_pass().unwrap();
+    assert_eq!(checkpoint.stalled_slices, 0);
+    assert!(!checkpoint.maintenance_required());
+}

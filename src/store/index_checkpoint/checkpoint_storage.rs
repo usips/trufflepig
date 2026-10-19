@@ -83,11 +83,12 @@ impl CheckpointStorage {
     }
 
     /// Commits the open batch. A bounded deadline's progress handler is removed first
-    /// so that expiry cannot abort the COMMIT, then reattached for the rest of the slice.
+    /// so that expiry cannot abort the COMMIT, with the busy timeout still capped by
+    /// the slice deadline, then reattached for the rest of the slice.
     pub(super) fn commit(&mut self) -> Result<()> {
         if !self.conn.is_autocommit() {
-            if self.deadline.is_some() {
-                index_deadline::clear(&self.conn)?;
+            if let Some(deadline) = &self.deadline {
+                index_deadline::suspend_for_commit(&self.conn, deadline)?;
             }
             self.conn.execute_batch("COMMIT")?;
             #[cfg(test)]
