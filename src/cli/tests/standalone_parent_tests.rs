@@ -523,6 +523,40 @@ fn parent_file_hit_handle_shows_changed_worktree_file() -> Result<()> {
 }
 
 #[test]
+fn parent_hit_handle_names_absent_worktree_file_divergence() -> Result<()> {
+    if !in_isolated_child("parent_hit_handle_names_absent_worktree_file_divergence")? {
+        return Ok(());
+    }
+
+    let fixture = WorktreeFixture::new()?;
+    let found = json(invoke(
+        &fixture.worktree,
+        &fixture.child_cache,
+        &["search", "file:src/lib.rs"],
+        &[],
+    )?)?;
+    let handle = found["hits"][0]["handle"]
+        .as_str()
+        .context("file hit has no handle")?
+        .to_owned();
+    fs::remove_file(fixture.worktree.join("src/lib.rs"))?;
+    let error = invoke(
+        &fixture.worktree,
+        &fixture.child_cache,
+        &["show", &handle],
+        &[],
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.starts_with("source_unavailable:"), "{error}");
+    assert!(
+        error.contains("absent in this worktree") && error.contains("parent index"),
+        "{error}"
+    );
+    Ok(())
+}
+
+#[test]
 fn explicit_cache_reads_through_parent_and_keeps_selected_result_identity() -> Result<()> {
     if !in_isolated_child("explicit_cache_reads_through_parent_and_keeps_selected_result_identity")?
     {

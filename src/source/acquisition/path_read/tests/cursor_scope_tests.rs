@@ -142,6 +142,28 @@ fn stateless_continuation_preserves_permission_refusal_and_io_cause() {
 }
 
 #[test]
+fn more_with_stateless_path_cursor_points_to_show() {
+    let directory = test_directory();
+    let root = directory.path().join("repo");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("src.rs"), source_bytes(205)).unwrap();
+    let cache = blocked_cache(directory.path());
+    let store = Store::unpublished(&root, &cache).unwrap();
+    let cursor = page(&store, "path:src.rs")["next"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(cursor.starts_with("read:path:"), "{cursor}");
+    let error =
+        crate::results::more(&store, &cursor, 10, &OutputBudget::new(20_000).unwrap()).unwrap_err();
+    let message = error.to_string();
+    assert!(
+        message.starts_with("invalid_cursor:") && message.contains("show"),
+        "{message}"
+    );
+}
+
+#[test]
 fn initial_page_path_is_encoded_even_before_any_continuation() {
     let directory = test_directory();
     let root = directory.path().join("repo");

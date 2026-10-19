@@ -123,6 +123,14 @@ fn read_within(
                 read.annotate(&owner.name, &mut metadata);
                 current
             }
+            Err(error)
+                if owner.parent_index.is_some()
+                    && error
+                        .to_string()
+                        .starts_with("source_unavailable: path missing or unsafe") =>
+            {
+                anyhow::bail!("{error}; path absent in this worktree; present in parent index");
+            }
             acquired => acquired?,
         };
         if let Some(offset) = offset {
