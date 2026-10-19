@@ -208,6 +208,14 @@ pub(super) fn show_read(
                 );
                 return source::render_owned(current, budget, &metadata);
             }
+            Err(error)
+                if identity.is_some()
+                    && error
+                        .to_string()
+                        .starts_with("source_unavailable: path missing or unsafe") =>
+            {
+                bail!("{error}; path absent in this worktree; present in parent index");
+            }
             acquired => acquired?,
         };
         let mut metadata = serde_json::json!({});

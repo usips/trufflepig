@@ -139,6 +139,16 @@ pub struct ResultCursor {
 impl FromStr for ResultCursor {
     type Err = anyhow::Error;
     fn from_str(value: &str) -> Result<Self> {
+        if value.starts_with("read:path:") {
+            bail!(
+                "invalid_cursor: path cursors resume with `show` using the same cursor; `more` takes SET@OFFSET"
+            );
+        }
+        if value.starts_with("read:") {
+            bail!(
+                "invalid_cursor: source cursors resume with `show` using the same cursor; `more` takes SET@OFFSET"
+            );
+        }
         let (set, offset) = value
             .rsplit_once('@')
             .context("invalid_cursor: expected SET@OFFSET")?;
