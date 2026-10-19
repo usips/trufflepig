@@ -3,7 +3,7 @@ mod index_progress_source;
 mod lines;
 use super::{
     config::WorkspaceConfig,
-    member_root::{MemberRoot, linked_root_of_member},
+    member_root::{GIT_PROBE_TIMEOUT, MemberRoot, linked_root_of_member},
 };
 use crate::{
     daemon::deadline::{QueryDeadline, TIMED_OUT, is_timed_out},
@@ -128,7 +128,7 @@ impl MemberSnapshot {
             return Ok(MemberRoot::configured(member));
         }
         let root = decode_path(&self.root)?;
-        let root = linked_root_of_member(member, &root)
+        let root = linked_root_of_member(member, &root, GIT_PROBE_TIMEOUT)
             .context("member_unavailable: result owner is missing")?;
         let mut owner = MemberRoot::linked(member, root)?;
         owner.is_home = true;

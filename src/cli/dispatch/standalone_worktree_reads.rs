@@ -281,7 +281,11 @@ fn parent_result_store_for_set(
     };
     let identity: crate::workspace::ParentIndexIdentity = serde_json::from_value(value)
         .context("stale_result: parent-index identity is invalid; search again")?;
-    let member = validate_parent_worktree(root, &identity)?;
+    let member = validate_parent_worktree(
+        root,
+        &identity,
+        deadline.cap(crate::workspace::member_root::GIT_PROBE_TIMEOUT),
+    )?;
     let parent_root = member.member.root;
     let parent_cache = crate::cli::cache_path(&parent_root, None)?;
     let parent =
@@ -303,8 +307,9 @@ fn parent_result_store_for_set(
 fn validate_parent_worktree(
     root: &Path,
     identity: &crate::workspace::ParentIndexIdentity,
+    timeout: std::time::Duration,
 ) -> Result<crate::workspace::member_root::MemberRoot> {
-    let member = crate::workspace::member_root::standalone_worktree(root)
+    let member = crate::workspace::member_root::standalone_worktree(root, timeout)
         .context("stale_result: linked worktree identity changed; search again")?;
     let worktree_metadata = member
         .root
@@ -340,7 +345,11 @@ pub(super) fn more_read(
             .context("stale_result: parent-index identity is invalid; search again")?;
         // Page snapshots survive parent republishes, but their worktree cache
         // belongs to the checkout that created the result set.
-        validate_parent_worktree(&store.root, &identity)?;
+        validate_parent_worktree(
+            &store.root,
+            &identity,
+            crate::workspace::member_root::GIT_PROBE_TIMEOUT,
+        )?;
     }
     results::more(store, &cursor.to_string(), limit, budget)
 }
