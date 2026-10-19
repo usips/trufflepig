@@ -245,6 +245,23 @@ fn local_dispatch(
                 Err(error) => return Err(index_cache_unavailable(cache, error)),
             };
             (store, None)
+        } else if matches!(
+            verb,
+            "hist" | "diff" | "blame" | "hist-status" | "hist-index"
+        ) || (verb == "since" && !options.uncommitted)
+        {
+            // History reads never create or write the index; `since
+            // --uncommitted` keeps the writer below because it reindexes.
+            let store = match Store::open_read(root, cache, deadline.clone())
+                .map_err(|error| classify_query_error(&deadline, error))
+            {
+                Ok(store) => store,
+                Err(error) if is_index_warming(&error) => {
+                    Store::unpublished(root, cache)?.with_query_deadline(deadline.clone())
+                }
+                Err(error) => return Err(index_cache_unavailable(cache, error)),
+            };
+            (store, None)
         } else {
             (Store::open(root, cache)?, None)
         };

@@ -13,7 +13,7 @@ use crate::{
     output::OutputBudget,
     results::{self, ResultEntry},
     source::{self, SourceSide, acquisition},
-    store::Store,
+    store::{Store, is_index_warming},
 };
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
@@ -219,7 +219,15 @@ pub(super) fn history(
     };
     member.verify_identity()?;
     let cache = member_cache_until(&member, options.cache.as_deref(), deadline)?;
-    let store = Store::open(&member.root, &cache)?;
+    // History reads never create or write the member index; result sets live
+    // in a separate database that a reader can also persist.
+    let store = match Store::open_read(&member.root, &cache, deadline.clone()) {
+        Ok(store) => store,
+        Err(error) if is_index_warming(&error) => {
+            Store::unpublished(&member.root, &cache)?.with_query_deadline(deadline.clone())
+        }
+        Err(error) => return Err(error),
+    };
     let mut local = member_options(options, &member, deadline)?;
     local.budget = 1_000_000;
     if let Some((set, index)) = &retained {
