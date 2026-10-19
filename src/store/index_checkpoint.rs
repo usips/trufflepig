@@ -111,7 +111,7 @@ impl IndexCheckpoint {
                     && record.base_epoch == base_epoch
                     && record.base_generation == base_generation
             });
-        let (progress, stalled_slices) = match previous {
+        let (mut progress, stalled_slices) = match previous {
             Some(record) => (record.progress, record.stalled_slices),
             None => (
                 IndexProgress {
@@ -123,6 +123,9 @@ impl IndexCheckpoint {
                 0,
             ),
         };
+        // Progress is written independently of batch commits, so a crash can persist
+        // a count the retained database never reached; never report past it.
+        progress.completed_files = progress.completed_files.min(retained_file_count);
         Ok(Self {
             storage,
             cache,
@@ -161,6 +164,10 @@ impl IndexCheckpoint {
         };
         storage.start_scan()?;
         self.new_files_this_pass = 0;
+        if !storage.is_bounded() {
+            // An unbounded pass is explicit maintenance, so it restarts stall grace.
+            self.stalled_slices = 0;
+        }
         self.progress.phase = IndexProgressPhase::Scanning;
         self.progress.reused_files = 0;
         self.retained_file_count = storage.completed_count()?;
