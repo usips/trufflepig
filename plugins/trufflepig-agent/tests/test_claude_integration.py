@@ -128,6 +128,57 @@ class ClaudeIntegrationTests(unittest.TestCase):
         self.assertFalse((config / "skills/trufflepig-code-search").exists())
         self.assertTrue((self.root / ".local/bin/trufflepig-agent").is_symlink())
 
+    def test_install_writes_through_a_symlinked_settings_file(self):
+        config = self.root / ".claude"
+        config.mkdir()
+        real = self.root / "dotfiles/claude-settings.json"
+        real.parent.mkdir()
+        real.write_text(json.dumps({"model": "kept"}))
+        (config / "settings.json").symlink_to(real)
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((config / "settings.json").is_symlink())
+        settings = json.loads(real.read_text())
+        self.assertEqual(settings["model"], "kept")
+        self.assertIn("Bash(trufflepig-agent *)", settings["permissions"]["allow"])
+
+    def test_enabling_the_plugin_removes_settings_hooks_and_skill_links(self):
+        config = self.root / ".claude"
+        config.mkdir()
+        path = config / "settings.json"
+        path.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "other"}]}]}}))
+        self.assertEqual(self.install().returncode, 0)
+        self.assertTrue((config / "skills/trufflepig-code-search").is_symlink())
+        settings = json.loads(path.read_text())
+        settings["enabledPlugins"] = {"trufflepig-agent@trufflepig": True}
+        path.write_text(json.dumps(settings))
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        settings = json.loads(path.read_text())
+        self.assertEqual(settings["hooks"], {"Stop": [{"hooks": [{"type": "command", "command": "other"}]}]})
+        self.assertFalse((config / "skills/trufflepig-code-search").exists())
+        self.assertEqual(settings["permissions"]["allow"], ["Bash(trufflepig-agent *)"])
+
+    def test_uninstall_removes_exactly_the_installed_entries(self):
+        config = self.root / ".claude"
+        config.mkdir()
+        path = config / "settings.json"
+        original = {"permissions": {"allow": ["Bash(ls *)"]},
+                    "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [
+                        {"type": "command", "command": "existing-pre-hook"}]}]}}
+        path.write_text(json.dumps(original))
+        self.assertEqual(self.install().returncode, 0)
+        result = subprocess.run([str(PLUGIN / "install.sh"), "--claude", "--uninstall"],
+                                env=self.env, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        settings = json.loads(path.read_text())
+        self.assertEqual(settings["hooks"], original["hooks"])
+        self.assertEqual(settings["permissions"], original["permissions"])
+        self.assertFalse((config / "skills/trufflepig-code-search").exists())
+        refused = subprocess.run([str(PLUGIN / "install.sh"), "--claude", "--codex", "--uninstall"],
+                                 env=self.env, text=True, capture_output=True)
+        self.assertEqual(refused.returncode, 2)
+
     def test_plugin_hooks_run_executable_hook_scripts(self):
         manifest = json.loads((PLUGIN / "hooks/hooks.json").read_text())
         commands = [hook["command"] for groups in manifest["hooks"].values()

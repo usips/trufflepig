@@ -24,7 +24,8 @@ ROUTER_READY_TIMEOUT_SECONDS = 10
 sys.path.insert(0, str(PLUGIN / "bin"))
 from trufflepig_runtime import runtime_config_path
 from agent_install_links import AgentLinkPlan, link
-from claude_install import claude_home, check_claude_hooks, prepare_settings, write_settings
+from claude_install import (claude_home, check_claude_hooks, prepare_settings, remove_settings,
+                            remove_skill_links, write_settings)
 from board_service_pin import validate_router_database
 from router_identity import require_managed_router, require_router_identity
 from systemd_units import (apply_units, board_database_path, render_service, service_text,
@@ -201,7 +202,20 @@ def main() -> int:
                         help="search steering mode recorded for the selected harnesses")
     parser.add_argument("--check", type=Path, metavar="ROOT",
                         help="smoke search/source access; with --claude also check hooks and current Board service")
+    parser.add_argument("--uninstall", action="store_true",
+                        help="with --claude only: remove the settings hooks, permission, and skill links it added")
     args = parser.parse_args()
+    if args.uninstall:
+        if not args.claude or any(getattr(args, name) for name in (
+                "codex", "gemini", "grok", "kimi", "muse", "kimi_hooks", "omp", "opencode",
+                "systemd", "board", "commands", "project", "check", "steer", "runtime_dir")):
+            parser.error("--uninstall applies only to --claude (with optional --bin)")
+        settings_path = claude_home() / "settings.json"
+        write_settings(settings_path, remove_settings(settings_path, args.bin))
+        for removed in remove_skill_links(PLUGIN):
+            print(f"removed {removed}")
+        print(f"removed trufflepig hooks and permission from {settings_path}")
+        return 0
     if not any((args.codex, args.claude, args.gemini, args.grok, args.kimi, args.muse, args.kimi_hooks, args.omp, args.opencode, args.systemd, args.board,
                 args.commands, args.project, args.check)):
         args.kimi = args.muse = True
@@ -258,11 +272,8 @@ def main() -> int:
 
     if args.claude:
         claude_settings_path = claude_home() / "settings.json"
-        claude_settings = prepare_settings(
-            claude_settings_path,
-            None if link_plan.claude_plugin else args.bin / "trufflepig-claude-session",
-            runtime, None if link_plan.claude_plugin else args.bin / "trufflepig-agent-steer",
-            None if link_plan.claude_plugin else args.bin / "trufflepig-claude-hooks")
+        claude_settings = prepare_settings(claude_settings_path, runtime, args.bin,
+                                           plugin=link_plan.claude_plugin)
     for source, destination in link_plan.links:
         link(source, destination)
     if runtime_harness:
@@ -277,6 +288,9 @@ def main() -> int:
         print(f"search steering {args.steer}: {', '.join(steer_harnesses)}")
     if args.claude:
         write_settings(claude_settings_path, claude_settings)
+        if link_plan.claude_plugin:
+            for removed in remove_skill_links(PLUGIN):
+                print(f"removed {removed} (the plugin provides it)")
         owner = "plugin trufflepig-agent (enabled)" if link_plan.claude_plugin else "settings"
         print(f"Claude skill and hooks via {owner}; wrapper permission and runtime access: "
               f"{claude_settings_path}")

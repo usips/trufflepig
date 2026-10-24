@@ -1,4 +1,4 @@
-"""Merge Claude attribution, steering, and Board lifecycle hooks into user settings."""
+"""Merge or remove Claude attribution, steering, and Board lifecycle hooks in user settings."""
 from __future__ import annotations
 
 import copy
@@ -16,6 +16,7 @@ def claude_home() -> Path:
 
 PERMISSION = "Bash(trufflepig-agent *)"
 PLUGIN_PREFIX = "trufflepig-agent@"
+SKILL_NAMES = ("trufflepig-code-search", "trufflepig-plan-board")
 CLAUDE_HOOK_EVENTS = (
     ("PreToolUse", "Bash", 5),
     ("PostToolUse", None, 5),
@@ -23,6 +24,17 @@ CLAUDE_HOOK_EVENTS = (
     ("SessionEnd", None, 1),
     ("SubagentStop", None, 1),
 )
+
+
+def managed_hooks(bin_dir: Path) -> list[tuple[str, str | None, str, int]]:
+    """(event, matcher, command, timeout) for every hook a settings install registers."""
+    session = shlex.quote(str((bin_dir / "trufflepig-claude-session").absolute()))
+    steer = f"{shlex.quote(str((bin_dir / 'trufflepig-agent-steer').absolute()))} claude"
+    board = shlex.quote(str((bin_dir / "trufflepig-claude-hooks").absolute()))
+    return [("SessionStart", None, session, 5), ("SubagentStart", None, session, 5),
+            ("PreToolUse", "Bash", steer, 5), ("PreToolUse", "Agent", steer, 5),
+            ("PostToolUse", "Bash", steer, 5),
+            *((event, matcher, board, timeout) for event, matcher, timeout in CLAUDE_HOOK_EVENTS)]
 
 
 def plugin_enabled(path: Path) -> bool:
@@ -62,29 +74,60 @@ def merge_command(hooks: dict, event: str, matcher: str | None, command: str, ti
     commands.append({"type": "command", "command": command, "timeout": timeout})
 
 
-def prepare_settings(path: Path, hook: Path | None, runtime: Path, steer: Path | None = None,
-                     board_hook: Path | None = None) -> dict:
-    """Merge attribution, steering, and Board hooks plus runtime access into Claude settings."""
+def remove_command(hooks: dict, event: str, matcher: str | None, command: str) -> None:
+    """Remove one command hook, dropping a group or event that it leaves empty."""
+    groups = hooks.get(event)
+    if not isinstance(groups, list):
+        return
+    for group in list(groups):
+        if not isinstance(group, dict) or group.get("matcher") != matcher \
+                or not isinstance(group.get("hooks"), list):
+            continue
+        kept = [h for h in group["hooks"]
+                if not (isinstance(h, dict) and h.get("type") == "command" and h.get("command") == command)]
+        if len(kept) == len(group["hooks"]):
+            continue
+        if kept:
+            group["hooks"] = kept
+        else:
+            groups.remove(group)
+    if not groups:
+        del hooks[event]
+
+
+def load_settings(path: Path) -> dict:
     settings = json.loads(path.read_text()) if path.exists() else {}
     if not isinstance(settings, dict):
         raise ValueError(f"expected a settings object in {path}")
-    settings = copy.deepcopy(settings)
+    return copy.deepcopy(settings)
+
+
+def remove_settings(path: Path, bin_dir: Path) -> dict:
+    """Settings without the hooks and permission a settings install added."""
+    settings = load_settings(path)
+    hooks = settings.get("hooks")
+    if isinstance(hooks, dict):
+        for event, matcher, command, _timeout in managed_hooks(bin_dir):
+            remove_command(hooks, event, matcher, command)
+    allow = settings.get("permissions", {}).get("allow") if isinstance(settings.get("permissions"), dict) else None
+    if isinstance(allow, list) and PERMISSION in allow:
+        allow.remove(PERMISSION)
+    return settings
+
+
+def prepare_settings(path: Path, runtime: Path, bin_dir: Path, plugin: bool = False) -> dict:
+    """Merge attribution, steering, and Board hooks plus runtime access into Claude settings.
+    With the plugin enabled it owns the hooks, so earlier settings entries are removed."""
+    settings = load_settings(path)
     if settings.get("disableAllHooks"):
         raise ValueError("Claude disables hooks; enable them before installing session attribution")
     hooks = settings.setdefault("hooks", {})
     if not isinstance(hooks, dict):
         raise ValueError("Claude hooks must be an object")
-    if hook is not None:
-        merge_command(hooks, "SessionStart", None, shlex.quote(str(hook.absolute())), 5)
-        merge_command(hooks, "SubagentStart", None, shlex.quote(str(hook.absolute())), 5)
-    if steer is not None:
-        command = f"{shlex.quote(str(steer.absolute()))} claude"
-        merge_command(hooks, "PreToolUse", "Bash", command, 5)
-        merge_command(hooks, "PreToolUse", "Agent", command, 5)
-        merge_command(hooks, "PostToolUse", "Bash", command, 5)
-    if board_hook is not None:
-        command = shlex.quote(str(board_hook.absolute()))
-        for event, matcher, timeout in CLAUDE_HOOK_EVENTS:
+    for event, matcher, command, timeout in managed_hooks(bin_dir):
+        if plugin:
+            remove_command(hooks, event, matcher, command)
+        else:
             merge_command(hooks, event, matcher, command, timeout)
     permissions = settings.setdefault("permissions", {})
     if not isinstance(permissions, dict):
@@ -154,16 +197,30 @@ def check_claude_hooks(settings_path: Path, bin_dir: Path, *, notices_helper: Pa
 
 
 def write_settings(path: Path, settings: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o600
+    """Atomically replace the settings file, following a symlinked `settings.json`
+    to the file it names so the link itself survives."""
+    target = path.resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    mode = stat.S_IMODE(target.stat().st_mode) if target.exists() else 0o600
     temporary = None
     try:
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=target.parent,
                                          prefix=".trufflepig-settings-", delete=False) as output:
             temporary = Path(output.name)
             output.write(json.dumps(settings, indent=2, ensure_ascii=False) + "\n")
         temporary.chmod(mode)
-        temporary.replace(path)
+        temporary.replace(target)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+def remove_skill_links(plugin: Path) -> list[Path]:
+    """Remove personal skill symlinks that point into this checkout."""
+    removed = []
+    for name in SKILL_NAMES:
+        link = claude_home() / "skills" / name
+        if link.is_symlink() and link.resolve() == (plugin / "skills" / name).resolve():
+            link.unlink()
+            removed.append(link)
+    return removed

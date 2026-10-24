@@ -17,8 +17,9 @@ plugins/trufflepig-agent/install.sh --commands --claude   # wrapper commands, pe
 ```
 
 With the plugin enabled, `install.sh --claude` links neither the personal skills
-nor the hooks, so nothing runs twice; it still adds the wrapper permission and
-runtime access. `claude --plugin-dir plugins/trufflepig-agent` loads a checkout
+nor the hooks and removes the settings hooks and skill links an earlier settings
+install added, so nothing runs twice; it still adds the wrapper permission and
+runtime access. Rerun it after enabling the plugin. `claude --plugin-dir plugins/trufflepig-agent` loads a checkout
 for a single session. `claude plugin validate --strict` checks both manifests.
 
 `--claude` installs `trufflepig-code-search` and `trufflepig-plan-board` at
@@ -163,12 +164,11 @@ interface; neither proves that a model will choose the skill on every prompt.
 Compare the audit session with Claude's actual session ID, including separate
 sessions in the same working directory and a resumed session.
 
-To remove the integration, remove both personal skill symlinks, the
-`SessionStart` and `SubagentStart` entries invoking `trufflepig-claude-session`,
-the `PreToolUse` and `PostToolUse` entries invoking `trufflepig-agent-steer claude`,
-the `claude-hooks.py` entries for `PreToolUse`, post-use events, `SessionEnd`, and
-`SubagentStop`, and the
-`Bash(trufflepig-agent *)` permission. `install.sh --claude --steer off` disables
-steering without editing settings. Remove the runtime
-allowWrite entry if no other Claude integration needs it. Shared wrapper commands,
-runtime configuration, and the service may still be used by other harnesses.
+`install.sh --claude --uninstall` (with the same `--bin` as the install) removes
+the personal skill symlinks into this checkout, exactly the settings hook entries
+the installer added, and the `Bash(trufflepig-agent *)` permission; unrelated
+hooks and settings stay. Settings writes follow a symlinked `settings.json` to
+its target. `install.sh --claude --steer off` disables steering without editing
+settings. Remove the runtime allowWrite entry if no other Claude integration needs
+it. Shared wrapper commands, runtime configuration, and the service may still be
+used by other harnesses.
