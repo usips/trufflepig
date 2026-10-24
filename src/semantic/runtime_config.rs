@@ -276,11 +276,20 @@ mod tests {
     fn models_stay_resident_unless_idle_unload_is_configured() {
         let resident = InferenceConfig::default();
         assert_eq!(resident.idle_unload(), None);
-        assert!(!serde_json::to_string(&resident).unwrap().contains("idle_unload"));
+        assert!(
+            !serde_json::to_string(&resident)
+                .unwrap()
+                .contains("idle_unload")
+        );
         let config: InferenceConfig = toml::from_str("idle_unload_seconds = 900").unwrap();
         assert_eq!(config.idle_unload(), Some(Duration::from_secs(900)));
         let zero: InferenceConfig = toml::from_str("idle_unload_seconds = 0").unwrap();
-        assert!(zero.validate().unwrap_err().to_string().contains("idle_unload_seconds"));
+        assert!(
+            zero.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("idle_unload_seconds")
+        );
     }
 
     #[test]

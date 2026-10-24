@@ -152,8 +152,10 @@ work. `semantic worker stop` asks it to release its model and exit. Models stay
 resident for the worker's lifetime unless `inference.toml` sets a positive
 `idle_unload_seconds`; each model then unloads after that idle period and
 reloads on its next request, during which reranking reports `rerank_loading`
-and keeps the fused order. Status and diagnostics report residency without
-attributing whole-process RSS solely to model tensors.
+and keeps the fused order. Each model's executor hashes its pinned assets once
+per worker process; a reload hashes a file again only when its device, inode,
+size, or modification time changed. Status and diagnostics report residency
+without attributing whole-process RSS solely to model tensors.
 
 After a model-load failure, the worker retries lazily after 500 ms, doubles the
 cooldown after each failure, and caps it at 30 seconds. The latest load error

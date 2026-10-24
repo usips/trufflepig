@@ -72,6 +72,7 @@ fn run() -> anyhow::Result<serde_json::Value> {
         &args.model_dir,
         provider,
         &args.runtime,
+        &mut trufflepig::semantic::VerifiedAssetDigests::default(),
     )?;
     let initialize_ms = started.elapsed().as_millis();
     let source_texts = inputs

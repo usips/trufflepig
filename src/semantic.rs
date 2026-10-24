@@ -20,6 +20,8 @@ pub mod worker;
 
 mod session;
 pub use session::{ResidencySample, SemanticSession};
+mod verified_assets;
+pub use verified_assets::VerifiedAssetDigests;
 
 pub const MODEL_REVISION: &str = "516f4baf13dec4ddddda8631e019b5737c8bc250";
 pub const DIMENSIONS: usize = 768;

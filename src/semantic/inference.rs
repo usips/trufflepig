@@ -3,6 +3,7 @@
 
 mod batch;
 mod gate;
+mod pinned_assets;
 mod provider;
 mod reranker;
 
@@ -14,7 +15,7 @@ pub use reranker::RerankInferenceEngine;
 // referring to them as `super::NAME`.
 pub use super::{RERANK_BATCH_SIZE, RERANK_MAX_TOKENS, check_rerank_bounds};
 
-use super::Embedding;
+use super::{Embedding, VerifiedAssetDigests};
 use anyhow::Result;
 use fastembed::TextEmbedding;
 use std::path::Path;
@@ -115,12 +116,18 @@ pub struct SemanticInferenceEngine {
 impl SemanticInferenceEngine {
     /// Opens the pinned model with the CPU provider and no embedding cache.
     pub fn open(model_dir: &Path) -> Result<Self> {
-        Self::open_with_provider(model_dir, SemanticProviderConfig::cpu())
+        let mut digests = VerifiedAssetDigests::default();
+        Self::open_with_provider(model_dir, SemanticProviderConfig::cpu(), &mut digests)
     }
 
     /// Opens the pinned model with an explicit execution provider and no cache.
-    pub fn open_with_provider(model_dir: &Path, provider: SemanticProviderConfig) -> Result<Self> {
-        let mut model = provider::load_verified_model(model_dir, provider)?;
+    /// `digests` skips re-hashing assets its owner already verified.
+    pub fn open_with_provider(
+        model_dir: &Path,
+        provider: SemanticProviderConfig,
+        digests: &mut VerifiedAssetDigests,
+    ) -> Result<Self> {
+        let mut model = provider::load_verified_model(model_dir, provider, digests)?;
         let publisher_parity_cosine = gate::check_parity(&mut model)?;
         Ok(Self {
             model,
@@ -136,9 +143,14 @@ impl SemanticInferenceEngine {
         model_dir: &Path,
         provider: SemanticProviderConfig,
         runtime_library: &Path,
+        digests: &mut VerifiedAssetDigests,
     ) -> Result<Self> {
-        let mut model =
-            provider::load_verified_model_with_runtime(model_dir, provider, runtime_library)?;
+        let mut model = provider::load_verified_model_with_runtime(
+            model_dir,
+            provider,
+            runtime_library,
+            digests,
+        )?;
         let publisher_parity_cosine = gate::check_parity(&mut model)?;
         Ok(Self {
             model,

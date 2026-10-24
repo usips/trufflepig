@@ -2,6 +2,7 @@
 //! Bounds admission before tokenizing; scores return in caller order.
 
 use super::{RERANK_BATCH_SIZE, SemanticProviderConfig, check_rerank_bounds, provider};
+use crate::semantic::VerifiedAssetDigests;
 use anyhow::{Result, bail};
 use fastembed::TextRerank;
 use std::path::Path;
@@ -13,8 +14,13 @@ pub struct RerankInferenceEngine {
 
 impl RerankInferenceEngine {
     /// Opens the pinned reranker using `provider`'s configured execution provider.
-    pub fn open_with_provider(model_dir: &Path, provider: SemanticProviderConfig) -> Result<Self> {
-        let model = provider::load_verified_reranker(model_dir, provider)?;
+    /// `digests` skips re-hashing assets its owner already verified.
+    pub fn open_with_provider(
+        model_dir: &Path,
+        provider: SemanticProviderConfig,
+        digests: &mut VerifiedAssetDigests,
+    ) -> Result<Self> {
+        let model = provider::load_verified_reranker(model_dir, provider, digests)?;
         Ok(Self { model })
     }
 
@@ -23,11 +29,13 @@ impl RerankInferenceEngine {
         model_dir: &Path,
         provider: SemanticProviderConfig,
         runtime_library: &Path,
+        digests: &mut VerifiedAssetDigests,
     ) -> Result<Self> {
         let model = self::provider::load_verified_reranker_with_runtime(
             model_dir,
             provider,
             runtime_library,
+            digests,
         )?;
         Ok(Self { model })
     }
@@ -45,7 +53,10 @@ impl RerankInferenceEngine {
         // fastembed pads each batch to its longest pair, so length-sorted
         // batches spend far less compute on padding than fused order does.
         let order = length_sorted_order(documents);
-        let sorted = order.iter().map(|&index| documents[index]).collect::<Vec<_>>();
+        let sorted = order
+            .iter()
+            .map(|&index| documents[index])
+            .collect::<Vec<_>>();
         let results = self
             .model
             .rerank(query, &sorted, false, Some(RERANK_BATCH_SIZE))?;
@@ -132,7 +143,10 @@ mod tests {
         results.sort_by(|a, b| b.1.total_cmp(&a.1));
         let caller = sorted_results_to_caller(&order, results.into_iter()).unwrap();
         let scores = scores_in_caller_order(caller, documents.len()).unwrap();
-        let expected = documents.iter().map(|text| score_of(text)).collect::<Vec<_>>();
+        let expected = documents
+            .iter()
+            .map(|text| score_of(text))
+            .collect::<Vec<_>>();
         assert_eq!(scores, expected);
     }
 

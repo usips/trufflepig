@@ -20,7 +20,7 @@ pub use status::{WorkerState, WorkerStatus};
 use super::Embedding;
 use crate::{
     background_process::{BackgroundOwner, current_background_executable, spawn_background_for},
-    semantic::runtime_config::InferenceConfig,
+    semantic::{VerifiedAssetDigests, runtime_config::InferenceConfig},
 };
 use anyhow::{Context, Result, bail, ensure};
 pub use client::{RERANK_DEADLINE, rerank_query};
@@ -79,7 +79,7 @@ impl ForegroundSession {
         require_foreground_cuda_mask(&config)?;
         let cache = worker_cache_dir()?;
         let lease = WorkerLease::acquire(&cache)?;
-        let engine = open_engine(&config, &cache)?;
+        let engine = open_engine(&config, &cache, &mut VerifiedAssetDigests::default())?;
         let _ = root_id;
         Ok(Self {
             _lease: lease,
@@ -825,17 +825,21 @@ impl WorkerRuntime {
 
 fn inference_loop(commands: Receiver<ExecutorCommand>, events: Sender<ExecutorEvent>) {
     let mut engine: Option<Box<dyn Engine>> = None;
+    // Lives as long as this thread, so a reload skips re-hashing unchanged assets.
+    let mut digests = VerifiedAssetDigests::default();
     for command in commands {
         match command {
-            ExecutorCommand::Load { config, cache } => match open_engine(&config, &cache) {
-                Ok(opened) => {
-                    engine = Some(opened);
-                    let _ = events.send(ExecutorEvent::Loaded(Ok(())));
+            ExecutorCommand::Load { config, cache } => {
+                match open_engine(&config, &cache, &mut digests) {
+                    Ok(opened) => {
+                        engine = Some(opened);
+                        let _ = events.send(ExecutorEvent::Loaded(Ok(())));
+                    }
+                    Err(error) => {
+                        let _ = events.send(ExecutorEvent::Loaded(Err(format!("{error:#}"))));
+                    }
                 }
-                Err(error) => {
-                    let _ = events.send(ExecutorEvent::Loaded(Err(format!("{error:#}"))));
-                }
-            },
+            }
             ExecutorCommand::Execute(connection) => {
                 let RunningConnection {
                     request,

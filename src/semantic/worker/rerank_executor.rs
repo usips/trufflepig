@@ -5,7 +5,7 @@ use super::engine::{RerankEngine, open_rerank_engine};
 use super::load_retry::LoadRetry;
 use super::protocol::{self, WorkerCommand, WorkerReply, write_reply};
 use super::{QueuedConnection, RunningConnection, now_ms};
-use crate::semantic::runtime_config::InferenceConfig;
+use crate::semantic::{VerifiedAssetDigests, runtime_config::InferenceConfig};
 use std::{
     collections::VecDeque,
     os::unix::net::UnixStream,
@@ -396,17 +396,22 @@ fn rerank_inference_loop(
     events: Sender<RerankExecutorEvent>,
 ) {
     let mut engine: Option<Box<dyn RerankEngine>> = None;
+    // Lives as long as this thread, so a reload skips re-hashing the
+    // reranker's multi-gigabyte external data when it is unchanged.
+    let mut digests = VerifiedAssetDigests::default();
     for command in commands {
         match command {
-            RerankExecutorCommand::Load(config) => match open_rerank_engine(&config) {
-                Ok(opened) => {
-                    engine = Some(opened);
-                    let _ = events.send(RerankExecutorEvent::Loaded(Ok(())));
+            RerankExecutorCommand::Load(config) => {
+                match open_rerank_engine(&config, &mut digests) {
+                    Ok(opened) => {
+                        engine = Some(opened);
+                        let _ = events.send(RerankExecutorEvent::Loaded(Ok(())));
+                    }
+                    Err(error) => {
+                        let _ = events.send(RerankExecutorEvent::Loaded(Err(format!("{error:#}"))));
+                    }
                 }
-                Err(error) => {
-                    let _ = events.send(RerankExecutorEvent::Loaded(Err(format!("{error:#}"))));
-                }
-            },
+            }
             RerankExecutorCommand::Execute(connection) => {
                 let RunningConnection {
                     request,

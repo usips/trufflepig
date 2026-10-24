@@ -50,9 +50,14 @@ fn cpu_cuda_comparison(
     if !matches!(cuda_provider.provider, SemanticProvider::Cuda { .. }) {
         bail!("semantic_unavailable: CPU/CUDA comparison requires a CUDA provider");
     }
-    let mut cpu =
-        SemanticInferenceEngine::open_with_provider(model_dir, SemanticProviderConfig::cpu())?;
-    let mut cuda = SemanticInferenceEngine::open_with_provider(model_dir, cuda_provider)?;
+    let mut digests = crate::semantic::VerifiedAssetDigests::default();
+    let mut cpu = SemanticInferenceEngine::open_with_provider(
+        model_dir,
+        SemanticProviderConfig::cpu(),
+        &mut digests,
+    )?;
+    let mut cuda =
+        SemanticInferenceEngine::open_with_provider(model_dir, cuda_provider, &mut digests)?;
     let cpu_batch = cpu.embed_batch_uncached(&[PARITY_QUERY, PARITY_SOURCE])?;
     let cuda_batch = cuda.embed_batch_uncached(&[PARITY_QUERY, PARITY_SOURCE])?;
     let cpu_query = cpu.embed_uncached(PARITY_QUERY)?;
@@ -134,7 +139,11 @@ pub fn run_gpu_gate(model_dir: &Path, cuda_provider: SemanticProviderConfig) -> 
 /// Executes real CPU inference against the publisher's frozen example.
 pub fn run_gate(model_dir: &Path) -> Result<Value> {
     let started = Instant::now();
-    let mut model = super::provider::load_verified_model(model_dir, SemanticProviderConfig::cpu())?;
+    let mut model = super::provider::load_verified_model(
+        model_dir,
+        SemanticProviderConfig::cpu(),
+        &mut crate::semantic::VerifiedAssetDigests::default(),
+    )?;
     let initialized_ms = started.elapsed().as_millis();
     let cosine = check_parity(&mut model)?;
     let total_ms = started.elapsed().as_millis();
