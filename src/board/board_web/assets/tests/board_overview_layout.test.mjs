@@ -100,7 +100,7 @@ it("overview filters persist in the route and reset plan paging when toggled", (
   filter.checked = true;
   filter.listeners.get("change")[0]({ target: filter });
   assert.deepEqual(navigations[0], ["overview", {
-    view: "overview", after: "", through: "", showInactive: "1",
+    view: "overview", focus: null, after: "", through: "", showInactive: "1",
   }, false, false], "filter changes preserve the focused checkbox while reloading the overview");
   state.route = { view: "overview", showInactive: "1" };
   const allPlans = overview();
@@ -125,24 +125,78 @@ it("the active-plan empty state leaves a visible recovery filter", () => {
   assert.equal(overview().querySelector(".empty").textContent, "No plans yet.");
 });
 
-it("Working now leads with the task and scope and retains the exact actor identity", () => {
+function visibleText(node) {
+  return `${node.textContent || ""}${node.children.map(visibleText).join("")}`;
+}
+
+it("Working now renders one dense row per claim with full detail in titles", () => {
   const { data, overview } = harness();
   const actor = { user: "josh", host: "archlinux", harness: "codex", session: "full-session-id" };
-  const claim = { task: "P7.26", actor, vendor: "codex",
-    scope: "src/deep/VeryLongFilename.js + geometry", last_active: 1 };
+  const worker = (handle, extra = {}) => ({
+    address: { task: "P7.26", handle }, role: "review", scope: `Review ${handle}`,
+    actor: { ...actor, harness: "kimi", session: handle }, last_active: 5, files: ["src/long/path.rs"],
+    state: null, ended_at: null, ...extra,
+  });
+  const claim = { task: "P7.26", actor, vendor: "codex", model: "gpt-6.1", effort: "max",
+    scope: "src/deep/VeryLongFilename.js + geometry", last_active: 1, open_questions: 2,
+    progress: { step: { value: { current: 2, total: 3 }, updated_at: 1 } },
+    workers: [worker("parser"), worker("old", { state: "done", ended_at: 2 })] };
   data.working = [claim];
   data.plans[0].tasks = [{ id: claim.task, title: "Make active work readable", column: "doing" }];
-  const page = overview(), card = page.querySelector(".working-card");
+  const page = overview(), row = page.querySelector(".working-row");
   const working = page.querySelector(".working-panel"), layout = page.querySelector(".overview-layout");
   assert.ok(working, "Working now must have its own prominent panel");
   assert.ok(page.children.indexOf(working) < page.children.indexOf(layout));
-  assert.equal(card.querySelector(".working-task").textContent, "Make active work readable");
-  assert.equal(card.querySelector(".working-scope").textContent, claim.scope);
-  const actorIdentity = card.querySelector(".working-meta").querySelector(".actor-attribution-identity");
-  assert.equal(actorIdentity.textContent, "josh@archlinux/codex/full-session-id");
-  const actorMark = card.querySelector(".working-meta").querySelector(".agent-mark");
-  assert.equal(actorMark.dataset.vendor, "codex");
-  assert.match(actorMark.attributes.get("aria-label"), /josh@archlinux\/full-session-id/);
+  assert.equal(working.querySelector("h2").textContent, "Working now (1)");
+  assert.equal(working.querySelector(".working-all").href, "/#/claims");
+  assert.equal(row.tagName, "DETAILS");
+  assert.equal(Boolean(row.open), false, "rows start collapsed");
+  assert.equal(row.dataset.disclosureKey, "working:P7.26");
+  const summary = row.querySelector("summary");
+  const task = summary.querySelector(".working-row-task");
+  assert.equal(task.href, "/#/P7?tab=tasks&task=P7.26");
+  assert.equal(task.querySelector(".working-row-id").textContent, "P7.26");
+  assert.equal(task.querySelector(".working-row-title").textContent, "Make active work readable");
+  const scope = summary.querySelector(".working-row-scope");
+  assert.equal(scope.textContent, claim.scope);
+  assert.equal(scope.title, claim.scope, "the full scope stays available on hover");
+  const agent = summary.querySelector(".working-row-agent");
+  assert.equal(agent.title, "josh@archlinux/codex/full-session-id · gpt-6.1 · max");
+  const mark = agent.querySelector(".agent-mark");
+  assert.equal(mark.dataset.vendor, "codex");
+  assert.match(mark.attributes.get("aria-label"), /josh@archlinux\/full-session-id/);
+  assert.equal(visibleText(summary.querySelector(".working-row-step")).includes("2/3"), true);
+  assert.equal(summary.querySelector(".working-row-questions").title, "2 open questions");
+  assert.equal(summary.querySelector(".working-row-workers").title, "1 live worker");
+  assert.ok(summary.querySelector(".working-row-age").querySelector("time"));
+  assert.equal(summary.querySelector(".working-row-stale").children.length, 0);
+  const lines = row.querySelectorAll(".working-worker");
+  assert.equal(lines.length, 1, "the body lists live workers only");
+  assert.equal(lines[0].querySelector(".working-worker-handle").textContent, "/parser");
+  assert.equal(lines[0].querySelector(".working-worker-handle").href,
+    "/#/P7?tab=tasks&task=P7.26&focus=worker-P7.26-parser");
+  assert.match(visibleText(row.querySelector(".working-row-footer")), /\(1 ended\)/);
+  assert.equal(row.querySelector(".working-row-details").href, "/#/P7?tab=tasks&task=P7.26");
+  for (const verbose of [".agent-tree", ".agent-files", ".worker-row", ".claim-signals"]) {
+    assert.equal(page.querySelector(verbose), null, `Overview omits ${verbose}`);
+  }
+});
+
+it("Working now hides zero counts and orders stale claims first, then by activity", () => {
+  const { data, overview } = harness();
+  const claim = (task, last_active, stale = false) => ({
+    task, actor: "josh", vendor: "claude", scope: task, last_active, stale, open_questions: 0,
+  });
+  data.working = [claim("P7.1", 10), claim("P7.2", 30), claim("P7.3", 5, true), claim("P7.4", 20)];
+  const rows = overview().querySelectorAll(".working-row");
+  assert.deepEqual(rows.map(row => row.dataset.disclosureKey),
+    ["working:P7.3", "working:P7.2", "working:P7.4", "working:P7.1"]);
+  assert.equal(rows[0].dataset.stale, "true");
+  assert.equal(rows[0].querySelector(".working-row-stale").querySelector(".badge").textContent, "stale");
+  for (const empty of [".working-row-questions", ".working-row-workers", ".working-row-step"]) {
+    assert.equal(rows[1].querySelector(empty).children.length, 0, `${empty} is empty at zero`);
+  }
+  assert.equal(rows[1].querySelector(".working-row-body").querySelector("p").textContent, "No live workers.");
 });
 
 it("Needs you bounds Unicode previews while the entry keeps the complete body", () => {

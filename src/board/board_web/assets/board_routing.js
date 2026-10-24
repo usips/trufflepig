@@ -44,7 +44,7 @@ export function routeFromLocation() {
     "tab", "q", "plan", "kind", "harness", "user", "host", "task", "after", "through", "state",
     "heading", "oid", "repo", "taskAfter", "taskCeiling", "claimAfter", "repliesAfter",
     "backrefsAfter", "own_stale", "taskThrough", "claimThrough", "repliesThrough", "showInactive",
-    "backrefsThrough", "before", "project",
+    "backrefsThrough", "before", "project", "focus",
   ].map(key => [key, query.get(key) || ""]));
   route.showInactive = query.has("showInactive")
     ? (query.get("showInactive") === "1" ? "1" : "0")

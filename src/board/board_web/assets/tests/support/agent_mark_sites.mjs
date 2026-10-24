@@ -142,7 +142,7 @@ export async function actorSiteNodes() {
     ["task holders", dom.add(dom.el("div"), tasks.map(task => views.taskCard(task, claims)))],
     ["assigned task holders", dom.add(dom.el("div"), assignedTasks.map(task =>
       views.taskCard(task, [])))],
-    ["Working now", board.querySelector(".working-strip")],
+    ["Working now", board.querySelector(".working-list")],
     ["ticker", board.querySelector(".ticker")],
     ["entry cards", dom.add(dom.el("div"), records.map(record => views.entryCard(record)))],
     ["entry table", views.entriesPage({ entries: records }, { view: "entries" })],

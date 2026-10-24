@@ -61,7 +61,7 @@ test("every_actor_site_renders_a_mark", async () => {
   const actual = {}, expected = {};
   for (const [site, node] of await actorSiteNodes()) {
     actual[site] = node.querySelectorAll(".agent-mark").map(mark => mark.dataset.vendor);
-    const vendors = ["claim badges", "Working now"].includes(site)
+    const vendors = site === "claim badges"
       ? MARK_VENDORS.flatMap(vendor => [vendor, vendor]) : MARK_VENDORS;
     expected[site] = site === "ticker" ? [...vendors].reverse() : vendors;
   }
@@ -70,7 +70,7 @@ test("every_actor_site_renders_a_mark", async () => {
     assert.deepEqual(node.querySelectorAll(".agent-mark").map(mark =>
       mark.querySelector("text").textContent),
     (() => {
-      const glyphs = ["claim badges", "Working now"].includes(site)
+      const glyphs = site === "claim badges"
         ? MARK_GLYPHS.flatMap(glyph => [glyph, glyph]) : MARK_GLYPHS;
       return site === "ticker" ? [...glyphs].reverse() : glyphs;
     })(), `${site} has the vendor glyphs`);
@@ -139,7 +139,7 @@ test("no_image_requests_without_logo", async () => {
   };
   try {
     for (const [site, node] of await actorSiteNodes()) {
-      const count = ["claim badges", "Working now"].includes(site) ? 18 : 9;
+      const count = site === "claim badges" ? 18 : 9;
       assert.equal(node.querySelectorAll(".agent-mark").length, count, `${site} has inline marks for each rendered actor`);
       assert.equal(node.querySelectorAll("img,image").length, 0, `${site} makes no logo request`);
     }

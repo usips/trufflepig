@@ -2,6 +2,7 @@ import { createBoardEntries } from "../board_entries.js";
 import { createBoardGrantPanel } from "../board_grants.js";
 import { decodeBoardFragment } from "../board_dom.js";
 import { actorAttribution, actorMark, agentMark, harnessVendor } from "../marks/agent_marks.js";
+import { commitAnchor } from "../board_refs.js";
 
 export function createPlanPage(context) {
   const {
@@ -20,7 +21,11 @@ export function createPlanPage(context) {
     for (const [key, label] of [
       ["ssot", "Plan"], ["tasks", "Tasks"], ["done", "Done"], ["entries", "Entries"],
       ["history", "History"], ["commits", "Commits"], ["review", "Review"],
-    ]) tabs.append(link(label, "plan", { ref: planId(ref), tab: key }, selected === key ? "active" : ""));
+    ]) {
+      const tab = link(label, "plan", { ref: planId(ref), tab: key }, selected === key ? "active" : "");
+      if (selected === key) tab.setAttribute("aria-current", "page");
+      tabs.append(tab);
+    }
     return tabs;
   }
   function sanitizedMarkup(rendered) {
@@ -31,7 +36,9 @@ export function createPlanPage(context) {
       const heading = decodeBoardFragment(anchor.getAttribute("href").slice(1));
       anchor.href = routeUrl(state.route.view, { ...state.route, heading }); anchor.dataset.nav = "true";
     }
-    return item;
+    // Plain text outside links and code links like any board text; the
+    // linkifier adds only text, anchor, and code nodes.
+    return dom.linkifyTextNodes(item, { plan: planId(state.route.ref) });
   }
   function annotateHeadings(markup, rendered, view) {
     const anchors = [...markup.querySelectorAll("[id]")];
@@ -136,7 +143,7 @@ export function createPlanPage(context) {
       }, rendered.headings);
       if (tasks.next_after) {
         details.append(link("Next tasks", "plan", {
-          ...route, taskAfter: tasks.next_after, taskThrough: tasks.through,
+          ...route, focus: null, taskAfter: tasks.next_after, taskThrough: tasks.through,
           taskCeiling: JSON.stringify(tasks.ceiling),
         }, "button"));
       }
@@ -146,7 +153,8 @@ export function createPlanPage(context) {
       })));
       if (claims.next_after) {
         claimList.append(link("Next claims", "plan",
-          { ...route, claimAfter: JSON.stringify(claims.next_after), claimThrough: claims.through }, "button"));
+          { ...route, focus: null, claimAfter: JSON.stringify(claims.next_after),
+            claimThrough: claims.through }, "button"));
       }
       return add(page, panel("Claims", claimList));
     }
@@ -237,7 +245,7 @@ export function createPlanPage(context) {
       const details = add(el("div"), refLink(revision.id),
         add(el("p"), actorMark({ ...revision, vendor: harnessVendor(revision.actor?.harness) }),
           el("span", "", actorName(revision.actor)), el("span", "", ` · ${revision.source}`)),
-        el("p", "", revision.summary));
+        dom.linkified("p", "", revision.summary, { plan: plan.id }));
       const number = Number(String(revision.id).split("@")[1]);
       add(item, details,
         number > 1 ? refLink(`${plan.id}@${number - 1}..${number}`, "View diff", "small") : null,
@@ -257,10 +265,11 @@ export function createPlanPage(context) {
     const list = el("ol", "commit-list");
     for (const commit of commits) {
       const item = el("li", "commit-row");
-      item.id = `commit-${commit.oid}`;
+      item.id = commitAnchor(commit.oid); item.dataset.anchor = item.id;
       add(item,
         refLink(commit.oid, commit.oid, "mono", { plan: plan || commit.plans[0]?.plan_id, repo_key: commit.repo_key }),
-        el("p", "", commit.subject),
+        dom.linkified("p", "", commit.subject,
+          { plan: plan || commit.plans[0]?.plan_id, repo_key: commit.repo_key }),
         add(el("p", "muted small"), el("span", "", `${commit.author} · `),
           timeNode(commit.committed_at),
           el("span", "", ` · ${commit.files} files · +${commit.insertions} −${commit.deletions}`)));

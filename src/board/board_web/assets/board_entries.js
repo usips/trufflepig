@@ -4,7 +4,7 @@ export function createBoardEntries(context) {
   const { state, dom, navigate, entryRecord, collection, entryKinds, nextAfter, pageParams } = context;
   const {
     el, add, refLink, badge, timeNode, empty, omitted, title, field, focusKey, retainForm,
-    link,
+    link, linkified,
   } = dom;
   function filtersForm(route, includePlan = true) {
     const form = el("form", "filters");
@@ -45,7 +45,8 @@ export function createBoardEntries(context) {
     }
     if (entry.supersedes) add(linked, el("span", "muted", "Supersedes"), refLink(entry.supersedes));
     cells[5].append(linked.childElementCount ? linked : el("span", "muted", "—"));
-    cells[6].className = "entry-text-cell"; cells[6].append(el("p", "entry-body", entry.body));
+    cells[6].className = "entry-text-cell"; cells[6].append(linkified("p", "entry-body", entry.body,
+      { plan: entry.plan, repo_key: entry.repo_key }));
     if (entry.to) cells[6].append(el("p", "small muted", `To ${entry.to}`));
     return add(row, cells);
   }
@@ -71,7 +72,7 @@ export function createBoardEntries(context) {
       entries.length ? null : empty("No entries match these filters."), omitted(data.omitted, "entries"));
     const pager = el("div", "pager");
     if (route.after) {
-      pager.append(link("Newest entries", route.view, { ...route, after: null, through: null }, "button"));
+      pager.append(link("Newest entries", route.view, { ...route, focus: null, after: null, through: null }, "button"));
     }
     if (entries.length && nextAfter(data)) {
       pager.append(link("Older entries", route.view, pageParams(route, data), "button"));

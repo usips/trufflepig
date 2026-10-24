@@ -26,6 +26,47 @@ fn task_and_grant_modules_are_public_assets() {
     }
 }
 
+/// Every shipped UI asset (outside `tests/`) needs a public route, or the
+/// browser's module graph fails to load.
+#[test]
+fn every_ui_module_is_a_public_asset() {
+    fn collect(directory: &std::path::Path, root: &std::path::Path, found: &mut Vec<String>) {
+        for entry in std::fs::read_dir(directory).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                if path.file_name().is_some_and(|name| name != "tests") {
+                    collect(&path, root, found);
+                }
+            } else if path
+                .extension()
+                .is_some_and(|ext| ext == "js" || ext == "css")
+            {
+                let relative = path
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned();
+                found.push(format!("/{relative}"));
+            }
+        }
+    }
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/board/board_web/assets");
+    let mut modules = Vec::new();
+    collect(&root, &root, &mut modules);
+    assert!(
+        modules.len() > 20,
+        "asset walk found too few modules: {modules:?}"
+    );
+    let missing: Vec<_> = modules
+        .iter()
+        .filter(|path| public_asset(path).is_none())
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "UI assets without public routes: {missing:?}"
+    );
+}
+
 struct RenderFixture {
     _directory: tempfile::TempDir,
     _poller: SequencePoller,

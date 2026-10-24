@@ -1,3 +1,6 @@
+import { boardRefRoute } from "./board_refs.js";
+import { createBoardLinkify } from "./board_linkify.js";
+
 export function decodeBoardFragment(value) {
   try { return decodeURIComponent(value); } catch (_) { return value; }
 }
@@ -53,21 +56,12 @@ export function createBoardDom(state) {
     if (!native) item.setAttribute("tabindex", "-1");
     return item;
   }
+  // Links a complete board reference (grammar: board_refs.js boardRefRoute);
+  // anything else renders as inert text.
   function refLink(ref, label = ref, className = "mono", context = {}) {
     if (!ref) return el("span", className, label || "—");
-    const text = String(ref);
-    if (/^E[1-9]\d*$/.test(text)) return link(label, "entry", { ref: text }, className);
-    if (/^P[1-9]\d*\.\d+$/.test(text)) {
-      return link(label, "plan", { ref: planId(text), tab: "tasks", task: text }, className);
-    }
-    if (/^P[1-9]\d*(?:@\d+(?:\.\.(?:\d+)?)?)?$/.test(text)) return link(label, "plan", { ref: text }, className);
-    if (/^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/.test(text)) {
-      return context.plan
-        ? link(label, "plan",
-          { ref: context.plan, tab: "commits", oid: text.toLowerCase(), repo: context.repo_key }, className)
-        : link(label, "search", { q: text }, className);
-    }
-    return el("span", className, label);
+    const route = boardRefRoute(ref, context);
+    return route ? link(label, route.view, route.params, className) : el("span", className, label);
   }
   function badge(value) {
     const item = el("span", "badge", value || "unknown");
@@ -121,6 +115,16 @@ export function createBoardDom(state) {
     if (title) item.append(el("h2", "", title));
     if (body) item.append(body);
     return focusKey(item, `section:${title}`);
+  }
+  // A native disclosure whose open state survives live refreshes: the render
+  // loop restores `details[data-disclosure-key]` by key and occurrence.
+  function disclosure(key, summaryText, className = "", summaryClass = "") {
+    const details = el("details", className);
+    details.dataset.disclosureKey = key;
+    const summary = el("summary", summaryClass, summaryText);
+    summary.dataset.focusKey = `disclosure:${key}`;
+    details.append(summary);
+    return details;
   }
   function empty(text) { return el("p", "empty", text); }
   function omitted(value, label = "records") {
@@ -310,10 +314,11 @@ export function createBoardDom(state) {
     }
   }
   function planId(ref) { return String(ref || "").match(/^P[1-9]\d*/)?.[0] || ""; }
+  const { linkify, linkified, linkifyTextNodes } = createBoardLinkify({ el, link, refLink });
 
   return {
-    el, add, button, routeUrl, link, refLink, badge, actorName, shortActor, stamp, timeNode, age,
-    ageNode, panel, empty, omitted, title, field, formStatus, planId, focusKey,
+    el, add, button, routeUrl, link, refLink, linkify, linkified, linkifyTextNodes, badge, actorName, shortActor,
+    stamp, timeNode, age, ageNode, panel, disclosure, empty, omitted, title, field, formStatus, planId, focusKey,
     retainForm, captureForms, restoreForms, syncForm, setFormBusy, focusedControl, restoreFocus, saveForm, markFormSaved,
   };
 }

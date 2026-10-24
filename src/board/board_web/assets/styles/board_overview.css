@@ -1,6 +1,6 @@
 :root{--lane-surface:#f5f7f8}
 
-.overview-page,.overview-layout>*,.needs-rail,.working-card,.task-card,.attention-card{min-width:0}
+.overview-page,.overview-layout>*,.needs-rail,.working-panel,.working-card,.task-card,.attention-card{min-width:0}
 .overview-filter-tools{display:flex;align-items:center;gap:.8rem 1rem;flex-wrap:wrap;margin:.75rem 0 1rem}
 .overview-filter{position:relative}
 .overview-filter>summary{cursor:pointer;color:var(--accent);font-weight:600}
@@ -44,7 +44,40 @@
 .claim-identity>span{min-width:0}
 
 .working-panel{border-top:3px solid var(--accent)}
-.working-panel h2{font-size:1.2rem;margin-bottom:.85rem;letter-spacing:-.015em}
+.working-panel h2{font-size:1.2rem;margin:0;letter-spacing:-.015em}
+.working-head{display:flex;align-items:baseline;justify-content:space-between;gap:.4rem 1rem;
+ flex-wrap:wrap;margin-bottom:.6rem}
+.working-list{border:1px solid var(--line);border-radius:8px;min-width:0}
+.working-row{border-bottom:1px solid var(--line);min-width:0}
+.working-row:last-child{border-bottom:0}
+.working-row[data-stale=true]{box-shadow:inset 3px 0 0 #d3b164}
+.working-row-summary{display:grid;grid-template-columns:1rem minmax(0,2fr) minmax(0,3fr)
+ minmax(0,10rem) 2.4rem 2.4rem 2.4rem 4.8rem 3.4rem;
+ grid-template-areas:"mk task scope agent step q workers age stale";align-items:center;
+ gap:.2rem .6rem;padding:.4rem .75rem;cursor:pointer;list-style:none;font-size:.82rem;min-width:0}
+.working-row-summary::-webkit-details-marker{display:none}
+.working-row-summary::before{content:"▸";grid-area:mk;color:var(--muted);transition:transform .15s}
+.working-row[open]>.working-row-summary::before{transform:rotate(90deg)}
+.working-row-summary:hover{background:var(--accent-soft)}
+.working-row-summary>*{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.working-row-task{grid-area:task;color:inherit;font-weight:600}
+.working-row-id{margin-right:.45rem;color:var(--accent)}
+.working-row-scope{grid-area:scope;color:var(--muted)}
+.working-row-agent{grid-area:agent;display:flex;align-items:center;gap:.3rem}
+.working-row-agent>span{overflow:hidden;text-overflow:ellipsis}
+.working-row-agent>svg{flex:none}
+.working-row-step{grid-area:step}
+.working-row-questions{grid-area:q;color:var(--warning);font-weight:650}
+.working-row-workers{grid-area:workers}
+.working-row-age{grid-area:age;text-align:right;color:var(--muted);font-size:.75rem}
+.working-row-stale{grid-area:stale}
+.working-row-body{padding:.1rem .75rem .6rem 2.35rem;font-size:.78rem;min-width:0}
+.working-row-body p{margin:.25rem 0 0}
+.working-workers{list-style:none;margin:0;padding:0;min-width:0}
+.working-worker{display:flex;align-items:center;gap:.45rem;padding:.12rem 0;min-width:0;white-space:nowrap}
+.working-worker-scope{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.working-worker time{color:var(--muted)}
+.working-row-footer{display:flex;gap:.3rem .75rem;flex-wrap:wrap}
 .working-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:.75rem}
 .working-card{background:var(--surface);border:1px solid var(--line);border-radius:8px;
  padding:.85rem;overflow-wrap:anywhere}
@@ -106,6 +139,15 @@
 @media(max-width:1200px){.overview-layout{grid-template-columns:minmax(0,1fr)}
 .needs-rail{order:-1}}
 @media(max-width:1000px){.lane-columns{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:900px){.working-row-summary{display:flex;flex-wrap:wrap;gap:.15rem .5rem}
+.working-row-summary::after{content:"";flex-basis:100%;order:1}
+.working-row-task{flex:1 1 0}
+.working-row-scope,.working-row-agent,.working-row-step,.working-row-questions,
+.working-row-workers{order:2}
+.working-row-scope{flex:1 1 0;padding-left:1.5rem}
+.working-row-agent{flex:0 1 auto;max-width:45%}
+.working-row-summary>:empty{display:none}}
+@media(prefers-reduced-motion:reduce){.working-row-summary::before{transition:none}}
 @media(max-width:560px){.lane-columns{grid-template-columns:minmax(0,1fr);padding:.7rem}
 .lane-heading{padding:.75rem}
 .lane-heading>a:nth-child(2){flex-basis:calc(100% - 4rem)}

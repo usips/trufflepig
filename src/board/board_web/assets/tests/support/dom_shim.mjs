@@ -56,11 +56,46 @@ function isFocusable(element) {
     || (element.tagName === "A" && element.href !== undefined)
     || ["BUTTON", "INPUT", "SELECT", "TEXTAREA"].includes(element.tagName);
 }
+// Text nodes live in childNodes only, as in a browser; an element holding any
+// reports their concatenated text (with its element children's) as textContent.
+class FakeText {
+  constructor(text) { this.nodeType = 3; this.textContent = String(text); this.parentElement = null; }
+  replaceWith(...nodes) { this.parentElement?.replaceNode(this, nodes); }
+}
+class FakeFragment {
+  constructor() { this.nodeType = 11; this.childNodes = []; }
+  get children() { return this.childNodes.filter(node => node.nodeType !== 3); }
+  append(...nodes) {
+    for (const node of nodes.flat(Infinity)) {
+      if (node !== null && node !== undefined && node !== false) {
+        this.childNodes.push(typeof node === "string" ? new FakeText(node) : node);
+      }
+    }
+  }
+  get textContent() { return this.childNodes.map(node => node.textContent).join(""); }
+}
 class FakeElement {
   constructor(tagName) {
-    this.tagName = String(tagName).toUpperCase();
-    this.children = []; this.parentElement = null; this.dataset = {}; this.attributes = new Map();
-    this.className = ""; this.id = ""; this.textContent = ""; this.listeners = new Map();
+    this.nodeType = 1; this.tagName = String(tagName).toUpperCase();
+    this.childNodes = []; this.parentElement = null; this.dataset = {}; this.attributes = new Map();
+    this.className = ""; this.id = ""; this.ownText = ""; this.listeners = new Map();
+  }
+  get children() { return this.childNodes.filter(node => node.nodeType !== 3); }
+  get textContent() {
+    if (!this.childNodes.some(node => node.nodeType === 3)) return this.ownText;
+    return this.ownText + this.childNodes.map(node => node.textContent).join("");
+  }
+  set textContent(value) {
+    if (this.childNodes.some(node => node.nodeType === 3)) this.childNodes = [];
+    this.ownText = value ?? "";
+  }
+  replaceNode(old, nodes) {
+    const at = this.childNodes.indexOf(old);
+    if (at < 0) return;
+    const holder = new FakeFragment(); holder.append(nodes);
+    const added = holder.childNodes.flatMap(node => node.nodeType === 11 ? node.childNodes : [node]);
+    for (const node of added) node.parentElement = this;
+    this.childNodes.splice(at, 1, ...added); old.parentElement = null;
   }
   get classList() {
     return {
@@ -74,15 +109,19 @@ class FakeElement {
     };
   }
   append(...nodes) {
-    for (const node of nodes.flat(Infinity)) {
-      if (node !== null && node !== undefined && node !== false) { node.parentElement = this; this.children.push(node); }
+    for (const item of nodes.flat(Infinity)) {
+      if (item === null || item === undefined || item === false) continue;
+      const node = typeof item === "string" ? new FakeText(item) : item;
+      const added = node.nodeType === 11 ? node.childNodes.splice(0) : [node];
+      for (const child of added) { child.parentElement = this; this.childNodes.push(child); }
     }
   }
-  replaceChildren(...nodes) { this.children = []; this.append(...nodes); }
+  replaceChildren(...nodes) { this.childNodes = []; this.append(...nodes); }
   addEventListener(type, listener) {
     (this.listeners.get(type) || this.listeners.set(type, []).get(type)).push(listener);
   }
   setAttribute(name, value) { this.attributes.set(name, String(value)); }
+  removeAttribute(name) { this.attributes.delete(name); }
   get childElementCount() { return this.children.length; }
   focus() { if (isFocusable(this)) globalThis.document.activeElement = this; }
   contains(node) { for (let at = node; at; at = at.parentElement) if (at === this) return true; return false; }
@@ -124,6 +163,8 @@ export function installDomShim() {
     visibilityState: "visible",
     body,
     createElement: tag => new FakeElement(tag),
+    createTextNode: text => new FakeText(text),
+    createDocumentFragment: () => new FakeFragment(),
     createElementNS: (namespaceURI, tag) => Object.assign(new FakeElement(tag), { namespaceURI }),
     getElementById: id => findById(root, String(id)),
     querySelector: selector => root.querySelector(selector),

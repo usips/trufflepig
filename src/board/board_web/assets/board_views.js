@@ -1,6 +1,7 @@
 import { createBoardDetails } from "./pages/board_pages.js";
 import { createBoardTaskView } from "./board_task_view.js";
 import { createBoardCards } from "./board_cards.js";
+import { createBoardWorkingRows, workingClaimOrder } from "./board_working_rows.js";
 import { createDonePage } from "./pages/done_page.js";
 import { actorAttribution, recipientMark } from "./marks/agent_marks.js";
 import { INGEST_TIMEOUT_MS, INGEST_UNKNOWN_MESSAGE, completeIngest, resolveIngestEvent } from "./board_ingest.js";
@@ -24,6 +25,7 @@ export function createBoardViews(context) {
     attentionItems, attentionCard, doneFooter,
   } = createBoardCards({ state, dom, entryRecord, collection });
   const { taskViewDetails } = createBoardTaskView({ dom, entryCard, workerTree, claimSignals });
+  const { workingRow } = createBoardWorkingRows({ dom });
   function projectChips(repoKeys, projects = state.projects || []) {
     if (!Array.isArray(repoKeys)) return null;
     const chips = el("div", "row wrap small");
@@ -98,7 +100,7 @@ export function createBoardViews(context) {
     focusKey(filterCheckbox, "overview:show-inactive");
     filterCheckbox.addEventListener("change", event => {
       navigate("overview", {
-        ...route, after: "", through: "", showInactive: event.target.checked ? "1" : "0",
+        ...route, focus: null, after: "", through: "", showInactive: event.target.checked ? "1" : "0",
       }, false, false);
     });
     filterChoice.append(filterCheckbox, el("span", "", "Show plans without active tasks"));
@@ -112,10 +114,14 @@ export function createBoardViews(context) {
     const plans = collection(data, "plans");
     const claims = (data.working || plans.flatMap(item => item.claims || [])).filter(claim => !claim.ended_at);
     const tasksById = new Map(plans.flatMap(item => (item.tasks || []).map(task => [task.id, task])));
-    if (claims.length) add(page, panel("Working now", add(el("div", "working-strip"),
-      claims.map(claim => workingCard(claim, tasksById.get(claim.task), {
-        now: data.server_now, ttlSecs: data.claim_ttl_secs, entries: data.entries,
-      }))), "working-panel"));
+    if (claims.length) {
+      const rows = claims.slice().sort(workingClaimOrder)
+        .map(claim => workingRow(claim, tasksById.get(claim.task)));
+      page.append(focusKey(add(el("section", "panel section working-panel"),
+        add(el("div", "working-head"), el("h2", "", `Working now (${claims.length})`),
+          link("all claims →", "claims", {}, "small working-all")),
+        add(el("div", "working-list"), rows)), "section:Working now"));
+    }
     const layout = el("div", "overview-layout");
     const lanes = el("div");
     for (const item of plans) {
@@ -225,18 +231,19 @@ export function createBoardViews(context) {
     return retainForm(form, `post:${target}:${defaults.question || ""}`);
   }
   function taskDetails(data, headings = []) {
-    const tasks = [...(data.tasks || [])], claims = data.claims || [];
+    const claims = data.claims || [];
     const tasksWritable = data.plan?.lifecycle_state !== "closed";
     const selectedView = data.task_view;
-    if (selectedView?.task && !tasks.some(task => task.id === selectedView.task.id)) {
-      tasks.unshift(selectedView.task);
-    }
+    // The selected task's detail is pinned above the list instead of inline.
+    const selected = selectedView?.task || null;
+    const tasks = [...(selected ? [selected] : []),
+      ...(data.tasks || []).filter(task => task.id !== selected?.id)];
     const content = el("div");
     for (const task of tasks) {
-      const taskView = selectedView?.task?.id === task.id ? selectedView : null;
+      const taskView = selected?.id === task.id ? selectedView : null;
       const claim = taskView ? taskView.current_claim
         : claims.find(item => item.task === task.id && !item.ended_at);
-      const item = el("article", "task-detail");
+      const item = el("article", taskView ? "task-detail task-detail-pinned" : "task-detail");
       item.id = task.id;
       focusKey(item, `task-detail:${task.id}`);
       add(item, add(el("div", "row wrap"), refLink(task.id), badge(taskColumnLabel(task.column)), el("strong", "", task.title)));
@@ -255,7 +262,7 @@ export function createBoardViews(context) {
           authority: data.entries?.find(entry => entry?.id === claim.entry)?.authority,
         })),
         claim.model || claim.effort ? el("p", "small", [claim.model, claim.effort].filter(Boolean).join(" · ")) : null,
-        el("p", "small", claim.scope),
+        dom.linkified("p", "small", claim.scope, { plan: data.plan?.id }),
         add(el("p", "small muted"), el("span", "", "Last active "), ageNode(claim.last_active),
           claim.stale ? badge("stale") : null));
       if (claim && !taskView) {
@@ -344,7 +351,7 @@ export function createBoardViews(context) {
     ...context, entryCard, taskCard, workingCard, postForm, taskDetails, projectChips, ...done,
   });
   return {
-    entryCard, eventList, workingCard, taskCard, attentionItems, attentionCard, renderOverview,
-    renderAttention, renderClaims, postForm, taskDetails, projectChips, ...done, ...details,
+    entryCard, eventList, workingCard, workingRow, taskCard, attentionItems, attentionCard,
+    renderOverview, renderAttention, renderClaims, postForm, taskDetails, projectChips, ...done, ...details,
   };
 }

@@ -30,7 +30,7 @@ it("header_select_drives_all_overview_panels_and_scoped_wire", async () => {
   chooseProject("w1");
   assert.equal(await waitFor(() => laneIds().join() === "swimlane:P1"), true);
   const main = document.getElementById("main");
-  assert.equal(main.querySelectorAll(".working-card").length, 1);
+  assert.equal(main.querySelectorAll(".working-row").length, 1);
   assert.equal(main.querySelectorAll(".attention-card").length, 1);
   assert.equal(main.querySelectorAll(".event-row").length, 1);
   assert.match(textOf(main), /P1 activity/);

@@ -6,7 +6,7 @@ export function createBoardReader(context) {
     state, dom, views, board, jsonFetch, apiVersion, readOp, snapshotSeq, minimumSeq, cursorFromRoute,
     parseBoardJson, queryFilters,
   } = context;
-  const { el, add, title, panel, planId, actorName, timeNode } = dom;
+  const { el, add, title, panel, planId, actorName, timeNode, link, refLink } = dom;
   const {
     renderOverview, renderAttention, renderClaims, feedbackPage, searchPage, editorPage, entryPage,
     entriesPage, diffPage, sanitizedMarkup, renderPlan, renderDone, projectChips,
@@ -19,6 +19,24 @@ export function createBoardReader(context) {
     }))).data;
     if (!Array.isArray(data?.entries)) throw new Error("Board reply is missing its entries collection.");
     return data;
+  }
+  // A stored revision links its neighbours, the diff from its predecessor,
+  // the current plan, and the plan's history.
+  function revisionLinks(revisionId, headRevision) {
+    const match = /^(P[1-9]\d*)@([1-9]\d*)$/.exec(String(revisionId || ""));
+    if (!match) return null;
+    const [, plan, text] = match, number = BigInt(text);
+    const head = /^[1-9]\d*$/.test(String(headRevision ?? "")) ? BigInt(headRevision) : null;
+    const nav = el("nav", "revision-nav row wrap small");
+    nav.setAttribute("aria-label", "Revision navigation");
+    add(nav,
+      number > 1n ? refLink(`${plan}@${number - 1n}`, `← Revision ${number - 1n}`, "button compact") : null,
+      head !== null && number < head
+        ? refLink(`${plan}@${number + 1n}`, `Revision ${number + 1n} →`, "button compact") : null,
+      number > 1n ? refLink(`${plan}@${number - 1n}..${number}`, "Diff from previous", "button compact") : null,
+      refLink(plan, "Current plan", "button compact"),
+      link("History", "plan", { ref: plan, tab: "history" }, "button compact"));
+    return nav;
   }
   function doneClock(data) {
     if (Number.isFinite(data?.server_now)) state.clockOffsetMs = data.server_now * 1000 - Date.now();
@@ -157,6 +175,7 @@ export function createBoardReader(context) {
             el("span", "", actorLine), timeNode(view.created_at));
           page = add(el("div"),
             heading,
+            revisionLinks(view.id, current.plan?.head_revision),
             projectChips(current.repo_keys, projects),
             panel("", sanitizedMarkup(await renderedReply("plan", route.ref))));
         } else {

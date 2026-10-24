@@ -1,15 +1,17 @@
 import { actorAttribution, agentMark, harnessVendor } from "./marks/agent_marks.js";
+import { commitAnchor, entryAnchor } from "./board_refs.js";
 
 export function createBoardTaskView(context) {
   const { dom, entryCard, workerTree, claimSignals } = context;
-  const { el, add, badge, refLink, timeNode, omitted } = dom;
+  const { el, add, badge, refLink, linkified, timeNode, omitted, disclosure } = dom;
 
   function claimHistory(items, entries, view) {
-    const details = el("details", "task-claim-history");
-    add(details, el("summary", "", `Claim history (${items.length})`));
+    const details = disclosure(`claim-history:${view.task.id}`, `Claim history (${items.length})`,
+      "task-claim-history");
     const list = el("ol", "claim-history-list");
     for (const claim of items) {
       const row = el("li", "claim-history-row");
+      if (claim.entry) row.dataset.anchor = entryAnchor(claim.entry);
       const source = entries.find(entry => entry?.id === claim.entry);
       add(row, refLink(claim.entry), actorAttribution({ ...claim,
         origin: source?.origin, authority: source?.authority,
@@ -20,15 +22,17 @@ export function createBoardTaskView(context) {
         claim.end_reason ? badge(claim.end_reason) : null,
         claim.ended_at ? add(el("span", "muted small"), el("span", "", "Ended "), timeNode(claim.ended_at)) : null);
       if (claim.workers?.length || claim.workers_omitted || claim.progress) {
-        const snapshot = el("details", "task-claim-snapshot");
-        add(snapshot, el("summary", "", `Agent snapshot (${claim.workers?.length || 0} workers)`));
-        snapshot.addEventListener("toggle", () => {
-          if (!snapshot.open || snapshot.dataset.loaded) return;
+        const snapshot = disclosure(`agent-snapshot:${claim.entry}`,
+          `Agent snapshot (${claim.workers?.length || 0} workers)`, "task-claim-snapshot");
+        // Restored disclosures call boardLoad directly; the tree renders once.
+        snapshot.boardLoad = () => {
+          if (snapshot.dataset.loaded) return;
           snapshot.dataset.loaded = "true";
           snapshot.append(workerTree(claim, {
             entries, now: view.server_now, ttlSecs: view.claim_ttl_secs,
           }));
-        });
+        };
+        snapshot.addEventListener("toggle", () => { if (snapshot.open) snapshot.boardLoad(); });
         row.append(snapshot);
       }
       list.append(row);
@@ -39,8 +43,10 @@ export function createBoardTaskView(context) {
 
   function commitCard(commit, task) {
     const row = el("li", "task-commit-row");
+    row.dataset.anchor = commitAnchor(commit.oid);
     add(row, refLink(commit.oid, commit.oid, "mono", { plan: String(task.id).split(".")[0], repo_key: commit.repo_key }),
-      el("p", "task-commit-subject", commit.subject),
+      linkified("p", "task-commit-subject", commit.subject,
+        { plan: String(task.id).split(".")[0], repo_key: commit.repo_key }),
       add(el("p", "muted small"), el("span", "", `${commit.author} · `), timeNode(commit.committed_at)));
     if (commit.coauthors?.length) {
       const authors = el("div", "coauthor-list");
@@ -53,7 +59,7 @@ export function createBoardTaskView(context) {
     }
     if (commit.worker_refs?.length) {
       row.append(add(el("div", "entry-refs task-commit-workers"),
-        commit.worker_refs.map(worker => el("span", "mono", `${worker.task}/${worker.handle}`))));
+        commit.worker_refs.map(worker => refLink(`${worker.task}/${worker.handle}`))));
     }
     if (commit.claim_links?.length) {
       const links = el("div", "entry-refs task-commit-claims");

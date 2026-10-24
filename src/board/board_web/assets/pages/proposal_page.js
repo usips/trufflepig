@@ -1,5 +1,6 @@
 import { createBoardFeedback } from "../feedback_triage.js";
 import { createPlanPage } from "./plan_page.js";
+import { BOARD_REF_PATTERNS, entryAnchor } from "../board_refs.js";
 
 export function createProposalPage(context) {
   const {
@@ -41,8 +42,11 @@ export function createProposalPage(context) {
   }
   function entryPage(view, diff, route, extra = {}) {
     const entry = view.entry;
+    const task = (entry.refs || []).map(String).find(ref => BOARD_REF_PATTERNS.task.test(ref));
     const page = add(el("div", "entry-page"),
-      title(`${entry.id} · ${entry.kind}`, entry.plan ? `Plan ${entry.plan}` : "Board entry"),
+      title(`${entry.id} · ${entry.kind}`, entry.plan ? `Plan ${entry.plan}` : "Board entry",
+        task ? refLink(task, `View in task ${task} →`, "button compact entry-task-link",
+          { focus: entryAnchor(entry.id) }) : null),
       entryCard(entry));
     const proposal = view.proposal;
     if (proposal) {
@@ -53,8 +57,9 @@ export function createProposalPage(context) {
             + " Acceptance keeps its original base and will fail until a fresh proposal is made."));
       }
       page.append(panel("Proposed SSOT change", diffPage(diff)));
-      const full = el("details", "section");
-      add(full, el("summary", "", "Full proposed plan"), el("pre", "entry-body", proposal.body)); page.append(full);
+      const full = dom.disclosure(`proposal-full:${entry.id}`, "Full proposed plan", "section");
+      full.append(dom.linkified("pre", "entry-body", proposal.body, { plan: entry.plan }));
+      page.append(full);
       if (proposal.decision_entry) {
         page.append(add(el("p", "small"), el("span", "muted", "Decision: "), refLink(proposal.decision_entry)));
       }
@@ -86,7 +91,7 @@ export function createProposalPage(context) {
     const repliesNext = extra.replies ? extra.replies.next_after : view.replies_next_after;
     if (repliesNext) {
       page.append(link("Next replies", "entry", {
-        ...route, repliesAfter: JSON.stringify(repliesNext),
+        ...route, focus: null, repliesAfter: JSON.stringify(repliesNext),
         repliesThrough: extra.replies?.through || view.through,
       }, "button"));
     }
@@ -98,7 +103,7 @@ export function createProposalPage(context) {
     const backrefsNext = extra.backrefs ? extra.backrefs.next_after : view.backrefs_next_after;
     if (backrefsNext) {
       page.append(link("Next references", "entry", {
-        ...route, backrefsAfter: JSON.stringify(backrefsNext),
+        ...route, focus: null, backrefsAfter: JSON.stringify(backrefsNext),
         backrefsThrough: extra.backrefs?.through || view.through,
       }, "button"));
     }

@@ -30,8 +30,8 @@ export function createBoardFeedback(context) {
   }
   function feedbackMetadata(record) {
     const metadata = record.metadata;
-    const details = el("details", "feedback-metadata");
-    details.append(el("summary", "small", "Report metadata and recent calls"));
+    const details = dom.disclosure(`feedback-metadata:${record.entry?.id || "report"}`,
+      "Report metadata and recent calls", "feedback-metadata", "small");
     const facts = el("dl", "metadata-facts");
     for (const [label, value] of [
       ["Version", metadata.version], ["Build", metadata.build_id], ["Repository", metadata.repo_key],
@@ -58,7 +58,10 @@ export function createBoardFeedback(context) {
     const page = add(el("div"), title("Feedback", "Reports that improve the board and code search."));
     const tabs = el("nav", "tabs"); tabs.setAttribute("aria-label", "Feedback filters");
     for (const [key, label] of [["open", "Open & triaged"], ["all", "All feedback"]]) {
-      tabs.append(link(label, "feedback", { state: key }, (route.state || "open") === key ? "active" : ""));
+      const current = (route.state || "open") === key;
+      const tab = link(label, "feedback", { state: key }, current ? "active" : "");
+      if (current) tab.setAttribute("aria-current", "page");
+      tabs.append(tab);
     }
     page.append(tabs);
     const records = collection(data, "feedback");

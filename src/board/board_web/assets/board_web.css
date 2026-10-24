@@ -69,6 +69,13 @@ h4{font-size:.9rem;margin:.2rem 0}
 .muted{color:var(--muted)}
 .small{font-size:.82rem}
 .mono,code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+.linkify-code,.linkify-path{font-size:.9em;padding:0 .2em;border-radius:4px;overflow-wrap:anywhere}
+.linkify-code{background:var(--line)}
+.linkify-path{background:var(--accent-soft)}
+.linkify-url{overflow-wrap:anywhere}
+.linkify-copy{border:0;background:transparent;padding:0 .2em;color:var(--muted);font-size:.85em;line-height:1}
+.linkify-copy::before{content:"⧉"}
+.linkify-copy:hover:not(:disabled){background:transparent;color:var(--accent)}
 .actions{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
 .row{display:flex;align-items:center;gap:.55rem;min-width:0}
 .spread{justify-content:space-between}
@@ -137,6 +144,14 @@ h4{font-size:.9rem;margin:.2rem 0}
 .task-detail:last-child{border-bottom:0}
 .task-detail p{margin:.3rem 0}
 .task-detail .actions{margin-top:.65rem}
+.task-detail-pinned{padding:1rem;margin-bottom:1rem;border:1px solid var(--line);
+ border-left:3px solid var(--accent);border-radius:8px}
+.task-detail-pinned:last-child{border-bottom:1px solid var(--line)}
+[data-anchor],.task-detail{scroll-margin-top:1rem}
+[data-targeted]{outline:2px solid var(--accent);outline-offset:3px;
+ animation:board-target-fade 1.6s ease-out 1.4s forwards}
+@keyframes board-target-fade{to{outline-color:transparent}}
+@media(prefers-reduced-motion:reduce){[data-targeted]{animation:none}}
 .commit-list{list-style:none;padding:0;margin:0}
 .commit-row{padding:.8rem 0;border-bottom:1px solid var(--line)}
 .commit-row:last-child{border-bottom:0}
