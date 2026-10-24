@@ -6,6 +6,7 @@ pub mod board_domain;
 pub(crate) mod board_markup;
 pub mod board_projects;
 pub(crate) mod board_web;
+use crate::coded_error::CodedContext;
 pub use board_domain::{
     board_actor, board_collections, board_ids, board_protocol, board_vocabulary,
 };
@@ -28,7 +29,7 @@ pub use board_protocol::{
 pub use local_board::SCHEMA_VERSION;
 
 use crate::{cli::Arguments, daemon::deadline::QueryDeadline, diagnostics::RequestContext};
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, bail, ensure};
 use board_grammar::BoardCommand;
 use std::io::Read;
 
@@ -50,19 +51,20 @@ fn read_body(options: &Arguments) -> Result<Option<String>> {
             .lock()
             .take((maximum + 1) as u64)
             .read_to_end(&mut bytes)
-            .context("invalid_body: cannot read stdin")?;
+            .with_coded_context(|| coded!(InvalidBody, "cannot read stdin"))?;
     } else {
         std::fs::File::open(path)
-            .context("invalid_body: cannot open body file")?
+            .with_coded_context(|| coded!(InvalidBody, "cannot open body file"))?
             .take((maximum + 1) as u64)
             .read_to_end(&mut bytes)
-            .context("invalid_body: cannot read body file")?;
+            .with_coded_context(|| coded!(InvalidBody, "cannot read body file"))?;
     }
     ensure!(
         bytes.len() <= maximum,
-        "invalid_body: body exceeds {maximum} bytes"
+        coded!(InvalidBody, "body exceeds {maximum} bytes")
     );
-    let text = String::from_utf8(bytes).context("invalid_body: body is not UTF-8")?;
+    let text =
+        String::from_utf8(bytes).with_coded_context(|| coded!(InvalidBody, "body is not UTF-8"))?;
     Ok(Some(text))
 }
 
@@ -119,7 +121,10 @@ fn unavailable_or_queue(
     {
         return Err(schema_upgrade_advice(error));
     }
-    bail!("board_unavailable: {message}; run trufflepig system ensure")
+    bail!(coded!(
+        BoardUnavailable,
+        "{message}; run trufflepig system ensure"
+    ))
 }
 
 /// Keeps typed schema refusals and their details; restarting cannot downgrade storage.
@@ -145,15 +150,23 @@ fn domain_error(error: &anyhow::Error) -> bool {
         return false;
     }
     error.chain().any(|cause| {
-        board_protocol::leading_error_code(&cause.to_string()).is_some_and(|(code, _)| {
-            code.starts_with("invalid_") || matches!(code, "budget_too_small" | "unknown_command")
-        })
+        cause
+            .downcast_ref::<crate::coded_error::CodedError>()
+            .is_some_and(|coded| {
+                use crate::coded_error::ErrorCode;
+                let code = coded.code();
+                code.as_str().starts_with("invalid_")
+                    || matches!(code, ErrorCode::BudgetTooSmall | ErrorCode::UnknownCommand)
+            })
     })
 }
 
+/// Classifies relayed reply text the way the daemon client boundary types it.
 #[cfg(test)]
 fn domain_answer(message: &str) -> bool {
-    domain_error(&anyhow::anyhow!(message.to_owned()))
+    let error = crate::coded_error::CodedError::from_relayed(message.to_owned())
+        .map_or_else(anyhow::Error::msg, anyhow::Error::from);
+    domain_error(&error)
 }
 
 pub(crate) fn enrich_feedback_cwd(

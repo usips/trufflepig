@@ -179,13 +179,13 @@ impl LocalBoard {
             BoardOp::Repositories { plan } => board_reads::repositories(&tx, *plan)?,
             BoardOp::Projects => {
                 return Err(invalid(
-                    "invalid_options",
+                    BoardErrorCode::InvalidOptions,
                     "projects require the serving host",
                 ));
             }
             _ => {
                 return Err(invalid(
-                    "invalid_options",
+                    BoardErrorCode::InvalidOptions,
                     "operation requires writable board storage",
                 ));
             }

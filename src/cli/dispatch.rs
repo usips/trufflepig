@@ -1,5 +1,6 @@
 //! Local dispatch against published live and captured historical identities.
 use super::{Arguments, emission, request_context, validate};
+use crate::coded_error::CodedContext;
 use crate::{
     daemon::deadline::QueryDeadline,
     output::OutputBudget,
@@ -111,7 +112,10 @@ fn local_dispatch(
     validate(options)?;
     session.set_no_daemon(options.no_daemon);
     if options.root.canonicalize()? != root {
-        bail!("invalid_root: daemon cache belongs to another repository");
+        bail!(coded!(
+            InvalidRoot,
+            "daemon cache belongs to another repository"
+        ));
     }
     let budget = OutputBudget::new(options.budget)?;
     let page_budget = OutputBudget::new(options.budget)?.with_format(options.output_format());
@@ -125,10 +129,7 @@ fn local_dispatch(
         "search" | "refs" | "map" | "show" | "more" | "ctx" | "status" | "doctor"
     );
     if bounded_read && deadline.expired() {
-        bail!(
-            "{}: query deadline expired",
-            crate::daemon::deadline::TIMED_OUT
-        );
+        bail!(coded!(TimedOut, "query deadline expired"));
     }
     if verb == "show"
         && let Some(target) = crate::source::acquisition::show_target(&options.words)
@@ -140,20 +141,17 @@ fn local_dispatch(
             .map(crate::source::SourceSide::parse)
             .transpose()?;
         if side.is_some() {
-            bail!("invalid_side: current path reads have no historical side");
+            bail!(coded!(
+                InvalidSide,
+                "current path reads have no historical side"
+            ));
         }
         if deadline.expired() {
-            bail!(
-                "{}: query deadline expired",
-                crate::daemon::deadline::TIMED_OUT
-            );
+            bail!(coded!(TimedOut, "query deadline expired"));
         }
         let store = Store::unpublished(root, cache).map_err(|error| deadline.classify(error))?;
         if deadline.expired() {
-            bail!(
-                "{}: query deadline expired",
-                crate::daemon::deadline::TIMED_OUT
-            );
+            bail!(coded!(TimedOut, "query deadline expired"));
         }
         let origin = crate::search::InvocationDirectory::within(store.root.as_path(), root);
         let acquired = crate::source::acquisition::acquire_current_path_without_cache(
@@ -161,18 +159,12 @@ fn local_dispatch(
         )
         .map_err(|error| deadline.classify(error))?;
         if deadline.expired() {
-            bail!(
-                "{}: query deadline expired",
-                crate::daemon::deadline::TIMED_OUT
-            );
+            bail!(coded!(TimedOut, "query deadline expired"));
         }
         let rendered = crate::source::render_owned(acquired, &page_budget, &serde_json::json!({}))
             .map_err(|error| deadline.classify(error))?;
         if deadline.expired() {
-            bail!(
-                "{}: query deadline expired",
-                crate::daemon::deadline::TIMED_OUT
-            );
+            bail!(coded!(TimedOut, "query deadline expired"));
         }
         return Ok(rendered);
     }
@@ -183,7 +175,7 @@ fn local_dispatch(
         let path = options
             .words
             .get(1)
-            .context("usage: semantic-check MODEL_DIRECTORY")?;
+            .with_coded_context(|| coded!(Usage, "semantic-check MODEL_DIRECTORY"))?;
         return match options.words.get(2).map(String::as_str) {
             None => budget.render(&crate::semantic::run_gate(Path::new(path))?),
             Some("cuda") => {
@@ -191,7 +183,9 @@ fn local_dispatch(
                 let ordinal = options
                     .words
                     .get(3)
-                    .context("usage: semantic-check MODEL_DIRECTORY cuda DEVICE_ORDINAL")?
+                    .with_coded_context(|| {
+                        coded!(Usage, "semantic-check MODEL_DIRECTORY cuda DEVICE_ORDINAL")
+                    })?
                     .parse::<i32>()
                     .context("invalid CUDA device ordinal")?;
                 #[cfg(feature = "semantic")]
@@ -207,9 +201,10 @@ fn local_dispatch(
                     Err(crate::semantic::unavailable())
                 }
             }
-            Some(provider) => bail!(
-                "usage: semantic-check MODEL_DIRECTORY [cuda DEVICE_ORDINAL] (got {provider})"
-            ),
+            Some(provider) => bail!(coded!(
+                Usage,
+                "semantic-check MODEL_DIRECTORY [cuda DEVICE_ORDINAL] (got {provider})"
+            )),
         };
     }
     if options.no_cache && super::stateless_dispatch::eligible(options) {
@@ -234,10 +229,7 @@ fn local_dispatch(
             {
                 Err(error) if is_index_warming(&error) => {
                     if deadline.expired() {
-                        bail!(
-                            "{}: query deadline expired",
-                            crate::daemon::deadline::TIMED_OUT
-                        );
+                        bail!(coded!(TimedOut, "query deadline expired"));
                     }
                     return warming_status(root, cache, &budget);
                 }
@@ -283,7 +275,7 @@ fn local_dispatch(
             .words
             .get(1)
             .map(String::as_str)
-            .context("usage: command requires an explicit argument")
+            .with_coded_context(|| coded!(Usage, "command requires an explicit argument"))
     };
     if matches!(
         verb,
@@ -348,7 +340,10 @@ fn local_dispatch(
                 "end" => {
                     let report = diagnostics.end_session(
                         &mut store,
-                        options.words.get(2).context("usage: session end ID")?,
+                        options
+                            .words
+                            .get(2)
+                            .with_coded_context(|| coded!(Usage, "session end ID"))?,
                     )?;
                     budget.render(&report).or_else(|_| budget.render(&serde_json::json!({
                         "session":report["session"],"status":report["status"],
@@ -359,7 +354,7 @@ fn local_dispatch(
                         "details":"audit SESSION_ID", "output_truncated":true
                     })))
                 }
-                _ => bail!("usage: session start | session end ID"),
+                _ => bail!(coded!(Usage, "session start | session end ID")),
             },
             "audit" => diagnostics.render_audit(&budget, options.words.get(1).map(String::as_str)),
             "forget-logs" => {
@@ -379,14 +374,11 @@ fn local_dispatch(
         "search" | "refs" | "map" => {
             standalone_worktree_reads::retrieve_read(root,cache,&store,parent_fallback.take(),verb,options,session,context,log_queue,preparation_manager,&page_budget,&deadline)
         }
-        _ => bail!("invalid_command: unknown command {verb}; use search for queries"),
+        _ => bail!(coded!(InvalidCommand, "unknown command {verb}; use search for queries")),
     };
     let response = response.map_err(|error| deadline.classify(error))?;
     if bounded_read && deadline.expired() {
-        bail!(
-            "{}: query deadline expired",
-            crate::daemon::deadline::TIMED_OUT
-        );
+        bail!(coded!(TimedOut, "query deadline expired"));
     }
     Ok(response)
 }
@@ -444,10 +436,7 @@ fn read_store(
     let needs_reconcile = !reads_without_index
         && ((query_needs_fresh_local_index && opened_store.is_some()) || open_error_can_reconcile);
     if deadline.expired() {
-        bail!(
-            "{}: query deadline expired",
-            crate::daemon::deadline::TIMED_OUT
-        );
+        bail!(coded!(TimedOut, "query deadline expired"));
     }
     let reconciles = if !needs_reconcile || daemon_running {
         false
@@ -486,11 +475,8 @@ fn read_store(
 
 fn classify_query_error(deadline: &QueryDeadline, error: anyhow::Error) -> anyhow::Error {
     let error = deadline.classify(error);
-    if deadline.expired() && !crate::daemon::deadline::is_timed_out(&error) {
-        error.context(format!(
-            "{}: query deadline expired",
-            crate::daemon::deadline::TIMED_OUT
-        ))
+    if deadline.expired() && !crate::coded_error::ErrorCode::TimedOut.is_code_of(&error) {
+        error.with_coded_context(|| coded!(TimedOut, "query deadline expired"))
     } else {
         error
     }
@@ -505,10 +491,7 @@ fn reconcile_inline(
     preserve_parent_response: bool,
 ) -> Result<(Store, Option<crate::workspace::ParentFallback>)> {
     if deadline.expired() {
-        bail!(
-            "{}: query deadline expired",
-            crate::daemon::deadline::TIMED_OUT
-        );
+        bail!(coded!(TimedOut, "query deadline expired"));
     }
     let maintenance = crate::store::inline_maintenance_deadline(deadline);
     if own_view.is_none()
@@ -522,10 +505,7 @@ fn reconcile_inline(
             deadline,
         );
         if deadline.expired() {
-            bail!(
-                "{}: query deadline expired",
-                crate::daemon::deadline::TIMED_OUT
-            );
+            bail!(coded!(TimedOut, "query deadline expired"));
         }
     }
 
@@ -613,7 +593,9 @@ fn maintenance_slice_ended(
     original: &QueryDeadline,
     error: &anyhow::Error,
 ) -> bool {
-    crate::daemon::deadline::is_timed_out(error) && !original.expired() && maintenance.expired()
+    crate::coded_error::ErrorCode::TimedOut.is_code_of(error)
+        && !original.expired()
+        && maintenance.expired()
 }
 
 fn available_or_warming(
@@ -640,17 +622,19 @@ fn index_warming_error(root: &Path, cache: &Path, reason: &str) -> anyhow::Error
                 IndexProgressPhase::Finalizing => "finalizing",
                 IndexProgressPhase::MaintenanceRequired => "maintenance_required",
             };
-            anyhow::anyhow!(
-                "index_warming: {reason}; progress phase={phase}, completed_files={}, reused_files={}, maintenance_required={}; {}; run `trufflepig index` to finish",
+            anyhow::anyhow!(coded!(
+                IndexWarming,
+                "{reason}; progress phase={phase}, completed_files={}, reused_files={}, maintenance_required={}; {}; run `trufflepig index` to finish",
                 progress.completed_files,
                 progress.reused_files,
                 progress.maintenance_required,
-                progress.description(),
-            )
+                progress.description()
+            ))
         }
-        None => anyhow::anyhow!(
-            "index_warming: {reason}; no retained checkpoint progress; run `trufflepig index` to build the index"
-        ),
+        None => anyhow::anyhow!(coded!(
+            IndexWarming,
+            "{reason}; no retained checkpoint progress; run `trufflepig index` to build the index"
+        )),
     }
 }
 
@@ -690,7 +674,7 @@ fn warming_status(root: &Path, cache: &Path, budget: &OutputBudget) -> Result<St
 fn ensure_semantic_check_arity(options: &Arguments) -> Result<()> {
     ensure!(
         options.words.len() == 4,
-        "usage: semantic-check MODEL_DIRECTORY cuda DEVICE_ORDINAL"
+        coded!(Usage, "semantic-check MODEL_DIRECTORY cuda DEVICE_ORDINAL")
     );
     Ok(())
 }

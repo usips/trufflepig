@@ -84,7 +84,10 @@ fn sorted_results_to_caller(
     results
         .map(|(position, score)| {
             let index = order.get(position).ok_or_else(|| {
-                anyhow::anyhow!("rerank_unavailable: result index {position} out of range")
+                anyhow::anyhow!(coded!(
+                    RerankUnavailable,
+                    "result index {position} out of range"
+                ))
             })?;
             Ok((*index, score))
         })
@@ -99,10 +102,13 @@ fn scores_in_caller_order(results: Vec<(usize, f32)>, count: usize) -> Result<Ve
     let mut scores: Vec<Option<f32>> = vec![None; count];
     for (index, score) in results {
         let slot = scores.get_mut(index).ok_or_else(|| {
-            anyhow::anyhow!("rerank_unavailable: result index {index} out of range")
+            anyhow::anyhow!(coded!(
+                RerankUnavailable,
+                "result index {index} out of range"
+            ))
         })?;
         if slot.is_some() {
-            bail!("rerank_unavailable: duplicate result index {index}");
+            bail!(coded!(RerankUnavailable, "duplicate result index {index}"));
         }
         *slot = Some(score);
     }
@@ -110,7 +116,9 @@ fn scores_in_caller_order(results: Vec<(usize, f32)>, count: usize) -> Result<Ve
         .into_iter()
         .enumerate()
         .map(|(index, score)| {
-            score.ok_or_else(|| anyhow::anyhow!("rerank_unavailable: missing result index {index}"))
+            score.ok_or_else(|| {
+                anyhow::anyhow!(coded!(RerankUnavailable, "missing result index {index}"))
+            })
         })
         .collect()
 }

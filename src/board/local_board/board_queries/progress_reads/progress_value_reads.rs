@@ -1,3 +1,4 @@
+use crate::board::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::super::super::{BoardError, invalid, row_number, sql_error};
@@ -34,7 +35,7 @@ pub(super) fn latest_head(
     row.map(|(oid, verified, entry, updated_at)| {
         let oid = GitOid::parse(&oid).map_err(|error| {
             invalid(
-                "board_unavailable",
+                BoardErrorCode::BoardUnavailable,
                 format!("invalid stored progress OID: {error}"),
             )
         })?;
@@ -43,7 +44,7 @@ pub(super) fn latest_head(
             Some(1) => true,
             _ => {
                 return Err(invalid(
-                    "board_unavailable",
+                    BoardErrorCode::BoardUnavailable,
                     "invalid stored progress head verification",
                 ));
             }
@@ -83,7 +84,10 @@ pub(super) fn latest_step(
         .map_err(sql_error)?;
     row.map(|(current, total, entry, updated_at)| {
         if total == 0 || current > total {
-            return Err(invalid("board_unavailable", "invalid stored progress step"));
+            return Err(invalid(
+                BoardErrorCode::BoardUnavailable,
+                "invalid stored progress step",
+            ));
         }
         Ok(ProgressFact {
             value: ProgressStep { current, total },
@@ -192,7 +196,7 @@ pub(super) fn latest_gates(
             "running" => GateStatus::Running,
             _ => {
                 return Err(invalid(
-                    "board_unavailable",
+                    BoardErrorCode::BoardUnavailable,
                     "invalid stored progress gate result",
                 ));
             }

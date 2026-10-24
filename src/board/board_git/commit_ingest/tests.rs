@@ -39,9 +39,11 @@ impl BoardBackend for TestBackend {
                 self.request_origins.push(request.origin.clone());
                 if self.fail_next_link {
                     self.fail_next_link = false;
-                    return Err(
-                        anyhow::anyhow!("board_unavailable: injected linking failure").into(),
-                    );
+                    return Err(anyhow::anyhow!(coded!(
+                        BoardUnavailable,
+                        "injected linking failure"
+                    ))
+                    .into());
                 }
                 if let Some(commit) = commits
                     .iter()

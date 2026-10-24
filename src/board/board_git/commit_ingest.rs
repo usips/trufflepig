@@ -230,7 +230,7 @@ impl RepoIngestor {
                 Err(error) => return Err(error.into()),
             };
             let BoardResult::CommitsLinked(linked) = reply.result else {
-                anyhow::bail!("board_scan: unexpected commit-link reply");
+                anyhow::bail!(coded!(BoardScan, "unexpected commit-link reply"));
             };
             result.inserted += linked.inserted;
             result.unknown_plans.extend(linked.unknown_plans);
@@ -263,11 +263,11 @@ impl RepoIngestor {
         report.errors.extend(warnings);
         ensure!(
             scan.complete,
-            "board_scan: commit scan exceeds {COMMIT_LIMIT} records"
+            coded!(BoardScan, "commit scan exceeds {COMMIT_LIMIT} records")
         );
         ensure!(
             collect_tips(registration, deadline)?.digest == tips.digest,
-            "board_scan: Git tips changed during scan"
+            coded!(BoardScan, "Git tips changed during scan")
         );
         record_scan(backend, actor, registration, None)?;
         report.completed.push(registration.clone());
@@ -302,7 +302,7 @@ fn record_scan(
     ))?;
     ensure!(
         matches!(reply.result, BoardResult::ScanRecorded),
-        "board_scan: unexpected scan-status reply"
+        coded!(BoardScan, "unexpected scan-status reply")
     );
     Ok(())
 }

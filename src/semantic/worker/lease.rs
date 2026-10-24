@@ -1,3 +1,4 @@
+use crate::coded_error::CodedContext;
 use anyhow::{Context, Result, bail};
 use fs2::FileExt;
 use std::{
@@ -18,7 +19,7 @@ pub fn worker_cache_dir() -> Result<PathBuf> {
     let base = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
-        .context("semantic_worker_unavailable: set HOME or XDG_CACHE_HOME")?;
+        .with_coded_context(|| coded!(SemanticWorkerUnavailable, "set HOME or XDG_CACHE_HOME"))?;
     Ok(base.join("trufflepig").join("inference-worker"))
 }
 
@@ -57,16 +58,24 @@ impl WorkerLease {
         let lease = Self { worker, device };
         if let Err(error) = lease.worker.try_lock_exclusive() {
             if error.kind() == ErrorKind::WouldBlock {
-                bail!("semantic_busy: inference worker owns the device/model lease");
+                bail!(coded!(
+                    SemanticBusy,
+                    "inference worker owns the device/model lease"
+                ));
             }
-            return Err(error).context("semantic_worker: acquire worker lease");
+            return Err(error)
+                .with_coded_context(|| coded!(SemanticWorker, "acquire worker lease"));
         }
         if let Err(error) = lease.device.try_lock_exclusive() {
             let _ = FileExt::unlock(&lease.worker);
             if error.kind() == ErrorKind::WouldBlock {
-                bail!("semantic_busy: another process owns the device/model lease");
+                bail!(coded!(
+                    SemanticBusy,
+                    "another process owns the device/model lease"
+                ));
             }
-            return Err(error).context("semantic_worker: acquire device/model lease");
+            return Err(error)
+                .with_coded_context(|| coded!(SemanticWorker, "acquire device/model lease"));
         }
         Ok(lease)
     }
@@ -98,7 +107,7 @@ impl WorkerSocket {
         let path = cache.join(SOCKET_NAME);
         match fs::symlink_metadata(&path) {
             Ok(metadata) if metadata.file_type().is_socket() => match UnixStream::connect(&path) {
-                Ok(_) => bail!("semantic_worker_busy: worker socket already active"),
+                Ok(_) => bail!(coded!(SemanticWorkerBusy, "worker socket already active")),
                 Err(error)
                     if matches!(
                         error.kind(),
@@ -109,10 +118,11 @@ impl WorkerSocket {
                 }
                 Err(error) => return Err(error).context("inspect semantic worker socket"),
             },
-            Ok(_) => bail!(
-                "semantic_worker: refusing to remove non-socket at {}",
+            Ok(_) => bail!(coded!(
+                SemanticWorker,
+                "refusing to remove non-socket at {}",
                 path.display()
-            ),
+            )),
             Err(error) if error.kind() == ErrorKind::NotFound => {}
             Err(error) => return Err(error.into()),
         }

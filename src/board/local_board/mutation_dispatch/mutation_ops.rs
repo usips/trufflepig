@@ -203,7 +203,7 @@ pub(super) fn apply_mutation(
         } => {
             let commit = resolution.as_deref().ok_or_else(|| {
                 invalid(
-                    "invalid_options",
+                    BoardErrorCode::InvalidOptions,
                     "commit links resolve through the board host",
                 )
             })?;

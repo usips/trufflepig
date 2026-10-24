@@ -74,9 +74,10 @@ pub(super) fn denied_router_socket(
         return Ok(None);
     }
     let config = load()?;
-    Ok(Some(anyhow::anyhow!(
+    Ok(Some(anyhow::anyhow!(coded!(
+        BoardUnavailable,
         concat!(
-            "board_unavailable: permission denied creating a client AF_UNIX socket or ",
+            "permission denied creating a client AF_UNIX socket or ",
             "connecting to router socket {} ({}); allow the sandbox to create AF_UNIX ",
             "client sockets and connect to that path; connection also needs parent-directory ",
             "traversal and socket access for the current Unix user; local database fallback ",
@@ -87,7 +88,7 @@ pub(super) fn denied_router_socket(
         path.display(),
         error,
         config.db_path.display()
-    )))
+    ))))
 }
 
 pub(super) fn is_storage_access_failure(error: &anyhow::Error) -> bool {

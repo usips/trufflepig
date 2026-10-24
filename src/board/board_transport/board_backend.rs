@@ -118,7 +118,9 @@ impl BoardHost {
         config
             .database_path()
             .map(std::path::Path::to_path_buf)
-            .ok_or_else(|| anyhow::anyhow!("board_unavailable: database path is unavailable"))
+            .ok_or_else(|| {
+                anyhow::anyhow!(coded!(BoardUnavailable, "database path is unavailable"))
+            })
     }
 
     /// The latest board configuration failure, for `system status` to report

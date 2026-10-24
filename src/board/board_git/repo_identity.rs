@@ -1,9 +1,12 @@
 //! Portable root-commit identity and host-local repository registration.
 use crate::board::board_ids::{PlanId, RepoKey};
 use crate::board::board_protocol::RepoRegistration;
-use crate::history::git::{common_dir_bounded, run_bounded_strict as run_bounded};
+use crate::coded_error::CodedContext;
+use crate::history::git::{
+    GitCommandFailed, common_dir_bounded, run_bounded_strict as run_bounded,
+};
 use crate::identity::GitOid;
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::os::unix::ffi::OsStringExt;
@@ -15,21 +18,38 @@ pub use registration_cache::{RegistrationProbe, RepoIdentityCache};
 
 const ORIGIN_QUERY: &str = "^(remote\\.origin\\.url|core\\.repositoryformatversion)$";
 
-/// Canonical checkout root; a bare repository has no working root.
+/// Canonical checkout root; a bare repository, or a directory outside any
+/// work tree, has no working root.
 pub fn repository_root(directory: &Path, timeout: Duration) -> Result<Option<PathBuf>> {
-    match run_bounded(directory, &["rev-parse", "--show-toplevel"], timeout) {
-        Ok(bytes) => output_path(bytes)
-            .canonicalize()
-            .map(Some)
-            .context("board_scan: canonicalize working root"),
-        Err(error)
-            if error.to_string().contains("not a git repository")
-                || error.to_string().contains("must be run in a work tree") =>
-        {
-            Ok(None)
-        }
-        Err(error) => Err(error),
+    let deadline = Instant::now() + timeout;
+    match run_bounded(
+        directory,
+        &["rev-parse", "--is-inside-work-tree"],
+        remaining(deadline)?,
+    ) {
+        Ok(inside) if inside == b"true\n" => {}
+        Ok(_) => return Ok(None),
+        Err(error) if found_no_repository(&error) => return Ok(None),
+        Err(error) => return Err(error),
     }
+    let bytes = run_bounded(
+        directory,
+        &["rev-parse", "--show-toplevel"],
+        remaining(deadline)?,
+    )?;
+    output_path(bytes)
+        .canonicalize()
+        .map(Some)
+        .with_coded_context(|| coded!(BoardScan, "canonicalize working root"))
+}
+
+fn found_no_repository(error: &anyhow::Error) -> bool {
+    GitCommandFailed::from_error(error).is_some_and(GitCommandFailed::found_no_repository)
+}
+
+/// `symbolic-ref -q` exits 1, silently, when HEAD is detached.
+fn head_is_detached(error: &anyhow::Error) -> bool {
+    GitCommandFailed::from_error(error).is_some_and(|failure| failure.exit_code() == Some(1))
 }
 
 /// Nonrepositories and unborn HEADs have no identity and return `None`.
@@ -52,10 +72,10 @@ fn register_repository_with_overrides(
     let deadline = Instant::now() + timeout;
     let directory = directory
         .canonicalize()
-        .context("board_scan: canonicalize repository root")?;
+        .with_coded_context(|| coded!(BoardScan, "canonicalize repository root"))?;
     let common_dir = match common_dir_bounded(&directory, remaining(deadline)?) {
         Ok(path) => path,
-        Err(error) if error.to_string().contains("not a git repository") => return Ok(None),
+        Err(error) if found_no_repository(&error) => return Ok(None),
         Err(error) => return Err(error),
     };
     let Some(head) = resolve_head(&directory, deadline)? else {
@@ -77,7 +97,10 @@ fn register_repository_with_overrides(
     )? == b"true\n";
     ensure!(
         !shallow || override_key.is_some(),
-        "board_scan: shallow repository requires a [repos] origin override for portable identity"
+        coded!(
+            BoardScan,
+            "shallow repository requires a [repos] origin override for portable identity"
+        )
     );
     let root_commits = if shallow {
         Vec::new()
@@ -123,12 +146,16 @@ pub fn root_sets_diverged(stored: &[GitOid], current: &[GitOid]) -> bool {
 }
 
 fn resolve_head(directory: &Path, deadline: Instant) -> Result<Option<GitOid>> {
-    match run_bounded(directory, &["symbolic-ref", "HEAD"], remaining(deadline)?) {
+    match run_bounded(
+        directory,
+        &["symbolic-ref", "-q", "HEAD"],
+        remaining(deadline)?,
+    ) {
         Ok(reference) => {
             let reference = std::str::from_utf8(&reference)?.trim();
             ensure!(
                 reference.starts_with("refs/") && !reference.chars().any(char::is_whitespace),
-                "board_scan: invalid symbolic HEAD"
+                coded!(BoardScan, "invalid symbolic HEAD")
             );
             let refs = run_bounded(
                 directory,
@@ -145,14 +172,14 @@ fn resolve_head(directory: &Path, deadline: Instant) -> Result<Option<GitOid>> {
             {
                 let (name, oid) = entry
                     .split_once_byte(0)
-                    .context("board_scan: invalid Git reference record")?;
+                    .with_coded_context(|| coded!(BoardScan, "invalid Git reference record"))?;
                 if name == reference.as_bytes() {
                     return GitOid::parse(std::str::from_utf8(oid)?).map(Some);
                 }
             }
             Ok(None)
         }
-        Err(error) if error.to_string().contains("not a symbolic ref") => {
+        Err(error) if head_is_detached(&error) => {
             let head = run_bounded(
                 directory,
                 &["rev-parse", "--verify", "HEAD^{commit}"],
@@ -167,11 +194,11 @@ fn resolve_head(directory: &Path, deadline: Instant) -> Result<Option<GitOid>> {
 pub(super) fn detached_head(git_dir: &Path, deadline: Instant) -> Result<Option<GitOid>> {
     match run_bounded(
         git_dir,
-        &["--git-dir=.", "symbolic-ref", "HEAD"],
+        &["--git-dir=.", "symbolic-ref", "-q", "HEAD"],
         remaining(deadline)?,
     ) {
         Ok(_) => Ok(None),
-        Err(error) if error.to_string().contains("not a symbolic ref") => {
+        Err(error) if head_is_detached(&error) => {
             let head = run_bounded(
                 git_dir,
                 &["--git-dir=.", "rev-parse", "--verify", "HEAD^{commit}"],
@@ -190,7 +217,7 @@ fn origin_from_config(bytes: &[u8]) -> Result<Option<String>> {
     {
         let (key, value) = item
             .split_once_byte(b'\n')
-            .context("board_scan: invalid origin configuration")?;
+            .with_coded_context(|| coded!(BoardScan, "invalid origin configuration"))?;
         if key == b"remote.origin.url" {
             let value = std::str::from_utf8(value)?.trim();
             return if value.is_empty() {
@@ -207,7 +234,7 @@ pub fn normalize_origin_label(value: &str) -> Result<String> {
     let value = value.trim();
     ensure!(
         !value.is_empty() && value.len() <= 4096 && !value.chars().any(char::is_control),
-        "invalid_options: invalid repository origin label"
+        coded!(InvalidOptions, "invalid repository origin label")
     );
     Ok(strip_origin_userinfo(value))
 }
@@ -229,7 +256,10 @@ fn strip_origin_userinfo(value: &str) -> String {
 
 pub(super) fn remaining(deadline: Instant) -> Result<Duration> {
     let remaining = deadline.saturating_duration_since(Instant::now());
-    ensure!(!remaining.is_zero(), "board_scan: Git scan timed out");
+    ensure!(
+        !remaining.is_zero(),
+        coded!(BoardScan, "Git scan timed out")
+    );
     Ok(remaining)
 }
 

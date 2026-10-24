@@ -1,5 +1,6 @@
 //! One wall-clock budget per read request, shared by every stage that can wait:
 //! SQLite progress handlers, busy timeouts, publication waits, and member loops.
+use crate::coded_error::CodedContext;
 use std::os::fd::AsRawFd;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -8,9 +9,6 @@ use std::time::{Duration, Instant};
 
 /// Local execution budget for a bounded query.
 pub const QUERY_DEADLINE: Duration = Duration::from_secs(20);
-
-/// Error prefix for work abandoned because its [`QueryDeadline`] expired.
-pub const TIMED_OUT: &str = "timed_out";
 
 /// Absolute expiry and optional peer or spool-claim cancellation signals.
 #[derive(Clone, Debug)]
@@ -98,7 +96,7 @@ impl QueryDeadline {
             )
         });
         if interrupted {
-            error.context(format!("{TIMED_OUT}: query deadline expired"))
+            error.with_coded_context(|| coded!(TimedOut, "query deadline expired"))
         } else {
             error
         }
@@ -124,14 +122,6 @@ fn claim_was_removed(path: &Path) -> bool {
     std::fs::symlink_metadata(path).is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
 }
 
-/// Whether `error` reports an expired query deadline.
-pub fn is_timed_out(error: &anyhow::Error) -> bool {
-    error
-        .to_string()
-        .strip_prefix(TIMED_OUT)
-        .is_some_and(|rest| rest.starts_with(':'))
-}
-
 /// Writes enough Rust sources under `root` that reconciling them outlasts a
 /// 100 ms query budget, plus one file defining `pub fn NAME`.
 #[cfg(test)]
@@ -151,6 +141,7 @@ pub(crate) fn write_slow_reconcile_fixture(root: &std::path::Path, name: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::coded_error::ErrorCode;
 
     #[test]
     fn expired_deadline_caps_waits_to_zero() {
@@ -285,13 +276,22 @@ mod tests {
     #[test]
     fn classify_relabels_only_sqlite_interrupts() {
         let deadline = QueryDeadline::start();
-        let interrupt = rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_INTERRUPT),
-            None,
+        let interrupt = || {
+            rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_INTERRUPT),
+                None,
+            )
+        };
+        let rendered_before = format!(
+            "{:#}",
+            anyhow::Error::new(interrupt())
+                .context("search")
+                .context("timed_out: query deadline expired")
         );
-        let error = deadline.classify(anyhow::Error::new(interrupt).context("search"));
-        assert!(is_timed_out(&error), "{error:#}");
-        let other = deadline.classify(anyhow::anyhow!("stale_source: changed"));
-        assert!(!is_timed_out(&other));
+        let error = deadline.classify(anyhow::Error::new(interrupt()).context("search"));
+        assert!(ErrorCode::TimedOut.is_code_of(&error), "{error:#}");
+        assert_eq!(format!("{error:#}"), rendered_before);
+        let other = deadline.classify(anyhow::anyhow!(coded!(StaleSource, "changed")));
+        assert!(!ErrorCode::TimedOut.is_code_of(&other));
     }
 }

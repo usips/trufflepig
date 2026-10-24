@@ -9,6 +9,7 @@ use super::super::{
     board_writer::{BoardHostBackendAccess, check_deadline, lock_before},
 };
 use super::scope_read_repo_key;
+use crate::coded_error::CodedContext;
 use crate::{
     board::{
         board_grammar::{self, BoardCommand},
@@ -23,7 +24,7 @@ use crate::{
     diagnostics::RequestContext,
     output::OutputBudget,
 };
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use std::time::Duration;
 
 impl BoardHost {
@@ -50,7 +51,7 @@ impl BoardHost {
         let command = board_grammar::parse(options, None)?;
         let deadline = local_read_deadline(&command, deadline);
         if matches!(&command, BoardCommand::Web { .. }) {
-            bail!("invalid_options: board web must run on the client");
+            bail!(coded!(InvalidOptions, "board web must run on the client"));
         }
         let config = self.config()?;
         let actor = config.actor(context.client.as_deref(), context.session.as_deref())?;
@@ -192,9 +193,9 @@ impl BoardHost {
         if let Some(selector) = options.board.project.as_deref() {
             if !self.validate_done_project(&op, selector, &actor.host, &deadline)? {
                 if selector == "unscoped" {
-                    *op.read_scope_mut()
-                        .context("invalid_options: --project requires a scoped read")? =
-                        ReadScope::Unscoped;
+                    *op.read_scope_mut().with_coded_context(|| {
+                        coded!(InvalidOptions, "--project requires a scoped read")
+                    })? = ReadScope::Unscoped;
                 } else {
                     self.select_project_scope(&mut op, selector, &actor.host, &deadline)?;
                 }

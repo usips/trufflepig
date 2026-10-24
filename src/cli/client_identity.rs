@@ -29,13 +29,17 @@ fn resolved_request_context(
             .as_deref()
             .is_some_and(|harness| matches!(harness, "human" | "cli" | "system"))
     {
-        anyhow::bail!(
-            "invalid_client: TRUFFLEPIG_AGENT_HARNESS cannot name reserved client identities"
-        );
+        anyhow::bail!(coded!(
+            InvalidClient,
+            "TRUFFLEPIG_AGENT_HARNESS cannot name reserved client identities"
+        ));
     }
     let observed = detected.or(fallback);
     if observed.as_deref() == Some("system") || options.client.as_deref() == Some("system") {
-        anyhow::bail!("invalid_client: system is reserved for trusted internal board requests");
+        anyhow::bail!(coded!(
+            InvalidClient,
+            "system is reserved for trusted internal board requests"
+        ));
     }
     if observed.is_some()
         && options
@@ -43,9 +47,10 @@ fn resolved_request_context(
             .as_deref()
             .is_some_and(|client| matches!(client, "human" | "cli"))
     {
-        anyhow::bail!(
-            "invalid_client: a detected harness cannot be overridden with --client human or --client cli"
-        );
+        anyhow::bail!(coded!(
+            InvalidClient,
+            "a detected harness cannot be overridden with --client human or --client cli"
+        ));
     }
 
     let client = options.client.clone().or_else(|| observed.clone());

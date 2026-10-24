@@ -10,18 +10,25 @@ fn positive_number(value: &str) -> Result<u64> {
         || value.starts_with('0')
         || !value.bytes().all(|byte| byte.is_ascii_digit())
     {
-        bail!("invalid_reference: expected a canonical positive number");
+        bail!(coded!(
+            InvalidReference,
+            "expected a canonical positive number"
+        ));
     }
     let number = value
         .parse::<u64>()
-        .map_err(|_| anyhow::anyhow!("invalid_reference: number is too large"))?;
+        .map_err(|_| anyhow::anyhow!(coded!(InvalidReference, "number is too large")))?;
     check_positive(number)?;
     Ok(number)
 }
 
 fn check_positive(value: u64) -> Result<()> {
     if value == 0 || value > MAX_BOARD_NUMBER {
-        bail!("invalid_reference: number must be 1..{}", MAX_BOARD_NUMBER);
+        bail!(coded!(
+            InvalidReference,
+            "number must be 1..{}",
+            MAX_BOARD_NUMBER
+        ));
     }
     Ok(())
 }
@@ -60,10 +67,11 @@ macro_rules! numbered_id {
             }
             pub fn parse(value: &str) -> Result<Self> {
                 let suffix = value.strip_prefix($prefix).ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "invalid_reference: expected {} followed by a number",
+                    anyhow::anyhow!(coded!(
+                        InvalidReference,
+                        "expected {} followed by a number",
                         $prefix
-                    )
+                    ))
                 })?;
                 Self::new(positive_number(suffix)?)
             }
@@ -100,7 +108,10 @@ impl EventSeq {
     }
     pub fn try_new(value: u64) -> Result<Self> {
         if value > MAX_BOARD_NUMBER {
-            bail!("invalid_reference: event sequence exceeds SQLite integer range");
+            bail!(coded!(
+                InvalidReference,
+                "event sequence exceeds SQLite integer range"
+            ));
         }
         Ok(Self(value))
     }

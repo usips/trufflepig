@@ -1,4 +1,5 @@
-use anyhow::{Context, Result};
+use crate::coded_error::CodedContext;
+use anyhow::Result;
 use std::os::unix::process::CommandExt;
 #[cfg(test)]
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -83,9 +84,10 @@ pub(crate) fn current_background_executable(
     cache: &Path,
     owner: BackgroundOwner,
 ) -> Result<PathBuf> {
-    let executable = std::env::current_exe().with_context(|| {
-        format!(
-            "background_executable_unavailable: cannot determine executable owned by {} for cache {}",
+    let executable = std::env::current_exe().with_coded_context(|| {
+        coded!(
+            BackgroundExecutableUnavailable,
+            "cannot determine executable owned by {} for cache {}",
             owner.role(),
             cache.display()
         )
@@ -181,9 +183,10 @@ pub(crate) fn spawn_background_for(
     role: &str,
     cache: &Path,
 ) -> Result<BackgroundChild> {
-    spawn_background(command).with_context(|| {
-        format!(
-            "background_spawn_failed: cannot start {role} executable {} for cache {}",
+    spawn_background(command).with_coded_context(|| {
+        coded!(
+            BackgroundSpawnFailed,
+            "cannot start {role} executable {} for cache {}",
             executable.display(),
             cache.display()
         )

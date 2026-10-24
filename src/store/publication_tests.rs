@@ -204,9 +204,7 @@ fn open_read_interrupts_statements_after_its_deadline() {
         )
         .map_err(anyhow::Error::from)
         .unwrap_err();
-    assert!(crate::daemon::deadline::is_timed_out(
-        &deadline.classify(error)
-    ));
+    assert!(crate::coded_error::ErrorCode::TimedOut.is_code_of(&deadline.classify(error)));
 }
 
 #[test]

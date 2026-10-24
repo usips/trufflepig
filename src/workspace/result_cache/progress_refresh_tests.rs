@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    daemon::deadline::{QueryDeadline, is_timed_out},
+    daemon::deadline::QueryDeadline,
     output::{OutputBudget, OutputFormat},
     results::{ChangeEntry, ResultEntry},
     store::{Store, encode_path, read_index_progress},
@@ -56,9 +56,10 @@ fn retain_real_progress(
     let result = store
         .index_available_until(QueryDeadline::after(Duration::from_secs(5)).with_claim_path(claim));
     assert!(watcher.join().expect("progress watcher did not panic"));
-    assert!(is_timed_out(
-        &result.expect_err("claim cancellation interrupts the pass")
-    ));
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut
+            .is_code_of(&result.expect_err("claim cancellation interrupts the pass"))
+    );
     assert!(read_index_progress(root, cache).is_some_and(|progress| progress.completed_files > 0));
     Ok(())
 }

@@ -1,5 +1,6 @@
 //! Agent-session shutdown and its claim cleanup.
 
+use crate::board::board_protocol::BoardErrorCode;
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::super::super::{
@@ -23,7 +24,12 @@ pub(in crate::board::local_board) fn bye(
         )
         .optional()
         .map_err(sql_error)?
-        .ok_or_else(|| invalid("board_unavailable", "agent session row is missing"))?;
+        .ok_or_else(|| {
+            invalid(
+                BoardErrorCode::BoardUnavailable,
+                "agent session row is missing",
+            )
+        })?;
     if ended_at.is_some() {
         let previous_bye: Option<u64> = tx
             .query_row(

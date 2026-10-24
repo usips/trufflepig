@@ -98,7 +98,7 @@ pub(in crate::board::local_board) fn task_ids(
         .map_err(sql_error)?;
     let capacity = usize::try_from(count).map_err(|_| {
         invalid(
-            "board_unavailable",
+            BoardErrorCode::BoardUnavailable,
             "task lineage count exceeds platform range",
         )
     })?;
@@ -143,7 +143,7 @@ pub(in crate::board::local_board) fn canonical_task(
         )
         .optional()
         .map_err(sql_error)?
-        .ok_or_else(|| invalid("board_unavailable", format!("task lineage for {task} has no terminal card")))?;
+        .ok_or_else(|| invalid(BoardErrorCode::BoardUnavailable, format!("task lineage for {task} has no terminal card")))?;
     TaskId::new(
         PlanId::new(terminal.0).map_err(BoardError::from)?,
         terminal.1,
@@ -242,7 +242,7 @@ pub(in crate::board::local_board) fn task_id_from_pair(
             .map_err(BoardError::from)?,
         )),
         _ => Err(invalid(
-            "board_unavailable",
+            BoardErrorCode::BoardUnavailable,
             "stored task transfer has an incomplete task reference",
         )),
     }

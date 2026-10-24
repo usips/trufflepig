@@ -13,7 +13,7 @@ mod tests;
 use super::{WorkspaceConfig, home_index::HomeIndexPolicy, result_cache::WorkspaceResults};
 use crate::{
     cli::Arguments,
-    daemon::deadline::{QueryDeadline, TIMED_OUT},
+    daemon::deadline::QueryDeadline,
     diagnostics::RequestContext,
     output::OutputBudget,
     semantic::SemanticSession,
@@ -98,6 +98,7 @@ pub(super) fn search_with_policy(
 fn timeout_without_member_answer(
     answered_members: usize,
     coverage: &[serde_json::Value],
+    phase: Option<&'static str>,
 ) -> Option<anyhow::Error> {
     if answered_members > 0 {
         return None;
@@ -109,11 +110,7 @@ fn timeout_without_member_answer(
     let reason = timed_out["reason"]
         .as_str()
         .unwrap_or("query deadline expired");
-    let phase = if reason.contains("current-source recheck") {
-        "current_source_recheck"
-    } else {
-        "member_processing"
-    };
+    let phase = phase.unwrap_or("member_processing");
     let mut details = serde_json::json!({
         "absence": "not_proven",
         "fallback": "show path:FILE",
@@ -124,7 +121,8 @@ fn timeout_without_member_answer(
     if let Some(root) = timed_out["root"].as_str() {
         details["root"] = root.into();
     }
-    Some(anyhow::anyhow!(
-        "{TIMED_OUT}: query deadline expired before any member answered; details={details}"
-    ))
+    Some(anyhow::anyhow!(coded!(
+        TimedOut,
+        "query deadline expired before any member answered; details={details}"
+    )))
 }

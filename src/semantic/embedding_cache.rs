@@ -132,7 +132,10 @@ impl EmbeddingCache {
             |row| row.get(0),
         )?;
         if schema_version != 0 || tables != 0 {
-            bail!("semantic_cache_unavailable: cache schema is not ready");
+            bail!(coded!(
+                SemanticCacheUnavailable,
+                "cache schema is not ready"
+            ));
         }
         db.execute_batch(
             "PRAGMA page_size=4096;
@@ -170,7 +173,10 @@ impl EmbeddingCache {
         db.busy_timeout(read_busy_timeout)?;
         let schema_version: i64 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
         if schema_version != SCHEMA_VERSION || !has_current_schema(&db)? {
-            bail!("semantic_cache_unavailable: cache schema is not ready");
+            bail!(coded!(
+                SemanticCacheUnavailable,
+                "cache schema is not ready"
+            ));
         }
         Self::from_existing(db, database_path, read_busy_timeout)
     }

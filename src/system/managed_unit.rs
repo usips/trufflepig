@@ -2,6 +2,7 @@
 //! when that unit owns the router runtime directory, so no detached router races
 //! the unit for the daemon lock, and watches the unit while it starts.
 
+use crate::coded_error::CodedContext;
 use crate::process_capture::{self, CaptureError};
 use crate::{background_process::BackgroundChild, daemon::deadline::QueryDeadline};
 use anyhow::{Context, Result, anyhow};
@@ -60,11 +61,12 @@ impl UnitWatch<'_> {
 
 /// The error for a unit that failed or restarted before the router answered.
 pub(super) fn did_not_start(state: &UnitState) -> anyhow::Error {
-    anyhow!(
-        "system_unavailable: {UNIT_NAME} did not start (ActiveState={}, NRestarts={}); see `journalctl --user -u {UNIT_NAME}`",
+    anyhow!(coded!(
+        SystemUnavailable,
+        "{UNIT_NAME} did not start (ActiveState={}, NRestarts={}); see `journalctl --user -u {UNIT_NAME}`",
         state.active,
         state.restarts
-    )
+    ))
 }
 
 /// Installed unit path: `$XDG_CONFIG_HOME/systemd/user/` when absolute, else
@@ -88,9 +90,10 @@ pub(super) fn installed_unit_text() -> Result<Option<String>> {
     match fs::read_to_string(&path) {
         Ok(text) => Ok(Some(text)),
         Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error).with_context(|| {
-            format!(
-                "system_unavailable: cannot read installed unit {}",
+        Err(error) => Err(error).with_coded_context(|| {
+            coded!(
+                SystemUnavailable,
+                "cannot read installed unit {}",
                 path.display()
             )
         }),
@@ -175,8 +178,8 @@ pub(super) fn start_router_with<'run>(
     ensure_startup_deadline(deadline)?;
     started.map_err(|detail| {
         anyhow!(
-            "system_unavailable: {UNIT_NAME} owns {} but `systemctl --user start` failed: {detail}; start it with `systemctl --user start {UNIT_NAME}`",
-            dir.display()
+            coded!(SystemUnavailable, "{UNIT_NAME} owns {} but `systemctl --user start` failed: {detail}; start it with `systemctl --user start {UNIT_NAME}`",
+            dir.display())
         )
     })?;
     // A failed baseline read is not a failed start; the first watch read sets it.
@@ -193,9 +196,10 @@ pub(super) fn start_router_with<'run>(
 
 fn ensure_startup_deadline(deadline: &QueryDeadline) -> Result<()> {
     if deadline.expired() {
-        return Err(anyhow!(
-            "system_unavailable: router startup deadline expired"
-        ));
+        return Err(anyhow!(coded!(
+            SystemUnavailable,
+            "router startup deadline expired"
+        )));
     }
     Ok(())
 }

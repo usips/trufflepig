@@ -23,7 +23,10 @@ pub fn parse(options: &Arguments, body: Option<&str>) -> Result<BoardCommand> {
     validate_board_surface(options)?;
     let payload = command_text(options, body)?;
     if options.board.body.is_some() && payload.body.is_none() {
-        bail!("invalid_body: --body must be read by the client before parsing");
+        bail!(coded!(
+            InvalidBody,
+            "--body must be read by the client before parsing"
+        ));
     }
     if payload.body.is_some()
         && !matches!(
@@ -35,7 +38,10 @@ pub fn parse(options: &Arguments, body: Option<&str>) -> Result<BoardCommand> {
                 )
         )
     {
-        bail!("invalid_options: a body is not valid for this board command");
+        bail!(coded!(
+            InvalidOptions,
+            "a body is not valid for this board command"
+        ));
     }
     if payload.import_key.is_some()
         && !matches!(
@@ -46,12 +52,15 @@ pub fn parse(options: &Arguments, body: Option<&str>) -> Result<BoardCommand> {
             )
         )
     {
-        bail!("invalid_options: an import key is only valid for feedback reports");
+        bail!(coded!(
+            InvalidOptions,
+            "an import key is only valid for feedback reports"
+        ));
     }
     let command = match verb {
         Some("board") => parse_board(options, &payload)?,
         Some("feedback") => parse_feedback(options, payload)?,
-        _ => bail!("usage: board COMMAND | feedback KIND SUMMARY"),
+        _ => bail!(coded!(Usage, "board COMMAND | feedback KIND SUMMARY")),
     };
     if let BoardCommand::Op(op) = &command {
         op.validate()?;
@@ -71,7 +80,10 @@ pub(crate) fn validate_board_surface(options: &Arguments) -> Result<()> {
         ("no-cache", options.no_cache),
     ] {
         if present {
-            bail!("invalid_options: --{flag} is not valid for a board command");
+            bail!(coded!(
+                InvalidOptions,
+                "--{flag} is not valid for a board command"
+            ));
         }
     }
     Ok(())

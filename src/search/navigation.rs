@@ -2,6 +2,7 @@
 mod reference_sites;
 mod structure_map;
 
+use crate::coded_error::CodedContext;
 pub use reference_sites::{
     REFERENCE_COVERAGE_KEYS, reference_query, reference_summary, references,
 };
@@ -12,7 +13,7 @@ use crate::{
     results::{self, DefinitionTarget, Hit},
     store::Store,
 };
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, bail, ensure};
 use rusqlite::{OptionalExtension, params};
 use std::collections::HashSet;
 
@@ -30,10 +31,13 @@ pub(crate) fn context_entry(
 ) -> Result<String> {
     let metadata = metadata
         .as_object()
-        .context("invalid_metadata: context metadata must be an object")?;
+        .with_coded_context(|| coded!(InvalidMetadata, "context metadata must be an object"))?;
     let snapshot = store.conn.unchecked_transaction()?;
     if generation != store.generation()? {
-        bail!("stale_result: graph generation changed; search again");
+        bail!(coded!(
+            StaleResult,
+            "graph generation changed; search again"
+        ));
     }
     let current_revision: Option<String> = store
         .conn
@@ -45,7 +49,10 @@ pub(crate) fn context_entry(
         .optional()?
         .flatten();
     if current_revision != hit.revision || current_revision.is_none() {
-        bail!("stale_result: result source is outside current graph revision; search again");
+        bail!(coded!(
+            StaleResult,
+            "result source is outside current graph revision; search again"
+        ));
     }
     let inheritance = super::inheritance_context::collect(store, &hit)?;
     let mut stmt=store.conn.prepare("SELECT r.kind,r.provenance,f.path,r.start,r.end,r.source,r.target FROM relationships r JOIN files f ON f.id=r.file_id WHERE r.source IN (SELECT d.id FROM definitions d JOIN files f ON f.id=d.file_id WHERE f.path=?1 AND d.start<=?2 AND d.end>=?3) OR r.target IN (SELECT d.id FROM definitions d JOIN files f ON f.id=d.file_id WHERE f.path=?1 AND d.start<=?2 AND d.end>=?3) ORDER BY f.path,r.start,r.kind,r.source,r.target LIMIT 101")?;
@@ -104,7 +111,10 @@ pub(crate) fn context_entry(
         let object = response.as_object_mut().expect("context response object");
         ensure!(
             metadata.keys().all(|key| !object.contains_key(key)),
-            "invalid_metadata: context metadata collides with response identity"
+            coded!(
+                InvalidMetadata,
+                "context metadata collides with response identity"
+            )
         );
         object.extend(metadata.clone());
         let text = budget.encode(&response)?;
@@ -114,7 +124,7 @@ pub(crate) fn context_entry(
             return Ok(text);
         }
         if edges.pop().is_none() {
-            bail!("budget_too_small: context envelope does not fit");
+            bail!(coded!(BudgetTooSmall, "context envelope does not fit"));
         }
         truncated = true;
     }

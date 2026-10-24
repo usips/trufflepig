@@ -1,5 +1,6 @@
 //! Claim-scoped worker registration, binding, and activity.
 
+use crate::board::board_protocol::BoardErrorCode;
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::super::super::{
@@ -34,7 +35,7 @@ pub(in crate::board::local_board) fn add_worker(
     validate_worker_files(files)?;
     if model.trim().is_empty() || model.len() > 256 || model.chars().any(char::is_control) {
         return Err(invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             "worker model must contain 1..256 bytes without control characters",
         ));
     }
@@ -42,7 +43,7 @@ pub(in crate::board::local_board) fn add_worker(
         && (effort.trim().is_empty() || effort.len() > 128 || effort.chars().any(char::is_control))
     {
         return Err(invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             "worker effort must contain 1..128 bytes without control characters",
         ));
     }
@@ -55,7 +56,7 @@ pub(in crate::board::local_board) fn add_worker(
         .map_err(sql_error)?;
     if duplicate {
         return Err(invalid(
-            "invalid_worker",
+            BoardErrorCode::InvalidWorker,
             format!("worker handle {} was already used for {task}", handle),
         ));
     }
@@ -71,7 +72,7 @@ pub(in crate::board::local_board) fn add_worker(
         )
         .optional()
         .map_err(sql_error)?
-        .ok_or_else(|| invalid("invalid_state", format!("{task} has no current claim")))?;
+        .ok_or_else(|| invalid(BoardErrorCode::InvalidState, format!("{task} has no current claim")))?;
     let address = WorkerAddress::new(task, handle).map_err(BoardError::from)?;
     let summary = format!("added worker {address} ({})", role.as_str());
     let entry = insert_entry(
@@ -89,7 +90,7 @@ pub(in crate::board::local_board) fn add_worker(
     )?;
     let files_json = serde_json::to_string(files).map_err(|error| {
         invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             format!("cannot encode worker files: {error}"),
         )
     })?;
@@ -142,30 +143,34 @@ pub(in crate::board::local_board) fn end_worker(
     address.validate().map_err(BoardError::from)?;
     if state == WorkerEndReason::ClaimEnded {
         return Err(invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             "claim_ended is reserved for claim lifecycle changes",
         ));
     }
-    let worker = worker_for_address(tx, address)?
-        .ok_or_else(|| invalid("invalid_reference", format!("unknown worker {address}")))?;
+    let worker = worker_for_address(tx, address)?.ok_or_else(|| {
+        invalid(
+            BoardErrorCode::InvalidReference,
+            format!("unknown worker {address}"),
+        )
+    })?;
     let holder = current_claim(tx, ctx, address.task)?;
     if holder.record.entry != worker.claim_entry {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("worker {address} belongs to an ended or replaced claim"),
         ));
     }
     let write_ctx = worker_manager_context(tx, ctx, address.task, &holder)?;
     if worker.ended_at.is_some() {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("worker {address} has already ended"),
         ));
     }
     let summary = format!("ended worker {address} as {}", state.as_str());
     if note.is_some_and(|note| summary.len() + 2 + note.as_str().len() > ENTRY_TEXT_LIMIT) {
         return Err(invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             format!(
                 "worker end note must fit within {ENTRY_TEXT_LIMIT} bytes with its audit summary"
             ),
@@ -195,7 +200,7 @@ pub(in crate::board::local_board) fn end_worker(
         .map_err(sql_error)?;
     if changed != 1 {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("worker {address} has already ended"),
         ));
     }
@@ -227,27 +232,31 @@ pub(in crate::board::local_board) fn bind_worker(
     let holder = current_claim(tx, ctx, address.task)?;
     if ctx.actor.user != holder.record.actor.user || ctx.actor.host != holder.record.actor.host {
         return Err(invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             "worker session must match the claim holder's user and host",
         ));
     }
-    let worker = worker_for_address(tx, address)?
-        .ok_or_else(|| invalid("invalid_reference", format!("unknown worker {address}")))?;
+    let worker = worker_for_address(tx, address)?.ok_or_else(|| {
+        invalid(
+            BoardErrorCode::InvalidReference,
+            format!("unknown worker {address}"),
+        )
+    })?;
     if worker.claim_entry != holder.record.entry {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("worker {address} belongs to an ended or replaced claim"),
         ));
     }
     if worker.ended_at.is_some() {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("worker {address} has ended"),
         ));
     }
     if worker.record.model != model || worker.record.effort.as_deref() != effort {
         return Err(invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             format!("worker {address} requires its declared model and effort"),
         ));
     }
@@ -257,13 +266,13 @@ pub(in crate::board::local_board) fn bind_worker(
             return Ok(());
         }
         return Err(invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             format!("worker {address} is already bound to another session"),
         ));
     }
     if let Some(existing) = active_bound_worker_for_actor(tx, ctx.actor_id)? {
         return Err(invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             format!(
                 "this session is already bound to worker {}",
                 existing.record.address
@@ -278,7 +287,7 @@ pub(in crate::board::local_board) fn bind_worker(
         .map_err(sql_error)?;
     if changed != 1 {
         return Err(invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             format!("worker {address} was bound by another session"),
         ));
     }
@@ -421,8 +430,12 @@ fn current_claim(
     ctx: &WriteContext,
     task: TaskId,
 ) -> Result<super::StoredClaim, BoardError> {
-    active_claim(tx, task, ctx.now, ctx.claim_ttl_secs)?
-        .ok_or_else(|| invalid("invalid_state", format!("{task} has no current claim")))
+    active_claim(tx, task, ctx.now, ctx.claim_ttl_secs)?.ok_or_else(|| {
+        invalid(
+            BoardErrorCode::InvalidState,
+            format!("{task} has no current claim"),
+        )
+    })
 }
 
 fn worker_manager_context(
@@ -452,7 +465,7 @@ fn worker_manager_context(
     )?
     .ok_or_else(|| {
         invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             "worker management requires the current holder, its delegator, or assign authority",
         )
     })?;
@@ -462,7 +475,7 @@ fn worker_manager_context(
 fn validate_worker_files(files: &[String]) -> Result<(), BoardError> {
     if files.is_empty() || files.len() > WORKER_FILE_LIMIT {
         return Err(invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             format!("worker requires 1..{WORKER_FILE_LIMIT} file paths"),
         ));
     }
@@ -472,7 +485,7 @@ fn validate_worker_files(files: &[String]) -> Result<(), BoardError> {
             || file.chars().any(char::is_control)
         {
             return Err(invalid(
-                "invalid_options",
+                BoardErrorCode::InvalidOptions,
                 format!(
                     "worker file paths must be nonblank, at most {WORKER_FILE_PATH_LIMIT} bytes, and contain no control characters"
                 ),
@@ -480,7 +493,7 @@ fn validate_worker_files(files: &[String]) -> Result<(), BoardError> {
         }
         if files[..index].contains(file) {
             return Err(invalid(
-                "invalid_options",
+                BoardErrorCode::InvalidOptions,
                 format!("worker file path `{file}` is repeated"),
             ));
         }

@@ -1,6 +1,7 @@
 //! Semantic preparation and inference worker command handling.
 
 use super::Arguments;
+use crate::coded_error::CodedContext;
 use crate::{
     daemon::deadline::QueryDeadline,
     output::OutputBudget,
@@ -20,16 +21,27 @@ pub(crate) fn local(
     manager: Option<&preparation::PreparationManager>,
 ) -> Result<String> {
     let budget = OutputBudget::new(options.budget)?;
-    let command = options.words.get(1).map(String::as_str).context(
-        "usage: semantic prepare [--wait] | semantic status | semantic worker status|stop",
-    )?;
+    let command = options
+        .words
+        .get(1)
+        .map(String::as_str)
+        .with_coded_context(|| {
+            coded!(
+                Usage,
+                "semantic prepare [--wait] | semantic status | semantic worker status|stop"
+            )
+        })?;
     match command {
         "prepare" => prepare(root, cache, options, manager, &budget),
         "status" => status(root, cache, options, &budget),
-        "worker" => bail!("usage: semantic worker status | semantic worker stop"),
-        other => bail!(
-            "usage: semantic prepare [--wait] | semantic status | semantic worker status|stop (got {other})"
-        ),
+        "worker" => bail!(coded!(
+            Usage,
+            "semantic worker status | semantic worker stop"
+        )),
+        other => bail!(coded!(
+            Usage,
+            "semantic prepare [--wait] | semantic status | semantic worker status|stop (got {other})"
+        )),
     }
 }
 
@@ -37,21 +49,27 @@ pub(crate) fn local(
 pub(crate) fn worker_command(options: &Arguments) -> Result<String> {
     ensure!(
         !options.no_daemon,
-        "invalid_options: --no-daemon cannot query or stop the semantic worker"
+        coded!(
+            InvalidOptions,
+            "--no-daemon cannot query or stop the semantic worker"
+        )
     );
     let command = options
         .words
         .get(2)
         .map(String::as_str)
-        .context("usage: semantic worker status | semantic worker stop")?;
+        .with_coded_context(|| coded!(Usage, "semantic worker status | semantic worker stop"))?;
     ensure!(
         options.words.len() == 3,
-        "usage: semantic worker status | semantic worker stop"
+        coded!(Usage, "semantic worker status | semantic worker stop")
     );
     let value = match command {
         "status" => serde_json::to_value(worker::status(&options.root)?)?,
         "stop" => serde_json::to_value(worker::stop(&options.root)?)?,
-        other => bail!("usage: semantic worker status | semantic worker stop (got {other})"),
+        other => bail!(coded!(
+            Usage,
+            "semantic worker status | semantic worker stop (got {other})"
+        )),
     };
     OutputBudget::new(options.budget)?.render(&value)
 }
@@ -145,7 +163,7 @@ pub(crate) fn wait_for_workspace(
             .member_roots(&options.root.canonicalize()?)?
             .into_iter()
             .find(|candidate| candidate.name() == name)
-            .with_context(|| format!("invalid_member: member is not configured: {name}"))?;
+            .with_coded_context(|| coded!(InvalidMember, "member is not configured: {name}"))?;
         let root = configured.root.clone();
         let cache = workspace::member_cache(&configured, options.cache.as_deref())?;
         let generation = member["captured_generation"].as_i64().or_else(|| {
@@ -206,10 +224,10 @@ pub(crate) fn workspace(
         .words
         .get(1)
         .map(String::as_str)
-        .context("usage: semantic prepare [--wait] | semantic status")?;
+        .with_coded_context(|| coded!(Usage, "semantic prepare [--wait] | semantic status"))?;
     ensure!(
         matches!(command, "prepare" | "status"),
-        "usage: semantic prepare [--wait] | semantic status"
+        coded!(Usage, "semantic prepare [--wait] | semantic status")
     );
     let members = selected_members(config, options)?;
     let mut values = Vec::with_capacity(members.len());
@@ -257,7 +275,7 @@ fn selected_members(
         let member = roots
             .into_iter()
             .find(|candidate| candidate.name() == name)
-            .with_context(|| format!("invalid_member: member is not configured: {name}"))?;
+            .with_coded_context(|| coded!(InvalidMember, "member is not configured: {name}"))?;
         return Ok(vec![member]);
     }
     Ok(roots)

@@ -2,6 +2,7 @@
 
 use super::super::task_claims::{active_claim, claim_task, end_claim};
 use super::*;
+use crate::board::board_protocol::BoardErrorCode;
 use crate::board::board_protocol::{AuthorityRole, AuthoritySource, ClaimEndReason, ClaimResume};
 use crate::board::board_vocabulary::{EntryKind, EntryText, TaskColumn};
 
@@ -33,7 +34,7 @@ pub(in crate::board::local_board) fn move_task(
         && task_created_by(tx, task, ctx.actor_id)?;
     if stale_other && !release_column {
         return Err(invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             format!("stale claim on {task} may only be released to todo or blocked"),
         ));
     }
@@ -52,7 +53,7 @@ pub(in crate::board::local_board) fn move_task(
     if card.column == TaskColumn::Done && column != TaskColumn::Done {
         if column != TaskColumn::Todo || decision_authority.is_none() {
             return Err(invalid(
-                "invalid_state",
+                BoardErrorCode::InvalidState,
                 format!("{task} is done and can only be reopened to todo with decide authority"),
             ));
         }
@@ -87,7 +88,7 @@ pub(in crate::board::local_board) fn move_task(
     };
     if (to.is_some() || cancel_pending_assignment) && assign_authority.is_none() {
         return Err(invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             if to.is_some() {
                 "task assignment requires assign authority"
             } else {
@@ -97,7 +98,7 @@ pub(in crate::board::local_board) fn move_task(
     }
     if matches!(column, TaskColumn::Done | TaskColumn::Review) && !holder_is_actor {
         return Err(invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             format!("only the active claim holder may move {task} to {column}"),
         ));
     }
@@ -144,14 +145,14 @@ pub(in crate::board::local_board) fn move_task(
     };
     if bound_worker && !holder_is_actor && !assigned_to_actor && task_authority.is_none() {
         return Err(invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             "a bound worker needs separate claim, assignee, or grant authority to move the lead task",
         ));
     }
     if column == TaskColumn::Doing && to.is_none() && !holder_is_actor {
         if stale_other {
             return Err(invalid(
-                "invalid_actor",
+                BoardErrorCode::InvalidActor,
                 format!("stale claim on {task} may only be released to todo or blocked"),
             ));
         }
@@ -168,7 +169,7 @@ pub(in crate::board::local_board) fn move_task(
     if holder.is_none() && !assigned_to_actor && task_authority.is_none() {
         require_assignee(&card, &ctx.actor, task)?;
         return Err(invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             format!(
                 "{task} requires its assignee or assign authority to move; use --to to assign a recipient"
             ),
@@ -178,7 +179,7 @@ pub(in crate::board::local_board) fn move_task(
     let assign = to.is_some();
     if holder_is_other && !stale_other && !delegated_release && !has_release_authority && !assign {
         return Err(invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             format!("cannot move {task} held by another actor"),
         ));
     }

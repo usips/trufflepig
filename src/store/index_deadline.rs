@@ -1,4 +1,5 @@
-use crate::daemon::deadline::{QueryDeadline, TIMED_OUT, is_timed_out};
+use crate::coded_error::CodedContext;
+use crate::daemon::deadline::QueryDeadline;
 use anyhow::{Result, bail};
 use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 use std::time::Duration;
@@ -23,7 +24,7 @@ pub fn inline_maintenance_deadline(deadline: &QueryDeadline) -> QueryDeadline {
 
 pub(super) fn check(deadline: &QueryDeadline) -> Result<()> {
     if deadline.expired() {
-        bail!("{TIMED_OUT}: query deadline expired");
+        bail!(coded!(TimedOut, "query deadline expired"));
     }
     Ok(())
 }
@@ -61,8 +62,8 @@ pub(super) fn suspend_for_commit(conn: &Connection, deadline: &QueryDeadline) ->
 
 pub(super) fn classify(deadline: &QueryDeadline, error: anyhow::Error) -> anyhow::Error {
     let error = deadline.classify(error);
-    if deadline.expired() && !is_timed_out(&error) {
-        error.context(format!("{TIMED_OUT}: query deadline expired"))
+    if deadline.expired() && !crate::coded_error::ErrorCode::TimedOut.is_code_of(&error) {
+        error.with_coded_context(|| coded!(TimedOut, "query deadline expired"))
     } else {
         error
     }
@@ -70,7 +71,9 @@ pub(super) fn classify(deadline: &QueryDeadline, error: anyhow::Error) -> anyhow
 
 pub(super) fn is_deadline_interruption(error: &anyhow::Error) -> bool {
     error.chain().any(|cause| {
-        cause.to_string().starts_with("timed_out:")
+        cause
+            .downcast_ref::<crate::coded_error::CodedError>()
+            .is_some_and(|coded| coded.code() == crate::coded_error::ErrorCode::TimedOut)
             || cause.downcast_ref::<SqliteError>().is_some_and(|error| {
                 matches!(
                     error,

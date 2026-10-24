@@ -7,7 +7,7 @@ use super::{
     timeout_without_member_answer,
 };
 use crate::{
-    daemon::deadline::is_timed_out,
+    coded_error::{CodeDetail, CodedError, ErrorCode},
     results::ResultEntry,
     search,
     store::{Store, is_index_warming},
@@ -26,6 +26,8 @@ pub(super) struct MemberFusion {
     /// Per owner: its coverage row and, when reranking, its answering store.
     owner_rows: Vec<usize>,
     stores: Vec<Option<Store>>,
+    /// Where the first timed-out member's deadline expired.
+    first_timeout_phase: Option<&'static str>,
 }
 
 /// The interleaved result set with what the merged rerank needs per owner.
@@ -53,6 +55,7 @@ impl MemberFusion {
             lists: Vec::with_capacity(roots.len()),
             owner_rows: Vec::with_capacity(roots.len()),
             stores: Vec::with_capacity(roots.len()),
+            first_timeout_phase: None,
         }
     }
 
@@ -82,11 +85,19 @@ impl MemberFusion {
             Err(error) => {
                 let state = if is_index_warming(&error) {
                     "warming"
-                } else if is_timed_out(&error) {
+                } else if ErrorCode::TimedOut.is_code_of(&error) {
                     "timed_out"
                 } else {
                     "unavailable"
                 };
+                if state == "timed_out" && self.first_timeout_phase.is_none() {
+                    let recheck = CodeDetail::CurrentSourceRecheck;
+                    self.first_timeout_phase = Some(if recheck.is_anywhere_in(&error) {
+                        "current_source_recheck"
+                    } else {
+                        "member_processing"
+                    });
+                }
                 let mut row = member_row(member, state);
                 if matches!(state, "unavailable" | "timed_out") {
                     row["reason"] = short_reason(&error).into();
@@ -185,7 +196,7 @@ impl MemberFusion {
     /// Fails an unanswerable query, then interleaves member ranks round-robin.
     pub fn interleave(
         mut self,
-        map_miss: Option<String>,
+        map_miss: Option<CodedError>,
         implicit_home: bool,
     ) -> Result<FusedMembers> {
         if self.lists.iter().all(|list| list.len() == 0)
@@ -193,15 +204,20 @@ impl MemberFusion {
         {
             anyhow::bail!(miss);
         }
-        if let Some(error) =
-            timeout_without_member_answer(self.set.owners.len(), &self.set.coverage)
-        {
+        if let Some(error) = timeout_without_member_answer(
+            self.set.owners.len(),
+            &self.set.coverage,
+            self.first_timeout_phase,
+        ) {
             return Err(error);
         }
         // An unselected query whose home is not answering reports that on an empty page.
         ensure!(
             !self.set.owners.is_empty() || implicit_home,
-            "workspace_unavailable: no selected member has an available published index; inspect ws status or use --no-daemon"
+            coded!(
+                WorkspaceUnavailable,
+                "no selected member has an available published index; inspect ws status or use --no-daemon"
+            )
         );
         self.set
             .hits

@@ -8,6 +8,7 @@ use super::{
     board_task_claim_parser::{parse_claim, parse_task},
 };
 use crate::board::board_protocol::ReadScope;
+use crate::coded_error::CodedContext;
 use crate::{
     board::{
         board_actor::HarnessLabel,
@@ -17,7 +18,7 @@ use crate::{
     },
     cli::Arguments,
 };
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 
 pub(super) fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Result<BoardCommand> {
     let words = &options.words;
@@ -42,7 +43,10 @@ pub(super) fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Re
                     target,
                     BoardRef::Plan(_) | BoardRef::Revision(_) | BoardRef::Entry(_)
                 ) {
-                    bail!("invalid_reference: web requires a plan, revision, or entry");
+                    bail!(coded!(
+                        InvalidReference,
+                        "web requires a plan, revision, or entry"
+                    ));
                 }
             }
             return Ok(BoardCommand::Web { target });
@@ -84,12 +88,9 @@ pub(super) fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Re
             }
             let base = word(options, 2, "board propose|edit P7@12 --body FILE SUMMARY")?
                 .parse::<PlanRevision>()?;
-            let body = PlanText::new(
-                payload
-                    .body
-                    .clone()
-                    .context("invalid_body: propose and edit require --body FILE")?,
-            )?;
+            let body = PlanText::new(payload.body.clone().with_coded_context(|| {
+                coded!(InvalidBody, "propose and edit require --body FILE")
+            })?)?;
             let summary = EntryText::new(payload.text.clone())?;
             if verb == "propose" {
                 BoardOp::Propose {
@@ -164,9 +165,12 @@ pub(super) fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Re
             }
         }
         value if value.parse::<u64>().is_ok() => return parse_inbox(options, 1),
-        _ => bail!(concat!(
-            "usage: board hello|inbox|show|done|feed|attention|history|search|web|claim|post|task|propose",
-            "|review|accept|reject|edit|new|ingest|link|unlink|grant|revoke|bye|pending|worker|projects|transfer|close|reopen"
+        _ => bail!(coded!(
+            Usage,
+            concat!(
+                "board hello|inbox|show|done|feed|attention|history|search|web|claim|post|task|propose",
+                "|review|accept|reject|edit|new|ingest|link|unlink|grant|revoke|bye|pending|worker|projects|transfer|close|reopen"
+            )
         )),
     };
     Ok(BoardCommand::Op(op))

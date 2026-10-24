@@ -1,5 +1,6 @@
 //! Event, revision, and entry pages with source-sequence keysets.
 
+use crate::board::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, params};
 
 use super::{COLLECTION_LIMIT, sequence_window, validate_limit};
@@ -80,7 +81,7 @@ pub(in crate::board::local_board) fn history(
     while let Some(row) = rows.next().map_err(sql_error)? {
         let source: String = row.get(1).map_err(sql_error)?;
         let source = RevisionSource::parse(&source)
-            .map_err(|error| invalid("board_unavailable", error.to_string()))?;
+            .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))?;
         revisions.push(RevisionHistoryRecord {
             id: PlanRevision::new(plan, row_number(row, 0).map_err(sql_error)?)
                 .map_err(BoardError::from)?,
@@ -128,7 +129,7 @@ pub(in crate::board::local_board) fn entries_page(
     validate_limit(limit, COLLECTION_LIMIT)?;
     if after.is_some() && before.is_some() {
         return Err(invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             "entries accepts at most one of after and before",
         ));
     }
@@ -139,7 +140,10 @@ pub(in crate::board::local_board) fn entries_page(
         validate_task_filter(conn, plan, task)?;
     }
     if before.is_some_and(|cursor| through.is_some_and(|end| cursor.seq > end)) {
-        return Err(invalid("invalid_reference", "before exceeds through"));
+        return Err(invalid(
+            BoardErrorCode::InvalidReference,
+            "before exceeds through",
+        ));
     }
     // `after` pages ascending (legacy); `before` and no cursor page
     // descending newest-first, so the first page needs no cursor at all.
@@ -230,7 +234,7 @@ fn validate_task_filter(
     task.validate().map_err(BoardError::from)?;
     if plan.is_some_and(|plan| plan != task.plan) {
         return Err(invalid(
-            "invalid_reference",
+            BoardErrorCode::InvalidReference,
             "task filter belongs to a different plan",
         ));
     }
@@ -242,7 +246,10 @@ fn validate_task_filter(
         )
         .map_err(sql_error)?;
     if !exists {
-        return Err(invalid("invalid_reference", format!("unknown task {task}")));
+        return Err(invalid(
+            BoardErrorCode::InvalidReference,
+            format!("unknown task {task}"),
+        ));
     }
     Ok(())
 }

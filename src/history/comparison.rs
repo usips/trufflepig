@@ -1,5 +1,6 @@
 use super::staging::{self, StagingBudget};
 use super::*;
+use crate::coded_error::CodedContext;
 use crate::{
     identity::ByteSpan,
     results::{ChangeEntry, HistoricalSource},
@@ -65,18 +66,18 @@ fn parse_tree(data: &[u8]) -> Result<BTreeMap<String, TreeFile>> {
         let split = row
             .iter()
             .position(|&b| b == b'\t')
-            .context("history_unavailable: malformed tree record")?;
+            .with_coded_context(|| coded!(HistoryUnavailable, "malformed tree record"))?;
         let fields = std::str::from_utf8(&row[..split])?
             .split_whitespace()
             .collect::<Vec<_>>();
         ensure!(
             fields.len() == 3,
-            "history_unavailable: malformed tree entry"
+            coded!(HistoryUnavailable, "malformed tree entry")
         );
         let raw = &row[split + 1..];
         ensure!(
             raw.len() <= staging::PATH_BYTES / 3,
-            "history_resource_limited: historical path staging limit"
+            coded!(HistoryResourceLimited, "historical path staging limit")
         );
         let path = crate::store::encode_path(Path::new(std::ffi::OsStr::from_bytes(raw)));
         budget.reserve(
@@ -173,7 +174,7 @@ pub(super) fn source(
 ) -> Result<HistoricalSource> {
     ensure!(
         matches!(file.mode.as_str(), "100644" | "100755"),
-        "history_source_excluded: symlink or gitlink"
+        coded!(HistorySourceExcluded, "symlink or gitlink")
     );
     let bytes = history.repository.blob(&file.oid)?;
     Ok(HistoricalSource {

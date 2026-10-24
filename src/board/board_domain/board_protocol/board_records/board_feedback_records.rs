@@ -41,10 +41,16 @@ impl FeedbackMetadata {
             bounded_metadata(steer, 256, "feedback steering mode")?;
         }
         if self.recent_calls.len() > 5 {
-            bail!("invalid_options: feedback accepts at most five recent calls");
+            bail!(coded!(
+                InvalidOptions,
+                "feedback accepts at most five recent calls"
+            ));
         }
         if serde_json::to_vec(&self.recent_calls)?.len() > 2048 {
-            bail!("invalid_options: recent calls exceed 2048 encoded bytes");
+            bail!(coded!(
+                InvalidOptions,
+                "recent calls exceed 2048 encoded bytes"
+            ));
         }
         Ok(())
     }

@@ -1,7 +1,8 @@
 //! Verify published-index candidates against bounded current-source snapshots.
 use super::{Query, search_current_file, semantic_representative};
+use crate::coded_error::CodedContext;
 use crate::{
-    daemon::deadline::{QueryDeadline, TIMED_OUT},
+    daemon::deadline::QueryDeadline,
     extract::Extraction,
     identity::ContentRevision,
     results::Hit,
@@ -59,7 +60,10 @@ fn recheck_with_current_search(
     let mut semantic_unverified = 0;
     for hit in hits.iter() {
         if deadline.expired() {
-            anyhow::bail!("{TIMED_OUT}: current-source recheck deadline expired");
+            anyhow::bail!(
+                coded!(TimedOut, "current-source recheck deadline expired")
+                    .with_detail(crate::coded_error::CodeDetail::CurrentSourceRecheck)
+            );
         }
         let Some(revision) = hit.revision.as_deref() else {
             continue;
@@ -117,9 +121,10 @@ fn recheck_with_current_search(
                 replacements.insert(hit.path.as_str(), current);
             }
             Err(error) if current_search_timed_out(&error) => {
-                return Err(
-                    error.context(format!("{TIMED_OUT}: current-source recheck interrupted"))
-                );
+                return Err(error.with_coded_context(|| {
+                    coded!(TimedOut, "current-source recheck interrupted")
+                        .with_detail(crate::coded_error::CodeDetail::CurrentSourceRecheck)
+                }));
             }
             Err(_) => {
                 unverified.insert(hit.path.as_str());
@@ -173,12 +178,7 @@ fn recheck_with_current_search(
 }
 
 fn current_search_timed_out(error: &anyhow::Error) -> bool {
-    error.chain().any(|cause| {
-        cause
-            .to_string()
-            .strip_prefix(TIMED_OUT)
-            .is_some_and(|rest| rest.starts_with(':'))
-    })
+    crate::coded_error::ErrorCode::TimedOut.is_code_of(error)
 }
 
 fn missing(error: &anyhow::Error) -> bool {

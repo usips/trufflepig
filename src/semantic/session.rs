@@ -58,9 +58,15 @@ impl SemanticSession {
         }
         if self.no_daemon {
             if cache_locked {
-                anyhow::bail!("semantic_cache_locked: cached query is temporarily unavailable");
+                anyhow::bail!(coded!(
+                    SemanticCacheLocked,
+                    "cached query is temporarily unavailable"
+                ));
             }
-            anyhow::bail!("semantic_pending: query vector is not cached in --no-daemon mode");
+            anyhow::bail!(coded!(
+                SemanticPending,
+                "query vector is not cached in --no-daemon mode"
+            ));
         }
         let vector = super::worker::embed_query(directory, text)?;
         // Inference has already met the query deadline. Persistence is an
@@ -86,7 +92,10 @@ impl SemanticSession {
         budget: std::time::Duration,
     ) -> Result<Vec<f32>> {
         if self.no_daemon {
-            anyhow::bail!("rerank_unavailable: --no-daemon never contacts the inference worker");
+            anyhow::bail!(coded!(
+                RerankUnavailable,
+                "--no-daemon never contacts the inference worker"
+            ));
         }
         #[cfg(feature = "semantic")]
         {

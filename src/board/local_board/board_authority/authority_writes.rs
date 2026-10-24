@@ -3,6 +3,7 @@
 use super::*;
 use crate::board::board_actor::BoardRecipient;
 use crate::board::board_ids::{EntryId, PlanId};
+use crate::board::board_protocol::BoardErrorCode;
 use crate::board::board_protocol::{
     AuthorityRole, AuthoritySource, BoardError, BoardOp, BoardReply,
 };
@@ -24,14 +25,17 @@ pub(in crate::board) fn write_grant(
         note,
     } = op
     else {
-        return Err(invalid("invalid_options", "expected grant operation"));
+        return Err(invalid(
+            BoardErrorCode::InvalidOptions,
+            "expected grant operation",
+        ));
     };
     op.validate().map_err(BoardError::from)?;
     let grantee = grantee.normalize_for_caller(&ctx.actor);
     validate_grantee(&grantee)?;
     if plan.is_none() && (roles.len() != 1 || roles[0] != AuthorityRole::Triage) {
         return Err(invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             "board-wide grants may contain only triage",
         ));
     }
@@ -50,17 +54,24 @@ pub(in crate::board) fn write_grant(
     require_owner_human(&ctx.actor, &owner_user, "create grants")?;
     let expires_at = expires_in
         .map(|seconds| {
-            let seconds = i64::try_from(seconds)
-                .map_err(|_| invalid("invalid_options", "grant duration is too large"))?;
+            let seconds = i64::try_from(seconds).map_err(|_| {
+                invalid(
+                    BoardErrorCode::InvalidOptions,
+                    "grant duration is too large",
+                )
+            })?;
             if seconds <= 0 {
                 return Err(invalid(
-                    "invalid_options",
+                    BoardErrorCode::InvalidOptions,
                     "grant duration must be positive",
                 ));
             }
-            ctx.now
-                .checked_add(seconds)
-                .ok_or_else(|| invalid("invalid_options", "grant expiration is too large"))
+            ctx.now.checked_add(seconds).ok_or_else(|| {
+                invalid(
+                    BoardErrorCode::InvalidOptions,
+                    "grant expiration is too large",
+                )
+            })
         })
         .transpose()?;
     let roles_text = roles
@@ -94,7 +105,7 @@ pub(in crate::board) fn write_grant(
         },
     )?;
     let roles_json = serde_json::to_string(roles)
-        .map_err(|error| invalid("invalid_options", error.to_string()))?;
+        .map_err(|error| invalid(BoardErrorCode::InvalidOptions, error.to_string()))?;
     tx.execute(
         concat!(
             "INSERT INTO authority_grants(entry_id,plan_id,owner_user,roles_json,grantee,",
@@ -130,7 +141,10 @@ pub(in crate::board) fn write_revoke(
     op: &BoardOp,
 ) -> Result<BoardReply, BoardError> {
     let BoardOp::Revoke { entry: grant_entry } = op else {
-        return Err(invalid("invalid_options", "expected revoke operation"));
+        return Err(invalid(
+            BoardErrorCode::InvalidOptions,
+            "expected revoke operation",
+        ));
     };
     op.validate().map_err(BoardError::from)?;
     let grant: Option<(Option<i64>, String, Option<i64>, String)> = tx
@@ -143,7 +157,7 @@ pub(in crate::board) fn write_revoke(
         .map_err(sql_error)?;
     let (plan_id, owner_user, revoked_by, grantee) = grant.ok_or_else(|| {
         invalid(
-            "invalid_reference",
+            BoardErrorCode::InvalidReference,
             format!("{grant_entry} is not a grant entry"),
         )
     })?;
@@ -151,14 +165,18 @@ pub(in crate::board) fn write_revoke(
     require_owner_human(&ctx.actor, &owner_user, "revoke grants")?;
     if let Some(revoked_by) = revoked_by {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("{grant_entry} was already revoked by E{revoked_by}"),
         ));
     }
     let plan = plan_id
         .map(|id| {
-            let id = u64::try_from(id)
-                .map_err(|_| invalid("board_unavailable", "grant has an invalid plan id"))?;
+            let id = u64::try_from(id).map_err(|_| {
+                invalid(
+                    BoardErrorCode::BoardUnavailable,
+                    "grant has an invalid plan id",
+                )
+            })?;
             PlanId::new(id).map_err(BoardError::from)
         })
         .transpose()?;
@@ -185,7 +203,7 @@ pub(in crate::board) fn write_revoke(
         .map_err(sql_error)?;
     if updated != 1 {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("{grant_entry} was revoked concurrently"),
         ));
     }
@@ -211,7 +229,7 @@ fn require_owner_human(
         Ok(())
     } else {
         Err(invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             format!("only owner user {owner_user} acting as human may {action}"),
         ))
     }

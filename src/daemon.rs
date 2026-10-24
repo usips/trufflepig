@@ -12,6 +12,7 @@ pub mod spool;
 mod tests;
 mod transport_failure;
 
+use crate::coded_error::CodedContext;
 use anyhow::{Context, Result, bail, ensure};
 use fs2::FileExt;
 use std::fs::{self, File, OpenOptions};
@@ -117,7 +118,7 @@ pub(crate) fn running_by(cache: &Path, deadline: &QueryDeadline) -> Result<bool>
         Ok(_stream) => Ok(true),
         Err(error) if unreachable(error.kind()) => Ok(false),
         Err(error) if error.kind() == ErrorKind::TimedOut => {
-            Err(error).context("timed_out: phase=connecting")
+            Err(error).with_coded_context(|| coded!(TimedOut, "phase=connecting"))
         }
         Err(error) => Err(error).context("connect to repository daemon"),
     }
@@ -181,8 +182,7 @@ fn exchange(
     let wait_budget = deadline.remaining();
     ensure!(
         !wait_budget.is_zero(),
-        "{}: phase=connecting no time left to reach a daemon",
-        deadline::TIMED_OUT
+        coded!(TimedOut, "phase=connecting no time left to reach a daemon")
     );
     let socket_path = cache.join(SOCKET_NAME);
     let mut stream = match socket_connect::connect_by(&socket_path, &deadline) {
@@ -191,14 +191,16 @@ fn exchange(
             return Ok(None);
         }
         Err(error) if error.kind() == ErrorKind::TimedOut => {
-            return Err(error).context("timed_out: phase=connecting");
+            return Err(error).with_coded_context(|| coded!(TimedOut, "phase=connecting"));
         }
         Err(error) => return Err(error).context("connect to repository daemon"),
     };
     ensure!(
         !deadline.expired(),
-        "{}: phase=connecting deadline expired before request write",
-        deadline::TIMED_OUT
+        coded!(
+            TimedOut,
+            "phase=connecting deadline expired before request write"
+        )
     );
     let write_deadline = deadline.capped(REQUEST_WRITE_WAIT);
     {
@@ -210,7 +212,7 @@ fn exchange(
                 })
             });
             if timed_out {
-                return Err(error).context("timed_out: phase=writing_request");
+                return Err(error).with_coded_context(|| coded!(TimedOut, "phase=writing_request"));
             }
             return Err(error);
         }

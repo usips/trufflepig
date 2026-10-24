@@ -57,7 +57,10 @@ impl BoardHost {
         );
         let reply = self.handle_by(request, deadline)?;
         let BoardResult::Review(evidence) = &reply.result else {
-            bail!("board_api_mismatch: review backend returned an unexpected result");
+            bail!(coded!(
+                BoardApiMismatch,
+                "review backend returned an unexpected result"
+            ));
         };
         let mut unlinked = Vec::new();
         if let Some(agent) = agent {

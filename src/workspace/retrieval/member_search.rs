@@ -3,7 +3,7 @@
 //! window once, so a member answer keeps its store for that stage.
 use super::{WorkspaceQuery, inline_member_index::inline_member_index};
 use crate::{
-    daemon::deadline::{TIMED_OUT, is_timed_out},
+    coded_error::{CodedContext, CodedError, ErrorCode},
     diagnostics::{DiagnosticsMode, EventStage, Operation, Outcome, RequestEvent},
     results::ResultSet,
     search::{self, Query, telemetry::RetrievalTrace},
@@ -20,7 +20,7 @@ use crate::{
         result_cache::{IndexProgressSource, MemberSnapshot},
     },
 };
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use std::{
     path::{Path, PathBuf},
     time::Instant,
@@ -58,7 +58,7 @@ impl<'w> MemberCommand<'w> {
         let verb = words
             .first()
             .map(String::as_str)
-            .context("usage: retrieval command is required")?;
+            .with_coded_context(|| coded!(Usage, "retrieval command is required"))?;
         let text = words[1..].join(" ");
         let query = Query::parse(&text)?;
         let semantic_eligible_shape = query.semantic_eligible()
@@ -136,7 +136,7 @@ pub(super) fn search_member(
     command: &MemberCommand,
     member: &MemberRoot,
     first: bool,
-    map_miss: &mut Option<String>,
+    map_miss: &mut Option<CodedError>,
 ) -> Result<SearchedMember> {
     let hashed_cache = hashed_member_cache(&member.root, request.options.cache.as_deref())?;
     let started = Instant::now();
@@ -187,7 +187,7 @@ impl MemberSearch<'_> {
         &self,
         trace: &mut RetrievalTrace,
         progress_source: &mut Option<IndexProgressSource>,
-        map_miss: &mut Option<String>,
+        map_miss: &mut Option<CodedError>,
     ) -> Result<MemberAnswer> {
         let Self {
             request,
@@ -197,7 +197,10 @@ impl MemberSearch<'_> {
         } = *self;
         let (options, deadline) = (request.options, &request.deadline);
         let explicit_cache = options.cache.as_deref();
-        ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+        ensure!(
+            !deadline.expired(),
+            coded!(TimedOut, "query deadline expired")
+        );
         member.verify_identity()?;
         let inline = matches!(request.policy, HomeIndexPolicy::IndexInline);
         let inline_deadline = inline.then(|| crate::store::inline_maintenance_deadline(deadline));
@@ -208,7 +211,7 @@ impl MemberSearch<'_> {
                 if inline_deadline
                     .as_ref()
                     .is_some_and(|slice| !deadline.expired() && slice.expired())
-                    && is_timed_out(&error) =>
+                    && ErrorCode::TimedOut.is_code_of(&error) =>
             {
                 self.hashed_cache.to_owned()
             }
@@ -232,7 +235,7 @@ impl MemberSearch<'_> {
             HomeIndexSource::Own(store) => (store, None),
             HomeIndexSource::Parent(view) => (view.store, Some(view.fallback)),
             HomeIndexSource::Warming { reason } => return Ok(MemberAnswer::Warming(reason)),
-            HomeIndexSource::Unavailable { reason } => anyhow::bail!(reason),
+            HomeIndexSource::Unavailable { error } => return Err(error),
         };
         let preparation_error = if command.semantic && !options.no_daemon {
             crate::semantic::preparation::schedule(&member.root, &member_cache).err()
@@ -244,7 +247,7 @@ impl MemberSearch<'_> {
         if command.verb == "map"
             && let Some(miss) = search::map_miss(&found)
         {
-            map_miss.get_or_insert_with(|| miss.to_owned());
+            map_miss.get_or_insert(miss);
         }
         if let Some(error) = &command.semantic_error {
             found.coverage["semantic_status"] = "unavailable".into();

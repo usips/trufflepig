@@ -20,7 +20,10 @@ fn request_publication_does_not_rename_after_temp_write_expires_deadline() {
     .unwrap_err();
 
     assert!(wrote_temporary, "test did not reach the temporary write");
-    assert!(deadline::is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
     assert!(!request_path.exists(), "expired request was published");
     assert!(
         !temporary.exists(),

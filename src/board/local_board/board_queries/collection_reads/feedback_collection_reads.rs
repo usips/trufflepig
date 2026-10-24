@@ -1,5 +1,6 @@
 //! Bounded global feedback pages and metadata decoding for individual entries.
 
+use crate::board::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, params};
 
 use super::{COLLECTION_LIMIT, count, sequence_window, validate_limit};
@@ -93,7 +94,7 @@ pub(in crate::board::local_board) fn feedback_record(
         .map_err(sql_error)?;
     let row = rows.next().map_err(sql_error)?.ok_or_else(|| {
         invalid(
-            "board_unavailable",
+            BoardErrorCode::BoardUnavailable,
             format!("missing feedback metadata for {}", entry.id),
         )
     })?;
@@ -101,7 +102,7 @@ pub(in crate::board::local_board) fn feedback_record(
         Some(EntryState::Feedback(state)) => state,
         _ => {
             return Err(invalid(
-                "board_unavailable",
+                BoardErrorCode::BoardUnavailable,
                 "invalid stored feedback state",
             ));
         }
@@ -116,11 +117,11 @@ pub(in crate::board::local_board) fn feedback_record(
         cwd: row.get(3).map_err(sql_error)?,
         steer_mode: row.get(4).map_err(sql_error)?,
         recent_calls: serde_json::from_str(&calls)
-            .map_err(|error| invalid("board_unavailable", error.to_string()))?,
+            .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))?,
     };
     metadata
         .validate()
-        .map_err(|error| invalid("board_unavailable", error.to_string()))?;
+        .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))?;
     Ok(FeedbackRecord {
         entry,
         kind,

@@ -1,6 +1,7 @@
 //! Request routing from the system daemon to workspace, root, and board owners.
 
 use super::{dir, record_board_database};
+use crate::coded_error::CodedContext;
 use crate::{
     background_process::{
         BackgroundChild, BackgroundOwner, background_executable_replaced,
@@ -10,7 +11,7 @@ use crate::{
     daemon::{self, deadline::QueryDeadline},
     diagnostics::RequestContext,
 };
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, bail, ensure};
 use std::{
     fs,
     path::Path,
@@ -84,10 +85,13 @@ pub(super) fn route(
         server.words = vec!["workspace-serve".into()];
         server.member = None;
         fs::create_dir_all(&cache).map_err(|error| {
-            let context = anyhow::Error::new(error).context(format!(
-                "daemon_cache_create_failed: cannot create workspace daemon cache {}",
-                cache.display()
-            ));
+            let context = anyhow::Error::new(error).with_coded_context(|| {
+                coded!(
+                    DaemonCacheCreateFailed,
+                    "cannot create workspace daemon cache {}",
+                    cache.display()
+                )
+            });
             crate::store::index_cache_unavailable(&cache, context)
         })?;
         let executable = current_background_executable(&cache, BackgroundOwner::SystemRouter)?;
@@ -95,8 +99,7 @@ pub(super) fn route(
         command.args(normalized_args(&server, &server.root));
         ensure!(
             !forwarding.expired(),
-            "{}: query deadline expired",
-            daemon::deadline::TIMED_OUT
+            coded!(TimedOut, "query deadline expired")
         );
         let child = spawn_background_for(&mut command, &executable, "workspace daemon", &cache)?;
         return forward_spawned(
@@ -111,7 +114,7 @@ pub(super) fn route(
     let root = options
         .root
         .canonicalize()
-        .context("invalid_root: cannot open repository root")?;
+        .with_coded_context(|| coded!(InvalidRoot, "cannot open repository root"))?;
     let cache = crate::cli::cache_path(&root, options.cache.as_deref())?;
     if verb == Some("stop") {
         refuse_router_stop(&cache)?;
@@ -121,10 +124,13 @@ pub(super) fn route(
         return Ok(reply);
     }
     fs::create_dir_all(&cache).map_err(|error| {
-        let context = anyhow::Error::new(error).context(format!(
-            "daemon_cache_create_failed: cannot create root daemon cache {}",
-            cache.display()
-        ));
+        let context = anyhow::Error::new(error).with_coded_context(|| {
+            coded!(
+                DaemonCacheCreateFailed,
+                "cannot create root daemon cache {}",
+                cache.display()
+            )
+        });
         crate::store::index_cache_unavailable(&cache, context)
     })?;
     let history_cache = options.resolved_history_cache.clone().or_else(|| {
@@ -152,8 +158,7 @@ pub(super) fn route(
         .arg("serve");
     ensure!(
         !forwarding.expired(),
-        "{}: query deadline expired",
-        daemon::deadline::TIMED_OUT
+        coded!(TimedOut, "query deadline expired")
     );
     let child = spawn_background_for(&mut command, &executable, "root daemon", &cache)?;
     forward_spawned(&cache, &args, &context, &child, forwarding, "root daemon")
@@ -173,7 +178,10 @@ fn board_schema_version(database: &Path) -> Option<i64> {
 /// Refuses a stop aimed at this router's own socket directory.
 fn refuse_router_stop(cache: &Path) -> Result<()> {
     if let Some(dir) = dir() {
-        ensure!(cache != dir, "invalid_cache: cannot stop the system router");
+        ensure!(
+            cache != dir,
+            coded!(InvalidCache, "cannot stop the system router")
+        );
     }
     Ok(())
 }
@@ -189,8 +197,7 @@ fn forward_spawned(
 ) -> Result<String> {
     ensure!(
         !forwarding.expired(),
-        "{}: query deadline expired",
-        daemon::deadline::TIMED_OUT
+        coded!(TimedOut, "query deadline expired")
     );
     let deadline = Instant::now() + forwarding.cap(Duration::from_secs(3));
     while Instant::now() < deadline {
@@ -204,11 +211,11 @@ fn forward_spawned(
     }
     ensure!(
         !forwarding.expired(),
-        "{}: query deadline expired",
-        daemon::deadline::TIMED_OUT
+        coded!(TimedOut, "query deadline expired")
     );
-    bail!(
-        "daemon_unavailable: {role} for cache {} did not start",
+    bail!(coded!(
+        DaemonUnavailable,
+        "{role} for cache {} did not start",
         cache.display()
-    )
+    ))
 }

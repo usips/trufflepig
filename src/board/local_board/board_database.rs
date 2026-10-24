@@ -276,7 +276,7 @@ fn io_error(error: std::io::Error) -> BoardError {
 }
 
 fn unavailable(message: impl Into<String>) -> BoardError {
-    invalid("board_unavailable", message)
+    invalid(BoardErrorCode::BoardUnavailable, message)
 }
 
 #[cfg(test)]

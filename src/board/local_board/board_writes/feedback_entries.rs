@@ -12,6 +12,7 @@ use super::super::{
 };
 use crate::board::board_actor::{BoardActor, BoardRecipient};
 use crate::board::board_ids::EntryId;
+use crate::board::board_protocol::BoardErrorCode;
 use crate::board::board_protocol::{
     AuthorityRole, AuthoritySource, BoardChange, BoardError, BoardOp, BoardReply, BoardResult,
     EntryRecord,
@@ -39,7 +40,10 @@ pub(in crate::board::local_board) fn write_feedback(
         import_key,
     } = op
     else {
-        return Err(invalid("invalid_options", "expected feedback operation"));
+        return Err(invalid(
+            BoardErrorCode::InvalidOptions,
+            "expected feedback operation",
+        ));
     };
     op.validate().map_err(BoardError::from)?;
     if let Some(key) = import_key {
@@ -83,7 +87,7 @@ pub(in crate::board::local_board) fn write_feedback(
         .map_err(sql_error)?;
     }
     let recent_calls = serde_json::to_string(&metadata.recent_calls)
-        .map_err(|error| invalid("invalid_options", error.to_string()))?;
+        .map_err(|error| invalid(BoardErrorCode::InvalidOptions, error.to_string()))?;
     tx.execute(
         concat!(
             "INSERT INTO board_feedback(entry_id,feedback_kind,version,build_id,cwd,steer_mode,",
@@ -141,8 +145,9 @@ fn read_feedback(conn: &Connection, open_only: bool) -> Result<Vec<FeedbackRecor
                 repo_key: entry.repo_key.clone(),
                 cwd: row.get(4).map_err(sql_error)?,
                 steer_mode: row.get(5).map_err(sql_error)?,
-                recent_calls: serde_json::from_str(&calls)
-                    .map_err(|error| invalid("board_unavailable", error.to_string()))?,
+                recent_calls: serde_json::from_str(&calls).map_err(|error| {
+                    invalid(BoardErrorCode::BoardUnavailable, error.to_string())
+                })?,
             },
             entry,
             kind: FeedbackKind::parse(&kind).map_err(BoardError::from)?,

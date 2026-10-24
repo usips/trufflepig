@@ -5,7 +5,8 @@
 //! before the process exits.
 
 use super::published_endpoint::{PublishedEndpoint, remove_published_endpoint};
-use anyhow::{Context, Result};
+use crate::coded_error::CodedContext;
+use anyhow::Result;
 use std::{
     sync::Arc,
     thread::{self, JoinHandle},
@@ -38,7 +39,7 @@ fn block(signals: &[i32]) -> Result<()> {
     let result = unsafe { libc::pthread_sigmask(libc::SIG_BLOCK, &set, std::ptr::null_mut()) };
     if result != 0 {
         return Err(std::io::Error::from_raw_os_error(result))
-            .context("board_web_shutdown: block termination signals");
+            .with_coded_context(|| coded!(BoardWebShutdown, "block termination signals"));
     }
     Ok(())
 }
@@ -69,12 +70,12 @@ fn signal_set(signals: &[i32]) -> Result<libc::sigset_t> {
         let mut set: libc::sigset_t = std::mem::zeroed();
         if libc::sigemptyset(&mut set) != 0 {
             return Err(std::io::Error::last_os_error())
-                .context("board_web_shutdown: build signal set");
+                .with_coded_context(|| coded!(BoardWebShutdown, "build signal set"));
         }
         for &signal in signals {
             if libc::sigaddset(&mut set, signal) != 0 {
                 return Err(std::io::Error::last_os_error())
-                    .context("board_web_shutdown: build signal set");
+                    .with_coded_context(|| coded!(BoardWebShutdown, "build signal set"));
             }
         }
         Ok(set)

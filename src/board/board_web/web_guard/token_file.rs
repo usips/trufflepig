@@ -3,7 +3,8 @@
 //! any planted entry; reads never create files or mint secrets.
 
 use super::super::board_web_secrets::{constant_time_equal, fill_random, hex_encode};
-use anyhow::{Context, Result, ensure};
+use crate::coded_error::CodedContext;
+use anyhow::{Result, ensure};
 use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
@@ -20,14 +21,19 @@ impl BoardWebToken {
     /// Rotate to a fresh token; board-serve calls this on every start so a
     /// leaked token dies with the service that published it.
     pub(crate) fn rotate() -> Result<Self> {
-        let directory = crate::system::dir().context("board_web_token: no runtime directory")?;
-        fs::create_dir_all(&directory).context("board_web_token: create runtime directory")?;
+        let directory = crate::system::dir()
+            .with_coded_context(|| coded!(BoardWebToken, "no runtime directory"))?;
+        fs::create_dir_all(&directory)
+            .with_coded_context(|| coded!(BoardWebToken, "create runtime directory"))?;
         Self::rotate_at(&directory.join("board-web.token"))
     }
 
     /// Read an existing private token without creating files or generating a secret.
     pub(crate) fn read_at(path: &Path) -> Result<Self> {
-        read_token(open_existing(path).context("board_web_token: open existing token")?)
+        read_token(
+            open_existing(path)
+                .with_coded_context(|| coded!(BoardWebToken, "open existing token"))?,
+        )
     }
 
     /// Write a fresh token with the load-time O_NOFOLLOW/0600 discipline, then
@@ -44,15 +50,16 @@ impl BoardWebToken {
         pending
             .file
             .write_all(&token.0)
-            .context("board_web_token: write token")?;
+            .with_coded_context(|| coded!(BoardWebToken, "write token"))?;
         pending
             .file
             .sync_all()
-            .context("board_web_token: sync token")?;
-        fs::rename(&pending.path, path).context("board_web_token: publish rotated token")?;
+            .with_coded_context(|| coded!(BoardWebToken, "sync token"))?;
+        fs::rename(&pending.path, path)
+            .with_coded_context(|| coded!(BoardWebToken, "publish rotated token"))?;
         File::open(parent)
             .and_then(|directory| directory.sync_all())
-            .context("board_web_token: sync token directory")?;
+            .with_coded_context(|| coded!(BoardWebToken, "sync token directory"))?;
         Ok(token)
     }
 
@@ -81,7 +88,7 @@ impl PendingTokenFile {
             .mode(0o600)
             .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
             .open(&path)
-            .context("board_web_token: create private token candidate")?;
+            .with_coded_context(|| coded!(BoardWebToken, "create private token candidate"))?;
         Ok(Self { file, path })
     }
 }
@@ -103,38 +110,40 @@ fn read_token(mut file: File) -> Result<BoardWebToken> {
     validate_file(&file, true)?;
     let mut bytes = [0; TOKEN_BYTES];
     file.read_exact(&mut bytes)
-        .context("board_web_token: read token")?;
+        .with_coded_context(|| coded!(BoardWebToken, "read token"))?;
     let mut extra = [0];
     ensure!(
         file.read(&mut extra)? == 0,
-        "board_web_token: token length changed"
+        coded!(BoardWebToken, "token length changed")
     );
     ensure!(
         bytes.iter().all(u8::is_ascii_hexdigit),
-        "board_web_token: invalid token bytes"
+        coded!(BoardWebToken, "invalid token bytes")
     );
     Ok(BoardWebToken(bytes))
 }
 
 fn validate_file(file: &File, existing: bool) -> Result<()> {
-    let metadata = file.metadata().context("board_web_token: inspect token")?;
+    let metadata = file
+        .metadata()
+        .with_coded_context(|| coded!(BoardWebToken, "inspect token"))?;
     ensure!(
         metadata.file_type().is_file(),
-        "board_web_token: token is not a regular file"
+        coded!(BoardWebToken, "token is not a regular file")
     );
     // SAFETY: geteuid has no preconditions and cannot fail.
     ensure!(
         metadata.uid() == unsafe { libc::geteuid() },
-        "board_web_token: wrong token owner"
+        coded!(BoardWebToken, "wrong token owner")
     );
     ensure!(
         metadata.mode() & 0o7777 == 0o600,
-        "board_web_token: token mode must be 0600"
+        coded!(BoardWebToken, "token mode must be 0600")
     );
     if existing {
         ensure!(
             metadata.len() == TOKEN_BYTES as u64,
-            "board_web_token: invalid token length"
+            coded!(BoardWebToken, "invalid token length")
         );
     }
     Ok(())
@@ -142,7 +151,8 @@ fn validate_file(file: &File, existing: bool) -> Result<()> {
 
 fn random_token() -> Result<BoardWebToken> {
     let mut random = [0; TOKEN_BYTES / 2];
-    fill_random(&mut random).context("board_web_token: read operating-system random source")?;
+    fill_random(&mut random)
+        .with_coded_context(|| coded!(BoardWebToken, "read operating-system random source"))?;
     let mut bytes = [0; TOKEN_BYTES];
     bytes.copy_from_slice(hex_encode(&random).as_bytes());
     Ok(BoardWebToken(bytes))

@@ -1,9 +1,5 @@
 use super::{LiveRegexCheckpoint, check_live_deadline, live_regex, live_regex_with_checkpoint};
-use crate::{
-    daemon::deadline::{QueryDeadline, TIMED_OUT},
-    search::Query,
-    store::Store,
-};
+use crate::{daemon::deadline::QueryDeadline, search::Query, store::Store};
 use anyhow::Result;
 use std::{os::unix::net::UnixStream, path::Path, sync::Arc, time::Duration};
 
@@ -45,7 +41,7 @@ fn before_compile_timeouts_precede_invalid_regex_errors() {
         &QueryDeadline::start(),
     )
     .unwrap_err();
-    assert!(!ordinary_error.to_string().starts_with(TIMED_OUT));
+    assert!(!ordinary_error.to_string().starts_with("timed_out:"));
     assert!(!ordinary_error.to_string().contains("scan incomplete"));
 
     let error = live_regex(
@@ -60,7 +56,7 @@ fn before_compile_timeouts_precede_invalid_regex_errors() {
     )
     .unwrap_err();
 
-    assert!(error.to_string().starts_with(TIMED_OUT));
+    assert!(error.to_string().starts_with("timed_out:"));
     assert!(
         error
             .to_string()
@@ -84,7 +80,7 @@ fn before_compile_timeouts_precede_invalid_regex_errors() {
     )
     .unwrap_err();
 
-    assert!(error.to_string().starts_with(TIMED_OUT));
+    assert!(error.to_string().starts_with("timed_out:"));
     assert!(hits.is_empty());
 }
 
@@ -167,7 +163,7 @@ fn timeout_between_matching_files_returns_error_after_partial_hit() {
     )
     .unwrap_err();
 
-    assert!(error.to_string().starts_with(TIMED_OUT));
+    assert!(error.to_string().starts_with("timed_out:"));
     assert!(
         error
             .to_string()
@@ -220,7 +216,7 @@ fn peer_drop_inside_match_loop_waits_until_the_64th_match_poll() {
     )
     .unwrap_err();
 
-    assert!(error.to_string().starts_with(TIMED_OUT));
+    assert!(error.to_string().starts_with("timed_out:"));
     assert!(
         error
             .to_string()
@@ -347,7 +343,7 @@ fn prepared_search_propagates_live_scan_cancellation_as_an_error() {
     );
 
     let error = result.unwrap_err();
-    assert!(error.to_string().starts_with(TIMED_OUT), "{error:#}");
+    assert!(error.to_string().starts_with("timed_out:"), "{error:#}");
 }
 
 #[test]
@@ -396,7 +392,7 @@ fn peer_drop_is_polled_while_filters_reject_every_walked_file() {
     .unwrap_err();
     drop(checkpoint);
 
-    assert!(error.to_string().starts_with(TIMED_OUT), "{error:#}");
+    assert!(error.to_string().starts_with("timed_out:"), "{error:#}");
     assert_eq!(reads, 0);
     assert_eq!(
         walked, 1024,

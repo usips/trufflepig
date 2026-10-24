@@ -1,9 +1,5 @@
 use super::*;
-use crate::{
-    daemon::deadline::{QueryDeadline, is_timed_out},
-    store::Store,
-    workspace::config::WorkspaceConfig,
-};
+use crate::{daemon::deadline::QueryDeadline, store::Store, workspace::config::WorkspaceConfig};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -229,7 +225,10 @@ fn coordinator_deadline_starts_at_accept() {
             deadline: QueryDeadline::after(Duration::ZERO),
         })
         .unwrap_err();
-    assert!(is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
 }
 
 #[test]
@@ -323,7 +322,10 @@ fn current_path_show_and_continuation_bypass_a_blocked_workspace_cache() {
         QueryDeadline::after(Duration::ZERO),
     )
     .unwrap_err();
-    assert!(is_timed_out(&expired), "{expired:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&expired),
+        "{expired:#}"
+    );
     assert_eq!(
         std::fs::read(&blocked_cache).unwrap(),
         b"keep this cache path blocked"

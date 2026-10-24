@@ -1,7 +1,8 @@
 //! Selected-cache errors retain their cause and carry an explicit refusal marker.
-use crate::daemon::deadline::{QueryDeadline, TIMED_OUT};
+use crate::coded_error::{CodeDetail, CodedContext, ErrorCode};
+use crate::daemon::deadline::QueryDeadline;
 use anyhow::{Result, bail};
-use rusqlite::{Error as SqliteError, ErrorCode};
+use rusqlite::{Error as SqliteError, ErrorCode as SqliteCode};
 use std::{
     error::Error,
     fmt,
@@ -24,16 +25,12 @@ impl Error for SelectedCacheRefusal {}
 
 /// Whether an error carries an explicit refusal for the selected cache.
 pub fn is_index_cache_unavailable(error: &anyhow::Error) -> bool {
-    !has_deadline_precedence(error) && has_selected_cache_marker(error)
+    !has_deadline_precedence(error) && CodeDetail::SelectedCacheRefusal.is_anywhere_in(error)
 }
 
 /// Adds the selected cache and recovery options only for a cache failure.
 pub fn index_cache_unavailable(cache: &Path, error: anyhow::Error) -> anyhow::Error {
-    if has_deadline_precedence(&error)
-        || error
-            .chain()
-            .any(|cause| cause.to_string().starts_with("index_cache_unavailable:"))
-    {
+    if has_deadline_precedence(&error) || ErrorCode::IndexCacheUnavailable.is_anywhere_in(&error) {
         return error;
     }
     let marked = if has_selected_cache_marker(&error) {
@@ -43,10 +40,14 @@ pub fn index_cache_unavailable(cache: &Path, error: anyhow::Error) -> anyhow::Er
     } else {
         return error;
     };
-    marked.context(format!(
-        "index_cache_unavailable: selected cache {} is unavailable; choose a writable path with `--cache` or set `XDG_CACHE_HOME` to a writable directory. For a bounded cache-free source read, use `show path:FILE[:START-END]` with FILE relative to the selected repository or member root",
-        cache.display()
-    ))
+    marked.with_coded_context(|| {
+        coded!(
+            IndexCacheUnavailable,
+            "selected cache {} is unavailable; choose a writable path with `--cache` or set `XDG_CACHE_HOME` to a writable directory. For a bounded cache-free source read, use `show path:FILE[:START-END]` with FILE relative to the selected repository or member root",
+            cache.display()
+        )
+        .with_detail(CodeDetail::SelectedCacheRefusal)
+    })
 }
 
 fn has_selected_cache_marker(error: &anyhow::Error) -> bool {
@@ -130,18 +131,13 @@ fn cache_io_error<T>(
 
 fn check_deadline(deadline: Option<&QueryDeadline>) -> Result<()> {
     if deadline.is_some_and(QueryDeadline::expired) {
-        bail!("{TIMED_OUT}: query deadline expired");
+        bail!(coded!(TimedOut, "query deadline expired"));
     }
     Ok(())
 }
 
 fn has_deadline_precedence(error: &anyhow::Error) -> bool {
-    error.chain().any(|cause| {
-        let text = cause.to_string();
-        text.starts_with("timed_out:")
-            || text.starts_with("cancelled:")
-            || text.starts_with("canceled:")
-    })
+    ErrorCode::TimedOut.is_anywhere_in(error)
 }
 
 fn cache_refusal_cause(error: &anyhow::Error) -> bool {
@@ -155,8 +151,8 @@ fn cache_refusal_cause(error: &anyhow::Error) -> bool {
                 matches!(
                     error,
                     SqliteError::SqliteFailure(failure, _)
-                        if failure.code == ErrorCode::ReadOnly
-                            || failure.code == ErrorCode::CannotOpen
+                        if failure.code == SqliteCode::ReadOnly
+                            || failure.code == SqliteCode::CannotOpen
                 )
             })
     })

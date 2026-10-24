@@ -338,7 +338,7 @@ fn startup_keeps_other_router_failures_fatal_on_the_first_probe() {
     drop(connection);
     for error in [
         unavailable("router socket permission denied"),
-        BoardError::from(anyhow::anyhow!("timed_out: phase=connecting")),
+        BoardError::from(anyhow::anyhow!(coded!(TimedOut, "phase=connecting"))),
     ] {
         let mut polls = 0;
         let failure = startup_probe(&database, Duration::from_millis(700), &mut |_, _| {

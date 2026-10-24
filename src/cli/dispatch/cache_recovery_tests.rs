@@ -21,7 +21,10 @@ fn bounded_reconcile_expiry_preserves_the_previous_publication() -> Result<()> {
         .and_then(|mut store| store.index_until(deadline).map(|_| store))
         .err()
         .expect("the slow reconcile must expire");
-    assert!(crate::daemon::deadline::is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
     assert!(started.elapsed() < Duration::from_secs(2), "{error:#}");
 
     let published = Store::open_read(root.path(), cache.path(), QueryDeadline::start())?;
@@ -160,7 +163,10 @@ fn expired_read_does_not_create_a_cache_or_start_reconciliation() -> Result<()> 
     let error = read_store(root.path(), &cache, &options, false, &deadline)
         .err()
         .expect("an expired read must not reconcile");
-    assert!(crate::daemon::deadline::is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
     assert!(!cache.exists());
     Ok(())
 }

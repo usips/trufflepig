@@ -6,23 +6,25 @@ use super::{
     result_cache::{MemberSnapshot, OwnedEntry, WorkspaceResults, WorkspaceSet},
     selected_member,
 };
+use crate::coded_error::CodedContext;
 use crate::{
     cli::Arguments,
-    daemon::deadline::{QueryDeadline, TIMED_OUT, is_timed_out},
+    coded_error::{CodeDetail, ErrorCode, coded_error, error_detail},
+    daemon::deadline::QueryDeadline,
     identity::ResultHandle,
     output::OutputBudget,
     results::{self, ResultEntry},
     source::{self, SourceSide, acquisition},
     store::{Store, is_index_warming},
 };
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use serde_json::{Value, json};
 
 fn address(target: &str) -> Result<(String, Option<SourceSide>, Option<usize>)> {
     if let Some(cursor) = target.strip_prefix("read:") {
         let (handle, offset) = cursor
             .rsplit_once('@')
-            .context("invalid_cursor: expected source byte offset")?;
+            .with_coded_context(|| coded!(InvalidCursor, "expected source byte offset"))?;
         let (handle, side) = match handle.rsplit_once(':') {
             Some((handle, side @ ("before" | "after"))) => (handle, Some(SourceSide::parse(side)?)),
             _ => (handle, None),
@@ -31,7 +33,11 @@ fn address(target: &str) -> Result<(String, Option<SourceSide>, Option<usize>)> 
         return Ok((
             parsed.to_string(),
             side,
-            Some(offset.parse().context("invalid_cursor: byte offset")?),
+            Some(
+                offset
+                    .parse()
+                    .with_coded_context(|| coded!(InvalidCursor, "byte offset"))?,
+            ),
         ));
     }
     Ok((target.parse::<ResultHandle>()?.to_string(), None, None))
@@ -42,7 +48,7 @@ fn verify_selection(owner: &MemberSnapshot, options: &Arguments) -> Result<()> {
             .member
             .as_ref()
             .is_none_or(|name| name == &owner.name),
-        "invalid_member: selector conflicts with immutable owner"
+        coded!(InvalidMember, "selector conflicts with immutable owner")
     );
     Ok(())
 }
@@ -63,8 +69,8 @@ fn read_within(
     budget: &OutputBudget,
     deadline: &QueryDeadline,
 ) -> Result<String> {
-    let target =
-        &acquisition::show_target(&options.words).context("usage: show TARGET | ctx HANDLE")?;
+    let target = &acquisition::show_target(&options.words)
+        .with_coded_context(|| coded!(Usage, "show TARGET | ctx HANDLE"))?;
     let side = options.side.as_deref().map(SourceSide::parse).transpose()?;
     let is_context = options.words[0] == "ctx";
     let addressed = target.starts_with("read:")
@@ -77,7 +83,7 @@ fn read_within(
         let (handle, recorded_side, offset) = address(target)?;
         ensure!(
             offset.is_none() || side.is_none() || side == recorded_side,
-            "invalid_side: continuation side cannot change"
+            coded!(InvalidSide, "continuation side cannot change")
         );
         let (set, index) = results.entry(&handle)?;
         let hit = &set.hits[index];
@@ -88,10 +94,13 @@ fn read_within(
         if is_context {
             ensure!(
                 offset.is_none() && side.is_none(),
-                "invalid_handle: context requires a live result handle"
+                coded!(InvalidHandle, "context requires a live result handle")
             );
             let ResultEntry::LiveSource(hit) = &hit.entry else {
-                anyhow::bail!("historical_result: historical entries are invalid for live context");
+                anyhow::bail!(coded!(
+                    HistoricalResult,
+                    "historical entries are invalid for live context"
+                ));
             };
             return crate::search::context_entry(
                 &store,
@@ -115,8 +124,7 @@ fn read_within(
         {
             // A parent-index definition whose worktree file changed re-reads current bytes.
             Err(error)
-                if owner.parent_index.is_some()
-                    && error.to_string().starts_with("stale_source") =>
+                if owner.parent_index.is_some() && ErrorCode::StaleSource.is_code_of(&error) =>
             {
                 let (current, read) =
                     reextracted_entry(&store, &handle, &hit.entry)?.ok_or(error)?;
@@ -125,18 +133,19 @@ fn read_within(
             }
             Err(error)
                 if owner.parent_index.is_some()
-                    && error
-                        .to_string()
-                        .starts_with("source_unavailable: path missing or unsafe") =>
+                    && error_detail(&error) == Some(CodeDetail::PathMissingOrUnsafe) =>
             {
-                anyhow::bail!("{error}; path absent in this worktree; present in parent index");
+                let missing = coded_error(&error).expect("detail implies a coded error");
+                anyhow::bail!(
+                    missing.appended("; path absent in this worktree; present in parent index")
+                );
             }
             acquired => acquired?,
         };
         if let Some(offset) = offset {
             ensure!(
                 offset >= source.span.start && offset <= source.span.end,
-                "invalid_cursor: offset outside original source range"
+                coded!(InvalidCursor, "offset outside original source range")
             );
             source.span.start = offset;
         }
@@ -144,7 +153,7 @@ fn read_within(
     }
     ensure!(
         !is_context,
-        "invalid_handle: context requires a live result handle"
+        coded!(InvalidHandle, "context requires a live result handle")
     );
     let member = selected_member(config, options)?;
     member.verify_identity()?;
@@ -154,8 +163,13 @@ fn read_within(
         match member_cache_until(&member, options.cache.as_deref(), &maintenance_deadline) {
             Ok(cache) => cache,
             Err(error) => {
-                ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
-                if is_timed_out(&error) && maintenance_deadline.expired() {
+                ensure!(
+                    !deadline.expired(),
+                    coded!(TimedOut, "query deadline expired")
+                );
+                if crate::coded_error::ErrorCode::TimedOut.is_code_of(&error)
+                    && maintenance_deadline.expired()
+                {
                     selected_cache
                 } else {
                     return Err(error);
@@ -344,6 +358,9 @@ fn render_owned_value(mut value: Value, budget: &OutputBudget) -> Result<String>
                 continue;
             }
         }
-        anyhow::bail!("budget_too_small: owner response and provenance do not fit");
+        anyhow::bail!(coded!(
+            BudgetTooSmall,
+            "owner response and provenance do not fit"
+        ));
     }
 }

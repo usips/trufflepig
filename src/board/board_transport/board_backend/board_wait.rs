@@ -156,7 +156,7 @@ fn set_wait(reply: &mut BoardReply, wait: InboxWait) {
 }
 
 pub(super) fn waiter_transient(error: &anyhow::Error) -> bool {
-    crate::daemon::deadline::is_timed_out(error)
+    crate::coded_error::ErrorCode::TimedOut.is_code_of(error)
         || crate::board::board_protocol::BoardErrorCode::from_error(error)
             == Some(crate::board::board_protocol::BoardErrorCode::DatabaseLocked)
 }

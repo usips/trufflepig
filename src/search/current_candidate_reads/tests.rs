@@ -1,6 +1,6 @@
 use super::{recheck, recheck_with_current_search};
 use crate::{
-    daemon::deadline::{QueryDeadline, TIMED_OUT, is_timed_out},
+    daemon::deadline::QueryDeadline,
     output::OutputBudget,
     results,
     search::{self, Query},
@@ -157,14 +157,17 @@ fn current_search_timeout_propagates_but_ordinary_failure_keeps_unverified_candi
             assert_eq!(path, "lib.rs");
             assert_eq!(bytes, current);
             Err(
-                anyhow::anyhow!("{TIMED_OUT}: current file search interrupted")
+                anyhow::anyhow!(coded!(TimedOut, "current file search interrupted"))
                     .context("search_current_file"),
             )
         },
     )
     .unwrap_err();
-    assert!(is_timed_out(&timeout), "{timeout:#}");
-    assert!(timeout.to_string().starts_with(TIMED_OUT));
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&timeout),
+        "{timeout:#}"
+    );
+    assert!(timeout.to_string().starts_with("timed_out:"));
 
     let mut ordinary_hits = initial.hits;
     let mut coverage = serde_json::json!({});
@@ -211,7 +214,10 @@ fn expired_query_deadline_aborts_candidate_recheck() {
     )
     .unwrap_err();
 
-    assert!(is_timed_out(&error), "{error:#}");
-    assert!(error.to_string().starts_with(TIMED_OUT));
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
+    assert!(error.to_string().starts_with("timed_out:"));
     assert!(!hits.is_empty());
 }

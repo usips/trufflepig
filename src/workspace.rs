@@ -13,9 +13,10 @@ mod stateless_queries;
 mod test_fixture;
 mod workspace_list;
 mod worktree_cache;
+use crate::coded_error::CodedContext;
 use crate::{
     cli::Arguments,
-    daemon::deadline::{QueryDeadline, TIMED_OUT},
+    daemon::deadline::QueryDeadline,
     diagnostics::RequestContext,
     output::OutputBudget,
     search::InvocationDirectory,
@@ -39,7 +40,7 @@ pub fn resolve(options: &Arguments) -> Result<Option<WorkspaceConfig>> {
     let start = options
         .root
         .canonicalize()
-        .context("invalid_root: cannot resolve workspace home")?;
+        .with_coded_context(|| coded!(InvalidRoot, "cannot resolve workspace home"))?;
     let config = config::discover(
         &start,
         options.workspace.as_deref(),
@@ -53,7 +54,10 @@ pub fn resolve(options: &Arguments) -> Result<Option<WorkspaceConfig>> {
                 .member_roots(&start)?
                 .iter()
                 .all(|member| !base.starts_with(&member.root) && !member.root.starts_with(&base)),
-            "invalid_cache: workspace cache base must be outside member roots"
+            coded!(
+                InvalidCache,
+                "workspace cache base must be outside member roots"
+            )
         );
     }
     Ok(config)
@@ -85,13 +89,19 @@ pub(super) fn member_cache_until(
     explicit: Option<&Path>,
     deadline: &QueryDeadline,
 ) -> Result<PathBuf> {
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     let cache = if member.worktree.is_some() {
         worktree_cache::ensure_until(&member.member.root, &member.root, explicit, deadline)
     } else {
         hashed_member_cache(&member.root, explicit)
     }?;
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     Ok(cache)
 }
 fn hashed_member_cache(root: &Path, explicit: Option<&Path>) -> Result<PathBuf> {
@@ -207,11 +217,14 @@ fn selected_member(config: &WorkspaceConfig, options: &Arguments) -> Result<Memb
             .member_roots(&start)?
             .into_iter()
             .find(|m| m.name() == name)
-            .context("invalid_member: member is not configured");
+            .with_coded_context(|| coded!(InvalidMember, "member is not configured"));
     }
-    config
-        .home_root(&start)?
-        .context("member_required: select --member for an owner-scoped command")
+    config.home_root(&start)?.with_coded_context(|| {
+        coded!(
+            MemberRequired,
+            "select --member for an owner-scoped command"
+        )
+    })
 }
 
 /// Reads a current path without opening or creating the workspace result cache.
@@ -229,14 +242,20 @@ pub(super) fn current_path_show(
     if !crate::source::acquisition::is_current_path_target(&target) {
         return Ok(None);
     }
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     let member = if target.starts_with("read:path:") {
         stateless_queries::cursor_owner(config, options, &target, deadline)?
     } else {
         selected_member(config, options)?
     };
     member.verify_identity()?;
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
 
     // This calculates the final cache path without the worktree helper's mkdir/seed side effects.
     let cache = hashed_member_cache(&member.root, options.cache.as_deref())?;
@@ -248,7 +267,10 @@ pub(super) fn current_path_show(
         .as_deref()
         .map(crate::source::SourceSide::parse)
         .transpose()?;
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     let acquired = crate::source::acquisition::acquire_current_path_without_cache(
         &store, &target, side, &origin,
     )
@@ -256,7 +278,10 @@ pub(super) fn current_path_show(
         current_path_hints::decorate_source_unavailable(config, &member, &target, error, deadline)
     })
     .map_err(|error| deadline.classify(error))?;
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
 
     let mut metadata = json!({
         "workspace": config.name,
@@ -267,10 +292,16 @@ pub(super) fn current_path_show(
         metadata["worktree"] = label.clone().into();
     }
     let budget = OutputBudget::new(options.budget)?.with_format(options.output_format());
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     let rendered = crate::source::render_owned(acquired, &budget, &metadata)
         .map_err(|error| deadline.classify(error))?;
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     Ok(Some(rendered))
 }
 
@@ -306,7 +337,10 @@ pub(crate) fn local(
     let page_budget = OutputBudget::new(options.budget)?.with_format(options.output_format());
     match verb {
         "more" => results.more(
-            options.words.get(1).context("usage: more SET@OFFSET")?,
+            options
+                .words
+                .get(1)
+                .with_coded_context(|| coded!(Usage, "more SET@OFFSET"))?,
             options.limit,
             &page_budget,
         ),
@@ -341,7 +375,7 @@ pub(crate) fn local(
             owned_response::render(value, &budget)
         }
         "serve" | "history-serve" | "workspace-serve" => {
-            bail!("invalid_command: internal server command")
+            bail!(coded!(InvalidCommand, "internal server command"))
         }
         "search" | "refs" | "map" => retrieval::search(
             config,
@@ -352,7 +386,10 @@ pub(crate) fn local(
             session,
             local_deadline,
         ),
-        _ => bail!("invalid_command: unknown command {verb}; use search for queries"),
+        _ => bail!(coded!(
+            InvalidCommand,
+            "unknown command {verb}; use search for queries"
+        )),
     }
 }
 fn inspect(
@@ -364,13 +401,16 @@ fn inspect(
     let command = options.words.get(1).map(String::as_str).unwrap_or("show");
     ensure!(
         matches!(command, "show" | "status"),
-        "usage: ws show | ws status | ws discover PATH..."
+        coded!(Usage, "ws show | ws status | ws discover PATH...")
     );
     let start = options.root.canonicalize()?;
     let roots = config.member_roots(&start)?;
     let mut members = Vec::with_capacity(roots.len());
     for member in &roots {
-        ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+        ensure!(
+            !deadline.expired(),
+            coded!(TimedOut, "query deadline expired")
+        );
         let cache = hashed_member_cache(&member.root, options.cache.as_deref())?;
         let mut value = json!({"member":member.name(),"root":encode_path(&member.root),"available":member.verify_identity().is_ok()});
         if let Some(label) = &member.worktree {
@@ -387,12 +427,17 @@ fn inspect(
         {
             match crate::store::Store::open_read(&member.root, &cache, deadline.clone()) {
                 Ok(store) => {
-                    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+                    ensure!(
+                        !deadline.expired(),
+                        coded!(TimedOut, "query deadline expired")
+                    );
                     value["generation"] = store.generation()?.into();
                     value["coverage"] = serde_json::to_value(store.coverage()?)?;
                 }
                 Err(error) if deadline.expired() => {
-                    return Err(error.context(format!("{TIMED_OUT}: query deadline expired")));
+                    return Err(
+                        error.with_coded_context(|| coded!(TimedOut, "query deadline expired"))
+                    );
                 }
                 Err(error) if crate::store::is_index_warming(&error) => {
                     value["generation"] = 0.into();
@@ -403,35 +448,44 @@ fn inspect(
         }
         members.push(value);
     }
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     let home = config.home_root(&start)?;
     budget.render(&json!({"workspace":config.name,"config":encode_path(&config.path),"home":home.as_ref().map(MemberRoot::name),"members":members}))
 }
 pub fn discover_paths(paths: &[String], budget: usize) -> Result<String> {
-    ensure!(!paths.is_empty(), "usage: ws discover PATH...");
-    ensure!(paths.len() <= 32, "invalid_workspace: maximum 32 members");
+    ensure!(!paths.is_empty(), coded!(Usage, "ws discover PATH..."));
+    ensure!(
+        paths.len() <= 32,
+        coded!(InvalidWorkspace, "maximum 32 members")
+    );
     let mut members = toml::map::Map::new();
     for path in paths {
         let root =
             config::resolve_path(Path::new(path), &std::env::current_dir()?)?.canonicalize()?;
         ensure!(
             root.is_dir(),
-            "invalid_workspace: member must be a directory"
+            coded!(InvalidWorkspace, "member must be a directory")
         );
         let name = root
             .file_name()
             .and_then(|s| s.to_str())
-            .context("invalid_workspace: choose a member name explicitly")?;
+            .with_coded_context(|| coded!(InvalidWorkspace, "choose a member name explicitly"))?;
         ensure!(
             config::valid_name(name) && !members.contains_key(name),
-            "invalid_workspace: member name is invalid or duplicated; write named members explicitly"
+            coded!(
+                InvalidWorkspace,
+                "member name is invalid or duplicated; write named members explicitly"
+            )
         );
         let mut entry = toml::map::Map::new();
         entry.insert(
             "path".into(),
             toml::Value::String(
                 root.to_str()
-                    .context("invalid_workspace: config path is not UTF-8")?
+                    .with_coded_context(|| coded!(InvalidWorkspace, "config path is not UTF-8"))?
                     .into(),
             ),
         );

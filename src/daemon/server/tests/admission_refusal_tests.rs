@@ -1,6 +1,5 @@
 use super::super::admission_refusal::{AdmissionRefusal, RefusalCause};
 use super::super::{DaemonReply, protocol, refuse_busy_nonblocking};
-use crate::board::board_protocol::{BoardErrorCode, leading_error_code};
 use crate::diagnostics::RequestContext;
 use std::io::{Error, ErrorKind};
 use std::os::unix::net::UnixStream;
@@ -27,8 +26,8 @@ fn refused_socket_reply_keeps_busy_code_and_bounded_queue_diagnostics() {
     };
     assert_eq!(message, refusal_message);
     assert_eq!(
-        leading_error_code(&message).map(|(code, _)| code),
-        Some(BoardErrorCode::DaemonBusy.as_str())
+        crate::coded_error::ErrorCode::leading(&message).map(|(code, _)| code),
+        Some(crate::coded_error::ErrorCode::DaemonBusy)
     );
     assert!(message.contains("pool=daemon-ingress queue_depth=8 queue_capacity=8"));
     assert!(message.contains("cause=queue_full retry_after_ms=250"));

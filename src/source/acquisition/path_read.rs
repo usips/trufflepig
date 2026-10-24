@@ -2,14 +2,15 @@
 
 use super::super::current_span;
 use super::{AcquiredSource, MAX_READ_BYTES, read_contained};
-use crate::daemon::deadline::is_timed_out;
+use crate::coded_error::CodedContext;
 use crate::{
+    coded_error::{ErrorCode, coded_error},
     identity::{ByteSpan, ContentRevision},
     results::{self, Hit, ResultEntry},
     search::InvocationDirectory,
     store::Store,
 };
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use std::{
     os::unix::ffi::OsStrExt,
     path::{Component, Path},
@@ -64,16 +65,17 @@ fn acquire_path_with_storage(
     let encoded_path = crate::store::encode_path(&relative);
     let bytes = match read_contained(&store.root, &relative, MAX_READ_BYTES) {
         Ok(bytes) => bytes,
-        Err(error) if error.to_string().starts_with("source_unavailable:") => {
+        Err(error) if ErrorCode::SourceUnavailable.is_code_of(&error) => {
             let invocation_relative = origin.member_relative_path()?.join(&relative);
             if invocation_relative != relative
                 && read_contained(&store.root, &invocation_relative, MAX_READ_BYTES).is_ok()
+                && let Some(unavailable) = coded_error(&error)
             {
                 let suggested = crate::store::encode_path(&invocation_relative);
                 let range = range.map_or_else(String::new, |range| format!(":{range}"));
-                anyhow::bail!(
-                    "{error}; path values are relative to the selected member root; use `path:{suggested}{range}`"
-                );
+                anyhow::bail!(unavailable.appended(&format!(
+                    "; path values are relative to the selected member root; use `path:{suggested}{range}`"
+                )));
             }
             return Err(error);
         }
@@ -117,7 +119,7 @@ fn acquire_path_with_storage(
             ) {
                 Ok(set) => format!("{set}:1"),
                 Err(error)
-                    if !is_timed_out(&error)
+                    if !crate::coded_error::ErrorCode::TimedOut.is_code_of(&error)
                         && crate::store::is_index_cache_unavailable(&error) =>
                 {
                     stateless_handle(&store.root, &relative, start, end, &revision_text)
@@ -145,68 +147,94 @@ pub(super) fn acquire_path_continuation(
     identity: &str,
     offset: usize,
 ) -> Result<AcquiredSource> {
-    let encoded_identity = identity
-        .strip_prefix("path:")
-        .context("invalid_cursor: expected path:ROOT_DIGEST:ENCODED_PATH:START-END@BLAKE3")?;
-    let (expected_root, encoded_identity) = encoded_identity
-        .split_once(':')
-        .context("invalid_cursor: expected path:ROOT_DIGEST:ENCODED_PATH:START-END@BLAKE3")?;
+    let encoded_identity = identity.strip_prefix("path:").with_coded_context(|| {
+        coded!(
+            InvalidCursor,
+            "expected path:ROOT_DIGEST:ENCODED_PATH:START-END@BLAKE3"
+        )
+    })?;
+    let (expected_root, encoded_identity) =
+        encoded_identity.split_once(':').with_coded_context(|| {
+            coded!(
+                InvalidCursor,
+                "expected path:ROOT_DIGEST:ENCODED_PATH:START-END@BLAKE3"
+            )
+        })?;
     let expected_root = PathCursorRootIdentity::parse(expected_root)?;
     ensure!(
         expected_root == PathCursorRootIdentity::for_root(&store.root),
-        "invalid_cursor: cursor belongs to a different repository root"
+        coded!(
+            InvalidCursor,
+            "cursor belongs to a different repository root"
+        )
     );
-    let (path_and_span, expected_revision) = encoded_identity
-        .rsplit_once('@')
-        .context("invalid_cursor: expected path:ROOT_DIGEST:ENCODED_PATH:START-END@BLAKE3")?;
-    let (encoded_path, requested_span) = path_and_span
-        .rsplit_once(':')
-        .context("invalid_cursor: expected path:ROOT_DIGEST:ENCODED_PATH:START-END@BLAKE3")?;
+    let (path_and_span, expected_revision) =
+        encoded_identity.rsplit_once('@').with_coded_context(|| {
+            coded!(
+                InvalidCursor,
+                "expected path:ROOT_DIGEST:ENCODED_PATH:START-END@BLAKE3"
+            )
+        })?;
+    let (encoded_path, requested_span) =
+        path_and_span.rsplit_once(':').with_coded_context(|| {
+            coded!(
+                InvalidCursor,
+                "expected path:ROOT_DIGEST:ENCODED_PATH:START-END@BLAKE3"
+            )
+        })?;
     let (start, end) = requested_span
         .split_once('-')
-        .context("invalid_cursor: expected original byte bounds")?;
+        .with_coded_context(|| coded!(InvalidCursor, "expected original byte bounds"))?;
     let start = start
         .parse::<usize>()
-        .context("invalid_cursor: invalid original start byte")?;
+        .with_coded_context(|| coded!(InvalidCursor, "invalid original start byte"))?;
     let end = end
         .parse::<usize>()
-        .context("invalid_cursor: invalid original end byte")?;
+        .with_coded_context(|| coded!(InvalidCursor, "invalid original end byte"))?;
     let revision = ContentRevision::parse(expected_revision)
-        .context("invalid_cursor: invalid source revision")?;
-    let relative =
-        crate::store::decode_path(encoded_path).context("invalid_cursor: invalid encoded path")?;
+        .with_coded_context(|| coded!(InvalidCursor, "invalid source revision"))?;
+    let relative = crate::store::decode_path(encoded_path)
+        .with_coded_context(|| coded!(InvalidCursor, "invalid encoded path"))?;
     ensure!(
         crate::store::encode_path(&relative) == encoded_path,
-        "invalid_cursor: path is not canonically encoded"
+        coded!(InvalidCursor, "path is not canonically encoded")
     );
     ensure!(
         !relative.as_os_str().is_empty()
             && relative
                 .components()
                 .all(|part| matches!(part, Component::Normal(_))),
-        "invalid_cursor: path is outside the configured root"
+        coded!(InvalidCursor, "path is outside the configured root")
     );
     let bytes = read_contained(&store.root, &relative, MAX_READ_BYTES)?;
     ensure!(
         ContentRevision::of(&bytes) == revision,
-        "stale_source: current path changed; start a new explicit path read"
+        coded!(
+            StaleSource,
+            "current path changed; start a new explicit path read"
+        )
     );
     let original_span = ByteSpan::new(start, end)
-        .context("invalid_cursor: invalid original byte bounds")?
+        .with_coded_context(|| coded!(InvalidCursor, "invalid original byte bounds"))?
         .validate(bytes.len())
-        .context("invalid_cursor: original byte bounds outside current source")?;
+        .with_coded_context(|| {
+            coded!(InvalidCursor, "original byte bounds outside current source")
+        })?;
     ensure!(
         is_line_boundary(&bytes, original_span.start)
             && is_line_boundary(&bytes, original_span.end),
-        "invalid_cursor: original byte bounds must be whole-line boundaries"
+        coded!(
+            InvalidCursor,
+            "original byte bounds must be whole-line boundaries"
+        )
     );
     ensure!(
         offset >= original_span.start && offset <= original_span.end,
-        "invalid_cursor: offset outside original source range"
+        coded!(InvalidCursor, "offset outside original source range")
     );
     ensure!(
         is_line_boundary(&bytes, offset),
-        "invalid_cursor: offset must be a whole-line boundary"
+        coded!(InvalidCursor, "offset must be a whole-line boundary")
     );
     Ok(AcquiredSource {
         bytes,
@@ -247,10 +275,10 @@ impl PathCursorRootIdentity {
 
     fn parse(value: &str) -> Result<Self> {
         let identity = blake3::Hash::from_hex(value)
-            .context("invalid_cursor: invalid canonical root digest")?;
+            .with_coded_context(|| coded!(InvalidCursor, "invalid canonical root digest"))?;
         ensure!(
             identity.to_hex().as_str() == value,
-            "invalid_cursor: root digest is not canonically encoded"
+            coded!(InvalidCursor, "root digest is not canonically encoded")
         );
         Ok(Self(identity))
     }

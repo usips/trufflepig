@@ -1,8 +1,9 @@
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, anyhow, ensure};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 
 use super::DaemonReplyTimeout;
+use crate::coded_error::{CodedError, ErrorCode};
 
 pub(super) const REQUEST_LIMIT: usize = 256 * 1024;
 const RESPONSE_LIMIT: usize = 4 * 1024 * 1024;
@@ -47,7 +48,7 @@ impl DaemonReply {
         match result {
             Ok(output) => Self::Success { output },
             Err(error) => Self::Failure {
-                message: if super::deadline::is_timed_out(&error) {
+                message: if ErrorCode::TimedOut.is_code_of(&error) {
                     format!("{error:#}")
                 } else {
                     DaemonReplyTimeout::from_error(&error)
@@ -58,19 +59,23 @@ impl DaemonReply {
         }
     }
 
+    /// The client boundary: a failure's code is parsed here, once, so callers
+    /// match [`ErrorCode`] instead of relayed text. A direct `timed_out` answer
+    /// stays unwrapped; every other failure gains one `daemon: ` wrapper.
     pub(super) fn into_result(self) -> Result<String> {
         match self {
             Self::Success { output } => Ok(output),
             Self::Failure { message } => match DaemonReplyTimeout::from_message(&message) {
                 Some(failure) => Err(failure.into()),
-                None => {
-                    let error = anyhow::Error::msg(message);
-                    if super::deadline::is_timed_out(&error) {
-                        Err(error)
-                    } else {
-                        bail!("daemon: {error}")
+                None => Err(match CodedError::from_relayed(message) {
+                    Ok(coded)
+                        if coded.code() == ErrorCode::TimedOut && !coded.is_relay_wrapped() =>
+                    {
+                        coded.into()
                     }
-                }
+                    Ok(coded) => coded.relayed_by_daemon().into(),
+                    Err(message) => anyhow!("daemon: {message}"),
+                }),
             },
         }
     }

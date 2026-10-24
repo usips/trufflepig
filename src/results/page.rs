@@ -9,7 +9,6 @@ mod tests;
 
 use super::{HitDetail, StoredResultSet, compact_entry_for_page, lines, load_entries};
 use crate::{
-    daemon::deadline::TIMED_OUT,
     identity::ResultCursor,
     output::{OutputBudget, OutputFormat},
     store::Store,
@@ -73,7 +72,7 @@ pub fn page(
     let mut set = load_entries(store, id)?;
     refresh_index_progress(store, &mut set)?;
     if offset > set.hits.len() {
-        bail!("invalid_cursor: offset outside result set");
+        bail!(coded!(InvalidCursor, "offset outside result set"));
     }
     let available = set.hits.len() - offset;
     let max_count = available.min(limit).min(budget.limit);
@@ -178,7 +177,10 @@ pub fn page(
             return Ok(text);
         }
     }
-    bail!("budget_too_small: no hit and pagination envelope fit; increase --budget")
+    bail!(coded!(
+        BudgetTooSmall,
+        "no hit and pagination envelope fit; increase --budget"
+    ))
 }
 
 fn refresh_index_progress(store: &Store, set: &mut StoredResultSet) -> Result<()> {
@@ -186,7 +188,7 @@ fn refresh_index_progress(store: &Store, set: &mut StoredResultSet) -> Result<()
         .query_deadline()
         .is_some_and(|deadline| deadline.expired())
     {
-        bail!("{TIMED_OUT}: query deadline expired");
+        bail!(coded!(TimedOut, "query deadline expired"));
     }
     if let Some(coverage) = set.coverage.as_object_mut() {
         coverage.remove("index_progress");
@@ -196,7 +198,7 @@ fn refresh_index_progress(store: &Store, set: &mut StoredResultSet) -> Result<()
         .query_deadline()
         .is_some_and(|deadline| deadline.expired())
     {
-        bail!("{TIMED_OUT}: query deadline expired");
+        bail!(coded!(TimedOut, "query deadline expired"));
     }
     if let (Some(progress), Some(coverage)) = (progress, set.coverage.as_object_mut()) {
         coverage.insert("index_progress".into(), serde_json::to_value(progress)?);

@@ -1,5 +1,5 @@
 use super::*;
-use crate::daemon::deadline::{QueryDeadline, is_timed_out};
+use crate::daemon::deadline::QueryDeadline;
 use std::{os::unix::net::UnixStream, sync::Arc, thread, time::Instant};
 use tempfile::tempdir;
 
@@ -24,7 +24,10 @@ fn expired_open_does_not_create_cache() {
         Err(error) => error,
     };
 
-    assert!(is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
     assert!(started.elapsed() < Duration::from_secs(1));
     assert!(!cache.exists());
 }
@@ -59,7 +62,10 @@ fn save_lock_wait_uses_remaining_original_budget_and_rolls_back() {
     let elapsed = started.elapsed();
     lock.execute_batch("ROLLBACK").unwrap();
 
-    assert!(is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
     assert!(elapsed < Duration::from_millis(500), "elapsed: {elapsed:?}");
     let count: i64 = lock
         .query_row("SELECT count(*) FROM result_sets", [], |row| row.get(0))
@@ -78,7 +84,10 @@ fn load_refuses_after_its_original_deadline_expires() {
 
     let error = store.load(&id).unwrap_err();
 
-    assert!(is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
 }
 
 #[test]
@@ -100,7 +109,10 @@ fn peer_drop_cancels_a_locked_save_without_persisting_rows() {
     closer.join().unwrap();
     lock.execute_batch("ROLLBACK").unwrap();
 
-    assert!(is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
     assert!(elapsed < Duration::from_secs(1), "elapsed: {elapsed:?}");
     let count: i64 = lock
         .query_row("SELECT count(*) FROM result_sets", [], |row| row.get(0))
@@ -131,7 +143,10 @@ fn peer_drop_interrupts_a_long_sqlite_vm_query() {
     let elapsed = started.elapsed();
     closer.join().unwrap();
 
-    assert!(is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
     assert!(elapsed < Duration::from_secs(1), "elapsed: {elapsed:?}");
 }
 

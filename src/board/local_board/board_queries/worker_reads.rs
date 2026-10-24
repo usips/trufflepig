@@ -1,5 +1,6 @@
 //! Bounded worker registry reads for task and claim projections.
 
+use crate::board::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use super::super::{
@@ -71,7 +72,12 @@ pub(in crate::board::local_board) fn workers_for_claim(
         )
         .map_err(sql_error)?
         .try_into()
-        .map_err(|_| invalid("board_unavailable", "worker count exceeds address space"))?;
+        .map_err(|_| {
+            invalid(
+                BoardErrorCode::BoardUnavailable,
+                "worker count exceeds address space",
+            )
+        })?;
     let sql = format!(
         "{WORKER_SELECT} WHERE w.claim_id=?1 ORDER BY (w.ended_at IS NOT NULL),w.last_active DESC,w.id DESC LIMIT ?2"
     );
@@ -168,7 +174,7 @@ fn worker_from_row(
     let stored = stored_worker_from_row(row, conn)?;
     if stored.record.address.task != task || stored.claim_entry != claim_entry {
         return Err(invalid(
-            "board_unavailable",
+            BoardErrorCode::BoardUnavailable,
             "worker row does not match its task claim",
         ));
     }
@@ -199,7 +205,7 @@ fn stored_worker_from_row(row: &Row<'_>, conn: &Connection) -> Result<StoredWork
     let files_json: String = row.get(16).map_err(sql_error)?;
     let files = serde_json::from_str(&files_json).map_err(|error| {
         invalid(
-            "board_unavailable",
+            BoardErrorCode::BoardUnavailable,
             format!("invalid worker files: {error}"),
         )
     })?;

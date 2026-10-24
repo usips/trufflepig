@@ -312,10 +312,11 @@ pub(super) fn validate(options: &Arguments) -> Result<()> {
     if let Some(command) = options.words.first().map(String::as_str)
         && !KNOWN_COMMANDS.contains(&command)
     {
-        bail!(
-            "unknown_command: {command}; {}",
+        bail!(coded!(
+            UnknownCommand,
+            "{command}; {}",
             unknown_command_hint(command)
-        );
+        ));
     }
     let verb = options
         .words
@@ -330,32 +331,41 @@ pub(super) fn validate(options: &Arguments) -> Result<()> {
                 .get(1)
                 .is_some_and(|target| crate::source::acquisition::is_current_path_target(target)))
     {
-        bail!("invalid_options: --no-cache supports search, map FILE, and current-path show");
+        bail!(coded!(
+            InvalidOptions,
+            "--no-cache supports search, map FILE, and current-path show"
+        ));
     }
     if options.no_daemon && (verb == "serve" || verb.ends_with("-serve")) {
-        bail!("invalid_options: --no-daemon cannot start a server");
+        bail!(coded!(InvalidOptions, "--no-daemon cannot start a server"));
     }
     if options.listen.is_some() && verb != "board-serve" {
-        bail!("invalid_options: --listen requires board-serve");
+        bail!(coded!(InvalidOptions, "--listen requires board-serve"));
     }
     if verb == "board-serve" {
         crate::board::board_grammar::validate_board_surface(options)?;
         if options.words.len() != 1 {
-            bail!("usage: board-serve [--listen 127.0.0.1:7341]");
+            bail!(coded!(Usage, "board-serve [--listen 127.0.0.1:7341]"));
         }
         let address = options.board_listen_address();
         if crate::board::board_web::web_guard::require_supported_bind_address(address).is_err() {
-            bail!("invalid_options: unsupported board-serve bind address");
+            bail!(coded!(
+                InvalidOptions,
+                "unsupported board-serve bind address"
+            ));
         }
     }
     if options.json && options.format != "json" {
-        bail!("invalid_options: --json conflicts with --format lines");
+        bail!(coded!(
+            InvalidOptions,
+            "--json conflicts with --format lines"
+        ));
     }
     if options.limit == 0 || options.limit > results::MAX_HITS {
-        bail!("invalid_limit: expected 1..10000");
+        bail!(coded!(InvalidLimit, "expected 1..10000"));
     }
     if options.budget > MAX_BUDGET {
-        bail!("invalid_budget: maximum is {MAX_BUDGET} tokens");
+        bail!(coded!(InvalidBudget, "maximum is {MAX_BUDGET} tokens"));
     }
     Ok(())
 }

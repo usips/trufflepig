@@ -86,7 +86,7 @@ impl Query {
             query.text = text.to_owned();
         }
         if query.text.is_empty() && (query.exact || query.regex) {
-            bail!("invalid_query: empty prefixed query");
+            bail!(coded!(InvalidQuery, "empty prefixed query"));
         }
         Ok(query)
     }
@@ -162,8 +162,8 @@ pub fn search_with_session(
     let (prepared, semantic_status) = match session.prepare(semantic_enabled, cache, &query.text) {
         Ok(prepared) => (prepared, None),
         Err(error) => {
-            let status = format!("{error:#}");
-            (None, Some(status))
+            let locked = crate::coded_error::ErrorCode::SemanticCacheLocked.is_code_of(&error);
+            (None, Some((format!("{error:#}"), locked)))
         }
     };
     if semantic_enabled {
@@ -172,13 +172,8 @@ pub fn search_with_session(
     let preparation_us = trace.query_preparation_us;
     let reranker = (rerank && query.semantic_eligible()).then_some(&*session as &dyn RerankScorer);
     let mut output = search_prepared(store, query, cache, prepared, reranker, trace, deadline);
-    if let (Some(status), Ok(result)) = (&semantic_status, &mut output) {
-        result.coverage["semantic_status"] = if status.starts_with("semantic_cache_locked:") {
-            "partial"
-        } else {
-            "unavailable"
-        }
-        .into();
+    if let (Some((status, locked)), Ok(result)) = (&semantic_status, &mut output) {
+        result.coverage["semantic_status"] = if *locked { "partial" } else { "unavailable" }.into();
         result.coverage["semantic_reason"] = status.clone().into();
         trace.record(
             Lane::Semantic,

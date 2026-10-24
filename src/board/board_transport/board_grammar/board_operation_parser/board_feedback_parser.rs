@@ -3,6 +3,7 @@ use super::{
     BoardCommand, BoardTextPayload, board_read_parser,
     board_syntax_validation::{check_flags, fixed_words, optional_text, word},
 };
+use crate::coded_error::CodedContext;
 use crate::{
     board::{
         board_ids::{EntryId, PlanId},
@@ -11,7 +12,7 @@ use crate::{
     },
     cli::Arguments,
 };
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 pub(super) fn parse_feedback(
     options: &Arguments,
@@ -81,8 +82,9 @@ fn feedback_metadata(options: &Arguments, steer_mode: Option<String>) -> Result<
         .recent_calls
         .as_deref()
         .map(|value| {
-            serde_json::from_str::<Vec<RecentCall>>(value)
-                .context("invalid_options: --recent-calls must be a JSON call list")
+            serde_json::from_str::<Vec<RecentCall>>(value).with_coded_context(|| {
+                coded!(InvalidOptions, "--recent-calls must be a JSON call list")
+            })
         })
         .transpose()?
         .unwrap_or_default();

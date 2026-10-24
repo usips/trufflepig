@@ -33,7 +33,7 @@ pub(in crate::board::local_board) fn new_plan(
             .map_err(sql_error)?;
         if !registered {
             return Err(invalid(
-                "invalid_reference",
+                BoardErrorCode::InvalidReference,
                 format!("unknown repository {}", repo_key.as_str()),
             ));
         }
@@ -223,23 +223,27 @@ fn require_superseded_proposal(
         )
         .optional()
         .map_err(sql_error)?;
-    let (prior_plan, state, author_user, author_harness) = prior
-        .ok_or_else(|| invalid("invalid_reference", format!("unknown proposal {previous}")))?;
+    let (prior_plan, state, author_user, author_harness) = prior.ok_or_else(|| {
+        invalid(
+            BoardErrorCode::InvalidReference,
+            format!("unknown proposal {previous}"),
+        )
+    })?;
     if prior_plan != plan.get() {
         return Err(invalid(
-            "invalid_reference",
+            BoardErrorCode::InvalidReference,
             "superseded proposal belongs to a different plan",
         ));
     }
     if author_user != ctx.actor.user || author_harness != ctx.actor.harness.as_str() {
         return Err(invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             "supersede requires the same user and harness as the proposal author",
         ));
     }
     if state != "open" {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("proposal {previous} is {state}"),
         ));
     }

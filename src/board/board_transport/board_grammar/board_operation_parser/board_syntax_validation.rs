@@ -1,9 +1,10 @@
 //! Shared flag, word-count, recipient, and optional-text validation.
+use crate::coded_error::CodedContext;
 use crate::{
     board::{board_actor::BoardRecipient, board_vocabulary::EntryText},
     cli::Arguments,
 };
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 
 pub(super) fn check_flags(options: &Arguments, allowed: &[&str]) -> Result<()> {
     let board = &options.board;
@@ -42,7 +43,10 @@ pub(super) fn check_flags(options: &Arguments, allowed: &[&str]) -> Result<()> {
     ] {
         if present && !allowed.contains(&name) {
             let flag = if name == "text" { "board-text" } else { name };
-            bail!("invalid_options: --{flag} is not valid for this board command");
+            bail!(coded!(
+                InvalidOptions,
+                "--{flag} is not valid for this board command"
+            ));
         }
     }
     Ok(())
@@ -70,7 +74,7 @@ pub(super) fn word<'a>(options: &'a Arguments, index: usize, usage: &str) -> Res
         .words
         .get(index)
         .map(String::as_str)
-        .with_context(|| format!("usage: {usage}"))
+        .with_coded_context(|| coded!(Usage, "{usage}"))
 }
 
 pub(super) fn fixed_words(
@@ -80,7 +84,7 @@ pub(super) fn fixed_words(
     usage: &str,
 ) -> Result<()> {
     if !(minimum..=maximum).contains(&options.words.len()) {
-        bail!("usage: {usage}");
+        bail!(coded!(Usage, "{usage}"));
     }
     Ok(())
 }

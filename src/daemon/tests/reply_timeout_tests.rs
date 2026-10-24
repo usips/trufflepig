@@ -1,5 +1,6 @@
 use super::*;
 use crate::board::board_protocol::BoardErrorCode;
+use crate::coded_error::CodedContext;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
@@ -282,7 +283,8 @@ fn daemon_reply_timeout_round_trips_through_socket_and_spool() {
 fn terminal_timed_out_context_round_trips_without_timeout_replay() {
     let expected = DaemonReplyTimeout::new(Duration::from_millis(37), CLIENT_REPLY_WAIT);
     let outer_context = "timed_out: daemon query budget expired";
-    let error = anyhow::Error::new(expected.clone()).context(outer_context);
+    let error = anyhow::Error::new(expected.clone())
+        .with_coded_context(|| coded!(TimedOut, "daemon query budget expired"));
     let expected_message = format!("{outer_context}: {expected}");
     let reply = DaemonReply::from_result(Err(error));
     let DaemonReply::Failure { message } = &reply else {

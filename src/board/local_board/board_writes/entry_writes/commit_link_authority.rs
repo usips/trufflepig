@@ -30,8 +30,7 @@ pub(in crate::board::local_board) fn require_link_authority(
         now,
     )?
     .ok_or_else(|| {
-        invalid(
-            "invalid_actor",
+        invalid(BoardErrorCode::InvalidActor,
             format!(
                 "changing commit links for {plan} requires link authority; ask its owner to grant link"
             ),
@@ -109,7 +108,7 @@ pub(in crate::board::local_board) fn task_link_receipt(
         ("manual", None) => Ok(TaskLinkReceipt::ManualWithoutEvent),
         ("scan", _) => Ok(TaskLinkReceipt::Scan),
         _ => Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("commit link for {task} has unknown source {source:?}"),
         )),
     })

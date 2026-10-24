@@ -1,9 +1,10 @@
+use crate::coded_error::CodedContext;
 use crate::{
     identity::{ByteSpan, ResultHandle},
     results::{self, Hit, ResultEntry},
     store::Store,
 };
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 pub(super) struct Target {
     pub path: String,
@@ -30,10 +31,9 @@ pub(super) fn resolve(store: &Store, value: &str) -> Result<Selection> {
                 span: Some(ByteSpan::new(hit.start, hit.end)?),
             },
             ResultEntry::Change(change) => {
-                let side = change
-                    .after
-                    .or(change.before)
-                    .context("history_unavailable: change has no readable side")?;
+                let side = change.after.or(change.before).with_coded_context(|| {
+                    coded!(HistoryUnavailable, "change has no readable side")
+                })?;
                 let symbol = (change.name != side.path).then_some(change.name);
                 Target {
                     path: side.path,
@@ -44,7 +44,10 @@ pub(super) fn resolve(store: &Store, value: &str) -> Result<Selection> {
                 }
             }
             ResultEntry::Commit(_) => {
-                anyhow::bail!("invalid_target: commit handle is not a source selector")
+                anyhow::bail!(coded!(
+                    InvalidTarget,
+                    "commit handle is not a source selector"
+                ))
             }
         }));
     }
@@ -77,7 +80,7 @@ pub(super) fn resolve(store: &Store, value: &str) -> Result<Selection> {
             let hit = row?;
             anyhow::ensure!(
                 hits.len() < crate::results::MAX_HITS,
-                "history_resource_limited: symbol candidate staging limit"
+                coded!(HistoryResourceLimited, "symbol candidate staging limit")
             );
             retained.reserve(super::staging::entry_charge(&ResultEntry::LiveSource(
                 hit.clone(),
@@ -103,7 +106,7 @@ pub(super) fn resolve(store: &Store, value: &str) -> Result<Selection> {
             .components()
             .all(|c| matches!(c, std::path::Component::Normal(_)))
             && !decoded.as_os_str().is_empty(),
-        "invalid_path: expected confined root-relative path"
+        coded!(InvalidPath, "expected confined root-relative path")
     );
     Ok(Selection::Target(Target {
         path,

@@ -140,13 +140,20 @@ fn feedback_for_plan(conn: &Connection, plan: PlanId) -> Result<Vec<FeedbackReco
             let mut rows = statement
                 .query([sql_number(entry.id.get())])
                 .map_err(sql_error)?;
-            let row = rows
-                .next()
-                .map_err(sql_error)?
-                .ok_or_else(|| invalid("board_unavailable", "feedback metadata is missing"))?;
+            let row = rows.next().map_err(sql_error)?.ok_or_else(|| {
+                invalid(
+                    BoardErrorCode::BoardUnavailable,
+                    "feedback metadata is missing",
+                )
+            })?;
             let state = match entry.state {
                 Some(EntryState::Feedback(state)) => state,
-                _ => return Err(invalid("board_unavailable", "feedback state is missing")),
+                _ => {
+                    return Err(invalid(
+                        BoardErrorCode::BoardUnavailable,
+                        "feedback state is missing",
+                    ));
+                }
             };
             Ok(FeedbackRecord {
                 kind: row

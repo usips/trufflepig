@@ -20,7 +20,7 @@ impl PlanRevision {
     pub fn parse(value: &str) -> Result<Self> {
         let (plan, revision) = value
             .split_once('@')
-            .ok_or_else(|| anyhow::anyhow!("invalid_reference: expected P#@#"))?;
+            .ok_or_else(|| anyhow::anyhow!(coded!(InvalidReference, "expected P#@#")))?;
         Self::new(PlanId::parse(plan)?, positive_number(revision)?)
     }
 }
@@ -54,7 +54,7 @@ impl RevisionSpan {
         if let Some(end) = self.end {
             check_positive(end)?;
             if end < self.start {
-                bail!("invalid_reference: revision span is reversed");
+                bail!(coded!(InvalidReference, "revision span is reversed"));
             }
         }
         Ok(())
@@ -62,7 +62,7 @@ impl RevisionSpan {
     pub fn parse(value: &str) -> Result<Self> {
         let (base, end) = value
             .split_once("..")
-            .ok_or_else(|| anyhow::anyhow!("invalid_reference: expected P#@#..[#]"))?;
+            .ok_or_else(|| anyhow::anyhow!(coded!(InvalidReference, "expected P#@#..[#]")))?;
         let base = PlanRevision::parse(base)?;
         Self::new(
             base.plan,
@@ -108,7 +108,7 @@ impl TaskId {
     pub fn parse(value: &str) -> Result<Self> {
         let (plan, ordinal) = value
             .split_once('.')
-            .ok_or_else(|| anyhow::anyhow!("invalid_reference: expected P#.#"))?;
+            .ok_or_else(|| anyhow::anyhow!(coded!(InvalidReference, "expected P#.#")))?;
         Self::new(PlanId::parse(plan)?, positive_number(ordinal)?)
     }
 }

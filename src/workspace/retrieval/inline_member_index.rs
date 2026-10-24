@@ -1,7 +1,8 @@
 //! `--no-daemon` member indexing within the query's maintenance slice; an
 //! existing own or parent view answers when the slice ends first.
 use crate::{
-    daemon::deadline::{QueryDeadline, TIMED_OUT, is_timed_out},
+    coded_error::ErrorCode,
+    daemon::deadline::QueryDeadline,
     store::{Store, is_index_cache_unavailable, is_index_warming},
     workspace::{
         home_index::{HomeIndexPolicy, HomeIndexSource, ParentIndexView, resolve_home_index},
@@ -29,11 +30,11 @@ pub(super) fn inline_member_index(
         HomeIndexSource::Own(store) => own_view = Some(store),
         HomeIndexSource::Parent(view) => parent_view = Some(view),
         HomeIndexSource::Warming { .. } => {}
-        HomeIndexSource::Unavailable { reason } => bail!(reason),
+        HomeIndexSource::Unavailable { error } => return Err(error),
     }
 
     if deadline.expired() {
-        bail!("{TIMED_OUT}: query deadline expired");
+        bail!(coded!(TimedOut, "query deadline expired"));
     }
     if own_view.is_none()
         && let Some(parent) = parent_view.as_ref()
@@ -46,7 +47,7 @@ pub(super) fn inline_member_index(
             deadline,
         );
         if deadline.expired() {
-            bail!("{TIMED_OUT}: query deadline expired");
+            bail!(coded!(TimedOut, "query deadline expired"));
         }
     }
     if maintenance.expired() {
@@ -129,5 +130,5 @@ fn maintenance_slice_ended(
     original: &QueryDeadline,
     error: &anyhow::Error,
 ) -> bool {
-    is_timed_out(error) && !original.expired() && maintenance.expired()
+    ErrorCode::TimedOut.is_code_of(error) && !original.expired() && maintenance.expired()
 }

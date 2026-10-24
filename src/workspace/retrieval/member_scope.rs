@@ -1,6 +1,7 @@
 //! Which members a query searches, from its selectors and the home member.
+use crate::coded_error::CodedContext;
 use crate::{cli::Arguments, workspace::member_root::MemberRoot};
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 
 /// Members to search. Without a selector, only the home member is searched when
 /// one exists (`implicit_home`); `search` widens to all members when home has no
@@ -21,7 +22,7 @@ pub(in crate::workspace) fn scope(roots: &[MemberRoot], options: &Arguments) -> 
             if word.starts_with("in:") || matches!(word, "ws:home" | "ws:all") {
                 ensure!(
                     selection.as_ref().is_none_or(|old| old == word),
-                    "invalid_scope: conflicting workspace selectors"
+                    coded!(InvalidScope, "conflicting workspace selectors")
                 );
                 selection = Some(word.to_owned());
             } else {
@@ -38,7 +39,9 @@ pub(in crate::workspace) fn scope(roots: &[MemberRoot], options: &Arguments) -> 
         .map(|root| root.name());
     let implicit_home = selection.is_none() && home.is_some();
     let selected = match selection.as_deref() {
-        Some("ws:home") => Some(home.context("member_required: ws:home has no home member")?),
+        Some("ws:home") => {
+            Some(home.with_coded_context(|| coded!(MemberRequired, "ws:home has no home member"))?)
+        }
         Some("ws:all") => None,
         None => home,
         Some(s) => Some(s.strip_prefix("in:").expect("validated selector")),
@@ -46,7 +49,7 @@ pub(in crate::workspace) fn scope(roots: &[MemberRoot], options: &Arguments) -> 
     if let Some(name) = selected {
         ensure!(
             roots.iter().any(|m| m.name() == name),
-            "invalid_member: member is not configured"
+            coded!(InvalidMember, "member is not configured")
         );
     }
     let mut members: Vec<_> = roots

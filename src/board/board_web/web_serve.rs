@@ -12,8 +12,9 @@ use super::{
     web_guard::{WebGuard, allowed_peer_ip, normalize_peer_ip},
     web_ops, web_routes,
 };
+use crate::coded_error::CodedContext;
 use crate::daemon::{PoolSize, RequestPool};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::{
     io::{self, IsTerminal, Write},
     net::{SocketAddr, TcpListener, TcpStream},
@@ -39,8 +40,8 @@ pub(crate) struct BoardWebServer {
 
 impl BoardWebServer {
     pub(crate) fn bind(address: SocketAddr, published: &PublishedEndpoint) -> Result<Self> {
-        let runtime =
-            crate::system::dir().context("board_unavailable: no router runtime directory")?;
+        let runtime = crate::system::dir()
+            .with_coded_context(|| coded!(BoardUnavailable, "no router runtime directory"))?;
         let serve_lock = serve_lock::acquire_at(&runtime)?;
         let listener = web_endpoint::bind_listener(&runtime, address)?;
         let (listener, guard) = WebGuard::with_listener(listener)?;
@@ -225,7 +226,10 @@ pub(super) fn serve_connections(
         // A stopped ring never recovers in-process; fail so systemd
         // restarts instead of answering 503 Retry-After forever.
         if state.streams.ring_stopped() {
-            return Err(anyhow::anyhow!("board_unavailable: event ring stopped"));
+            return Err(anyhow::anyhow!(coded!(
+                BoardUnavailable,
+                "event ring stopped"
+            )));
         }
         let Some(accepted) = incoming.next() else {
             return Ok(());

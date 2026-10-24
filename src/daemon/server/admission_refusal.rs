@@ -80,12 +80,21 @@ impl<'a> AdmissionRefusal<'a> {
         self
     }
 
+    /// The refusal as a typed `daemon_busy` error.
+    pub(crate) fn error(&self) -> crate::coded_error::CodedError {
+        coded!(DaemonBusy, "{}", self.detail())
+    }
+
     /// Returns the wire diagnostic with bounded ASCII-only labels.
     pub(crate) fn message(&self) -> String {
+        self.error().to_string()
+    }
+
+    fn detail(&self) -> String {
         let mut message = String::with_capacity(DIAGNOSTIC_CAPACITY);
         let _ = write!(
             message,
-            "daemon_busy: pool={} queue_depth={} queue_capacity={} cause={} retry_after_ms={} hint=retry_with_bounded_backoff",
+            "pool={} queue_depth={} queue_capacity={} cause={} retry_after_ms={} hint=retry_with_bounded_backoff",
             safe_label(self.pool),
             self.queue_depth,
             self.queue_capacity,

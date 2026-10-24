@@ -1,4 +1,5 @@
 use super::*;
+use crate::coded_error::CodedContext;
 use std::{fs, time::Duration};
 
 fn words(arguments: &[&str]) -> Vec<String> {
@@ -173,13 +174,13 @@ fn exhausted_busy_fallback_keeps_the_original_expired_deadline() {
         )
         .expect("current path show should be eligible")
         .unwrap_err();
-    assert!(error.to_string().starts_with("timed_out:"), "{error:#}");
+    assert!(ErrorCode::TimedOut.is_code_of(&error), "{error:#}");
 }
 
 #[test]
 fn cache_refusal_fallback_requires_an_exact_code_and_current_path_show() {
     let accepted =
-        anyhow::anyhow!("daemon: daemon: index_cache_unavailable: selected cache cannot be opened");
+        relayed("daemon: daemon: index_cache_unavailable: selected cache cannot be opened");
     let eligible = words(&["show", "path:src/lib.rs"]);
     let options = index_cache_fallback_options(&eligible, &accepted)
         .expect("exact relayed cache refusal should admit current-path show");
@@ -191,22 +192,22 @@ fn cache_refusal_fallback_requires_an_exact_code_and_current_path_show() {
         "timed_out: index_cache_unavailable appeared in a timeout detail",
         "daemon_reply_timeout: index_cache_unavailable appeared in a timeout detail",
     ] {
-        let error = anyhow::anyhow!("{message}");
+        let error = relayed(message);
         assert!(
             index_cache_fallback_options(&eligible, &error).is_none(),
             "unexpected fallback for {message}"
         );
     }
 
-    let nested_timeout = anyhow::anyhow!("index_cache_unavailable: cause")
-        .context("timed_out: enclosing request expired");
+    let nested_timeout = anyhow::anyhow!(coded!(IndexCacheUnavailable, "cause"))
+        .with_coded_context(|| coded!(TimedOut, "enclosing request expired"));
     assert!(index_cache_fallback_options(&eligible, &nested_timeout).is_none());
 
     let typed_timeout = anyhow::Error::new(crate::daemon::DaemonReplyTimeout::new(
         Duration::from_millis(5),
         Duration::from_millis(5),
     ))
-    .context("index_cache_unavailable: misleading wrapper");
+    .with_coded_context(|| coded!(IndexCacheUnavailable, "misleading wrapper"));
     assert!(index_cache_fallback_options(&eligible, &typed_timeout).is_none());
 
     let non_path = words(&["show", "sym:ClientCommand"]);
@@ -214,4 +215,10 @@ fn cache_refusal_fallback_requires_an_exact_code_and_current_path_show() {
         index_cache_fallback_options(&non_path, &accepted).is_none(),
         "cache refusal must not route symbol reads through the local current-file path"
     );
+}
+
+/// Types reply text as the daemon client boundary does.
+fn relayed(text: &str) -> anyhow::Error {
+    crate::coded_error::CodedError::from_relayed(text.to_owned())
+        .map_or_else(anyhow::Error::msg, anyhow::Error::from)
 }

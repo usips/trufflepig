@@ -31,7 +31,7 @@ pub fn references(store: &Store, query: &Query) -> Result<ResultSet> {
 /// ownership and priority before the result cap.
 fn references_with_limit(store: &Store, query: &Query, max_sites: usize) -> Result<ResultSet> {
     let name = QualifiedName::parse(&query.text);
-    ensure!(!name.name.is_empty(), "usage: refs NAME");
+    ensure!(!name.name.is_empty(), coded!(Usage, "refs NAME"));
     let snapshot = store.conn.unchecked_transaction()?;
     let generation = store.generation()?;
     let mut coverage = serde_json::to_value(store.coverage()?)?;

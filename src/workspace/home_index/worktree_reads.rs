@@ -4,7 +4,7 @@
 //! the indexed revision ([`WorktreeHashes`]).
 use super::{ParentFallback, WorktreeDivergence, hit_verification::WorktreeHashes};
 use crate::{
-    daemon::deadline::{QueryDeadline, TIMED_OUT},
+    daemon::deadline::QueryDeadline,
     extract::Definition,
     identity::ContentRevision,
     results::{Hit, ResultSet},
@@ -43,8 +43,11 @@ pub(super) struct WorktreeSymbols {
 
 /// Worktree bytes exist but their definitions cannot be known.
 pub(super) fn unextractable(error: &anyhow::Error) -> bool {
-    let message = error.to_string();
-    message.starts_with("source_excluded") || message.starts_with("extraction_unavailable")
+    use crate::coded_error::{ErrorCode, error_code};
+    matches!(
+        error_code(error),
+        Some(ErrorCode::SourceExcluded | ErrorCode::ExtractionUnavailable)
+    )
 }
 
 impl ParentFallback {
@@ -344,7 +347,10 @@ fn current_file_hits(
     let bytes = source::read_contained(&store.root, &decode_path(path)?, source::MAX_READ_BYTES)?;
     ensure!(
         !bytes.contains(&0),
-        "source_excluded: {path} is binary; the index does not extract it"
+        coded!(
+            SourceExcluded,
+            "{path} is binary; the index does not extract it"
+        )
     );
     let extraction = source::usable_extraction(path, crate::extract::extract(path, &bytes))?;
     check_deadline(deadline)?;
@@ -368,7 +374,7 @@ fn current_file_hits(
 
 fn check_deadline(deadline: &QueryDeadline) -> Result<()> {
     if deadline.expired() {
-        anyhow::bail!("{TIMED_OUT}: worktree re-extraction deadline expired");
+        anyhow::bail!(coded!(TimedOut, "worktree re-extraction deadline expired"));
     }
     Ok(())
 }

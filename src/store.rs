@@ -30,6 +30,7 @@ mod seed_tests;
 mod tests;
 mod worktree_seed_source;
 
+use crate::coded_error::CodedContext;
 use crate::daemon::deadline::QueryDeadline;
 use crate::{identity::ContentRevision, results::ResultSetStore};
 use anyhow::{Context, Result};
@@ -263,7 +264,7 @@ impl Store {
         let transaction = self.conn.unchecked_transaction()?;
         let publication = self
             .publication()?
-            .context("working_tree_unavailable: no published capture")?;
+            .with_coded_context(|| coded!(WorkingTreeUnavailable, "no published capture"))?;
         let result = read(&transaction, &publication)?;
         transaction.commit()?;
         Ok(result)
@@ -304,7 +305,7 @@ impl Store {
     pub fn index(&mut self) -> Result<Coverage> {
         anyhow::ensure!(
             self.access == StoreAccess::Writer,
-            "read_only_store: indexing requires Store::open"
+            coded!(ReadOnlyStore, "indexing requires Store::open")
         );
         self.index_with_resolver(resolve_all)
     }
@@ -314,7 +315,7 @@ impl Store {
     pub fn index_unless_leased(&mut self) -> Result<Option<Coverage>> {
         anyhow::ensure!(
             self.access == StoreAccess::Writer,
-            "read_only_store: indexing requires Store::open"
+            coded!(ReadOnlyStore, "indexing requires Store::open")
         );
         let writer_lock = self.writer_lease_file()?;
         match fs2::FileExt::try_lock_exclusive(&writer_lock) {
@@ -344,7 +345,7 @@ impl Store {
     ) -> Result<Option<Coverage>> {
         anyhow::ensure!(
             self.access == StoreAccess::Writer,
-            "read_only_store: indexing requires Store::open_for_reconcile"
+            coded!(ReadOnlyStore, "indexing requires Store::open_for_reconcile")
         );
         index_deadline::check(&deadline)?;
         let writer_lock = self

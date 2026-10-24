@@ -1,21 +1,19 @@
 //! Provenance for a locally expired file-spool transport deadline.
 
-use crate::daemon::deadline::TIMED_OUT;
-use std::{error::Error, fmt};
+use crate::coded_error::{CodeDetail, CodedError, ErrorCode};
 
-#[derive(Debug)]
-pub(super) struct LocalSpoolTimeout;
-
-impl fmt::Display for LocalSpoolTimeout {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{TIMED_OUT}: spooled request deadline expired")
-    }
+/// The `timed_out` answer for a spool wait whose deadline expired locally.
+pub(super) fn local_spool_timeout() -> CodedError {
+    coded!(TimedOut, "spooled request deadline expired").with_detail(CodeDetail::LocalSpoolTimeout)
 }
 
-impl Error for LocalSpoolTimeout {}
-
 pub(crate) fn is_local_spool_timeout(error: &anyhow::Error) -> bool {
-    error.is::<LocalSpoolTimeout>()
+    CodeDetail::LocalSpoolTimeout.is_anywhere_in(error)
+}
+
+/// Whether `error` is a `timed_out` answer or a locally expired spool wait.
+pub(crate) fn is_spool_or_coded_timeout(error: &anyhow::Error) -> bool {
+    ErrorCode::TimedOut.is_code_of(error) || is_local_spool_timeout(error)
 }
 
 #[cfg(test)]

@@ -24,7 +24,10 @@ pub struct ProgressHead {
 impl ProgressStep {
     pub fn validate(self) -> Result<()> {
         if self.total == 0 || self.current > self.total {
-            bail!("invalid_progress: step must satisfy 0 <= current <= total and total > 0");
+            bail!(coded!(
+                InvalidProgress,
+                "step must satisfy 0 <= current <= total and total > 0"
+            ));
         }
         Ok(())
     }
@@ -59,9 +62,10 @@ impl ProgressGateInput {
             || self.name.chars().any(char::is_control)
             || self.name.contains('=')
         {
-            bail!(
-                "invalid_progress: gate name must be nonblank, at most 64 bytes, and contain no control characters or '='"
-            );
+            bail!(coded!(
+                InvalidProgress,
+                "gate name must be nonblank, at most 64 bytes, and contain no control characters or '='"
+            ));
         }
         Ok(())
     }
@@ -90,16 +94,22 @@ impl ProgressInput {
         if let Some(eta_secs) = self.eta_secs
             && (eta_secs == 0 || eta_secs > PROGRESS_ETA_LIMIT_SECS)
         {
-            bail!("invalid_progress: ETA must be 1..=31536000 seconds");
+            bail!(coded!(InvalidProgress, "ETA must be 1..=31536000 seconds"));
         }
         if self.gates.len() > PROGRESS_GATE_LIMIT {
-            bail!("invalid_progress: at most 64 gate updates are allowed");
+            bail!(coded!(
+                InvalidProgress,
+                "at most 64 gate updates are allowed"
+            ));
         }
         let mut names = std::collections::HashSet::with_capacity(self.gates.len());
         for gate in &self.gates {
             gate.validate()?;
             if !names.insert(&gate.name) {
-                bail!("invalid_progress: a gate may be updated only once per entry");
+                bail!(coded!(
+                    InvalidProgress,
+                    "a gate may be updated only once per entry"
+                ));
             }
         }
         Ok(())

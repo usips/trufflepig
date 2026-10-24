@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::daemon::deadline::{QueryDeadline, is_timed_out};
+use crate::daemon::deadline::QueryDeadline;
 use fs2::FileExt;
 use rusqlite::Connection;
 use std::fs::{self, OpenOptions};
@@ -135,7 +135,10 @@ fn bounded_slices_with_a_save_budget_reuse_retained_extractions_until_publish() 
             let error = result
                 .err()
                 .expect("a slice stops once its save budget is spent");
-            assert!(is_timed_out(&error), "{error:#}");
+            assert!(
+                crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+                "{error:#}"
+            );
             assert_eq!(retained_file_count(&cache), slice * SAVES_PER_SLICE);
             let progress = progress.expect("an interrupted slice persists progress");
             assert_eq!(progress.reused_files, (slice - 1) * SAVES_PER_SLICE);
@@ -277,7 +280,10 @@ fn resumed_scan_invalidates_changed_and_deleted_completed_sources() {
     let bounded_pass = store.index_available_until(QueryDeadline::start());
     TEST_SAVE_BUDGET.set(None);
     match bounded_pass {
-        Err(error) => assert!(is_timed_out(&error), "{error:#}"),
+        Err(error) => assert!(
+            crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+            "{error:#}"
+        ),
         Ok(None) => {}
         Ok(Some(_)) => panic!("fixture must stop after its first new saved extraction"),
     }
@@ -358,7 +364,10 @@ fn expired_resolver_records_maintenance_and_explicit_index_finishes_retained_wor
             Some(&deadline),
         );
         let error = result.unwrap_err();
-        assert!(is_timed_out(&error), "{error:#}");
+        assert!(
+            crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+            "{error:#}"
+        );
         assert_eq!(retained_file_count(&cache), FILES);
         let progress = crate::store::read_index_progress(&root, &cache).unwrap();
         assert_eq!(progress.maintenance_required, stalled == 3);
@@ -401,7 +410,10 @@ fn caller_cancellation_keeps_resumable_progress_without_maintenance_poison() {
         Some(&deadline),
     );
     let error = result.unwrap_err();
-    assert!(is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
     let progress = crate::store::read_index_progress(&root, &cache).unwrap();
     assert!(!progress.maintenance_required);
 

@@ -54,7 +54,7 @@ pub(super) fn require_base(
         Ok(())
     } else {
         Err(invalid(
-            "invalid_reference",
+            BoardErrorCode::InvalidReference,
             format!("unknown revision {base}"),
         ))
     }
@@ -80,7 +80,7 @@ pub(super) fn advance_head(
             )
             .map_err(sql_error)?;
         return Err(invalid(
-            "stale_revision",
+            BoardErrorCode::StaleRevision,
             format!("{base} is stale; head is {}@{head}", base.plan),
         ));
     }
@@ -109,7 +109,7 @@ pub(super) fn require_authority(
         )
         .map_err(sql_error)?;
     Err(invalid(
-        "invalid_actor",
+        BoardErrorCode::InvalidActor,
         format!(
             "{} lacks decide authority for {plan}; ask owner {owner} to grant it with board grant",
             ctx.actor
@@ -141,8 +141,12 @@ pub(super) fn proposal_data(
         )
         .optional()
         .map_err(sql_error)?;
-    let (plan, base, body, state, actor) =
-        value.ok_or_else(|| invalid("invalid_reference", format!("unknown proposal {entry}")))?;
+    let (plan, base, body, state, actor) = value.ok_or_else(|| {
+        invalid(
+            BoardErrorCode::InvalidReference,
+            format!("unknown proposal {entry}"),
+        )
+    })?;
     Ok((
         PlanId::new(plan).map_err(BoardError::from)?,
         base,

@@ -15,7 +15,14 @@ fn router_with_newer_storage(database: &Path) -> FakeGateway {
     })
     .to_string();
     FakeGateway {
-        replies: VecDeque::from([Ok(Some(status)), Err(anyhow::anyhow!("daemon: {error}"))]),
+        replies: VecDeque::from([
+            Ok(Some(status)),
+            Err(
+                crate::coded_error::CodedError::from_relayed(format!("daemon: {error}"))
+                    .expect("the router relays a coded refusal")
+                    .into(),
+            ),
+        ]),
         ..Default::default()
     }
 }

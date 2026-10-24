@@ -18,14 +18,20 @@ pub(super) fn render_inbox(
         .windows(2)
         .any(|events| events[0].seq >= events[1].seq)
     {
-        bail!("board_unavailable: inbox events are not strictly ordered");
+        bail!(coded!(
+            BoardUnavailable,
+            "inbox events are not strictly ordered"
+        ));
     }
     if inbox
         .events
         .last()
         .is_some_and(|event| event.seq > inbox.scanned_through)
     {
-        bail!("board_unavailable: inbox scan watermark precedes selected events");
+        bail!(coded!(
+            BoardUnavailable,
+            "inbox scan watermark precedes selected events"
+        ));
     }
     let scope_flag = cli_scope_flag(&inbox.scope, project);
     let render = |count: usize, open_count: usize| {
@@ -91,7 +97,10 @@ pub(super) fn render_inbox(
     };
     let count = fit_items(inbox.events.len(), budget, |count| render(count, 0))?;
     if count == 0 && !inbox.events.is_empty() {
-        bail!("budget_too_small: first inbox event does not fit; raise -b");
+        bail!(coded!(
+            BudgetTooSmall,
+            "first inbox event does not fit; raise -b"
+        ));
     }
     let open_count = fit_items(inbox.open.len(), budget, |open_count| {
         render(count, open_count)

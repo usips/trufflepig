@@ -21,10 +21,12 @@ pub(in crate::board::local_board) fn entry(
         ),
     ).map_err(sql_error)?;
     let mut rows = statement.query([sql_number(id.get())]).map_err(sql_error)?;
-    let row = rows
-        .next()
-        .map_err(sql_error)?
-        .ok_or_else(|| invalid("invalid_reference", format!("unknown entry {id}")))?;
+    let row = rows.next().map_err(sql_error)?.ok_or_else(|| {
+        invalid(
+            BoardErrorCode::InvalidReference,
+            format!("unknown entry {id}"),
+        )
+    })?;
     let kind: String = row.get(1).map_err(sql_error)?;
     let kind: EntryKind = kind.parse().map_err(BoardError::from)?;
     let to: Option<String> = row.get(3).map_err(sql_error)?;
@@ -40,7 +42,7 @@ pub(in crate::board::local_board) fn entry(
         (_, None) => None,
         _ => {
             return Err(invalid(
-                "board_unavailable",
+                BoardErrorCode::BoardUnavailable,
                 format!("invalid stored state for {id}"),
             ));
         }
@@ -55,7 +57,7 @@ pub(in crate::board::local_board) fn entry(
             .as_deref()
             .map(FeedbackVia::parse)
             .transpose()
-            .map_err(|error| invalid("board_unavailable", error.to_string()))?,
+            .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))?,
         plan: row
             .get::<_, Option<i64>>(0)
             .map_err(sql_error)?
@@ -160,7 +162,12 @@ pub(in crate::board::local_board) fn entry_view(
             [&reference],
         )?;
         let omitted = usize::try_from(total)
-            .map_err(|_| invalid("board_unavailable", "invalid backreference count"))?
+            .map_err(|_| {
+                invalid(
+                    BoardErrorCode::BoardUnavailable,
+                    "invalid backreference count",
+                )
+            })?
             .saturating_sub(records.len());
         Ok((records, omitted))
     };

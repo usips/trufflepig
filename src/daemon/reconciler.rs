@@ -194,10 +194,11 @@ fn survive<T>(state: &ServerState, work: impl FnOnce() -> T) -> Option<T> {
     match catch_unwind(AssertUnwindSafe(work)) {
         Ok(value) => Some(value),
         Err(panic) => {
-            state.fail(anyhow::anyhow!(
-                "internal_error: daemon maintenance panicked: {}",
+            state.fail(anyhow::anyhow!(coded!(
+                InternalError,
+                "daemon maintenance panicked: {}",
                 super::server::panic_message(panic.as_ref())
-            ));
+            )));
             None
         }
     }

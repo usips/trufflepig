@@ -193,7 +193,10 @@ fn render_ephemeral(
             return render(count, detail);
         }
     }
-    bail!("budget_too_small: no stateless result page envelope fits; increase --budget")
+    bail!(coded!(
+        BudgetTooSmall,
+        "no stateless result page envelope fits; increase --budget"
+    ))
 }
 
 fn compact_metadata(metadata: &Value) -> Result<String> {

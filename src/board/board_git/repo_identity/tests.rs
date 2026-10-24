@@ -173,3 +173,31 @@ fn nonrepository_and_unborn_repository_have_no_portable_identity() {
     fixture.commit("root");
     assert!(fixture.registration().origin_label.is_none());
 }
+
+#[test]
+fn working_roots_and_detached_heads_come_from_git_exit_codes() {
+    let wait = Duration::from_secs(5);
+    let fixture = GitFixture::new();
+    let first = fixture.commit("root");
+    let nested = fixture.root.join("nested");
+    std::fs::create_dir(&nested).unwrap();
+    let root = fixture.root.canonicalize().unwrap();
+    assert_eq!(repository_root(&nested, wait).unwrap(), Some(root));
+    assert_eq!(
+        repository_root(&fixture.root.join(".git"), wait).unwrap(),
+        None
+    );
+    assert_eq!(repository_root(Path::new("/"), wait).unwrap(), None);
+    let bare = fixture.directory.path().join("bare.git");
+    fixture.git(&["clone", "--quiet", "--bare", ".", bare.to_str().unwrap()]);
+    assert_eq!(repository_root(&bare, wait).unwrap(), None);
+    let missing = fixture.directory.path().join("missing");
+    assert!(repository_root(&missing, wait).is_err());
+
+    let git_dir = fixture.root.join(".git");
+    let deadline = Instant::now() + wait;
+    assert_eq!(detached_head(&git_dir, deadline).unwrap(), None);
+    fixture.git(&["checkout", "--quiet", "--detach", "HEAD"]);
+    assert_eq!(detached_head(&git_dir, deadline).unwrap(), Some(first));
+    assert_eq!(fixture.registration().root_commits, vec![first]);
+}

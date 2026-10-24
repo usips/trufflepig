@@ -263,9 +263,10 @@ fn file_stamp(path: &Path) -> FileStamp {
 
 fn check_deadline(deadline: &QueryDeadline) -> Result<(), BoardError> {
     if deadline.expired() {
-        return Err(BoardError::from(anyhow::anyhow!(
-            "timed_out: project resolution deadline expired"
-        )));
+        return Err(BoardError::from(anyhow::anyhow!(coded!(
+            TimedOut,
+            "project resolution deadline expired"
+        ))));
     }
     Ok(())
 }

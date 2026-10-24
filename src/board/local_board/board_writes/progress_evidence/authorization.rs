@@ -1,3 +1,4 @@
+use crate::board::board_protocol::BoardErrorCode;
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::super::super::{BoardError, WriteContext, invalid, sql_error, sql_number};
@@ -13,13 +14,13 @@ pub(super) fn current_claim(
 ) -> Result<(StoredClaim, i64), BoardError> {
     let claim = active_claim(tx, task, ctx.now, ctx.claim_ttl_secs)?.ok_or_else(|| {
         invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("{task} has no current claim for structured evidence"),
         )
     })?;
     if claim.record.stale {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("{task} current claim is stale"),
         ));
     }
@@ -31,7 +32,12 @@ pub(super) fn current_claim(
         )
         .optional()
         .map_err(sql_error)?
-        .ok_or_else(|| invalid("invalid_state", format!("{task} claim has ended")))?;
+        .ok_or_else(|| {
+            invalid(
+                BoardErrorCode::InvalidState,
+                format!("{task} claim has ended"),
+            )
+        })?;
     Ok((claim, claim_id))
 }
 
@@ -59,13 +65,13 @@ pub(super) fn task_entry_worker(
         .map_err(sql_error)?
         .ok_or_else(|| {
             invalid(
-                "invalid_reference",
+                BoardErrorCode::InvalidReference,
                 format!("{entry} is not an entry on {task}"),
             )
         })?;
     if row.0 != expected_kind.as_str() {
         return Err(invalid(
-            "invalid_reference",
+            BoardErrorCode::InvalidReference,
             format!(
                 "structured evidence requires a {} entry",
                 expected_kind.as_str()
@@ -89,7 +95,7 @@ pub(super) fn require_progress_author(
             let worker_id = active_worker_id(tx, ctx, task, claim_id, worker.handle.as_str())?;
             if entry_worker_id != Some(worker_id) {
                 return Err(invalid(
-                    "invalid_actor",
+                    BoardErrorCode::InvalidActor,
                     "progress entry worker binding does not match its active worker",
                 ));
             }
@@ -98,7 +104,7 @@ pub(super) fn require_progress_author(
         None => {
             if entry_worker_id.is_some() || claim.actor_id != ctx.actor_id {
                 return Err(invalid(
-                    "invalid_actor",
+                    BoardErrorCode::InvalidActor,
                     "structured task evidence requires the active claim holder or bound worker",
                 ));
             }
@@ -138,10 +144,15 @@ pub(super) fn require_verdict_author(
                 )
                 .optional()
                 .map_err(sql_error)?
-                .ok_or_else(|| invalid("invalid_worker", "review worker binding is missing"))?;
+                .ok_or_else(|| {
+                    invalid(
+                        BoardErrorCode::InvalidWorker,
+                        "review worker binding is missing",
+                    )
+                })?;
             if worker.0 != claim_id || worker.1 != Some(ctx.actor_id) || worker.2.is_some() {
                 return Err(invalid(
-                    "invalid_actor",
+                    BoardErrorCode::InvalidActor,
                     "review verdict requires the active worker bound to this claim",
                 ));
             }
@@ -149,7 +160,7 @@ pub(super) fn require_verdict_author(
         }
         None if claim.actor_id == ctx.actor_id => Ok(()),
         None => Err(invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             "structured task evidence requires the active claim holder or bound worker",
         )),
     }
@@ -184,10 +195,15 @@ pub(super) fn active_worker_id(
         )
         .optional()
         .map_err(sql_error)?
-        .ok_or_else(|| invalid("invalid_worker", format!("unknown worker {task}/{handle}")))?;
+        .ok_or_else(|| {
+            invalid(
+                BoardErrorCode::InvalidWorker,
+                format!("unknown worker {task}/{handle}"),
+            )
+        })?;
     if worker.1 != claim_id || worker.2 != Some(ctx.actor_id) || worker.3.is_some() {
         return Err(invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             "progress requires the active worker bound to this claim",
         ));
     }

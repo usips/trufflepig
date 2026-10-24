@@ -2,6 +2,8 @@
 
 use super::*;
 use crate::board::board_transport::board_client_transport::BoardClientTransport;
+use crate::coded_error::CodedContext;
+use crate::coded_error::{ErrorCode, error_code};
 
 pub(super) fn request_pending(
     args: &[String],
@@ -11,17 +13,19 @@ pub(super) fn request_pending(
     deadline: crate::daemon::deadline::QueryDeadline,
 ) -> Result<String> {
     if no_daemon {
-        anyhow::bail!("invalid_options: board pending requires an existing router");
+        anyhow::bail!(coded!(
+            InvalidOptions,
+            "board pending requires an existing router"
+        ));
     }
-    let directory =
-        system_dir().context("board_unavailable: no running router for pending notices")?;
+    let directory = system_dir()
+        .with_coded_context(|| coded!(BoardUnavailable, "no running router for pending notices"))?;
     anyhow::ensure!(
         !deadline.expired(),
-        "{}: board pending request deadline expired",
-        crate::daemon::deadline::TIMED_OUT
+        coded!(TimedOut, "board pending request deadline expired")
     );
     crate::daemon::request_by(&directory, args, context, deadline)?
-        .context("board_unavailable: no running router for pending notices")
+        .with_coded_context(|| coded!(BoardUnavailable, "no running router for pending notices"))
 }
 
 #[derive(Default)]
@@ -132,7 +136,7 @@ impl ClientCommand {
                     // An unavailable owner or locally expired spool wait leaves direct
                     // execution; other router errors remain answers.
                     if !daemon::spool::is_local_spool_timeout(&error)
-                        && !format!("{error:#}").contains("daemon_unavailable")
+                        && !ErrorCode::DaemonUnavailable.is_code_of(&error)
                     {
                         return Err(error);
                     }
@@ -175,22 +179,12 @@ fn local_path_show_fallback_options(args: &[String]) -> Option<Arguments> {
 }
 
 fn index_cache_fallback_options(args: &[String], error: &anyhow::Error) -> Option<Arguments> {
-    let has_timeout = crate::daemon::DaemonReplyTimeout::from_error(error).is_some()
-        || error.chain().any(|cause| {
-            crate::board::board_protocol::leading_error_code(&cause.to_string())
-                .is_some_and(|(code, _)| matches!(code, "timed_out" | "daemon_reply_timeout"))
-        });
-    if has_timeout {
+    if crate::daemon::DaemonReplyTimeout::from_error(error).is_some() {
         return None;
     }
-    let is_cache_refusal = error.chain().any(|cause| {
-        crate::board::board_protocol::leading_error_code(&cause.to_string())
-            .is_some_and(|(code, _)| code == "index_cache_unavailable")
-    });
-    if is_cache_refusal {
-        local_path_show_fallback_options(args)
-    } else {
-        None
+    match error_code(error) {
+        Some(ErrorCode::IndexCacheUnavailable) => local_path_show_fallback_options(args),
+        _ => None,
     }
 }
 

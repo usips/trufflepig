@@ -49,24 +49,27 @@ pub const RERANK_BATCH_SIZE: usize = 8;
 /// `semantic` feature.
 pub fn check_rerank_bounds(query: &str, documents: &[impl AsRef<str>]) -> Result<()> {
     if documents.len() > RERANK_MAX_DOCUMENTS {
-        bail!(
-            "rerank_admission: {} documents exceeds the limit of {RERANK_MAX_DOCUMENTS}",
+        bail!(coded!(
+            RerankAdmission,
+            "{} documents exceeds the limit of {RERANK_MAX_DOCUMENTS}",
             documents.len()
-        );
+        ));
     }
     if query.len() > RERANK_MAX_DOCUMENT_BYTES {
-        bail!(
-            "rerank_admission: query of {} bytes exceeds the limit of {RERANK_MAX_DOCUMENT_BYTES}",
+        bail!(coded!(
+            RerankAdmission,
+            "query of {} bytes exceeds the limit of {RERANK_MAX_DOCUMENT_BYTES}",
             query.len()
-        );
+        ));
     }
     for (index, document) in documents.iter().enumerate() {
         let document = document.as_ref();
         if document.len() > RERANK_MAX_DOCUMENT_BYTES {
-            bail!(
-                "rerank_admission: document at index {index} is {} bytes, exceeding the limit of {RERANK_MAX_DOCUMENT_BYTES}",
+            bail!(coded!(
+                RerankAdmission,
+                "document at index {index} is {} bytes, exceeding the limit of {RERANK_MAX_DOCUMENT_BYTES}",
                 document.len()
-            );
+            ));
         }
     }
     Ok(())
@@ -85,7 +88,7 @@ pub struct Embedding(pub [f32; DIMENSIONS]);
 impl Embedding {
     pub fn from_values(values: &[f32]) -> Result<Self> {
         if values.len() != DIMENSIONS || values.iter().any(|v| !v.is_finite()) {
-            bail!("invalid_embedding: expected 768 finite f32 values");
+            bail!(coded!(InvalidEmbedding, "expected 768 finite f32 values"));
         }
         let norm = values
             .iter()
@@ -93,7 +96,7 @@ impl Embedding {
             .sum::<f64>()
             .sqrt();
         if norm <= f64::EPSILON {
-            bail!("invalid_embedding: zero vector");
+            bail!(coded!(InvalidEmbedding, "zero vector"));
         }
         let mut result = [0.0; DIMENSIONS];
         for (out, value) in result.iter_mut().zip(values) {
@@ -156,9 +159,10 @@ pub fn search_top_k(
 }
 
 pub fn unavailable() -> anyhow::Error {
-    anyhow::anyhow!(
-        "semantic_unavailable: build with --features semantic-cuda (or semantic for CPU), install the pinned assets in evaluation/semantic_gate/model.json, configure inference.toml, then run semantic prepare"
-    )
+    anyhow::anyhow!(coded!(
+        SemanticUnavailable,
+        "build with --features semantic-cuda (or semantic for CPU), install the pinned assets in evaluation/semantic_gate/model.json, configure inference.toml, then run semantic prepare"
+    ))
 }
 
 #[cfg(not(feature = "semantic"))]

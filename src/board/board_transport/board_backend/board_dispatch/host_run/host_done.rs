@@ -28,7 +28,10 @@ impl BoardHost {
             let projects = self.projects(host, deadline)?;
             let project = select_project(selector, &projects)?;
             if project.project.repo_keys.is_empty() {
-                bail!("invalid_options: project {selector:?} has no usable repository identities");
+                bail!(coded!(
+                    InvalidOptions,
+                    "project {selector:?} has no usable repository identities"
+                ));
             }
             Some(project.project.repo_keys.clone())
         };
@@ -43,7 +46,10 @@ impl BoardHost {
         );
         check_deadline(deadline)?;
         if !matches {
-            bail!("invalid_options: plan {plan} is outside project {selector:?}");
+            bail!(coded!(
+                InvalidOptions,
+                "plan {plan} is outside project {selector:?}"
+            ));
         }
         Ok(true)
     }

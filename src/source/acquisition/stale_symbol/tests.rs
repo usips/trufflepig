@@ -1,6 +1,6 @@
 use super::super::acquire;
 use super::{await_republish, liveness_probe_result};
-use crate::daemon::deadline::{QueryDeadline, is_timed_out};
+use crate::daemon::deadline::QueryDeadline;
 use crate::search::InvocationDirectory;
 use crate::source::line_span;
 use crate::{output::OutputBudget, store::Store};
@@ -149,7 +149,10 @@ fn stale_republish_wait_obeys_query_deadline() {
 
     let error = await_republish(&store, fixture.generation).unwrap_err();
 
-    assert!(is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
     assert!(started.elapsed() < Duration::from_millis(250));
     assert_eq!(store.generation().unwrap(), fixture.generation);
     drop(fixture.listener);
@@ -158,14 +161,17 @@ fn stale_republish_wait_obeys_query_deadline() {
 #[test]
 fn stale_republish_probe_preserves_daemon_liveness_semantics() {
     let active_deadline = QueryDeadline::after(Duration::from_secs(5));
-    let probe_timeout = anyhow::anyhow!("timed_out: phase=connecting");
+    let probe_timeout = anyhow::anyhow!(coded!(TimedOut, "phase=connecting"));
 
     assert!(liveness_probe_result(Err(probe_timeout), &active_deadline).unwrap());
 
     let expired_deadline = QueryDeadline::after(Duration::ZERO);
-    let caller_timeout = anyhow::anyhow!("timed_out: phase=connecting");
+    let caller_timeout = anyhow::anyhow!(coded!(TimedOut, "phase=connecting"));
     let error = liveness_probe_result(Err(caller_timeout), &expired_deadline).unwrap_err();
-    assert!(is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
 
     let unavailable_deadline = QueryDeadline::after(Duration::from_secs(5));
     let unavailable = anyhow::anyhow!("connect to repository daemon: permission denied");
@@ -187,7 +193,10 @@ fn stale_republish_wait_observes_cancellation_promptly() {
     let error = await_republish(&store, fixture.generation).unwrap_err();
 
     cancel.join().unwrap();
-    assert!(is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
     assert!(started.elapsed() < Duration::from_millis(250));
     assert_eq!(store.generation().unwrap(), fixture.generation);
     drop(fixture.listener);

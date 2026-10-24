@@ -33,10 +33,11 @@ pub fn canonical_language(value: &str) -> Result<&'static str> {
         "lua" => "luau",
         "dm" => "dreammaker",
         "md" | "markdown" | "toml" | "json" | "txt" => "text",
-        _ => bail!(
-            "unknown_language: {value}; known: {} (other files, including md/markdown/toml/json, are text)",
+        _ => bail!(coded!(
+            UnknownLanguage,
+            "{value}; known: {} (other files, including md/markdown/toml/json, are text)",
             INDEXED_LANGUAGES.join(", ")
-        ),
+        )),
     })
 }
 

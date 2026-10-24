@@ -34,7 +34,10 @@ impl ActorOrigin {
     pub(crate) fn validate_for_request(&self, trusted_internal: bool) -> Result<()> {
         HarnessLabel::parse(self.harness.as_str())?;
         if self.harness.is_system() && !trusted_internal {
-            bail!("invalid_actor: system cannot be supplied as a client origin");
+            bail!(coded!(
+                InvalidActor,
+                "system cannot be supplied as a client origin"
+            ));
         }
         validate_actor_component(&self.session, "session")
     }
@@ -60,9 +63,10 @@ impl WorkerHandle {
                 byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"_-".contains(&byte)
             })
         {
-            bail!(
-                "invalid_worker: handle must be 1..32 lowercase ASCII letters, digits, '_' or '-'"
-            );
+            bail!(coded!(
+                InvalidWorker,
+                "handle must be 1..32 lowercase ASCII letters, digits, '_' or '-'"
+            ));
         }
         Ok(Self(value.to_owned()))
     }
@@ -116,9 +120,9 @@ impl WorkerAddress {
     pub fn parse(value: &str) -> Result<Self> {
         let (task, handle) = value
             .split_once('/')
-            .ok_or_else(|| anyhow::anyhow!("invalid_worker: expected P7.3/HANDLE"))?;
+            .ok_or_else(|| anyhow::anyhow!(coded!(InvalidWorker, "expected P7.3/HANDLE")))?;
         if handle.contains('/') {
-            bail!("invalid_worker: expected P7.3/HANDLE");
+            bail!(coded!(InvalidWorker, "expected P7.3/HANDLE"));
         }
         Self::new(task.parse()?, WorkerHandle::parse(handle)?)
     }

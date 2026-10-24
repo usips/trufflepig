@@ -7,6 +7,7 @@ use crate::board::{
     board_protocol::BOARD_API,
     board_web::web_guard::{ChallengeNonce, WebGuard},
 };
+use crate::coded_error::CodedContext;
 use anyhow::{Context, Result, ensure};
 use std::{
     io::{self, Write},
@@ -17,7 +18,8 @@ use std::{
 /// Verify the listener holds our token without ever sending it: POST a random
 /// nonce to the unauthenticated challenge route and check the HMAC proof.
 pub(super) fn probe(address: SocketAddr, guard: &WebGuard, expires: Instant) -> Result<()> {
-    let nonce = ChallengeNonce::generate().context("board_unavailable: web challenge failed")?;
+    let nonce = ChallengeNonce::generate()
+        .with_coded_context(|| coded!(BoardUnavailable, "web challenge failed"))?;
     let mut socket = TcpStream::connect_timeout(&probe_address(address), remaining(expires)?)?;
     let body = serde_json::to_vec(&serde_json::json!({
         "api": BOARD_API,
@@ -44,14 +46,23 @@ pub(super) fn probe(address: SocketAddr, guard: &WebGuard, expires: Instant) -> 
     let value: serde_json::Value = serde_json::from_slice(&reply)?;
     ensure!(
         value["api"].as_u64() == Some(u64::from(BOARD_API)),
-        "board_unavailable: web listener answered with an incompatible api version"
+        coded!(
+            BoardUnavailable,
+            "web listener answered with an incompatible api version"
+        )
     );
-    let proof = value["proof"]
-        .as_str()
-        .context("board_unavailable: web listener answered without an ownership proof")?;
+    let proof = value["proof"].as_str().with_coded_context(|| {
+        coded!(
+            BoardUnavailable,
+            "web listener answered without an ownership proof"
+        )
+    })?;
     ensure!(
         guard.challenge_matches(&nonce, proof),
-        "board_unavailable: web listener failed the ownership challenge"
+        coded!(
+            BoardUnavailable,
+            "web listener failed the ownership challenge"
+        )
     );
     Ok(())
 }

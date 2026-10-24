@@ -48,10 +48,11 @@ pub(crate) fn render_cli_reply(
     project: Option<&str>,
 ) -> Result<RenderedBoard> {
     if reply.api != BOARD_API {
-        bail!(
-            "board_api_mismatch: expected {BOARD_API}, received {}",
+        bail!(coded!(
+            BoardApiMismatch,
+            "expected {BOARD_API}, received {}",
             reply.api
-        );
+        ));
     }
     match &reply.result {
         BoardResult::Inbox(inbox) => render_inbox(reply, inbox, budget, project),

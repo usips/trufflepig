@@ -3,6 +3,7 @@
 #[cfg(test)]
 mod tests;
 
+use crate::board::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
@@ -69,7 +70,10 @@ pub(super) fn inbox(
     scope: &ReadScope,
 ) -> Result<BoardReply, BoardError> {
     if !(1..=2000).contains(&limit) {
-        return Err(invalid("invalid_options", "inbox limit must be 1..2000"));
+        return Err(invalid(
+            BoardErrorCode::InvalidOptions,
+            "inbox limit must be 1..2000",
+        ));
     }
     if after.is_none() {
         task_claims::refresh_inbox_claims(tx, ctx.actor_id, ctx.now)?;
@@ -164,7 +168,10 @@ pub(super) fn pending(
     limit: usize,
 ) -> Result<BoardReply, BoardError> {
     if !(1..=200).contains(&limit) {
-        return Err(invalid("invalid_options", "pending limit must be 1..200"));
+        return Err(invalid(
+            BoardErrorCode::InvalidOptions,
+            "pending limit must be 1..200",
+        ));
     }
     let actor_known: bool = conn
         .query_row(
@@ -175,7 +182,7 @@ pub(super) fn pending(
         .map_err(sql_error)?;
     if !actor_known {
         return Err(invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             "pending requires a known board actor",
         ));
     }
@@ -183,7 +190,7 @@ pub(super) fn pending(
     let through = max_seq(conn)?;
     if after.is_some_and(|cursor| cursor > through) {
         return Err(invalid(
-            "invalid_reference",
+            BoardErrorCode::InvalidReference,
             "pending cursor exceeds through",
         ));
     }
@@ -241,7 +248,9 @@ pub(super) fn pending(
     for (seq, kind, id, reason) in descriptors {
         let reason = parse_pending_reason(&reason)?;
         let notice = if kind == "entry" {
-            let id = id.ok_or_else(|| invalid("board_unavailable", "pending entry has no id"))?;
+            let id = id.ok_or_else(|| {
+                invalid(BoardErrorCode::BoardUnavailable, "pending entry has no id")
+            })?;
             let id = EntryId::new(sqlite_u64(id)?).map_err(BoardError::from)?;
             PendingNotice {
                 seq,
@@ -257,10 +266,12 @@ pub(super) fn pending(
             let mut rows = statement
                 .query([sql_number(seq.get())])
                 .map_err(sql_error)?;
-            let row = rows
-                .next()
-                .map_err(sql_error)?
-                .ok_or_else(|| invalid("board_unavailable", "pending event disappeared"))?;
+            let row = rows.next().map_err(sql_error)?.ok_or_else(|| {
+                invalid(
+                    BoardErrorCode::BoardUnavailable,
+                    "pending event disappeared",
+                )
+            })?;
             let event = event_row(row)?;
             PendingNotice {
                 seq,
@@ -270,14 +281,22 @@ pub(super) fn pending(
                 event: Some(event),
             }
         } else {
-            return Err(invalid("board_unavailable", "unknown pending payload kind"));
+            return Err(invalid(
+                BoardErrorCode::BoardUnavailable,
+                "unknown pending payload kind",
+            ));
         };
         notice.validate().map_err(BoardError::from)?;
         notices.push(notice);
     }
 
     let omitted = usize::try_from(total)
-        .map_err(|_| invalid("board_unavailable", "pending count exceeds platform range"))?
+        .map_err(|_| {
+            invalid(
+                BoardErrorCode::BoardUnavailable,
+                "pending count exceeds platform range",
+            )
+        })?
         .saturating_sub(notices.len());
     Ok(BoardReply::new(
         "local",
@@ -416,7 +435,7 @@ fn parse_pending_reason(value: &str) -> Result<PendingNoticeReason, BoardError> 
         "claim" => Ok(PendingNoticeReason::Claim),
         "worker" => Ok(PendingNoticeReason::Worker),
         _ => Err(invalid(
-            "board_unavailable",
+            BoardErrorCode::BoardUnavailable,
             "unknown pending notice reason",
         )),
     }
@@ -487,7 +506,7 @@ fn event_row(row: &rusqlite::Row<'_>) -> Result<EventRecord, BoardError> {
             .as_deref()
             .map(FeedbackVia::parse)
             .transpose()
-            .map_err(|error| invalid("board_unavailable", error.to_string()))?,
+            .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))?,
         seq: EventSeq::new(row_number(row, 0).map_err(sql_error)?),
         plan: plan
             .map(sqlite_u64)
@@ -524,7 +543,7 @@ pub(super) fn read_events(
 ) -> Result<Vec<EventRecord>, BoardError> {
     if !(1..=501).contains(&limit) {
         return Err(invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             "event batch limit must be 1..501",
         ));
     }
@@ -568,7 +587,7 @@ pub(super) fn acknowledge(
 ) -> Result<BoardReply, BoardError> {
     if rendered_through.get() > max_seq(tx)?.get() {
         return Err(invalid(
-            "invalid_reference",
+            BoardErrorCode::InvalidReference,
             "inbox acknowledgement exceeds the latest event",
         ));
     }

@@ -5,8 +5,9 @@ use crate::board::board_protocol::{
     COAUTHOR_LIMIT, CommitCoauthor, CommitPlanLink, LINK_LIMIT, LinkedCommit, WORKER_REF_LIMIT,
     WorkerAddress,
 };
+use crate::coded_error::CodedContext;
 use crate::identity::GitOid;
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::str::FromStr;
@@ -95,7 +96,7 @@ pub(super) fn parse_record(fields: &[&[u8]], repo_key: &RepoKey) -> Result<Parse
                 oid: GitOid::parse(oid)?,
                 committed_at: timestamp
                     .parse()
-                    .context("board_scan: invalid commit timestamp")?,
+                    .with_coded_context(|| coded!(BoardScan, "invalid commit timestamp"))?,
                 author: bounded_git_metadata(&author, 1024),
                 subject: bounded_git_metadata(&subject, 1024),
                 coauthors,
@@ -206,10 +207,10 @@ fn trailer_values<'a>(field: &'a str, key: &str) -> Result<Vec<&'a str>> {
         .map(|trailer| {
             let (actual, value) = trailer
                 .split_once(':')
-                .context("board_scan: malformed Git trailer field")?;
+                .with_coded_context(|| coded!(BoardScan, "malformed Git trailer field"))?;
             ensure!(
                 actual.eq_ignore_ascii_case(key),
-                "board_scan: unexpected Git trailer key"
+                coded!(BoardScan, "unexpected Git trailer key")
             );
             Ok(value.trim())
         })
@@ -228,19 +229,19 @@ pub(crate) fn shortstat(value: &str) -> Result<(u64, u64, u64)> {
         let (count, label) = part
             .trim()
             .split_once(' ')
-            .context("board_scan: invalid shortstat")?;
+            .with_coded_context(|| coded!(BoardScan, "invalid shortstat"))?;
         let count = count
             .parse()
-            .context("board_scan: invalid shortstat count")?;
+            .with_coded_context(|| coded!(BoardScan, "invalid shortstat count"))?;
         ensure!(
             count <= crate::board::board_ids::MAX_BOARD_NUMBER,
-            "board_scan: shortstat count exceeds storage limit"
+            coded!(BoardScan, "shortstat count exceeds storage limit")
         );
         match label {
             "file changed" | "files changed" => files = count,
             "insertion(+)" | "insertions(+)" => insertions = count,
             "deletion(-)" | "deletions(-)" => deletions = count,
-            _ => anyhow::bail!("board_scan: unknown shortstat field"),
+            _ => anyhow::bail!(coded!(BoardScan, "unknown shortstat field")),
         }
     }
     Ok((files, insertions, deletions))

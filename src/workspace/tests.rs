@@ -240,7 +240,10 @@ fn expired_query_deadline_answers_timed_out() {
     })
     .unwrap_err();
     assert!(deadline_factory_invoked);
-    assert!(crate::daemon::deadline::is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
 }
 
 #[test]
@@ -283,7 +286,7 @@ fn member_slices_end_before_the_original_budget_and_later_members_get_the_remain
     let unavailable = error.to_string()
         == "workspace_unavailable: no selected member has an available published index; inspect ws status or use --no-daemon";
     assert!(
-        unavailable || crate::daemon::deadline::is_timed_out(&error),
+        unavailable || crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
     assert!(

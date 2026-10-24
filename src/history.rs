@@ -5,6 +5,7 @@ mod command_tests;
 mod commands;
 mod comparison;
 pub mod git;
+mod resource_limits;
 pub mod source_diff;
 mod staging;
 mod storage;

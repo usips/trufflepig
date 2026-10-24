@@ -11,11 +11,13 @@ mod worktree_divergence;
 mod worktree_reads;
 
 use super::member_root::{GIT_PROBE_TIMEOUT, MemberRoot, linked_root_of_member};
+use crate::coded_error::CodedContext;
 use crate::{
-    daemon::deadline::{QueryDeadline, TIMED_OUT},
+    coded_error::ErrorCode,
+    daemon::deadline::QueryDeadline,
     store::{Store, is_index_cache_unavailable, is_index_cannot_open, is_index_warming},
 };
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, bail, ensure};
 pub(super) use hit_verification::DifferingFiles;
 pub(crate) use hit_verification::WorktreeHashes;
 pub(crate) use hit_verification::is_reextracted_worktree_hit;
@@ -57,7 +59,7 @@ pub(super) enum HomeIndexSource {
     Own(Store),
     Parent(ParentIndexView),
     Warming { reason: Option<&'static str> },
-    Unavailable { reason: String },
+    Unavailable { error: anyhow::Error },
 }
 
 /// A parent member's published index reading a warming worktree's bytes.
@@ -87,14 +89,17 @@ pub(crate) struct ParentIndexIdentity {
 
 impl ParentIndexIdentity {
     pub(crate) fn validate_publication(&self, store: &Store) -> Result<()> {
-        let publication = store
-            .publication()?
-            .context("stale_result: saved parent index is unpublished; search again")?;
+        let publication = store.publication()?.with_coded_context(|| {
+            coded!(
+                StaleResult,
+                "saved parent index is unpublished; search again"
+            )
+        })?;
         ensure!(
             publication.root == self.root
                 && publication.index_epoch == self.index_epoch
                 && publication.generation == self.generation,
-            "stale_result: parent index changed; search again"
+            coded!(StaleResult, "parent index changed; search again")
         );
         Ok(())
     }
@@ -102,7 +107,7 @@ impl ParentIndexIdentity {
     pub(crate) fn capture(store: &Store, fallback: &ParentFallback) -> Result<Self> {
         let publication = store
             .publication()?
-            .context("stale_result: parent index has no published identity")?;
+            .with_coded_context(|| coded!(StaleResult, "parent index has no published identity"))?;
         let worktree = store.root.metadata()?;
         Ok(Self {
             root: crate::store::encode_path(store.index_root()),
@@ -161,18 +166,11 @@ pub(super) fn resolve_home_index(
         Ok(source) => source,
         // A deadline interrupt stays recognizable however much context wraps it.
         Err(error) => HomeIndexSource::Unavailable {
-            reason: match deadline.classify(error) {
-                error
-                    if error.chain().any(|cause| {
-                        cause
-                            .to_string()
-                            .strip_prefix(TIMED_OUT)
-                            .is_some_and(|rest| rest.starts_with(':'))
-                    }) =>
-                {
-                    format!("{TIMED_OUT}: query deadline expired")
+            error: match deadline.classify(error) {
+                error if ErrorCode::TimedOut.is_anywhere_in(&error) => {
+                    coded!(TimedOut, "query deadline expired").into()
                 }
-                error => format!("{error:#}"),
+                error => error,
             },
         },
     }
@@ -197,7 +195,7 @@ fn resolve(
     let mut cannot_open = None;
     loop {
         if deadline.expired() {
-            bail!("{TIMED_OUT}: query deadline expired");
+            bail!(coded!(TimedOut, "query deadline expired"));
         }
         match Store::open_read(&member.root, member_cache, deadline.clone()) {
             Err(error) if is_index_warming(&error) => {}
@@ -210,7 +208,7 @@ fn resolve(
             opened => return Ok(HomeIndexSource::Own(opened?)),
         }
         if deadline.expired() {
-            bail!("{TIMED_OUT}: query deadline expired");
+            bail!(coded!(TimedOut, "query deadline expired"));
         }
         if member.worktree.is_some()
             && let Some(view) = parent_view(member, member_cache, explicit_cache, deadline.clone())
@@ -220,9 +218,12 @@ fn resolve(
         if std::time::Instant::now() >= until {
             if let Some(error) = cannot_open {
                 return Ok(HomeIndexSource::Unavailable {
-                    reason: format!(
-                        "index_cache_unavailable: could not open the linked worktree index; check cache permissions or run `trufflepig index`: {error:#}"
-                    ),
+                    error: error.with_coded_context(|| {
+                        coded!(
+                            IndexCacheUnavailable,
+                            "could not open the linked worktree index; check cache permissions or run `trufflepig index`"
+                        )
+                    }),
                 });
             }
             return Ok(HomeIndexSource::Warming {

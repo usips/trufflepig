@@ -50,29 +50,35 @@ impl AdmissionController {
 
     pub fn try_admit(&self, inputs: usize, raw_input_bytes: usize) -> Result<AdmissionTicket> {
         if inputs > self.limits.max_inputs {
-            bail!(
-                "semantic_admission: at most {} inputs per batch",
+            bail!(coded!(
+                SemanticAdmission,
+                "at most {} inputs per batch",
                 self.limits.max_inputs
-            );
+            ));
         }
         if raw_input_bytes > self.limits.max_raw_input_bytes {
-            bail!(
-                "semantic_admission: raw inputs exceed {} bytes",
+            bail!(coded!(
+                SemanticAdmission,
+                "raw inputs exceed {} bytes",
                 self.limits.max_raw_input_bytes
-            );
+            ));
         }
         let mut state = self.state.lock().expect("admission state poisoned");
         if state.queued.saturating_add(state.inflight) >= self.limits.max_admitted {
-            bail!("semantic_admission: 64 batches already queued or in flight");
+            bail!(coded!(
+                SemanticAdmission,
+                "64 batches already queued or in flight"
+            ));
         }
         let Some(total) = state.raw_input_bytes.checked_add(raw_input_bytes) else {
-            bail!("semantic_admission: raw input byte counter overflow");
+            bail!(coded!(SemanticAdmission, "raw input byte counter overflow"));
         };
         if total > self.limits.max_raw_input_bytes {
-            bail!(
-                "semantic_admission: raw inputs exceed {} bytes including in-flight batches",
+            bail!(coded!(
+                SemanticAdmission,
+                "raw inputs exceed {} bytes including in-flight batches",
                 self.limits.max_raw_input_bytes
-            );
+            ));
         }
         state.queued += 1;
         state.raw_input_bytes = total;

@@ -1,4 +1,10 @@
 use super::*;
+use crate::coded_error::CodedError;
+
+/// Types relayed text as the daemon client boundary does.
+fn relayed(text: &str) -> anyhow::Error {
+    CodedError::from_relayed(text.to_owned()).map_or_else(anyhow::Error::msg, anyhow::Error::from)
+}
 
 #[test]
 fn leading_error_codes_ignore_untrusted_diagnostic_segments() {
@@ -6,7 +12,7 @@ fn leading_error_codes_ignore_untrusted_diagnostic_segments() {
         "daemon: daemon: invalid_body: text mentions : invalid_actor: nope",
         "invalid_body: text mentions : database is locked: nope",
     ] {
-        let error = anyhow::anyhow!(message).context("route request");
+        let error = relayed(message).context("route request");
         assert_eq!(
             BoardErrorCode::from_error(&error),
             Some(BoardErrorCode::InvalidBody)
@@ -17,7 +23,7 @@ fn leading_error_codes_ignore_untrusted_diagnostic_segments() {
         "board_unavailable_note: invalid_actor: nope",
         "daemon: failure mentions database is locked",
     ] {
-        assert_eq!(BoardErrorCode::from_error(&anyhow::anyhow!(message)), None);
+        assert_eq!(BoardErrorCode::from_error(&relayed(message)), None);
     }
     let typed = BoardError::new(BoardErrorCode::ClaimConflict, "invalid_body: quoted text");
     let error = anyhow::Error::new(typed).context("dispatch board");
@@ -114,7 +120,7 @@ fn typed_errors_win_over_conflicting_textual_contexts() {
         "daemon: daemon: database is locked",
     ] {
         assert_eq!(
-            BoardErrorCode::from_error(&anyhow::anyhow!(message)),
+            BoardErrorCode::from_error(&relayed(message)),
             Some(BoardErrorCode::DatabaseLocked)
         );
     }
@@ -122,13 +128,14 @@ fn typed_errors_win_over_conflicting_textual_contexts() {
 
 #[test]
 fn typed_errors_preserve_domain_prefixes_and_database_lock_classification() {
-    let stale = BoardError::from(anyhow::anyhow!("stale_revision: expected P1@2"));
+    let stale = BoardError::from(anyhow::anyhow!(coded!(StaleRevision, "expected P1@2")));
     assert_eq!(stale.code, BoardErrorCode::StaleRevision);
     assert_eq!(stale.to_string(), "stale_revision: expected P1@2");
-    let contextual =
-        BoardError::from(anyhow::anyhow!("invalid_actor: not steward").context("accept proposal"));
+    let contextual = BoardError::from(
+        anyhow::anyhow!(coded!(InvalidActor, "not steward")).context("accept proposal"),
+    );
     assert_eq!(contextual.code, BoardErrorCode::InvalidActor);
-    let locked = BoardError::from(anyhow::anyhow!("database is locked"));
+    let locked = BoardError::from(relayed("database is locked"));
     assert_eq!(locked.code, BoardErrorCode::DatabaseLocked);
     let unavailable = BoardError::from(anyhow::anyhow!("unable to open database file"));
     assert_eq!(unavailable.code, BoardErrorCode::BoardUnavailable);
@@ -136,9 +143,10 @@ fn typed_errors_preserve_domain_prefixes_and_database_lock_classification() {
 
 #[test]
 fn invalid_worker_is_a_domain_error() {
-    let error = BoardError::from(anyhow::anyhow!(
-        "invalid_worker: worker handle helper was already used"
-    ));
+    let error = BoardError::from(anyhow::anyhow!(coded!(
+        InvalidWorker,
+        "worker handle helper was already used"
+    )));
     assert_eq!(error.code, BoardErrorCode::InvalidWorker);
     assert_eq!(
         error.to_string(),
@@ -149,19 +157,22 @@ fn invalid_worker_is_a_domain_error() {
 
 #[test]
 fn unregistered_invalid_prefixes_are_domain_options() {
-    let error = BoardError::from(anyhow::anyhow!(
-        "invalid_role: role must be one of triage, release"
-    ));
+    let error = BoardError::from(
+        crate::board::board_vocabulary::AuthorityRole::parse("owner").unwrap_err(),
+    );
     assert_eq!(error.code, BoardErrorCode::InvalidOptions);
     assert_eq!(
         error.to_string(),
-        "invalid_options: role must be one of triage, release"
+        "invalid_options: unknown AuthorityRole 'owner'"
     );
     assert!(error.code.is_domain_answer());
     assert_eq!(
-        BoardErrorCode::from_error(&anyhow::anyhow!("invalid_progress: step must be positive")),
+        BoardErrorCode::from_error(&anyhow::anyhow!(coded!(
+            InvalidProgress,
+            "step must be positive"
+        ))),
         Some(BoardErrorCode::InvalidOptions)
     );
-    let unknown = BoardError::from(anyhow::anyhow!("unclassified_failure: detail"));
+    let unknown = BoardError::from(relayed("unclassified_failure: detail"));
     assert_eq!(unknown.code, BoardErrorCode::BoardUnavailable);
 }

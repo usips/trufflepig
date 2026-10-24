@@ -1,6 +1,7 @@
 //! Plan overview and actor-specific attention within the caller's read transaction.
 mod attention_predicates;
 
+use crate::board::board_protocol::BoardErrorCode;
 pub(super) use attention_predicates::attention_predicate;
 use rusqlite::{Connection, params};
 
@@ -48,7 +49,7 @@ pub(in crate::board::local_board) fn overview(
         after.validate().map_err(BoardError::from)?;
         if after.seq > through {
             return Err(invalid(
-                "invalid_reference",
+                BoardErrorCode::InvalidReference,
                 "overview cursor exceeds through",
             ));
         }

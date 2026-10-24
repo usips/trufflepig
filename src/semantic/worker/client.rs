@@ -1,6 +1,7 @@
 use super::{WorkerStatus, lease, protocol};
+use crate::coded_error::CodedContext;
 use crate::semantic::runtime_config::InferenceConfig;
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use std::{
     io::{self, ErrorKind},
     os::unix::net::UnixStream,
@@ -37,11 +38,14 @@ pub fn rerank_query(
     let cache = super::lease::worker_cache_dir()?;
     let remaining = deadline_instant.saturating_duration_since(Instant::now());
     if remaining.is_zero() {
-        bail!("semantic_timeout: request exceeded its deadline before send");
+        bail!(coded!(
+            SemanticTimeout,
+            "request exceeded its deadline before send"
+        ));
     }
     let deadline_ms = SystemTime::now()
         .checked_add(remaining)
-        .context("semantic_worker: system clock overflow")?
+        .with_coded_context(|| coded!(SemanticWorker, "system clock overflow"))?
         .duration_since(UNIX_EPOCH)?
         .as_millis() as u64;
     let request = protocol::WorkerRequest::new(
@@ -60,7 +64,7 @@ pub fn rerank_query(
                 || error.kind() == ErrorKind::ConnectionRefused =>
         {
             let _ = super::ensure_started_until(cache_identity, deadline_instant)?;
-            bail!("semantic_loading: inference worker is starting")
+            bail!(coded!(SemanticLoading, "inference worker is starting"))
         }
         Err(error) => return Err(error.into()),
     };
@@ -68,9 +72,9 @@ pub fn rerank_query(
     protocol::write_request_with_deadline(&mut stream, &request, deadline_instant)?;
     match protocol::read_reply_with_deadline(&mut stream, deadline_instant)? {
         protocol::WorkerReply::Scores { values } => Ok(values),
-        protocol::WorkerReply::Error { message } => bail!("rerank_worker: {message}"),
+        protocol::WorkerReply::Error { message } => bail!(coded!(RerankWorker, "{message}")),
         protocol::WorkerReply::Status(_) | protocol::WorkerReply::Embeddings { .. } => {
-            bail!("rerank_worker: invalid rerank response")
+            bail!(coded!(RerankWorker, "invalid rerank response"))
         }
     }
 }
@@ -133,9 +137,12 @@ pub(super) fn request_status(
     protocol::write_request_with_deadline(&mut stream, &request, deadline)?;
     match protocol::read_reply_with_deadline(&mut stream, deadline)? {
         protocol::WorkerReply::Status(status) => Ok(status),
-        protocol::WorkerReply::Error { message } => bail!("{message}"),
+        protocol::WorkerReply::Error { message } => {
+            Err(crate::coded_error::CodedError::from_relayed(message)
+                .map_or_else(anyhow::Error::msg, anyhow::Error::from))
+        }
         protocol::WorkerReply::Embeddings { .. } | protocol::WorkerReply::Scores { .. } => {
-            bail!("semantic_worker: invalid status response")
+            bail!(coded!(SemanticWorker, "invalid status response"))
         }
     }
 }

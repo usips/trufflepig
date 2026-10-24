@@ -1,6 +1,7 @@
 //! Runtime markers pin the board database and track recent router failures.
 
-use anyhow::{Context, Result, ensure};
+use crate::coded_error::CodedContext;
+use anyhow::{Result, ensure};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -17,7 +18,7 @@ pub(crate) fn record_board_database(runtime: &Path, database: &Path) -> Result<(
     use std::{io::Write, os::unix::fs::OpenOptionsExt};
     ensure!(
         database.is_absolute(),
-        "invalid_options: board database path must be absolute"
+        coded!(InvalidOptions, "board database path must be absolute")
     );
     fs::create_dir_all(runtime)?;
     let marker = runtime.join("board-backend.json");
@@ -62,14 +63,19 @@ pub(super) fn board_database_marker_matches(
     {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(error).context("board_unavailable: open database pin"),
+        Err(error) => {
+            return Err(error).with_coded_context(|| coded!(BoardUnavailable, "open database pin"));
+        }
     };
     let metadata = file.metadata()?;
     ensure!(
         metadata.file_type().is_file()
             && metadata.uid() == owner
             && metadata.permissions().mode() & 0o7777 == 0o600,
-        "board_unavailable: database pin must be a private regular file owned by the current user"
+        coded!(
+            BoardUnavailable,
+            "database pin must be a private regular file owned by the current user"
+        )
     );
     if metadata.len() != expected.len() as u64 {
         return Ok(false);
@@ -84,10 +90,12 @@ pub(crate) fn validate_board_database(runtime: &Path, database: &Path) -> Result
     let bytes = match fs::read(runtime.join("board-backend.json")) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(error).context("board_unavailable: read database pin"),
+        Err(error) => {
+            return Err(error).with_coded_context(|| coded!(BoardUnavailable, "read database pin"));
+        }
     };
-    let marker: BoardDatabaseMarker =
-        serde_json::from_slice(&bytes).context("board_unavailable: invalid database pin")?;
+    let marker: BoardDatabaseMarker = serde_json::from_slice(&bytes)
+        .with_coded_context(|| coded!(BoardUnavailable, "invalid database pin"))?;
     let equal = marker.database == database
         || marker
             .database
@@ -97,9 +105,12 @@ pub(crate) fn validate_board_database(runtime: &Path, database: &Path) -> Result
             .is_some_and(|(router, local)| router == local);
     ensure!(
         marker.database.is_absolute() && equal,
-        "board_unavailable: local database {} differs from router database {}; restore the router database configuration",
-        database.display(),
-        marker.database.display()
+        coded!(
+            BoardUnavailable,
+            "local database {} differs from router database {}; restore the router database configuration",
+            database.display(),
+            marker.database.display()
+        )
     );
     Ok(())
 }

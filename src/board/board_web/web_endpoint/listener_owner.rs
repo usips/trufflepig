@@ -2,7 +2,8 @@
 //! A squatter binding the published port while board-serve is down must never
 //! pass as the real service, so its socket uid must equal our euid.
 
-use anyhow::{Context, Result, bail};
+use crate::coded_error::CodedContext;
+use anyhow::{Result, bail};
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     path::Path,
@@ -22,15 +23,16 @@ pub(super) fn require_owned_listener(address: &SocketAddr) -> Result<()> {
 
 fn require_owned_listener_at(address: &SocketAddr, table: &Path) -> Result<()> {
     let content = std::fs::read_to_string(table)
-        .with_context(|| format!("board_unavailable: cannot inspect {}", table.display()))?;
+        .with_coded_context(|| coded!(BoardUnavailable, "cannot inspect {}", table.display()))?;
     // SAFETY: geteuid has no preconditions and cannot fail.
     let euid = unsafe { libc::geteuid() };
     match listener_uid(&content, address) {
         Some(uid) if uid == euid => Ok(()),
-        Some(uid) => bail!(
-            "board_unavailable: web listener at {address} is owned by uid {uid}, not our uid {euid}"
-        ),
-        None => bail!("board_unavailable: no listener at {address}"),
+        Some(uid) => bail!(coded!(
+            BoardUnavailable,
+            "web listener at {address} is owned by uid {uid}, not our uid {euid}"
+        )),
+        None => bail!(coded!(BoardUnavailable, "no listener at {address}")),
     }
 }
 

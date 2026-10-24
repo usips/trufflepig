@@ -51,7 +51,10 @@ pub(in crate::board::board_render) fn render_collections(
     };
     let count = fit_items(maximum, budget, |count| encode(count, 0))?;
     if maximum > 0 && count == 0 {
-        bail!("budget_too_small: first board item does not fit; raise -b");
+        bail!(coded!(
+            BudgetTooSmall,
+            "first board item does not fit; raise -b"
+        ));
     }
     let claims = if let BoardResult::Attention(page) = &reply.result {
         fit_items(page.stale_claims.len(), budget, |claims| {

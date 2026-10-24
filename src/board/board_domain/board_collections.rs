@@ -38,7 +38,10 @@ impl OverviewCursor {
     pub fn validate(self) -> anyhow::Result<()> {
         anyhow::ensure!(
             self.seq.get() > 0,
-            "invalid_reference: overview cursor sequence must be positive"
+            coded!(
+                InvalidReference,
+                "overview cursor sequence must be positive"
+            )
         );
         Ok(())
     }
@@ -171,7 +174,10 @@ impl TaskCursor {
         self.id.validate()?;
         anyhow::ensure!(
             (1..=MAX_BOARD_NUMBER).contains(&self.seq.get()),
-            "invalid_reference: task cursor must contain a positive SQLite sequence"
+            coded!(
+                InvalidReference,
+                "task cursor must contain a positive SQLite sequence"
+            )
         );
         Ok(())
     }
@@ -199,7 +205,10 @@ impl TaskCeiling {
     pub fn validate(self) -> anyhow::Result<()> {
         anyhow::ensure!(
             self.ordinal <= MAX_BOARD_NUMBER,
-            "invalid_reference: task ceiling exceeds the SQLite ordinal range"
+            coded!(
+                InvalidReference,
+                "task ceiling exceeds the SQLite ordinal range"
+            )
         );
         Ok(())
     }
@@ -231,7 +240,10 @@ impl ClaimCursor {
     pub fn validate(self) -> anyhow::Result<()> {
         anyhow::ensure!(
             (1..=MAX_BOARD_NUMBER).contains(&self.claim),
-            "invalid_reference: claim cursor must contain a positive SQLite id"
+            coded!(
+                InvalidReference,
+                "claim cursor must contain a positive SQLite id"
+            )
         );
         Ok(())
     }

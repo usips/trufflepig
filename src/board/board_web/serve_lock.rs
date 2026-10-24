@@ -2,7 +2,8 @@
 #[cfg(test)]
 mod tests;
 
-use anyhow::{Context, Result};
+use crate::coded_error::CodedContext;
+use anyhow::Result;
 use std::{
     fs::{self, File, OpenOptions},
     os::unix::fs::OpenOptionsExt,
@@ -19,7 +20,8 @@ pub(super) struct ServeLock {
 /// Take the per-user board-serve lock before rotating the token or binding; a
 /// second instance fails with the live listener's origin and touches nothing.
 pub(super) fn acquire_at(runtime: &Path) -> Result<ServeLock> {
-    fs::create_dir_all(runtime).context("board_serve_lock: create runtime directory")?;
+    fs::create_dir_all(runtime)
+        .with_coded_context(|| coded!(BoardServeLock, "create runtime directory"))?;
     let file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -27,13 +29,13 @@ pub(super) fn acquire_at(runtime: &Path) -> Result<ServeLock> {
         .mode(0o600)
         .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
         .open(runtime.join(LOCK_FILE))
-        .context("board_serve_lock: open lock file")?;
+        .with_coded_context(|| coded!(BoardServeLock, "open lock file"))?;
     match fs2::FileExt::try_lock_exclusive(&file) {
         Ok(()) => Ok(ServeLock { _file: file }),
         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
             Err(already_running(runtime))
         }
-        Err(error) => Err(error).context("board_serve_lock: take lock"),
+        Err(error) => Err(error).with_coded_context(|| coded!(BoardServeLock, "take lock")),
     }
 }
 

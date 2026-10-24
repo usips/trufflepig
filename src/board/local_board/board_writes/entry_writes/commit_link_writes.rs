@@ -22,7 +22,7 @@ pub(in crate::board::local_board) fn link_commits(
 ) -> Result<BoardReply, BoardError> {
     if commits.len() > 1 {
         return Err(invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             "commit scans write one commit per event sequence",
         ));
     }
@@ -144,9 +144,9 @@ fn insert_commit_row(tx: &Transaction<'_>, commit: &LinkedCommit) -> Result<(), 
     )
     .map_err(sql_error)?;
     let coauthors = serde_json::to_string(&commit.coauthors)
-        .map_err(|error| invalid("invalid_body", error.to_string()))?;
+        .map_err(|error| invalid(BoardErrorCode::InvalidBody, error.to_string()))?;
     let worker_refs = serde_json::to_string(&commit.worker_refs)
-        .map_err(|error| invalid("invalid_body", error.to_string()))?;
+        .map_err(|error| invalid(BoardErrorCode::InvalidBody, error.to_string()))?;
     tx.execute(
         concat!(
             "INSERT OR IGNORE INTO commits(repo_key,oid,subject,committed_at,author,coauthors,files,",
@@ -465,7 +465,7 @@ fn linked_commit_summary(
     };
     let coauthors: Vec<crate::board::board_protocol::CommitCoauthor> =
         serde_json::from_str(&coauthors_json)
-            .map_err(|error| invalid("board_unavailable", error.to_string()))?;
+            .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))?;
     let mut model_names = BTreeSet::new();
     model_names.extend(coauthors.iter().map(|author| author.model.as_str()));
     let task_text = linked_tasks
@@ -551,9 +551,9 @@ pub(in crate::board::local_board) fn backfill_commit_claim_links(
             .map_err(BoardError::from)?;
         let coauthors: Vec<crate::board::board_protocol::CommitCoauthor> =
             serde_json::from_str(&coauthors)
-                .map_err(|error| invalid("board_unavailable", error.to_string()))?;
+                .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))?;
         let worker_refs: Vec<WorkerAddress> = serde_json::from_str(&workers)
-            .map_err(|error| invalid("board_unavailable", error.to_string()))?;
+            .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))?;
         let commit = LinkedCommit {
             repo_key,
             oid,

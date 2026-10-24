@@ -99,3 +99,39 @@ coverage changes, and incomplete publication windows remain separate categories.
 Byte overlap is an observational proxy, not proof of full understanding,
 exclusive authorship, task success, or complete source coverage. The stricter
 full-span evidence rule belongs to the [navigation replay](navigation-evaluation.md).
+
+## Error codes
+
+Failures render as `code: message`: a stable snake_case code, then human text.
+`ErrorCode` in `src/coded_error/error_code_inventory.rs` lists every code.
+Producers raise a `CodedError` with `coded!` and attach one as context with
+`CodedContext::with_coded_context`, which keeps the code visible through wrapping
+errors; `{error:#}` renders exactly as plain anyhow context would.
+
+Control flow matches codes, never rendered text. `error_code` returns the
+outermost code in an error chain, `ErrorCode::is_anywhere_in` checks every layer,
+and a `CodeDetail` refines one code for local matchers (missing path, selected
+cache refusal, local spool timeout, current-source recheck). Details never render
+and do not cross a process boundary.
+
+Text crosses a process boundary once. The daemon client decodes a failure reply
+with `CodedError::from_relayed`, which accepts a registered code after any
+`daemon:` relay labels, or exactly `database is locked`, and keeps the text
+verbatim; unregistered prefixes stay uncoded. Board answers map codes through
+`BoardErrorCode::from_code`, which folds other `invalid_*` codes into
+`invalid_options`.
+
+Request outcomes come from the codes in the chain, in the precedence
+`budget_too_small`, `stale_*`, `*unavailable*` or `expired_*`, then `invalid_*`,
+`unknown_command`, or `usage`; anything else is `failure`. Free text that merely
+mentions a code names no outcome.
+
+`timed_out` covers every expired deadline and cancelled peer; no separate
+cancellation code exists. Git failures keep their exit code (`GitCommandFailed`):
+a detached HEAD is `symbolic-ref -q` exit 1, and only Git's `LC_ALL=C` "not a git
+repository" fatal message is read as text. Other text reads are third-party
+wording with no typed form: SQLite schema and FTS5 syntax faults, board storage
+access, OS errno text relayed to client retry, semantic worker runtime failures,
+and serialized coverage reasons. `src/coded_error/text_match_guard.rs` lists the
+ones its test would flag; the test rejects new rendered-text branches and
+plain-text codes.

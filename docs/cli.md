@@ -172,7 +172,7 @@ session rules in the [board contract](board-contract.md#identity-references-and-
 Optional `--client NAME` labels the caller. Diagnostics default to bounded metadata;
 `--diagnostics detailed` records bounded raw queries, and `--diagnostics off`
 disables request recording. `audit` reports retained summaries.
-See [diagnostics](diagnostics-contract.md) for delivery evidence, retention, overlap labels, and incomplete-window limits.
+See [diagnostics](diagnostics-contract.md) for delivery evidence, retention, overlap labels, incomplete-window limits, and [error codes](diagnostics-contract.md#error-codes).
 
 ## Cache and daemon
 

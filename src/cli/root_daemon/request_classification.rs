@@ -1,10 +1,11 @@
+use crate::coded_error::CodedContext;
 use crate::{
     cli::{Arguments, parse},
     daemon::pool::{RequestClass, RequestLane},
     search::Query,
     workspace::{config::WorkspaceConfig, member_root::MemberRoot},
 };
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use std::path::PathBuf;
 
 pub(crate) struct ClassifiedDaemonRequest {
@@ -151,7 +152,7 @@ fn split_search_scope(
             if let Some(selector) = selector {
                 ensure!(
                     selection.as_ref().is_none_or(|old| old == &selector),
-                    "invalid_scope: conflicting workspace selectors"
+                    coded!(InvalidScope, "conflicting workspace selectors")
                 );
                 selection = Some(selector);
             } else {
@@ -173,11 +174,11 @@ fn protected_search_roots(
     let start = options
         .root
         .canonicalize()
-        .context("invalid_root: cannot resolve request root")?;
+        .with_coded_context(|| coded!(InvalidRoot, "cannot resolve request root"))?;
     let Some(config) = config else {
         ensure!(
             selector.is_none() && options.member.is_none(),
-            "workspace_required: select a workspace configuration"
+            coded!(WorkspaceRequired, "select a workspace configuration")
         );
         return Ok(vec![start]);
     };
@@ -187,13 +188,13 @@ fn protected_search_roots(
             roots
                 .iter()
                 .find(|root| root.is_home)
-                .context("member_required: ws:home has no home member")?,
+                .with_coded_context(|| coded!(MemberRequired, "ws:home has no home member"))?,
         ),
         Some(WorkspaceSelector::Member(name)) => one_root(
             roots
                 .iter()
                 .find(|root| root.name() == name)
-                .with_context(|| format!("invalid_member: member {name} is not configured"))?,
+                .with_coded_context(|| coded!(InvalidMember, "member {name} is not configured"))?,
         ),
         Some(WorkspaceSelector::All) | None => {
             Ok(roots.into_iter().map(|root| root.root).collect())
@@ -209,11 +210,11 @@ fn protected_owner_roots(
     let start = options
         .root
         .canonicalize()
-        .context("invalid_root: cannot resolve request root")?;
+        .with_coded_context(|| coded!(InvalidRoot, "cannot resolve request root"))?;
     let Some(config) = config else {
         ensure!(
             options.member.is_none(),
-            "workspace_required: select a workspace configuration"
+            coded!(WorkspaceRequired, "select a workspace configuration")
         );
         return Ok(vec![start]);
     };
@@ -225,12 +226,17 @@ fn protected_owner_roots(
         roots
             .iter()
             .find(|root| root.name() == name)
-            .with_context(|| format!("invalid_member: member {name} is not configured"))?
+            .with_coded_context(|| coded!(InvalidMember, "member {name} is not configured"))?
     } else {
         roots
             .iter()
             .find(|root| root.is_home)
-            .context("member_required: select --member for an owner-scoped command")?
+            .with_coded_context(|| {
+                coded!(
+                    MemberRequired,
+                    "select --member for an owner-scoped command"
+                )
+            })?
     };
     one_root(selected)
 }

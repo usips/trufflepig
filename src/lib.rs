@@ -1,3 +1,6 @@
+// First, so `coded!` is in textual scope for every later module.
+#[macro_use]
+pub mod coded_error;
 pub(crate) mod background_process;
 pub mod board;
 pub mod cli;

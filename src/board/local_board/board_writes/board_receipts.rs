@@ -12,7 +12,7 @@ pub(in crate::board::local_board) fn request_dedupe_key(
     request
         .dedupe_key()
         .map(|key| key.to_string())
-        .map_err(|error| invalid("board_unavailable", error.to_string()))
+        .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))
 }
 
 pub(in crate::board::local_board) fn read_receipt(
@@ -41,7 +41,7 @@ pub(in crate::board::local_board) fn read_receipt(
         return Ok(unknown_receipt(key));
     };
     let reply: BoardReply = serde_json::from_str(&stored)
-        .map_err(|error| invalid("board_unavailable", error.to_string()))?;
+        .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))?;
     let BoardResult::Change(change) = reply.result else {
         return Ok(unknown_receipt(key));
     };

@@ -1,4 +1,5 @@
 use super::{PathCursorRootIdentity, stateless_handle};
+use crate::coded_error::CodedContext;
 use crate::identity::{ByteSpan, ContentRevision};
 use anyhow::{Context, Result, ensure};
 use std::path::{Component, Path};
@@ -19,12 +20,12 @@ pub(crate) fn stateless_hit_handle(
             && relative
                 .components()
                 .all(|part| matches!(part, Component::Normal(_))),
-        "invalid_path: hit path is outside the configured root"
+        coded!(InvalidPath, "hit path is outside the configured root")
     );
     let span = ByteSpan::new(start, end)
-        .context("invalid_range: invalid current-source hit span")?
+        .with_coded_context(|| coded!(InvalidRange, "invalid current-source hit span"))?
         .validate(bytes.len())
-        .context("invalid_range: current-source hit span exceeds file")?;
+        .with_coded_context(|| coded!(InvalidRange, "current-source hit span exceeds file"))?;
     let (first, last) = super::super::super::line_span(bytes, span.start, span.end);
     let (line_start, line_end) = super::super::super::current_span(bytes, first, last)?;
     let revision = ContentRevision::of(bytes).to_string();
@@ -39,7 +40,7 @@ pub(crate) fn cursor_matches_root(target: &str, root: &Path) -> Result<bool> {
     };
     let (identity, _) = cursor
         .split_once(':')
-        .context("invalid_cursor: expected path:ROOT_DIGEST:ENCODED_PATH")?;
+        .with_coded_context(|| coded!(InvalidCursor, "expected path:ROOT_DIGEST:ENCODED_PATH"))?;
     let identity = PathCursorRootIdentity::parse(identity)?;
     let root = root
         .canonicalize()

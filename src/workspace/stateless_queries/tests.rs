@@ -126,6 +126,9 @@ fn expired_cache_free_workspace_request_does_not_probe_or_scan() {
         None,
     )
     .unwrap_err();
-    assert!(crate::daemon::deadline::is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
     assert_eq!(fs::read_dir(fixture.cache.path()).unwrap().count(), 0);
 }

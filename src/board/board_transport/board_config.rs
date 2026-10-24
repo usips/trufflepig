@@ -1,7 +1,8 @@
 //! Strict board configuration with passwd-derived identity and durable data paths.
 use crate::board::board_actor::{BoardActor, HarnessLabel, validate_actor_component};
 use crate::board::board_ids::RepoKey;
-use anyhow::{Context, Result, bail};
+use crate::coded_error::CodedContext;
+use anyhow::{Result, bail};
 use serde::Deserialize;
 use std::{
     collections::BTreeMap,
@@ -51,8 +52,8 @@ impl BoardConfig {
 
     /// Resolve a strict TOML document against supplied defaults without reading env.
     pub fn from_toml(input: &str, mut defaults: Self) -> Result<Self> {
-        let file: BoardConfigFile =
-            toml::from_str(input).context("invalid_options: invalid board.toml")?;
+        let file: BoardConfigFile = toml::from_str(input)
+            .with_coded_context(|| coded!(InvalidOptions, "invalid board.toml"))?;
         if let Some(mode) = file.mode {
             defaults.mode = mode;
         }
@@ -72,15 +73,16 @@ impl BoardConfig {
             let origin = crate::board::repo_identity::normalize_origin_label(&origin)?;
             if let Some(previous) = repos.insert(origin.clone(), key.clone()) {
                 if previous != key {
-                    bail!(
+                    bail!(coded!(
+                        InvalidOptions,
                         concat!(
-                            "invalid_options: repository origin {origin} has conflicting identity ",
+                            "repository origin {origin} has conflicting identity ",
                             "overrides {previous} and {key}"
                         ),
                         origin = origin,
                         previous = previous,
                         key = key
-                    );
+                    ));
                 }
             }
         }
@@ -122,9 +124,10 @@ impl BoardConfig {
 
     pub fn ensure_local(&self) -> Result<()> {
         if self.mode == BoardMode::Remote {
-            bail!(
-                "board_remote_unsupported: remote coordinator is not available; use mode = \"local\""
-            );
+            bail!(coded!(
+                BoardRemoteUnsupported,
+                "remote coordinator is not available; use mode = \"local\""
+            ));
         }
         Ok(())
     }
@@ -133,19 +136,28 @@ impl BoardConfig {
         validate_actor_component(&self.user, "user")?;
         validate_actor_component(&self.host, "host")?;
         if self.claim_ttl_minutes == 0 || self.claim_ttl_minutes > (i64::MAX as u64) / 60 {
-            bail!("invalid_options: claim_ttl_minutes must be positive and fit Unix seconds");
+            bail!(coded!(
+                InvalidOptions,
+                "claim_ttl_minutes must be positive and fit Unix seconds"
+            ));
         }
         if !self.db_path.is_absolute() {
-            bail!("invalid_options: board database path must be absolute");
+            bail!(coded!(
+                InvalidOptions,
+                "board database path must be absolute"
+            ));
         }
         for origin in self.repos.keys() {
             if origin.is_empty() || origin.len() > 4096 || origin.chars().any(char::is_control) {
-                bail!("invalid_options: repository override origin must be bounded and nonempty");
+                bail!(coded!(
+                    InvalidOptions,
+                    "repository override origin must be bounded and nonempty"
+                ));
             }
         }
         if let Some(url) = &self.url {
             if url.is_empty() || url.len() > 2048 || url.chars().any(char::is_control) {
-                bail!("invalid_options: invalid board URL");
+                bail!(coded!(InvalidOptions, "invalid board URL"));
             }
         }
         Ok(())
@@ -190,7 +202,7 @@ impl BoardConfigSource {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => self.defaults.clone(),
             Err(error) => {
                 return Err(error)
-                    .with_context(|| format!("invalid_options: read {}", self.path.display()));
+                    .with_coded_context(|| coded!(InvalidOptions, "read {}", self.path.display()));
             }
         };
         config.validate()?;
@@ -233,29 +245,30 @@ fn passwd_account() -> Result<PasswdAccount> {
             continue;
         }
         if status != 0 {
-            bail!(
-                "invalid_actor: passwd lookup failed: {}",
+            bail!(coded!(
+                InvalidActor,
+                "passwd lookup failed: {}",
                 std::io::Error::from_raw_os_error(status)
-            );
+            ));
         }
         if result.is_null() {
-            bail!("invalid_actor: current uid has no passwd entry");
+            bail!(coded!(InvalidActor, "current uid has no passwd entry"));
         }
         // A non-null successful result guarantees initialization of the passwd record.
         let record = unsafe { record.assume_init() };
         if record.pw_name.is_null() || record.pw_dir.is_null() {
-            bail!("invalid_actor: passwd entry lacks user or home");
+            bail!(coded!(InvalidActor, "passwd entry lacks user or home"));
         }
         // These NUL-terminated strings belong to buffer and are copied before it is dropped.
         let user = unsafe { CStr::from_ptr(record.pw_name) }
             .to_str()
-            .context("invalid_actor: passwd user is not UTF-8")?
+            .with_coded_context(|| coded!(InvalidActor, "passwd user is not UTF-8"))?
             .to_owned();
         // pw_dir is a filesystem path and may contain non-UTF-8 bytes.
         let home = unsafe { CStr::from_ptr(record.pw_dir) };
         let home = PathBuf::from(std::ffi::OsStr::from_bytes(home.to_bytes()));
         if !home.is_absolute() {
-            bail!("invalid_actor: passwd home is not absolute");
+            bail!(coded!(InvalidActor, "passwd home is not absolute"));
         }
         validate_actor_component(&user, "user")?;
         return Ok(PasswdAccount { user, home });
@@ -269,14 +282,14 @@ fn machine_hostname() -> Result<String> {
     let status = unsafe { libc::gethostname(buffer.as_mut_ptr().cast(), buffer.len()) };
     if status != 0 {
         return Err(std::io::Error::last_os_error())
-            .context("invalid_actor: hostname lookup failed");
+            .with_coded_context(|| coded!(InvalidActor, "hostname lookup failed"));
     }
     let length = buffer
         .iter()
         .position(|byte| *byte == 0)
-        .context("invalid_actor: hostname exceeds 255 bytes")?;
+        .with_coded_context(|| coded!(InvalidActor, "hostname exceeds 255 bytes"))?;
     let host = std::str::from_utf8(&buffer[..length])
-        .context("invalid_actor: hostname is not UTF-8")?
+        .with_coded_context(|| coded!(InvalidActor, "hostname is not UTF-8"))?
         .to_owned();
     validate_actor_component(&host, "host")?;
     Ok(host)
@@ -284,11 +297,17 @@ fn machine_hostname() -> Result<String> {
 
 #[cfg(not(unix))]
 fn passwd_account() -> Result<PasswdAccount> {
-    bail!("invalid_actor: board passwd identity requires a Unix host")
+    bail!(coded!(
+        InvalidActor,
+        "board passwd identity requires a Unix host"
+    ))
 }
 #[cfg(not(unix))]
 fn machine_hostname() -> Result<String> {
-    bail!("invalid_actor: board hostname capture requires a Unix host")
+    bail!(coded!(
+        InvalidActor,
+        "board hostname capture requires a Unix host"
+    ))
 }
 
 #[cfg(test)]

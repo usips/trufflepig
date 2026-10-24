@@ -131,15 +131,16 @@ impl RequestAdmission {
                         && lexical.roots.is_empty(),
                     "semantic_fallback_classification_invalid"
                 );
-                let permit = self.reserve_roots(lexical.class, &lexical.roots).map_err(
-                    |refusal| {
-                        anyhow!(
-                            "semantic_fallback_root_reservation_failed: outstanding={} limit={}",
-                            refusal.outstanding,
-                            refusal.limit
-                        )
-                    },
-                )?;
+                let permit =
+                    self.reserve_roots(lexical.class, &lexical.roots)
+                        .map_err(|refusal| {
+                            anyhow!(coded!(
+                                SemanticFallbackRootReservationFailed,
+                                "outstanding={} limit={}",
+                                refusal.outstanding,
+                                refusal.limit
+                            ))
+                        })?;
                 Ok(AdmissionDecision::Admitted(AdmittedRequest {
                     class: lexical.class,
                     args: fallback_args,

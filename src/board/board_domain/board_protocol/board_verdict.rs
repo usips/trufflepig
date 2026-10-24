@@ -17,15 +17,18 @@ impl ReviewVerdict {
             _ => {
                 if let Some(count) = value.strip_prefix("findings=") {
                     return count.parse::<u32>().map(Self::Findings).map_err(|_| {
-                        anyhow::anyhow!("invalid_verdict: findings requires a u32 count")
+                        anyhow::anyhow!(coded!(InvalidVerdict, "findings requires a u32 count"))
                     });
                 }
                 if let Some(count) = value.strip_prefix("blocking=") {
                     return count.parse::<u32>().map(Self::Blocking).map_err(|_| {
-                        anyhow::anyhow!("invalid_verdict: blocking requires a u32 count")
+                        anyhow::anyhow!(coded!(InvalidVerdict, "blocking requires a u32 count"))
                     });
                 }
-                bail!("invalid_verdict: expected clean, findings=N, or blocking=N")
+                bail!(coded!(
+                    InvalidVerdict,
+                    "expected clean, findings=N, or blocking=N"
+                ))
             }
         }
     }

@@ -1,5 +1,6 @@
 //! User-wide inference runtime configuration.
 
+use crate::coded_error::CodedContext;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -70,11 +71,15 @@ impl InferenceConfig {
         if let Some(path) = env::var_os("TRUFFLEPIG_INFERENCE_CONFIG") {
             let path = PathBuf::from(path);
             if !path.is_absolute() {
-                bail!("inference_config_invalid: TRUFFLEPIG_INFERENCE_CONFIG must be absolute");
+                bail!(coded!(
+                    InferenceConfigInvalid,
+                    "TRUFFLEPIG_INFERENCE_CONFIG must be absolute"
+                ));
             }
             return Ok(path);
         }
-        let home = env::var_os("HOME").context("inference_config_unavailable: HOME is unset")?;
+        let home = env::var_os("HOME")
+            .with_coded_context(|| coded!(InferenceConfigUnavailable, "HOME is unset"))?;
         Ok(PathBuf::from(home).join(CONFIG_DIRECTORY).join(CONFIG_FILE))
     }
 
@@ -116,21 +121,33 @@ impl InferenceConfig {
 
     pub fn validate(&self) -> Result<()> {
         if self.arena_bytes == 0 {
-            bail!("inference_config_invalid: arena_bytes must be positive");
+            bail!(coded!(
+                InferenceConfigInvalid,
+                "arena_bytes must be positive"
+            ));
         }
         if self.provider == InferenceProvider::Cuda
             && self.gpu_uuid.as_deref().is_none_or(str::is_empty)
         {
-            bail!("inference_config_invalid: cuda requires gpu_uuid");
+            bail!(coded!(InferenceConfigInvalid, "cuda requires gpu_uuid"));
         }
         if self.rerank_gpu_uuid.is_some() && self.provider != InferenceProvider::Cuda {
-            bail!("inference_config_invalid: rerank_gpu_uuid requires the cuda provider");
+            bail!(coded!(
+                InferenceConfigInvalid,
+                "rerank_gpu_uuid requires the cuda provider"
+            ));
         }
         if self.rerank_gpu_uuid.is_some() && self.rerank_model_dir.is_none() {
-            bail!("inference_config_invalid: rerank_gpu_uuid requires rerank_model_dir");
+            bail!(coded!(
+                InferenceConfigInvalid,
+                "rerank_gpu_uuid requires rerank_model_dir"
+            ));
         }
         if self.idle_unload_seconds == Some(0) {
-            bail!("inference_config_invalid: idle_unload_seconds must be positive");
+            bail!(coded!(
+                InferenceConfigInvalid,
+                "idle_unload_seconds must be positive"
+            ));
         }
         Ok(())
     }
@@ -142,15 +159,21 @@ impl InferenceConfig {
     }
 
     pub fn model_dir(&self) -> Result<&Path> {
-        self.model_dir.as_deref().context(
-            "semantic_unavailable: set model_dir in inference.toml or TRUFFLEPIG_MODEL_DIR",
-        )
+        self.model_dir.as_deref().with_coded_context(|| {
+            coded!(
+                SemanticUnavailable,
+                "set model_dir in inference.toml or TRUFFLEPIG_MODEL_DIR"
+            )
+        })
     }
 
     pub fn runtime_library(&self) -> Result<&Path> {
-        self.runtime_library.as_deref().context(
-            "semantic_unavailable: set runtime_library in inference.toml or ORT_DYLIB_PATH",
-        )
+        self.runtime_library.as_deref().with_coded_context(|| {
+            coded!(
+                SemanticUnavailable,
+                "set runtime_library in inference.toml or ORT_DYLIB_PATH"
+            )
+        })
     }
 
     /// Resolve the configured UUID to the current CUDA ordinal at process start.
@@ -168,9 +191,12 @@ impl InferenceConfig {
     }
 
     pub fn rerank_model_dir(&self) -> Result<&Path> {
-        self.rerank_model_dir.as_deref().context(
-            "rerank_unavailable: set rerank_model_dir in inference.toml or TRUFFLEPIG_RERANK_MODEL_DIR",
-        )
+        self.rerank_model_dir.as_deref().with_coded_context(|| {
+            coded!(
+                RerankUnavailable,
+                "set rerank_model_dir in inference.toml or TRUFFLEPIG_RERANK_MODEL_DIR"
+            )
+        })
     }
 
     /// Resolve the configured reranker UUID to its CUDA ordinal, falling back
@@ -221,12 +247,13 @@ pub fn enumerate_cuda_devices() -> Result<Vec<CudaDevice>> {
     let output = Command::new("nvidia-smi")
         .args(["--query-gpu=uuid,index", "--format=csv,noheader,nounits"])
         .output()
-        .context("cuda_unavailable: nvidia-smi is unavailable")?;
+        .with_coded_context(|| coded!(CudaUnavailable, "nvidia-smi is unavailable"))?;
     if !output.status.success() {
-        bail!(
-            "cuda_unavailable: nvidia-smi failed with status {}",
+        bail!(coded!(
+            CudaUnavailable,
+            "nvidia-smi failed with status {}",
             output.status
-        );
+        ));
     }
     let mut devices = Vec::new();
     for line in String::from_utf8_lossy(&output.stdout).lines() {
@@ -234,7 +261,7 @@ pub fn enumerate_cuda_devices() -> Result<Vec<CudaDevice>> {
         let uuid = fields.next().unwrap_or_default();
         let ordinal = fields.next().unwrap_or_default().parse::<u32>();
         if uuid.is_empty() || ordinal.is_err() {
-            bail!("cuda_unavailable: malformed nvidia-smi GPU row");
+            bail!(coded!(CudaUnavailable, "malformed nvidia-smi GPU row"));
         }
         devices.push(CudaDevice {
             uuid: uuid.to_owned(),

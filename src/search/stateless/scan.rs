@@ -1,6 +1,7 @@
 use super::{coverage, handles};
 use crate::{
-    daemon::deadline::{QueryDeadline, TIMED_OUT},
+    coded_error::{CodeDetail, ErrorCode, error_detail},
+    daemon::deadline::QueryDeadline,
     results::{MAX_HITS, ResultSet},
     search::{self, InvocationDirectory, Query, telemetry::RetrievalTrace},
     source::{self, MAX_READ_BYTES},
@@ -132,7 +133,10 @@ pub(super) fn map_current_file(
         !root
             .join(&relative)
             .starts_with(normalized_path(cache_exclusion)),
-        "source_excluded: current map path is inside the selected cache"
+        coded!(
+            SourceExcluded,
+            "current map path is inside the selected cache"
+        )
     );
     ensure!(
         !relative.components().any(|part| match part {
@@ -142,24 +146,26 @@ pub(super) fn map_current_file(
             ),
             _ => false,
         }),
-        "source_excluded: current map path is inside an excluded directory"
+        coded!(
+            SourceExcluded,
+            "current map path is inside an excluded directory"
+        )
     );
     let encoded_path = store::encode_path(&relative);
     let bytes = match source::read_contained(&root, &relative, MAX_READ_BYTES) {
         Ok(bytes) => bytes,
-        Err(error)
-            if error
-                .chain()
-                .any(|cause| cause.to_string().contains("source is not a regular file")) =>
-        {
-            bail!("stateless_map_requires_file: map requires one current file path")
+        Err(error) if error_detail(&error) == Some(CodeDetail::NotRegularFile) => {
+            bail!(coded!(
+                StatelessMapRequiresFile,
+                "map requires one current file path"
+            ))
         }
         Err(error) => return Err(error),
     };
     check_deadline(deadline)?;
     ensure!(
         !bytes.contains(&0),
-        "source_excluded: current map path is binary"
+        coded!(SourceExcluded, "current map path is binary")
     );
     let extraction = source::usable_extraction(
         &encoded_path,
@@ -312,7 +318,7 @@ fn attach_filename_handles(
                 current.complete = false;
                 continue;
             }
-            Err(error) if error.to_string().starts_with("source_excluded:") => {
+            Err(error) if ErrorCode::SourceExcluded.is_code_of(&error) => {
                 current.excluded_files = current.excluded_files.saturating_add(1);
                 current.complete = false;
                 continue;
@@ -338,7 +344,10 @@ fn attach_filename_handles(
         if let Some(expected) = &hit.revision
             && expected != &revision
         {
-            bail!("stale_source: current file changed during stateless search; search again");
+            bail!(coded!(
+                StaleSource,
+                "current file changed during stateless search; search again"
+            ));
         }
         hit.revision = Some(revision);
         let end = if hit.kind == "file" && hit.start == 0 && hit.end == 0 {
@@ -370,7 +379,7 @@ fn read_current_sources(
         let relative = store::decode_path(encoded_path)?;
         let bytes = match source::read_contained(&store.root, &relative, MAX_CURRENT_FILE_BYTES) {
             Ok(bytes) => bytes,
-            Err(error) if error.to_string().starts_with("source_excluded:") => {
+            Err(error) if ErrorCode::SourceExcluded.is_code_of(&error) => {
                 store::current_source::mark_unavailable(store, encoded_path, "source_excluded", 0)?;
                 current.excluded_files += 1;
                 current.complete = false;
@@ -484,7 +493,7 @@ fn current_relative_path(path: &str) -> Result<std::path::PathBuf> {
             && relative
                 .components()
                 .all(|part| matches!(part, std::path::Component::Normal(_))),
-        "invalid_path: use one root-relative current file path"
+        coded!(InvalidPath, "use one root-relative current file path")
     );
     Ok(relative)
 }
@@ -500,7 +509,10 @@ fn extraction_fact_count(extraction: &crate::extract::Extraction) -> usize {
 fn validate_cache_exclusion(root: &Path, cache: &Path) -> Result<()> {
     ensure!(
         !root.starts_with(normalized_path(cache)),
-        "invalid_cache: selected cache cannot contain the repository root"
+        coded!(
+            InvalidCache,
+            "selected cache cannot contain the repository root"
+        )
     );
     Ok(())
 }
@@ -519,7 +531,10 @@ fn normalized_path(path: &Path) -> std::path::PathBuf {
 
 fn check_deadline(deadline: &QueryDeadline) -> Result<()> {
     if deadline.expired() {
-        bail!("{TIMED_OUT}: stateless current-source query deadline expired");
+        bail!(coded!(
+            TimedOut,
+            "stateless current-source query deadline expired"
+        ));
     }
     Ok(())
 }

@@ -58,7 +58,10 @@ pub(in crate::board::local_board) fn show(
             let plan = plan(tx, span.plan)?;
             let end = span.end.unwrap_or(plan.head_revision);
             if end < span.start {
-                return Err(invalid("invalid_reference", "revision range is reversed"));
+                return Err(invalid(
+                    BoardErrorCode::InvalidReference,
+                    "revision range is reversed",
+                ));
             }
             BoardResult::Diff(RevisionDiff {
                 before: revision(
@@ -73,7 +76,7 @@ pub(in crate::board::local_board) fn show(
         }
         _ => {
             return Err(invalid(
-                "invalid_reference",
+                BoardErrorCode::InvalidReference,
                 "show requires a plan, task, entry, revision, or revision span",
             ));
         }
@@ -82,7 +85,8 @@ pub(in crate::board::local_board) fn show(
 }
 
 fn decode_json<T: serde::de::DeserializeOwned>(body: String) -> Result<T, BoardError> {
-    serde_json::from_str(&body).map_err(|error| invalid("board_unavailable", error.to_string()))
+    serde_json::from_str(&body)
+        .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))
 }
 
 pub(in crate::board::local_board) fn linked_commits_bounded(

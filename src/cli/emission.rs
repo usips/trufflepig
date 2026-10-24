@@ -1,4 +1,6 @@
 //! One client emission boundary for execution, parsing, and delivery failures.
+mod outcome_classes;
+
 use super::emitted_evidence::{SavedEntries, capture_emitted};
 use super::{Arguments, request_context};
 use crate::diagnostics::{DiagnosticsMode, Operation, Outcome, RequestEvent};
@@ -76,9 +78,9 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
             Ok(text) => (text, Outcome::Success, 0),
             Err(error) => {
                 let message = format!("{error:#}");
-                let outcome = error_outcome(&message);
+                let outcome = outcome_classes::error_outcome(&error);
                 let stderr_message = message.replace(['\n', '\r'], " ");
-                let stderr_message = if stderr_message.contains("budget_too_small") {
+                let stderr_message = if outcome == Outcome::BudgetTooSmall {
                     format!(
                         "{stderr_message}; {}",
                         retry_hint_for_args(args, options.budget)
@@ -236,23 +238,6 @@ pub(super) fn operation(options: &Arguments) -> Operation {
 fn paging_flag(arg: &str) -> bool {
     let flag = arg.split_once('=').map_or(arg, |(flag, _)| flag);
     matches!(flag, "--page" | "--next" | "--cursor" | "--offset")
-}
-
-fn error_outcome(message: &str) -> Outcome {
-    if message.contains("budget_too_small") {
-        Outcome::BudgetTooSmall
-    } else if message.contains("stale_") {
-        Outcome::Stale
-    } else if message.contains("unavailable") || message.contains("expired_") {
-        Outcome::Unavailable
-    } else if message.contains("invalid_")
-        || message.contains("unknown_command")
-        || message.contains("usage:")
-    {
-        Outcome::InvalidInput
-    } else {
-        Outcome::Failure
-    }
 }
 
 fn retry_budget(current: usize) -> Option<usize> {

@@ -245,5 +245,5 @@ fn readable(fd: RawFd) -> libc::pollfd {
 }
 
 fn reading_frame_timeout() -> io::Error {
-    io::Error::new(ErrorKind::TimedOut, "timed_out: phase=reading_frame")
+    io::Error::new(ErrorKind::TimedOut, coded!(TimedOut, "phase=reading_frame"))
 }

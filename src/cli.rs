@@ -1,6 +1,7 @@
 //! Linux command dispatch; stdout contains one budgeted JSON response.
 mod board_api_probe;
 mod client_command;
+use crate::coded_error::CodedContext;
 use client_command::ClientCommand;
 mod client_identity;
 pub use client_identity::request_context;
@@ -100,13 +101,16 @@ fn direct_with_deadline(
             return crate::workspace::run_with_deadline(config, options, context, deadline.clone());
         }
         if options.member.is_some() || verb == "ws" {
-            anyhow::bail!("workspace_required: select a workspace configuration");
+            anyhow::bail!(coded!(
+                WorkspaceRequired,
+                "select a workspace configuration"
+            ));
         }
     }
     let root = options
         .root
         .canonicalize()
-        .context("invalid_root: cannot open repository root")?;
+        .with_coded_context(|| coded!(InvalidRoot, "cannot open repository root"))?;
     let cache = cache_path(&root, options.cache.as_deref())?;
     if options.no_cache && stateless_dispatch::eligible(options) {
         return stateless_dispatch::run(&root, &cache, options, &deadline.capped(QUERY_DEADLINE));
@@ -153,10 +157,7 @@ fn direct_with_deadline(
         if !deadline.expired() {
             let spawn: Result<crate::background_process::BackgroundChild> = (|| {
                 if deadline.expired() {
-                    anyhow::bail!(
-                        "{}: query deadline expired",
-                        crate::daemon::deadline::TIMED_OUT
-                    );
+                    anyhow::bail!(coded!(TimedOut, "query deadline expired"));
                 }
                 std::fs::create_dir_all(&cache).with_context(|| {
                     format!("cannot create root daemon cache {}", cache.display())
@@ -182,10 +183,7 @@ fn direct_with_deadline(
                     .arg("--diagnostics")
                     .arg(&options.diagnostics);
                 if deadline.expired() {
-                    anyhow::bail!(
-                        "{}: query deadline expired",
-                        crate::daemon::deadline::TIMED_OUT
-                    );
+                    anyhow::bail!(coded!(TimedOut, "query deadline expired"));
                 }
                 spawn_background(
                     command
@@ -252,7 +250,7 @@ pub fn cache_base() -> Result<PathBuf> {
     let base = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
-        .context("cache_unavailable: set --cache or XDG_CACHE_HOME")?;
+        .with_coded_context(|| coded!(CacheUnavailable, "set --cache or XDG_CACHE_HOME"))?;
     Ok(base.join("trufflepig"))
 }
 

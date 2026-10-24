@@ -10,6 +10,7 @@ pub(in crate::board::local_board) use action_collection_reads::{attention, overv
 pub(in crate::board::local_board) use event_collection_reads::{entries_page, feed, history};
 pub(in crate::board::local_board) use feedback_collection_reads::{feedback_page, feedback_record};
 
+use crate::board::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, Params};
 
 use super::super::{BoardError, WriteContext, invalid, max_seq, sql_error};
@@ -43,7 +44,7 @@ pub(in crate::board::local_board) fn validate_limit(
 ) -> Result<(), BoardError> {
     if !(1..=maximum).contains(&limit) {
         return Err(invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             format!("collection limit must be 1..{maximum}"),
         ));
     }
@@ -60,12 +61,15 @@ pub(in crate::board::local_board) fn sequence_window(
     let after = after.unwrap_or_default();
     if through > snapshot {
         return Err(invalid(
-            "invalid_reference",
+            BoardErrorCode::InvalidReference,
             "through exceeds the current snapshot",
         ));
     }
     if after > through {
-        return Err(invalid("invalid_reference", "after exceeds through"));
+        return Err(invalid(
+            BoardErrorCode::InvalidReference,
+            "after exceeds through",
+        ));
     }
     Ok((after, through))
 }
@@ -78,7 +82,8 @@ pub(in crate::board::local_board) fn count(
     let total: i64 = conn
         .query_row(sql, parameters, |row| row.get(0))
         .map_err(sql_error)?;
-    usize::try_from(total).map_err(|_| invalid("board_unavailable", "invalid collection count"))
+    usize::try_from(total)
+        .map_err(|_| invalid(BoardErrorCode::BoardUnavailable, "invalid collection count"))
 }
 
 pub(in crate::board::local_board) fn claim_ttl(ctx: &WriteContext) -> u64 {

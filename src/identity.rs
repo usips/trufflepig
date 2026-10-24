@@ -1,5 +1,6 @@
 //! Validated object identifiers, original-byte spans, and immutable result addresses.
-use anyhow::{Context, Result, bail};
+use crate::coded_error::CodedContext;
+use anyhow::{Result, bail};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{fmt, str::FromStr};
 
@@ -13,7 +14,10 @@ pub struct GitOid {
 impl GitOid {
     pub fn parse(value: &str) -> Result<Self> {
         if !matches!(value.len(), 40 | 64) || !value.bytes().all(|b| b.is_ascii_hexdigit()) {
-            bail!("invalid_oid: expected full SHA-1 or SHA-256 object ID");
+            bail!(coded!(
+                InvalidOid,
+                "expected full SHA-1 or SHA-256 object ID"
+            ));
         }
         let mut hex = [0; 64];
         for (out, byte) in hex.iter_mut().zip(value.bytes()) {
@@ -61,8 +65,8 @@ impl ContentRevision {
         Self(*blake3::hash(bytes).as_bytes())
     }
     pub fn parse(value: &str) -> Result<Self> {
-        let hash =
-            blake3::Hash::from_hex(value).context("invalid_revision: expected BLAKE3 digest")?;
+        let hash = blake3::Hash::from_hex(value)
+            .with_coded_context(|| coded!(InvalidRevision, "expected BLAKE3 digest"))?;
         Ok(Self(*hash.as_bytes()))
     }
 }
@@ -92,13 +96,13 @@ pub struct ByteSpan {
 impl ByteSpan {
     pub fn new(start: usize, end: usize) -> Result<Self> {
         if start > end {
-            bail!("invalid_span: reversed byte range");
+            bail!(coded!(InvalidSpan, "reversed byte range"));
         }
         Ok(Self { start, end })
     }
     pub fn validate(self, length: usize) -> Result<Self> {
         if self.start > self.end || self.end > length {
-            bail!("invalid_span: coordinates outside verified source");
+            bail!(coded!(InvalidSpan, "coordinates outside verified source"));
         }
         Ok(self)
     }
@@ -114,13 +118,14 @@ impl FromStr for ResultHandle {
     fn from_str(value: &str) -> Result<Self> {
         let (set, ordinal) = value
             .rsplit_once(':')
-            .context("invalid_handle: expected SET:ORDINAL")?;
-        let set = uuid::Uuid::parse_str(set).context("invalid_handle: invalid result-set ID")?;
+            .with_coded_context(|| coded!(InvalidHandle, "expected SET:ORDINAL"))?;
+        let set = uuid::Uuid::parse_str(set)
+            .with_coded_context(|| coded!(InvalidHandle, "invalid result-set ID"))?;
         let ordinal = ordinal
             .parse::<usize>()
-            .context("invalid_handle: invalid ordinal")?;
+            .with_coded_context(|| coded!(InvalidHandle, "invalid ordinal"))?;
         if ordinal == 0 {
-            bail!("invalid_handle: ordinal must be positive");
+            bail!(coded!(InvalidHandle, "ordinal must be positive"));
         }
         Ok(Self { set, ordinal })
     }
@@ -140,21 +145,26 @@ impl FromStr for ResultCursor {
     type Err = anyhow::Error;
     fn from_str(value: &str) -> Result<Self> {
         if value.starts_with("read:path:") {
-            bail!(
-                "invalid_cursor: path cursors resume with `show` using the same cursor; `more` takes SET@OFFSET"
-            );
+            bail!(coded!(
+                InvalidCursor,
+                "path cursors resume with `show` using the same cursor; `more` takes SET@OFFSET"
+            ));
         }
         if value.starts_with("read:") {
-            bail!(
-                "invalid_cursor: source cursors resume with `show` using the same cursor; `more` takes SET@OFFSET"
-            );
+            bail!(coded!(
+                InvalidCursor,
+                "source cursors resume with `show` using the same cursor; `more` takes SET@OFFSET"
+            ));
         }
         let (set, offset) = value
             .rsplit_once('@')
-            .context("invalid_cursor: expected SET@OFFSET")?;
+            .with_coded_context(|| coded!(InvalidCursor, "expected SET@OFFSET"))?;
         Ok(Self {
-            set: uuid::Uuid::parse_str(set).context("invalid_cursor: invalid result-set ID")?,
-            offset: offset.parse().context("invalid_cursor: invalid offset")?,
+            set: uuid::Uuid::parse_str(set)
+                .with_coded_context(|| coded!(InvalidCursor, "invalid result-set ID"))?,
+            offset: offset
+                .parse()
+                .with_coded_context(|| coded!(InvalidCursor, "invalid offset"))?,
         })
     }
 }

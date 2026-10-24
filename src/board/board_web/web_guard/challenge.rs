@@ -7,7 +7,8 @@ use super::super::board_web_secrets::{
     PROOF_HEX_LEN, constant_time_equal, fill_random, hex_encode,
 };
 use super::BoardWebToken;
-use anyhow::{Context, Result, ensure};
+use crate::coded_error::CodedContext;
+use anyhow::{Result, ensure};
 use sha2::{Digest, Sha256};
 use std::net::SocketAddr;
 
@@ -19,15 +20,16 @@ pub(crate) struct ChallengeNonce([u8; NONCE_BYTES]);
 impl ChallengeNonce {
     pub(crate) fn generate() -> Result<Self> {
         let mut bytes = [0; NONCE_BYTES];
-        fill_random(&mut bytes)
-            .context("board_web_challenge: read operating-system random source")?;
+        fill_random(&mut bytes).with_coded_context(|| {
+            coded!(BoardWebChallenge, "read operating-system random source")
+        })?;
         Ok(Self(bytes))
     }
 
     pub(crate) fn from_hex(text: &str) -> Result<Self> {
         ensure!(
             text.len() == PROOF_HEX_LEN && text.bytes().all(|byte| byte.is_ascii_hexdigit()),
-            "board_web_challenge: nonce must be 64 hexadecimal characters"
+            coded!(BoardWebChallenge, "nonce must be 64 hexadecimal characters")
         );
         let value = |byte: u8| match byte {
             b'0'..=b'9' => byte - b'0',

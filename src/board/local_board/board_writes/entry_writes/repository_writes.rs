@@ -9,7 +9,7 @@ pub(in crate::board::local_board) fn register_repo(
 ) -> Result<BoardReply, BoardError> {
     if registration.host != ctx.actor.host {
         return Err(invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             "repository path host differs from actor host",
         ));
     }
@@ -24,12 +24,12 @@ pub(in crate::board::local_board) fn register_repo(
     ).optional().map_err(sql_error)?;
     if let Some((key, roots)) = prior {
         let roots: Vec<crate::identity::GitOid> = serde_json::from_str(&roots)
-            .map_err(|error| invalid("board_unavailable", error.to_string()))?;
+            .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))?;
         let initial_key: RepoKey = key.parse().map_err(BoardError::from)?;
         if let Some(configured) = &registration.origin_override {
             if configured != &initial_key {
                 return Err(invalid(
-                    "invalid_options",
+                    BoardErrorCode::InvalidOptions,
                     format!(
                         "origin override {configured} conflicts with registered repository identity {initial_key}"
                     ),
@@ -63,7 +63,7 @@ pub(in crate::board::local_board) fn register_repo(
     )
     .map_err(sql_error)?;
     let roots = serde_json::to_string(&registration.root_commits)
-        .map_err(|error| invalid("invalid_body", error.to_string()))?;
+        .map_err(|error| invalid(BoardErrorCode::InvalidBody, error.to_string()))?;
     tx.execute(
         concat!(
             "INSERT INTO repo_paths(repo_key,host,common_dir,root_commits_json,registration_error) ",
@@ -102,7 +102,7 @@ pub(in crate::board::local_board) fn forget_repo_path(
 ) -> Result<BoardReply, BoardError> {
     if host != ctx.actor.host {
         return Err(invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             "repository path host differs from actor host",
         ));
     }
@@ -138,7 +138,7 @@ pub(in crate::board::local_board) fn record_scan(
         .map_err(sql_error)?;
     if updated == 0 {
         return Err(invalid(
-            "invalid_reference",
+            BoardErrorCode::InvalidReference,
             "scan target is not registered",
         ));
     }

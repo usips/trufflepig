@@ -32,20 +32,32 @@ pub struct PendingNotice {
 impl PendingNotice {
     pub fn validate(&self) -> anyhow::Result<()> {
         if self.entry.is_some() == self.event.is_some() {
-            anyhow::bail!("invalid_state: pending notice must contain exactly one entry or event");
+            anyhow::bail!(coded!(
+                InvalidState,
+                "pending notice must contain exactly one entry or event"
+            ));
         }
         if (self.kind == PendingNoticeKind::Entry) != self.entry.is_some() {
-            anyhow::bail!("invalid_state: pending notice payload does not match its kind");
+            anyhow::bail!(coded!(
+                InvalidState,
+                "pending notice payload does not match its kind"
+            ));
         }
         if let Some(entry) = &self.entry
             && entry.seq != self.seq
         {
-            anyhow::bail!("invalid_state: pending entry sequence does not match notice");
+            anyhow::bail!(coded!(
+                InvalidState,
+                "pending entry sequence does not match notice"
+            ));
         }
         if let Some(event) = &self.event
             && event.seq != self.seq
         {
-            anyhow::bail!("invalid_state: pending event sequence does not match notice");
+            anyhow::bail!(coded!(
+                InvalidState,
+                "pending event sequence does not match notice"
+            ));
         }
         Ok(())
     }

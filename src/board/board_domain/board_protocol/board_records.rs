@@ -83,10 +83,11 @@ impl BoardReply {
     }
     pub fn validate(&self) -> Result<()> {
         if self.api != BOARD_API {
-            bail!(
-                "board_api_mismatch: expected {BOARD_API}, received {}",
+            bail!(coded!(
+                BoardApiMismatch,
+                "expected {BOARD_API}, received {}",
                 self.api
-            );
+            ));
         }
         Ok(())
     }

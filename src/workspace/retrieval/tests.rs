@@ -75,7 +75,8 @@ fn member_timeout_diagnostic_includes_phase_member_root_and_fallback() {
         "state": "timed_out",
         "reason": "timed_out: current-source recheck deadline expired",
     })];
-    let error = timeout_without_member_answer(0, &coverage).unwrap();
+    let error =
+        timeout_without_member_answer(0, &coverage, Some("current_source_recheck")).unwrap();
     let message = format!("{error:#}");
     assert!(message.starts_with("timed_out: query deadline expired before any member answered;"));
     let (_, details) = message.split_once("details=").unwrap();
@@ -96,14 +97,17 @@ fn member_timeout_diagnostic_includes_phase_member_root_and_fallback() {
 #[test]
 fn member_timeout_diagnostic_requires_an_unanswered_timed_out_member() {
     let timed_out = [json!({"member":"lunatic", "state":"timed_out"})];
-    assert!(timeout_without_member_answer(1, &timed_out).is_none());
+    assert!(timeout_without_member_answer(1, &timed_out, None).is_none());
+    let error = timeout_without_member_answer(0, &timed_out, None).unwrap();
+    assert!(format!("{error:#}").contains(r#""phase":"member_processing""#));
     assert!(
         timeout_without_member_answer(
             0,
             &[json!({
                 "member":"lunatic",
                 "state":"unavailable"
-            })]
+            })],
+            None
         )
         .is_none()
     );

@@ -9,6 +9,7 @@ use super::super::{
 };
 use crate::board::board_actor::BoardRecipient;
 use crate::board::board_ids::{EntryId, PlanId, TaskId};
+use crate::board::board_protocol::BoardErrorCode;
 use crate::board::board_protocol::{
     AuthorityRole, AuthoritySource, BoardChange, BoardReply, BoardResult,
 };
@@ -24,7 +25,7 @@ pub(in crate::board::local_board) fn transfer_task(
 ) -> Result<BoardReply, BoardError> {
     if task.plan == destination {
         return Err(invalid(
-            "invalid_reference",
+            BoardErrorCode::InvalidReference,
             "task transfer requires a different destination plan",
         ));
     }
@@ -36,7 +37,7 @@ pub(in crate::board::local_board) fn transfer_task(
     if super::super::board_queries::board_reads::task_lineage::has_live_claims_or_workers(tx, task)?
     {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("{task} has a live claim or worker and cannot be transferred"),
         ));
     }
@@ -49,13 +50,17 @@ pub(in crate::board::local_board) fn transfer_task(
         )
         .optional()
         .map_err(sql_error)?;
-    let (title, column, assignee, section) =
-        source.ok_or_else(|| invalid("invalid_reference", format!("unknown task {task}")))?;
+    let (title, column, assignee, section) = source.ok_or_else(|| {
+        invalid(
+            BoardErrorCode::InvalidReference,
+            format!("unknown task {task}"),
+        )
+    })?;
     let title = PlanTitle::new(title).map_err(BoardError::from)?;
     let column: TaskColumn = column.parse().map_err(BoardError::from)?;
     if column == TaskColumn::Done {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("{task} is done and cannot be transferred"),
         ));
     }
@@ -181,13 +186,16 @@ pub(in crate::board::local_board) fn require_current(
         )
         .map_err(sql_error)?;
     if !exists {
-        return Err(invalid("invalid_reference", format!("unknown task {task}")));
+        return Err(invalid(
+            BoardErrorCode::InvalidReference,
+            format!("unknown task {task}"),
+        ));
     }
     if let Some(successor) =
         super::super::board_queries::board_reads::task_lineage::links(conn, task)?.successor
     {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("{task} was transferred to {successor}; use the successor card"),
         ));
     }
@@ -209,7 +217,7 @@ fn require_authority(
     )?
     .ok_or_else(|| {
         invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             format!("{} lacks {role} authority for {plan}", ctx.actor),
         )
     })
@@ -226,7 +234,7 @@ fn audit_source(source: &AuthoritySource) -> Result<(&'static str, Option<i64>),
                 .transpose()?,
         )),
         _ => Err(invalid(
-            "board_unavailable",
+            BoardErrorCode::BoardUnavailable,
             "task transfer resolved an unsupported authority source",
         )),
     }

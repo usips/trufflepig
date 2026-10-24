@@ -1,7 +1,8 @@
 //! `<cache>/results.sqlite3`: persisted result sets, apart from the published
 //! index so saving a query's results never waits behind a publication.
 use super::{MAX_BYTES, MAX_HITS, StoredResultSet, now};
-use crate::daemon::deadline::{QueryDeadline, TIMED_OUT};
+use crate::coded_error::CodedContext;
+use crate::daemon::deadline::QueryDeadline;
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::{path::Path, thread, time::Duration};
@@ -79,7 +80,10 @@ impl ResultSetStore {
             self.ensure_live()?;
         }
         if payload.len() > MAX_BYTES {
-            bail!("result_cache_unavailable: metadata exceeds cache capacity");
+            bail!(coded!(
+                ResultCacheUnavailable,
+                "metadata exceeds cache capacity"
+            ));
         }
         self.ensure_live()?;
         let tx = execute_sql(&self.conn, self.deadline.as_ref(), || {
@@ -153,8 +157,9 @@ impl ResultSetStore {
 
     pub fn load(&self, id: &str) -> Result<StoredResultSet> {
         self.ensure_live()?;
-        uuid::Uuid::parse_str(id)
-            .context("invalid_handle: expected immutable result-set identifier")?;
+        uuid::Uuid::parse_str(id).with_coded_context(|| {
+            coded!(InvalidHandle, "expected immutable result-set identifier")
+        })?;
         let row: Option<(i64, String)> = execute_sql(&self.conn, self.deadline.as_ref(), || {
             self.conn
                 .query_row(
@@ -166,14 +171,21 @@ impl ResultSetStore {
         })?;
         self.ensure_live()?;
         let Some((expires, payload)) = row else {
-            bail!("expired_result: result set expired or was evicted; search again");
+            bail!(coded!(
+                ExpiredResult,
+                "result set expired or was evicted; search again"
+            ));
         };
         if expires <= now() {
-            bail!("expired_result: result set expired; search again");
+            bail!(coded!(ExpiredResult, "result set expired; search again"));
         }
         self.ensure_live()?;
-        let set = serde_json::from_str(&payload)
-            .context("result_unavailable: stored result format is invalid; search again")?;
+        let set = serde_json::from_str(&payload).with_coded_context(|| {
+            coded!(
+                ResultUnavailable,
+                "stored result format is invalid; search again"
+            )
+        })?;
         self.ensure_live()?;
         Ok(set)
     }
@@ -206,7 +218,7 @@ fn commit(
 fn classify(deadline: Option<&QueryDeadline>, error: anyhow::Error) -> anyhow::Error {
     match deadline {
         Some(deadline) if deadline.expired() => {
-            error.context(format!("{TIMED_OUT}: query deadline expired"))
+            error.with_coded_context(|| coded!(TimedOut, "query deadline expired"))
         }
         Some(deadline) => deadline.classify(error),
         None => error,
@@ -215,7 +227,7 @@ fn classify(deadline: Option<&QueryDeadline>, error: anyhow::Error) -> anyhow::E
 
 fn ensure_live(deadline: Option<&QueryDeadline>) -> Result<()> {
     if deadline.is_some_and(QueryDeadline::expired) {
-        bail!("{TIMED_OUT}: query deadline expired");
+        bail!(coded!(TimedOut, "query deadline expired"));
     }
     Ok(())
 }
@@ -245,7 +257,7 @@ fn execute_sql<T>(
                 ensure_live(Some(deadline))?;
                 let pause = deadline.cap(BUSY_RETRY_PAUSE);
                 if pause.is_zero() {
-                    bail!("{TIMED_OUT}: query deadline expired");
+                    bail!(coded!(TimedOut, "query deadline expired"));
                 }
                 thread::sleep(pause);
             }

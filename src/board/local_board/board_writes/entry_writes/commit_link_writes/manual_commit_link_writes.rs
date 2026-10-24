@@ -24,14 +24,17 @@ pub(in crate::board::local_board) fn link_commit(
         )
         .map_err(sql_error)?;
     if !task_exists {
-        return Err(invalid("invalid_reference", format!("unknown task {task}")));
+        return Err(invalid(
+            BoardErrorCode::InvalidReference,
+            format!("unknown task {task}"),
+        ));
     }
     insert_commit_row(tx, commit)?;
     let existing_entry = plan_commit_entry(tx, commit, plan)?;
     if let Some(receipt) = task_link_receipt(tx, &commit.repo_key, commit.oid, task)? {
         let plan_entry = existing_entry.ok_or_else(|| {
             invalid(
-                "invalid_state",
+                BoardErrorCode::InvalidState,
                 format!("commit link for {task} has no plan-level entry"),
             )
         })?;
@@ -39,7 +42,7 @@ pub(in crate::board::local_board) fn link_commit(
             TaskLinkReceipt::Manual(seq) => (seq, true),
             TaskLinkReceipt::ManualWithoutEvent => {
                 return Err(invalid(
-                    "invalid_state",
+                    BoardErrorCode::InvalidState,
                     format!("manual commit link for {task} has no stored event receipt"),
                 ));
             }
@@ -78,7 +81,7 @@ pub(in crate::board::local_board) fn link_commit(
     ).map_err(sql_error)?;
     if inserted == 0 {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("commit link for {task} changed during its write"),
         ));
     }
@@ -116,7 +119,7 @@ pub(in crate::board::local_board) fn link_commit(
         .map_err(sql_error)?;
     if linked != 1 {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("manual commit link for {task} could not store its event receipt"),
         ));
     }

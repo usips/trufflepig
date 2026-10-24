@@ -1,15 +1,16 @@
 //! Current-source workspace lookup with configured ownership and no persisted results.
 
 use super::{WorkspaceConfig, hashed_member_cache, member_root::MemberRoot};
+use crate::coded_error::CodedContext;
 use crate::{
     cli::Arguments,
-    daemon::deadline::{QueryDeadline, TIMED_OUT},
+    daemon::deadline::QueryDeadline,
     output::OutputBudget,
     results::ResultSet,
     search::{InvocationDirectory, Query, stateless},
     store::{encode_path, is_index_cache_unavailable, preflight_results_cache},
 };
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use serde_json::{Value, json};
 
 pub(super) fn eligible(options: &Arguments) -> bool {
@@ -28,7 +29,10 @@ pub(super) fn cursor_owner(
     let roots = config.member_roots(&options.root.canonicalize()?)?;
     let mut owner = None;
     for member in roots {
-        ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+        ensure!(
+            !deadline.expired(),
+            coded!(TimedOut, "query deadline expired")
+        );
         if options
             .member
             .as_ref()
@@ -42,12 +46,17 @@ pub(super) fn cursor_owner(
         if crate::source::acquisition::cursor_matches_root(target, &member.root)? {
             ensure!(
                 owner.is_none(),
-                "invalid_cursor: ambiguous configured source owner"
+                coded!(InvalidCursor, "ambiguous configured source owner")
             );
             owner = Some(member);
         }
     }
-    owner.context("invalid_cursor: source owner is not a verified selected workspace member")
+    owner.with_coded_context(|| {
+        coded!(
+            InvalidCursor,
+            "source owner is not a verified selected workspace member"
+        )
+    })
 }
 
 pub(super) fn cache_refused(
@@ -89,22 +98,25 @@ pub(super) fn run(
     deadline: &QueryDeadline,
     fallback: Option<Value>,
 ) -> Result<String> {
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     let invocation = options.root.canonicalize()?;
     let roots = config.member_roots(&invocation)?;
     let scope = super::retrieval::member_scope::scope(&roots, options)?;
     let verb = scope
         .words
         .first()
-        .context("usage: search QUERY | map FILE")?;
+        .with_coded_context(|| coded!(Usage, "search QUERY | map FILE"))?;
     let text = scope.words[1..].join(" ");
     ensure!(
         !text.starts_with("refs:"),
-        "cache_free_unsupported: refs requires an index"
+        coded!(CacheFreeUnsupported, "refs requires an index")
     );
     ensure!(
         verb != "map" || scope.words.len() == 2,
-        "usage: --no-cache map FILE"
+        coded!(Usage, "--no-cache map FILE")
     );
     let query = Query::parse(&text)?;
     let mut queue = scope.members;
@@ -122,7 +134,10 @@ pub(super) fn run(
         position += 1;
         let member = &roots[index];
         let found = (|| {
-            ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+            ensure!(
+                !deadline.expired(),
+                coded!(TimedOut, "query deadline expired")
+            );
             member.verify_identity()?;
             let exclusion = hashed_member_cache(&member.root, options.cache.as_deref())?;
             if verb == "map" {
@@ -163,7 +178,8 @@ pub(super) fn run(
                 }
             }
             Err(error) => {
-                if crate::daemon::deadline::is_timed_out(&error) && answers.is_empty() {
+                if crate::coded_error::ErrorCode::TimedOut.is_code_of(&error) && answers.is_empty()
+                {
                     return Err(error);
                 }
                 incomplete = true;
@@ -174,11 +190,17 @@ pub(super) fn run(
             }
         }
     }
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     ensure!(
         !answers.is_empty(),
-        "source_unavailable: no selected member answered current-source lookup; absence=not_proven; coverage={}",
-        Value::Array(coverage.clone())
+        coded!(
+            SourceUnavailable,
+            "no selected member answered current-source lookup; absence=not_proven; coverage={}",
+            Value::Array(coverage.clone())
+        )
     );
     let truncated = incomplete || answers.iter().any(|(_, set)| set.truncated);
     let mut metadata = json!({"workspace":config.name,"source":"current_source","cache":"unused",
@@ -199,7 +221,10 @@ pub(super) fn run(
         .collect();
     let budget = OutputBudget::new(options.budget)?.with_format(options.output_format());
     let rendered = stateless::render_members(&parts, &metadata, options.limit, &budget)?;
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     Ok(rendered)
 }
 
