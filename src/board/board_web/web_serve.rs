@@ -40,7 +40,7 @@ pub(crate) struct BoardWebServer {
 
 impl BoardWebServer {
     pub(crate) fn bind(address: SocketAddr, published: &PublishedEndpoint) -> Result<Self> {
-        let runtime = crate::system::dir()
+        let runtime = crate::runtime_paths::system_dir()
             .with_coded_context(|| coded!(BoardUnavailable, "no router runtime directory"))?;
         let serve_lock = serve_lock::acquire_at(&runtime)?;
         let listener = web_endpoint::bind_listener(&runtime, address)?;

@@ -138,6 +138,6 @@ pub(super) fn storage_access_advice(
 fn router_socket_path(runtime: Option<&Path>) -> Option<PathBuf> {
     runtime
         .map(Path::to_path_buf)
-        .or_else(crate::system::dir)
+        .or_else(crate::runtime_paths::system_dir)
         .map(|runtime| runtime.join(crate::daemon::SOCKET_NAME))
 }

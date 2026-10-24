@@ -132,10 +132,10 @@ A per-user system daemon routes requests to the owning workspace coordinator or
 per-root daemon as a single endpoint agent harnesses can allowlist; see
 `src/system.rs`. It runs no watcher and no index: it starts the target daemon
 when missing and proxies the reply. Its socket lives in a per-user runtime
-directory (`src/system.rs:dir`). Clients treat connect errors `NotFound`,
+directory (`src/runtime_paths.rs:system_dir`). Clients treat connect errors `NotFound`,
 `ConnectionRefused`, and `PermissionDenied` as "no daemon" and fall back
 (`src/daemon.rs:unreachable`), first to the router's file spool
-(`src/daemon/spool.rs`, directory `src/system.rs:spool_dir`), which carries the
+(`src/daemon/spool.rs`, directory `src/runtime_paths.rs:spool_dir`), which carries the
 same JSON request and reply bodies through atomically renamed files and is served
 by the router's workers. The frame protocol and its limits apply unchanged per
 hop; concurrency is in the [runtime contract](runtime-contract.md).

@@ -42,7 +42,7 @@ pub(super) fn system_command(
             render("{\"status\":\"ok\"}")
         }
         Some("stop") => render(&crate::system::stop()?),
-        Some("dir") => match crate::system::dir() {
+        Some("dir") => match crate::runtime_paths::system_dir() {
             Some(dir) => Ok(format!("{}\n", dir.display())),
             None => anyhow::bail!(coded!(SystemUnavailable, "no runtime dir")),
         },

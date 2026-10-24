@@ -61,7 +61,7 @@ pub(super) fn run_isolated() -> bool {
 fn check_real_retry() {
     let runtime = PathBuf::from(std::env::var_os("TRUFFLEPIG_SYSTEM_DIR").unwrap());
     let database = PathBuf::from(std::env::var_os("TRUFFLEPIG_BOARD_DB").unwrap());
-    assert_eq!(crate::system::dir().as_ref(), Some(&runtime));
+    assert_eq!(crate::runtime_paths::system_dir().as_ref(), Some(&runtime));
     std::fs::create_dir(&runtime).unwrap();
     let listener = UnixListener::bind(runtime.join(crate::daemon::SOCKET_NAME)).unwrap();
     listener.set_nonblocking(true).unwrap();

@@ -77,7 +77,7 @@ pub(crate) struct WebStore {
 
 impl WebStore {
     fn open(cache: BoardConfigCache) -> Result<Self> {
-        let runtime = crate::system::dir()
+        let runtime = crate::runtime_paths::system_dir()
             .with_coded_context(|| coded!(BoardUnavailable, "no router runtime directory"))?;
         Self::open_at(cache, runtime)
     }

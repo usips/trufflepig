@@ -137,7 +137,7 @@ fn ensure_waits_for_a_migrating_router_without_spawning_a_second() {
         assert!(status.success());
         return;
     }
-    let runtime = crate::system::dir().expect("child sets TRUFFLEPIG_SYSTEM_DIR");
+    let runtime = crate::runtime_paths::system_dir().expect("child sets TRUFFLEPIG_SYSTEM_DIR");
     let spawned_before = crate::background_process::spawned_count();
     let worker = std::thread::spawn(crate::system::serve);
     // The slowed migration holds the router for five seconds; the socket binds
@@ -200,7 +200,7 @@ fn ensure_waits_for_a_slow_spawned_router() {
         assert!(status.success());
         return;
     }
-    let runtime = crate::system::dir().expect("child sets TRUFFLEPIG_SYSTEM_DIR");
+    let runtime = crate::runtime_paths::system_dir().expect("child sets TRUFFLEPIG_SYSTEM_DIR");
     let process = SlowRouterProcess(std::cell::Cell::new(None));
     let spawned_before = crate::background_process::spawned_count();
     let started = Instant::now();

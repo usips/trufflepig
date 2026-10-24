@@ -29,7 +29,7 @@ CLI bootstrap links `/?ref=REF#token=TOKEN` (REF `P7`, `P7@N`, or `E485`) conver
 and drop the reference query/token. Every private JSON, render, ingest, and event-stream request
 supplies `X-Board-Token`; browser streams use `fetch` streaming to send it. The server atomically
 publishes API/address/database, without a token, in owned regular 0600
-`system::dir()/board-web.json`, removed on shutdown.
+`runtime_paths::system_dir()/board-web.json`, removed on shutdown.
 
 `board web [P7|P7@N|E#]` validates the descriptor and configured database, verifies the listener's
 owner through `/proc/net/tcp{,6}`, and proves token possession before printing a link. The proof
@@ -40,7 +40,7 @@ published wildcard address. The challenge route keeps Host, Origin, and JSON bod
 Missing, stale, or mismatched endpoints advise `board-serve`; `board web` creates no token.
 
 The token is 256 CSPRNG bits stored as 64 hexadecimal characters at
-`system::dir()/board-web.token`. Every start rotates it using `O_NOFOLLOW`, 0600 permissions, and
+`runtime_paths::system_dir()/board-web.token`. Every start rotates it using `O_NOFOLLOW`, 0600 permissions, and
 atomic rename, so restart invalidates old links. Unsafe or malformed files are replaced without
 writing through them; candidate filenames use an independent UUID, and the parent directory is
 synced. Runtime resolution follows the [runtime contract](runtime-contract.md). Authentication

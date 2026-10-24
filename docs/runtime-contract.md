@@ -21,7 +21,7 @@ directory, so linked worktrees share immutable Git facts. An explicit `--cache` 
 history; `--history-cache DIRECTORY` selects a shared history-cache base. In workspace mode,
 `--cache` supplies an isolated base with coordinator state and separate member caches.
 A per-user system daemon gives agent harnesses one endpoint to allowlist. Its
-socket is `daemon.sock` in the system directory (`src/system.rs:dir_from`):
+socket is `daemon.sock` in the system directory (`src/runtime_paths.rs:dir_from`):
 `$TRUFFLEPIG_SYSTEM_DIR` when absolute, else
 `$XDG_RUNTIME_DIR/trufflepig/system` (the allowlist target) when absolute, else
 `/run/user/<uid>/trufflepig/system` when that login-session directory exists, is

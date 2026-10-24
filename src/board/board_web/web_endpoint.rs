@@ -170,7 +170,7 @@ impl Drop for EndpointGuard {
 }
 
 pub(super) fn link(target: Option<BoardRef>) -> Result<String> {
-    let runtime = crate::system::dir()
+    let runtime = crate::runtime_paths::system_dir()
         .with_coded_context(|| coded!(BoardUnavailable, "no runtime directory"))?;
     link_at(&runtime, &BoardConfig::load()?, target)
 }

@@ -90,7 +90,7 @@ impl ClientCommand {
                 args,
                 context,
                 options.no_daemon,
-                crate::system::dir,
+                crate::runtime_paths::system_dir,
                 deadline,
             );
         }

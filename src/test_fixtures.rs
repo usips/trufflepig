@@ -4,6 +4,7 @@
 mod git_fixture;
 
 pub(crate) use git_fixture::GitFixture;
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 pub(crate) fn scratch(prefix: &str) -> tempfile::TempDir {
@@ -28,4 +29,16 @@ pub(crate) fn scratch(prefix: &str) -> tempfile::TempDir {
         builder.permissions(std::fs::Permissions::from_mode(0o700));
     }
     builder.tempdir_in(parent).unwrap()
+}
+
+/// An environment lookup over fixed `(name, value)` pairs.
+pub(crate) fn env_lookup<'a>(
+    pairs: &'a [(&'a str, &'a str)],
+) -> impl Fn(&str) -> Option<OsString> + 'a {
+    move |name| {
+        pairs
+            .iter()
+            .find(|(key, _)| *key == name)
+            .map(|(_, value)| OsString::from(value))
+    }
 }

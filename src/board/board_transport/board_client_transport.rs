@@ -80,8 +80,8 @@ impl BoardClientTransport {
             context,
             &mut SystemGateway,
             &mut BoardConfig::load,
-            crate::system::dir().as_deref(),
-            &crate::system::spool_dir(),
+            crate::runtime_paths::system_dir().as_deref(),
+            &crate::runtime_paths::spool_dir(),
             &deadline,
         )
     }

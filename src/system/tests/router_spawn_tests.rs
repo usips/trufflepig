@@ -44,7 +44,7 @@ fn running_router_answers_without_the_long_wait() {
     if isolated_router_test("running_router_answers_without_the_long_wait") {
         return;
     }
-    let runtime = dir().unwrap();
+    let runtime = system_dir().unwrap();
     let worker = std::thread::spawn(serve);
     let ping = ["system".into(), "status".into()];
     let context = RequestContext::new(None, None);
@@ -133,7 +133,7 @@ fn managed_start_waits_for_the_unit_router_without_a_child() {
     if isolated_router_test("managed_start_waits_for_the_unit_router_without_a_child") {
         return;
     }
-    let runtime = dir().unwrap();
+    let runtime = system_dir().unwrap();
     let unit = unit_owning(&runtime);
     // The first baseline read fails, which is not a failed start; the router
     // binds 600 ms after the unit start, so the watch reads `activating` first.
@@ -185,7 +185,7 @@ fn unit_that_fails_at_startup_bails_before_the_deadline() {
     if isolated_router_test("unit_that_fails_at_startup_bails_before_the_deadline") {
         return;
     }
-    let runtime = dir().unwrap();
+    let runtime = system_dir().unwrap();
     let unit = unit_owning(&runtime);
     let systemctl = super::managed_unit_tests::FakeSystemctl::new([
         Ok("ActiveState=activating\nNRestarts=0"),
@@ -222,7 +222,7 @@ fn unit_that_keeps_restarting_bails_once_nrestarts_passes_its_baseline() {
     if isolated_router_test("unit_that_keeps_restarting_bails_once_nrestarts_passes_its_baseline") {
         return;
     }
-    let runtime = dir().unwrap();
+    let runtime = system_dir().unwrap();
     let unit = unit_owning(&runtime);
     let systemctl = super::managed_unit_tests::FakeSystemctl::new([
         Ok("ActiveState=activating\nNRestarts=0"),

@@ -81,7 +81,7 @@ Denied socket access and local SQLite permission failures identify router socket
 Sandbox access preserves caller identity.
 
 The router pins its database before opening it; only the socket-owning router publishes
-`system::dir()/board-backend.json` holding the absolute database path. `system-serve` opens the
+`runtime_paths::system_dir()/board-backend.json` holding the absolute database path. `system-serve` opens the
 board writer before accepting connections; migration never races status or board-serve startup.
 Fallback and service startup reject a conflicting known pin; paths canonicalizing to the same
 file pass. Read-only operations use deferred query-only transactions without creating actors,

@@ -132,7 +132,10 @@ fn system_dir_prints_the_resolved_runtime_path() {
     let output = system_command(&options, &context).unwrap();
     assert_eq!(
         output,
-        format!("{}\n", crate::system::dir().unwrap().display())
+        format!(
+            "{}\n",
+            crate::runtime_paths::system_dir().unwrap().display()
+        )
     );
 }
 

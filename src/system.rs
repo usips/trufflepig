@@ -7,6 +7,7 @@ mod route;
 pub mod sweep;
 
 use crate::coded_error::CodedContext;
+use crate::runtime_paths::{spool_dir, system_dir};
 pub(crate) use board_runtime::{
     board_router_recently_unavailable, clear_board_router_unavailable,
     mark_board_router_unavailable, record_board_database, validate_board_database,
@@ -25,7 +26,6 @@ use crate::{
 use anyhow::{Result, bail};
 use route::route;
 use std::{
-    ffi::OsString,
     fs,
     io::ErrorKind,
     path::PathBuf,
@@ -36,64 +36,9 @@ use std::{
 };
 use sweep::{SWEEP_GRACE, SWEEP_INTERVAL, sweep};
 
-fn dir_from(
-    get: impl Fn(&str) -> Option<OsString>,
-    login_session: impl Fn() -> Option<PathBuf>,
-) -> Option<PathBuf> {
-    // Empty and relative values fall through at every step, including an
-    // explicit but empty override: only absolute paths resolve.
-    let absolute = |name: &str| {
-        get(name)
-            .map(PathBuf::from)
-            .filter(|path| path.is_absolute())
-    };
-    if let Some(dir) = absolute("TRUFFLEPIG_SYSTEM_DIR") {
-        return Some(dir);
-    }
-    if let Some(base) = absolute("XDG_RUNTIME_DIR") {
-        return Some(base.join("trufflepig").join("system"));
-    }
-    if let Some(session) = login_session() {
-        return Some(session.join("trufflepig").join("system"));
-    }
-    let base =
-        absolute("XDG_CACHE_HOME").or_else(|| absolute("HOME").map(|home| home.join(".cache")))?;
-    Some(base.join("trufflepig").join("system"))
-}
-
-/// The login session's `/run/user/<uid>` when it exists, is owned by us,
-/// and is mode 0700.
-fn login_session_runtime_dir() -> Option<PathBuf> {
-    // SAFETY: getuid has no preconditions and cannot fail.
-    let uid = unsafe { libc::getuid() };
-    let candidate = PathBuf::from(format!("/run/user/{uid}"));
-    let metadata = candidate.metadata().ok()?;
-    use std::os::unix::fs::MetadataExt;
-    (metadata.is_dir() && metadata.uid() == uid && metadata.mode() & 0o7777 == 0o700)
-        .then_some(candidate)
-}
-
-/// Per-user runtime directory holding the system daemon socket.
-pub fn dir() -> Option<PathBuf> {
-    dir_from(|name| std::env::var_os(name), login_session_runtime_dir)
-}
-
-fn spool_dir_from(get: impl Fn(&str) -> Option<OsString>, uid: u32) -> PathBuf {
-    match get("TRUFFLEPIG_SPOOL_DIR") {
-        Some(dir) => PathBuf::from(dir),
-        None => PathBuf::from(format!("/tmp/trufflepig-{uid}/spool")),
-    }
-}
-
-/// Spool directory for sandboxed clients; `/tmp` is what such sandboxes leave writable.
-pub fn spool_dir() -> PathBuf {
-    // SAFETY: getuid has no preconditions and cannot fail.
-    spool_dir_from(|name| std::env::var_os(name), unsafe { libc::getuid() })
-}
-
 /// Stops a listening system daemon through its socket.
 pub fn stop() -> Result<String> {
-    daemon::stop(&dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?)
+    daemon::stop(&system_dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?)
 }
 
 /// Sends a request to the system daemon over its socket, else its spool;
@@ -108,7 +53,7 @@ pub(crate) fn request_by(
     context: &RequestContext,
     deadline: QueryDeadline,
 ) -> Result<Option<String>> {
-    if let Some(dir) = dir()
+    if let Some(dir) = system_dir()
         && let Some(reply) = daemon::request_by(&dir, args, context, deadline.clone())?
     {
         return Ok(Some(reply));
@@ -137,7 +82,7 @@ pub(crate) fn ensure_by(deadline: QueryDeadline) -> Result<()> {
 /// Starts the router through the installed unit when it owns this runtime
 /// directory, else as a detached `system-serve`.
 fn start_router(deadline: QueryDeadline) -> Result<managed_unit::RouterStart<'static>> {
-    let dir = dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?;
+    let dir = system_dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?;
     let unit = managed_unit::installed_unit_text()?;
     let systemctl_deadline = deadline.clone();
     managed_unit::start_router_with(
@@ -150,7 +95,7 @@ fn start_router(deadline: QueryDeadline) -> Result<managed_unit::RouterStart<'st
 }
 
 fn spawn_router() -> Result<BackgroundChild> {
-    let cache = dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?;
+    let cache = system_dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?;
     let executable = current_background_executable(&cache, BackgroundOwner::Command)?;
     let mut command = Command::new(&executable);
     command.arg("system-serve");
@@ -170,7 +115,7 @@ fn ensure_until<'run>(
         return Ok(());
     }
     ensure_router_starting(deadline.clone(), start_wait)?;
-    let dir = dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?;
+    let dir = system_dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?;
     let started = if daemon::running_by(&dir, &deadline)? {
         None
     } else {
@@ -221,7 +166,7 @@ fn ensure_until<'run>(
 /// Reports the existing startup failure after the one absolute deadline expires.
 fn ensure_router_starting(deadline: QueryDeadline, start_wait: Duration) -> Result<()> {
     if deadline.expired() {
-        let cache = dir()
+        let cache = system_dir()
             .map(|cache| cache.display().to_string())
             .unwrap_or_else(|| "<unavailable>".into());
         bail!(coded!(
@@ -242,7 +187,13 @@ fn poll(
     if deadline.expired() {
         return Ok(None);
     }
-    poll_at(dir().as_deref(), &spool_dir(), ping, context, deadline)
+    poll_at(
+        system_dir().as_deref(),
+        &spool_dir(),
+        ping,
+        context,
+        deadline,
+    )
 }
 
 fn poll_at(
@@ -293,7 +244,8 @@ fn poll_budget_spent(error: &anyhow::Error) -> bool {
 /// `SWEEP_INTERVAL` on a background thread, so a slow daemon stop never
 /// blocks the request path.
 pub fn serve() -> Result<()> {
-    let runtime = dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?;
+    let runtime =
+        system_dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?;
     let router = SystemRouter {
         runtime: Some(runtime.clone()),
         cache_base: crate::cli::cache_base().ok(),

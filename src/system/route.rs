@@ -1,7 +1,8 @@
 //! Request routing from the system daemon to workspace, root, and board owners.
 
-use super::{dir, record_board_database};
+use super::record_board_database;
 use crate::coded_error::CodedContext;
+use crate::runtime_paths::system_dir;
 use crate::{
     background_process::{
         BackgroundChild, BackgroundOwner, background_executable_replaced,
@@ -178,7 +179,7 @@ fn board_schema_version(database: &Path) -> Option<i64> {
 
 /// Refuses a stop aimed at this router's own socket directory.
 fn refuse_router_stop(cache: &Path) -> Result<()> {
-    if let Some(dir) = dir() {
+    if let Some(dir) = system_dir() {
         ensure!(
             cache != dir,
             coded!(InvalidCache, "cannot stop the system router")

@@ -21,7 +21,7 @@ impl BoardWebToken {
     /// Rotate to a fresh token; board-serve calls this on every start so a
     /// leaked token dies with the service that published it.
     pub(crate) fn rotate() -> Result<Self> {
-        let directory = crate::system::dir()
+        let directory = crate::runtime_paths::system_dir()
             .with_coded_context(|| coded!(BoardWebToken, "no runtime directory"))?;
         fs::create_dir_all(&directory)
             .with_coded_context(|| coded!(BoardWebToken, "create runtime directory"))?;
