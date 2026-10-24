@@ -2,7 +2,7 @@
 
 Use the [reviewer prerequisites](../SKILL.md#reviewer-inspect-and-post-a-verdict)
 before posting structured evidence. Authority is defined by the
-[worker contract](https://github.com/usips/trufflepig/blob/feat/trufflepig-board/docs/board-workers.md#structured-progress-and-review-verdicts).
+[worker contract](https://github.com/usips/trufflepig/blob/master/docs/board-workers.md#structured-progress-and-review-verdicts).
 
 ## Separate review after the author finishes
 

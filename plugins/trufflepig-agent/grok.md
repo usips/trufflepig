@@ -19,8 +19,8 @@ installation and use `grok inspect --json` to verify discovery. Grok also reads
 installation may already expose this skill.
 
 The wrapper recognizes Grok through `GROK_SESSION_ID` when supplied or a Grok
-ancestor process. When no session identifier is available, audit records use
-the documented harness/cwd/day fallback, not a claimed unique conversation ID.
+ancestor process. When no session identifier is available, audit records carry
+no session and `trufflepig-audit` groups them as `unattributed`.
 Set `TRUFFLEPIG_AGENT_HARNESS=grok` and `TRUFFLEPIG_SESSION` explicitly when an
 external launcher hides process ancestry or needs exact conversation attribution.
 No Grok session environment export or hook is assumed.

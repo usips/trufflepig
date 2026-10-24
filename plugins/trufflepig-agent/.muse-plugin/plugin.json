@@ -35,14 +35,7 @@
         "event": "SessionStart",
         "command": ["sh", "hooks/session-start.sh", "muse", "start"],
         "timeoutMs": 2000,
-        "statusMessage": "Recording trufflepig audit session"
-      },
-      {
-        "id": "trufflepig-session-end",
-        "event": "SessionEnd",
-        "command": ["sh", "hooks/session-start.sh", "muse", "end"],
-        "timeoutMs": 2000,
-        "statusMessage": "Closing trufflepig audit session"
+        "statusMessage": "Starting the trufflepig router"
       }
     ],
     "mcpServers": [],

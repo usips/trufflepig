@@ -33,7 +33,7 @@ Include every contributing model with its actual co-author identity.
 `board pending` is read-only: it neither acknowledges activity nor renews the
 claim. Do not poll it on every turn. File Trufflepig feedback only when a
 failure forces a workaround; use the canonical body and limits in the
-[feedback contract](https://github.com/usips/trufflepig/blob/feat/trufflepig-board/docs/board-feedback-contract.md).
+[feedback contract](https://github.com/usips/trufflepig/blob/master/docs/board-feedback-contract.md).
 
 Use `board web` when the user requests the web board. Its bootstrap URL contains
 a secret token; do not store it in files, commits, feedback, or audit notes.

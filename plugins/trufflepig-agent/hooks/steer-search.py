@@ -179,7 +179,7 @@ def steer() -> int:
     policy.log({
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "harness": harness,
-        "session": session or f"{harness}-{checkout.cwd_key(str(cwd))}-{time.strftime('%Y%m%d')}",
+        "session": session or None,
         "agent": agent,
         "agent_type": str(payload.get("agent_type") or ""),
         "cwd": str(cwd),

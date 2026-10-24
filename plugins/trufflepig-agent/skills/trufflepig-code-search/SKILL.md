@@ -130,9 +130,10 @@ Use `--json` when relationship fields or machine-readable coverage are needed.
 - `next:` is a display label, not part of the command or cursor. For
   `next: more SET@OFFSET`, run `trufflepig-agent more SET@OFFSET`; for
   `next: show read:H@B`, run `trufflepig-agent show read:H@B`. An adjacent
-  `hint: -n N raises the page size` is optional advice, separate from the
-  cursor. For example, widen `next: more abc@4` with
-  `trufflepig-agent -n 100 more abc@4`.
+  `hint:` line is optional advice, separate from the cursor: `-n N raises the
+  page size` when the page cap cut results, `-b N raises the token budget` when
+  the budget did. For example, widen `next: more abc@4` with
+  `trufflepig-agent -n 100 more abc@4` or `trufflepig-agent -b 2000 more abc@4`.
 - For an exhaustive list, raise the page size once (`trufflepig-agent -n 100 refs
   NAME`) instead of paging repeatedly; `refs` ends with `refs: T sites in F files`.
 - Partial coverage or candidate truncation prevents a claim of exhaustive absence.
@@ -159,7 +160,7 @@ the plan ID in relevant feedback; do not claim another worker's task.
 
 Report a Trufflepig failure only when it forces a workaround. Use the four-field
 body, categories, and 4 KiB limit in the
-[feedback contract](https://github.com/usips/trufflepig/blob/feat/trufflepig-board/docs/board-feedback-contract.md#report-fields);
+[feedback contract](https://github.com/usips/trufflepig/blob/master/docs/board-feedback-contract.md#report-fields);
 do not copy a second template here. The wrapper adds call metadata,
 never source output. If reporting fails, state that once and continue the fallback.
 

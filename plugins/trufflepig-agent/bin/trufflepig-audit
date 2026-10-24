@@ -25,6 +25,8 @@ from pathlib import Path
 
 from trufflepig_runtime import fallback_root
 
+# Label for calls without a session ID; none is ever synthesized.
+UNATTRIBUTED = "unattributed"
 THRESHOLDS = {
     "error_rate": 0.25,
     "no_hit_rate": 0.5,
@@ -77,7 +79,7 @@ def load(directories: list[Path], harness: str | None, since_hours: float | None
 def summarize(records: list[dict]) -> list[dict]:
     sessions: dict[tuple[str, str], list[dict]] = defaultdict(list)
     for record in records:
-        sessions[(record.get("harness", "?"), record.get("session", "?"))].append(record)
+        sessions[(record.get("harness", "?"), record.get("session") or UNATTRIBUTED)].append(record)
     rows = []
     for (harness, session), calls in sessions.items():
         calls = [c for c in calls if not c.get("malformed")]
@@ -251,7 +253,7 @@ def main() -> int:
             print()
             for record in records:
                 if record.get("signals"):
-                    print(f"{record.get('ts')} {record.get('harness')} {record.get('session', '')[:20]} "
+                    print(f"{record.get('ts')} {record.get('harness')} {(record.get('session') or UNATTRIBUTED)[:20]} "
                           f"{record.get('verb')} {' '.join(record.get('args', []))[:60]!r} "
                           f"{record.get('elapsed_ms')}ms hits={record.get('hits')} "
                           f"signals={','.join(record['signals'])} {record.get('error') or record.get('stderr') or ''}"[:220])

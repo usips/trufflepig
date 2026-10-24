@@ -42,22 +42,17 @@ scopes for Codex. Existing links to this checkout are reusable; conflicting unma
 destinations fail without replacement. `--bin DIR` changes the default `~/.local/bin` wrapper
 destination. With no selectors, the installer attempts Kimi and Muse installation.
 
-`--omp` links both skills and a session-attribution extension under
-omp's active agent directory (default `~/.omp/agent`), honoring its environment
-overrides and profiles; `--omp-agent-dir DIR` selects an explicit destination.
-See [omp integration](omp.md) for discovery, session lifecycle, verification,
-and removal.
+`--omp` links both skills and a session-attribution extension under omp's active agent directory
+(default `~/.omp/agent`), honoring its environment overrides and profiles; `--omp-agent-dir DIR`
+selects an explicit destination. See [omp integration](omp.md) for its lifecycle and removal.
 
-Codex discovers skills by their description and also supports explicit
-`$trufflepig-code-search` invocation. Start a fresh session if discovery does not
-refresh. See [Codex skill discovery](https://learn.chatgpt.com/docs/build-skills).
-Skill availability does not guarantee automatic selection on every prompt.
+Codex discovers skills by their description and also supports explicit `$trufflepig-code-search`
+invocation; start a fresh session if discovery does not refresh. See [Codex skill
+discovery](https://learn.chatgpt.com/docs/build-skills). Availability does not guarantee selection.
 
-For Rust API documentation and trait navigation in Codex, the skill includes an
-optional [rustdoc helper](skills/trufflepig-code-search/references/rustdoc.md).
-It builds one Cargo target with an installed nightly and returns bounded JSON
-with compilation provenance and source spans. The symlink installation includes
-the helper and its reference; no additional wrapper or daemon setup is needed.
+The skill's optional [rustdoc helper](skills/trufflepig-code-search/references/rustdoc.md) adds
+Rust API documentation and trait navigation in Codex: it builds one Cargo target with an installed
+nightly and returns bounded JSON with provenance and source spans, with no extra setup.
 
 Codex, Claude, Grok, Gemini, and OpenCode configure a data-only `agent-runtime.json` under
 `$XDG_CONFIG_HOME/trufflepig` (default `~/.config/trufflepig`). `runtime_dir` defaults to
@@ -136,8 +131,9 @@ marked harness wins. Kimi and Muse markers are their session variables, `KIMI_SE
 provider ID, then `AGENT_SESSION_ID`; absent all, the actor session is unattributed. Origin preserves
 the observed harness/session despite a CLI session claim. Diagnostic baselines come only from
 explicit `--session` or `TRUFFLEPIG_SESSION`. Codex prefers `CODEX_THREAD_ID` over
-`CODEX_SESSION_ID`; Claude/omp/OpenCode integrations supply provider IDs per call. The session-start
-hook records no identity. No cwd/date ID is synthesized. See [Claude integration](claude-code.md) and [omp integration](omp.md).
+`CODEX_SESSION_ID`; Claude/omp/OpenCode integrations supply provider IDs per call. No session ID is
+synthesized; `trufflepig-audit` groups calls without one as `unattributed`. See
+[Claude integration](claude-code.md) and [omp integration](omp.md).
 
 Each call logs arguments, exit code, latency, byte count, coverage, truncation, and struggle
 signals. Board/feedback text is redacted. Logs use `$TRUFFLEPIG_AGENT_LOG_DIR`, otherwise
@@ -165,30 +161,31 @@ Kimi's optional `--kimi-hooks` and the Muse manifest use `hooks/session-start.sh
 for best-effort daemon startup. The hook writes no session state.
 
 `hooks/steer-search.py` steers ordinary search in checkouts of registered workspace members and
-Git roots whose default cache holds an index, including linked worktrees. It classifies each shell search (`definition`, `body`, `outline`,
-`references`, `regex`, `concept`, `files`) and source read (`read`: `sed -n A,Bp F` →
-`show path:F:A-B`, `cat F` → `map F`), resolving paths against `cd DIR`/`git -C DIR`, and
-names the equivalent command (prefixed with `cd CHECKOUT &&` when that is another checkout).
-Pipe filters, copies (`cat F > out`), logs and command output, other revisions, filesystem
-`find` actions, shell variables, and paths outside the checkout are never steered. Nudges are
-full for an agent's first search of a class, one line after; piped or chained
-`trufflepig-agent` calls get a tip that the footer was lost. Modes: `off` does nothing; `nudge`
-allows and adds the equivalent command as context after the search (Claude default); `block`
-denies until one Trufflepig call from this directory in 45 minutes (Kimi/Muse default);
-`strict` denies `definition`, `body`, `outline`, and `references` with the equivalent command
-unless a Trufflepig call from this checkout returned no hits or failed in the last 10 minutes,
-or the command ends with `# tp-fallback: reason`; it nudges the rest, including `read`.
+Git roots whose default cache holds an index, including linked worktrees. It classifies each shell
+search (`definition`, `body`, `outline`, `references`, `regex`, `concept`, `files`) and source read
+(`read`: `sed -n A,Bp F` → `show path:F:A-B`, `cat F` → `map F`), resolving paths against
+`cd DIR`/`git -C DIR`, and names the equivalent command (prefixed with `cd CHECKOUT &&` when that
+is another checkout). Glob tool calls are file searches. Pipe filters, copies (`cat F > out`), logs
+and command output, other revisions, filesystem `find` actions, shell variables, and paths outside
+the checkout are never steered. Nudges are full for an agent's first search of a class, one line
+after; piped or chained `trufflepig-agent` calls get a tip that the footer was lost. Modes: `off`
+does nothing; `nudge` allows and adds the equivalent command as context after the search (Claude
+default); `block` denies until one Trufflepig call, with or without a session, from this directory
+in 45 minutes (Kimi/Muse default); `strict` denies `definition`, `body`, `outline`, and
+`references` with the equivalent command unless a Trufflepig search, `refs`, `map`, or `show` from
+this checkout returned no hits or failed in the last 10 minutes, or the command ends with
+`# tp-fallback: reason`; it nudges the rest, including `read`.
 
-`TRUFFLEPIG_AGENT_STEER` overrides `steer.<harness>` in `agent-runtime.json`,
-which `install.sh --steer MODE` records for the selected Claude, Kimi, or Muse
-installation. Symbol, body, outline, and `refs` commands are suggested only for Rust,
-TypeScript, JavaScript, C#, PHP, Luau, and DreamMaker; docs paths and other languages get `re:`
-equivalents, and bare all-caps markers such as `TODO` are not steered.
-Codex, Grok, Gemini, omp, and OpenCode do not install steering hooks and report steering as `off`.
+`TRUFFLEPIG_AGENT_STEER` overrides `steer.<harness>` in `agent-runtime.json`, which
+`install.sh --steer MODE` records for the selected Claude, Kimi, or Muse installation. Symbol,
+body, outline, and `refs` commands are suggested only for Rust, TypeScript, JavaScript, C#, PHP,
+Luau, and DreamMaker; docs paths and other languages get `re:` equivalents, and bare all-caps
+markers such as `TODO` are not steered. Codex, Grok, Gemini, omp, and OpenCode do not install
+steering hooks and report steering as `off`.
 
-`trufflepig-audit --adoption` compares Trufflepig navigation calls with the
-ordinary searches the hook observed, split into main agent and subagents, with
-the classes that escaped. Blocked searches and `read`s are reported separately.
+`trufflepig-audit --adoption` compares Trufflepig navigation calls with the ordinary searches the
+hook observed, split into main agent and subagents, with the classes that escaped. Blocked
+searches and `read`s are reported separately.
 
 ## Verification
 
@@ -198,6 +195,5 @@ python3 evaluation/navigation_replay.py --trufflepig target/debug/trufflepig
 ```
 
 Use tasks with identical required source evidence to compare ordinary tools with Trufflepig.
-Count output tokens with `o200k_base`
-when available, calls, and completed evidence; do not substitute byte estimates
-for missing tokenizer measurements or infer billed usage from replay results.
+Count output tokens with `o200k_base` when available, calls, and completed evidence; do not
+substitute byte estimates for missing tokenizer measurements or infer billed usage from replay results.

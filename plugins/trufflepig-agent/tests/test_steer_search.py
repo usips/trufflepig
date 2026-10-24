@@ -395,6 +395,17 @@ class HookTests(unittest.TestCase):
         self.assertEqual(rows["subagent"]["classes"], {"references": 1})
         self.assertEqual((rows["total"]["trufflepig"], rows["total"]["escaped"], rows["total"]["adoption"]), (1, 2, 0.333))
 
+    def test_sessionless_steer_records_stay_unattributed(self):
+        payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "cwd": str(self.repo),
+                   "tool_input": {"command": "grep -rn 'fn step' crates/"}}
+        subprocess.run([sys.executable, str(PLUGIN / "hooks/steer-search.py"), "claude"],
+                       input=json.dumps(payload), env=self.env, capture_output=True, text=True, check=True)
+        self.assertIsNone(self.audit()[-1]["session"])
+        table = subprocess.run([sys.executable, str(PLUGIN / "bin/trufflepig-audit"),
+                                str(self.state / "trufflepig/agent-audit")], env=self.env, capture_output=True, text=True)
+        self.assertEqual(table.stderr, "")
+        self.assertIn("claude\tunattributed\t", table.stdout)
+
     def test_suggestions_move_into_the_checkout_the_search_ran_in(self):
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
         subprocess.run(["git", "-C", str(self.repo), "-c", "user.name=t", "-c", "user.email=t@t",
