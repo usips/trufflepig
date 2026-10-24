@@ -77,7 +77,7 @@ pub(super) fn provider_dispatches(
                 let dispatch = ort::ep::CUDA::default()
                     .with_device_id(device_ordinal)
                     .with_memory_limit(arena_max_bytes)
-                    .with_tf32(false)
+                    .with_tf32(provider.tf32)
                     .build()
                     .error_on_failure();
                 Ok(vec![dispatch])

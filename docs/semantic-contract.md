@@ -74,7 +74,9 @@ The shared per-user worker owns the reranker alongside the embedding model.
 `rerank_model_dir` selects its verified asset directory; an optional
 `rerank_gpu_uuid` names a second GPU for CUDA, and the worker's
 `CUDA_VISIBLE_DEVICES` mask lists both the embedding and rerank GPU UUIDs.
-Without `rerank_gpu_uuid`, the reranker shares `gpu_uuid`.
+Without `rerank_gpu_uuid`, the reranker shares `gpu_uuid`. The reranker's
+CUDA session allows TF32 math because its scores are never cached; the
+embedding session disables TF32 to keep cached vectors parity-gated.
 
 Each rerank request scores at most 32 documents against one query, with a
 4,096-byte bound per document and per query, truncating tokenized pairs at

@@ -106,8 +106,7 @@ fn open_cuda(config: &InferenceConfig, _: &Path) -> Result<Box<dyn Engine>> {
     let model = config
         .model_dir()
         .context("semantic_worker: model directory is not configured")?;
-    let provider = crate::semantic::SemanticProviderConfig::cuda(ordinal)
-        .with_arena_max_bytes(config.arena_bytes);
+    let provider = embed_cuda_provider(ordinal, config.arena_bytes);
     let preload = config
         .cuda_preload_library
         .as_deref()
@@ -190,8 +189,7 @@ fn open_rerank_cuda(config: &InferenceConfig) -> Result<Box<dyn RerankEngine>> {
     )
     .context("cuda_unavailable: device ordinal does not fit i32")?;
     let model = config.rerank_model_dir()?;
-    let provider = crate::semantic::SemanticProviderConfig::cuda(ordinal)
-        .with_arena_max_bytes(config.arena_bytes);
+    let provider = rerank_cuda_provider(ordinal, config.arena_bytes);
     let preload = config
         .cuda_preload_library
         .as_deref()
@@ -212,4 +210,30 @@ fn open_rerank_cuda(config: &InferenceConfig) -> Result<Box<dyn RerankEngine>> {
 #[cfg(not(feature = "semantic"))]
 fn open_rerank_cuda(_: &InferenceConfig) -> Result<Box<dyn RerankEngine>> {
     Err(crate::semantic::unavailable())
+}
+
+/// The embedder keeps TF32 off: its vectors are cached and parity-gated.
+#[cfg(feature = "semantic")]
+fn embed_cuda_provider(ordinal: i32, arena_bytes: u64) -> crate::semantic::SemanticProviderConfig {
+    crate::semantic::SemanticProviderConfig::cuda(ordinal).with_arena_max_bytes(arena_bytes)
+}
+
+/// Rerank scores are never cached, so the reranker enables TF32 for speed.
+#[cfg(feature = "semantic")]
+fn rerank_cuda_provider(ordinal: i32, arena_bytes: u64) -> crate::semantic::SemanticProviderConfig {
+    crate::semantic::SemanticProviderConfig::cuda(ordinal)
+        .with_arena_max_bytes(arena_bytes)
+        .with_tf32(true)
+}
+
+#[cfg(all(test, feature = "semantic"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_reranker_enables_tf32() {
+        assert!(!embed_cuda_provider(0, 1).tf32);
+        assert!(rerank_cuda_provider(0, 1).tf32);
+        assert!(!crate::semantic::SemanticProviderConfig::cpu().tf32);
+    }
 }
