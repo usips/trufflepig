@@ -90,8 +90,10 @@ and commit attribution.
 
 `board receipt KEY` checks the current caller's retained write result for ten minutes. `committed`
 includes the original BoardChange; `unknown` means no BoardChange receipt is available and cannot
-establish whether a write failed or is still pending. An ambiguous mutation timeout prints its key and
-lookup command. Receipt lookup never retries or replays the mutation.
+establish whether a write failed or is still pending. When available, an ambiguous mutation timeout
+prints `request_key=KEY` and its lookup command. Receipt lookup never retries or replays the mutation.
+Preflight and dispatched-write outcomes follow the [transport contract](board-contract.md#backend-transport-and-deadlines);
+manual recovery after `board_write_outcome=not_dispatched` follows [Board write recovery](../plugins/trufflepig-agent/skills/trufflepig-plan-board/references/recovery.md#preflight-timeout).
 
 Posts accept task addresses naming an existing task, such as `--to P7.3`; task-question defaults and
 read-time recipient resolution are defined by the [worker evidence contract](board-workers.md).

@@ -263,10 +263,15 @@ fn failed_request(
     board_request_attempted: bool,
     error: anyhow::Error,
 ) -> Result<String> {
-    if board_request_attempted
-        && let Some(timeout) = crate::daemon::DaemonReplyTimeout::from_error(&error)
+    if let Some(timeout) = crate::daemon::DaemonReplyTimeout::from_error(&error)
         && matches!(command, BoardCommand::Op(op) if !op.is_read_only() && !matches!(op, BoardOp::Feedback { .. }))
     {
+        if !board_request_attempted {
+            return Err(BoardPreflightTimeout {
+                timeout: timeout.clone(),
+            }
+            .into());
+        }
         let receipt_key = request_receipt_key(command, options, context, load)
             .ok()
             .flatten();
@@ -286,6 +291,33 @@ fn failed_request(
         )
     } else {
         Err(crate::board::schema_upgrade_advice(error))
+    }
+}
+
+#[derive(Debug)]
+struct BoardPreflightTimeout {
+    timeout: crate::daemon::DaemonReplyTimeout,
+}
+
+impl fmt::Display for BoardPreflightTimeout {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            concat!(
+                "{}; board_write_outcome=not_dispatched board_preflight=system_status; ",
+                "Board write was not sent; verify the same actor/session and exact Board database ",
+                "before retrying with --no-daemon; local writes require filesystem write access ",
+                "to the database and its parent directory (SQLite WAL/SHM files), including ",
+                "sandbox permission when required outside the workspace"
+            ),
+            self.timeout
+        )
+    }
+}
+
+impl StdError for BoardPreflightTimeout {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        Some(&self.timeout)
     }
 }
 

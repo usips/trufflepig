@@ -1,6 +1,7 @@
 mod ambiguous_write_tests;
 mod local_access_tests;
 mod no_daemon_tests;
+mod preflight_timeout_tests;
 mod router_api_version_tests;
 mod router_probe_cache_tests;
 mod router_probe_tests;

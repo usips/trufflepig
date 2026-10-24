@@ -69,18 +69,16 @@ each overview row exposes its bounded `updated_seq` for budget-truncated continu
 returned `through` for every continuation. The optional `active_only` request field defaults to
 false and removes plans without a current active task before the result is counted and paged.
 
-The client chooses socket or spool transport before host-side [Project
-resolution](board-projects.md#live-host-resolution); if no router answers, it makes one `system
-ensure` attempt and retries. Direct `LocalBoard` fallback preserves the resolved DB identity and
-never migrates beside a live router: feedback queues to the outbox; other operations require the
-current stored schema. `--no-daemon` board calls use no router requests or spawns. Router errors are
-final; `unknown_command: board` advises restarting `trufflepig-system.service`. Board requests start
-no root index daemon and produce no source-cache diagnostic records. One `board_api`/`board_db`
-probe precedes dispatch; mismatch advises restart. A private 30-second negative marker suppresses
-repeated ensure only after a provably unreached request; hits do not extend it; success clears it.
-Denied socket access and local SQLite permission failures identify the router socket and board
-database paths with their required access. A denied socket skips startup and direct database
-fallback; feedback can still queue in its outbox. Sandbox access preserves the caller's identity.
+The client chooses socket or spool transport before host-side [Project resolution](board-projects.md#live-host-resolution); if no router answers, it makes one `system ensure` attempt and retries.
+Direct `LocalBoard` fallback preserves the resolved DB identity and never migrates beside a live router; feedback queues to the outbox, other operations require the current schema.
+`--no-daemon` board calls use no router requests or spawns. Board requests start no root index daemon and produce no source-cache diagnostics.
+Router errors are final; `unknown_command: board` advises restarting `trufflepig-system.service`.
+One `system status` probe checks `board_api`/`board_db` before dispatch; mismatch advises restart. A non-feedback mutation preflight timeout returns `daemon_reply_timeout` with
+`board_write_outcome=not_dispatched board_preflight=system_status`, retaining its typed timeout; the write is not sent and the client does not fall back automatically.
+An ambiguous timeout after dispatch returns `board_write_outcome=unknown` and `request_key=KEY` when available; never replay it automatically. Feedback retains its durable outbox path.
+A private 30-second negative marker suppresses repeated ensure only after a provably unreached request; hits do not extend it; success clears it.
+Denied socket access and local SQLite permission failures identify router socket and DB paths with required access. A denied socket skips startup and direct DB fallback; feedback can still queue.
+Sandbox access preserves caller identity.
 
 The router pins its database before opening it; only the socket-owning router publishes
 `system::dir()/board-backend.json` holding the absolute database path. `system-serve` opens the
@@ -106,10 +104,10 @@ Receipt readback and unknown outcomes follow the [CLI contract](board-cli-contra
 
 Stable error prefixes: `stale_revision`, `claim_conflict`, `board_unavailable`, `schema_newer`,
 `invalid_reference`, `invalid_kind`, `invalid_body`, `invalid_actor`, `invalid_state`,
-`invalid_options`, `board_api_mismatch`, and `board_remote_unsupported`; other `invalid_*` prefixes
-map to `invalid_options`. An unwritable fallback DB reports `board_unavailable` advising
-`trufflepig system ensure`; feedback uses its [outbox](board-feedback-contract.md#outbox-and-spool). Newer
-storage refuses with typed `schema_newer`; socket and local client paths advise upgrading
+`invalid_options`, `board_api_mismatch`, `daemon_reply_timeout`, and `board_remote_unsupported`; other
+`invalid_*` prefixes map to `invalid_options`. An unwritable fallback DB reports `board_unavailable`
+with required filesystem and router socket access; feedback uses its [outbox](board-feedback-contract.md#outbox-and-spool).
+Newer storage refuses with typed `schema_newer`; socket and local client paths advise upgrading
 trufflepig, and feedback stays queued until storage is supported.
 
 ## Git links and review evidence
