@@ -223,11 +223,16 @@ fn stage_inner(
     Ok((coverage, fingerprint.finalize().to_hex().to_string()))
 }
 
+/// Locked `tree-sitter*` package versions, extracted from `Cargo.lock` by `build.rs`.
+const GRAMMAR_VERSIONS: &str = env!("TRUFFLEPIG_GRAMMAR_VERSIONS");
+
+/// Keys durable extractions on the extraction contract and grammar crate
+/// versions only, so unrelated dependency changes keep cached facts.
 pub(crate) fn extraction_cache_version() -> i64 {
     let mut version = blake3::Hasher::new();
-    version.update(b"trufflepig-extraction-cache-v1");
+    version.update(b"trufflepig-extraction-cache-v2");
     version.update(&EXTRACTION_CONTRACT_REVISION.to_le_bytes());
-    version.update(include_bytes!("../../Cargo.lock"));
+    version.update(GRAMMAR_VERSIONS.as_bytes());
     i64::from_le_bytes(
         version.finalize().as_bytes()[..8]
             .try_into()
@@ -424,6 +429,24 @@ fn candidate_json(ids: &[i64], indexes: &[usize], buffer: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extraction_cache_version_keys_on_grammar_crates_only() {
+        assert!(
+            GRAMMAR_VERSIONS.contains("tree-sitter="),
+            "{GRAMMAR_VERSIONS}"
+        );
+        assert!(
+            GRAMMAR_VERSIONS.contains("tree-sitter-rust="),
+            "{GRAMMAR_VERSIONS}"
+        );
+        assert!(
+            GRAMMAR_VERSIONS
+                .split(';')
+                .all(|entry| entry.starts_with("tree-sitter")),
+            "{GRAMMAR_VERSIONS}"
+        );
+    }
 
     #[test]
     fn candidate_json_keeps_resolved_ids_up_to_the_bound() {
