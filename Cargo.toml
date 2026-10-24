@@ -51,4 +51,9 @@ opt-level = 3
 # Unwinding stays enabled: the daemon pool isolates jobs with catch_unwind.
 [profile.release]
 lto = "thin"
+
+# Release code plus line tables for profilers: `cargo build --profile profiling`
+# writes target/profiling/.
+[profile.profiling]
+inherits = "release"
 debug = "line-tables-only"
