@@ -1,6 +1,6 @@
 use super::{coverage, handles};
 use crate::{
-    coded_error::{CodeDetail, ErrorCode, error_detail},
+    coded_error::{CodeDetail, ErrorCode},
     daemon::deadline::QueryDeadline,
     results::{MAX_HITS, ResultSet},
     search::{self, InvocationDirectory, Query, telemetry::RetrievalTrace},
@@ -154,7 +154,7 @@ pub(super) fn map_current_file(
     let encoded_path = store::encode_path(&relative);
     let bytes = match source::read_contained(&root, &relative, MAX_READ_BYTES) {
         Ok(bytes) => bytes,
-        Err(error) if error_detail(&error) == Some(CodeDetail::NotRegularFile) => {
+        Err(error) if CodeDetail::NotRegularFile.is_anywhere_in(&error) => {
             bail!(coded!(
                 StatelessMapRequiresFile,
                 "map requires one current file path"

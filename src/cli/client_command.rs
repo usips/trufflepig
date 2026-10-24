@@ -3,7 +3,7 @@
 use super::*;
 use crate::board::board_transport::board_client_transport::BoardClientTransport;
 use crate::coded_error::CodedContext;
-use crate::coded_error::{ErrorCode, error_code};
+use crate::coded_error::ErrorCode;
 
 pub(super) fn request_pending(
     args: &[String],
@@ -133,11 +133,7 @@ impl ClientCommand {
                     if let Some(fallback_options) = index_cache_fallback_options(args, &error) {
                         return super::direct_with_deadline(&fallback_options, context, deadline);
                     }
-                    // An unavailable owner or locally expired spool wait leaves direct
-                    // execution; other router errors remain answers.
-                    if !daemon::spool::is_local_spool_timeout(&error)
-                        && !ErrorCode::DaemonUnavailable.is_code_of(&error)
-                    {
+                    if !leaves_router_for_direct_execution(&error) {
                         return Err(error);
                     }
                 }
@@ -178,14 +174,23 @@ fn local_path_show_fallback_options(args: &[String]) -> Option<Arguments> {
     Some(options)
 }
 
+/// An unavailable owner, named in any layer or in relayed text, or a locally
+/// expired spool wait leaves the router for direct execution; other router
+/// errors remain answers.
+fn leaves_router_for_direct_execution(error: &anyhow::Error) -> bool {
+    daemon::spool::is_local_spool_timeout(error) || ErrorCode::DaemonUnavailable.is_named_in(error)
+}
+
+/// A cache refusal in any layer admits the local current-path reader, unless
+/// any layer reports a timeout.
 fn index_cache_fallback_options(args: &[String], error: &anyhow::Error) -> Option<Arguments> {
-    if crate::daemon::DaemonReplyTimeout::from_error(error).is_some() {
+    let timed_out = crate::daemon::DaemonReplyTimeout::from_error(error).is_some()
+        || ErrorCode::TimedOut.is_anywhere_in(error)
+        || ErrorCode::DaemonReplyTimeout.is_anywhere_in(error);
+    if timed_out || !ErrorCode::IndexCacheUnavailable.is_anywhere_in(error) {
         return None;
     }
-    match error_code(error) {
-        Some(ErrorCode::IndexCacheUnavailable) => local_path_show_fallback_options(args),
-        _ => None,
-    }
+    local_path_show_fallback_options(args)
 }
 
 #[cfg(test)]

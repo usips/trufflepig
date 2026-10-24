@@ -276,6 +276,35 @@ fn current_search_timeout_propagates_but_ordinary_failure_keeps_unverified_candi
 }
 
 #[test]
+fn current_search_timeout_under_another_coded_layer_still_propagates() {
+    use crate::coded_error::CodedContext;
+    let (root, cache, store) = search::tests::fixture(&[("lib.rs", b"pub struct OldName;")]);
+    let query = Query::parse("OldName file:lib.rs").unwrap();
+    let mut hits = search::search(&store, &query, false, cache.path())
+        .unwrap()
+        .hits;
+    assert!(!hits.is_empty());
+    std::fs::write(root.path().join("lib.rs"), b"pub struct NewName;").unwrap();
+    let error = recheck_with_current_search(
+        &store,
+        &query,
+        &mut hits,
+        &mut serde_json::json!({}),
+        &mut false,
+        &QueryDeadline::start(),
+        |_, _, _, _, _, _| {
+            Err(anyhow::anyhow!(coded!(TimedOut, "current file search interrupted"))
+                .with_coded_context(|| coded!(SourceUnavailable, "current snapshot")))
+        },
+    )
+    .unwrap_err();
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
+}
+
+#[test]
 fn expired_query_deadline_aborts_candidate_recheck() {
     let (root, cache, store) = search::tests::fixture(&[("lib.rs", b"pub struct OldName;")]);
     let query = Query::parse("OldName file:lib.rs").unwrap();

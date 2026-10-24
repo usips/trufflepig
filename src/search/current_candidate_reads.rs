@@ -170,8 +170,9 @@ fn recheck_with_current_search(
     Ok(())
 }
 
+/// A `timed_out` code in any layer: context may wrap the interrupted search.
 fn current_search_timed_out(error: &anyhow::Error) -> bool {
-    crate::coded_error::ErrorCode::TimedOut.is_code_of(error)
+    crate::coded_error::ErrorCode::TimedOut.is_anywhere_in(error)
 }
 
 fn missing(error: &anyhow::Error) -> bool {

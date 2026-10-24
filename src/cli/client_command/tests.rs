@@ -219,6 +219,39 @@ fn cache_refusal_fallback_requires_an_exact_code_and_current_path_show() {
 
 /// Types reply text as the daemon client boundary does.
 fn relayed(text: &str) -> anyhow::Error {
-    crate::coded_error::CodedError::from_relayed(text.to_owned())
-        .map_or_else(anyhow::Error::msg, anyhow::Error::from)
+    crate::coded_error::relayed_error(text.to_owned())
+}
+
+#[test]
+fn cache_refusal_fallback_reads_every_layer() {
+    let eligible = words(&["show", "path:src/lib.rs"]);
+    let wrapped = anyhow::anyhow!(coded!(IndexCacheUnavailable, "cache cannot be opened"))
+        .with_coded_context(|| coded!(MemberUnavailable, "member read failed"));
+    assert!(index_cache_fallback_options(&eligible, &wrapped).is_some());
+
+    let inner_timeout = anyhow::anyhow!(coded!(TimedOut, "query deadline expired"))
+        .with_coded_context(|| coded!(IndexCacheUnavailable, "cache wrapper"));
+    assert!(index_cache_fallback_options(&eligible, &inner_timeout).is_none());
+    let inner_reply_timeout = anyhow::anyhow!(coded!(DaemonReplyTimeout, "no reply"))
+        .with_coded_context(|| coded!(IndexCacheUnavailable, "cache wrapper"));
+    assert!(index_cache_fallback_options(&eligible, &inner_reply_timeout).is_none());
+}
+
+#[test]
+fn an_unavailable_owner_named_anywhere_leaves_the_router() {
+    for error in [
+        relayed("daemon: daemon_unavailable: no socket"),
+        relayed("daemon: member_unavailable: owner refused: daemon_unavailable: no socket"),
+        relayed("route request: daemon_unavailable: owner stopped"),
+        anyhow::anyhow!(coded!(DaemonUnavailable, "no socket"))
+            .with_coded_context(|| coded!(SystemUnavailable, "router relay")),
+    ] {
+        assert!(leaves_router_for_direct_execution(&error), "{error:#}");
+    }
+    for error in [
+        relayed("daemon: invalid_query: empty prefixed query"),
+        relayed("daemon: member_unavailable: the daemon is unavailable"),
+    ] {
+        assert!(!leaves_router_for_direct_execution(&error), "{error:#}");
+    }
 }

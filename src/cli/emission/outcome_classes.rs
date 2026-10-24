@@ -1,9 +1,10 @@
 //! Diagnostics outcomes for failed requests, named by their error codes.
-use crate::coded_error::{CodedError, ErrorCode};
+use crate::coded_error::{ErrorCode, named_codes};
 use crate::diagnostics::Outcome;
 
-/// The most specific outcome any code in `error`'s chain names, in the
-/// precedence budget, stale, unavailable, invalid input; uncoded is a failure.
+/// The most specific outcome any code `error` names ([`named_codes`]: every
+/// coded layer and codes inside relayed text), in the precedence budget,
+/// stale, unavailable, invalid input; uncoded is a failure.
 pub(super) fn error_outcome(error: &anyhow::Error) -> Outcome {
     const PRECEDENCE: [Outcome; 4] = [
         Outcome::BudgetTooSmall,
@@ -11,26 +12,24 @@ pub(super) fn error_outcome(error: &anyhow::Error) -> Outcome {
         Outcome::Unavailable,
         Outcome::InvalidInput,
     ];
-    let named: Vec<Outcome> = error
-        .chain()
-        .filter_map(|cause| cause.downcast_ref::<CodedError>())
-        .filter_map(|coded| code_outcome(coded.code()))
-        .collect();
-    PRECEDENCE
-        .into_iter()
-        .find(|outcome| named.contains(outcome))
-        .unwrap_or(Outcome::Failure)
+    named_codes(error)
+        .filter_map(code_outcome)
+        .filter_map(|outcome| PRECEDENCE.iter().position(|ranked| *ranked == outcome))
+        .min()
+        .map_or(Outcome::Failure, |rank| PRECEDENCE[rank])
 }
 
+/// A code's outcome family by its spelling: `*budget_too_small*`, `*stale_*`,
+/// `*unavailable*` or `*expired_*`, then `*invalid_*`, `unknown_command`, `usage`.
 fn code_outcome(code: ErrorCode) -> Option<Outcome> {
     let name = code.as_str();
-    if code == ErrorCode::BudgetTooSmall {
+    if name.contains("budget_too_small") {
         Some(Outcome::BudgetTooSmall)
-    } else if name.starts_with("stale_") {
+    } else if name.contains("stale_") {
         Some(Outcome::Stale)
-    } else if name.contains("unavailable") || name.starts_with("expired_") {
+    } else if name.contains("unavailable") || name.contains("expired_") {
         Some(Outcome::Unavailable)
-    } else if name.starts_with("invalid_")
+    } else if name.contains("invalid_")
         || matches!(code, ErrorCode::UnknownCommand | ErrorCode::Usage)
     {
         Some(Outcome::InvalidInput)

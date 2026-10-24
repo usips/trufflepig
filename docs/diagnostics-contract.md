@@ -117,14 +117,18 @@ and do not cross a process boundary.
 Text crosses a process boundary once. The daemon client decodes a failure reply
 with `CodedError::from_relayed`, which accepts a registered code after any
 `daemon:` relay labels, or exactly `database is locked`, and keeps the text
-verbatim; unregistered prefixes stay uncoded. Board answers map codes through
-`BoardErrorCode::from_code`, which folds other `invalid_*` codes into
-`invalid_options`.
+verbatim; unregistered prefixes stay uncoded (`UncodedRelayedText`). The leading
+code is the relayed error's code. `named_codes` also reports codes spelled as
+whole words later in relayed text (`usage` only as `usage:`); only request
+outcomes and the router's unavailable-owner fallback read them. Board answers
+map codes through `BoardErrorCode::from_code`, which folds other `invalid_*`
+codes into `invalid_options`.
 
-Request outcomes come from the codes in the chain, in the precedence
-`budget_too_small`, `stale_*`, `*unavailable*` or `expired_*`, then `invalid_*`,
-`unknown_command`, or `usage`; anything else is `failure`. Free text that merely
-mentions a code names no outcome.
+Request outcomes come from every code `named_codes` reports, in the precedence
+`*budget_too_small*`, `*stale_*`, `*unavailable*` or `*expired_*`, then
+`*invalid_*`, `unknown_command`, or `usage`; anything else is `failure`. Words
+that are not registered codes, and code words inside local messages, name no
+outcome.
 
 `timed_out` covers every expired deadline and cancelled peer; no separate
 cancellation code exists. Git failures keep their exit code (`GitCommandFailed`):

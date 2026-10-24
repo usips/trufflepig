@@ -1,9 +1,9 @@
-use anyhow::{Context, Result, anyhow, ensure};
+use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 
 use super::DaemonReplyTimeout;
-use crate::coded_error::{CodedError, ErrorCode};
+use crate::coded_error::{CodedError, ErrorCode, UncodedRelayedText};
 
 pub(super) const REQUEST_LIMIT: usize = 256 * 1024;
 const RESPONSE_LIMIT: usize = 4 * 1024 * 1024;
@@ -74,7 +74,7 @@ impl DaemonReply {
                         coded.into()
                     }
                     Ok(coded) => coded.relayed_by_daemon().into(),
-                    Err(message) => anyhow!("daemon: {message}"),
+                    Err(message) => UncodedRelayedText::new(format!("daemon: {message}")).into(),
                 }),
             },
         }

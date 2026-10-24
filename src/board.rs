@@ -164,9 +164,7 @@ fn domain_error(error: &anyhow::Error) -> bool {
 /// Classifies relayed reply text the way the daemon client boundary types it.
 #[cfg(test)]
 fn domain_answer(message: &str) -> bool {
-    let error = crate::coded_error::CodedError::from_relayed(message.to_owned())
-        .map_or_else(anyhow::Error::msg, anyhow::Error::from);
-    domain_error(&error)
+    domain_error(&crate::coded_error::relayed_error(message.to_owned()))
 }
 
 pub(crate) fn enrich_feedback_cwd(

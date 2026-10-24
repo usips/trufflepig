@@ -247,3 +247,16 @@ fn current_map_rejects_traversal_and_symlink_escape() -> Result<()> {
     assert!(map_file(&root, &cache, "alias.rs", &deadline()).is_err());
     Ok(())
 }
+
+#[test]
+fn map_of_a_directory_requires_one_current_file() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let (root, cache) = create_root(directory.path())?;
+    fs::create_dir_all(root.join("src"))?;
+    let error = map_file(&root, &cache, "src", &deadline()).unwrap_err();
+    assert!(
+        crate::coded_error::ErrorCode::StatelessMapRequiresFile.is_code_of(&error),
+        "{error:#}"
+    );
+    Ok(())
+}

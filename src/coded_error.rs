@@ -6,6 +6,7 @@
 mod error_code_inventory;
 
 pub use error_code_inventory::ErrorCode;
+pub use relayed_codes::{UncodedRelayedText, named_codes, relayed_error};
 use std::fmt;
 
 /// Builds a [`CodedError`] from a code variant and `format!` arguments:
@@ -39,6 +40,12 @@ impl ErrorCode {
             .chain()
             .filter_map(|cause| cause.downcast_ref::<CodedError>())
             .any(|coded| coded.code() == self)
+    }
+
+    /// Whether `error` names this code in any layer or in relayed text
+    /// ([`named_codes`]); for outcome classification, not control flow.
+    pub fn is_named_in(self, error: &anyhow::Error) -> bool {
+        named_codes(error).any(|code| code == self)
     }
 }
 
@@ -102,6 +109,8 @@ pub struct CodedError {
     text: String,
     message_start: usize,
     relay_wrapped: bool,
+    /// Parsed from text that crossed a process boundary.
+    relayed: bool,
     detail: Option<CodeDetail>,
     source: Option<anyhow::Error>,
 }
@@ -120,6 +129,7 @@ impl CodedError {
             text,
             message_start: prefix,
             relay_wrapped: false,
+            relayed: false,
             detail: None,
             source: None,
         }
@@ -140,7 +150,8 @@ impl CodedError {
         }
     }
 
-    /// Keeps relayed `text` verbatim when [`ErrorCode::leading`] finds its code.
+    /// Keeps relayed `text` verbatim when [`ErrorCode::leading`] finds its code;
+    /// codes later in the text stay discoverable through [`named_codes`].
     pub fn from_relayed(text: String) -> Result<Self, String> {
         let Some((code, detail, relay_wrapped)) = leading_with_wrappers(&text) else {
             return Err(text);
@@ -151,6 +162,7 @@ impl CodedError {
             text,
             message_start,
             relay_wrapped,
+            relayed: true,
             detail: None,
             source: None,
         })
@@ -176,6 +188,11 @@ impl CodedError {
         self.relay_wrapped
     }
 
+    /// Whether this error was parsed from relayed text.
+    pub fn is_relayed(&self) -> bool {
+        self.relayed
+    }
+
     pub fn detail(&self) -> Option<CodeDetail> {
         self.detail
     }
@@ -187,6 +204,7 @@ impl CodedError {
             text: format!("{}{suffix}", self.text),
             message_start: self.message_start,
             relay_wrapped: self.relay_wrapped,
+            relayed: self.relayed,
             detail: self.detail,
             source: None,
         }
@@ -260,6 +278,8 @@ pub fn error_detail(error: &anyhow::Error) -> Option<CodeDetail> {
     coded_error(error).and_then(CodedError::detail)
 }
 
+// Declared after `coded!` so its tests can raise coded errors.
+mod relayed_codes;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

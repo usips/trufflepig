@@ -20,7 +20,7 @@ fn terminal_io_timeout(kind: ErrorKind, phase: &str) -> anyhow::Error {
 
 /// Types reply text as the daemon client boundary does.
 fn relayed(text: &str) -> anyhow::Error {
-    CodedError::from_relayed(text.to_owned()).map_or_else(anyhow::Error::msg, anyhow::Error::from)
+    crate::coded_error::relayed_error(text.to_owned())
 }
 
 fn busy() -> anyhow::Error {
@@ -188,6 +188,34 @@ fn busy_retry_hint_requires_a_leading_busy_code() {
     assert_eq!(
         RetryPolicy::classify(RetryScope::Read, &wrapped, QUICK),
         RetryPolicy::Fail
+    );
+}
+
+#[test]
+fn inner_timeout_warming_and_busy_codes_keep_their_retry_meaning() {
+    let timeout = anyhow::anyhow!(coded!(TimedOut, "query deadline expired"))
+        .with_coded_context(|| coded!(MemberUnavailable, "member answer"));
+    assert_eq!(
+        RetryPolicy::classify(RetryScope::Read, &timeout, QUICK),
+        RetryPolicy::Fail
+    );
+    assert!(is_timeout_answer(&timeout));
+
+    let warming = anyhow::anyhow!(coded!(IndexWarming, "initial index is not published"))
+        .with_coded_context(|| coded!(MemberUnavailable, "member answer"));
+    assert_eq!(
+        RetryPolicy::classify(RetryScope::Read, &warming, QUICK),
+        RetryPolicy::Retry(WARMING_RETRY_DELAY)
+    );
+
+    // A layer without a board classification does not hide the busy refusal.
+    let busy = anyhow::anyhow!(coded!(DaemonBusy, "queue_depth=8 retry_after_ms=725"))
+        .with_coded_context(|| coded!(SystemUnavailable, "router relay"));
+    assert!(is_explicit_busy(&busy));
+    assert_eq!(busy_retry_after(&busy), Some(Duration::from_millis(725)));
+    assert_eq!(
+        RetryPolicy::classify(RetryScope::ContentionOnly, &busy, QUICK),
+        RetryPolicy::Retry(CONTENTION_RETRY_DELAY)
     );
 }
 

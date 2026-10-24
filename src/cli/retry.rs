@@ -1,7 +1,7 @@
 //! Bounded retries for transient failures, restricted by operation safety.
 use super::Arguments;
-use crate::board::board_protocol::BoardErrorCode;
-use crate::coded_error::{ErrorCode, coded_error};
+use crate::board::board_protocol::{BoardError, BoardErrorCode};
+use crate::coded_error::{CodedError, ErrorCode};
 use crate::daemon::{DaemonReplyTimeout, deadline::QueryDeadline};
 use crate::diagnostics::RequestContext;
 use anyhow::Result;
@@ -67,10 +67,10 @@ impl RetryPolicy {
     /// Restricts transient retries to failures safe for this operation.
     /// `elapsed` is how long the failed attempt took.
     pub(super) fn classify(scope: RetryScope, error: &anyhow::Error, elapsed: Duration) -> Self {
-        if scope == RetryScope::Never || ErrorCode::TimedOut.is_code_of(error) {
+        if scope == RetryScope::Never || ErrorCode::TimedOut.is_anywhere_in(error) {
             return Self::Fail;
         }
-        if ErrorCode::DaemonBusy.is_code_of(error)
+        if is_explicit_busy(error)
             || BoardErrorCode::from_error(error) == Some(BoardErrorCode::DatabaseLocked)
         {
             return Self::Retry(CONTENTION_RETRY_DELAY);
@@ -95,7 +95,7 @@ impl RetryPolicy {
             || message.contains("(os error 32)")
             || message.contains("(os error 104)");
         let timed_out = io_kind(&[ErrorKind::WouldBlock, ErrorKind::TimedOut]);
-        if ErrorCode::IndexWarming.is_code_of(error) {
+        if ErrorCode::IndexWarming.is_anywhere_in(error) {
             Self::Retry(WARMING_RETRY_DELAY)
         } else if dropped {
             Self::Retry(CONTENTION_RETRY_DELAY)
@@ -183,7 +183,7 @@ fn run_retry_loop(
                     return match answer {
                         // The original reply still names the failure; the fallback
                         // only explains why the local read could not finish.
-                        Err(fallback) if ErrorCode::TimedOut.is_code_of(&fallback) => {
+                        Err(fallback) if ErrorCode::TimedOut.is_anywhere_in(&fallback) => {
                             Err(error.context(format!("local fallback failed: {fallback:#}")))
                         }
                         answer => answer,
@@ -195,9 +195,10 @@ fn run_retry_loop(
     }
 }
 
-/// Whether a failed attempt is a typed reply timeout or a `timed_out` answer.
+/// Whether a failed attempt is a typed reply timeout or carries a `timed_out`
+/// answer in any layer.
 fn is_timeout_answer(error: &anyhow::Error) -> bool {
-    DaemonReplyTimeout::from_error(error).is_some() || ErrorCode::TimedOut.is_code_of(error)
+    DaemonReplyTimeout::from_error(error).is_some() || ErrorCode::TimedOut.is_anywhere_in(error)
 }
 
 /// One attempt's deadline: the shared read budget less the time held back for the fallback.
@@ -229,14 +230,29 @@ fn backoff(request_id: &str, retry_index: usize) -> Duration {
     Duration::from_millis(lower_ms + hash % span)
 }
 
+/// The first layer of `error` with a board classification, and its detail;
+/// layers whose codes have none (`timed_out`, `index_warming`) are skipped.
+fn first_board_code(error: &anyhow::Error) -> Option<(BoardErrorCode, &str)> {
+    error.chain().find_map(|cause| {
+        if let Some(board) = cause.downcast_ref::<BoardError>() {
+            return Some((board.code, board.message.as_str()));
+        }
+        let coded = cause.downcast_ref::<CodedError>()?;
+        BoardErrorCode::from_code(coded.code()).map(|code| (code, coded.message()))
+    })
+}
+
 fn is_explicit_busy(error: &anyhow::Error) -> bool {
-    ErrorCode::DaemonBusy.is_code_of(error)
+    first_board_code(error).is_some_and(|(code, _)| code == BoardErrorCode::DaemonBusy)
 }
 
 /// Reads the `retry_after_ms=` field of a `daemon_busy` refusal.
 fn busy_retry_after(error: &anyhow::Error) -> Option<Duration> {
-    let busy = coded_error(error).filter(|coded| coded.code() == ErrorCode::DaemonBusy)?;
-    busy.message()
+    let (code, detail) = first_board_code(error)?;
+    if code != BoardErrorCode::DaemonBusy {
+        return None;
+    }
+    detail
         .split_ascii_whitespace()
         .find_map(|token| token.strip_prefix("retry_after_ms=")?.parse::<u64>().ok())
         .map(Duration::from_millis)

@@ -138,8 +138,7 @@ pub(super) fn request_status(
     match protocol::read_reply_with_deadline(&mut stream, deadline)? {
         protocol::WorkerReply::Status(status) => Ok(status),
         protocol::WorkerReply::Error { message } => {
-            Err(crate::coded_error::CodedError::from_relayed(message)
-                .map_or_else(anyhow::Error::msg, anyhow::Error::from))
+            Err(crate::coded_error::relayed_error(message))
         }
         protocol::WorkerReply::Embeddings { .. } | protocol::WorkerReply::Scores { .. } => {
             bail!(coded!(SemanticWorker, "invalid status response"))

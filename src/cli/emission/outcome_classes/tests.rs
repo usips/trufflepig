@@ -1,9 +1,9 @@
 use super::*;
-use crate::coded_error::CodedContext;
+use crate::coded_error::{CodedContext, relayed_error};
 use anyhow::anyhow;
 
 fn relayed(text: &str) -> anyhow::Error {
-    CodedError::from_relayed(text.to_owned()).map_or_else(anyhow::Error::msg, anyhow::Error::from)
+    relayed_error(text.to_owned())
 }
 
 #[test]
@@ -50,12 +50,46 @@ fn the_most_specific_code_in_the_chain_wins() {
 }
 
 #[test]
-fn free_text_never_names_an_outcome() {
+fn codes_inside_relayed_text_name_outcomes_by_precedence() {
+    for (text, outcome) in [
+        (
+            "daemon: timed_out: waited 5 s; index_cache_unavailable",
+            Outcome::Unavailable,
+        ),
+        (
+            "daemon: timed_out: member: index_cache_unavailable: cannot open",
+            Outcome::Unavailable,
+        ),
+        (
+            "daemon: semantic_fallback_output_too_large: does not fit: budget_too_small: need 900",
+            Outcome::BudgetTooSmall,
+        ),
+        ("load page: budget_too_small: need 900", Outcome::BudgetTooSmall),
+        (
+            "search 'invalid_limit usage: stale_source' found nothing",
+            Outcome::Stale,
+        ),
+        ("daemon: internal_error: bad usage: x", Outcome::InvalidInput),
+    ] {
+        assert_eq!(error_outcome(&relayed(text)), outcome, "{text}");
+    }
+}
+
+#[test]
+fn family_spellings_inside_longer_codes_still_classify() {
+    let error = anyhow!(coded!(SemanticFallbackBudgetTooSmall, "need 900"));
+    assert_eq!(error_outcome(&error), Outcome::BudgetTooSmall);
+}
+
+#[test]
+fn free_text_that_is_not_a_code_names_no_outcome() {
     for text in [
-        "search 'invalid_limit usage: stale_source' found nothing",
         "Resource temporarily unavailable (os error 11)",
-        "load page: budget_too_small: quoted",
+        "see usage below; stale_sources were skipped",
+        "daemon: timed_out: Stale_source xinvalid_limit",
     ] {
         assert_eq!(error_outcome(&relayed(text)), Outcome::Failure, "{text}");
     }
+    let local = anyhow!(coded!(TimedOut, "mentions index_cache_unavailable"));
+    assert_eq!(error_outcome(&local), Outcome::Failure);
 }
