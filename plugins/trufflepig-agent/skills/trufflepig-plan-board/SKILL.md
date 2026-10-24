@@ -74,6 +74,7 @@ Post progress after each meaningful step and at least hourly during long work.
 Task-addressed questions reach the current lead and bound workers when read;
 plan-level questions without `--to` remain broadcast, and `--to human` targets
 the owner's human actor. A task creator or assignee has no administrative powers.
+Transfer, close, and reopen rules are in the [lifecycle contract](https://github.com/usips/trufflepig/blob/feat/trufflepig-board/docs/board-lifecycle.md).
 
 ## Worker: bind, post evidence, and hand off
 
@@ -139,6 +140,12 @@ workers. Never work on another session's active claim. A lead, actual
 delegator, or `assign` grantee manages workers. A worker's `bye` stops its own
 node and session; it does not stop peer workers. Before a handoff, post the
 evidence and move the lead's task to `todo`, unless the human requested a pause.
+
+An ambiguous Board write timeout can include `request_key=KEY`. Read it with
+`trufflepig-agent board receipt KEY` under the same exact identity. `committed`
+returns the retained transaction receipt; `unknown` can mean pending, absent,
+expired, or another actor's key and never proves failure. Receipts last ten minutes.
+Do not automatically replay ambiguous writes; feedback retains its durable outbox.
 
 Commit trailers associate work with plans and tasks:
 

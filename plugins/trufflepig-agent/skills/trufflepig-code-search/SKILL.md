@@ -177,24 +177,24 @@ body, categories, and 4 KiB limit in the
 do not copy a second template here. The wrapper adds call metadata,
 never source output. If reporting fails, state that once and continue the fallback.
 
-For a complete empty search, refine terms or try one exact/regex search before
-a targeted fallback. `warming` with a `served from` footer is an answer. Reads allow
-at most five attempts within one shared 30 s client budget, including startup,
-transport, backoff, and local fallback. Board/feedback contention-only writes
-allow at most two attempts on typed busy/locked errors; other writes run once.
-`show FILE`, `show path:FILE`, and `read:path:` continuations use one local
-current-file fallback after retries exhaust on explicit `daemon_busy`, or
-immediately on pre-dispatch `index_cache_unavailable`. A retry after busy keeps 250 ms for
-that fallback and falls back if it times out at its cap; other timeouts, database locks, and
-ambiguous errors do not. Other busy searches allow at most one manual retry after service/load clears; if still busy, report the limit
-and use the documented bounded fallback. For unavailable service, inaccessible
-cache, or unsupported needs, state the limit and use one bounded fallback; if a
-needed file remains unreadable, use the harness's bounded exact-file reader and report
-persistent failure with feedback. Do not loop or switch workspace/cache identity.
-Report daemon flag rejection or `router_binary_replaced` for runtime repair; do
-not strip flags or restart services. For cache-free current bytes, use
-`--no-daemon show path:FILE[:START-END]`; opaque `read:path:` continuations stay
-stateless across processes. See the [CLI contract](https://github.com/usips/trufflepig/blob/master/docs/cli.md) and [runtime contract](https://github.com/usips/trufflepig/blob/master/docs/runtime-contract.md).
+For a complete empty search, refine terms or try one exact/regex search before a bounded fallback.
+`warming` with a `served from` footer is an answer. Reads share one 30 s budget and at most five
+attempts, including startup, transport, and fallback. Board/feedback writes retry typed contention
+at most twice; other writes run once. Never automatically replay an ambiguous write.
+`show FILE`, `show path:FILE`, and `read:path:` continuations use one current-file fallback after
+explicit `daemon_busy` retries or immediately on pre-dispatch `index_cache_unavailable`.
+A busy retry reserves 250 ms for that fallback; other timeouts and database locks do not trigger it.
+For cache-free discovery, use `--no-cache search 'sym:NAME'`, `--no-cache search 'file:NAME kind:file'`,
+or `--no-cache map FILE`. These bounded current-source reads write no cache and skip semantic/rerank.
+`--no-daemon search/map` also falls back on a typed pre-dispatch cache refusal; `cache_fallback`
+preserves the selected cache and cause. Neither mode bypasses source permissions or root containment.
+Current-source coverage names caps and unread files: partial coverage never proves absence.
+Copy returned `read:path:` handles to `show`; they bind current bytes to their verified root, expire
+when bytes change, and have no persisted `more` page. Use `ws:all` or `in:MEMBER` for dependency
+ownership; an unreadable home path can suggest a verified configured member without redirecting it.
+After another busy search, retry manually at most once after load clears, then use this bounded
+fallback. Do not loop, change cache identity, strip rejected flags, or restart services for repair.
+For an unreadable known path, use the harness's bounded exact-file reader and report the failure.
+See the [CLI contract](https://github.com/usips/trufflepig/blob/master/docs/cli.md) and [runtime contract](https://github.com/usips/trufflepig/blob/master/docs/runtime-contract.md).
 
-Read whole files only when needed after locating them. This skill does not replace editing, builds, tests, Git, or
-reads of known instruction files. History uses `hist`, `since`, `diff`, or `blame` with Git 2.55+ and local objects; live search needs no history.
+This skill does not replace editing, builds, tests, Git, or instruction reads. History uses `hist`, `since`, `diff`, or `blame` with Git 2.55+ and local objects.
