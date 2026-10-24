@@ -166,7 +166,7 @@ reads at most 2 MiB per source file, retains at most 50,000 extracted facts per
 file, and divides lexical coverage into regions of at most 4,096 raw bytes.
 Sources containing NUL or exceeding the read cap remain file records with an
 exclusion reason. General current-source reads have a separate 16 MiB cap.
-Stage files live in the selected cache; completion clears progress and removes them, while interruptions may retain a valid checkpoint.
+Stage files live in the selected cache; completion clears progress and removes them, while interruptions may retain a valid checkpoint. The next writer lease holder or [router sweep](runtime-contract.md#cache-and-daemon) removes other stale stages.
 Progress (`scanning`, `finalizing`, `maintenance_required`) shows completed/reused counts and `index` guidance; status/pages/`more` refresh it from the verified root and selected cache.
 Saved results omit phases; refresh is read-only and skips seed/index (`src/workspace/result_cache/index_progress_source.rs`, `src/results/page.rs`, `src/workspace/result_cache.rs`).
 Result and embedding retention limits are in the [retrieval](retrieval-contract.md) and

@@ -8,11 +8,13 @@ separate cache that can seed from the main checkout's default cache when it hold
 an index (`src/store/seed.rs`). Workspace cache selection follows the
 [workspace contract](workspace-contract.md#retrieval-and-output). A worktree cache
 records its root in a `cache-root` marker until it holds an index; `ws status`
-reports a workspace worktree's seed outcome. The router evicts a
-default-base cache whose recorded root no longer exists, on startup and every ten minutes,
-after a one-minute grace period and only when the root's parent directory still exists
-(`src/system/sweep.rs`);
-`system prune` runs that sweep now. Explicit `--cache` bases are never swept.
+reports a workspace worktree's seed outcome. On startup and every ten minutes the router
+sweeps the default base (`src/system/sweep.rs`). After a one-minute grace period it evicts a
+cache whose recorded root was deleted: the root's nearest existing ancestor is a directory on
+the base's device and not a mount point; any other ancestor may hide an unmounted volume, so
+that cache stays. Kept caches lose `stage-*` directories other than `stage-index-checkpoint`
+while their `index.lock` writer lease is free. `system prune` sweeps now and reports `evicted`
+and `removed_stages`. Explicit `--cache` bases are never swept.
 History defaults to the normal cache base
 keyed by canonical Git common directory, so linked worktrees share immutable Git
 facts. An explicit `--cache` isolates history; `--history-cache DIRECTORY` selects
@@ -41,12 +43,10 @@ issue their own sub-requests (workspace owner verbs, member `semantic` commands)
 (`src/cli.rs:run_direct`), never through the router that may still be proxying
 the request, and wait for them only within the request's query deadline. `stop`,
 `index`, `init`, `ws`, `semantic status`, `semantic-check`, the `*-serve` verbs, and
-`--no-daemon` requests never touch it. `system ensure` starts the router, `system
-stop` shuts it down, `system status` reports if it runs, `system prune` evicts
-caches for vanished roots immediately, and `system-serve` serves it in the
-foreground. The agent plugin ships a systemd user unit (`install.sh
---systemd`) that keeps the router running and restarts it on failure. Service stop/restart
-covers only router-spawned daemons. Client-fallback daemons survive it; stop each per root as described in
+`--no-daemon` requests never touch it. `system ensure` starts the router, `system stop` shuts
+it down, `system status` reports if it runs, and `system-serve` serves it in the foreground.
+The agent plugin ships a systemd user unit (`install.sh --systemd`) that keeps the router
+running and restarts it on failure. Service stop/restart covers only router-spawned daemons. Client-fallback daemons survive it; stop each per root as described in
 [runtime recovery](../plugins/trufflepig-agent/README.md#runtime-recovery-and-upgrades). `system status` does not list them yet. The
 session-start hook starts that service when it is enabled, else runs `system ensure`.
 `system ensure` starts a detached router only when no installed unit owns the router
