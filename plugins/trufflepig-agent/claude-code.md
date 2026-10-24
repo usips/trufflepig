@@ -66,17 +66,14 @@ Claude Code on this platform has no Grep or Glob tools: it runs `grep` and `find
 through Bash (shadowed by bundled ugrep/bfs). Guidance therefore targets shell
 searches, not tool names.
 
-When a session starts inside an indexed checkout, the `SessionStart` hook also
-returns `additionalContext`: the member and workspace, replacement commands for
-definition, body, reference, outline, file, and line-range (`sed -n`) reads,
-exact `next: more SET@OFFSET` → `trufflepig-agent more SET@OFFSET` and
-`next: show read:H@B` → `trufflepig-agent show read:H@B` mappings, and separate
-optional `hint:` advice. It explains whole-query quoting for negative filters,
-`file:` prefix/component matching, and linked-worktree fallback: `differs` may
-carry parent coordinates, `show` re-extracts changed bytes when possible, and
-`verified`/`source` must be checked before claiming current bytes. Incomplete or
-truncated coverage cannot establish absence. It also reminds the main agent to
-brief subagents the same way.
+When a session starts inside an indexed checkout (a registered workspace member
+or a Git root with a default index cache), the `SessionStart` hook also returns a
+short `additionalContext` note: the checkout name, replacement commands for
+definition, body, reference, outline, regex, file, concept, and line-range reads,
+one `trufflepig-agent` command per Bash call, and `re:` for unsupported file
+types. It also reminds the main agent to brief subagents the same way. Paging,
+filters, worktree fallback, and recovery stay in the
+[search skill](skills/trufflepig-code-search/SKILL.md).
 `SessionStart` context does not reach subagents, so the same script, registered
 for `SubagentStart`, returns that guidance (without the briefing reminder) as the
 subagent's `additionalContext`. Claude's `SubagentStart` payload carries the parent

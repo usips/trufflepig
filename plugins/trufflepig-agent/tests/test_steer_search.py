@@ -470,8 +470,9 @@ class HookTests(unittest.TestCase):
         self.assertIn("trufflepig-agent --session claude-agent-", output["additionalContext"])
         self.assertIn("Searches need no prefix", output["additionalContext"])
         self.assertIn("trufflepig-agent show 'sym:Name'", output["additionalContext"])
-        self.assertIn("Only an unpublished linked-worktree home in a workspace can serve from its member's parent index",
-                      output["additionalContext"])
+        self.assertIn("one trufflepig-agent command per Bash call", output["additionalContext"])
+        self.assertIn("for other file types use `re:`", output["additionalContext"])
+        self.assertNotIn("parent index", output["additionalContext"])
         self.assertNotIn("briefing subagents", output["additionalContext"])
         self.assertEqual(env_file.read_text(), "export TRUFFLEPIG_CLAUDE_SESSION=abc123\n",
                          "subagents must not rewrite the parent's session environment")

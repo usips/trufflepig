@@ -1,6 +1,6 @@
 ---
 name: trufflepig-code-search
-description: Use instead of grep, rg, or find to search code in indexed local projects. Finds definitions, bodies, references, outlines, text, files, and implementations of concepts with verified source reads. Includes optional Rust API documentation and trait navigation through rustdoc in Codex. Use during code investigation and before edits; not for command output, logs, files outside the project, other git revisions, or editing.
+description: "Use instead of grep, rg, find, or cat/sed reads to search code in projects Trufflepig indexes: definitions, bodies, references, outlines, files, regex, and concept search with verified source reads. Symbols cover Rust, TS/JS, C#, PHP, Luau, DreamMaker; other files use `re:` text search. Not for logs, command output, files outside the project, other git revisions, or editing."
 ---
 
 # Trufflepig code search
@@ -82,23 +82,9 @@ Outside a workspace, run from the project root so a subdirectory does not become
 an accidental separate index. Retain that scope for follow-up calls.
 
 A linked worktree is its own checkout: run from it (`cd DIR && trufflepig-agent ...`
-or `--root DIR`). Standalone parent reads use the main checkout's default cache even with
-custom `--cache`, which holds worktree results and divergence. Workspace parent reads use the
-configured member cache under the workspace base; worktree results/divergence stay separate.
-Index-based parent reads need a writable selected result cache. Explicit current paths read bytes
-without a cache; `refs` stays index-only. The footer reads like
-`lunatic@wt warming → served from lunatic index (3 files differ)`. A `differs` hit
-can retain parent coordinates. `show` re-extracts changed files; failed
-re-extraction may show unverified parent bytes, so check `verified` and `source`.
-An exact `sym:` miss with no parent-index candidate refreshes divergence and checks at
-most 64 changed files. If more than 64 paths changed, Git probing fails, or a
-changed file remains unchecked, coverage is partial and truncated, so absence
-is not exhaustive and home does not widen.
-Fallback reads reuse divergence for five seconds; `show`/`ctx` handles keep parent identity.
-`more` pages survive parent republishes. Without a parent, the footer says
-`warming (no parent index)`. See the
-[workspace contract](https://github.com/usips/trufflepig/blob/master/docs/workspace-contract.md) and
-[index contract](https://github.com/usips/trufflepig/blob/master/docs/index-contract.md).
+or `--root DIR`). While its index warms it can serve from the parent index; a
+`differs` hit or `verified: false` read needs care before you claim current bytes.
+See [worktree fallback](references/recovery.md#linked-worktrees).
 
 ## Follow implementation dependencies
 
@@ -177,24 +163,10 @@ body, categories, and 4 KiB limit in the
 do not copy a second template here. The wrapper adds call metadata,
 never source output. If reporting fails, state that once and continue the fallback.
 
-For a complete empty search, refine terms or try one exact/regex search before a bounded fallback.
-`warming` with a `served from` footer is an answer. Reads share one 30 s budget and at most five
-attempts, including startup, transport, and fallback. Board/feedback writes retry typed contention
-at most twice; other writes run once. Never automatically replay an ambiguous write.
-`show FILE`, `show path:FILE`, and `read:path:` continuations use one current-file fallback after
-explicit `daemon_busy` retries or immediately on pre-dispatch `index_cache_unavailable`.
-A busy retry reserves 250 ms for that fallback; other timeouts and database locks do not trigger it.
-For cache-free discovery, use `--no-cache search 'sym:NAME'`, `--no-cache search 'file:NAME kind:file'`,
-or `--no-cache map FILE`. These bounded current-source reads write no cache and skip semantic/rerank.
-`--no-daemon search/map` also falls back on a typed pre-dispatch cache refusal; `cache_fallback`
-preserves the selected cache and cause. Neither mode bypasses source permissions or root containment.
-Current-source coverage names caps and unread files: partial coverage never proves absence.
-Copy returned `read:path:` handles to `show`; they bind current bytes to their verified root, expire
-when bytes change, and have no persisted `more` page. Use `ws:all` or `in:MEMBER` for dependency
-ownership; an unreadable home path can suggest a verified configured member without redirecting it.
-After another busy search, retry manually at most once after load clears, then use this bounded
-fallback. Do not loop, change cache identity, strip rejected flags, or restart services for repair.
-For an unreadable known path, use the harness's bounded exact-file reader and report the failure.
-See the [CLI contract](https://github.com/usips/trufflepig/blob/master/docs/cli.md) and [runtime contract](https://github.com/usips/trufflepig/blob/master/docs/runtime-contract.md).
+For a complete empty search, refine terms or try one exact or `re:` search before a
+bounded fallback; `warming` with a `served from` footer is an answer. For busy,
+failed, or cache-less calls, follow [recovery](references/recovery.md#empty-busy-and-failed-calls):
+retry at most once, never loop, strip rejected flags, or restart services, and
+never replay an ambiguous write.
 
 This skill does not replace editing, builds, tests, Git, or instruction reads. History uses `hist`, `since`, `diff`, or `blame` with Git 2.55+ and local objects.
