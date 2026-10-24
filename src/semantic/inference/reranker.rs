@@ -2,6 +2,7 @@
 //! Bounds admission before tokenizing; scores return in caller order.
 
 use super::{RERANK_BATCH_SIZE, SemanticProviderConfig, check_rerank_bounds, provider};
+use crate::semantic::VerifiedAssetDigests;
 use anyhow::{Result, bail};
 use fastembed::TextRerank;
 use std::path::Path;
@@ -13,8 +14,13 @@ pub struct RerankInferenceEngine {
 
 impl RerankInferenceEngine {
     /// Opens the pinned reranker using `provider`'s configured execution provider.
-    pub fn open_with_provider(model_dir: &Path, provider: SemanticProviderConfig) -> Result<Self> {
-        let model = provider::load_verified_reranker(model_dir, provider)?;
+    /// `digests` skips re-hashing assets its owner already verified.
+    pub fn open_with_provider(
+        model_dir: &Path,
+        provider: SemanticProviderConfig,
+        digests: &mut VerifiedAssetDigests,
+    ) -> Result<Self> {
+        let model = provider::load_verified_reranker(model_dir, provider, digests)?;
         Ok(Self { model })
     }
 
@@ -23,11 +29,13 @@ impl RerankInferenceEngine {
         model_dir: &Path,
         provider: SemanticProviderConfig,
         runtime_library: &Path,
+        digests: &mut VerifiedAssetDigests,
     ) -> Result<Self> {
         let model = self::provider::load_verified_reranker_with_runtime(
             model_dir,
             provider,
             runtime_library,
+            digests,
         )?;
         Ok(Self { model })
     }
@@ -42,14 +50,45 @@ impl RerankInferenceEngine {
         if documents.is_empty() {
             return Ok(Vec::new());
         }
+        // fastembed pads each batch to its longest pair, so length-sorted
+        // batches spend far less compute on padding than fused order does.
+        let order = length_sorted_order(documents);
+        let sorted = order
+            .iter()
+            .map(|&index| documents[index])
+            .collect::<Vec<_>>();
         let results = self
             .model
-            .rerank(query, documents, false, Some(RERANK_BATCH_SIZE))?;
+            .rerank(query, &sorted, false, Some(RERANK_BATCH_SIZE))?;
         scores_in_caller_order(
-            results.into_iter().map(|r| (r.index, r.score)).collect(),
+            sorted_results_to_caller(&order, results.into_iter().map(|r| (r.index, r.score)))?,
             documents.len(),
         )
     }
+}
+
+/// Caller indices ordered by document byte length (a token-length proxy, as
+/// the query is shared), ties keeping caller order.
+fn length_sorted_order(documents: &[&str]) -> Vec<usize> {
+    let mut order = (0..documents.len()).collect::<Vec<_>>();
+    order.sort_by_key(|&index| documents[index].len());
+    order
+}
+
+/// Maps results indexed by sorted position back to caller indices, failing
+/// closed on a position outside `order`.
+fn sorted_results_to_caller(
+    order: &[usize],
+    results: impl Iterator<Item = (usize, f32)>,
+) -> Result<Vec<(usize, f32)>> {
+    results
+        .map(|(position, score)| {
+            let index = order.get(position).ok_or_else(|| {
+                anyhow::anyhow!("rerank_unavailable: result index {position} out of range")
+            })?;
+            Ok((*index, score))
+        })
+        .collect()
 }
 
 /// Reassembles fastembed's score-sorted results into caller order, failing
@@ -86,6 +125,35 @@ mod tests {
         let results = vec![(2, 0.1), (0, 0.9), (1, 0.5)];
         let scores = scores_in_caller_order(results, 3).unwrap();
         assert_eq!(scores, vec![0.9, 0.5, 0.1]);
+    }
+
+    #[test]
+    fn length_sorted_scores_map_back_to_caller_order() {
+        let documents = ["ccc", "a", "bbbb", "dd", "e"];
+        let order = length_sorted_order(&documents);
+        assert_eq!(order, vec![1, 4, 3, 0, 2]);
+        // Score each sorted document by its text so the remap is checkable,
+        // returned in fastembed's descending-score order.
+        let score_of = |text: &str| text.len() as f32 * 10.0 + f32::from(text.as_bytes()[0]);
+        let mut results = order
+            .iter()
+            .enumerate()
+            .map(|(position, &index)| (position, score_of(documents[index])))
+            .collect::<Vec<_>>();
+        results.sort_by(|a, b| b.1.total_cmp(&a.1));
+        let caller = sorted_results_to_caller(&order, results.into_iter()).unwrap();
+        let scores = scores_in_caller_order(caller, documents.len()).unwrap();
+        let expected = documents
+            .iter()
+            .map(|text| score_of(text))
+            .collect::<Vec<_>>();
+        assert_eq!(scores, expected);
+    }
+
+    #[test]
+    fn sorted_results_reject_out_of_range_position() {
+        let error = sorted_results_to_caller(&[0, 1], [(2, 0.5)].into_iter()).unwrap_err();
+        assert!(error.to_string().contains("result index 2 out of range"));
     }
 
     #[test]

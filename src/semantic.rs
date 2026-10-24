@@ -20,6 +20,8 @@ pub mod worker;
 
 mod session;
 pub use session::{ResidencySample, SemanticSession};
+mod verified_assets;
+pub use verified_assets::VerifiedAssetDigests;
 
 pub const MODEL_REVISION: &str = "516f4baf13dec4ddddda8631e019b5737c8bc250";
 pub const DIMENSIONS: usize = 768;
@@ -36,7 +38,8 @@ pub const RERANK_MAX_DOCUMENTS: usize = 32;
 pub const RERANK_MAX_DOCUMENT_BYTES: usize = 4096;
 /// Maximum tokenized (query, document) pair length; tokenizer truncation stays on.
 pub const RERANK_MAX_TOKENS: usize = 1024;
-/// Documents submitted to one fastembed rerank call.
+/// Length-sorted documents per reranker batch; each batch pads to its longest
+/// pair, and larger batches measured slower with higher peak memory.
 pub const RERANK_BATCH_SIZE: usize = 8;
 
 /// Validates rerank admission bounds shared with the worker protocol. Defined

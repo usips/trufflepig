@@ -5,7 +5,7 @@ use super::engine::{RerankEngine, open_rerank_engine};
 use super::load_retry::LoadRetry;
 use super::protocol::{self, WorkerCommand, WorkerReply, write_reply};
 use super::{QueuedConnection, RunningConnection, now_ms};
-use crate::semantic::runtime_config::InferenceConfig;
+use crate::semantic::{VerifiedAssetDigests, runtime_config::InferenceConfig};
 use std::{
     collections::VecDeque,
     os::unix::net::UnixStream,
@@ -349,15 +349,18 @@ impl RerankLane {
         }
     }
 
-    /// Unloads the reranker after it sits idle for [`super::IDLE_UNLOAD`],
-    /// independent of the embedding engine's own idle unload.
+    /// Unloads the reranker after the configured idle period, independent of
+    /// the embedding engine's own idle unload; without one it stays resident.
     pub(super) fn unload_idle(&mut self) {
+        let Some(idle_unload) = self.config.idle_unload() else {
+            return;
+        };
         if !self.queue.is_empty() || self.loading || self.active || !self.loaded {
             return;
         }
         if self
             .last_used
-            .is_some_and(|used| used.elapsed() >= super::IDLE_UNLOAD)
+            .is_some_and(|used| used.elapsed() >= idle_unload)
         {
             let _ = self.executor_send.send(RerankExecutorCommand::Unload);
             self.loaded = false;
@@ -393,17 +396,22 @@ fn rerank_inference_loop(
     events: Sender<RerankExecutorEvent>,
 ) {
     let mut engine: Option<Box<dyn RerankEngine>> = None;
+    // Lives as long as this thread, so a reload skips re-hashing the
+    // reranker's multi-gigabyte external data when it is unchanged.
+    let mut digests = VerifiedAssetDigests::default();
     for command in commands {
         match command {
-            RerankExecutorCommand::Load(config) => match open_rerank_engine(&config) {
-                Ok(opened) => {
-                    engine = Some(opened);
-                    let _ = events.send(RerankExecutorEvent::Loaded(Ok(())));
+            RerankExecutorCommand::Load(config) => {
+                match open_rerank_engine(&config, &mut digests) {
+                    Ok(opened) => {
+                        engine = Some(opened);
+                        let _ = events.send(RerankExecutorEvent::Loaded(Ok(())));
+                    }
+                    Err(error) => {
+                        let _ = events.send(RerankExecutorEvent::Loaded(Err(format!("{error:#}"))));
+                    }
                 }
-                Err(error) => {
-                    let _ = events.send(RerankExecutorEvent::Loaded(Err(format!("{error:#}"))));
-                }
-            },
+            }
             RerankExecutorCommand::Execute(connection) => {
                 let RunningConnection {
                     request,
@@ -743,7 +751,10 @@ mod tests {
 
     #[test]
     fn idle_unload_targets_only_the_rerank_lane() {
-        let config = InferenceConfig::default();
+        let config = InferenceConfig {
+            idle_unload_seconds: Some(600),
+            ..InferenceConfig::default()
+        };
         let mut lane = RerankLane::new(config.clone());
         let (events, receive) = mpsc::channel();
         let (send, commands) = mpsc::channel();
@@ -753,7 +764,7 @@ mod tests {
         events.send(RerankExecutorEvent::Loaded(Ok(()))).unwrap();
         lane.pump(Instant::now());
         assert!(lane.loaded);
-        lane.last_used = Some(Instant::now() - super::super::IDLE_UNLOAD);
+        lane.last_used = Some(Instant::now() - std::time::Duration::from_secs(600));
         lane.unload_idle();
 
         assert!(!lane.loaded);
@@ -761,6 +772,24 @@ mod tests {
             commands.try_recv(),
             Ok(RerankExecutorCommand::Unload)
         ));
+        assert!(commands.try_recv().is_err());
+    }
+
+    #[test]
+    fn reranker_stays_resident_without_idle_unload() {
+        let config = InferenceConfig::default();
+        let mut lane = RerankLane::new(config);
+        let (events, receive) = mpsc::channel();
+        let (send, commands) = mpsc::channel();
+        lane.executor_receive = receive;
+        lane.executor_send = send;
+
+        events.send(RerankExecutorEvent::Loaded(Ok(()))).unwrap();
+        lane.pump(Instant::now());
+        lane.last_used = Some(Instant::now() - std::time::Duration::from_secs(24 * 60 * 60));
+        lane.unload_idle();
+
+        assert!(lane.loaded);
         assert!(commands.try_recv().is_err());
     }
 }

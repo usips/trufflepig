@@ -20,7 +20,7 @@ pub use status::{WorkerState, WorkerStatus};
 use super::Embedding;
 use crate::{
     background_process::{BackgroundOwner, current_background_executable, spawn_background_for},
-    semantic::runtime_config::InferenceConfig,
+    semantic::{VerifiedAssetDigests, runtime_config::InferenceConfig},
 };
 use anyhow::{Context, Result, bail, ensure};
 pub use client::{RERANK_DEADLINE, rerank_query};
@@ -49,7 +49,6 @@ use std::{
 const QUERY_DEADLINE: Duration = Duration::from_millis(500);
 const BACKGROUND_DEADLINE: Duration = Duration::from_secs(60);
 const CONTROL_DEADLINE: Duration = Duration::from_millis(500);
-const IDLE_UNLOAD: Duration = Duration::from_secs(10 * 60);
 const ACCEPT_SLEEP: Duration = Duration::from_millis(5);
 const FRAME_READ_TIMEOUT: Duration = Duration::from_millis(25);
 const FRAME_READ_DEADLINE: Duration = Duration::from_millis(500);
@@ -80,7 +79,7 @@ impl ForegroundSession {
         require_foreground_cuda_mask(&config)?;
         let cache = worker_cache_dir()?;
         let lease = WorkerLease::acquire(&cache)?;
-        let engine = open_engine(&config, &cache)?;
+        let engine = open_engine(&config, &cache, &mut VerifiedAssetDigests::default())?;
         let _ = root_id;
         Ok(Self {
             _lease: lease,
@@ -275,7 +274,8 @@ pub fn embed_foreground_query(root_id: &Path, text: &str) -> Result<Embedding> {
         .context("semantic_worker: missing embedding")
 }
 
-/// Run the worker command in the foreground. Model loading begins on first batch.
+/// Run the worker command in the foreground. Both configured models begin
+/// loading on their executor threads at startup while the socket serves status.
 pub fn serve(cache_override: Option<&Path>) -> Result<()> {
     #[cfg(not(feature = "semantic"))]
     {
@@ -293,6 +293,7 @@ pub fn serve(cache_override: Option<&Path>) -> Result<()> {
     let socket = WorkerSocket::bind(&cache)?;
     let handshake = Handshake::for_config(&config);
     let mut state = WorkerRuntime::new(config, cache, handshake);
+    state.start_eager_load(Instant::now());
     state.run(&socket)
 }
 
@@ -686,17 +687,30 @@ impl WorkerRuntime {
         }
     }
 
+    /// Unloads the embedder after the configured idle period; without one it
+    /// stays resident.
     fn unload_idle(&mut self) {
+        let Some(idle_unload) = self.config.idle_unload() else {
+            return;
+        };
         if self.scheduler.pending() != 0 || self.loading || self.active || !self.engine_loaded {
             return;
         }
         if self
             .last_used
-            .is_some_and(|used| used.elapsed() >= IDLE_UNLOAD)
+            .is_some_and(|used| used.elapsed() >= idle_unload)
         {
             let _ = self.executor_send.send(ExecutorCommand::Unload);
             self.engine_loaded = false;
             self.last_used = None;
+        }
+    }
+
+    /// Starts loading a configured embedder on the executor thread so the first
+    /// query need not pay for a cold start within its 500 ms deadline.
+    fn start_eager_load(&mut self, now: Instant) {
+        if self.config.model_dir.is_some() && !self.loading && !self.engine_loaded {
+            self.start_loader(now);
         }
     }
 
@@ -811,17 +825,21 @@ impl WorkerRuntime {
 
 fn inference_loop(commands: Receiver<ExecutorCommand>, events: Sender<ExecutorEvent>) {
     let mut engine: Option<Box<dyn Engine>> = None;
+    // Lives as long as this thread, so a reload skips re-hashing unchanged assets.
+    let mut digests = VerifiedAssetDigests::default();
     for command in commands {
         match command {
-            ExecutorCommand::Load { config, cache } => match open_engine(&config, &cache) {
-                Ok(opened) => {
-                    engine = Some(opened);
-                    let _ = events.send(ExecutorEvent::Loaded(Ok(())));
+            ExecutorCommand::Load { config, cache } => {
+                match open_engine(&config, &cache, &mut digests) {
+                    Ok(opened) => {
+                        engine = Some(opened);
+                        let _ = events.send(ExecutorEvent::Loaded(Ok(())));
+                    }
+                    Err(error) => {
+                        let _ = events.send(ExecutorEvent::Loaded(Err(format!("{error:#}"))));
+                    }
                 }
-                Err(error) => {
-                    let _ = events.send(ExecutorEvent::Loaded(Err(format!("{error:#}"))));
-                }
-            },
+            }
             ExecutorCommand::Execute(connection) => {
                 let RunningConnection {
                     request,
@@ -885,9 +903,7 @@ mod tests {
         )
     }
 
-    #[test]
-    fn loaded_model_unloads_without_a_completed_query() {
-        let config = InferenceConfig::default();
+    fn loaded_runtime(config: InferenceConfig) -> (WorkerRuntime, Receiver<ExecutorCommand>) {
         let handshake = Handshake::for_config(&config);
         let mut runtime = WorkerRuntime::new(config, PathBuf::new(), handshake);
         let (events, receive) = mpsc::channel();
@@ -897,11 +913,59 @@ mod tests {
         runtime.loading = true;
         events.send(ExecutorEvent::Loaded(Ok(()))).unwrap();
         runtime.poll_executor();
+        (runtime, commands)
+    }
+
+    #[test]
+    fn loaded_model_stays_resident_without_idle_unload() {
+        let (mut runtime, commands) = loaded_runtime(InferenceConfig::default());
+        runtime.last_used = Some(Instant::now() - Duration::from_secs(24 * 60 * 60));
+        runtime.unload_idle();
+        assert!(runtime.engine_loaded);
+        assert!(commands.try_recv().is_err());
+    }
+
+    #[test]
+    fn loaded_model_unloads_without_a_completed_query() {
+        let (mut runtime, commands) = loaded_runtime(InferenceConfig {
+            idle_unload_seconds: Some(600),
+            ..InferenceConfig::default()
+        });
         assert!(runtime.last_used.is_some());
-        runtime.last_used = Some(Instant::now() - IDLE_UNLOAD);
+        runtime.last_used = Some(Instant::now() - Duration::from_secs(600));
         runtime.unload_idle();
         assert!(!runtime.engine_loaded);
         assert!(matches!(commands.try_recv(), Ok(ExecutorCommand::Unload)));
+    }
+
+    #[test]
+    fn startup_loads_a_configured_embedder_once_without_a_request() {
+        let unconfigured = InferenceConfig::default();
+        let handshake = Handshake::for_config(&unconfigured);
+        let mut runtime = WorkerRuntime::new(unconfigured, PathBuf::new(), handshake);
+        let (send, commands) = mpsc::channel();
+        runtime.executor_send = send;
+        runtime.start_eager_load(Instant::now());
+        assert!(!runtime.loading);
+        assert!(commands.try_recv().is_err());
+
+        let config = InferenceConfig {
+            model_dir: Some("/models/embedder".into()),
+            ..InferenceConfig::default()
+        };
+        let handshake = Handshake::for_config(&config);
+        let mut runtime = WorkerRuntime::new(config, PathBuf::new(), handshake);
+        let (send, commands) = mpsc::channel();
+        runtime.executor_send = send;
+        runtime.start_eager_load(Instant::now());
+        runtime.start_eager_load(Instant::now());
+        assert!(runtime.loading);
+        assert!(matches!(
+            commands.try_recv(),
+            Ok(ExecutorCommand::Load { .. })
+        ));
+        assert!(commands.try_recv().is_err());
+        assert_eq!(runtime.status(true).state, WorkerState::Loading);
     }
 
     #[test]
@@ -953,7 +1017,6 @@ mod tests {
     #[test]
     fn worker_constants_preserve_query_budget() {
         assert_eq!(QUERY_DEADLINE, Duration::from_millis(500));
-        assert_eq!(IDLE_UNLOAD, Duration::from_secs(600));
         assert_eq!(RERANK_DEADLINE, Duration::from_millis(1500));
     }
 }

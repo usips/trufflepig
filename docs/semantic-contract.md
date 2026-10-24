@@ -74,11 +74,15 @@ The shared per-user worker owns the reranker alongside the embedding model.
 `rerank_model_dir` selects its verified asset directory; an optional
 `rerank_gpu_uuid` names a second GPU for CUDA, and the worker's
 `CUDA_VISIBLE_DEVICES` mask lists both the embedding and rerank GPU UUIDs.
-Without `rerank_gpu_uuid`, the reranker shares `gpu_uuid`.
+Without `rerank_gpu_uuid`, the reranker shares `gpu_uuid`. The reranker's
+CUDA session allows TF32 math because its scores are never cached; the
+embedding session disables TF32 to keep cached vectors parity-gated.
 
 Each rerank request scores at most 32 documents against one query, with a
 4,096-byte bound per document and per query, truncating tokenized pairs at
-1,024 tokens, in batches of 8, under a 1,500 ms query deadline. The stage
+1,024 tokens, in batches of 8 documents sorted by byte length (each batch
+pads to its longest pair), under a 1,500 ms query deadline. Scores return in
+the caller's document order. The stage
 reorders only the top 32 files from the fused lexical/semantic ranking.
 It uses the representative hit's evidence tiers from
 [file ranking](ranking-contract.md): phrase hits and, for identifier queries,
@@ -138,11 +142,20 @@ status commands.
 
 ## Worker lifecycle and diagnostics
 
+The worker begins loading each configured model (`model_dir`,
+`rerank_model_dir`) when it starts, on that model's executor thread, so the
+first query need not trigger a cold start and status answers meanwhile.
+
 `semantic worker status` reports whether the per-user worker is running, its
 selected provider and GPU identity, whether the model is loaded, and pending
-work. `semantic worker stop` asks it to release its model and exit. The worker
-may unload an idle model; status and diagnostics report residency without
-attributing whole-process RSS solely to model tensors.
+work. `semantic worker stop` asks it to release its model and exit. Models stay
+resident for the worker's lifetime unless `inference.toml` sets a positive
+`idle_unload_seconds`; each model then unloads after that idle period and
+reloads on its next request, during which reranking reports `rerank_loading`
+and keeps the fused order. Each model's executor hashes its pinned assets once
+per worker process; a reload hashes a file again only when its device, inode,
+size, or modification time changed. Status and diagnostics report residency
+without attributing whole-process RSS solely to model tensors.
 
 After a model-load failure, the worker retries lazily after 500 ms, doubles the
 cooldown after each failure, and caps it at 30 seconds. The latest load error

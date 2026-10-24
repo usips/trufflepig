@@ -38,3 +38,13 @@ ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dy
 [features]
 semantic = ["dep:fastembed", "dep:ort"]
 semantic-cuda = ["semantic", "ort/cuda"]
+
+# Dependencies (bundled SQLite, tree-sitter grammars, blake3, tiktoken) run
+# optimized in debug builds; the crate itself keeps fast incremental builds.
+[profile.dev.package."*"]
+opt-level = 3
+
+# Unwinding stays enabled: the daemon pool isolates jobs with catch_unwind.
+[profile.release]
+lto = "thin"
+debug = "line-tables-only"
