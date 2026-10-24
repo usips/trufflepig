@@ -80,7 +80,9 @@ embedding session disables TF32 to keep cached vectors parity-gated.
 
 Each rerank request scores at most 32 documents against one query, with a
 4,096-byte bound per document and per query, truncating tokenized pairs at
-1,024 tokens, in batches of 8, under a 1,500 ms query deadline. The stage
+1,024 tokens, in batches of 8 documents sorted by byte length (each batch
+pads to its longest pair), under a 1,500 ms query deadline. Scores return in
+the caller's document order. The stage
 reorders only the top 32 files from the fused lexical/semantic ranking.
 It uses the representative hit's evidence tiers from
 [file ranking](ranking-contract.md): phrase hits and, for identifier queries,
