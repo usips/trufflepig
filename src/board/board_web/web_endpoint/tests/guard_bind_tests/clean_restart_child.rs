@@ -19,7 +19,7 @@ pub(super) fn check_clean_restart() {
         eprintln!("\n{SUCCESS_MARKER}");
         return;
     }
-    let directory = crate::board::board_test_support::scratch("web-clean-restart-child-");
+    let directory = crate::test_fixtures::scratch("web-clean-restart-child-");
     let log_path = directory.path().join("child.log");
     let output = File::create(&log_path).unwrap();
     let child = Command::new(std::env::current_exe().unwrap())

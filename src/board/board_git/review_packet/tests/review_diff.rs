@@ -75,7 +75,7 @@ fn trimmed_review() -> (ReviewPacket, String, serde_json::Value) {
         2,
         &format!("context\n{}", "new text for line\n".repeat(1000)),
     );
-    let fixture = crate::board::repo_identity::tests::GitFixture::new();
+    let fixture = crate::test_fixtures::GitFixture::new();
     let oid = fixture.commit("root");
     let quoted = fixture.directory.path().join("it's here");
     fixture.git(&[

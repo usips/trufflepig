@@ -22,7 +22,7 @@ mod tests {
 
     #[test]
     fn local_spool_timeout_preserves_wire_text_and_provenance() {
-        let directory = crate::board::board_test_support::scratch("st-");
+        let directory = crate::test_fixtures::scratch("st-");
         let context = crate::diagnostics::RequestContext::new(None, None);
         let error = super::super::request(
             directory.path(),

@@ -5,7 +5,7 @@ use std::sync::{Arc, Barrier};
 
 #[test]
 fn unlink_scan_link_stays_suppressed_after_reingest() {
-    let directory = crate::board::board_test_support::scratch("board-unlink-");
+    let directory = crate::test_fixtures::scratch("board-unlink-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -73,7 +73,7 @@ fn unlink_scan_link_stays_suppressed_after_reingest() {
 
 #[test]
 fn plan_only_trailer_still_links_after_task_unlink() {
-    let directory = crate::board::board_test_support::scratch("board-unlink-");
+    let directory = crate::test_fixtures::scratch("board-unlink-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -124,7 +124,7 @@ fn plan_only_trailer_still_links_after_task_unlink() {
 
 #[test]
 fn unlink_rejects_repository_ambiguity_without_writing() {
-    let directory = crate::board::board_test_support::scratch("board-unlink-");
+    let directory = crate::test_fixtures::scratch("board-unlink-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -160,7 +160,7 @@ fn unlink_rejects_repository_ambiguity_without_writing() {
 
 #[test]
 fn unlink_receipt_cannot_be_forged_with_user_authored_refs() {
-    let directory = crate::board::board_test_support::scratch("board-unlink-");
+    let directory = crate::test_fixtures::scratch("board-unlink-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -214,7 +214,7 @@ fn unlink_receipt_cannot_be_forged_with_user_authored_refs() {
 
 #[test]
 fn unlink_concurrent_callers_share_one_durable_receipt() {
-    let directory = crate::board::board_test_support::scratch("board-unlink-");
+    let directory = crate::test_fixtures::scratch("board-unlink-");
     let path = directory.path().join("board.sqlite3");
     let mut setup = LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap();
     let (owner, task) = manual_link_plan(&mut setup);

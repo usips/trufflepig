@@ -14,7 +14,7 @@ pub(super) use schema_refusal_tests::upgrade_schema_before_lock;
 use super::*;
 
 fn directory() -> tempfile::TempDir {
-    crate::board::board_test_support::scratch("board-test-")
+    crate::test_fixtures::scratch("board-test-")
 }
 
 #[test]

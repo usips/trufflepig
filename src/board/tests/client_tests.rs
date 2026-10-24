@@ -7,7 +7,7 @@ use crate::coded_error::CodedContext;
 
 #[test]
 fn captured_body_survives_file_changes_between_retries() {
-    let directory = crate::board::board_test_support::scratch("board-transport-");
+    let directory = crate::test_fixtures::scratch("board-transport-");
     let body_path = directory.path().join("plan.md");
     std::fs::write(&body_path, "- captured plan\n").unwrap();
     let args = vec![
@@ -50,7 +50,7 @@ fn body_preflight_precedes_file_reads_and_byte_limits_precede_utf8() {
         error.to_string().starts_with("invalid_reference:"),
         "{error:#}"
     );
-    let directory = crate::board::board_test_support::scratch("board-runtime-");
+    let directory = crate::test_fixtures::scratch("board-runtime-");
     let path = directory.path().join("oversized-feedback");
     std::fs::write(&path, vec![0xff; 4097]).unwrap();
     let args = vec![
@@ -134,7 +134,7 @@ fn oversized_write_reports_size_code_instead_of_invalid_state() {
 
 #[test]
 fn newer_schema_refusal_advises_upgrade() {
-    let directory = crate::board::board_test_support::scratch("board-schema-");
+    let directory = crate::test_fixtures::scratch("board-schema-");
     let config = crate::board::BoardConfig::for_database(directory.path().join("board.sqlite3"));
     let args: Vec<String> = ["board", "inbox"].map(str::to_owned).into();
     let options = crate::cli::parse(&args).unwrap();
@@ -168,7 +168,7 @@ fn newer_schema_refusal_advises_upgrade() {
 
 #[test]
 fn schema_words_in_transport_prose_do_not_advise_upgrade() {
-    let directory = crate::board::board_test_support::scratch("board-schema-prose-");
+    let directory = crate::test_fixtures::scratch("board-schema-prose-");
     let config = crate::board::BoardConfig::for_database(directory.path().join("board.sqlite3"));
     let args: Vec<String> = ["board", "inbox"].map(str::to_owned).into();
     let options = crate::cli::parse(&args).unwrap();

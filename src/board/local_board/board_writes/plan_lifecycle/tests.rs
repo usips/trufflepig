@@ -12,7 +12,7 @@ struct LifecycleDatabase {
 
 impl LifecycleDatabase {
     fn new(task_column: &str) -> Self {
-        let directory = crate::board::board_test_support::scratch("plan-lifecycle-tests-");
+        let directory = crate::test_fixtures::scratch("plan-lifecycle-tests-");
         let path = directory.path().join("board.sqlite3");
         let conn = crate::board::local_board::board_database::open(&path)
             .unwrap()

@@ -16,7 +16,7 @@ struct TransferDatabase {
 
 impl TransferDatabase {
     fn new() -> Self {
-        let directory = crate::board::board_test_support::scratch("task-transfer-tests-");
+        let directory = crate::test_fixtures::scratch("task-transfer-tests-");
         let path = directory.path().join("board.sqlite3");
         let conn = crate::board::local_board::board_database::open(&path)
             .unwrap()

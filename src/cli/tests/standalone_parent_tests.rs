@@ -702,7 +702,7 @@ struct WorktreeFixture {
 
 impl WorktreeFixture {
     fn new() -> Result<Self> {
-        let scratch = crate::board::board_test_support::scratch("standalone-parent-");
+        let scratch = crate::test_fixtures::scratch("standalone-parent-");
         let main = scratch.path().join("main");
         let worktree = scratch.path().join("linked-worktree");
         fs::create_dir_all(main.join("src"))?;
@@ -901,7 +901,7 @@ fn in_isolated_child(case: &str) -> Result<bool> {
         return Ok(true);
     }
 
-    let directory = crate::board::board_test_support::scratch("standalone-parent-process-");
+    let directory = crate::test_fixtures::scratch("standalone-parent-process-");
     let paths = [
         "home", "cache", "config", "data", "runtime", "system", "spool", "tmp",
     ]

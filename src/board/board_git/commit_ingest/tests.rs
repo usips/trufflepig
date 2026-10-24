@@ -11,8 +11,9 @@ use crate::board::board_ids::EventSeq;
 use crate::board::board_protocol::{
     ActorOrigin, BoardError, BoardErrorCode, BoardReply, CommitLinkResult, WorkerAddress,
 };
-use crate::board::repo_identity::tests::GitFixture;
+use crate::board::repo_identity::tests::FixtureRegistration;
 use crate::identity::GitOid;
+use crate::test_fixtures::GitFixture;
 use std::collections::BTreeSet;
 
 #[derive(Default)]

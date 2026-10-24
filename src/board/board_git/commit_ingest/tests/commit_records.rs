@@ -1,5 +1,6 @@
 use super::*;
 use crate::board::board_protocol::CommitPlanLink;
+use crate::board::repo_identity::tests::FixtureRegistration;
 
 #[test]
 fn native_trailers_link_case_insensitively_and_exclude_body_mentions() {

@@ -9,7 +9,7 @@ fn isolated_router_test(name: &str) -> bool {
     if std::env::var(MARKER).as_deref() == Ok(name) {
         return false;
     }
-    let directory = crate::board::board_test_support::scratch("router-spawn-case-");
+    let directory = crate::test_fixtures::scratch("router-spawn-case-");
     let test = format!("system::tests::router_spawn_tests::{name}");
     let output = Command::new(std::env::current_exe().unwrap())
         .env(MARKER, name)
@@ -93,7 +93,7 @@ fn initial_status_probe_leaves_time_for_spawn() {
 
 #[test]
 fn status_probe_uses_spool_without_a_runtime_directory() {
-    let directory = crate::board::board_test_support::scratch("router-spool-only-");
+    let directory = crate::test_fixtures::scratch("router-spool-only-");
     let spool = directory.path().join("spool");
     let mut server = daemon::spool::SpoolServer::open(&spool).unwrap();
     let stopped = Arc::new(AtomicBool::new(false));

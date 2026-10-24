@@ -640,7 +640,7 @@ mod tests {
     #[test]
     fn bounded_board_git_uses_243_compatible_no_fetch_policy() {
         use std::os::unix::fs::PermissionsExt;
-        let directory = crate::board::board_test_support::scratch("git-243-");
+        let directory = crate::test_fixtures::scratch("git-243-");
         let program = directory.path().join("git243");
         std::fs::write(&program, "#!/bin/sh\nprotocol=no\nfor arg do\n case \"$arg\" in\n --no-lazy-fetch) exit 129;;\n protocol.allow=never) protocol=yes;;\n esac\ndone\n[ \"$protocol\" = yes ] || exit 2\n[ \"$GIT_NO_LAZY_FETCH\" = 1 ] || exit 3\n[ \"${GIT_ALLOW_PROTOCOL+x}\" = x ] && [ -z \"$GIT_ALLOW_PROTOCOL\" ] || exit 4\nprintf 'compatible\\n'\n").unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -671,7 +671,7 @@ mod tests {
 
     #[test]
     fn bounded_board_git_does_not_fetch_missing_promisor_objects() {
-        use crate::board::repo_identity::tests::GitFixture;
+        use crate::test_fixtures::GitFixture;
         let fixture = GitFixture::new();
         let oid = fixture.commit("root");
         let clone = fixture.directory.path().join("promisor");

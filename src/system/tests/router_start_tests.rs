@@ -48,7 +48,7 @@ fn ensure_does_not_spawn_after_the_request_peer_disconnects() {
 fn ensure_reports_a_running_router_despite_unresolvable_board_database() {
     if std::env::var_os("TRUFFLEPIG_SYSTEM_TEST_RELATIVE_DB").is_none() {
         // The child process owns the board environment; parallel tests never see it.
-        let directory = crate::board::board_test_support::scratch("board-lazy-");
+        let directory = crate::test_fixtures::scratch("board-lazy-");
         let status = std::process::Command::new(std::env::current_exe().unwrap())
             .env("TRUFFLEPIG_SYSTEM_TEST_RELATIVE_DB", "1")
             .env("TRUFFLEPIG_BOARD_DB", "relative.sqlite3")
@@ -118,7 +118,7 @@ fn ensure_waits_for_a_migrating_router_without_spawning_a_second() {
     const TEST: &str = "system::tests::router_start_tests::ensure_waits_for_a_migrating_router_without_spawning_a_second";
     if std::env::var_os(MARKER).is_none() {
         // The child process owns the router environment; parallel tests never see it.
-        let directory = crate::board::board_test_support::scratch("router-migration-");
+        let directory = crate::test_fixtures::scratch("router-migration-");
         let database = directory.path().join("board.sqlite3");
         crate::board::local_board::seed_storage_schema(&database, crate::board::SCHEMA_VERSION - 1)
             .unwrap();
@@ -181,7 +181,7 @@ fn ensure_waits_for_a_slow_spawned_router() {
     }
     if std::env::var_os(MARKER).is_none() {
         // The child process owns the router environment; parallel tests never see it.
-        let directory = crate::board::board_test_support::scratch("router-slow-spawn-");
+        let directory = crate::test_fixtures::scratch("router-slow-spawn-");
         let database = directory.path().join("board.sqlite3");
         crate::board::local_board::seed_storage_schema(&database, crate::board::SCHEMA_VERSION - 1)
             .unwrap();
@@ -244,7 +244,7 @@ fn ensure_gives_up_after_the_cap() {
     const TEST: &str = "system::tests::router_start_tests::ensure_gives_up_after_the_cap";
     if std::env::var_os(MARKER).is_none() {
         // The child process owns the router environment; parallel tests never see it.
-        let directory = crate::board::board_test_support::scratch("router-hung-spawn-");
+        let directory = crate::test_fixtures::scratch("router-hung-spawn-");
         let database = directory.path().join("board.sqlite3");
         crate::board::local_board::seed_storage_schema(&database, crate::board::SCHEMA_VERSION - 1)
             .unwrap();

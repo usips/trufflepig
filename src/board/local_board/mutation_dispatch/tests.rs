@@ -21,7 +21,7 @@ fn actor(harness: &str, session: &str) -> BoardActor {
 }
 
 fn database() -> (tempfile::TempDir, LocalBoard) {
-    let directory = crate::board::board_test_support::scratch("mutation-dispatch-");
+    let directory = crate::test_fixtures::scratch("mutation-dispatch-");
     let path = directory.path().join("board.sqlite3");
     let board = LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap();
     (directory, board)

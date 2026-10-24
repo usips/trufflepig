@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::repo_identity::tests::GitFixture;
+use crate::test_fixtures::GitFixture;
 use crate::workspace::config::WorkspaceConfig;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -124,7 +124,7 @@ fn isolated(test: &str, scenario: impl FnOnce(&Path)) {
         scenario(Path::new(&root));
         return;
     }
-    let directory = crate::board::board_test_support::scratch("board-cli-project-");
+    let directory = crate::test_fixtures::scratch("board-cli-project-");
     let output = Command::new(std::env::current_exe().unwrap())
         .args([test, "--nocapture"])
         .env(FIXTURE_ROOT, directory.path())

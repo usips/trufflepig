@@ -27,7 +27,7 @@ fn owner() -> BoardActor {
 }
 
 fn database() -> (tempfile::TempDir, LocalBoard) {
-    let directory = crate::board::board_test_support::scratch("board-search-");
+    let directory = crate::test_fixtures::scratch("board-search-");
     let board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),

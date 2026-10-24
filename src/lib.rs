@@ -19,4 +19,6 @@ pub mod semantic;
 pub mod source;
 pub mod store;
 pub mod system;
+#[cfg(test)]
+pub(crate) mod test_fixtures;
 pub mod workspace;

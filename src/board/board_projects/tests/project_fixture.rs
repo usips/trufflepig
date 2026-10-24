@@ -10,7 +10,7 @@ pub(super) struct ProjectFixture {
 
 impl ProjectFixture {
     pub fn new() -> Self {
-        let directory = crate::board::board_test_support::scratch("board-projects-");
+        let directory = crate::test_fixtures::scratch("board-projects-");
         let registry = directory.path().join("workspaces.toml");
         let config = BoardConfig::for_database(directory.path().join("board.sqlite3"));
         Self {

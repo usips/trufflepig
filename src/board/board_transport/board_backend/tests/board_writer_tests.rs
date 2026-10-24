@@ -3,7 +3,7 @@ use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn panicked_board_write_rolls_back_then_reopens_for_durable_writes() {
-    let directory = crate::board::board_test_support::scratch("board-runtime-");
+    let directory = crate::test_fixtures::scratch("board-runtime-");
     let database = directory.path().join("board.sqlite3");
     let host = BoardHost::with_config(BoardConfig::for_database(&database));
     let actor = host
@@ -67,7 +67,7 @@ fn poison<T>(mutex: &Mutex<T>) {
 
 #[test]
 fn poisoned_writer_reopens_durable_board_and_recovers_other_locks() {
-    let directory = crate::board::board_test_support::scratch("board-test-");
+    let directory = crate::test_fixtures::scratch("board-test-");
     let host = BoardHost::with_config(BoardConfig::for_database(
         directory.path().join("board.sqlite3"),
     ));
@@ -95,7 +95,7 @@ fn poisoned_writer_reopens_durable_board_and_recovers_other_locks() {
 #[test]
 fn host_reads_existing_board_without_initializing_or_waiting_for_writer() {
     use std::os::unix::fs::PermissionsExt;
-    let directory = crate::board::board_test_support::scratch("board-runtime-");
+    let directory = crate::test_fixtures::scratch("board-runtime-");
     let parent = directory.path().join("data");
     std::fs::create_dir(&parent).unwrap();
     std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -143,7 +143,7 @@ fn host_reads_existing_board_without_initializing_or_waiting_for_writer() {
 
 #[test]
 fn expired_board_mutation_never_creates_the_database() {
-    let directory = crate::board::board_test_support::scratch("board-transport-");
+    let directory = crate::test_fixtures::scratch("board-transport-");
     let database = directory.path().join("data/board.sqlite3");
     let host = BoardHost::with_config(BoardConfig::for_database(&database));
     let options =
@@ -177,7 +177,7 @@ fn writer_lock_wait_respects_the_accepted_deadline() {
 #[test]
 fn host_bootstraps_writable_legacy_storage_but_keeps_readonly_initialization_error() {
     use std::os::unix::fs::PermissionsExt;
-    let directory = crate::board::board_test_support::scratch("legacy-host-");
+    let directory = crate::test_fixtures::scratch("legacy-host-");
     let config = BoardConfig::for_database(directory.path().join("board.sqlite3"));
     let external = rusqlite::Connection::open(&config.db_path).unwrap();
     external.pragma_update(None, "user_version", 0).unwrap();
@@ -222,7 +222,7 @@ fn host_bootstraps_writable_legacy_storage_but_keeps_readonly_initialization_err
 
 #[test]
 fn ensure_writer_migrates_once_for_router_startup() {
-    let directory = crate::board::board_test_support::scratch("board-runtime-");
+    let directory = crate::test_fixtures::scratch("board-runtime-");
     let database = directory.path().join("board.sqlite3");
     let host = BoardHost::with_config(BoardConfig::for_database(&database));
     assert!(!database.exists());
@@ -239,7 +239,7 @@ fn ensure_writer_migrates_once_for_router_startup() {
 
 #[test]
 fn ensure_writer_migrates_stale_storage_for_router_startup() {
-    let directory = crate::board::board_test_support::scratch("board-runtime-");
+    let directory = crate::test_fixtures::scratch("board-runtime-");
     let database = directory.path().join("board.sqlite3");
     crate::board::local_board::seed_storage_schema(&database, crate::board::SCHEMA_VERSION - 1)
         .unwrap();

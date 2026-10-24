@@ -17,7 +17,7 @@ pub(super) struct HostProjectFixture {
 
 impl HostProjectFixture {
     pub(super) fn new() -> Self {
-        let directory = crate::board::board_test_support::scratch("project-host-");
+        let directory = crate::test_fixtures::scratch("project-host-");
         let config = BoardConfig::for_database(directory.path().join("storage/board.sqlite3"));
         let registry = directory.path().join("workspaces.toml");
         let host = BoardHost::with_config(config.clone());

@@ -1,5 +1,6 @@
 use super::*;
-use crate::board::repo_identity::tests::GitFixture;
+use crate::board::repo_identity::tests::FixtureRegistration;
+use crate::test_fixtures::GitFixture;
 use crate::workspace::config::WorkspaceConfig;
 
 mod project_fixture;

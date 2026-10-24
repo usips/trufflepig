@@ -3,7 +3,7 @@ use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn unchanged_waiting_inbox_uses_sequence_gate_and_returns_empty_under_writer_lock() {
-    let directory = crate::board::board_test_support::scratch("board-transport-");
+    let directory = crate::test_fixtures::scratch("board-transport-");
     let config = BoardConfig::for_database(directory.path().join("board.sqlite3"));
     drop(LocalBoard::open(&config).unwrap());
     let host = BoardHost::with_config(config.clone());

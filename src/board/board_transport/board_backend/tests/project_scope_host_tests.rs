@@ -1,6 +1,8 @@
 use super::*;
-use crate::board::{
-    board_projects::ProjectResolver, board_protocol::ReadScope, repo_identity::tests::GitFixture,
+use crate::board::repo_identity::tests::FixtureRegistration;
+use crate::{
+    board::{board_projects::ProjectResolver, board_protocol::ReadScope},
+    test_fixtures::GitFixture,
 };
 use serde_json::json;
 use std::fs;

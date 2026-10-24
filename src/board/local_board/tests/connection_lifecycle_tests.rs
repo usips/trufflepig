@@ -26,7 +26,7 @@ fn local_board_refuses_newer_schema_without_changing_journal() {
 
 #[test]
 fn local_board_concurrent_first_open_serializes_migration() {
-    let path = crate::board::board_test_support::scratch("board-storage-")
+    let path = crate::test_fixtures::scratch("board-storage-")
         .keep()
         .join("board.sqlite3");
     let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));

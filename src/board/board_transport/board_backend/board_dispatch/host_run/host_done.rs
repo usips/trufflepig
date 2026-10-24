@@ -58,13 +58,15 @@ impl BoardHost {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board::{
-        board_backend::BoardBackend,
-        board_config::BoardConfig,
-        board_ids::RepoKey,
-        board_projects::ProjectResolver,
-        board_vocabulary::{PlanText, PlanTitle},
-        repo_identity::tests::GitFixture,
+    use crate::{
+        board::{
+            board_backend::BoardBackend,
+            board_config::BoardConfig,
+            board_ids::RepoKey,
+            board_projects::ProjectResolver,
+            board_vocabulary::{PlanText, PlanTitle},
+        },
+        test_fixtures::GitFixture,
     };
 
     struct DoneFixture {

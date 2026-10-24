@@ -155,7 +155,7 @@ fn bounded_metadata(path: &Path) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board::repo_identity::tests::GitFixture;
+    use crate::test_fixtures::GitFixture;
 
     #[test]
     fn oversized_head_metadata_has_bounded_cached_diagnostics() {

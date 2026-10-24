@@ -82,7 +82,7 @@ fn explicit_resume_entry_still_requires_same_user_host_and_harness() {
 
 #[test]
 fn show_lists_the_claim_entry_for_resume_targeting() {
-    let directory = crate::board::board_test_support::scratch("board-test-");
+    let directory = crate::test_fixtures::scratch("board-test-");
     let mut backend = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         std::time::Duration::from_secs(7200),

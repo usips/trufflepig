@@ -81,7 +81,7 @@ fn privileged_recorded_port_falls_back() {
         return;
     }
     if std::env::var_os(CHILD).is_none() {
-        let directory = crate::board::board_test_support::scratch("web-port-privileged-");
+        let directory = crate::test_fixtures::scratch("web-port-privileged-");
         let runtime = directory.path().join("runtime");
         fs::create_dir_all(&runtime).unwrap();
         let output = std::process::Command::new(std::env::current_exe().unwrap())
@@ -126,7 +126,7 @@ fn privileged_recorded_port_falls_back() {
 fn taken_persisted_port_falls_back_with_a_one_line_notice() {
     const CHILD: &str = "TRUFFLEPIG_BOARD_WEB_PORT_FALLBACK_CHILD";
     if std::env::var_os(CHILD).is_none() {
-        let directory = crate::board::board_test_support::scratch("web-port-fallback-");
+        let directory = crate::test_fixtures::scratch("web-port-fallback-");
         let runtime = directory.path().join("runtime");
         fs::create_dir_all(&runtime).unwrap();
         let holder = TcpListener::bind("127.0.0.1:0").unwrap();

@@ -10,7 +10,7 @@ use crate::board::local_board::LocalBoard;
 use std::time::Duration;
 
 fn board() -> (tempfile::TempDir, LocalBoard) {
-    let directory = crate::board::board_test_support::scratch("task-move-authority-");
+    let directory = crate::test_fixtures::scratch("task-move-authority-");
     let board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),

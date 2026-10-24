@@ -130,7 +130,7 @@ fn version_supported(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board::repo_identity::tests::GitFixture;
+    use crate::test_fixtures::GitFixture;
 
     #[test]
     fn history_drills_reject_shallow_boundary_with_missing_raw_parent() {

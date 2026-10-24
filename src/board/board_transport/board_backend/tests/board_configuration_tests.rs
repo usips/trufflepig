@@ -28,7 +28,7 @@ fn maintenance_import_backoff_caps_and_recovers_without_hot_polling() {
 
 #[test]
 fn configuration_ttl_refresh_changes_existing_writer_claim_policy() {
-    let directory = crate::board::board_test_support::scratch("board-runtime-");
+    let directory = crate::test_fixtures::scratch("board-runtime-");
     let database = directory.path().join("board.sqlite3");
     let mut config = BoardConfig::for_database(&database);
     let host = BoardHost::with_config(config.clone());
@@ -86,7 +86,7 @@ fn configuration_ttl_refresh_changes_existing_writer_claim_policy() {
 #[test]
 fn idle_maintenance_schedules_a_blocked_loader_without_waiting() {
     use std::os::unix::ffi::OsStrExt;
-    let directory = crate::board::board_test_support::scratch("board-runtime-");
+    let directory = crate::test_fixtures::scratch("board-runtime-");
     let source = directory.path().join("blocked-board.toml");
     let name = std::ffi::CString::new(source.as_os_str().as_bytes()).unwrap();
     // SAFETY: CString is NUL terminated and mkfifo only creates this test path.
@@ -113,7 +113,7 @@ fn idle_maintenance_schedules_a_blocked_loader_without_waiting() {
 
 #[test]
 fn idle_maintenance_does_not_wait_for_configuration_lock() {
-    let directory = crate::board::board_test_support::scratch("board-runtime-");
+    let directory = crate::test_fixtures::scratch("board-runtime-");
     let host = BoardHost::with_config(BoardConfig::for_database(
         directory.path().join("absent-board.sqlite3"),
     ));
@@ -126,7 +126,7 @@ fn idle_maintenance_does_not_wait_for_configuration_lock() {
 
 #[test]
 fn backend_rejects_client_only_web_before_opening_board_database() {
-    let directory = crate::board::board_test_support::scratch("board-web-client-only-");
+    let directory = crate::test_fixtures::scratch("board-web-client-only-");
     let database = directory.path().join("absent.sqlite3");
     let host = BoardHost::with_config(BoardConfig::for_database(&database));
     let options = crate::cli::parse(&["board".into(), "web".into(), "P1".into()]).unwrap();

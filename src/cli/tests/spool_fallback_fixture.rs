@@ -24,7 +24,7 @@ pub(super) fn in_child(case: &str) -> Result<bool> {
     if std::env::var(CHILD_CASE).as_deref() == Ok(case) {
         return Ok(true);
     }
-    let directory = crate::board::board_test_support::scratch("sf-");
+    let directory = crate::test_fixtures::scratch("sf-");
     for name in ["r", "c", "d", "s"] {
         fs::create_dir(directory.path().join(name))?;
     }

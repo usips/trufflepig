@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn blocked_termination_signal_reaches_the_waiter_and_runs_cleanup() {
-        let directory = crate::board::board_test_support::scratch("web-signal-");
+        let directory = crate::test_fixtures::scratch("web-signal-");
         let descriptor = directory.path().join("board-web.json");
         std::fs::write(&descriptor, "{}").unwrap();
         block(&[libc::SIGUSR1]).unwrap();

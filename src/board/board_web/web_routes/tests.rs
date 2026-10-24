@@ -92,7 +92,7 @@ fn render_fixture_with(reader: FeedReader) -> RenderFixture {
 }
 
 fn render_fixture_with_ingest(reader: FeedReader, ingest: web_ops::IngestFlight) -> RenderFixture {
-    let directory = crate::board::board_test_support::scratch("web-render-");
+    let directory = crate::test_fixtures::scratch("web-render-");
     let config = BoardConfig::for_database(directory.path().join("web.sqlite3"));
     let store = WebStore::open_at(
         BoardConfigCache::with_config(config.clone()),

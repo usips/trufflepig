@@ -15,7 +15,7 @@ use std::fs::File;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
 fn scratch() -> tempfile::TempDir {
-    crate::board::board_test_support::scratch("feedback-outbox-")
+    crate::test_fixtures::scratch("feedback-outbox-")
 }
 
 fn report() -> BoardRequest {

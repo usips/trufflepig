@@ -4,7 +4,7 @@ use super::*;
 fn unchanged_private_database_marker_preserves_inode_and_mtime() {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
     use std::time::{Duration, SystemTime};
-    let directory = crate::board::board_test_support::scratch("board-marker-idempotence-");
+    let directory = crate::test_fixtures::scratch("board-marker-idempotence-");
     let first_database = directory.path().join("first.sqlite3");
     super::record_board_database(directory.path(), &first_database).unwrap();
     let marker = directory.path().join("board-backend.json");
@@ -34,7 +34,7 @@ fn unchanged_private_database_marker_preserves_inode_and_mtime() {
 #[test]
 fn database_marker_rejects_symlinks_nonprivate_files_and_other_owners() {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
-    let directory = crate::board::board_test_support::scratch("board-marker-security-");
+    let directory = crate::test_fixtures::scratch("board-marker-security-");
     let database = directory.path().join("board.sqlite3");
     let marker = directory.path().join("board-backend.json");
     let outside = directory.path().join("outside");
@@ -67,7 +67,7 @@ fn database_marker_rejects_symlinks_nonprivate_files_and_other_owners() {
 
 #[test]
 fn losing_router_start_cannot_replace_the_live_database_marker() {
-    let directory = crate::board::board_test_support::scratch("board-runtime-");
+    let directory = crate::test_fixtures::scratch("board-runtime-");
     let runtime = directory.path().join("runtime");
     let spool = directory.path().join("spool");
     let live_database = directory.path().join("live.sqlite3");
@@ -110,7 +110,7 @@ fn losing_router_start_cannot_replace_the_live_database_marker() {
 
 #[test]
 fn router_database_marker_refuses_split_local_fallback() {
-    let directory = crate::board::board_test_support::scratch("board-runtime-");
+    let directory = crate::test_fixtures::scratch("board-runtime-");
     let pinned = directory.path().join("router.sqlite3");
     record_board_database(directory.path(), &pinned).unwrap();
     validate_board_database(directory.path(), &pinned).unwrap();

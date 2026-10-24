@@ -131,7 +131,7 @@ mod tests {
 
     #[test]
     fn owned_listen_row_is_accepted_and_foreign_uid_is_refused() {
-        let directory = crate::board::board_test_support::scratch("web-listener-");
+        let directory = crate::test_fixtures::scratch("web-listener-");
         let address: SocketAddr = "127.0.0.1:7341".parse().unwrap();
         // SAFETY: geteuid has no preconditions and cannot fail.
         let euid = unsafe { libc::geteuid() };
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn non_listen_states_and_other_addresses_do_not_count() {
-        let directory = crate::board::board_test_support::scratch("web-listener-");
+        let directory = crate::test_fixtures::scratch("web-listener-");
         let address: SocketAddr = "127.0.0.1:7341".parse().unwrap();
         // SAFETY: geteuid has no preconditions and cannot fail.
         let euid = unsafe { libc::geteuid() };
@@ -161,7 +161,7 @@ mod tests {
 
     #[test]
     fn ipv6_loopback_rows_parse_from_tcp6_tables() {
-        let directory = crate::board::board_test_support::scratch("web-listener-");
+        let directory = crate::test_fixtures::scratch("web-listener-");
         let address: SocketAddr = "[::1]:7341".parse().unwrap();
         // SAFETY: geteuid has no preconditions and cannot fail.
         let euid = unsafe { libc::geteuid() };

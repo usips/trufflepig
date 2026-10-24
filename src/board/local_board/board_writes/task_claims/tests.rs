@@ -29,7 +29,7 @@ struct ClaimDatabase {
 
 impl ClaimDatabase {
     fn new() -> Self {
-        let directory = crate::board::board_test_support::scratch("task-claim-tests-");
+        let directory = crate::test_fixtures::scratch("task-claim-tests-");
         let path = directory.path().join("board.sqlite3");
         let database = Self {
             _directory: directory,

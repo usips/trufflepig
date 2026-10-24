@@ -21,7 +21,7 @@ use crate::board::local_board::LocalBoard;
 use std::time::Duration;
 
 fn database() -> (tempfile::TempDir, LocalBoard) {
-    let directory = crate::board::board_test_support::scratch("board-fixture-");
+    let directory = crate::test_fixtures::scratch("board-fixture-");
     let board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(7200),

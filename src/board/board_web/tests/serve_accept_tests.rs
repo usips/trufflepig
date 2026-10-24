@@ -88,7 +88,7 @@ fn queue_full_flood_caps_concurrent_drain_threads() {
 
 #[test]
 fn deferred_cleanup_removes_only_the_published_descriptor() {
-    let directory = crate::board::board_test_support::scratch("web-deferred-cleanup-");
+    let directory = crate::test_fixtures::scratch("web-deferred-cleanup-");
     let descriptor = directory.path().join("board-web.json");
     let address: std::net::SocketAddr = "127.0.0.1:1".parse().unwrap();
     let write_descriptor = || {
@@ -125,7 +125,7 @@ fn deferred_cleanup_removes_only_the_published_descriptor() {
 
 #[test]
 fn signal_during_publish_leaves_no_descriptor() {
-    let directory = crate::board::board_test_support::scratch("web-publish-race-");
+    let directory = crate::test_fixtures::scratch("web-publish-race-");
     let runtime = directory.path().join("runtime");
     let database = directory.path().join("web.sqlite3");
     let descriptor = runtime.join("board-web.json");
