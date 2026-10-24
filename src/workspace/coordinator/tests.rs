@@ -83,8 +83,12 @@ impl ServedWorkspace {
 
     fn ask(&self, flags: &[&str], words: &[&str]) -> Result<String> {
         let args = self.args(flags, words);
-        daemon::request(&self.coordinator, &args, &RequestContext::new(None, None))?
-            .context("coordinator is not listening")
+        crate::daemon_transport::request(
+            &self.coordinator,
+            &args,
+            &RequestContext::new(None, None),
+        )?
+        .context("coordinator is not listening")
     }
 
     fn options_with_cache(&self, cache: &Path, words: &[&str]) -> crate::cli::Arguments {
@@ -115,7 +119,7 @@ impl ServedWorkspace {
 
 impl Drop for ServedWorkspace {
     fn drop(&mut self) {
-        let _ = daemon::stop(&self.coordinator);
+        let _ = crate::daemon_transport::stop(&self.coordinator);
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
@@ -168,7 +172,7 @@ impl MemberDaemons {
 impl Drop for MemberDaemons {
     fn drop(&mut self) {
         for (cache, _) in &self.0 {
-            let _ = daemon::stop(cache);
+            let _ = crate::daemon_transport::stop(cache);
         }
         for (_, thread) in self.0.drain(..) {
             let _ = thread.join();
@@ -365,7 +369,7 @@ fn coordinator_owner_status_reaches_the_root_daemon_directly() {
     let started = Instant::now();
     let status = workspace.ask(&[], &["status"]);
     let elapsed = started.elapsed();
-    daemon::stop(&engine_cache).unwrap();
+    crate::daemon_transport::stop(&engine_cache).unwrap();
     root_daemon.join().unwrap().unwrap();
     let status: serde_json::Value = serde_json::from_str(&status.unwrap()).unwrap();
     assert!(elapsed < Duration::from_secs(5), "status took {elapsed:?}");

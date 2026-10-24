@@ -95,7 +95,7 @@ fn evict_entry(
         return None;
     }
     let daemon_stopped = cache.join("daemon.sock").exists()
-        && crate::daemon::stop(cache).is_ok_and(|reply| reply.contains("\"stopped\""));
+        && crate::daemon_transport::stop(cache).is_ok_and(|reply| reply.contains("\"stopped\""));
     let _lock = acquire_daemon_lock(cache)?;
     fs::remove_dir_all(cache).ok()?;
     eprintln!(

@@ -50,7 +50,7 @@ fn running_router_answers_without_the_long_wait() {
     let context = RequestContext::new(None, None);
     let deadline = QueryDeadline::after(Duration::from_secs(3));
     loop {
-        if daemon::request_by(&runtime, &ping, &context, deadline.clone())
+        if crate::daemon_transport::request_by(&runtime, &ping, &context, deadline.clone())
             .unwrap()
             .is_some()
         {
@@ -65,7 +65,7 @@ fn running_router_answers_without_the_long_wait() {
         panic!("an answering router needs no spawn")
     });
     let elapsed = started.elapsed();
-    daemon::stop(&runtime).unwrap();
+    crate::daemon_transport::stop(&runtime).unwrap();
     worker.join().unwrap().unwrap();
     ensured.unwrap();
     assert!(
@@ -81,7 +81,7 @@ fn initial_status_probe_leaves_time_for_spawn() {
         return;
     }
     // A fresh but undrained spool must not consume the whole startup cap.
-    let _spool = daemon::spool::SpoolServer::open(&spool_dir()).unwrap();
+    let _spool = crate::daemon_transport::spool::SpoolServer::open(&spool_dir()).unwrap();
     let spawned_before = crate::background_process::spawned_count();
     let _error = ensure_with(Duration::from_secs(2), start_router).unwrap_err();
     assert_eq!(
@@ -95,7 +95,7 @@ fn initial_status_probe_leaves_time_for_spawn() {
 fn status_probe_uses_spool_without_a_runtime_directory() {
     let directory = crate::test_fixtures::scratch("router-spool-only-");
     let spool = directory.path().join("spool");
-    let mut server = daemon::spool::SpoolServer::open(&spool).unwrap();
+    let mut server = crate::daemon_transport::spool::SpoolServer::open(&spool).unwrap();
     let stopped = Arc::new(AtomicBool::new(false));
     let worker_stopped = Arc::clone(&stopped);
     let worker = std::thread::spawn(move || {
@@ -171,7 +171,7 @@ fn managed_start_waits_for_the_unit_router_without_a_child() {
         systemctl.show_count() >= 1,
         "the watch read the unit while it was activating"
     );
-    daemon::stop(&runtime).unwrap();
+    crate::daemon_transport::stop(&runtime).unwrap();
     worker
         .into_inner()
         .expect("the unit start ran the router")

@@ -8,7 +8,11 @@ use crate::board::{
 };
 
 fn reply_timeout() -> anyhow::Error {
-    crate::daemon::DaemonReplyTimeout::new(Duration::from_secs(30), Duration::from_secs(30)).into()
+    crate::daemon_transport::DaemonReplyTimeout::new(
+        Duration::from_secs(30),
+        Duration::from_secs(30),
+    )
+    .into()
 }
 
 fn capability_status(database: &Path) -> String {

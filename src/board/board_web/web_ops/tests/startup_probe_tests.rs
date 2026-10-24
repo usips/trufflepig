@@ -352,8 +352,10 @@ fn startup_keeps_other_router_failures_fatal_on_the_first_probe() {
 }
 
 fn router_reply_timeout() -> BoardError {
-    BoardError::from(anyhow::Error::new(crate::daemon::DaemonReplyTimeout::new(
-        Duration::from_millis(500),
-        Duration::from_millis(500),
-    )))
+    BoardError::from(anyhow::Error::new(
+        crate::daemon_transport::DaemonReplyTimeout::new(
+            Duration::from_millis(500),
+            Duration::from_millis(500),
+        ),
+    ))
 }

@@ -194,7 +194,9 @@ fn wait_until_terminal(
         if waited.status.error.as_deref() != Some("preparation_wait_timeout") {
             return Ok(waited);
         }
-        if !crate::daemon::running(cache) || started.elapsed() >= Duration::from_secs(3600) {
+        if !crate::daemon_transport::running(cache)
+            || started.elapsed() >= Duration::from_secs(3600)
+        {
             waited.state = preparation::PreparationState::Failed;
             waited.status.state = preparation::PreparationState::Failed;
             waited.status.error = Some(

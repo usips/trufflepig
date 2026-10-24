@@ -367,7 +367,7 @@ fn board_pending_waits_for_slow_existing_router_without_startup() -> anyhow::Res
     };
 
     let directory = tempfile::tempdir()?;
-    let socket_path = directory.path().join(crate::daemon::SOCKET_NAME);
+    let socket_path = directory.path().join(crate::daemon_transport::SOCKET_NAME);
     let listener = UnixListener::bind(&socket_path)?;
     let responder = thread::spawn(move || -> std::io::Result<()> {
         let (mut stream, _) = listener.accept()?;
@@ -398,7 +398,7 @@ fn board_pending_waits_for_slow_existing_router_without_startup() -> anyhow::Res
     responder_result?;
 
     let absent = tempfile::tempdir()?;
-    let absent_socket = absent.path().join(crate::daemon::SOCKET_NAME);
+    let absent_socket = absent.path().join(crate::daemon_transport::SOCKET_NAME);
     let error = super::super::client_command::request_pending(
         &args,
         &context,
@@ -437,7 +437,7 @@ fn board_pending_does_not_contact_a_router_after_its_deadline() -> anyhow::Resul
     };
 
     let directory = tempfile::tempdir()?;
-    let socket_path = directory.path().join(crate::daemon::SOCKET_NAME);
+    let socket_path = directory.path().join(crate::daemon_transport::SOCKET_NAME);
     let listener = UnixListener::bind(&socket_path)?;
     listener.set_nonblocking(true)?;
     let responder = thread::spawn(move || -> std::io::Result<bool> {

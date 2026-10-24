@@ -3,7 +3,7 @@ use super::Arguments;
 use crate::board::board_protocol::BoardErrorCode;
 use crate::coded_error::{ErrorCode, coded_error};
 use crate::request_context::RequestContext;
-use crate::{daemon::DaemonReplyTimeout, query_deadline::QueryDeadline};
+use crate::{daemon_transport::DaemonReplyTimeout, query_deadline::QueryDeadline};
 use anyhow::Result;
 use std::io::ErrorKind;
 use std::time::{Duration, Instant};
@@ -258,7 +258,7 @@ pub(super) fn run_with_retry(
     context: &RequestContext,
 ) -> Result<String> {
     let read_deadline = (RetryScope::for_options(options) == RetryScope::Read)
-        .then(|| QueryDeadline::after(crate::daemon::CLIENT_REPLY_WAIT));
+        .then(|| QueryDeadline::after(crate::daemon_transport::CLIENT_REPLY_WAIT));
     run_with_retry_deadline(args, options, context, read_deadline)
 }
 

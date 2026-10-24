@@ -276,7 +276,7 @@ fn expired_or_disconnected_queued_classes_skip_the_handler() {
             None,
         );
         assert!(matches!(
-            protocol::read_reply(&mut client).unwrap(),
+            daemon_wire_protocol::read_reply(&mut client).unwrap(),
             DaemonReply::Failure { message } if message.starts_with("timed_out:")
         ));
 
@@ -312,10 +312,12 @@ fn an_existing_typed_reply_timeout_survives_request_expiry() {
                 entered.lock().unwrap().send(()).unwrap();
                 released.lock().unwrap().recv().unwrap();
                 assert!(request.deadline.expired());
-                Err(anyhow::Error::new(crate::daemon::DaemonReplyTimeout::new(
-                    Duration::from_millis(40),
-                    Duration::from_millis(25),
-                )))
+                Err(anyhow::Error::new(
+                    crate::daemon_transport::DaemonReplyTimeout::new(
+                        Duration::from_millis(40),
+                        Duration::from_millis(25),
+                    ),
+                ))
             })
         },
         reconcile: quiet(),
@@ -340,7 +342,7 @@ fn an_existing_typed_reply_timeout_survives_request_expiry() {
     release.send(()).unwrap();
     request.join().unwrap();
     assert!(matches!(
-        protocol::read_reply(&mut client).unwrap(),
+        daemon_wire_protocol::read_reply(&mut client).unwrap(),
         DaemonReply::Failure { message } if message.starts_with("daemon_reply_timeout:")
     ));
 }
@@ -384,7 +386,7 @@ fn active_maintenance_keeps_its_result_after_deadline_cancellation() {
     release.send(()).unwrap();
     request.join().unwrap();
     assert!(matches!(
-        protocol::read_reply(&mut client).unwrap(),
+        daemon_wire_protocol::read_reply(&mut client).unwrap(),
         DaemonReply::Success { output } if output == "maintenance completed"
     ));
 }
@@ -422,7 +424,7 @@ fn disconnecting_an_active_query_expires_its_deadline_and_releases_the_worker() 
     client
         .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();
-    protocol::write_request(
+    daemon_wire_protocol::write_request(
         &mut client,
         &DaemonRequest::Arguments {
             context: RequestContext::new(None, None),
@@ -457,7 +459,7 @@ fn disconnecting_an_active_query_expires_its_deadline_and_releases_the_worker() 
 fn old_spooled_request_waiting_in_a_lane_never_reaches_the_handler() {
     let scratch = scratch();
     let spool_dir = scratch.path().join("spool");
-    let mut spool = super::super::super::spool::SpoolServer::open(&spool_dir).unwrap();
+    let mut spool = crate::daemon_transport::spool::SpoolServer::open(&spool_dir).unwrap();
     let id = uuid::Uuid::new_v4();
     let request_path = spool_dir.join(format!("{id}.request"));
     let reply_path = spool_dir.join(format!("{id}.reply"));
@@ -524,7 +526,7 @@ fn old_spooled_request_waiting_in_a_lane_never_reaches_the_handler() {
 fn removing_an_active_spool_claim_cancels_its_query_deadline() {
     let scratch = scratch();
     let spool_dir = scratch.path().join("active-spool");
-    let mut spool = super::super::super::spool::SpoolServer::open(&spool_dir).unwrap();
+    let mut spool = crate::daemon_transport::spool::SpoolServer::open(&spool_dir).unwrap();
     let id = uuid::Uuid::new_v4();
     let request_path = spool_dir.join(format!("{id}.request"));
     let claim_path = spool_dir.join(format!("{id}.claimed"));

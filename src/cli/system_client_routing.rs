@@ -59,7 +59,7 @@ pub(super) fn system_command(
         }
         None | Some("status") => {
             let ping = vec!["system".to_owned(), "status".to_owned()];
-            let status = if crate::system::request(&ping, context)
+            let status = if crate::daemon_transport::router_request(&ping, context)
                 .ok()
                 .flatten()
                 .is_some()

@@ -107,7 +107,7 @@ impl StubDaemon {
     }
 
     fn start(directory: &Path, reply: Value) -> Result<Self> {
-        let listener = UnixListener::bind(directory.join(crate::daemon::SOCKET_NAME))?;
+        let listener = UnixListener::bind(directory.join(crate::daemon_transport::SOCKET_NAME))?;
         listener.set_nonblocking(true)?;
         let stop = Arc::new(AtomicBool::new(false));
         let stopping = stop.clone();

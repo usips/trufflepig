@@ -443,7 +443,7 @@ fn read_store(
     } else if options.no_daemon {
         true
     } else {
-        !crate::daemon::running_by(cache, deadline)?
+        !crate::daemon_transport::running_by(cache, deadline)?
     };
     if reconciles {
         let preserve_parent_response = verb == "show"

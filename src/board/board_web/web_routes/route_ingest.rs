@@ -26,7 +26,7 @@ pub(super) fn ingest_accepted(mut stream: TcpStream, state: &Arc<BoardWebState>)
                     #[cfg(test)]
                     let scan_budget = relay_state.ingest.scan_budget();
                     #[cfg(not(test))]
-                    let scan_budget = crate::daemon::CLIENT_REPLY_WAIT;
+                    let scan_budget = crate::daemon_transport::CLIENT_REPLY_WAIT;
                     let expires = Instant::now() + scan_budget;
                     let result = relay_ingest(&relay_state.store, expires);
                     relay_state

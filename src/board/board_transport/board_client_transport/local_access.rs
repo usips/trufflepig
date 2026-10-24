@@ -66,7 +66,7 @@ pub(super) fn denied_router_socket(
     let Some(runtime) = runtime else {
         return Ok(None);
     };
-    let path = runtime.join(crate::daemon::SOCKET_NAME);
+    let path = runtime.join(crate::daemon_transport::SOCKET_NAME);
     let Err(error) = gateway.probe_socket(&path) else {
         return Ok(None);
     };
@@ -139,5 +139,5 @@ fn router_socket_path(runtime: Option<&Path>) -> Option<PathBuf> {
     runtime
         .map(Path::to_path_buf)
         .or_else(crate::runtime_paths::system_dir)
-        .map(|runtime| runtime.join(crate::daemon::SOCKET_NAME))
+        .map(|runtime| runtime.join(crate::daemon_transport::SOCKET_NAME))
 }

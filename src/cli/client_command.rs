@@ -24,7 +24,7 @@ pub(super) fn request_pending(
         !deadline.expired(),
         coded!(TimedOut, "board pending request deadline expired")
     );
-    crate::daemon::request_by(&directory, args, context, deadline)?
+    crate::daemon_transport::request_by(&directory, args, context, deadline)?
         .with_coded_context(|| coded!(BoardUnavailable, "no running router for pending notices"))
 }
 
@@ -115,16 +115,20 @@ impl ClientCommand {
             {
                 forwarded.push("--wait".into());
             }
-            let routed = crate::system::request_by(&forwarded, context, deadline.clone()).and_then(
-                |reply| match reply {
-                    Some(reply) => Ok(Some(reply)),
-                    None if !deadline.expired() => {
-                        let _ = crate::system::ensure_by(deadline.clone());
-                        crate::system::request_by(&forwarded, context, deadline.clone())
-                    }
-                    None => Ok(None),
-                },
-            );
+            let routed =
+                crate::daemon_transport::router_request_by(&forwarded, context, deadline.clone())
+                    .and_then(|reply| match reply {
+                        Some(reply) => Ok(Some(reply)),
+                        None if !deadline.expired() => {
+                            let _ = crate::system::ensure_by(deadline.clone());
+                            crate::daemon_transport::router_request_by(
+                                &forwarded,
+                                context,
+                                deadline.clone(),
+                            )
+                        }
+                        None => Ok(None),
+                    });
             match routed {
                 Ok(Some(reply)) => {
                     return system_reply(&applied, &root, verb, config.as_ref(), reply);
@@ -135,7 +139,7 @@ impl ClientCommand {
                     }
                     // An unavailable owner or locally expired spool wait leaves direct
                     // execution; other router errors remain answers.
-                    if !daemon::spool::is_local_spool_timeout(&error)
+                    if !crate::daemon_transport::spool::is_local_spool_timeout(&error)
                         && !ErrorCode::DaemonUnavailable.is_code_of(&error)
                     {
                         return Err(error);
@@ -179,7 +183,7 @@ fn local_path_show_fallback_options(args: &[String]) -> Option<Arguments> {
 }
 
 fn index_cache_fallback_options(args: &[String], error: &anyhow::Error) -> Option<Arguments> {
-    if crate::daemon::DaemonReplyTimeout::from_error(error).is_some() {
+    if crate::daemon_transport::DaemonReplyTimeout::from_error(error).is_some() {
         return None;
     }
     match error_code(error) {

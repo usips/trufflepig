@@ -1,4 +1,4 @@
-use super::super::protocol::REQUEST_LIMIT;
+use crate::daemon_transport::daemon_wire_protocol::REQUEST_LIMIT;
 use crate::query_deadline::QueryDeadline;
 use std::io::{self, ErrorKind, Read};
 use std::os::fd::{AsRawFd, RawFd};

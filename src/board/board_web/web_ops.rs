@@ -17,7 +17,8 @@ pub(super) fn check_router_identity(runtime: &Path, database: &Path) -> Result<(
     let context =
         crate::request_context::RequestContext::new(Some("web".into()), Some("human".into()));
     startup_probe(database, ROUTER_MIGRATION_WAIT, &mut |args, deadline| {
-        crate::daemon::request_by(runtime, args, &context, deadline).map_err(BoardError::from)
+        crate::daemon_transport::request_by(runtime, args, &context, deadline)
+            .map_err(BoardError::from)
     })
 }
 
@@ -30,7 +31,7 @@ pub(super) fn relay_ingest(
         crate::request_context::RequestContext::new(Some("web".into()), Some("human".into()));
     let deadline = QueryDeadline::after(expires.saturating_duration_since(Instant::now()));
     ingest_via(&config.db_path, deadline, &mut |args, deadline| {
-        crate::daemon::request_by(&store.runtime, args, &context, deadline)
+        crate::daemon_transport::request_by(&store.runtime, args, &context, deadline)
             .map_err(BoardError::from)
     })
 }

@@ -1,6 +1,7 @@
 use super::*;
 use crate::{
-    daemon::{RequestPool, pool::PooledJob, request_by},
+    daemon::{RequestPool, pool::PooledJob},
+    daemon_transport::request_by,
     query_deadline::QueryDeadline,
 };
 use std::os::unix::net::UnixStream;
@@ -325,10 +326,10 @@ fn disconnect_forwarded_request(
 ) {
     let query = "re:disconnect".to_owned();
     let args = workspace_args(config, root, &["search", "ws:all", &query]);
-    let mut client = UnixStream::connect(cache.join(crate::daemon::SOCKET_NAME)).unwrap();
-    super::super::protocol::write_request(
+    let mut client = UnixStream::connect(cache.join(crate::daemon_transport::SOCKET_NAME)).unwrap();
+    crate::daemon_transport::daemon_wire_protocol::write_request(
         &mut client,
-        &super::super::protocol::DaemonRequest::Arguments {
+        &crate::daemon_transport::daemon_wire_protocol::DaemonRequest::Arguments {
             context: crate::request_context::RequestContext::new(None, None),
             args,
         },
@@ -339,7 +340,7 @@ fn disconnect_forwarded_request(
     reader.set_read_timeout(Some(TEST_WAIT)).unwrap();
     let (events_tx, query_for_reader) = (events_tx.clone(), query.clone());
     let reply_reader = std::thread::spawn(move || {
-        let _ = super::super::protocol::read_reply(&mut reader);
+        let _ = crate::daemon_transport::daemon_wire_protocol::read_reply(&mut reader);
         let _ = events_tx.send(DisconnectEvent::ClientReply(query_for_reader));
     });
 

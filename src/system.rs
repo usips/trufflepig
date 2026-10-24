@@ -1,5 +1,5 @@
 //! Per-user system daemon routing CLI requests to owning workspace or root daemons.
-//! Each request is proxied on its own worker, bounded by `daemon::PROXY_REPLY_WAIT`.
+//! Each request is proxied on its own worker, bounded by `crate::daemon_transport::PROXY_REPLY_WAIT`.
 
 mod board_runtime;
 mod managed_unit;
@@ -38,27 +38,9 @@ use sweep::{SWEEP_GRACE, SWEEP_INTERVAL, sweep};
 
 /// Stops a listening system daemon through its socket.
 pub fn stop() -> Result<String> {
-    daemon::stop(&system_dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?)
-}
-
-/// Sends a request to the system daemon over its socket, else its spool;
-/// `None` means no router answered either way.
-pub fn request(args: &[String], context: &RequestContext) -> Result<Option<String>> {
-    request_by(args, context, QueryDeadline::after(Duration::from_secs(30)))
-}
-
-/// Sends a system request through the router, then spool, under one deadline.
-pub(crate) fn request_by(
-    args: &[String],
-    context: &RequestContext,
-    deadline: QueryDeadline,
-) -> Result<Option<String>> {
-    if let Some(dir) = system_dir()
-        && let Some(reply) = daemon::request_by(&dir, args, context, deadline.clone())?
-    {
-        return Ok(Some(reply));
-    }
-    daemon::spool::request(&spool_dir(), args, context, deadline)
+    crate::daemon_transport::stop(
+        &system_dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?,
+    )
 }
 
 /// Longest `ensure` waits for a spawned router's first status answer.
@@ -116,7 +98,7 @@ fn ensure_until<'run>(
     }
     ensure_router_starting(deadline.clone(), start_wait)?;
     let dir = system_dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?;
-    let started = if daemon::running_by(&dir, &deadline)? {
+    let started = if crate::daemon_transport::running_by(&dir, &deadline)? {
         None
     } else {
         ensure_router_starting(deadline.clone(), start_wait)?;
@@ -144,7 +126,7 @@ fn ensure_until<'run>(
         // A racing spawn exits on the socket bind while its winner serves; a
         // spawn that is gone with no listener fails before the cap.
         if child.as_ref().is_some_and(BackgroundChild::exited)
-            && !daemon::running_by(&dir, &deadline)?
+            && !crate::daemon_transport::running_by(&dir, &deadline)?
         {
             bail!(coded!(
                 SystemUnavailable,
@@ -155,7 +137,7 @@ fn ensure_until<'run>(
         // A unit that failed or crash-loops has no child to exit, so its state
         // decides the start; a router that already answers is left to the poll.
         if let Some(state) = unit.as_mut().and_then(|unit| unit.failure(Instant::now()))
-            && !daemon::running_by(&dir, &deadline)?
+            && !crate::daemon_transport::running_by(&dir, &deadline)?
         {
             return Err(managed_unit::did_not_start(&state));
         }
@@ -207,7 +189,8 @@ fn poll_at(
         return Ok(None);
     }
     if let Some(dir) = runtime {
-        let reply = match daemon::request_by(dir, ping, context, deadline.clone()) {
+        let reply = match crate::daemon_transport::request_by(dir, ping, context, deadline.clone())
+        {
             Ok(reply) => reply,
             Err(error) if poll_budget_spent(&error) => None,
             Err(error) => return Err(error),
@@ -219,7 +202,7 @@ fn poll_at(
     if deadline.expired() {
         return Ok(None);
     }
-    match daemon::spool::request(spool, ping, context, deadline.clone()) {
+    match crate::daemon_transport::spool::request(spool, ping, context, deadline.clone()) {
         Ok(_) if deadline.expired() => Ok(None),
         Ok(reply) => Ok(reply),
         Err(error) if poll_budget_spent(&error) => Ok(None),
@@ -229,8 +212,8 @@ fn poll_at(
 
 /// Whether a bounded poll error only reports its own expired budget.
 fn poll_budget_spent(error: &anyhow::Error) -> bool {
-    daemon::spool::is_spool_or_coded_timeout(error)
-        || daemon::DaemonReplyTimeout::from_error(error).is_some()
+    crate::daemon_transport::spool::is_spool_or_coded_timeout(error)
+        || crate::daemon_transport::DaemonReplyTimeout::from_error(error).is_some()
         || error.chain().any(|cause| {
             matches!(
                 cause.downcast_ref::<std::io::Error>(),

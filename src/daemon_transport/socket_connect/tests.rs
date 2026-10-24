@@ -1,9 +1,8 @@
 use super::*;
-use crate::daemon::DeadlineWrite;
+use crate::daemon_transport::DeadlineWrite;
 use std::io::{self, Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::ffi::OsStringExt;
-use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -16,7 +15,8 @@ fn scratch() -> tempfile::TempDir {
         .unwrap()
 }
 
-fn backlog_zero_listener(path: &Path) -> UnixListener {
+/// A listening socket with a zero backlog, so the second connect cannot complete.
+pub(crate) fn backlog_zero_listener(path: &Path) -> UnixListener {
     let (address, length) = socket_address(path).unwrap();
     // SAFETY: socket has no pointer arguments and returns a fresh descriptor on success.
     let raw = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0) };
@@ -135,31 +135,6 @@ fn connect_by_times_out_instead_of_accepting_a_full_backlog_as_connected() {
     assert!(error.to_string().starts_with("timed_out: phase=connecting"));
     assert!(started.elapsed() < Duration::from_secs(2));
     assert!(super::super::running(scratch.path()));
-    drop(first);
-    drop(listener);
-}
-
-#[cfg(target_os = "linux")]
-#[test]
-fn daemon_bind_preserves_a_socket_when_its_backlog_probe_times_out() {
-    let scratch = scratch();
-    let path = scratch.path().join(super::super::SOCKET_NAME);
-    let listener = backlog_zero_listener(&path);
-    let first = connect_by(&path, &QueryDeadline::after(Duration::from_secs(1))).unwrap();
-    let original_inode = std::fs::symlink_metadata(&path).unwrap().ino();
-
-    let error = super::super::DaemonSocket::bind(scratch.path())
-        .err()
-        .expect("a full listener backlog must not be treated as a stale socket");
-
-    assert!(
-        error
-            .to_string()
-            .contains("inspect existing repository socket")
-    );
-    let metadata = std::fs::symlink_metadata(&path).unwrap();
-    assert!(metadata.file_type().is_socket());
-    assert_eq!(metadata.ino(), original_inode);
     drop(first);
     drop(listener);
 }

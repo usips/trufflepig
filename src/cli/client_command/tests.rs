@@ -203,7 +203,7 @@ fn cache_refusal_fallback_requires_an_exact_code_and_current_path_show() {
         .with_coded_context(|| coded!(TimedOut, "enclosing request expired"));
     assert!(index_cache_fallback_options(&eligible, &nested_timeout).is_none());
 
-    let typed_timeout = anyhow::Error::new(crate::daemon::DaemonReplyTimeout::new(
+    let typed_timeout = anyhow::Error::new(crate::daemon_transport::DaemonReplyTimeout::new(
         Duration::from_millis(5),
         Duration::from_millis(5),
     ))

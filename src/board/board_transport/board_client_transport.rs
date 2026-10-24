@@ -46,7 +46,7 @@ impl BoardGateway for SystemGateway {
         context: &RequestContext,
         deadline: &QueryDeadline,
     ) -> Result<Option<String>> {
-        crate::system::request_by(args, context, deadline.clone())
+        crate::daemon_transport::router_request_by(args, context, deadline.clone())
     }
     fn ensure(&mut self, deadline: &QueryDeadline) -> Result<()> {
         crate::system::ensure_by(deadline.clone())
@@ -64,13 +64,13 @@ impl BoardClientTransport {
         let forwarded = crate::board::prepare_client(args, options)?;
         let options = crate::cli::parse(&forwarded)?;
         let command = board_grammar::parse(&options, None)?;
-        let encoded = crate::daemon::request_encoded_size(&forwarded, context)?;
+        let encoded = crate::daemon_transport::request_encoded_size(&forwarded, context)?;
         ensure!(
-            encoded <= crate::daemon::MAX_DAEMON_REQUEST_BYTES,
+            encoded <= crate::daemon_transport::MAX_DAEMON_REQUEST_BYTES,
             coded!(
                 InvalidBody,
                 "encoded board request is {encoded} bytes; maximum is {} bytes; split the plan",
-                crate::daemon::MAX_DAEMON_REQUEST_BYTES
+                crate::daemon_transport::MAX_DAEMON_REQUEST_BYTES
             )
         );
         self.run_prepared(
@@ -269,7 +269,7 @@ fn failed_request(
     board_request_attempted: bool,
     error: anyhow::Error,
 ) -> Result<String> {
-    if let Some(timeout) = crate::daemon::DaemonReplyTimeout::from_error(&error)
+    if let Some(timeout) = crate::daemon_transport::DaemonReplyTimeout::from_error(&error)
         && matches!(command, BoardCommand::Op(op) if !op.is_read_only() && !matches!(op, BoardOp::Feedback { .. }))
     {
         if !board_request_attempted {
@@ -302,7 +302,7 @@ fn failed_request(
 
 #[derive(Debug)]
 struct BoardPreflightTimeout {
-    timeout: crate::daemon::DaemonReplyTimeout,
+    timeout: crate::daemon_transport::DaemonReplyTimeout,
 }
 
 impl fmt::Display for BoardPreflightTimeout {
@@ -329,7 +329,7 @@ impl StdError for BoardPreflightTimeout {
 
 #[derive(Debug)]
 struct AmbiguousBoardWriteTimeout {
-    timeout: crate::daemon::DaemonReplyTimeout,
+    timeout: crate::daemon_transport::DaemonReplyTimeout,
     receipt_key: Option<BoardRequestKey>,
 }
 
@@ -428,7 +428,7 @@ fn local_reply(
     check_deadline(deadline)?;
     // A live router owns migration: feedback queues for it to import while
     // other operations run without migrating and refuse stale storage only.
-    if runtime.is_some_and(|runtime| crate::daemon::running(runtime)) {
+    if runtime.is_some_and(|runtime| crate::daemon_transport::running(runtime)) {
         if matches!(
             command,
             BoardCommand::Op(crate::board::BoardOp::Feedback { .. })

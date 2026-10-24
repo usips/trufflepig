@@ -17,7 +17,7 @@ use system_client_routing::{system_command, system_reply, system_routes};
 pub(crate) mod semantic;
 use crate::{
     background_process::spawn_background,
-    daemon::{self, CLIENT_REPLY_WAIT},
+    daemon_transport::CLIENT_REPLY_WAIT,
     output::OutputBudget,
     query_deadline::{QUERY_DEADLINE, QueryDeadline},
     store::Store,
@@ -136,7 +136,9 @@ fn direct_with_deadline(
         Store::open(&root, &cache)?;
         return OutputBudget::new(options.budget)?.render(&serde_json::from_str::<
             serde_json::Value,
-        >(&daemon::stop(&cache)?)?);
+        >(
+            &crate::daemon_transport::stop(&cache)?,
+        )?);
     }
     let metadata_only = verb == "semantic"
         && options
@@ -149,7 +151,9 @@ fn direct_with_deadline(
         && !matches!(verb, "index" | "init" | "semantic-check")
     {
         let args = normalized_args(options, &root);
-        if let Some(response) = daemon::request_by(&cache, &args, context, deadline.clone())? {
+        if let Some(response) =
+            crate::daemon_transport::request_by(&cache, &args, context, deadline.clone())?
+        {
             return root_reply(&root, &cache, options, response);
         }
         if !deadline.expired() {
@@ -203,12 +207,17 @@ fn direct_with_deadline(
                 Ok(child) => {
                     let spawn_deadline = Instant::now() + deadline.cap(Duration::from_secs(3));
                     while Instant::now() < spawn_deadline {
-                        if let Some(response) =
-                            daemon::request_by(&cache, &args, context, deadline.clone())?
-                        {
+                        if let Some(response) = crate::daemon_transport::request_by(
+                            &cache,
+                            &args,
+                            context,
+                            deadline.clone(),
+                        )? {
                             return root_reply(&root, &cache, options, response);
                         }
-                        if child.exited() && !daemon::running_by(&cache, &deadline)? {
+                        if child.exited()
+                            && !crate::daemon_transport::running_by(&cache, &deadline)?
+                        {
                             break;
                         }
                         std::thread::sleep(Duration::from_millis(25));

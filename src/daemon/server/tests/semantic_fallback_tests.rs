@@ -1,5 +1,7 @@
 use super::*;
-use crate::{daemon::request_by, query_deadline::QueryDeadline, request_context::RequestContext};
+use crate::{
+    daemon_transport::request_by, query_deadline::QueryDeadline, request_context::RequestContext,
+};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -251,10 +253,11 @@ fn saturated_semantic_root_serves_annotated_lexical_search_without_extra_semanti
     assert_eq!(semantic_calls.load(Ordering::Acquire), 2);
     assert_eq!(lexical_calls.load(Ordering::Acquire), 1);
 
-    let mut client = UnixStream::connect(router_cache.join(crate::daemon::SOCKET_NAME)).unwrap();
-    super::super::protocol::write_request(
+    let mut client =
+        UnixStream::connect(router_cache.join(crate::daemon_transport::SOCKET_NAME)).unwrap();
+    crate::daemon_transport::daemon_wire_protocol::write_request(
         &mut client,
-        &super::super::protocol::DaemonRequest::Arguments {
+        &crate::daemon_transport::daemon_wire_protocol::DaemonRequest::Arguments {
             context: RequestContext::new(None, None),
             args: workspace_args(&config, &router_root),
         },

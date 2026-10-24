@@ -63,7 +63,7 @@ fn check_real_retry() {
     let database = PathBuf::from(std::env::var_os("TRUFFLEPIG_BOARD_DB").unwrap());
     assert_eq!(crate::runtime_paths::system_dir().as_ref(), Some(&runtime));
     std::fs::create_dir(&runtime).unwrap();
-    let listener = UnixListener::bind(runtime.join(crate::daemon::SOCKET_NAME)).unwrap();
+    let listener = UnixListener::bind(runtime.join(crate::daemon_transport::SOCKET_NAME)).unwrap();
     listener.set_nonblocking(true).unwrap();
     let status = serde_json::json!({"board_api": BOARD_API, "board_db": database}).to_string();
     let server = std::thread::spawn(move || serve_attempts(listener, status));
@@ -153,7 +153,7 @@ fn read_request(stream: &mut UnixStream) -> serde_json::Value {
     let mut header = [0; 4];
     stream.read_exact(&mut header).unwrap();
     let size = u32::from_be_bytes(header) as usize;
-    assert!(size <= crate::daemon::MAX_DAEMON_REQUEST_BYTES);
+    assert!(size <= crate::daemon_transport::MAX_DAEMON_REQUEST_BYTES);
     let mut bytes = vec![0; size];
     stream.read_exact(&mut bytes).unwrap();
     serde_json::from_slice(&bytes).unwrap()

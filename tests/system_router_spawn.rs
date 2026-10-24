@@ -9,7 +9,7 @@ use std::{
 };
 use trufflepig::{
     board::{BOARD_API, SCHEMA_VERSION},
-    daemon,
+    daemon_transport,
     query_deadline::QueryDeadline,
     request_context::RequestContext,
 };
@@ -218,7 +218,7 @@ fn ensure_spawns_and_waits_for_a_real_router() {
         ensuring.child().id(),
         "ensure spawned the router child"
     );
-    let error = daemon::request_by(
+    let error = daemon_transport::request_by(
         &runtime,
         &["system".into(), "status".into()],
         &RequestContext::new(None, None),
@@ -266,7 +266,7 @@ fn ensure_spawns_and_waits_for_a_real_router() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let reply = daemon::request_by(
+    let reply = daemon_transport::request_by(
         &runtime,
         &["system".into(), "status".into()],
         &RequestContext::new(None, None),
@@ -280,7 +280,7 @@ fn ensure_spawns_and_waits_for_a_real_router() {
     assert_eq!(status["board_api"], BOARD_API);
     assert_eq!(status["schema_file"], SCHEMA_VERSION);
     assert_eq!(status["board_db"], serde_json::json!(database));
-    daemon::stop(&runtime).unwrap();
-    router.reap(Instant::now() + daemon::PROXY_REPLY_WAIT + Duration::from_secs(2));
+    daemon_transport::stop(&runtime).unwrap();
+    router.reap(Instant::now() + daemon_transport::PROXY_REPLY_WAIT + Duration::from_secs(2));
     assert!(!runtime.join("daemon.sock").exists());
 }

@@ -5,13 +5,13 @@ use std::io::{Read, Write};
 use super::DaemonReplyTimeout;
 use crate::coded_error::{CodedError, ErrorCode};
 
-pub(super) const REQUEST_LIMIT: usize = 256 * 1024;
+pub(crate) const REQUEST_LIMIT: usize = 256 * 1024;
 const RESPONSE_LIMIT: usize = 4 * 1024 * 1024;
 const ARGUMENT_LIMIT: usize = 256;
 
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "command", content = "arguments", deny_unknown_fields)]
-pub(super) enum DaemonRequest {
+pub(crate) enum DaemonRequest {
     Arguments {
         context: crate::request_context::RequestContext,
         args: Vec<String>,
@@ -20,7 +20,7 @@ pub(super) enum DaemonRequest {
 }
 
 impl DaemonRequest {
-    pub(super) fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         if let Self::Arguments { context, args } = self {
             uuid::Uuid::parse_str(&context.request_id).context("invalid request UUID")?;
             ensure!(args.len() <= ARGUMENT_LIMIT, "too many daemon arguments");
@@ -38,13 +38,13 @@ impl DaemonRequest {
 
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case", deny_unknown_fields)]
-pub(super) enum DaemonReply {
+pub(crate) enum DaemonReply {
     Success { output: String },
     Failure { message: String },
 }
 
 impl DaemonReply {
-    pub(super) fn from_result(result: Result<String>) -> Self {
+    pub(crate) fn from_result(result: Result<String>) -> Self {
         match result {
             Ok(output) => Self::Success { output },
             Err(error) => Self::Failure {
@@ -62,7 +62,7 @@ impl DaemonReply {
     /// The client boundary: a failure's code is parsed here, once, so callers
     /// match [`ErrorCode`] instead of relayed text. A direct `timed_out` answer
     /// stays unwrapped; every other failure gains one `daemon: ` wrapper.
-    pub(super) fn into_result(self) -> Result<String> {
+    pub(crate) fn into_result(self) -> Result<String> {
         match self {
             Self::Success { output } => Ok(output),
             Self::Failure { message } => match DaemonReplyTimeout::from_message(&message) {
@@ -101,23 +101,23 @@ fn write_frame(writer: &mut impl Write, bytes: &[u8], limit: usize) -> Result<()
     Ok(())
 }
 
-pub(super) fn read_request(reader: &mut impl Read) -> Result<DaemonRequest> {
+pub(crate) fn read_request(reader: &mut impl Read) -> Result<DaemonRequest> {
     let request: DaemonRequest = serde_json::from_slice(&read_frame(reader, REQUEST_LIMIT)?)
         .context("decode daemon request")?;
     request.validate()?;
     Ok(request)
 }
 
-pub(super) fn write_request(writer: &mut impl Write, request: &DaemonRequest) -> Result<()> {
+pub(crate) fn write_request(writer: &mut impl Write, request: &DaemonRequest) -> Result<()> {
     request.validate()?;
     write_frame(writer, &serde_json::to_vec(request)?, REQUEST_LIMIT)
 }
 
-pub(super) fn read_reply(reader: &mut impl Read) -> Result<DaemonReply> {
+pub(crate) fn read_reply(reader: &mut impl Read) -> Result<DaemonReply> {
     serde_json::from_slice(&read_frame(reader, RESPONSE_LIMIT)?).context("decode daemon response")
 }
 
-pub(super) fn write_reply(writer: &mut impl Write, reply: &DaemonReply) -> Result<()> {
+pub(crate) fn write_reply(writer: &mut impl Write, reply: &DaemonReply) -> Result<()> {
     let oversized = match reply {
         DaemonReply::Success { output } => output.len() > RESPONSE_LIMIT,
         DaemonReply::Failure { message } => message.len() > RESPONSE_LIMIT,
@@ -137,13 +137,14 @@ pub(super) fn write_reply(writer: &mut impl Write, reply: &DaemonReply) -> Resul
 }
 
 #[cfg(test)]
-mod serialized_entry_transport_tests {
+mod escaped_frame_tests {
     use super::*;
-    use crate::board::board_vocabulary::ENTRY_TEXT_LIMIT;
+    /// Control characters escape to six bytes, so this text needs a raised bound.
+    const ESCAPED_TEXT_CHARS: usize = 32 * 1024;
 
     #[test]
-    fn maximum_escaped_entry_fits_daemon_request_frame() {
-        let text = "\u{1}".repeat(ENTRY_TEXT_LIMIT);
+    fn escaped_text_round_trips_through_a_raised_request_frame() {
+        let text = "\u{1}".repeat(ESCAPED_TEXT_CHARS);
         let request = DaemonRequest::Arguments {
             context: crate::request_context::RequestContext {
                 request_id: "00000000-0000-4000-8000-000000000000".to_owned(),
@@ -161,7 +162,7 @@ mod serialized_entry_transport_tests {
                 text.clone(),
             ],
         };
-        let mut frame = Vec::with_capacity(4 + 6 * ENTRY_TEXT_LIMIT + 128);
+        let mut frame = Vec::with_capacity(4 + 6 * ESCAPED_TEXT_CHARS + 128);
         write_request(&mut frame, &request).unwrap();
         let length = u32::from_be_bytes(frame[..4].try_into().unwrap()) as usize;
 

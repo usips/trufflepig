@@ -134,8 +134,8 @@ per-root daemon as a single endpoint agent harnesses can allowlist; see
 when missing and proxies the reply. Its socket lives in a per-user runtime
 directory (`src/runtime_paths.rs:system_dir`). Clients treat connect errors `NotFound`,
 `ConnectionRefused`, and `PermissionDenied` as "no daemon" and fall back
-(`src/daemon.rs:unreachable`), first to the router's file spool
-(`src/daemon/spool.rs`, directory `src/runtime_paths.rs:spool_dir`), which carries the
+(`src/daemon_transport.rs:unreachable`), first to the router's file spool
+(`src/daemon_transport/spool.rs`, directory `src/runtime_paths.rs:spool_dir`), which carries the
 same JSON request and reply bodies through atomically renamed files and is served
 by the router's workers. The frame protocol and its limits apply unchanged per
 hop; concurrency is in the [runtime contract](runtime-contract.md).

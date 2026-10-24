@@ -73,7 +73,7 @@ fn await_republish(store: &Store, seen: i64) -> Result<bool> {
     }
     let serving = match store.query_deadline() {
         Some(deadline) => running_for_republish(store.index_cache(), deadline)?,
-        None => crate::daemon::running(store.index_cache()),
+        None => crate::daemon_transport::running(store.index_cache()),
     };
     if !serving {
         return Ok(false);
@@ -109,8 +109,11 @@ fn await_republish(store: &Store, seen: i64) -> Result<bool> {
 /// `running`'s conservative treatment of a busy serving socket.
 fn running_for_republish(cache: &Path, deadline: &QueryDeadline) -> Result<bool> {
     check_query_deadline(deadline)?;
-    let probe_deadline = deadline.capped(crate::daemon::RUNNING_PROBE_WAIT);
-    liveness_probe_result(crate::daemon::running_by(cache, &probe_deadline), deadline)
+    let probe_deadline = deadline.capped(crate::daemon_transport::RUNNING_PROBE_WAIT);
+    liveness_probe_result(
+        crate::daemon_transport::running_by(cache, &probe_deadline),
+        deadline,
+    )
 }
 
 fn liveness_probe_result(result: Result<bool>, deadline: &QueryDeadline) -> Result<bool> {

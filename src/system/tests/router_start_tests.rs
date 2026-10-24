@@ -79,7 +79,7 @@ fn ensure_reports_a_running_router_despite_unresolvable_board_database() {
     let context = RequestContext::new(None, None);
     let deadline = Instant::now() + Duration::from_secs(3);
     loop {
-        if daemon::request(&runtime, &ping, &context)
+        if crate::daemon_transport::request(&runtime, &ping, &context)
             .unwrap()
             .is_some()
         {
@@ -88,7 +88,9 @@ fn ensure_reports_a_running_router_despite_unresolvable_board_database() {
         assert!(Instant::now() < deadline, "router failed to start");
         std::thread::sleep(Duration::from_millis(10));
     }
-    let reply = crate::system::request(&ping, &context).unwrap().unwrap();
+    let reply = crate::daemon_transport::router_request(&ping, &context)
+        .unwrap()
+        .unwrap();
     let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
     assert_eq!(status["status"], "ok");
     assert_eq!(status["board_api"], crate::board::BOARD_API);
@@ -102,12 +104,13 @@ fn ensure_reports_a_running_router_despite_unresolvable_board_database() {
         "{status}"
     );
     crate::system::ensure().unwrap();
-    let error = crate::system::request(&["board".into(), "show".into()], &context).unwrap_err();
+    let error = crate::daemon_transport::router_request(&["board".into(), "show".into()], &context)
+        .unwrap_err();
     assert!(
         format!("{error:#}").contains("board database path must be absolute"),
         "{error:#}"
     );
-    daemon::stop(&runtime).unwrap();
+    crate::daemon_transport::stop(&runtime).unwrap();
     worker.join().unwrap().unwrap();
 }
 
@@ -146,7 +149,7 @@ fn ensure_waits_for_a_migrating_router_without_spawning_a_second() {
         let deadline = Instant::now() + Duration::from_millis(500);
         let mut bound = false;
         while !bound && Instant::now() < deadline {
-            bound = daemon::running(&runtime);
+            bound = crate::daemon_transport::running(&runtime);
             if !bound {
                 std::thread::sleep(Duration::from_millis(10));
             }
@@ -159,13 +162,13 @@ fn ensure_waits_for_a_migrating_router_without_spawning_a_second() {
     assert!(bound_early, "the router binds its socket before migrating");
     assert_eq!(spawned, 0, "a waiting ensure spawns no second router");
     let ping = vec!["system".to_owned(), "status".to_owned()];
-    let reply = crate::system::request(&ping, &RequestContext::new(None, None))
+    let reply = crate::daemon_transport::router_request(&ping, &RequestContext::new(None, None))
         .unwrap()
         .expect("router answers status after migration");
     let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
     assert_eq!(status["schema_supported"], crate::board::SCHEMA_VERSION);
     assert_eq!(status["schema_file"], crate::board::SCHEMA_VERSION);
-    daemon::stop(&runtime).unwrap();
+    crate::daemon_transport::stop(&runtime).unwrap();
     worker.join().unwrap().unwrap();
 }
 
@@ -222,7 +225,7 @@ fn ensure_waits_for_a_slow_spawned_router() {
         started.elapsed() >= Duration::from_secs(3),
         "ensure waits for spawned migration"
     );
-    daemon::stop(&runtime).unwrap();
+    crate::daemon_transport::stop(&runtime).unwrap();
     drop(process);
 }
 

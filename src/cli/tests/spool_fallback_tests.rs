@@ -1,5 +1,5 @@
 use super::spool_fallback_fixture::{DIRECT_REPLY, StubDaemon, args, fixture_dir, in_child};
-use crate::{cli::run_with_context, daemon::spool, request_context::RequestContext};
+use crate::{cli::run_with_context, daemon_transport::spool, request_context::RequestContext};
 use anyhow::Result;
 
 #[test]

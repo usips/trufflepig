@@ -1,7 +1,11 @@
 use super::*;
 
 fn daemon_timeout() -> anyhow::Error {
-    crate::daemon::DaemonReplyTimeout::new(Duration::from_secs(30), Duration::from_secs(30)).into()
+    crate::daemon_transport::DaemonReplyTimeout::new(
+        Duration::from_secs(30),
+        Duration::from_secs(30),
+    )
+    .into()
 }
 
 fn invoke_counted(
@@ -65,7 +69,7 @@ fn assert_preflight_timeout(error: &anyhow::Error) {
     assert!(!message.contains("request_key="), "{message}");
     assert!(!message.contains("board receipt"), "{message}");
     assert!(
-        crate::daemon::DaemonReplyTimeout::from_error(error).is_some(),
+        crate::daemon_transport::DaemonReplyTimeout::from_error(error).is_some(),
         "typed timeout was lost: {error:?}"
     );
 }

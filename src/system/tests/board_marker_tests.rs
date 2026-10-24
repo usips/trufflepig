@@ -88,7 +88,7 @@ fn losing_router_start_cannot_replace_the_live_database_marker() {
     let ping = ["system".into(), "status".into()];
     let context = RequestContext::new(None, None);
     loop {
-        if daemon::request(&runtime, &ping, &context)
+        if crate::daemon_transport::request(&runtime, &ping, &context)
             .unwrap()
             .is_some()
         {
@@ -101,7 +101,7 @@ fn losing_router_start_cannot_replace_the_live_database_marker() {
     assert!(rejected.is_err());
     let accepted = validate_board_database(&runtime, &live_database);
     let refused = validate_board_database(&runtime, &loser_database);
-    daemon::stop(&runtime).unwrap();
+    crate::daemon_transport::stop(&runtime).unwrap();
     worker.join().unwrap().unwrap();
     accepted.unwrap();
     assert!(refused.is_err());

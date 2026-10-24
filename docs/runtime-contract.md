@@ -31,7 +31,7 @@ every step, and with no absolute candidate there is no directory
 (`system_unavailable`). `trufflepig system dir` prints the resolved directory.
 For source operations, the router forwards requests to the owning workspace coordinator or per-root
 daemon, starting a missing target and proxying the reply within 28 s
-(`src/daemon.rs:PROXY_REPLY_WAIT`), spawn wait included. Router replies, including
+(`src/daemon_transport.rs:PROXY_REPLY_WAIT`), spawn wait included. Router replies, including
 `timed_out` errors, remain answers. An unreachable router gets one `system ensure`
 attempt within the client's 30 s budget, then one retry (`src/cli/client_command.rs`).
 That attempt starts the router through the installed unit when the unit owns the
@@ -141,7 +141,7 @@ expired, the router reports `timed_out` before classification.
 5 s frame budget), releases the socket, and drains accepted work for up to
 28 s, then rejects queued work and returns so the daemon process exits; requests
 still running at that point may lose their reply. Liveness checks connect to the
-socket (`src/daemon.rs:running`) and never touch the startup lock. `system
+socket (`src/daemon_transport.rs:running`) and never touch the startup lock. `system
 ensure` uses one absolute 120 s startup deadline for status probes, the start, and
 socket/spool polling. Its initial status probe waits at most 250 ms; a bound
 router then gets the remaining startup budget without a second start. A unit-owned
@@ -156,7 +156,7 @@ probe or process after expiry and reports
 `system_unavailable: router still starting after 120 s`. Clients allow at most
 30 s for the read/retry operation, including startup, transport, backoff, and
 fallback, and at most five read attempts with fresh request IDs
-(`src/daemon.rs:CLIENT_REPLY_WAIT`, `src/cli/retry.rs`). A spooled
+(`src/daemon_transport.rs:CLIENT_REPLY_WAIT`, `src/cli/retry.rs`). A spooled
 request whose claiming router stops beating fails at once with
 `daemon_unavailable`. Lane queue refusals include pool, queue depth/capacity,
 cause, bounded `retry_after_ms`, and a retry hint. Read retries

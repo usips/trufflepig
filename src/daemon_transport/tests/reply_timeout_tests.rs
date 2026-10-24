@@ -1,5 +1,4 @@
 use super::*;
-use crate::board::board_protocol::BoardErrorCode;
 use crate::coded_error::CodedContext;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
@@ -28,7 +27,7 @@ fn frame(payload: &[u8]) -> Vec<u8> {
 
 fn encoded_reply(reply: &DaemonReply) -> Vec<u8> {
     let mut bytes = Vec::new();
-    protocol::write_reply(&mut bytes, reply).unwrap();
+    daemon_wire_protocol::write_reply(&mut bytes, reply).unwrap();
     bytes
 }
 
@@ -46,7 +45,7 @@ fn socket_exchange(
     let peer_dispatches = Arc::clone(&dispatches);
     let peer = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
-        let observed = protocol::read_request(&mut stream).unwrap();
+        let observed = daemon_wire_protocol::read_request(&mut stream).unwrap();
         peer_dispatches.fetch_add(1, Ordering::SeqCst);
         observed_tx.send(observed).unwrap();
         stream.write_all(&response).unwrap();
@@ -75,7 +74,7 @@ fn socket_exchange_fragmented(
     let listener = UnixListener::bind(scratch.path().join(SOCKET_NAME)).unwrap();
     let peer = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
-        protocol::read_request(&mut stream).unwrap();
+        daemon_wire_protocol::read_request(&mut stream).unwrap();
         stream.write_all(&response[..2]).unwrap();
         std::thread::sleep(delay);
         stream.write_all(&response[2..]).unwrap();
@@ -93,7 +92,7 @@ fn exchange_cancelled(deadline: QueryDeadline, cancel: impl FnOnce()) -> anyhow:
     let (release_tx, release_rx) = mpsc::channel();
     let peer = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
-        protocol::read_request(&mut stream).unwrap();
+        daemon_wire_protocol::read_request(&mut stream).unwrap();
         accepted_tx.send(()).unwrap();
         let mut byte = [0_u8; 1];
         eof_tx.send(stream.read(&mut byte).unwrap()).unwrap();
@@ -135,7 +134,6 @@ fn exchange_cancelled(deadline: QueryDeadline, cancel: impl FnOnce()) -> anyhow:
 fn assert_timeout(error: &anyhow::Error, maximum_budget: Duration) -> &DaemonReplyTimeout {
     let timeout = DaemonReplyTimeout::from_error(error)
         .unwrap_or_else(|| panic!("expected typed reply timeout, got {error:#}"));
-    assert_eq!(BoardErrorCode::from_error(error), None);
     assert_eq!(timeout.retry_after(), Duration::from_millis(250));
     assert!(timeout.wait_budget() > Duration::ZERO);
     assert!(timeout.wait_budget() <= maximum_budget);
@@ -175,7 +173,7 @@ fn daemon_reply_timeout_maps_partial_payload_read_timeout() {
 }
 
 #[test]
-fn daemon_reply_timeout_after_accepted_board_write_is_not_daemon_busy() {
+fn daemon_reply_timeout_after_accepted_board_write_is_typed() {
     let request = arguments(&["board", "post", "P11.2", "progress", "accepted"]);
     let (result, observed, dispatches) = socket_exchange(
         request,
@@ -191,10 +189,6 @@ fn daemon_reply_timeout_after_accepted_board_write_is_not_daemon_busy() {
     let error = result.unwrap_err();
     assert_timeout(&error, SHORT_REPLY_WAIT);
     assert_eq!(dispatches, 1);
-    assert_ne!(
-        BoardErrorCode::from_error(&error),
-        Some(BoardErrorCode::DaemonBusy)
-    );
 }
 
 #[test]

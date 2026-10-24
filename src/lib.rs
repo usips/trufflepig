@@ -5,6 +5,7 @@ pub(crate) mod background_process;
 pub mod board;
 pub mod cli;
 pub mod daemon;
+pub mod daemon_transport;
 pub mod diagnostics;
 pub mod extract;
 pub mod git_runner;
