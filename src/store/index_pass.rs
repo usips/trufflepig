@@ -10,9 +10,9 @@ use crate::daemon::deadline::QueryDeadline;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension};
 
-/// The staged build is discarded on failure, so it never syncs.
+/// The staged build is discarded on failure, so it keeps no journal and never syncs.
 const STAGED_PRAGMAS: &str =
-    "PRAGMA journal_mode=DELETE; PRAGMA synchronous=OFF; PRAGMA cache_size=-4096;";
+    "PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF; PRAGMA cache_size=-4096;";
 
 impl Store {
     /// Stages and publishes while `_writer_lock` holds the writer lease. A
@@ -92,7 +92,8 @@ impl Store {
             return Ok(Some(coverage));
         }
         checkpoint.set_finalizing()?;
-        resolve_staged(&mut staged)
+        schema::create_staged_indexes(&staged)
+            .and_then(|()| resolve_staged(&mut staged))
             .map_err(|error| interrupted(&mut checkpoint, deadline, error))?;
         check_slice(&mut checkpoint, deadline)?;
         drop(staged);
@@ -120,6 +121,11 @@ impl Store {
         )
         .map_err(|error| interrupted(&mut checkpoint, deadline, error))?;
         drop(directory);
+        if let Err(error) = live_index::reclaim_after_publish(&self.conn, deadline)
+            && !index_deadline::is_deadline_interruption(&error)
+        {
+            eprintln!("trufflepig: index space reclamation skipped: {error:#}");
+        }
         checkpoint
             .mark_complete()
             .context("index published; clearing its preparation failed")?;
@@ -166,7 +172,7 @@ fn open_staged(
         index_deadline::install(&staged, deadline)?;
     }
     staged.execute_batch(STAGED_PRAGMAS)?;
-    schema::create(&staged)?;
+    schema::create_staged(&staged)?;
     if let Some(deadline) = deadline {
         index_deadline::check(deadline)?;
     }

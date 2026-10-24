@@ -23,8 +23,9 @@ pub(super) fn publish(
         append_observations(&transaction, publication)?;
         transaction.execute_batch(
             "DELETE FROM relationships; DELETE FROM occurrences; DELETE FROM definitions;
-             DELETE FROM documents; DELETE FROM regions; DELETE FROM files;",
+             DELETE FROM regions; DELETE FROM files;",
         )?;
+        super::schema::recreate_documents(&transaction)?;
         transaction.execute_batch(
             "INSERT OR IGNORE INTO contents(revision,bytes) SELECT revision,bytes FROM staged.contents;
              INSERT INTO files(id,path,revision,language,status,bytes)

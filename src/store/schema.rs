@@ -1,4 +1,6 @@
-//! `index.sqlite3` tables, secondary indexes, and the FTS5 `documents` table.
+//! `index.sqlite3` tables. The live index and in-memory views carry secondary
+//! indexes and the FTS5 `documents` table; a staged build loads plain tables
+//! first and adds the indexes its resolvers need afterwards.
 use anyhow::Result;
 use rusqlite::Connection;
 
@@ -30,10 +32,34 @@ const SECONDARY_INDEXES: &str = "CREATE INDEX IF NOT EXISTS definition_name ON d
 /// The searchable lexical documents; `rowid` is the region id.
 const DOCUMENTS_FTS: &str = "CREATE VIRTUAL TABLE IF NOT EXISTS main.documents USING fts5(name,expanded,body,path,tokenize='unicode61');";
 
+/// Staged documents are only copied into the live FTS table, so they stay plain rows.
+const STAGED_DOCUMENTS: &str = "CREATE TABLE IF NOT EXISTS documents(id INTEGER PRIMARY KEY,name TEXT NOT NULL,expanded TEXT NOT NULL,body TEXT NOT NULL,path TEXT NOT NULL);";
+
 /// Creates the complete queryable schema (live index, in-memory views, tests).
 pub(super) fn create(conn: &Connection) -> Result<()> {
     conn.execute_batch(TABLES)?;
     conn.execute_batch(SECONDARY_INDEXES)?;
     conn.execute_batch(DOCUMENTS_FTS)?;
+    Ok(())
+}
+
+/// Replaces the live FTS table with an empty one inside the caller's transaction,
+/// discarding its index without writing per-row delete markers.
+pub(super) fn recreate_documents(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DROP TABLE main.documents;")?;
+    conn.execute_batch(DOCUMENTS_FTS)?;
+    Ok(())
+}
+
+/// Creates a staged build's tables without secondary indexes or FTS.
+pub(super) fn create_staged(conn: &Connection) -> Result<()> {
+    conn.execute_batch(TABLES)?;
+    conn.execute_batch(STAGED_DOCUMENTS)?;
+    Ok(())
+}
+
+/// Adds the secondary indexes the resolvers join on, after the bulk load.
+pub(super) fn create_staged_indexes(conn: &Connection) -> Result<()> {
+    conn.execute_batch(SECONDARY_INDEXES)?;
     Ok(())
 }

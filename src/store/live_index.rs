@@ -1,5 +1,5 @@
-//! The writer's `index.sqlite3`: pragmas, schema revision, and corruption
-//! quarantine. The index is a
+//! The writer's `index.sqlite3`: pragmas, schema revision, corruption
+//! quarantine, and space reclamation after publication. The index is a
 //! rebuildable cache, so another revision or a corrupt file is replaced, never
 //! migrated ([storage contract](../../docs/index-storage-contract.md)).
 use super::{cache_access, encode_path, index_deadline, publish, schema};
@@ -10,6 +10,7 @@ use rusqlite::{
     TransactionBehavior,
 };
 use std::path::Path;
+use std::time::Duration;
 
 pub(super) const INDEX_NAME: &str = "index.sqlite3";
 /// The most recent corrupt index, kept for inspection; each quarantine replaces it.
@@ -266,6 +267,35 @@ fn remove_if_present(path: &Path) -> Result<()> {
 pub(super) fn fails_quick_check(conn: &Connection) -> bool {
     conn.query_row("PRAGMA quick_check(1)", [], |row| row.get::<_, String>(0))
         .map_or(true, |result| result != "ok")
+}
+
+/// Returns freed pages to the filesystem and truncates the WAL after a
+/// publication. Best effort: a reader on an older snapshot leaves the WAL in
+/// place, and the checkpoint never waits on its busy handler.
+pub(super) fn reclaim_after_publish(
+    conn: &Connection,
+    deadline: Option<&QueryDeadline>,
+) -> Result<()> {
+    if deadline.is_some_and(QueryDeadline::expired) {
+        return Ok(());
+    }
+    // Each step frees pages, so the statement runs to completion.
+    let mut vacuum = conn.prepare("PRAGMA incremental_vacuum")?;
+    let mut steps = vacuum.query([])?;
+    while steps.next()?.is_some() {}
+    drop(steps);
+    drop(vacuum);
+    conn.busy_timeout(Duration::ZERO)?;
+    let checkpoint = conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+        row.get::<_, i64>(0)
+    });
+    let busy = match deadline {
+        Some(deadline) => deadline.cap(index_deadline::SQLITE_BUSY_TIMEOUT),
+        None => index_deadline::SQLITE_DEFAULT_BUSY_TIMEOUT,
+    };
+    conn.busy_timeout(busy)?;
+    checkpoint?;
+    Ok(())
 }
 
 #[cfg(test)]
