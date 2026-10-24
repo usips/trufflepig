@@ -229,7 +229,7 @@ fn try_writer_lease(cache: &Path) -> Result<Option<std::fs::File>> {
         .truncate(false)
         .read(true)
         .write(true)
-        .open(cache.join("index.lock"))
+        .open(cache.join(super::index_checkpoint::WRITER_LEASE_FILE))
         .context("open index writer lease")?;
     match fs2::FileExt::try_lock_exclusive(&lock) {
         Ok(()) => Ok(Some(lock)),

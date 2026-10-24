@@ -21,7 +21,7 @@ const CHECKPOINT_DIRECTORY: &str = "stage-index-checkpoint";
 const CHECKPOINT_DATABASE: &str = "prepared.sqlite3";
 const CHECKPOINT_SCHEMA_REVISION: u32 = 1;
 /// The writer lease `Store` locks from staging through publication.
-const WRITER_LEASE_FILE: &str = "index.lock";
+pub(super) const WRITER_LEASE_FILE: &str = "index.lock";
 /// Consecutive expired bounded slices that save no new file before maintenance is required.
 const STALLED_SLICES_BEFORE_MAINTENANCE: u32 = 3;
 

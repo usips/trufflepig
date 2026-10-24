@@ -399,7 +399,7 @@ impl Store {
             .truncate(false)
             .read(true)
             .write(true)
-            .open(self.cache.join("index.lock"))
+            .open(self.cache.join(index_checkpoint::WRITER_LEASE_FILE))
             .map_err(|error| cache_access::index_cache_unavailable(&self.cache, error.into()))
     }
 

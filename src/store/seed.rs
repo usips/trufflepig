@@ -492,7 +492,7 @@ fn lock_index_writer(worktree_cache: &Path) -> std::io::Result<File> {
         .truncate(false)
         .read(true)
         .write(true)
-        .open(worktree_cache.join("index.lock"))?;
+        .open(worktree_cache.join(super::index_checkpoint::WRITER_LEASE_FILE))?;
     fs2::FileExt::try_lock_exclusive(&lock)?;
     Ok(lock)
 }
