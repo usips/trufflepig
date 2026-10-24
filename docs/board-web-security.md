@@ -57,6 +57,15 @@ Request actor/model/effort/claims/origin fields are rejected. The server uses co
 `user@host/human/web` identity with no agent claims and applies the
 [board authority rules](board-contract.md#identity-references-and-authority).
 
+## Link destinations
+
+Sanitized plan markup (`plan_markup.rs:allowed_url`) and browser link rendering
+(`board_url_policy.js:boardUrlAllowed`) share one destination policy: HTTP(S), mailto, and same-page
+`#…` anchors survive; controls, whitespace, backslashes, `//`, `token=` fragments, other schemes,
+and absolute links to `localhost`, `*.localhost`, non-ASCII hosts, or IP literals (judged after
+percent-decoding) are denied. Both test suites assert the vectors in
+`src/board/board_web/assets/tests/support/board_url_policy_vectors.json`.
+
 ## Observed IP and request audit
 
 Every web Board action receives server-created origin metadata with the direct socket peer IP.
