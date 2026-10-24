@@ -23,6 +23,7 @@ impl RerankScorer for FakeScorer {
         _cache_identity: &std::path::Path,
         _query: &str,
         _documents: &[String],
+        _budget: std::time::Duration,
     ) -> Result<Vec<f32>> {
         match self {
             FakeScorer::Scores(scores) => Ok(scores.clone()),

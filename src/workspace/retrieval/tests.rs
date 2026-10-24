@@ -140,17 +140,18 @@ fn expired_workspace_search_identifies_the_unanswered_home() {
     WorkspaceResults::create(&cache, &setup_deadline).unwrap();
     let results = WorkspaceResults::open(&cache, &setup_deadline).unwrap();
 
-    let error = super::search_with_policy(
-        &config,
-        &cache,
-        &results,
-        &options,
-        &cli::request_context(&options).unwrap(),
-        &mut crate::semantic::SemanticSession::default(),
-        QueryDeadline::after(std::time::Duration::ZERO),
-        super::HomeIndexPolicy::IndexInline,
-    )
-    .expect_err("an expired home query cannot prove absence");
+    let request = super::WorkspaceQuery {
+        config: &config,
+        cache: &cache,
+        results: &results,
+        options: &options,
+        context: &cli::request_context(&options).unwrap(),
+        deadline: QueryDeadline::after(std::time::Duration::ZERO),
+        policy: super::HomeIndexPolicy::IndexInline,
+    };
+    let error =
+        super::search_with_policy(&request, &mut crate::semantic::SemanticSession::default())
+            .expect_err("an expired home query cannot prove absence");
 
     let message = format!("{error:#}");
     assert!(message.starts_with("timed_out:"), "{message}");
@@ -160,4 +161,31 @@ fn expired_workspace_search_identifies_the_unanswered_home() {
     assert_eq!(details["phase"], "member_processing");
     assert_eq!(details["absence"], "not_proven");
     assert_eq!(details["fallback"], "show path:FILE");
+}
+
+#[test]
+fn no_daemon_rerank_reports_every_member_unavailable_and_keeps_fused_order() {
+    let fixture = crate::workspace::test_fixture::Fixture::new();
+    let words = ["search", "SharedThing marker", "ws:all"];
+    let plain = fixture.json("engine", &words);
+    let reranked = fixture.json("engine", &[&["--rerank"][..], &words].concat());
+    let files = |page: &serde_json::Value| {
+        let hits = page["hits"].as_array().unwrap();
+        hits.iter()
+            .map(|hit| hit["file"].clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(files(&reranked), files(&plain));
+    let rows = reranked["coverage"].as_array().unwrap();
+    assert_eq!(rows.len(), 3);
+    for row in rows {
+        assert_eq!(row["issues"]["rerank_status"], "unavailable", "{row}");
+        let reason = row["issues"]["rerank_reason"].as_str().unwrap();
+        assert!(reason.contains("--no-daemon"), "{reason}");
+    }
+    let rows = plain["coverage"].as_array().unwrap();
+    assert!(
+        rows.iter()
+            .all(|row| row["issues"].get("rerank_status").is_none())
+    );
 }

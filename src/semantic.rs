@@ -4,6 +4,8 @@
 use anyhow::{Result, bail};
 use std::{cmp::Ordering, collections::BinaryHeap};
 
+mod content_identity;
+pub(crate) use content_identity::content_key;
 #[cfg(feature = "semantic")]
 pub(crate) mod embedding_cache;
 #[cfg(feature = "semantic")]

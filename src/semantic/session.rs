@@ -44,7 +44,7 @@ impl SemanticSession {
 
     #[cfg(feature = "semantic")]
     fn query(&self, directory: &Path, text: &str) -> Result<Embedding> {
-        use super::embedding_cache::{EmbeddingCache, content_key};
+        use super::{content_key, embedding_cache::EmbeddingCache};
         let key = content_key(text);
         let mut cache_locked = false;
         match EmbeddingCache::open_query(directory) {
@@ -76,23 +76,25 @@ impl SemanticSession {
         Err(super::unavailable())
     }
 
-    /// Scores (query, document) pairs through the shared worker. Never loads a model here.
+    /// Scores (query, document) pairs through the shared worker within
+    /// `budget` (capped at its rerank deadline). Never loads a model here.
     pub fn rerank(
         &self,
         cache_identity: &Path,
         query: &str,
         documents: &[String],
+        budget: std::time::Duration,
     ) -> Result<Vec<f32>> {
         if self.no_daemon {
             anyhow::bail!("rerank_unavailable: --no-daemon never contacts the inference worker");
         }
         #[cfg(feature = "semantic")]
         {
-            super::worker::rerank_query(cache_identity, query, documents)
+            super::worker::rerank_query(cache_identity, query, documents, budget)
         }
         #[cfg(not(feature = "semantic"))]
         {
-            let _ = (cache_identity, query, documents);
+            let _ = (cache_identity, query, documents, budget);
             Err(super::unavailable())
         }
     }
@@ -137,7 +139,7 @@ mod tests {
     #[cfg(feature = "semantic")]
     #[test]
     fn semantic_no_daemon_reads_cached_query_without_model() -> Result<()> {
-        use super::super::embedding_cache::{EmbeddingCache, content_key};
+        use super::super::{content_key, embedding_cache::EmbeddingCache};
         let directory = tempfile::tempdir()?;
         let mut values = [0.0; super::super::DIMENSIONS];
         values[0] = 1.0;

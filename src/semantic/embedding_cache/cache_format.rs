@@ -1,12 +1,12 @@
-use super::super::{DIMENSIONS, Embedding, INPUT_VERSION, MODEL_REVISION};
+use super::super::{
+    DIMENSIONS, Embedding, INPUT_VERSION, MODEL_REVISION,
+    content_identity::{MODEL_MANIFEST, NORMALIZATION},
+};
 use anyhow::{Result, bail};
 use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// The exact pooling and normalization contract used by the pinned model.
-pub(super) const NORMALIZATION: &str = "l2";
 const NORM_TOLERANCE: f64 = 0.001;
-const MODEL_MANIFEST: &[u8] = include_bytes!("../../../evaluation/semantic_gate/model.json");
 
 #[derive(Debug, Default)]
 pub(super) struct CacheCounters {
@@ -39,27 +39,6 @@ impl CacheCounters {
 
 pub(super) fn manifest_digest() -> String {
     format!("{:x}", Sha256::digest(MODEL_MANIFEST))
-}
-
-/// Keys bind source content to every input that can change its vector.
-pub fn content_key(text: &str) -> String {
-    let dimensions = DIMENSIONS.to_le_bytes();
-    let parts: [(&[u8], &[u8]); 6] = [
-        (b"manifest", MODEL_MANIFEST),
-        (b"model_revision", MODEL_REVISION.as_bytes()),
-        (b"input_version", INPUT_VERSION.as_bytes()),
-        (b"dimensions", &dimensions),
-        (b"normalization", NORMALIZATION.as_bytes()),
-        (b"content", text.as_bytes()),
-    ];
-    let mut digest = Sha256::new();
-    for (label, value) in parts {
-        digest.update((label.len() as u64).to_le_bytes());
-        digest.update(label);
-        digest.update((value.len() as u64).to_le_bytes());
-        digest.update(value);
-    }
-    format!("{:x}", digest.finalize())
 }
 
 pub(super) fn encode(vector: &Embedding) -> Result<[u8; DIMENSIONS * 4]> {

@@ -152,12 +152,32 @@ impl RetrievalTrace {
         outcome: LaneOutcome,
         result_limit_reached: bool,
     ) {
+        self.record_ranked(
+            lane,
+            started,
+            hits.iter(),
+            hits.len(),
+            outcome,
+            result_limit_reached,
+        );
+    }
+
+    /// Records a lane whose `candidate_count` ranked hits arrive as an iterator.
+    pub(super) fn record_ranked<'h>(
+        &mut self,
+        lane: Lane,
+        started: Instant,
+        hits: impl Iterator<Item = &'h Hit>,
+        candidate_count: usize,
+        outcome: LaneOutcome,
+        result_limit_reached: bool,
+    ) {
         if !self.enabled {
             return;
         }
         let elapsed_us = elapsed_us(started);
-        let mut candidates = Vec::with_capacity(hits.len().min(MAX_LANE_IDENTITIES));
-        for (i, hit) in hits.iter().take(MAX_LANE_IDENTITIES).enumerate() {
+        let mut candidates = Vec::with_capacity(candidate_count.min(MAX_LANE_IDENTITIES));
+        for (i, hit) in hits.take(MAX_LANE_IDENTITIES).enumerate() {
             let identity = RankedSourceIdentity {
                 original_rank: i + 1,
                 path: hit.path.clone(),
@@ -179,9 +199,9 @@ impl RetrievalTrace {
             lane,
             elapsed_us,
             outcome,
-            candidate_count: hits.len(),
+            candidate_count,
             result_limit_reached,
-            candidate_records_omitted: hits.len() - candidates.len(),
+            candidate_records_omitted: candidate_count - candidates.len(),
             candidates,
         });
     }

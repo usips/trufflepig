@@ -89,13 +89,28 @@ It uses the representative hit's evidence tiers from
 named and declaring files share the first tier; identifier-use hits follow,
 then other hits. Within each tier, scored hits sort by descending rerank score,
 with ties breaking by fused rank; hits the reranker could not score keep their
-fused order below their tier's scored hits.
+fused order below their tier's scored hits. A document is the hit's span (a
+file hit's first 4,096 bytes) read from the indexed content of the hit's
+revision.
+
+A workspace query reranks once: members search without reranking, their
+ranks interleave as the [workspace contract](workspace-contract.md) describes,
+and one request scores the top 32 merged hits, whose scores compare across
+members because one model produced them. Entries keep their member and member
+rank. That request's deadline is the smaller of 1,500 ms and the query
+deadline's remainder; an expired query deadline skips the request and reports
+`semantic_timeout`. Every member that answered reports the shared status and
+reason; its `rerank_window` counts its own scored hits. The stage follows the
+members' current-source checks, so a hit replaced from current bytes has no
+indexed document and stays unscored.
 
 A timeout, missing model, or provider failure keeps the fused order
 unchanged and reports `rerank_status` (`ready`, `unavailable`, or `skipped`)
 and, when unavailable, `rerank_reason` in coverage, along with
 `rerank_window` counting scored hits. `--no-daemon` never reranks, since it
-never contacts the inference worker.
+never contacts the inference worker. Diagnostics record the stage as a
+`rerank` lane with its `elapsed_us`: in the root's event, or in a workspace
+event that names no member.
 
 ## Preparation and cache
 

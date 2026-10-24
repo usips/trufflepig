@@ -109,6 +109,8 @@ Each member produces its existing ranked candidate list. Retrieval collapses
 each lane to one representative occurrence per file, then fuses file ranks with
 stable path and span tie breaks. The coordinator combines member file lanes with
 member provenance; raw scores from separate indexes are not compared. There is no elapsed-time lane omission.
+Member ranks interleave round-robin; an opt-in rerank then reorders the top 32 merged hits with one
+cross-encoder request, whose scores compare across members ([semantic contract](semantic-contract.md#optional-reranking)).
 
 Every emitted hit includes its member name. The page's `members` mapping
 resolves represented names to percent-encoded canonical roots. Coverage
