@@ -13,6 +13,7 @@ mod cross_root_admission_tests;
 mod failures;
 mod frame_ingress;
 mod request_lanes;
+mod semantic_fallback_tests;
 mod tier_deadlines;
 
 type Reply = Box<dyn Fn(&AcceptedRequest) -> Result<String> + Send + Sync>;

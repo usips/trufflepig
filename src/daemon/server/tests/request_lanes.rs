@@ -273,6 +273,7 @@ fn expired_or_disconnected_queued_classes_skip_the_handler() {
             RequestContext::new(None, None),
             vec![class.verb.to_owned()],
             Arc::clone(&handler),
+            None,
         );
         assert!(matches!(
             protocol::read_reply(&mut client).unwrap(),
@@ -290,6 +291,7 @@ fn expired_or_disconnected_queued_classes_skip_the_handler() {
             RequestContext::new(None, None),
             vec![class.verb.to_owned()],
             Arc::clone(&handler),
+            None,
         );
     }
     assert_eq!(calls.load(Ordering::Acquire), 0);
@@ -330,6 +332,7 @@ fn an_existing_typed_reply_timeout_survives_request_expiry() {
             RequestContext::new(None, None),
             vec!["search".to_owned()],
             handler,
+            None,
         );
     });
     entries.recv_timeout(Duration::from_secs(2)).unwrap();
@@ -373,6 +376,7 @@ fn active_maintenance_keeps_its_result_after_deadline_cancellation() {
             RequestContext::new(None, None),
             vec!["index".to_owned()],
             handler,
+            None,
         );
     });
     entries.recv_timeout(Duration::from_secs(2)).unwrap();

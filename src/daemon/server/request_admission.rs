@@ -1,6 +1,9 @@
 use super::super::pool::{PoolSize, RequestClass, RequestLane, RequestPool};
 use super::AdmissionTier;
 use super::root_work_limits::{RootLimitRefusal, RootWorkLimits, RootWorkPermit};
+use super::semantic_fallback::SemanticAdmissionFallback;
+use crate::cli::{ClassifiedDaemonRequest, classify_daemon_request};
+use anyhow::{Result, anyhow, ensure};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -18,6 +21,18 @@ pub(in crate::daemon) struct RequestAdmission {
     semantic: Arc<RequestPool>,
     board: Arc<RequestPool>,
     root_work_limits: RootWorkLimits,
+}
+
+pub(super) struct AdmittedRequest {
+    pub class: RequestClass,
+    pub args: Vec<String>,
+    pub permit: RootWorkPermit,
+    pub fallback: Option<SemanticAdmissionFallback>,
+}
+
+pub(super) enum AdmissionDecision {
+    Admitted(AdmittedRequest),
+    RootLimit(RootLimitRefusal),
 }
 
 impl RequestAdmission {
@@ -86,6 +101,54 @@ impl RequestAdmission {
     ) -> Result<RootWorkPermit, RootLimitRefusal> {
         self.root_work_limits
             .try_acquire(self.tier, class.lane, roots)
+    }
+
+    pub(super) fn admit(
+        &self,
+        classified: ClassifiedDaemonRequest,
+        args: Vec<String>,
+    ) -> Result<AdmissionDecision> {
+        let class = classified.class;
+        match self.reserve_roots(class, &classified.roots) {
+            Ok(permit) => Ok(AdmissionDecision::Admitted(AdmittedRequest {
+                class,
+                args,
+                permit,
+                fallback: None,
+            })),
+            Err(limit)
+                if class.lane == RequestLane::Semantic
+                    && class.verb == "search"
+                    && limit.limit > 0
+                    && limit.outstanding >= limit.limit =>
+            {
+                let (fallback, fallback_args) =
+                    SemanticAdmissionFallback::from_request(&args, limit.outstanding, limit.limit)?;
+                let lexical = classify_daemon_request(&fallback_args)?;
+                ensure!(
+                    lexical.class.lane == RequestLane::Query
+                        && lexical.class.verb == "search"
+                        && lexical.roots.is_empty(),
+                    "semantic_fallback_classification_invalid"
+                );
+                let permit = self.reserve_roots(lexical.class, &lexical.roots).map_err(
+                    |refusal| {
+                        anyhow!(
+                            "semantic_fallback_root_reservation_failed: outstanding={} limit={}",
+                            refusal.outstanding,
+                            refusal.limit
+                        )
+                    },
+                )?;
+                Ok(AdmissionDecision::Admitted(AdmittedRequest {
+                    class: lexical.class,
+                    args: fallback_args,
+                    permit,
+                    fallback: Some(fallback),
+                }))
+            }
+            Err(limit) => Ok(AdmissionDecision::RootLimit(limit)),
+        }
     }
 
     /// Drains every lane against one deadline, so stop never multiplies its

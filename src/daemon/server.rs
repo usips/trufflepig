@@ -14,6 +14,7 @@ use ingress_frames::{
     CompleteFrame, FinishedFrame, FrameFailure, FramePoll, PendingFrame, hold_refused,
     poll_refused, wait_for_ingress,
 };
+use semantic_fallback::SemanticAdmissionFallback;
 use std::any::Any;
 use std::io::ErrorKind;
 use std::net::Shutdown;
@@ -28,7 +29,9 @@ mod admission_refusal;
 mod ingress_frames;
 mod request_admission;
 mod root_work_limits;
+mod semantic_fallback;
 
+use request_admission::AdmissionDecision;
 pub(super) use request_admission::RequestAdmission;
 
 /// Longest idle wait of the accept loop before it polls its peers again.
@@ -611,14 +614,14 @@ fn intake_frame<H: DaemonHandler>(
                 );
                 return;
             }
-            let class = classified.class;
-            let (_, pool) = admission.execution(class);
-            let permit = match admission.reserve_roots(class, &classified.roots) {
-                Ok(permit) => permit,
-                Err(limit) => {
-                    let snapshot = pool.snapshot();
+            let original_class = classified.class;
+            let (_, original_pool) = admission.execution(original_class);
+            let admitted = match admission.admit(classified, args) {
+                Ok(AdmissionDecision::Admitted(admitted)) => admitted,
+                Ok(AdmissionDecision::RootLimit(limit)) => {
+                    let snapshot = original_pool.snapshot();
                     let refusal = AdmissionRefusal::new(
-                        pool.name(),
+                        original_pool.name(),
                         snapshot.queue_depth,
                         snapshot.queue_capacity,
                         RefusalCause::RootLimit,
@@ -628,12 +631,32 @@ fn intake_frame<H: DaemonHandler>(
                     write_refusal_shared(&stream, refusal);
                     return;
                 }
+                Err(error) => {
+                    write_result(&stream, Err(error));
+                    return;
+                }
             };
+            if deadline.expired() {
+                write_result(
+                    &stream,
+                    Err(anyhow::anyhow!(
+                        "timed_out: query deadline expired during admission"
+                    )),
+                );
+                return;
+            }
+            let class = admitted.class;
+            let args = admitted.args;
+            let permit = admitted.permit;
+            let fallback = admitted.fallback;
+            let (_, pool) = admission.execution(class);
             let job: PooledJob = {
                 let (handler, stream) = (Arc::clone(&handler), Arc::clone(&stream));
                 Box::new(move || {
                     let _permit = permit;
-                    run_connection_request(stream, deadline, class, context, args, handler)
+                    run_connection_request(
+                        stream, deadline, class, context, args, handler, fallback,
+                    )
                 })
             };
             if let Err((cause, job)) = pool.submit_labeled(class.verb, job) {
@@ -664,6 +687,7 @@ fn run_connection_request<H: DaemonHandler>(
     context: RequestContext,
     args: Vec<String>,
     handler: Arc<H>,
+    fallback: Option<SemanticAdmissionFallback>,
 ) {
     let result = if deadline.expired() {
         Err(anyhow::anyhow!(
@@ -679,6 +703,7 @@ fn run_connection_request<H: DaemonHandler>(
             },
         )
     };
+    let result = apply_semantic_fallback(result, fallback);
     let result = if result.is_ok() && discards_late_result(class, &deadline) {
         Err(anyhow::anyhow!(
             "timed_out: query deadline expired or peer closed"
@@ -688,6 +713,16 @@ fn run_connection_request<H: DaemonHandler>(
     };
     let result = normalize_owned_query_timeout(class, result, &deadline);
     write_result(&stream, result);
+}
+
+fn apply_semantic_fallback(
+    result: Result<String>,
+    fallback: Option<SemanticAdmissionFallback>,
+) -> Result<String> {
+    match (fallback, result) {
+        (Some(fallback), Ok(output)) => fallback.annotate(&output),
+        (_, result) => result,
+    }
 }
 
 fn bounded_query_class(class: RequestClass) -> bool {
@@ -790,14 +825,14 @@ pub(super) fn dispatch_spooled<H: DaemonHandler>(
             )));
             continue;
         }
-        let class = classified.class;
-        let (_, pool) = admission.execution(class);
-        let permit = match admission.reserve_roots(class, &classified.roots) {
-            Ok(permit) => permit,
-            Err(limit) => {
-                let snapshot = pool.snapshot();
+        let original_class = classified.class;
+        let (_, original_pool) = admission.execution(original_class);
+        let admitted = match admission.admit(classified, args) {
+            Ok(AdmissionDecision::Admitted(admitted)) => admitted,
+            Ok(AdmissionDecision::RootLimit(limit)) => {
+                let snapshot = original_pool.snapshot();
                 let refusal = AdmissionRefusal::new(
-                    pool.name(),
+                    original_pool.name(),
                     snapshot.queue_depth,
                     snapshot.queue_capacity,
                     RefusalCause::RootLimit,
@@ -808,7 +843,25 @@ pub(super) fn dispatch_spooled<H: DaemonHandler>(
                 claimed.answer_result(Err(anyhow::anyhow!("{}", refusal.message())));
                 continue;
             }
+            Err(error) => {
+                claimed.answer_result(Err(error));
+                continue;
+            }
         };
+        if !claimed.is_claimed() {
+            continue;
+        }
+        if deadline.time_expired() {
+            claimed.answer_result(Err(anyhow::anyhow!(
+                "timed_out: spooled request expired during admission"
+            )));
+            continue;
+        }
+        let class = admitted.class;
+        let args = admitted.args;
+        let permit = admitted.permit;
+        let fallback = admitted.fallback;
+        let (_, pool) = admission.execution(class);
         let claimed = Arc::new(Mutex::new(Some(claimed)));
         let job: PooledJob = {
             let (handler, claimed) = (Arc::clone(handler), Arc::clone(&claimed));
@@ -832,6 +885,7 @@ pub(super) fn dispatch_spooled<H: DaemonHandler>(
                             },
                         )
                     };
+                    let result = apply_semantic_fallback(result, fallback);
                     let result = if result.is_ok() && discards_late_result(class, &deadline) {
                         Err(anyhow::anyhow!("timed_out: query deadline expired"))
                     } else {

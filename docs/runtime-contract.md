@@ -97,13 +97,13 @@ lanes have 16 router, 8 coordinator, and 4 root workers, each with a 64-request
 queue. Maintenance, regex, and semantic lanes have router widths/queues 16/32,
 16/32, and 8/16; coordinator 4/8, 4/8, and 2/8; and root 1/8, 2/8, and 1/8.
 `board`, `feedback`, and `system` bypass the query lane: board lane 4/32 router, else 1/8.
-Admission refusal returns `daemon_busy`. A panicking request
-answers `internal_error: MESSAGE` and its worker keeps serving. Router and
-coordinator cap queued-plus-active maintenance, regex, and semantic commands per
-canonical root at 2, 3, and 2. Overlapping workspace scopes share that root key;
-the permits cover scheduling, forwarding, and reply wait, not the lifetime of
-background preparation (`src/daemon/server/root_work_limits.rs`). Root execution
-widths for those lanes are 1, 2, and 1.
+Admission refusals return `daemon_busy` except Semantic `search` root-limit refusals, which run once in bounded
+Query with semantic/rerank skipped. The fallback keeps the accepted deadline/cancellation and workspace settings;
+successful pages expose `semantic_status=skipped`, `semantic_reason=root_limit`, `rerank_status=skipped`, and counts.
+Query saturation returns `daemon_busy`; panics return `internal_error: MESSAGE` and workers continue. Router/coordinator
+cap queued-plus-active maintenance/regex/semantic work per canonical root at 2/3/2; overlapping scopes share keys.
+Permits cover scheduling/forwarding/reply wait, not background preparation (`src/daemon/server/root_work_limits.rs`).
+Root widths are 1/2/1; regex and maintenance refusals keep their limits and never use this fallback.
 One maintenance thread (`src/daemon/reconciler.rs`) watches, reconciles on watch
 events and periodically, drains the spool, and runs idle probes; if it panics,
 the daemon exits so the next client starts a fresh one. A root daemon binds and
