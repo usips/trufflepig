@@ -1,6 +1,7 @@
 import { createBoardDetails } from "./pages/board_pages.js";
 import { createBoardTaskView } from "./board_task_view.js";
 import { createBoardCards } from "./board_cards.js";
+import { createBoardWorkingRows, workingClaimOrder } from "./board_working_rows.js";
 import { createDonePage } from "./pages/done_page.js";
 import { actorAttribution, recipientMark } from "./marks/agent_marks.js";
 import { INGEST_TIMEOUT_MS, INGEST_UNKNOWN_MESSAGE, completeIngest, resolveIngestEvent } from "./board_ingest.js";
@@ -24,6 +25,7 @@ export function createBoardViews(context) {
     attentionItems, attentionCard, doneFooter,
   } = createBoardCards({ state, dom, entryRecord, collection });
   const { taskViewDetails } = createBoardTaskView({ dom, entryCard, workerTree, claimSignals });
+  const { workingRow } = createBoardWorkingRows({ dom });
   function projectChips(repoKeys, projects = state.projects || []) {
     if (!Array.isArray(repoKeys)) return null;
     const chips = el("div", "row wrap small");
@@ -112,10 +114,14 @@ export function createBoardViews(context) {
     const plans = collection(data, "plans");
     const claims = (data.working || plans.flatMap(item => item.claims || [])).filter(claim => !claim.ended_at);
     const tasksById = new Map(plans.flatMap(item => (item.tasks || []).map(task => [task.id, task])));
-    if (claims.length) add(page, panel("Working now", add(el("div", "working-strip"),
-      claims.map(claim => workingCard(claim, tasksById.get(claim.task), {
-        now: data.server_now, ttlSecs: data.claim_ttl_secs, entries: data.entries,
-      }))), "working-panel"));
+    if (claims.length) {
+      const rows = claims.slice().sort(workingClaimOrder)
+        .map(claim => workingRow(claim, tasksById.get(claim.task)));
+      page.append(focusKey(add(el("section", "panel section working-panel"),
+        add(el("div", "working-head"), el("h2", "", `Working now (${claims.length})`),
+          link("all claims →", "claims", {}, "small working-all")),
+        add(el("div", "working-list"), rows)), "section:Working now"));
+    }
     const layout = el("div", "overview-layout");
     const lanes = el("div");
     for (const item of plans) {
@@ -344,7 +350,7 @@ export function createBoardViews(context) {
     ...context, entryCard, taskCard, workingCard, postForm, taskDetails, projectChips, ...done,
   });
   return {
-    entryCard, eventList, workingCard, taskCard, attentionItems, attentionCard, renderOverview,
-    renderAttention, renderClaims, postForm, taskDetails, projectChips, ...done, ...details,
+    entryCard, eventList, workingCard, workingRow, taskCard, attentionItems, attentionCard,
+    renderOverview, renderAttention, renderClaims, postForm, taskDetails, projectChips, ...done, ...details,
   };
 }

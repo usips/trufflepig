@@ -43,13 +43,19 @@ Proposal/acceptance authority and task transitions remain backend decisions.
 
 ## Active tasks and Done
 
-Working now leads Overview with a wrapping grid of the returned current claims. Cards show the
-task title when it is present in the snapshot, the full claim scope, the claimant's actor mark and
-`user@host/harness/session` identity, model and effort, and the claim's task agent tree. Working now
-never requires horizontal scrolling. Below it, Needs you precedes plan lanes on narrow screens; its
-stale-claim cards link to their tasks without release controls.
+Working now leads Overview with `Working now (N)`, an `all claims →` link, and one row per returned
+current claim, stale claims first and then by latest activity. Each row is a native disclosure,
+closed by default; its one-line summary (two lines on narrow screens) shows the task id and title
+linking to the task, the ellipsized scope, the actor mark with model (and harness when the mark
+does not name it), the step, open questions when nonzero, live workers, relative activity, and a
+stale badge. The full scope and `user@host/harness/session` identity with model and effort stay in
+hover titles and the mark's label. Expanded, a row lists each live worker (mark, `/handle`, role,
+scope, activity), the ended-worker count, and `task details →`. Working now
+never requires horizontal scrolling. Below it, Needs you precedes plan lanes on narrow screens.
 
-The task agent tree lists the lead claim and its workers with role, state, handle, scope, files,
+Full claim cards — scope, attribution, signals, and the task agent tree — appear on Claims, a plan's
+Tasks claims panel, Needs you stale claims (linking to their tasks without release controls), and
+task detail. The task agent tree lists the lead claim and its workers with role, state, handle, scope, files,
 last activity, review verdict, and progress. Its attribution adds the observed origin, peer IP, and
 authority source recorded on the claim's entry. Workers ended more than 30 minutes ago collapse under
 `Ended workers (N)`, and workers beyond the first 20 count as omitted.
