@@ -1,11 +1,15 @@
 //! Read-only Git plumbing with bounded subprocess lifetime and output.
 
+mod git_command_failure;
+
+use super::resource_limits::ResourceLimitExceeded;
 use crate::{
     daemon::deadline::QueryDeadline,
     identity::GitOid,
     process_capture::{self, CaptureError},
 };
 use anyhow::{Context, Result, anyhow, bail, ensure};
+pub use git_command_failure::GitCommandFailed;
 use std::ffi::{OsStr, OsString};
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Component, Path, PathBuf};
@@ -138,7 +142,7 @@ impl GitRepository {
     pub fn run_with_input(&self, args: &[&str], input: &[u8]) -> Result<Vec<u8>> {
         ensure!(
             input.len() <= MAX_BLOB_BYTES,
-            "Git input exceeds blob resource limit"
+            ResourceLimitExceeded("Git input exceeds blob resource limit")
         );
         execute(&self.root, args, Some(input))
     }
@@ -181,7 +185,7 @@ pub fn read_blob(repository: &Path, blob: &str) -> Result<Vec<u8>> {
     let size: usize = std::str::from_utf8(&size)?.trim_end().parse()?;
     ensure!(
         size <= MAX_BLOB_BYTES,
-        "historical blob exceeds 2 MiB resource limit"
+        ResourceLimitExceeded("historical blob exceeds 2 MiB resource limit")
     );
     let contents = execute(repository, &["cat-file", "blob", oid.as_str()], None)
         .context("historical blob unavailable")?;
@@ -292,7 +296,13 @@ fn execute_with_program(
         "only read-only Git configuration enumeration is permitted"
     );
     ensure!(
-        name != "symbolic-ref" || args == [OsStr::new("symbolic-ref"), OsStr::new("HEAD")],
+        name != "symbolic-ref"
+            || args
+                == [
+                    OsStr::new("symbolic-ref"),
+                    OsStr::new("-q"),
+                    OsStr::new("HEAD")
+                ],
         "only read-only symbolic HEAD resolution is permitted"
     );
     let filter_overrides = if name == "blame" {
@@ -391,7 +401,7 @@ fn filter_overrides(directory: &Path) -> Result<Vec<(OsString, &'static str)>> {
         .collect();
     ensure!(
         filters.len() <= 1024 && filters.iter().all(|name| name.len() <= 4096),
-        "Git filter configuration exceeds resource limit"
+        ResourceLimitExceeded("Git filter configuration exceeds resource limit")
     );
     let mut overrides = Vec::with_capacity(filters.len() * 3);
     for name in filters {
@@ -428,13 +438,16 @@ fn collect_process(
                 }
                 CaptureError::Io(source) => anyhow!(source),
                 CaptureError::TimedOut => anyhow!("Git plumbing timed out"),
-                CaptureError::OutputLimit => anyhow!("Git output exceeds resource limit"),
+                CaptureError::OutputLimit => {
+                    anyhow!(ResourceLimitExceeded("Git output exceeds resource limit"))
+                }
             })?;
     if !captured.status.success() {
-        bail!(
-            "Git plumbing failed: {}",
+        bail!(GitCommandFailed::new(
+            captured.status.code(),
             String::from_utf8_lossy(&captured.stderr[..captured.stderr.len().min(2048)])
-        );
+                .into_owned(),
+        ));
     }
     ensure!(
         !strict || captured.stderr.is_empty(),

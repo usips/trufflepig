@@ -1,5 +1,6 @@
 //! Cached Git registration, invalidated by local HEAD and ref storage metadata.
 use super::*;
+use crate::coded_error::CodedContext;
 use std::collections::{BTreeSet, HashMap};
 use std::time::SystemTime;
 
@@ -39,7 +40,7 @@ impl RepoIdentityCache {
     ) -> Result<RegistrationProbe> {
         let root = directory
             .canonicalize()
-            .context("board_scan: canonicalize repository root")?;
+            .with_coded_context(|| coded!(BoardScan, "canonicalize repository root"))?;
         let fingerprint = head_fingerprint(&root);
         let fresh = self.entries.get(&root).is_some_and(|entry| {
             entry.expires > Instant::now()

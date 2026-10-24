@@ -49,7 +49,10 @@ pub(super) fn initialize(conn: &Connection, repository: &GitRepository) -> Resul
         .optional()?;
     ensure!(
         previous.as_ref().is_none_or(|p| p == &identity),
-        "history_cache_mismatch: cache belongs to another Git common directory"
+        coded!(
+            HistoryCacheMismatch,
+            "cache belongs to another Git common directory"
+        )
     );
     if previous.is_none() {
         conn.execute("INSERT INTO identity VALUES(?1)", [identity])?;
@@ -99,7 +102,7 @@ pub(super) fn index(history: &mut History) -> Result<Value> {
     )?;
     let result = index_batch(history);
     if let Err(error) = result {
-        let category = if error.to_string().contains("resource") {
+        let category = if super::resource_limits::is_resource_limited(&error) {
             "resource_limited"
         } else {
             "unavailable"
@@ -149,7 +152,7 @@ fn index_batch(history: &mut History) -> Result<()> {
     let fields = bytes.split(|b| *b == 0).collect::<Vec<_>>();
     ensure!(
         fields.len() % 4 == 1 && fields.last() == Some(&&b""[..]),
-        "history_unavailable: malformed commit traversal"
+        coded!(HistoryUnavailable, "malformed commit traversal")
     );
     let total = fields.len() / 4;
     let count = 128usize.min(total).min(MAX_COMMITS.saturating_sub(visited));
@@ -249,7 +252,7 @@ pub(super) fn capacity(history: &History) -> Result<()> {
         )?;
         ensure!(
             deleted > 0,
-            "history_resource_limited: database capacity reached"
+            coded!(HistoryResourceLimited, "database capacity reached")
         );
         checkpoint(history)?;
     }
@@ -267,7 +270,7 @@ fn checkpoint(history: &History) -> Result<()> {
                 })?;
         ensure!(
             busy == 0,
-            "history_resource_limited: WAL checkpoint is blocked"
+            coded!(HistoryResourceLimited, "WAL checkpoint is blocked")
         );
     }
     Ok(())

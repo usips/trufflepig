@@ -35,7 +35,7 @@ impl StagingBudget {
     pub fn reserve(&mut self, bytes: usize) -> Result<()> {
         ensure!(
             bytes <= self.limit.saturating_sub(self.used),
-            "history_resource_limited: retained staging capacity reached"
+            coded!(HistoryResourceLimited, "retained staging capacity reached")
         );
         self.used += bytes;
         Ok(())
@@ -62,13 +62,13 @@ pub(super) fn bounded_json(value: &impl Serialize, limit: usize) -> Result<Strin
     struct Buffer {
         bytes: Vec<u8>,
         limit: usize,
+        exceeded: bool,
     }
     impl Write for Buffer {
         fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
             if bytes.len() > self.limit.saturating_sub(self.bytes.len()) {
-                return Err(io::Error::other(
-                    "history_resource_limited: serialized staging capacity reached",
-                ));
+                self.exceeded = true;
+                return Err(io::Error::other("serialized staging capacity reached"));
             }
             if self.bytes.capacity() - self.bytes.len() < bytes.len() {
                 let capacity = (self.bytes.len() + bytes.len()).div_ceil(64 * 1024) * (64 * 1024);
@@ -85,7 +85,17 @@ pub(super) fn bounded_json(value: &impl Serialize, limit: usize) -> Result<Strin
     let mut buffer = Buffer {
         bytes: Vec::with_capacity(limit.min(4096)),
         limit,
+        exceeded: false,
     };
-    serde_json::to_writer(&mut buffer, value)?;
+    if let Err(error) = serde_json::to_writer(&mut buffer, value) {
+        ensure!(
+            !buffer.exceeded,
+            coded!(
+                HistoryResourceLimited,
+                "serialized staging capacity reached"
+            )
+        );
+        return Err(error.into());
+    }
     Ok(String::from_utf8(buffer.bytes).expect("JSON UTF-8"))
 }
