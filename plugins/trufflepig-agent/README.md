@@ -164,8 +164,8 @@ Audit follow-through is a heuristic, not evidence of task success or measured to
 Kimi's optional `--kimi-hooks` and the Muse manifest use `hooks/session-start.sh`
 for best-effort daemon startup. The hook writes no session state.
 
-`hooks/steer-search.py` steers ordinary search in checkouts of registered workspace members,
-including linked worktrees. It classifies each shell search (`definition`, `body`, `outline`,
+`hooks/steer-search.py` steers ordinary search in checkouts of registered workspace members and
+Git roots whose default cache holds an index, including linked worktrees. It classifies each shell search (`definition`, `body`, `outline`,
 `references`, `regex`, `concept`, `files`) and source read (`read`: `sed -n A,Bp F` →
 `show path:F:A-B`, `cat F` → `map F`), resolving paths against `cd DIR`/`git -C DIR`, and
 names the equivalent command (prefixed with `cd CHECKOUT &&` when that is another checkout).

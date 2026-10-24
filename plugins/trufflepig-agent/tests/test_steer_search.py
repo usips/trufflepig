@@ -10,6 +10,7 @@ import unittest
 
 PLUGIN = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PLUGIN / "hooks"))
+import trufflepig_cache_key as cache_key  # noqa: E402
 import trufflepig_checkout as checkout  # noqa: E402
 import trufflepig_classify as classifier  # noqa: E402
 import trufflepig_shell as shell  # noqa: E402
@@ -202,6 +203,15 @@ class ClassifierTests(unittest.TestCase):
                 )
 
 
+class CacheKeyTests(unittest.TestCase):
+    def test_cache_key_is_blake3_of_the_root_path(self):
+        self.assertEqual(cache_key.blake3_hex(b""),
+                         "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262")
+        self.assertEqual(cache_key.blake3_hex(b"abc"),
+                         "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85")
+        self.assertIsNone(cache_key.blake3_hex(b"x" * 1025))
+
+
 class HookTests(unittest.TestCase):
     def setUp(self):
         self.scratch = tempfile.TemporaryDirectory(prefix="trufflepig-steer-hook-")
@@ -216,7 +226,8 @@ class HookTests(unittest.TestCase):
         (config / "workspaces.toml").write_text('workspaces = ["space.toml"]\n')
         self.state = base / "state"
         self.env = {k: v for k, v in os.environ.items() if not k.startswith(("TRUFFLEPIG", "CLAUDE"))}
-        self.env.update(HOME=str(base), XDG_CONFIG_HOME=str(base / "config"), XDG_STATE_HOME=str(self.state))
+        self.env.update(HOME=str(base), XDG_CONFIG_HOME=str(base / "config"), XDG_STATE_HOME=str(self.state),
+                        XDG_CACHE_HOME=str(base / "cache"))
 
     def run_hook(self, command, harness="claude", event="PreToolUse", cwd=None, mode=None, agent="",
                  tool="Bash", tool_input=None):
@@ -476,6 +487,24 @@ class HookTests(unittest.TestCase):
         steered_off = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
         self.assertIn("--session claude-agent-", steered_off)
         self.assertNotIn("trufflepig-agent show 'sym:Name'", steered_off)
+
+    def test_standalone_indexed_git_root_gets_session_context(self):
+        standalone = Path(self.scratch.name) / "standalone"
+        (standalone / ".git").mkdir(parents=True)
+        (standalone / "src").mkdir()
+        payload = {"hook_event_name": "SessionStart", "session_id": "s1", "cwd": str(standalone / "src")}
+
+        def start():
+            return subprocess.run([sys.executable, str(PLUGIN / "hooks/claude-session.py")],
+                                  input=json.dumps(payload), env=self.env, capture_output=True, text=True)
+
+        self.assertEqual(start().stdout, "")
+        key = cache_key.blake3_hex(os.fsencode(str(standalone.resolve())))
+        cache = Path(self.env["XDG_CACHE_HOME"]) / "trufflepig" / key
+        cache.mkdir(parents=True)
+        (cache / "index.sqlite3").write_bytes(b"")
+        context = json.loads(start().stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("This checkout (standalone) is indexed by trufflepig", context)
 
     def test_session_context_only_inside_indexed_checkouts(self):
         env_file = Path(self.scratch.name) / "claude.env"

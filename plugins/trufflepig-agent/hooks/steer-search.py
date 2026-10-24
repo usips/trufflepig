@@ -4,8 +4,8 @@
 Usage: steer-search.py <claude|kimi|muse>   (hook JSON payload on stdin)
 
 Applies only inside checkouts of registered trufflepig workspace members
-(`~/.config/trufflepig/workspaces.toml`, linked worktrees included) or under a
-`trufflepig.workspace.toml`. Each shell search is classified (definition, body,
+(`~/.config/trufflepig/workspaces.toml`), under a `trufflepig.workspace.toml`, or
+in a Git root with a default index cache, linked worktrees included. Each shell search is classified (definition, body,
 outline, references, regex, concept, files); pipe filters, log/output files,
 other revisions, filesystem `find` actions, and paths outside the checkout are
 never steered; `sed -n A,Bp`/`cat` of indexed source is the `read` class. Modes
