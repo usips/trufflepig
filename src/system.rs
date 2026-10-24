@@ -19,8 +19,8 @@ use crate::{
         BackgroundChild, BackgroundOwner, current_background_executable, spawn_background_for,
     },
     daemon::{self, AcceptedRequest, DaemonHandler},
-    diagnostics::RequestContext,
     query_deadline::QueryDeadline,
+    request_context::RequestContext,
 };
 use anyhow::{Result, bail};
 use route::route;

@@ -43,9 +43,7 @@ fn normalized_markdown_and_body_preserve_client_context_and_ssot() {
     let grant_context = RequestContext::with_origin(
         Some("grant-session".into()),
         Some("human".into()),
-        Some(crate::board::board_protocol::ActorOrigin::from_actor(
-            &human,
-        )),
+        Some(human.origin()),
     );
     let grant_response = fixture
         .host

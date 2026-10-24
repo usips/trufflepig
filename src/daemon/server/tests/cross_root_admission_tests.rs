@@ -329,7 +329,7 @@ fn disconnect_forwarded_request(
     super::super::protocol::write_request(
         &mut client,
         &super::super::protocol::DaemonRequest::Arguments {
-            context: crate::diagnostics::RequestContext::new(None, None),
+            context: crate::request_context::RequestContext::new(None, None),
             args,
         },
     )

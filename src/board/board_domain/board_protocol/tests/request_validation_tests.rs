@@ -1,5 +1,6 @@
 use super::*;
 use crate::board::board_protocol::{ClaimDelegate, ReadScope};
+use crate::request_context::ActorOrigin;
 
 #[test]
 fn claim_delegates_refuse_reserved_harnesses() {
@@ -142,7 +143,7 @@ fn request_peer_ip_requires_server_observation_and_observation_is_not_serialized
         },
     );
     let peer_ip = std::net::IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 0, 42));
-    request.origin = Some(ActorOrigin::from_actor(&request.actor));
+    request.origin = Some(request.actor.origin());
     request.origin.as_mut().unwrap().peer_ip = Some(peer_ip);
     assert!(
         request

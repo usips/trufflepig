@@ -30,7 +30,7 @@ fn schema_became_newer_gives_upgrade_advice() {
     let refusal = unavailable_or_queue(
         &command,
         &options,
-        &crate::diagnostics::RequestContext::new(None, None),
+        &crate::request_context::RequestContext::new(None, None),
         &config,
         directory.path(),
         &crate::query_deadline::QueryDeadline::start(),

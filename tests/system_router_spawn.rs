@@ -10,8 +10,8 @@ use std::{
 use trufflepig::{
     board::{BOARD_API, SCHEMA_VERSION},
     daemon,
-    diagnostics::RequestContext,
     query_deadline::QueryDeadline,
+    request_context::RequestContext,
 };
 
 struct EnsureProcess(Option<Child>);

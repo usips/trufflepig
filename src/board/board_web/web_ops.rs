@@ -14,7 +14,8 @@ use std::{path::Path, time::Instant};
 pub(crate) use web_request::{WebRequest, execute};
 
 pub(super) fn check_router_identity(runtime: &Path, database: &Path) -> Result<(), BoardError> {
-    let context = crate::diagnostics::RequestContext::new(Some("web".into()), Some("human".into()));
+    let context =
+        crate::request_context::RequestContext::new(Some("web".into()), Some("human".into()));
     startup_probe(database, ROUTER_MIGRATION_WAIT, &mut |args, deadline| {
         crate::daemon::request_by(runtime, args, &context, deadline).map_err(BoardError::from)
     })
@@ -25,7 +26,8 @@ pub(super) fn relay_ingest(
     expires: Instant,
 ) -> Result<serde_json::Value, BoardError> {
     let config = store.config(expires)?;
-    let context = crate::diagnostics::RequestContext::new(Some("web".into()), Some("human".into()));
+    let context =
+        crate::request_context::RequestContext::new(Some("web".into()), Some("human".into()));
     let deadline = QueryDeadline::after(expires.saturating_duration_since(Instant::now()));
     ingest_via(&config.db_path, deadline, &mut |args, deadline| {
         crate::daemon::request_by(&store.runtime, args, &context, deadline)

@@ -43,7 +43,7 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
     let (context, context_error) = match request_context(options) {
         Ok(context) => (context, None),
         Err(error) => (
-            crate::diagnostics::RequestContext::new(
+            crate::request_context::RequestContext::new(
                 options.session.clone(),
                 options.client.clone(),
             ),

@@ -217,7 +217,7 @@ mod tests;
 pub(crate) fn workspace(
     config: &WorkspaceConfig,
     options: &Arguments,
-    context: &crate::diagnostics::RequestContext,
+    context: &crate::request_context::RequestContext,
     deadline: &QueryDeadline,
 ) -> Result<String> {
     let command = options

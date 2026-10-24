@@ -1,10 +1,10 @@
 use super::*;
-use crate::board::board_actor::{BoardActor, HarnessLabel};
 use crate::board::board_domain::board_collections::{EntryCursor, OverviewCursor, OverviewReply};
 use crate::board::board_protocol::BoardErrorCode;
 use crate::board::board_protocol::ReadScope;
 use crate::board::board_vocabulary::EntryKind;
 use crate::board::local_board::{LocalBoard, board_queries::collection_reads};
+use crate::{board::board_actor::BoardActor, request_context::HarnessLabel};
 use std::time::Duration;
 
 fn database() -> (tempfile::TempDir, LocalBoard) {

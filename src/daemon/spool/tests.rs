@@ -34,7 +34,7 @@ fn request_publication_does_not_rename_after_temp_write_expires_deadline() {
 #[test]
 fn claimed_spool_age_is_subtracted_from_each_tier_budget() {
     let request_bytes = serde_json::to_vec(&DaemonRequest::Arguments {
-        context: crate::diagnostics::RequestContext::new(None, None),
+        context: crate::request_context::RequestContext::new(None, None),
         args: vec!["status".to_owned()],
     })
     .unwrap();

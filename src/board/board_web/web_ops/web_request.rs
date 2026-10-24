@@ -3,9 +3,7 @@ use super::super::WebStore;
 use crate::board::{
     board_backend::BoardBackend,
     board_config::BoardConfig,
-    board_protocol::{
-        ActorOrigin, BOARD_API, BoardError, BoardErrorCode, BoardOp, BoardReply, BoardRequest,
-    },
+    board_protocol::{BOARD_API, BoardError, BoardErrorCode, BoardOp, BoardReply, BoardRequest},
     board_vocabulary::EntryKind,
 };
 use serde::Deserialize;
@@ -82,7 +80,7 @@ impl WebRequest {
             .actor(Some("human"), Some("web"))
             .map_err(BoardError::from)?;
         let mut request = BoardRequest::new(actor, self.op);
-        request.origin = Some(ActorOrigin::from_actor(&request.actor));
+        request.origin = Some(request.actor.origin());
         request.observe_peer_ip(peer_ip);
         request.validate().map_err(BoardError::from)?;
         Ok(request)

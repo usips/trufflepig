@@ -12,8 +12,8 @@ mod tests;
 
 use super::{WorkspaceConfig, home_index::HomeIndexPolicy, result_cache::WorkspaceResults};
 use crate::{
-    cli::Arguments, diagnostics::RequestContext, output::OutputBudget,
-    query_deadline::QueryDeadline, semantic::SemanticSession,
+    cli::Arguments, output::OutputBudget, query_deadline::QueryDeadline,
+    request_context::RequestContext, semantic::SemanticSession,
 };
 use anyhow::Result;
 use member_fusion::MemberFusion;

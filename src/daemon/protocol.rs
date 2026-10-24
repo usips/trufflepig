@@ -13,7 +13,7 @@ const ARGUMENT_LIMIT: usize = 256;
 #[serde(tag = "command", content = "arguments", deny_unknown_fields)]
 pub(super) enum DaemonRequest {
     Arguments {
-        context: crate::diagnostics::RequestContext,
+        context: crate::request_context::RequestContext,
         args: Vec<String>,
     },
     Stop,
@@ -145,7 +145,7 @@ mod serialized_entry_transport_tests {
     fn maximum_escaped_entry_fits_daemon_request_frame() {
         let text = "\u{1}".repeat(ENTRY_TEXT_LIMIT);
         let request = DaemonRequest::Arguments {
-            context: crate::diagnostics::RequestContext {
+            context: crate::request_context::RequestContext {
                 request_id: "00000000-0000-4000-8000-000000000000".to_owned(),
                 created_unix_micros: 1,
                 session: None,

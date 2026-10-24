@@ -2,7 +2,7 @@ use super::*;
 use crate::board::{
     board_actor::BoardActor,
     board_backend::BoardBackend,
-    board_protocol::{ActorOrigin, BoardOp, BoardRequest, BoardResult},
+    board_protocol::{BoardOp, BoardRequest, BoardResult},
     board_vocabulary::{PlanText, PlanTitle},
     local_board::LocalBoard,
 };
@@ -165,7 +165,7 @@ fn client_post_key_matches_the_actual_host_receipt_with_claims_and_origin() {
     let context = RequestContext::with_origin(
         Some("receipt-integration".into()),
         Some("human".into()),
-        Some(ActorOrigin::from_actor(&actor)),
+        Some(actor.origin()),
     );
     let words = [
         "board".to_owned(),
@@ -210,14 +210,14 @@ fn client_post_key_matches_the_actual_host_receipt_with_claims_and_origin() {
     let other_actor = BoardActor::new(
         "test",
         "localhost",
-        crate::board::board_actor::HarnessLabel::parse("codex").unwrap(),
+        crate::request_context::HarnessLabel::parse("codex").unwrap(),
         "other-session",
     )
     .unwrap();
     let other_context = RequestContext::with_origin(
         Some("other-session".into()),
         Some("codex".into()),
-        Some(ActorOrigin::from_actor(&other_actor)),
+        Some(other_actor.origin()),
     );
     let hidden = host
         .run(

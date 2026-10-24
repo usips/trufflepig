@@ -2,7 +2,7 @@
 use super::Arguments;
 use crate::board::board_protocol::BoardErrorCode;
 use crate::coded_error::{ErrorCode, coded_error};
-use crate::diagnostics::RequestContext;
+use crate::request_context::RequestContext;
 use crate::{daemon::DaemonReplyTimeout, query_deadline::QueryDeadline};
 use anyhow::Result;
 use std::io::ErrorKind;

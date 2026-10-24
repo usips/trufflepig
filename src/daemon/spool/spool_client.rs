@@ -6,7 +6,7 @@ use super::*;
 pub fn request(
     spool: &Path,
     args: &[String],
-    context: &crate::diagnostics::RequestContext,
+    context: &crate::request_context::RequestContext,
     deadline: QueryDeadline,
 ) -> Result<Option<String>> {
     check_deadline(&deadline)?;

@@ -402,7 +402,7 @@ fn actor_from_columns(row: &rusqlite::Row<'_>, start: usize) -> Result<BoardActo
     BoardActor::new(
         &user,
         &host,
-        crate::board::board_actor::HarnessLabel::parse(&harness).map_err(BoardError::from)?,
+        crate::request_context::HarnessLabel::parse(&harness).map_err(BoardError::from)?,
         &session,
     )
     .map_err(BoardError::from)

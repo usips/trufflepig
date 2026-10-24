@@ -13,7 +13,7 @@ pub use super::board_collections::*;
 pub use crate::board::board_vocabulary::{AuthorityRole, WorkerEndReason, WorkerRole};
 pub use board_authority::AuthoritySource;
 pub use board_errors::{BoardError, BoardErrorCode};
-pub use board_identity::{ActorOrigin, WorkerAddress, WorkerHandle};
+pub use board_identity::{WorkerAddress, WorkerHandle};
 pub use board_progress::{
     GateStatus, PROGRESS_ETA_LIMIT_SECS, PROGRESS_GATE_LIMIT, PROGRESS_GATE_NAME_LIMIT,
     ProgressEvidence, ProgressFact, ProgressGateFact, ProgressGateInput, ProgressHead,

@@ -385,7 +385,7 @@ fn board_pending_waits_for_slow_existing_router_without_startup() -> anyhow::Res
     });
 
     let args = ["board", "pending"].map(str::to_owned);
-    let context = crate::diagnostics::RequestContext::new(None, None);
+    let context = crate::request_context::RequestContext::new(None, None);
     let output = super::super::client_command::request_pending(
         &args,
         &context,
@@ -465,7 +465,7 @@ fn board_pending_does_not_contact_a_router_after_its_deadline() -> anyhow::Resul
         }
     });
     let args = ["board", "pending"].map(str::to_owned);
-    let context = crate::diagnostics::RequestContext::new(None, None);
+    let context = crate::request_context::RequestContext::new(None, None);
 
     let error = super::super::client_command::request_pending(
         &args,
@@ -489,7 +489,7 @@ fn board_pending_does_not_contact_a_router_after_its_deadline() -> anyhow::Resul
 #[test]
 fn contextual_board_api_probe_exits_before_client_dispatch() -> anyhow::Result<()> {
     let args = ["--board-api-version".to_owned()];
-    let context = crate::diagnostics::RequestContext::new(None, None);
+    let context = crate::request_context::RequestContext::new(None, None);
 
     assert_eq!(
         crate::cli::run_with_context(&args, &context)?,

@@ -12,13 +12,14 @@ mod transport_acceptance;
 mod unlink_grammar_tests;
 mod warning_suppression_acceptance;
 
-use super::board_actor::{BoardActor, HarnessLabel};
+use super::board_actor::BoardActor;
 use super::board_backend::BoardHost;
 use super::board_config::BoardConfig;
 use super::board_grammar;
 use crate::cli::{self, Arguments};
-use crate::diagnostics::RequestContext;
 use crate::query_deadline::QueryDeadline;
+use crate::request_context::HarnessLabel;
+use crate::request_context::RequestContext;
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::Value;
@@ -113,9 +114,7 @@ impl EdgeFixture {
         let context = RequestContext::with_origin(
             Some(grantor_session.to_owned()),
             Some("human".to_owned()),
-            Some(crate::board::board_protocol::ActorOrigin::from_actor(
-                &actor,
-            )),
+            Some(actor.origin()),
         );
         let response = self
             .host

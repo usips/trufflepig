@@ -1,4 +1,5 @@
 use super::*;
+use crate::request_context::RequestContext;
 use std::io::{self, Write};
 
 struct PartialWriter {
@@ -88,8 +89,8 @@ fn metadata_excludes_raw_queries_and_audit_joins_request_stages() {
 fn native_actor_session_records_without_a_diagnostic_baseline() {
     let temp = tempfile::tempdir().unwrap();
     let log = DiagnosticStore::open(temp.path(), DiagnosticsMode::Metadata).unwrap();
-    let origin = crate::board::board_protocol::ActorOrigin {
-        harness: crate::board::board_actor::HarnessLabel::parse("codex").unwrap(),
+    let origin = crate::request_context::ActorOrigin {
+        harness: crate::request_context::HarnessLabel::parse("codex").unwrap(),
         session: "native-thread-9".into(),
         peer_ip: None,
     };

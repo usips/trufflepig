@@ -7,7 +7,7 @@ use crate::coded_error::{ErrorCode, error_code};
 
 pub(super) fn request_pending(
     args: &[String],
-    context: &crate::diagnostics::RequestContext,
+    context: &crate::request_context::RequestContext,
     no_daemon: bool,
     system_dir: impl FnOnce() -> Option<PathBuf>,
     deadline: crate::query_deadline::QueryDeadline,
@@ -37,7 +37,7 @@ impl ClientCommand {
     pub(super) fn run(
         &mut self,
         args: &[String],
-        context: &crate::diagnostics::RequestContext,
+        context: &crate::request_context::RequestContext,
         deadline: crate::query_deadline::QueryDeadline,
     ) -> Result<String> {
         if let Some(answer) = board_api_probe::probe_board_api(args) {
@@ -150,7 +150,7 @@ impl ClientCommand {
     pub(super) fn run_after_busy_exhaustion(
         &mut self,
         args: &[String],
-        context: &crate::diagnostics::RequestContext,
+        context: &crate::request_context::RequestContext,
         deadline: crate::query_deadline::QueryDeadline,
     ) -> Option<Result<String>> {
         let options = local_path_show_fallback_options(args)?;

@@ -1,9 +1,12 @@
 use super::sequence_poller::WakeResult;
 use super::*;
-use crate::board::{
-    board_actor::{AgentVendor, BoardActor, HarnessLabel},
-    board_ids::{BoardRef, EntryId},
-    board_vocabulary::{EntryKind, EntryText},
+use crate::{
+    board::{
+        board_actor::{AgentVendor, BoardActor},
+        board_ids::{BoardRef, EntryId},
+        board_vocabulary::{EntryKind, EntryText},
+    },
+    request_context::HarnessLabel,
 };
 use std::{
     io::{Read, Write},

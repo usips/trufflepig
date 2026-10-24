@@ -15,6 +15,7 @@ pub mod path_codec;
 pub mod probes;
 pub(crate) mod process_capture;
 pub mod query_deadline;
+pub mod request_context;
 pub mod results;
 pub mod search;
 pub mod semantic;

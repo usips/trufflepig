@@ -16,7 +16,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
-use super::board_actor::{BoardActor, BoardRecipient, HarnessLabel};
+use super::board_actor::{BoardActor, BoardRecipient};
 use super::board_backend::BoardBackend;
 use super::board_config::BoardConfig;
 use super::board_ids::{
@@ -24,6 +24,7 @@ use super::board_ids::{
 };
 use super::board_protocol::*;
 use super::board_vocabulary::EntryKind;
+use crate::request_context::{ActorOrigin, HarnessLabel};
 #[cfg(test)]
 use board_authority::authority_for;
 use board_authority::{write_grant, write_revoke};

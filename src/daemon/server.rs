@@ -7,8 +7,8 @@ use super::protocol::{self, DaemonReply, DaemonRequest};
 use super::reconciler::{self, Maintenance};
 use super::spool::{ClaimedSpoolRequest, SpoolServer};
 use crate::coded_error::CodedContext;
-use crate::diagnostics::RequestContext;
 use crate::query_deadline::QueryDeadline;
+use crate::request_context::RequestContext;
 use admission_refusal::{AdmissionRefusal, RefusalCause};
 use anyhow::{Context, Result};
 use ingress_frames::{

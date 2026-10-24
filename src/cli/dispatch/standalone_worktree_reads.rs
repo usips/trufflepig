@@ -18,7 +18,7 @@ pub(super) fn retrieve_read(
     verb: &str,
     options: &Arguments,
     session: &mut crate::semantic::SemanticSession,
-    context: &crate::diagnostics::RequestContext,
+    context: &crate::request_context::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
     preparation_manager: Option<&crate::semantic::preparation::PreparationManager>,
     budget: &OutputBudget,

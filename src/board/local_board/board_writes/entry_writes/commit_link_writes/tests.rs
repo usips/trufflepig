@@ -1,5 +1,4 @@
 use super::*;
-use crate::board::board_actor::HarnessLabel;
 use crate::board::board_ids::{PlanId, TaskId};
 use crate::board::board_protocol::{
     BoardOp, BoardRequest, BoardResult, ClaimResume, CommitCoauthor, CommitLinkResult,
@@ -8,6 +7,7 @@ use crate::board::board_protocol::{
 use crate::board::board_vocabulary::{EntryText, PlanText, PlanTitle};
 use crate::board::local_board::LocalBoard;
 use crate::identity::GitOid;
+use crate::request_context::HarnessLabel;
 use rusqlite::params;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 

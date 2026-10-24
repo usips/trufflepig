@@ -11,12 +11,12 @@ use crate::board::board_protocol::ReadScope;
 use crate::coded_error::CodedContext;
 use crate::{
     board::{
-        board_actor::HarnessLabel,
         board_ids::{BoardRef, EntryId, EventSeq, PlanRevision},
         board_protocol::BoardOp,
         board_vocabulary::{EntryText, PlanText, PlanTitle},
     },
     cli::Arguments,
+    request_context::HarnessLabel,
 };
 use anyhow::{Result, bail};
 

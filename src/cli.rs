@@ -56,7 +56,7 @@ pub fn run(args: &[String]) -> Result<String> {
 /// Other router replies remain answers.
 pub fn run_with_context(
     args: &[String],
-    context: &crate::diagnostics::RequestContext,
+    context: &crate::request_context::RequestContext,
 ) -> Result<String> {
     if let Some(answer) = board_api_probe::probe_board_api(args) {
         return answer;
@@ -71,7 +71,7 @@ pub fn run_with_context(
 /// deadline, including peer cancellation, bounds those waits and sub-requests.
 pub(crate) fn run_direct(
     args: &[String],
-    context: &crate::diagnostics::RequestContext,
+    context: &crate::request_context::RequestContext,
     deadline: QueryDeadline,
 ) -> Result<String> {
     let options = parse(args)?;
@@ -81,7 +81,7 @@ pub(crate) fn run_direct(
 
 fn direct_with_deadline(
     options: &Arguments,
-    context: &crate::diagnostics::RequestContext,
+    context: &crate::request_context::RequestContext,
     deadline: QueryDeadline,
 ) -> Result<String> {
     let verb = options

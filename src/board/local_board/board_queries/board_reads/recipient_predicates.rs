@@ -3,10 +3,10 @@
 use crate::board::board_protocol::BoardErrorCode;
 use rusqlite::Row;
 
-use crate::board::board_actor::HarnessLabel;
 use crate::board::board_ids::EntryId;
-use crate::board::board_protocol::{ActorOrigin, AuthoritySource};
 use crate::board::local_board::{BoardError, invalid, sql_error, sqlite_u64};
+use crate::request_context::HarnessLabel;
+use crate::{board::board_protocol::AuthoritySource, request_context::ActorOrigin};
 use std::net::IpAddr;
 
 pub(in crate::board::local_board) fn actor_origin_from_row(

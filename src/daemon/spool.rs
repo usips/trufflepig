@@ -124,7 +124,9 @@ pub struct ClaimedSpoolRequest {
 
 impl ClaimedSpoolRequest {
     /// Reads and validates the arguments before assigning the request to a lane.
-    pub(crate) fn arguments(&self) -> Result<(crate::diagnostics::RequestContext, Vec<String>)> {
+    pub(crate) fn arguments(
+        &self,
+    ) -> Result<(crate::request_context::RequestContext, Vec<String>)> {
         let request = fs::read(&self.claim)
             .context("read spooled daemon request")
             .and_then(|bytes| {
@@ -178,7 +180,7 @@ impl ClaimedSpoolRequest {
     /// Decodes and validates the request, runs `handler`, and publishes its reply.
     pub fn answer(
         self,
-        handler: impl FnOnce(crate::diagnostics::RequestContext, Vec<String>) -> Result<String>,
+        handler: impl FnOnce(crate::request_context::RequestContext, Vec<String>) -> Result<String>,
     ) {
         let result = self
             .arguments()

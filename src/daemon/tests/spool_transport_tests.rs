@@ -6,7 +6,7 @@ fn spool_round_trip_answers_request_and_cleans_up() {
     let dir = scratch.path().join("spool");
     let mut server = spool::SpoolServer::open(&dir).unwrap();
     assert!(server.claim().is_empty());
-    let context = crate::diagnostics::RequestContext::new(None, None);
+    let context = crate::request_context::RequestContext::new(None, None);
     let args = vec!["status".to_owned()];
     let client = {
         let (dir, context) = (dir.clone(), context.clone());
@@ -40,7 +40,7 @@ fn spool_claims_each_request_once_until_answered() {
     let scratch = scratch();
     let dir = scratch.path().join("spool");
     let mut server = spool::SpoolServer::open(&dir).unwrap();
-    let context = crate::diagnostics::RequestContext::new(None, None);
+    let context = crate::request_context::RequestContext::new(None, None);
     let client = {
         let (dir, context) = (dir.clone(), context.clone());
         std::thread::spawn(move || {
@@ -71,7 +71,7 @@ fn spool_claims_each_request_once_until_answered() {
 fn spool_without_heartbeat_reports_no_daemon() {
     let scratch = scratch();
     let dir = scratch.path().join("spool");
-    let context = crate::diagnostics::RequestContext::new(None, None);
+    let context = crate::request_context::RequestContext::new(None, None);
     assert_eq!(
         spool::request(
             &dir,
@@ -108,7 +108,7 @@ fn spool_reports_handler_failure_and_ignores_foreign_files() {
     let dir = scratch.path().join("spool");
     let mut server = spool::SpoolServer::open(&dir).unwrap();
     fs::write(dir.join("notes.txt"), b"keep").unwrap();
-    let context = crate::diagnostics::RequestContext::new(None, None);
+    let context = crate::request_context::RequestContext::new(None, None);
     let client = {
         let (dir, context) = (dir.clone(), context.clone());
         std::thread::spawn(move || {
@@ -137,7 +137,7 @@ fn spool_client_gives_up_when_the_claiming_router_dies() {
     let scratch = scratch();
     let dir = scratch.path().join("spool");
     let mut server = spool::SpoolServer::open(&dir).unwrap();
-    let context = crate::diagnostics::RequestContext::new(None, None);
+    let context = crate::request_context::RequestContext::new(None, None);
     let client = {
         let (dir, context) = (dir.clone(), context.clone());
         std::thread::spawn(move || {
@@ -174,7 +174,7 @@ fn spool_client_deadline_expires_while_fresh_heartbeat_is_not_drained() {
     let scratch = scratch();
     let dir = scratch.path().join("spool");
     let _server = spool::SpoolServer::open(&dir).unwrap();
-    let context = crate::diagnostics::RequestContext::new(None, None);
+    let context = crate::request_context::RequestContext::new(None, None);
     let request = dir.join(format!("{}.request", context.request_id));
     let deadline = QueryDeadline::after(Duration::from_millis(200));
 

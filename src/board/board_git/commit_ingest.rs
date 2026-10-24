@@ -1,5 +1,4 @@
 //! Local Git scans; only accepted complete scans advance edge-local digests.
-use crate::board::board_actor::{BoardActor, HarnessLabel};
 use crate::board::board_backend::BoardBackend;
 use crate::board::board_ids::{PlanId, RepoKey, TaskId};
 use crate::board::board_protocol::{
@@ -7,6 +6,7 @@ use crate::board::board_protocol::{
     WorkerAddress,
 };
 use crate::board::commit_trailers::attributed_to;
+use crate::{board::board_actor::BoardActor, request_context::HarnessLabel};
 use anyhow::{Result, ensure};
 use std::collections::HashMap;
 use std::path::PathBuf;

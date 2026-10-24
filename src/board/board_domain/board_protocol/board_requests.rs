@@ -1,18 +1,22 @@
 //! Versioned backend requests and operation addresses.
 use super::{
-    ActorOrigin, AuthorityRole, BOARD_API, ClaimCursor, EntryCursor, FeedbackMetadata,
-    LinkedCommit, OverviewCursor, ProgressInput, RepoRegistration, ReviewVerdict, TaskCeiling,
-    TaskCursor, TaskOrder, WorkerAddress, WorkerHandle, validate_claim,
-};
-use crate::board::{
-    board_actor::{BoardActor, BoardRecipient, HarnessLabel},
-    board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
-    board_vocabulary::{
-        EntryKind, EntryText, FeedbackImportKey, FeedbackKind, FeedbackState, PlanText, PlanTitle,
-        TaskColumn, WorkerEndReason, WorkerRole,
-    },
+    AuthorityRole, BOARD_API, ClaimCursor, EntryCursor, FeedbackMetadata, LinkedCommit,
+    OverviewCursor, ProgressInput, RepoRegistration, ReviewVerdict, TaskCeiling, TaskCursor,
+    TaskOrder, WorkerAddress, WorkerHandle, validate_claim,
 };
 use crate::identity::GitOid;
+use crate::request_context::ActorOrigin;
+use crate::{
+    board::{
+        board_actor::{BoardActor, BoardRecipient},
+        board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
+        board_vocabulary::{
+            EntryKind, EntryText, FeedbackImportKey, FeedbackKind, FeedbackState, PlanText,
+            PlanTitle, TaskColumn, WorkerEndReason, WorkerRole,
+        },
+    },
+    request_context::HarnessLabel,
+};
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize, de};
 use std::{fmt, path::PathBuf, str::FromStr};
@@ -148,7 +152,7 @@ impl BoardRequest {
     }
 
     pub(crate) fn system(actor: BoardActor, op: BoardOp) -> Self {
-        let origin = Some(ActorOrigin::from_actor(&actor));
+        let origin = Some(actor.origin());
         Self {
             api: BOARD_API,
             actor,
@@ -163,7 +167,7 @@ impl BoardRequest {
 
     pub(crate) fn observe_peer_ip(&mut self, peer_ip: std::net::IpAddr) {
         if self.origin.is_none() {
-            self.origin = Some(ActorOrigin::from_actor(&self.actor));
+            self.origin = Some(self.actor.origin());
         }
         let origin = self.origin.as_mut().expect("origin was initialized");
         origin.peer_ip = Some(peer_ip);

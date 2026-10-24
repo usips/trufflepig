@@ -1,10 +1,13 @@
 use super::*;
-use crate::board::board_actor::{AgentVendor, BoardActor, HarnessLabel, claim_vendor};
 use crate::board::board_ids::{BoardRef, EntryId, EventSeq, PlanId};
 use crate::board::board_protocol::ReadScope;
 use crate::board::board_protocol::*;
 use crate::board::board_vocabulary::{EntryKind, EntryText, ProposalState};
 use crate::board::review_packet::{ReviewPacket, SsotDiff};
+use crate::{
+    board::board_actor::{AgentVendor, BoardActor, claim_vendor},
+    request_context::HarnessLabel,
+};
 
 mod budget_render_tests;
 mod collection_boundary_tests;

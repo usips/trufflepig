@@ -81,7 +81,7 @@ fn exhausted_busy_fallback_reads_current_source_from_the_requested_root() {
         "show".to_owned(),
         "path:src/lib.rs".to_owned(),
     ];
-    let context = crate::diagnostics::RequestContext::new(
+    let context = crate::request_context::RequestContext::new(
         Some("fallback-session".to_owned()),
         Some("codex".to_owned()),
     );
@@ -128,7 +128,7 @@ fn current_path_show_survives_refused_daemon_cache_creation() {
         "path:src/lib.rs".to_owned(),
     ];
     let options = parse(&arguments).unwrap();
-    let context = crate::diagnostics::RequestContext::new(
+    let context = crate::request_context::RequestContext::new(
         Some("startup-fallback".to_owned()),
         Some("codex".to_owned()),
     );
@@ -163,7 +163,7 @@ fn exhausted_busy_fallback_keeps_the_original_expired_deadline() {
         "show".to_owned(),
         "path:missing.rs".to_owned(),
     ];
-    let context = crate::diagnostics::RequestContext::new(None, None);
+    let context = crate::request_context::RequestContext::new(None, None);
 
     let mut command = ClientCommand::default();
     let error = command

@@ -82,7 +82,7 @@ fn daemon_protocol_rejects_oversized_and_truncated_frames() {
     let bytes = [0, 0, 0, 8, b'{'];
     assert!(protocol::read_request(&mut Cursor::new(bytes)).is_err());
     let request = DaemonRequest::Arguments {
-        context: crate::diagnostics::RequestContext::new(None, None),
+        context: crate::request_context::RequestContext::new(None, None),
         args: vec![String::new(); 257],
     };
     assert!(protocol::write_request(&mut Vec::new(), &request).is_err());
@@ -158,7 +158,7 @@ fn daemon_shutdown_unlocks_inherited_file_description() {
 
 #[test]
 fn encoded_request_limit_counts_json_escaping() {
-    let context = crate::diagnostics::RequestContext::new(None, None);
+    let context = crate::request_context::RequestContext::new(None, None);
     let args = vec![
         "board".to_owned(),
         "\"".repeat(super::MAX_DAEMON_REQUEST_BYTES / 2),

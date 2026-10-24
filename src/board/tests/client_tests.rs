@@ -139,7 +139,7 @@ fn newer_schema_refusal_advises_upgrade() {
     let args: Vec<String> = ["board", "inbox"].map(str::to_owned).into();
     let options = crate::cli::parse(&args).unwrap();
     let command = board_grammar::parse(&options, None).unwrap();
-    let context = crate::diagnostics::RequestContext::new(None, None);
+    let context = crate::request_context::RequestContext::new(None, None);
     let error = anyhow::Error::new(board_protocol::BoardError::new(
         board_protocol::BoardErrorCode::SchemaNewer,
         format!(
@@ -180,7 +180,7 @@ fn schema_words_in_transport_prose_do_not_advise_upgrade() {
     let refusal = crate::board::unavailable_or_queue(
         &command,
         &options,
-        &crate::diagnostics::RequestContext::new(None, None),
+        &crate::request_context::RequestContext::new(None, None),
         &config,
         directory.path(),
         &crate::query_deadline::QueryDeadline::start(),

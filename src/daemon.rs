@@ -44,7 +44,7 @@ pub(crate) const MAX_DAEMON_REQUEST_BYTES: usize = protocol::REQUEST_LIMIT;
 /// Measures the exact wire request before client-side routing or fallback.
 pub(crate) fn request_encoded_size(
     args: &[String],
-    context: &crate::diagnostics::RequestContext,
+    context: &crate::request_context::RequestContext,
 ) -> Result<usize> {
     Ok(serde_json::to_vec(&arguments(args, context))?.len())
 }
@@ -53,7 +53,7 @@ pub(crate) fn request_encoded_size(
 pub fn request(
     cache: &Path,
     args: &[String],
-    context: &crate::diagnostics::RequestContext,
+    context: &crate::request_context::RequestContext,
 ) -> Result<Option<String>> {
     request_by(
         cache,
@@ -68,13 +68,13 @@ pub fn request(
 pub fn request_by(
     cache: &Path,
     args: &[String],
-    context: &crate::diagnostics::RequestContext,
+    context: &crate::request_context::RequestContext,
     deadline: QueryDeadline,
 ) -> Result<Option<String>> {
     exchange(cache, &arguments(args, context), deadline)
 }
 
-fn arguments(args: &[String], context: &crate::diagnostics::RequestContext) -> DaemonRequest {
+fn arguments(args: &[String], context: &crate::request_context::RequestContext) -> DaemonRequest {
     DaemonRequest::Arguments {
         context: context.clone(),
         args: args.to_vec(),

@@ -14,7 +14,7 @@ const SHORT_REPLY_WAIT: Duration = Duration::from_millis(200);
 
 fn arguments(words: &[&str]) -> DaemonRequest {
     DaemonRequest::Arguments {
-        context: crate::diagnostics::RequestContext::new(None, None),
+        context: crate::request_context::RequestContext::new(None, None),
         args: words.iter().map(|word| (*word).to_owned()).collect(),
     }
 }
@@ -263,7 +263,7 @@ fn daemon_reply_timeout_round_trips_through_socket_and_spool() {
     let scratch = scratch();
     let dir = scratch.path().join("spool");
     let _server = spool::SpoolServer::open(&dir).unwrap();
-    let context = crate::diagnostics::RequestContext::new(None, None);
+    let context = crate::request_context::RequestContext::new(None, None);
     let reply_path = dir.join(format!("{}.reply", context.request_id));
     fs::write(&reply_path, serde_json::to_vec(&reply).unwrap()).unwrap();
     let spool_error = spool::request(
@@ -306,7 +306,7 @@ fn terminal_timed_out_context_round_trips_without_timeout_replay() {
     let scratch = scratch();
     let dir = scratch.path().join("spool");
     let _server = spool::SpoolServer::open(&dir).unwrap();
-    let context = crate::diagnostics::RequestContext::new(None, None);
+    let context = crate::request_context::RequestContext::new(None, None);
     let reply_path = dir.join(format!("{}.reply", context.request_id));
     fs::write(&reply_path, serde_json::to_vec(&reply).unwrap()).unwrap();
     let spool_error = spool::request(
@@ -406,7 +406,7 @@ fn daemon_spool_timeout_removes_claimed_request_and_preserves_reply() {
     let scratch = scratch();
     let dir = scratch.path().join("spool");
     let _server = spool::SpoolServer::open(&dir).unwrap();
-    let context = crate::diagnostics::RequestContext::new(None, None);
+    let context = crate::request_context::RequestContext::new(None, None);
     let request_path = dir.join(format!("{}.request", context.request_id));
     let claimed_path = dir.join(format!("{}.claimed", context.request_id));
     let reply_path = dir.join(format!("{}.reply", context.request_id));

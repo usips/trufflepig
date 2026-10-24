@@ -1,7 +1,10 @@
 //! Strict board configuration with passwd-derived identity and durable data paths.
-use crate::board::board_actor::{BoardActor, HarnessLabel, validate_actor_component};
 use crate::board::board_ids::RepoKey;
 use crate::coded_error::CodedContext;
+use crate::{
+    board::board_actor::BoardActor,
+    request_context::{HarnessLabel, validate_actor_component},
+};
 use anyhow::{Result, bail};
 use serde::Deserialize;
 use std::{

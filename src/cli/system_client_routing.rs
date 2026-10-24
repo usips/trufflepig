@@ -31,7 +31,7 @@ pub(super) fn system_routes(options: &Arguments, verb: &str) -> bool {
 /// Handles the `system` verb against the per-user routing daemon.
 pub(super) fn system_command(
     options: &Arguments,
-    context: &crate::diagnostics::RequestContext,
+    context: &crate::request_context::RequestContext,
 ) -> Result<String> {
     let render = |json: &str| -> Result<String> {
         OutputBudget::new(options.budget)?.render(&serde_json::from_str::<serde_json::Value>(json)?)

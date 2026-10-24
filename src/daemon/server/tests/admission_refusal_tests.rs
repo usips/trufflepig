@@ -1,6 +1,6 @@
 use super::super::admission_refusal::{AdmissionRefusal, RefusalCause};
 use super::super::{DaemonReply, protocol, refuse_busy_nonblocking};
-use crate::diagnostics::RequestContext;
+use crate::request_context::RequestContext;
 use std::io::{Error, ErrorKind};
 use std::os::unix::net::UnixStream;
 

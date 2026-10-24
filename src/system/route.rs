@@ -9,8 +9,8 @@ use crate::{
     },
     cli::normalized_args,
     daemon,
-    diagnostics::RequestContext,
     query_deadline::QueryDeadline,
+    request_context::RequestContext,
 };
 use anyhow::{Result, bail, ensure};
 use std::{

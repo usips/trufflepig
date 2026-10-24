@@ -16,11 +16,11 @@ use std::path::PathBuf;
 use std::sync::{Arc, Barrier};
 
 use super::*;
-use crate::board::board_actor::{BoardActor, HarnessLabel};
 use crate::board::board_backend::BoardBackend;
 use crate::board::board_protocol::{BoardOp, BoardRequest, BoardResult};
 use crate::board::board_vocabulary::TaskColumn;
 use crate::board::local_board::LocalBoard;
+use crate::{board::board_actor::BoardActor, request_context::HarnessLabel};
 
 struct ClaimDatabase {
     _directory: tempfile::TempDir,
