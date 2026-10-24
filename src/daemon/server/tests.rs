@@ -1,8 +1,8 @@
-use super::super::deadline::QueryDeadline;
 use super::super::tests::scratch;
 use super::super::{SOCKET_NAME, request, stop};
 use super::*;
 use crate::diagnostics::RequestContext;
+use crate::query_deadline::QueryDeadline;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Barrier;

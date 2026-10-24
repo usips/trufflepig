@@ -1,7 +1,7 @@
 use super::{recheck, recheck_with_current_search};
 use crate::{
-    daemon::deadline::QueryDeadline,
     output::OutputBudget,
+    query_deadline::QueryDeadline,
     results,
     search::{self, Query},
     source,

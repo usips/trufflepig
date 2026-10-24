@@ -1,5 +1,5 @@
 use super::*;
-use crate::{daemon::deadline::QueryDeadline, store::Store, workspace::config::WorkspaceConfig};
+use crate::{query_deadline::QueryDeadline, store::Store, workspace::config::WorkspaceConfig};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,

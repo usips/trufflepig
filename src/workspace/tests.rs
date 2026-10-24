@@ -179,7 +179,7 @@ fn explicit_scopes_limit_members_and_unavailable_members_remain_visible() {
 /// Runs `search sym:SharedThing ws:all` (`--no-daemon`) from `engine` with a fresh deadline.
 fn search_all_with_deadline(
     fixture: &Fixture,
-    deadline_factory: impl FnOnce() -> crate::daemon::deadline::QueryDeadline,
+    deadline_factory: impl FnOnce() -> crate::query_deadline::QueryDeadline,
 ) -> Result<String> {
     let workspace_path = fixture
         .config
@@ -214,7 +214,7 @@ fn search_all_with_deadline(
     let config = WorkspaceConfig::load(&fixture.config)?;
     let cache = cache_path(&config, Some(fixture.cache.path()))?;
     let setup_deadline =
-        crate::daemon::deadline::QueryDeadline::after(std::time::Duration::from_secs(5));
+        crate::query_deadline::QueryDeadline::after(std::time::Duration::from_secs(5));
     WorkspaceResults::create(&cache, &setup_deadline)?;
     let request_context = cli::request_context(&options)?;
     let deadline = deadline_factory();
@@ -236,7 +236,7 @@ fn expired_query_deadline_answers_timed_out() {
     let mut deadline_factory_invoked = false;
     let error = search_all_with_deadline(&fixture, || {
         deadline_factory_invoked = true;
-        crate::daemon::deadline::QueryDeadline::after(std::time::Duration::ZERO)
+        crate::query_deadline::QueryDeadline::after(std::time::Duration::ZERO)
     })
     .unwrap_err();
     assert!(deadline_factory_invoked);
@@ -273,7 +273,7 @@ fn member_slices_end_before_the_original_budget_and_later_members_get_the_remain
     let mut started = None;
     let mut original_deadline = None;
     let error = search_all_with_deadline(&fixture, || {
-        let deadline = crate::daemon::deadline::QueryDeadline::after(budget);
+        let deadline = crate::query_deadline::QueryDeadline::after(budget);
         started = Some(std::time::Instant::now());
         original_deadline = Some(deadline.clone());
         deadline
@@ -314,7 +314,7 @@ fn member_slices_end_before_the_original_budget_and_later_members_get_the_remain
         let error = Store::open_read(
             root,
             cache,
-            crate::daemon::deadline::QueryDeadline::after(std::time::Duration::from_millis(100)),
+            crate::query_deadline::QueryDeadline::after(std::time::Duration::from_millis(100)),
         )
         .err()
         .expect("every writer-locked member remains unpublished");

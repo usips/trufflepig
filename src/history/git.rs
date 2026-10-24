@@ -4,9 +4,9 @@ mod git_command_failure;
 
 use super::resource_limits::ResourceLimitExceeded;
 use crate::{
-    daemon::deadline::QueryDeadline,
     identity::GitOid,
     process_capture::{self, CaptureError},
+    query_deadline::QueryDeadline,
 };
 use anyhow::{Context, Result, anyhow, bail, ensure};
 pub use git_command_failure::GitCommandFailed;

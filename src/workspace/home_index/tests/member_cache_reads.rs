@@ -1,6 +1,6 @@
 use super::{Fixture, coverage_line, search_without_waiting};
 use crate::{
-    daemon::deadline::QueryDeadline,
+    query_deadline::QueryDeadline,
     search::InvocationDirectory,
     store::{Store, encode_path, read_seed_outcome},
     workspace::{

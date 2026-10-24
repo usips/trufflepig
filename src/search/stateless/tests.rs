@@ -4,8 +4,8 @@ mod scoped_lookup;
 use super::scan::MAX_CURRENT_FILE_BYTES;
 use super::*;
 use crate::{
-    daemon::deadline::QueryDeadline,
     output::OutputBudget,
+    query_deadline::QueryDeadline,
     search::{InvocationDirectory, Query},
     source,
     store::Store,

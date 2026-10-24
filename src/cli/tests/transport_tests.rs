@@ -391,7 +391,7 @@ fn board_pending_waits_for_slow_existing_router_without_startup() -> anyhow::Res
         &context,
         false,
         || Some(directory.path().to_owned()),
-        crate::daemon::deadline::QueryDeadline::after(Duration::from_secs(2)),
+        crate::query_deadline::QueryDeadline::after(Duration::from_secs(2)),
     );
     let responder_result = responder.join().expect("router responder thread panicked");
     assert_eq!(output?, "pending notices");
@@ -404,7 +404,7 @@ fn board_pending_waits_for_slow_existing_router_without_startup() -> anyhow::Res
         &context,
         false,
         || Some(absent.path().to_owned()),
-        crate::daemon::deadline::QueryDeadline::after(Duration::from_secs(1)),
+        crate::query_deadline::QueryDeadline::after(Duration::from_secs(1)),
     )
     .unwrap_err()
     .to_string();
@@ -419,7 +419,7 @@ fn board_pending_waits_for_slow_existing_router_without_startup() -> anyhow::Res
         &context,
         true,
         || panic!("--no-daemon must be rejected before resolving the router"),
-        crate::daemon::deadline::QueryDeadline::after(Duration::from_secs(1)),
+        crate::query_deadline::QueryDeadline::after(Duration::from_secs(1)),
     )
     .unwrap_err()
     .to_string();
@@ -472,7 +472,7 @@ fn board_pending_does_not_contact_a_router_after_its_deadline() -> anyhow::Resul
         &context,
         false,
         || Some(directory.path().to_owned()),
-        crate::daemon::deadline::QueryDeadline::after(std::time::Duration::ZERO),
+        crate::query_deadline::QueryDeadline::after(std::time::Duration::ZERO),
     )
     .unwrap_err();
 

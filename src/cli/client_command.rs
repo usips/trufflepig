@@ -10,7 +10,7 @@ pub(super) fn request_pending(
     context: &crate::diagnostics::RequestContext,
     no_daemon: bool,
     system_dir: impl FnOnce() -> Option<PathBuf>,
-    deadline: crate::daemon::deadline::QueryDeadline,
+    deadline: crate::query_deadline::QueryDeadline,
 ) -> Result<String> {
     if no_daemon {
         anyhow::bail!(coded!(
@@ -38,7 +38,7 @@ impl ClientCommand {
         &mut self,
         args: &[String],
         context: &crate::diagnostics::RequestContext,
-        deadline: crate::daemon::deadline::QueryDeadline,
+        deadline: crate::query_deadline::QueryDeadline,
     ) -> Result<String> {
         if let Some(answer) = board_api_probe::probe_board_api(args) {
             return answer;
@@ -151,7 +151,7 @@ impl ClientCommand {
         &mut self,
         args: &[String],
         context: &crate::diagnostics::RequestContext,
-        deadline: crate::daemon::deadline::QueryDeadline,
+        deadline: crate::query_deadline::QueryDeadline,
     ) -> Option<Result<String>> {
         let options = local_path_show_fallback_options(args)?;
         Some(super::direct_with_deadline(&options, context, deadline))

@@ -17,11 +17,9 @@ use system_client_routing::{system_command, system_reply, system_routes};
 pub(crate) mod semantic;
 use crate::{
     background_process::spawn_background,
-    daemon::{
-        self, CLIENT_REPLY_WAIT,
-        deadline::{QUERY_DEADLINE, QueryDeadline},
-    },
+    daemon::{self, CLIENT_REPLY_WAIT},
     output::OutputBudget,
+    query_deadline::{QUERY_DEADLINE, QueryDeadline},
     store::Store,
 };
 use anyhow::{Context, Result};

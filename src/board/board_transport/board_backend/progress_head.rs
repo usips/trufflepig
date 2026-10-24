@@ -4,7 +4,7 @@ use crate::board::{
     board_ids::BoardRef,
     board_protocol::{BoardOp, BoardRequest},
 };
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use anyhow::Result;
 use std::time::Duration;
 

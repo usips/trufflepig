@@ -1,6 +1,6 @@
 use super::*;
 use crate::coded_error::CodedContext;
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use anyhow::{Result, bail};
 use std::path::Path;
 

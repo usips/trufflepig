@@ -7,7 +7,7 @@ use super::{
     Coverage, Publication, Store, encode_path, index_checkpoint, index_deadline, live_index,
     php_resolver, publish, regions, scan, schema,
 };
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension};
 

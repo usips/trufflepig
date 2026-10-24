@@ -1,5 +1,5 @@
-use crate::daemon::deadline::QueryDeadline;
 use crate::extract::Extraction;
+use crate::query_deadline::QueryDeadline;
 use crate::store::index_deadline;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, Error as SqliteError, ErrorCode, OptionalExtension, params};

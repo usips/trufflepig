@@ -5,7 +5,7 @@
 use super::file_stat::{FileStat, PassStart};
 use super::read_source;
 use super::scan_tally::ScanTally;
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use crate::store::{Coverage, encode_path, index_deadline};
 use anyhow::Result;
 use rusqlite::{Connection, params};

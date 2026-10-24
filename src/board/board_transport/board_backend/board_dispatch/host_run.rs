@@ -20,9 +20,9 @@ use crate::{
         board_render::{render_cli_reply, render_reply},
     },
     cli::Arguments,
-    daemon::deadline::{QUERY_DEADLINE, QueryDeadline},
     diagnostics::RequestContext,
     output::OutputBudget,
+    query_deadline::{QUERY_DEADLINE, QueryDeadline},
 };
 use anyhow::{Result, bail};
 use std::time::Duration;

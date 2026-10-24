@@ -9,7 +9,7 @@ use crate::{
         board_actor::BoardActor,
         board_protocol::{BoardError, BoardOp, BoardRequest, BoardResult, RepoScanTarget},
     },
-    daemon::deadline::QueryDeadline,
+    query_deadline::QueryDeadline,
 };
 use anyhow::{Result, bail};
 use std::{

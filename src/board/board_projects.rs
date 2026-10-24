@@ -12,8 +12,8 @@ use super::{
     local_board::LocalBoard, repo_identity::RepoIdentityCache,
 };
 use crate::{
-    daemon::deadline::QueryDeadline,
     history::git::common_dir_bounded,
+    query_deadline::QueryDeadline,
     workspace::config::{
         RegisteredWorkspace, RegisteredWorkspaceMember, registered_workspaces_from,
     },

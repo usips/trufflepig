@@ -10,9 +10,9 @@ use crate::coded_error::CodedContext;
 use crate::{
     cli::Arguments,
     coded_error::{CodeDetail, ErrorCode, coded_error, error_detail},
-    daemon::deadline::QueryDeadline,
     identity::ResultHandle,
     output::OutputBudget,
+    query_deadline::QueryDeadline,
     results::{self, ResultEntry},
     source::{self, SourceSide, acquisition},
     store::{Store, is_index_warming},

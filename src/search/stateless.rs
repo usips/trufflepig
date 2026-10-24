@@ -6,8 +6,8 @@ mod scan;
 mod tests;
 
 use crate::{
-    daemon::deadline::QueryDeadline,
     output::OutputBudget,
+    query_deadline::QueryDeadline,
     results::ResultSet,
     search::{InvocationDirectory, Query},
 };

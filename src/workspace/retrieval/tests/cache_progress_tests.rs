@@ -92,7 +92,7 @@ fn assert_unpublished_index(root: &std::path::Path, cache: &std::path::Path) {
     let error = match crate::store::Store::open_read(
         root,
         cache,
-        crate::daemon::deadline::QueryDeadline::start(),
+        crate::query_deadline::QueryDeadline::start(),
     ) {
         Ok(_) => panic!("generation-zero index must be warming"),
         Err(error) => error,

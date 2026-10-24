@@ -111,7 +111,7 @@ impl WebStore {
     ) -> Result<Vec<ResolvedProject>, BoardError> {
         let config = self.config(expires)?;
         let mut projects = lock_until(&self.projects, expires)?;
-        let deadline = crate::daemon::deadline::QueryDeadline::after(
+        let deadline = crate::query_deadline::QueryDeadline::after(
             expires.saturating_duration_since(Instant::now()),
         );
         projects.resolve(&config, host, deadline)

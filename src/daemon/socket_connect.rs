@@ -1,4 +1,4 @@
-use super::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use std::io::{self, ErrorKind};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;

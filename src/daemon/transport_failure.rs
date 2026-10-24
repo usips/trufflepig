@@ -1,4 +1,4 @@
-use super::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use std::fmt;
 use std::io::{self, ErrorKind, Read, Write};
 use std::os::unix::net::UnixStream;

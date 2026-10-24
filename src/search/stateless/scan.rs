@@ -1,7 +1,7 @@
 use super::{coverage, handles};
 use crate::{
     coded_error::{CodeDetail, ErrorCode, error_detail},
-    daemon::deadline::QueryDeadline,
+    query_deadline::QueryDeadline,
     results::{MAX_HITS, ResultSet},
     search::{self, InvocationDirectory, Query, telemetry::RetrievalTrace},
     source::{self, MAX_READ_BYTES},

@@ -1,6 +1,6 @@
 use super::super::acquire;
 use super::{await_republish, liveness_probe_result};
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use crate::search::InvocationDirectory;
 use crate::source::line_span;
 use crate::{output::OutputBudget, store::Store};

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{daemon::deadline::QueryDeadline, output::OutputBudget, results};
+use crate::{output::OutputBudget, query_deadline::QueryDeadline, results};
 
 pub(super) fn fixture(files: &[(&str, &[u8])]) -> (tempfile::TempDir, tempfile::TempDir, Store) {
     let root = tempfile::tempdir().unwrap();

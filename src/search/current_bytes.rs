@@ -1,9 +1,9 @@
 //! Re-run ordinary search lanes against bounded current-file snapshots.
 use super::{Query, search_prepared, telemetry::RetrievalTrace};
 use crate::{
-    daemon::deadline::QueryDeadline,
     extract::Extraction,
     identity::ContentRevision,
+    query_deadline::QueryDeadline,
     results::Hit,
     source,
     store::{Store, current_source},

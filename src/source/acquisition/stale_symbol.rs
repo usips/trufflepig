@@ -2,7 +2,7 @@
 //! serving daemon to republish, then locate the definition in current bytes.
 use super::{AcquiredSource, acquire_entry};
 use crate::{
-    daemon::deadline::QueryDeadline,
+    query_deadline::QueryDeadline,
     results::{self, Hit, ResultEntry},
     store::Store,
 };

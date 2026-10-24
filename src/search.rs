@@ -130,7 +130,7 @@ pub fn search(
     cache: &std::path::Path,
 ) -> Result<ResultSet> {
     // Query inference precedes the snapshot. Candidate vectors use source bodies from that snapshot.
-    let deadline = crate::daemon::deadline::QueryDeadline::start();
+    let deadline = crate::query_deadline::QueryDeadline::start();
     let mut session = crate::semantic::SemanticSession::default();
     search_with_session(
         store,
@@ -152,7 +152,7 @@ pub fn search_with_session(
     cache: &std::path::Path,
     session: &mut crate::semantic::SemanticSession,
     trace: &mut telemetry::RetrievalTrace,
-    deadline: &crate::daemon::deadline::QueryDeadline,
+    deadline: &crate::query_deadline::QueryDeadline,
 ) -> Result<ResultSet> {
     use std::time::Instant;
     use telemetry::{Lane, LaneOutcome};
@@ -198,7 +198,7 @@ pub fn search_prepared(
     semantic_query: Option<crate::semantic::Embedding>,
     reranker: Option<&dyn RerankScorer>,
     trace: &mut telemetry::RetrievalTrace,
-    deadline: &crate::daemon::deadline::QueryDeadline,
+    deadline: &crate::query_deadline::QueryDeadline,
 ) -> Result<ResultSet> {
     use std::time::Instant;
     use telemetry::{Lane, LaneOutcome};

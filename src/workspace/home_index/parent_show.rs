@@ -8,8 +8,8 @@ use super::{
 };
 use crate::{
     coded_error::{ErrorCode, error_code},
-    daemon::deadline::QueryDeadline,
     identity::{ByteSpan, ContentRevision},
+    query_deadline::QueryDeadline,
     results::{Hit, ResultEntry},
     search::{InvocationDirectory, Query},
     source::{self, AcquiredSource, SourceSide, acquisition},

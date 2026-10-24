@@ -28,7 +28,7 @@ mod tests {
             directory.path(),
             &["status".into()],
             &context,
-            crate::daemon::deadline::QueryDeadline::after(std::time::Duration::ZERO),
+            crate::query_deadline::QueryDeadline::after(std::time::Duration::ZERO),
         )
         .unwrap_err();
         let text = error.to_string();

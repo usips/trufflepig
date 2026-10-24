@@ -31,7 +31,7 @@ mod tests;
 mod worktree_seed_source;
 
 use crate::coded_error::CodedContext;
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use crate::{identity::ContentRevision, results::ResultSetStore};
 use anyhow::{Context, Result};
 pub use cache_access::{

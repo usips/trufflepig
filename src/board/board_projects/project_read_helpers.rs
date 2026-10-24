@@ -9,7 +9,7 @@ use crate::board::{
     },
     local_board::LocalBoard,
 };
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use std::time::Duration;
 
 pub(crate) fn select_scope(

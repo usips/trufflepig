@@ -2,13 +2,13 @@
 //! Per-root permits limit expensive work while a maintenance thread runs beside requests.
 //! Panics become failures or stop the daemon without stranding accepted sockets.
 use super::DaemonSocket;
-use super::deadline::QueryDeadline;
 use super::pool::{PoolSize, PoolSubmitCause, PooledJob, RequestClass, RequestLane};
 use super::protocol::{self, DaemonReply, DaemonRequest};
 use super::reconciler::{self, Maintenance};
 use super::spool::{ClaimedSpoolRequest, SpoolServer};
 use crate::coded_error::CodedContext;
 use crate::diagnostics::RequestContext;
+use crate::query_deadline::QueryDeadline;
 use admission_refusal::{AdmissionRefusal, RefusalCause};
 use anyhow::{Context, Result};
 use ingress_frames::{
@@ -103,7 +103,7 @@ impl AdmissionTier {
         match self {
             Self::Router => Duration::from_secs(28),
             Self::Coordinator => Duration::from_secs(24),
-            Self::Root => super::deadline::QUERY_DEADLINE,
+            Self::Root => crate::query_deadline::QUERY_DEADLINE,
         }
     }
 

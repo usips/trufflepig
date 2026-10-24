@@ -1,5 +1,5 @@
 use crate::coded_error::CodedContext;
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use anyhow::{Result, bail};
 use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 use std::time::Duration;

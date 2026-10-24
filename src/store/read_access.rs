@@ -2,7 +2,7 @@
 //! optional worktree view that reads its own bytes through a parent's index.
 use super::{Store, StoreAccess, encode_path};
 use crate::coded_error::CodedContext;
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use anyhow::{Context, Result, bail, ensure};
 use rusqlite::{Connection, Error as SqliteError, ErrorCode, OpenFlags, OptionalExtension};
 use std::{path::Path, time::Duration};

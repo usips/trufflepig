@@ -16,9 +16,9 @@ mod worktree_cache;
 use crate::coded_error::CodedContext;
 use crate::{
     cli::Arguments,
-    daemon::deadline::QueryDeadline,
     diagnostics::RequestContext,
     output::OutputBudget,
+    query_deadline::QueryDeadline,
     search::InvocationDirectory,
     store::{Store, encode_path},
 };
@@ -173,7 +173,7 @@ fn is_local_query(options: &Arguments) -> bool {
 
 fn local_execution_deadline(options: &Arguments, incoming: &QueryDeadline) -> QueryDeadline {
     if is_local_query(options) {
-        incoming.capped(crate::daemon::deadline::QUERY_DEADLINE)
+        incoming.capped(crate::query_deadline::QUERY_DEADLINE)
     } else {
         incoming.clone()
     }
@@ -313,7 +313,7 @@ pub(crate) fn local(
     options: &Arguments,
     context: &RequestContext,
     session: &mut crate::semantic::SemanticSession,
-    deadline: crate::daemon::deadline::QueryDeadline,
+    deadline: crate::query_deadline::QueryDeadline,
 ) -> Result<String> {
     let incoming_deadline = deadline;
     let local_deadline = local_execution_deadline(options, &incoming_deadline);

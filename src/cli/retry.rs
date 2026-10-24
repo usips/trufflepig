@@ -2,8 +2,8 @@
 use super::Arguments;
 use crate::board::board_protocol::BoardErrorCode;
 use crate::coded_error::{ErrorCode, coded_error};
-use crate::daemon::{DaemonReplyTimeout, deadline::QueryDeadline};
 use crate::diagnostics::RequestContext;
+use crate::{daemon::DaemonReplyTimeout, query_deadline::QueryDeadline};
 use anyhow::Result;
 use std::io::ErrorKind;
 use std::time::{Duration, Instant};

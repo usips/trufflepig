@@ -6,7 +6,7 @@
 //! recorded in `<worktree cache>/seed-outcome.json` ([`read_seed_outcome`]).
 
 use super::{encode_path, live_index};
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, TransactionBehavior};
 use serde::{Deserialize, Serialize};

@@ -1,5 +1,5 @@
 use super::*;
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 
 fn fixture() -> (tempfile::TempDir, Store) {
     let directory = tempfile::tempdir().unwrap();

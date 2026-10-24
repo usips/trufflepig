@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use fs2::FileExt;
 use rusqlite::Connection;
 use std::fs::{self, OpenOptions};

@@ -7,7 +7,7 @@ mod web_request;
 
 use super::WebStore;
 use crate::board::board_protocol::BoardError;
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 pub(crate) use ingest_flight::{IngestFlight, relay_flight};
 use router_probe::{ROUTER_MIGRATION_WAIT, ingest_via, startup_probe};
 use std::{path::Path, time::Instant};

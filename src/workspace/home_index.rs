@@ -14,7 +14,7 @@ use super::member_root::{GIT_PROBE_TIMEOUT, MemberRoot, linked_root_of_member};
 use crate::coded_error::CodedContext;
 use crate::{
     coded_error::ErrorCode,
-    daemon::deadline::QueryDeadline,
+    query_deadline::QueryDeadline,
     store::{Store, is_index_cache_unavailable, is_index_cannot_open, is_index_warming},
 };
 use anyhow::{Result, bail, ensure};

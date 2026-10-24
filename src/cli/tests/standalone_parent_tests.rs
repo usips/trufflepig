@@ -344,7 +344,7 @@ fn saved_parent_handle_and_more_keep_parent_origin_after_child_publication() -> 
     let error = crate::store::Store::open_read(
         &fixture.worktree,
         &fixture.child_cache,
-        crate::daemon::deadline::QueryDeadline::start(),
+        crate::query_deadline::QueryDeadline::start(),
     )
     .err()
     .context("fixture must deny opening the index")?;
@@ -778,7 +778,7 @@ impl WorktreeFixture {
         Ok(crate::store::Store::open_read(
             &self.main,
             &self.main_cache,
-            crate::daemon::deadline::QueryDeadline::start(),
+            crate::query_deadline::QueryDeadline::start(),
         )?
         .generation()?)
     }
@@ -870,7 +870,7 @@ fn assert_unpublished_index(root: &Path, cache: &Path) -> Result<()> {
     let error = match crate::store::Store::open_read(
         root,
         cache,
-        crate::daemon::deadline::QueryDeadline::start(),
+        crate::query_deadline::QueryDeadline::start(),
     ) {
         Ok(_) => anyhow::bail!("generation-zero index must be warming"),
         Err(error) => error,

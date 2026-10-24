@@ -4,9 +4,9 @@
 //! the indexed revision ([`WorktreeHashes`]).
 use super::{ParentFallback, WorktreeDivergence, hit_verification::WorktreeHashes};
 use crate::{
-    daemon::deadline::QueryDeadline,
     extract::Definition,
     identity::ContentRevision,
+    query_deadline::QueryDeadline,
     results::{Hit, ResultSet},
     search::{BoundPathFilter, InvocationDirectory, Query},
     source,

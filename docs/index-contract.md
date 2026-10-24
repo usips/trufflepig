@@ -59,7 +59,7 @@ Only committed generations are queryable. A reader holds one snapshot through
 candidate retrieval and graph joins. Readers are query-only
 (`src/store/read_access.rs:open_read`): they open the index read-only, run no
 schema or metadata writes, wait at most 2 s on a lock, and are interrupted when
-the request's 20 s query deadline (`src/daemon/deadline.rs`) expires, answering
+the request's 20 s query deadline (`src/query_deadline.rs`) expires, answering
 `timed_out`; inline work uses that original deadline without pausing it. A missing
 index or generation 0 answers `index_warming`. Only indexing, sessions, and the
 reconciler open the writer (`Store::open`). A reader

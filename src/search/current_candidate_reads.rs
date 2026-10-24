@@ -2,9 +2,9 @@
 use super::{Query, search_current_file, semantic_representative};
 use crate::coded_error::CodedContext;
 use crate::{
-    daemon::deadline::QueryDeadline,
     extract::Extraction,
     identity::ContentRevision,
+    query_deadline::QueryDeadline,
     results::Hit,
     source,
     store::{Store, decode_path},

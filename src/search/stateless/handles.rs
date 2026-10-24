@@ -1,6 +1,6 @@
 use crate::{
-    daemon::deadline::QueryDeadline,
     identity::ContentRevision,
+    query_deadline::QueryDeadline,
     results::ResultSet,
     source::{self, acquisition::stateless_hit_handle},
     store,

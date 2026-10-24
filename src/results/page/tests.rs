@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
-    daemon::deadline::QueryDeadline,
     output::{OutputBudget, OutputFormat},
+    query_deadline::QueryDeadline,
     results::{ChangeEntry, Hit, ResultEntry, ResultSet, StoredResultSet, load_entries},
     store::{Store, read_index_progress},
 };

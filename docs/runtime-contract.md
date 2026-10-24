@@ -121,7 +121,7 @@ read-only Board operations use the same local cap after parsing, while writes an
 (`src/board/board_transport/board_backend/board_dispatch/host_run.rs:local_read_deadline`). Query-only
 index reads cap lock waits and interrupt long SQL statements at expiry. Deadline
 checks are cooperative; a blocking system call can outlive the budget
-(`src/daemon/deadline.rs`).
+(`src/query_deadline.rs`).
 Inline index maintenance uses at most 2 s per root/member and reserves 250 ms from
 the original read budget; workspace member slices share the original 20 s deadline
 ([index contract](index-contract.md#coherent-publication)).

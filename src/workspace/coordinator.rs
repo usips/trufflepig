@@ -10,8 +10,9 @@ use crate::coded_error::CodedContext;
 use crate::{
     background_process::{BackgroundOwner, current_background_executable, spawn_background_for},
     cli::{Arguments, normalized_args},
-    daemon::{self, AcceptedRequest, DaemonHandler, deadline::QueryDeadline},
+    daemon::{self, AcceptedRequest, DaemonHandler},
     diagnostics::RequestContext,
+    query_deadline::QueryDeadline,
     semantic::SemanticSession,
 };
 use anyhow::{Context, Result, ensure};

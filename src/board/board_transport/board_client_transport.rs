@@ -5,7 +5,7 @@ use crate::board::{
     board_protocol::{AgentClaims, BoardOp},
 };
 use crate::coded_error::CodedContext;
-use crate::{cli::Arguments, daemon::deadline::QueryDeadline, diagnostics::RequestContext};
+use crate::{cli::Arguments, diagnostics::RequestContext, query_deadline::QueryDeadline};
 use anyhow::{Result, bail, ensure};
 use std::{
     error::Error as StdError,

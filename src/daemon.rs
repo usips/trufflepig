@@ -1,7 +1,6 @@
 //! Per-root, coordinator, and router Unix daemons: concurrent request workers
 //! beside one maintenance thread that reconciles filesystem updates.
 
-pub mod deadline;
 pub(crate) mod pool;
 mod protocol;
 mod reconciler;
@@ -24,7 +23,7 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 pub(crate) use pool::{PoolSize, RequestClass, RequestLane, RequestPool};
 use protocol::{DaemonReply, DaemonRequest};
 pub use server::{AcceptedRequest, DaemonHandler};

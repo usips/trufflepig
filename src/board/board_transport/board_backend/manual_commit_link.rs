@@ -6,8 +6,8 @@ use crate::{
         board_protocol::{BoardError, BoardErrorCode, BoardOp, BoardRequest},
         local_board::LocalBoard,
     },
-    daemon::deadline::QueryDeadline,
     identity::GitOid,
+    query_deadline::QueryDeadline,
 };
 use anyhow::Result;
 use std::time::Duration;

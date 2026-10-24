@@ -7,8 +7,8 @@
 //! file, refreshed while the daemon serves, tells clients whether anyone is
 //! draining the spool before they wait.
 
-use super::deadline::QueryDeadline;
 use super::protocol::{DaemonReply, DaemonRequest};
+use crate::query_deadline::QueryDeadline;
 use anyhow::{Context, Result, bail};
 use std::fs;
 use std::io::ErrorKind;

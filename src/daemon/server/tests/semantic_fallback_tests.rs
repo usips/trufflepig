@@ -1,8 +1,5 @@
 use super::*;
-use crate::{
-    daemon::{deadline::QueryDeadline, request_by},
-    diagnostics::RequestContext,
-};
+use crate::{daemon::request_by, diagnostics::RequestContext, query_deadline::QueryDeadline};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};

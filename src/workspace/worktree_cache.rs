@@ -2,7 +2,7 @@
 //! keyed by the worktree path, warmed from the configured member's cache when
 //! that cache exists. Never shares one database between two roots.
 
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use anyhow::{Result, ensure};
 use std::path::{Path, PathBuf};
 

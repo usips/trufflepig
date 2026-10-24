@@ -14,7 +14,7 @@ fn bounded_reconcile_expiry_preserves_the_previous_publication() -> Result<()> {
     let coverage = serde_json::to_value(initial.coverage()?)?;
     drop(initial);
 
-    crate::daemon::deadline::write_slow_reconcile_fixture(root.path(), "later");
+    crate::query_deadline::write_slow_reconcile_fixture(root.path(), "later");
     let deadline = QueryDeadline::after(Duration::from_millis(100));
     let started = Instant::now();
     let error = Store::open_for_reconcile(root.path(), cache.path(), deadline.clone())

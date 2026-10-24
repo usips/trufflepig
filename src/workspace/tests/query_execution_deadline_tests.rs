@@ -1,6 +1,6 @@
 use crate::{
     cli,
-    daemon::deadline::QueryDeadline,
+    query_deadline::QueryDeadline,
     workspace::{is_local_query, local_execution_deadline},
 };
 use std::{os::unix::net::UnixStream, sync::Arc, time::Duration};

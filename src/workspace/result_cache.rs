@@ -7,9 +7,9 @@ use super::{
 };
 use crate::coded_error::CodedContext;
 use crate::{
-    daemon::deadline::QueryDeadline,
     identity::{ResultCursor, ResultHandle},
     output::{OutputBudget, OutputFormat},
+    query_deadline::QueryDeadline,
     results::{self, HitDetail, ResultEntry},
     store::{Store, decode_path, encode_path},
 };

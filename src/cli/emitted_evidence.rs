@@ -1,8 +1,8 @@
 //! Preserve only identities present in the final prepared JSON response.
 use crate::diagnostics::{Outcome, RequestEvent};
 use crate::{
-    daemon::deadline::QueryDeadline,
     identity::ResultHandle,
+    query_deadline::QueryDeadline,
     results::{self, HistoricalSource, RESULTS_DATABASE, ResultEntry, ResultSetStore},
     store::encode_path,
 };

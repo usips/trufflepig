@@ -33,7 +33,7 @@ fn schema_became_newer_gives_upgrade_advice() {
         &crate::diagnostics::RequestContext::new(None, None),
         &config,
         directory.path(),
-        &crate::daemon::deadline::QueryDeadline::start(),
+        &crate::query_deadline::QueryDeadline::start(),
         anyhow::Error::new(error),
     )
     .unwrap_err();

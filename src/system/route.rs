@@ -8,8 +8,9 @@ use crate::{
         current_background_executable, spawn_background_for,
     },
     cli::normalized_args,
-    daemon::{self, deadline::QueryDeadline},
+    daemon,
     diagnostics::RequestContext,
+    query_deadline::QueryDeadline,
 };
 use anyhow::{Result, bail, ensure};
 use std::{

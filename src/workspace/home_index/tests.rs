@@ -1,7 +1,7 @@
 use super::{HomeIndexPolicy, WorktreeDivergence};
 use crate::{
     cli,
-    daemon::deadline::QueryDeadline,
+    query_deadline::QueryDeadline,
     store::Store,
     workspace::{
         WorkspaceConfig, cache_path, member_cache,

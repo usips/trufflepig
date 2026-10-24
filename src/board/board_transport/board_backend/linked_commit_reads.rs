@@ -2,8 +2,8 @@
 use super::{BoardBackend, BoardHost, board_writer::check_deadline};
 use crate::{
     board::{board_ids::RepoKey, local_board::LocalBoard},
-    daemon::deadline::QueryDeadline,
     identity::GitOid,
+    query_deadline::QueryDeadline,
 };
 use anyhow::Result;
 use std::{collections::BTreeSet, time::Duration};

@@ -2,7 +2,7 @@ use super::super::{
     config::WorkspaceConfig, hashed_member_cache, member_cache_until, member_root::MemberRoot,
 };
 use crate::{
-    daemon::deadline::QueryDeadline, system::sweep::CACHE_ROOT_MARKER,
+    query_deadline::QueryDeadline, system::sweep::CACHE_ROOT_MARKER,
     workspace::test_fixture::Fixture,
 };
 use std::{os::unix::net::UnixStream, path::PathBuf, sync::Arc, time::Duration};

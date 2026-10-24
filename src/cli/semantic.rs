@@ -3,8 +3,8 @@
 use super::Arguments;
 use crate::coded_error::CodedContext;
 use crate::{
-    daemon::deadline::QueryDeadline,
     output::OutputBudget,
+    query_deadline::QueryDeadline,
     semantic::{preparation, worker},
     workspace::{self, config::WorkspaceConfig},
 };

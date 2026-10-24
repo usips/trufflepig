@@ -1,5 +1,5 @@
 use super::{LiveRegexCheckpoint, check_live_deadline, live_regex, live_regex_with_checkpoint};
-use crate::{daemon::deadline::QueryDeadline, search::Query, store::Store};
+use crate::{query_deadline::QueryDeadline, search::Query, store::Store};
 use anyhow::Result;
 use std::{os::unix::net::UnixStream, path::Path, sync::Arc, time::Duration};
 

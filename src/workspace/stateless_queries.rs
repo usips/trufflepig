@@ -4,8 +4,8 @@ use super::{WorkspaceConfig, hashed_member_cache, member_root::MemberRoot};
 use crate::coded_error::CodedContext;
 use crate::{
     cli::Arguments,
-    daemon::deadline::QueryDeadline,
     output::OutputBudget,
+    query_deadline::QueryDeadline,
     results::ResultSet,
     search::{InvocationDirectory, Query, stateless},
     store::{encode_path, is_index_cache_unavailable, preflight_results_cache},

@@ -2,8 +2,8 @@
 use super::{Arguments, emission, request_context, validate};
 use crate::coded_error::CodedContext;
 use crate::{
-    daemon::deadline::QueryDeadline,
     output::OutputBudget,
+    query_deadline::QueryDeadline,
     store::{
         IndexProgressPhase, Store, index_cache_unavailable, is_index_cache_unavailable,
         is_index_cannot_open, is_index_warming, preflight_results_cache,

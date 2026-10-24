@@ -91,7 +91,7 @@ fn exhausted_busy_fallback_reads_current_source_from_the_requested_root() {
         .run_after_busy_exhaustion(
             &arguments,
             &context,
-            crate::daemon::deadline::QueryDeadline::after(Duration::from_secs(5)),
+            crate::query_deadline::QueryDeadline::after(Duration::from_secs(5)),
         )
         .expect("current path show should be eligible")
         .unwrap();
@@ -136,7 +136,7 @@ fn current_path_show_survives_refused_daemon_cache_creation() {
     let response = super::super::direct_with_deadline(
         &options,
         &context,
-        crate::daemon::deadline::QueryDeadline::after(Duration::from_secs(5)),
+        crate::query_deadline::QueryDeadline::after(Duration::from_secs(5)),
     )
     .unwrap();
     let response: serde_json::Value = serde_json::from_str(&response).unwrap();
@@ -170,7 +170,7 @@ fn exhausted_busy_fallback_keeps_the_original_expired_deadline() {
         .run_after_busy_exhaustion(
             &arguments,
             &context,
-            crate::daemon::deadline::QueryDeadline::after(Duration::ZERO),
+            crate::query_deadline::QueryDeadline::after(Duration::ZERO),
         )
         .expect("current path show should be eligible")
         .unwrap_err();

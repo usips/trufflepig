@@ -1,9 +1,8 @@
 use super::*;
 use crate::{
-    daemon::deadline::QueryDeadline,
+    query_deadline::QueryDeadline,
     results::Hit,
-    search::{self, Query},
-    search::{RERANK_WINDOW, telemetry::Lane},
+    search::{self, Query, RERANK_WINDOW, telemetry::Lane},
     store::Store,
     workspace::result_cache::{MemberSnapshot, OwnedEntry, WorkspaceSet},
 };

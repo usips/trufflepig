@@ -12,6 +12,7 @@ pub mod identity;
 pub mod output;
 pub mod probes;
 pub(crate) mod process_capture;
+pub mod query_deadline;
 pub mod results;
 pub mod search;
 pub mod semantic;

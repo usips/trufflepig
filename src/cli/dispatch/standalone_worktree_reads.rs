@@ -2,8 +2,8 @@
 use super::Arguments;
 use crate::{
     coded_error::{CodeDetail, CodedContext, ErrorCode, coded_error, error_detail},
-    daemon::deadline::QueryDeadline,
     output::OutputBudget,
+    query_deadline::QueryDeadline,
     results, search, source,
     store::{Store, is_index_cache_unavailable, is_index_cannot_open, is_index_warming},
 };

@@ -28,7 +28,7 @@ pub use board_protocol::{
 };
 pub use local_board::SCHEMA_VERSION;
 
-use crate::{cli::Arguments, daemon::deadline::QueryDeadline, diagnostics::RequestContext};
+use crate::{cli::Arguments, diagnostics::RequestContext, query_deadline::QueryDeadline};
 use anyhow::{Result, bail, ensure};
 use board_grammar::BoardCommand;
 use std::io::Read;
