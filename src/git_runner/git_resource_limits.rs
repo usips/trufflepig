@@ -16,7 +16,7 @@ impl fmt::Display for ResourceLimitExceeded {
 impl Error for ResourceLimitExceeded {}
 
 /// Whether `error`'s outermost layer is a resource-limit refusal.
-pub(super) fn is_resource_limited(error: &anyhow::Error) -> bool {
+pub(crate) fn is_resource_limited(error: &anyhow::Error) -> bool {
     error.chain().next().is_some_and(|outer| {
         outer.is::<ResourceLimitExceeded>()
             || outer

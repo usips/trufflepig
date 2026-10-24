@@ -2,9 +2,7 @@
 use crate::board::board_ids::{PlanId, RepoKey};
 use crate::board::board_protocol::RepoRegistration;
 use crate::coded_error::CodedContext;
-use crate::history::git::{
-    GitCommandFailed, common_dir_bounded, run_bounded_strict as run_bounded,
-};
+use crate::git_runner::{GitCommandFailed, common_dir_bounded, run_bounded_strict as run_bounded};
 use crate::identity::GitOid;
 use anyhow::{Result, ensure};
 use std::collections::BTreeMap;

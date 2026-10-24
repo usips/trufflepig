@@ -30,9 +30,7 @@ pub(super) fn entries(
                 let status = match file.mode.as_str() {
                     "120000" => "symlink_excluded",
                     "160000" => "gitlink_excluded",
-                    _ if crate::history::resource_limits::is_resource_limited(&error) => {
-                        "resource_excluded"
-                    }
+                    _ if crate::git_runner::is_resource_limited(&error) => "resource_excluded",
                     _ => "object_unavailable",
                 };
                 let excluded_entry = ResultEntry::Change(crate::results::ChangeEntry {

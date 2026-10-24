@@ -69,7 +69,7 @@ impl ProjectFixture {
             [key.as_str()],
         )
         .unwrap();
-        let common = crate::history::git::common_dir(root).unwrap();
+        let common = crate::git_runner::common_dir(root).unwrap();
         conn.execute(
             "INSERT INTO repo_paths(repo_key,host,common_dir,root_commits_json) VALUES(?1,?2,?3,'[]')",
             rusqlite::params![key.as_str(), host, common.to_string_lossy().as_ref()],

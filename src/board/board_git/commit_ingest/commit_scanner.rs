@@ -8,7 +8,7 @@ use crate::board::{
     repo_identity::{detached_head, remaining},
 };
 use crate::coded_error::CodedContext;
-use crate::history::git::{run_bounded, run_bounded_strict};
+use crate::git_runner::{run_bounded, run_bounded_strict};
 use crate::identity::GitOid;
 use anyhow::{Result, ensure};
 use passes::{GREP_FORMAT, MISPLACED_PATTERN, STATS_FORMAT, log_args, parse_grep_log, parse_stats};

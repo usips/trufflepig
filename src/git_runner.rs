@@ -1,8 +1,8 @@
 //! Read-only Git plumbing with bounded subprocess lifetime and output.
 
 mod git_command_failure;
+mod git_resource_limits;
 
-use super::resource_limits::ResourceLimitExceeded;
 use crate::{
     identity::GitOid,
     process_capture::{self, CaptureError},
@@ -10,6 +10,8 @@ use crate::{
 };
 use anyhow::{Context, Result, anyhow, bail, ensure};
 pub use git_command_failure::GitCommandFailed;
+use git_resource_limits::ResourceLimitExceeded;
+pub(crate) use git_resource_limits::is_resource_limited;
 use std::ffi::{OsStr, OsString};
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Component, Path, PathBuf};

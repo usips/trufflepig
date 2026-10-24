@@ -102,7 +102,7 @@ pub(super) fn index(history: &mut History) -> Result<Value> {
     )?;
     let result = index_batch(history);
     if let Err(error) = result {
-        let category = if super::resource_limits::is_resource_limited(&error) {
+        let category = if crate::git_runner::is_resource_limited(&error) {
             "resource_limited"
         } else {
             "unavailable"

@@ -240,7 +240,7 @@ fn acquire_historical(
     side: SourceSide,
     identity: HistoricalSource,
 ) -> Result<AcquiredSource> {
-    let repository = crate::history::git::GitRepository::discover(&store.root)?;
+    let repository = crate::git_runner::GitRepository::discover(&store.root)?;
     ensure!(
         repository.common_dir == crate::store::decode_path(&identity.repository)?,
         coded!(

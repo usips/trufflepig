@@ -43,7 +43,7 @@ impl BoardHost {
         let mut resolved = None;
         for target in &targets {
             let spec = format!("{oid}^{{commit}}");
-            let Ok(peeled) = crate::history::git::run_bounded(
+            let Ok(peeled) = crate::git_runner::run_bounded(
                 &target.registration.common_dir,
                 &["rev-parse", "--verify", "--end-of-options", spec.as_str()],
                 deadline.cap(Duration::from_secs(5)),

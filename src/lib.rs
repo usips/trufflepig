@@ -7,6 +7,7 @@ pub mod cli;
 pub mod daemon;
 pub mod diagnostics;
 pub mod extract;
+pub mod git_runner;
 pub mod history;
 pub mod identity;
 pub mod output;

@@ -6,10 +6,11 @@ mod tests;
 use crate::coded_error::CodedContext;
 pub use heartbeat::Heartbeat;
 
-use super::{History, git::GitRepository};
+use super::History;
 use crate::background_process::{
     BackgroundChild, BackgroundOwner, current_background_executable, spawn_background_for,
 };
+use crate::git_runner::GitRepository;
 use anyhow::{Context, Result, bail};
 use fs2::FileExt;
 use notify::{EventKind, RecursiveMode, Watcher};

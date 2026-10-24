@@ -1,5 +1,5 @@
 //! Review drill hints use the supported history gate and available local objects.
-use crate::{history::git::run_bounded_strict, identity::GitOid};
+use crate::{git_runner::run_bounded_strict, identity::GitOid};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
