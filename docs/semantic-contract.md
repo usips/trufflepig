@@ -91,7 +91,10 @@ then other hits. Within each tier, scored hits sort by descending rerank score,
 with ties breaking by fused rank; hits the reranker could not score keep their
 fused order below their tier's scored hits. A document is the hit's span (a
 file hit's first 4,096 bytes) read from the indexed content of the hit's
-revision.
+revision. The stage follows the
+[current-source check](index-contract.md#coherent-publication), so a hit replaced from
+current bytes has no indexed document and stays unscored; no hit is scored on
+stale indexed text.
 
 A workspace query reranks once: members search without reranking, their
 ranks interleave as the [workspace contract](workspace-contract.md) describes,
@@ -100,9 +103,8 @@ members because one model produced them. Entries keep their member and member
 rank. That request's deadline is the smaller of 1,500 ms and the query
 deadline's remainder; an expired query deadline skips the request and reports
 `semantic_timeout`. Every member that answered reports the shared status and
-reason; its `rerank_window` counts its own scored hits. The stage follows the
-members' current-source checks, so a hit replaced from current bytes has no
-indexed document and stays unscored.
+reason; its `rerank_window` counts its own scored hits. The request follows
+every member's current-source check.
 
 A timeout, missing model, or provider failure keeps the fused order
 unchanged and reports `rerank_status` (`ready`, `unavailable`, or `skipped`)

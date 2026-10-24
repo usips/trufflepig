@@ -70,43 +70,125 @@ fn published_candidate_reextraction_is_bounded_and_partial() {
     );
 }
 
-#[test]
-fn refreshed_candidates_do_not_claim_current_rerank_scores() {
-    struct Scores;
-    impl search::RerankScorer for Scores {
-        fn score(
-            &self,
-            _: &std::path::Path,
-            _: &str,
-            documents: &[String],
-            _: std::time::Duration,
-        ) -> anyhow::Result<Vec<f32>> {
-            Ok(vec![1.0; documents.len()])
+/// Records every scored document; scores each by its `rank N` marker so an
+/// unchanged file can outrank the files ahead of it in fused order.
+struct RecordingScorer {
+    documents: std::cell::RefCell<Vec<String>>,
+    failure: Option<&'static str>,
+}
+
+impl search::RerankScorer for RecordingScorer {
+    fn score(
+        &self,
+        _: &std::path::Path,
+        _: &str,
+        documents: &[String],
+        _: std::time::Duration,
+    ) -> anyhow::Result<Vec<f32>> {
+        self.documents.borrow_mut().extend_from_slice(documents);
+        if let Some(failure) = self.failure {
+            anyhow::bail!("{failure}");
         }
+        Ok(documents
+            .iter()
+            .map(|document| document.contains("rank high") as u8 as f32)
+            .collect())
     }
-    let (root, cache, store) = search::tests::fixture(&[("notes.md", b"marker before")]);
-    std::fs::write(root.path().join("notes.md"), b"marker current").unwrap();
-    let result = search::search_prepared(
-        &store,
+}
+
+fn recording(failure: Option<&'static str>) -> RecordingScorer {
+    RecordingScorer {
+        documents: std::cell::RefCell::new(Vec::new()),
+        failure,
+    }
+}
+
+/// `a.md` and `b.md` stay as indexed; `notes.md` changes after publishing, so
+/// the current-source recheck replaces its hit.
+fn replaced_fixture() -> (tempfile::TempDir, tempfile::TempDir, crate::store::Store) {
+    let (root, cache, store) = search::tests::fixture(&[
+        ("a.md", b"marker rank low"),
+        ("b.md", b"marker rank high"),
+        ("notes.md", b"marker stale indexed text"),
+    ]);
+    std::fs::write(root.path().join("notes.md"), b"marker current text").unwrap();
+    (root, cache, store)
+}
+
+fn rerank_search(
+    store: &crate::store::Store,
+    cache: &std::path::Path,
+    scorer: Option<&RecordingScorer>,
+) -> results::ResultSet {
+    search::search_prepared(
+        store,
         &Query::parse("marker").unwrap(),
-        cache.path(),
+        cache,
         None,
-        Some(&Scores),
+        scorer.map(|scorer| scorer as &dyn search::RerankScorer),
         &mut search::telemetry::RetrievalTrace::disabled(),
         &QueryDeadline::start(),
     )
-    .unwrap();
-    assert!(!result.hits.is_empty());
-    assert_eq!(result.coverage["rerank_status"], "unavailable");
-    assert!(result.coverage.get("rerank_window").is_none());
+    .unwrap()
+}
+
+#[test]
+fn replaced_candidate_stays_unscored_after_current_source_recheck() {
+    let (_root, cache, store) = replaced_fixture();
+    let scorer = recording(None);
+    let result = rerank_search(&store, cache.path(), Some(&scorer));
+    let documents = scorer.documents.borrow();
     assert!(
-        result.hits[0]
-            .snippet
-            .as_ref()
-            .unwrap()
-            .text
-            .contains("current")
+        documents.iter().all(|document| !document.contains("stale")
+            && !document.contains("current text")),
+        "{documents:?}"
     );
+    assert_eq!(documents.len(), 2, "{documents:?}");
+    assert_eq!(result.coverage["rerank_status"], "ready");
+    assert_eq!(result.coverage["rerank_window"], 2);
+    assert!(result.coverage.get("rerank_reason").is_none());
+    let replaced = result
+        .hits
+        .iter()
+        .find(|hit| hit.path == "notes.md")
+        .expect("replaced hit kept");
+    assert!(replaced.snippet.as_ref().unwrap().text.contains("current"));
+}
+
+#[test]
+fn unchanged_candidates_are_reranked_after_current_source_recheck() {
+    let (_root, cache, store) = replaced_fixture();
+    let fused = rerank_search(&store, cache.path(), None);
+    let fused: Vec<_> = fused.hits.iter().map(|hit| hit.path.as_str()).collect();
+    let low = fused.iter().position(|path| *path == "a.md").unwrap();
+    let high = fused.iter().position(|path| *path == "b.md").unwrap();
+    assert!(low < high, "fixture expects a.md ahead in fused order: {fused:?}");
+
+    let scorer = recording(None);
+    let result = rerank_search(&store, cache.path(), Some(&scorer));
+    let paths: Vec<_> = result.hits.iter().map(|hit| hit.path.as_str()).collect();
+    // Scored hits lead their tier in score order; the unscored replacement follows.
+    assert_eq!(paths, ["b.md", "a.md", "notes.md"]);
+}
+
+#[test]
+fn unavailable_reranker_keeps_the_rechecked_fused_order() {
+    let (_root, cache, store) = replaced_fixture();
+    let fused = rerank_search(&store, cache.path(), None);
+    let scorer = recording(Some("rerank_worker_unreachable"));
+    let result = rerank_search(&store, cache.path(), Some(&scorer));
+    let paths = |set: &results::ResultSet| -> Vec<String> {
+        set.hits.iter().map(|hit| hit.path.clone()).collect()
+    };
+    assert_eq!(paths(&result), paths(&fused));
+    assert_eq!(result.coverage["rerank_status"], "unavailable");
+    assert!(
+        result.coverage["rerank_reason"]
+            .as_str()
+            .unwrap()
+            .contains("rerank_worker_unreachable")
+    );
+    assert!(result.coverage.get("rerank_window").is_none());
 }
 
 #[test]

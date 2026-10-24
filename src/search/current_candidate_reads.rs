@@ -150,13 +150,6 @@ fn recheck_with_current_search(
             serde_json::json!({"status":"unverified", "files":semantic_unverified});
         coverage["semantic_status"] = "partial".into();
     }
-    if (!replacements.is_empty() || unsearched > 0) && coverage["rerank_status"] == "ready" {
-        coverage["rerank_status"] = "unavailable".into();
-        coverage["rerank_reason"] = "current-source replacements were not reranked".into();
-        if let Some(object) = coverage.as_object_mut() {
-            object.remove("rerank_window");
-        }
-    }
     let mut replacements: HashMap<String, Vec<Hit>> = replacements
         .into_iter()
         .map(|(path, current)| (path.to_owned(), current))

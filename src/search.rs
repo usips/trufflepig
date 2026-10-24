@@ -287,6 +287,19 @@ pub fn search_prepared(
             trace,
         )?;
     }
+    if generation > 0 && store.root == store.index_root() && !query.regex && !query.text.is_empty()
+    {
+        current_candidate_reads::recheck(
+            store,
+            query,
+            &mut hits,
+            &mut coverage,
+            &mut truncated,
+            deadline,
+        )?;
+    }
+    // Reranking follows the recheck: a hit replaced from current source carries
+    // a revision with no indexed body, so it stays unscored in its fused place.
     if let Some(scorer) = reranker {
         rerank_window::apply(
             store,
@@ -298,17 +311,6 @@ pub fn search_prepared(
             &mut coverage,
             trace,
         );
-    }
-    if generation > 0 && store.root == store.index_root() && !query.regex && !query.text.is_empty()
-    {
-        current_candidate_reads::recheck(
-            store,
-            query,
-            &mut hits,
-            &mut coverage,
-            &mut truncated,
-            deadline,
-        )?;
     }
     trace.snapshot(generation, &coverage);
     let mut seen = HashSet::with_capacity(hits.len());

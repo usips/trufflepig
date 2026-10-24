@@ -55,7 +55,8 @@ when the query names tests (`test`, `tests`, `testing`, `spec`, `fixture`) or a
 every query term are never demoted ([`path_prior`](../src/search/path_prior.rs));
 demoted files remain eligible. Semantic file ranks then fuse with the combined
 ranking at equal weight, the prior applying once to them and the identifier
-tiers holding; literal queries skip them. An opt-in rerank stage then reorders
-the top 32 fused files, once per query: a workspace reranks its merged member
+tiers holding; literal queries skip them. After the current-source check, an
+opt-in rerank stage reorders the top 32 fused files, once per query; hits
+replaced from current bytes stay unscored. A workspace reranks its merged member
 ranking rather than each member's; see the
 [semantic contract](semantic-contract.md#optional-reranking).
