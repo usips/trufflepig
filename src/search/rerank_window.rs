@@ -141,8 +141,8 @@ impl MergedRerank<'_> {
             .min(semantic::worker::RERANK_DEADLINE);
         if budget.is_zero() && !text.is_empty() && !items.is_empty() {
             trace.record(Lane::Rerank, started, &[], LaneOutcome::Failed, false);
-            let reason = "semantic_timeout: query deadline expired before rerank";
-            return (RerankOutcome::Unavailable(reason.into()), Vec::new());
+            let reason = coded!(SemanticTimeout, "query deadline expired before rerank");
+            return (RerankOutcome::Unavailable(reason.to_string()), Vec::new());
         }
         let prior = PathPrior::for_query(self.query);
         let policy = FusionPolicy {
@@ -218,12 +218,13 @@ impl RerankStage<'_> {
             .score(self.cache, self.query_text, &documents, self.budget)
         {
             Ok(scores) if scores.len() != documents.len() => {
-                let reason = format!(
-                    "rerank_worker: score count mismatch: {} scores for {} documents",
+                let reason = coded!(
+                    RerankWorker,
+                    "score count mismatch: {} scores for {} documents",
                     scores.len(),
                     documents.len()
                 );
-                return failed(trace, reason);
+                return failed(trace, reason.to_string());
             }
             Ok(scores) => scores,
             Err(error) => return failed(trace, format!("{error:#}")),

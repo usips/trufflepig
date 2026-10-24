@@ -32,7 +32,9 @@ impl RerankScorer for RecordingScorer {
     ) -> anyhow::Result<Vec<f32>> {
         self.requests.borrow_mut().push((documents.len(), budget));
         if let Some(failure) = self.failure {
-            anyhow::bail!("{failure}");
+            // The worker client raises its relayed failures as coded errors.
+            let coded = crate::coded_error::CodedError::from_relayed(failure.to_owned());
+            anyhow::bail!(coded.expect("fake failures carry a registered code"));
         }
         Ok(documents
             .iter()
