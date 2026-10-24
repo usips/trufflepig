@@ -20,8 +20,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[cfg(not(feature = "semantic"))]
-use crate::semantic::{INPUT_VERSION, MODEL_REVISION};
+use crate::semantic::content_key;
 
 pub const SNAPSHOT_WINDOW: usize = 256;
 pub const MAX_BATCH: usize = 8;
@@ -815,35 +814,6 @@ fn read_generation(connection: &Connection) -> Result<i64> {
             row.get::<_, String>(0)
         })?
         .parse()?)
-}
-
-#[cfg(feature = "semantic")]
-fn content_key(text: &str) -> String {
-    crate::semantic::embedding_cache::content_key(text)
-}
-
-#[cfg(not(feature = "semantic"))]
-fn content_key(text: &str) -> String {
-    use sha2::{Digest, Sha256};
-    const MODEL_MANIFEST: &[u8] = include_bytes!("../../evaluation/semantic_gate/model.json");
-    const NORMALIZATION: &[u8] = b"l2";
-    let dimensions = crate::semantic::DIMENSIONS.to_le_bytes();
-    let parts: [(&[u8], &[u8]); 6] = [
-        (b"manifest", MODEL_MANIFEST),
-        (b"model_revision", MODEL_REVISION.as_bytes()),
-        (b"input_version", INPUT_VERSION.as_bytes()),
-        (b"dimensions", &dimensions),
-        (b"normalization", NORMALIZATION),
-        (b"content", text.as_bytes()),
-    ];
-    let mut digest = Sha256::new();
-    for (label, value) in parts {
-        digest.update((label.len() as u64).to_le_bytes());
-        digest.update(label);
-        digest.update((value.len() as u64).to_le_bytes());
-        digest.update(value);
-    }
-    format!("{:x}", digest.finalize())
 }
 
 fn estimate_tokens(text: &str) -> usize {

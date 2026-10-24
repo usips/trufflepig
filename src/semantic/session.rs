@@ -44,7 +44,7 @@ impl SemanticSession {
 
     #[cfg(feature = "semantic")]
     fn query(&self, directory: &Path, text: &str) -> Result<Embedding> {
-        use super::embedding_cache::{EmbeddingCache, content_key};
+        use super::{content_key, embedding_cache::EmbeddingCache};
         let key = content_key(text);
         let mut cache_locked = false;
         match EmbeddingCache::open_query(directory) {
@@ -139,7 +139,7 @@ mod tests {
     #[cfg(feature = "semantic")]
     #[test]
     fn semantic_no_daemon_reads_cached_query_without_model() -> Result<()> {
-        use super::super::embedding_cache::{EmbeddingCache, content_key};
+        use super::super::{content_key, embedding_cache::EmbeddingCache};
         let directory = tempfile::tempdir()?;
         let mut values = [0.0; super::super::DIMENSIONS];
         values[0] = 1.0;

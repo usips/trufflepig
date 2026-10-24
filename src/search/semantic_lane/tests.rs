@@ -3,8 +3,7 @@ use crate::{
     daemon::deadline::QueryDeadline,
     search::{self, Query},
     semantic::{
-        DIMENSIONS, Embedding, SemanticSession,
-        embedding_cache::{EmbeddingCache, content_key},
+        DIMENSIONS, Embedding, SemanticSession, content_key, embedding_cache::EmbeddingCache,
     },
     store::Store,
 };

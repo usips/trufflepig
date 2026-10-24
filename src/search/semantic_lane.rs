@@ -83,10 +83,7 @@ fn retrieve(
     hits: &mut Vec<Hit>,
     coverage: &mut serde_json::Value,
 ) -> Result<bool> {
-    use crate::semantic::{
-        SemanticHit,
-        embedding_cache::{EmbeddingCache, content_key},
-    };
+    use crate::semantic::{SemanticHit, content_key, embedding_cache::EmbeddingCache};
     use std::collections::BinaryHeap;
     const FILE_LIMIT: usize = 1000;
     let cache = EmbeddingCache::open_query(directory)?;

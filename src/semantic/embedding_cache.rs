@@ -1,9 +1,10 @@
 mod cache_format;
 mod snapshot;
 
+use super::content_identity::NORMALIZATION;
 use super::{CACHE_BYTES, DIMENSIONS, INPUT_VERSION, MODEL_REVISION};
 use anyhow::{Result, bail};
-use cache_format::{CacheCounters, NORMALIZATION, encode, manifest_digest};
+use cache_format::{CacheCounters, encode, manifest_digest};
 use rusqlite::{Connection, OpenFlags, params, params_from_iter};
 use std::{
     borrow::Borrow,
@@ -16,7 +17,6 @@ use std::{
 
 #[cfg(test)]
 use cache_format::CacheStatus;
-pub(crate) use cache_format::content_key;
 pub(crate) use snapshot::EmbeddingCacheSnapshot;
 
 const PAGE_SIZE: u64 = 4096;
@@ -591,18 +591,5 @@ mod tests {
         assert_eq!(pages, (CACHE_BYTES / PAGE_SIZE) as i64);
         assert!(writer.max_entries < CACHE_BYTES / PAGE_SIZE);
         Ok(())
-    }
-
-    #[test]
-    fn content_key_binds_provenance_and_content() {
-        assert_eq!(
-            cache_format::content_key("same"),
-            cache_format::content_key("same")
-        );
-        assert_ne!(
-            cache_format::content_key("same"),
-            cache_format::content_key("changed")
-        );
-        assert_ne!(cache_format::content_key("same").len(), 0);
     }
 }
