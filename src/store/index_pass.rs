@@ -1,0 +1,177 @@
+//! One leased indexing pass: stage the current files into a disposable
+//! database, resolve, and publish into the live index
+//! ([coherent publication](../../docs/index-contract.md#coherent-publication)).
+use super::index_checkpoint::IndexCheckpoint;
+use super::{
+    Coverage, Publication, Store, encode_path, index_checkpoint, index_deadline, php_resolver,
+    publish, scan, schema,
+};
+use crate::daemon::deadline::QueryDeadline;
+use anyhow::{Context, Result};
+use rusqlite::{Connection, OptionalExtension};
+
+/// The staged build is discarded on failure, so it never syncs.
+const STAGED_PRAGMAS: &str =
+    "PRAGMA journal_mode=DELETE; PRAGMA synchronous=OFF; PRAGMA cache_size=-4096;";
+
+impl Store {
+    /// Stages and publishes while `_writer_lock` holds the writer lease.
+    pub(super) fn index_leased(
+        &mut self,
+        _writer_lock: std::fs::File,
+        resolve_staged: impl FnOnce(&mut Connection) -> Result<()>,
+        deadline: Option<&QueryDeadline>,
+    ) -> Result<Option<Coverage>> {
+        self.index_pass(resolve_staged, deadline)
+    }
+
+    fn index_pass(
+        &mut self,
+        resolve_staged: impl FnOnce(&mut Connection) -> Result<()>,
+        deadline: Option<&QueryDeadline>,
+    ) -> Result<Option<Coverage>> {
+        let mut checkpoint =
+            IndexCheckpoint::open(&self.conn, &self.index_root, &self.cache, deadline)?;
+        index_checkpoint::cleanup_stale_stages(&self.cache, deadline)
+            .map_err(|error| interrupted(&mut checkpoint, deadline, error))?;
+        if deadline.is_some() && checkpoint.maintenance_required() {
+            return Ok(None);
+        }
+        let use_checkpoint = deadline.is_some() || checkpoint.has_retained_facts();
+        if use_checkpoint {
+            checkpoint
+                .begin_pass()
+                .map_err(|error| interrupted(&mut checkpoint, deadline, error))?;
+        }
+        check_slice(&mut checkpoint, deadline)?;
+        let (directory, mut staged, capture_started_ms) = open_staged(&self.cache, deadline)
+            .map_err(|error| interrupted(&mut checkpoint, deadline, error))?;
+        let staged_path = directory.path().join("index.sqlite3");
+        let (coverage, scan_fingerprint) = if use_checkpoint {
+            index_checkpoint::stage(
+                &mut checkpoint,
+                &mut staged,
+                &self.conn,
+                &self.index_root,
+                &self.cache,
+                deadline,
+            )?
+        } else {
+            scan::stage(&mut staged, &self.conn, &self.index_root, &self.cache)?
+        };
+        check_slice(&mut checkpoint, deadline)?;
+        let fingerprint =
+            scan::resolved_fingerprint(&scan_fingerprint, php_resolver::SHARED_RESOLVER_REVISION);
+        let capture_completed_ms = publish::timestamp_ms()?.max(capture_started_ms);
+        let unchanged = self
+            .publication_unchanged(&fingerprint, &coverage)
+            .map_err(|error| interrupted(&mut checkpoint, deadline, error))?;
+        if unchanged {
+            checkpoint.mark_complete()?;
+            return Ok(Some(coverage));
+        }
+        checkpoint.set_finalizing()?;
+        resolve_staged(&mut staged)
+            .map_err(|error| interrupted(&mut checkpoint, deadline, error))?;
+        check_slice(&mut checkpoint, deadline)?;
+        drop(staged);
+        let (index_epoch, generation) = self
+            .next_publication_identity()
+            .map_err(|error| interrupted(&mut checkpoint, deadline, error))?;
+        let publication = Publication {
+            index_epoch,
+            generation,
+            root: encode_path(&self.index_root),
+            capture_started_ms,
+            capture_completed_ms,
+        };
+        if let Some(deadline) = deadline {
+            check_slice(&mut checkpoint, Some(deadline))?;
+            index_deadline::install(&self.conn, deadline)
+                .map_err(|error| interrupted(&mut checkpoint, Some(deadline), error))?;
+        }
+        publish::publish(
+            &mut self.conn,
+            &staged_path,
+            &coverage,
+            &fingerprint,
+            &publication,
+        )
+        .map_err(|error| interrupted(&mut checkpoint, deadline, error))?;
+        drop(directory);
+        checkpoint
+            .mark_complete()
+            .context("index published; clearing its preparation failed")?;
+        Ok(Some(coverage))
+    }
+
+    /// Whether the published index already matches this scan.
+    fn publication_unchanged(&self, fingerprint: &str, coverage: &Coverage) -> Result<bool> {
+        let previous: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT value FROM meta WHERE key='fingerprint'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if previous.as_deref() != Some(fingerprint) {
+            return Ok(false);
+        }
+        Ok(self.coverage()?.walk_failures == coverage.walk_failures
+            && self.publication()?.is_some())
+    }
+
+    fn next_publication_identity(&self) -> Result<(String, i64)> {
+        let index_epoch = self.conn.query_row(
+            "SELECT value FROM meta WHERE key='index_epoch'",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok((index_epoch, self.generation()? + 1))
+    }
+}
+
+/// Creates the disposable staged database inside a fresh `stage-*` directory.
+fn open_staged(
+    cache: &std::path::Path,
+    deadline: Option<&QueryDeadline>,
+) -> Result<(tempfile::TempDir, Connection, u64)> {
+    let directory = tempfile::Builder::new()
+        .prefix("stage-")
+        .tempdir_in(cache)?;
+    let staged = Connection::open(directory.path().join("index.sqlite3"))?;
+    if let Some(deadline) = deadline {
+        index_deadline::install(&staged, deadline)?;
+    }
+    staged.execute_batch(STAGED_PRAGMAS)?;
+    schema::create(&staged)?;
+    if let Some(deadline) = deadline {
+        index_deadline::check(deadline)?;
+    }
+    Ok((directory, staged, publish::timestamp_ms()?))
+}
+
+/// Fails the pass once a bounded slice's deadline has expired.
+fn check_slice(checkpoint: &mut IndexCheckpoint, deadline: Option<&QueryDeadline>) -> Result<()> {
+    match deadline {
+        Some(deadline) => index_deadline::check(deadline)
+            .map_err(|error| interrupted(checkpoint, Some(deadline), error)),
+        None => Ok(()),
+    }
+}
+
+/// Records checkpoint progress when a bounded slice ended by expiry, then
+/// returns `error`. A failed record is logged; the original error wins.
+fn interrupted(
+    checkpoint: &mut IndexCheckpoint,
+    deadline: Option<&QueryDeadline>,
+    error: anyhow::Error,
+) -> anyhow::Error {
+    if let Some(deadline) = deadline.filter(|deadline| deadline.expired())
+        && let Err(record) = checkpoint.note_interruption(deadline, &error)
+    {
+        eprintln!("trufflepig: index checkpoint progress not recorded: {record:#}");
+    }
+    error
+}
