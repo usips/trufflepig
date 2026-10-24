@@ -238,7 +238,7 @@ fn small_valid_member_seed_is_published_with_extraction_facts() {
 }
 
 #[test]
-fn slice_expiry_during_seed_memoizes_while_the_caller_is_alive() {
+fn locked_source_busy_refusal_memoizes_while_the_caller_is_alive() {
     let fixture = fixture();
     let source_index = fixture.member_cache.join(INDEX_NAME);
     let locked_source = Connection::open(&source_index).unwrap();
@@ -259,9 +259,49 @@ fn slice_expiry_during_seed_memoizes_while_the_caller_is_alive() {
     );
 
     assert_eq!(outcome, SeedOutcome::Skipped("seed failed"));
-    assert!(slice.expired());
     assert!(!caller.expired());
     let diagnostic = read_seed_outcome(&fixture.worktree_cache).unwrap();
+    assert_eq!(diagnostic["outcome"], "skipped");
+    assert_eq!(diagnostic["reason"], "seed failed");
+    let error = diagnostic["error"]
+        .as_str()
+        .expect("busy error is recorded");
+    assert!(error.to_ascii_lowercase().contains("locked"), "{error}");
     assert!(diagnostic["memo"].is_object(), "{diagnostic}");
     drop(locked_source);
+
+    // With the lock gone, a retry would seed successfully unless it reads the persisted memo.
+    let retry_slice = QueryDeadline::after(Duration::from_secs(2));
+    assert_eq!(
+        ensure_seeded_within(
+            &fixture.member_cache,
+            &fixture.worktree_root,
+            &fixture.worktree_cache,
+            &retry_slice,
+            &caller,
+        ),
+        SeedOutcome::Skipped("seed failed")
+    );
+    assert!(!caller.expired());
+    assert!(!fixture.worktree_cache.join(INDEX_NAME).exists());
+}
+
+#[test]
+fn expired_slice_skips_before_cache_io_while_the_caller_is_alive() {
+    let fixture = fixture();
+    let slice = QueryDeadline::after(Duration::ZERO);
+    let caller = QueryDeadline::after(Duration::from_secs(5));
+
+    let outcome = ensure_seeded_within(
+        &fixture.member_cache,
+        &fixture.worktree_root,
+        &fixture.worktree_cache,
+        &slice,
+        &caller,
+    );
+
+    assert_eq!(outcome, SeedOutcome::Skipped("seed deadline expired"));
+    assert!(slice.expired());
+    assert!(!caller.expired());
+    assert!(!fixture.worktree_cache.exists());
 }

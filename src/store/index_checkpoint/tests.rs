@@ -273,10 +273,13 @@ fn resumed_scan_invalidates_changed_and_deleted_completed_sources() {
         .unwrap();
     }
 
-    match store.index_available_until(QueryDeadline::after(Duration::from_millis(150))) {
+    TEST_SAVE_BUDGET.set(Some(1));
+    let bounded_pass = store.index_available_until(QueryDeadline::start());
+    TEST_SAVE_BUDGET.set(None);
+    match bounded_pass {
         Err(error) => assert!(is_timed_out(&error), "{error:#}"),
         Ok(None) => {}
-        Ok(Some(_)) => panic!("fixture must outlast one bounded pass"),
+        Ok(Some(_)) => panic!("fixture must stop after its first new saved extraction"),
     }
     assert!(retained_file_count(&cache) >= 2);
     assert_eq!(store.generation().unwrap(), original_generation);
