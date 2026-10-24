@@ -141,7 +141,7 @@ export function createPlanPage(context) {
       }, rendered.headings);
       if (tasks.next_after) {
         details.append(link("Next tasks", "plan", {
-          ...route, taskAfter: tasks.next_after, taskThrough: tasks.through,
+          ...route, focus: null, taskAfter: tasks.next_after, taskThrough: tasks.through,
           taskCeiling: JSON.stringify(tasks.ceiling),
         }, "button"));
       }
@@ -151,7 +151,8 @@ export function createPlanPage(context) {
       })));
       if (claims.next_after) {
         claimList.append(link("Next claims", "plan",
-          { ...route, claimAfter: JSON.stringify(claims.next_after), claimThrough: claims.through }, "button"));
+          { ...route, focus: null, claimAfter: JSON.stringify(claims.next_after),
+            claimThrough: claims.through }, "button"));
       }
       return add(page, panel("Claims", claimList));
     }

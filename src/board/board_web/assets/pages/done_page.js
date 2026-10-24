@@ -30,9 +30,11 @@ export function createDonePage({ state, dom, taskCard }) {
     }
     if (!data.tasks.length) content.append(empty("No completed tasks."));
     if (data.next_before) content.append(link("Load older", route.view, {
-      ...route, before: JSON.stringify(data.next_before),
+      ...route, focus: null, before: JSON.stringify(data.next_before),
     }, "button"));
-    if (route.before) content.append(link("Latest Done", route.view, { ...route, before: null }, "button"));
+    if (route.before) {
+      content.append(link("Latest Done", route.view, { ...route, focus: null, before: null }, "button"));
+    }
     return content;
   }
 

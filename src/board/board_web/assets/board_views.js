@@ -100,7 +100,7 @@ export function createBoardViews(context) {
     focusKey(filterCheckbox, "overview:show-inactive");
     filterCheckbox.addEventListener("change", event => {
       navigate("overview", {
-        ...route, after: "", through: "", showInactive: event.target.checked ? "1" : "0",
+        ...route, focus: null, after: "", through: "", showInactive: event.target.checked ? "1" : "0",
       }, false, false);
     });
     filterChoice.append(filterCheckbox, el("span", "", "Show plans without active tasks"));

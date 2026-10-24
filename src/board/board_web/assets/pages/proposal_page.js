@@ -90,7 +90,7 @@ export function createProposalPage(context) {
     const repliesNext = extra.replies ? extra.replies.next_after : view.replies_next_after;
     if (repliesNext) {
       page.append(link("Next replies", "entry", {
-        ...route, repliesAfter: JSON.stringify(repliesNext),
+        ...route, focus: null, repliesAfter: JSON.stringify(repliesNext),
         repliesThrough: extra.replies?.through || view.through,
       }, "button"));
     }
@@ -102,7 +102,7 @@ export function createProposalPage(context) {
     const backrefsNext = extra.backrefs ? extra.backrefs.next_after : view.backrefs_next_after;
     if (backrefsNext) {
       page.append(link("Next references", "entry", {
-        ...route, backrefsAfter: JSON.stringify(backrefsNext),
+        ...route, focus: null, backrefsAfter: JSON.stringify(backrefsNext),
         backrefsThrough: extra.backrefs?.through || view.through,
       }, "button"));
     }

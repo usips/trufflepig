@@ -71,7 +71,7 @@ export function createBoardEntries(context) {
       entries.length ? null : empty("No entries match these filters."), omitted(data.omitted, "entries"));
     const pager = el("div", "pager");
     if (route.after) {
-      pager.append(link("Newest entries", route.view, { ...route, after: null, through: null }, "button"));
+      pager.append(link("Newest entries", route.view, { ...route, focus: null, after: null, through: null }, "button"));
     }
     if (entries.length && nextAfter(data)) {
       pager.append(link("Older entries", route.view, pageParams(route, data), "button"));

@@ -182,6 +182,17 @@ describe("specific links", () => {
     assert.equal(plain.querySelector(".entry-task-link"), null);
   });
 
+  it("pager links built from a focused route drop the focus target", () => {
+    const { views } = setup({ view: "entry", ref: "E5", focus: "entry-E9" });
+    const entry = { id: "E5", kind: "note", actor, body: "x", created_at: 1, plan: "P7", refs: [] };
+    const page = views.entryPage({ entry, replies: [], backrefs: [], replies_next_after: { seq: "4" },
+      backrefs_next_after: { seq: "3" }, through: "9" }, null,
+    { view: "entry", ref: "E5", focus: "entry-E9" });
+    const pagers = page.querySelectorAll("a.button").filter(item => /Next/.test(item.textContent));
+    assert.equal(pagers.length, 2);
+    for (const pager of pagers) assert.doesNotMatch(pager.href, /focus=/, pager.textContent);
+  });
+
   it("a stored revision links its neighbours, diff, plan, and history", async () => {
     const { context, views } = setup();
     const reader = createBoardReader({

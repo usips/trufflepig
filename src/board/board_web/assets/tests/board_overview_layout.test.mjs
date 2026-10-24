@@ -100,7 +100,7 @@ it("overview filters persist in the route and reset plan paging when toggled", (
   filter.checked = true;
   filter.listeners.get("change")[0]({ target: filter });
   assert.deepEqual(navigations[0], ["overview", {
-    view: "overview", after: "", through: "", showInactive: "1",
+    view: "overview", focus: null, after: "", through: "", showInactive: "1",
   }, false, false], "filter changes preserve the focused checkbox while reloading the overview");
   state.route = { view: "overview", showInactive: "1" };
   const allPlans = overview();

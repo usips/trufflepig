@@ -193,7 +193,8 @@ export function createBoardRenderLoop({
   }
   function pageParams(route, data) {
     const cursor = nextAfter(data);
-    return { ...route, after: typeof cursor === "object" ? JSON.stringify(cursor) : cursor, through: data.through };
+    return { ...route, focus: null, after: typeof cursor === "object" ? JSON.stringify(cursor) : cursor,
+      through: data.through };
   }
   function queryFilters(route) {
     return {
