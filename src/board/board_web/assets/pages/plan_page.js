@@ -36,7 +36,9 @@ export function createPlanPage(context) {
       const heading = decodeBoardFragment(anchor.getAttribute("href").slice(1));
       anchor.href = routeUrl(state.route.view, { ...state.route, heading }); anchor.dataset.nav = "true";
     }
-    return item;
+    // Plain text outside links and code links like any board text; the
+    // linkifier adds only text, anchor, and code nodes.
+    return dom.linkifyTextNodes(item, { plan: planId(state.route.ref) });
   }
   function annotateHeadings(markup, rendered, view) {
     const anchors = [...markup.querySelectorAll("[id]")];
@@ -243,7 +245,7 @@ export function createPlanPage(context) {
       const details = add(el("div"), refLink(revision.id),
         add(el("p"), actorMark({ ...revision, vendor: harnessVendor(revision.actor?.harness) }),
           el("span", "", actorName(revision.actor)), el("span", "", ` · ${revision.source}`)),
-        el("p", "", revision.summary));
+        dom.linkified("p", "", revision.summary, { plan: plan.id }));
       const number = Number(String(revision.id).split("@")[1]);
       add(item, details,
         number > 1 ? refLink(`${plan.id}@${number - 1}..${number}`, "View diff", "small") : null,
@@ -266,7 +268,8 @@ export function createPlanPage(context) {
       item.id = commitAnchor(commit.oid); item.dataset.anchor = item.id;
       add(item,
         refLink(commit.oid, commit.oid, "mono", { plan: plan || commit.plans[0]?.plan_id, repo_key: commit.repo_key }),
-        el("p", "", commit.subject),
+        dom.linkified("p", "", commit.subject,
+          { plan: plan || commit.plans[0]?.plan_id, repo_key: commit.repo_key }),
         add(el("p", "muted small"), el("span", "", `${commit.author} · `),
           timeNode(commit.committed_at),
           el("span", "", ` · ${commit.files} files · +${commit.insertions} −${commit.deletions}`)));

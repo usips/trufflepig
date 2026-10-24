@@ -19,11 +19,26 @@ References link through `board_refs.js:boardRefRoute`, the one grammar for rende
 opens the entry; `P7`, `P7@N`, and `P7@A..B` open the plan, revision, or diff; `P7.3` opens
 `/#/P7?tab=tasks&task=P7.3`; a worker address `P7.3/handle` adds `focus=worker-P7.3-handle`; a full
 commit id opens its plan's Commits tab (`oid=`) when the plan is known and `/#/search?q=<oid>`
-otherwise. Other text stays inert. A route's `focus=` names a `data-anchor` target (`entry-E485`,
+otherwise. A route's `focus=` names a `data-anchor` target (`entry-E485`,
 `worker-P7.3-handle`, `commit-<oid>`), falling back to `heading`, then `oid`, then `task`. After a
 navigation renders, the target's enclosing disclosures open, it scrolls into view, and it carries
 `data-targeted`, an outline that fades (static under reduced motion). Live refreshes never repeat
 this, and same-page focus links reveal without a reload.
+
+Free text links through `board_linkify.js:linkify`, one left-to-right tokenizer capped at 200
+matches per call: entry bodies, Latest activity and Needs you previews, claim and worker scopes and
+notes, proposal bodies, revision summaries, commit subjects, search snippets, and plan markup text
+outside links and code. References in the grammar above link through `boardRefRoute` with the
+record's plan; a short commit id (7–12 lowercase hex with a digit and a letter) opens the prefix
+search `/#/search?q=<id>*`. A repository path with a known source or document extension
+(`spray.rs`, `docs/x.md:194`, `a.rs:10-20`, `m.rs:symbol`) renders as a `code` chip whose title and
+copy button carry the `trufflepig-agent` command that opens it. HTTP(S) URLs follow the
+[link policy](board-web-security.md#link-destinations). Backtick spans render as code and link only
+when the whole span is one token. Trailing `.,;:!?*` and unbalanced closers, `#N`, prose words,
+versions, emails, and absolute paths stay text. Bounded previews keep tokens whole. Entry cards
+chip only server-extracted references the body does not link; search hits link their target
+heading and snippet separately. Working now summary scopes stay plain, since a link inside a
+one-line `summary` toggles the disclosure and hides under its ellipsis.
 
 Overview refreshes every 15 seconds: inbox renewal, claim expiry, and configuration changes can
 occur without advancing the event sequence. Entries views

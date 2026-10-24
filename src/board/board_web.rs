@@ -41,6 +41,7 @@ const PUBLIC_OVERVIEW_STYLE: &str = include_str!("board_web/assets/styles/board_
 const PUBLIC_DOM: &str = include_str!("board_web/assets/board_dom.js");
 const PUBLIC_REFS: &str = include_str!("board_web/assets/board_refs.js");
 const PUBLIC_ROUTE_TARGET: &str = include_str!("board_web/assets/board_route_target.js");
+const PUBLIC_LINKIFY: &str = include_str!("board_web/assets/board_linkify.js");
 const PUBLIC_URL_POLICY: &str = include_str!("board_web/assets/board_url_policy.js");
 const PUBLIC_VIEWS: &str = include_str!("board_web/assets/board_views.js");
 const PUBLIC_CARDS: &str = include_str!("board_web/assets/board_cards.js");

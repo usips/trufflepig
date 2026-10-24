@@ -262,7 +262,7 @@ export function createBoardViews(context) {
           authority: data.entries?.find(entry => entry?.id === claim.entry)?.authority,
         })),
         claim.model || claim.effort ? el("p", "small", [claim.model, claim.effort].filter(Boolean).join(" · ")) : null,
-        el("p", "small", claim.scope),
+        dom.linkified("p", "small", claim.scope, { plan: data.plan?.id }),
         add(el("p", "small muted"), el("span", "", "Last active "), ageNode(claim.last_active),
           claim.stale ? badge("stale") : null));
       if (claim && !taskView) {

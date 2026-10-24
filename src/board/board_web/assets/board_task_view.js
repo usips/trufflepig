@@ -3,7 +3,7 @@ import { commitAnchor, entryAnchor } from "./board_refs.js";
 
 export function createBoardTaskView(context) {
   const { dom, entryCard, workerTree, claimSignals } = context;
-  const { el, add, badge, refLink, timeNode, omitted, disclosure } = dom;
+  const { el, add, badge, refLink, linkified, timeNode, omitted, disclosure } = dom;
 
   function claimHistory(items, entries, view) {
     const details = disclosure(`claim-history:${view.task.id}`, `Claim history (${items.length})`,
@@ -45,7 +45,8 @@ export function createBoardTaskView(context) {
     const row = el("li", "task-commit-row");
     row.dataset.anchor = commitAnchor(commit.oid);
     add(row, refLink(commit.oid, commit.oid, "mono", { plan: String(task.id).split(".")[0], repo_key: commit.repo_key }),
-      el("p", "task-commit-subject", commit.subject),
+      linkified("p", "task-commit-subject", commit.subject,
+        { plan: String(task.id).split(".")[0], repo_key: commit.repo_key }),
       add(el("p", "muted small"), el("span", "", `${commit.author} · `), timeNode(commit.committed_at)));
     if (commit.coauthors?.length) {
       const authors = el("div", "coauthor-list");

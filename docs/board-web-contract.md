@@ -34,7 +34,7 @@ Mismatches fail `board_api_mismatch` without negotiation. Errors are
 | `GET /board_dom.js`, `/board_views.js`, `/board_cards.js` | Public UI modules |
 | `GET /board_working_rows.js` | Working now row module |
 | `GET /board_refs.js`, `/board_route_target.js` | Reference routes and focus targets |
-| `GET /board_url_policy.js` | Shared link policy |
+| `GET /board_linkify.js`, `/board_url_policy.js` | Free-text links and the shared link policy |
 | `GET /marks/agent_marks.js` | JavaScript marks; no vendor image routes |
 | `GET /board_routing.js`, `/board_render_loop.js` | Public UI modules |
 | `GET /pages/board_pages.js`, `/pages/plan_page.js`, `/pages/proposal_page.js` | Page modules |
@@ -170,7 +170,9 @@ the [board web UI contract](board-web-ui.md). The server escapes raw Markdown HT
 inline HTML, suppresses images, and validates decoded link destinations under the
 [link policy](board-web-security.md#link-destinations); other links render inert. Generated
 attributes are escaped. Only server-sanitized markup reaches `innerHTML`; entries, references,
-snippets, and FTS text use `textContent`. Heading
+snippets, and FTS text render as text nodes. Free text passes through `board_linkify.js:linkify`,
+which adds only anchors, `code` chips, and empty copy buttons, so each container's `textContent`
+equals its source text. Heading
 anchors are deterministic, including duplicate/formatted headings. `task.section` matches normalized
 visible heading titles exactly; one task covers every repeated heading with that title. Anchors
 identify locations, and task navigation selects the first matching anchor. Uncovered titles are

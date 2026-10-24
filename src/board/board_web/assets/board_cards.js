@@ -1,15 +1,14 @@
 import { actorAttribution, harnessVendor, recipientMark } from "./marks/agent_marks.js";
 import { entryAnchor, workerAnchor } from "./board_refs.js";
+import { boardRefLinkedInline, boardTextRefs } from "./board_linkify.js";
 
 export function createBoardCards({ state, dom, entryRecord, collection }) {
   const {
-    el, add, link, refLink, badge, actorName, timeNode, ageNode,
+    el, add, link, refLink, linkified, badge, actorName, timeNode, ageNode,
     disclosure, empty, focusKey, planId,
   } = dom;
-  function cardPreview(value) {
-    const text = String(value || ""), characters = Array.from(text);
-    return characters.length > 280 ? `${characters.slice(0, 279).join("")}…` : text;
-  }
+  // Needs you and Latest activity previews: 280 codepoints, references whole.
+  const PREVIEW = { maxCodepoints: 280, copy: false };
 
   function entryCard(record, options = {}) {
     const entry = entryRecord(record);
@@ -22,11 +21,13 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
       entry.via === "outbox" ? el("span", "provenance", "(spooled, unverified)") : null,
       entry.model ? el("span", "", `${entry.model}${entry.effort ? ` · ${entry.effort}` : ""}`) : null,
       entry.state ? badge(entry.state.state || entry.state) : null, timeNode(entry.created_at));
-    add(item, meta, el("p", "entry-body", entry.body));
-    const refs = el("div", "entry-refs");
+    const context = { plan: entry.plan, repo_key: entry.repo_key };
+    add(item, meta, linkified("p", "entry-body", entry.body, context));
+    // Chips keep only server-extracted references the body does not link inline.
+    const refs = el("div", "entry-refs"), inline = boardTextRefs(entry.body);
     if (entry.plan) refs.append(refLink(entry.plan));
     for (const ref of entry.refs || []) {
-      refs.append(refLink(ref, ref, "mono", { plan: entry.plan, repo_key: entry.repo_key }));
+      if (!boardRefLinkedInline(inline, ref)) refs.append(refLink(ref, ref, "mono", context));
     }
     if (entry.to) refs.append(el("span", "muted", `To ${entry.to}`));
     if (entry.supersedes) add(refs, el("span", "muted", "Supersedes"), refLink(entry.supersedes));
@@ -65,7 +66,7 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
       const item = el("li", "event-row");
       focusKey(item, `event:${event.seq}`);
       add(item, fresh(event) ? badge("new") : null, badge(event.kind), eventSubject(event),
-        el("span", "event-summary", cardPreview(event.summary)),
+        linkified("span", "event-summary", event.summary, { plan: event.plan }, PREVIEW),
         actorAttribution(event),
         event.via === "outbox" ? el("span", "provenance", "(spooled, unverified)") : null,
         timeNode(event.created_at));
@@ -172,11 +173,11 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
     add(item,
       worker.model || worker.effort
         ? el("p", "agent-model muted small", [worker.model, worker.effort].filter(Boolean).join(" · ")) : null,
-      el("p", "agent-scope", worker.scope || ""),
+      linkified("p", "agent-scope", worker.scope, { plan: planId(worker.address?.task) }),
       worker.files?.length ? el("p", "agent-files muted small", `Files: ${worker.files.join(", ")}`) : null,
       add(el("p", "agent-active muted small"), el("span", "", "Last active "), ageNode(worker.last_active)),
       worker.ended_at ? add(el("p", "agent-ended muted small"), el("span", "", "Ended "), timeNode(worker.ended_at)) : null,
-      worker.note ? el("p", "agent-note", worker.note) : null,
+      worker.note ? linkified("p", "agent-note", worker.note, { plan: planId(worker.address?.task) }) : null,
       worker.verdict ? el("p", "agent-verdict small", `Review: ${verdictLabel(worker.verdict)}`) : null,
       progressPanel(worker.progress, { ...options, now }));
     return item;
@@ -192,7 +193,7 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
       actorAttribution({ ...claim, origin: claimEntry?.origin, authority: claimEntry?.authority }),
       claim.model || claim.effort
         ? el("p", "agent-model muted small", [claim.model, claim.effort].filter(Boolean).join(" · ")) : null,
-      el("p", "agent-scope", claim.scope || ""),
+      linkified("p", "agent-scope", claim.scope, { plan: planId(claim.task) }),
       add(el("p", "agent-active muted small"), el("span", "", "Last active "), ageNode(claim.last_active)));
     if (claim.entry) lead.dataset.anchor = entryAnchor(claim.entry);
     if (claim.delegated_by) {
@@ -265,7 +266,7 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
     add(item,
       add(el("div", "working-card-heading"), refLink(claim.task, task?.title || claim.task, "working-task"),
         claim.stale ? badge("stale") : badge("doing")),
-      el("p", "working-scope", claim.scope),
+      linkified("p", "working-scope", claim.scope, { plan: planId(claim.task) }),
       add(el("div", "working-meta"), actorAttribution(claim),
         claim.model || claim.effort ? el("span", "", [claim.model, claim.effort].filter(Boolean).join(" · ")) : null,
         refLink(claim.task),
@@ -310,10 +311,10 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
     const entry = entryRecord(item.record);
     const card = el("article", "attention-card");
     focusKey(card, `attention-card:${entry?.id || item.record.entry}`);
-    const preview = cardPreview(entry?.body || item.record.summary || "Open entry");
+    const preview = entry?.body || item.record.summary || "Open entry";
     add(card,
       add(el("div", "row wrap"), badge(item.type), entry?.plan ? refLink(entry.plan) : null),
-      el("p", "attention-preview", preview),
+      linkified("p", "attention-preview", preview, { plan: entry?.plan }, PREVIEW),
       refLink(entry?.id || item.record.entry, "Read entry →", "attention-entry-link"),
       add(el("p", "attention-author"), entry?.actor ? actorAttribution(entry) : null,
         entry?.via === "outbox" ? el("span", "provenance", " (spooled, unverified)") : null));

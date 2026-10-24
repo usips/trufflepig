@@ -1,4 +1,5 @@
 import { boardRefRoute } from "./board_refs.js";
+import { createBoardLinkify } from "./board_linkify.js";
 
 export function decodeBoardFragment(value) {
   try { return decodeURIComponent(value); } catch (_) { return value; }
@@ -313,10 +314,11 @@ export function createBoardDom(state) {
     }
   }
   function planId(ref) { return String(ref || "").match(/^P[1-9]\d*/)?.[0] || ""; }
+  const { linkify, linkified, linkifyTextNodes } = createBoardLinkify({ el, link, refLink });
 
   return {
-    el, add, button, routeUrl, link, refLink, badge, actorName, shortActor, stamp, timeNode, age,
-    ageNode, panel, disclosure, empty, omitted, title, field, formStatus, planId, focusKey,
+    el, add, button, routeUrl, link, refLink, linkify, linkified, linkifyTextNodes, badge, actorName, shortActor,
+    stamp, timeNode, age, ageNode, panel, disclosure, empty, omitted, title, field, formStatus, planId, focusKey,
     retainForm, captureForms, restoreForms, syncForm, setFormBusy, focusedControl, restoreFocus, saveForm, markFormSaved,
   };
 }

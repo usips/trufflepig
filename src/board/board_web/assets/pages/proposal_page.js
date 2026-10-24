@@ -58,7 +58,8 @@ export function createProposalPage(context) {
       }
       page.append(panel("Proposed SSOT change", diffPage(diff)));
       const full = dom.disclosure(`proposal-full:${entry.id}`, "Full proposed plan", "section");
-      full.append(el("pre", "entry-body", proposal.body)); page.append(full);
+      full.append(dom.linkified("pre", "entry-body", proposal.body, { plan: entry.plan }));
+      page.append(full);
       if (proposal.decision_entry) {
         page.append(add(el("p", "small"), el("span", "muted", "Decision: "), refLink(proposal.decision_entry)));
       }

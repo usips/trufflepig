@@ -69,6 +69,13 @@ h4{font-size:.9rem;margin:.2rem 0}
 .muted{color:var(--muted)}
 .small{font-size:.82rem}
 .mono,code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+.linkify-code,.linkify-path{font-size:.9em;padding:0 .2em;border-radius:4px;overflow-wrap:anywhere}
+.linkify-code{background:var(--line)}
+.linkify-path{background:var(--accent-soft)}
+.linkify-url{overflow-wrap:anywhere}
+.linkify-copy{border:0;background:transparent;padding:0 .2em;color:var(--muted);font-size:.85em;line-height:1}
+.linkify-copy::before{content:"⧉"}
+.linkify-copy:hover:not(:disabled){background:transparent;color:var(--accent)}
 .actions{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
 .row{display:flex;align-items:center;gap:.55rem;min-width:0}
 .spread{justify-content:space-between}

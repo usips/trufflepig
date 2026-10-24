@@ -32,13 +32,14 @@ export function createBoardDetails(context) {
     page.append(retainForm(form, `search:${route.q}:${route.plan}`));
     if (!route.q) return add(page, empty("Enter a phrase to search the board."));
     const hits = collection(data, "hits");
+    // The target heading links the hit; the snippet links its own references,
+    // so the card is no longer one anchor (anchors cannot nest).
     for (const hit of hits) {
-      const item = refLink(hit.target, "", "search-result", { plan: hit.plan });
-      add(item,
-        add(el("div", "row"), el("h2", "mono", hit.target), badge(hit.source || hit.kind),
+      const heading = add(el("h2", "mono"), refLink(hit.target, hit.target, "search-target", { plan: hit.plan }));
+      page.append(add(el("article", "search-result"),
+        add(el("div", "row"), heading, badge(hit.source || hit.kind),
           hit.plan ? el("span", "muted small", hit.plan) : null),
-        el("p", "", hit.snippet));
-      page.append(item);
+        dom.linkified("p", "", hit.snippet, { plan: hit.plan })));
     }
     if (!hits.length) page.append(empty("No matches."));
     if (data?.truncated) {
