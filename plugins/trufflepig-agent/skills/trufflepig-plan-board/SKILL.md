@@ -20,8 +20,8 @@ entry. Full commit oids are references; short hex is not.
 Harness identity follows native signals before the `TRUFFLEPIG_AGENT_HARNESS`
 hint. Never pass `--client human` or `--client cli` from a harness. If a worker
 needs an explicit unique session because no unique native session is available,
-set its own `TRUFFLEPIG_SESSION`; this overrides provider-session selection but
-does not change harness detection. Every active model calls `board hello MODEL
+pass it right after the command (`trufflepig-agent --session ID board ...`); this
+overrides provider-session selection but does not change harness detection. Every active model calls `board hello MODEL
 [EFFORT]` in its own session. In Kimi Code, read [Kimi setup](references/kimi.md)
 first.
 

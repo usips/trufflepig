@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Claude Bash identity rewriting and bounded Board lifecycle hooks."""
+"""Claude Bash identity rewriting (`--session` insertion) and bounded Board lifecycle hooks."""
 from __future__ import annotations
 
 import json
@@ -21,8 +21,6 @@ ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 WRAPPERS = {"trufflepig", "trufflepig-agent"}
 PENDING_TIMEOUT = 2.5
 BYE_TIMEOUT = 0.65
-REWRITE_ENABLED = os.environ.get("TRUFFLEPIG_CLAUDE_IDENTITY_REWRITE", "").lower() \
-    in {"1", "true", "yes", "on"}
 
 
 def shell_segments(command: str) -> list[tuple[int, int, str]] | None:
@@ -125,8 +123,39 @@ def command_word_index(words: list[str]) -> int:
     return index
 
 
+def word_end(source: str, index: int) -> int:
+    """Index just past the shell word starting at `index` (quotes and escapes kept whole)."""
+    quote: str | None = None
+    while index < len(source):
+        char = source[index]
+        if quote:
+            if char == "\\" and quote == '"':
+                index += 1
+            elif char == quote:
+                quote = None
+        elif char == "\\":
+            index += 1
+        elif char in "'\"":
+            quote = char
+        elif char.isspace():
+            return index
+        index += 1
+    return index
+
+
+def executable_end(source: str, command_index: int) -> int:
+    """Source offset just past word `command_index`, the executable, of one segment."""
+    index = 0
+    for _ in range(command_index + 1):
+        while index < len(source) and source[index].isspace():
+            index += 1
+        index = word_end(source, index)
+    return index
+
+
 def rewrite_command(command: str, session: str) -> str | None:
-    """Insert a command-local identity before direct Trufflepig invocations."""
+    """Insert `--session SESSION` after the executable of direct Trufflepig invocations,
+    keeping the command prefix that `Bash(trufflepig-agent *)` permission rules match."""
     segments = shell_segments(command)
     if segments is None:
         return None
@@ -153,10 +182,8 @@ def rewrite_command(command: str, session: str) -> str | None:
             continue
         if any(word == "--session" or word.startswith("--session=") for word in words[command_index + 1:]):
             continue
-        prefix = command[start:end]
-        leading = len(prefix) - len(prefix.lstrip())
-        insert_at = start + leading
-        edits.append((insert_at, insert_at, f"TRUFFLEPIG_SESSION={shlex.quote(session)} "))
+        insert_at = start + executable_end(command[start:end], command_index)
+        edits.append((insert_at, insert_at, f" --session {shlex.quote(session)}"))
     if not edits:
         return None
     for begin, finish, insertion in reversed(edits):
@@ -288,7 +315,7 @@ def main() -> int:
     if event == "PreToolUse" and payload.get("tool_name") == "Bash":
         tool_input = payload.get("tool_input")
         session = identity.payload_subagent_session(payload)
-        if (not REWRITE_ENABLED or not session or os.environ.get("TRUFFLEPIG_SESSION")
+        if (not identity.identity_rewrite_enabled() or not session or os.environ.get("TRUFFLEPIG_SESSION")
                 or not isinstance(tool_input, dict)):
             return 0
         command = tool_input.get("command")

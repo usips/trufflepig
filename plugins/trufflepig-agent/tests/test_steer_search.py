@@ -429,8 +429,8 @@ class HookTests(unittest.TestCase):
                                 env=dict(self.env, CLAUDE_ENV_FILE=str(env_file)), capture_output=True, text=True)
         output = json.loads(result.stdout)["hookSpecificOutput"]
         self.assertEqual(output["hookEventName"], "SubagentStart")
-        self.assertIn("TRUFFLEPIG_SESSION=claude-agent-", output["additionalContext"])
-        self.assertIn("including `board hello`", output["additionalContext"])
+        self.assertIn("trufflepig-agent --session claude-agent-", output["additionalContext"])
+        self.assertIn("Searches need no prefix", output["additionalContext"])
         self.assertIn("trufflepig-agent show 'sym:Name'", output["additionalContext"])
         self.assertIn("Only an unpublished linked-worktree home in a workspace can serve from its member's parent index",
                       output["additionalContext"])
@@ -441,13 +441,13 @@ class HookTests(unittest.TestCase):
         result = subprocess.run([sys.executable, str(PLUGIN / "hooks/claude-session.py")], input=json.dumps(payload),
                                 env=self.env, capture_output=True, text=True)
         unindexed = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("TRUFFLEPIG_SESSION=claude-agent-", unindexed)
+        self.assertIn("--session claude-agent-", unindexed)
         self.assertNotIn("trufflepig-agent show 'sym:Name'", unindexed)
         result = subprocess.run([sys.executable, str(PLUGIN / "hooks/claude-session.py")],
                                 input=json.dumps(dict(payload, cwd=str(self.repo))),
                                 env=dict(self.env, TRUFFLEPIG_AGENT_STEER="off"), capture_output=True, text=True)
         steered_off = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("TRUFFLEPIG_SESSION=claude-agent-", steered_off)
+        self.assertIn("--session claude-agent-", steered_off)
         self.assertNotIn("trufflepig-agent show 'sym:Name'", steered_off)
 
     def test_session_context_only_inside_indexed_checkouts(self):

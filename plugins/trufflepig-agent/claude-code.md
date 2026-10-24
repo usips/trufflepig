@@ -83,13 +83,11 @@ subagent's `additionalContext`. Claude's `SubagentStart` payload carries the par
 `session_id` and a unique `agent_id`. Their SHA-256 with a NUL separator yields a
 stable `claude-agent-<24 hex>` token, shared by tool hooks and that subagent's stop
 hook. It does not replace the parent session export. Workers use the worker address
-and role from the lead's brief; `agent_type` does not select a Board role. If either
-ID is missing, the hook requires a unique explicit `TRUFFLEPIG_SESSION` and never
-uses the parent's identity for a subagent write.
+and role from the lead's brief; `agent_type` does not select a Board role.
 Outside indexed checkouts, or with steering `off`, code-search guidance is omitted.
 Subagent identity guidance is still returned whenever Claude supplies both IDs. If either
 ID is missing, the hook marks attribution unavailable and tells the child to obtain a unique
-`TRUFFLEPIG_SESSION` from its parent before making board calls; it must not reuse the parent's
+`--session` value from its parent before making board calls; it must not reuse the parent's
 identity for `board hello` or other identity-sensitive writes.
 
 The installer merges search steering on `PreToolUse`/`PostToolUse` Bash and
@@ -116,22 +114,16 @@ definition, body, outline, and reference searches. See
 [Other harness hooks](README.md#other-harness-hooks) for classes, fallbacks, and
 `install.sh --steer MODE`.
 
-Automatic identity rewriting stays disabled by default. The native Claude Code
-2.1.296 fixture confirmed that the hook's `updatedInput` reaches normal permission
-evaluation, then showed that `Bash(trufflepig-agent *)` does not authorize the
-rewritten command, which starts with `TRUFFLEPIG_SESSION=...`; Claude denied the
-probe before the wrapper ran. No permission decision is bypassed. Set
-`TRUFFLEPIG_CLAUDE_IDENTITY_REWRITE=1` only when the active permission rules
-already authorize the rewritten command. The hook does not change those rules.
-
-With opt-in enabled, the PreToolUse hook prefixes direct `trufflepig-agent` and
-`trufflepig` Bash calls with the stable subagent token. Explicit
-`TRUFFLEPIG_SESSION=` and `--session` overrides remain intact; all other tool
-input fields are preserved. The hook returns `updatedInput` without
-`permissionDecision`. The [SDK hook contract](https://code.claude.com/docs/en/agent-sdk/hooks#modified-input-not-applied)
-specifies that omitting `permissionDecision` preserves normal permission
-evaluation. Manual `TRUFFLEPIG_SESSION=...` prefixes use that same permission
-flow and may also prompt under the existing allow rule.
+Inside a subagent, the PreToolUse hook inserts `--session claude-agent-...` right
+after the executable of direct `trufflepig-agent` and `trufflepig` Bash calls, so
+the command still starts with `trufflepig-agent` and `Bash(trufflepig-agent *)`
+still matches it. Explicit `TRUFFLEPIG_SESSION=` and `--session` overrides remain
+intact; all other tool input fields are preserved. The hook returns `updatedInput`
+without `permissionDecision`, which the [SDK hook contract](https://code.claude.com/docs/en/agent-sdk/hooks#modified-input-not-applied)
+defines as normal permission evaluation; no permission decision is bypassed.
+`TRUFFLEPIG_CLAUDE_IDENTITY_REWRITE=0` disables the rewrite. The `SubagentStart`
+note tells each subagent to pass the same `--session` on `board` commands
+itself; searches need no session.
 
 After a successful or failed tool call, the hook checks pending Board notices at
 most once per 60 seconds per actor. It emits only compact entry/task IDs, model,
@@ -173,11 +165,6 @@ initialization can be checked without a model turn using Claude's SDK control
 interface; neither proves that a model will choose the skill on every prompt.
 Compare the audit session with Claude's actual session ID, including separate
 sessions in the same working directory and a resumed session.
-
-The isolated Claude Code 2.1.296 check confirmed ordinary permission evaluation
-and showed that the existing allow rule rejects the rewritten command. Keep the
-default disabled unless a future permission policy intentionally authorizes that
-command form; do not use hook output to bypass permission checks.
 
 To remove the integration, remove both personal skill symlinks, the
 `SessionStart` and `SubagentStart` entries invoking `trufflepig-claude-session`,

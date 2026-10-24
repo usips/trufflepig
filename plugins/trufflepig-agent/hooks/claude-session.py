@@ -22,37 +22,23 @@ def subagent_identity_context(payload: dict) -> str:
     ):
         return (
             "Trufflepig attribution is unavailable because Claude did not provide both session_id and agent_id. "
-            "Before any Trufflepig call, ask the parent for a unique TRUFFLEPIG_SESSION override and prefix each "
-            "wrapper command with `TRUFFLEPIG_SESSION='<value>'`. Do not run `trufflepig-agent board hello` or "
-            "an identity-sensitive board write with the inherited parent session."
+            "Before any `board` command, ask the parent for a unique session value and pass it as "
+            "`trufflepig-agent --session VALUE board ...`. Do not run `board hello` or an identity-sensitive "
+            "board write with the inherited parent session. Searches need no session."
         )
     override = identity.subagent_session(session, agent)
     if override is None:
         return "Trufflepig attribution is unavailable."
-    worker = (
+    automatic = identity.identity_rewrite_enabled()
+    return (
+        f"Your Trufflepig Board session is `{override}`. Pass it right after `trufflepig-agent` on every "
+        f"`board` command, e.g. `trufflepig-agent --session {override} board hello MODEL`"
+        + ("; direct calls also receive it automatically" if automatic else "")
+        + ". Searches need no prefix. "
         "Follow the worker recipe in the lead's brief and use the handle, address, and role the lead registered. "
         "Claude's agent_type is not a Board role, so do not infer or register a role from it. "
         "When the brief provides a worker address, include it in `board hello` as "
-        "`--worker TASK/HANDLE` (e.g. P7.3/parser). "
-    )
-    if os.environ.get("TRUFFLEPIG_CLAUDE_IDENTITY_REWRITE", "").lower() in {"1", "true", "yes", "on"}:
-        return (
-            "Recognized direct `trufflepig-agent` and `trufflepig` Bash calls receive this subagent's "
-            "stable board identity automatically. Do not add a session override unless the lead explicitly "
-            "provides one. Claude still evaluates permissions normally; the rewritten environment-prefixed "
-            "command must be permitted by the active rules. " + worker
-            + "Calls through another shell, scripts, or unrecognized command forms need an explicit "
-            f"`TRUFFLEPIG_SESSION={override}` prefix, which also follows normal permission evaluation."
-        )
-    return (
-        "Automatic per-subagent command rewriting is disabled because native Claude Code 2.1.296 "
-        "permission checks rejected its rewritten command under `Bash(trufflepig-agent *)`. No permission "
-        "decision is bypassed. Manually prefix every Trufflepig command, including `board hello`, with "
-        f"`TRUFFLEPIG_SESSION={override}`; for example, "
-        f"`TRUFFLEPIG_SESSION={override} trufflepig-agent board hello MODEL`. "
-        "The prefix also follows normal permission evaluation and may prompt under the current allow rule. "
-        "Set `TRUFFLEPIG_CLAUDE_IDENTITY_REWRITE=1` only when your active rules permit the rewritten command. "
-        + worker
+        "`--worker TASK/HANDLE` (e.g. P7.3/parser)."
     )
 
 

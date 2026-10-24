@@ -203,9 +203,10 @@ class ClaudeIntegrationTests(unittest.TestCase):
                                 env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        self.assertEqual(context.count("TRUFFLEPIG_SESSION="), 2)
-        self.assertIn("including `board hello`", context)
-        self.assertIn("trufflepig-agent board hello MODEL", context)
+        self.assertEqual(context.count("trufflepig-agent --session claude-agent-"), 1)
+        self.assertIn("on every `board` command", context)
+        self.assertIn("board hello MODEL", context)
+        self.assertNotIn("TRUFFLEPIG_SESSION=", context)
         self.assertNotIn("Use `trufflepig-agent` via Bash for code search", context)
         self.assertEqual(env_file.read_text(), "export TRUFFLEPIG_CLAUDE_SESSION=abc123\n")
 
@@ -243,9 +244,10 @@ class ClaudeIntegrationTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
             self.assertIn("attribution is unavailable", context)
-            self.assertIn("ask the parent for a unique TRUFFLEPIG_SESSION override", context)
-            self.assertIn("Do not run `trufflepig-agent board hello`", context)
-            self.assertNotIn("TRUFFLEPIG_SESSION=claude-agent-", context)
+            self.assertIn("ask the parent for a unique session value", context)
+            self.assertIn("`trufflepig-agent --session VALUE board ...`", context)
+            self.assertIn("Do not run `board hello`", context)
+            self.assertNotIn("claude-agent-", context)
             self.assertEqual(env_file.read_text(), "export TRUFFLEPIG_CLAUDE_SESSION=abc123\n")
 
 

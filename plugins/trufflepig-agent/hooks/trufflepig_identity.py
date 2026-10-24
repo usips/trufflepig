@@ -2,7 +2,13 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from collections.abc import Mapping
+
+
+def identity_rewrite_enabled() -> bool:
+    """Bash calls get `--session` inserted unless `TRUFFLEPIG_CLAUDE_IDENTITY_REWRITE` is off."""
+    return os.environ.get("TRUFFLEPIG_CLAUDE_IDENTITY_REWRITE", "").lower() not in {"0", "false", "no", "off"}
 
 
 def subagent_session(session_id: object, agent_id: object) -> str | None:
