@@ -266,7 +266,7 @@ fn current_path_show_and_continuation_bypass_a_blocked_workspace_cache() {
     assert_eq!(first["workspace"], "coordinated");
     assert_eq!(
         first["repository"],
-        crate::store::encode_path(&workspace.root.path().join("engine"))
+        crate::path_codec::encode_path(&workspace.root.path().join("engine"))
     );
     assert!(first["truncated"].as_bool().unwrap(), "{first}");
     let continuation = first["next"].as_str().expect("stateless continuation");

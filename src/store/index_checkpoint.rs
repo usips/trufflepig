@@ -63,7 +63,7 @@ impl IndexCheckpoint {
         if let Some(deadline) = deadline {
             index_deadline::check(deadline)?;
         }
-        let root = crate::store::encode_path(root);
+        let root = crate::path_codec::encode_path(root);
         let contract = contract_revision();
         let base_epoch: String = conn.query_row(
             "SELECT value FROM meta WHERE key='index_epoch'",

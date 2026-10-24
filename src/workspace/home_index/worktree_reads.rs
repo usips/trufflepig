@@ -6,11 +6,12 @@ use super::{ParentFallback, WorktreeDivergence, hit_verification::WorktreeHashes
 use crate::{
     extract::Definition,
     identity::ContentRevision,
+    path_codec::decode_path,
     query_deadline::QueryDeadline,
     results::{Hit, ResultSet},
     search::{BoundPathFilter, InvocationDirectory, Query},
     source,
-    store::{Store, decode_path},
+    store::Store,
 };
 use anyhow::{Result, ensure};
 use rusqlite::OptionalExtension;

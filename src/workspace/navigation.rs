@@ -309,7 +309,7 @@ pub(super) fn history(
     }
     value["workspace"] = config.name.clone().into();
     value["member"] = member.name().into();
-    value["repository"] = crate::store::encode_path(&member.root).into();
+    value["repository"] = crate::path_codec::encode_path(&member.root).into();
     render_owned_value(value, budget)
 }
 fn rewrite_handles(value: &mut Value, old: &str, new: &str) {

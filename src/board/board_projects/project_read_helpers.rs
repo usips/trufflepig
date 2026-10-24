@@ -97,7 +97,7 @@ pub(crate) fn project_reply(
                     .into_iter()
                     .map(|member| ProjectMemberRecord {
                         name: member.name,
-                        root: crate::store::encode_path(&member.root),
+                        root: crate::path_codec::encode_path(&member.root),
                         available: member.available,
                     })
                     .collect(),

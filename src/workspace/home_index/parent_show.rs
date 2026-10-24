@@ -247,7 +247,7 @@ pub(crate) fn reextracted_entry(
     if names_whole_file(hit) {
         let bytes = source::read_contained(
             root,
-            &crate::store::decode_path(&hit.path)?,
+            &crate::path_codec::decode_path(&hit.path)?,
             source::MAX_READ_BYTES,
         )?;
         let source = AcquiredSource {

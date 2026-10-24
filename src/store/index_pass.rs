@@ -4,9 +4,10 @@
 //! ([coherent publication](../../docs/index-contract.md#coherent-publication)).
 use super::index_checkpoint::IndexCheckpoint;
 use super::{
-    Coverage, Publication, Store, encode_path, index_checkpoint, index_deadline, live_index,
-    php_resolver, publish, regions, scan, schema,
+    Coverage, Publication, Store, index_checkpoint, index_deadline, live_index, php_resolver,
+    publish, regions, scan, schema,
 };
+use crate::path_codec::encode_path;
 use crate::query_deadline::QueryDeadline;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension};

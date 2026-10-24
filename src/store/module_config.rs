@@ -1,4 +1,4 @@
-use super::encode_path;
+use crate::path_codec::encode_path;
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::Value;

@@ -110,11 +110,11 @@ impl ParentIndexIdentity {
             .with_coded_context(|| coded!(StaleResult, "parent index has no published identity"))?;
         let worktree = store.root.metadata()?;
         Ok(Self {
-            root: crate::store::encode_path(store.index_root()),
+            root: crate::path_codec::encode_path(store.index_root()),
             index_epoch: publication.index_epoch,
             generation: publication.generation,
             served_from: fallback.served_from.clone(),
-            worktree_root: crate::store::encode_path(&store.root),
+            worktree_root: crate::path_codec::encode_path(&store.root),
             worktree_device: worktree.dev(),
             worktree_inode: worktree.ino(),
         })

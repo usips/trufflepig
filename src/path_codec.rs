@@ -1,3 +1,4 @@
+//! Reversible percent encoding of Unix paths for cache keys, wire fields, and file names.
 use anyhow::{Result, bail};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};

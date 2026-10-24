@@ -5,8 +5,9 @@ use super::{History, comparison, source_diff, targets::Target};
 use crate::{
     identity::{ByteSpan, ContentRevision, GitOid},
     output::OutputBudget,
+    path_codec::encode_path,
     results::{self, ChangeEntry, HistoricalSource, Hit, ResultEntry},
-    store::{PublicationChange, Store, encode_path},
+    store::{PublicationChange, Store},
 };
 use anyhow::{Result, ensure};
 use rusqlite::OptionalExtension;

@@ -2,9 +2,9 @@
 use crate::diagnostics::{Outcome, RequestEvent};
 use crate::{
     identity::ResultHandle,
+    path_codec::encode_path,
     query_deadline::QueryDeadline,
     results::{self, HistoricalSource, RESULTS_DATABASE, ResultEntry, ResultSetStore},
-    store::encode_path,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;

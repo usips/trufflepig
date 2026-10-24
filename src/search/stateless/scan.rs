@@ -151,7 +151,7 @@ pub(super) fn map_current_file(
             "current map path is inside an excluded directory"
         )
     );
-    let encoded_path = store::encode_path(&relative);
+    let encoded_path = crate::path_codec::encode_path(&relative);
     let bytes = match source::read_contained(&root, &relative, MAX_READ_BYTES) {
         Ok(bytes) => bytes,
         Err(error) if error_detail(&error) == Some(CodeDetail::NotRegularFile) => {
@@ -295,7 +295,7 @@ fn current_paths(
             break;
         }
         let relative = entry.path().strip_prefix(&store.root)?;
-        paths.push(store::encode_path(relative));
+        paths.push(crate::path_codec::encode_path(relative));
     }
     Ok(paths)
 }
@@ -310,7 +310,7 @@ fn attach_filename_handles(
     let mut retained = Vec::with_capacity(hits.len());
     while let Some(mut hit) = hits.next() {
         check_deadline(deadline)?;
-        let relative = store::decode_path(&hit.path)?;
+        let relative = crate::path_codec::decode_path(&hit.path)?;
         let bytes = match source::read_contained(root, &relative, MAX_CURRENT_FILE_BYTES) {
             Ok(bytes) if !bytes.contains(&0) => bytes,
             Ok(_) => {
@@ -376,7 +376,7 @@ fn read_current_sources(
 ) -> Result<()> {
     for (index, encoded_path) in paths.iter().enumerate() {
         check_deadline(deadline)?;
-        let relative = store::decode_path(encoded_path)?;
+        let relative = crate::path_codec::decode_path(encoded_path)?;
         let bytes = match source::read_contained(&store.root, &relative, MAX_CURRENT_FILE_BYTES) {
             Ok(bytes) => bytes,
             Err(error) if ErrorCode::SourceExcluded.is_code_of(&error) => {
@@ -487,7 +487,7 @@ fn empty_set(
 
 fn current_relative_path(path: &str) -> Result<std::path::PathBuf> {
     let path = path.strip_prefix("./").unwrap_or(path);
-    let relative = store::decode_path(path)?;
+    let relative = crate::path_codec::decode_path(path)?;
     ensure!(
         !relative.as_os_str().is_empty()
             && relative

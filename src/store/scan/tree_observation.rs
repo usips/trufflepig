@@ -6,7 +6,10 @@ use super::file_stat::{FileStat, PassStart};
 use super::read_source;
 use super::scan_tally::ScanTally;
 use crate::query_deadline::QueryDeadline;
-use crate::store::{Coverage, encode_path, index_deadline};
+use crate::{
+    path_codec::encode_path,
+    store::{Coverage, index_deadline},
+};
 use anyhow::Result;
 use rusqlite::{Connection, params};
 use std::collections::HashMap;

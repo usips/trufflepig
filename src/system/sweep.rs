@@ -29,7 +29,7 @@ pub const CACHE_ROOT_MARKER: &str = "cache-root";
 pub fn record_cache_root(cache: &Path, root: &Path) {
     let marker = cache.join(CACHE_ROOT_MARKER);
     if !marker.exists() {
-        let _ = fs::write(marker, crate::store::encode_path(root));
+        let _ = fs::write(marker, crate::path_codec::encode_path(root));
     }
 }
 
@@ -87,7 +87,9 @@ fn evict_entry(
     }
     let root = match indexed {
         Some(_) => recorded_root(&index_path)?,
-        None => crate::store::decode_path(fs::read_to_string(&marker_path).ok()?.trim()).ok()?,
+        None => {
+            crate::path_codec::decode_path(fs::read_to_string(&marker_path).ok()?.trim()).ok()?
+        }
     };
     if !vanished_root::root_deleted(&root, base, home) {
         return None;
@@ -146,7 +148,7 @@ fn recorded_root(index: &Path) -> Option<PathBuf> {
             row.get(0)
         })
         .ok()?;
-    crate::store::decode_path(&encoded).ok()
+    crate::path_codec::decode_path(&encoded).ok()
 }
 
 /// Waits briefly for a stopping daemon to release its lease; `None` defers eviction.

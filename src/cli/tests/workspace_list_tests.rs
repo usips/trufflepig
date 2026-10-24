@@ -151,7 +151,7 @@ fn workspace_list_json_encodes_non_utf8_member_paths() {
     let value: Value = serde_json::from_str(&output).unwrap();
     assert_eq!(
         value["workspaces"][0]["members"][0]["root"],
-        crate::store::encode_path(&root)
+        crate::path_codec::encode_path(&root)
     );
     assert_eq!(value["workspaces"][0]["members"][0]["available"], true);
 }

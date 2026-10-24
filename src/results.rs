@@ -189,7 +189,7 @@ pub(crate) fn concise_name(name: &str) -> bool {
 
 /// Return an absolute `file:` URI while preserving raw Unix path bytes.
 pub(crate) fn file_uri(root: &Path, relative: &str) -> Result<String> {
-    let relative = crate::store::decode_path(relative)?;
+    let relative = crate::path_codec::decode_path(relative)?;
     ensure!(
         relative.is_relative(),
         coded!(ResultUnavailable, "stored path is absolute")
@@ -200,7 +200,7 @@ pub(crate) fn file_uri(root: &Path, relative: &str) -> Result<String> {
             .all(|part| matches!(part, Component::Normal(_))),
         coded!(ResultUnavailable, "stored path escapes repository root")
     );
-    let encoded = crate::store::encode_path(&root.join(relative));
+    let encoded = crate::path_codec::encode_path(&root.join(relative));
     // `?` and `#` delimit URI query/fragment components, so escape them even
     // though they are safe in the root-relative CLI path encoding.
     let encoded = encoded.replace('?', "%3F").replace('#', "%23");

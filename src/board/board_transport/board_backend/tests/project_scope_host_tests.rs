@@ -120,7 +120,7 @@ fn projects_wire_encodes_unavailable_non_utf8_member_path() {
     let reply = fixture.wire_projects();
     let wire =
         serde_json::to_value(&reply).expect("Projects JSON preserves unavailable Unix paths");
-    let expected = crate::store::encode_path(&base.join("missing"));
+    let expected = crate::path_codec::encode_path(&base.join("missing"));
     assert_eq!(
         wire["result"]["data"][0]["unavailable"][0]["root"],
         expected

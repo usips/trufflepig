@@ -134,7 +134,7 @@ fn pages_are_file_first_while_saved_entries_keep_full_identity() {
         hit["file"],
         format!(
             "file://{}",
-            crate::store::encode_path(&root.path().join("lib.rs"))
+            crate::path_codec::encode_path(&root.path().join("lib.rs"))
         )
     );
     assert_eq!(hit["start_line"], 1);

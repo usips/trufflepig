@@ -1,5 +1,5 @@
 use super::{GitIndexStamp, WorktreeDivergence, head_and_index};
-use crate::store::encode_path;
+use crate::path_codec::encode_path;
 use crate::workspace::test_fixture::Fixture;
 use std::{
     fs::{self, File, FileTimes},

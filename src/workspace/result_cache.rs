@@ -9,9 +9,10 @@ use crate::coded_error::CodedContext;
 use crate::{
     identity::{ResultCursor, ResultHandle},
     output::{OutputBudget, OutputFormat},
+    path_codec::{decode_path, encode_path},
     query_deadline::QueryDeadline,
     results::{self, HitDetail, ResultEntry},
-    store::{Store, decode_path, encode_path},
+    store::Store,
 };
 use anyhow::{Result, bail, ensure};
 pub(super) use index_progress_source::IndexProgressSource;

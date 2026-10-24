@@ -56,7 +56,7 @@ impl ReextractedDefinition {
 pub fn reextract_definition(root: &Path, hit: &Hit) -> Result<Option<ReextractedDefinition>> {
     let bytes = read_contained(
         root,
-        &crate::store::decode_path(&hit.path)?,
+        &crate::path_codec::decode_path(&hit.path)?,
         crate::store::MAX_SOURCE_BYTES as usize,
     )?;
     ensure!(

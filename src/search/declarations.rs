@@ -33,7 +33,7 @@ impl InvocationDirectory {
             .ok()
             .map(|relative| {
                 Self(
-                    crate::store::encode_path(relative)
+                    crate::path_codec::encode_path(relative)
                         .trim_matches('/')
                         .to_owned(),
                 )
@@ -43,7 +43,7 @@ impl InvocationDirectory {
 
     /// Invocation directory relative to the selected root.
     pub(crate) fn member_relative_path(&self) -> Result<PathBuf> {
-        crate::store::decode_path(&self.0)
+        crate::path_codec::decode_path(&self.0)
     }
 
     /// Leading directory components shared with `path`'s directory.

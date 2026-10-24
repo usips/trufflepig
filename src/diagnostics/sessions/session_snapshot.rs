@@ -3,7 +3,10 @@ use crate::history::source_diff::{
     diff_fingerprints, fingerprint_lines,
 };
 use crate::identity::{ByteSpan, ContentRevision};
-use crate::store::{PublicationObservations, Store, encode_path};
+use crate::{
+    path_codec::encode_path,
+    store::{PublicationObservations, Store},
+};
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};

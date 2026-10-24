@@ -1,8 +1,5 @@
 //! One member's coverage row: what was searched, what could not be, and why.
-use crate::{
-    store::{Store, encode_path},
-    workspace::member_root::MemberRoot,
-};
+use crate::{path_codec::encode_path, store::Store, workspace::member_root::MemberRoot};
 use anyhow::Result;
 use serde_json::{Value, json};
 

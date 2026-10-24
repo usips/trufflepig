@@ -1,4 +1,5 @@
-use super::{decode_path, encode_path, module_config as config};
+use super::module_config as config;
+use crate::path_codec::{decode_path, encode_path};
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::{Path, PathBuf};

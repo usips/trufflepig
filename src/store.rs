@@ -13,7 +13,6 @@ mod inheritance_cache_tests;
 mod live_index;
 mod module_config;
 mod module_resolver;
-mod paths;
 mod php_resolver;
 #[cfg(test)]
 mod publication_tests;
@@ -40,7 +39,6 @@ pub use cache_access::{
 pub use index_checkpoint::{
     IndexProgress, IndexProgressPhase, read_index_progress, sweep_stale_stages,
 };
-pub use paths::{decode_path, encode_path};
 pub use read_access::{is_index_cannot_open, is_index_warming};
 use rusqlite::{Connection, OptionalExtension};
 pub(crate) use scan::{MAX_SOURCE_BYTES, extraction_cache_version};

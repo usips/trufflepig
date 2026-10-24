@@ -5,9 +5,9 @@
 use super::ParentFallback;
 use crate::{
     identity::ContentRevision,
+    path_codec::decode_path,
     results::Hit,
     source::{self, MAX_READ_BYTES},
-    store::decode_path,
 };
 use std::{
     collections::{HashMap, HashSet},

@@ -4,7 +4,7 @@
 //! files. Each Git probe is bounded; one that fails or times out leaves the set
 //! incomplete. A result is reused from `<worktree cache>/divergence.json` briefly.
 
-use crate::{git_runner, store::encode_path};
+use crate::{git_runner, path_codec::encode_path};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeSet,

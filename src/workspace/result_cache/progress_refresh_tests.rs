@@ -1,9 +1,10 @@
 use super::*;
 use crate::{
     output::{OutputBudget, OutputFormat},
+    path_codec::encode_path,
     query_deadline::QueryDeadline,
     results::{ChangeEntry, ResultEntry},
-    store::{Store, encode_path, read_index_progress},
+    store::{Store, read_index_progress},
 };
 use anyhow::Result;
 use serde_json::{Value, json};

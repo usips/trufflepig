@@ -1,7 +1,8 @@
 use super::{emission::execute, run};
 use crate::{
     diagnostics::{DiagnosticStore, DiagnosticsMode, EventStage, RequestEvent},
-    store::{Store, encode_path},
+    path_codec::encode_path,
+    store::Store,
     workspace::{config::WorkspaceConfig, member_cache},
 };
 use serde_json::Value;

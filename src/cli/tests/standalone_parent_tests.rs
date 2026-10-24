@@ -39,7 +39,7 @@ fn cold_parent_fallback_reads_current_worktree_without_child_publication() -> Re
     );
     assert_eq!(
         search["coverage"]["parent_index"]["root"],
-        crate::store::encode_path(&fixture.main)
+        crate::path_codec::encode_path(&fixture.main)
     );
     assert_eq!(search["hits"].as_array().unwrap().len(), 2, "{search}");
     let handle = search["hits"][0]["handle"]

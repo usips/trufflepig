@@ -820,7 +820,7 @@ fn open_index(root: &Path, cache: &Path) -> Result<Connection> {
             row.get(0)
         })
         .optional()?;
-    let expected_root = crate::store::encode_path(&root);
+    let expected_root = crate::path_codec::encode_path(&root);
     if stored_root.as_deref() != Some(expected_root.as_str()) {
         bail!(coded!(
             PreparationCacheMismatch,

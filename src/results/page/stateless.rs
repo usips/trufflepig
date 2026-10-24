@@ -89,7 +89,10 @@ pub(crate) fn stateless_page_members(
         if let Some(members) = members.as_object_mut() {
             for (root, member, _) in &ranked {
                 if let Some(member) = member {
-                    members.insert((*member).to_owned(), crate::store::encode_path(root).into());
+                    members.insert(
+                        (*member).to_owned(),
+                        crate::path_codec::encode_path(root).into(),
+                    );
                 }
             }
         }

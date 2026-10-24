@@ -344,12 +344,12 @@ fn validate_parent_worktree(
         coded!(StaleResult, "linked worktree is unavailable; search again")
     })?;
     ensure!(
-        crate::store::encode_path(&member.root) == identity.worktree_root
+        crate::path_codec::encode_path(&member.root) == identity.worktree_root
             && worktree_metadata.dev() == identity.worktree_device
             && worktree_metadata.ino() == identity.worktree_inode,
         coded!(StaleResult, "linked worktree was replaced; search again")
     );
-    let parent_root = crate::store::decode_path(&identity.root)?
+    let parent_root = crate::path_codec::decode_path(&identity.root)?
         .canonicalize()
         .with_coded_context(|| {
             coded!(StaleResult, "parent checkout is unavailable; search again")

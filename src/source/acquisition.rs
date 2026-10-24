@@ -179,7 +179,7 @@ pub(crate) fn acquire_entry(
                 })?)?;
             let bytes = read_contained(
                 &store.root,
-                &crate::store::decode_path(&hit.path)?,
+                &crate::path_codec::decode_path(&hit.path)?,
                 MAX_READ_BYTES,
             )?;
             let revision = ContentRevision::of(&bytes);
@@ -242,13 +242,13 @@ fn acquire_historical(
 ) -> Result<AcquiredSource> {
     let repository = crate::git_runner::GitRepository::discover(&store.root)?;
     ensure!(
-        repository.common_dir == crate::store::decode_path(&identity.repository)?,
+        repository.common_dir == crate::path_codec::decode_path(&identity.repository)?,
         coded!(
             ScopeBoundary,
             "historical source belongs to another repository"
         )
     );
-    let decoded = crate::store::decode_path(&identity.path)?;
+    let decoded = crate::path_codec::decode_path(&identity.path)?;
     ensure!(
         !decoded.as_os_str().is_empty()
             && decoded

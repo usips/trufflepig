@@ -1,4 +1,5 @@
 use super::*;
+use crate::path_codec::{decode_path, encode_path};
 use crate::query_deadline::QueryDeadline;
 
 fn fixture() -> (tempfile::TempDir, Store) {

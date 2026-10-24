@@ -11,6 +11,7 @@ pub mod git_runner;
 pub mod history;
 pub mod identity;
 pub mod output;
+pub mod path_codec;
 pub mod probes;
 pub(crate) mod process_capture;
 pub mod query_deadline;

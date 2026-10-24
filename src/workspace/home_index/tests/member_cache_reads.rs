@@ -1,8 +1,9 @@
 use super::{Fixture, coverage_line, search_without_waiting};
 use crate::{
+    path_codec::encode_path,
     query_deadline::QueryDeadline,
     search::InvocationDirectory,
-    store::{Store, encode_path, read_seed_outcome},
+    store::{Store, read_seed_outcome},
     workspace::{
         WorkspaceConfig, hashed_member_cache,
         home_index::{ParentRead, acquire_home_read},

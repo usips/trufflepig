@@ -5,7 +5,8 @@
 //! Seeding never writes to stdout or stderr: each attempt that does work is
 //! recorded in `<worktree cache>/seed-outcome.json` ([`read_seed_outcome`]).
 
-use super::{encode_path, live_index};
+use super::live_index;
+use crate::path_codec::encode_path;
 use crate::query_deadline::QueryDeadline;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, TransactionBehavior};

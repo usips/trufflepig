@@ -151,7 +151,7 @@ fn blame_historical_target_uses_its_own_commit_and_span() {
         status: "modified".into(),
         before: None,
         after: Some(HistoricalSource {
-            repository: crate::store::encode_path(&history.repository.common_dir),
+            repository: crate::path_codec::encode_path(&history.repository.common_dir),
             commit,
             blob,
             revision: crate::identity::ContentRevision::of(

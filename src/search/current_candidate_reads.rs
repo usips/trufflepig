@@ -2,12 +2,8 @@
 use super::{Query, search_current_file, semantic_representative};
 use crate::coded_error::CodedContext;
 use crate::{
-    extract::Extraction,
-    identity::ContentRevision,
-    query_deadline::QueryDeadline,
-    results::Hit,
-    source,
-    store::{Store, decode_path},
+    extract::Extraction, identity::ContentRevision, path_codec::decode_path,
+    query_deadline::QueryDeadline, results::Hit, source, store::Store,
 };
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};

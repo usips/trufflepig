@@ -1,6 +1,7 @@
+use super::Store;
 use super::seed::{SeedOutcome, ensure_seeded, ensure_seeded_with_limit, read_seed_outcome};
-use super::{Store, encode_path};
 use crate::extract::{Definition, Extraction};
+use crate::path_codec::encode_path;
 use rusqlite::{Connection, params};
 use std::fs;
 use std::path::{Path, PathBuf};

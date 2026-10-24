@@ -100,7 +100,7 @@ pub(super) fn resolve(store: &Store, value: &str) -> Result<Selection> {
         }));
     }
     let path = value.strip_prefix("path:").unwrap_or(value).to_owned();
-    let decoded = crate::store::decode_path(&path)?;
+    let decoded = crate::path_codec::decode_path(&path)?;
     anyhow::ensure!(
         decoded
             .components()

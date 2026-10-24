@@ -5,10 +5,11 @@ use crate::coded_error::CodedContext;
 use crate::{
     cli::Arguments,
     output::OutputBudget,
+    path_codec::encode_path,
     query_deadline::QueryDeadline,
     results::ResultSet,
     search::{InvocationDirectory, Query, stateless},
-    store::{encode_path, is_index_cache_unavailable, preflight_results_cache},
+    store::{is_index_cache_unavailable, preflight_results_cache},
 };
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};

@@ -15,12 +15,8 @@ mod workspace_list;
 mod worktree_cache;
 use crate::coded_error::CodedContext;
 use crate::{
-    cli::Arguments,
-    diagnostics::RequestContext,
-    output::OutputBudget,
-    query_deadline::QueryDeadline,
-    search::InvocationDirectory,
-    store::{Store, encode_path},
+    cli::Arguments, diagnostics::RequestContext, output::OutputBudget, path_codec::encode_path,
+    query_deadline::QueryDeadline, search::InvocationDirectory, store::Store,
 };
 use anyhow::{Context, Result, bail, ensure};
 use config::WorkspaceConfig;
