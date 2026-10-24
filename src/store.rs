@@ -2,6 +2,8 @@
 
 mod cache_access;
 pub(crate) mod current_source;
+#[cfg(test)]
+mod incremental_tests;
 mod index_checkpoint;
 mod index_deadline;
 mod index_pass;

@@ -116,21 +116,35 @@ fn published_definitions_match(
          AND NOT (d.kind='module' AND d.name=f.path AND d.start=0 AND d.container IS NULL)
          ORDER BY d.id LIMIT 1025",
     )?;
-    let definitions = query
+    let mut definitions = query
         .query_map([path], |row| {
-            Ok(extract::Definition {
-                name: row.get(0)?,
-                kind: row.get(1)?,
-                start: row.get::<_, i64>(2)? as usize,
-                end: row.get::<_, i64>(3)? as usize,
-                container: row.get(4)?,
-            })
+            Ok((
+                row.get::<_, i64>(2)? as usize,
+                row.get::<_, i64>(3)? as usize,
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(4)?,
+            ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     if definitions.len() > MAX_DEFINITIONS {
         return Ok(None);
     }
-    Ok(Some(
-        serde_json::to_value(definitions)? == serde_json::to_value(&extracted.definitions)?,
-    ))
+    // Diff publication keeps a moved definition's row id, so row order is not extraction order.
+    let mut expected: Vec<_> = extracted
+        .definitions
+        .iter()
+        .map(|definition| {
+            (
+                definition.start,
+                definition.end,
+                definition.name.clone(),
+                definition.kind.clone(),
+                definition.container.clone(),
+            )
+        })
+        .collect();
+    definitions.sort_unstable();
+    expected.sort_unstable();
+    Ok(Some(definitions == expected))
 }

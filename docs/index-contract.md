@@ -26,16 +26,16 @@ occurrences. Pages maximize file references before adding optional symbol names.
 
 ## Coherent publication
 
-1. Reconcile the working tree, including untracked eligible files. Filesystem
-   metadata and Git status are hints; content hashing establishes revision.
-2. Read each current eligible file into bounded buffers on every pass. Reuse
-   durable extraction only when path, revision, source status, byte length, and
-   extraction version match. One worker stages the complete current file set;
-   cancelled extraction is retried. Resource bounds and failures remain visible.
+1. Reconcile the working tree, including untracked eligible files. A file whose recorded [stat](index-storage-contract.md#unchanged-files)
+   still matches keeps its published revision unread; content hashing establishes every other revision.
+2. Read changed files into bounded buffers; a tree matching the publication stages nothing.
+   Otherwise one worker stages the complete current file set, reusing durable extraction only
+   when path, revision, source status, byte length, and extraction version match; cancelled
+   extraction is retried. Resource bounds and failures remain visible.
 3. Build the staged symbol universe and recompute relationship resolution,
    including references in unchanged callers whose targets changed.
-4. Publish source revisions, definitions, occurrences, relationships, and FTS
-   documents in one transaction, then advance the generation.
+4. Publish the rows of added, removed, and differing files in one transaction
+   ([diff publication](index-storage-contract.md#publication-storage)), then advance the generation.
 5. Roll back every published component if the transaction fails. Prune
    superseded content without discarding unexpired handle revision metadata.
 
@@ -152,8 +152,8 @@ directories. Ignored trees may still consume operating-system watches.
 
 Reconciliation observes ignore rules and relevant configuration/include bytes; module
 candidate resolution runs against the staged files. Cached facts follow the [extraction
-cache identity](index-storage-contract.md#extraction-cache-identity). The initial resolver
-may recompute the full reference universe; there is no promise that all work is proportional to changed files.
+cache identity](index-storage-contract.md#extraction-cache-identity). Each staged pass
+re-resolves the full reference universe ([why](index-storage-contract.md#cross-file-resolution)); only publication writes are proportional to changed rows.
 
 Keep only the current graph. `refs`, `ctx`, and `map` expose structural facts;
 a module map does not require PageRank. Readers do not join old result identities

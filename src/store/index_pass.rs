@@ -1,10 +1,11 @@
-//! One leased indexing pass: stage the current files into a disposable
-//! database, resolve, and publish into the live index
+//! One leased indexing pass: observe the tree, return early when it matches
+//! the publication, else stage the current files into a disposable database,
+//! resolve, and publish the difference into the live index
 //! ([coherent publication](../../docs/index-contract.md#coherent-publication)).
 use super::index_checkpoint::IndexCheckpoint;
 use super::{
     Coverage, Publication, Store, encode_path, index_checkpoint, index_deadline, live_index,
-    php_resolver, publish, scan, schema,
+    php_resolver, publish, regions, scan, schema,
 };
 use crate::daemon::deadline::QueryDeadline;
 use anyhow::{Context, Result};
@@ -58,6 +59,30 @@ impl Store {
         if deadline.is_some() && checkpoint.maintenance_required() {
             return Ok(None);
         }
+        check_slice(&mut checkpoint, deadline)?;
+        let capture_started_ms = publish::timestamp_ms()?;
+        let observation =
+            scan::TreeObservation::observe(&self.conn, &self.index_root, &self.cache, deadline)
+                .map_err(|error| interrupted(&mut checkpoint, deadline, error))?;
+        if let Some((coverage, scan_fingerprint)) = observation.unchanged_tally() {
+            let fingerprint = scan::resolved_fingerprint(
+                &scan_fingerprint,
+                php_resolver::SHARED_RESOLVER_REVISION,
+            );
+            let unchanged = self
+                .publication_unchanged(&fingerprint, &coverage)
+                .and_then(|unchanged| {
+                    if unchanged {
+                        observation.stat_refresh().apply(&self.conn)?;
+                    }
+                    Ok(unchanged)
+                })
+                .map_err(|error| interrupted(&mut checkpoint, deadline, error))?;
+            if unchanged {
+                checkpoint.mark_complete()?;
+                return Ok(Some(coverage));
+            }
+        }
         let use_checkpoint = deadline.is_some() || checkpoint.has_retained_facts();
         if use_checkpoint {
             checkpoint
@@ -65,20 +90,29 @@ impl Store {
                 .map_err(|error| interrupted(&mut checkpoint, deadline, error))?;
         }
         check_slice(&mut checkpoint, deadline)?;
-        let (directory, mut staged, capture_started_ms) = open_staged(&self.cache, deadline)
+        let (directory, mut staged) = open_staged(&self.cache, deadline)
             .map_err(|error| interrupted(&mut checkpoint, deadline, error))?;
         let staged_path = directory.path().join(live_index::INDEX_NAME);
-        let (coverage, scan_fingerprint) = if use_checkpoint {
+        let regions_current = self
+            .regions_current()
+            .map_err(|error| interrupted(&mut checkpoint, deadline, error))?;
+        let live_index = self.cache.join(live_index::INDEX_NAME);
+        let inputs = scan::StageInputs {
+            root: &self.index_root,
+            live_index: &live_index,
+            regions_current,
+        };
+        let (coverage, scan_fingerprint, stat_refresh) = if use_checkpoint {
             index_checkpoint::stage(
                 &mut checkpoint,
                 &mut staged,
                 &self.conn,
-                &self.index_root,
-                &self.cache,
+                observation,
+                &inputs,
                 deadline,
             )?
         } else {
-            scan::stage(&mut staged, &self.conn, &self.index_root, &self.cache)?
+            scan::stage(&mut staged, &self.conn, observation, &inputs, None, None)?
         };
         check_slice(&mut checkpoint, deadline)?;
         let fingerprint =
@@ -86,6 +120,12 @@ impl Store {
         let capture_completed_ms = publish::timestamp_ms()?.max(capture_started_ms);
         let unchanged = self
             .publication_unchanged(&fingerprint, &coverage)
+            .and_then(|unchanged| {
+                if unchanged {
+                    stat_refresh.apply(&self.conn)?;
+                }
+                Ok(unchanged)
+            })
             .map_err(|error| interrupted(&mut checkpoint, deadline, error))?;
         if unchanged {
             checkpoint.mark_complete()?;
@@ -149,6 +189,19 @@ impl Store {
             && self.publication()?.is_some())
     }
 
+    /// Whether the live regions were built by this binary's region construction.
+    fn regions_current(&self) -> Result<bool> {
+        let stored: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT value FROM meta WHERE key='regions_contract'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(stored.is_some_and(|stored| stored == regions::contract()))
+    }
+
     fn next_publication_identity(&self) -> Result<(String, i64)> {
         let index_epoch = self.conn.query_row(
             "SELECT value FROM meta WHERE key='index_epoch'",
@@ -163,7 +216,7 @@ impl Store {
 fn open_staged(
     cache: &std::path::Path,
     deadline: Option<&QueryDeadline>,
-) -> Result<(tempfile::TempDir, Connection, u64)> {
+) -> Result<(tempfile::TempDir, Connection)> {
     let directory = tempfile::Builder::new()
         .prefix("stage-")
         .tempdir_in(cache)?;
@@ -176,7 +229,7 @@ fn open_staged(
     if let Some(deadline) = deadline {
         index_deadline::check(deadline)?;
     }
-    Ok((directory, staged, publish::timestamp_ms()?))
+    Ok((directory, staged))
 }
 
 /// Fails the pass once a bounded slice's deadline has expired.
