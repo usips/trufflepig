@@ -3,17 +3,23 @@ use crate::daemon::deadline::QueryDeadline;
 use crate::store::{Coverage, index_deadline, scan};
 use anyhow::Result;
 use rusqlite::Connection;
-use std::path::Path;
 
 pub(super) fn stage(
     checkpoint: &mut IndexCheckpoint,
     staged: &mut Connection,
     previous: &Connection,
-    root: &Path,
-    cache: &Path,
+    observation: scan::TreeObservation,
+    inputs: &scan::StageInputs<'_>,
     deadline: Option<&QueryDeadline>,
-) -> Result<(Coverage, String)> {
-    let result = scan::stage_checkpointed(staged, previous, root, cache, checkpoint, deadline);
+) -> Result<(Coverage, String, scan::StatRefresh)> {
+    let result = scan::stage(
+        staged,
+        previous,
+        observation,
+        inputs,
+        deadline,
+        Some(checkpoint),
+    );
     match result {
         Ok(result) => Ok(result),
         Err(error) => {

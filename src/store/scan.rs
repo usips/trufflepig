@@ -1,243 +1,266 @@
-use super::{Coverage, encode_path, index_checkpoint::IndexCheckpoint, index_deadline, regions};
+//! Stages an observed tree into a disposable database: every file's facts,
+//! plus bytes, extraction cache rows, and lexical regions for each file whose
+//! published revision does not stand
+//! ([staged build](../../docs/index-storage-contract.md#staged-build)).
+mod extraction_reuse;
+mod fact_rows;
+mod file_stat;
+mod scan_tally;
+mod tree_observation;
+
+pub(crate) use extraction_reuse::extraction_cache_version;
+pub(super) use extraction_reuse::grammar;
+pub(super) use fact_rows::{insert_facts, insert_module_definition};
+#[cfg(test)]
+pub(super) use file_stat::TEST_PASS_START_SKEW_NS;
+pub(super) use tree_observation::{StatRefresh, TreeObservation};
+
+use super::{Coverage, index_checkpoint::IndexCheckpoint, index_deadline, regions};
 use crate::daemon::deadline::QueryDeadline;
 use crate::extract::{self, Extraction};
-use anyhow::Result;
+use anyhow::{Context, Result};
+use extraction_reuse::{cached_extraction, insert_extraction_cache, published_extraction};
+use file_stat::FileStat;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use scan_tally::ScanTally;
 use std::path::Path;
+use tree_observation::{FileSource, ObservedFile};
 
 pub(crate) const MAX_SOURCE_BYTES: u64 = 2 * 1024 * 1024;
-const MAX_FACTS: usize = 50_000;
-const EXTRACTION_CONTRACT_REVISION: u32 = 6;
 
+#[cfg(test)]
+thread_local! {
+    /// Test counter: source files read from disk by this thread.
+    pub(super) static TEST_SOURCE_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Where a pass stages: the live index it reuses from, and whether its regions are current.
+pub(super) struct StageInputs<'a> {
+    pub(super) root: &'a Path,
+    pub(super) live_index: &'a Path,
+    pub(super) regions_current: bool,
+}
+
+/// Stages `observation` into `conn`; `previous` is the live index. Returns the
+/// coverage, scan fingerprint, and stats to record if the pass publishes nothing.
 pub(super) fn stage(
     conn: &mut Connection,
     previous: &Connection,
-    root: &Path,
-    cache: &Path,
-) -> Result<(Coverage, String)> {
-    stage_inner(conn, previous, root, cache, None, None)
-}
-
-pub(super) fn stage_checkpointed(
-    conn: &mut Connection,
-    previous: &Connection,
-    root: &Path,
-    cache: &Path,
-    checkpoint: &mut IndexCheckpoint,
-    deadline: Option<&QueryDeadline>,
-) -> Result<(Coverage, String)> {
-    stage_inner(conn, previous, root, cache, deadline, Some(checkpoint))
-}
-
-fn stage_inner(
-    conn: &mut Connection,
-    previous: &Connection,
-    root: &Path,
-    cache: &Path,
+    observation: TreeObservation,
+    inputs: &StageInputs<'_>,
     deadline: Option<&QueryDeadline>,
     mut checkpoint: Option<&mut IndexCheckpoint>,
-) -> Result<(Coverage, String)> {
+) -> Result<(Coverage, String, StatRefresh)> {
     if let Some(deadline) = deadline {
         index_deadline::check(deadline)?;
     }
-    let mut coverage = Coverage::default();
-    let mut fingerprint = blake3::Hasher::new();
-    fingerprint.update(b"trufflepig-schema-1-extraction");
-    fingerprint.update(&EXTRACTION_CONTRACT_REVISION.to_le_bytes());
+    let mut refresh = StatRefresh::default();
     let cache_version = extraction_cache_version();
-    fingerprint.update(&cache_version.to_le_bytes());
-    let excluded_cache = cache.to_path_buf();
-    let mut walker = ignore::WalkBuilder::new(root);
-    walker
-        .hidden(false)
-        .require_git(false)
-        .follow_links(false)
-        .sort_by_file_path(|a, b| a.cmp(b));
-    walker.filter_entry(move |entry| {
-        if entry.path().starts_with(&excluded_cache) {
-            return false;
-        }
-        // A linked worktree's `.git` is a file; skip it whatever its type.
-        entry.file_name() != ".git"
-            && (!entry.file_type().is_some_and(|kind| kind.is_dir())
-                || !matches!(
-                    entry.file_name().to_str(),
-                    Some("target" | "node_modules" | ".trufflepig")
-                ))
-    });
+    let mut tally = ScanTally::new();
     let transaction = conn.transaction()?;
-    for entry in walker.build() {
+    for mut file in observation.files {
         if let Some(deadline) = deadline {
             index_deadline::check(deadline)?;
         }
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(_) => {
-                coverage.walk_failures += 1;
-                continue;
-            }
-        };
-        if !entry.file_type().is_some_and(|kind| kind.is_file()) {
+        if matches!(file.source, FileSource::Pending) {
+            file.read_pending(inputs.root);
+        }
+        if let Some(deadline) = deadline {
+            index_deadline::check(deadline)?;
+        }
+        let extraction =
+            file_extraction(&file, previous, cache_version, checkpoint.as_deref_mut())?;
+        if let Some(deadline) = deadline {
+            index_deadline::check(deadline)?;
+        }
+        let stable = inputs.regions_current
+            && extraction.served
+            && file.published.as_ref().is_some_and(|published| {
+                published.revision == file.revision && published.status != "cancelled"
+            });
+        let extraction = extraction.facts;
+        refresh.note(&file);
+        tally.file(
+            &file.path,
+            file.read_status,
+            file.length,
+            file.revision.as_deref(),
+            &extraction.status,
+            file.revision.is_some(),
+        );
+        let file_id = insert_file(&transaction, &file, &extraction)?;
+        if !stable {
+            transaction
+                .prepare_cached("INSERT INTO restaged(file_id) VALUES(?1)")?
+                .execute([file_id])?;
+        }
+        let Some(revision) = file.revision.as_deref() else {
             continue;
-        }
-        coverage.total_files += 1;
-        let relative = entry.path().strip_prefix(root)?;
-        let path = encode_path(relative);
-        let (source, status, length) = read_source(root, relative);
-        if let Some(deadline) = deadline {
-            index_deadline::check(deadline)?;
-        }
-        let revision = source
-            .as_ref()
-            .map(|source| blake3::hash(source).to_hex().to_string());
-        fingerprint.update(&(path.len() as u64).to_le_bytes());
-        fingerprint.update(path.as_bytes());
-        fingerprint.update(status.as_bytes());
-        fingerprint.update(&length.to_le_bytes());
-        if let Some(revision) = &revision {
-            fingerprint.update(revision.as_bytes());
-        }
-        let extraction = if let Some(checkpoint) = checkpoint.as_deref_mut() {
-            match checkpoint.extraction(
-                &path,
-                revision.as_deref(),
-                status,
-                length,
-                cache_version,
-            )? {
-                Some(extraction) => {
-                    checkpoint.reused_file(&path)?;
-                    extraction
-                }
-                None => {
-                    let (extraction, from_publication) = match (source.as_ref(), revision.as_ref())
-                    {
-                        (Some(source), Some(revision)) => {
-                            cached_extraction(previous, &path, revision, source, cache_version)?
-                        }
-                        _ => (
-                            Extraction {
-                                language: extract::language(&path).to_owned(),
-                                status: status.to_owned(),
-                                ..Extraction::default()
-                            },
-                            false,
-                        ),
-                    };
-                    if let Some(deadline) = deadline {
-                        index_deadline::check(deadline)?;
-                    }
-                    if from_publication {
-                        checkpoint.publication_reused_file()?;
-                    } else if revision.is_some()
-                        && extraction.status != "cancelled"
-                        && checkpoint.retains_new_extractions()
-                    {
-                        checkpoint.completed_file(
-                            &path,
-                            revision.as_deref(),
-                            status,
-                            length,
-                            cache_version,
-                            &extraction,
-                        )?;
-                    }
-                    extraction
-                }
-            }
-        } else {
-            match (source.as_ref(), revision.as_ref()) {
-                (Some(source), Some(revision)) => {
-                    cached_extraction(previous, &path, revision, source, cache_version)?.0
-                }
-                _ => Extraction {
-                    language: extract::language(&path).to_owned(),
-                    status: status.to_owned(),
-                    ..Extraction::default()
-                },
+        };
+        let loaded;
+        let source = match &file.source {
+            FileSource::Read(source) => Some(source.as_slice()),
+            _ if stable => None,
+            _ => {
+                loaded = published_source(previous, revision)?;
+                Some(loaded.as_slice())
             }
         };
-        if let Some(deadline) = deadline {
-            index_deadline::check(deadline)?;
-        }
-        if extraction.status == "fact_limit" {
-            coverage.truncated_files += 1;
-        }
-        fingerprint.update(extraction.status.as_bytes());
-        if source.is_some() {
-            coverage.indexed_files += 1;
-            coverage.indexed_bytes += length;
-            if !matches!(
-                extraction.status.as_str(),
-                "ok" | "parsed" | "complete" | "lexical_only" | "recovered"
-            ) {
-                coverage.parse_failures += 1;
-            }
-        } else {
-            coverage.excluded_files += 1;
-        }
-        transaction
-            .prepare_cached(
-                "INSERT INTO files(path,revision,language,status,bytes) VALUES(?1,?2,?3,?4,?5)",
-            )?
-            .execute(params![
-                path,
-                revision,
-                extraction.language,
-                extraction.status,
-                length as i64
-            ])?;
-        let file_id = transaction.last_insert_rowid();
-        if let (Some(source), Some(revision)) = (source.as_ref(), revision.as_ref()) {
+        if let (false, Some(source)) = (stable, source) {
             if extraction.status != "cancelled" {
-                insert_extraction_cache(&transaction, revision, &path, cache_version, &extraction)?;
+                insert_extraction_cache(
+                    &transaction,
+                    revision,
+                    &file.path,
+                    cache_version,
+                    &extraction,
+                )?;
             }
             transaction
                 .prepare_cached("INSERT OR IGNORE INTO contents(revision,bytes) VALUES(?1,?2)")?
                 .execute(params![revision, source])?;
-            insert_facts(&transaction, file_id, &extraction)?;
-            if extraction.language != "text" {
-                insert_module_definition(&transaction, file_id, &path, source.len())?;
-            }
+        }
+        insert_facts(&transaction, file_id, &extraction)?;
+        if extraction.language != "text" {
+            insert_module_definition(&transaction, file_id, &file.path, file.length as usize)?;
+        }
+        if let (false, Some(source)) = (stable, source) {
             regions::insert(
                 &transaction,
                 file_id,
-                &path,
+                &file.path,
                 source,
                 &extraction.definitions,
             )?;
-        } else {
-            regions::insert(&transaction, file_id, &path, &[], &[])?;
         }
     }
-    fingerprint.update(&coverage.walk_failures.to_le_bytes());
     if let Some(deadline) = deadline {
         index_deadline::check(deadline)?;
     }
     transaction.commit()?;
-    if let Some(checkpoint) = checkpoint.as_deref_mut() {
-        if coverage.walk_failures == 0 {
-            checkpoint.pass_completed()?;
-        }
+    copy_published_contents(conn, inputs.live_index)?;
+    if let Some(checkpoint) = checkpoint
+        && observation.walk_failures == 0
+    {
+        checkpoint.pass_completed()?;
     }
-    Ok((coverage, fingerprint.finalize().to_hex().to_string()))
+    let (coverage, fingerprint) = tally.finish(observation.walk_failures);
+    Ok((coverage, fingerprint, refresh))
 }
 
-/// Locked `tree-sitter*` package versions, extracted from `Cargo.lock` by `build.rs`.
-const GRAMMAR_VERSIONS: &str = env!("TRUFFLEPIG_GRAMMAR_VERSIONS");
+/// A file's facts and whether durable facts served them unchanged.
+struct FileExtraction {
+    facts: Extraction,
+    served: bool,
+}
 
-/// Keys durable extractions on the extraction contract and grammar crate
-/// versions only, so unrelated dependency changes keep cached facts.
-pub(crate) fn extraction_cache_version() -> i64 {
-    let mut version = blake3::Hasher::new();
-    version.update(b"trufflepig-extraction-cache-v2");
-    version.update(&EXTRACTION_CONTRACT_REVISION.to_le_bytes());
-    version.update(GRAMMAR_VERSIONS.as_bytes());
-    i64::from_le_bytes(
-        version.finalize().as_bytes()[..8]
-            .try_into()
-            .expect("eight hash bytes"),
-    )
+fn file_extraction(
+    file: &ObservedFile,
+    previous: &Connection,
+    cache_version: i64,
+    checkpoint: Option<&mut IndexCheckpoint>,
+) -> Result<FileExtraction> {
+    let mut checkpoint = checkpoint;
+    let revision = file.revision.as_deref();
+    if let Some(checkpoint) = checkpoint.as_deref_mut()
+        && let Some(facts) = checkpoint.extraction(
+            &file.path,
+            revision,
+            file.read_status,
+            file.length,
+            cache_version,
+        )?
+    {
+        checkpoint.reused_file(&file.path)?;
+        return Ok(FileExtraction {
+            facts,
+            served: true,
+        });
+    }
+    let Some(revision) = revision else {
+        let facts = Extraction {
+            language: extract::language(&file.path).to_owned(),
+            status: file.read_status.to_owned(),
+            ..Extraction::default()
+        };
+        return Ok(FileExtraction {
+            facts,
+            served: true,
+        });
+    };
+    let (facts, served) = match &file.source {
+        FileSource::Read(source) => {
+            cached_extraction(previous, &file.path, revision, source, cache_version)?
+        }
+        _ => match published_extraction(previous, &file.path, revision, cache_version)? {
+            Some(facts) => (facts, true),
+            None => {
+                let source = published_source(previous, revision)?;
+                cached_extraction(previous, &file.path, revision, &source, cache_version)?
+            }
+        },
+    };
+    if let Some(checkpoint) = checkpoint {
+        if served {
+            checkpoint.publication_reused_file()?;
+        } else if facts.status != "cancelled" && checkpoint.retains_new_extractions() {
+            checkpoint.completed_file(
+                &file.path,
+                Some(revision),
+                file.read_status,
+                file.length,
+                cache_version,
+                &facts,
+            )?;
+        }
+    }
+    Ok(FileExtraction { facts, served })
+}
+
+fn insert_file(tx: &Transaction<'_>, file: &ObservedFile, extraction: &Extraction) -> Result<i64> {
+    let [size, mtime, ctime, inode, device] = FileStat::columns(file.stat);
+    tx.prepare_cached(
+        "INSERT INTO files(path,revision,language,status,bytes,stat_size,stat_mtime_ns,stat_ctime_ns,stat_inode,stat_device)
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+    )?
+    .execute(params![
+        file.path,
+        file.revision,
+        extraction.language,
+        extraction.status,
+        file.length as i64,
+        size,
+        mtime,
+        ctime,
+        inode,
+        device
+    ])?;
+    Ok(tx.last_insert_rowid())
+}
+
+/// The published bytes of `revision`; observation reuses a revision only while they exist.
+fn published_source(previous: &Connection, revision: &str) -> Result<Vec<u8>> {
+    previous
+        .prepare_cached("SELECT bytes FROM contents WHERE revision=?1")?
+        .query_row([revision], |row| row.get(0))
+        .optional()?
+        .with_context(|| format!("published contents missing for revision {revision}"))
+}
+
+/// Copies the published bytes of every staged revision not read this pass, so
+/// resolvers that read configuration and PHP sources see the complete tree.
+fn copy_published_contents(conn: &Connection, live_index: &Path) -> Result<()> {
+    let live_index = live_index.to_str().context("non-UTF8 cache directory")?;
+    conn.execute("ATTACH DATABASE ?1 AS live_index", [live_index])?;
+    let copied = conn.execute_batch(
+        "INSERT OR IGNORE INTO main.contents(revision,bytes)
+         SELECT revision,bytes FROM live_index.contents
+         WHERE revision IN (SELECT revision FROM main.files WHERE revision IS NOT NULL)
+           AND revision NOT IN (SELECT revision FROM main.contents);",
+    );
+    let detached = conn.execute_batch("DETACH DATABASE live_index");
+    copied?;
+    Ok(detached?)
 }
 
 pub(crate) fn resolved_fingerprint(scan_fingerprint: &str, resolver_revision: &str) -> String {
@@ -248,71 +271,17 @@ pub(crate) fn resolved_fingerprint(scan_fingerprint: &str, resolver_revision: &s
     fingerprint.finalize().to_hex().to_string()
 }
 
-/// The extraction for `source`, and whether the previous publication's extraction cache served it.
-fn cached_extraction(
-    previous: &Connection,
-    path: &str,
-    revision: &str,
-    source: &[u8],
-    cache_version: i64,
-) -> Result<(Extraction, bool)> {
-    let grammar = path.rsplit('.').next().unwrap_or("");
-    let cached: Option<String> = previous
-        .prepare_cached(
-            "SELECT facts FROM extraction_cache WHERE revision=?1 AND grammar=?2 AND version=?3",
-        )?
-        .query_row(params![revision, grammar, cache_version], |row| row.get(0))
-        .optional()?;
-    let mut from_publication = cached.is_some();
-    let mut extraction: Extraction = match cached.as_deref() {
-        Some(facts) => serde_json::from_str(facts)?,
-        None => extract::extract(path, source),
-    };
-    if extraction.status == "cancelled" && cached.is_some() {
-        extraction = extract::extract(path, source);
-        from_publication = false;
-    }
-    if extraction.definitions.len() + extraction.occurrences.len() + extraction.relationships.len()
-        > MAX_FACTS
-    {
-        extraction.definitions.clear();
-        extraction.occurrences.clear();
-        extraction.relationships.clear();
-        extraction.status = "fact_limit".into();
-    }
-    Ok((extraction, from_publication))
-}
-
-fn insert_extraction_cache(
-    staged: &Transaction<'_>,
-    revision: &str,
-    path: &str,
-    cache_version: i64,
-    extraction: &Extraction,
-) -> Result<()> {
-    let grammar = path.rsplit('.').next().unwrap_or("");
-    staged
-        .prepare_cached(
-            "INSERT OR IGNORE INTO extraction_cache(revision,grammar,version,facts) VALUES(?1,?2,?3,?4)",
-        )?
-        .execute(params![
-            revision,
-            grammar,
-            cache_version,
-            serde_json::to_string(extraction)?
-        ])?;
-    Ok(())
-}
-
-fn read_source(root: &Path, relative: &Path) -> (Option<Vec<u8>>, &'static str, u64) {
-    let metadata = match root.join(relative).symlink_metadata() {
-        Ok(metadata) => metadata,
-        Err(_) => return (None, "metadata_error", 0),
-    };
+fn read_source(
+    root: &Path,
+    relative: &Path,
+    metadata: &std::fs::Metadata,
+) -> (Option<Vec<u8>>, &'static str, u64) {
     let length = metadata.len();
     if length > MAX_SOURCE_BYTES {
         return (None, "resource_excluded", length);
     }
+    #[cfg(test)]
+    TEST_SOURCE_READS.set(TEST_SOURCE_READS.get() + 1);
     let source = match crate::source::read_contained(root, relative, MAX_SOURCE_BYTES as usize) {
         Ok(source) => source,
         Err(error) => {
@@ -332,132 +301,4 @@ fn read_source(root: &Path, relative: &Path) -> (Option<Vec<u8>>, &'static str, 
     }
     let length = source.len() as u64;
     (Some(source), "read", length)
-}
-
-/// Inserts one file's extracted facts with statements compiled once per connection.
-pub(super) fn insert_facts(
-    tx: &Transaction<'_>,
-    file_id: i64,
-    extraction: &Extraction,
-) -> Result<()> {
-    let mut ids = Vec::with_capacity(extraction.definitions.len());
-    let mut definitions = tx.prepare_cached(
-        "INSERT INTO definitions(file_id,name,kind,start,end,container) VALUES(?1,?2,?3,?4,?5,?6)",
-    )?;
-    for definition in &extraction.definitions {
-        ids.push(definitions.insert(params![
-            file_id,
-            definition.name,
-            definition.kind,
-            definition.start as i64,
-            definition.end as i64,
-            definition.container
-        ])?);
-    }
-    let mut occurrences = tx.prepare_cached(
-        "INSERT INTO occurrences(file_id,name,start,end,role,target,candidates,provenance) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
-    )?;
-    let mut candidates = String::new();
-    for occurrence in &extraction.occurrences {
-        let target = occurrence.target.and_then(|index| ids.get(index)).copied();
-        candidate_json(&ids, &occurrence.candidates, &mut candidates);
-        occurrences.execute(params![
-            file_id,
-            occurrence.name,
-            occurrence.start as i64,
-            occurrence.end as i64,
-            occurrence.role,
-            target,
-            candidates,
-            occurrence.provenance
-        ])?;
-    }
-    let mut relationships = tx.prepare_cached(
-        "INSERT INTO relationships(source,target,kind,file_id,start,end,provenance) VALUES(?1,?2,?3,?4,?5,?6,?7)",
-    )?;
-    for relationship in &extraction.relationships {
-        let Some(source) = ids.get(relationship.source) else {
-            continue;
-        };
-        let target = relationship
-            .target
-            .and_then(|index| ids.get(index))
-            .copied();
-        relationships.execute(params![
-            source,
-            target,
-            relationship.kind,
-            file_id,
-            relationship.evidence_start as i64,
-            relationship.evidence_end as i64,
-            relationship.provenance
-        ])?;
-    }
-    Ok(())
-}
-
-/// The file-level `module` definition that spans a non-text source.
-pub(super) fn insert_module_definition(
-    tx: &Transaction<'_>,
-    file_id: i64,
-    path: &str,
-    length: usize,
-) -> Result<()> {
-    tx.prepare_cached(
-        "INSERT INTO definitions(file_id,name,kind,start,end,container) VALUES(?1,?2,'module',0,?3,NULL)",
-    )?
-    .execute(params![file_id, path, length as i64])?;
-    Ok(())
-}
-
-/// Writes up to 64 resolved candidate ids as a JSON array into `buffer`;
-/// readers parse the column as JSON, so an empty set is `[]`.
-fn candidate_json(ids: &[i64], indexes: &[usize], buffer: &mut String) {
-    use std::fmt::Write;
-    buffer.clear();
-    buffer.push('[');
-    let resolved = indexes.iter().filter_map(|index| ids.get(*index)).take(64);
-    for (position, id) in resolved.enumerate() {
-        if position > 0 {
-            buffer.push(',');
-        }
-        let _ = write!(buffer, "{id}");
-    }
-    buffer.push(']');
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn extraction_cache_version_keys_on_grammar_crates_only() {
-        assert!(
-            GRAMMAR_VERSIONS.contains("tree-sitter="),
-            "{GRAMMAR_VERSIONS}"
-        );
-        assert!(
-            GRAMMAR_VERSIONS.contains("tree-sitter-rust="),
-            "{GRAMMAR_VERSIONS}"
-        );
-        assert!(
-            GRAMMAR_VERSIONS
-                .split(';')
-                .all(|entry| entry.starts_with("tree-sitter")),
-            "{GRAMMAR_VERSIONS}"
-        );
-    }
-
-    #[test]
-    fn candidate_json_keeps_resolved_ids_up_to_the_bound() {
-        let mut buffer = String::new();
-        candidate_json(&[10, 20], &[], &mut buffer);
-        assert_eq!(buffer, "[]");
-        candidate_json(&[10, 20], &[1, 7, 0], &mut buffer);
-        assert_eq!(buffer, "[20,10]");
-        let ids: Vec<i64> = (0..100).collect();
-        let indexes: Vec<usize> = (0..100).collect();
-        candidate_json(&ids, &indexes, &mut buffer);
-        assert_eq!(serde_json::from_str::<Vec<i64>>(&buffer).unwrap().len(), 64);
-    }
 }

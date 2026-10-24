@@ -450,11 +450,11 @@ pub(super) fn stage(
     checkpoint: &mut IndexCheckpoint,
     staged: &mut Connection,
     previous: &Connection,
-    root: &Path,
-    cache: &Path,
+    observation: scan::TreeObservation,
+    inputs: &scan::StageInputs<'_>,
     deadline: Option<&QueryDeadline>,
-) -> Result<(Coverage, String)> {
-    checkpoint_scan::stage(checkpoint, staged, previous, root, cache, deadline)
+) -> Result<(Coverage, String, scan::StatRefresh)> {
+    checkpoint_scan::stage(checkpoint, staged, previous, observation, inputs, deadline)
 }
 
 /// Removes stale `stage-*` directories when the writer lease in `cache` is free,

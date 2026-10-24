@@ -310,7 +310,7 @@ fn publication_copies_staged_columns_by_name() {
     staged
         .execute_batch(
             "CREATE TABLE contents(bytes BLOB NOT NULL,revision TEXT PRIMARY KEY);
-             CREATE TABLE files(bytes INTEGER,status TEXT,language TEXT,revision TEXT,path TEXT,id INTEGER PRIMARY KEY);
+             CREATE TABLE files(stat_device INTEGER,stat_inode INTEGER,stat_ctime_ns INTEGER,stat_mtime_ns INTEGER,stat_size INTEGER,bytes INTEGER,status TEXT,language TEXT,revision TEXT,path TEXT,id INTEGER PRIMARY KEY);
              CREATE TABLE definitions(container TEXT,end INTEGER,start INTEGER,kind TEXT,name TEXT,file_id INTEGER,id INTEGER PRIMARY KEY);
              CREATE TABLE occurrences(provenance TEXT,candidates TEXT,target INTEGER,role TEXT,end INTEGER,start INTEGER,name TEXT,file_id INTEGER,id INTEGER PRIMARY KEY);
              CREATE TABLE relationships(provenance TEXT,end INTEGER,start INTEGER,file_id INTEGER,kind TEXT,target INTEGER,source INTEGER);
@@ -318,7 +318,7 @@ fn publication_copies_staged_columns_by_name() {
              CREATE TABLE documents(path TEXT,body TEXT,expanded TEXT,name TEXT,id INTEGER PRIMARY KEY);
              CREATE TABLE extraction_cache(facts TEXT,version INTEGER,grammar TEXT,revision TEXT);
              INSERT INTO contents VALUES(x'6162','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
-             INSERT INTO files VALUES(2,'read','rust','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','lib.rs',5);
+             INSERT INTO files VALUES(9,8,7,6,2,2,'read','rust','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','lib.rs',5);
              INSERT INTO definitions VALUES(NULL,2,0,'function','alpha',5,9);
              INSERT INTO occurrences VALUES('syntax','[9]',9,'call',2,0,'alpha',5,11);
              INSERT INTO relationships VALUES('syntax',2,0,5,'calls',9,9);
@@ -373,6 +373,23 @@ fn publication_copies_staged_columns_by_name() {
             2
         )
     );
+    let stat: (i64, i64, i64, i64, i64) = store
+        .conn
+        .query_row(
+            "SELECT stat_size,stat_mtime_ns,stat_ctime_ns,stat_inode,stat_device FROM files",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .unwrap();
+    assert_eq!(stat, (2, 6, 7, 8, 9));
     let occurrence: (i64, String, String, String) = store
         .conn
         .query_row(

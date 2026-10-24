@@ -1,4 +1,4 @@
-use super::{Store, php_resolver, scan, schema};
+use super::{Store, live_index, php_resolver, scan, schema};
 use crate::extract::{self, Extraction, Occurrence, php_markers::MARKER_KIND};
 use rusqlite::{Connection, params};
 
@@ -115,16 +115,20 @@ fn extraction_revision_rebuilds_markerless_php_cache_facts() {
 }
 
 fn scan_fingerprint(fixture: &InheritanceCacheFixture) -> String {
+    let store = &fixture.store;
     let mut staged = Connection::open_in_memory().unwrap();
-    schema::create(&staged).unwrap();
-    scan::stage(
-        &mut staged,
-        &fixture.store.conn,
-        &fixture.store.root,
-        &fixture.store.cache,
-    )
-    .unwrap()
-    .1
+    schema::create_staged(&staged).unwrap();
+    let observation =
+        scan::TreeObservation::observe(&store.conn, &store.root, &store.cache, None).unwrap();
+    let live_index = store.cache.join(live_index::INDEX_NAME);
+    let inputs = scan::StageInputs {
+        root: &store.root,
+        live_index: &live_index,
+        regions_current: false,
+    };
+    scan::stage(&mut staged, &store.conn, observation, &inputs, None, None)
+        .unwrap()
+        .1
 }
 
 fn xenforo_graph(store: &Store) -> Vec<(String, i64, Option<i64>, i64, i64, String)> {

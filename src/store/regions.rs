@@ -28,6 +28,14 @@ struct DefinitionNode {
     children: Vec<DefinitionNode>,
 }
 
+/// Identifies region and document construction; a pass restages every file's
+/// regions when the live index records another contract.
+pub(super) fn contract() -> String {
+    blake3::hash(include_bytes!("regions.rs"))
+        .to_hex()
+        .to_string()
+}
+
 pub(super) fn insert(
     tx: &Transaction<'_>,
     file_id: i64,

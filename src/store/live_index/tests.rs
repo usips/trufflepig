@@ -115,7 +115,7 @@ fn unstamped_legacy_index_is_discarded() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(columns, 6);
+    assert_eq!(columns, 11);
 }
 
 #[test]
@@ -175,6 +175,8 @@ fn corruption_found_by_an_unbounded_pass_is_quarantined_for_the_next_pass() {
             .unwrap();
         file.write_all(&vec![0xff; page_size as usize]).unwrap();
     }
+    // An edit makes the pass consult the damaged extraction cache.
+    std::fs::write(root.join("lib.rs"), "pub fn beta() {}\n").unwrap();
 
     let error = store.index().unwrap_err();
     assert!(is_index_corrupt(&error), "{error:#}");
