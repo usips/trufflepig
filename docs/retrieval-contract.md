@@ -37,6 +37,9 @@ identifier's definitions and uses first (see
 a symbol, a source region, or a file. Searchable source regions cover the entire
 eligible file, including long-symbol middles and gaps between definitions.
 Resource-excluded files remain discoverable by path with their exclusion reason.
+A query with only path, language, or kind filters has no semantic input and skips
+embedding preparation and reranking. Adding free text makes semantic retrieval
+eligible, including `kind:file` queries that rank whole-file regions.
 
 Coverage describes indexed files, parser failures, semantic coverage, and result
 truncation separately. An interrupted or incomplete search cannot claim an
@@ -147,3 +150,29 @@ accepted by the stdout writer and require complete receipts for viewed evidence.
 Workspace queries merge independently ranked member results before rendering.
 Persisted owner identities route foreign reads and context; provenance consumes
 the same output budget. See the [workspace contract](workspace-contract.md).
+
+## Cache-free current-source discovery
+
+`search` and `map FILE` accept `--no-cache` to discover current files without
+opening or writing the selected index or result cache. Search keeps the normal
+exact, lexical, path, language, kind, and live-regex rules over bounded current
+bytes; semantic retrieval and reranking are unavailable and coverage says so.
+Filter-only `kind:file` queries catalog paths without extracting source. Free-text
+file queries also search body content within the current-source bounds. Scoped
+queries bind their normal path filters before reading or extracting source.
+`map FILE` outlines exactly one current root-relative file. `refs` remains an
+index-only operation.
+
+The source walk remains inside the selected repository root, does not follow
+symlinks, excludes `.git`, `target`, `node_modules`, `.trufflepig`, and the
+selected cache, and observes shared file, byte, fact, walk, hit, and deadline
+limits. Every omitted or unreadable source is reflected in coverage. Empty
+results claim `absence: exhaustive` only when the bounded current-source
+coverage is complete; otherwise they report `absence: not_proven` and a
+truncated page. A cache-free hit carries a revision-bound `read:path:` handle
+that `show` can resolve from current bytes without a persisted result set.
+
+An automatic cache-free retry occurs only when the selected cache is refused
+before ordinary dispatch with the typed cache-unavailable condition. The page
+identifies that fallback, selected cache, and original cause. Errors from a
+dispatched index operation do not trigger a current-source retry.

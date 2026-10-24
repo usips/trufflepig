@@ -103,10 +103,45 @@ fn invalid_cache_error_names_the_selected_path_and_recovery_options() -> Result<
     )
     .err()
     .expect("the path used as a cache must be rejected");
+    assert!(is_index_cache_unavailable(&error), "{error:#}");
     let text = format!("{error:#}");
     assert!(text.contains(&cache.display().to_string()), "{text}");
     assert!(text.contains("--cache"), "{text}");
     assert!(text.contains("XDG_CACHE_HOME"), "{text}");
+    assert!(text.contains("show path:FILE[:START-END]"), "{text}");
+    Ok(())
+}
+
+#[test]
+fn no_daemon_map_reports_selected_cache_and_cache_free_source_fallback() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let scratch = tempfile::tempdir()?;
+    std::fs::write(root.path().join("lib.rs"), "pub fn indexed() {}\n")?;
+    let cache = scratch.path().join("cache-file");
+    let marker = b"preserve this selected cache path\n";
+    std::fs::write(&cache, marker)?;
+    let options = super::super::parse(&[
+        "--root".to_owned(),
+        root.path().display().to_string(),
+        "--cache".to_owned(),
+        cache.display().to_string(),
+        "--no-daemon".to_owned(),
+        "--diagnostics".to_owned(),
+        "off".to_owned(),
+        "map".to_owned(),
+        "lib.rs".to_owned(),
+    ])?;
+
+    let output = local(root.path(), &cache, &options, false)?;
+    let page: serde_json::Value = serde_json::from_str(&output)?;
+    assert!(!page["hits"].as_array().unwrap().is_empty(), "{page}");
+    assert_eq!(page["cache_fallback"]["status"], "index_cache_unavailable");
+    assert_eq!(page["cache_fallback"]["cache"], cache.display().to_string());
+    assert_eq!(
+        std::fs::read(&cache)?.as_slice(),
+        &marker[..],
+        "cache identity remains selected"
+    );
     Ok(())
 }
 

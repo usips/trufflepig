@@ -228,6 +228,12 @@ impl WorkspaceResults {
     /// Creates the private cache and its schema; runs once per coordinator start
     /// (or local command), never per request.
     pub fn create(cache: &Path, deadline: &QueryDeadline) -> Result<()> {
+        Self::create_schema(cache, deadline).map_err(|error| {
+            crate::store::index_cache_unavailable(cache, classify_db_error(deadline, error))
+        })
+    }
+
+    fn create_schema(cache: &Path, deadline: &QueryDeadline) -> Result<()> {
         check_deadline(deadline)?;
         std::fs::create_dir_all(cache)?;
         std::fs::set_permissions(cache, std::fs::Permissions::from_mode(0o700))?;

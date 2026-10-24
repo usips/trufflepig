@@ -136,6 +136,9 @@ pub struct Arguments {
     /// Override the cache directory.
     #[arg(long)]
     pub cache: Option<PathBuf>,
+    /// Search or map current source without reading or writing an index or result cache.
+    #[arg(long)]
+    pub no_cache: bool,
     /// Maximum serialized output budget in o200k_base tokens.
     #[arg(short = 'b', long, default_value_t = 600)]
     pub budget: usize,
@@ -319,6 +322,16 @@ pub(super) fn validate(options: &Arguments) -> Result<()> {
         .first()
         .map(String::as_str)
         .unwrap_or("status");
+    if options.no_cache
+        && !matches!(verb, "search" | "map")
+        && !(verb == "show"
+            && options
+                .words
+                .get(1)
+                .is_some_and(|target| crate::source::acquisition::is_current_path_target(target)))
+    {
+        bail!("invalid_options: --no-cache supports search, map FILE, and current-path show");
+    }
     if options.no_daemon && (verb == "serve" || verb.ends_with("-serve")) {
         bail!("invalid_options: --no-daemon cannot start a server");
     }
@@ -427,6 +440,7 @@ pub(crate) fn normalized_args(options: &Arguments, root: &Path) -> Vec<String> {
         ("--uncommitted", options.uncommitted),
         ("--raw", options.raw),
         ("--no-daemon", options.no_daemon),
+        ("--no-cache", options.no_cache),
     ] {
         if enabled {
             args.push(flag.into());

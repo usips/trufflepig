@@ -3,6 +3,10 @@
 //! lines. Snippets stay while `SNIPPET_PAGE_FLOOR` hits fit; then names are
 //! dropped first and a lone ambiguous JSON hit trims candidates.
 
+mod stateless;
+#[cfg(test)]
+mod tests;
+
 use super::{HitDetail, StoredResultSet, compact_entry_for_page, lines, load_entries};
 use crate::{
     daemon::deadline::TIMED_OUT,
@@ -56,6 +60,8 @@ pub(crate) fn snippet_page(
         None
     })
 }
+
+pub(crate) use stateless::{stateless_page, stateless_page_members};
 
 pub fn page(
     store: &Store,
@@ -246,6 +252,3 @@ pub fn more(store: &Store, cursor: &str, limit: usize, budget: &OutputBudget) ->
         budget,
     )
 }
-
-#[cfg(test)]
-mod tests;

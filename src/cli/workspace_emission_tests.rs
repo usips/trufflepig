@@ -119,6 +119,32 @@ fn deliveries(cache: &Path, expected: usize) -> Vec<RequestEvent> {
 }
 
 #[test]
+fn workspace_local_cache_refusal_returns_current_source_with_selected_cache() {
+    let fixture = Fixture::new();
+    let config = WorkspaceConfig::load(&fixture.config).unwrap();
+    let selected = crate::workspace::cache_path(&config, Some(fixture.cache.path())).unwrap();
+    fs::create_dir_all(selected.parent().unwrap()).unwrap();
+    let marker = b"preserve the selected workspace cache\n";
+    fs::write(&selected, marker).unwrap();
+    for command in [vec!["search", "sym:SharedThing"], vec!["map", "lib.rs"]] {
+        let mut args = fixture.args(&command);
+        args.extend(["--budget".into(), "4000".into()]);
+        let output = run(&args).unwrap();
+        let page: Value = serde_json::from_str(&output).unwrap();
+        assert!(!page["hits"].as_array().unwrap().is_empty(), "{page}");
+        assert_eq!(page["cache_fallback"]["status"], "index_cache_unavailable");
+        assert_eq!(
+            page["cache_fallback"]["cache"],
+            selected.display().to_string()
+        );
+        assert_eq!(fs::read(&selected).unwrap(), marker);
+    }
+    let output = run(&fixture.args(&["show", "path:lib.rs:1-1"])).unwrap();
+    assert!(output.contains("SharedThing"), "{output}");
+    assert_eq!(fs::read(&selected).unwrap(), marker);
+}
+
+#[test]
 fn workspace_page_emission_records_foreign_identity_and_one_final_receipt() {
     let fixture = Fixture::new();
     DiagnosticStore::open(&fixture.member_cache("engine"), DiagnosticsMode::Metadata).unwrap();

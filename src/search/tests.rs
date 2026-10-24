@@ -426,6 +426,44 @@ fn rerank_gate_excludes_exact_and_regex_queries() {
 }
 
 #[test]
+fn filter_only_queries_skip_semantic_preparation_and_reranking() {
+    let (_root, cache, store) = fixture(&[("lib.rs", b"authentication flow\n")]);
+    let mut session = crate::semantic::SemanticSession::default();
+    session.set_no_daemon(true);
+    let mut trace = telemetry::RetrievalTrace::default();
+    let filter_only = Query::parse("kind:file file:lib.rs").unwrap();
+    let filtered = search_with_session(
+        &store,
+        &filter_only,
+        true,
+        true,
+        cache.path(),
+        &mut session,
+        &mut trace,
+        &QueryDeadline::start(),
+    )
+    .unwrap();
+    assert!(filtered.coverage.get("semantic_status").is_none());
+    assert!(filtered.coverage.get("rerank_status").is_none());
+    assert!(trace.query_preparation_us.is_none());
+    assert!(filtered.hits.iter().any(|hit| hit.path == "lib.rs"));
+
+    let file_concept = Query::parse("authentication flow kind:file file:lib.rs").unwrap();
+    let concept = search_with_session(
+        &store,
+        &file_concept,
+        true,
+        true,
+        cache.path(),
+        &mut session,
+        &mut trace,
+        &QueryDeadline::start(),
+    )
+    .unwrap();
+    assert!(concept.coverage.get("semantic_status").is_some());
+}
+
+#[test]
 fn exact_search_lists_declarations_before_imports_of_the_name() {
     let (_root, cache, store) = fixture(&[
         ("a.rs", b"use crate::z::Coord;\nfn f(_: Coord) {}\n"),

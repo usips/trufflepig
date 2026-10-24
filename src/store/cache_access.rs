@@ -44,7 +44,7 @@ pub fn index_cache_unavailable(cache: &Path, error: anyhow::Error) -> anyhow::Er
         return error;
     };
     marked.context(format!(
-        "index_cache_unavailable: selected cache {} is unavailable; choose a writable path with `--cache` or set `XDG_CACHE_HOME` to a writable directory",
+        "index_cache_unavailable: selected cache {} is unavailable; choose a writable path with `--cache` or set `XDG_CACHE_HOME` to a writable directory. For a bounded cache-free source read, use `show path:FILE[:START-END]` with FILE relative to the selected repository or member root",
         cache.display()
     ))
 }

@@ -48,10 +48,11 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
             Some(format!("{error:#}")),
         ),
     };
-    let skip_recording = matches!(
-        operation(options),
-        Operation::ForgetLogs | Operation::Board | Operation::Feedback
-    );
+    let skip_recording = options.no_cache
+        || matches!(
+            operation(options),
+            Operation::ForgetLogs | Operation::Board | Operation::Feedback
+        );
     let diagnostic_location = (context_error.is_none() && !skip_recording)
         .then(|| crate::workspace::diagnostic_location(options));
     let mut operation = operation(options);

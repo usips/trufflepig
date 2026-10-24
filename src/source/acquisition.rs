@@ -10,6 +10,7 @@ use anyhow::{Context, Result, bail, ensure};
 use std::path::Component;
 
 mod path_read;
+pub(crate) use path_read::{cursor_matches_root, stateless_hit_handle};
 mod symbol;
 #[cfg(test)]
 mod tests;

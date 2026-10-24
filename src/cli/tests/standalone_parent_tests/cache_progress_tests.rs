@@ -1,9 +1,8 @@
 use super::*;
 
 #[test]
-fn selected_read_only_worktree_cache_fails_before_parent_retrieval() -> Result<()> {
-    const CASE: &str =
-        "cache_progress_tests::selected_read_only_worktree_cache_fails_before_parent_retrieval";
+fn selected_read_only_worktree_cache_falls_back_without_parent_retrieval() -> Result<()> {
+    const CASE: &str = "cache_progress_tests::selected_read_only_worktree_cache_falls_back_without_parent_retrieval";
     if !in_isolated_child(CASE)? {
         return Ok(());
     }
@@ -33,26 +32,28 @@ fn selected_read_only_worktree_cache_fails_before_parent_retrieval() -> Result<(
     fs::remove_dir(&parent_database)?;
     fs::rename(&saved_database, &parent_database)?;
     fs::set_permissions(&fixture.child_cache, fs::Permissions::from_mode(0o755))?;
-    let error = result.expect_err("a read-only selected cache is refused before parent retrieval");
-
-    assert!(
-        crate::store::is_index_cache_unavailable(&error),
-        "{error:#}"
+    let text = result.expect("a read-only selected cache uses current worktree bytes");
+    let page: serde_json::Value = serde_json::from_str(&text)?;
+    assert_eq!(page["cache_fallback"]["status"], "index_cache_unavailable");
+    assert_eq!(
+        page["cache_fallback"]["cache"],
+        fixture.child_cache.display().to_string()
     );
-    let text = format!("{error:#}");
+    assert_eq!(page["coverage"]["endpoint"], "stateless_current_source");
+    let hits = page["hits"].as_array().expect("current-source hits");
+    assert!(!hits.is_empty(), "{text}");
+    let worktree = fixture.worktree.display().to_string();
     assert!(
-        text.contains(&fixture.child_cache.display().to_string()),
-        "{text}"
+        hits.iter()
+            .all(|hit| hit["file"].as_str().unwrap().contains(&worktree))
     );
-    assert!(text.contains("--cache"), "{text}");
-    assert!(text.contains("XDG_CACHE_HOME"), "{text}");
     assert!(
         !fixture.child_cache.join("results.sqlite3").exists(),
-        "preflight must refuse before saving a parent answer"
+        "fallback must not save a selected-cache answer"
     );
     assert!(
         !fixture.main_cache.join("results.sqlite3").exists(),
-        "preflight must refuse before parent result work"
+        "fallback must not save a parent answer"
     );
     assert_eq!(
         fixture.current_parent_generation()?,

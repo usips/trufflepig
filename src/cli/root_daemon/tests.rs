@@ -281,6 +281,27 @@ fn persistent_semantic_and_rerank_settings_use_the_semantic_lane() {
             .lane,
         RequestLane::Query
     );
+    let filter_only = classify_workspace(
+        &config,
+        &engine,
+        &["search", "kind:file", "file:reads_item_state.rs"],
+    );
+    assert_eq!(filter_only.class.lane, RequestLane::Query);
+    assert!(filter_only.roots.is_empty());
+    let file_concept = classify_workspace(
+        &config,
+        &engine,
+        &["search", "authentication", "flow", "kind:file"],
+    );
+    assert_eq!(file_concept.class.lane, RequestLane::Semantic);
+    assert_eq!(file_concept.roots.len(), 2);
+    let no_cache = classify_workspace(&config, &engine, &["--no-cache", "search", "needle"]);
+    assert_eq!(no_cache.class.lane, RequestLane::Query);
+    assert!(no_cache.roots.is_empty());
+    let no_cache_regex =
+        classify_workspace(&config, &engine, &["--no-cache", "search", "re:needle"]);
+    assert_eq!(no_cache_regex.class.lane, RequestLane::Regex);
+    assert_eq!(no_cache_regex.roots.len(), 2);
     assert_eq!(
         classify_workspace(&config, &engine, &["search", "re:needle"])
             .class

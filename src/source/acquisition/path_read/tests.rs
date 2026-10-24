@@ -159,6 +159,48 @@ fn cache_independent_acquisition_skips_optional_result_storage() {
 }
 
 #[test]
+fn current_hit_handle_reads_revision_bound_lines_without_cache() {
+    let directory = test_directory();
+    let root = directory.path().join("repo");
+    fs::create_dir_all(&root).unwrap();
+    let bytes = b"first line\nneedle in the current source\nlast line\n";
+    fs::write(root.join("src.rs"), bytes).unwrap();
+    let cache = directory.path().join("never-created-cache");
+    let canonical_root = root.canonicalize().unwrap();
+    let needle = bytes
+        .windows(b"needle".len())
+        .position(|window| window == b"needle")
+        .unwrap();
+    let handle = stateless_hit_handle(
+        &canonical_root,
+        Path::new("src.rs"),
+        bytes,
+        needle,
+        needle + b"needle".len(),
+    )
+    .unwrap();
+
+    assert!(handle.starts_with("read:path:"));
+    assert!(cursor_matches_root(&handle, &canonical_root).unwrap());
+    let other_root = directory.path().join("other");
+    fs::create_dir_all(&other_root).unwrap();
+    assert!(!cursor_matches_root(&handle, &other_root).unwrap());
+
+    let store = Store::unpublished(&root, &cache).unwrap();
+    let shown = page(&store, &handle);
+    assert_eq!(shown["source"], "current_file");
+    assert_eq!(shown["verified"], false);
+    assert_eq!(shown["lines"][0]["text"], "needle in the current source\n");
+    assert!(!cache.exists());
+
+    fs::write(root.join("src.rs"), b"replacement source\n").unwrap();
+    let changed_store = Store::unpublished(&root, &cache).unwrap();
+    let error = show(&changed_store, &handle, &OutputBudget::new(20_000).unwrap()).unwrap_err();
+    assert!(error.to_string().starts_with("stale_source:"));
+    assert!(!cache.exists());
+}
+
+#[test]
 fn stateless_continuation_rejects_changed_current_bytes() {
     let directory = test_directory();
     let root = directory.path().join("repo");

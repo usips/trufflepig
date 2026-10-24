@@ -5,13 +5,13 @@ use anyhow::{Context, Result, ensure};
 /// Members to search. Without a selector, only the home member is searched when
 /// one exists (`implicit_home`); `search` widens to all members when home has no
 /// hits, but never while home itself is warming or unavailable.
-pub(super) struct Scope {
+pub(in crate::workspace) struct Scope {
     pub members: Vec<usize>,
     pub words: Vec<String>,
     pub implicit_home: bool,
 }
 
-pub(super) fn scope(roots: &[MemberRoot], options: &Arguments) -> Result<Scope> {
+pub(in crate::workspace) fn scope(roots: &[MemberRoot], options: &Arguments) -> Result<Scope> {
     let mut selection = options.member.clone().map(|m| format!("in:{m}"));
     let mut words = Vec::with_capacity(options.words.len());
     for argument in &options.words {

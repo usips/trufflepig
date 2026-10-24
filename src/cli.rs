@@ -9,6 +9,7 @@ pub mod emission;
 mod emitted_evidence;
 mod retry;
 mod root_daemon;
+mod stateless_dispatch;
 pub(crate) use root_daemon::{ClassifiedDaemonRequest, classify_daemon_request};
 mod system_client_routing;
 use system_client_routing::{system_command, system_reply, system_routes};
@@ -107,6 +108,9 @@ fn direct_with_deadline(
         .canonicalize()
         .context("invalid_root: cannot open repository root")?;
     let cache = cache_path(&root, options.cache.as_deref())?;
+    if options.no_cache && stateless_dispatch::eligible(options) {
+        return stateless_dispatch::run(&root, &cache, options, &deadline.capped(QUERY_DEADLINE));
+    }
     let bounded_read = matches!(
         verb,
         "search" | "refs" | "map" | "show" | "more" | "ctx" | "status" | "doctor"
@@ -137,7 +141,10 @@ fn direct_with_deadline(
             .words
             .get(1)
             .is_some_and(|command| command == "status");
-    if !options.no_daemon && !metadata_only && !matches!(verb, "index" | "init" | "semantic-check")
+    if !options.no_daemon
+        && !options.no_cache
+        && !metadata_only
+        && !matches!(verb, "index" | "init" | "semantic-check")
     {
         let args = normalized_args(options, &root);
         if let Some(response) = daemon::request_by(&cache, &args, context, deadline.clone())? {

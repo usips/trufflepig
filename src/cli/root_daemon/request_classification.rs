@@ -33,10 +33,12 @@ pub(crate) fn classify(args: &[String]) -> Result<ClassifiedDaemonRequest> {
         let (words, selector) = split_search_scope(&options.words, options.member.as_deref())?;
         let query_text = words[1..].join(" ");
         let query = Query::parse(&query_text)?;
-        let semantic_shape = !query.exact && !query.regex && !query_text.starts_with("refs:");
-        let semantic =
-            (options.sem || config.as_ref().is_some_and(|c| c.semantic.enabled)) && !options.no_sem;
-        let rerank = (options.rerank || config.as_ref().is_some_and(|c| c.semantic.rerank))
+        let semantic_shape = query.semantic_eligible() && !query_text.starts_with("refs:");
+        let semantic = !options.no_cache
+            && (options.sem || config.as_ref().is_some_and(|c| c.semantic.enabled))
+            && !options.no_sem;
+        let rerank = !options.no_cache
+            && (options.rerank || config.as_ref().is_some_and(|c| c.semantic.rerank))
             && !options.no_rerank;
         let lane = if query.regex {
             RequestLane::Regex

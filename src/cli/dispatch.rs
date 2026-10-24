@@ -212,6 +212,19 @@ fn local_dispatch(
             ),
         };
     }
+    if options.no_cache && super::stateless_dispatch::eligible(options) {
+        return super::stateless_dispatch::run(root, cache, options, &deadline);
+    }
+    if options.no_daemon && super::stateless_dispatch::eligible(options) {
+        if let Err(error) = preflight_results_cache(cache, Some(&deadline)) {
+            let error = deadline.classify(error);
+            return if is_index_cache_unavailable(&error) {
+                super::stateless_dispatch::run_fallback(root, cache, options, &deadline, &error)
+            } else {
+                Err(error)
+            };
+        }
+    }
     let (mut store, mut parent_fallback) =
         if matches!(verb, "show" | "more" | "ctx" | "search" | "refs" | "map") {
             read_store(root, cache, options, daemon_running, &deadline)?

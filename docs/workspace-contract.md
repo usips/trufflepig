@@ -120,20 +120,13 @@ the five-path sample in `issues.unsearched_paths`. Exclusions, parse failures,
 and semantic/rerank status remain in `issues`. Lines read `MEMBER complete` or `MEMBER partial (N unsearched: KIND)`
 and omit lanes never configured. Each member receives an equal share of the
 retained candidate/byte ceiling; omissions are explicit rather than exhaustive
-counts. Unpublished members report `warming`, unavailable ones a 120-character
-`reason` (`MEMBER unavailable (REASON)`), and members reached after the 20 s
-query deadline `timed_out` (`MEMBER timed out`). With no explicitly selected
-member available, the command fails `workspace_unavailable` (or `timed_out`).
+counts. Unpublished members report `warming`; unavailable or timed-out members retain a 120-character `reason`. No answers produce `workspace_unavailable` or `timed_out`; details name the member, phase, optional worktree root, and `show path:FILE` fallback with `absence=not_proven`.
 
-The normal 600-token `o200k_base` budget applies once to the complete response
-in the selected format, including provenance and coverage. Compact entries carry
-a percent-encoded `file` URI, line span, and owner-qualified handle; lines
-format prefixes each path with its member and reduces coverage to one line that
-still names every member's `partial` and `truncated` state
-(`src/workspace/result_cache/lines.rs`). Labels cannot be removed to squeeze in
-additional hits. Tiny budgets retain explicit insufficient-budget behavior.
-Pages capture each member's publication generation separately and freeze those
-owners for follow-up reads; they are not atomic snapshots spanning repositories.
+The normal 600-token `o200k_base` budget applies once to the complete response, including provenance and coverage. Compact entries carry a percent-encoded `file` URI, line span, and owner-qualified handle; lines prefix paths with the member and name every member's `partial` and `truncated` state (`src/workspace/result_cache/lines.rs`). Labels cannot be removed to fit more hits; tiny budgets retain explicit insufficient-budget behavior. Pages freeze each member's publication generation for follow-up reads, not one atomic cross-repository snapshot.
+
+`--no-cache search` and `map FILE` inspect current bytes in selected members without cache access; normal member and root-relative path selection applies.
+The renderer round-robins member ranks under one budget and preserves every result or failure; partial scans or unavailable members cannot prove absence.
+Semantics and reranking are unavailable, `refs` remains index-only, and revision-bound `read:path:` handles resolve only against configured roots; `show` rejects edits.
 
 ## Immutable navigation
 

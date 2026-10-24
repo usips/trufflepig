@@ -84,6 +84,16 @@ pub(crate) fn run_with_deadline(
     if let Some(rendered) = super::current_path_show(&config, &options, &path_deadline)? {
         return Ok(rendered);
     }
+    if options.no_cache && super::stateless_queries::eligible(&options) {
+        return super::stateless_queries::run(&config, &options, &path_deadline, None);
+    }
+    if options.no_daemon
+        && super::stateless_queries::eligible(&options)
+        && let Some(refusal) =
+            super::stateless_queries::cache_refused(&config, &options, &path_deadline)?
+    {
+        return super::stateless_queries::run(&config, &options, &path_deadline, Some(refusal));
+    }
     let cache = cache_path(&config, options.cache.as_deref())?;
     let verb = options
         .words
@@ -108,7 +118,22 @@ pub(crate) fn run_with_deadline(
     // Indexing is long foreground work; it never occupies a coordinator worker.
     if options.no_daemon || matches!(verb, "ws" | "index" | "init") || metadata_only {
         if !(verb == "ws" || metadata_only) {
-            WorkspaceResults::create(&cache, &deadline)?;
+            if let Err(error) = WorkspaceResults::create(&cache, &deadline) {
+                let error = deadline.classify(error);
+                if options.no_daemon
+                    && super::stateless_queries::eligible(&options)
+                    && crate::store::is_index_cache_unavailable(&error)
+                {
+                    let refusal = super::stateless_queries::cache_failure(&cache, &error);
+                    return super::stateless_queries::run(
+                        &config,
+                        &options,
+                        &path_deadline,
+                        Some(refusal),
+                    );
+                }
+                return Err(error);
+            }
         }
         return local(
             &config,

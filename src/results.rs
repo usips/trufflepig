@@ -8,6 +8,7 @@ use anyhow::{Context, Result, bail, ensure};
 pub use entries::*;
 pub(crate) use page::{largest_fitting, snippet_page};
 pub use page::{more, page};
+pub(crate) use page::{stateless_page, stateless_page_members};
 pub use result_set_store::{RESULTS_DATABASE, ResultSetStore};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

@@ -93,6 +93,9 @@ impl ClientCommand {
         if matches!(verb, "board" | "feedback") {
             return self.board.run(args, &options, context, deadline);
         }
+        if options.no_cache {
+            return super::direct_with_deadline(&options, context, deadline);
+        }
         if system_routes(&options, verb)
             && let Ok(root) = options.root.canonicalize()
             && let Ok(config) = crate::workspace::resolve(&options)

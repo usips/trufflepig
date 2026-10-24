@@ -13,6 +13,7 @@ use crate::{
     store::{Store, decode_path},
 };
 use anyhow::{Result, ensure};
+use rusqlite::OptionalExtension;
 use std::collections::HashSet;
 
 /// Most changed files re-evaluated for one search query.
@@ -61,20 +62,23 @@ impl ParentFallback {
         check_deadline(deadline)?;
         let (verb, words, query, origin) = request;
         if verb == "map" {
-            let Some(path) = words.get(1) else {
+            let Some(target) = words.get(1) else {
                 return Ok(HashSet::new());
             };
-            let indexed = found.hits.iter().find(|hit| &hit.path == path);
-            let changed = self.divergence.contains(path)
-                || indexed.is_some_and(|hit| {
-                    hashes.check(&store.root, path, hit.revision.as_deref()) == Some(false)
-                });
-            if changed && let Some(hits) = reextracted_map(store, path) {
+            let filter = crate::search::PathFilter::prefix(target);
+            let Some(path) = filter
+                .resolve_single_file(&store.conn)?
+                .or_else(|| filter.includes().first().cloned())
+            else {
+                return Ok(HashSet::new());
+            };
+            let git_changed = self.divergence.contains(&path);
+            let bytes_changed = Self::refresh_current_map_with_hashes(store, &path, found, hashes)?;
+            if git_changed && !bytes_changed {
+                Self::replace_map_from_current_source(store, &path, found);
+            }
+            if git_changed || bytes_changed {
                 check_deadline(deadline)?;
-                found.hits = hits;
-                if let Some(coverage) = found.coverage.as_object_mut() {
-                    coverage.remove("no_indexed_path");
-                }
                 return Ok(HashSet::from([path.clone()]));
             }
         } else if verb == "search" && rechecks_search_query(query) {
@@ -113,6 +117,81 @@ impl ParentFallback {
             return Ok(symbols.changed);
         }
         Ok(HashSet::new())
+    }
+
+    /// Replaces an exact-file outline when its current bytes differ from the
+    /// indexed revision, including a readable worktree index published before
+    /// a later commit.
+    pub(crate) fn refresh_current_map(
+        store: &Store,
+        target: &str,
+        found: &mut ResultSet,
+    ) -> Result<bool> {
+        let Some(path) =
+            crate::search::PathFilter::prefix(target).resolve_single_file(&store.conn)?
+        else {
+            return Ok(false);
+        };
+        let mut hashes = WorktreeHashes::default();
+        Self::refresh_current_map_with_hashes(store, &path, found, &mut hashes)
+    }
+
+    /// Retains indexed hits only when current bytes verify their revision.
+    pub(crate) fn refresh_current_map_with_hashes(
+        store: &Store,
+        path: &str,
+        found: &mut ResultSet,
+        hashes: &mut WorktreeHashes,
+    ) -> Result<bool> {
+        let revision: Option<String> = store
+            .conn
+            .query_row("SELECT revision FROM files WHERE path=?1", [path], |row| {
+                row.get(0)
+            })
+            .optional()?;
+        let Some(revision) = revision else {
+            if found.hits.iter().any(|hit| hit.path == path) {
+                Self::mark_map_unavailable(found, path, "indexed map revision could not be read");
+                return Ok(true);
+            }
+            return Ok(false);
+        };
+        match hashes.check(&store.root, path, Some(&revision)) {
+            Some(true) => Ok(false),
+            Some(false) => {
+                Self::replace_map_from_current_source(store, path, found);
+                Ok(true)
+            }
+            None => {
+                Self::mark_map_unavailable(found, path, "current source could not be verified");
+                Ok(true)
+            }
+        }
+    }
+
+    fn replace_map_from_current_source(store: &Store, path: &str, found: &mut ResultSet) {
+        if let Some(hits) = reextracted_map(store, path) {
+            found.hits = hits;
+            if let Some(coverage) = found.coverage.as_object_mut() {
+                coverage.remove("no_indexed_path");
+            }
+            found.coverage["worktree_map"] = serde_json::json!({
+                "status": "reextracted",
+                "path": path,
+            });
+        } else {
+            Self::mark_map_unavailable(found, path, "changed source could not be outlined");
+        }
+    }
+
+    fn mark_map_unavailable(found: &mut ResultSet, path: &str, reason: &str) {
+        found.hits.clear();
+        found.truncated = true;
+        found.coverage["worktree_map"] = serde_json::json!({
+            "status": "unavailable",
+            "path": path,
+            "reason": reason,
+        });
     }
 
     /// Replaces `parent` hits in changed files with candidates those files hold

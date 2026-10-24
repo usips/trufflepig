@@ -1,12 +1,14 @@
 //! Explicit multi-root retrieval with persisted ownership and one final output budget.
 pub mod config;
 mod coordinator;
+mod current_path_hints;
 mod home_index;
 pub mod member_root;
 mod navigation;
 mod owned_response;
 mod result_cache;
 mod retrieval;
+mod stateless_queries;
 #[cfg(test)]
 mod test_fixture;
 mod workspace_list;
@@ -228,7 +230,11 @@ pub(super) fn current_path_show(
         return Ok(None);
     }
     ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
-    let member = selected_member(config, options)?;
+    let member = if target.starts_with("read:path:") {
+        stateless_queries::cursor_owner(config, options, &target, deadline)?
+    } else {
+        selected_member(config, options)?
+    };
     member.verify_identity()?;
     ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
 
@@ -246,6 +252,9 @@ pub(super) fn current_path_show(
     let acquired = crate::source::acquisition::acquire_current_path_without_cache(
         &store, &target, side, &origin,
     )
+    .map_err(|error| {
+        current_path_hints::decorate_source_unavailable(config, &member, &target, error, deadline)
+    })
     .map_err(|error| deadline.classify(error))?;
     ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
 

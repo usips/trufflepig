@@ -16,6 +16,7 @@ mod qualified_name;
 mod rerank_window;
 mod semantic_lane;
 mod snippets;
+pub(crate) mod stateless;
 pub mod telemetry;
 #[cfg(test)]
 mod tests;
@@ -89,6 +90,11 @@ impl Query {
         }
         Ok(query)
     }
+
+    /// Returns whether free text can use semantic retrieval or reranking.
+    pub fn semantic_eligible(&self) -> bool {
+        !self.text.is_empty() && !self.exact && !self.regex
+    }
 }
 
 pub(super) fn hit_row(row: &Row<'_>) -> rusqlite::Result<Hit> {
@@ -152,7 +158,7 @@ pub fn search_with_session(
     use telemetry::{Lane, LaneOutcome};
     trace.begin(&store.root);
     let preparation_started = Instant::now();
-    let semantic_enabled = semantic && !query.exact && !query.regex;
+    let semantic_enabled = semantic && query.semantic_eligible();
     let (prepared, semantic_status) = match session.prepare(semantic_enabled, cache, &query.text) {
         Ok(prepared) => (prepared, None),
         Err(error) => {
@@ -164,8 +170,7 @@ pub fn search_with_session(
         trace.query_preparation_us = Some(telemetry::elapsed_us(preparation_started));
     }
     let preparation_us = trace.query_preparation_us;
-    let reranker =
-        (rerank && !query.exact && !query.regex).then_some(&*session as &dyn RerankScorer);
+    let reranker = (rerank && query.semantic_eligible()).then_some(&*session as &dyn RerankScorer);
     let mut output = search_prepared(store, query, cache, prepared, reranker, trace, deadline);
     if let (Some(status), Ok(result)) = (&semantic_status, &mut output) {
         result.coverage["semantic_status"] = if status.starts_with("semantic_cache_locked:") {
@@ -266,8 +271,7 @@ pub fn search_prepared(
             }
         }
     }
-    if !query.exact
-        && !query.regex
+    if query.semantic_eligible()
         && !concept.literal
         && let Some(vector) = semantic_query.as_ref()
     {

@@ -15,6 +15,7 @@ use fs2::FileExt;
 use serde_json::Value;
 use std::{fs, fs::OpenOptions, path::Path, path::PathBuf, time::Duration};
 
+mod map_currentness;
 mod member_cache_reads;
 
 /// A worktree of `engine` whose cache is only seeded: `lib.rs` edited so

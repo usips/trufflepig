@@ -15,8 +15,10 @@ use std::{
     path::{Component, Path},
 };
 
+mod stateless;
 #[cfg(test)]
 mod tests;
+pub(crate) use stateless::{cursor_matches_root, stateless_hit_handle};
 
 #[derive(Clone, Copy)]
 pub(super) enum PathResultStorage {

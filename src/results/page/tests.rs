@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     daemon::deadline::{QueryDeadline, is_timed_out},
     output::{OutputBudget, OutputFormat},
-    results::{ChangeEntry, ResultEntry, StoredResultSet, load_entries},
+    results::{ChangeEntry, Hit, ResultEntry, ResultSet, StoredResultSet, load_entries},
     store::{Store, read_index_progress},
 };
 use anyhow::Result;
@@ -71,6 +71,108 @@ fn change(name: &str) -> ResultEntry {
         after: None,
         correspondence: "exact".into(),
     })
+}
+
+fn current_hit(name: &str, path: &str) -> Hit {
+    Hit {
+        handle: format!("read:path:root-digest:{path}:0-1@revision"),
+        path: path.into(),
+        revision: Some("revision".into()),
+        start: 0,
+        end: 1,
+        start_line: 1,
+        end_line: 1,
+        name: name.into(),
+        kind: "function".into(),
+        container: None,
+        provenance: Some("stateless_current_source".into()),
+        resolution: None,
+        candidates: Vec::new(),
+        target: None,
+        repeats: None,
+        snippet: Some(crate::results::Snippet {
+            line: 1,
+            text: format!("fn {name}() {{}}"),
+        }),
+        differs: false,
+    }
+}
+
+fn current_set(hits: Vec<Hit>, truncated: bool) -> ResultSet {
+    ResultSet {
+        generation: 0,
+        coverage: json!({"endpoint":"stateless_current_source","absence":"exhaustive"}),
+        truncated,
+        hits,
+    }
+}
+
+#[test]
+fn stateless_member_pages_round_robin_and_preserve_coverage_and_fallback_metadata() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let first_root = directory.path().join("first");
+    let second_root = directory.path().join("second");
+    let first = current_set(
+        vec![current_hit("a0", "a.rs"), current_hit("a1", "a.rs")],
+        false,
+    );
+    let second = current_set(
+        vec![current_hit("b0", "b.rs"), current_hit("b1", "b.rs")],
+        false,
+    );
+    let metadata = json!({
+        "workspace":"space", "source":"current_source", "cache":"unused",
+        "home":"first", "scope":"all", "truncated":false,
+        "cache_fallback":{"status":"index_cache_unavailable","cache":"selected-cache",
+            "reason":"selected cache is read-only"},
+        "coverage":[
+            {"member":"first","state":"searched","coverage":{"absence":"exhaustive"}},
+            {"member":"second","state":"searched","coverage":{"absence":"exhaustive"}}
+        ]
+    });
+    let parts = [
+        (first_root.as_path(), Some("first"), &first),
+        (second_root.as_path(), Some("second"), &second),
+    ];
+    let budget = OutputBudget::new(10_000)?;
+    let rendered = stateless_page_members(&parts, &metadata, 3, &budget)?;
+    let page: Value = serde_json::from_str(&rendered)?;
+
+    assert_eq!(page["hits"][0]["name"], "a0");
+    assert_eq!(page["hits"][1]["name"], "b0");
+    assert_eq!(page["hits"][2]["name"], "a1");
+    assert_eq!(page["hits"][0]["member"], "first");
+    assert_eq!(
+        page["members"]["first"],
+        crate::store::encode_path(&first_root)
+    );
+    assert_eq!(page["coverage"][1]["coverage"]["absence"], "exhaustive");
+    assert_eq!(page["cache_fallback"]["status"], "index_cache_unavailable");
+    assert_eq!(page["next"], Value::Null);
+    assert_eq!(page["truncated"], true);
+
+    let lines_budget = OutputBudget::new(10_000)?.with_format(OutputFormat::Lines);
+    let lines = stateless_page_members(&parts, &metadata, 3, &lines_budget)?;
+    assert!(lines.contains("first/a.rs:1-1"));
+    assert!(lines.contains("second/b.rs:1-1"));
+    assert!(lines.contains("cache_fallback"));
+    assert!(lines.contains("truncated"));
+    Ok(())
+}
+
+#[test]
+fn stateless_single_page_keeps_auto_fallback_metadata() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let root = directory.path().join("root");
+    let set = current_set(Vec::new(), false);
+    let metadata = json!({"cache_fallback":{"status":"index_cache_unavailable",
+        "cache":"selected-cache","reason":"read-only"}});
+    let rendered = stateless_page(&root, None, &set, &metadata, 20, &OutputBudget::new(1_000)?)?;
+    let page: Value = serde_json::from_str(&rendered)?;
+    assert_eq!(page["cache_fallback"]["status"], "index_cache_unavailable");
+    assert_eq!(page["coverage"]["absence"], "exhaustive");
+    assert_eq!(page["hits"], json!([]));
+    Ok(())
 }
 
 #[test]

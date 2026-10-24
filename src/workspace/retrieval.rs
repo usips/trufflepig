@@ -1,6 +1,6 @@
 //! Fair rank merging of independent published member snapshots.
 mod member_coverage;
-mod member_scope;
+pub(super) mod member_scope;
 #[cfg(test)]
 mod tests;
 
@@ -83,10 +83,8 @@ pub(super) fn search_with_policy(
         .context("usage: retrieval command is required")?;
     let text = words[1..].join(" ");
     let query = Query::parse(&text)?;
-    let semantic_eligible_shape = !query.exact
-        && !query.regex
-        && !matches!(verb, "refs" | "map")
-        && !text.starts_with("refs:");
+    let semantic_eligible_shape =
+        query.semantic_eligible() && !matches!(verb, "refs" | "map") && !text.starts_with("refs:");
     let semantic = options.sem && semantic_eligible_shape;
     let rerank = options.rerank && semantic_eligible_shape;
     let started = std::time::Instant::now();
@@ -191,7 +189,11 @@ pub(super) fn search_with_policy(
             let mut found = if verb == "refs" || text.starts_with("refs:") {
                 search::references(&store, &search::reference_query(&text)?)?
             } else if verb == "map" {
-                let found = search::map(&store, words.get(1).map(String::as_str).unwrap_or(""))?;
+                let path = words.get(1).map(String::as_str).unwrap_or("");
+                let mut found = search::map(&store, path)?;
+                if fallback.is_none() && member.worktree.is_some() {
+                    ParentFallback::refresh_current_map(&store, path, &mut found)?;
+                }
                 if let Some(miss) = search::map_miss(&found) {
                     map_miss.get_or_insert_with(|| miss.to_owned());
                 }
@@ -358,7 +360,7 @@ pub(super) fn search_with_policy(
                     "unavailable"
                 };
                 let mut coverage = member_row(member, member_state);
-                if member_state == "unavailable" {
+                if matches!(member_state, "unavailable" | "timed_out") {
                     coverage["reason"] = short_reason(&error).into();
                 }
                 if let Some(source) = &progress_source {
@@ -391,14 +393,9 @@ pub(super) fn search_with_policy(
     {
         anyhow::bail!(miss);
     }
-    ensure!(
-        !set.owners.is_empty()
-            || !set
-                .coverage
-                .iter()
-                .any(|member| member["state"] == "timed_out"),
-        "{TIMED_OUT}: query deadline expired before any member answered"
-    );
+    if let Some(error) = timeout_without_member_answer(set.owners.len(), &set.coverage) {
+        return Err(error);
+    }
     // An unselected query whose home is not answering reports that on an empty page.
     ensure!(
         !set.owners.is_empty() || implicit_home,
@@ -417,6 +414,40 @@ pub(super) fn search_with_policy(
     let id = results.save(set)?;
     let budget = OutputBudget::new(options.budget)?.with_format(options.output_format());
     results.page(&id, 0, options.limit, &budget)
+}
+
+fn timeout_without_member_answer(
+    answered_members: usize,
+    coverage: &[serde_json::Value],
+) -> Option<anyhow::Error> {
+    if answered_members > 0 {
+        return None;
+    }
+    let timed_out = coverage
+        .iter()
+        .find(|member| member["state"] == "timed_out")?;
+    let member = timed_out["member"].as_str().unwrap_or("unknown");
+    let reason = timed_out["reason"]
+        .as_str()
+        .unwrap_or("query deadline expired");
+    let phase = if reason.contains("current-source recheck") {
+        "current_source_recheck"
+    } else {
+        "member_processing"
+    };
+    let mut details = serde_json::json!({
+        "absence": "not_proven",
+        "fallback": "show path:FILE",
+        "member": member,
+        "phase": phase,
+        "reason": reason,
+    });
+    if let Some(root) = timed_out["root"].as_str() {
+        details["root"] = root.into();
+    }
+    Some(anyhow::anyhow!(
+        "{TIMED_OUT}: query deadline expired before any member answered; details={details}"
+    ))
 }
 
 fn inline_member_index(

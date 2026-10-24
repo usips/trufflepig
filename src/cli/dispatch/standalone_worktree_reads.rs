@@ -54,7 +54,7 @@ pub(super) fn retrieve_read(
         "search" => {
             let query = query.as_ref().expect("search query parsed above");
             let preparation_error =
-                if options.sem && !options.no_daemon && !query.exact && !query.regex {
+                if options.sem && !options.no_daemon && query.semantic_eligible() {
                     preparation_manager.and_then(|manager| manager.schedule(root, cache).err())
                 } else {
                     None
@@ -123,6 +123,10 @@ pub(super) fn retrieve_read(
             "stale_result: parent index changed during retrieval; search again"
         );
         set.coverage["parent_index"] = serde_json::to_value(identity)?;
+    } else if verb == "map"
+        && let Some(path) = request_words.get(1)
+    {
+        crate::workspace::ParentFallback::refresh_current_map(store, path, &mut set)?;
     }
     if verb == "map"
         && let Some(miss) = search::map_miss(&set)
