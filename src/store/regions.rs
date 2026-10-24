@@ -35,6 +35,12 @@ pub(super) fn insert(
     source: &[u8],
     definitions: &[Definition],
 ) -> Result<()> {
+    let mut regions = tx.prepare_cached(
+        "INSERT INTO regions(file_id,start,end,name,kind,body) VALUES(?1,?2,?3,?4,?5,?6)",
+    )?;
+    let mut documents = tx.prepare_cached(
+        "INSERT INTO documents(rowid,name,expanded,body,path) VALUES(?1,?2,?3,?4,?5)",
+    )?;
     for region in partition_source(source, definitions) {
         let (name, kind) = region
             .definition
@@ -44,23 +50,16 @@ pub(super) fn insert(
             })
             .unwrap_or((path, "file"));
         let body = String::from_utf8_lossy(&source[region.start..region.end]);
-        tx.execute(
-            "INSERT INTO regions(file_id,start,end,name,kind,body) VALUES(?1,?2,?3,?4,?5,?6)",
-            params![
-                file_id,
-                region.start as i64,
-                region.end as i64,
-                name,
-                kind,
-                body.as_ref()
-            ],
-        )?;
-        let region_id = tx.last_insert_rowid();
+        let region_id = regions.insert(params![
+            file_id,
+            region.start as i64,
+            region.end as i64,
+            name,
+            kind,
+            body.as_ref()
+        ])?;
         let expanded = expand_identifiers(&format!("{name} {body}"));
-        tx.execute(
-            "INSERT INTO documents(rowid,name,expanded,body,path) VALUES(?1,?2,?3,?4,?5)",
-            params![region_id, name, expanded, body.as_ref(), path],
-        )?;
+        documents.execute(params![region_id, name, expanded, body.as_ref(), path])?;
     }
     Ok(())
 }

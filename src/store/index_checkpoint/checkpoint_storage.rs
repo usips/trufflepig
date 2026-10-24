@@ -153,10 +153,12 @@ impl CheckpointStorage {
     ) -> Result<Option<Extraction>> {
         let facts: Option<String> = self
             .conn
-            .query_row(
+            .prepare_cached(
                 "SELECT facts FROM completed_files
                  WHERE path=?1 AND revision IS ?2 AND source_status=?3
                    AND bytes=?4 AND extraction_version=?5",
+            )?
+            .query_row(
                 params![
                     path,
                     revision,
@@ -185,26 +187,25 @@ impl CheckpointStorage {
     ) -> Result<bool> {
         let facts = serde_json::to_string(extraction).context("encode retained extraction")?;
         self.begin()?;
-        let already_present: bool = self.conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM completed_files WHERE path=?1)",
-            [path],
-            |row| row.get(0),
-        )?;
-        self.conn.execute(
+        let already_present: bool = self
+            .conn
+            .prepare_cached("SELECT EXISTS(SELECT 1 FROM completed_files WHERE path=?1)")?
+            .query_row([path], |row| row.get(0))?;
+        self.conn.prepare_cached(
             "INSERT INTO completed_files(path,revision,source_status,bytes,extraction_version,facts)
              VALUES(?1,?2,?3,?4,?5,?6)
              ON CONFLICT(path) DO UPDATE SET revision=excluded.revision,
                  source_status=excluded.source_status,bytes=excluded.bytes,
                  extraction_version=excluded.extraction_version,facts=excluded.facts",
-            params![
+        )?
+        .execute(params![
                 path,
                 revision,
                 source_status,
                 bytes as i64,
                 extraction_version,
                 facts
-            ],
-        )?;
+            ])?;
         Ok(!already_present)
     }
 
@@ -221,7 +222,8 @@ impl CheckpointStorage {
         }
         self.begin()?;
         self.conn
-            .execute("INSERT OR IGNORE INTO scan_seen(path) VALUES(?1)", [path])?;
+            .prepare_cached("INSERT OR IGNORE INTO scan_seen(path) VALUES(?1)")?
+            .execute([path])?;
         self.files_in_transaction += 1;
         Ok(())
     }

@@ -122,14 +122,14 @@ fn append_observations(conn: &Connection, publication: &Publication) -> Result<(
             complete = false;
             break;
         }
-        conn.execute(
-            "INSERT INTO publication_observations VALUES(?1,?2,?3)",
-            params![publication.generation, path, value],
-        )?;
+        conn.prepare_cached(
+            "INSERT INTO publication_observations(generation,path,value) VALUES(?1,?2,?3)",
+        )?
+        .execute(params![publication.generation, path, value])?;
         count += 1;
     }
     conn.execute(
-        "INSERT INTO publication_windows VALUES(?1,?2)",
+        "INSERT INTO publication_windows(generation,complete) VALUES(?1,?2)",
         params![publication.generation, complete],
     )?;
     conn.execute(
