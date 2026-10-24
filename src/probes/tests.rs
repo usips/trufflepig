@@ -97,6 +97,31 @@ fn probes_healthy_index_passes_without_mutation() -> Result<()> {
 }
 
 #[test]
+fn probes_pass_after_a_definition_is_inserted_before_published_ones() -> Result<()> {
+    let (directory, mut store) = fixture()?;
+    std::fs::write(
+        store.root.join("example.rs"),
+        "fn inserted() {}\nfn example() {}\n",
+    )?;
+    store.index()?;
+    let report = doctor(
+        &store,
+        &directory.path().join("cache"),
+        &SemanticSession::new(),
+    )?;
+    let extraction = report
+        .probes
+        .iter()
+        .find(|check| check.name == ProbeName::UnchangedExtractionIdentity)
+        .unwrap();
+    assert!(
+        matches!(extraction.outcome, ProbeOutcome::Passed),
+        "{extraction:?}"
+    );
+    Ok(())
+}
+
+#[test]
 fn probes_legacy_semantic_cache_is_unverified_not_corruption() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let conn = Connection::open(directory.path().join("embeddings.sqlite"))?;
