@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import types
 import unittest
 from unittest import mock
@@ -12,6 +13,19 @@ from unittest import mock
 PLUGIN = Path(__file__).resolve().parents[1]
 HOOK = PLUGIN / "hooks/claude-hooks.py"
 SESSION_HOOK = PLUGIN / "hooks/claude-session.py"
+
+
+def isolated_environment(test):
+    """The process environment without harness markers, with HOME and XDG pointed at a
+    scratch directory so hooks never read or write the real user state."""
+    scratch = tempfile.TemporaryDirectory(prefix="trufflepig-claude-hooks-")
+    test.addCleanup(scratch.cleanup)
+    base = Path(scratch.name)
+    env = {key: value for key, value in os.environ.items()
+           if not key.startswith(("TRUFFLEPIG", "CLAUDE", "CODEX", "KIMI", "MUSE", "OPENCODE", "XDG_"))}
+    env.update(HOME=str(base), XDG_CONFIG_HOME=str(base / "config"), XDG_STATE_HOME=str(base / "state"),
+               XDG_CACHE_HOME=str(base / "cache"), TMPDIR=str(base))
+    return env
 
 
 def load_module(name, path):
@@ -23,8 +37,7 @@ def load_module(name, path):
 
 class ClaudeHookIdentityTests(unittest.TestCase):
     def setUp(self):
-        self.env = {key: value for key, value in os.environ.items()
-                    if not key.startswith(("TRUFFLEPIG", "CLAUDE", "CODEX", "KIMI", "MUSE", "OPENCODE"))}
+        self.env = isolated_environment(self)
 
     def run_hook(self, payload, env=None):
         return subprocess.run([str(HOOK)], input=json.dumps(payload), env=self.env if env is None else env,
@@ -155,8 +168,7 @@ class ClaudeHookIdentityTests(unittest.TestCase):
 class ClaudeHookLifecycleTests(unittest.TestCase):
     def setUp(self):
         self.hooks = load_module("claude_hooks_lifecycle", HOOK)
-        self.env = {key: value for key, value in os.environ.items()
-                    if not key.startswith(("TRUFFLEPIG", "CLAUDE", "CODEX", "KIMI", "MUSE", "OPENCODE"))}
+        self.env = isolated_environment(self)
 
     def test_post_tool_poll_uses_derived_actor_and_only_emits_helper_context(self):
         payload = {"hook_event_name": "PostToolUse", "session_id": "parent-session",
