@@ -66,17 +66,35 @@ export function createBoardRenderLoop({
 
   function errorMessage(error) { return error?.message || String(error); }
   function isAbort(error) { return error?.name === "AbortError"; }
-  function captureDoneDisclosures(root) {
-    const open = state.openDonePlans ||= new Set();
-    for (const details of root.querySelectorAll(".lane-done")) {
-      if (details.open) open.add(details.dataset.donePlan);
-      else open.delete(details.dataset.donePlan);
+  // Disclosure choices are tab-memory state keyed by `key#occurrence`, so
+  // repeated keys on one page stay independent; a lazy body loads on restore.
+  function keyedDisclosures(root) {
+    const counts = new Map();
+    return [...root.querySelectorAll("details[data-disclosure-key]")].map(details => {
+      const key = details.dataset.disclosureKey, at = counts.get(key) || 0;
+      counts.set(key, at + 1);
+      return [`${key}#${at}`, details];
+    });
+  }
+  function captureDisclosures(root) {
+    const open = state.openDisclosures ||= new Map();
+    for (const [key, details] of keyedDisclosures(root)) {
+      open.delete(key); open.set(key, Boolean(details.open));
+    }
+    for (const key of open.keys()) { if (open.size <= 500) break; open.delete(key); }
+  }
+  function restoreDisclosures(root) {
+    const open = state.openDisclosures;
+    if (!open) return;
+    for (const [key, details] of keyedDisclosures(root)) {
+      if (!open.has(key)) continue;
+      details.open = open.get(key);
+      if (details.open) details.boardLoad?.();
     }
   }
-  function restoreDoneDisclosures(root) {
-    for (const details of root.querySelectorAll(".lane-done")) {
-      details.open = state.openDonePlans?.has(details.dataset.donePlan) || false;
-    }
+  function pageScroll() {
+    const view = globalThis.window;
+    return Number.isFinite(view?.scrollY) ? view.scrollY : null;
   }
   function acceptProjects(projects) {
     if (!projects) return;
@@ -237,7 +255,7 @@ export function createBoardRenderLoop({
     const controller = new AbortController(); state.request = controller;
     const generation = ++state.generation;
     const route = { ...state.route };
-    captureForms(main); captureDoneDisclosures(main);
+    captureForms(main); captureDisclosures(main);
     state.refreshing = true; state.refreshAgain = false;
     main.setAttribute("aria-busy", "true");
     if (focus) main.replaceChildren(el("div", "loading", "Loading…"));
@@ -254,8 +272,10 @@ export function createBoardRenderLoop({
       const active = focus ? null : focusedControl(main);
       // Read the still-visible disclosure again: its choice may have changed
       // while the request was pending, before a native toggle event is delivered.
-      captureDoneDisclosures(main); restoreDoneDisclosures(result.page);
+      captureDisclosures(main); restoreDisclosures(result.page);
+      const scroll = focus ? null : pageScroll();
       captureForms(main); restoreForms(result.page); main.replaceChildren(result.page); restoreFocus(main, active);
+      if (scroll !== null && pageScroll() !== scroll) window.scrollTo({ top: scroll });
       state.loadedAt = Date.now();
       if (result.watermark !== null) {
         // A fresh baseline is the only legitimate lowering: the stored mark
@@ -285,7 +305,7 @@ export function createBoardRenderLoop({
       if (!main.querySelector("form") || focus) {
         const box = panel("Board unavailable", add(el("div"), el("p", "", errorMessage(error)),
           focusKey(button("Try again", () => void loadRoute(true)), "try-again")), "callout");
-        captureDoneDisclosures(main); main.replaceChildren(box);
+        captureDisclosures(main); main.replaceChildren(box);
       } else notice(errorMessage(error), "error");
       if (!isExpired()) setConnection(getToken() ? "Request failed" : "Authorization required", "error");
     } finally {

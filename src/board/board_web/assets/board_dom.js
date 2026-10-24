@@ -122,6 +122,16 @@ export function createBoardDom(state) {
     if (body) item.append(body);
     return focusKey(item, `section:${title}`);
   }
+  // A native disclosure whose open state survives live refreshes: the render
+  // loop restores `details[data-disclosure-key]` by key and occurrence.
+  function disclosure(key, summaryText, className = "", summaryClass = "") {
+    const details = el("details", className);
+    details.dataset.disclosureKey = key;
+    const summary = el("summary", summaryClass, summaryText);
+    summary.dataset.focusKey = `disclosure:${key}`;
+    details.append(summary);
+    return details;
+  }
   function empty(text) { return el("p", "empty", text); }
   function omitted(value, label = "records") {
     return Number(value) > 0 ? el("p", "omitted", `${value} more ${label} omitted from this snapshot.`) : null;
@@ -313,7 +323,7 @@ export function createBoardDom(state) {
 
   return {
     el, add, button, routeUrl, link, refLink, badge, actorName, shortActor, stamp, timeNode, age,
-    ageNode, panel, empty, omitted, title, field, formStatus, planId, focusKey,
+    ageNode, panel, disclosure, empty, omitted, title, field, formStatus, planId, focusKey,
     retainForm, captureForms, restoreForms, syncForm, setFormBusy, focusedControl, restoreFocus, saveForm, markFormSaved,
   };
 }

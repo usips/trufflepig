@@ -3,7 +3,7 @@ import { actorAttribution, harnessVendor, recipientMark } from "./marks/agent_ma
 export function createBoardCards({ state, dom, entryRecord, collection }) {
   const {
     el, add, link, refLink, badge, actorName, timeNode, ageNode,
-    empty, focusKey, planId,
+    disclosure, empty, focusKey, planId,
   } = dom;
   function cardPreview(value) {
     const text = String(value || ""), characters = Array.from(text);
@@ -194,10 +194,11 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
     }
     const list = add(el("ol", "agent-tree-list"), lead, recent.map(worker => workerRow(worker, { ...options, entries, ttlSecs })));
     if (oldEnded.length) {
-      const disclosure = el("details", "agent-ended-group");
-      add(disclosure, el("summary", "", `Ended workers (${oldEnded.length})`),
-        add(el("ol", "agent-tree-list"), oldEnded.map(worker => workerRow(worker, { ...options, entries, ttlSecs }))));
-      list.append(add(el("li", "agent-ended-group-row"), disclosure));
+      const ended = disclosure(`ended-workers:${claim.entry || claim.task}`,
+        `Ended workers (${oldEnded.length})`, "agent-ended-group");
+      ended.append(add(el("ol", "agent-tree-list"),
+        oldEnded.map(worker => workerRow(worker, { ...options, entries, ttlSecs }))));
+      list.append(add(el("li", "agent-ended-group-row"), ended));
     }
     const tree = el("section", "agent-tree");
     tree.setAttribute("aria-label", "Task agents");
@@ -299,14 +300,11 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
     return card;
   }
   function doneFooter(plan, item) {
-    const done = el("details", "lane-done"), count = item.done_count || 0;
-    done.dataset.donePlan = plan.id;
-    done.open = state.openDonePlans?.has(plan.id) || false;
-    const summary = el("summary", "done-summary", `Done (${count})`);
-    summary.dataset.focusKey = `done:${plan.id}`;
+    const count = item.done_count || 0;
+    const done = disclosure(`done:${plan.id}`, `Done (${count})`, "lane-done", "done-summary");
     const recent = (item.recent_done || []).slice(0, 5);
     const more = count - recent.length;
-    add(done, summary, add(el("div", "lane-done-content"),
+    add(done, add(el("div", "lane-done-content"),
       recent.length ? add(el("div", "recent-done-cards"), recent.map(task => taskCard(task, [])))
         : el("p", "small muted", "No completed tasks yet."),
       link(more > 0 ? `${more} more →` : "View all completed tasks →", "plan",

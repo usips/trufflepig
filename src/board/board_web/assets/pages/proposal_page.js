@@ -53,8 +53,8 @@ export function createProposalPage(context) {
             + " Acceptance keeps its original base and will fail until a fresh proposal is made."));
       }
       page.append(panel("Proposed SSOT change", diffPage(diff)));
-      const full = el("details", "section");
-      add(full, el("summary", "", "Full proposed plan"), el("pre", "entry-body", proposal.body)); page.append(full);
+      const full = dom.disclosure(`proposal-full:${entry.id}`, "Full proposed plan", "section");
+      full.append(el("pre", "entry-body", proposal.body)); page.append(full);
       if (proposal.decision_entry) {
         page.append(add(el("p", "small"), el("span", "muted", "Decision: "), refLink(proposal.decision_entry)));
       }

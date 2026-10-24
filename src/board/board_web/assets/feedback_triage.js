@@ -30,8 +30,8 @@ export function createBoardFeedback(context) {
   }
   function feedbackMetadata(record) {
     const metadata = record.metadata;
-    const details = el("details", "feedback-metadata");
-    details.append(el("summary", "small", "Report metadata and recent calls"));
+    const details = dom.disclosure(`feedback-metadata:${record.entry?.id || "report"}`,
+      "Report metadata and recent calls", "feedback-metadata", "small");
     const facts = el("dl", "metadata-facts");
     for (const [label, value] of [
       ["Version", metadata.version], ["Build", metadata.build_id], ["Repository", metadata.repo_key],

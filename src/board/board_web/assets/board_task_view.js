@@ -2,11 +2,11 @@ import { actorAttribution, agentMark, harnessVendor } from "./marks/agent_marks.
 
 export function createBoardTaskView(context) {
   const { dom, entryCard, workerTree, claimSignals } = context;
-  const { el, add, badge, refLink, timeNode, omitted } = dom;
+  const { el, add, badge, refLink, timeNode, omitted, disclosure } = dom;
 
   function claimHistory(items, entries, view) {
-    const details = el("details", "task-claim-history");
-    add(details, el("summary", "", `Claim history (${items.length})`));
+    const details = disclosure(`claim-history:${view.task.id}`, `Claim history (${items.length})`,
+      "task-claim-history");
     const list = el("ol", "claim-history-list");
     for (const claim of items) {
       const row = el("li", "claim-history-row");
@@ -20,15 +20,17 @@ export function createBoardTaskView(context) {
         claim.end_reason ? badge(claim.end_reason) : null,
         claim.ended_at ? add(el("span", "muted small"), el("span", "", "Ended "), timeNode(claim.ended_at)) : null);
       if (claim.workers?.length || claim.workers_omitted || claim.progress) {
-        const snapshot = el("details", "task-claim-snapshot");
-        add(snapshot, el("summary", "", `Agent snapshot (${claim.workers?.length || 0} workers)`));
-        snapshot.addEventListener("toggle", () => {
-          if (!snapshot.open || snapshot.dataset.loaded) return;
+        const snapshot = disclosure(`agent-snapshot:${claim.entry}`,
+          `Agent snapshot (${claim.workers?.length || 0} workers)`, "task-claim-snapshot");
+        // Restored disclosures call boardLoad directly; the tree renders once.
+        snapshot.boardLoad = () => {
+          if (snapshot.dataset.loaded) return;
           snapshot.dataset.loaded = "true";
           snapshot.append(workerTree(claim, {
             entries, now: view.server_now, ttlSecs: view.claim_ttl_secs,
           }));
-        });
+        };
+        snapshot.addEventListener("toggle", () => { if (snapshot.open) snapshot.boardLoad(); });
         row.append(snapshot);
       }
       list.append(row);

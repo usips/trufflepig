@@ -34,8 +34,10 @@ Future dates use `in 1m`; invalid or missing dates show `Unknown time`. Server t
 server clock offset; freshness uses the client clock. Shared timers stop on page hide and resume
 once on page show; restored and foregrounded pages update their relative text immediately.
 
-Form drafts and focus (by `data-focus-key`) survive live-region refreshes; connection announcements
-fire only on outage, authorization expiry, and restore. Editors retain the originally loaded
+Form drafts, focus (by `data-focus-key`), scroll position, and native disclosures (by
+`data-disclosure-key` and occurrence) survive live-region refreshes. Disclosure choices persist for
+the tab's lifetime, including across navigation; a lazily filled disclosure renders its body when
+restored open. Connection announcements fire only on outage, authorization expiry, and restore. Editors retain the originally loaded
 base revision; stale edits preserve the user's draft and never silently rebase or retry.
 Proposal/acceptance authority and task transitions remain backend decisions.
 
