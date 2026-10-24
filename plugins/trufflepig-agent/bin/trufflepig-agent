@@ -410,28 +410,27 @@ def main() -> int:
     coverage = coverage_summary(response)
 
     fingerprint = hashlib.blake2s(" ".join([verb, *words[1:]]).encode(), digest_size=8).hexdigest()
-    recent_path = (state_dir() / "agent-recent" / harness / f"{cwd_key(cwd)}-{session}"
-                   if session else None)
+    # Unattributed calls share one per-directory file, which still unlocks `block` steering.
+    recent_name = f"{cwd_key(cwd)}-{session or 'unattributed'}"
+    recent_path = state_dir() / "agent-recent" / harness / recent_name
     audit_fallback = runtime / "agent-audit"
-    recent_fallback = (runtime / "agent-recent" / recent_path.parent.name / recent_path.name
-                       if recent_path is not None else None)
-    if recent_path is not None:
-        try:
-            recent = recent_path.read_text().split()[-RECENT_LIMIT:]
-        except OSError:
-            recent = recent_fingerprints(recent_fallback)
-    else:
-        recent = []
+    recent_fallback = runtime / "agent-recent" / harness / recent_name
+    try:
+        recent = recent_path.read_text().split()[-RECENT_LIMIT:]
+    except OSError:
+        recent = recent_fingerprints(recent_fallback)
     repeat_count = recent.count(fingerprint)
 
     signals: list[str] = []
+    lowered = (error_text + " " + stderr_head).lower()
     if exit_code != 0 or status not in ("ok",):
         signals.append("error")
-    if verb == "search" and hit_count == 0 and exit_code == 0:
+    # Hit-list verbs report an empty page; `show` reports a missing definition as an error.
+    if (verb in ("search", "refs", "map") and hit_count == 0 and exit_code == 0
+            or verb == "show" and "no_definition" in lowered):
         signals.append("no_hits")
     if response.get("truncated") is True:
         signals.append("truncated")
-    lowered = (error_text + " " + stderr_head).lower()
     if "budget" in lowered:
         signals.append("budget")
     if any(key in lowered for key in ("stale_result", "stale_source", "expired_result")):
@@ -493,8 +492,7 @@ def main() -> int:
                 return fallback_error
 
     audit_error = with_fallback(append_audit, log_dir(), audit_fallback)
-    if recent_path is not None and recent_fallback is not None:
-        with_fallback(write_recent, recent_path, recent_fallback)
+    with_fallback(write_recent, recent_path, recent_fallback)
     if audit_error is not None:
         sys.stderr.write(f"trufflepig-agent: audit log unavailable: {audit_error}\n")
     return exit_code

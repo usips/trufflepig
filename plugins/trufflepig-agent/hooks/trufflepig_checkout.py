@@ -1,15 +1,20 @@
-"""Indexed checkouts: registered workspace members and their linked worktrees.
+"""Indexed checkouts: registered workspace members, standalone-indexed Git roots,
+and their linked worktrees.
 
 A directory belongs to a checkout by path or, for a linked worktree (a `.git`
-file) anywhere on disk, through its Git common directory.
+file) anywhere on disk, through its Git common directory. A standalone root is
+indexed when its default cache holds an index database.
 """
 from __future__ import annotations
 
+import functools
 import hashlib
 import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+from trufflepig_cache_key import default_cache_dir
 
 
 try:
@@ -89,10 +94,21 @@ def member_common_dir(root: Path) -> Path | None:
 
 @dataclass
 class IndexedRoot:
-    """The checkout that owns a directory: a member root or a linked worktree of one."""
+    """The checkout that owns a directory: a member root, a standalone-indexed Git
+    root, or a linked worktree of either. `workspace` is None when standalone."""
     checkout: Path
     member: str
-    workspace: str
+    workspace: str | None
+
+
+@functools.lru_cache(maxsize=16)
+def standalone_indexed(root: Path) -> bool:
+    """Whether the CLI's default cache for `root` holds an index; fails closed on errors."""
+    try:
+        cache = default_cache_dir(root)
+        return cache is not None and (cache / "index.sqlite3").is_file()
+    except (OSError, ValueError):
+        return False
 
 
 def indexed_checkout(cwd: Path) -> IndexedRoot | None:
@@ -106,6 +122,10 @@ def indexed_checkout(cwd: Path) -> IndexedRoot | None:
         for root, member, workspace in members:
             if common is not None and member_common_dir(root) == common:
                 return IndexedRoot(nearest, member, workspace)
+        # A standalone worktree seeds from its main checkout's default cache.
+        main = common.parent if common is not None and common.name == ".git" else None
+        if standalone_indexed(nearest) or main is not None and standalone_indexed(main):
+            return IndexedRoot(nearest, (main or nearest).name, None)
         return None
     for root, member, workspace in members:
         if cwd == root or root in cwd.parents:
@@ -113,41 +133,26 @@ def indexed_checkout(cwd: Path) -> IndexedRoot | None:
     for ancestor in (cwd, *cwd.parents):
         if (ancestor / "trufflepig.workspace.toml").is_file():
             return IndexedRoot(ancestor, ancestor.name, ancestor.name)
+    if nearest is not None and standalone_indexed(nearest):
+        return IndexedRoot(nearest, nearest.name, None)
     return None
 
 
 def session_context(found: IndexedRoot, subagent: bool = False) -> str:
     """SessionStart/SubagentStart guidance for a checkout that trufflepig indexes; only
-    the main conversation is told how to brief subagents."""
+    the main conversation is told how to brief subagents. Worktree fallback and
+    recovery detail live in the trufflepig-code-search skill, not in this note."""
+    workspace = f", trufflepig workspace `{found.workspace}`" if found.workspace else ""
     return (
-        f"This checkout ({found.member}, trufflepig workspace `{found.workspace}`) is indexed by "
-        "trufflepig. Use `trufflepig-agent` via Bash for code search and verified reads. See "
-        "[CLI follow-ups](https://github.com/usips/trufflepig/blob/master/docs/cli.md#follow-up-reads-and-navigation), "
-        "[retrieval filters and coverage](https://github.com/usips/trufflepig/blob/master/docs/retrieval-contract.md#retrieval), "
-        "[workspace fallback](https://github.com/usips/trufflepig/blob/master/docs/workspace-contract.md#retrieval-and-output), and "
-        "[index freshness](https://github.com/usips/trufflepig/blob/master/docs/index-contract.md#coherent-publication):\n"
-        "- body: `trufflepig-agent show 'sym:Name'`; locations: `trufflepig-agent search 'sym:Name'`; "
-        "references: `trufflepig-agent refs name`\n"
-        "- regex: `trufflepig-agent search 're:a|b lang:rust file:src/'`; outline: "
-        "`trufflepig-agent map path/to/file.rs`; known lines: `trufflepig-agent show path:path/to/file.rs:120-200`\n"
-        "- files: `trufflepig-agent search 'name kind:file'`; concepts: "
-        "`trufflepig-agent search 'few discriminating words'`\n"
-        "In lines output, `next:` labels the exact follow-up: `next: more SET@OFFSET` means "
-        "`trufflepig-agent more SET@OFFSET`; `next: show read:H@B` means "
-        "`trufflepig-agent show read:H@B`. A separate `hint: -n N...` is optional page-size advice. "
-        "Quote the whole query containing `-file:`, e.g. `trufflepig-agent search 'needle -file:tests'`. "
-        "`file:` first matches a root-relative prefix ending at `/`, `.`, or path end. If no indexed path matches "
-        "that prefix, it falls back to matching at a component boundary (e.g. `script/host` matches "
-        "`src/script/host.rs`, not `src/ghost.rs`); it is not a glob.\n"
-        "Only an unpublished linked-worktree home in a workspace can serve from its member's parent index "
-        "while warming. Parent-index hits can carry parent coordinates; `differs` marks changed-file hits, and "
-        "`sym:`, `map FILE`, and `show` re-extract changed files from current worktree bytes. If extraction fails, "
-        "`show` can return parent-index bytes with `verified: false` and `source: parent_index`; check both before "
-        "claiming a read contains current bytes. An exact `sym:` miss without a parent-index candidate refreshes "
-        "divergence and checks at most 64 changed files; other fallback reads reuse divergence for up to five seconds. "
-        "Workspace home widens only after complete, readable, "
-        "untruncated no-hit coverage; warming, unavailable, or incomplete coverage cannot trigger widening. "
-        "Run each command as its own Bash call so its exit code and coverage footer are intact. "
-        "grep remains useful for logs, command output, and files outside this checkout."
+        f"This checkout ({found.member}{workspace}) is indexed by trufflepig. "
+        "Search code with `trufflepig-agent` via Bash instead of grep, rg, find, or sed/cat reads:\n"
+        "- definition: `trufflepig-agent search 'sym:Name'`; body: `trufflepig-agent show 'sym:Name'`\n"
+        "- references: `trufflepig-agent refs name`; outline: `trufflepig-agent map path/to/file.rs`\n"
+        "- regex: `trufflepig-agent search 're:a|b file:src/'`; files: `trufflepig-agent search 'name kind:file'`\n"
+        "- known lines: `trufflepig-agent show path:path/to/file.rs:120-200`; "
+        "concepts: `trufflepig-agent search 'few discriminating words'`\n"
+        "Run one trufflepig-agent command per Bash call so its exit code and footer stay intact. "
+        "Symbols cover Rust, TS/JS, C#, PHP, Luau, and DreamMaker; for other file types use `re:`. "
+        "grep remains right for logs, command output, and files outside this checkout."
         + ("" if subagent else " When briefing subagents, tell them to search with trufflepig-agent, not grep.")
     )

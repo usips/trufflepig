@@ -23,8 +23,8 @@ Automatic skill selection remains Gemini's decision.
 
 Gemini shell calls set `GEMINI_CLI=1`, which the wrapper uses to identify the
 harness. `GEMINI_SESSION_ID` is available to Gemini hooks but is not forwarded
-to ordinary shell calls, so those audit records use the harness/cwd/day
-fallback instead of claiming a unique conversation ID. A launcher that needs
+to ordinary shell calls, so those audit records carry no session and
+`trufflepig-audit` groups them as `unattributed`. A launcher that needs
 exact attribution can set `TRUFFLEPIG_AGENT_HARNESS=gemini` and
 `TRUFFLEPIG_SESSION` explicitly.
 

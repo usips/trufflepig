@@ -1,4 +1,5 @@
 """Exercise the wrapper boundary using an executable stand-in for the CLI."""
+import hashlib
 import importlib.util
 import json
 import os
@@ -326,6 +327,28 @@ sys.exit(exit_code)
         self.assertEqual(self.record("codex")["session"], "explicit")
         self.assertNotIn("--session", self.capture()["argv"])
         self.assertNotIn("--session", self.pending_calls()[0])
+
+    def test_empty_navigation_results_signal_no_hits(self):
+        hit = "0123456789abcdef0123456789abcdef:1\ta.rs:1-1\n  1: x\ncoverage: indexed 1/1\n"
+        for args, response, stderr, code, expected in (
+            (("refs", "x"), "coverage: indexed 1/1; refs 0 sites in 0 files\n", "", "0", True),
+            (("map", "README.md"), "coverage: indexed 1/1\n", "", "0", True),
+            (("show", "sym:x"), "", "daemon: no_definition: no indexed definition named `x`\n", "2", True),
+            (("show", "path:a.rs:1-1"), "a.rs lines 1-1\n1\tfn a() {}\nverified: current file\n", "", "0", False),
+            (("refs", "x"), hit, "", "0", False),
+        ):
+            with self.subTest(args=args, response=response):
+                self.env.update(RESPONSE=response, STDERR=stderr, EXIT=code)
+                self.run_wrapper(*args)
+                self.assertEqual("no_hits" in self.last_record()["signals"], expected)
+
+    def test_unattributed_calls_record_recent_use_by_directory(self):
+        del self.env["CODEX_THREAD_ID"]
+        self.env["TRUFFLEPIG_AGENT_HARNESS"] = "kimi"
+        self.run_wrapper("search", "x")
+        key = hashlib.sha256(str(self.root).encode()).hexdigest()[:12]
+        recent = list((self.root / "state/trufflepig/agent-recent").glob(f"*/{key}-unattributed"))
+        self.assertEqual(len(recent), 1, recent)
 
     def test_wrapper_harness_hint_is_used_without_native_markers(self):
         del self.env["CODEX_THREAD_ID"]

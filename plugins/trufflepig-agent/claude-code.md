@@ -17,8 +17,9 @@ plugins/trufflepig-agent/install.sh --commands --claude   # wrapper commands, pe
 ```
 
 With the plugin enabled, `install.sh --claude` links neither the personal skills
-nor the hooks, so nothing runs twice; it still adds the wrapper permission and
-runtime access. `claude --plugin-dir plugins/trufflepig-agent` loads a checkout
+nor the hooks and removes the settings hooks and skill links an earlier settings
+install added, so nothing runs twice; it still adds the wrapper permission and
+runtime access. Rerun it after enabling the plugin. `claude --plugin-dir plugins/trufflepig-agent` loads a checkout
 for a single session. `claude plugin validate --strict` checks both manifests.
 
 `--claude` installs `trufflepig-code-search` and `trufflepig-plan-board` at
@@ -66,30 +67,25 @@ Claude Code on this platform has no Grep or Glob tools: it runs `grep` and `find
 through Bash (shadowed by bundled ugrep/bfs). Guidance therefore targets shell
 searches, not tool names.
 
-When a session starts inside an indexed checkout, the `SessionStart` hook also
-returns `additionalContext`: the member and workspace, replacement commands for
-definition, body, reference, outline, file, and line-range (`sed -n`) reads,
-exact `next: more SET@OFFSET` → `trufflepig-agent more SET@OFFSET` and
-`next: show read:H@B` → `trufflepig-agent show read:H@B` mappings, and separate
-optional `hint:` advice. It explains whole-query quoting for negative filters,
-`file:` prefix/component matching, and linked-worktree fallback: `differs` may
-carry parent coordinates, `show` re-extracts changed bytes when possible, and
-`verified`/`source` must be checked before claiming current bytes. Incomplete or
-truncated coverage cannot establish absence. It also reminds the main agent to
-brief subagents the same way.
+When a session starts inside an indexed checkout (a registered workspace member
+or a Git root with a default index cache), the `SessionStart` hook also returns a
+short `additionalContext` note: the checkout name, replacement commands for
+definition, body, reference, outline, regex, file, concept, and line-range reads,
+one `trufflepig-agent` command per Bash call, and `re:` for unsupported file
+types. It also reminds the main agent to brief subagents the same way. Paging,
+filters, worktree fallback, and recovery stay in the
+[search skill](skills/trufflepig-code-search/SKILL.md).
 `SessionStart` context does not reach subagents, so the same script, registered
 for `SubagentStart`, returns that guidance (without the briefing reminder) as the
 subagent's `additionalContext`. Claude's `SubagentStart` payload carries the parent
 `session_id` and a unique `agent_id`. Their SHA-256 with a NUL separator yields a
 stable `claude-agent-<24 hex>` token, shared by tool hooks and that subagent's stop
 hook. It does not replace the parent session export. Workers use the worker address
-and role from the lead's brief; `agent_type` does not select a Board role. If either
-ID is missing, the hook requires a unique explicit `TRUFFLEPIG_SESSION` and never
-uses the parent's identity for a subagent write.
+and role from the lead's brief; `agent_type` does not select a Board role.
 Outside indexed checkouts, or with steering `off`, code-search guidance is omitted.
 Subagent identity guidance is still returned whenever Claude supplies both IDs. If either
 ID is missing, the hook marks attribution unavailable and tells the child to obtain a unique
-`TRUFFLEPIG_SESSION` from its parent before making board calls; it must not reuse the parent's
+`--session` value from its parent before making board calls; it must not reuse the parent's
 identity for `board hello` or other identity-sensitive writes.
 
 The installer merges search steering on `PreToolUse`/`PostToolUse` Bash and
@@ -116,22 +112,16 @@ definition, body, outline, and reference searches. See
 [Other harness hooks](README.md#other-harness-hooks) for classes, fallbacks, and
 `install.sh --steer MODE`.
 
-Automatic identity rewriting stays disabled by default. The native Claude Code
-2.1.296 fixture confirmed that the hook's `updatedInput` reaches normal permission
-evaluation, then showed that `Bash(trufflepig-agent *)` does not authorize the
-rewritten command, which starts with `TRUFFLEPIG_SESSION=...`; Claude denied the
-probe before the wrapper ran. No permission decision is bypassed. Set
-`TRUFFLEPIG_CLAUDE_IDENTITY_REWRITE=1` only when the active permission rules
-already authorize the rewritten command. The hook does not change those rules.
-
-With opt-in enabled, the PreToolUse hook prefixes direct `trufflepig-agent` and
-`trufflepig` Bash calls with the stable subagent token. Explicit
-`TRUFFLEPIG_SESSION=` and `--session` overrides remain intact; all other tool
-input fields are preserved. The hook returns `updatedInput` without
-`permissionDecision`. The [SDK hook contract](https://code.claude.com/docs/en/agent-sdk/hooks#modified-input-not-applied)
-specifies that omitting `permissionDecision` preserves normal permission
-evaluation. Manual `TRUFFLEPIG_SESSION=...` prefixes use that same permission
-flow and may also prompt under the existing allow rule.
+Inside a subagent, the PreToolUse hook inserts `--session claude-agent-...` right
+after the executable of direct `trufflepig-agent` and `trufflepig` Bash calls, so
+the command still starts with `trufflepig-agent` and `Bash(trufflepig-agent *)`
+still matches it. Explicit `TRUFFLEPIG_SESSION=` and `--session` overrides remain
+intact; all other tool input fields are preserved. The hook returns `updatedInput`
+without `permissionDecision`, which the [SDK hook contract](https://code.claude.com/docs/en/agent-sdk/hooks#modified-input-not-applied)
+defines as normal permission evaluation; no permission decision is bypassed.
+`TRUFFLEPIG_CLAUDE_IDENTITY_REWRITE=0` disables the rewrite. The `SubagentStart`
+note tells each subagent to pass the same `--session` on `board` commands
+itself; searches need no session.
 
 After a successful or failed tool call, the hook checks pending Board notices at
 most once per 60 seconds per actor. It emits only compact entry/task IDs, model,
@@ -174,17 +164,11 @@ interface; neither proves that a model will choose the skill on every prompt.
 Compare the audit session with Claude's actual session ID, including separate
 sessions in the same working directory and a resumed session.
 
-The isolated Claude Code 2.1.296 check confirmed ordinary permission evaluation
-and showed that the existing allow rule rejects the rewritten command. Keep the
-default disabled unless a future permission policy intentionally authorizes that
-command form; do not use hook output to bypass permission checks.
-
-To remove the integration, remove both personal skill symlinks, the
-`SessionStart` and `SubagentStart` entries invoking `trufflepig-claude-session`,
-the `PreToolUse` and `PostToolUse` entries invoking `trufflepig-agent-steer claude`,
-the `claude-hooks.py` entries for `PreToolUse`, post-use events, `SessionEnd`, and
-`SubagentStop`, and the
-`Bash(trufflepig-agent *)` permission. `install.sh --claude --steer off` disables
-steering without editing settings. Remove the runtime
-allowWrite entry if no other Claude integration needs it. Shared wrapper commands,
-runtime configuration, and the service may still be used by other harnesses.
+`install.sh --claude --uninstall` (with the same `--bin` as the install) removes
+the personal skill symlinks into this checkout, exactly the settings hook entries
+the installer added, and the `Bash(trufflepig-agent *)` permission; unrelated
+hooks and settings stay. Settings writes follow a symlinked `settings.json` to
+its target. `install.sh --claude --steer off` disables steering without editing
+settings. Remove the runtime allowWrite entry if no other Claude integration needs
+it. Shared wrapper commands, runtime configuration, and the service may still be
+used by other harnesses.

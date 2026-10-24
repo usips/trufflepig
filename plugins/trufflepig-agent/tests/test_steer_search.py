@@ -10,6 +10,7 @@ import unittest
 
 PLUGIN = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PLUGIN / "hooks"))
+import trufflepig_cache_key as cache_key  # noqa: E402
 import trufflepig_checkout as checkout  # noqa: E402
 import trufflepig_classify as classifier  # noqa: E402
 import trufflepig_shell as shell  # noqa: E402
@@ -74,7 +75,19 @@ CASES = [
     ("find . -name dispatch_order.rs", "files", "dispatch_order kind:file"),
     ("sed -n 1,40p src/lib.rs 2>/dev/null", "read", "show path:src/lib.rs:1-40"),
     ("cat src/lib.rs 2>&1", "read", "map src/lib.rs"),
+    # Docs and unsupported languages have no symbols or references: they use `re:`,
+    # and file searches keep an extension that no `lang:` filter pins down.
+    ('grep -rn "def steering_mode" crates/', "regex", "search 're:def steering_mode file:crates/'"),
+    ("rg -n BoardReply docs/", "regex", "search 're:BoardReply file:docs/'"),
+    ("rg -n BoardReply README.md docs", "regex", "search re:BoardReply"),
+    ("rg -n foo_bar --type py", "regex", "search re:foo_bar"),
+    ("rg -n 'class Foo' -g '*.py' crates", "regex", "search 're:class Foo file:crates/'"),
+    ('find . -name "*.md"', "files", "search '.md lang:text kind:file'"),
+    ("find . -name '*steer*.py'", "files", "search 'steer .py kind:file'"),
+    ("find . -name Cargo.toml", "files", "search 'Cargo.toml kind:file'"),
     # Never steered.
+    ("rg -n TODO", None, ""),
+    ("rg -n 'TODO|FIXME' crates", None, ""),
     ("cargo test 2>&1 | grep FAILED", None, ""),
     ("ls -la | grep -v total", None, ""),
     ("grep -n error /tmp/build.log", None, ""),
@@ -190,6 +203,15 @@ class ClassifierTests(unittest.TestCase):
                 )
 
 
+class CacheKeyTests(unittest.TestCase):
+    def test_cache_key_is_blake3_of_the_root_path(self):
+        self.assertEqual(cache_key.blake3_hex(b""),
+                         "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262")
+        self.assertEqual(cache_key.blake3_hex(b"abc"),
+                         "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85")
+        self.assertIsNone(cache_key.blake3_hex(b"x" * 1025))
+
+
 class HookTests(unittest.TestCase):
     def setUp(self):
         self.scratch = tempfile.TemporaryDirectory(prefix="trufflepig-steer-hook-")
@@ -204,7 +226,8 @@ class HookTests(unittest.TestCase):
         (config / "workspaces.toml").write_text('workspaces = ["space.toml"]\n')
         self.state = base / "state"
         self.env = {k: v for k, v in os.environ.items() if not k.startswith(("TRUFFLEPIG", "CLAUDE"))}
-        self.env.update(HOME=str(base), XDG_CONFIG_HOME=str(base / "config"), XDG_STATE_HOME=str(self.state))
+        self.env.update(HOME=str(base), XDG_CONFIG_HOME=str(base / "config"), XDG_STATE_HOME=str(self.state),
+                        XDG_CACHE_HOME=str(base / "cache"))
 
     def run_hook(self, command, harness="claude", event="PreToolUse", cwd=None, mode=None, agent="",
                  tool="Bash", tool_input=None):
@@ -333,6 +356,21 @@ class HookTests(unittest.TestCase):
         recent.write_text("x")
         self.assertEqual(self.run_hook("grep -rn 'fn step' crates/", harness="kimi").returncode, 0)
 
+    def test_block_translates_globs_and_unlocks_from_the_runtime_fallback(self):
+        glob = {"pattern": "crates/**/*steer*.py"}
+        result = self.run_hook("", harness="kimi", tool="Glob", tool_input=glob)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("trufflepig-agent search 'steer .py file:crates/ kind:file'", result.stderr)
+        self.assertNotIn("re:", result.stderr)
+        # A sandboxed wrapper without a session records its call under the runtime directory.
+        runtime = Path(self.scratch.name) / "runtime"
+        (Path(self.env["XDG_CONFIG_HOME"]) / "trufflepig/agent-runtime.json").write_text(
+            json.dumps({"runtime_dir": str(runtime)}))
+        recent = runtime / "agent-recent/kimi" / f"{checkout.cwd_key(str(self.repo))}-unattributed"
+        recent.parent.mkdir(parents=True)
+        recent.write_text("x")
+        self.assertEqual(self.run_hook("", harness="kimi", tool="Glob", tool_input=glob).returncode, 0)
+
     def test_pipe_filters_unindexed_directories_and_off_mode_are_silent(self):
         self.assertEqual(self.run_hook("cargo test 2>&1 | grep FAILED", mode="strict").stdout, "")
         outside = Path(self.scratch.name) / "elsewhere"
@@ -356,6 +394,17 @@ class HookTests(unittest.TestCase):
         self.assertEqual((rows["main"]["reads"], rows["total"]["reads"]), (1, 1))
         self.assertEqual(rows["subagent"]["classes"], {"references": 1})
         self.assertEqual((rows["total"]["trufflepig"], rows["total"]["escaped"], rows["total"]["adoption"]), (1, 2, 0.333))
+
+    def test_sessionless_steer_records_stay_unattributed(self):
+        payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "cwd": str(self.repo),
+                   "tool_input": {"command": "grep -rn 'fn step' crates/"}}
+        subprocess.run([sys.executable, str(PLUGIN / "hooks/steer-search.py"), "claude"],
+                       input=json.dumps(payload), env=self.env, capture_output=True, text=True, check=True)
+        self.assertIsNone(self.audit()[-1]["session"])
+        table = subprocess.run([sys.executable, str(PLUGIN / "bin/trufflepig-audit"),
+                                str(self.state / "trufflepig/agent-audit")], env=self.env, capture_output=True, text=True)
+        self.assertEqual(table.stderr, "")
+        self.assertIn("claude\tunattributed\t", table.stdout)
 
     def test_suggestions_move_into_the_checkout_the_search_ran_in(self):
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
@@ -429,11 +478,12 @@ class HookTests(unittest.TestCase):
                                 env=dict(self.env, CLAUDE_ENV_FILE=str(env_file)), capture_output=True, text=True)
         output = json.loads(result.stdout)["hookSpecificOutput"]
         self.assertEqual(output["hookEventName"], "SubagentStart")
-        self.assertIn("TRUFFLEPIG_SESSION=claude-agent-", output["additionalContext"])
-        self.assertIn("including `board hello`", output["additionalContext"])
+        self.assertIn("trufflepig-agent --session claude-agent-", output["additionalContext"])
+        self.assertIn("Searches need no prefix", output["additionalContext"])
         self.assertIn("trufflepig-agent show 'sym:Name'", output["additionalContext"])
-        self.assertIn("Only an unpublished linked-worktree home in a workspace can serve from its member's parent index",
-                      output["additionalContext"])
+        self.assertIn("one trufflepig-agent command per Bash call", output["additionalContext"])
+        self.assertIn("for other file types use `re:`", output["additionalContext"])
+        self.assertNotIn("parent index", output["additionalContext"])
         self.assertNotIn("briefing subagents", output["additionalContext"])
         self.assertEqual(env_file.read_text(), "export TRUFFLEPIG_CLAUDE_SESSION=abc123\n",
                          "subagents must not rewrite the parent's session environment")
@@ -441,14 +491,32 @@ class HookTests(unittest.TestCase):
         result = subprocess.run([sys.executable, str(PLUGIN / "hooks/claude-session.py")], input=json.dumps(payload),
                                 env=self.env, capture_output=True, text=True)
         unindexed = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("TRUFFLEPIG_SESSION=claude-agent-", unindexed)
+        self.assertIn("--session claude-agent-", unindexed)
         self.assertNotIn("trufflepig-agent show 'sym:Name'", unindexed)
         result = subprocess.run([sys.executable, str(PLUGIN / "hooks/claude-session.py")],
                                 input=json.dumps(dict(payload, cwd=str(self.repo))),
                                 env=dict(self.env, TRUFFLEPIG_AGENT_STEER="off"), capture_output=True, text=True)
         steered_off = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("TRUFFLEPIG_SESSION=claude-agent-", steered_off)
+        self.assertIn("--session claude-agent-", steered_off)
         self.assertNotIn("trufflepig-agent show 'sym:Name'", steered_off)
+
+    def test_standalone_indexed_git_root_gets_session_context(self):
+        standalone = Path(self.scratch.name) / "standalone"
+        (standalone / ".git").mkdir(parents=True)
+        (standalone / "src").mkdir()
+        payload = {"hook_event_name": "SessionStart", "session_id": "s1", "cwd": str(standalone / "src")}
+
+        def start():
+            return subprocess.run([sys.executable, str(PLUGIN / "hooks/claude-session.py")],
+                                  input=json.dumps(payload), env=self.env, capture_output=True, text=True)
+
+        self.assertEqual(start().stdout, "")
+        key = cache_key.blake3_hex(os.fsencode(str(standalone.resolve())))
+        cache = Path(self.env["XDG_CACHE_HOME"]) / "trufflepig" / key
+        cache.mkdir(parents=True)
+        (cache / "index.sqlite3").write_bytes(b"")
+        context = json.loads(start().stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("This checkout (standalone) is indexed by trufflepig", context)
 
     def test_session_context_only_inside_indexed_checkouts(self):
         env_file = Path(self.scratch.name) / "claude.env"

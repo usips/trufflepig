@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import types
 import unittest
 from unittest import mock
@@ -12,6 +13,19 @@ from unittest import mock
 PLUGIN = Path(__file__).resolve().parents[1]
 HOOK = PLUGIN / "hooks/claude-hooks.py"
 SESSION_HOOK = PLUGIN / "hooks/claude-session.py"
+
+
+def isolated_environment(test):
+    """The process environment without harness markers, with HOME and XDG pointed at a
+    scratch directory so hooks never read or write the real user state."""
+    scratch = tempfile.TemporaryDirectory(prefix="trufflepig-claude-hooks-")
+    test.addCleanup(scratch.cleanup)
+    base = Path(scratch.name)
+    env = {key: value for key, value in os.environ.items()
+           if not key.startswith(("TRUFFLEPIG", "CLAUDE", "CODEX", "KIMI", "MUSE", "OPENCODE", "XDG_"))}
+    env.update(HOME=str(base), XDG_CONFIG_HOME=str(base / "config"), XDG_STATE_HOME=str(base / "state"),
+               XDG_CACHE_HOME=str(base / "cache"), TMPDIR=str(base))
+    return env
 
 
 def load_module(name, path):
@@ -23,12 +37,10 @@ def load_module(name, path):
 
 class ClaudeHookIdentityTests(unittest.TestCase):
     def setUp(self):
-        self.env = {key: value for key, value in os.environ.items()
-                    if not key.startswith(("TRUFFLEPIG", "CLAUDE", "CODEX", "KIMI", "MUSE", "OPENCODE"))}
+        self.env = isolated_environment(self)
 
     def run_hook(self, payload, env=None):
-        hook_env = dict(self.env, TRUFFLEPIG_CLAUDE_IDENTITY_REWRITE="1") if env is None else env
-        return subprocess.run([str(HOOK)], input=json.dumps(payload), env=hook_env,
+        return subprocess.run([str(HOOK)], input=json.dumps(payload), env=self.env if env is None else env,
                               text=True, capture_output=True, check=False)
 
     def test_rewrite_preserves_tool_input_and_leaves_permission_evaluation_open(self):
@@ -49,27 +61,43 @@ class ClaudeHookIdentityTests(unittest.TestCase):
         self.assertEqual(output["hookEventName"], "PreToolUse")
         self.assertNotIn("permissionDecision", output)
         self.assertNotIn("permissionDecisionReason", output)
-        expected = "TRUFFLEPIG_SESSION=" + \
-            load_module("trufflepig_identity_test", PLUGIN / "hooks/trufflepig_identity.py").subagent_session(
-                "session-1", "agent-a") + " "
+        token = load_module("trufflepig_identity_test", PLUGIN / "hooks/trufflepig_identity.py").subagent_session(
+            "session-1", "agent-a")
         self.assertEqual(output["updatedInput"], {
             **payload["tool_input"],
-            "command": "cd 'repo with spaces' && " + expected + "trufflepig-agent board show --json",
+            "command": f"cd 'repo with spaces' && trufflepig-agent --session {token} board show --json",
         })
+
+    def test_rewrite_keeps_the_permission_prefix_after_qualified_executables(self):
+        token = load_module("trufflepig_identity_prefix", PLUGIN / "hooks/trufflepig_identity.py").subagent_session(
+            "session-5", "agent-e")
+        for command, expected in (
+            ("trufflepig-agent search 'sym:step'", f"trufflepig-agent --session {token} search 'sym:step'"),
+            ("  'trufflepig-agent' board show", f"  'trufflepig-agent' --session {token} board show"),
+            ("A=1 ~/.local/bin/trufflepig-agent refs x; trufflepig status",
+             f"A=1 ~/.local/bin/trufflepig-agent --session {token} refs x; trufflepig --session {token} status"),
+        ):
+            with self.subTest(command=command):
+                result = self.run_hook({"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                                        "session_id": "session-5", "agent_id": "agent-e",
+                                        "tool_input": {"command": command}})
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"],
+                                 expected)
 
     def test_rewrite_and_session_guidance_share_the_same_hash(self):
         payload = {"hook_event_name": "SubagentStart", "session_id": "session-2",
                    "agent_id": "agent-b", "agent_type": "Explore", "cwd": "/unindexed"}
-        rewrite_env = dict(self.env, TRUFFLEPIG_CLAUDE_IDENTITY_REWRITE="1")
-        result = subprocess.run([str(SESSION_HOOK)], input=json.dumps(payload), env=rewrite_env,
+        result = subprocess.run([str(SESSION_HOOK)], input=json.dumps(payload), env=self.env,
                                 text=True, capture_output=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
         identity = load_module("trufflepig_identity_parity", PLUGIN / "hooks/trufflepig_identity.py")
         token = identity.subagent_session("session-2", "agent-b")
-        self.assertIn(token, context)
-        self.assertIn("Claude still evaluates permissions normally", context)
-        self.assertIn("active rules", context)
+        self.assertIn(f"`trufflepig-agent --session {token} board hello MODEL`", context)
+        self.assertIn("direct calls also receive it automatically", context)
+        self.assertIn("Searches need no prefix", context)
+        self.assertNotIn("TRUFFLEPIG_SESSION=", context)
         self.assertIn("Claude's agent_type is not a Board role", context)
         self.assertIn("worker recipe in the lead's brief", context)
         self.assertIn("`--worker TASK/HANDLE` (e.g. P7.3/parser)", context)
@@ -79,7 +107,7 @@ class ClaudeHookIdentityTests(unittest.TestCase):
                                 "tool_input": {"command": "trufflepig board show"}})
         self.assertEqual(result.returncode, 0, result.stderr)
         rewritten = json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
-        self.assertTrue(rewritten.startswith(f"TRUFFLEPIG_SESSION={token} trufflepig board show"))
+        self.assertEqual(rewritten, f"trufflepig --session {token} board show")
 
     def test_explicit_session_forms_and_unrecognized_strings_are_unchanged(self):
         commands = [
@@ -111,24 +139,25 @@ class ClaudeHookIdentityTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout, "")
 
-    def test_automatic_rewrite_is_disabled_without_native_permission_opt_in(self):
+    def test_rewrite_opt_out_keeps_manual_session_guidance(self):
+        env = dict(self.env, TRUFFLEPIG_CLAUDE_IDENTITY_REWRITE="0")
         payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s",
                    "agent_id": "a", "tool_input": {"command": "trufflepig-agent board show"}}
-        result = self.run_hook(payload, self.env)
+        result = self.run_hook(payload, env)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "")
         guidance = subprocess.run([str(SESSION_HOOK)], input=json.dumps({
             "hook_event_name": "SubagentStart", "session_id": "s", "agent_id": "a",
             "cwd": "/unindexed",
-        }), env=self.env, text=True, capture_output=True, check=False)
+        }), env=env, text=True, capture_output=True, check=False)
         context = json.loads(guidance.stdout)["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("disabled because native Claude Code 2.1.296", context)
-        self.assertIn("No permission decision is bypassed", context)
-        self.assertIn("normal permission evaluation", context)
+        token = load_module("trufflepig_identity_opt_out", PLUGIN / "hooks/trufflepig_identity.py").subagent_session(
+            "s", "a")
+        self.assertIn(f"trufflepig-agent --session {token} board hello", context)
+        self.assertNotIn("automatically", context)
 
     def test_explicit_process_override_disables_automatic_rewrite(self):
-        env = dict(self.env, TRUFFLEPIG_SESSION="caller-session",
-                   TRUFFLEPIG_CLAUDE_IDENTITY_REWRITE="1")
+        env = dict(self.env, TRUFFLEPIG_SESSION="caller-session")
         result = self.run_hook({"hook_event_name": "PreToolUse", "tool_name": "Bash",
                                 "session_id": "session-4", "agent_id": "agent-d",
                                 "tool_input": {"command": "trufflepig-agent board show"}}, env)
@@ -139,8 +168,7 @@ class ClaudeHookIdentityTests(unittest.TestCase):
 class ClaudeHookLifecycleTests(unittest.TestCase):
     def setUp(self):
         self.hooks = load_module("claude_hooks_lifecycle", HOOK)
-        self.env = {key: value for key, value in os.environ.items()
-                    if not key.startswith(("TRUFFLEPIG", "CLAUDE", "CODEX", "KIMI", "MUSE", "OPENCODE"))}
+        self.env = isolated_environment(self)
 
     def test_post_tool_poll_uses_derived_actor_and_only_emits_helper_context(self):
         payload = {"hook_event_name": "PostToolUse", "session_id": "parent-session",

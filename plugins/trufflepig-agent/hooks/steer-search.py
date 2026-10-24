@@ -4,8 +4,8 @@
 Usage: steer-search.py <claude|kimi|muse>   (hook JSON payload on stdin)
 
 Applies only inside checkouts of registered trufflepig workspace members
-(`~/.config/trufflepig/workspaces.toml`, linked worktrees included) or under a
-`trufflepig.workspace.toml`. Each shell search is classified (definition, body,
+(`~/.config/trufflepig/workspaces.toml`), under a `trufflepig.workspace.toml`, or
+in a Git root with a default index cache, linked worktrees included. Each shell search is classified (definition, body,
 outline, references, regex, concept, files); pipe filters, log/output files,
 other revisions, filesystem `find` actions, and paths outside the checkout are
 never steered; `sed -n A,Bp`/`cat` of indexed source is the `read` class. Modes
@@ -42,7 +42,8 @@ import trufflepig_classify as classifier  # noqa: E402
 import trufflepig_shell as shell  # noqa: E402
 import trufflepig_steer as policy  # noqa: E402
 
-SEARCH_TOOLS = re.compile(r"^(grep|glob|ripgrep|rg|find_files|search_files|list_files)$", re.I)
+GREP_TOOLS = re.compile(r"^(grep|ripgrep|rg|search_files)$", re.I)
+GLOB_TOOLS = re.compile(r"^(glob|find_files|list_files)$", re.I)
 SHELL_TOOLS = re.compile(r"^(bash|shell|run_command|execute|terminal)$", re.I)
 AGENT_TOOLS = re.compile(r"^(agent|task)$", re.I)
 
@@ -83,6 +84,19 @@ def advise(harness: str, event: str, key: str, kind: str, tip) -> None:
         sys.stdout.write(tip(full) + "\n")
 
 
+def glob_command(pattern: str, path: str) -> str:
+    """The `find` equivalent of a file-glob tool call: fixed leading components of
+    the pattern extend the search root, and its last component is the name."""
+    parts = pattern.split("/")
+    fixed = []
+    for part in parts[:-1]:
+        if any(ch in part for ch in "*?[{"):
+            break
+        fixed.append(part)
+    root = os.path.join(path, *fixed) if fixed else path
+    return f"find {classifier.quote(root)} -name {classifier.quote(parts[-1] or '*')}"
+
+
 def steer() -> int:
     harness = sys.argv[1] if len(sys.argv) > 1 else "unknown"
     mode = policy.steering_mode(harness)
@@ -111,9 +125,12 @@ def steer() -> int:
             advise(harness, "PreToolUse", key, "brief",
                    lambda full: advice.grep_brief_tip(phrase, owner.member, full))
         return 0
-    if SEARCH_TOOLS.match(tool):
+    if GREP_TOOLS.match(tool):
         pattern = str(tool_input.get("pattern") or tool_input.get("query") or "")
         command = f"rg -n {classifier.quote(pattern)} {classifier.quote(str(tool_input.get('path') or '.'))}"
+    elif GLOB_TOOLS.match(tool):
+        command = glob_command(str(tool_input.get("pattern") or tool_input.get("query") or "*"),
+                               str(tool_input.get("path") or "."))
     elif SHELL_TOOLS.match(tool):
         command = tool_input.get("command") or tool_input.get("cmd") or ""
         command = " ".join(map(str, command)) if isinstance(command, list) else str(command)
@@ -162,7 +179,7 @@ def steer() -> int:
     policy.log({
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "harness": harness,
-        "session": session or f"{harness}-{checkout.cwd_key(str(cwd))}-{time.strftime('%Y%m%d')}",
+        "session": session or None,
         "agent": agent,
         "agent_type": str(payload.get("agent_type") or ""),
         "cwd": str(cwd),

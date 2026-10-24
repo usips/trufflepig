@@ -20,8 +20,8 @@ entry. Full commit oids are references; short hex is not.
 Harness identity follows native signals before the `TRUFFLEPIG_AGENT_HARNESS`
 hint. Never pass `--client human` or `--client cli` from a harness. If a worker
 needs an explicit unique session because no unique native session is available,
-set its own `TRUFFLEPIG_SESSION`; this overrides provider-session selection but
-does not change harness detection. Every active model calls `board hello MODEL
+pass it right after the command (`trufflepig-agent --session ID board ...`); this
+overrides provider-session selection but does not change harness detection. Every active model calls `board hello MODEL
 [EFFORT]` in its own session. In Kimi Code, read [Kimi setup](references/kimi.md)
 first.
 
@@ -44,7 +44,7 @@ Carve an explicit task for the lead from the named plan. `--for HARNESS/SESSION`
 on a claim is optional and only for a known worker identity; never invent a
 session ID. Creating a task for another recipient requires `assign`; `TaskId` is
 not a valid assignee. Syntax is in the
-[CLI contract](https://github.com/usips/trufflepig/blob/feat/trufflepig-board/docs/board-cli-contract.md#commands).
+[CLI contract](https://github.com/usips/trufflepig/blob/master/docs/board-cli-contract.md#commands).
 
 ```sh
 trufflepig-agent board show P7
@@ -60,7 +60,7 @@ Handles stay unique for the task's life, including stopped workers' handles.
 Each worker registration accepts at most 64 distinct paths. For a larger file
 set, split ownership into coherent, preferably nonoverlapping groups, register
 one worker handle per group, and give each worker a matching scope and brief.
-See the [worker contract](https://github.com/usips/trufflepig/blob/feat/trufflepig-board/docs/board-workers.md)
+See the [worker contract](https://github.com/usips/trufflepig/blob/master/docs/board-workers.md)
 for path validation.
 
 ```sh
@@ -74,7 +74,7 @@ Post progress after each meaningful step and at least hourly during long work.
 Task-addressed questions reach the current lead and bound workers when read;
 plan-level questions without `--to` remain broadcast, and `--to human` targets
 the owner's human actor. A task creator or assignee has no administrative powers.
-Transfer, close, and reopen rules are in the [lifecycle contract](https://github.com/usips/trufflepig/blob/feat/trufflepig-board/docs/board-lifecycle.md).
+Transfer, close, and reopen rules are in the [lifecycle contract](https://github.com/usips/trufflepig/blob/master/docs/board-lifecycle.md).
 
 ## Worker: bind, post evidence, and hand off
 
@@ -133,7 +133,7 @@ the reviewed evidence and do not establish unrun tests or implementation accepta
 ## Claims, commits, and feedback
 
 Do not take over a live claim unless an explicit, authorized `--resume` applies
-under the [claim rules](https://github.com/usips/trufflepig/blob/feat/trufflepig-board/docs/board-claims.md).
+under the [claim rules](https://github.com/usips/trufflepig/blob/master/docs/board-claims.md).
 On `claim_conflict`, pick another open task, or ask the holder with
 `board post P7.3 question "..."`, which addresses the task holder and its bound
 workers. Never work on another session's active claim. A lead, actual
@@ -159,18 +159,18 @@ Use one `Plan-Task` per plan, and keep distinct plan tasks in separate commits.
 Each commit carries one `Co-authored-by: NAME <EMAIL>` per model that wrote or
 integrated it, with the exact model ID the harness reports as NAME; the
 orchestrator adds its own when it integrates a commit. Vendor email domains
-follow the [CLI attribution rules](https://github.com/usips/trufflepig/blob/feat/trufflepig-board/docs/board-cli-contract.md#attribution).
+follow the [CLI attribution rules](https://github.com/usips/trufflepig/blob/master/docs/board-cli-contract.md#attribution).
 Trailers are the final paragraph with no blank lines between them: a blank line
 ends the block, and Git ignores every trailer before it. `Plan-Worker` is
 optional; a scanned claim association identifies responsible evidence, not the
-proven writer. Evidence rules are in the [worker contract](https://github.com/usips/trufflepig/blob/feat/trufflepig-board/docs/board-workers.md).
+proven writer. Evidence rules are in the [worker contract](https://github.com/usips/trufflepig/blob/master/docs/board-workers.md).
 
 After committing, check that `git log -1 --format='%(trailers)'` shows every
 intended trailer and that `git log -1 --format='%(trailers:key=Plan-Task,valueonly)'`
 prints the task ID. When trailers are missing or unparsable and you have link
 authority, repair the link with `trufflepig-agent board link <full-oid> P7.3`,
-following the [CLI manual-link rules](https://github.com/usips/trufflepig/blob/feat/trufflepig-board/docs/board-cli-contract.md#commands)
-and the [manual-link contract](https://github.com/usips/trufflepig/blob/feat/trufflepig-board/docs/board-contract.md#git-links-and-review-evidence).
+following the [CLI manual-link rules](https://github.com/usips/trufflepig/blob/master/docs/board-cli-contract.md#commands)
+and the [manual-link contract](https://github.com/usips/trufflepig/blob/master/docs/board-contract.md#git-links-and-review-evidence).
 
 Propose plan changes by default. `board edit` writes a direct revision and
 requires `decide`, so use it only when the human explicitly requests a direct
@@ -193,7 +193,7 @@ missing capability forces a workaround. Choose `blocked`, `confused`, `wrong`,
 or `missing`, and add `--plan P7` when the report concerns a plan. Pass the
 body with `--body -` on stdin, using the Tried / Observed / Fallback / Needed
 template in the
-[feedback contract](https://github.com/usips/trufflepig/blob/feat/trufflepig-board/docs/board-feedback-contract.md#report-fields),
+[feedback contract](https://github.com/usips/trufflepig/blob/master/docs/board-feedback-contract.md#report-fields),
 within 4 KiB. The wrapper attaches call metadata, never source output. Feedback
 can queue for import; if filing fails, report that once and continue the
 fallback. Board use does not expand authorization for implementation, commits,
