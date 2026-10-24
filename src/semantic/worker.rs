@@ -275,7 +275,8 @@ pub fn embed_foreground_query(root_id: &Path, text: &str) -> Result<Embedding> {
         .context("semantic_worker: missing embedding")
 }
 
-/// Run the worker command in the foreground. Model loading begins on first batch.
+/// Run the worker command in the foreground. Both configured models begin
+/// loading on their executor threads at startup while the socket serves status.
 pub fn serve(cache_override: Option<&Path>) -> Result<()> {
     #[cfg(not(feature = "semantic"))]
     {
@@ -293,6 +294,7 @@ pub fn serve(cache_override: Option<&Path>) -> Result<()> {
     let socket = WorkerSocket::bind(&cache)?;
     let handshake = Handshake::for_config(&config);
     let mut state = WorkerRuntime::new(config, cache, handshake);
+    state.start_eager_load(Instant::now());
     state.run(&socket)
 }
 
@@ -700,6 +702,14 @@ impl WorkerRuntime {
         }
     }
 
+    /// Starts loading a configured embedder on the executor thread so the first
+    /// query need not pay for a cold start within its 500 ms deadline.
+    fn start_eager_load(&mut self, now: Instant) {
+        if self.config.model_dir.is_some() && !self.loading && !self.engine_loaded {
+            self.start_loader(now);
+        }
+    }
+
     fn start_loader(&mut self, now: Instant) {
         self.loading = true;
         if self
@@ -902,6 +912,36 @@ mod tests {
         runtime.unload_idle();
         assert!(!runtime.engine_loaded);
         assert!(matches!(commands.try_recv(), Ok(ExecutorCommand::Unload)));
+    }
+
+    #[test]
+    fn startup_loads_a_configured_embedder_once_without_a_request() {
+        let unconfigured = InferenceConfig::default();
+        let handshake = Handshake::for_config(&unconfigured);
+        let mut runtime = WorkerRuntime::new(unconfigured, PathBuf::new(), handshake);
+        let (send, commands) = mpsc::channel();
+        runtime.executor_send = send;
+        runtime.start_eager_load(Instant::now());
+        assert!(!runtime.loading);
+        assert!(commands.try_recv().is_err());
+
+        let config = InferenceConfig {
+            model_dir: Some("/models/embedder".into()),
+            ..InferenceConfig::default()
+        };
+        let handshake = Handshake::for_config(&config);
+        let mut runtime = WorkerRuntime::new(config, PathBuf::new(), handshake);
+        let (send, commands) = mpsc::channel();
+        runtime.executor_send = send;
+        runtime.start_eager_load(Instant::now());
+        runtime.start_eager_load(Instant::now());
+        assert!(runtime.loading);
+        assert!(matches!(
+            commands.try_recv(),
+            Ok(ExecutorCommand::Load { .. })
+        ));
+        assert!(commands.try_recv().is_err());
+        assert_eq!(runtime.status(true).state, WorkerState::Loading);
     }
 
     #[test]

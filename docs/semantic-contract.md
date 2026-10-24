@@ -142,6 +142,10 @@ status commands.
 
 ## Worker lifecycle and diagnostics
 
+The worker begins loading each configured model (`model_dir`,
+`rerank_model_dir`) when it starts, on that model's executor thread, so the
+first query need not trigger a cold start and status answers meanwhile.
+
 `semantic worker status` reports whether the per-user worker is running, its
 selected provider and GPU identity, whether the model is loaded, and pending
 work. `semantic worker stop` asks it to release its model and exit. The worker
