@@ -425,13 +425,15 @@ def main() -> int:
     repeat_count = recent.count(fingerprint)
 
     signals: list[str] = []
+    lowered = (error_text + " " + stderr_head).lower()
     if exit_code != 0 or status not in ("ok",):
         signals.append("error")
-    if verb == "search" and hit_count == 0 and exit_code == 0:
+    # Hit-list verbs report an empty page; `show` reports a missing definition as an error.
+    if (verb in ("search", "refs", "map") and hit_count == 0 and exit_code == 0
+            or verb == "show" and "no_definition" in lowered):
         signals.append("no_hits")
     if response.get("truncated") is True:
         signals.append("truncated")
-    lowered = (error_text + " " + stderr_head).lower()
     if "budget" in lowered:
         signals.append("budget")
     if any(key in lowered for key in ("stale_result", "stale_source", "expired_result")):
