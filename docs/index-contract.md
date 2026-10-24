@@ -5,9 +5,11 @@
 SQLite WAL with FTS5 (`<cache>/index.sqlite3`) holds source revisions, definitions,
 occurrences, relationships, and lexical documents. Immutable result sets use a separate
 `<cache>/results.sqlite3` (`src/results/result_set_store.rs`), so saving query results
-never waits behind publication. Index-backed reads preflight the selected writable
-result cache before parent lookup. Occurrence identity is root/path/revision/span;
-content identity supports reuse without merging distinct definitions or overrides.
+never waits behind publication; the file's revision, recovery, and space are in the
+[storage lifecycle](index-storage-contract.md). Index-backed reads preflight the
+selected writable result cache before parent lookup. Occurrence identity is
+root/path/revision/span; content identity supports reuse without merging distinct
+definitions or overrides.
 
 Ordinary indexes retain exact identifiers. Separate FTS columns contain expanded
 snake/camel identifiers, body text, and path terms. All eligible file content is
@@ -148,11 +150,10 @@ sub-debounce visibility promise applies. The recursive watcher covers the root
 and filters cache events, while the indexing walk prunes ignored/build
 directories. Ignored trees may still consume operating-system watches.
 
-Reconciliation observes ignore rules and relevant configuration/include bytes;
-module candidate resolution runs against the staged files. Grammar or extraction
-changes require bumping the stored extraction version to invalidate cached facts.
-The initial resolver may recompute the full reference universe;
-there is no promise that all work is proportional to changed files.
+Reconciliation observes ignore rules and relevant configuration/include bytes; module
+candidate resolution runs against the staged files. Cached facts follow the [extraction
+cache identity](index-storage-contract.md#extraction-cache-identity). The initial resolver
+may recompute the full reference universe; there is no promise that all work is proportional to changed files.
 
 Keep only the current graph. `refs`, `ctx`, and `map` expose structural facts;
 a module map does not require PageRank. Readers do not join old result identities
@@ -160,9 +161,8 @@ to graph nodes reused by a replacement generation.
 
 ## Resource lifecycle
 
-The authoritative SQLite page cache is 8 MiB for the writer and 2 MiB per
-reader; staging uses 4 MiB. Indexing
-reads at most 2 MiB per source file, retains at most 50,000 extracted facts per
+SQLite page caches are in the [storage lifecycle](index-storage-contract.md#connections).
+Indexing reads at most 2 MiB per source file, retains at most 50,000 extracted facts per
 file, and divides lexical coverage into regions of at most 4,096 raw bytes.
 Sources containing NUL or exceeding the read cap remain file records with an
 exclusion reason. General current-source reads have a separate 16 MiB cap.
@@ -186,15 +186,15 @@ preparation; explicit foreground `index`/`init` finish indexing. Semantic search
 
 ## Bounded diagnostics probes
 
-`doctor` checks SQLite structure, foreign keys, FTS integrity, unchanged-source
-extraction identity, semantic cache provenance, and accidental model initialization.
-SQL checks have a 100 ms progress deadline and a 10 ms busy wait. Extraction
-samples at most four source files of at most 64 KiB, with a 250 ms inter-file
-cutoff; a running extraction may finish after that cutoff. Semantic checks sample
-at most sixteen vectors without loading a model.
+`doctor` checks SQLite structure, foreign keys, FTS integrity, unchanged-source extraction
+identity, semantic cache provenance, and accidental model initialization. SQL checks have a
+100 ms progress deadline and a 10 ms busy wait. Extraction samples at most four source files
+of at most 64 KiB, with a 250 ms inter-file cutoff; a running extraction may finish after
+that cutoff. Semantic checks sample at most sixteen vectors without loading a model.
 
-Outcomes distinguish passed, failed, incomplete, and unavailable checks. Source
-drift is reported separately from corruption; unverified cached facts are not
-silently treated as valid. The daemon attempts these checks on idle ticks after
-thirty seconds. FTS verification runs its integrity command inside a rolled-back
-savepoint. No automatic repair or exhaustive integrity claim is made.
+Outcomes distinguish passed, failed, incomplete, and unavailable checks. Source drift is
+reported separately from corruption; unverified cached facts are not silently treated as
+valid. The daemon attempts these checks on idle ticks after thirty seconds. FTS verification
+runs its integrity command inside a rolled-back savepoint. Probes repair nothing and make no
+exhaustive integrity claim; writers quarantine a corrupt index
+([recovery](index-storage-contract.md#corruption-recovery)).

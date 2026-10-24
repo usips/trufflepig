@@ -17,6 +17,7 @@ semantic retrieval requires an explicit `--sem` request.
 - [Free-text lanes, evidence tiers, and path prior](ranking-contract.md)
 - [Definition, reference, and outline navigation](navigation-contract.md)
 - [Authoritative storage and publication](index-contract.md)
+- [Index database revision, recovery, and reclamation](index-storage-contract.md)
 - [Cache ownership, daemon lifecycle, and transport](runtime-contract.md)
 - [Plan revisions, task claims, commit links, and storage](board-contract.md)
 - [Board and feedback command grammar](board-cli-contract.md)
