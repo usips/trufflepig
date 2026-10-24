@@ -262,3 +262,5 @@ pub fn error_detail(error: &anyhow::Error) -> Option<CodeDetail> {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod text_match_guard;
