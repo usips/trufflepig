@@ -21,7 +21,7 @@ use crate::board::board_protocol::{FeedbackMetadata, FeedbackRecord};
 #[cfg(test)]
 use crate::board::board_vocabulary::FeedbackKind;
 use crate::board::board_vocabulary::{
-    ENTRY_TEXT_LIMIT, EntryKind, FeedbackImportKey, FeedbackState,
+    EntryKind, FEEDBACK_TEXT_LIMIT, FeedbackImportKey, FeedbackState,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
@@ -184,8 +184,8 @@ pub(in crate::board::local_board) fn feedback_authority(
 }
 
 fn truncate_entry_summary(text: &mut String) {
-    if text.len() > ENTRY_TEXT_LIMIT {
-        let mut end = ENTRY_TEXT_LIMIT;
+    if text.len() > FEEDBACK_TEXT_LIMIT {
+        let mut end = FEEDBACK_TEXT_LIMIT;
         while !text.is_char_boundary(end) {
             end -= 1;
         }

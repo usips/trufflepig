@@ -10,6 +10,7 @@ use crate::board::board_ids::{BoardRef, PlanId};
 use crate::board::board_protocol::{
     BoardReply, BoardResult, BoardSearchHit, BoardSearchReply, BoardSearchSource,
 };
+use crate::board::board_vocabulary::ENTRY_TEXT_LIMIT;
 
 const SEARCH_LIMIT: usize = 50;
 const SNIPPET_BYTES: usize = 512;
@@ -22,12 +23,14 @@ pub(in crate::board::local_board) fn search(
 ) -> Result<BoardReply, BoardError> {
     if !(1..=SEARCH_LIMIT).contains(&limit)
         || query.trim().is_empty()
-        || query.len() > 4096
+        || query.len() > ENTRY_TEXT_LIMIT
         || query.contains('\0')
     {
         return Err(invalid(
             "invalid_options",
-            "search requires a nonblank query of at most 4096 bytes and a limit of 1..50",
+            format!(
+                "search requires a nonblank query of at most {ENTRY_TEXT_LIMIT} bytes and a limit of 1..50"
+            ),
         ));
     }
     if let Some(plan) = plan {

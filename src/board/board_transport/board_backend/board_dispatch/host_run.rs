@@ -77,7 +77,10 @@ impl BoardHost {
         let probe = if (options.board.all && matches!(&op, BoardOp::Inbox { .. }))
             || matches!(
                 &op,
-                BoardOp::LinkCommit { .. } | BoardOp::UnlinkCommit { .. } | BoardOp::Pending { .. }
+                BoardOp::LinkCommit { .. }
+                    | BoardOp::UnlinkCommit { .. }
+                    | BoardOp::Pending { .. }
+                    | BoardOp::Receipt { .. }
             ) {
             Ok(crate::board::repo_identity::RegistrationProbe {
                 registration: None,

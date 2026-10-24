@@ -7,7 +7,9 @@ use super::{
     board_syntax_validation::{check_flags, fixed_words, word},
 };
 use crate::board::board_ids::{BoardRef, EventSeq, PlanId};
-use crate::board::board_protocol::{BoardOp, EntryCursor, OverviewCursor, TaskCursor, TaskOrder};
+use crate::board::board_protocol::{
+    BoardOp, BoardRequestKey, EntryCursor, OverviewCursor, TaskCursor, TaskOrder,
+};
 use crate::board::board_vocabulary::TaskColumn;
 use crate::cli::Arguments;
 use anyhow::{Context, Result, bail, ensure};
@@ -52,6 +54,14 @@ pub(super) fn parse_read(
                     limit: bounded_limit(options, 200)?,
                 }
             }
+        }
+        "receipt" => {
+            check_flags(options, &[])?;
+            fixed_words(options, 3, 3, "board receipt KEY")?;
+            let key = options.words[2]
+                .parse::<BoardRequestKey>()
+                .map_err(|error| anyhow::anyhow!("invalid_reference: {error}"))?;
+            BoardOp::Receipt { key }
         }
         "done" => {
             check_flags(options, &["all", "project", "after"])?;

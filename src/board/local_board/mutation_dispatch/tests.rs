@@ -83,6 +83,91 @@ fn claim_task(board: &mut LocalBoard, actor: BoardActor, task: TaskId, scope: &s
         .unwrap();
 }
 
+#[test]
+fn same_holder_scope_update_preserves_claim_and_emits_no_event() {
+    let (_directory, mut board) = database();
+    let plan = create_plan(&mut board);
+    let task = create_task(&mut board, plan, "Expanded scope");
+    let claimant = actor("codex", "same-holder");
+    claim_task(&mut board, claimant.clone(), task, "initial scope");
+
+    let claim_row = |board: &LocalBoard| {
+        board
+            .conn
+            .query_row(
+                concat!(
+                    "SELECT id,entry_id,claimed_at,scope FROM claims ",
+                    "WHERE plan_id=?1 AND task_ordinal=?2 AND ended_at IS NULL"
+                ),
+                rusqlite::params![
+                    i64::try_from(plan.get()).unwrap(),
+                    i64::try_from(task.ordinal).unwrap()
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                },
+            )
+            .unwrap()
+    };
+    let original_claim = claim_row(&board);
+    let event_count: i64 = board
+        .conn
+        .query_row("SELECT COUNT(*) FROM events", [], |row| row.get(0))
+        .unwrap();
+    let entry_count: i64 = board
+        .conn
+        .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))
+        .unwrap();
+
+    let updated = change(
+        board
+            .handle(&BoardRequest::new(
+                claimant,
+                BoardOp::ClaimTask {
+                    task,
+                    scope: Some(EntryText::new("expanded scope").unwrap()),
+                    resume: ClaimResume::No,
+                    delegate: None,
+                },
+            ))
+            .unwrap(),
+    );
+
+    assert!(!updated.deduplicated);
+    assert_eq!(
+        updated.entry.get(),
+        u64::try_from(original_claim.1).unwrap()
+    );
+    assert_eq!(updated.plan, Some(plan));
+    assert_eq!(updated.task, Some(task));
+    let changed_claim = claim_row(&board);
+    assert_eq!(changed_claim.0, original_claim.0);
+    assert_eq!(changed_claim.1, original_claim.1);
+    assert_eq!(changed_claim.2, original_claim.2);
+    assert_eq!(changed_claim.3, "expanded scope");
+    assert_eq!(
+        board
+            .conn
+            .query_row("SELECT COUNT(*) FROM events", [], |row| row
+                .get::<_, i64>(0))
+            .unwrap(),
+        event_count
+    );
+    assert_eq!(
+        board
+            .conn
+            .query_row("SELECT COUNT(*) FROM entries", [], |row| row
+                .get::<_, i64>(0))
+            .unwrap(),
+        entry_count
+    );
+}
+
 fn progress_post(actor: BoardActor, task: TaskId) -> BoardRequest {
     BoardRequest::new(
         actor,

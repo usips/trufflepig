@@ -5,6 +5,8 @@ use crate::board::board_vocabulary::{PlanTitle, TaskColumn};
 fn overview_with_recent_done() -> BoardReply {
     let plan = PlanId::new(7).unwrap();
     let task = |ordinal, column| TaskRecord {
+        transferred_from: None,
+        transferred_to: None,
         id: TaskId::new(plan, ordinal).unwrap(),
         title: PlanTitle::new("recent completion evidence ".repeat(9)).unwrap(),
         column,
@@ -20,6 +22,7 @@ fn overview_with_recent_done() -> BoardReply {
                 repo_keys: Vec::new(),
                 updated_seq: EventSeq::new(70),
                 plan: PlanRecord {
+                    lifecycle_state: crate::board::board_protocol::PlanLifecycleState::Open,
                     id: plan,
                     title: PlanTitle::new("Trial").unwrap(),
                     owner_user: "josh".into(),

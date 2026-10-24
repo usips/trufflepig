@@ -80,33 +80,57 @@ pub(in crate::board::local_board) fn addressed_to_actor_sql(
     harness: &str,
     identity: &str,
 ) -> String {
+    let task_successors = task_successors_cte(&format!(
+        "SELECT task_source.plan_id,task_source.ordinal FROM tasks task_source \
+         WHERE {recipient}='P'||task_source.plan_id||'.'||task_source.ordinal"
+    ));
     format!(
         concat!(
             "({recipient} IN ({user},{harness},{identity}) OR ",
-            "EXISTS(SELECT 1 FROM claims task_claim JOIN actors holder ON holder.id=task_claim.actor_id ",
-            "WHERE {recipient}='P'||task_claim.plan_id||'.'||task_claim.task_ordinal ",
-            "AND task_claim.ended_at IS NULL AND ",
+            "EXISTS({task_successors} SELECT 1 FROM task_successor current ",
+            "JOIN claims task_claim ON task_claim.plan_id=current.plan_id ",
+            "AND task_claim.task_ordinal=current.ordinal ",
+            "JOIN actors holder ON holder.id=task_claim.actor_id ",
+            "WHERE task_claim.ended_at IS NULL AND ",
             "holder.user||'@'||holder.host||'/'||holder.harness||'/'||holder.session={identity}) OR ",
-            "EXISTS(SELECT 1 FROM claim_workers task_worker JOIN claims task_claim ",
-            "ON task_claim.id=task_worker.claim_id JOIN actors worker ON worker.id=task_worker.actor_id ",
-            "WHERE {recipient}='P'||task_claim.plan_id||'.'||task_claim.task_ordinal ",
-            "AND task_claim.ended_at IS NULL AND task_worker.ended_at IS NULL AND ",
+            "EXISTS({task_successors} SELECT 1 FROM task_successor current ",
+            "JOIN claims task_claim ON task_claim.plan_id=current.plan_id ",
+            "AND task_claim.task_ordinal=current.ordinal ",
+            "JOIN claim_workers task_worker ON task_claim.id=task_worker.claim_id ",
+            "JOIN actors worker ON worker.id=task_worker.actor_id ",
+            "WHERE task_claim.ended_at IS NULL AND task_worker.ended_at IS NULL AND ",
             "worker.user||'@'||worker.host||'/'||worker.harness||'/'||worker.session={identity}))"
         ),
         recipient = recipient,
         user = user,
         harness = harness,
         identity = identity,
+        task_successors = task_successors,
     )
 }
 
-/// Matches entries whose persisted references identify a task.
+fn task_successors_cte(anchor: &str) -> String {
+    format!(
+        concat!(
+            "WITH RECURSIVE task_successor(plan_id,ordinal) AS ({anchor} ",
+            "UNION SELECT transfer.destination_plan,transfer.destination_ordinal ",
+            "FROM task_transfers transfer JOIN task_successor current ",
+            "ON transfer.source_plan=current.plan_id AND transfer.source_ordinal=current.ordinal)"
+        ),
+        anchor = anchor
+    )
+}
+
+/// Matches entries addressed to a task or linked to it by reference.
 pub(in crate::board::local_board) fn task_entry_sql(entry_id: &str) -> String {
     format!(
         concat!(
-            "EXISTS(SELECT 1 FROM entry_refs task_reference JOIN tasks task_target ",
+            "(EXISTS(SELECT 1 FROM entry_refs task_reference JOIN tasks task_target ",
             "ON task_reference.target='P'||task_target.plan_id||'.'||task_target.ordinal ",
-            "WHERE task_reference.entry_id={entry_id})"
+            "WHERE task_reference.entry_id={entry_id}) OR ",
+            "EXISTS(SELECT 1 FROM entries addressed JOIN tasks task_target ",
+            "ON addressed.to_whom='P'||task_target.plan_id||'.'||task_target.ordinal ",
+            "WHERE addressed.id={entry_id}))"
         ),
         entry_id = entry_id,
     )
@@ -118,28 +142,39 @@ pub(in crate::board::local_board) fn task_owner_human_question_sql(
     user: &str,
     harness: &str,
 ) -> String {
+    let task_successors = task_successors_cte(&format!(
+        concat!(
+            "SELECT task_target.plan_id,task_target.ordinal FROM entry_refs task_reference ",
+            "JOIN tasks task_target ON task_reference.target='P'||task_target.plan_id||'.'||task_target.ordinal ",
+            "WHERE task_reference.entry_id={entry_id} UNION ",
+            "SELECT task_target.plan_id,task_target.ordinal FROM entries addressed ",
+            "JOIN tasks task_target ON addressed.to_whom='P'||task_target.plan_id||'.'||task_target.ordinal ",
+            "WHERE addressed.id={entry_id}"
+        ),
+        entry_id = entry_id
+    ));
     format!(
         concat!(
-            "EXISTS(SELECT 1 FROM entry_refs task_reference JOIN tasks task_target ",
-            "ON task_reference.target='P'||task_target.plan_id||'.'||task_target.ordinal ",
-            "JOIN plans task_plan ON task_plan.id=task_target.plan_id ",
-            "WHERE task_reference.entry_id={entry_id} AND task_plan.owner_user={user} ",
-            "AND {harness}='human')"
+            "EXISTS({task_successors} SELECT 1 FROM task_successor current ",
+            "JOIN plans task_plan ON task_plan.id=current.plan_id ",
+            "WHERE NOT EXISTS(SELECT 1 FROM task_transfers outgoing ",
+            "WHERE outgoing.source_plan=current.plan_id AND outgoing.source_ordinal=current.ordinal) ",
+            "AND task_plan.owner_user={user} AND {harness}='human')"
         ),
-        entry_id = entry_id,
         user = user,
         harness = harness,
+        task_successors = task_successors,
     )
 }
 
 /// Matches an event generated by a still-open task question.
 pub(in crate::board::local_board) fn event_task_question_sql(event: &str) -> String {
+    let task_entry = task_entry_sql("task_question.id");
     format!(
         concat!(
-            "EXISTS(SELECT 1 FROM entries task_question JOIN entry_refs task_reference ",
-            "ON task_reference.entry_id=task_question.id JOIN tasks task_target ",
-            "ON task_reference.target='P'||task_target.plan_id||'.'||task_target.ordinal ",
+            "EXISTS(SELECT 1 FROM entries task_question ",
             "WHERE task_question.seq={event}.seq AND task_question.kind='question' ",
+            "AND {task_entry} ",
             "AND NOT EXISTS(SELECT 1 FROM entries answer JOIN entry_refs answer_ref ",
             "ON answer_ref.entry_id=answer.id WHERE answer.kind='answer' ",
             "AND answer_ref.target='E'||task_question.id) ",
@@ -147,6 +182,7 @@ pub(in crate::board::local_board) fn event_task_question_sql(event: &str) -> Str
             "WHERE correction.supersedes=task_question.id))"
         ),
         event = event,
+        task_entry = task_entry,
     )
 }
 
@@ -156,14 +192,12 @@ pub(in crate::board::local_board) fn event_task_owner_human_sql(
     user: &str,
     harness: &str,
 ) -> String {
+    let task_owner = task_owner_human_question_sql("task_question.id", user, harness);
     format!(
         concat!(
-            "EXISTS(SELECT 1 FROM entries task_question JOIN entry_refs task_reference ",
-            "ON task_reference.entry_id=task_question.id JOIN tasks task_target ",
-            "ON task_reference.target='P'||task_target.plan_id||'.'||task_target.ordinal ",
-            "JOIN plans task_plan ON task_plan.id=task_target.plan_id ",
+            "EXISTS(SELECT 1 FROM entries task_question ",
             "WHERE task_question.seq={event}.seq AND task_question.kind='question' ",
-            "AND task_plan.owner_user={user} AND {harness}='human' ",
+            "AND {task_owner} ",
             "AND NOT EXISTS(SELECT 1 FROM entries answer JOIN entry_refs answer_ref ",
             "ON answer_ref.entry_id=answer.id WHERE answer.kind='answer' ",
             "AND answer_ref.target='E'||task_question.id) ",
@@ -171,8 +205,7 @@ pub(in crate::board::local_board) fn event_task_owner_human_sql(
             "WHERE correction.supersedes=task_question.id))"
         ),
         event = event,
-        user = user,
-        harness = harness,
+        task_owner = task_owner,
     )
 }
 

@@ -60,7 +60,7 @@ export function createProposalPage(context) {
       }
       if (proposal.state === "open" && permitted(view, "can_decide")) {
         const form = el("form");
-        const note = field("Decision note", "decision-note", "", { multiline: true, maxLength: 4096 });
+        const note = field("Decision note", "decision-note", "", { multiline: true, maxLength: 32768 });
         const actions = el("div", "actions");
         const accept = focusKey(button("Accept proposal",
           () => void submitMutation(form, { op: "accept", proposal: entry.id, note: note.input.value || null }),

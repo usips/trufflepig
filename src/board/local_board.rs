@@ -125,6 +125,7 @@ impl WriteContext {
                 plan,
                 revision,
                 task,
+                transferred_to: None,
                 deduplicated: false,
             }),
         )

@@ -39,7 +39,7 @@ it("header_select_drives_all_overview_panels_and_scoped_wire", async () => {
   const selected = scopedCalls(calls).filter(request => request.project === "w1");
   assert.deepEqual(new Set(selected.map(request => request.op.op)),
     new Set(["overview", "attention", "feed"]));
-    assert.ok(selected.every(request => request.api === 11 && request.op.scope === "all"));
+    assert.ok(selected.every(request => request.api === 13 && request.op.scope === "all"));
   assert.match(location.hash, /project=w1/);
   assert.equal(sessionStorage.getItem("trufflepig-board-project:project-fixture"), "w1");
 });

@@ -131,6 +131,7 @@ pub(super) fn reply_plan(reply: &BoardReply) -> Option<PlanId> {
         BoardResult::Revision(revision) => Some(revision.id.plan),
         BoardResult::Diff(diff) => Some(diff.before.id.plan),
         BoardResult::Change(change) => change.plan,
+        BoardResult::Receipt(receipt) => receipt.change.as_ref().and_then(|change| change.plan),
         BoardResult::Review(evidence) => Some(evidence.plan.id),
         BoardResult::History(page) => Some(page.plan),
         BoardResult::Tasks(page) => Some(page.plan),
@@ -159,6 +160,17 @@ pub(super) fn committed_receipt(result: &BoardResult) -> Option<String> {
                 .map_or_else(|| "-".into(), |task| task.to_string()),
             change.deduplicated
         ),
+        BoardResult::Receipt(receipt)
+            if receipt.state == crate::board::board_protocol::BoardReceiptState::Committed =>
+        {
+            let Some(change) = &receipt.change else {
+                return None;
+            };
+            format!(
+                "request_key={} {} seq={}",
+                receipt.key, change.entry, change.seq
+            )
+        }
         BoardResult::Session(_) => "session registered".into(),
         BoardResult::Cursor(cursor) => format!("cursor {cursor}"),
         BoardResult::Registered(repository) => format!("registered {}", repository.repo_key),

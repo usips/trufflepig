@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 
 use super::DaemonReplyTimeout;
 
-pub(super) const REQUEST_LIMIT: usize = 64 * 1024;
+pub(super) const REQUEST_LIMIT: usize = 256 * 1024;
 const RESPONSE_LIMIT: usize = 4 * 1024 * 1024;
 const ARGUMENT_LIMIT: usize = 256;
 
@@ -129,4 +129,47 @@ pub(super) fn write_reply(writer: &mut impl Write, reply: &DaemonReply) -> Resul
         return write_frame(writer, &serde_json::to_vec(&reply)?, RESPONSE_LIMIT);
     }
     write_frame(writer, &bytes, RESPONSE_LIMIT)
+}
+
+#[cfg(test)]
+mod serialized_entry_transport_tests {
+    use super::*;
+    use crate::board::board_vocabulary::ENTRY_TEXT_LIMIT;
+
+    #[test]
+    fn maximum_escaped_entry_fits_daemon_request_frame() {
+        let text = "\u{1}".repeat(ENTRY_TEXT_LIMIT);
+        let request = DaemonRequest::Arguments {
+            context: crate::diagnostics::RequestContext {
+                request_id: "00000000-0000-4000-8000-000000000000".to_owned(),
+                created_unix_micros: 1,
+                session: None,
+                client: None,
+                diagnostic_session: None,
+                origin: None,
+            },
+            args: vec![
+                "board".into(),
+                "post".into(),
+                "P1".into(),
+                "note".into(),
+                text.clone(),
+            ],
+        };
+        let mut frame = Vec::with_capacity(4 + 6 * ENTRY_TEXT_LIMIT + 128);
+        write_request(&mut frame, &request).unwrap();
+        let length = u32::from_be_bytes(frame[..4].try_into().unwrap()) as usize;
+
+        assert!(length > 64 * 1024, "fixture must exercise the raised bound");
+        assert!(
+            length <= REQUEST_LIMIT,
+            "serialized request exceeds its frame limit"
+        );
+        assert_eq!(length, frame.len() - 4);
+        let decoded = read_request(&mut frame.as_slice()).unwrap();
+        let DaemonRequest::Arguments { args, .. } = decoded else {
+            panic!("expected argument request");
+        };
+        assert_eq!(args.last().map(String::as_str), Some(text.as_str()));
+    }
 }

@@ -59,6 +59,8 @@ fn internal_collections_keep_frozen_bounds_without_cli_hints() {
     let plan = PlanId::new(7).unwrap();
     let tasks = (6..36)
         .map(|ordinal| TaskRecord {
+            transferred_from: None,
+            transferred_to: None,
             id: TaskId::new(plan, ordinal).unwrap(),
             title: PlanTitle::new("visible task evidence ".repeat(10)).unwrap(),
             column: TaskColumn::Todo,
@@ -197,6 +199,8 @@ fn overview_nested_fallback_keeps_task_membership_ceiling() {
     let next_plan = PlanId::new(8).unwrap();
     let tasks = (1..31)
         .map(|ordinal| TaskRecord {
+            transferred_from: None,
+            transferred_to: None,
             id: TaskId::new(plan, ordinal).unwrap(),
             title: PlanTitle::new("nested task evidence ".repeat(10)).unwrap(),
             column: TaskColumn::Todo,
@@ -214,6 +218,7 @@ fn overview_nested_fallback_keeps_task_membership_ceiling() {
         repo_keys: vec![crate::board::board_ids::RepoKey::parse(&repo_key).unwrap()],
         updated_seq: EventSeq::new(18),
         plan: PlanRecord {
+            lifecycle_state: crate::board::board_protocol::PlanLifecycleState::Open,
             id: next_plan,
             title: PlanTitle::new("Next").unwrap(),
             owner_user: "josh".into(),
@@ -243,6 +248,7 @@ fn overview_nested_fallback_keeps_task_membership_ceiling() {
                     repo_keys: Vec::new(),
                     updated_seq: EventSeq::new(20),
                     plan: PlanRecord {
+                        lifecycle_state: crate::board::board_protocol::PlanLifecycleState::Open,
                         id: plan,
                         title: PlanTitle::new("Trial").unwrap(),
                         owner_user: "josh".into(),

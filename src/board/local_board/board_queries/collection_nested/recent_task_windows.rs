@@ -28,9 +28,15 @@ pub(super) fn recent_task_window(
     }
     let scope = ScopeSql::new(scope)?;
     let predicate = ScopeSql::plan_predicate("t.plan_id", 1, 2);
+    let column_filter = concat!(
+        "(?4 IS NULL OR (?4='transferred' AND EXISTS(SELECT 1 FROM task_transfers transferred ",
+        "WHERE transferred.source_plan=t.plan_id AND transferred.source_ordinal=t.ordinal)) ",
+        "OR (?4<>'transferred' AND t.column_name=?4 AND NOT EXISTS(SELECT 1 FROM task_transfers transferred ",
+        "WHERE transferred.source_plan=t.plan_id AND transferred.source_ordinal=t.ordinal)))"
+    );
     let filter = format!(
         "{predicate} AND (?3 IS NULL OR t.plan_id=?3) \
-         AND (?4 IS NULL OR t.column_name=?4) \
+         AND {column_filter} \
          AND (?5 IS NULL OR (t.seq,t.plan_id,t.ordinal)<(?5,?6,?7))"
     );
     let values = [

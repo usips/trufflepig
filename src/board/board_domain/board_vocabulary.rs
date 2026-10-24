@@ -3,7 +3,8 @@ use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::{fmt, str::FromStr};
 
-pub const ENTRY_TEXT_LIMIT: usize = 4096;
+pub const ENTRY_TEXT_LIMIT: usize = 32768;
+pub const FEEDBACK_TEXT_LIMIT: usize = 4096;
 pub const PLAN_TEXT_LIMIT: usize = 32768;
 pub const PLAN_TITLE_LIMIT: usize = 256;
 
@@ -77,9 +78,11 @@ macro_rules! vocabulary {
 vocabulary!(EntryKind, "invalid_kind", {
     Note => "note", Progress => "progress", Review => "review", Question => "question",
     Answer => "answer", Decision => "decision", Divergence => "divergence", Claim => "claim",
-    Commit => "commit", Unlinked => "unlinked", Feedback => "feedback", Task => "task", Hello => "hello",
+    Commit => "commit", Unlinked => "unlinked", Feedback => "feedback", Task => "task",
+    TaskTransfer => "task_transfer", Hello => "hello",
     Bye => "bye", Grant => "grant", Revoke => "revoke", WorkerAdd => "worker_add", WorkerEnd => "worker_end",
     Create => "create", Proposal => "proposal", Accept => "accept", Reject => "reject", Direct => "direct",
+    PlanClose => "plan_close", PlanReopen => "plan_reopen",
 });
 impl EntryKind {
     pub fn is_post_kind(self) -> bool {
@@ -98,6 +101,7 @@ impl EntryKind {
 
 vocabulary!(TaskColumn, "invalid_state", {
     Todo => "todo", Doing => "doing", Review => "review", Done => "done", Blocked => "blocked",
+    Transferred => "transferred",
 });
 vocabulary!(ProposalState, "invalid_state", {
     Open => "open", Accepted => "accepted", Rejected => "rejected", Superseded => "superseded",
@@ -216,12 +220,12 @@ mod tests {
     }
 
     #[test]
-    fn entry_text_cap_counts_utf8_bytes_and_is_enforced_by_serde() {
-        assert!(EntryText::new("x".repeat(4096)).is_ok());
-        assert!(EntryText::new("x".repeat(4097)).is_err());
-        assert!(EntryText::new("é".repeat(2048)).is_ok());
-        assert!(EntryText::new("é".repeat(2049)).is_err());
-        let encoded = serde_json::to_string(&"x".repeat(4097)).unwrap();
+    fn entry_text_cap_is_32k_utf8_bytes_and_is_enforced_by_serde() {
+        assert!(EntryText::new("x".repeat(32768)).is_ok());
+        assert!(EntryText::new("x".repeat(32769)).is_err());
+        assert!(EntryText::new("é".repeat(16384)).is_ok());
+        assert!(EntryText::new("é".repeat(16385)).is_err());
+        let encoded = serde_json::to_string(&"x".repeat(32769)).unwrap();
         assert!(serde_json::from_str::<EntryText>(&encoded).is_err());
         assert!(EntryText::new("\n  ").is_err());
         assert!(EntryText::new("a\0b").is_err());
@@ -241,8 +245,27 @@ mod tests {
     fn user_post_kinds_exclude_backend_event_kinds() {
         assert!(EntryKind::parse("progress").unwrap().is_post_kind());
         assert!(!EntryKind::Claim.is_post_kind());
+        assert_eq!(
+            EntryKind::parse("task_transfer").unwrap(),
+            EntryKind::TaskTransfer
+        );
+        assert_eq!(
+            EntryKind::parse("plan_close").unwrap(),
+            EntryKind::PlanClose
+        );
+        assert_eq!(
+            EntryKind::parse("plan_reopen").unwrap(),
+            EntryKind::PlanReopen
+        );
+        assert!(!EntryKind::TaskTransfer.is_post_kind());
+        assert!(!EntryKind::PlanClose.is_post_kind());
+        assert!(!EntryKind::PlanReopen.is_post_kind());
         assert!(EntryKind::parse("unknown").is_err());
         assert!(TaskColumn::parse("active").is_err());
+        assert_eq!(
+            TaskColumn::parse("transferred").unwrap(),
+            TaskColumn::Transferred
+        );
         assert!(!FeedbackState::Triaged.is_closed());
         assert!(FeedbackState::Fixed.is_closed());
     }

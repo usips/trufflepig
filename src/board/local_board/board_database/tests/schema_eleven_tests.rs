@@ -23,7 +23,7 @@ fn populated_v10_upgrade_preserves_origins_and_adds_null_peer_addresses() {
         migrated
             .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
             .unwrap(),
-        11
+        SCHEMA_VERSION
     );
     let entry_origin: (Option<String>, Option<String>, Option<String>) = migrated
         .query_row(

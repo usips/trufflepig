@@ -60,7 +60,7 @@ fn populated_v9_upgrade_preserves_history_and_migrates_legacy_steward() {
     drop(legacy);
 
     let (migrated, _) = open(&path).unwrap();
-    assert_eq!(schema_version(&migrated), 11);
+    assert_eq!(schema_version(&migrated), SCHEMA_VERSION);
     assert_eq!(
         migrated
             .query_row(

@@ -8,6 +8,8 @@ fn show_preserves_labor_and_uncovered_sections_while_trimming_the_body() {
     };
     let plan = PlanId::new(7).unwrap();
     let task = |ordinal, column| TaskRecord {
+        transferred_from: None,
+        transferred_to: None,
         id: TaskId::new(plan, ordinal).unwrap(),
         title: PlanTitle::new(format!("task {ordinal}")).unwrap(),
         column,
@@ -48,8 +50,10 @@ fn show_preserves_labor_and_uncovered_sections_while_trimming_the_body() {
     recent.kind = EntryKind::Progress;
     recent.body = EntryText::new("recent long evidence ".repeat(150)).unwrap();
     let view = PlanView {
+        can_change_lifecycle: false,
         repo_keys: Vec::new(),
         plan: PlanRecord {
+            lifecycle_state: crate::board::board_protocol::PlanLifecycleState::Open,
             id: plan,
             title: PlanTitle::new("Trial").unwrap(),
             owner_user: "josh".into(),
@@ -141,8 +145,10 @@ fn plan_budget_keeps_body_and_tasks_ahead_of_commit_rows() {
         .map(|line| format!("body fact {line}\n"))
         .collect::<String>();
     let view = PlanView {
+        can_change_lifecycle: false,
         repo_keys: Vec::new(),
         plan: PlanRecord {
+            lifecycle_state: crate::board::board_protocol::PlanLifecycleState::Open,
             id: plan,
             title: PlanTitle::new("Trial").unwrap(),
             owner_user: "josh".into(),
@@ -160,6 +166,8 @@ fn plan_budget_keeps_body_and_tasks_ahead_of_commit_rows() {
         },
         tasks: (1..=3)
             .map(|ordinal| TaskRecord {
+                transferred_from: None,
+                transferred_to: None,
                 id: TaskId::new(plan, ordinal).unwrap(),
                 title: PlanTitle::new(format!("task {ordinal}")).unwrap(),
                 column: TaskColumn::Todo,
@@ -221,8 +229,10 @@ fn plan_trim_keeps_newest_entries_behind_a_before_cursor() {
         })
         .to_vec();
     let view = PlanView {
+        can_change_lifecycle: false,
         repo_keys: Vec::new(),
         plan: PlanRecord {
+            lifecycle_state: crate::board::board_protocol::PlanLifecycleState::Open,
             id: plan,
             title: PlanTitle::new("Trial").unwrap(),
             owner_user: "josh".into(),

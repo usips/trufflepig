@@ -33,8 +33,27 @@ pub(in crate::board::local_board) fn task_view(
         .transpose()?
         .ok_or_else(|| invalid("invalid_reference", format!("unknown task {task}")))?;
 
-    let (mut claims, mut claims_omitted) =
-        claim_evidence::claims_for_task(conn, ctx, task, through, TASK_CLAIM_LIMIT)?;
+    let mut lineage = task_lineage::task_ids(conn, task)?;
+    let canonical = task_lineage::canonical_task(conn, task)?;
+    if let Some(position) = lineage.iter().position(|item| *item == canonical) {
+        lineage.swap_remove(position);
+        lineage.push(canonical);
+    }
+    let mut claims = Vec::with_capacity(lineage.len().min(TASK_CLAIM_LIMIT));
+    let mut total_claims = 0usize;
+    for lineage_task in &lineage {
+        let (mut task_claims, omitted) =
+            claim_evidence::claims_for_task(conn, ctx, *lineage_task, through, TASK_CLAIM_LIMIT)?;
+        total_claims = total_claims.saturating_add(task_claims.len().saturating_add(omitted));
+        claims.append(&mut task_claims);
+    }
+    claims.sort_by(|left, right| {
+        right
+            .claimed_at
+            .cmp(&left.claimed_at)
+            .then_with(|| right.entry.get().cmp(&left.entry.get()))
+    });
+    claims.truncate(TASK_CLAIM_LIMIT);
     for claim in &mut claims {
         claim_evidence::hydrate_claim(conn, ctx, claim, through)?;
     }
@@ -42,36 +61,39 @@ pub(in crate::board::local_board) fn task_view(
     let current_claim = current_claim_index.map(|index| claims.remove(index));
     // Claim history is newest first and excludes the separately exposed active claim.
     let history_limit = TASK_CLAIM_LIMIT.saturating_sub(1);
-    if current_claim.is_none() {
-        claims_omitted = claims_omitted.saturating_add(claims.len().saturating_sub(history_limit));
-    }
     claims.truncate(history_limit);
+    let retained_claims = claims.len() + usize::from(current_claim.is_some());
+    let claims_omitted = total_claims.saturating_sub(retained_claims);
 
     let (open_questions, oldest_open_question, oldest_open_question_at) =
-        claim_evidence::question_summary(conn, task, through)?;
-
-    let target = task.to_string();
-    let task_entry_predicate = concat!(
-        "EXISTS(SELECT 1 FROM entry_refs direct_ref WHERE direct_ref.entry_id=e.id AND direct_ref.target=?1) ",
-        "OR EXISTS(SELECT 1 FROM entry_refs reply_ref ",
-        "JOIN entries parent ON reply_ref.target='E'||parent.id ",
-        "JOIN entry_refs parent_ref ON parent_ref.entry_id=parent.id AND parent_ref.target=?1 ",
-        "WHERE reply_ref.entry_id=e.id)"
-    );
+        task_lineage::open_question_summary(conn, task, through)?;
+    let task_entry_predicate = task_lineage::entry_predicate("e.id");
+    let task_lineage_cte = task_lineage::TASK_LINEAGE_CTE;
     let entries_total: i64 = conn
         .query_row(
-            &format!("SELECT count(*) FROM entries e WHERE e.seq<=?2 AND ({task_entry_predicate})"),
-            params![target, sql_number(through.get())],
+            &format!(
+                "{task_lineage_cte} SELECT count(*) FROM entries e WHERE e.seq<=?3 AND ({task_entry_predicate})"
+            ),
+            params![
+                sql_number(task.plan.get()),
+                sql_number(task.ordinal),
+                sql_number(through.get())
+            ],
             |row| row.get(0),
         )
         .map_err(sql_error)?;
     let entry_records = entries(
         conn,
         &format!(
-            "SELECT e.id FROM entries e WHERE e.seq<=?2 AND ({task_entry_predicate}) \
-             ORDER BY e.seq DESC,e.id DESC LIMIT ?3"
+            "{task_lineage_cte} SELECT e.id FROM entries e WHERE e.seq<=?3 AND ({task_entry_predicate}) \
+             ORDER BY e.seq DESC,e.id DESC LIMIT ?4"
         ),
-        params![target, sql_number(through.get()), TASK_ENTRY_LIMIT as i64],
+        params![
+            sql_number(task.plan.get()),
+            sql_number(task.ordinal),
+            sql_number(through.get()),
+            TASK_ENTRY_LIMIT as i64
+        ],
     )?;
     let entries_omitted = usize::try_from(entries_total)
         .map_err(|_| {
@@ -82,8 +104,18 @@ pub(in crate::board::local_board) fn task_view(
         })?
         .saturating_sub(entry_records.len());
 
-    let (commits, total_commits, latest_commit_at) =
-        board_commits::linked_commits_for_task(conn, task, TASK_COMMIT_LIMIT)?;
+    let mut commits = Vec::with_capacity(lineage.len().min(TASK_COMMIT_LIMIT));
+    let mut total_commits = 0usize;
+    let mut latest_commit_at = None;
+    for lineage_task in &lineage {
+        let (mut task_commits, task_total, task_latest) =
+            board_commits::linked_commits_for_task(conn, *lineage_task, TASK_COMMIT_LIMIT)?;
+        total_commits = total_commits.saturating_add(task_total);
+        latest_commit_at = latest_commit_at.max(task_latest);
+        commits.append(&mut task_commits);
+    }
+    commits.sort_by(|left, right| right.committed_at.cmp(&left.committed_at));
+    commits.truncate(TASK_COMMIT_LIMIT);
     let commits_omitted = total_commits.saturating_sub(commits.len());
 
     Ok(TaskView {

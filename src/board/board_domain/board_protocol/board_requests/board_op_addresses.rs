@@ -7,6 +7,7 @@ impl BoardOp {
         matches!(
             self,
             Self::Inbox { after: Some(_), .. }
+                | Self::Receipt { .. }
                 | Self::Pending { .. }
                 | Self::Show { .. }
                 | Self::Search { .. }
@@ -23,6 +24,36 @@ impl BoardOp {
                 | Self::DoneTasks { .. }
                 | Self::Claims { .. }
         )
+    }
+
+    pub(crate) fn is_dedupable(&self) -> bool {
+        matches!(
+            self,
+            Self::Hello { .. }
+                | Self::New { .. }
+                | Self::Post { .. }
+                | Self::TaskCreate { .. }
+                | Self::TaskMove { .. }
+                | Self::TaskTransfer { .. }
+                | Self::PlanClose { .. }
+                | Self::PlanReopen { .. }
+                | Self::ClaimTask { .. }
+                | Self::CarveClaim { .. }
+                | Self::Propose { .. }
+                | Self::Edit { .. }
+                | Self::Accept { .. }
+                | Self::Reject { .. }
+                | Self::Feedback { .. }
+                | Self::FeedbackTriage { .. }
+                | Self::FeedbackClose { .. }
+                | Self::Grant { .. }
+                | Self::Revoke { .. }
+                | Self::WorkerAdd { .. }
+        )
+    }
+
+    pub(crate) fn has_change_receipt(&self) -> bool {
+        self.is_dedupable() && !matches!(self, Self::Hello { .. })
     }
 
     /// Concrete scopes are accepted only by these collection reads.
@@ -58,8 +89,13 @@ impl BoardOp {
     pub fn plan_id(&self) -> Option<PlanId> {
         match self {
             Self::Post { target, .. } | Self::Show { target } => target.plan_id(),
-            Self::TaskCreate { plan, .. } | Self::CarveClaim { plan, .. } => Some(*plan),
-            Self::TaskMove { task, .. } | Self::ClaimTask { task, .. } => Some(task.plan),
+            Self::TaskCreate { plan, .. }
+            | Self::CarveClaim { plan, .. }
+            | Self::PlanClose { plan, .. }
+            | Self::PlanReopen { plan, .. } => Some(*plan),
+            Self::TaskMove { task, .. }
+            | Self::TaskTransfer { task, .. }
+            | Self::ClaimTask { task, .. } => Some(task.plan),
             Self::WorkerAdd { task, .. } => Some(task.plan),
             Self::WorkerEnd { worker, .. }
             | Self::Hello {

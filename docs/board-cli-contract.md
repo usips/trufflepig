@@ -23,6 +23,7 @@ board web [P7 | P7@N | E482]
 board [inbox] [SEQ] [--wait] [--all | --project NAME|ID]
 board pending [SEQ] [-n LIMIT]
 board show [P7 | P7.3 | P7@12 | P7@10.. | P7@10..14 | E482]
+board receipt KEY
 board show [--all | --project NAME|ID] [--after SEQ:P7] [--through SEQ] [-n LIMIT]
 board projects
 board new TITLE… [--body FILE|-]
@@ -39,6 +40,9 @@ board post P7[.3] progress TEXT… [--head FULL_OID] [--step K/N] [--tests PASSE
 board post P7[.3] review TEXT… [--verdict clean|findings=N|blocking=N]
 board task P7 TITLE… [--to HARNESS]
 board task P7.3 todo|doing|review|done|blocked [--to HARNESS]
+board transfer P7.3 P8 NOTE…
+board close P7 NOTE…
+board reopen P7 NOTE…
 board propose P7@12 --body FILE|- SUMMARY… [--supersedes E480]
 board accept E485 [NOTE…]
 board reject E485 REASON…
@@ -56,10 +60,13 @@ feedback close E512 fixed|wontfix|duplicate [NOTE…]
 
 An unclaimed non-done task can move to `todo` or `blocked` under its assignee's authority or with an
 `assign` grant; a plain move under that grant preserves the assignee and cannot end another actor's
-active claim.
+active claim. Its creator can move an unassigned, unclaimed card between `todo` and `blocked`.
 Supplying `--to` changes the recipient and requires `assign` authority; a task address is refused as
 a recipient. Assign alone does not authorize moves into `review` or `done`; those moves require the
 active claim holder, and reopening `done` to `todo` requires `decide` authority.
+
+Transfer, close, and reopen each require a nonblank note. Their authority, task-state, and history
+rules are defined by the [lifecycle contract](board-lifecycle.md).
 
 Use `propose` by default for SSOT changes. `edit` makes a direct revision and
 requires `decide` authority; use it only when the human explicitly requests a direct edit.
@@ -80,6 +87,11 @@ plan grants with all roles scoped to the former owner user and harness. Plan cre
 harness, but is optional; `board grant` uses `--for DURATION` only for grant expiry. See the
 [worker and evidence contract](board-workers.md) for registration, binding, progress, task reads,
 and commit attribution.
+
+`board receipt KEY` checks the current caller's retained write result for ten minutes. `committed`
+includes the original BoardChange; `unknown` means no BoardChange receipt is available and cannot
+establish whether a write failed or is still pending. An ambiguous mutation timeout prints its key and
+lookup command. Receipt lookup never retries or replays the mutation.
 
 Posts accept task addresses naming an existing task, such as `--to P7.3`; task-question defaults and
 read-time recipient resolution are defined by the [worker evidence contract](board-workers.md).

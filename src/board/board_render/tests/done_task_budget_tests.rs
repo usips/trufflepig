@@ -7,6 +7,8 @@ fn done_tasks() -> Vec<TaskRecord> {
     (1..=40)
         .rev()
         .map(|number| TaskRecord {
+            transferred_from: None,
+            transferred_to: None,
             id: TaskId::new(plan, number).unwrap(),
             title: PlanTitle::new("completion with useful evidence ".repeat(7)).unwrap(),
             column: TaskColumn::Done,

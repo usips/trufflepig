@@ -40,7 +40,7 @@ function boardReply(op, data, seq = "40") {
   return {
     ok: true, status: 200,
     text: async () => JSON.stringify({
-      api: 11, result: { result: op, data }, snapshot_seq: seq, warnings: [],
+    api: 13, result: { result: op, data }, snapshot_seq: seq, warnings: [],
     }),
   };
 }
@@ -67,7 +67,7 @@ function seedShell() {
     item.setAttribute("name", name); item.setAttribute("content", content);
     item.content = content; document.body.append(item);
   };
-  meta("board-api", "11"); meta("board-id", "board-test");
+    meta("board-api", "13"); meta("board-id", "board-test");
   const main = document.createElement("main");
   main.id = "main"; main.setAttribute("tabindex", "-1"); document.body.append(main);
   for (const [tag, id] of [

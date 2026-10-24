@@ -22,6 +22,7 @@ mod plan_history_reads;
 pub(in crate::board::local_board) mod recipient_predicates;
 mod repository_reads;
 mod review_evidence_reads;
+pub(in crate::board::local_board) mod task_lineage;
 mod task_view_reads;
 
 pub(in crate::board::local_board) use entry_reference_reads::{
@@ -35,7 +36,8 @@ pub(in crate::board::local_board) use task_view_reads::task_view;
 
 const RECENT_ENTRIES: i64 = 20;
 const PLAN_ENTRY_CAP: u64 = 200;
-const PLAN_SELECT: &str = "SELECT id,title,owner_user,head_revision,created_at FROM plans";
+const PLAN_SELECT: &str =
+    "SELECT id,title,owner_user,head_revision,created_at,lifecycle_state FROM plans";
 const OPEN_QUESTION: &str = concat!(
     "e.kind='question' AND NOT EXISTS(SELECT 1 FROM entries answer JOIN entry_refs reference ",
     "ON reference.entry_id=answer.id WHERE answer.kind='answer' AND reference.target='E'||e.id) ",

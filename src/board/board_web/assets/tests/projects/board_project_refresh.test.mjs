@@ -20,7 +20,7 @@ function refreshHarness(handler) {
   const dom = createBoardDom(state);
   const connections = [];
   const loop = createBoardRenderLoop({
-    state, dom, main: document.getElementById("main"), apiVersion: 11,
+    state, dom, main: document.getElementById("main"), apiVersion: 13,
     getToken: () => "a".repeat(64), isExpired: () => false,
     enterExpired: () => {}, notice: () => {}, noteSeen: () => {}, wiring: {},
     setConnection: (label, mode) => connections.push({ label, mode }),

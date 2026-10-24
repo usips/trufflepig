@@ -82,6 +82,17 @@ export function createBoardTaskView(context) {
     }, { now: view.server_now, ttlSecs: view.claim_ttl_secs, showZeroQuestions: true });
     add(section, el("h3", "", `Task detail · ${view.task.id}`), summary);
 
+    if (view.task.transferred_from || view.task.transferred_to) {
+      const lineage = el("p", "small muted task-transfer-lineage");
+      if (view.task.transferred_from) {
+        add(lineage, el("span", "", "Transferred from "), refLink(view.task.transferred_from));
+      }
+      if (view.task.transferred_to) {
+        add(lineage, el("span", "", "Transferred to "), refLink(view.task.transferred_to));
+      }
+      section.append(lineage);
+    }
+
     if (current) {
       section.append(workerTree(current, {
         entries: view.entries, now: view.server_now, ttlSecs: view.claim_ttl_secs,

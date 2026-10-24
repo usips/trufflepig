@@ -276,7 +276,7 @@ fn stale_claims_only_release_to_todo_or_blocked_and_record_stale_authority() {
                 actor("codex", "creator"),
                 BoardOp::TaskCreate {
                     plan,
-                    title: PlanTitle::new("Creator has no move authority").unwrap(),
+                    title: PlanTitle::new("Other actors have no move authority").unwrap(),
                     to: None,
                     section: None,
                 },
@@ -288,7 +288,7 @@ fn stale_claims_only_release_to_todo_or_blocked_and_record_stale_authority() {
     assert!(
         board
             .handle(&BoardRequest::new(
-                actor("codex", "creator"),
+                actor("codex", "unrelated-mover"),
                 BoardOp::TaskMove {
                     task: unclaimed,
                     column: TaskColumn::Blocked,

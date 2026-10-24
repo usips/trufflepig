@@ -9,8 +9,8 @@ from agent_real_router_case import AgentRealRouterCase
 class AgentInstallerConstantsTests(AgentRealRouterCase):
     def test_installer_constants_match_rust(self):
         module = self.load_installer("install_actual_constants")
-        self.assertEqual(module.BOARD_API, 11)
-        self.assertEqual(module.BOARD_SCHEMA, 11)
+        self.assertEqual(module.BOARD_API, 13)
+        self.assertEqual(module.BOARD_SCHEMA, 13)
         binary = self.real_trufflepig_binary()
         probe = subprocess.run([binary, "--board-api-version"], env=self.env, text=True,
                                capture_output=True, timeout=5)

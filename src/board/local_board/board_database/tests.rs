@@ -6,6 +6,8 @@ mod schema_nine_tests;
 mod schema_refusal_tests;
 mod schema_repair_tests;
 mod schema_ten_tests;
+mod schema_thirteen_tests;
+mod schema_twelve_tests;
 
 pub(super) use schema_refusal_tests::upgrade_schema_before_lock;
 
@@ -69,6 +71,14 @@ fn shipped_migration_steps_are_byte_pinned() {
     assert_eq!(
         pin(SCHEMA_V11),
         "617a1c1e99f3e8307d0bd8e7bbffe7f29c9b5984f8d46be72d1e6b5a0e583624"
+    );
+    assert_eq!(
+        pin(SCHEMA_V12),
+        "8f5948219476f94f1693063521d01e9b94eb2de7948cb39b1ba544d0a2c7dfdb"
+    );
+    assert_eq!(
+        pin(SCHEMA_V13),
+        "1963aac44d5e1f550c3eef6c839467f4760d48468fdcb42b773ffc441dc9f08e"
     );
 }
 

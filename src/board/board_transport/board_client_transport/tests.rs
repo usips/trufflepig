@@ -1,3 +1,4 @@
+mod ambiguous_write_tests;
 mod local_access_tests;
 mod no_daemon_tests;
 mod router_api_version_tests;

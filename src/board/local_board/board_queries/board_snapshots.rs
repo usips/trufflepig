@@ -1,5 +1,8 @@
 //! Committed read snapshots and query-only dispatch.
 
+#[cfg(test)]
+mod tests;
+
 use super::super::*;
 use super::{board_reads, board_search, collection_nested, collection_reads};
 
@@ -48,6 +51,15 @@ impl LocalBoard {
             authority: None,
         };
         let mut reply = match &request.op {
+            BoardOp::Receipt { key } => BoardReply::new(
+                "local",
+                BoardResult::Receipt(board_writes::board_receipts::read_receipt(
+                    &tx,
+                    *key,
+                    ctx.actor_id,
+                    ctx.now,
+                )?),
+            ),
             BoardOp::Inbox {
                 after,
                 limit,

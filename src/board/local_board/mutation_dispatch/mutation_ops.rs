@@ -8,6 +8,21 @@ pub(super) fn apply_mutation(
     request: &BoardRequest,
 ) -> Result<BoardReply, BoardError> {
     match &request.op {
+        BoardOp::TaskCreate { plan, .. } | BoardOp::CarveClaim { plan, .. } => {
+            board_writes::plan_lifecycle::require_open(tx, *plan)?;
+        }
+        BoardOp::TaskMove { task, .. }
+        | BoardOp::ClaimTask { task, .. }
+        | BoardOp::WorkerAdd { task, .. } => {
+            board_writes::plan_lifecycle::require_open(tx, task.plan)?;
+            board_writes::task_transfers::require_current(tx, *task)?;
+        }
+        BoardOp::Propose { base, .. } | BoardOp::Edit { base, .. } => {
+            board_writes::plan_lifecycle::require_open(tx, base.plan)?;
+        }
+        _ => {}
+    }
+    match &request.op {
         BoardOp::Hello {
             model,
             effort,
@@ -89,6 +104,17 @@ pub(super) fn apply_mutation(
         BoardOp::TaskMove { task, column, to } => {
             board_writes::task_writes::move_task(tx, ctx, *task, *column, to.as_ref())
         }
+        BoardOp::TaskTransfer {
+            task,
+            destination,
+            note,
+        } => board_writes::task_transfers::transfer_task(tx, ctx, *task, *destination, note),
+        BoardOp::PlanClose { plan, note } => {
+            board_writes::plan_lifecycle::close_plan(tx, ctx, *plan, note)
+        }
+        BoardOp::PlanReopen { plan, note } => {
+            board_writes::plan_lifecycle::reopen_plan(tx, ctx, *plan, note)
+        }
         BoardOp::ClaimTask {
             task,
             scope,
@@ -137,6 +163,7 @@ pub(super) fn apply_mutation(
             board_writes::entry_writes::register_repo(tx, ctx, registration)
         }
         BoardOp::Show { .. }
+        | BoardOp::Receipt { .. }
         | BoardOp::Pending { .. }
         | BoardOp::Search { .. }
         | BoardOp::Review { .. }

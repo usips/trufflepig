@@ -1,4 +1,7 @@
 //! Parses board commands, including inbox and local commit ingestion.
+#[cfg(test)]
+mod tests;
+
 use super::{
     BoardCommand, BoardTextPayload, board_read_parser,
     board_syntax_validation::{check_flags, fixed_words, optional_text, word},
@@ -55,6 +58,24 @@ pub(super) fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Re
         }
         "task" => parse_task(options, payload)?,
         "claim" => parse_claim(options, payload)?,
+        "transfer" => {
+            check_flags(options, &["text"])?;
+            BoardOp::TaskTransfer {
+                task: word(options, 2, "board transfer P7.3 P8 NOTE...")?.parse()?,
+                destination: word(options, 3, "board transfer P7.3 P8 NOTE...")?.parse()?,
+                note: EntryText::new(payload.text.clone())?,
+            }
+        }
+        "close" | "reopen" => {
+            check_flags(options, &["text"])?;
+            let plan = word(options, 2, "board close|reopen P7 NOTE...")?.parse()?;
+            let note = EntryText::new(payload.text.clone())?;
+            if verb == "close" {
+                BoardOp::PlanClose { plan, note }
+            } else {
+                BoardOp::PlanReopen { plan, note }
+            }
+        }
         "propose" | "edit" => {
             if verb == "propose" {
                 check_flags(options, &["body", "text", "supersedes"])?;
@@ -145,7 +166,7 @@ pub(super) fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Re
         value if value.parse::<u64>().is_ok() => return parse_inbox(options, 1),
         _ => bail!(concat!(
             "usage: board hello|inbox|show|done|feed|attention|history|search|web|claim|post|task|propose",
-            "|review|accept|reject|edit|new|ingest|link|unlink|grant|revoke|bye|pending|worker|projects"
+            "|review|accept|reject|edit|new|ingest|link|unlink|grant|revoke|bye|pending|worker|projects|transfer|close|reopen"
         )),
     };
     Ok(BoardCommand::Op(op))

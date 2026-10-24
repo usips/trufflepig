@@ -68,6 +68,7 @@ pub(crate) fn validate_board_surface(options: &Arguments) -> Result<()> {
         ("no-rerank", options.no_rerank),
         ("member", options.member.is_some()),
         ("cache", options.cache.is_some()),
+        ("no-cache", options.no_cache),
     ] {
         if present {
             bail!("invalid_options: --{flag} is not valid for a board command");

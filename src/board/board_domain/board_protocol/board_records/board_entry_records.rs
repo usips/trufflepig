@@ -136,5 +136,7 @@ pub struct BoardChange {
     pub plan: Option<PlanId>,
     pub revision: Option<PlanRevision>,
     pub task: Option<TaskId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transferred_to: Option<TaskId>,
     pub deduplicated: bool,
 }

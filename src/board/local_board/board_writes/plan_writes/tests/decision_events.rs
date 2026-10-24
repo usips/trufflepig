@@ -96,7 +96,8 @@ fn proposal_decisions_broadcast_to_author_and_other_participants() {
 
 #[test]
 fn proposal_decisions_preserve_maximum_bodies_and_bound_broadcast_summaries() {
-    for detail in ["x".repeat(4096), "é".repeat(2048)] {
+    let limit = crate::board::board_vocabulary::ENTRY_TEXT_LIMIT;
+    for detail in ["x".repeat(limit), "é".repeat(limit / 2)] {
         for accept in [true, false] {
             let (_directory, mut board) = database();
             let plan = plan(&mut board);
@@ -150,7 +151,7 @@ fn proposal_decisions_preserve_maximum_bodies_and_bound_broadcast_summaries() {
                 .find(|event| event.seq == decision.seq)
                 .unwrap();
             assert_eq!(event.to, None);
-            assert!(event.summary.as_str().len() <= 4096);
+            assert!(event.summary.as_str().len() <= limit);
             assert!(event.summary.as_str().contains(&proposer.identity()));
             assert!(event.summary.as_str().contains(&proposal.entry.to_string()));
             assert!(event.summary.as_str().ends_with("..."));

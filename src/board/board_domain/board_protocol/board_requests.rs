@@ -14,8 +14,8 @@ use crate::board::{
 };
 use crate::identity::GitOid;
 use anyhow::{Result, bail};
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use serde::{Deserialize, Serialize, de};
+use std::{fmt, path::PathBuf, str::FromStr};
 
 mod board_op_addresses;
 mod board_op_validation;
@@ -43,6 +43,73 @@ pub struct BoardRequest {
     observed_peer_ip: Option<std::net::IpAddr>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct BoardRequestKey([u8; 32]);
+
+impl BoardRequestKey {
+    fn from_bytes(bytes: &[u8]) -> Self {
+        Self(*blake3::hash(bytes).as_bytes())
+    }
+}
+
+impl fmt::Display for BoardRequestKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for byte in self.0 {
+            write!(formatter, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
+
+impl FromStr for BoardRequestKey {
+    type Err = String;
+
+    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
+        if value.len() != 64 {
+            return Err("board receipt key must contain 64 hexadecimal characters".into());
+        }
+        let mut bytes = [0; 32];
+        for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+            let high = hex_nibble(pair[0]).ok_or_else(|| {
+                "board receipt key must contain only hexadecimal characters".to_owned()
+            })?;
+            let low = hex_nibble(pair[1]).ok_or_else(|| {
+                "board receipt key must contain only hexadecimal characters".to_owned()
+            })?;
+            bytes[index] = (high << 4) | low;
+        }
+        Ok(Self(bytes))
+    }
+}
+
+impl Serialize for BoardRequestKey {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for BoardRequestKey {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        value.parse().map_err(de::Error::custom)
+    }
+}
+
+fn hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgentClaims {
@@ -62,6 +129,22 @@ impl BoardRequest {
             trusted_head: None,
             observed_peer_ip: None,
         }
+    }
+
+    pub(crate) fn dedupe_key(&self) -> Result<BoardRequestKey> {
+        let bytes = if let BoardOp::Feedback {
+            kind,
+            summary,
+            body,
+            plan,
+            ..
+        } = &self.op
+        {
+            serde_json::to_vec(&(kind, summary, body, plan))?
+        } else {
+            serde_json::to_vec(self)?
+        };
+        Ok(BoardRequestKey::from_bytes(&bytes))
     }
 
     pub(crate) fn system(actor: BoardActor, op: BoardOp) -> Self {
@@ -161,6 +244,9 @@ pub enum BoardOp {
         after: Option<EventSeq>,
         limit: usize,
         scope: ReadScope,
+    },
+    Receipt {
+        key: BoardRequestKey,
     },
     AcknowledgeInbox {
         rendered_through: EventSeq,
@@ -292,6 +378,19 @@ pub enum BoardOp {
         task: TaskId,
         column: TaskColumn,
         to: Option<BoardRecipient>,
+    },
+    TaskTransfer {
+        task: TaskId,
+        destination: PlanId,
+        note: EntryText,
+    },
+    PlanClose {
+        plan: PlanId,
+        note: EntryText,
+    },
+    PlanReopen {
+        plan: PlanId,
+        note: EntryText,
     },
     ClaimTask {
         task: TaskId,

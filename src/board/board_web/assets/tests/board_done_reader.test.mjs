@@ -28,12 +28,12 @@ function harness(ordinalTasks = false, planId = "P7") {
     return { data, seq: "40", warnings: [] };
   };
   const reader = createBoardReader({
-    state, board, dom: { planId: ref => /^P\d+/.exec(ref)?.[0] }, apiVersion: 11,
+    state, board, dom: { planId: ref => /^P\d+/.exec(ref)?.[0] }, apiVersion: 13,
     views: {
       renderDone: (data, route) => ({ data, route, offset: state.clockOffsetMs }),
       renderPlan: (_, __, data, route) => ({ data, route, offset: state.clockOffsetMs }),
     },
-    jsonFetch: async () => ({ api: 11, html: "", headings: [], snapshot_seq: "40" }),
+    jsonFetch: async () => ({ api: 13, html: "", headings: [], snapshot_seq: "40" }),
     readOp: (op, fields = {}) => ({ op, ...fields }), snapshotSeq: reply => reply.seq ?? null,
     minimumSeq: () => "40", parseBoardJson: JSON.parse, queryFilters: () => ({}),
   });

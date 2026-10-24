@@ -39,6 +39,7 @@ Plans:
   board hello MODEL [EFFORT] --worker P7.3/HANDLE  identify a worker session
   board inbox [SEQ] [--wait]  plan events and questions
   board pending [SEQ]         bounded inbox notices without service startup
+  board receipt KEY          read the retained outcome of your Board write
   board show [P7|P7.3|P7@12|E512]  bounded overview or one plan, task, revision, or entry
   board done [P7] [--project NAME|ID]  recent completed tasks; --after SEQ:P7.N pages older
   board feed [P7] [SEQ]      frozen event pages
@@ -55,6 +56,8 @@ Plans:
   board grant --board triage --to WHO
   board revoke E# | board bye
   board task P7.3 COLUMN    move a task and release its claim
+  board transfer P7.3 P8 NOTE...  transfer a task with its history and obligations
+  board close|reopen P7 NOTE...  change plan lifecycle without accepting tasks
   board propose P7@12 --body FILE SUMMARY...  propose a plan revision
   board review P7@12 [AGENT]  assemble review evidence
   feedback KIND SUMMARY... [--body FILE]  report a workaround

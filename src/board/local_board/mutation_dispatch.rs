@@ -110,7 +110,7 @@ impl LocalBoard {
             let stored: Option<String> = tx
                 .query_row(
                     "SELECT reply_json FROM operation_dedupes WHERE dedupe_key=?1 AND created_at>=?2",
-                    params![key, now - 600],
+                    params![key, now - BOARD_WRITE_RECEIPT_RETENTION_SECS],
                     |r| r.get(0),
                 )
                 .optional()
@@ -145,10 +145,9 @@ impl LocalBoard {
                 }
             }
         }
-        // An own-holder resume refreshes the live lease without an event;
-        // predict it before the mutation runs so the receipt check below
-        // expects zero events instead of one.
-        let resume_refresh = resume_refreshes_in_place(&tx, &request.op, actor_id)?;
+        // Own-holder resumes and scope replacements refresh the live claim
+        // without an event; predict them so the receipt check expects zero.
+        let claim_refresh = claim_refreshes_in_place(&tx, &request.op, actor_id)?;
         let mut reply = mutation_ops::apply_mutation(&tx, &ctx, request)?;
         #[cfg(test)]
         if std::mem::take(&mut self.panic_after_write) {
@@ -171,16 +170,12 @@ impl LocalBoard {
                 .map_err(sql_error)?;
             let replay =
                 matches!(&reply.result, BoardResult::Change(change) if change.deduplicated);
-            let expected = if resume_refresh {
-                0
-            } else {
-                i64::from(!replay)
-            };
+            let expected = if claim_refresh { 0 } else { i64::from(!replay) };
             if events != expected {
                 return Err(invalid(
                     "board_unavailable",
-                    if resume_refresh {
-                        "resume refresh must not produce an event"
+                    if claim_refresh {
+                        "claim refresh must not produce an event"
                     } else {
                         "mutation did not produce exactly one event"
                     },
@@ -191,16 +186,17 @@ impl LocalBoard {
                 .map_err(|e| invalid("board_unavailable", e.to_string()))?;
             tx.execute(
                 "DELETE FROM operation_dedupes WHERE created_at<?1",
-                [now - 600],
+                [now - BOARD_WRITE_RECEIPT_RETENTION_SECS],
             )
             .map_err(sql_error)?;
             tx.execute(
                 concat!(
-                    "INSERT INTO operation_dedupes(dedupe_key,reply_json,created_at) VALUES(?1,?2,?3) ",
+                    "INSERT INTO operation_dedupes(dedupe_key,reply_json,created_at,actor_id) VALUES(?1,?2,?3,?4) ",
                     "ON CONFLICT(dedupe_key) DO UPDATE SET reply_json=excluded.reply_json,",
-                    "created_at=excluded.created_at"
+                    "created_at=excluded.created_at,",
+                    "actor_id=COALESCE(operation_dedupes.actor_id,excluded.actor_id)"
                 ),
-                params![key, encoded, now],
+                params![key, encoded, now, actor_id],
             )
             .map_err(sql_error)?;
         }
@@ -264,23 +260,23 @@ fn task_post_target(request: &BoardRequest) -> Option<TaskId> {
     }
 }
 
-/// Whether a resume names the caller's own live lease, which `claim_task`
-/// refreshes in place without writing an event.
-fn resume_refreshes_in_place(
+/// Whether a resume or scope replacement targets the caller's own live lease,
+/// which `claim_task` refreshes in place without writing an event.
+fn claim_refreshes_in_place(
     tx: &Transaction<'_>,
     op: &BoardOp,
     actor_id: i64,
 ) -> Result<bool, BoardError> {
     let BoardOp::ClaimTask {
         task,
+        scope,
         resume,
         delegate,
-        ..
     } = op
     else {
         return Ok(false);
     };
-    if !resume.is_resuming() || delegate.is_some() {
+    if (!resume.is_resuming() && scope.is_none()) || delegate.is_some() {
         return Ok(false);
     }
     tx.query_row(

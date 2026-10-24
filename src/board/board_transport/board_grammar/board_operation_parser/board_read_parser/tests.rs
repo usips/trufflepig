@@ -146,6 +146,35 @@ fn board_collection_grammar_rejects_wrong_cursor_types_and_cross_command_flags()
 }
 
 #[test]
+fn receipt_grammar_requires_a_full_hexadecimal_request_key() {
+    use crate::board::board_grammar::{BoardCommand, parse as board_parse};
+    use crate::board::board_protocol::BoardOp;
+
+    let key = "ab".repeat(32);
+    let args = ["board", "receipt", &key].map(str::to_owned);
+    let BoardCommand::Op(BoardOp::Receipt { key: parsed }) =
+        board_parse(&parse(&args).unwrap(), None).unwrap()
+    else {
+        panic!("expected receipt lookup");
+    };
+    assert_eq!(parsed.to_string(), key);
+    let operation = BoardOp::Receipt { key: parsed };
+    assert!(operation.is_read_only());
+    let encoded = serde_json::to_string(&operation).unwrap();
+    assert!(encoded.contains(&format!("\"key\":\"{key}\"")));
+    assert_eq!(
+        serde_json::from_str::<BoardOp>(&encoded).unwrap(),
+        operation
+    );
+
+    let non_hex = "z".repeat(64);
+    for invalid in ["short", non_hex.as_str()] {
+        let args = ["board", "receipt", invalid].map(str::to_owned);
+        assert!(board_parse(&parse(&args).unwrap(), None).is_err());
+    }
+}
+
+#[test]
 fn board_search_round_trip_preserves_raw_query_and_plan_scope() {
     use crate::board::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
     use crate::board::board_protocol::BoardOp;

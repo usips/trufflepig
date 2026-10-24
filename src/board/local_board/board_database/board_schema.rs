@@ -2,12 +2,16 @@
 
 mod board_schema_v10;
 mod board_schema_v11;
+mod board_schema_v12;
+mod board_schema_v13;
 mod board_search_schema;
 pub(super) use board_schema_v10::SCHEMA_V10;
 pub(super) use board_schema_v11::SCHEMA_V11;
+pub(super) use board_schema_v12::SCHEMA_V12;
+pub(super) use board_schema_v13::SCHEMA_V13;
 pub(super) use board_search_schema::{SCHEMA_V3, SCHEMA_V6};
 
-pub const SCHEMA_VERSION: i64 = 11;
+pub const SCHEMA_VERSION: i64 = 13;
 
 pub(super) const SCHEMA_V1: &str = r#"
 CREATE TABLE board_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);

@@ -566,7 +566,7 @@ fn body_preflight_rejects_bad_grammar_before_client_reads() {
     validate_before_body(&feedback).unwrap();
     assert_eq!(
         body_limit(&feedback),
-        crate::board::board_vocabulary::ENTRY_TEXT_LIMIT
+        crate::board::board_vocabulary::FEEDBACK_TEXT_LIMIT
     );
     let plan = parse(&[
         "board".into(),

@@ -10,7 +10,7 @@ pub(super) use diff_lines::diff_lines;
 pub(super) use line_cells::{cell, footer, recipient};
 pub(super) use record_lines::{claim_line, entry_line};
 
-use crate::board::board_protocol::{BoardResult, FeedbackVia, InboxWait};
+use crate::board::board_protocol::{BoardReceiptState, BoardResult, FeedbackVia, InboxWait};
 use line_cells::{author, source_suffix, vendor_suffix};
 use record_lines::{plan_lines, revision_lines};
 use std::fmt::Write;
@@ -147,6 +147,28 @@ pub(super) fn lines_result(result: &BoardResult) -> String {
             change.deduplicated
         )
         .unwrap(),
+        BoardResult::Receipt(receipt) => match (receipt.state, &receipt.change) {
+            (BoardReceiptState::Committed, Some(change)) => writeln!(
+                text,
+                "receipt key={} committed entry={} seq={} plan={} revision={} task={}",
+                receipt.key,
+                change.entry,
+                change.seq,
+                change.plan.map_or_else(|| "-".into(), |value| value.to_string()),
+                change
+                    .revision
+                    .map_or_else(|| "-".into(), |value| value.to_string()),
+                change.task.map_or_else(|| "-".into(), |value| value.to_string())
+            )
+            .unwrap(),
+            (BoardReceiptState::Unknown, None) => writeln!(
+                text,
+                "receipt key={} unknown; no BoardChange receipt is available; this does not establish whether the write failed or is still pending",
+                receipt.key
+            )
+            .unwrap(),
+            _ => text.push_str("invalid Board receipt response\n"),
+        },
         BoardResult::Feedback(feedback) => {
             text.push_str("feedback\n");
             for report in &feedback.feedback {

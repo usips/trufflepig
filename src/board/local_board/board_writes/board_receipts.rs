@@ -3,47 +3,61 @@
 use super::super::*;
 
 pub(in crate::board::local_board) fn is_dedupable(op: &BoardOp) -> bool {
-    matches!(
-        op,
-        BoardOp::Hello { .. }
-            | BoardOp::New { .. }
-            | BoardOp::Post { .. }
-            | BoardOp::TaskCreate { .. }
-            | BoardOp::TaskMove { .. }
-            | BoardOp::ClaimTask { .. }
-            | BoardOp::CarveClaim { .. }
-            | BoardOp::Propose { .. }
-            | BoardOp::Edit { .. }
-            | BoardOp::Accept { .. }
-            | BoardOp::Reject { .. }
-            | BoardOp::Feedback { .. }
-            | BoardOp::FeedbackTriage { .. }
-            | BoardOp::FeedbackClose { .. }
-            | BoardOp::Grant { .. }
-            | BoardOp::Revoke { .. }
-            | BoardOp::WorkerAdd { .. }
-    )
+    op.is_dedupable()
 }
 
 pub(in crate::board::local_board) fn request_dedupe_key(
     request: &BoardRequest,
 ) -> Result<String, BoardError> {
-    if let BoardOp::Feedback {
-        kind,
-        summary,
-        body,
-        plan,
-        ..
-    } = &request.op
-    {
-        let bytes = serde_json::to_vec(&(kind, summary, body, plan))
-            .map_err(|error| invalid("board_unavailable", error.to_string()))?;
-        return Ok(blake3::hash(&bytes).to_hex().to_string());
+    request
+        .dedupe_key()
+        .map(|key| key.to_string())
+        .map_err(|error| invalid("board_unavailable", error.to_string()))
+}
+
+pub(in crate::board::local_board) fn read_receipt(
+    tx: &rusqlite::Transaction<'_>,
+    key: BoardRequestKey,
+    actor_id: i64,
+    now: i64,
+) -> Result<BoardReceipt, BoardError> {
+    let key_text = key.to_string();
+    let stored: Option<String> = tx
+        .query_row(
+            concat!(
+                "SELECT reply_json FROM operation_dedupes ",
+                "WHERE dedupe_key=?1 AND actor_id=?2 AND created_at>=?3"
+            ),
+            rusqlite::params![
+                key_text,
+                actor_id,
+                now.saturating_sub(BOARD_WRITE_RECEIPT_RETENTION_SECS)
+            ],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(sql_error)?;
+    let Some(stored) = stored else {
+        return Ok(unknown_receipt(key));
+    };
+    let reply: BoardReply = serde_json::from_str(&stored)
+        .map_err(|error| invalid("board_unavailable", error.to_string()))?;
+    let BoardResult::Change(change) = reply.result else {
+        return Ok(unknown_receipt(key));
+    };
+    Ok(BoardReceipt {
+        key,
+        state: BoardReceiptState::Committed,
+        change: Some(change),
+    })
+}
+
+fn unknown_receipt(key: BoardRequestKey) -> BoardReceipt {
+    BoardReceipt {
+        key,
+        state: BoardReceiptState::Unknown,
+        change: None,
     }
-    let canonical = request.clone();
-    let bytes =
-        serde_json::to_vec(&canonical).map_err(|e| invalid("board_unavailable", e.to_string()))?;
-    Ok(blake3::hash(&bytes).to_hex().to_string())
 }
 
 pub(in crate::board::local_board) fn receipt_current(

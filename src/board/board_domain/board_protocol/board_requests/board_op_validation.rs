@@ -7,7 +7,9 @@ use crate::board::{
         COAUTHOR_LIMIT, LINK_LIMIT, PROGRESS_ETA_LIMIT_SECS, TaskOrder, WORKER_FILE_LIMIT,
         WORKER_FILE_PATH_LIMIT, WORKER_REF_LIMIT, bounded_metadata, validate_claim,
     },
-    board_vocabulary::{AuthorityRole, ENTRY_TEXT_LIMIT, EntryKind},
+    board_vocabulary::{
+        AuthorityRole, ENTRY_TEXT_LIMIT, EntryKind, FEEDBACK_TEXT_LIMIT, TaskColumn,
+    },
 };
 use anyhow::{Result, bail};
 
@@ -15,8 +17,21 @@ impl BoardOp {
     pub fn validate(&self) -> Result<()> {
         match self {
             Self::Post { target, .. } | Self::Show { target } => target.validate()?,
-            Self::TaskMove { task, .. }
-            | Self::ClaimTask { task, .. }
+            Self::TaskMove { task, column, .. } => {
+                task.validate()?;
+                if *column == TaskColumn::Transferred {
+                    bail!("invalid_state: transferred is a read-only task column");
+                }
+            }
+            Self::TaskTransfer {
+                task, destination, ..
+            } => {
+                task.validate()?;
+                if task.plan == *destination {
+                    bail!("invalid_reference: task transfer requires a different destination plan");
+                }
+            }
+            Self::ClaimTask { task, .. }
             | Self::WorkerAdd { task, .. }
             | Self::UnlinkCommit { task, .. } => task.validate()?,
             Self::Propose { base, .. } | Self::Edit { base, .. } | Self::Review { base, .. } => {
@@ -136,7 +151,8 @@ impl BoardOp {
                     || !(1..=50).contains(limit) =>
             {
                 bail!(
-                    "invalid_options: search requires a nonblank query of at most 4096 bytes and a limit of 1..50"
+                    "invalid_options: search requires a nonblank query of at most {} bytes and a limit of 1..50",
+                    ENTRY_TEXT_LIMIT
                 )
             }
             Self::Feed { limit, .. } if !(1..=500).contains(limit) => {
@@ -266,8 +282,8 @@ impl BoardOp {
             } => {
                 let length = summary.as_str().len()
                     + body.as_ref().map_or(0, |text| text.as_str().len() + 2);
-                if length > ENTRY_TEXT_LIMIT {
-                    bail!("invalid_body: feedback text exceeds 4096 bytes");
+                if length > FEEDBACK_TEXT_LIMIT {
+                    bail!("invalid_body: feedback text exceeds {FEEDBACK_TEXT_LIMIT} bytes");
                 }
                 metadata.validate()?;
             }
@@ -372,4 +388,96 @@ fn validate_commit_metadata(commit: &crate::board::board_protocol::LinkedCommit)
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::board::board_ids::PlanId;
+    use crate::board::board_protocol::FeedbackMetadata;
+    use crate::board::board_vocabulary::{EntryText, FeedbackKind};
+
+    fn feedback_op(summary: &str, body: Option<&str>) -> BoardOp {
+        BoardOp::Feedback {
+            kind: FeedbackKind::Missing,
+            summary: EntryText::new(summary).unwrap(),
+            body: body.map(|text| EntryText::new(text).unwrap()),
+            plan: None,
+            metadata: FeedbackMetadata {
+                version: "test".into(),
+                cwd: "/workspace".into(),
+                ..FeedbackMetadata::default()
+            },
+            import_key: None,
+        }
+    }
+
+    #[test]
+    fn feedback_aggregate_stays_4k_with_32k_entry_text() {
+        assert_eq!(ENTRY_TEXT_LIMIT, 32768);
+        assert_eq!(FEEDBACK_TEXT_LIMIT, 4096);
+        assert!(EntryText::new("x".repeat(FEEDBACK_TEXT_LIMIT + 1)).is_ok());
+        assert!(
+            feedback_op(&"s".repeat(3000), Some(&"b".repeat(1094)))
+                .validate()
+                .is_ok()
+        );
+        assert!(
+            feedback_op(&"s".repeat(3000), Some(&"b".repeat(1095)))
+                .validate()
+                .is_err()
+        );
+        assert!(
+            feedback_op(&"é".repeat(1000), Some(&"é".repeat(1047)))
+                .validate()
+                .is_ok()
+        );
+        assert!(
+            feedback_op(&"é".repeat(1000), Some(&"é".repeat(1048)))
+                .validate()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn task_transfer_requires_another_plan_and_transferred_is_not_a_move_target() {
+        let plan = PlanId::new(1).unwrap();
+        let task = TaskId::new(plan, 1).unwrap();
+        let note = EntryText::new("transfer reason").unwrap();
+        let same_plan = BoardOp::TaskTransfer {
+            task,
+            destination: plan,
+            note: note.clone(),
+        };
+        assert!(same_plan.validate().is_err());
+
+        let cross_plan = BoardOp::TaskTransfer {
+            task,
+            destination: PlanId::new(2).unwrap(),
+            note,
+        };
+        assert!(cross_plan.validate().is_ok());
+
+        let derived_column_move = BoardOp::TaskMove {
+            task,
+            column: TaskColumn::Transferred,
+            to: None,
+        };
+        assert!(derived_column_move.validate().is_err());
+    }
+
+    #[test]
+    fn plan_lifecycle_notes_use_the_general_entry_text_cap() {
+        let plan = PlanId::new(1).unwrap();
+        let note = EntryText::new("n".repeat(ENTRY_TEXT_LIMIT)).unwrap();
+        assert!(
+            BoardOp::PlanClose {
+                plan,
+                note: note.clone()
+            }
+            .validate()
+            .is_ok()
+        );
+        assert!(BoardOp::PlanReopen { plan, note }.validate().is_ok());
+    }
 }

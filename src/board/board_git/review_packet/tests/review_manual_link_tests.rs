@@ -32,6 +32,8 @@ fn commit_entry(commit: &LinkedCommit, session: &str) -> EntryRecord {
 
 fn task_record(plan: PlanId, ordinal: u64) -> TaskRecord {
     TaskRecord {
+        transferred_from: None,
+        transferred_to: None,
         id: TaskId::new(plan, ordinal).unwrap(),
         title: PlanTitle::new(format!("Review task {ordinal}")).unwrap(),
         column: TaskColumn::Doing,

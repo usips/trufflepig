@@ -98,6 +98,7 @@ fn review_packet() -> ReviewPacket {
     let head = PlanRevision::new(plan, 2).unwrap();
     ReviewPacket {
         plan: PlanRecord {
+            lifecycle_state: crate::board::board_protocol::PlanLifecycleState::Open,
             id: plan,
             title: PlanTitle::new("Review trial").unwrap(),
             owner_user: "josh".into(),

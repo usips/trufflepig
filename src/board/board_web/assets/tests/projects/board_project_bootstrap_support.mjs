@@ -73,7 +73,7 @@ export function setupProjectPage({ hash = "#/", storedProject = "", handler } = 
   resetDomShim();
   globalThis.setInterval = () => 0;
   let url = new URL(`https://board.test/${hash}`);
-  for (const [name, content] of [["board-api", "11"], ["board-id", "project-fixture"]]) {
+  for (const [name, content] of [["board-api", "13"], ["board-id", "project-fixture"]]) {
     const meta = document.createElement("meta");
     meta.setAttribute("name", name); meta.content = content; document.body.append(meta);
   }
@@ -108,7 +108,7 @@ export function setupProjectPage({ hash = "#/", storedProject = "", handler } = 
     if (String(address).includes("/api/v1/events")) return new Promise(() => {});
     if (String(address).includes("/api/v1/render/")) {
       return { ok: true, status: 200, text: async () => JSON.stringify({
-        api: 11, html: "", headings: [], snapshot_seq: "100",
+    api: 13, html: "", headings: [], snapshot_seq: "100",
       }) };
     }
     const request = JSON.parse(options.body); calls.push(request);

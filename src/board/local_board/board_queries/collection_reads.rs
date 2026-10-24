@@ -31,7 +31,11 @@ use crate::board::board_vocabulary::{EntryKind, FeedbackKind};
 use rusqlite::params;
 
 const COLLECTION_LIMIT: usize = 200;
-pub(super) const ACTIVE_TASKS: &str = "t.column_name IN ('todo','doing','review','blocked')";
+pub(super) const ACTIVE_TASKS: &str = concat!(
+    "t.column_name IN ('todo','doing','review','blocked') ",
+    "AND NOT EXISTS(SELECT 1 FROM task_transfers transferred ",
+    "WHERE transferred.source_plan=t.plan_id AND transferred.source_ordinal=t.ordinal)"
+);
 
 pub(in crate::board::local_board) fn validate_limit(
     limit: usize,

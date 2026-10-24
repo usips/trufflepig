@@ -19,7 +19,10 @@ fn board_search_returns_typed_query_errors_and_bounded_plain_snippets() {
     );
     for (query, limit) in [
         (" ".to_owned(), 20),
-        ("x".repeat(4097), 20),
+        (
+            "x".repeat(crate::board::board_vocabulary::ENTRY_TEXT_LIMIT + 1),
+            20,
+        ),
         ("x\0y".to_owned(), 20),
         ("needle".to_owned(), 0),
         ("needle".to_owned(), 51),

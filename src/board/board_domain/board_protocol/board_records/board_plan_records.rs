@@ -18,6 +18,31 @@ pub struct PlanRecord {
     pub owner_user: String,
     pub head_revision: u64,
     pub created_at: i64,
+    pub lifecycle_state: PlanLifecycleState,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanLifecycleState {
+    Open,
+    Closed,
+}
+
+impl PlanLifecycleState {
+    pub fn parse(value: &str) -> Result<Self> {
+        match value {
+            "open" => Ok(Self::Open),
+            "closed" => Ok(Self::Closed),
+            _ => bail!("invalid_state: unknown plan lifecycle '{value}'"),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Closed => "closed",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -66,6 +91,10 @@ pub struct TaskRecord {
     pub section: Option<String>,
     pub seq: EventSeq,
     pub done_at: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transferred_from: Option<TaskId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transferred_to: Option<TaskId>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -172,6 +201,7 @@ pub struct PlanView {
     pub entries_next_before: Option<EntryCursor>,
     pub through: EventSeq,
     pub can_edit: bool,
+    pub can_change_lifecycle: bool,
     pub server_now: i64,
     pub claim_ttl_secs: u64,
     pub sections_without_tasks: Vec<String>,

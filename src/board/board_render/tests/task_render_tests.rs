@@ -148,6 +148,8 @@ fn detailed_task() -> TaskView {
     };
     TaskView {
         task: TaskRecord {
+            transferred_from: None,
+            transferred_to: None,
             id: task,
             title: PlanTitle::new("Renderer task").unwrap(),
             column: TaskColumn::Doing,
@@ -454,6 +456,7 @@ fn pending_lines_show_a_notice_without_one_payload_as_invalid() {
 fn plan_lines_render_grant_rows_and_manage_permission() {
     let plan_id = PlanId::new(7).unwrap();
     let plan = PlanRecord {
+        lifecycle_state: crate::board::board_protocol::PlanLifecycleState::Open,
         id: plan_id,
         title: PlanTitle::new("Grant visibility").unwrap(),
         owner_user: "josh".into(),
@@ -461,6 +464,7 @@ fn plan_lines_render_grant_rows_and_manage_permission() {
         created_at: 100,
     };
     let plan_view = PlanView {
+        can_change_lifecycle: false,
         repo_keys: Vec::new(),
         plan,
         revision: RevisionRecord {

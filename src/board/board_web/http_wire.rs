@@ -22,7 +22,53 @@ pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 /// once the first byte arrives, the whole-request deadline alone applies.
 pub(crate) const FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(2);
 pub(crate) const HEADER_LIMIT: usize = 16 * 1024;
-pub(crate) const BODY_LIMIT: usize = 160 * 1024;
+pub(crate) const BODY_LIMIT: usize = 256 * 1024;
+
+#[cfg(test)]
+mod serialized_entry_transport_tests {
+    use super::BODY_LIMIT;
+    use crate::board::{
+        board_actor::{BoardActor, HarnessLabel},
+        board_protocol::{BoardOp, BoardRequest},
+        board_vocabulary::{ENTRY_TEXT_LIMIT, EntryKind, EntryText},
+    };
+
+    #[test]
+    fn maximum_escaped_entry_fits_http_request_body_limit() {
+        let text = "\u{1}".repeat(ENTRY_TEXT_LIMIT);
+        let body = EntryText::new(text).unwrap();
+        let actor = BoardActor::new(
+            "user",
+            "host",
+            HarnessLabel::parse("codex").unwrap(),
+            "session",
+        )
+        .unwrap();
+        let request = BoardRequest::new(
+            actor,
+            BoardOp::Post {
+                target: "P1".parse().unwrap(),
+                kind: EntryKind::Note,
+                body,
+                to: None,
+                supersedes: None,
+                progress: None,
+                verdict: None,
+            },
+        );
+        let encoded = serde_json::to_vec(&request).unwrap();
+
+        assert!(
+            encoded.len() > 160 * 1024,
+            "fixture must exercise the raised bound"
+        );
+        assert!(
+            encoded.len() <= BODY_LIMIT,
+            "32 KiB entry serializes to {} bytes, over the HTTP body limit of {BODY_LIMIT}",
+            encoded.len()
+        );
+    }
+}
 
 /// Shared Content-Security-Policy header line for normal and SSE replies.
 /// A literal macro because `concat!` header blocks cannot consume a `const`.

@@ -48,6 +48,7 @@ pub(in crate::board::local_board) fn link_commit(
         return Ok(BoardReply::new(
             "local",
             BoardResult::Change(BoardChange {
+                transferred_to: None,
                 entry: plan_entry.entry,
                 seq,
                 plan: Some(plan),
@@ -122,6 +123,7 @@ pub(in crate::board::local_board) fn link_commit(
     Ok(BoardReply::new(
         "local",
         BoardResult::Change(BoardChange {
+            transferred_to: None,
             entry: plan_entry.entry,
             seq: link_ctx.seq,
             plan: Some(plan),

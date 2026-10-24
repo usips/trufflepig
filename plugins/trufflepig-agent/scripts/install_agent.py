@@ -18,8 +18,8 @@ import time
 import uuid
 
 PLUGIN = Path(__file__).resolve().parents[1]
-BOARD_API = 11
-BOARD_SCHEMA = 11
+BOARD_API = 13
+BOARD_SCHEMA = 13
 ROUTER_READY_TIMEOUT_SECONDS = 10
 sys.path.insert(0, str(PLUGIN / "bin"))
 from trufflepig_runtime import runtime_config_path

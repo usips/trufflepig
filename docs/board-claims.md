@@ -1,6 +1,7 @@
 # Revisions, tasks, and events
 
-Revision, task, claim, event, and text-bound semantics for the [board](board-contract.md).
+Revision, task, claim, event, and text-bound semantics for the [board](board-contract.md). Plan
+closeout and task succession rules live in the [lifecycle contract](board-lifecycle.md).
 
 Creation records the caller user as owner at revision 1. Proposals carry a base revision and
 complete new SSOT body. Acceptance uses compare-and-swap on the plan head, creates the next
@@ -10,8 +11,8 @@ and records its decision. Decisions broadcast to participants, naming proposal a
 proposal supersedes only an open proposal on the same plan by any session of the author's user and
 harness; replacement is atomic and retains both bodies. Open proposals flag a stale base.
 
-Task ordinals are allocated atomically per plan; columns are `todo`, `doing`, `review`, `done`, and
-`blocked`. Claiming sets `doing`, assignee, and scope; carve-and-claim is atomic. `--section`
+Task ordinals are allocated atomically per plan; stored columns are `todo`, `doing`, `review`, `done`, and
+`blocked`. `transferred` is a read-only view derived from task succession. Claiming sets `doing`, assignee, and scope; carve-and-claim is atomic. `--section`
 follows the [shared heading-title and anchor
 rules](board-web-contract.md#browser-state-and-safe-rendering). At most one unended claim exists per
 task. Active competing claims fail `claim_conflict` with holder identity, model, effort, and
@@ -33,7 +34,9 @@ and an `assign` grant to reassign a task, move an unclaimed non-done task to `to
 changing its assignee, or manage its workers. A plain move under an assign grant cannot release
 another actor's active claim; an authorized `--to` reassignment can end it as reassigned. Assign
 authority alone does not authorize moves into `review` or `done`; those moves require the active claim
-holder. Task creation, assignment, and authorship alone grant no such authority. Moving out of `doing`
+holder. Task creation, assignment, and authorship alone grant no such authority. A task's creator may
+move only their own unassigned, unclaimed task between `todo` and `blocked` without `--to`; this records
+creator authority and grants no other permission. Moving out of `doing`
 ends the claim. Delegation never names the reserved `human`, `cli`, `system`, or `git:*` harnesses.
 A delegated claim revives its holder's ended session, so the holder's `bye` releases that claim.
 Before handing work back, post progress and move the task to `todo`, unless the human requested a

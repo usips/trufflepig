@@ -36,13 +36,13 @@ it("a stored revision header retains a live timestamp", async () => {
     user: "josh", host: "board", harness: "codex", session: "timestamps",
   }, created_at: timestamp };
   const reader = createBoardReader({
-    dom, state, apiVersion: 11,
+    dom, state, apiVersion: 13,
     views: { projectChips: () => dom.el("div"), sanitizedMarkup: () => dom.el("div") },
     board: async op => ({ seq: "5", warnings: [],
       data: op.target === revision.id ? revision : { plan: { id: "P1" }, repo_keys: [] } }),
     readOp: (op, fields) => ({ op, ...fields }), snapshotSeq: reply => reply.seq,
     minimumSeq: () => "5",
-    jsonFetch: async () => ({ api: 11, html: "", headings: [], snapshot_seq: "5" }),
+    jsonFetch: async () => ({ api: 13, html: "", headings: [], snapshot_seq: "5" }),
   });
   const result = await reader.fetchRoute({ view: "plan", ref: "P1@1" });
   assertRelativeTimestamp(result.page);

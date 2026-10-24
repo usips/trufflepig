@@ -24,6 +24,8 @@ pub(in crate::board::local_board) fn plan_row(row: &Row<'_>) -> Result<PlanRecor
         owner_user: row.get(2).map_err(sql_error)?,
         head_revision: row_number(row, 3).map_err(sql_error)?,
         created_at: row.get(4).map_err(sql_error)?,
+        lifecycle_state: PlanLifecycleState::parse(&row.get::<_, String>(5).map_err(sql_error)?)
+            .map_err(BoardError::from)?,
     })
 }
 
@@ -147,6 +149,14 @@ pub(super) fn plan_view(
         }
     }
     let can_edit = crate::board::local_board::can_accept(conn, &ctx.actor, id)?;
+    let can_change_lifecycle = crate::board::local_board::board_authority::authority_for(
+        conn,
+        &ctx.actor,
+        Some(id),
+        AuthorityRole::Decide,
+        ctx.now,
+    )?
+    .is_some();
     // The before cursor anchors the recent window, not the open extras listed
     // after it, so paging continues past older non-open entries in between.
     let entries_next_before = (entries_omitted > 0)
@@ -181,6 +191,7 @@ pub(super) fn plan_view(
         entries_next_before,
         through,
         can_edit,
+        can_change_lifecycle,
         server_now: ctx.now,
         claim_ttl_secs: ctx.claim_ttl_secs.max(0) as u64,
         sections_without_tasks,

@@ -59,6 +59,111 @@ fn task_creator_and_assignee_has_no_admin_authority_without_a_grant() {
 }
 
 #[test]
+fn task_creator_can_move_own_unassigned_unclaimed_card_between_todo_and_blocked() {
+    let database = ClaimDatabase::new();
+    let mut conn = database.connect();
+    let creator = actor("josh", "codex", "creator");
+    let task = create_unassigned_task(&mut conn, &creator, 1000, "creator-owned card");
+
+    let before = persisted_counts(&conn);
+    let same_column = write(&mut conn, &creator, 1005, |tx, ctx| {
+        move_task(tx, ctx, task, TaskColumn::Todo, None)
+    })
+    .unwrap_err();
+    assert!(same_column.to_string().starts_with("invalid_actor:"));
+    assert_eq!(persisted_counts(&conn), before);
+
+    for (column, now) in [(TaskColumn::Blocked, 1010), (TaskColumn::Todo, 1020)] {
+        let reply = write(&mut conn, &creator, now, |tx, ctx| {
+            move_task(tx, ctx, task, column, None)
+        })
+        .unwrap();
+        let BoardResult::Change(change) = reply.result else {
+            panic!("expected task move change")
+        };
+        assert_eq!(read_tasks(&conn, task.plan).unwrap()[0].column, column);
+        assert_creator_authority(&conn, task, change.entry);
+    }
+}
+
+#[test]
+fn creator_move_authority_does_not_bypass_assignees_or_active_claims() {
+    let database = ClaimDatabase::new();
+    let mut conn = database.connect();
+    let creator = actor("josh", "codex", "creator");
+    let stranger = actor("other", "muse", "stranger");
+    let assignee = actor("josh", "claude", "assignee");
+    let owner = actor("josh", "human", "owner");
+
+    let unassigned = create_unassigned_task(&mut conn, &creator, 1000, "unassigned card");
+    let before = persisted_counts(&conn);
+    let error = write(&mut conn, &stranger, 1010, |tx, ctx| {
+        move_task(tx, ctx, unassigned, TaskColumn::Blocked, None)
+    })
+    .unwrap_err();
+    assert!(error.to_string().starts_with("invalid_actor:"), "{error}");
+    assert_eq!(persisted_counts(&conn), before);
+
+    let recipient = BoardRecipient::parse("muse").unwrap();
+    for (column, to, now) in [
+        (TaskColumn::Doing, Some(&recipient), 1016),
+        (TaskColumn::Review, None, 1017),
+        (TaskColumn::Done, None, 1018),
+    ] {
+        let before = persisted_counts(&conn);
+        let error = write(&mut conn, &creator, now, |tx, ctx| {
+            move_task(tx, ctx, unassigned, column, to)
+        })
+        .unwrap_err();
+        assert!(error.to_string().starts_with("invalid_actor:"), "{error}");
+        assert_eq!(persisted_counts(&conn), before);
+    }
+
+    let assign_grant = create_assign_grant(
+        &mut conn,
+        &owner,
+        &creator,
+        PlanId::new(1).unwrap(),
+        1019,
+        None,
+    );
+    let assigned = create_task_for_actor(&mut conn, &creator, &assignee, 1020, "assigned card");
+    write(&mut conn, &owner, 1025, |tx, ctx| {
+        crate::board::local_board::board_authority::write_revoke(
+            tx,
+            ctx,
+            &BoardOp::Revoke {
+                entry: assign_grant,
+            },
+        )
+    })
+    .unwrap();
+    let before = persisted_counts(&conn);
+    let error = write(&mut conn, &creator, 1030, |tx, ctx| {
+        move_task(tx, ctx, assigned, TaskColumn::Blocked, None)
+    })
+    .unwrap_err();
+    assert!(error.to_string().starts_with("invalid_actor:"), "{error}");
+    assert_eq!(persisted_counts(&conn), before);
+
+    let claimed = create_unassigned_task(&mut conn, &creator, 1040, "claimed card");
+    claim(&mut conn, &stranger, 1050, claimed, "active holder").unwrap();
+    let before = persisted_counts(&conn);
+    let error = write(&mut conn, &creator, 1060, |tx, ctx| {
+        move_task(tx, ctx, claimed, TaskColumn::Blocked, None)
+    })
+    .unwrap_err();
+    assert!(error.to_string().starts_with("invalid_actor:"), "{error}");
+    assert_eq!(persisted_counts(&conn), before);
+    let claimed_card = read_tasks(&conn, claimed.plan)
+        .unwrap()
+        .into_iter()
+        .find(|card| card.id == claimed)
+        .unwrap();
+    assert_eq!(claimed_card.column, TaskColumn::Doing);
+}
+
+#[test]
 fn assign_grant_reassignment_ends_claim_and_assigns_recipient() {
     let database = ClaimDatabase::new();
     let mut conn = database.connect();
@@ -705,4 +810,72 @@ fn assert_grant_authority(conn: &Connection, task: TaskId, entry: EntryId, grant
     let expected = ("grant".to_owned(), Some(grant));
     assert_eq!(entry_authority, expected);
     assert_eq!(event_authority, expected);
+}
+
+fn assert_creator_authority(conn: &Connection, task: TaskId, entry: EntryId) {
+    let entry_authority: (String, Option<i64>) = conn
+        .query_row(
+            "SELECT authority_basis,authority_entry FROM entries WHERE id=?1",
+            [i64::try_from(entry.get()).unwrap()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    let event_authority: (String, Option<i64>) = conn
+        .query_row(
+            "SELECT authority_basis,authority_entry FROM events WHERE subject=?1 ORDER BY seq DESC LIMIT 1",
+            [task.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    let expected = ("creator".to_owned(), None);
+    assert_eq!(entry_authority, expected);
+    assert_eq!(event_authority, expected);
+}
+
+fn create_unassigned_task(
+    conn: &mut Connection,
+    creator: &BoardActor,
+    now: i64,
+    title: &str,
+) -> TaskId {
+    let reply = write(conn, creator, now, |tx, ctx| {
+        create_task(
+            tx,
+            ctx,
+            PlanId::new(1).unwrap(),
+            &PlanTitle::new(title).unwrap(),
+            None,
+            None,
+        )
+    })
+    .unwrap();
+    let BoardResult::Change(change) = reply.result else {
+        panic!("expected task creation change")
+    };
+    change.task.unwrap()
+}
+
+fn create_task_for_actor(
+    conn: &mut Connection,
+    creator: &BoardActor,
+    assignee: &BoardActor,
+    now: i64,
+    title: &str,
+) -> TaskId {
+    let recipient = BoardRecipient::for_actor(assignee);
+    let reply = write(conn, creator, now, |tx, ctx| {
+        create_task(
+            tx,
+            ctx,
+            PlanId::new(1).unwrap(),
+            &PlanTitle::new(title).unwrap(),
+            Some(&recipient),
+            None,
+        )
+    })
+    .unwrap();
+    let BoardResult::Change(change) = reply.result else {
+        panic!("expected task creation change")
+    };
+    change.task.unwrap()
 }

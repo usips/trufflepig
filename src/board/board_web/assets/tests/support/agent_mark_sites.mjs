@@ -63,7 +63,7 @@ export function markViews() {
   const noop = () => {};
   const context = {
     state, dom, board: noop, jsonFetch: noop, navigate: noop, scheduleRefresh: noop,
-    submitMutation: noop, notice: noop, apiVersion: 11,
+    submitMutation: noop, notice: noop, apiVersion: 13,
     entryRecord: record => record?.entry && typeof record.entry === "object"
       ? record.entry : record,
     collection: (data, key) => data[key], permitted: () => false, nextAfter: () => null,
@@ -84,7 +84,7 @@ async function revisionHeadingNodes(context, views, revisions) {
       ...context, views,
       board: async op => ({ seq: "1", warnings: [], data: op.op === "show"
         ? op.target.includes("@") ? revision : { plan: { id: "P1" }, repo_keys: [] } : [] }),
-      jsonFetch: async () => ({ api: 11, html: "", headings: [], snapshot_seq: "1" }),
+    jsonFetch: async () => ({ api: 13, html: "", headings: [], snapshot_seq: "1" }),
       readOp: (op, options) => ({ op, ...options }), snapshotSeq: reply => reply.seq || null,
       minimumSeq: () => "1", cursorFromRoute: () => null, parseBoardJson: JSON.parse,
     });

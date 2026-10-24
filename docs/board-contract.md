@@ -4,9 +4,9 @@ The per-machine router serves a durable board for agent harnesses. Plans hold a 
 single source of truth (SSOT); tasks divide work; entries record agent evidence. Trufflepig
 assembles evidence, generating no prose. Board writes require no workspace configuration or source
 index; read selection follows the [Project contract](board-projects.md). Grammar, feedback, web
-access, and worker evidence live in the [CLI](board-cli-contract.md),
-[feedback](board-feedback-contract.md), [web](board-web-contract.md), and
-[worker evidence](board-workers.md) contracts. Plugin links here use `feat/trufflepig-board` until merge.
+access, worker evidence, and plan lifecycle/task succession live in the [CLI](board-cli-contract.md),
+[feedback](board-feedback-contract.md), [web](board-web-contract.md), [worker evidence](board-workers.md),
+and [lifecycle](board-lifecycle.md) contracts. Plugin links here use `feat/trufflepig-board` until merge.
 
 ## Identity, references, and authority
 
@@ -52,14 +52,13 @@ planless feedback by the grantor's owner user; see [grants](board-cli-contract.m
 
 ## Backend, transport, and deadlines
 
-Every operation uses API 11 `BoardRequest` with actor, operation, claims, and optional client origin
+Every operation uses API 13 `BoardRequest` with actor, operation, claims, and optional client origin
 `{harness, session}`. Clients cannot supply `peer_ip`; only trusted web ingress records it.
 The client forwards origin unchanged; external `system` origins are rejected. The host independently
 validates progress heads and carries that trusted value outside
 the serialized request. Replies are typed `BoardReply`. `BoardBackend` owns state and returns data;
-the edge parses, reads
-bodies, scans local Git, and renders. An API mismatch fails `board_api_mismatch` without
-negotiation. `LocalBoard` is the SQLite backend. Replies identify the backend and expose a
+the edge reads bodies, scans local Git, and renders. An API mismatch fails `board_api_mismatch`
+without negotiation. `LocalBoard` is the SQLite backend. Replies identify the backend and expose a
 read-transaction `snapshot_seq`. `ReviewEvidence.manual_links` contains per-task `ManualCommitLink {
 repo_key: RepoKey, oid: GitOid, task: TaskId, entry: EntryId, seq: Option<EventSeq>, actor:
 Option<BoardActor> }`; absent optionals preserve unknown attribution.
@@ -103,6 +102,7 @@ transient retries. `ingest`, other writes, and cursor-advancing inbox allow at m
 two attempts, and only for typed `daemon_busy` or database-lock errors proving no write happened.
 Retry uses typed codes, never prose. Write dedupe lasts ten minutes, keyed by actor/kind and
 normalized target/body/parameters; feedback has a global content key. Repeats return the original result.
+Receipt readback and unknown outcomes follow the [CLI contract](board-cli-contract.md#commands).
 
 Stable error prefixes: `stale_revision`, `claim_conflict`, `board_unavailable`, `schema_newer`,
 `invalid_reference`, `invalid_kind`, `invalid_body`, `invalid_actor`, `invalid_state`,
@@ -180,9 +180,9 @@ Storage defaults to `$XDG_DATA_HOME/trufflepig/board.sqlite3`, else the passwd h
 0700 applies only to board-created directories (a fresh account's missing `~/.local` and
 `~/.local/share` ancestors), and a pre-existing group/world-accessible parent is refused — open
 paths never chmod, read paths never modify the filesystem. The DB records its resolved path and uses
-forward `user_version` migrations; shipped steps 1–11 are immutable and byte-pinned. Schema 11 adds nullable
-`origin_ip` columns to `entries` and `events` and clears API dedupe replies. Schema 10 upgrades v9 in one
-transaction. It preserves actor rows, entries, references, manual link receipts, session cursors, and claims
+forward `user_version` migrations; shipped steps 1–13 are immutable and byte-pinned. Schema 13 adds plan lifecycle state and immutable task succession; see the [lifecycle contract](board-lifecycle.md).
+Schema 12 adds nullable request-actor attribution to retained operation receipts; pre-v12 rows have unknown ownership and are not returned by receipt readback. Dedupe replay and permanent feedback imports remain available.
+Schema 11 adds nullable `origin_ip` columns to `entries` and `events` and clears API dedupe replies. Schema 10 upgrades v9 atomically. It preserves actor rows, entries, references, manual link receipts, session cursors, and claims
 without rewriting historical actors; clears API 9 dedupe replies; and appends a system-authored Grant
 entry/event for each legacy steward before dropping `plans.steward`. Each migrated grant carries all five roles,
 no expiry, and the former owner-user, harness, and plan scope. Origin, grant, worker, progress, verdict, and

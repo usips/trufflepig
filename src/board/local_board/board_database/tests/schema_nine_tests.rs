@@ -30,20 +30,20 @@ fn v10_drops_backfill_index_and_preserves_manual_link_history() {
         !backfill_index_exists(&migrated),
         "schema v10 must drop the backfill-only events_manual_commit_lookup index"
     );
-    assert_eq!(schema_version(&migrated), 11);
+    assert_eq!(schema_version(&migrated), SCHEMA_VERSION);
     assert_eq!(DurableLinkSnapshot::read(&migrated), evidence_before);
     assert_integrity(&migrated);
     drop(migrated);
 
     let (reopened, _) = open(&path).unwrap();
-    assert_eq!(schema_version(&reopened), 11);
+    assert_eq!(schema_version(&reopened), SCHEMA_VERSION);
     assert!(!backfill_index_exists(&reopened));
     assert_eq!(DurableLinkSnapshot::read(&reopened), evidence_before);
     assert_integrity(&reopened);
 }
 
 #[test]
-fn fresh_schema_eleven_keeps_durable_indexes_and_integrity() {
+fn fresh_schema_thirteen_keeps_durable_indexes_and_integrity() {
     let directory = directory();
     let path = directory.path().join("board.sqlite3");
     let (connection, _) = open(&path).unwrap();
@@ -51,8 +51,8 @@ fn fresh_schema_eleven_keeps_durable_indexes_and_integrity() {
         !backfill_index_exists(&connection),
         "fresh databases must not retain the manual-link backfill index"
     );
-    assert_eq!(schema_version(&connection), 11);
-    assert_eq!(SCHEMA_VERSION, 11);
+    assert_eq!(schema_version(&connection), SCHEMA_VERSION);
+    assert_eq!(SCHEMA_VERSION, 13);
     let indexes = connection
         .prepare("SELECT name FROM sqlite_schema WHERE type='index' AND tbl_name='events'")
         .unwrap()

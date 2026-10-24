@@ -62,7 +62,7 @@ pub(in crate::board::local_board) fn overview(
     };
     let candidates = format!(
         concat!(
-            "WITH candidates AS (SELECT p.id,p.title,p.owner_user,p.head_revision,p.created_at,",
+            "WITH candidates AS (SELECT p.id,p.title,p.owner_user,p.head_revision,p.created_at,p.lifecycle_state,",
             "coalesce((SELECT max(e.seq) FROM events e WHERE e.plan_id=p.id AND e.seq<=?5),",
             "(SELECT initial.seq FROM revisions initial WHERE initial.plan_id=p.id AND initial.number=1 ",
             "AND initial.seq<=?5)) AS activity_seq FROM plans p WHERE {membership} ",
@@ -76,7 +76,7 @@ pub(in crate::board::local_board) fn overview(
     let mut statement = conn
         .prepare(&format!(
             concat!(
-                "{candidates} SELECT id,title,owner_user,head_revision,created_at,activity_seq ",
+                "{candidates} SELECT id,title,owner_user,head_revision,created_at,lifecycle_state,activity_seq ",
                 "FROM candidates WHERE {keyset} ORDER BY activity_seq DESC,id DESC LIMIT ?6"
             ),
             candidates = candidates,
@@ -97,7 +97,7 @@ pub(in crate::board::local_board) fn overview(
     while let Some(row) = rows.next().map_err(sql_error)? {
         records.push((
             board_reads::plan_row(row)?,
-            EventSeq::new(row_number(row, 5).map_err(sql_error)?),
+            EventSeq::new(row_number(row, 6).map_err(sql_error)?),
         ));
     }
     let next_after = if records.len() > limit {

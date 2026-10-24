@@ -20,24 +20,26 @@ pub use board_progress::{
     ProgressInput, ProgressStep, ProgressTests,
 };
 pub use board_records::{
-    BoardChange, BoardReply, BoardResult, BoardSearchHit, BoardSearchReply, BoardSearchSource,
-    COAUTHOR_LIMIT, ClaimEndReason, ClaimRecord, CommitClaimBasis, CommitClaimLink, CommitCoauthor,
-    CommitLinkResult, CommitPlanLink, EntryRecord, EntryState, EntryView, EventRecord,
-    FeedbackMetadata, FeedbackRecord, FeedbackVia, GrantRecord, GrantSource, InboxReply, InboxWait,
-    LINK_LIMIT, LinkedCommit, ManualCommitLink, PendingNotice, PendingNoticeKind,
-    PendingNoticeReason, PendingReply, PlanRecord, PlanView, ProjectMemberRecord, ProjectRecord,
-    ProposalRecord, RecentCall, RepoRegistration, RepoScanTarget, ReviewEvidence, RevisionDiff,
-    RevisionRecord, RevisionSource, SessionRecord, TaskRecord, TaskView, WORKER_FILE_LIMIT,
-    WORKER_FILE_PATH_LIMIT, WORKER_REF_LIMIT, WorkerRecord,
+    BoardChange, BoardReceipt, BoardReceiptState, BoardReply, BoardResult, BoardSearchHit,
+    BoardSearchReply, BoardSearchSource, COAUTHOR_LIMIT, ClaimEndReason, ClaimRecord,
+    CommitClaimBasis, CommitClaimLink, CommitCoauthor, CommitLinkResult, CommitPlanLink,
+    EntryRecord, EntryState, EntryView, EventRecord, FeedbackMetadata, FeedbackRecord, FeedbackVia,
+    GrantRecord, GrantSource, InboxReply, InboxWait, LINK_LIMIT, LinkedCommit, ManualCommitLink,
+    PendingNotice, PendingNoticeKind, PendingNoticeReason, PendingReply, PlanLifecycleState,
+    PlanRecord, PlanView, ProjectMemberRecord, ProjectRecord, ProposalRecord, RecentCall,
+    RepoRegistration, RepoScanTarget, ReviewEvidence, RevisionDiff, RevisionRecord, RevisionSource,
+    SessionRecord, TaskRecord, TaskView, WORKER_FILE_LIMIT, WORKER_FILE_PATH_LIMIT,
+    WORKER_REF_LIMIT, WorkerRecord,
 };
 pub use board_requests::{
-    AgentClaims, BoardOp, BoardRequest, ClaimDelegate, ClaimResume, ReadScope,
+    AgentClaims, BoardOp, BoardRequest, BoardRequestKey, ClaimDelegate, ClaimResume, ReadScope,
 };
 pub use board_verdict::ReviewVerdict;
 
 use anyhow::{Result, bail};
 
-pub const BOARD_API: u32 = 11;
+pub const BOARD_API: u32 = 13;
+pub const BOARD_WRITE_RECEIPT_RETENTION_SECS: i64 = 600;
 
 fn validate_claim(value: &str, field: &str) -> Result<()> {
     if value.trim().is_empty() || value.len() > 256 || value.chars().any(char::is_control) {

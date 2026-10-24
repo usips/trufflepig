@@ -1,11 +1,14 @@
 //! One capability probe precedes board dispatch; local fallback requires the database pin.
 use crate::board::{
-    BOARD_API, BoardConfig, BoardHost,
+    BOARD_API, BoardConfig, BoardHost, BoardRequest, BoardRequestKey,
     board_grammar::{self, BoardCommand},
+    board_protocol::{AgentClaims, BoardOp},
 };
 use crate::{cli::Arguments, daemon::deadline::QueryDeadline, diagnostics::RequestContext};
 use anyhow::{Context, Result, bail, ensure};
 use std::{
+    error::Error as StdError,
+    fmt,
     path::{Path, PathBuf},
     time::SystemTime,
 };
@@ -101,7 +104,9 @@ impl BoardClientTransport {
                     .downcast_ref::<BoardRequestDeadlineExpired>()
                     .is_some() =>
             {
-                failed_request(command, options, context, load, spool, deadline, error)
+                failed_request(
+                    command, options, context, load, spool, deadline, false, error,
+                )
             }
             result => result,
         }
@@ -128,7 +133,9 @@ impl BoardClientTransport {
             let mut status = match gateway.request(&ping, context, deadline) {
                 Ok(status) => status,
                 Err(error) => {
-                    return failed_request(command, options, context, load, spool, deadline, error);
+                    return failed_request(
+                        command, options, context, load, spool, deadline, false, error,
+                    );
                 }
             };
             let mut recent = false;
@@ -137,7 +144,9 @@ impl BoardClientTransport {
                 let denied = local_access::denied_router_socket(gateway, runtime, load)?;
                 check_deadline(deadline)?;
                 if let Some(error) = denied {
-                    return failed_request(command, options, context, load, spool, deadline, error);
+                    return failed_request(
+                        command, options, context, load, spool, deadline, false, error,
+                    );
                 }
                 recent = runtime.is_some_and(|runtime| {
                     crate::system::board_router_recently_unavailable(runtime, SystemTime::now())
@@ -150,7 +159,7 @@ impl BoardClientTransport {
                         Ok(status) => status,
                         Err(error) => {
                             return failed_request(
-                                command, options, context, load, spool, deadline, error,
+                                command, options, context, load, spool, deadline, false, error,
                             );
                         }
                     };
@@ -204,7 +213,9 @@ impl BoardClientTransport {
                 let denied = local_access::denied_router_socket(gateway, runtime, load)?;
                 check_deadline(deadline)?;
                 if let Some(error) = denied {
-                    return failed_request(command, options, context, load, spool, deadline, error);
+                    return failed_request(
+                        command, options, context, load, spool, deadline, false, error,
+                    );
                 }
                 if let Some(runtime) = runtime {
                     let _ =
@@ -212,7 +223,9 @@ impl BoardClientTransport {
                 }
                 local_reply(options, command, context, load, runtime, spool, deadline)
             }
-            Err(error) => failed_request(command, options, context, load, spool, deadline, error),
+            Err(error) => failed_request(
+                command, options, context, load, spool, deadline, true, error,
+            ),
         }
     }
 }
@@ -247,8 +260,22 @@ fn failed_request(
     load: &mut dyn FnMut() -> Result<BoardConfig>,
     spool: &Path,
     deadline: &QueryDeadline,
+    board_request_attempted: bool,
     error: anyhow::Error,
 ) -> Result<String> {
+    if board_request_attempted
+        && let Some(timeout) = crate::daemon::DaemonReplyTimeout::from_error(&error)
+        && matches!(command, BoardCommand::Op(op) if !op.is_read_only() && !matches!(op, BoardOp::Feedback { .. }))
+    {
+        let receipt_key = request_receipt_key(command, options, context, load)
+            .ok()
+            .flatten();
+        return Err(AmbiguousBoardWriteTimeout {
+            timeout: timeout.clone(),
+            receipt_key,
+        }
+        .into());
+    }
     if matches!(
         command,
         BoardCommand::Op(crate::board::BoardOp::Feedback { .. })
@@ -260,6 +287,58 @@ fn failed_request(
     } else {
         Err(crate::board::schema_upgrade_advice(error))
     }
+}
+
+#[derive(Debug)]
+struct AmbiguousBoardWriteTimeout {
+    timeout: crate::daemon::DaemonReplyTimeout,
+    receipt_key: Option<BoardRequestKey>,
+}
+
+impl fmt::Display for AmbiguousBoardWriteTimeout {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}; board_write_outcome=unknown", self.timeout)?;
+        if let Some(key) = self.receipt_key {
+            write!(
+                formatter,
+                " request_key={key}; inspect with `board receipt {key}`"
+            )?;
+        } else {
+            formatter.write_str("; no BoardChange receipt key is available for this operation")?;
+        }
+        formatter.write_str("; do not automatically replay this mutation")
+    }
+}
+
+impl StdError for AmbiguousBoardWriteTimeout {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        Some(&self.timeout)
+    }
+}
+
+fn request_receipt_key(
+    command: &BoardCommand,
+    options: &Arguments,
+    context: &RequestContext,
+    load: &mut dyn FnMut() -> Result<BoardConfig>,
+) -> Result<Option<BoardRequestKey>> {
+    let BoardCommand::Op(op) = command else {
+        return Ok(None);
+    };
+    if !op.has_change_receipt() {
+        return Ok(None);
+    }
+    let config = load()?;
+    let actor = config.actor(context.client.as_deref(), context.session.as_deref())?;
+    let mut request = BoardRequest::new(actor, op.clone());
+    request.origin = context.origin.clone();
+    if options.board.agent_model.is_some() || options.board.agent_effort.is_some() {
+        request.claims = Some(AgentClaims {
+            model: options.board.agent_model.clone(),
+            effort: options.board.agent_effort.clone(),
+        });
+    }
+    Ok(Some(request.dedupe_key()?))
 }
 
 fn parse_probe(status: &str) -> Result<(u32, PathBuf)> {

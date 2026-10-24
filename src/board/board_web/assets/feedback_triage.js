@@ -6,7 +6,7 @@ export function createBoardFeedback(context) {
     const form = el("form");
     const status = record.state || entry.state?.state;
     if (!permitted(record, "can_triage") && !permitted(record, "can_close")) return null;
-    const note = field("Note", "note", "", { multiline: true, maxLength: 4096, hint: "optional" });
+    const note = field("Note", "note", "", { multiline: true, maxLength: 32768, hint: "optional" });
     const actions = el("div", "actions");
     const control = (label, key, action) => {
       const item = focusKey(button(label, action, "compact"), key);

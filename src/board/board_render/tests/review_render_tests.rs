@@ -24,6 +24,8 @@ fn default_review_budget_bounds_proposals_commits_tasks_and_claims() {
     for ordinal in 1..=40 {
         let task = TaskId::new(packet.plan.id, ordinal).unwrap();
         packet.tasks.push(TaskRecord {
+            transferred_from: None,
+            transferred_to: None,
             id: task,
             title: PlanTitle::new(format!("Review task {ordinal}")).unwrap(),
             column: TaskColumn::Doing,

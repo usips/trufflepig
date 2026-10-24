@@ -103,7 +103,11 @@ fn checks_content_length_decimal_overflow_and_limits() {
     }
     rejected(b"POST / HTTP/1.1\r\nHost: local\r\n\r\n", 411);
     rejected(
-        b"POST / HTTP/1.1\r\nHost: local\r\nContent-Length: 163841\r\n\r\n",
+        format!(
+            "POST / HTTP/1.1\r\nHost: local\r\nContent-Length: {}\r\n\r\n",
+            BODY_LIMIT + 1
+        )
+        .as_bytes(),
         413,
     );
     let mut request =

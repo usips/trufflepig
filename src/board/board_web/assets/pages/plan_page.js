@@ -73,6 +73,35 @@ export function createPlanPage(context) {
       if (markers.childElementCount) element.append(markers);
     }
   }
+  function lifecycleControl(plan) {
+    const closed = plan.lifecycle_state === "closed";
+    const form = el("form", "plan-lifecycle-control");
+    const note = field("Required note", "note", "", {
+      multiline: true, required: true, maxLength: 32768,
+      hint: `Explain why this plan should be ${closed ? "reopened" : "closed"}.`,
+    });
+    const submit = focusKey(button(closed ? "Reopen plan" : "Close plan"),
+      `plan-lifecycle:${plan.id}:${closed ? "reopen" : "close"}`);
+    submit.type = "submit";
+    add(form, note.wrapper, submit);
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      const reason = note.input.value.trim();
+      if (!reason) {
+        formStatus(form, "Enter a note to record this lifecycle change.");
+        return;
+      }
+      void submitMutation(form, {
+        op: closed ? "plan_reopen" : "plan_close", plan: plan.id, note: reason,
+      }, (_, current) => {
+        note.input.value = "";
+        if (!current) return;
+        notice(closed ? "Plan reopened." : "Plan closed.", "success");
+        scheduleRefresh();
+      });
+    });
+    return retainForm(form, `plan-lifecycle:${plan.id}`);
+  }
   function renderPlan(view, rendered, extra, route, projects) {
     const plan = view.plan;
     const page = el("div");
@@ -84,10 +113,12 @@ export function createPlanPage(context) {
       page,
       title(
         `${plan.id} · ${plan.title}`,
-        `Revision ${plan.head_revision} · Owner ${plan.owner_user}`,
+        `Revision ${plan.head_revision} · Owner ${plan.owner_user} · Plan ${plan.lifecycle_state}`,
         actions
       ),
       projectChips(view.repo_keys, projects),
+      view.can_change_lifecycle === true
+        ? panel("Plan lifecycle", lifecycleControl(plan), "plan-lifecycle-panel") : null,
       planTabs(plan.id, route.tab || "ssot"),
       grantPanel(view)
     );

@@ -18,7 +18,7 @@ function timerCount(delay) {
   return [...intervals.values()].filter(value => value === delay).length;
 }
 function seedShell() {
-  for (const [name, content] of [["board-api", "11"], ["board-id", "time-lifecycle"]]) {
+  for (const [name, content] of [["board-api", "13"], ["board-id", "time-lifecycle"]]) {
     const meta = document.createElement("meta");
     meta.setAttribute("name", name); meta.content = content; document.body.append(meta);
   }
@@ -75,7 +75,7 @@ beforeEach(() => {
     });
     const op = JSON.parse(options.body).op.op; reads.push(op);
     return { ok: true, status: 200, text: async () => JSON.stringify({
-      api: 11, result: { result: op, data: data(op) }, snapshot_seq: "40", warnings: [],
+    api: 13, result: { result: op, data: data(op) }, snapshot_seq: "40", warnings: [],
     }) };
   };
   sessionStorage.setItem("trufflepig-board-token", "a".repeat(64));

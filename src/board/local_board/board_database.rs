@@ -18,7 +18,7 @@ pub(super) use board_read_open::open_read_with_timeout;
 pub use board_schema::SCHEMA_VERSION;
 use board_schema::{
     SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8,
-    SCHEMA_V9, SCHEMA_V10, SCHEMA_V11,
+    SCHEMA_V9, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V13,
 };
 
 #[cfg(test)]
@@ -39,6 +39,8 @@ fn migration_step(from: i64) -> Result<&'static str, BoardError> {
         8 => Ok(SCHEMA_V9),
         9 => Ok(SCHEMA_V10),
         10 => Ok(SCHEMA_V11),
+        11 => Ok(SCHEMA_V12),
+        12 => Ok(SCHEMA_V13),
         _ => Err(unavailable(format!(
             "missing schema migration from version {from}"
         ))),

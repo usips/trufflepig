@@ -49,6 +49,7 @@ fn evidence() -> ReviewEvidence {
     let plan = PlanId::new(7).unwrap();
     ReviewEvidence {
         plan: PlanRecord {
+            lifecycle_state: crate::board::board_protocol::PlanLifecycleState::Open,
             id: plan,
             title: PlanTitle::new("Trial").unwrap(),
             owner_user: "josh".into(),

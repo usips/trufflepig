@@ -159,7 +159,10 @@ fn daemon_shutdown_unlocks_inherited_file_description() {
 #[test]
 fn encoded_request_limit_counts_json_escaping() {
     let context = crate::diagnostics::RequestContext::new(None, None);
-    let args = vec!["board".to_owned(), "\"".repeat(32 * 1024)];
+    let args = vec![
+        "board".to_owned(),
+        "\"".repeat(super::MAX_DAEMON_REQUEST_BYTES / 2),
+    ];
     let bytes = super::request_encoded_size(&args, &context).unwrap();
     assert!(args.iter().map(String::len).sum::<usize>() < super::MAX_DAEMON_REQUEST_BYTES);
     assert!(bytes > super::MAX_DAEMON_REQUEST_BYTES);

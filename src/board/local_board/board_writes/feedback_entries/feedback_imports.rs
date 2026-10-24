@@ -36,6 +36,7 @@ pub(in crate::board::local_board) fn imported_reply(
         Ok(BoardReply::new(
             "local",
             BoardResult::Change(BoardChange {
+                transferred_to: None,
                 entry: entry.id,
                 seq: entry.seq,
                 plan: entry.plan,

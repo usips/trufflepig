@@ -115,6 +115,7 @@ fn authority_audit_values(
         Some(AuthoritySource::Owner) => (Some("owner"), None),
         Some(AuthoritySource::Grant(entry)) => (Some("grant"), Some(sqlite_id(entry.get())?)),
         Some(AuthoritySource::Reporter) => (Some("reporter"), None),
+        Some(AuthoritySource::Creator) => (Some("creator"), None),
         Some(AuthoritySource::Stale) => (Some("stale"), None),
         Some(AuthoritySource::Holder) => (Some("holder"), None),
         Some(AuthoritySource::Delegator) => (Some("delegator"), None),

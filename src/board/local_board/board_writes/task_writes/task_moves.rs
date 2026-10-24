@@ -24,6 +24,13 @@ pub(in crate::board::local_board) fn move_task(
         .as_ref()
         .is_some_and(|claim| claim.actor_id != ctx.actor_id && claim.record.stale);
     let release_column = matches!(column, TaskColumn::Todo | TaskColumn::Blocked);
+    let creator_plain_move = to.is_none()
+        && holder.is_none()
+        && card.assignee.is_none()
+        && matches!(card.column, TaskColumn::Todo | TaskColumn::Blocked)
+        && release_column
+        && card.column != column
+        && task_created_by(tx, task, ctx.actor_id)?;
     if stale_other && !release_column {
         return Err(invalid(
             "invalid_actor",
@@ -61,8 +68,11 @@ pub(in crate::board::local_board) fn move_task(
         && holder.is_none()
         && card.assignee.is_some()
         && !assigned_to_actor;
-    let assign_for_plain_release =
-        to.is_none() && holder.is_none() && !assigned_to_actor && release_column;
+    let assign_for_plain_release = to.is_none()
+        && holder.is_none()
+        && !assigned_to_actor
+        && release_column
+        && !creator_plain_move;
     let assign_authority = if to.is_some() || cancel_pending_assignment || assign_for_plain_release
     {
         super::super::super::board_authority::authority_for(
@@ -127,6 +137,8 @@ pub(in crate::board::local_board) fn move_task(
         release_authority
     } else if holder_is_actor {
         Some(AuthoritySource::Holder)
+    } else if creator_plain_move {
+        Some(AuthoritySource::Creator)
     } else {
         assign_authority
     };
@@ -220,4 +232,21 @@ pub(in crate::board::local_board) fn move_task(
         &summary,
     )?;
     Ok(action_ctx.change_reply(entry, Some(task.plan), None, Some(task)))
+}
+
+/// Task rows do not store their creator, so read it from the immutable create event.
+fn task_created_by(tx: &Transaction<'_>, task: TaskId, actor_id: i64) -> Result<bool, BoardError> {
+    let created_by: Option<i64> = tx
+        .query_row(
+            concat!(
+                "SELECT e.actor_id FROM entries e JOIN entry_refs r ON r.entry_id=e.id ",
+                "WHERE r.target=?1 AND e.kind='task' AND e.body LIKE ?2 ",
+                "ORDER BY e.seq ASC LIMIT 1"
+            ),
+            params![task.to_string(), format!("created {task}:%")],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(sql_error)?;
+    Ok(created_by == Some(actor_id))
 }

@@ -5,6 +5,10 @@ import { createDonePage } from "./pages/done_page.js";
 import { actorAttribution, recipientMark } from "./marks/agent_marks.js";
 import { INGEST_TIMEOUT_MS, INGEST_UNKNOWN_MESSAGE, completeIngest, resolveIngestEvent } from "./board_ingest.js";
 
+function taskColumnLabel(column) {
+  return column === "transferred" ? "Transferred" : column;
+}
+
 export function createBoardViews(context) {
   const {
     state, dom, board, jsonFetch, navigate, scheduleRefresh, submitMutation, notice, apiVersion,
@@ -128,7 +132,8 @@ export function createBoardViews(context) {
       const grid = el("div", "lane-columns");
       for (const column of columns.filter(column => column !== "done")) {
         const tasks = activeTasks.filter(task => task.column === column);
-        const cell = add(el("div", "lane-column"), el("div", "column-name", `${column} · ${tasks.length}`));
+        const label = taskColumnLabel(column);
+        const cell = add(el("div", "lane-column"), el("div", "column-name", `${label} · ${tasks.length}`));
         add(cell, tasks.map(task => taskCard(task, item.claims,
           { claimsOmitted: item.claims_omitted, plan: plan.id, through: data.through,
             now: data.server_now, ttlSecs: data.claim_ttl_secs, entries: data.entries })));
@@ -193,7 +198,7 @@ export function createBoardViews(context) {
   function postForm(target, defaults = {}) {
     const form = el("form");
     const kind = field("Kind", "kind", defaults.kind || "note", { choices: postKinds });
-    const body = field("Message", "body", defaults.body || "", { multiline: true, required: true, maxLength: 4096 });
+    const body = field("Message", "body", defaults.body || "", { multiline: true, required: true, maxLength: 32768 });
     const to = field("To", "to", defaults.to || "", { hint: "optional user, harness, or full actor" });
     const supersedes = field("Supersedes", "supersedes", "", { hint: "optional E#" });
     if (defaults.question) {
@@ -221,6 +226,7 @@ export function createBoardViews(context) {
   }
   function taskDetails(data, headings = []) {
     const tasks = [...(data.tasks || [])], claims = data.claims || [];
+    const tasksWritable = data.plan?.lifecycle_state !== "closed";
     const selectedView = data.task_view;
     if (selectedView?.task && !tasks.some(task => task.id === selectedView.task.id)) {
       tasks.unshift(selectedView.task);
@@ -233,7 +239,7 @@ export function createBoardViews(context) {
       const item = el("article", "task-detail");
       item.id = task.id;
       focusKey(item, `task-detail:${task.id}`);
-      add(item, add(el("div", "row wrap"), refLink(task.id), badge(task.column), el("strong", "", task.title)));
+      add(item, add(el("div", "row wrap"), refLink(task.id), badge(taskColumnLabel(task.column)), el("strong", "", task.title)));
       if (task.section) {
         const heading = headings.find(value => value.title === task.section);
         const section = el(heading ? "a" : "span", "small", task.section);
@@ -264,22 +270,25 @@ export function createBoardViews(context) {
       }
       if (taskView) item.append(taskViewDetails(taskView));
       const controls = el("form", "actions");
-      if (claim?.stale) {
-        const release = focusKey(button("Release stale claim", () => {
-          void submitMutation(controls, { op: "task_move", task: task.id, column: "todo", to: null });
-        }, "compact"), `move:${task.id}:release-stale`);
-        release.append(el("span", "sr-only", ` ${task.id}`));
-        controls.append(release);
+      if (tasksWritable && task.column !== "transferred" && !task.transferred_to) {
+        if (claim?.stale) {
+          const release = focusKey(button("Release stale claim", () => {
+            void submitMutation(controls, { op: "task_move", task: task.id, column: "todo", to: null });
+          }, "compact"), `move:${task.id}:release-stale`);
+          release.append(el("span", "sr-only", ` ${task.id}`));
+          controls.append(release);
+        }
+        for (const column of columns.filter(column => column !== task.column && column !== "transferred")) {
+          if (claim?.stale && column === "todo") continue;
+          const move = focusKey(button(`Move to ${taskColumnLabel(column)}`, () => {
+            void submitMutation(controls, { op: "task_move", task: task.id, column, to: null });
+          }, "compact"), `move:${task.id}:${column}`);
+          move.append(el("span", "sr-only", ` ${task.id}`));
+          controls.append(move);
+        }
+        item.append(retainForm(controls, `move:${task.id}`));
       }
-      for (const column of columns.filter(column => column !== task.column)) {
-        if (claim?.stale && column === "todo") continue;
-        const move = focusKey(button(`Move to ${column}`, () => {
-          void submitMutation(controls, { op: "task_move", task: task.id, column, to: null });
-        }, "compact"), `move:${task.id}:${column}`);
-        move.append(el("span", "sr-only", ` ${task.id}`));
-        controls.append(move);
-      }
-      item.append(retainForm(controls, `move:${task.id}`)); content.append(item);
+      content.append(item);
     }
     if (!tasks.length) content.append(empty("No tasks in this plan."));
     content.append(omitted(data.tasks_omitted, "tasks") || el("span"));
@@ -297,6 +306,7 @@ export function createBoardViews(context) {
       }
       content.append(panel("Sections without tasks", sections));
     }
+    if (!tasksWritable) return content;
     const create = el("form");
     const name = field("New task", "task-title", "", { required: true, maxLength: 256 });
     const section = field("SSOT section", "section", "",

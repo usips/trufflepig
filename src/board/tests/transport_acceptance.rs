@@ -157,14 +157,33 @@ fn encoded_frame_measurement_includes_nested_body_escaping_and_audit_metadata() 
     let fixture = EdgeFixture::new();
     let mut options = fixture.options(&["board", "new", "Escaped body"]);
     options.board.body = Some(PathBuf::from("body.md"));
-    let body = "\u{001f}".repeat(16_384);
-    let args = board_grammar::normalize_args(&[], &options, Some(&body)).unwrap();
-    let size =
-        crate::daemon::request_encoded_size(&args, &context("codex", "encoded-session")).unwrap();
-    assert!(body.len() < 32_768);
+    let body = "\u{001f}".repeat(crate::board::board_vocabulary::ENTRY_TEXT_LIMIT);
+    let escaped_args = board_grammar::normalize_args(&[], &options, Some(&body)).unwrap();
+    let request_context = context("codex", "encoded-session");
+    let escaped_size =
+        crate::daemon::request_encoded_size(&escaped_args, &request_context).unwrap();
+    let expected_request = serde_json::json!({
+        "command": "Arguments",
+        "arguments": {
+            "context": &request_context,
+            "args": &escaped_args,
+        },
+    });
+    assert_eq!(
+        escaped_size,
+        serde_json::to_vec(&expected_request).unwrap().len()
+    );
+    let plain_body = "x".repeat(crate::board::board_vocabulary::ENTRY_TEXT_LIMIT);
+    let plain_args = board_grammar::normalize_args(&[], &options, Some(&plain_body)).unwrap();
+    let plain_size = crate::daemon::request_encoded_size(&plain_args, &request_context).unwrap();
+    assert_eq!(body.len(), crate::board::board_vocabulary::ENTRY_TEXT_LIMIT);
     assert!(
-        size > crate::daemon::MAX_DAEMON_REQUEST_BYTES,
-        "encoded request unexpectedly fits: {size}"
+        escaped_size > plain_size,
+        "nested JSON escaping was not counted"
+    );
+    assert!(
+        escaped_size <= crate::daemon::MAX_DAEMON_REQUEST_BYTES,
+        "maximum entry text unexpectedly exceeds the request limit: {escaped_size}"
     );
     assert!(
         !fixture.config.db_path.exists(),

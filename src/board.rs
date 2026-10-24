@@ -22,7 +22,9 @@ mod tests;
 
 pub use board_backend::{BoardBackend, BoardHost};
 pub use board_config::BoardConfig;
-pub use board_protocol::{BOARD_API, BoardError, BoardOp, BoardReply, BoardRequest};
+pub use board_protocol::{
+    BOARD_API, BoardError, BoardOp, BoardReply, BoardRequest, BoardRequestKey,
+};
 pub use local_board::SCHEMA_VERSION;
 
 use crate::{cli::Arguments, daemon::deadline::QueryDeadline, diagnostics::RequestContext};

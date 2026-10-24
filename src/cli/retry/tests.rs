@@ -236,6 +236,7 @@ fn board_scope_preserves_cursor_and_write_safety() {
         vec!["board", "review", "P1@1"],
         vec!["board", "inbox", "8"],
         vec!["board", "pending"],
+        vec!["board", "receipt", &"a".repeat(64)],
         vec!["feedback", "ls"],
     ] {
         assert_eq!(RetryScope::for_options(&options(&words)), RetryScope::Read);

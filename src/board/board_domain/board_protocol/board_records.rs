@@ -1,4 +1,5 @@
 //! Versioned replies and the records they contain.
+use super::BoardRequestKey;
 use super::{
     AttentionReply, BOARD_API, ClaimPage, DoneTasksPage, EntriesPage, EventPage, FeedbackPage,
     HistoryPage, OverviewReply, TaskPage,
@@ -30,8 +31,8 @@ pub use board_pending_records::{
     PendingNotice, PendingNoticeKind, PendingNoticeReason, PendingReply,
 };
 pub use board_plan_records::{
-    ClaimEndReason, ClaimRecord, ManualCommitLink, PlanRecord, PlanView, ProposalRecord,
-    ReviewEvidence, RevisionDiff, RevisionRecord, RevisionSource, TaskRecord,
+    ClaimEndReason, ClaimRecord, ManualCommitLink, PlanLifecycleState, PlanRecord, PlanView,
+    ProposalRecord, ReviewEvidence, RevisionDiff, RevisionRecord, RevisionSource, TaskRecord,
 };
 pub use board_project_records::{ProjectMemberRecord, ProjectRecord};
 pub use board_repo_records::{
@@ -52,6 +53,22 @@ pub struct BoardReply {
     pub snapshot_seq: Option<EventSeq>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BoardReceiptState {
+    Committed,
+    Unknown,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BoardReceipt {
+    pub key: BoardRequestKey,
+    pub state: BoardReceiptState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change: Option<BoardChange>,
 }
 
 impl BoardReply {
@@ -87,6 +104,7 @@ pub enum BoardResult {
     Revision(RevisionRecord),
     Diff(RevisionDiff),
     Change(BoardChange),
+    Receipt(BoardReceipt),
     Review(ReviewEvidence),
     Overview(OverviewReply),
     Attention(AttentionReply),

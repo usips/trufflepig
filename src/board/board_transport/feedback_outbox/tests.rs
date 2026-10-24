@@ -65,6 +65,7 @@ impl BoardBackend for ImportBackend {
             .entries
             .entry(key.to_string())
             .or_insert_with(|| BoardChange {
+                transferred_to: None,
                 entry: EntryId::new(next).unwrap(),
                 seq: EventSeq::new(next),
                 plan: None,

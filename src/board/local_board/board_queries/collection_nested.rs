@@ -11,6 +11,7 @@ use rusqlite::{Connection, Row, params};
 #[cfg(test)]
 use super::super::WriteContext;
 use super::super::{BoardError, invalid, require_plan, row_number, sql_error, sql_number};
+use super::board_reads::task_lineage;
 use super::collection_reads::{ACTIVE_TASKS, count, sequence_window, validate_limit};
 use crate::board::board_actor::BoardRecipient;
 #[cfg(test)]
@@ -29,8 +30,19 @@ use recent_task_windows::recent_task_window;
 
 const NESTED_PAGE_LIMIT: usize = 200;
 pub(in crate::board::local_board) const TASK_SELECT: &str = concat!(
-    "SELECT t.ordinal,t.title,t.column_name,t.assignee,t.section,t.seq,completion.created_at,t.plan_id ",
-    "FROM tasks t LEFT JOIN events completion ON completion.seq=t.seq AND t.column_name='done'"
+    "SELECT t.ordinal,t.title,CASE WHEN outgoing.source_plan IS NULL THEN t.column_name ELSE 'transferred' END,",
+    "t.assignee,t.section,t.seq,completion.created_at,t.plan_id,",
+    "incoming.source_plan,incoming.source_ordinal,outgoing.destination_plan,outgoing.destination_ordinal ",
+    "FROM tasks t LEFT JOIN events completion ON completion.seq=t.seq AND t.column_name='done' ",
+    "LEFT JOIN task_transfers incoming ON incoming.destination_plan=t.plan_id AND incoming.destination_ordinal=t.ordinal ",
+    "LEFT JOIN task_transfers outgoing ON outgoing.source_plan=t.plan_id AND outgoing.source_ordinal=t.ordinal"
+);
+
+const TASK_COLUMN_FILTER: &str = concat!(
+    "(?4 IS NULL OR (?4='transferred' AND EXISTS(SELECT 1 FROM task_transfers transferred ",
+    "WHERE transferred.source_plan=t.plan_id AND transferred.source_ordinal=t.ordinal)) ",
+    "OR (?4<>'transferred' AND t.column_name=?4 AND NOT EXISTS(SELECT 1 FROM task_transfers transferred ",
+    "WHERE transferred.source_plan=t.plan_id AND transferred.source_ordinal=t.ordinal)))"
 );
 
 pub(in crate::board::local_board) fn task_row(
@@ -38,6 +50,14 @@ pub(in crate::board::local_board) fn task_row(
     plan: PlanId,
 ) -> Result<TaskRecord, BoardError> {
     let assignee: Option<String> = row.get(3).map_err(sql_error)?;
+    let predecessor = task_lineage::task_id_from_pair(
+        row.get(8).map_err(sql_error)?,
+        row.get(9).map_err(sql_error)?,
+    )?;
+    let successor = task_lineage::task_id_from_pair(
+        row.get(10).map_err(sql_error)?,
+        row.get(11).map_err(sql_error)?,
+    )?;
     Ok(TaskRecord {
         id: TaskId::new(plan, row_number(row, 0).map_err(sql_error)?).map_err(BoardError::from)?,
         title: PlanTitle::new(row.get::<_, String>(1).map_err(sql_error)?)
@@ -55,6 +75,8 @@ pub(in crate::board::local_board) fn task_row(
         section: row.get(4).map_err(sql_error)?,
         seq: EventSeq::new(row_number(row, 5).map_err(sql_error)?),
         done_at: row.get(6).map_err(sql_error)?,
+        transferred_from: predecessor,
+        transferred_to: successor,
     })
 }
 
@@ -190,13 +212,15 @@ pub(in crate::board::local_board) fn task_window(
     ];
     let total = count(
         conn,
-        "SELECT count(*) FROM tasks WHERE plan_id=?1 AND ordinal>?2 AND ordinal<=?3 AND (?4 IS NULL OR column_name=?4)",
+        &format!(
+            "SELECT count(*) FROM tasks t WHERE t.plan_id=?1 AND t.ordinal>?2 AND t.ordinal<=?3 AND {TASK_COLUMN_FILTER}"
+        ),
         parameters,
     )?;
     let mut statement = conn
         .prepare(&format!(
             "{TASK_SELECT} WHERE t.plan_id=?1 AND t.ordinal>?2 AND t.ordinal<=?3 \
-             AND (?4 IS NULL OR t.column_name=?4) ORDER BY t.ordinal LIMIT ?5"
+             AND {TASK_COLUMN_FILTER} ORDER BY t.ordinal LIMIT ?5"
         ))
         .map_err(sql_error)?;
     let mut rows = statement

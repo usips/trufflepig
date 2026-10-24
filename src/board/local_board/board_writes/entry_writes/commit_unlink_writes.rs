@@ -149,6 +149,7 @@ fn replay_unlink(
     Ok(Some(BoardReply::new(
         "local",
         BoardResult::Change(BoardChange {
+            transferred_to: None,
             entry: EntryId::new(sqlite_u64(entry)?).map_err(BoardError::from)?,
             seq: EventSeq::new(sqlite_u64(seq)?),
             plan: Some(task.plan),

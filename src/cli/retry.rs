@@ -33,7 +33,7 @@ impl RetryScope {
             "board" => match options.words.get(1).map(String::as_str) {
                 Some(
                     "show" | "review" | "feed" | "attention" | "history" | "search" | "web"
-                    | "pending",
+                    | "pending" | "receipt",
                 ) => Self::Read,
                 Some("inbox") if options.words.get(2).is_some() => Self::Read,
                 Some(word) if word.parse::<u64>().is_ok() => Self::Read,

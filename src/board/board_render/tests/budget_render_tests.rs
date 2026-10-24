@@ -52,6 +52,7 @@ fn committed_change_receipt_survives_a_tiny_output_budget() {
     let reply = BoardReply::new(
         "local",
         BoardResult::Change(BoardChange {
+            transferred_to: None,
             entry: EntryId::new(9).unwrap(),
             seq: EventSeq::new(9),
             plan: Some(PlanId::new(7).unwrap()),

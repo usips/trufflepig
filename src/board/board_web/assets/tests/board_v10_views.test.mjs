@@ -26,12 +26,12 @@ function harness({ denied = false } = {}) {
       operations.push(op);
       if (denied) dom.formStatus(form, "The backend denied this authority change.");
     },
-    notice: (...args) => notices.push(args), apiVersion: 11,
+    notice: (...args) => notices.push(args), apiVersion: 13,
     entryRecord: record => record?.entry && typeof record.entry === "object" ? record.entry : record,
     collection: (data, key) => Array.isArray(data?.[key]) ? data[key] : [],
     permitted: () => false, nextAfter: () => null, pageParams: route => ({ ...route }),
     queryFilters: () => ({}), postKinds: ["note"], entryKinds: ["note"],
-    columns: ["todo", "doing", "review", "blocked", "done"],
+    columns: ["todo", "doing", "review", "blocked", "transferred", "done"],
     errorMessage: error => error?.message || String(error),
   });
   return { state, dom, views, operations, notices };
@@ -198,6 +198,44 @@ describe("Board v10 task and worker views", () => {
     assert.equal(Boolean(release.disabled), false);
     for (const listener of release.listeners.get("click") || []) listener({ type: "click", target: release });
     assert.deepEqual(operations[0], { op: "task_move", task: "P1.2", column: "todo", to: null });
+  });
+
+  it("shows transferred status without offering manual moves into or out of it", () => {
+    const { views } = harness();
+    const transferred = { id: "P1.2", title: "Transferred task", column: "transferred" };
+    const transferredDetails = views.taskDetails({
+      plan: { id: "P1" }, tasks: [transferred], claims: [],
+    }, []);
+    assert.match(visibleText(transferredDetails), /Transferred/);
+    assert.equal(transferredDetails.querySelector(".task-detail").querySelectorAll("button").length, 0);
+
+    const active = { id: "P1.3", title: "Active task", column: "todo" };
+    const activeDetails = views.taskDetails({ plan: { id: "P1" }, tasks: [active], claims: [] }, []);
+    assert.ok(activeDetails.querySelectorAll("button").some(button => button.textContent.includes("Move to doing")));
+    assert.equal(
+      activeDetails.querySelectorAll("button").some(button => button.textContent.includes("Move to Transferred")),
+      false,
+    );
+  });
+
+  it("removes move controls from a source task with a transfer destination", () => {
+    const { views } = harness();
+    const task = { id: "P1.2", title: "Transferred source", column: "doing", transferred_to: "P2.1" };
+    const details = views.taskDetails({
+      plan: { id: "P1" }, tasks: [task], claims: [claim({ task: task.id, stale: true })],
+    }, []);
+    assert.equal(details.querySelector(".task-detail").querySelectorAll("button").length, 0);
+  });
+
+  it("hides task mutations on a closed plan while preserving task history", () => {
+    const { views } = harness();
+    const details = views.taskDetails({
+      plan: { id: "P1", lifecycle_state: "closed" },
+      tasks: [{ id: "P1.2", title: "Historical task", column: "done" }], claims: [],
+    }, []);
+    assert.match(visibleText(details), /Historical task/);
+    assert.equal(details.querySelectorAll("button").length, 0);
+    assert.equal(details.querySelectorAll("form").length, 0);
   });
 
   it("shows question age and linked commit metadata on task cards", () => {

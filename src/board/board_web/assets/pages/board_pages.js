@@ -65,7 +65,7 @@ export function createBoardDetails(context) {
       multiline: true, className: "ssot-editor", maxLength: 32768, hint: "Markdown, up to 32 KiB",
     });
     fields.push(body);
-    if (mode !== "new") fields.push(field("Change summary", "summary", draft.summary, { required: true, maxLength: 4096 }));
+    if (mode !== "new") fields.push(field("Change summary", "summary", draft.summary, { required: true, maxLength: 32768 }));
     if (mode === "new" && repositories.length) {
       const known = new Map();
       for (const target of repositories) {
