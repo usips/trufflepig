@@ -148,8 +148,11 @@ first query need not trigger a cold start and status answers meanwhile.
 
 `semantic worker status` reports whether the per-user worker is running, its
 selected provider and GPU identity, whether the model is loaded, and pending
-work. `semantic worker stop` asks it to release its model and exit. The worker
-may unload an idle model; status and diagnostics report residency without
+work. `semantic worker stop` asks it to release its model and exit. Models stay
+resident for the worker's lifetime unless `inference.toml` sets a positive
+`idle_unload_seconds`; each model then unloads after that idle period and
+reloads on its next request, during which reranking reports `rerank_loading`
+and keeps the fused order. Status and diagnostics report residency without
 attributing whole-process RSS solely to model tensors.
 
 After a model-load failure, the worker retries lazily after 500 ms, doubles the

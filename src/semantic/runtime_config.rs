@@ -6,6 +6,7 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
     process::Command,
+    time::Duration,
 };
 
 mod cuda_identity;
@@ -42,6 +43,10 @@ pub struct InferenceConfig {
     pub arena_bytes: u64,
     pub rerank_model_dir: Option<PathBuf>,
     pub rerank_gpu_uuid: Option<String>,
+    /// Idle seconds after which the worker unloads a model; unset keeps both
+    /// models resident. Omitted from the fingerprint when unset.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub idle_unload_seconds: Option<u64>,
 }
 
 impl Default for InferenceConfig {
@@ -55,6 +60,7 @@ impl Default for InferenceConfig {
             arena_bytes: DEFAULT_ARENA_BYTES,
             rerank_model_dir: None,
             rerank_gpu_uuid: None,
+            idle_unload_seconds: None,
         }
     }
 }
@@ -123,7 +129,16 @@ impl InferenceConfig {
         if self.rerank_gpu_uuid.is_some() && self.rerank_model_dir.is_none() {
             bail!("inference_config_invalid: rerank_gpu_uuid requires rerank_model_dir");
         }
+        if self.idle_unload_seconds == Some(0) {
+            bail!("inference_config_invalid: idle_unload_seconds must be positive");
+        }
         Ok(())
+    }
+
+    /// How long a loaded model may sit idle before the worker unloads it;
+    /// `None` keeps models resident for the worker's lifetime.
+    pub fn idle_unload(&self) -> Option<Duration> {
+        self.idle_unload_seconds.map(Duration::from_secs)
     }
 
     pub fn model_dir(&self) -> Result<&Path> {
@@ -251,9 +266,21 @@ mod tests {
             arena_bytes: 123,
             rerank_model_dir: Some("reranker".into()),
             rerank_gpu_uuid: Some("GPU-rerank".into()),
+            idle_unload_seconds: Some(600),
         };
         let parsed: InferenceConfig = toml::from_str(&toml::to_string(&config).unwrap()).unwrap();
         assert_eq!(config, parsed);
+    }
+
+    #[test]
+    fn models_stay_resident_unless_idle_unload_is_configured() {
+        let resident = InferenceConfig::default();
+        assert_eq!(resident.idle_unload(), None);
+        assert!(!serde_json::to_string(&resident).unwrap().contains("idle_unload"));
+        let config: InferenceConfig = toml::from_str("idle_unload_seconds = 900").unwrap();
+        assert_eq!(config.idle_unload(), Some(Duration::from_secs(900)));
+        let zero: InferenceConfig = toml::from_str("idle_unload_seconds = 0").unwrap();
+        assert!(zero.validate().unwrap_err().to_string().contains("idle_unload_seconds"));
     }
 
     #[test]

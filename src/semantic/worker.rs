@@ -49,7 +49,6 @@ use std::{
 const QUERY_DEADLINE: Duration = Duration::from_millis(500);
 const BACKGROUND_DEADLINE: Duration = Duration::from_secs(60);
 const CONTROL_DEADLINE: Duration = Duration::from_millis(500);
-const IDLE_UNLOAD: Duration = Duration::from_secs(10 * 60);
 const ACCEPT_SLEEP: Duration = Duration::from_millis(5);
 const FRAME_READ_TIMEOUT: Duration = Duration::from_millis(25);
 const FRAME_READ_DEADLINE: Duration = Duration::from_millis(500);
@@ -688,13 +687,18 @@ impl WorkerRuntime {
         }
     }
 
+    /// Unloads the embedder after the configured idle period; without one it
+    /// stays resident.
     fn unload_idle(&mut self) {
+        let Some(idle_unload) = self.config.idle_unload() else {
+            return;
+        };
         if self.scheduler.pending() != 0 || self.loading || self.active || !self.engine_loaded {
             return;
         }
         if self
             .last_used
-            .is_some_and(|used| used.elapsed() >= IDLE_UNLOAD)
+            .is_some_and(|used| used.elapsed() >= idle_unload)
         {
             let _ = self.executor_send.send(ExecutorCommand::Unload);
             self.engine_loaded = false;
@@ -895,9 +899,7 @@ mod tests {
         )
     }
 
-    #[test]
-    fn loaded_model_unloads_without_a_completed_query() {
-        let config = InferenceConfig::default();
+    fn loaded_runtime(config: InferenceConfig) -> (WorkerRuntime, Receiver<ExecutorCommand>) {
         let handshake = Handshake::for_config(&config);
         let mut runtime = WorkerRuntime::new(config, PathBuf::new(), handshake);
         let (events, receive) = mpsc::channel();
@@ -907,8 +909,26 @@ mod tests {
         runtime.loading = true;
         events.send(ExecutorEvent::Loaded(Ok(()))).unwrap();
         runtime.poll_executor();
+        (runtime, commands)
+    }
+
+    #[test]
+    fn loaded_model_stays_resident_without_idle_unload() {
+        let (mut runtime, commands) = loaded_runtime(InferenceConfig::default());
+        runtime.last_used = Some(Instant::now() - Duration::from_secs(24 * 60 * 60));
+        runtime.unload_idle();
+        assert!(runtime.engine_loaded);
+        assert!(commands.try_recv().is_err());
+    }
+
+    #[test]
+    fn loaded_model_unloads_without_a_completed_query() {
+        let (mut runtime, commands) = loaded_runtime(InferenceConfig {
+            idle_unload_seconds: Some(600),
+            ..InferenceConfig::default()
+        });
         assert!(runtime.last_used.is_some());
-        runtime.last_used = Some(Instant::now() - IDLE_UNLOAD);
+        runtime.last_used = Some(Instant::now() - Duration::from_secs(600));
         runtime.unload_idle();
         assert!(!runtime.engine_loaded);
         assert!(matches!(commands.try_recv(), Ok(ExecutorCommand::Unload)));
@@ -993,7 +1013,6 @@ mod tests {
     #[test]
     fn worker_constants_preserve_query_budget() {
         assert_eq!(QUERY_DEADLINE, Duration::from_millis(500));
-        assert_eq!(IDLE_UNLOAD, Duration::from_secs(600));
         assert_eq!(RERANK_DEADLINE, Duration::from_millis(1500));
     }
 }
