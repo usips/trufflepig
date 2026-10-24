@@ -17,16 +17,21 @@ const IO_SLICE: Duration = Duration::from_millis(25);
 /// End-to-end deadline for one rerank request through the shared worker.
 pub const RERANK_DEADLINE: Duration = Duration::from_millis(1500);
 
-/// Score (query, document) pairs through the shared worker, bounded to 1.5 s.
-/// Never loads a model in this process.
-pub fn rerank_query(cache_identity: &Path, query: &str, documents: &[String]) -> Result<Vec<f32>> {
+/// Score (query, document) pairs through the shared worker within `budget`,
+/// capped at [`RERANK_DEADLINE`]. Never loads a model in this process.
+pub fn rerank_query(
+    cache_identity: &Path,
+    query: &str,
+    documents: &[String],
+    budget: Duration,
+) -> Result<Vec<f32>> {
     #[cfg(not(feature = "semantic"))]
     {
-        let _ = (cache_identity, query, documents);
+        let _ = (cache_identity, query, documents, budget);
         return Err(crate::semantic::unavailable());
     }
     let started = Instant::now();
-    let deadline_instant = started + RERANK_DEADLINE;
+    let deadline_instant = started + budget.min(RERANK_DEADLINE);
     protocol::validate_rerank_inputs(query, documents)?;
     let config = InferenceConfig::load()?;
     let cache = super::lease::worker_cache_dir()?;

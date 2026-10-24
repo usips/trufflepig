@@ -79,6 +79,7 @@ fn refreshed_candidates_do_not_claim_current_rerank_scores() {
             _: &std::path::Path,
             _: &str,
             documents: &[String],
+            _: std::time::Duration,
         ) -> anyhow::Result<Vec<f32>> {
             Ok(vec![1.0; documents.len()])
         }

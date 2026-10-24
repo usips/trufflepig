@@ -112,17 +112,18 @@ fn search_without_waiting(fixture: &Fixture, root: &Path, words: &[&str]) -> Str
     let cache = cache_path(&config, Some(fixture.cache.path())).unwrap();
     let deadline = QueryDeadline::start();
     WorkspaceResults::create(&cache, &deadline).unwrap();
-    retrieval::search_with_policy(
-        &config,
-        &cache,
-        &WorkspaceResults::open(&cache, &deadline).unwrap(),
-        &options,
-        &cli::request_context(&options).unwrap(),
-        &mut crate::semantic::SemanticSession::default(),
+    let results = WorkspaceResults::open(&cache, &deadline).unwrap();
+    let request = retrieval::WorkspaceQuery {
+        config: &config,
+        cache: &cache,
+        results: &results,
+        options: &options,
+        context: &cli::request_context(&options).unwrap(),
         deadline,
-        HomeIndexPolicy::AwaitDaemon(Duration::ZERO),
-    )
-    .unwrap()
+        policy: HomeIndexPolicy::AwaitDaemon(Duration::ZERO),
+    };
+    retrieval::search_with_policy(&request, &mut crate::semantic::SemanticSession::default())
+        .unwrap()
 }
 
 fn coverage_line(text: &str) -> &str {

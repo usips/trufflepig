@@ -76,23 +76,25 @@ impl SemanticSession {
         Err(super::unavailable())
     }
 
-    /// Scores (query, document) pairs through the shared worker. Never loads a model here.
+    /// Scores (query, document) pairs through the shared worker within
+    /// `budget` (capped at its rerank deadline). Never loads a model here.
     pub fn rerank(
         &self,
         cache_identity: &Path,
         query: &str,
         documents: &[String],
+        budget: std::time::Duration,
     ) -> Result<Vec<f32>> {
         if self.no_daemon {
             anyhow::bail!("rerank_unavailable: --no-daemon never contacts the inference worker");
         }
         #[cfg(feature = "semantic")]
         {
-            super::worker::rerank_query(cache_identity, query, documents)
+            super::worker::rerank_query(cache_identity, query, documents, budget)
         }
         #[cfg(not(feature = "semantic"))]
         {
-            let _ = (cache_identity, query, documents);
+            let _ = (cache_identity, query, documents, budget);
             Err(super::unavailable())
         }
     }
