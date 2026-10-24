@@ -67,7 +67,11 @@ carry the bare cursor as `next`. Pagination
 preserves original ranking and source revisions. Persisted sets survive daemon
 restart until their ten-minute expiry. Expiration and eviction produce explicit
 errors, never an alias to a newer set. Retention is bounded by 32 MiB total,
-50 sets, and 10,000 hits per set; capped searches report truncation.
+50 sets, and 10,000 hits per set; capped searches report truncation. Each set
+records its payload size, so eviction never rereads payloads, and a save that
+removes sets returns up to 1,024 free pages to the filesystem. `results.sqlite3`
+is a versioned cache: an opener that finds another `user_version` drops its sets
+and rebuilds the file (`src/results/result_set_store/result_set_schema.rs`).
 
 Reference targets and candidates carry explicit path, revision, and byte spans.
 A page may shorten a candidate list while reporting `candidates_total` and
