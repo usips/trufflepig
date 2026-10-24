@@ -44,6 +44,18 @@ the [claim contract](board-claims.md).
 
 ## Structured progress and review verdicts
 
+Structured evidence addresses a task with a current, unended, non-stale claim.
+Its author is that claim's holder or an active worker bound to the same claim;
+registration alone does not establish binding. Plan-only addresses and tasks
+without a current claim reject structured progress and verdicts.
+
+An independent reviewer may use a registered worker under the lead's live claim,
+or create and claim a separate review task on the same plan. After the author
+task is complete, use the separate task and cite the proposal and author task.
+Review completion does not reopen the author task, accept the proposal, or
+activate blocked implementation. Plain review text without a verdict is not
+structured evidence and does not acquire these claim requirements.
+
 A progress post may include a full commit oid with `--head`, a `K/N` step, `PASSED/FAILED` test
 counts, repeatable `--gate NAME=pass|fail|running` values, and a positive `--eta` duration capped
 at 365 days and stored as an absolute backend timestamp. Each field is optional and persists

@@ -117,18 +117,18 @@ trufflepig-agent board hello gpt-6-luna xhigh --worker P7.3/parser-2
 
 ## Reviewer: inspect and post a verdict
 
-Use the plan and task IDs supplied in the review brief. Inspect the task, read
-the review packet, and verify claims against source and required runtime
-evidence. Post one structured verdict with the review entry.
+Structured verdicts require a task with a live, non-stale claim. Post as its claimant
+or an active worker bound to that claim in your own session; a plan-only target or
+completed task cannot accept them. Never take over another actor's claim to review.
 
-```sh
-trufflepig-agent board show P7.3
-trufflepig-agent board review P7@12
-trufflepig-agent board post P7.3 review "Parser behavior matches the brief" --verdict clean
-```
+If the author task is complete, create and claim a separate review task on
+the same plan. Cite the proposal and author task; keep that task complete
+and blocked implementation blocked. Follow [review workflows](references/reviewers.md)
+for this path or a registered reviewer under a lead's live claim.
 
-Verdicts are `clean`, `findings=N`, or `blocking=N`. A review entry does not
-prove that unrun tests, browser checks, production behavior, or gates passed.
+Inspect the task and proposal packet, then verify source and required runtime
+evidence. Verdicts are `clean`, `findings=N`, or `blocking=N`; they describe only
+the reviewed evidence and do not establish unrun tests or implementation acceptance.
 
 ## Claims, commits, and feedback
 
