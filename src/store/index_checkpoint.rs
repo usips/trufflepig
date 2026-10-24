@@ -20,6 +20,8 @@ use std::time::{Duration, Instant};
 const CHECKPOINT_DIRECTORY: &str = "stage-index-checkpoint";
 const CHECKPOINT_DATABASE: &str = "prepared.sqlite3";
 const CHECKPOINT_SCHEMA_REVISION: u32 = 1;
+/// The writer lease `Store` locks from staging through publication.
+const WRITER_LEASE_FILE: &str = "index.lock";
 /// Consecutive expired bounded slices that save no new file before maintenance is required.
 const STALLED_SLICES_BEFORE_MAINTENANCE: u32 = 3;
 
@@ -455,23 +457,56 @@ pub(super) fn stage(
     checkpoint_scan::stage(checkpoint, staged, previous, root, cache, deadline)
 }
 
-pub(super) fn cleanup_stale_stages(cache: &Path, deadline: Option<&QueryDeadline>) -> Result<()> {
+/// Removes stale `stage-*` directories when the writer lease in `cache` is free,
+/// returning `None` without waiting while an indexer holds it. The lease is probed
+/// only when a stale stage exists, so idle caches never contend with indexers.
+pub fn sweep_stale_stages(cache: &Path) -> Result<Option<Vec<PathBuf>>> {
     let retained = cache.join(CHECKPOINT_DIRECTORY);
+    let mut stale = false;
+    for entry in std::fs::read_dir(cache)? {
+        stale |= is_stale_stage(&entry?, &retained)?;
+    }
+    if !stale {
+        return Ok(Some(Vec::new()));
+    }
+    // A stage exists only after `Store` created and locked the lease file.
+    let lease = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(cache.join(WRITER_LEASE_FILE))?;
+    match fs2::FileExt::try_lock_exclusive(&lease) {
+        Ok(()) => cleanup_stale_stages(cache, None).map(Some),
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Removes every stale stage; the caller holds the writer lease, so none is live.
+pub(super) fn cleanup_stale_stages(
+    cache: &Path,
+    deadline: Option<&QueryDeadline>,
+) -> Result<Vec<PathBuf>> {
+    let retained = cache.join(CHECKPOINT_DIRECTORY);
+    let mut removed = Vec::new();
     for entry in std::fs::read_dir(cache)? {
         if let Some(deadline) = deadline {
             index_deadline::check(deadline)?;
         }
         let entry = entry?;
-        let name = entry.file_name();
-        if !name.to_string_lossy().starts_with("stage-")
-            || entry.path() == retained
-            || !entry.file_type()?.is_dir()
-        {
+        if !is_stale_stage(&entry, &retained)? {
             continue;
         }
         std::fs::remove_dir_all(entry.path())?;
+        removed.push(entry.path());
     }
-    Ok(())
+    Ok(removed)
+}
+
+/// A `stage-*` directory other than the retained checkpoint `retained`.
+fn is_stale_stage(entry: &std::fs::DirEntry, retained: &Path) -> Result<bool> {
+    Ok(entry.file_name().to_string_lossy().starts_with("stage-")
+        && entry.path() != retained
+        && entry.file_type()?.is_dir())
 }
 
 fn contract_revision() -> String {

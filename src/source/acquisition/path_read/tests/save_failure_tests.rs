@@ -59,11 +59,12 @@ fn not_a_database_and_corrupt_result_databases_propagate() {
         fs::create_dir_all(&cache).unwrap();
         let database = cache.join(crate::results::RESULTS_DATABASE);
         if corrupt_schema {
+            // Corrupt a current-layout database, so the failure surfaces in use, not rebuild.
+            drop(crate::results::ResultSetStore::open(&cache).unwrap());
             let connection = rusqlite::Connection::open(&database).unwrap();
             connection
                 .execute_batch(
-                    "CREATE TABLE result_sets(id TEXT PRIMARY KEY, created INTEGER NOT NULL, expires INTEGER NOT NULL, payload TEXT NOT NULL);
-                     PRAGMA writable_schema=ON;
+                    "PRAGMA writable_schema=ON;
                      UPDATE sqlite_master SET rootpage=999999 WHERE name='result_sets';",
                 )
                 .unwrap();

@@ -6,12 +6,16 @@ use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::{path::Path, thread, time::Duration};
 
+mod result_set_schema;
+
 const MAX_SETS: usize = 50;
 const TTL_SECONDS: i64 = 600;
 const MAINTENANCE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const SQL_BUSY_SLICE: Duration = Duration::from_millis(25);
 const BUSY_RETRY_PAUSE: Duration = Duration::from_millis(3);
 const SQL_CHECK_STEPS: i32 = 1_024;
+/// Free pages one save returns to the filesystem; inserts reuse the rest.
+const VACUUM_PAGES_PER_SAVE: u32 = 1_024;
 pub const RESULTS_DATABASE: &str = "results.sqlite3";
 
 /// One cache's result-set database; the only writer path a read query uses.
@@ -39,31 +43,17 @@ impl ResultSetStore {
         let conn =
             Connection::open(cache.join(RESULTS_DATABASE)).context("open result-set database")?;
         let store = Self { conn, deadline };
-        if let Some(deadline) = &store.deadline {
-            ensure_live(Some(deadline))?;
-            let handler_deadline = deadline.clone();
-            store
-                .conn
-                .progress_handler(SQL_CHECK_STEPS, Some(move || handler_deadline.expired()))?;
-            store.execute_sql(|| store.conn.execute_batch("PRAGMA journal_mode=WAL;"))?;
-            store.execute_sql(|| store.conn.execute_batch("PRAGMA synchronous=NORMAL;"))?;
-            store.execute_sql(|| {
+        match &store.deadline {
+            Some(deadline) => {
+                ensure_live(Some(deadline))?;
+                let handler_deadline = deadline.clone();
                 store
                     .conn
-                    .execute_batch("PRAGMA journal_size_limit=4194304;")
-            })?;
-            store.execute_sql(|| {
-                store.conn.execute_batch(
-                    "CREATE TABLE IF NOT EXISTS result_sets(id TEXT PRIMARY KEY, created INTEGER NOT NULL, expires INTEGER NOT NULL, payload TEXT NOT NULL)",
-                )
-            })?;
-        } else {
-            store.conn.busy_timeout(MAINTENANCE_BUSY_TIMEOUT)?;
-            store.conn.execute_batch(
-                "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA journal_size_limit=4194304;
-                 CREATE TABLE IF NOT EXISTS result_sets(id TEXT PRIMARY KEY, created INTEGER NOT NULL, expires INTEGER NOT NULL, payload TEXT NOT NULL)",
-            )?;
+                    .progress_handler(SQL_CHECK_STEPS, Some(move || handler_deadline.expired()))?;
+            }
+            None => store.conn.busy_timeout(MAINTENANCE_BUSY_TIMEOUT)?,
         }
+        result_set_schema::prepare(&store.conn, store.deadline.as_ref())?;
         Ok(store)
     }
 
@@ -99,45 +89,66 @@ impl ResultSetStore {
             )
         })?;
         let time = now();
-        execute_sql(&self.conn, self.deadline.as_ref(), || {
+        let expired = execute_sql(&self.conn, self.deadline.as_ref(), || {
             tx.execute("DELETE FROM result_sets WHERE expires<=?1", [time])
         })?;
         execute_sql(&self.conn, self.deadline.as_ref(), || {
             tx.execute(
-                "INSERT INTO result_sets VALUES(?1,?2,?3,?4)",
-                params![id, time, time + TTL_SECONDS, payload],
+                "INSERT INTO result_sets(id,created,expires,bytes,payload) VALUES(?1,?2,?3,?4,?5)",
+                params![id, time, time + TTL_SECONDS, payload.len() as i64, payload],
             )
         })?;
-        loop {
-            let (count, bytes): (usize, usize) = execute_sql(
+        let (mut count, mut bytes): (usize, usize) =
+            execute_sql(&self.conn, self.deadline.as_ref(), || {
+                tx.query_row(
+                    "SELECT count(*),coalesce(sum(bytes),0) FROM result_sets",
+                    [],
+                    |r| Ok((r.get::<_, i64>(0)? as usize, r.get::<_, i64>(1)? as usize)),
+                )
+            })?;
+        let mut evicted = 0;
+        while count > MAX_SETS || bytes > MAX_BYTES {
+            let oldest: Option<(String, i64)> = execute_sql(
                 &self.conn,
                 self.deadline.as_ref(),
                 || {
                     tx.query_row(
-                        "SELECT count(*),coalesce(sum(length(CAST(payload AS BLOB))),0) FROM result_sets",
-                        [],
-                        |r| Ok((r.get::<_, i64>(0)? as usize, r.get::<_, i64>(1)? as usize)),
+                        "SELECT id,bytes FROM result_sets WHERE id != ?1 ORDER BY created,id LIMIT 1",
+                        [&id],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
                     )
+                    .optional()
                 },
             )?;
-            if count <= MAX_SETS && bytes <= MAX_BYTES {
+            let Some((oldest, oldest_bytes)) = oldest else {
                 break;
-            }
+            };
             execute_sql(&self.conn, self.deadline.as_ref(), || {
-                tx.execute(
-                    "DELETE FROM result_sets WHERE id=(SELECT id FROM result_sets WHERE id != ?1 ORDER BY created,id LIMIT 1)",
-                    [&id],
-                )
+                tx.execute("DELETE FROM result_sets WHERE id=?1", [&oldest])
             })?;
+            count -= 1;
+            bytes = bytes.saturating_sub(oldest_bytes as usize);
+            evicted += 1;
         }
-        self.ensure_live()?;
-        self.conn
-            .busy_timeout(self.busy_slice())
-            .context("set result-set commit timeout")?;
-        let result = tx.commit().map_err(|error| self.classify(error.into()));
-        result?;
-        self.ensure_live()?;
+        commit(&self.conn, self.deadline.as_ref(), tx)?;
+        if expired + evicted > 0 {
+            self.return_free_pages();
+        }
         Ok(id)
+    }
+
+    /// Best effort after commit: a busy or expiring vacuum leaves pages for inserts to reuse.
+    fn return_free_pages(&self) {
+        let _ = self.conn.busy_timeout(busy_slice(self.deadline.as_ref()));
+        // Each step frees one page, so the pragma runs to completion.
+        let _ = (|| -> rusqlite::Result<()> {
+            let mut vacuum = self.conn.prepare(&format!(
+                "PRAGMA incremental_vacuum({VACUUM_PAGES_PER_SAVE})"
+            ))?;
+            let mut steps = vacuum.query([])?;
+            while steps.next()?.is_some() {}
+            Ok(())
+        })();
     }
 
     pub fn load(&self, id: &str) -> Result<StoredResultSet> {
@@ -170,27 +181,35 @@ impl ResultSetStore {
     fn ensure_live(&self) -> Result<()> {
         ensure_live(self.deadline.as_ref())
     }
+}
 
-    fn execute_sql<T>(&self, operation: impl FnMut() -> rusqlite::Result<T>) -> Result<T> {
-        execute_sql(&self.conn, self.deadline.as_ref(), operation)
-    }
+fn busy_slice(deadline: Option<&QueryDeadline>) -> Duration {
+    deadline.map_or(MAINTENANCE_BUSY_TIMEOUT, |deadline| {
+        deadline.cap(SQL_BUSY_SLICE)
+    })
+}
 
-    fn busy_slice(&self) -> Duration {
-        self.deadline
-            .as_ref()
-            .map_or(MAINTENANCE_BUSY_TIMEOUT, |deadline| {
-                deadline.cap(SQL_BUSY_SLICE)
-            })
-    }
+/// Commits `tx` within one busy slice of the remaining budget.
+fn commit(
+    conn: &Connection,
+    deadline: Option<&QueryDeadline>,
+    tx: rusqlite::Transaction<'_>,
+) -> Result<()> {
+    ensure_live(deadline)?;
+    conn.busy_timeout(busy_slice(deadline))
+        .context("set result-set commit timeout")?;
+    tx.commit()
+        .map_err(|error| classify(deadline, error.into()))?;
+    ensure_live(deadline)
+}
 
-    fn classify(&self, error: anyhow::Error) -> anyhow::Error {
-        match &self.deadline {
-            Some(deadline) if deadline.expired() => {
-                error.context(format!("{TIMED_OUT}: query deadline expired"))
-            }
-            Some(deadline) => deadline.classify(error),
-            None => error,
+fn classify(deadline: Option<&QueryDeadline>, error: anyhow::Error) -> anyhow::Error {
+    match deadline {
+        Some(deadline) if deadline.expired() => {
+            error.context(format!("{TIMED_OUT}: query deadline expired"))
         }
+        Some(deadline) => deadline.classify(error),
+        None => error,
     }
 }
 

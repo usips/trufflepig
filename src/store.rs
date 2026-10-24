@@ -34,7 +34,9 @@ use anyhow::{Context, Result};
 pub use cache_access::{
     index_cache_unavailable, is_index_cache_unavailable, preflight_results_cache,
 };
-pub use index_checkpoint::{IndexProgress, IndexProgressPhase, read_index_progress};
+pub use index_checkpoint::{
+    IndexProgress, IndexProgressPhase, read_index_progress, sweep_stale_stages,
+};
 pub use paths::{decode_path, encode_path};
 pub use read_access::{is_index_cannot_open, is_index_warming};
 use rusqlite::{Connection, OptionalExtension};

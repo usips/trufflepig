@@ -47,14 +47,15 @@ pub(super) fn system_command(
             None => anyhow::bail!("system_unavailable: no runtime dir"),
         },
         Some("prune") => {
-            let evicted = crate::system::sweep::sweep(
+            let report = crate::system::sweep::sweep(
                 &cache_base()?,
+                std::env::var_os("HOME")
+                    .map(std::path::PathBuf::from)
+                    .as_deref(),
                 std::time::SystemTime::now(),
                 crate::system::sweep::SWEEP_GRACE,
             );
-            render(&serde_json::to_string(
-                &serde_json::json!({ "evicted": evicted }),
-            )?)
+            render(&serde_json::to_string(&report)?)
         }
         None | Some("status") => {
             let ping = vec!["system".to_owned(), "status".to_owned()];
