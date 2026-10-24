@@ -49,6 +49,9 @@ pub(super) fn system_command(
         Some("prune") => {
             let report = crate::system::sweep::sweep(
                 &cache_base()?,
+                std::env::var_os("HOME")
+                    .map(std::path::PathBuf::from)
+                    .as_deref(),
                 std::time::SystemTime::now(),
                 crate::system::sweep::SWEEP_GRACE,
             );

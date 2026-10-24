@@ -8,8 +8,9 @@ fn scratch() -> tempfile::TempDir {
         .unwrap()
 }
 
+/// Sweeps with the scratch directory holding `base` as the user's home.
 fn sweep_now(base: &Path) -> SweepReport {
-    sweep(base, SystemTime::now(), SWEEP_GRACE)
+    sweep(base, base.parent(), SystemTime::now(), SWEEP_GRACE)
 }
 
 /// Creates a published cache under `base` for `root`, returning both paths.
@@ -143,9 +144,29 @@ fn sweep_keeps_roots_that_may_be_on_unmounted_volumes() {
     let blocker = scratch.path().join("not-a-directory");
     fs::write(&blocker, b"file").unwrap();
     let shadowed = marked_cache(&base, &blocker.join("repo"), "shadowed-cache");
-    assert!(sweep_now(&base).evicted.is_empty());
+    // A home of `/` puts both roots in scope, so the device and shape checks decide.
+    let swept = sweep(&base, Some(Path::new("/")), SystemTime::now(), SWEEP_GRACE);
+    assert!(swept.evicted.is_empty(), "{swept:?}");
     assert!(mounted.join(CACHE_ROOT_MARKER).is_file());
     assert!(shadowed.join(CACHE_ROOT_MARKER).is_file());
+}
+
+#[test]
+fn sweep_keeps_removable_media_root_outside_home_on_the_same_filesystem() {
+    let scratch = scratch();
+    let base = scratch.path().join("base");
+    let home = scratch.path().join("home");
+    // udisks removes `/media/$USER/<label>` on unmount, leaving `/media/$USER` on the root filesystem.
+    let media_user = scratch.path().join("media").join("josh");
+    fs::create_dir_all(&media_user).unwrap();
+    let media = marked_cache(&base, &media_user.join("USB").join("repo"), "media-cache");
+    let worktree = cache_for(&base, &home.join("repo/.worktrees/lane"), "worktree-cache");
+    fs::remove_dir_all(home.join("repo/.worktrees")).unwrap();
+    age_cache(&worktree);
+    let evicted = sweep(&base, Some(&home), SystemTime::now(), SWEEP_GRACE).evicted;
+    assert_eq!(evicted.len(), 1, "{evicted:?}");
+    assert_eq!(evicted[0].cache, worktree);
+    assert!(media.join(CACHE_ROOT_MARKER).is_file());
 }
 
 #[test]

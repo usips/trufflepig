@@ -1,7 +1,9 @@
 //! Decides whether a missing root was deleted or may sit on an unmounted volume.
-//! The nearest existing ancestor of a deleted root is an ordinary directory on the
-//! cache base's filesystem. Any other ancestor (a mount point, another device, or
-//! a non-directory entry) may hide an unmounted volume, so its caches are kept.
+//! A root whose parent directory exists was deleted. Otherwise the root must lie
+//! under the user's home, and its nearest existing ancestor must be a directory in
+//! home on the cache base's device and not a mount point. Anything else (removable
+//! media whose mount directory vanished, another device, a mount point, a file in
+//! the way) may hide an unmounted volume, so its cache is kept.
 
 use std::{
     fs,
@@ -9,15 +11,24 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// True when `root` is gone and its nearest existing ancestor is a plain directory
-/// on `base`'s device that is not itself a mount point.
-pub(super) fn root_deleted(root: &Path, base: &Path) -> bool {
+/// True when `root` is gone and the module rule proves it was deleted.
+pub(super) fn root_deleted(root: &Path, base: &Path, home: Option<&Path>) -> bool {
     if fs::symlink_metadata(root).is_ok() {
         return false;
     }
+    if root.parent().is_some_and(Path::is_dir) {
+        return true;
+    }
+    let Some(home) = home.map(|home| home.canonicalize().unwrap_or_else(|_| home.to_owned()))
+    else {
+        return false;
+    };
     let Some(ancestor) = nearest_existing_ancestor(root) else {
         return false;
     };
+    if !root.starts_with(&home) || !ancestor.starts_with(&home) {
+        return false;
+    }
     let (Ok(ancestor_meta), Ok(base_meta)) = (fs::symlink_metadata(&ancestor), fs::metadata(base))
     else {
         return false;

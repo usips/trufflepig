@@ -347,7 +347,8 @@ impl DaemonHandler for SystemRouter {
             }
             let base = base.clone();
             clock.running = Some(std::thread::spawn(move || {
-                sweep(&base, SystemTime::now(), SWEEP_GRACE);
+                let home = std::env::var_os("HOME").map(PathBuf::from);
+                sweep(&base, home.as_deref(), SystemTime::now(), SWEEP_GRACE);
             }));
             clock.last_sweep = Some(Instant::now());
         }

@@ -10,16 +10,16 @@ an index (`src/store/seed.rs`). Workspace cache selection follows the
 records its root in a `cache-root` marker until it holds an index; `ws status`
 reports a workspace worktree's seed outcome. On startup and every ten minutes the router
 sweeps the default base (`src/system/sweep.rs`). After a one-minute grace period it evicts a
-cache whose recorded root was deleted: the root's nearest existing ancestor is a directory on
-the base's device and not a mount point; any other ancestor may hide an unmounted volume, so
-that cache stays. Kept caches lose `stage-*` directories other than `stage-index-checkpoint`
-while their `index.lock` writer lease is free. `system prune` sweeps now and reports `evicted`
-and `removed_stages`. Explicit `--cache` bases are never swept.
-History defaults to the normal cache base
-keyed by canonical Git common directory, so linked worktrees share immutable Git
-facts. An explicit `--cache` isolates history; `--history-cache DIRECTORY` selects
-a shared history-cache base. In workspace mode, `--cache` supplies an isolated
-base with coordinator state and separate member caches.
+cache whose recorded root was deleted: its parent directory exists, or the root is under `$HOME`
+and its nearest existing ancestor is a directory under `$HOME` on the base's device and not a
+mount point. Anything else, such as removable media whose `/media/$USER/<label>` directory
+vanished, may be an unmounted volume, so that cache stays. Kept caches lose `stage-*`
+directories other than `stage-index-checkpoint` while their `index.lock` writer lease is free.
+`system prune` sweeps now and reports `evicted` and `removed_stages`. Explicit `--cache` bases
+are never swept. History defaults to the normal cache base keyed by canonical Git common
+directory, so linked worktrees share immutable Git facts. An explicit `--cache` isolates
+history; `--history-cache DIRECTORY` selects a shared history-cache base. In workspace mode,
+`--cache` supplies an isolated base with coordinator state and separate member caches.
 A per-user system daemon gives agent harnesses one endpoint to allowlist. Its
 socket is `daemon.sock` in the system directory (`src/system.rs:dir_from`):
 `$TRUFFLEPIG_SYSTEM_DIR` when absolute, else

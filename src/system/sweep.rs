@@ -48,8 +48,8 @@ pub struct SweepReport {
     pub removed_stages: Vec<PathBuf>,
 }
 
-/// Pure over `base`; never errors on one entry.
-pub fn sweep(base: &Path, now: SystemTime, grace: Duration) -> SweepReport {
+/// Pure over `base` and the user's `home`; never errors on one entry.
+pub fn sweep(base: &Path, home: Option<&Path>, now: SystemTime, grace: Duration) -> SweepReport {
     let mut report = SweepReport::default();
     let Ok(entries) = fs::read_dir(base) else {
         return report;
@@ -59,7 +59,7 @@ pub fn sweep(base: &Path, now: SystemTime, grace: Duration) -> SweepReport {
         if !fs::metadata(&cache).is_ok_and(|metadata| metadata.is_dir()) {
             continue;
         }
-        match evict_entry(base, &cache, now, grace) {
+        match evict_entry(base, home, &cache, now, grace) {
             Some(evicted) => report.evicted.push(evicted),
             None => report.removed_stages.extend(remove_stale_stages(&cache)),
         }
@@ -67,7 +67,13 @@ pub fn sweep(base: &Path, now: SystemTime, grace: Duration) -> SweepReport {
     report
 }
 
-fn evict_entry(base: &Path, cache: &Path, now: SystemTime, grace: Duration) -> Option<Evicted> {
+fn evict_entry(
+    base: &Path,
+    home: Option<&Path>,
+    cache: &Path,
+    now: SystemTime,
+    grace: Duration,
+) -> Option<Evicted> {
     let directory = fs::metadata(cache).ok().filter(Metadata::is_dir)?;
     let index_path = cache.join("index.sqlite3");
     let marker_path = cache.join(CACHE_ROOT_MARKER);
@@ -83,7 +89,7 @@ fn evict_entry(base: &Path, cache: &Path, now: SystemTime, grace: Duration) -> O
         Some(_) => recorded_root(&index_path)?,
         None => crate::store::decode_path(fs::read_to_string(&marker_path).ok()?.trim()).ok()?,
     };
-    if !vanished_root::root_deleted(&root, base) {
+    if !vanished_root::root_deleted(&root, base, home) {
         return None;
     }
     let daemon_stopped = cache.join("daemon.sock").exists()
