@@ -176,28 +176,28 @@ fn stage_inner(
         } else {
             coverage.excluded_files += 1;
         }
-        transaction.execute(
-            "INSERT INTO files(path,revision,language,status,bytes) VALUES(?1,?2,?3,?4,?5)",
-            params![
+        transaction
+            .prepare_cached(
+                "INSERT INTO files(path,revision,language,status,bytes) VALUES(?1,?2,?3,?4,?5)",
+            )?
+            .execute(params![
                 path,
                 revision,
                 extraction.language,
                 extraction.status,
                 length as i64
-            ],
-        )?;
+            ])?;
         let file_id = transaction.last_insert_rowid();
         if let (Some(source), Some(revision)) = (source.as_ref(), revision.as_ref()) {
             if extraction.status != "cancelled" {
                 insert_extraction_cache(&transaction, revision, &path, cache_version, &extraction)?;
             }
-            transaction.execute(
-                "INSERT OR IGNORE INTO contents VALUES(?1,?2)",
-                params![revision, source],
-            )?;
+            transaction
+                .prepare_cached("INSERT OR IGNORE INTO contents(revision,bytes) VALUES(?1,?2)")?
+                .execute(params![revision, source])?;
             insert_facts(&transaction, file_id, &extraction)?;
             if extraction.language != "text" {
-                transaction.execute("INSERT INTO definitions(file_id,name,kind,start,end,container) VALUES(?1,?2,'module',0,?3,NULL)", params![file_id, path, source.len() as i64])?;
+                insert_module_definition(&transaction, file_id, &path, source.len())?;
             }
             regions::insert(
                 &transaction,
@@ -223,11 +223,16 @@ fn stage_inner(
     Ok((coverage, fingerprint.finalize().to_hex().to_string()))
 }
 
+/// Locked `tree-sitter*` package versions, extracted from `Cargo.lock` by `build.rs`.
+const GRAMMAR_VERSIONS: &str = env!("TRUFFLEPIG_GRAMMAR_VERSIONS");
+
+/// Keys durable extractions on the extraction contract and grammar crate
+/// versions only, so unrelated dependency changes keep cached facts.
 pub(crate) fn extraction_cache_version() -> i64 {
     let mut version = blake3::Hasher::new();
-    version.update(b"trufflepig-extraction-cache-v1");
+    version.update(b"trufflepig-extraction-cache-v2");
     version.update(&EXTRACTION_CONTRACT_REVISION.to_le_bytes());
-    version.update(include_bytes!("../../Cargo.lock"));
+    version.update(GRAMMAR_VERSIONS.as_bytes());
     i64::from_le_bytes(
         version.finalize().as_bytes()[..8]
             .try_into()
@@ -253,11 +258,10 @@ fn cached_extraction(
 ) -> Result<(Extraction, bool)> {
     let grammar = path.rsplit('.').next().unwrap_or("");
     let cached: Option<String> = previous
-        .query_row(
+        .prepare_cached(
             "SELECT facts FROM extraction_cache WHERE revision=?1 AND grammar=?2 AND version=?3",
-            params![revision, grammar, cache_version],
-            |row| row.get(0),
-        )
+        )?
+        .query_row(params![revision, grammar, cache_version], |row| row.get(0))
         .optional()?;
     let mut from_publication = cached.is_some();
     let mut extraction: Extraction = match cached.as_deref() {
@@ -287,15 +291,16 @@ fn insert_extraction_cache(
     extraction: &Extraction,
 ) -> Result<()> {
     let grammar = path.rsplit('.').next().unwrap_or("");
-    staged.execute(
-        "INSERT OR IGNORE INTO extraction_cache VALUES(?1,?2,?3,?4)",
-        params![
+    staged
+        .prepare_cached(
+            "INSERT OR IGNORE INTO extraction_cache(revision,grammar,version,facts) VALUES(?1,?2,?3,?4)",
+        )?
+        .execute(params![
             revision,
             grammar,
             cache_version,
             serde_json::to_string(extraction)?
-        ],
-    )?;
+        ])?;
     Ok(())
 }
 
@@ -329,26 +334,47 @@ fn read_source(root: &Path, relative: &Path) -> (Option<Vec<u8>>, &'static str, 
     (Some(source), "read", length)
 }
 
+/// Inserts one file's extracted facts with statements compiled once per connection.
 pub(super) fn insert_facts(
     tx: &Transaction<'_>,
     file_id: i64,
     extraction: &Extraction,
 ) -> Result<()> {
     let mut ids = Vec::with_capacity(extraction.definitions.len());
+    let mut definitions = tx.prepare_cached(
+        "INSERT INTO definitions(file_id,name,kind,start,end,container) VALUES(?1,?2,?3,?4,?5,?6)",
+    )?;
     for definition in &extraction.definitions {
-        tx.execute("INSERT INTO definitions(file_id,name,kind,start,end,container) VALUES(?1,?2,?3,?4,?5,?6)", params![file_id, definition.name, definition.kind, definition.start as i64, definition.end as i64, definition.container])?;
-        ids.push(tx.last_insert_rowid());
+        ids.push(definitions.insert(params![
+            file_id,
+            definition.name,
+            definition.kind,
+            definition.start as i64,
+            definition.end as i64,
+            definition.container
+        ])?);
     }
+    let mut occurrences = tx.prepare_cached(
+        "INSERT INTO occurrences(file_id,name,start,end,role,target,candidates,provenance) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+    )?;
+    let mut candidates = String::new();
     for occurrence in &extraction.occurrences {
         let target = occurrence.target.and_then(|index| ids.get(index)).copied();
-        let candidates: Vec<i64> = occurrence
-            .candidates
-            .iter()
-            .filter_map(|index| ids.get(*index).copied())
-            .take(64)
-            .collect();
-        tx.execute("INSERT INTO occurrences(file_id,name,start,end,role,target,candidates,provenance) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)", params![file_id, occurrence.name, occurrence.start as i64, occurrence.end as i64, occurrence.role, target, serde_json::to_string(&candidates)?, occurrence.provenance])?;
+        candidate_json(&ids, &occurrence.candidates, &mut candidates);
+        occurrences.execute(params![
+            file_id,
+            occurrence.name,
+            occurrence.start as i64,
+            occurrence.end as i64,
+            occurrence.role,
+            target,
+            candidates,
+            occurrence.provenance
+        ])?;
     }
+    let mut relationships = tx.prepare_cached(
+        "INSERT INTO relationships(source,target,kind,file_id,start,end,provenance) VALUES(?1,?2,?3,?4,?5,?6,?7)",
+    )?;
     for relationship in &extraction.relationships {
         let Some(source) = ids.get(relationship.source) else {
             continue;
@@ -357,18 +383,81 @@ pub(super) fn insert_facts(
             .target
             .and_then(|index| ids.get(index))
             .copied();
-        tx.execute(
-            "INSERT INTO relationships VALUES(?1,?2,?3,?4,?5,?6,?7)",
-            params![
-                source,
-                target,
-                relationship.kind,
-                file_id,
-                relationship.evidence_start as i64,
-                relationship.evidence_end as i64,
-                relationship.provenance
-            ],
-        )?;
+        relationships.execute(params![
+            source,
+            target,
+            relationship.kind,
+            file_id,
+            relationship.evidence_start as i64,
+            relationship.evidence_end as i64,
+            relationship.provenance
+        ])?;
     }
     Ok(())
+}
+
+/// The file-level `module` definition that spans a non-text source.
+pub(super) fn insert_module_definition(
+    tx: &Transaction<'_>,
+    file_id: i64,
+    path: &str,
+    length: usize,
+) -> Result<()> {
+    tx.prepare_cached(
+        "INSERT INTO definitions(file_id,name,kind,start,end,container) VALUES(?1,?2,'module',0,?3,NULL)",
+    )?
+    .execute(params![file_id, path, length as i64])?;
+    Ok(())
+}
+
+/// Writes up to 64 resolved candidate ids as a JSON array into `buffer`;
+/// readers parse the column as JSON, so an empty set is `[]`.
+fn candidate_json(ids: &[i64], indexes: &[usize], buffer: &mut String) {
+    use std::fmt::Write;
+    buffer.clear();
+    buffer.push('[');
+    let resolved = indexes.iter().filter_map(|index| ids.get(*index)).take(64);
+    for (position, id) in resolved.enumerate() {
+        if position > 0 {
+            buffer.push(',');
+        }
+        let _ = write!(buffer, "{id}");
+    }
+    buffer.push(']');
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extraction_cache_version_keys_on_grammar_crates_only() {
+        assert!(
+            GRAMMAR_VERSIONS.contains("tree-sitter="),
+            "{GRAMMAR_VERSIONS}"
+        );
+        assert!(
+            GRAMMAR_VERSIONS.contains("tree-sitter-rust="),
+            "{GRAMMAR_VERSIONS}"
+        );
+        assert!(
+            GRAMMAR_VERSIONS
+                .split(';')
+                .all(|entry| entry.starts_with("tree-sitter")),
+            "{GRAMMAR_VERSIONS}"
+        );
+    }
+
+    #[test]
+    fn candidate_json_keeps_resolved_ids_up_to_the_bound() {
+        let mut buffer = String::new();
+        candidate_json(&[10, 20], &[], &mut buffer);
+        assert_eq!(buffer, "[]");
+        candidate_json(&[10, 20], &[1, 7, 0], &mut buffer);
+        assert_eq!(buffer, "[20,10]");
+        let ids: Vec<i64> = (0..100).collect();
+        let indexes: Vec<usize> = (0..100).collect();
+        candidate_json(&ids, &indexes, &mut buffer);
+        assert_eq!(serde_json::from_str::<Vec<i64>>(&buffer).unwrap().len(), 64);
+    }
 }

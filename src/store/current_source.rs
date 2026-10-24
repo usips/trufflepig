@@ -10,12 +10,13 @@ pub(crate) fn register_paths<'a>(
     paths: impl IntoIterator<Item = &'a str>,
 ) -> Result<()> {
     let tx = store.conn.unchecked_transaction()?;
+    let mut register = tx.prepare(
+        "INSERT OR IGNORE INTO files(path,revision,language,status,bytes) VALUES(?1,NULL,?2,'unread',0)",
+    )?;
     for path in paths {
-        tx.execute(
-            "INSERT OR IGNORE INTO files(path,revision,language,status,bytes) VALUES(?1,NULL,?2,'unread',0)",
-            params![path, crate::extract::language(path)],
-        )?;
+        register.execute(params![path, crate::extract::language(path)])?;
     }
+    drop(register);
     tx.commit()?;
     Ok(())
 }
@@ -109,10 +110,7 @@ pub(crate) fn insert(
     };
     scan::insert_facts(&tx, file_id, extraction)?;
     if extraction.language != "text" {
-        tx.execute(
-            "INSERT INTO definitions(file_id,name,kind,start,end,container) VALUES(?1,?2,'module',0,?3,NULL)",
-            params![file_id, path, bytes.len() as i64],
-        )?;
+        scan::insert_module_definition(&tx, file_id, path, bytes.len())?;
     }
     regions::insert(&tx, file_id, path, bytes, &extraction.definitions)?;
     tx.commit()?;

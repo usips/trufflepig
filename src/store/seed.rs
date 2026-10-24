@@ -5,7 +5,7 @@
 //! Seeding never writes to stdout or stderr: each attempt that does work is
 //! recorded in `<worktree cache>/seed-outcome.json` ([`read_seed_outcome`]).
 
-use super::{encode_path, publish, schema};
+use super::{encode_path, live_index};
 use crate::daemon::deadline::QueryDeadline;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, TransactionBehavior};
@@ -514,16 +514,18 @@ fn copy_extraction_facts(
         SQLITE_PROGRESS_STEPS,
         Some(move || progress_deadline.expired()),
     )?;
-    conn.execute_batch("PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL;")?;
+    // Setting auto-vacuum writes the empty file's header; the FULL commit syncs it.
+    conn.execute_batch(
+        "PRAGMA journal_mode=DELETE; PRAGMA synchronous=OFF; PRAGMA auto_vacuum=INCREMENTAL;
+         PRAGMA synchronous=FULL;",
+    )?;
 
     let copied: Result<u64> = (|| {
         ensure_seed_deadline(deadline)?;
         refresh_seed_busy_timeout(&conn, deadline).context("before staged index transaction")?;
         let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         ensure_seed_deadline(deadline)?;
-        schema::create(&transaction).context("create staged index schema")?;
-        ensure_seed_deadline(deadline)?;
-        publish::create_journal(&transaction).context("create staged publication journal")?;
+        live_index::create_fresh(&transaction).context("create staged index schema")?;
         ensure_seed_deadline(deadline)?;
         transaction
             .execute(
@@ -546,7 +548,8 @@ fn copy_extraction_facts(
             .context("before copying member extraction facts")?;
         let rows = transaction
             .execute(
-                "INSERT INTO extraction_cache SELECT * FROM source.extraction_cache",
+                "INSERT INTO extraction_cache(revision,grammar,version,facts)
+                 SELECT revision,grammar,version,facts FROM source.extraction_cache",
                 [],
             )
             .context("copy member extraction facts")?;

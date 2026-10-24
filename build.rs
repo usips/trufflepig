@@ -37,6 +37,11 @@ fn main() {
         let _ = tool_probe::write_probe_report(Path::new(&out_dir), &report);
     }
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+    let lock = fs::read_to_string(manifest.join("Cargo.lock")).unwrap_or_default();
+    println!(
+        "cargo:rustc-env=TRUFFLEPIG_GRAMMAR_VERSIONS={}",
+        grammar_versions(&lock)
+    );
     let mut files = vec![manifest.join("Cargo.toml"), manifest.join("Cargo.lock")];
     collect_files(&manifest.join("src"), &mut files);
     files.sort_by(|left, right| left.cmp(right));
@@ -145,6 +150,26 @@ fn command_stdout(path: &Path, arg: &str) -> Option<Vec<u8>> {
         .ok()
         .filter(|output| output.status.success())
         .map(|output| output.stdout)
+}
+
+/// `name=version` of every locked `tree-sitter*` package, sorted and
+/// `;`-joined; extraction caches key on these, not the whole lockfile.
+fn grammar_versions(lock: &str) -> String {
+    let mut versions = Vec::new();
+    let mut name = None;
+    for line in lock.lines() {
+        if line == "[[package]]" {
+            name = None;
+        } else if let Some(value) = line.strip_prefix("name = ") {
+            name = Some(value.trim_matches('"'));
+        } else if let (Some(package), Some(value)) = (name, line.strip_prefix("version = "))
+            && package.starts_with("tree-sitter")
+        {
+            versions.push(format!("{package}={}", value.trim_matches('"')));
+        }
+    }
+    versions.sort();
+    versions.join(";")
 }
 
 fn hash_bytes(lanes: &mut [u64; 4], bytes: &[u8]) {

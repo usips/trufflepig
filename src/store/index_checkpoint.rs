@@ -298,6 +298,24 @@ impl IndexCheckpoint {
         }
     }
 
+    /// Records why `deadline` ended a slice: budget exhaustion counts toward
+    /// [`STALLED_SLICES_BEFORE_MAINTENANCE`]; cancellation or another cause
+    /// only records progress.
+    pub(super) fn note_interruption(
+        &mut self,
+        deadline: &QueryDeadline,
+        cause: &anyhow::Error,
+    ) -> Result<()> {
+        if deadline.time_expired()
+            && !deadline.cancelled()
+            && index_deadline::is_deadline_interruption(cause)
+        {
+            self.note_budget_expired(deadline)
+        } else {
+            self.record_progress()
+        }
+    }
+
     pub(super) fn record_progress(&mut self) -> Result<()> {
         self.commit()?;
         self.progress.completed_files = self.retained_file_count;
