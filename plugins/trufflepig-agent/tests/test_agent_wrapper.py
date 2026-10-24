@@ -1,4 +1,5 @@
 """Exercise the wrapper boundary using an executable stand-in for the CLI."""
+import hashlib
 import importlib.util
 import json
 import os
@@ -340,6 +341,14 @@ sys.exit(exit_code)
                 self.env.update(RESPONSE=response, STDERR=stderr, EXIT=code)
                 self.run_wrapper(*args)
                 self.assertEqual("no_hits" in self.last_record()["signals"], expected)
+
+    def test_unattributed_calls_record_recent_use_by_directory(self):
+        del self.env["CODEX_THREAD_ID"]
+        self.env["TRUFFLEPIG_AGENT_HARNESS"] = "kimi"
+        self.run_wrapper("search", "x")
+        key = hashlib.sha256(str(self.root).encode()).hexdigest()[:12]
+        recent = list((self.root / "state/trufflepig/agent-recent").glob(f"*/{key}-unattributed"))
+        self.assertEqual(len(recent), 1, recent)
 
     def test_wrapper_harness_hint_is_used_without_native_markers(self):
         del self.env["CODEX_THREAD_ID"]

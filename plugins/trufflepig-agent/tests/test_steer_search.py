@@ -345,6 +345,21 @@ class HookTests(unittest.TestCase):
         recent.write_text("x")
         self.assertEqual(self.run_hook("grep -rn 'fn step' crates/", harness="kimi").returncode, 0)
 
+    def test_block_translates_globs_and_unlocks_from_the_runtime_fallback(self):
+        glob = {"pattern": "crates/**/*steer*.py"}
+        result = self.run_hook("", harness="kimi", tool="Glob", tool_input=glob)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("trufflepig-agent search 'steer .py file:crates/ kind:file'", result.stderr)
+        self.assertNotIn("re:", result.stderr)
+        # A sandboxed wrapper without a session records its call under the runtime directory.
+        runtime = Path(self.scratch.name) / "runtime"
+        (Path(self.env["XDG_CONFIG_HOME"]) / "trufflepig/agent-runtime.json").write_text(
+            json.dumps({"runtime_dir": str(runtime)}))
+        recent = runtime / "agent-recent/kimi" / f"{checkout.cwd_key(str(self.repo))}-unattributed"
+        recent.parent.mkdir(parents=True)
+        recent.write_text("x")
+        self.assertEqual(self.run_hook("", harness="kimi", tool="Glob", tool_input=glob).returncode, 0)
+
     def test_pipe_filters_unindexed_directories_and_off_mode_are_silent(self):
         self.assertEqual(self.run_hook("cargo test 2>&1 | grep FAILED", mode="strict").stdout, "")
         outside = Path(self.scratch.name) / "elsewhere"

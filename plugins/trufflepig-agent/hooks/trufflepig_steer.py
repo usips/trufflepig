@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bin"))
-from trufflepig_runtime import steering_mode
+from trufflepig_runtime import fallback_root, steering_mode
 from trufflepig_checkout import config_dir, cwd_key, state_dir
 
 # Classes where the translated command answers the same question in one call.
@@ -77,17 +77,16 @@ def recent_fallback_reason(harness: str, checkout: Path) -> str | None:
 
 
 def used_recently(harness: str, cwd: str) -> bool:
-    """Legacy `block` policy: any trufflepig-agent call from this directory recently."""
-    recent = state_dir() / "agent-recent" / harness
-    if not recent.is_dir():
-        return False
+    """`block` policy: any trufflepig-agent call from this directory recently, with or
+    without a session, in the state directory or the wrapper's runtime fallback."""
     now = time.time()
-    for path in recent.glob(f"{cwd_key(cwd)}-*"):
-        try:
-            if now - path.stat().st_mtime <= UNLOCK_WINDOW_SECONDS:
-                return True
-        except OSError:
-            continue
+    for base in (state_dir(), fallback_root()):
+        for path in (base / "agent-recent" / harness).glob(f"{cwd_key(cwd)}-*"):
+            try:
+                if now - path.stat().st_mtime <= UNLOCK_WINDOW_SECONDS:
+                    return True
+            except OSError:
+                continue
     return False
 
 
