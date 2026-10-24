@@ -33,6 +33,7 @@ Mismatches fail `board_api_mismatch` without negotiation. Errors are
 | `GET /styles/board_overview.css` | Overview, card, and activity styles |
 | `GET /board_dom.js`, `/board_views.js`, `/board_cards.js` | Public UI modules |
 | `GET /board_working_rows.js` | Working now row module |
+| `GET /board_refs.js`, `/board_route_target.js` | Reference routes and focus targets |
 | `GET /marks/agent_marks.js` | JavaScript marks; no vendor image routes |
 | `GET /board_routing.js`, `/board_render_loop.js` | Public UI modules |
 | `GET /pages/board_pages.js`, `/pages/plan_page.js`, `/pages/proposal_page.js` | Page modules |

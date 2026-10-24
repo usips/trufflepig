@@ -7,11 +7,23 @@ stream leadership are below.
 Primary routes are `/#/P7`, `/#/P7@N`, `/#/P7@A..B`, and `/#/E485`. Named routes include
 `/#/attention`, `/#/done`, `/#/feedback`, `/#/entries`, `/#/search`, `/#/new`, `/#/claims`, and
 `/#/edit/P7@N`; `/#/` shows Overview. The Review tab is a static note: review packets stay a CLI
-surface (`trufflepig board review P7@N`). Heading query state survives table-of-contents, same-page
+surface (`trufflepig board review P7@N`). A stored revision page `/#/P7@N` links the previous and
+next revisions, the diff from its predecessor, the current plan, and History. The active navigation
+item and tab carry `aria-current="page"`. Heading query state survives table-of-contents, same-page
 Markdown, and skip-link navigation. Read selection and Project chips follow the
 [Project contract](board-projects.md#browser-selector). Feedback uses 20-record FeedbackList pages
 and batches at most four Entry Show reads to obtain each row's current permissions. Recent-call
 metadata renders literally; typed outbox entries/events display `(spooled, unverified)`.
+
+References link through `board_refs.js:boardRefRoute`, the one grammar for rendered links: `E485`
+opens the entry; `P7`, `P7@N`, and `P7@A..B` open the plan, revision, or diff; `P7.3` opens
+`/#/P7?tab=tasks&task=P7.3`; a worker address `P7.3/handle` adds `focus=worker-P7.3-handle`; a full
+commit id opens its plan's Commits tab (`oid=`) when the plan is known and `/#/search?q=<oid>`
+otherwise. Other text stays inert. A route's `focus=` names a `data-anchor` target (`entry-E485`,
+`worker-P7.3-handle`, `commit-<oid>`), falling back to `heading`, then `oid`, then `task`. After a
+navigation renders, the target's enclosing disclosures open, it scrolls into view, and it carries
+`data-targeted`, an outline that fades (static under reduced motion). Live refreshes never repeat
+this, and same-page focus links reveal without a reload.
 
 Overview refreshes every 15 seconds: inbox renewal, claim expiry, and configuration changes can
 occur without advancing the event sequence. Entries views
@@ -37,8 +49,9 @@ once on page show; restored and foregrounded pages update their relative text im
 Form drafts, focus (by `data-focus-key`), scroll position, and native disclosures (by
 `data-disclosure-key` and occurrence) survive live-region refreshes. Disclosure choices persist for
 the tab's lifetime, including across navigation; a lazily filled disclosure renders its body when
-restored open. Connection announcements fire only on outage, authorization expiry, and restore. Editors retain the originally loaded
-base revision; stale edits preserve the user's draft and never silently rebase or retry.
+restored open. Connection announcements fire only on outage, authorization expiry, and restore.
+Editors retain the originally loaded base revision; stale edits preserve the user's draft and never
+silently rebase or retry.
 Proposal/acceptance authority and task transitions remain backend decisions.
 
 ## Active tasks and Done
@@ -49,21 +62,23 @@ closed by default; its one-line summary (two lines on narrow screens) shows the 
 linking to the task, the ellipsized scope, the actor mark with model (and harness when the mark
 does not name it), the step, open questions when nonzero, live workers, relative activity, and a
 stale badge. The full scope and `user@host/harness/session` identity with model and effort stay in
-hover titles and the mark's label. Expanded, a row lists each live worker (mark, `/handle`, role,
-scope, activity), the ended-worker count, and `task details →`. Working now
+hover titles and the mark's label. Expanded, a row lists each live worker (mark, `/handle` linking
+to that worker, role, scope, activity), the ended-worker count, and `task details →`. Working now
 never requires horizontal scrolling. Below it, Needs you precedes plan lanes on narrow screens.
 
 Full claim cards — scope, attribution, signals, and the task agent tree — appear on Claims, a plan's
 Tasks claims panel, Needs you stale claims (linking to their tasks without release controls), and
-task detail. The task agent tree lists the lead claim and its workers with role, state, handle, scope, files,
-last activity, review verdict, and progress. Its attribution adds the observed origin, peer IP, and
+task detail. The task agent tree lists the lead claim and its workers with role, state, handle,
+scope, files, last activity, review verdict, and progress. Its attribution adds the observed origin, peer IP, and
 authority source recorded on the claim's entry. Workers ended more than 30 minutes ago collapse under
 `Ended workers (N)`, and workers beyond the first 20 count as omitted.
 
 A plan's Tasks tab shows each claim with the same attribution. A stale claim offers `Release stale
 claim` (a `task_move` to `todo`) and omits the `todo` move control. A task reference such as
-`/#/P7?tab=tasks&task=P7.1` opens that task's detail: its agent tree, claim history, task entries,
-and task-linked commits, with omitted counts.
+`/#/P7?tab=tasks&task=P7.1` opens that task's detail pinned above the task list: its agent tree,
+claim history, task entries, and task-linked commits, with omitted counts. A Latest activity claim
+event opens its task focused on the claim entry and still links the entry; worker events open the
+worker. An entry page whose references name a task links `View in task`, focused on that entry.
 
 Every plan page shows Plan grants below its tabs. Rows list roles, live, expired, or revoked status,
 grantee, owner scope, source, grant time, and expiry. Where the server reports `can_manage_grants`,

@@ -1,5 +1,6 @@
 import { createBoardFeedback } from "../feedback_triage.js";
 import { createPlanPage } from "./plan_page.js";
+import { BOARD_REF_PATTERNS, entryAnchor } from "../board_refs.js";
 
 export function createProposalPage(context) {
   const {
@@ -41,8 +42,11 @@ export function createProposalPage(context) {
   }
   function entryPage(view, diff, route, extra = {}) {
     const entry = view.entry;
+    const task = (entry.refs || []).map(String).find(ref => BOARD_REF_PATTERNS.task.test(ref));
     const page = add(el("div", "entry-page"),
-      title(`${entry.id} · ${entry.kind}`, entry.plan ? `Plan ${entry.plan}` : "Board entry"),
+      title(`${entry.id} · ${entry.kind}`, entry.plan ? `Plan ${entry.plan}` : "Board entry",
+        task ? refLink(task, `View in task ${task} →`, "button compact entry-task-link",
+          { focus: entryAnchor(entry.id) }) : null),
       entryCard(entry));
     const proposal = view.proposal;
     if (proposal) {

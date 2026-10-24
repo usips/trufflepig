@@ -1,3 +1,5 @@
+import { boardRefRoute } from "./board_refs.js";
+
 export function decodeBoardFragment(value) {
   try { return decodeURIComponent(value); } catch (_) { return value; }
 }
@@ -53,21 +55,12 @@ export function createBoardDom(state) {
     if (!native) item.setAttribute("tabindex", "-1");
     return item;
   }
+  // Links a complete board reference (grammar: board_refs.js boardRefRoute);
+  // anything else renders as inert text.
   function refLink(ref, label = ref, className = "mono", context = {}) {
     if (!ref) return el("span", className, label || "—");
-    const text = String(ref);
-    if (/^E[1-9]\d*$/.test(text)) return link(label, "entry", { ref: text }, className);
-    if (/^P[1-9]\d*\.\d+$/.test(text)) {
-      return link(label, "plan", { ref: planId(text), tab: "tasks", task: text }, className);
-    }
-    if (/^P[1-9]\d*(?:@\d+(?:\.\.(?:\d+)?)?)?$/.test(text)) return link(label, "plan", { ref: text }, className);
-    if (/^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/.test(text)) {
-      return context.plan
-        ? link(label, "plan",
-          { ref: context.plan, tab: "commits", oid: text.toLowerCase(), repo: context.repo_key }, className)
-        : link(label, "search", { q: text }, className);
-    }
-    return el("span", className, label);
+    const route = boardRefRoute(ref, context);
+    return route ? link(label, route.view, route.params, className) : el("span", className, label);
   }
   function badge(value) {
     const item = el("span", "badge", value || "unknown");

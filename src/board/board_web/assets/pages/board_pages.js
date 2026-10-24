@@ -33,7 +33,7 @@ export function createBoardDetails(context) {
     if (!route.q) return add(page, empty("Enter a phrase to search the board."));
     const hits = collection(data, "hits");
     for (const hit of hits) {
-      const item = refLink(hit.target, "", "search-result");
+      const item = refLink(hit.target, "", "search-result", { plan: hit.plan });
       add(item,
         add(el("div", "row"), el("h2", "mono", hit.target), badge(hit.source || hit.kind),
           hit.plan ? el("span", "muted small", hit.plan) : null),

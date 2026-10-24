@@ -4,6 +4,7 @@ import { createBoardDom, decodeBoardFragment } from "./board_dom.js";
 import { createBoardViews } from "./board_views.js";
 import { createBoardRouting, routeFromLocation } from "./board_routing.js";
 import { createBoardRenderLoop } from "./board_render_loop.js";
+import { revealRouteTarget } from "./board_route_target.js";
 import {
   offeredTokenFromHash, resolveBootstrapToken, resolveAdoptionToken,
 } from "./state/board_web_token.js";
@@ -179,9 +180,9 @@ document.addEventListener("click", event => {
   const target = new URL(anchor.href, location.href);
   history.pushState({}, "", target.pathname + target.search + target.hash);
   const next = routeFromLocation();
-  if (routeUrl(next.view, { ...next, heading: "" }) === routeUrl(state.route.view, { ...state.route, heading: "" })) {
-    adoptRoute(next);
-    document.getElementById(next.heading)?.scrollIntoView?.({ block: "start" }); return;
+  const place = route => routeUrl(route.view, { ...route, heading: "", focus: "" });
+  if (place(next) === place(state.route)) {
+    adoptRoute(next); revealRouteTarget(main, next); return;
   }
   state.navigation++;
   adoptRoute(next); notice(""); void loop.loadRoute(true);

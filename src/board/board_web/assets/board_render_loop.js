@@ -1,5 +1,6 @@
 import { resyncSeenMark } from "./state/board_seen.js";
 import { boardReadScope, boardProjectSelector } from "./board_routing.js";
+import { revealRouteTarget } from "./board_route_target.js";
 
 export function createBoardRenderLoop({
   state, dom, main, apiVersion, seenStorage, seenKey,
@@ -259,8 +260,12 @@ export function createBoardRenderLoop({
     state.refreshing = true; state.refreshAgain = false;
     main.setAttribute("aria-busy", "true");
     if (focus) main.replaceChildren(el("div", "loading", "Loading…"));
-    document.querySelectorAll("[data-route]")
-      .forEach(item => item.classList.toggle("active", item.dataset.route === route.view));
+    document.querySelectorAll("[data-route]").forEach(item => {
+      const current = item.dataset.route === route.view;
+      item.classList.toggle("active", current);
+      if (current && item.closest("nav")) item.setAttribute("aria-current", "page");
+      else item.removeAttribute("aria-current");
+    });
     try {
       assertAuth();
       const result = await wiring.fetchRoute(route, controller.signal, forceSnapshot);
@@ -296,8 +301,7 @@ export function createBoardRenderLoop({
       } else if (!state.stream && !state.reconnect) wiring.startStream(state.watermark);
       if (focus) {
         main.focus({ preventScroll: true }); window.scrollTo({ top: 0 });
-        const anchor = route.heading || (route.oid ? `commit-${route.oid}` : route.task);
-        if (anchor) document.getElementById(anchor)?.scrollIntoView?.({ block: "start" });
+        revealRouteTarget(main, route);
       }
     } catch (error) {
       if (isAbort(error) || generation !== state.generation) return;

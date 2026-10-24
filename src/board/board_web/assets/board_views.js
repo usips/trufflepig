@@ -231,18 +231,19 @@ export function createBoardViews(context) {
     return retainForm(form, `post:${target}:${defaults.question || ""}`);
   }
   function taskDetails(data, headings = []) {
-    const tasks = [...(data.tasks || [])], claims = data.claims || [];
+    const claims = data.claims || [];
     const tasksWritable = data.plan?.lifecycle_state !== "closed";
     const selectedView = data.task_view;
-    if (selectedView?.task && !tasks.some(task => task.id === selectedView.task.id)) {
-      tasks.unshift(selectedView.task);
-    }
+    // The selected task's detail is pinned above the list instead of inline.
+    const selected = selectedView?.task || null;
+    const tasks = [...(selected ? [selected] : []),
+      ...(data.tasks || []).filter(task => task.id !== selected?.id)];
     const content = el("div");
     for (const task of tasks) {
-      const taskView = selectedView?.task?.id === task.id ? selectedView : null;
+      const taskView = selected?.id === task.id ? selectedView : null;
       const claim = taskView ? taskView.current_claim
         : claims.find(item => item.task === task.id && !item.ended_at);
-      const item = el("article", "task-detail");
+      const item = el("article", taskView ? "task-detail task-detail-pinned" : "task-detail");
       item.id = task.id;
       focusKey(item, `task-detail:${task.id}`);
       add(item, add(el("div", "row wrap"), refLink(task.id), badge(taskColumnLabel(task.column)), el("strong", "", task.title)));

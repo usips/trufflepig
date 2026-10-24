@@ -8,9 +8,10 @@ mod tests;
 use super::{
     BoardWebState, PUBLIC_AGENT_MARKS, PUBLIC_CARDS, PUBLIC_DOM, PUBLIC_DONE_PAGE, PUBLIC_ENTRIES,
     PUBLIC_GRANTS, PUBLIC_INGEST, PUBLIC_LRU, PUBLIC_MAIN, PUBLIC_OVERVIEW_STYLE, PUBLIC_PAGES,
-    PUBLIC_PLAN_PAGE, PUBLIC_PROPOSAL_PAGE, PUBLIC_READER, PUBLIC_RENDER_LOOP, PUBLIC_ROUTING,
-    PUBLIC_SEEN, PUBLIC_SHELL, PUBLIC_STREAM, PUBLIC_STREAM_ELECTION, PUBLIC_STREAM_PARSE,
-    PUBLIC_STYLE, PUBLIC_TASK_VIEW, PUBLIC_TOKEN, PUBLIC_TRIAGE, PUBLIC_VIEWS, PUBLIC_WORKING_ROWS,
+    PUBLIC_PLAN_PAGE, PUBLIC_PROPOSAL_PAGE, PUBLIC_READER, PUBLIC_REFS, PUBLIC_RENDER_LOOP,
+    PUBLIC_ROUTE_TARGET, PUBLIC_ROUTING, PUBLIC_SEEN, PUBLIC_SHELL, PUBLIC_STREAM,
+    PUBLIC_STREAM_ELECTION, PUBLIC_STREAM_PARSE, PUBLIC_STYLE, PUBLIC_TASK_VIEW, PUBLIC_TOKEN,
+    PUBLIC_TRIAGE, PUBLIC_VIEWS, PUBLIC_WORKING_ROWS,
     http_audit::HttpAudit,
     http_wire::{self, HttpError, HttpMethod, HttpRequest},
     web_guard::{ChallengeNonce, RouteAccess, WebGuard},
@@ -169,6 +170,8 @@ pub(super) fn public_asset(path: &str) -> Option<(&str, &str)> {
     let script = match path {
         "/board_web_main.js" => PUBLIC_MAIN,
         "/board_dom.js" => PUBLIC_DOM,
+        "/board_refs.js" => PUBLIC_REFS,
+        "/board_route_target.js" => PUBLIC_ROUTE_TARGET,
         "/board_views.js" => PUBLIC_VIEWS,
         "/board_cards.js" => PUBLIC_CARDS,
         "/board_working_rows.js" => PUBLIC_WORKING_ROWS,

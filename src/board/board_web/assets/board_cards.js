@@ -1,4 +1,5 @@
 import { actorAttribution, harnessVendor, recipientMark } from "./marks/agent_marks.js";
+import { entryAnchor, workerAnchor } from "./board_refs.js";
 
 export function createBoardCards({ state, dom, entryRecord, collection }) {
   const {
@@ -15,6 +16,7 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
     if (!entry) return empty("Entry unavailable.");
     const item = el("article", "entry-card");
     focusKey(item, `entry-card:${entry.id}`);
+    item.dataset.anchor = entryAnchor(entry.id);
     const meta = el("div", "entry-meta");
     add(meta, refLink(entry.id), badge(entry.kind), actorAttribution(entry),
       entry.via === "outbox" ? el("span", "provenance", "(spooled, unverified)") : null,
@@ -32,6 +34,21 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
     if (options.actions) item.append(options.actions);
     return item;
   }
+  // Claim and worker events link where the work lives: a claim opens its task
+  // focused on the claim entry (still linked), a worker event opens that worker.
+  function eventSubject(event) {
+    const summary = String(event.summary || "");
+    const claimed = event.kind === "claim" && /^took (P[1-9]\d*\.\d+):/.exec(summary);
+    if (claimed && /^E[1-9]\d*$/.test(String(event.subject))) {
+      return add(el("span", "event-subject"),
+        refLink(claimed[1], claimed[1], "mono", { focus: entryAnchor(event.subject) }),
+        el("span", "muted small", " · "), refLink(event.subject, event.subject, "mono muted small"));
+    }
+    const worker = ["worker_add", "worker_end"].includes(event.kind)
+      && /\bworker (P[1-9]\d*\.\d+)\/([a-z0-9_-]{1,32})\b/.exec(summary);
+    if (worker && worker[1] === String(event.subject)) return refLink(`${worker[1]}/${worker[2]}`);
+    return refLink(event.subject, event.subject, "mono", { plan: event.plan });
+  }
   function eventList(events) {
     const list = el("ol", "event-list");
     const activity = (events || []).map(event => {
@@ -47,7 +64,7 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
     for (const event of ordered) {
       const item = el("li", "event-row");
       focusKey(item, `event:${event.seq}`);
-      add(item, fresh(event) ? badge("new") : null, badge(event.kind), refLink(event.subject),
+      add(item, fresh(event) ? badge("new") : null, badge(event.kind), eventSubject(event),
         el("span", "event-summary", cardPreview(event.summary)),
         actorAttribution(event),
         event.via === "outbox" ? el("span", "provenance", "(spooled, unverified)") : null,
@@ -137,6 +154,9 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
     const source = (options.entries || []).find(entry => entry?.id === worker.entry);
     const item = el("li", "agent-tree-row worker-row");
     item.dataset.state = ended ? String(worker.state || "ended") : "live";
+    if (worker.address?.task && worker.address?.handle) {
+      item.dataset.anchor = workerAnchor(worker.address.task, worker.address.handle);
+    }
     const details = add(el("div", "agent-row-heading"),
       el("strong", "", workerRoleLabel(worker.role)),
       worker.state ? badge(worker.state) : badge("live"),
@@ -174,6 +194,7 @@ export function createBoardCards({ state, dom, entryRecord, collection }) {
         ? el("p", "agent-model muted small", [claim.model, claim.effort].filter(Boolean).join(" · ")) : null,
       el("p", "agent-scope", claim.scope || ""),
       add(el("p", "agent-active muted small"), el("span", "", "Last active "), ageNode(claim.last_active)));
+    if (claim.entry) lead.dataset.anchor = entryAnchor(claim.entry);
     if (claim.delegated_by) {
       lead.append(add(el("p", "agent-delegator muted small"), el("span", "", "Assigned by "),
         actorAttribution({ actor: claim.delegated_by,

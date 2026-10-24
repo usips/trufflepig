@@ -83,6 +83,7 @@ class FakeElement {
     (this.listeners.get(type) || this.listeners.set(type, []).get(type)).push(listener);
   }
   setAttribute(name, value) { this.attributes.set(name, String(value)); }
+  removeAttribute(name) { this.attributes.delete(name); }
   get childElementCount() { return this.children.length; }
   focus() { if (isFocusable(this)) globalThis.document.activeElement = this; }
   contains(node) { for (let at = node; at; at = at.parentElement) if (at === this) return true; return false; }

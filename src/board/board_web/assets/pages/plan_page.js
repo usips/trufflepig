@@ -2,6 +2,7 @@ import { createBoardEntries } from "../board_entries.js";
 import { createBoardGrantPanel } from "../board_grants.js";
 import { decodeBoardFragment } from "../board_dom.js";
 import { actorAttribution, actorMark, agentMark, harnessVendor } from "../marks/agent_marks.js";
+import { commitAnchor } from "../board_refs.js";
 
 export function createPlanPage(context) {
   const {
@@ -20,7 +21,11 @@ export function createPlanPage(context) {
     for (const [key, label] of [
       ["ssot", "Plan"], ["tasks", "Tasks"], ["done", "Done"], ["entries", "Entries"],
       ["history", "History"], ["commits", "Commits"], ["review", "Review"],
-    ]) tabs.append(link(label, "plan", { ref: planId(ref), tab: key }, selected === key ? "active" : ""));
+    ]) {
+      const tab = link(label, "plan", { ref: planId(ref), tab: key }, selected === key ? "active" : "");
+      if (selected === key) tab.setAttribute("aria-current", "page");
+      tabs.append(tab);
+    }
     return tabs;
   }
   function sanitizedMarkup(rendered) {
@@ -257,7 +262,7 @@ export function createPlanPage(context) {
     const list = el("ol", "commit-list");
     for (const commit of commits) {
       const item = el("li", "commit-row");
-      item.id = `commit-${commit.oid}`;
+      item.id = commitAnchor(commit.oid); item.dataset.anchor = item.id;
       add(item,
         refLink(commit.oid, commit.oid, "mono", { plan: plan || commit.plans[0]?.plan_id, repo_key: commit.repo_key }),
         el("p", "", commit.subject),

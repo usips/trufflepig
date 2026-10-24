@@ -1,4 +1,5 @@
 import { actorAttribution, agentMark, harnessVendor } from "./marks/agent_marks.js";
+import { commitAnchor, entryAnchor } from "./board_refs.js";
 
 export function createBoardTaskView(context) {
   const { dom, entryCard, workerTree, claimSignals } = context;
@@ -10,6 +11,7 @@ export function createBoardTaskView(context) {
     const list = el("ol", "claim-history-list");
     for (const claim of items) {
       const row = el("li", "claim-history-row");
+      if (claim.entry) row.dataset.anchor = entryAnchor(claim.entry);
       const source = entries.find(entry => entry?.id === claim.entry);
       add(row, refLink(claim.entry), actorAttribution({ ...claim,
         origin: source?.origin, authority: source?.authority,
@@ -41,6 +43,7 @@ export function createBoardTaskView(context) {
 
   function commitCard(commit, task) {
     const row = el("li", "task-commit-row");
+    row.dataset.anchor = commitAnchor(commit.oid);
     add(row, refLink(commit.oid, commit.oid, "mono", { plan: String(task.id).split(".")[0], repo_key: commit.repo_key }),
       el("p", "task-commit-subject", commit.subject),
       add(el("p", "muted small"), el("span", "", `${commit.author} · `), timeNode(commit.committed_at)));
@@ -55,7 +58,7 @@ export function createBoardTaskView(context) {
     }
     if (commit.worker_refs?.length) {
       row.append(add(el("div", "entry-refs task-commit-workers"),
-        commit.worker_refs.map(worker => el("span", "mono", `${worker.task}/${worker.handle}`))));
+        commit.worker_refs.map(worker => refLink(`${worker.task}/${worker.handle}`))));
     }
     if (commit.claim_links?.length) {
       const links = el("div", "entry-refs task-commit-claims");

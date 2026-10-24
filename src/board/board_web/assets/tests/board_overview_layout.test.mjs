@@ -173,6 +173,8 @@ it("Working now renders one dense row per claim with full detail in titles", () 
   const lines = row.querySelectorAll(".working-worker");
   assert.equal(lines.length, 1, "the body lists live workers only");
   assert.equal(lines[0].querySelector(".working-worker-handle").textContent, "/parser");
+  assert.equal(lines[0].querySelector(".working-worker-handle").href,
+    "/#/P7?tab=tasks&task=P7.26&focus=worker-P7.26-parser");
   assert.match(visibleText(row.querySelector(".working-row-footer")), /\(1 ended\)/);
   assert.equal(row.querySelector(".working-row-details").href, "/#/P7?tab=tasks&task=P7.26");
   for (const verbose of [".agent-tree", ".agent-files", ".worker-row", ".claim-signals"]) {

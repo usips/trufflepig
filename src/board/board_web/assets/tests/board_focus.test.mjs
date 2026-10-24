@@ -149,6 +149,8 @@ describe("board focus restore", () => {
     assert.equal(taskCard.dataset.focusKey, "task-card:P1.1");
     assert.equal(views.entryCard(entry).dataset.focusKey, "entry-card:E1");
     assert.equal(views.workingCard(claim).dataset.focusKey, "working-card:P1.1");
+    assert.equal(views.workingRow(claim).querySelector("summary").dataset.focusKey,
+      "disclosure:working:P1.1", "a Working now row keeps focus on its native summary");
     assert.equal(
       views.attentionCard({ type: "proposal", record: entry }).dataset.focusKey, "attention-card:E1");
     const details = views.taskDetails({ plan: { id: "P1" }, tasks: [task], claims: [] }, []);
