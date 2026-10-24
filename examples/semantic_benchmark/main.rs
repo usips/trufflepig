@@ -3,34 +3,19 @@
 //! The Python harness owns device discovery and memory sampling. This process
 //! owns the model session and emits one JSON document for either provider.
 
-#[cfg(feature = "semantic")]
 mod benchmark_inputs;
-#[cfg(feature = "semantic")]
 mod benchmark_scenarios;
 
-#[cfg(feature = "semantic")]
 use benchmark_inputs::{load_inputs, mixed_inputs, parse_args, take_bytes};
-#[cfg(feature = "semantic")]
 use benchmark_scenarios::{
     run_batches, run_long_probe, synthetic_batch, synthetic_tokens, with_shape,
 };
-#[cfg(feature = "semantic")]
 use std::time::Instant;
 
-#[cfg(feature = "semantic")]
 const MAX_REGION_BYTES: usize = 4096;
-#[cfg(feature = "semantic")]
 const MAX_INPUT_TOKENS: usize = 4096;
-#[cfg(feature = "semantic")]
 const MAX_BATCH_PADDED_TOKENS: usize = 8192;
 
-#[cfg(not(feature = "semantic"))]
-fn main() {
-    eprintln!("semantic_benchmark requires --features semantic (or semantic-cuda)");
-    std::process::exit(2);
-}
-
-#[cfg(feature = "semantic")]
 fn main() {
     match run() {
         Ok(report) => {
@@ -57,7 +42,6 @@ fn main() {
     }
 }
 
-#[cfg(feature = "semantic")]
 fn run() -> anyhow::Result<serde_json::Value> {
     let args = parse_args()?;
     let inputs = load_inputs(&args.inputs)?;

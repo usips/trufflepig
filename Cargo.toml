@@ -39,6 +39,10 @@ ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dy
 semantic = ["dep:fastembed", "dep:ort"]
 semantic-cuda = ["semantic", "ort/cuda"]
 
+[[example]]
+name = "semantic_benchmark"
+required-features = ["semantic"]
+
 # Dependencies (bundled SQLite, tree-sitter grammars, blake3, tiktoken) run
 # optimized in debug builds; the crate itself keeps fast incremental builds.
 [profile.dev.package."*"]
