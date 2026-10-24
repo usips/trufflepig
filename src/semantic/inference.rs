@@ -94,13 +94,17 @@ impl SemanticProviderConfig {
     /// Validates provider values before model or runtime initialization.
     pub fn validate(&self) -> Result<()> {
         if self.arena_max_bytes == 0 {
-            anyhow::bail!("semantic_unavailable: provider arena limit must be positive");
+            anyhow::bail!(coded!(
+                SemanticUnavailable,
+                "provider arena limit must be positive"
+            ));
         }
         if let SemanticProvider::Cuda { device_ordinal } = self.provider {
             if device_ordinal < 0 {
-                anyhow::bail!(
-                    "semantic_unavailable: CUDA device ordinal must be non-negative, got {device_ordinal}"
-                );
+                anyhow::bail!(coded!(
+                    SemanticUnavailable,
+                    "CUDA device ordinal must be non-negative, got {device_ordinal}"
+                ));
             }
         }
         Ok(())

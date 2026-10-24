@@ -138,10 +138,11 @@ pub fn render_review(
         trim!(open_feedback, open_feedback);
         trim!(scan_errors, scan_errors);
     }
-    bail!(
-        "budget_too_small: minimal review packet exceeds {} o200k_base tokens; raise -b",
+    bail!(coded!(
+        BudgetTooSmall,
+        "minimal review packet exceeds {} o200k_base tokens; raise -b",
         budget.limit
-    )
+    ))
 }
 
 #[derive(Clone, Copy, Default, Serialize)]

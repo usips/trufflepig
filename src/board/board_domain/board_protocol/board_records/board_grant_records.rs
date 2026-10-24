@@ -19,7 +19,7 @@ impl GrantSource {
         match value {
             "owner" => Ok(Self::Owner),
             "migration" => Ok(Self::Migration),
-            _ => bail!("invalid_state: unknown grant source '{value}'"),
+            _ => bail!(coded!(InvalidState, "unknown grant source '{value}'")),
         }
     }
 

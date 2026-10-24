@@ -20,7 +20,10 @@ impl BoardOp {
             Self::TaskMove { task, column, .. } => {
                 task.validate()?;
                 if *column == TaskColumn::Transferred {
-                    bail!("invalid_state: transferred is a read-only task column");
+                    bail!(coded!(
+                        InvalidState,
+                        "transferred is a read-only task column"
+                    ));
                 }
             }
             Self::TaskTransfer {
@@ -28,7 +31,10 @@ impl BoardOp {
             } => {
                 task.validate()?;
                 if task.plan == *destination {
-                    bail!("invalid_reference: task transfer requires a different destination plan");
+                    bail!(coded!(
+                        InvalidReference,
+                        "task transfer requires a different destination plan"
+                    ));
                 }
             }
             Self::ClaimTask { task, .. }
@@ -47,7 +53,7 @@ impl BoardOp {
             } => {
                 after.validate()?;
                 if through.is_some_and(|through| after.seq > through) {
-                    bail!("invalid_reference: overview cursor exceeds through");
+                    bail!(coded!(InvalidReference, "overview cursor exceeds through"));
                 }
             }
             Self::DoneTasks {
@@ -62,7 +68,10 @@ impl BoardOp {
                 resume,
                 ..
             } if !resume.is_resuming() => {
-                bail!("invalid_options: claiming a task requires scope or resume");
+                bail!(coded!(
+                    InvalidOptions,
+                    "claiming a task requires scope or resume"
+                ));
             }
             Self::ClaimTask {
                 delegate: Some(delegate),
@@ -92,23 +101,29 @@ impl BoardOp {
                 note: _,
             } => {
                 if roles.is_empty() {
-                    bail!("invalid_options: grant requires at least one role");
+                    bail!(coded!(InvalidOptions, "grant requires at least one role"));
                 }
                 let mut unique = std::collections::HashSet::with_capacity(roles.len());
                 if roles.iter().any(|role| !unique.insert(*role)) {
-                    bail!("invalid_options: grant roles cannot repeat");
+                    bail!(coded!(InvalidOptions, "grant roles cannot repeat"));
                 }
                 if plan.is_none() && roles.as_slice() != [AuthorityRole::Triage] {
-                    bail!("invalid_options: board-wide grants support only triage");
+                    bail!(coded!(
+                        InvalidOptions,
+                        "board-wide grants support only triage"
+                    ));
                 }
                 if expires_in
                     .is_some_and(|seconds| seconds == 0 || seconds > PROGRESS_ETA_LIMIT_SECS)
                 {
-                    bail!("invalid_options: grant duration must be 1..=31536000 seconds");
+                    bail!(coded!(
+                        InvalidOptions,
+                        "grant duration must be 1..=31536000 seconds"
+                    ));
                 }
             }
             Self::Pending { limit, .. } if !(1..=200).contains(limit) => {
-                bail!("invalid_options: pending limit must be 1..200");
+                bail!(coded!(InvalidOptions, "pending limit must be 1..200"));
             }
             Self::WorkerAdd {
                 handle,
@@ -123,7 +138,10 @@ impl BoardOp {
                 }
                 crate::board::board_protocol::WorkerHandle::parse(handle.as_str())?;
                 if files.is_empty() || files.len() > WORKER_FILE_LIMIT {
-                    bail!("invalid_options: worker requires 1..{WORKER_FILE_LIMIT} file paths");
+                    bail!(coded!(
+                        InvalidOptions,
+                        "worker requires 1..{WORKER_FILE_LIMIT} file paths"
+                    ));
                 }
                 let mut unique = std::collections::HashSet::with_capacity(files.len());
                 for file in files {
@@ -131,18 +149,19 @@ impl BoardOp {
                         || file.len() > WORKER_FILE_PATH_LIMIT
                         || file.chars().any(char::is_control)
                     {
-                        bail!(
-                            "invalid_options: worker file paths must be nonblank, at most {WORKER_FILE_PATH_LIMIT} bytes, and contain no control characters"
-                        );
+                        bail!(coded!(
+                            InvalidOptions,
+                            "worker file paths must be nonblank, at most {WORKER_FILE_PATH_LIMIT} bytes, and contain no control characters"
+                        ));
                     }
                     if !unique.insert(file) {
-                        bail!("invalid_options: worker file paths cannot repeat");
+                        bail!(coded!(InvalidOptions, "worker file paths cannot repeat"));
                     }
                 }
             }
             Self::WorkerEnd { worker, .. } => worker.validate()?,
             Self::Inbox { limit, .. } if *limit == 0 || *limit > 2000 => {
-                bail!("invalid_options: inbox limit must be 1..2000")
+                bail!(coded!(InvalidOptions, "inbox limit must be 1..2000"))
             }
             Self::Search { query, limit, .. }
                 if query.trim().is_empty()
@@ -150,13 +169,14 @@ impl BoardOp {
                     || query.contains('\0')
                     || !(1..=50).contains(limit) =>
             {
-                bail!(
-                    "invalid_options: search requires a nonblank query of at most {} bytes and a limit of 1..50",
+                bail!(coded!(
+                    InvalidOptions,
+                    "search requires a nonblank query of at most {} bytes and a limit of 1..50",
                     ENTRY_TEXT_LIMIT
-                )
+                ))
             }
             Self::Feed { limit, .. } if !(1..=500).contains(limit) => {
-                bail!("invalid_options: feed limit must be 1..500")
+                bail!(coded!(InvalidOptions, "feed limit must be 1..500"))
             }
             Self::Overview { limit, .. }
             | Self::Attention { limit, .. }
@@ -168,14 +188,17 @@ impl BoardOp {
             | Self::FeedbackList { limit, .. }
                 if !(1..=200).contains(limit) =>
             {
-                bail!("invalid_options: collection limit must be 1..200")
+                bail!(coded!(InvalidOptions, "collection limit must be 1..200"))
             }
             Self::Entries {
                 after: Some(_),
                 before: Some(_),
                 ..
             } => {
-                bail!("invalid_options: entries accepts at most one of after and before");
+                bail!(coded!(
+                    InvalidOptions,
+                    "entries accepts at most one of after and before"
+                ));
             }
             Self::Entries {
                 user, host, task, ..
@@ -201,34 +224,47 @@ impl BoardOp {
             } => {
                 if *order == TaskOrder::RecentFirst {
                     if after.is_some() || ceiling.is_some() || through.is_some() {
-                        bail!(
-                            "invalid_options: recent-first tasks use before, without after, ceiling, or through"
-                        );
+                        bail!(coded!(
+                            InvalidOptions,
+                            "recent-first tasks use before, without after, ceiling, or through"
+                        ));
                     }
                     if let Some(before) = before {
                         before.validate()?;
                         if before.id.plan != *plan {
-                            bail!("invalid_reference: task cursor belongs to another plan");
+                            bail!(coded!(
+                                InvalidReference,
+                                "task cursor belongs to another plan"
+                            ));
                         }
                     }
                     return Ok(());
                 }
                 if before.is_some() {
-                    bail!("invalid_options: ordinal tasks do not accept before");
+                    bail!(coded!(InvalidOptions, "ordinal tasks do not accept before"));
                 }
                 if let Some(after) = after {
                     after.validate()?;
                     if after.plan != *plan {
-                        bail!("invalid_reference: task cursor belongs to another plan");
+                        bail!(coded!(
+                            InvalidReference,
+                            "task cursor belongs to another plan"
+                        ));
                     }
                 }
                 if let Some(ceiling) = ceiling {
                     ceiling.validate()?;
                     if ceiling.plan != *plan {
-                        bail!("invalid_reference: task ceiling belongs to another plan");
+                        bail!(coded!(
+                            InvalidReference,
+                            "task ceiling belongs to another plan"
+                        ));
                     }
                 } else if after.is_some() || through.is_some() {
-                    bail!("invalid_options: task continuation requires its captured ceiling");
+                    bail!(coded!(
+                        InvalidOptions,
+                        "task continuation requires its captured ceiling"
+                    ));
                 }
             }
             Self::Claims {
@@ -236,7 +272,10 @@ impl BoardOp {
                 own_stale: false,
                 ..
             } => {
-                bail!("invalid_options: claims requires a plan or own_stale");
+                bail!(coded!(
+                    InvalidOptions,
+                    "claims requires a plan or own_stale"
+                ));
             }
             Self::Post {
                 target,
@@ -246,33 +285,43 @@ impl BoardOp {
                 ..
             } => {
                 if !matches!(target, BoardRef::Plan(_) | BoardRef::Task(_)) {
-                    bail!("invalid_reference: post requires a plan or task");
+                    bail!(coded!(InvalidReference, "post requires a plan or task"));
                 }
                 if !kind.is_post_kind() {
-                    bail!("invalid_kind: this entry kind cannot be posted");
+                    bail!(coded!(InvalidKind, "this entry kind cannot be posted"));
                 }
                 if progress.is_some() && *kind != EntryKind::Progress {
-                    bail!("invalid_options: progress evidence requires a progress entry");
+                    bail!(coded!(
+                        InvalidOptions,
+                        "progress evidence requires a progress entry"
+                    ));
                 }
                 if let Some(progress) = progress {
                     progress.validate()?;
                 }
                 if verdict.is_some() && *kind != EntryKind::Review {
-                    bail!("invalid_options: a review verdict requires a review entry");
+                    bail!(coded!(
+                        InvalidOptions,
+                        "a review verdict requires a review entry"
+                    ));
                 }
             }
             Self::Show {
                 target: BoardRef::Commit(_),
-            } => bail!(
-                "invalid_reference: show requires a plan, task, entry, revision, or revision span"
-            ),
+            } => bail!(coded!(
+                InvalidReference,
+                "show requires a plan, task, entry, revision, or revision span"
+            )),
             Self::TaskCreate { section, .. } | Self::CarveClaim { section, .. } => {
                 if let Some(section) = section {
                     validate_claim(section, "section")?;
                 }
             }
             Self::FeedbackClose { state, .. } if !state.is_closed() => {
-                bail!("invalid_state: close requires fixed, wontfix, or duplicate")
+                bail!(coded!(
+                    InvalidState,
+                    "close requires fixed, wontfix, or duplicate"
+                ))
             }
             Self::Feedback {
                 summary,
@@ -283,13 +332,16 @@ impl BoardOp {
                 let length = summary.as_str().len()
                     + body.as_ref().map_or(0, |text| text.as_str().len() + 2);
                 if length > FEEDBACK_TEXT_LIMIT {
-                    bail!("invalid_body: feedback text exceeds {FEEDBACK_TEXT_LIMIT} bytes");
+                    bail!(coded!(
+                        InvalidBody,
+                        "feedback text exceeds {FEEDBACK_TEXT_LIMIT} bytes"
+                    ));
                 }
                 metadata.validate()?;
             }
             Self::LinkCommits { commits } => {
                 if commits.len() > 2000 {
-                    bail!("invalid_options: commit batch exceeds 2000 records");
+                    bail!(coded!(InvalidOptions, "commit batch exceeds 2000 records"));
                 }
                 for commit in commits {
                     validate_commit_metadata(commit)?;
@@ -305,14 +357,20 @@ impl BoardOp {
             }
             Self::RegisterRepo { registration } => {
                 if registration.root_commits.len() > 4096 {
-                    bail!("invalid_options: repository roots exceed resource limit");
+                    bail!(coded!(
+                        InvalidOptions,
+                        "repository roots exceed resource limit"
+                    ));
                 }
                 if let Some(error) = &registration.registration_error {
                     bounded_metadata(error, 4096, "registration error")?;
                 }
                 validate_actor_component(&registration.host, "repository host")?;
                 if !registration.common_dir.is_absolute() {
-                    bail!("invalid_options: repository common_dir must be absolute");
+                    bail!(coded!(
+                        InvalidOptions,
+                        "repository common_dir must be absolute"
+                    ));
                 }
                 if let Some(origin) = &registration.origin_label {
                     bounded_metadata(origin, 4096, "origin label")?;
@@ -323,7 +381,10 @@ impl BoardOp {
             } => {
                 validate_actor_component(host, "repository host")?;
                 if !common_dir.is_absolute() {
-                    bail!("invalid_options: repository common_dir must be absolute");
+                    bail!(coded!(
+                        InvalidOptions,
+                        "repository common_dir must be absolute"
+                    ));
                 }
             }
             Self::RecordScan {
@@ -334,7 +395,10 @@ impl BoardOp {
             } => {
                 validate_actor_component(host, "repository host")?;
                 if !common_dir.is_absolute() {
-                    bail!("invalid_options: repository common_dir must be absolute");
+                    bail!(coded!(
+                        InvalidOptions,
+                        "repository common_dir must be absolute"
+                    ));
                 }
                 if let Some(error) = error {
                     bounded_metadata(error, 4096, "scan error")?;
@@ -354,11 +418,17 @@ fn validate_commit_metadata(commit: &crate::board::board_protocol::LinkedCommit)
         || commit.plans.len() > LINK_LIMIT
         || commit.worker_refs.len() > WORKER_REF_LIMIT
     {
-        bail!("invalid_options: commit metadata exceeds collection limits");
+        bail!(coded!(
+            InvalidOptions,
+            "commit metadata exceeds collection limits"
+        ));
     }
     for number in [commit.files, commit.insertions, commit.deletions] {
         if number > MAX_BOARD_NUMBER {
-            bail!("invalid_options: commit statistics exceed SQLite integer range");
+            bail!(coded!(
+                InvalidOptions,
+                "commit statistics exceed SQLite integer range"
+            ));
         }
     }
     for author in &commit.coauthors {
@@ -374,14 +444,20 @@ fn validate_commit_metadata(commit: &crate::board::board_protocol::LinkedCommit)
     for worker in &commit.worker_refs {
         worker.validate()?;
         if !worker_refs.insert(worker) {
-            bail!("invalid_options: worker references cannot repeat on a commit");
+            bail!(coded!(
+                InvalidOptions,
+                "worker references cannot repeat on a commit"
+            ));
         }
     }
     let mut claim_links = std::collections::HashSet::with_capacity(commit.claim_links.len());
     for link in &commit.claim_links {
         link.task.validate()?;
         if !claim_links.insert((link.task, link.claim)) {
-            bail!("invalid_options: claim links cannot repeat on a commit");
+            bail!(coded!(
+                InvalidOptions,
+                "claim links cannot repeat on a commit"
+            ));
         }
         if let Some(actor) = &link.actor {
             actor.validate()?;

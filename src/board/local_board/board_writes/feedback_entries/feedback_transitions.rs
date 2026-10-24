@@ -1,6 +1,7 @@
 //! Feedback authority and terminal triage decisions.
 
 use super::*;
+use crate::board::board_protocol::BoardErrorCode;
 
 pub(in crate::board::local_board) fn close_feedback(
     tx: &Transaction<'_>,
@@ -12,7 +13,7 @@ pub(in crate::board::local_board) fn close_feedback(
         BoardOp::FeedbackTriage { entry, note } => (entry, FeedbackState::Triaged, note),
         _ => {
             return Err(invalid(
-                "invalid_options",
+                BoardErrorCode::InvalidOptions,
                 "expected feedback triage or close operation",
             ));
         }
@@ -21,13 +22,13 @@ pub(in crate::board::local_board) fn close_feedback(
     let report = read_entry(tx, *entry)?;
     if report.kind != EntryKind::Feedback {
         return Err(invalid(
-            "invalid_reference",
+            BoardErrorCode::InvalidReference,
             format!("{entry} is not feedback"),
         ));
     }
     let authority = feedback_authority(tx, &ctx.actor, &report, ctx.now)?.ok_or_else(|| {
         invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             "feedback triage requires its exact reporter or triage authority",
         )
     })?;
@@ -42,13 +43,13 @@ pub(in crate::board::local_board) fn close_feedback(
     let current = FeedbackState::parse(&current).map_err(BoardError::from)?;
     if current.is_closed() {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("{entry} is already closed {current}"),
         ));
     }
     if state == FeedbackState::Triaged && current == FeedbackState::Triaged {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("{entry} is already triaged"),
         ));
     }

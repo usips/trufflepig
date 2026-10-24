@@ -26,7 +26,10 @@ impl FeedbackVia {
     pub fn parse(value: &str) -> Result<Self> {
         match value {
             "outbox" => Ok(Self::Outbox),
-            _ => bail!("invalid_state: unknown feedback provenance '{value}'"),
+            _ => bail!(coded!(
+                InvalidState,
+                "unknown feedback provenance '{value}'"
+            )),
         }
     }
     pub fn as_str(self) -> &'static str {

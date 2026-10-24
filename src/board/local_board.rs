@@ -198,8 +198,8 @@ pub(super) fn read_entry(conn: &Connection, id: EntryId) -> Result<EntryRecord, 
 pub(super) fn sql_error(error: rusqlite::Error) -> BoardError {
     BoardError::from(anyhow::anyhow!(error))
 }
-pub(super) fn invalid(code: &str, message: impl Into<String>) -> BoardError {
-    BoardError::from(anyhow::anyhow!("{code}: {}", message.into()))
+pub(super) fn invalid(code: BoardErrorCode, message: impl Into<String>) -> BoardError {
+    BoardError::new(code, message)
 }
 pub(super) fn max_seq(conn: &Connection) -> Result<EventSeq, BoardError> {
     let seq: u64 = conn
@@ -212,9 +212,9 @@ pub(super) fn max_seq(conn: &Connection) -> Result<EventSeq, BoardError> {
 pub(super) fn unix_now() -> Result<i64, BoardError> {
     let seconds = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|e| invalid("board_unavailable", e.to_string()))?
+        .map_err(|e| invalid(BoardErrorCode::BoardUnavailable, e.to_string()))?
         .as_secs();
-    i64::try_from(seconds).map_err(|e| invalid("board_unavailable", e.to_string()))
+    i64::try_from(seconds).map_err(|e| invalid(BoardErrorCode::BoardUnavailable, e.to_string()))
 }
 
 fn lookup_actor(conn: &Connection, actor: &BoardActor) -> Result<Option<i64>, BoardError> {
@@ -288,12 +288,17 @@ fn ensure_actor_without_seen_bump(
 }
 
 pub(super) fn sqlite_id(value: u64) -> Result<i64, BoardError> {
-    i64::try_from(value)
-        .map_err(|_| invalid("invalid_reference", "number exceeds SQLite integer range"))
+    i64::try_from(value).map_err(|_| {
+        invalid(
+            BoardErrorCode::InvalidReference,
+            "number exceeds SQLite integer range",
+        )
+    })
 }
 
 pub(super) fn sqlite_u64(value: i64) -> Result<u64, BoardError> {
-    u64::try_from(value).map_err(|_| invalid("board_unavailable", "negative stored number"))
+    u64::try_from(value)
+        .map_err(|_| invalid(BoardErrorCode::BoardUnavailable, "negative stored number"))
 }
 
 pub(super) struct SqlU64(u64);

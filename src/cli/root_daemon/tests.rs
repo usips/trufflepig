@@ -1,9 +1,6 @@
 use super::*;
 use crate::{
-    daemon::{
-        RequestClass, RequestLane,
-        deadline::{QueryDeadline, is_timed_out},
-    },
+    daemon::{RequestClass, RequestLane, deadline::QueryDeadline},
     diagnostics::RequestContext,
     store::Store,
 };
@@ -93,7 +90,10 @@ fn root_daemon_honors_an_expired_accept_time_deadline() {
             QueryDeadline::after(Duration::ZERO),
         )
         .unwrap_err();
-        assert!(is_timed_out(&error), "{words:?}: {error:#}");
+        assert!(
+            crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+            "{words:?}: {error:#}"
+        );
     }
 }
 

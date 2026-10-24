@@ -1,5 +1,6 @@
 //! Read-only collection commands and typed continuation cursors.
 use crate::board::board_protocol::ReadScope;
+use crate::coded_error::CodedContext;
 #[cfg(test)]
 mod tests;
 use super::{
@@ -12,7 +13,7 @@ use crate::board::board_protocol::{
 };
 use crate::board::board_vocabulary::TaskColumn;
 use crate::cli::Arguments;
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, bail, ensure};
 
 pub(super) fn parse_read(
     options: &Arguments,
@@ -26,9 +27,10 @@ pub(super) fn parse_read(
                 check_flags(options, &[])?;
                 let target = target.parse::<BoardRef>()?;
                 if matches!(target, BoardRef::Commit(_)) {
-                    bail!(
-                        "invalid_reference: show requires a plan, task, revision, revision span, or entry"
-                    );
+                    bail!(coded!(
+                        InvalidReference,
+                        "show requires a plan, task, revision, revision span, or entry"
+                    ));
                 }
                 BoardOp::Show { target }
             } else {
@@ -40,9 +42,9 @@ pub(super) fn parse_read(
                         .after
                         .as_deref()
                         .map(|cursor| {
-                            let (seq, plan) = cursor
-                                .split_once(':')
-                                .context("invalid_reference: overview cursor must be SEQ:P7")?;
+                            let (seq, plan) = cursor.split_once(':').with_coded_context(|| {
+                                coded!(InvalidReference, "overview cursor must be SEQ:P7")
+                            })?;
                             Ok::<_, anyhow::Error>(OverviewCursor {
                                 seq: seq.parse()?,
                                 plan: plan.parse::<PlanId>()?,
@@ -60,7 +62,7 @@ pub(super) fn parse_read(
             fixed_words(options, 3, 3, "board receipt KEY")?;
             let key = options.words[2]
                 .parse::<BoardRequestKey>()
-                .map_err(|error| anyhow::anyhow!("invalid_reference: {error}"))?;
+                .map_err(|error| anyhow::anyhow!(coded!(InvalidReference, "{error}")))?;
             BoardOp::Receipt { key }
         }
         "done" => {
@@ -76,9 +78,9 @@ pub(super) fn parse_read(
                 .after
                 .as_deref()
                 .map(|cursor| {
-                    let (seq, id) = cursor
-                        .split_once(':')
-                        .context("invalid_reference: Done cursor must be SEQ:P7.N")?;
+                    let (seq, id) = cursor.split_once(':').with_coded_context(|| {
+                        coded!(InvalidReference, "Done cursor must be SEQ:P7.N")
+                    })?;
                     Ok::<_, anyhow::Error>(TaskCursor {
                         seq: seq.parse()?,
                         id: id.parse()?,
@@ -89,7 +91,7 @@ pub(super) fn parse_read(
             if let Some(plan) = options.words.get(2) {
                 ensure!(
                     !options.board.all,
-                    "invalid_options: --all applies only to board-wide Done"
+                    coded!(InvalidOptions, "--all applies only to board-wide Done")
                 );
                 BoardOp::Tasks {
                     plan: plan.parse::<PlanId>()?,
@@ -140,7 +142,10 @@ pub(super) fn parse_read(
                     options.words.get(3).map(String::as_str),
                 ),
                 Some(value) => {
-                    ensure!(options.words.len() == 3, "usage: board feed [P7] [SEQ]");
+                    ensure!(
+                        options.words.len() == 3,
+                        coded!(Usage, "board feed [P7] [SEQ]")
+                    );
                     (None, Some(value.as_str()))
                 }
                 None => (None, None),
@@ -209,7 +214,7 @@ pub(super) fn entry_after(options: &Arguments) -> Result<Option<EntryCursor>> {
         .map(|value| {
             let (seq, entry) = value
                 .split_once(':')
-                .context("invalid_reference: entry cursor must be SEQ:E#")?;
+                .with_coded_context(|| coded!(InvalidReference, "entry cursor must be SEQ:E#"))?;
             Ok(EntryCursor {
                 seq: seq.parse()?,
                 entry: entry.parse()?,
@@ -230,7 +235,7 @@ pub(super) fn through(options: &Arguments) -> Result<Option<EventSeq>> {
 fn event_after(options: &Arguments, positional: Option<&str>) -> Result<Option<EventSeq>> {
     ensure!(
         positional.is_none() || options.board.after.is_none(),
-        "invalid_options: event cursor supplied twice"
+        coded!(InvalidOptions, "event cursor supplied twice")
     );
     positional
         .or(options.board.after.as_deref())
@@ -241,7 +246,10 @@ fn event_after(options: &Arguments, positional: Option<&str>) -> Result<Option<E
 pub(super) fn bounded_limit(options: &Arguments, maximum: usize) -> Result<usize> {
     ensure!(
         (1..=maximum).contains(&options.limit),
-        "invalid_options: this board collection limit must be 1..{maximum}"
+        coded!(
+            InvalidOptions,
+            "this board collection limit must be 1..{maximum}"
+        )
     );
     Ok(options.limit)
 }

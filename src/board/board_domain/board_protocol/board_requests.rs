@@ -172,7 +172,10 @@ impl BoardRequest {
 
     pub(crate) fn with_system_origin(mut self, session: impl Into<String>) -> Result<Self> {
         if !self.trusted_internal {
-            bail!("invalid_actor: a system origin requires a trusted internal request");
+            bail!(coded!(
+                InvalidActor,
+                "a system origin requires a trusted internal request"
+            ));
         }
         self.origin = Some(ActorOrigin::system(session)?);
         Ok(self)
@@ -180,23 +183,33 @@ impl BoardRequest {
 
     pub fn validate(&self) -> Result<()> {
         if self.api != BOARD_API {
-            bail!(
-                "board_api_mismatch: expected {BOARD_API}, received {}",
+            bail!(coded!(
+                BoardApiMismatch,
+                "expected {BOARD_API}, received {}",
                 self.api
-            );
+            ));
         }
         self.actor.validate()?;
         if self.actor.harness.is_system() != self.trusted_internal {
-            bail!("invalid_actor: system actor requires a trusted internal request");
+            bail!(coded!(
+                InvalidActor,
+                "system actor requires a trusted internal request"
+            ));
         }
         if self.actor.harness.as_str().starts_with("git:") {
-            bail!("invalid_actor: git co-author labels cannot act as request harnesses");
+            bail!(coded!(
+                InvalidActor,
+                "git co-author labels cannot act as request harnesses"
+            ));
         }
         if let Some(origin) = &self.origin {
             origin.validate_for_request(self.trusted_internal)?;
             if let Some(peer_ip) = origin.peer_ip {
                 if self.observed_peer_ip != Some(peer_ip) {
-                    bail!("invalid_origin: peer IP must be observed by the server");
+                    bail!(coded!(
+                        InvalidOrigin,
+                        "peer IP must be observed by the server"
+                    ));
                 }
             }
         }
@@ -206,7 +219,10 @@ impl BoardRequest {
                     progress: Some(progress),
                     ..
                 } if progress.head == Some(head) => {}
-                _ => bail!("invalid_progress: trusted head must match the progress OID"),
+                _ => bail!(coded!(
+                    InvalidProgress,
+                    "trusted head must match the progress OID"
+                )),
             }
         }
         if matches!(
@@ -217,7 +233,10 @@ impl BoardRequest {
             }
         ) && !self.trusted_internal
         {
-            bail!("invalid_worker: claim_ended is reserved for trusted internal requests");
+            bail!(coded!(
+                InvalidWorker,
+                "claim_ended is reserved for trusted internal requests"
+            ));
         }
         if let Some(claims) = &self.claims {
             if let Some(model) = &claims.model {

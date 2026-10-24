@@ -1,6 +1,7 @@
 //! CUDA driver UUID enumeration and ordinal resolution.
 
-use anyhow::{Context, Result, bail};
+use crate::coded_error::CodedContext;
+use anyhow::{Result, bail};
 use std::{ffi::CString, ptr::NonNull};
 
 const CUDA_UUID_BYTES: usize = 16;
@@ -49,7 +50,7 @@ impl DriverApi {
         let handle = NonNull::new(unsafe {
             libc::dlopen(library_name.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL)
         })
-        .context("cuda_unavailable: libcuda.so.1 is unavailable")?;
+        .with_coded_context(|| coded!(CudaUnavailable, "libcuda.so.1 is unavailable"))?;
         let library = DriverLibrary(handle);
 
         // The CUDA header aliases cuDeviceGetUuid to the v2 symbol. Resolve
@@ -76,20 +77,26 @@ impl DriverApi {
             (self.cu_device_get_count)(&mut count)
         })?;
         if count < 0 {
-            bail!("cuda_unavailable: CUDA driver returned a negative device count");
+            bail!(coded!(
+                CudaUnavailable,
+                "CUDA driver returned a negative device count"
+            ));
         }
-        let count = usize::try_from(count)
-            .context("cuda_unavailable: CUDA device count does not fit usize")?;
+        let count = usize::try_from(count).with_coded_context(|| {
+            coded!(CudaUnavailable, "CUDA device count does not fit usize")
+        })?;
         if count > MAX_CUDA_DEVICES {
-            bail!(
-                "cuda_unavailable: CUDA reported {count} devices, maximum supported is {MAX_CUDA_DEVICES}"
-            );
+            bail!(coded!(
+                CudaUnavailable,
+                "CUDA reported {count} devices, maximum supported is {MAX_CUDA_DEVICES}"
+            ));
         }
 
         let mut devices = Vec::with_capacity(count);
         for ordinal in 0..count {
-            let ordinal_i32 = i32::try_from(ordinal)
-                .context("cuda_unavailable: CUDA device ordinal does not fit i32")?;
+            let ordinal_i32 = i32::try_from(ordinal).with_coded_context(|| {
+                coded!(CudaUnavailable, "CUDA device ordinal does not fit i32")
+            })?;
             let mut device = 0;
             cuda_call("cuDeviceGet", unsafe {
                 (self.cu_device_get)(&mut device, ordinal_i32)
@@ -101,8 +108,9 @@ impl DriverApi {
                 (self.cu_device_get_uuid)(&mut uuid, device)
             })?;
             devices.push(DriverCudaDevice {
-                ordinal: u32::try_from(ordinal)
-                    .context("cuda_unavailable: CUDA device ordinal overflow")?,
+                ordinal: u32::try_from(ordinal).with_coded_context(|| {
+                    coded!(CudaUnavailable, "CUDA device ordinal overflow")
+                })?,
                 uuid: uuid.bytes,
             });
         }
@@ -114,7 +122,10 @@ fn load_symbol<T>(handle: NonNull<libc::c_void>, name: &str) -> Result<T> {
     let name_c = CString::new(name).expect("static CUDA symbol name");
     let symbol = unsafe { libc::dlsym(handle.as_ptr(), name_c.as_ptr()) };
     if symbol.is_null() {
-        bail!("cuda_unavailable: CUDA driver symbol {name} is unavailable");
+        bail!(coded!(
+            CudaUnavailable,
+            "CUDA driver symbol {name} is unavailable"
+        ));
     }
     // CUDA exposes these C functions from the same ABI as dlsym function pointers.
     Ok(unsafe { std::mem::transmute_copy(&symbol) })
@@ -124,7 +135,10 @@ fn cuda_call(name: &str, status: CuResult) -> Result<()> {
     if status == 0 {
         return Ok(());
     }
-    bail!("cuda_unavailable: {name} failed with CUDA status {status}")
+    bail!(coded!(
+        CudaUnavailable,
+        "{name} failed with CUDA status {status}"
+    ))
 }
 
 pub fn resolve_cuda_uuid(wanted: &str) -> Result<u32> {
@@ -141,7 +155,12 @@ fn resolve_uuid_from_devices(
         .into_iter()
         .find(|device| device.uuid == wanted)
         .map(|device| device.ordinal)
-        .context("cuda_unavailable: configured gpu_uuid is not visible to CUDA")
+        .with_coded_context(|| {
+            coded!(
+                CudaUnavailable,
+                "configured gpu_uuid is not visible to CUDA"
+            )
+        })
 }
 
 #[cfg(test)]
@@ -157,11 +176,19 @@ fn parse_gpu_uuid(input: &str) -> Result<[u8; CUDA_UUID_BYTES]> {
     let prefix = input
         .get(..4)
         .filter(|prefix| prefix.eq_ignore_ascii_case("GPU-"))
-        .context("cuda_unavailable: configured gpu_uuid must be a canonical GPU UUID")?;
+        .with_coded_context(|| {
+            coded!(
+                CudaUnavailable,
+                "configured gpu_uuid must be a canonical GPU UUID"
+            )
+        })?;
     let _ = prefix;
-    let encoded = input
-        .get(4..)
-        .context("cuda_unavailable: configured gpu_uuid must be a canonical GPU UUID")?;
+    let encoded = input.get(4..).with_coded_context(|| {
+        coded!(
+            CudaUnavailable,
+            "configured gpu_uuid must be a canonical GPU UUID"
+        )
+    })?;
     let group_lengths = [8, 4, 4, 4, 12];
     let mut offset = 0;
     let mut output = [0_u8; CUDA_UUID_BYTES];
@@ -169,25 +196,44 @@ fn parse_gpu_uuid(input: &str) -> Result<[u8; CUDA_UUID_BYTES]> {
     for (group_index, &group_length) in group_lengths.iter().enumerate() {
         let group = encoded
             .get(offset..offset + group_length)
-            .context("cuda_unavailable: configured gpu_uuid must be a canonical GPU UUID")?;
+            .with_coded_context(|| {
+                coded!(
+                    CudaUnavailable,
+                    "configured gpu_uuid must be a canonical GPU UUID"
+                )
+            })?;
         for pair in group.as_bytes().chunks_exact(2) {
-            let high = hex_nibble(pair[0])
-                .context("cuda_unavailable: configured gpu_uuid must be a canonical GPU UUID")?;
-            let low = hex_nibble(pair[1])
-                .context("cuda_unavailable: configured gpu_uuid must be a canonical GPU UUID")?;
+            let high = hex_nibble(pair[0]).with_coded_context(|| {
+                coded!(
+                    CudaUnavailable,
+                    "configured gpu_uuid must be a canonical GPU UUID"
+                )
+            })?;
+            let low = hex_nibble(pair[1]).with_coded_context(|| {
+                coded!(
+                    CudaUnavailable,
+                    "configured gpu_uuid must be a canonical GPU UUID"
+                )
+            })?;
             output[output_offset] = (high << 4) | low;
             output_offset += 1;
         }
         offset += group_length;
         if group_index + 1 != group_lengths.len() {
             if encoded.as_bytes().get(offset) != Some(&b'-') {
-                bail!("cuda_unavailable: configured gpu_uuid must be a canonical GPU UUID");
+                bail!(coded!(
+                    CudaUnavailable,
+                    "configured gpu_uuid must be a canonical GPU UUID"
+                ));
             }
             offset += 1;
         }
     }
     if offset != encoded.len() {
-        bail!("cuda_unavailable: configured gpu_uuid must be a canonical GPU UUID");
+        bail!(coded!(
+            CudaUnavailable,
+            "configured gpu_uuid must be a canonical GPU UUID"
+        ));
     }
     Ok(output)
 }

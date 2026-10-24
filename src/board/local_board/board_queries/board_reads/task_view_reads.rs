@@ -29,9 +29,12 @@ pub(in crate::board::local_board) fn task_view(
         )
         .optional()
         .map_err(sql_error)?;
-    let task_record = task_row_result
-        .transpose()?
-        .ok_or_else(|| invalid("invalid_reference", format!("unknown task {task}")))?;
+    let task_record = task_row_result.transpose()?.ok_or_else(|| {
+        invalid(
+            BoardErrorCode::InvalidReference,
+            format!("unknown task {task}"),
+        )
+    })?;
 
     let mut lineage = task_lineage::task_ids(conn, task)?;
     let canonical = task_lineage::canonical_task(conn, task)?;
@@ -98,7 +101,7 @@ pub(in crate::board::local_board) fn task_view(
     let entries_omitted = usize::try_from(entries_total)
         .map_err(|_| {
             invalid(
-                "board_unavailable",
+                BoardErrorCode::BoardUnavailable,
                 "task entry count exceeds platform range",
             )
         })?

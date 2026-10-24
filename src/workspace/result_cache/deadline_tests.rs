@@ -32,7 +32,10 @@ fn workspace_result_save_busy_wait_uses_the_open_deadline() -> Result<()> {
         })
         .unwrap_err();
 
-    assert!(crate::daemon::deadline::is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
     assert!(started.elapsed() < Duration::from_millis(500));
     drop(_lock);
     let verify = Connection::open(cache.join("workspace.sqlite3"))?;
@@ -92,5 +95,8 @@ fn workspace_result_open_rejects_an_expired_deadline() {
         Err(error) => error,
         Ok(_) => panic!("expired deadline opened workspace results"),
     };
-    assert!(crate::daemon::deadline::is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
 }

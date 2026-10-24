@@ -5,14 +5,15 @@ use super::{
     config::WorkspaceConfig,
     member_root::{GIT_PROBE_TIMEOUT, MemberRoot, linked_root_of_member},
 };
+use crate::coded_error::CodedContext;
 use crate::{
-    daemon::deadline::{QueryDeadline, TIMED_OUT, is_timed_out},
+    daemon::deadline::QueryDeadline,
     identity::{ResultCursor, ResultHandle},
     output::{OutputBudget, OutputFormat},
     results::{self, HitDetail, ResultEntry},
     store::{Store, decode_path, encode_path},
 };
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, bail, ensure};
 pub(super) use index_progress_source::IndexProgressSource;
 use lines::{compact_coverage, mark_worktree_differs, member_coverage_summary};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -62,14 +63,13 @@ impl MemberSnapshot {
         generation: i64,
     ) -> Result<Self> {
         member.verify_identity()?;
-        let identity = member
-            .identity
-            .as_ref()
-            .context("member_unavailable: original root identity is missing")?;
+        let identity = member.identity.as_ref().with_coded_context(|| {
+            coded!(MemberUnavailable, "original root identity is missing")
+        })?;
         let deadline = store.query_deadline();
         let check_deadline = || -> Result<()> {
             if deadline.is_some_and(QueryDeadline::expired) {
-                bail!("{TIMED_OUT}: query deadline expired");
+                bail!(coded!(TimedOut, "query deadline expired"));
             }
             Ok(())
         };
@@ -119,17 +119,19 @@ impl MemberSnapshot {
             .members
             .iter()
             .find(|member| member.name == self.name)
-            .context("member_unavailable: result owner was removed from workspace")?;
+            .with_coded_context(|| {
+                coded!(MemberUnavailable, "result owner was removed from workspace")
+            })?;
         if self.worktree.is_none() {
             ensure!(
                 encode_path(&member.root) == self.root,
-                "member_unavailable: result owner path changed"
+                coded!(MemberUnavailable, "result owner path changed")
             );
             return Ok(MemberRoot::configured(member));
         }
         let root = decode_path(&self.root)?;
         let root = linked_root_of_member(member, &root, GIT_PROBE_TIMEOUT)
-            .context("member_unavailable: result owner is missing")?;
+            .with_coded_context(|| coded!(MemberUnavailable, "result owner is missing"))?;
         let mut owner = MemberRoot::linked(member, root)?;
         owner.is_home = true;
         Ok(owner)
@@ -140,12 +142,12 @@ impl MemberSnapshot {
         let metadata = member
             .root
             .metadata()
-            .context("member_unavailable: result owner is missing")?;
+            .with_coded_context(|| coded!(MemberUnavailable, "result owner is missing"))?;
         ensure!(
             metadata.dev() == self.device
                 && metadata.ino() == self.inode
                 && member.root.canonicalize()? == member.root,
-            "member_unavailable: result owner was replaced"
+            coded!(MemberUnavailable, "result owner was replaced")
         );
         let cache = decode_path(&self.cache)?;
         if self.generation == 0 {
@@ -158,19 +160,19 @@ impl MemberSnapshot {
         let store = if let Some(parent) = &self.parent_index {
             ensure!(
                 encode_path(&member.member.root) == parent.root,
-                "member_unavailable: parent index owner changed"
+                coded!(MemberUnavailable, "parent index owner changed")
             );
             let parent_cache = decode_path(&parent.cache)?;
             ensure!(
                 parent_cache.join("index.sqlite3").is_file(),
-                "member_unavailable: owning index was removed"
+                coded!(MemberUnavailable, "owning index was removed")
             );
             Store::open_read(&member.member.root, &parent_cache, deadline.clone())?
                 .reading_from(&member.root, &cache)?
         } else {
             ensure!(
                 cache.join("index.sqlite3").is_file(),
-                "member_unavailable: owning index was removed"
+                coded!(MemberUnavailable, "owning index was removed")
             );
             Store::open_read(&member.root, &cache, deadline.clone())?
         };
@@ -182,7 +184,7 @@ impl MemberSnapshot {
             .optional()?;
         ensure!(
             current.as_ref() == Some(&self.index_identity),
-            "member_unavailable: owning index was replaced"
+            coded!(MemberUnavailable, "owning index was replaced")
         );
         Ok(store)
     }
@@ -256,8 +258,9 @@ impl WorkspaceResults {
         .map_err(|error| {
             classify_db_error(
                 deadline,
-                anyhow::Error::new(error)
-                    .context("workspace_unavailable: workspace result store is missing"),
+                anyhow::Error::new(error).with_coded_context(|| {
+                    coded!(WorkspaceUnavailable, "workspace result store is missing")
+                }),
             )
         })?;
         install_deadline(&conn, deadline)?;
@@ -293,7 +296,10 @@ impl WorkspaceResults {
         }
         ensure!(
             payload.len() <= results::MAX_BYTES,
-            "result_cache_unavailable: workspace metadata exceeds capacity"
+            coded!(
+                ResultCacheUnavailable,
+                "workspace metadata exceeds capacity"
+            )
         );
         check_deadline(&self.deadline)?;
         let tx = execute_workspace_sql(&self.conn, &self.deadline, || {
@@ -344,7 +350,8 @@ impl WorkspaceResults {
     }
     pub fn load(&self, id: &str) -> Result<WorkspaceSet> {
         check_deadline(&self.deadline)?;
-        uuid::Uuid::parse_str(id).context("invalid_handle: invalid set identifier")?;
+        uuid::Uuid::parse_str(id)
+            .with_coded_context(|| coded!(InvalidHandle, "invalid set identifier"))?;
         let payload: Option<String> = execute_workspace_sql(&self.conn, &self.deadline, || {
             self.conn
                 .query_row(
@@ -355,19 +362,23 @@ impl WorkspaceResults {
                 .optional()
         })?;
         check_deadline(&self.deadline)?;
-        let payload = payload
-            .context("expired_result: workspace result expired or was evicted; search again")?;
+        let payload = payload.with_coded_context(|| {
+            coded!(
+                ExpiredResult,
+                "workspace result expired or was evicted; search again"
+            )
+        })?;
         ensure!(
             payload.len() <= results::MAX_BYTES,
-            "result_unavailable: oversized workspace result"
+            coded!(ResultUnavailable, "oversized workspace result")
         );
         let set: WorkspaceSet = serde_json::from_str(&payload)
-            .context("result_unavailable: invalid workspace result")?;
+            .with_coded_context(|| coded!(ResultUnavailable, "invalid workspace result"))?;
         ensure!(
             set.owners.len() <= 32
                 && set.hits.len() <= results::MAX_HITS
                 && set.hits.iter().all(|hit| hit.owner < set.owners.len()),
-            "result_unavailable: invalid workspace ownership"
+            coded!(ResultUnavailable, "invalid workspace ownership")
         );
         check_deadline(&self.deadline)?;
         Ok(set)
@@ -377,7 +388,7 @@ impl WorkspaceResults {
         let set = self.load(&handle.set.simple().to_string())?;
         ensure!(
             handle.ordinal <= set.hits.len(),
-            "invalid_handle: ordinal outside result set"
+            coded!(InvalidHandle, "ordinal outside result set")
         );
         Ok((set, handle.ordinal - 1))
     }
@@ -402,7 +413,7 @@ impl WorkspaceResults {
         refresh_index_progress(&mut set, &self.deadline)?;
         ensure!(
             offset <= set.hits.len(),
-            "invalid_cursor: offset outside result set"
+            coded!(InvalidCursor, "offset outside result set")
         );
         let available = set.hits.len() - offset;
         let max_count = available.min(limit).min(budget.limit);
@@ -465,13 +476,16 @@ impl WorkspaceResults {
                 return Ok(text);
             }
         }
-        bail!("budget_too_small: workspace coverage and one result do not fit");
+        bail!(coded!(
+            BudgetTooSmall,
+            "workspace coverage and one result do not fit"
+        ));
     }
 }
 
 fn check_deadline(deadline: &QueryDeadline) -> Result<()> {
     if deadline.expired() {
-        bail!("{TIMED_OUT}: query deadline expired");
+        bail!(coded!(TimedOut, "query deadline expired"));
     }
     Ok(())
 }
@@ -519,8 +533,8 @@ fn install_deadline(connection: &Connection, deadline: &QueryDeadline) -> Result
 
 fn classify_db_error(deadline: &QueryDeadline, error: anyhow::Error) -> anyhow::Error {
     let error = deadline.classify(error);
-    if deadline.expired() && !is_timed_out(&error) {
-        error.context(format!("{TIMED_OUT}: query deadline expired"))
+    if deadline.expired() && !crate::coded_error::ErrorCode::TimedOut.is_code_of(&error) {
+        error.with_coded_context(|| coded!(TimedOut, "query deadline expired"))
     } else {
         error
     }
@@ -546,7 +560,7 @@ fn execute_workspace_sql<T>(
                 let pause = deadline.cap(WORKSPACE_BUSY_RETRY_PAUSE);
                 if pause.is_zero() {
                     check_deadline(deadline)?;
-                    bail!("{TIMED_OUT}: query deadline expired");
+                    bail!(coded!(TimedOut, "query deadline expired"));
                 }
                 thread::sleep(pause);
             }

@@ -1,4 +1,5 @@
 //! Claim windows over live leases with stable entry cursors.
+use crate::board::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, Row, params};
 
 use super::NESTED_PAGE_LIMIT;
@@ -52,7 +53,7 @@ pub(in crate::board::local_board) fn claim_window(
     }
     if !own_stale && plan.is_none() {
         return Err(invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             "claims require a plan unless own_stale is true",
         ));
     }

@@ -18,27 +18,26 @@ impl LocalBoard {
         }
         if self.reader.is_none() {
             return Err(invalid(
-                "invalid_options",
+                BoardErrorCode::InvalidOptions,
                 "operation requires writable board storage",
             ));
         }
         #[cfg(unix)]
         if !request.op.is_read_only() {
             use std::os::unix::fs::PermissionsExt;
-            let parent = self
-                .path
-                .parent()
-                .ok_or_else(|| invalid("board_unavailable", "database has no parent"))?;
+            let parent = self.path.parent().ok_or_else(|| {
+                invalid(BoardErrorCode::BoardUnavailable, "database has no parent")
+            })?;
             if parent
                 .metadata()
-                .map_err(|e| invalid("board_unavailable", e.to_string()))?
+                .map_err(|e| invalid(BoardErrorCode::BoardUnavailable, e.to_string()))?
                 .permissions()
                 .mode()
                 & 0o200
                 == 0
             {
                 return Err(invalid(
-                    "board_unavailable",
+                    BoardErrorCode::BoardUnavailable,
                     "database directory is not writable",
                 ));
             }
@@ -73,7 +72,7 @@ impl LocalBoard {
         let seq = max_seq(&tx)?
             .get()
             .checked_add(1)
-            .ok_or_else(|| invalid("board_unavailable", "event sequence exhausted"))?;
+            .ok_or_else(|| invalid(BoardErrorCode::BoardUnavailable, "event sequence exhausted"))?;
         let key = request_dedupe_key(request)?;
         let ctx = WriteContext {
             actor_id,
@@ -117,7 +116,7 @@ impl LocalBoard {
                 .map_err(sql_error)?;
             if let Some(stored) = stored {
                 let mut reply: BoardReply = serde_json::from_str(&stored)
-                    .map_err(|e| invalid("board_unavailable", e.to_string()))?;
+                    .map_err(|e| invalid(BoardErrorCode::BoardUnavailable, e.to_string()))?;
                 // Stored receipts older than the wire API upgrade; validation stays strict.
                 if reply.api < BOARD_API {
                     reply.api = BOARD_API;
@@ -173,7 +172,7 @@ impl LocalBoard {
             let expected = if claim_refresh { 0 } else { i64::from(!replay) };
             if events != expected {
                 return Err(invalid(
-                    "board_unavailable",
+                    BoardErrorCode::BoardUnavailable,
                     if claim_refresh {
                         "claim refresh must not produce an event"
                     } else {
@@ -183,7 +182,7 @@ impl LocalBoard {
             }
             reply.backend = format!("local:{}", self.path.display());
             let encoded = serde_json::to_string(&reply)
-                .map_err(|e| invalid("board_unavailable", e.to_string()))?;
+                .map_err(|e| invalid(BoardErrorCode::BoardUnavailable, e.to_string()))?;
             tx.execute(
                 "DELETE FROM operation_dedupes WHERE created_at<?1",
                 [now - BOARD_WRITE_RECEIPT_RETENTION_SECS],

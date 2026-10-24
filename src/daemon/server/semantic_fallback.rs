@@ -39,7 +39,10 @@ impl SemanticAdmissionFallback {
         );
         ensure!(
             options.budget > FALLBACK_BUDGET_RESERVE,
-            "semantic_fallback_budget_too_small: --budget must exceed {FALLBACK_BUDGET_RESERVE}"
+            coded!(
+                SemanticFallbackBudgetTooSmall,
+                "--budget must exceed {FALLBACK_BUDGET_RESERVE}"
+            )
         );
 
         let fallback = Self {
@@ -69,13 +72,16 @@ impl SemanticAdmissionFallback {
 
     fn annotate_json(&self, output: &str, budget: &OutputBudget) -> Result<String> {
         let mut value = serde_json::from_str::<Value>(output)
-            .map_err(|error| anyhow!("semantic_fallback_output_invalid: {error}"))?;
+            .map_err(|error| anyhow!(coded!(SemanticFallbackOutputInvalid, "{error}")))?;
         ensure!(
             value.get("hits").and_then(Value::as_array).is_some(),
-            "semantic_fallback_output_invalid: expected search page hits"
+            coded!(SemanticFallbackOutputInvalid, "expected search page hits")
         );
         let Some(coverage) = value.get("coverage") else {
-            bail!("semantic_fallback_output_missing_coverage: expected search page coverage");
+            bail!(coded!(
+                SemanticFallbackOutputMissingCoverage,
+                "expected search page coverage"
+            ));
         };
         let object_coverage = coverage.is_object();
         let array_coverage = coverage.is_array();
@@ -93,7 +99,10 @@ impl SemanticAdmissionFallback {
                 .get_mut("coverage")
                 .and_then(Value::as_object_mut)
                 .ok_or_else(|| {
-                    anyhow!("semantic_fallback_output_missing_coverage: expected object")
+                    anyhow!(coded!(
+                        SemanticFallbackOutputMissingCoverage,
+                        "expected object"
+                    ))
                 })?;
             coverage.insert("semantic_status".into(), json!("skipped"));
             coverage.insert("semantic_reason".into(), json!("root_limit"));
@@ -111,17 +120,24 @@ impl SemanticAdmissionFallback {
             value
                 .as_object_mut()
                 .ok_or_else(|| {
-                    anyhow!("semantic_fallback_output_invalid: expected object search page")
+                    anyhow!(coded!(
+                        SemanticFallbackOutputInvalid,
+                        "expected object search page"
+                    ))
                 })?
                 .insert("semantic_admission".into(), admission);
         } else {
-            bail!("semantic_fallback_output_missing_coverage: expected object or array");
+            bail!(coded!(
+                SemanticFallbackOutputMissingCoverage,
+                "expected object or array"
+            ));
         }
         budget.render(&value).map_err(|error| {
-            anyhow!(
-                "semantic_fallback_output_too_large: fallback coverage does not fit --budget {}: {error:#}",
+            anyhow!(coded!(
+                SemanticFallbackOutputTooLarge,
+                "fallback coverage does not fit --budget {}: {error:#}",
                 self.budget
-            )
+            ))
         })
     }
 
@@ -147,12 +163,18 @@ impl SemanticAdmissionFallback {
         }
         ensure!(
             found_coverage,
-            "semantic_fallback_output_missing_coverage: expected search page coverage line"
+            coded!(
+                SemanticFallbackOutputMissingCoverage,
+                "expected search page coverage line"
+            )
         );
         ensure!(
             budget.fits(&annotated),
-            "semantic_fallback_output_too_large: fallback coverage does not fit --budget {}",
-            self.budget
+            coded!(
+                SemanticFallbackOutputTooLarge,
+                "fallback coverage does not fit --budget {}",
+                self.budget
+            )
         );
         Ok(annotated)
     }

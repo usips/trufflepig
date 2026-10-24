@@ -3,6 +3,7 @@ use super::{
     BoardTextPayload,
     board_syntax_validation::{check_flags, fixed_words, optional_text, recipient, word},
 };
+use crate::coded_error::CodedContext;
 use crate::{
     board::{
         board_ids::{BoardRef, EntryId},
@@ -11,7 +12,7 @@ use crate::{
     },
     cli::Arguments,
 };
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 
 pub(super) fn parse_task(options: &Arguments, payload: &BoardTextPayload) -> Result<BoardOp> {
     let target = word(options, 2, "board task P7 TITLE | P7.3 COLUMN")?.parse::<BoardRef>()?;
@@ -39,7 +40,7 @@ pub(super) fn parse_task(options: &Arguments, payload: &BoardTextPayload) -> Res
                 to: recipient(options)?,
             })
         }
-        _ => bail!("invalid_reference: task requires a plan or task"),
+        _ => bail!(coded!(InvalidReference, "task requires a plan or task")),
     }
 }
 
@@ -56,13 +57,9 @@ pub(super) fn parse_claim(options: &Arguments, payload: &BoardTextPayload) -> Re
             Ok(BoardOp::CarveClaim {
                 plan,
                 title: PlanTitle::new(payload.text.clone())?,
-                scope: EntryText::new(
-                    options
-                        .board
-                        .scope
-                        .clone()
-                        .context("invalid_options: claiming a plan requires --scope")?,
-                )?,
+                scope: EntryText::new(options.board.scope.clone().with_coded_context(|| {
+                    coded!(InvalidOptions, "claiming a plan requires --scope")
+                })?)?,
                 section: options.board.section.clone(),
             })
         }
@@ -75,15 +72,19 @@ pub(super) fn parse_claim(options: &Arguments, payload: &BoardTextPayload) -> Re
                 Some(Some(target)) => ClaimResume::Entry(target.parse::<EntryId>()?),
             };
             if scope.is_none() && !resume.is_resuming() {
-                bail!("invalid_options: claiming a task requires scope or --resume");
+                bail!(coded!(
+                    InvalidOptions,
+                    "claiming a task requires scope or --resume"
+                ));
             }
             if resume == ClaimResume::Idle {
                 if let Some(scope) = &scope {
                     let token = scope.as_str().trim();
                     if token.parse::<EntryId>().is_ok() {
-                        bail!(
-                            "invalid_options: --resume {token} passes scope text, not a resume target; use --resume={token}"
-                        );
+                        bail!(coded!(
+                            InvalidOptions,
+                            "--resume {token} passes scope text, not a resume target; use --resume={token}"
+                        ));
                     }
                 }
             }
@@ -100,6 +101,6 @@ pub(super) fn parse_claim(options: &Arguments, payload: &BoardTextPayload) -> Re
                 delegate,
             })
         }
-        _ => bail!("invalid_reference: claim requires a plan or task"),
+        _ => bail!(coded!(InvalidReference, "claim requires a plan or task")),
     }
 }

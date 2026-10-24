@@ -7,7 +7,7 @@
 //! file, refreshed while the daemon serves, tells clients whether anyone is
 //! draining the spool before they wait.
 
-use super::deadline::{self, QueryDeadline};
+use super::deadline::QueryDeadline;
 use super::protocol::{DaemonReply, DaemonRequest};
 use anyhow::{Context, Result, bail};
 use std::fs;
@@ -32,7 +32,7 @@ use spool_client::check_deadline;
 pub use spool_client::request;
 #[cfg(test)]
 pub(crate) use spool_test_deadline::{expire_after_next_publication, publication_expired};
-pub(crate) use spool_timeout::is_local_spool_timeout;
+pub(crate) use spool_timeout::{is_local_spool_timeout, is_spool_or_coded_timeout};
 
 /// Serves one spool directory from a daemon's maintenance ticks.
 pub struct SpoolServer {

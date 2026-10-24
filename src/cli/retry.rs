@@ -1,6 +1,7 @@
 //! Bounded retries for transient failures, restricted by operation safety.
 use super::Arguments;
-use crate::board::board_protocol::{BoardErrorCode, leading_error_code};
+use crate::board::board_protocol::BoardErrorCode;
+use crate::coded_error::{ErrorCode, coded_error};
 use crate::daemon::{DaemonReplyTimeout, deadline::QueryDeadline};
 use crate::diagnostics::RequestContext;
 use anyhow::Result;
@@ -66,10 +67,10 @@ impl RetryPolicy {
     /// Restricts transient retries to failures safe for this operation.
     /// `elapsed` is how long the failed attempt took.
     pub(super) fn classify(scope: RetryScope, error: &anyhow::Error, elapsed: Duration) -> Self {
-        if scope == RetryScope::Never || has_leading_timeout_code(error) {
+        if scope == RetryScope::Never || ErrorCode::TimedOut.is_code_of(error) {
             return Self::Fail;
         }
-        if leading_board_code(error) == Some(BoardErrorCode::DaemonBusy)
+        if ErrorCode::DaemonBusy.is_code_of(error)
             || BoardErrorCode::from_error(error) == Some(BoardErrorCode::DatabaseLocked)
         {
             return Self::Retry(CONTENTION_RETRY_DELAY);
@@ -94,9 +95,7 @@ impl RetryPolicy {
             || message.contains("(os error 32)")
             || message.contains("(os error 104)");
         let timed_out = io_kind(&[ErrorKind::WouldBlock, ErrorKind::TimedOut]);
-        if error.chain().any(|cause| {
-            leading_error_code(&cause.to_string()).is_some_and(|(code, _)| code == "index_warming")
-        }) {
+        if ErrorCode::IndexWarming.is_code_of(error) {
             Self::Retry(WARMING_RETRY_DELAY)
         } else if dropped {
             Self::Retry(CONTENTION_RETRY_DELAY)
@@ -106,13 +105,6 @@ impl RetryPolicy {
             Self::Fail
         }
     }
-}
-
-fn has_leading_timeout_code(error: &anyhow::Error) -> bool {
-    error.chain().any(|cause| {
-        leading_error_code(&cause.to_string())
-            .is_some_and(|(code, _)| code == crate::daemon::deadline::TIMED_OUT)
-    })
 }
 
 enum RetryInvocation {
@@ -191,7 +183,7 @@ fn run_retry_loop(
                     return match answer {
                         // The original reply still names the failure; the fallback
                         // only explains why the local read could not finish.
-                        Err(fallback) if has_leading_timeout_code(&fallback) => {
+                        Err(fallback) if ErrorCode::TimedOut.is_code_of(&fallback) => {
                             Err(error.context(format!("local fallback failed: {fallback:#}")))
                         }
                         answer => answer,
@@ -203,9 +195,9 @@ fn run_retry_loop(
     }
 }
 
-/// Whether a failed attempt is a typed reply timeout or a leading `timed_out` answer.
+/// Whether a failed attempt is a typed reply timeout or a `timed_out` answer.
 fn is_timeout_answer(error: &anyhow::Error) -> bool {
-    DaemonReplyTimeout::from_error(error).is_some() || has_leading_timeout_code(error)
+    DaemonReplyTimeout::from_error(error).is_some() || ErrorCode::TimedOut.is_code_of(error)
 }
 
 /// One attempt's deadline: the shared read budget less the time held back for the fallback.
@@ -238,31 +230,16 @@ fn backoff(request_id: &str, retry_index: usize) -> Duration {
 }
 
 fn is_explicit_busy(error: &anyhow::Error) -> bool {
-    leading_board_code(error) == Some(BoardErrorCode::DaemonBusy)
+    ErrorCode::DaemonBusy.is_code_of(error)
 }
 
-fn leading_board_code(error: &anyhow::Error) -> Option<BoardErrorCode> {
-    error.chain().find_map(|cause| {
-        let message = cause.to_string();
-        BoardErrorCode::leading(&message).map(|(code, _)| code)
-    })
-}
-
+/// Reads the `retry_after_ms=` field of a `daemon_busy` refusal.
 fn busy_retry_after(error: &anyhow::Error) -> Option<Duration> {
-    for cause in error.chain() {
-        let message = cause.to_string();
-        let Some((code, detail)) = BoardErrorCode::leading(&message) else {
-            continue;
-        };
-        if code != BoardErrorCode::DaemonBusy {
-            return None;
-        }
-        return detail
-            .split_ascii_whitespace()
-            .find_map(|token| token.strip_prefix("retry_after_ms=")?.parse::<u64>().ok())
-            .map(Duration::from_millis);
-    }
-    None
+    let busy = coded_error(error).filter(|coded| coded.code() == ErrorCode::DaemonBusy)?;
+    busy.message()
+        .split_ascii_whitespace()
+        .find_map(|token| token.strip_prefix("retry_after_ms=")?.parse::<u64>().ok())
+        .map(Duration::from_millis)
 }
 
 fn retry_delay(request_id: &str, retry_index: usize, error: &anyhow::Error) -> Duration {

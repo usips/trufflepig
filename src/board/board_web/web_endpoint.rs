@@ -10,7 +10,8 @@ use super::{
     web_guard::{BoardWebToken, WebGuard},
 };
 use crate::board::{board_config::BoardConfig, board_ids::BoardRef, board_protocol::BOARD_API};
-use anyhow::{Context, Result, ensure};
+use crate::coded_error::CodedContext;
+use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, OpenOptions},
@@ -35,7 +36,7 @@ struct WebEndpoint {
 pub(super) fn publish(runtime: &Path, address: SocketAddr, database: &Path) -> Result<()> {
     ensure!(
         database.is_absolute(),
-        "board_unavailable: database must be absolute"
+        coded!(BoardUnavailable, "database must be absolute")
     );
     fs::create_dir_all(runtime)?;
     let destination = runtime.join(ENDPOINT_FILE);
@@ -65,7 +66,7 @@ pub(super) fn publish(runtime: &Path, address: SocketAddr, database: &Path) -> R
         })?;
         ensure!(
             bytes.len() as u64 <= ENDPOINT_LIMIT,
-            "board_unavailable: endpoint metadata too large"
+            coded!(BoardUnavailable, "endpoint metadata too large")
         );
         file.write_all(&bytes)?;
         file.sync_all()?;
@@ -169,7 +170,8 @@ impl Drop for EndpointGuard {
 }
 
 pub(super) fn link(target: Option<BoardRef>) -> Result<String> {
-    let runtime = crate::system::dir().context("board_unavailable: no runtime directory")?;
+    let runtime = crate::system::dir()
+        .with_coded_context(|| coded!(BoardUnavailable, "no runtime directory"))?;
     link_at(&runtime, &BoardConfig::load()?, target)
 }
 
@@ -182,7 +184,7 @@ fn link_at(runtime: &Path, config: &BoardConfig, target: Option<BoardRef>) -> Re
                 target,
                 BoardRef::Plan(_) | BoardRef::Revision(_) | BoardRef::Entry(_)
             ),
-            "invalid_reference: board web accepts P#, P#@#, or E#"
+            coded!(InvalidReference, "board web accepts P#, P#@#, or E#")
         );
     }
     let mut file = match open_private(&runtime.join(ENDPOINT_FILE)) {
@@ -192,9 +194,15 @@ fn link_at(runtime: &Path, config: &BoardConfig, target: Option<BoardRef>) -> Re
                 .downcast_ref::<std::io::Error>()
                 .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
         {
-            anyhow::bail!("board_unavailable: board web is not listening; run board-serve");
+            anyhow::bail!(coded!(
+                BoardUnavailable,
+                "board web is not listening; run board-serve"
+            ));
         }
-        Err(error) => return Err(error).context("board_unavailable: unsafe web endpoint"),
+        Err(error) => {
+            return Err(error)
+                .with_coded_context(|| coded!(BoardUnavailable, "unsafe web endpoint"));
+        }
     };
     let mut bytes = Vec::with_capacity(512);
     Read::by_ref(&mut file)
@@ -202,22 +210,25 @@ fn link_at(runtime: &Path, config: &BoardConfig, target: Option<BoardRef>) -> Re
         .read_to_end(&mut bytes)?;
     ensure!(
         bytes.len() as u64 <= ENDPOINT_LIMIT,
-        "board_unavailable: endpoint metadata too large"
+        coded!(BoardUnavailable, "endpoint metadata too large")
     );
-    let endpoint: WebEndpoint =
-        serde_json::from_slice(&bytes).context("board_unavailable: invalid web endpoint")?;
+    let endpoint: WebEndpoint = serde_json::from_slice(&bytes)
+        .with_coded_context(|| coded!(BoardUnavailable, "invalid web endpoint"))?;
     ensure!(
         endpoint.api == BOARD_API,
-        "board_api_mismatch: restart board-serve"
+        coded!(BoardApiMismatch, "restart board-serve")
     );
     ensure!(
         endpoint.database.is_absolute() && same_database(&endpoint.database, &config.db_path),
-        "board_unavailable: running web database differs from configured database"
+        coded!(
+            BoardUnavailable,
+            "running web database differs from configured database"
+        )
     );
     crate::system::validate_board_database(runtime, &config.db_path)?;
     let token = BoardWebToken::read_at(&runtime.join("board-web.token"))?;
     let guard = WebGuard::with_token(endpoint.address, token.clone())
-        .context("board_unavailable: invalid web listener address")?;
+        .with_coded_context(|| coded!(BoardUnavailable, "invalid web listener address"))?;
     listener_owner::require_owned_listener(&endpoint.address)
         .and_then(|()| {
             endpoint_probe::probe(
@@ -226,9 +237,10 @@ fn link_at(runtime: &Path, config: &BoardConfig, target: Option<BoardRef>) -> Re
                 Instant::now() + http_wire::REQUEST_TIMEOUT,
             )
         })
-        .with_context(|| {
-            format!(
-                "board_unavailable: no verified listener at {}; run board-serve",
+        .with_coded_context(|| {
+            coded!(
+                BoardUnavailable,
+                "no verified listener at {}; run board-serve",
                 guard.origin()
             )
         })?;
@@ -260,7 +272,10 @@ fn open_private(path: &Path) -> Result<File> {
         metadata.is_file() && metadata.mode() & 0o7777 == 0o600
         // SAFETY: geteuid has no preconditions and cannot fail.
         && metadata.uid() == unsafe { libc::geteuid() },
-        "board_unavailable: endpoint must be an owned regular 0600 file"
+        coded!(
+            BoardUnavailable,
+            "endpoint must be an owned regular 0600 file"
+        )
     );
     Ok(file)
 }

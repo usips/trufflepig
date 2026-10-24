@@ -1,4 +1,5 @@
 mod change_entries;
+use crate::coded_error::CodedContext;
 use change_entries::entries;
 mod historical_render;
 mod historical_symbols;
@@ -126,7 +127,12 @@ pub(super) fn hist(
                 |r| r.get::<_, i64>(0),
             )
             .optional()?
-            .context("history_unavailable: selected commit is outside captured first-parent view")?
+            .with_coded_context(|| {
+                coded!(
+                    HistoryUnavailable,
+                    "selected commit is outside captured first-parent view"
+                )
+            })?
     } else {
         0
     };
@@ -254,7 +260,10 @@ fn ensure_diff_capacity(before: &[u8], after: &[u8]) -> Result<()> {
         before.iter().filter(|&&b| b == b'\n').count()
             + after.iter().filter(|&&b| b == b'\n').count()
             <= 100_000,
-        "history_resource_limited: diff line-token staging capacity reached"
+        coded!(
+            HistoryResourceLimited,
+            "diff line-token staging capacity reached"
+        )
     );
     Ok(())
 }

@@ -29,16 +29,18 @@ fn unchanged_waiting_inbox_uses_sequence_gate_and_returns_empty_under_writer_loc
     assert_eq!(inbox.wait, InboxWait::Timeout);
     assert_eq!(host.inner.inbox_queries.load(Ordering::Relaxed), 1);
     assert!(host.inner.backend.lock().unwrap().is_none());
-    assert!(waiter_transient(&anyhow::anyhow!(
-        "timed_out: no deadline remains"
-    )));
+    assert!(waiter_transient(&anyhow::anyhow!(coded!(
+        TimedOut,
+        "no deadline remains"
+    ))));
     assert!(waiter_transient(&anyhow::Error::new(BoardError::new(
         crate::board::board_protocol::BoardErrorCode::DatabaseLocked,
         "writer held"
     ))));
-    assert!(!waiter_transient(&anyhow::anyhow!(
-        "invalid_body: text mentions timed_out"
-    )));
+    assert!(!waiter_transient(&anyhow::anyhow!(coded!(
+        InvalidBody,
+        "text mentions timed_out"
+    ))));
     for scope in [
         ReadScope::Repo(RepoKey::parse(&"a".repeat(40)).unwrap()),
         ReadScope::Keys(BTreeSet::new()),

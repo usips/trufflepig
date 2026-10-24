@@ -3,6 +3,7 @@
 #[cfg(test)]
 mod tests;
 
+use crate::board::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, params};
 
 use super::super::{BoardError, invalid, require_plan, sql_error, sql_number, sqlite_u64};
@@ -27,7 +28,7 @@ pub(in crate::board::local_board) fn search(
         || query.contains('\0')
     {
         return Err(invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             format!(
                 "search requires a nonblank query of at most {ENTRY_TEXT_LIMIT} bytes and a limit of 1..50"
             ),
@@ -74,7 +75,7 @@ pub(in crate::board::local_board) fn search(
             BoardRef::Entry(_) | BoardRef::Revision(_) | BoardRef::Plan(_)
         ) {
             return Err(invalid(
-                "board_unavailable",
+                BoardErrorCode::BoardUnavailable,
                 "search document has an unsupported target",
             ));
         }
@@ -93,7 +94,7 @@ pub(in crate::board::local_board) fn search(
             "plan" => BoardSearchSource::Plan,
             _ => {
                 return Err(invalid(
-                    "board_unavailable",
+                    BoardErrorCode::BoardUnavailable,
                     "search document has an unsupported source",
                 ));
             }
@@ -153,7 +154,7 @@ fn match_expression(query: &str) -> Result<String, BoardError> {
     }
     if kept == 0 {
         return Err(invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             "search query has no searchable terms",
         ));
     }
@@ -169,7 +170,7 @@ fn match_error(error: rusqlite::Error) -> BoardError {
                 || message.starts_with("unknown special query:"))
         {
             return invalid(
-                "invalid_options",
+                BoardErrorCode::InvalidOptions,
                 format!("invalid search query: {message}"),
             );
         }

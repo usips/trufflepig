@@ -18,7 +18,10 @@ pub(super) fn check_parity(model: &mut TextEmbedding) -> Result<f32> {
     let source = batch::infer(model, PARITY_SOURCE)?;
     let cosine = query.cosine(&source);
     if (cosine - 0.7281749).abs() > 0.002 {
-        bail!("semantic_unavailable: publisher parity gate failed: cosine {cosine}");
+        bail!(coded!(
+            SemanticUnavailable,
+            "publisher parity gate failed: cosine {cosine}"
+        ));
     }
     Ok(cosine)
 }
@@ -48,7 +51,10 @@ fn cpu_cuda_comparison(
     cuda_provider: SemanticProviderConfig,
 ) -> Result<CpuCudaComparison> {
     if !matches!(cuda_provider.provider, SemanticProvider::Cuda { .. }) {
-        bail!("semantic_unavailable: CPU/CUDA comparison requires a CUDA provider");
+        bail!(coded!(
+            SemanticUnavailable,
+            "CPU/CUDA comparison requires a CUDA provider"
+        ));
     }
     let mut digests = crate::semantic::VerifiedAssetDigests::default();
     let mut cpu = SemanticInferenceEngine::open_with_provider(
@@ -80,9 +86,10 @@ fn cpu_cuda_comparison(
         || !batch_consistency.is_finite()
         || batch_consistency < CPU_CUDA_PARITY_COSINE
     {
-        bail!(
-            "semantic_unavailable: CPU/CUDA cached-bypass parity failed: cpu_cuda_min={minimum_cosine}, batch_consistency_min={batch_consistency}, required >= {CPU_CUDA_PARITY_COSINE}"
-        );
+        bail!(coded!(
+            SemanticUnavailable,
+            "CPU/CUDA cached-bypass parity failed: cpu_cuda_min={minimum_cosine}, batch_consistency_min={batch_consistency}, required >= {CPU_CUDA_PARITY_COSINE}"
+        ));
     }
     Ok(CpuCudaComparison {
         cpu_publisher_parity: cpu.publisher_parity_cosine(),
@@ -157,7 +164,10 @@ pub fn run_gate(model_dir: &Path) -> Result<Value> {
                 .and_then(|value| value.parse::<u64>().ok())
         });
     if peak_rss_kib.is_some_and(|rss| rss > 4 * 1024 * 1024) {
-        bail!("semantic_unavailable: small-input gate exceeded 4 GiB peak RSS");
+        bail!(coded!(
+            SemanticUnavailable,
+            "small-input gate exceeded 4 GiB peak RSS"
+        ));
     }
     Ok(serde_json::json!({
         "status": "passed", "model": MODEL_NAME, "revision": MODEL_REVISION,

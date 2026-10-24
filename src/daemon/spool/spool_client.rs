@@ -27,7 +27,11 @@ pub fn request(
     let request_path = spool.join(format!("{id}.request"));
     let reply_path = spool.join(format!("{id}.reply"));
     let result = request_until(spool, &request_path, &reply_path, &bytes, deadline);
-    if result.as_ref().err().is_some_and(deadline::is_timed_out) {
+    if result
+        .as_ref()
+        .err()
+        .is_some_and(super::is_spool_or_coded_timeout)
+    {
         remove_pending_request(&request_path);
     }
     result
@@ -99,7 +103,10 @@ fn request_until(
                 let _ = fs::remove_file(spool.join(format!("{id}.claimed")));
             }
             check_deadline(&deadline)?;
-            bail!("daemon_unavailable: router stopped while answering a spooled request");
+            bail!(coded!(
+                DaemonUnavailable,
+                "router stopped while answering a spooled request"
+            ));
         }
         let wait = deadline.cap(REPLY_POLL);
         if wait.is_zero() {
@@ -111,7 +118,7 @@ fn request_until(
 
 pub(super) fn check_deadline(deadline: &QueryDeadline) -> Result<()> {
     if deadline.expired() {
-        return Err(spool_timeout::LocalSpoolTimeout.into());
+        return Err(spool_timeout::local_spool_timeout().into());
     }
     Ok(())
 }

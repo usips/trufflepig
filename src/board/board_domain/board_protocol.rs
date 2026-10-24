@@ -12,7 +12,7 @@ mod tests;
 pub use super::board_collections::*;
 pub use crate::board::board_vocabulary::{AuthorityRole, WorkerEndReason, WorkerRole};
 pub use board_authority::AuthoritySource;
-pub use board_errors::{BoardError, BoardErrorCode, leading_error_code};
+pub use board_errors::{BoardError, BoardErrorCode};
 pub use board_identity::{ActorOrigin, WorkerAddress, WorkerHandle};
 pub use board_progress::{
     GateStatus, PROGRESS_ETA_LIMIT_SECS, PROGRESS_GATE_LIMIT, PROGRESS_GATE_NAME_LIMIT,
@@ -43,14 +43,20 @@ pub const BOARD_WRITE_RECEIPT_RETENTION_SECS: i64 = 600;
 
 fn validate_claim(value: &str, field: &str) -> Result<()> {
     if value.trim().is_empty() || value.len() > 256 || value.chars().any(char::is_control) {
-        bail!("invalid_options: {field} must contain 1..256 bytes without control characters");
+        bail!(coded!(
+            InvalidOptions,
+            "{field} must contain 1..256 bytes without control characters"
+        ));
     }
     Ok(())
 }
 
 fn bounded_metadata(value: &str, limit: usize, field: &str) -> Result<()> {
     if value.len() > limit || value.contains('\0') {
-        bail!("invalid_options: {field} exceeds {limit} bytes or contains NUL");
+        bail!(coded!(
+            InvalidOptions,
+            "{field} exceeds {limit} bytes or contains NUL"
+        ));
     }
     Ok(())
 }

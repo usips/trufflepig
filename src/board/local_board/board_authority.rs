@@ -9,6 +9,7 @@ pub(in crate::board) use authority_writes::{write_grant, write_revoke};
 use super::{invalid, require_plan, sql_error, sql_number};
 use crate::board::board_actor::{BoardActor, BoardRecipient, HarnessLabel};
 use crate::board::board_ids::{EntryId, PlanId};
+use crate::board::board_protocol::BoardErrorCode;
 use crate::board::board_protocol::{
     AuthorityRole, AuthoritySource, BoardError, GrantRecord, GrantSource,
 };
@@ -46,7 +47,7 @@ pub(in crate::board::local_board) fn read_grants(
         let plan_id: Option<i64> = row.get(1).map_err(sql_error)?;
         let roles_json: String = row.get(3).map_err(sql_error)?;
         let roles: Vec<AuthorityRole> = serde_json::from_str(&roles_json)
-            .map_err(|error| invalid("board_unavailable", error.to_string()))?;
+            .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))?;
         let grantee: String = row.get(4).map_err(sql_error)?;
         let granted_at: i64 = row.get(5).map_err(sql_error)?;
         let expires_at: Option<i64> = row.get(6).map_err(sql_error)?;
@@ -147,7 +148,7 @@ fn authority_for_owner(
         .map(|id| {
             EntryId::new(u64::try_from(id).map_err(|_| {
                 invalid(
-                    "board_unavailable",
+                    BoardErrorCode::BoardUnavailable,
                     "authority grant has an invalid entry id",
                 )
             })?)
@@ -198,14 +199,14 @@ pub(in crate::board::local_board) fn validate_grantee(
         Ok(actor) => actor.harness,
         Err(_) => HarnessLabel::parse(grantee.as_str()).map_err(|_| {
             invalid(
-                "invalid_options",
+                BoardErrorCode::InvalidOptions,
                 "grant target must be a full actor identity or harness label",
             )
         })?,
     };
     if harness.is_reserved() {
         return Err(invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             format!("grant target cannot name reserved harness {harness}"),
         ));
     }
@@ -213,13 +214,21 @@ pub(in crate::board::local_board) fn validate_grantee(
 }
 
 fn parse_entry_id(id: i64) -> Result<EntryId, BoardError> {
-    let id = u64::try_from(id)
-        .map_err(|_| invalid("board_unavailable", "grant has an invalid entry id"))?;
+    let id = u64::try_from(id).map_err(|_| {
+        invalid(
+            BoardErrorCode::BoardUnavailable,
+            "grant has an invalid entry id",
+        )
+    })?;
     EntryId::new(id).map_err(BoardError::from)
 }
 
 fn parse_plan_id(id: i64) -> Result<PlanId, BoardError> {
-    let id = u64::try_from(id)
-        .map_err(|_| invalid("board_unavailable", "grant has an invalid plan id"))?;
+    let id = u64::try_from(id).map_err(|_| {
+        invalid(
+            BoardErrorCode::BoardUnavailable,
+            "grant has an invalid plan id",
+        )
+    })?;
     PlanId::new(id).map_err(BoardError::from)
 }

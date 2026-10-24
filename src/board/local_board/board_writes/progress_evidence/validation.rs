@@ -1,3 +1,4 @@
+use crate::board::board_protocol::BoardErrorCode;
 use std::convert::TryFrom;
 
 use super::super::super::{BoardError, WriteContext, invalid};
@@ -24,13 +25,13 @@ pub(super) fn validate_progress(
         || !input.gates.is_empty();
     if !has_facts {
         return Err(invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             "structured progress must supply at least one field",
         ));
     }
     if input.gates.len() > 64 {
         return Err(invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             "progress may update at most 64 gates at once",
         ));
     }
@@ -39,14 +40,14 @@ pub(super) fn validate_progress(
         (Some(head), Some(verified)) if head == verified => (Some(head.to_string()), Some(1_i64)),
         (Some(_), Some(_)) => {
             return Err(invalid(
-                "board_unavailable",
+                BoardErrorCode::BoardUnavailable,
                 "host progress head verification does not match the submitted object ID",
             ));
         }
         (Some(head), None) => (Some(head.to_string()), Some(0_i64)),
         (None, Some(_)) => {
             return Err(invalid(
-                "board_unavailable",
+                BoardErrorCode::BoardUnavailable,
                 "host supplied progress head verification without a submitted head",
             ));
         }
@@ -59,7 +60,7 @@ pub(super) fn validate_progress(
         .map(|step| -> Result<(i64, i64), BoardError> {
             if step.total == 0 || step.current > step.total {
                 return Err(invalid(
-                    "invalid_options",
+                    BoardErrorCode::InvalidOptions,
                     "progress step requires 0 <= current <= total and total > 0",
                 ));
             }
@@ -84,19 +85,22 @@ pub(super) fn validate_progress(
         .map(|eta_secs| {
             if eta_secs == 0 || eta_secs > 31_536_000 {
                 return Err(invalid(
-                    "invalid_options",
+                    BoardErrorCode::InvalidOptions,
                     "progress ETA must be between 1 second and 365 days",
                 ));
             }
             let eta_secs = i64::try_from(eta_secs).map_err(|_| {
                 invalid(
-                    "invalid_options",
+                    BoardErrorCode::InvalidOptions,
                     "progress ETA exceeds SQLite integer range",
                 )
             })?;
-            ctx.now
-                .checked_add(eta_secs)
-                .ok_or_else(|| invalid("invalid_options", "progress ETA timestamp overflow"))
+            ctx.now.checked_add(eta_secs).ok_or_else(|| {
+                invalid(
+                    BoardErrorCode::InvalidOptions,
+                    "progress ETA timestamp overflow",
+                )
+            })
         })
         .transpose()?;
 
@@ -109,7 +113,7 @@ pub(super) fn validate_progress(
             || name.contains('=')
         {
             return Err(invalid(
-                "invalid_options",
+                BoardErrorCode::InvalidOptions,
                 "progress gate name must be 1..64 UTF-8 bytes without whitespace-only, control, or '=' characters",
             ));
         }
@@ -118,7 +122,7 @@ pub(super) fn validate_progress(
             .any(|previous| previous.name == gate.name)
         {
             return Err(invalid(
-                "invalid_options",
+                BoardErrorCode::InvalidOptions,
                 format!("progress gate `{name}` is supplied more than once"),
             ));
         }
@@ -136,7 +140,7 @@ pub(super) fn validate_progress(
 fn checked_sql_count(value: u64, field: &str) -> Result<i64, BoardError> {
     i64::try_from(value).map_err(|_| {
         invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             format!("{field} exceeds SQLite integer range"),
         )
     })

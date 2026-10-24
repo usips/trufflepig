@@ -131,7 +131,10 @@ fn expired_accepted_board_write_never_opens_storage_or_commits_an_event() {
             QueryDeadline::after(Duration::ZERO),
         )
         .unwrap_err();
-    assert!(crate::daemon::deadline::is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
     assert!(
         !fixture.config.db_path.exists(),
         "expired accepted mutation opened durable storage"

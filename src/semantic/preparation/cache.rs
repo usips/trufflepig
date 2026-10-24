@@ -89,7 +89,10 @@ impl PreparationCache {
 
     pub(super) fn request(&mut self, generation: i64) -> Result<bool> {
         if generation <= 0 {
-            bail!("preparation_unavailable: no published source generation");
+            bail!(coded!(
+                PreparationUnavailable,
+                "no published source generation"
+            ));
         }
         let previous = self.requested_generation()?;
         self.db.execute(

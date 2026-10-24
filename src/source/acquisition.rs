@@ -1,12 +1,13 @@
 //! Acquire and verify one immutable identity before rendering its remaining byte range.
 use super::{MAX_READ_BYTES, read_contained};
+use crate::coded_error::CodedContext;
 use crate::{
     identity::{ByteSpan, ContentRevision, ResultHandle},
     results::{self, HistoricalSource, ResultEntry},
     search::InvocationDirectory,
     store::Store,
 };
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, bail, ensure};
 use std::path::Component;
 
 mod path_read;
@@ -34,7 +35,7 @@ impl SourceSide {
         match value {
             "before" => Ok(Self::Before),
             "after" => Ok(Self::After),
-            _ => bail!("invalid_side: expected before or after"),
+            _ => bail!(coded!(InvalidSide, "expected before or after")),
         }
     }
 }
@@ -65,15 +66,18 @@ pub(crate) fn acquire(
     if let Some(cursor) = target.strip_prefix("read:") {
         let (identity, offset) = cursor
             .rsplit_once('@')
-            .context("invalid_cursor: expected read:HANDLE@BYTE_OFFSET")?;
+            .with_coded_context(|| coded!(InvalidCursor, "expected read:HANDLE@BYTE_OFFSET"))?;
         if identity.starts_with("path:") {
             ensure!(
                 side.is_none(),
-                "invalid_side: current path continuations have no historical side"
+                coded!(
+                    InvalidSide,
+                    "current path continuations have no historical side"
+                )
             );
             let offset = offset
                 .parse::<usize>()
-                .context("invalid_cursor: invalid byte offset")?;
+                .with_coded_context(|| coded!(InvalidCursor, "invalid byte offset"))?;
             return path_read::acquire_path_continuation(store, identity, offset);
         }
         let (handle, recorded_side) = match identity.rsplit_once(':') {
@@ -84,15 +88,15 @@ pub(crate) fn acquire(
         };
         ensure!(
             side.is_none() || side == recorded_side,
-            "invalid_side: continuation side cannot change"
+            coded!(InvalidSide, "continuation side cannot change")
         );
         let mut source = acquire_handle(store, handle, recorded_side)?;
         let offset = offset
             .parse::<usize>()
-            .context("invalid_cursor: invalid byte offset")?;
+            .with_coded_context(|| coded!(InvalidCursor, "invalid byte offset"))?;
         ensure!(
             offset >= source.span.start && offset <= source.span.end,
-            "invalid_cursor: offset outside original source range"
+            coded!(InvalidCursor, "offset outside original source range")
         );
         source.span.start = offset;
         return Ok(source);
@@ -102,7 +106,7 @@ pub(crate) fn acquire(
     }
     ensure!(
         side.is_none(),
-        "invalid_side: side requires a historical change handle"
+        coded!(InvalidSide, "side requires a historical change handle")
     );
     if target.starts_with("sym:") {
         return symbol::acquire_symbol(store, target, origin);
@@ -130,11 +134,14 @@ pub(crate) fn acquire_current_path_without_cache(
 ) -> Result<AcquiredSource> {
     ensure!(
         is_current_path_target(target),
-        "invalid_target: cache-independent reads require a current path target"
+        coded!(
+            InvalidTarget,
+            "cache-independent reads require a current path target"
+        )
     );
     ensure!(
         side.is_none(),
-        "invalid_side: current path reads have no historical side"
+        coded!(InvalidSide, "current path reads have no historical side")
     );
     if target.starts_with("read:path:") {
         return acquire(store, target, side, origin);
@@ -164,13 +171,12 @@ pub(crate) fn acquire_entry(
         ResultEntry::LiveSource(hit) => {
             ensure!(
                 side.is_none(),
-                "invalid_side: live sources have no historical side"
+                coded!(InvalidSide, "live sources have no historical side")
             );
-            let expected = ContentRevision::parse(
-                hit.revision
-                    .as_deref()
-                    .context("source_excluded: no indexed source revision")?,
-            )?;
+            let expected =
+                ContentRevision::parse(hit.revision.as_deref().with_coded_context(|| {
+                    coded!(SourceExcluded, "no indexed source revision")
+                })?)?;
             let bytes = read_contained(
                 &store.root,
                 &crate::store::decode_path(&hit.path)?,
@@ -179,7 +185,10 @@ pub(crate) fn acquire_entry(
             let revision = ContentRevision::of(&bytes);
             ensure!(
                 revision == expected,
-                "stale_source: source revision changed; search again or use explicit current path coordinates"
+                coded!(
+                    StaleSource,
+                    "source revision changed; search again or use explicit current path coordinates"
+                )
             );
             let span = if hit.kind == "file" {
                 ByteSpan::new(0, bytes.len())?
@@ -201,16 +210,26 @@ pub(crate) fn acquire_entry(
             })
         }
         ResultEntry::Change(change) => {
-            let side = side.context("side_required: show a change with --side before or after")?;
+            let side = side.with_coded_context(|| {
+                coded!(SideRequired, "show a change with --side before or after")
+            })?;
             let identity = match side {
                 SourceSide::Before => change.before,
                 SourceSide::After => change.after,
             }
-            .context("source_unavailable: change has no source on the requested side")?;
+            .with_coded_context(|| {
+                coded!(
+                    SourceUnavailable,
+                    "change has no source on the requested side"
+                )
+            })?;
             acquire_historical(store, handle, side, identity)
         }
         ResultEntry::Commit(_) => {
-            bail!("source_unavailable: commit entries contain metadata; select a change source")
+            bail!(coded!(
+                SourceUnavailable,
+                "commit entries contain metadata; select a change source"
+            ))
         }
     }
 }
@@ -224,7 +243,10 @@ fn acquire_historical(
     let repository = crate::history::git::GitRepository::discover(&store.root)?;
     ensure!(
         repository.common_dir == crate::store::decode_path(&identity.repository)?,
-        "scope_boundary: historical source belongs to another repository"
+        coded!(
+            ScopeBoundary,
+            "historical source belongs to another repository"
+        )
     );
     let decoded = crate::store::decode_path(&identity.path)?;
     ensure!(
@@ -232,7 +254,7 @@ fn acquire_historical(
             && decoded
                 .components()
                 .all(|part| matches!(part, Component::Normal(_))),
-        "scope_boundary: historical path is outside configured root"
+        coded!(ScopeBoundary, "historical path is outside configured root")
     );
     let tree = repository.tree_entry(&identity.commit, &decoded)?;
     let header = tree.split(|b| *b == b'\t').next().unwrap_or_default();
@@ -241,19 +263,28 @@ fn acquire_historical(
     let mode = fields.next();
     ensure!(
         matches!(mode, Some("100644" | "100755")),
-        "source_unavailable: historical path missing or not a regular file"
+        coded!(
+            SourceUnavailable,
+            "historical path missing or not a regular file"
+        )
     );
     ensure!(
         fields.next() == Some("blob") && fields.next() == Some(identity.blob.as_str()),
-        "source_unavailable: historical path does not identify recorded blob"
+        coded!(
+            SourceUnavailable,
+            "historical path does not identify recorded blob"
+        )
     );
     let bytes = repository
         .blob(&identity.blob)
-        .context("source_unavailable: historical blob is unavailable")?;
+        .with_coded_context(|| coded!(SourceUnavailable, "historical blob is unavailable"))?;
     let revision = ContentRevision::of(&bytes);
     ensure!(
         revision == identity.revision,
-        "source_unavailable: historical content revision does not match recorded identity"
+        coded!(
+            SourceUnavailable,
+            "historical content revision does not match recorded identity"
+        )
     );
     let span = identity.span.validate(bytes.len())?;
     Ok(AcquiredSource {

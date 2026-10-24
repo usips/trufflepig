@@ -6,7 +6,7 @@ use serde_json::json;
 use std::fmt::Write;
 
 pub(crate) fn list(options: &Arguments) -> Result<String> {
-    ensure!(options.words.len() == 2, "usage: ws list");
+    ensure!(options.words.len() == 2, coded!(Usage, "ws list"));
     let workspaces = config::registered_workspaces()?;
     let budget = OutputBudget::new(options.budget)?;
     if options.json {
@@ -76,8 +76,11 @@ pub(crate) fn list(options: &Arguments) -> Result<String> {
     }
     ensure!(
         budget.fits(&output),
-        "budget_too_small: complete response exceeds {} o200k_base tokens",
-        budget.limit
+        coded!(
+            BudgetTooSmall,
+            "complete response exceeds {} o200k_base tokens",
+            budget.limit
+        )
     );
     Ok(output)
 }

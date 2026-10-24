@@ -224,7 +224,7 @@ impl IndexCheckpoint {
             .get()
             .is_some_and(|limit| self.new_files_this_pass >= limit)
         {
-            anyhow::bail!("timed_out: test save budget exhausted");
+            anyhow::bail!(coded!(TimedOut, "test save budget exhausted"));
         }
         let Some(storage) = self.storage.as_mut() else {
             return Ok(());

@@ -1,4 +1,5 @@
 use super::*;
+use crate::coded_error::CodedContext;
 use anyhow::{Context, ensure};
 use serde_json::json;
 
@@ -20,9 +21,9 @@ pub(super) fn blame(
         .repository_path(decoded.to_str().context("blame path is not UTF-8")?)?;
     let (bytes, blob, revision, publication, endpoint) = if let Some(commit) = &target.commit {
         let tree = comparison::tree(history, Some(commit))?;
-        let file = tree
-            .get(&target.path)
-            .context("history_unavailable: path is absent at selected commit")?;
+        let file = tree.get(&target.path).with_coded_context(|| {
+            coded!(HistoryUnavailable, "path is absent at selected commit")
+        })?;
         let source = comparison::source(history, commit, file)?;
         (
             history.repository.blob(&source.blob)?,
@@ -34,12 +35,15 @@ pub(super) fn blame(
     } else {
         ensure_captured_head(history)?;
         let tree = comparison::tree(history, Some(&history.tip))?;
-        let file = tree
-            .get(&target.path)
-            .context("history_unavailable: untracked path has no captured HEAD ancestry")?;
+        let file = tree.get(&target.path).with_coded_context(|| {
+            coded!(
+                HistoryUnavailable,
+                "untracked path has no captured HEAD ancestry"
+            )
+        })?;
         ensure!(
             matches!(file.mode.as_str(), "100644" | "100755"),
-            "history_unavailable: blame requires a regular file"
+            coded!(HistoryUnavailable, "blame requires a regular file")
         );
         let (bytes, revision, publication) = published_source(store, &target)?;
         (
@@ -70,7 +74,7 @@ pub(super) fn blame(
     if let Some(path) = &ignored {
         ensure!(
             path.is_file() && path.metadata()?.len() <= MAX_BLOB_BYTES as u64,
-            "history_resource_limited: invalid ignore revisions file"
+            coded!(HistoryResourceLimited, "invalid ignore revisions file")
         );
         args.extend([
             "--ignore-revs-file",
@@ -113,14 +117,17 @@ pub(super) fn blame(
         if line.first() == Some(&b'\t') {
             let (oid, original, final_line) = pending
                 .take()
-                .context("history_unavailable: incomplete blame record")?;
-            let (index, expected) = expected_lines
-                .next()
-                .context("history_unavailable: unexpected blame source line")?;
+                .with_coded_context(|| coded!(HistoryUnavailable, "incomplete blame record"))?;
+            let (index, expected) = expected_lines.next().with_coded_context(|| {
+                coded!(HistoryUnavailable, "unexpected blame source line")
+            })?;
             let expected = expected.strip_suffix(b"\n").unwrap_or(expected);
             ensure!(
                 line[1..] == *expected && final_line == index as u64 + 1,
-                "history_unavailable: Git attributes transformed supplied source bytes"
+                coded!(
+                    HistoryUnavailable,
+                    "Git attributes transformed supplied source bytes"
+                )
             );
             let can_join = runs.last().is_some_and(|r| {
                 r["commit"] == json!(oid)
@@ -158,7 +165,7 @@ pub(super) fn blame(
     }
     ensure!(
         expected_lines.next().is_none() && pending.is_none(),
-        "history_unavailable: incomplete blame source coverage"
+        coded!(HistoryUnavailable, "incomplete blame source coverage")
     );
     let total = runs.len();
     loop {
@@ -168,7 +175,7 @@ pub(super) fn blame(
             return Ok(text);
         }
         if runs.pop().is_none() {
-            anyhow::bail!("budget_too_small: attribution run does not fit")
+            anyhow::bail!(coded!(BudgetTooSmall, "attribution run does not fit"))
         }
     }
 }
@@ -176,7 +183,10 @@ pub(super) fn blame(
 fn ensure_captured_head(history: &History) -> Result<()> {
     ensure!(
         history.repository.resolve("HEAD")? == history.tip,
-        "history_changed: HEAD moved during supplied-buffer blame; retry with a new captured tip"
+        coded!(
+            HistoryChanged,
+            "HEAD moved during supplied-buffer blame; retry with a new captured tip"
+        )
     );
     Ok(())
 }
@@ -192,12 +202,13 @@ fn published_source(
                 [&target.path],
                 |row| row.get(0),
             )
-            .context("history_unavailable: path has no published source")?;
-        let revision = revision.context("history_unavailable: published path is excluded")?;
+            .with_coded_context(|| coded!(HistoryUnavailable, "path has no published source"))?;
+        let revision = revision
+            .with_coded_context(|| coded!(HistoryUnavailable, "published path is excluded"))?;
         if let Some(expected) = &target.revision {
             ensure!(
                 expected == &revision,
-                "stale_source: target revision differs from published source"
+                coded!(StaleSource, "target revision differs from published source")
             );
         }
         let size: i64 = conn.query_row(
@@ -207,7 +218,10 @@ fn published_source(
         )?;
         ensure!(
             size >= 0 && size as u64 <= MAX_BLOB_BYTES as u64,
-            "history_resource_limited: published source exceeds blob limit"
+            coded!(
+                HistoryResourceLimited,
+                "published source exceeds blob limit"
+            )
         );
         let bytes: Vec<u8> = conn.query_row(
             "SELECT bytes FROM contents WHERE revision=?1",
@@ -217,7 +231,7 @@ fn published_source(
         ensure!(
             crate::identity::ContentRevision::of(&bytes)
                 == crate::identity::ContentRevision::parse(&revision)?,
-            "history_unavailable: published source identity mismatch"
+            coded!(HistoryUnavailable, "published source identity mismatch")
         );
         Ok((bytes, revision, publication.clone()))
     })

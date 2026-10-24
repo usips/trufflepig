@@ -137,7 +137,7 @@ fn shorter_root_budget_expires_before_coordinator_and_router_on_socket_path() {
             while !request.deadline.time_expired() {
                 std::thread::sleep(Duration::from_millis(5));
             }
-            anyhow::bail!("timed_out: scaled root deadline expired")
+            anyhow::bail!(coded!(TimedOut, "scaled root deadline expired"))
         }),
     );
     let root_cache = root.cache.clone();

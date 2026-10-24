@@ -17,7 +17,7 @@ impl OutputFormat {
         match value {
             "json" => Ok(Self::Json),
             "lines" => Ok(Self::Lines),
-            other => bail!("invalid_options: unknown output format {other}"),
+            other => bail!(coded!(InvalidOptions, "unknown output format {other}")),
         }
     }
 }
@@ -64,10 +64,11 @@ impl OutputBudget {
     pub fn render(&self, value: &impl Serialize) -> Result<String> {
         let text = self.encode(value)?;
         if !self.fits(&text) {
-            bail!(
-                "budget_too_small: complete response exceeds {} o200k_base tokens",
+            bail!(coded!(
+                BudgetTooSmall,
+                "complete response exceeds {} o200k_base tokens",
                 self.limit
-            );
+            ));
         }
         Ok(text)
     }

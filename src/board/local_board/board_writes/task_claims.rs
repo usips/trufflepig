@@ -12,6 +12,7 @@ mod worker_lifecycle;
 use super::super::board_queries::worker_reads::{
     active_bound_worker_for_actor, active_worker_binding, worker_for_address,
 };
+use crate::board::board_protocol::BoardErrorCode;
 pub(in crate::board::local_board) use claim_activity::{
     refresh_commit_claims, refresh_inbox_claims, refresh_plan_claims,
 };
@@ -73,7 +74,7 @@ pub(in crate::board::local_board) fn claim_task(
     let card = require_task(tx, task)?;
     if card.column == TaskColumn::Done {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("{task} is done and cannot be claimed"),
         ));
     }
@@ -105,7 +106,7 @@ pub(in crate::board::local_board) fn claim_task(
             )?;
             if !assigned_to_actor && assign_authority.is_none() {
                 return Err(invalid(
-                    "invalid_actor",
+                    BoardErrorCode::InvalidActor,
                     "a bound worker needs separate claim, assignee, or assign authority to claim the lead task",
                 ));
             }
@@ -129,13 +130,16 @@ pub(in crate::board::local_board) fn claim_task(
         require_assignee(&card, &ctx.actor, task)?;
     }
     if resume.is_resuming() {
-        let previous = holder
-            .as_ref()
-            .ok_or_else(|| invalid("invalid_state", format!("{task} has no claim to resume")))?;
+        let previous = holder.as_ref().ok_or_else(|| {
+            invalid(
+                BoardErrorCode::InvalidState,
+                format!("{task} has no claim to resume"),
+            )
+        })?;
         if let ClaimResume::Entry(entry) = resume {
             if previous.record.entry != entry {
                 return Err(invalid(
-                    "invalid_reference",
+                    BoardErrorCode::InvalidReference,
                     format!("{entry} is not the current claim for {task}"),
                 ));
             }
@@ -145,7 +149,7 @@ pub(in crate::board::local_board) fn claim_task(
             || previous.record.actor.harness != ctx.actor.harness
         {
             return Err(invalid(
-                "invalid_actor",
+                BoardErrorCode::InvalidActor,
                 "resume requires the same user, host, and harness",
             ));
         }
@@ -203,7 +207,7 @@ pub(in crate::board::local_board) fn claim_task(
         })
         .ok_or_else(|| {
             invalid(
-                "invalid_options",
+                BoardErrorCode::InvalidOptions,
                 "claiming a task requires scope or resume",
             )
         })?;

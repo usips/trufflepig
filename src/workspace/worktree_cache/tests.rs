@@ -2,8 +2,7 @@ use super::super::{
     config::WorkspaceConfig, hashed_member_cache, member_cache_until, member_root::MemberRoot,
 };
 use crate::{
-    daemon::deadline::{QueryDeadline, is_timed_out},
-    system::sweep::CACHE_ROOT_MARKER,
+    daemon::deadline::QueryDeadline, system::sweep::CACHE_ROOT_MARKER,
     workspace::test_fixture::Fixture,
 };
 use std::{os::unix::net::UnixStream, path::PathBuf, sync::Arc, time::Duration};
@@ -18,7 +17,10 @@ fn expired_read_deadline_creates_no_worktree_cache_side_effects() {
     )
     .unwrap_err();
 
-    assert!(is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
     assert_no_cache_side_effects(&cache);
 }
 
@@ -31,7 +33,10 @@ fn cancelled_read_deadline_creates_no_worktree_cache_side_effects() {
 
     let error = member_cache_until(&member, Some(&explicit_cache), &deadline).unwrap_err();
 
-    assert!(is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
     assert_no_cache_side_effects(&cache);
 }
 

@@ -1,10 +1,11 @@
 //! Immutable, persisted query snapshots. Missing IDs never resolve through newer sets.
+use crate::coded_error::CodedContext;
 use crate::{identity::ResultHandle, store::Store};
 mod entries;
 pub(crate) mod lines;
 mod page;
 mod result_set_store;
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, bail, ensure};
 pub use entries::*;
 pub(crate) use page::{largest_fitting, snippet_page};
 pub use page::{more, page};
@@ -191,13 +192,13 @@ pub(crate) fn file_uri(root: &Path, relative: &str) -> Result<String> {
     let relative = crate::store::decode_path(relative)?;
     ensure!(
         relative.is_relative(),
-        "result_unavailable: stored path is absolute"
+        coded!(ResultUnavailable, "stored path is absolute")
     );
     ensure!(
         relative
             .components()
             .all(|part| matches!(part, Component::Normal(_))),
-        "result_unavailable: stored path escapes repository root"
+        coded!(ResultUnavailable, "stored path escapes repository root")
     );
     let encoded = crate::store::encode_path(&root.join(relative));
     // `?` and `#` delimit URI query/fragment components, so escape them even
@@ -246,7 +247,7 @@ pub fn load(store: &Store, id: &str) -> Result<ResultSet> {
         .into_iter()
         .map(|entry| match entry {
             ResultEntry::LiveSource(hit) => Ok(hit),
-            _ => bail!("historical_result: expected live-source result set"),
+            _ => bail!(coded!(HistoricalResult, "expected live-source result set")),
         })
         .collect::<Result<Vec<_>>>()?;
     Ok(ResultSet {
@@ -265,7 +266,10 @@ pub fn handle(store: &Store, handle: &str) -> Result<(i64, Hit)> {
     let (generation, entry) = entry(store, handle)?;
     match entry {
         ResultEntry::LiveSource(hit) => Ok((generation, hit)),
-        _ => bail!("historical_result: historical entries are invalid for live context"),
+        _ => bail!(coded!(
+            HistoricalResult,
+            "historical entries are invalid for live context"
+        )),
     }
 }
 
@@ -275,7 +279,7 @@ pub fn entry(store: &Store, handle: &str) -> Result<(i64, ResultEntry)> {
     let entry = set
         .hits
         .get(handle.ordinal - 1)
-        .context("invalid_handle: ordinal outside result set")?;
+        .with_coded_context(|| coded!(InvalidHandle, "ordinal outside result set"))?;
     Ok((set.generation, entry.clone()))
 }
 

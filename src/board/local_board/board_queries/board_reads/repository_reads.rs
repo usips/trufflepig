@@ -85,7 +85,9 @@ pub(in crate::board::local_board) fn repositories(
                     .as_deref()
                     .map(crate::board::repo_identity::normalize_origin_label)
                     .transpose()
-                    .map_err(|error| invalid("board_unavailable", error.to_string()))?,
+                    .map_err(|error| {
+                        invalid(BoardErrorCode::BoardUnavailable, error.to_string())
+                    })?,
                 host: row.get(2).map_err(sql_error)?,
                 common_dir: PathBuf::from(row.get::<_, String>(3).map_err(sql_error)?),
                 plan_id: plan,

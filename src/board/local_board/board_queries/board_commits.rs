@@ -3,6 +3,7 @@ use super::super::{
     BoardError, actor_from_row, delegated_actor_from_row, invalid, row_number, sql_error,
     sql_number, sqlite_u64,
 };
+use crate::board::board_protocol::BoardErrorCode;
 use crate::board::{
     board_ids::{EntryId, EventSeq, PlanId, RepoKey, TaskId},
     board_protocol::{
@@ -28,9 +29,14 @@ pub(in crate::board::local_board) fn linked_commits_bounded(
     let bound = i64::try_from(
         limit
             .checked_add(1)
-            .ok_or_else(|| invalid("invalid_options", "commit limit overflow"))?,
+            .ok_or_else(|| invalid(BoardErrorCode::InvalidOptions, "commit limit overflow"))?,
     )
-    .map_err(|_| invalid("invalid_options", "commit limit exceeds SQLite range"))?;
+    .map_err(|_| {
+        invalid(
+            BoardErrorCode::InvalidOptions,
+            "commit limit exceeds SQLite range",
+        )
+    })?;
     let total: i64 = conn
         .query_row(
             &format!("SELECT COUNT(*) FROM commits c WHERE {PLAN_WINDOW}"),
@@ -38,8 +44,12 @@ pub(in crate::board::local_board) fn linked_commits_bounded(
             |row| row.get(0),
         )
         .map_err(sql_error)?;
-    let total = usize::try_from(total)
-        .map_err(|_| invalid("board_unavailable", "commit count exceeds platform range"))?;
+    let total = usize::try_from(total).map_err(|_| {
+        invalid(
+            BoardErrorCode::BoardUnavailable,
+            "commit count exceeds platform range",
+        )
+    })?;
     let commits = read_plan_window(conn, plan, start, end, bound, limit)?;
     let omitted = total.saturating_sub(commits.len());
     Ok((commits, omitted))
@@ -71,8 +81,12 @@ pub(in crate::board::local_board) fn linked_commits_for_task(
             |row| row.get(0),
         )
         .map_err(sql_error)?;
-    let total = usize::try_from(total)
-        .map_err(|_| invalid("board_unavailable", "commit count exceeds platform range"))?;
+    let total = usize::try_from(total).map_err(|_| {
+        invalid(
+            BoardErrorCode::BoardUnavailable,
+            "commit count exceeds platform range",
+        )
+    })?;
     let latest_at: Option<i64> = conn
         .query_row(
             concat!(
@@ -87,9 +101,14 @@ pub(in crate::board::local_board) fn linked_commits_for_task(
     let bound = i64::try_from(
         limit
             .checked_add(1)
-            .ok_or_else(|| invalid("invalid_options", "commit limit overflow"))?,
+            .ok_or_else(|| invalid(BoardErrorCode::InvalidOptions, "commit limit overflow"))?,
     )
-    .map_err(|_| invalid("invalid_options", "commit limit exceeds SQLite range"))?;
+    .map_err(|_| {
+        invalid(
+            BoardErrorCode::InvalidOptions,
+            "commit limit exceeds SQLite range",
+        )
+    })?;
     let sql = format!(
         "SELECT {COMMIT_COLUMNS} FROM commits c JOIN commit_tasks t ON t.repo_key=c.repo_key AND t.oid=c.oid WHERE t.plan_id=?1 AND t.task_ordinal=?2 ORDER BY c.committed_at DESC,c.repo_key DESC,c.oid DESC LIMIT ?3"
     );
@@ -293,7 +312,7 @@ fn decode_commit(conn: &Connection, row: &rusqlite::Row<'_>) -> Result<LinkedCom
             Some("claim_window") => CommitClaimBasis::ClaimWindow,
             other => {
                 return Err(invalid(
-                    "board_unavailable",
+                    BoardErrorCode::BoardUnavailable,
                     format!("unknown commit attribution basis {other:?}"),
                 ));
             }
@@ -313,13 +332,13 @@ fn decode_commit(conn: &Connection, row: &rusqlite::Row<'_>) -> Result<LinkedCom
         committed_at: row.get(3).map_err(sql_error)?,
         author: row.get(4).map_err(sql_error)?,
         coauthors: serde_json::from_str(&coauthors)
-            .map_err(|error| invalid("board_unavailable", error.to_string()))?,
+            .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))?,
         files: row_number(row, 6).map_err(sql_error)?,
         insertions: row_number(row, 7).map_err(sql_error)?,
         deletions: row_number(row, 8).map_err(sql_error)?,
         plans,
         worker_refs: serde_json::from_str::<Vec<WorkerAddress>>(&worker_refs)
-            .map_err(|error| invalid("board_unavailable", error.to_string()))?,
+            .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))?,
         claim_links,
     })
 }

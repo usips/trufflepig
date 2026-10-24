@@ -212,7 +212,7 @@ pub(crate) fn ensure_feedback_import(
 
 pub(super) fn check_deadline(deadline: &QueryDeadline) -> Result<()> {
     if deadline.expired() {
-        bail!("timed_out: board query deadline expired");
+        bail!(coded!(TimedOut, "board query deadline expired"));
     }
     Ok(())
 }

@@ -47,9 +47,10 @@ pub(crate) fn validate_actor_component(value: &str, component: &str) -> Result<(
             character.is_whitespace() || character.is_control() || matches!(character, '/' | '@')
         })
     {
-        bail!(
-            "invalid_actor: {component} must contain 1..256 bytes without whitespace, controls, '/' or '@'"
-        );
+        bail!(coded!(
+            InvalidActor,
+            "{component} must contain 1..256 bytes without whitespace, controls, '/' or '@'"
+        ));
     }
     Ok(())
 }
@@ -66,7 +67,7 @@ impl HarnessLabel {
                     character.is_whitespace() || character.is_control() || character == '/'
                 })
             {
-                bail!("invalid_actor: invalid git co-author label");
+                bail!(coded!(InvalidActor, "invalid git co-author label"));
             }
             return Ok(Self(value.to_owned()));
         }
@@ -76,7 +77,10 @@ impl HarnessLabel {
                 byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-')
             })
         {
-            bail!("invalid_actor: harness must be a lowercase identifier");
+            bail!(coded!(
+                InvalidActor,
+                "harness must be a lowercase identifier"
+            ));
         }
         Ok(Self(value.to_owned()))
     }
@@ -198,18 +202,21 @@ impl BoardActor {
     pub fn parse(value: &str) -> Result<Self> {
         let mut parts = value.split('/');
         let user_host = parts.next().unwrap_or_default();
-        let harness = parts
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("invalid_actor: expected user@host/harness/session"))?;
-        let session = parts
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("invalid_actor: expected user@host/harness/session"))?;
+        let harness = parts.next().ok_or_else(|| {
+            anyhow::anyhow!(coded!(InvalidActor, "expected user@host/harness/session"))
+        })?;
+        let session = parts.next().ok_or_else(|| {
+            anyhow::anyhow!(coded!(InvalidActor, "expected user@host/harness/session"))
+        })?;
         if parts.next().is_some() {
-            bail!("invalid_actor: expected exactly three identity components");
+            bail!(coded!(
+                InvalidActor,
+                "expected exactly three identity components"
+            ));
         }
-        let (user, host) = user_host
-            .split_once('@')
-            .ok_or_else(|| anyhow::anyhow!("invalid_actor: expected user@host/harness/session"))?;
+        let (user, host) = user_host.split_once('@').ok_or_else(|| {
+            anyhow::anyhow!(coded!(InvalidActor, "expected user@host/harness/session"))
+        })?;
         Self::new(user, host, HarnessLabel::parse(harness)?, session)
     }
     pub fn identity(&self) -> String {

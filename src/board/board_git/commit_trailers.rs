@@ -6,7 +6,8 @@ mod trailer_records;
 use crate::board::board_actor::{AgentVendor, HarnessLabel};
 use crate::board::board_ids::RepoKey;
 use crate::board::board_protocol::{CommitCoauthor, LinkedCommit};
-use anyhow::{Context, Result, ensure};
+use crate::coded_error::CodedContext;
+use anyhow::{Result, ensure};
 use trailer_records::parse_record;
 pub(crate) use trailer_records::shortstat;
 
@@ -47,11 +48,11 @@ pub fn parse_log(bytes: &[u8], repo_key: &RepoKey) -> Result<ParsedLog> {
             warnings: Vec::new(),
         });
     }
-    ensure!(bytes[0] == 0, "board_scan: invalid Git log framing");
+    ensure!(bytes[0] == 0, coded!(BoardScan, "invalid Git log framing"));
     let fields: Vec<_> = bytes[1..].split(|byte| *byte == 0).collect();
     ensure!(
         fields.len() % RECORD_FIELDS == 0,
-        "board_scan: incomplete Git log record"
+        coded!(BoardScan, "incomplete Git log record")
     );
     let mut result = ParsedLog {
         records: Vec::with_capacity(fields.len() / RECORD_FIELDS),
@@ -85,15 +86,15 @@ pub fn parse_log(bytes: &[u8], repo_key: &RepoKey) -> Result<ParsedLog> {
 pub fn parse_coauthor(value: &str) -> Result<CommitCoauthor> {
     ensure!(
         !value.chars().any(char::is_control),
-        "board_scan: control character in coauthor"
+        coded!(BoardScan, "control character in coauthor")
     );
     let (model, email) = value
         .rsplit_once('<')
-        .context("board_scan: coauthor requires Name <email>")?;
+        .with_coded_context(|| coded!(BoardScan, "coauthor requires Name <email>"))?;
     let model = model.trim();
     let email = email
         .strip_suffix('>')
-        .context("board_scan: coauthor requires closing >")?
+        .with_coded_context(|| coded!(BoardScan, "coauthor requires closing >"))?
         .trim();
     ensure!(
         !model.is_empty()
@@ -101,14 +102,14 @@ pub fn parse_coauthor(value: &str) -> Result<CommitCoauthor> {
             && !email.is_empty()
             && email.len() <= 256
             && !email.chars().any(char::is_whitespace),
-        "board_scan: invalid coauthor"
+        coded!(BoardScan, "invalid coauthor")
     );
     let (local, domain) = email
         .rsplit_once('@')
-        .context("board_scan: coauthor requires email domain")?;
+        .with_coded_context(|| coded!(BoardScan, "coauthor requires email domain"))?;
     ensure!(
         !local.is_empty() && !domain.is_empty(),
-        "board_scan: invalid coauthor email"
+        coded!(BoardScan, "invalid coauthor email")
     );
     let vendor = match domain.to_ascii_lowercase().as_str() {
         "anthropic.com" => AgentVendor::Claude,

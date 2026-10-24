@@ -1,5 +1,4 @@
 use super::*;
-use crate::daemon::deadline::is_timed_out;
 use std::{io, time::Duration};
 
 #[test]
@@ -95,16 +94,23 @@ fn bare_permission_and_path_errors_need_the_selected_cache_marker() {
 }
 
 #[test]
-fn deadline_and_cancellation_contexts_take_precedence() {
+fn deadline_contexts_take_precedence() {
     let cache = Path::new("/chosen/cache");
-    for prefix in ["timed_out", "cancelled", "canceled"] {
-        let cause = io::Error::from_raw_os_error(libc::EACCES);
-        let marked = index_cache_unavailable(cache, cause.into());
-        assert!(is_index_cache_unavailable(&marked), "{marked:#}");
-        let wrapped = marked.context(format!("{prefix}: query ended"));
-        assert!(!is_index_cache_unavailable(&wrapped), "{wrapped:#}");
-        assert!(wrapped.to_string().starts_with(prefix), "{wrapped:#}");
-    }
+    let cause = io::Error::from_raw_os_error(libc::EACCES);
+    let marked = index_cache_unavailable(cache, cause.into());
+    assert!(is_index_cache_unavailable(&marked), "{marked:#}");
+    let wrapped = marked.with_coded_context(|| coded!(TimedOut, "query ended"));
+    assert!(!is_index_cache_unavailable(&wrapped), "{wrapped:#}");
+    assert!(ErrorCode::TimedOut.is_code_of(&wrapped), "{wrapped:#}");
+    let rewrapped = index_cache_unavailable(cache, wrapped);
+    assert_eq!(error_code_count(&rewrapped), 2, "{rewrapped:#}");
+}
+
+fn error_code_count(error: &anyhow::Error) -> usize {
+    error
+        .chain()
+        .filter(|cause| cause.is::<crate::coded_error::CodedError>())
+        .count()
 }
 
 #[test]
@@ -160,7 +166,7 @@ fn expired_preflight_does_not_create_the_selected_cache() {
     let deadline = QueryDeadline::after(Duration::ZERO);
 
     let error = preflight_results_cache(&cache, Some(&deadline)).expect_err("deadline expired");
-    assert!(is_timed_out(&error), "{error:#}");
+    assert!(ErrorCode::TimedOut.is_code_of(&error), "{error:#}");
     assert!(!cache.exists());
 }
 

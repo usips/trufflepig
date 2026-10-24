@@ -1,6 +1,7 @@
 //! Stored task cards and immutable lease history windows.
 
 use super::*;
+use crate::board::board_protocol::BoardErrorCode;
 use crate::board::local_board::board_queries::collection_nested::{TASK_SELECT, task_row};
 
 pub(in crate::board::local_board) fn read_tasks(
@@ -91,7 +92,7 @@ fn claim_from_row(
         .as_deref()
         .map(ClaimEndReason::parse)
         .transpose()
-        .map_err(|error| invalid("board_unavailable", error.to_string()))?;
+        .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))?;
     let actor = actor_from_row(row, 2).map_err(sql_error)?;
     let model: Option<String> = row.get(12).map_err(sql_error)?;
     Ok(StoredClaim {

@@ -6,6 +6,7 @@ mod managed_unit;
 mod route;
 pub mod sweep;
 
+use crate::coded_error::CodedContext;
 pub(crate) use board_runtime::{
     board_router_recently_unavailable, clear_board_router_unavailable,
     mark_board_router_unavailable, record_board_database, validate_board_database,
@@ -20,7 +21,7 @@ use crate::{
     daemon::{self, AcceptedRequest, DaemonHandler, deadline::QueryDeadline},
     diagnostics::RequestContext,
 };
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use route::route;
 use std::{
     ffi::OsString,
@@ -91,7 +92,7 @@ pub fn spool_dir() -> PathBuf {
 
 /// Stops a listening system daemon through its socket.
 pub fn stop() -> Result<String> {
-    daemon::stop(&dir().context("system_unavailable: no runtime dir")?)
+    daemon::stop(&dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?)
 }
 
 /// Sends a request to the system daemon over its socket, else its spool;
@@ -135,7 +136,7 @@ pub(crate) fn ensure_by(deadline: QueryDeadline) -> Result<()> {
 /// Starts the router through the installed unit when it owns this runtime
 /// directory, else as a detached `system-serve`.
 fn start_router(deadline: QueryDeadline) -> Result<managed_unit::RouterStart<'static>> {
-    let dir = dir().context("system_unavailable: no runtime dir")?;
+    let dir = dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?;
     let unit = managed_unit::installed_unit_text()?;
     let systemctl_deadline = deadline.clone();
     managed_unit::start_router_with(
@@ -148,7 +149,7 @@ fn start_router(deadline: QueryDeadline) -> Result<managed_unit::RouterStart<'st
 }
 
 fn spawn_router() -> Result<BackgroundChild> {
-    let cache = dir().context("system_unavailable: no runtime dir")?;
+    let cache = dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?;
     let executable = current_background_executable(&cache, BackgroundOwner::Command)?;
     let mut command = Command::new(&executable);
     command.arg("system-serve");
@@ -168,14 +169,15 @@ fn ensure_until<'run>(
         return Ok(());
     }
     ensure_router_starting(deadline.clone(), start_wait)?;
-    let dir = dir().context("system_unavailable: no runtime dir")?;
+    let dir = dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?;
     let started = if daemon::running_by(&dir, &deadline)? {
         None
     } else {
         ensure_router_starting(deadline.clone(), start_wait)?;
-        fs::create_dir_all(&dir).with_context(|| {
-            format!(
-                "router_cache_create_failed: cannot create system router cache {}",
+        fs::create_dir_all(&dir).with_coded_context(|| {
+            coded!(
+                RouterCacheCreateFailed,
+                "cannot create system router cache {}",
                 dir.display()
             )
         })?;
@@ -198,10 +200,11 @@ fn ensure_until<'run>(
         if child.as_ref().is_some_and(BackgroundChild::exited)
             && !daemon::running_by(&dir, &deadline)?
         {
-            bail!(
-                "system_unavailable: system router for cache {} did not start",
+            bail!(coded!(
+                SystemUnavailable,
+                "system router for cache {} did not start",
                 dir.display()
-            );
+            ));
         }
         // A unit that failed or crash-loops has no child to exit, so its state
         // decides the start; a router that already answers is left to the poll.
@@ -220,10 +223,11 @@ fn ensure_router_starting(deadline: QueryDeadline, start_wait: Duration) -> Resu
         let cache = dir()
             .map(|cache| cache.display().to_string())
             .unwrap_or_else(|| "<unavailable>".into());
-        bail!(
-            "system_unavailable: router still starting after {} s for cache {cache}",
+        bail!(coded!(
+            SystemUnavailable,
+            "router still starting after {} s for cache {cache}",
             start_wait.as_secs()
-        );
+        ));
     }
     Ok(())
 }
@@ -273,7 +277,7 @@ fn poll_at(
 
 /// Whether a bounded poll error only reports its own expired budget.
 fn poll_budget_spent(error: &anyhow::Error) -> bool {
-    daemon::deadline::is_timed_out(error)
+    daemon::spool::is_spool_or_coded_timeout(error)
         || daemon::DaemonReplyTimeout::from_error(error).is_some()
         || error.chain().any(|cause| {
             matches!(
@@ -288,7 +292,7 @@ fn poll_budget_spent(error: &anyhow::Error) -> bool {
 /// `SWEEP_INTERVAL` on a background thread, so a slow daemon stop never
 /// blocks the request path.
 pub fn serve() -> Result<()> {
-    let runtime = dir().context("system_unavailable: no runtime dir")?;
+    let runtime = dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?;
     let router = SystemRouter {
         runtime: Some(runtime.clone()),
         cache_base: crate::cli::cache_base().ok(),

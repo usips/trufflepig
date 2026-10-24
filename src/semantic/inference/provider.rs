@@ -1,5 +1,6 @@
 use super::pinned_assets::{read_verified_asset, verify_asset_digest};
 use super::{MAX_INPUT_TOKENS, RERANK_MAX_TOKENS, SemanticProvider, SemanticProviderConfig};
+use crate::coded_error::CodedContext;
 use crate::semantic::VerifiedAssetDigests;
 use anyhow::{Context, Result};
 use fastembed::{
@@ -21,9 +22,10 @@ pub(super) fn provider_dispatches(
             #[cfg(feature = "semantic-cuda")]
             {
                 let arena_max_bytes = usize::try_from(provider.arena_max_bytes).map_err(|_| {
-                    anyhow::anyhow!(
-                        "semantic_unavailable: CUDA arena limit does not fit this platform"
-                    )
+                    anyhow::anyhow!(coded!(
+                        SemanticUnavailable,
+                        "CUDA arena limit does not fit this platform"
+                    ))
                 })?;
                 let dispatch = ort::ep::CUDA::default()
                     .with_device_id(device_ordinal)
@@ -36,9 +38,10 @@ pub(super) fn provider_dispatches(
             #[cfg(not(feature = "semantic-cuda"))]
             {
                 let _ = (device_ordinal, provider);
-                anyhow::bail!(
-                    "semantic_unavailable: CUDA provider requires building with --features semantic-cuda"
-                )
+                anyhow::bail!(coded!(
+                    SemanticUnavailable,
+                    "CUDA provider requires building with --features semantic-cuda"
+                ))
             }
         }
     }
@@ -49,9 +52,12 @@ pub(super) fn load_verified_model(
     provider: SemanticProviderConfig,
     digests: &mut VerifiedAssetDigests,
 ) -> Result<TextEmbedding> {
-    let runtime = std::env::var_os("ORT_DYLIB_PATH").context(
-        "semantic_unavailable: set ORT_DYLIB_PATH to a compatible ONNX Runtime shared library",
-    )?;
+    let runtime = std::env::var_os("ORT_DYLIB_PATH").with_coded_context(|| {
+        coded!(
+            SemanticUnavailable,
+            "set ORT_DYLIB_PATH to a compatible ONNX Runtime shared library"
+        )
+    })?;
     load_verified_model_with_runtime(model_dir, provider, Path::new(&runtime), digests)
 }
 
@@ -60,9 +66,12 @@ pub(super) fn load_verified_reranker(
     provider: SemanticProviderConfig,
     digests: &mut VerifiedAssetDigests,
 ) -> Result<TextRerank> {
-    let runtime = std::env::var_os("ORT_DYLIB_PATH").context(
-        "rerank_unavailable: set ORT_DYLIB_PATH to a compatible ONNX Runtime shared library",
-    )?;
+    let runtime = std::env::var_os("ORT_DYLIB_PATH").with_coded_context(|| {
+        coded!(
+            RerankUnavailable,
+            "set ORT_DYLIB_PATH to a compatible ONNX Runtime shared library"
+        )
+    })?;
     load_verified_reranker_with_runtime(model_dir, provider, Path::new(&runtime), digests)
 }
 
@@ -74,7 +83,9 @@ pub(super) fn load_verified_reranker_with_runtime(
 ) -> Result<TextRerank> {
     provider.validate()?;
     ort::init_from(runtime_library)
-        .context("rerank_unavailable: cannot load ONNX Runtime shared library")?
+        .with_coded_context(|| {
+            coded!(RerankUnavailable, "cannot load ONNX Runtime shared library")
+        })?
         .commit();
     let execution_providers = provider_dispatches(provider)?;
     let manifest: serde_json::Value = serde_json::from_str(RERANKER_MANIFEST)?;
@@ -133,9 +144,12 @@ pub(super) fn load_verified_reranker_with_runtime(
         .with_max_length(RERANK_MAX_TOKENS)
         .with_execution_providers(execution_providers)
         .with_intra_threads(2);
-    let model = TextRerank::try_new_from_user_defined(model, options).context(
-        "rerank_unavailable: ONNX reranker initialization failed; check ORT_DYLIB_PATH and provider configuration",
-    )?;
+    let model = TextRerank::try_new_from_user_defined(model, options).with_coded_context(|| {
+        coded!(
+            RerankUnavailable,
+            "ONNX reranker initialization failed; check ORT_DYLIB_PATH and provider configuration"
+        )
+    })?;
     super::super::MODEL_INITIALIZATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     Ok(model)
 }
@@ -148,7 +162,12 @@ pub(super) fn load_verified_model_with_runtime(
 ) -> Result<TextEmbedding> {
     provider.validate()?;
     ort::init_from(runtime_library)
-        .context("semantic_unavailable: cannot load ONNX Runtime shared library")?
+        .with_coded_context(|| {
+            coded!(
+                SemanticUnavailable,
+                "cannot load ONNX Runtime shared library"
+            )
+        })?
         .commit();
     let execution_providers = provider_dispatches(provider)?;
     let manifest: serde_json::Value = serde_json::from_str(MODEL_MANIFEST)?;
@@ -200,9 +219,13 @@ pub(super) fn load_verified_model_with_runtime(
         .with_max_length(MAX_INPUT_TOKENS)
         .with_execution_providers(execution_providers)
         .with_intra_threads(2);
-    let mut model = TextEmbedding::try_new_from_user_defined(model, options).context(
-        "semantic_unavailable: ONNX model initialization failed; check ORT_DYLIB_PATH and provider configuration",
-    )?;
+    let mut model =
+        TextEmbedding::try_new_from_user_defined(model, options).with_coded_context(|| {
+            coded!(
+                SemanticUnavailable,
+                "ONNX model initialization failed; check ORT_DYLIB_PATH and provider configuration"
+            )
+        })?;
     super::super::MODEL_INITIALIZATIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     // Reject excessive input explicitly instead of silently truncating content.
     model

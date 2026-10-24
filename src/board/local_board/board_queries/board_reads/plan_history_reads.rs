@@ -9,10 +9,12 @@ pub(super) fn plan(conn: &Connection, id: PlanId) -> Result<PlanRecord, BoardErr
         .prepare(&format!("{PLAN_SELECT} WHERE id=?1"))
         .map_err(sql_error)?;
     let mut rows = statement.query([sql_number(id.get())]).map_err(sql_error)?;
-    let row = rows
-        .next()
-        .map_err(sql_error)?
-        .ok_or_else(|| invalid("invalid_reference", format!("unknown plan {id}")))?;
+    let row = rows.next().map_err(sql_error)?.ok_or_else(|| {
+        invalid(
+            BoardErrorCode::InvalidReference,
+            format!("unknown plan {id}"),
+        )
+    })?;
     plan_row(row)
 }
 
@@ -40,13 +42,15 @@ pub(super) fn revision(conn: &Connection, id: PlanRevision) -> Result<RevisionRe
     let mut rows = statement
         .query(params![sql_number(id.plan.get()), sql_number(id.revision)])
         .map_err(sql_error)?;
-    let row = rows
-        .next()
-        .map_err(sql_error)?
-        .ok_or_else(|| invalid("invalid_reference", format!("unknown revision {id}")))?;
+    let row = rows.next().map_err(sql_error)?.ok_or_else(|| {
+        invalid(
+            BoardErrorCode::InvalidReference,
+            format!("unknown revision {id}"),
+        )
+    })?;
     let source: String = row.get(1).map_err(sql_error)?;
     let source = RevisionSource::parse(&source)
-        .map_err(|error| invalid("board_unavailable", error.to_string()))?;
+        .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))?;
     Ok(RevisionRecord {
         id,
         body: PlanText::new(row.get::<_, String>(0).map_err(sql_error)?)
@@ -132,7 +136,7 @@ pub(super) fn plan_view(
         params![sql_number(id.get()), RECENT_ENTRIES], |row| row.get(0),
     ).map_err(sql_error)?;
     let entries_omitted = usize::try_from(entries_total)
-        .map_err(|_| invalid("board_unavailable", "invalid entry count"))?
+        .map_err(|_| invalid(BoardErrorCode::BoardUnavailable, "invalid entry count"))?
         .saturating_sub(recent.len() + extras.len());
     let (commits, commits_omitted) = linked_commits_bounded(conn, id, i64::MIN, i64::MAX, 200)?;
     let mut sections_without_tasks = Vec::new();

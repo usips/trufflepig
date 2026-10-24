@@ -61,8 +61,11 @@ pub fn reextract_definition(root: &Path, hit: &Hit) -> Result<Option<Reextracted
     )?;
     ensure!(
         !bytes.contains(&0),
-        "source_excluded: {} is binary; the index does not extract it",
-        hit.path
+        coded!(
+            SourceExcluded,
+            "{} is binary; the index does not extract it",
+            hit.path
+        )
     );
     let extraction = usable_extraction(&hit.path, crate::extract::extract(&hit.path, &bytes))?;
     let Some(definition) = extraction
@@ -107,10 +110,11 @@ pub fn usable_extraction(path: &str, extraction: Extraction) -> Result<Extractio
     let factless_failure = extraction.definitions.is_empty()
         && !matches!(extraction.status.as_str(), "complete" | "lexical_only");
     if extraction.status == "cancelled" || factless_failure {
-        bail!(
-            "extraction_unavailable: {path} extraction {}; its definitions are unknown",
+        bail!(coded!(
+            ExtractionUnavailable,
+            "{path} extraction {}; its definitions are unknown",
             extraction.status
-        );
+        ));
     }
     Ok(extraction)
 }

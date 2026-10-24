@@ -6,13 +6,11 @@ use super::{
     WorkspaceConfig, cache_path, hashed_member_cache, local, member_root::MemberRoot,
     result_cache::WorkspaceResults,
 };
+use crate::coded_error::CodedContext;
 use crate::{
     background_process::{BackgroundOwner, current_background_executable, spawn_background_for},
     cli::{Arguments, normalized_args},
-    daemon::{
-        self, AcceptedRequest, DaemonHandler,
-        deadline::{QueryDeadline, TIMED_OUT},
-    },
+    daemon::{self, AcceptedRequest, DaemonHandler, deadline::QueryDeadline},
     diagnostics::RequestContext,
     semantic::SemanticSession,
 };
@@ -77,7 +75,10 @@ pub(crate) fn run_with_deadline(
         .first()
         .is_none_or(|verb| verb != "workspace-serve")
     {
-        ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+        ensure!(
+            !deadline.expired(),
+            coded!(TimedOut, "query deadline expired")
+        );
     }
     let options = apply_config(&config, options)?;
     let path_deadline = super::local_execution_deadline(&options, &deadline);
@@ -154,26 +155,41 @@ pub(crate) fn run_with_deadline(
     {
         args.push("--wait".into());
     }
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     if let Some(reply) = daemon::request_by(&cache, &args, context, deadline.clone())? {
         return wait_if_semantic_prepare(&config, &options, reply);
     }
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     std::fs::create_dir_all(&cache).map_err(|error| {
-        let context = anyhow::Error::new(error).context(format!(
-            "coordinator_cache_create_failed: cannot create workspace coordinator cache {}",
-            cache.display()
-        ));
+        let context = anyhow::Error::new(error).with_coded_context(|| {
+            coded!(
+                CoordinatorCacheCreateFailed,
+                "cannot create workspace coordinator cache {}",
+                cache.display()
+            )
+        });
         crate::store::index_cache_unavailable(&cache, context)
     })?;
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     let mut server = options.clone();
     server.words = vec!["workspace-serve".into()];
     server.member = None;
     let executable = current_background_executable(&cache, BackgroundOwner::Command)?;
     let mut command = Command::new(&executable);
     command.args(normalized_args(&server, &server.root));
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     let child = spawn_background_for(&mut command, &executable, "workspace coordinator", &cache)?;
     let started = Instant::now();
     while started.elapsed() < Duration::from_secs(3) && !deadline.expired() {
@@ -185,14 +201,18 @@ pub(crate) fn run_with_deadline(
         }
         std::thread::sleep(Duration::from_millis(25).min(deadline.remaining()));
     }
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
-    anyhow::bail!(
-        "workspace_unavailable: coordinator for cache {} did not start; \
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
+    anyhow::bail!(coded!(
+        WorkspaceUnavailable,
+        "coordinator for cache {} did not start; \
          a sandbox that blocks unix sockets or cache writes must run trufflepig \
          unsandboxed; otherwise start the trufflepig-system service, use --no-daemon, \
          or inspect cache permissions",
         cache.display()
-    )
+    ))
 }
 
 fn wait_if_semantic_prepare(
@@ -214,9 +234,10 @@ fn wait_if_semantic_prepare(
 }
 fn serve(config: &WorkspaceConfig, cache: &Path) -> Result<()> {
     WorkspaceResults::create(cache, &QueryDeadline::after(daemon::CLIENT_REPLY_WAIT))
-        .with_context(|| {
-            format!(
-                "coordinator_cache_create_failed: cannot create workspace coordinator cache {}",
+        .with_coded_context(|| {
+            coded!(
+                CoordinatorCacheCreateFailed,
+                "cannot create workspace coordinator cache {}",
                 cache.display()
             )
         })?;
@@ -244,15 +265,22 @@ pub(super) struct WorkspaceCoordinator {
 impl DaemonHandler for WorkspaceCoordinator {
     fn request(&self, request: AcceptedRequest) -> Result<String> {
         let options = crate::cli::parse(&request.args)?;
-        let current = super::resolve(&options)?
-            .context("workspace_unavailable: configuration no longer selects this workspace")?;
+        let current = super::resolve(&options)?.with_coded_context(|| {
+            coded!(
+                WorkspaceUnavailable,
+                "configuration no longer selects this workspace"
+            )
+        })?;
         ensure!(
             current.id == self.config_id && current.path == self.config_path,
-            "invalid_workspace: coordinator belongs to a different configuration"
+            coded!(
+                InvalidWorkspace,
+                "coordinator belongs to a different configuration"
+            )
         );
         ensure!(
             cache_path(&current, options.cache.as_deref())? == self.cache,
-            "invalid_cache: coordinator cache mismatch"
+            coded!(InvalidCache, "coordinator cache mismatch")
         );
         local(
             &current,
@@ -270,25 +298,37 @@ pub(super) fn ensure_member(
     options: &Arguments,
     deadline: &QueryDeadline,
 ) -> Result<()> {
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     if options.no_daemon {
         return Ok(());
     }
     let cache = hashed_member_cache(&member.root, options.cache.as_deref())?;
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     // Probing the startup lock instead could make a starting daemon exit.
     if daemon::running_by(&cache, deadline)? {
         return Ok(());
     }
     let mut local = super::member_options(options, member, deadline)?;
     std::fs::create_dir_all(&cache).map_err(|error| {
-        let context = anyhow::Error::new(error).context(format!(
-            "daemon_cache_create_failed: cannot create workspace member cache {}",
-            cache.display()
-        ));
+        let context = anyhow::Error::new(error).with_coded_context(|| {
+            coded!(
+                DaemonCacheCreateFailed,
+                "cannot create workspace member cache {}",
+                cache.display()
+            )
+        });
         crate::store::index_cache_unavailable(&cache, context)
     })?;
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     // Resolve from the original override: default worktree history stays shared.
     local.resolved_history_cache = crate::history::worker::resolve_cache(
         &member.root,
@@ -303,7 +343,10 @@ pub(super) fn ensure_member(
     let mut command = Command::new(&executable);
     command.args(normalized_args(&local, &local.root));
 
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     spawn_background_for(&mut command, &executable, "workspace member daemon", &cache)?;
     Ok(())
 }

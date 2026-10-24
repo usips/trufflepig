@@ -1,4 +1,5 @@
 use super::*;
+use crate::coded_error::CodedContext;
 
 pub(super) fn compare_trees(
     old: BTreeMap<String, TreeFile>,
@@ -32,7 +33,9 @@ pub(super) fn compare_trees(
     auxiliary.reserve(
         new.len()
             .checked_mul(auxiliary_per_file)
-            .context("history_resource_limited: comparison entry count overflow")?,
+            .with_coded_context(|| {
+                coded!(HistoryResourceLimited, "comparison entry count overflow")
+            })?,
     )?;
     added.extend(new.into_values().map(Some));
     let mut old_counts = HashMap::with_capacity(deleted.len());
@@ -95,7 +98,7 @@ fn change_charge(change: &FileChange) -> Result<usize> {
     for file in change.before.iter().chain(change.after.iter()) {
         ensure!(
             file.path.len() <= staging::PATH_BYTES,
-            "history_resource_limited: cached path staging limit"
+            coded!(HistoryResourceLimited, "cached path staging limit")
         );
         size += file.path.capacity() + file.mode.capacity();
     }
@@ -134,7 +137,7 @@ pub(super) fn decode_changes(payload: &str) -> Result<Vec<FileChange>> {
     }
     ensure!(
         payload.len() <= staging::CACHE_BYTES,
-        "history_resource_limited: cached payload staging limit"
+        coded!(HistoryResourceLimited, "cached payload staging limit")
     );
     let mut decoder = serde_json::Deserializer::from_str(payload);
     let changes = serde::de::Deserializer::deserialize_seq(&mut decoder, Changes)?;

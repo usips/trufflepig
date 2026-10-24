@@ -109,7 +109,10 @@ pub(super) fn decode(
 
 fn validate_values(values: &[f32; DIMENSIONS]) -> Result<()> {
     if values.iter().any(|value| !value.is_finite()) {
-        bail!("invalid_embedding: cached vector contains non-finite values");
+        bail!(coded!(
+            InvalidEmbedding,
+            "cached vector contains non-finite values"
+        ));
     }
     let norm = values
         .iter()
@@ -117,7 +120,10 @@ fn validate_values(values: &[f32; DIMENSIONS]) -> Result<()> {
         .sum::<f64>()
         .sqrt();
     if !norm.is_finite() || norm <= f64::EPSILON || (norm - 1.0).abs() > NORM_TOLERANCE {
-        bail!("invalid_embedding: cached vector is not unit normalized");
+        bail!(coded!(
+            InvalidEmbedding,
+            "cached vector is not unit normalized"
+        ));
     }
     Ok(())
 }

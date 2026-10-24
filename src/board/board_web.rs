@@ -23,7 +23,8 @@ use super::{
     board_protocol::{BoardError, BoardErrorCode},
     local_board::LocalBoard,
 };
-use anyhow::{Context, Result};
+use crate::coded_error::CodedContext;
+use anyhow::Result;
 use event_stream::{EventStreams, ReplayBatch, SequencePoller};
 use reader_pool::ReaderPool;
 use std::{
@@ -76,8 +77,8 @@ pub(crate) struct WebStore {
 
 impl WebStore {
     fn open(cache: BoardConfigCache) -> Result<Self> {
-        let runtime =
-            crate::system::dir().context("board_unavailable: no router runtime directory")?;
+        let runtime = crate::system::dir()
+            .with_coded_context(|| coded!(BoardUnavailable, "no router runtime directory"))?;
         Self::open_at(cache, runtime)
     }
 

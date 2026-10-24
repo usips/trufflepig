@@ -1,10 +1,5 @@
 use super::{blocked_cache, page, source_bytes, test_directory};
-use crate::{
-    daemon::deadline::{QueryDeadline, is_timed_out},
-    output::OutputBudget,
-    source::show,
-    store::Store,
-};
+use crate::{daemon::deadline::QueryDeadline, output::OutputBudget, source::show, store::Store};
 use std::{
     fs,
     os::unix::{fs::PermissionsExt, net::UnixStream},
@@ -24,7 +19,10 @@ fn expired_result_save_deadline_propagates_instead_of_falling_back() {
 
     let error = show(&store, "path:src.rs", &OutputBudget::new(20_000).unwrap()).unwrap_err();
 
-    assert!(is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
 }
 
 #[test]
@@ -42,7 +40,10 @@ fn dropped_result_save_peer_propagates_cancellation_instead_of_falling_back() {
 
     let error = show(&store, "path:src.rs", &OutputBudget::new(20_000).unwrap()).unwrap_err();
 
-    assert!(is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
 }
 
 #[test]

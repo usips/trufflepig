@@ -12,7 +12,7 @@ impl RepoKey {
         roots.sort_unstable();
         roots.dedup();
         if roots.is_empty() {
-            bail!("invalid_reference: repository has no root commits");
+            bail!(coded!(InvalidReference, "repository has no root commits"));
         }
         let mut value = String::with_capacity(roots.iter().map(|oid| oid.as_str().len() + 1).sum());
         for (index, root) in roots.iter().enumerate() {
@@ -22,24 +22,33 @@ impl RepoKey {
             value.push_str(root.as_str());
         }
         if value.len() > 32768 {
-            bail!("invalid_reference: repository root identity exceeds 32768 bytes");
+            bail!(coded!(
+                InvalidReference,
+                "repository root identity exceeds 32768 bytes"
+            ));
         }
         Ok(Self(value))
     }
     pub fn parse(value: &str) -> Result<Self> {
         if value.len() > 32768 {
-            bail!("invalid_reference: repository root identity exceeds 32768 bytes");
+            bail!(coded!(
+                InvalidReference,
+                "repository root identity exceeds 32768 bytes"
+            ));
         }
         let roots = value
             .split(',')
             .map(GitOid::parse)
             .collect::<Result<Vec<_>>>()
-            .map_err(|error| anyhow::anyhow!("invalid_reference: repository roots: {error}"))?;
+            .map_err(|error| {
+                anyhow::anyhow!(coded!(InvalidReference, "repository roots: {error}"))
+            })?;
         let key = Self::from_roots(roots)?;
         if key.as_str() != value {
-            bail!(
-                "invalid_reference: repository roots must be sorted, unique, lowercase full oids"
-            );
+            bail!(coded!(
+                InvalidReference,
+                "repository roots must be sorted, unique, lowercase full oids"
+            ));
         }
         Ok(key)
     }

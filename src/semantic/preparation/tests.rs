@@ -132,9 +132,10 @@ struct SplittingWorker;
 impl EmbeddingWorker for SplittingWorker {
     fn embed_batch(&mut self, batch: &[EmbeddingInput]) -> Result<Vec<Result<Embedding>>> {
         if batch.iter().any(|input| input.content_key == "bad") {
-            return Err(anyhow::anyhow!(
-                "semantic_unavailable: invalid model output"
-            ));
+            return Err(anyhow::anyhow!(coded!(
+                SemanticUnavailable,
+                "invalid model output"
+            )));
         }
         Ok(batch.iter().map(|_| Ok(fake_embedding())).collect())
     }

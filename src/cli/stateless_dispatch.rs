@@ -1,12 +1,13 @@
 //! Local current-source retrieval without persistent cache access.
 
 use super::Arguments;
+use crate::coded_error::CodedContext;
 use crate::{
-    daemon::deadline::{QueryDeadline, TIMED_OUT},
+    daemon::deadline::QueryDeadline,
     output::OutputBudget,
     search::{InvocationDirectory, Query, stateless},
 };
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use std::path::Path;
 
 pub(super) fn eligible(options: &Arguments) -> bool {
@@ -51,13 +52,16 @@ fn run_with_metadata(
     deadline: &QueryDeadline,
     metadata: &serde_json::Value,
 ) -> Result<String> {
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     let set = match options.words.first().map(String::as_str) {
         Some("search") => {
             let text = options.words[1..].join(" ");
             ensure!(
                 !text.starts_with("refs:"),
-                "cache_free_unsupported: refs requires an index"
+                coded!(CacheFreeUnsupported, "refs requires an index")
             );
             let query = Query::parse(&text)?;
             let invocation = options.root.canonicalize()?;
@@ -73,21 +77,33 @@ fn run_with_metadata(
             )?
         }
         Some("map") => {
-            ensure!(options.words.len() == 2, "usage: --no-cache map FILE");
+            ensure!(
+                options.words.len() == 2,
+                coded!(Usage, "--no-cache map FILE")
+            );
             stateless::map_file(
                 root,
                 cache,
-                options.words.get(1).context("usage: map FILE")?,
+                options
+                    .words
+                    .get(1)
+                    .with_coded_context(|| coded!(Usage, "map FILE"))?,
                 deadline,
             )?
         }
-        _ => anyhow::bail!("cache_free_unsupported: use search or map FILE"),
+        _ => anyhow::bail!(coded!(CacheFreeUnsupported, "use search or map FILE")),
     };
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     let budget = OutputBudget::new(options.budget)?.with_format(options.output_format());
     let rendered =
         stateless::render_with_metadata(root, None, &set, metadata, options.limit, &budget)?;
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     Ok(rendered)
 }
 

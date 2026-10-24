@@ -112,9 +112,10 @@ fn ensure_schema_revision(conn: &Connection, cache: &Path) -> Result<()> {
     }
     if !table_names(conn, false)?.is_empty() {
         let Some(_lease) = try_writer_lease(cache)? else {
-            anyhow::bail!(
-                "index_warming: index schema revision differs and another writer holds the lease"
-            );
+            anyhow::bail!(coded!(
+                IndexWarming,
+                "index schema revision differs and another writer holds the lease"
+            ));
         };
         discard_tables(conn)?;
     }

@@ -15,9 +15,10 @@ use super::{
         IndexProgressSource, MemberSnapshot, OwnedEntry, WorkspaceResults, WorkspaceSet,
     },
 };
+use crate::coded_error::CodedContext;
 use crate::{
     cli::Arguments,
-    daemon::deadline::{QueryDeadline, TIMED_OUT, is_timed_out},
+    daemon::deadline::QueryDeadline,
     diagnostics::{DiagnosticsMode, EventStage, Operation, Outcome, RequestContext, RequestEvent},
     output::OutputBudget,
     results::{ResultEntry, ResultSet},
@@ -25,7 +26,7 @@ use crate::{
     semantic::SemanticSession,
     store::{Store, is_index_cache_unavailable, is_index_warming},
 };
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, bail, ensure};
 use member_coverage::{fact_limit_paths, member_row, searched_row, short_reason};
 use member_scope::{Scope, implicit_home_scope, scope};
 
@@ -80,7 +81,7 @@ pub(super) fn search_with_policy(
     let verb = words
         .first()
         .map(String::as_str)
-        .context("usage: retrieval command is required")?;
+        .with_coded_context(|| coded!(Usage, "retrieval command is required"))?;
     let text = words[1..].join(" ");
     let query = Query::parse(&text)?;
     let semantic_eligible_shape =
@@ -110,6 +111,7 @@ pub(super) fn search_with_policy(
     };
     let mut lists = Vec::with_capacity(roots.len());
     let mut map_miss = None;
+    let mut first_timeout_phase = None;
     let mut position = 0;
     while position < queue.len() {
         let index = queue[position];
@@ -133,7 +135,10 @@ pub(super) fn search_with_policy(
         let started = std::time::Instant::now();
         let mut progress_source = None;
         let found = (|| {
-            ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+            ensure!(
+                !deadline.expired(),
+                coded!(TimedOut, "query deadline expired")
+            );
             member.verify_identity()?;
             let inline_deadline = matches!(policy, HomeIndexPolicy::IndexInline)
                 .then(|| crate::store::inline_maintenance_deadline(&deadline));
@@ -145,7 +150,7 @@ pub(super) fn search_with_policy(
                         if inline_deadline
                             .as_ref()
                             .is_some_and(|slice| !deadline.expired() && slice.expired())
-                            && is_timed_out(&error) =>
+                            && crate::coded_error::ErrorCode::TimedOut.is_code_of(&error) =>
                     {
                         diagnostic_member_cache.clone()
                     }
@@ -177,7 +182,7 @@ pub(super) fn search_with_policy(
                 HomeIndexSource::Warming { reason } => {
                     return Ok(MemberAnswer::Warming(reason));
                 }
-                HomeIndexSource::Unavailable { reason } => anyhow::bail!(reason),
+                HomeIndexSource::Unavailable { error } => return Err(error),
             };
             let origin =
                 search::InvocationDirectory::within(&member.root, &options.root.canonicalize()?);
@@ -195,7 +200,7 @@ pub(super) fn search_with_policy(
                     ParentFallback::refresh_current_map(&store, path, &mut found)?;
                 }
                 if let Some(miss) = search::map_miss(&found) {
-                    map_miss.get_or_insert_with(|| miss.to_owned());
+                    map_miss.get_or_insert(miss);
                 }
                 found
             } else {
@@ -354,11 +359,19 @@ pub(super) fn search_with_policy(
             Err(error) => {
                 member_state = if is_index_warming(&error) {
                     "warming"
-                } else if is_timed_out(&error) {
+                } else if crate::coded_error::ErrorCode::TimedOut.is_code_of(&error) {
                     "timed_out"
                 } else {
                     "unavailable"
                 };
+                if member_state == "timed_out" && first_timeout_phase.is_none() {
+                    let recheck = crate::coded_error::CodeDetail::CurrentSourceRecheck;
+                    first_timeout_phase = Some(if recheck.is_anywhere_in(&error) {
+                        "current_source_recheck"
+                    } else {
+                        "member_processing"
+                    });
+                }
                 let mut coverage = member_row(member, member_state);
                 if matches!(member_state, "unavailable" | "timed_out") {
                     coverage["reason"] = short_reason(&error).into();
@@ -393,13 +406,18 @@ pub(super) fn search_with_policy(
     {
         anyhow::bail!(miss);
     }
-    if let Some(error) = timeout_without_member_answer(set.owners.len(), &set.coverage) {
+    if let Some(error) =
+        timeout_without_member_answer(set.owners.len(), &set.coverage, first_timeout_phase)
+    {
         return Err(error);
     }
     // An unselected query whose home is not answering reports that on an empty page.
     ensure!(
         !set.owners.is_empty() || implicit_home,
-        "workspace_unavailable: no selected member has an available published index; inspect ws status or use --no-daemon"
+        coded!(
+            WorkspaceUnavailable,
+            "no selected member has an available published index; inspect ws status or use --no-daemon"
+        )
     );
     set.hits.reserve(lists.iter().map(|list| list.len()).sum());
     loop {
@@ -419,6 +437,7 @@ pub(super) fn search_with_policy(
 fn timeout_without_member_answer(
     answered_members: usize,
     coverage: &[serde_json::Value],
+    phase: Option<&'static str>,
 ) -> Option<anyhow::Error> {
     if answered_members > 0 {
         return None;
@@ -430,11 +449,7 @@ fn timeout_without_member_answer(
     let reason = timed_out["reason"]
         .as_str()
         .unwrap_or("query deadline expired");
-    let phase = if reason.contains("current-source recheck") {
-        "current_source_recheck"
-    } else {
-        "member_processing"
-    };
+    let phase = phase.unwrap_or("member_processing");
     let mut details = serde_json::json!({
         "absence": "not_proven",
         "fallback": "show path:FILE",
@@ -445,9 +460,10 @@ fn timeout_without_member_answer(
     if let Some(root) = timed_out["root"].as_str() {
         details["root"] = root.into();
     }
-    Some(anyhow::anyhow!(
-        "{TIMED_OUT}: query deadline expired before any member answered; details={details}"
-    ))
+    Some(anyhow::anyhow!(coded!(
+        TimedOut,
+        "query deadline expired before any member answered; details={details}"
+    )))
 }
 
 fn inline_member_index(
@@ -469,11 +485,11 @@ fn inline_member_index(
         HomeIndexSource::Own(store) => own_view = Some(store),
         HomeIndexSource::Parent(view) => parent_view = Some(view),
         HomeIndexSource::Warming { .. } => {}
-        HomeIndexSource::Unavailable { reason } => bail!(reason),
+        HomeIndexSource::Unavailable { error } => return Err(error),
     }
 
     if deadline.expired() {
-        bail!("{TIMED_OUT}: query deadline expired");
+        bail!(coded!(TimedOut, "query deadline expired"));
     }
     if own_view.is_none()
         && let Some(parent) = parent_view.as_ref()
@@ -486,7 +502,7 @@ fn inline_member_index(
             deadline,
         );
         if deadline.expired() {
-            bail!("{TIMED_OUT}: query deadline expired");
+            bail!(coded!(TimedOut, "query deadline expired"));
         }
     }
     if maintenance.expired() {
@@ -569,5 +585,7 @@ fn maintenance_slice_ended(
     original: &QueryDeadline,
     error: &anyhow::Error,
 ) -> bool {
-    is_timed_out(error) && !original.expired() && maintenance.expired()
+    crate::coded_error::ErrorCode::TimedOut.is_code_of(error)
+        && !original.expired()
+        && maintenance.expired()
 }

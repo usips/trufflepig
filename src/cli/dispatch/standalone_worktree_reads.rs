@@ -1,12 +1,13 @@
 //! Standalone linked-worktree read routing and immutable parent-result ownership.
 use super::Arguments;
 use crate::{
+    coded_error::{CodeDetail, CodedContext, ErrorCode, coded_error, error_detail},
     daemon::deadline::QueryDeadline,
     output::OutputBudget,
     results, search, source,
     store::{Store, is_index_cache_unavailable, is_index_cannot_open, is_index_warming},
 };
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, bail, ensure};
 use std::{os::unix::fs::MetadataExt, path::Path};
 
 pub(super) fn retrieve_read(
@@ -45,7 +46,7 @@ pub(super) fn retrieve_read(
         "refs" => search::references(store, &search::reference_query(&text)?)?,
         "map" => {
             let found = search::map(store, words.first().map_or("", String::as_str))?;
-            map_miss = search::map_miss(&found).map(str::to_owned);
+            map_miss = search::map_miss(&found);
             found
         }
         "search" if text.starts_with("refs:") => {
@@ -120,7 +121,10 @@ pub(super) fn retrieve_read(
         identity.validate_publication(store)?;
         ensure!(
             set.generation == identity.generation,
-            "stale_result: parent index changed during retrieval; search again"
+            coded!(
+                StaleResult,
+                "parent index changed during retrieval; search again"
+            )
         );
         set.coverage["parent_index"] = serde_json::to_value(identity)?;
     } else if verb == "map"
@@ -131,7 +135,7 @@ pub(super) fn retrieve_read(
     if verb == "map"
         && let Some(miss) = search::map_miss(&set)
     {
-        map_miss.get_or_insert_with(|| miss.to_owned());
+        map_miss.get_or_insert(miss);
         bail!(map_miss.expect("map miss was just set"));
     }
     let id = results::save(store, set)
@@ -149,7 +153,7 @@ pub(super) fn show_read(
     deadline: QueryDeadline,
 ) -> Result<String> {
     let target = source::acquisition::show_target(&options.words)
-        .context("usage: command requires an explicit argument")?;
+        .with_coded_context(|| coded!(Usage, "command requires an explicit argument"))?;
     let side = options
         .side
         .as_deref()
@@ -182,11 +186,11 @@ pub(super) fn show_read(
             let generation = stored_generation(&store, &handle)?;
             ensure!(
                 generation == 0 || store.index_root() == store.root,
-                "stale_result: parent-index origin is missing; search again"
+                coded!(StaleResult, "parent-index origin is missing; search again")
             );
         }
         let acquired = match source::acquisition::acquire(read_store, &target, side, &origin) {
-            Err(error) if identity.is_some() && error.to_string().starts_with("stale_source:") => {
+            Err(error) if identity.is_some() && ErrorCode::StaleSource.is_code_of(&error) => {
                 let (generation, entry) = results::entry(read_store, &handle)?;
                 let _ = generation;
                 let (mut current, read) =
@@ -195,7 +199,7 @@ pub(super) fn show_read(
                 if let Some(offset) = target_offset(&target)? {
                     ensure!(
                         offset >= current.span.start && offset <= current.span.end,
-                        "invalid_cursor: offset outside original source range"
+                        coded!(InvalidCursor, "offset outside original source range")
                     );
                     current.span.start = offset;
                 }
@@ -214,11 +218,10 @@ pub(super) fn show_read(
             }
             Err(error)
                 if identity.is_some()
-                    && error
-                        .to_string()
-                        .starts_with("source_unavailable: path missing or unsafe") =>
+                    && error_detail(&error) == Some(CodeDetail::PathMissingOrUnsafe) =>
             {
-                bail!("{error}; path absent in this worktree; present in parent index");
+                let missing = coded_error(&error).expect("detail implies a coded error");
+                bail!(missing.appended("; path absent in this worktree; present in parent index"));
             }
             acquired => acquired?,
         };
@@ -241,20 +244,23 @@ pub(super) fn context_read(
 ) -> Result<String> {
     ensure!(
         !handle.starts_with("read:"),
-        "invalid_handle: context requires a live result handle"
+        coded!(InvalidHandle, "context requires a live result handle")
     );
-    let handle =
-        target_handle(handle).context("invalid_handle: context requires a live result handle")?;
+    let handle = target_handle(handle)
+        .with_coded_context(|| coded!(InvalidHandle, "context requires a live result handle"))?;
     ensure!(
         stored_generation(store, &handle)? > 0,
-        "stale_result: current-path handles have no indexed context; search again"
+        coded!(
+            StaleResult,
+            "current-path handles have no indexed context; search again"
+        )
     );
     match parent_result_store(root, cache, store, &handle, deadline)? {
         Some((parent, _identity)) => search::context(&parent, &handle, budget),
         None => {
             ensure!(
                 store.index_root() == store.root,
-                "stale_result: parent-index origin is missing; search again"
+                coded!(StaleResult, "parent-index origin is missing; search again")
             );
             search::context(store, &handle, budget)
         }
@@ -292,7 +298,12 @@ fn parent_result_store_for_set(
         return Ok(None);
     };
     let identity: crate::workspace::ParentIndexIdentity = serde_json::from_value(value)
-        .context("stale_result: parent-index identity is invalid; search again")?;
+        .with_coded_context(|| {
+            coded!(
+                StaleResult,
+                "parent-index identity is invalid; search again"
+            )
+        })?;
     let member = validate_parent_worktree(
         root,
         &identity,
@@ -303,12 +314,13 @@ fn parent_result_store_for_set(
     let parent =
         Store::open_read(&parent_root, &parent_cache, deadline.clone()).map_err(|error| {
             let error = super::classify_query_error(&deadline, error);
-            if crate::daemon::deadline::is_timed_out(&error) {
+            if crate::coded_error::ErrorCode::TimedOut.is_code_of(&error) {
                 error
             } else {
-                anyhow::anyhow!(
-                    "stale_result: saved parent index is no longer available; search again"
-                )
+                anyhow::anyhow!(coded!(
+                    StaleResult,
+                    "saved parent index is no longer available; search again"
+                ))
                 .context(error)
             }
         })?;
@@ -322,23 +334,32 @@ fn validate_parent_worktree(
     timeout: std::time::Duration,
 ) -> Result<crate::workspace::member_root::MemberRoot> {
     let member = crate::workspace::member_root::standalone_worktree(root, timeout)
-        .context("stale_result: linked worktree identity changed; search again")?;
-    let worktree_metadata = member
-        .root
-        .metadata()
-        .context("stale_result: linked worktree is unavailable; search again")?;
+        .with_coded_context(|| {
+            coded!(
+                StaleResult,
+                "linked worktree identity changed; search again"
+            )
+        })?;
+    let worktree_metadata = member.root.metadata().with_coded_context(|| {
+        coded!(StaleResult, "linked worktree is unavailable; search again")
+    })?;
     ensure!(
         crate::store::encode_path(&member.root) == identity.worktree_root
             && worktree_metadata.dev() == identity.worktree_device
             && worktree_metadata.ino() == identity.worktree_inode,
-        "stale_result: linked worktree was replaced; search again"
+        coded!(StaleResult, "linked worktree was replaced; search again")
     );
     let parent_root = crate::store::decode_path(&identity.root)?
         .canonicalize()
-        .context("stale_result: parent checkout is unavailable; search again")?;
+        .with_coded_context(|| {
+            coded!(StaleResult, "parent checkout is unavailable; search again")
+        })?;
     ensure!(
         parent_root == member.member.root,
-        "stale_result: saved parent index belongs to another checkout; search again"
+        coded!(
+            StaleResult,
+            "saved parent index belongs to another checkout; search again"
+        )
     );
     Ok(member)
 }
@@ -354,7 +375,12 @@ pub(super) fn more_read(
     let set = results::load_entries(store, &set_id)?;
     if let Some(value) = set.coverage.get("parent_index") {
         let identity: crate::workspace::ParentIndexIdentity = serde_json::from_value(value.clone())
-            .context("stale_result: parent-index identity is invalid; search again")?;
+            .with_coded_context(|| {
+                coded!(
+                    StaleResult,
+                    "parent-index identity is invalid; search again"
+                )
+            })?;
         // Page snapshots survive parent republishes, but their worktree cache
         // belongs to the checkout that created the result set.
         validate_parent_worktree(
@@ -376,7 +402,10 @@ fn save_parent_identity(
     identity.validate_publication(store)?;
     ensure!(
         set.generation == identity.generation,
-        "stale_result: parent index changed during retrieval; search again"
+        coded!(
+            StaleResult,
+            "parent index changed during retrieval; search again"
+        )
     );
     set.coverage["parent_index"] = serde_json::to_value(identity)?;
     let new_set =
@@ -391,12 +420,10 @@ fn target_offset(target: &str) -> Result<Option<usize>> {
     };
     let (_, offset) = cursor
         .rsplit_once('@')
-        .context("invalid_cursor: expected read:HANDLE@BYTE_OFFSET")?;
-    Ok(Some(
-        offset
-            .parse()
-            .context("invalid_cursor: invalid byte offset")?,
-    ))
+        .with_coded_context(|| coded!(InvalidCursor, "expected read:HANDLE@BYTE_OFFSET"))?;
+    Ok(Some(offset.parse().with_coded_context(|| {
+        coded!(InvalidCursor, "invalid byte offset")
+    })?))
 }
 
 /// New parent-index reads are limited to search, map, and symbol lookup.

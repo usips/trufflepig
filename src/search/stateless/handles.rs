@@ -1,5 +1,5 @@
 use crate::{
-    daemon::deadline::{QueryDeadline, TIMED_OUT},
+    daemon::deadline::QueryDeadline,
     identity::ContentRevision,
     results::ResultSet,
     source::{self, acquisition::stateless_hit_handle},
@@ -31,7 +31,10 @@ pub(super) fn attach_current_handles(
         for index in indices {
             let hit = &mut set.hits[index];
             if hit.revision.as_deref() != Some(revision.as_str()) {
-                bail!("stale_source: current file changed during stateless search; search again");
+                bail!(coded!(
+                    StaleSource,
+                    "current file changed during stateless search; search again"
+                ));
             }
             let (start, end) = if hit.kind == "file" && hit.start == 0 && hit.end == 0 {
                 (0, bytes.len())
@@ -49,7 +52,10 @@ pub(super) fn attach_current_handles(
 
 fn check_deadline(deadline: &QueryDeadline) -> Result<()> {
     if deadline.expired() {
-        bail!("{TIMED_OUT}: stateless current-source handle verification expired");
+        bail!(coded!(
+            TimedOut,
+            "stateless current-source handle verification expired"
+        ));
     }
     Ok(())
 }

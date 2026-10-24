@@ -7,9 +7,10 @@ use crate::board::{
     commit_trailers::{LOG_FORMAT, ParsedCommit, parse_log},
     repo_identity::{detached_head, remaining},
 };
+use crate::coded_error::CodedContext;
 use crate::history::git::{run_bounded, run_bounded_strict};
 use crate::identity::GitOid;
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use passes::{GREP_FORMAT, MISPLACED_PATTERN, STATS_FORMAT, log_args, parse_grep_log, parse_stats};
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
@@ -50,14 +51,17 @@ pub(super) fn collect_tips(registration: &RepoRegistration, deadline: Instant) -
     }
     ensure!(
         all.len() <= TIP_LIMIT,
-        "board_scan: branch tips exceed resource limit"
+        coded!(BoardScan, "branch tips exceed resource limit")
     );
     let mut detached = BTreeSet::new();
     add_detached(common, &mut detached, deadline)?;
     let worktrees = match std::fs::read_dir(common.join("worktrees")) {
         Ok(entries) => Some(entries),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-        Err(error) => return Err(error).context("board_scan: enumerate linked worktrees"),
+        Err(error) => {
+            return Err(error)
+                .with_coded_context(|| coded!(BoardScan, "enumerate linked worktrees"));
+        }
     };
     let mut count = 0;
     for entry in worktrees.into_iter().flatten() {
@@ -65,7 +69,7 @@ pub(super) fn collect_tips(registration: &RepoRegistration, deadline: Instant) -
         count += 1;
         ensure!(
             count <= TIP_LIMIT,
-            "board_scan: linked worktrees exceed resource limit"
+            coded!(BoardScan, "linked worktrees exceed resource limit")
         );
         let entry = entry?;
         if !entry.file_type()?.is_dir() || !entry.path().join("HEAD").is_file() {
@@ -76,7 +80,7 @@ pub(super) fn collect_tips(registration: &RepoRegistration, deadline: Instant) -
     all.extend(detached.iter().copied());
     ensure!(
         all.len() <= TIP_LIMIT,
-        "board_scan: repository tips exceed resource limit"
+        coded!(BoardScan, "repository tips exceed resource limit")
     );
     let mut hasher = blake3::Hasher::new();
     for oid in &all {
@@ -128,7 +132,7 @@ pub(super) fn read_commit(
     let mut parsed = parse_log(&bytes, &registration.repo_key)?;
     ensure!(
         parsed.record_count == 1 && parsed.records.len() == 1,
-        "board_link: commit metadata is unavailable"
+        coded!(BoardLink, "commit metadata is unavailable")
     );
     let stats_budget = remaining(deadline)?.min(Duration::from_secs(1));
     if !stats_budget.is_zero() {

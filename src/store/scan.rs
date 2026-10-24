@@ -318,7 +318,7 @@ fn read_source(root: &Path, relative: &Path) -> (Option<Vec<u8>>, &'static str, 
         Err(error) => {
             return (
                 None,
-                if error.to_string().starts_with("source_excluded") {
+                if crate::coded_error::ErrorCode::SourceExcluded.is_code_of(&error) {
                     "resource_excluded"
                 } else {
                     "read_error"

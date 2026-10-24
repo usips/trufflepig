@@ -218,11 +218,11 @@ pub fn write_reply(writer: &mut impl Write, reply: &WorkerReply) -> Result<()> {
 pub fn validate_inputs(texts: &[String]) -> Result<()> {
     ensure!(
         texts.len() <= MAX_INPUTS,
-        "semantic_admission: at most 8 inputs per batch"
+        coded!(SemanticAdmission, "at most 8 inputs per batch")
     );
     ensure!(
         raw_input_bytes(texts) <= MAX_RAW_INPUT_BYTES,
-        "semantic_admission: raw inputs exceed 8 MiB"
+        coded!(SemanticAdmission, "raw inputs exceed 8 MiB")
     );
     Ok(())
 }
@@ -246,8 +246,14 @@ fn validate_command(command: &WorkerCommand) -> Result<()> {
             deadline_ms,
             ..
         } => {
-            ensure!(!root_id.is_empty(), "semantic_admission: root id is empty");
-            ensure!(*deadline_ms != 0, "semantic_admission: deadline is missing");
+            ensure!(
+                !root_id.is_empty(),
+                coded!(SemanticAdmission, "root id is empty")
+            );
+            ensure!(
+                *deadline_ms != 0,
+                coded!(SemanticAdmission, "deadline is missing")
+            );
             validate_inputs(texts)?;
         }
         WorkerCommand::Rerank {
@@ -256,8 +262,14 @@ fn validate_command(command: &WorkerCommand) -> Result<()> {
             documents,
             deadline_ms,
         } => {
-            ensure!(!root_id.is_empty(), "rerank_admission: root id is empty");
-            ensure!(*deadline_ms != 0, "rerank_admission: deadline is missing");
+            ensure!(
+                !root_id.is_empty(),
+                coded!(RerankAdmission, "root id is empty")
+            );
+            ensure!(
+                *deadline_ms != 0,
+                coded!(RerankAdmission, "deadline is missing")
+            );
             validate_rerank_inputs(query, documents)?;
         }
         WorkerCommand::Status | WorkerCommand::Stop => {}

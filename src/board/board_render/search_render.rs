@@ -41,7 +41,10 @@ pub(super) fn render(
     };
     let count = fit_items(result.hits.len(), budget, encode)?;
     if count == 0 && !result.hits.is_empty() {
-        bail!("budget_too_small: first search hit does not fit; raise -b");
+        bail!(coded!(
+            BudgetTooSmall,
+            "first search hit does not fit; raise -b"
+        ));
     }
     Ok(RenderedBoard {
         text: require_fits(encode(count)?, budget)?,

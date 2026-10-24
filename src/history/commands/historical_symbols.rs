@@ -1,4 +1,5 @@
 use super::*;
+use crate::coded_error::CodedContext;
 
 pub(super) fn symbol_entries(
     history: &History,
@@ -49,10 +50,27 @@ pub(super) fn symbol_correspondence(
     if let Some(revision) = &target.revision {
         anyhow::ensure!(
             blake3::hash(&new).to_hex().as_str() == revision,
-            "stale_source: symbol selector does not identify this historical postimage"
+            coded!(
+                StaleSource,
+                "symbol selector does not identify this historical postimage"
+            )
         );
     }
-    let selected=after.definitions.iter().position(|d|Some(&d.name)==target.symbol.as_ref() && target.span.is_some_and(|s|s.start==d.start && s.end==d.end)).context("uncertain_symbol_correspondence: selected occurrence is absent from historical postimage")?;
+    let selected = after
+        .definitions
+        .iter()
+        .position(|d| {
+            Some(&d.name) == target.symbol.as_ref()
+                && target
+                    .span
+                    .is_some_and(|s| s.start == d.start && s.end == d.end)
+        })
+        .with_coded_context(|| {
+            coded!(
+                UncertainSymbolCorrespondence,
+                "selected occurrence is absent from historical postimage"
+            )
+        })?;
     ensure_diff_capacity(&old, &new)?;
     let differences = source_diff::diff_sources(&old, &new);
     let correspondences =
@@ -60,7 +78,12 @@ pub(super) fn symbol_correspondence(
     let row = correspondences
         .iter()
         .find(|row| row.after == Some(selected))
-        .context("uncertain_symbol_correspondence: selected occurrence has no correspondence")?;
+        .with_coded_context(|| {
+            coded!(
+                UncertainSymbolCorrespondence,
+                "selected occurrence has no correspondence"
+            )
+        })?;
     let preimage = row.before.map(|i| &before.definitions[i]);
     let prior_span = preimage.map(|d| ByteSpan {
         start: d.start,

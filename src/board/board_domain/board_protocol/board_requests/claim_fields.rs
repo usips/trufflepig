@@ -16,17 +16,20 @@ pub struct ClaimDelegate {
 impl ClaimDelegate {
     /// Parses a `--for` value; every malformed shape is `invalid_options`.
     pub fn parse(value: &str) -> Result<Self> {
-        let malformed = || anyhow::anyhow!("invalid_options: --for must be HARNESS/SESSION");
+        let malformed = || anyhow::anyhow!(coded!(InvalidOptions, "--for must be HARNESS/SESSION"));
         let (harness, session) = value.split_once('/').ok_or_else(malformed)?;
         if harness.is_empty() || session.is_empty() || session.contains('/') {
-            bail!("invalid_options: --for must be HARNESS/SESSION");
+            bail!(coded!(InvalidOptions, "--for must be HARNESS/SESSION"));
         }
         if value.chars().any(|c| c.is_whitespace() || c.is_control()) {
-            bail!("invalid_options: --for must be HARNESS/SESSION");
+            bail!(coded!(InvalidOptions, "--for must be HARNESS/SESSION"));
         }
         let harness = HarnessLabel::parse(harness).map_err(|_| malformed())?;
         if harness.is_reserved() {
-            bail!("invalid_options: --for cannot delegate to a reserved harness");
+            bail!(coded!(
+                InvalidOptions,
+                "--for cannot delegate to a reserved harness"
+            ));
         }
         validate_actor_component(session, "session").map_err(|_| malformed())?;
         Ok(Self {

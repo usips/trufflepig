@@ -27,9 +27,12 @@ impl LocalBoard {
     ) -> Result<Self, BoardError> {
         let (mut conn, path) = board_database::open_with_timeout(path, timeout)?;
         let claim_ttl_secs = i64::try_from(claim_ttl.as_secs())
-            .map_err(|_| invalid("invalid_options", "claim TTL is too large"))?;
+            .map_err(|_| invalid(BoardErrorCode::InvalidOptions, "claim TTL is too large"))?;
         if claim_ttl_secs == 0 {
-            return Err(invalid("invalid_options", "claim TTL must be positive"));
+            return Err(invalid(
+                BoardErrorCode::InvalidOptions,
+                "claim TTL must be positive",
+            ));
         }
         let tx = conn
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
@@ -89,9 +92,12 @@ impl LocalBoard {
 
     pub fn set_claim_ttl(&mut self, claim_ttl: Duration) -> Result<(), BoardError> {
         let seconds = i64::try_from(claim_ttl.as_secs())
-            .map_err(|_| invalid("invalid_options", "claim TTL is too large"))?;
+            .map_err(|_| invalid(BoardErrorCode::InvalidOptions, "claim TTL is too large"))?;
         if seconds == 0 {
-            return Err(invalid("invalid_options", "claim TTL must be positive"));
+            return Err(invalid(
+                BoardErrorCode::InvalidOptions,
+                "claim TTL must be positive",
+            ));
         }
         self.claim_ttl_secs = seconds;
         Ok(())

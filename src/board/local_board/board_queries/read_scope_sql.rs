@@ -1,5 +1,6 @@
 //! Shared plan membership predicates with a single JSON repository-key binding.
 use crate::board::board_ids::{PlanId, RepoKey};
+use crate::board::board_protocol::BoardErrorCode;
 use crate::board::board_protocol::ReadScope;
 use crate::board::local_board::{BoardError, invalid, sql_error, sql_number};
 use rusqlite::Connection;
@@ -17,7 +18,8 @@ impl ScopeSql {
             ReadScope::Keys(keys) => (2, serde_json::to_string(keys)),
             ReadScope::Unscoped => (3, Ok("[]".to_owned())),
         };
-        let keys_json = keys_json.map_err(|error| invalid("invalid_options", error.to_string()))?;
+        let keys_json = keys_json
+            .map_err(|error| invalid(BoardErrorCode::InvalidOptions, error.to_string()))?;
         Ok(Self { kind, keys_json })
     }
 
@@ -62,7 +64,7 @@ pub(in crate::board::local_board) fn plan_repo_keys(
         .map(|key| {
             key.map_err(sql_error)?.parse().map_err(|error| {
                 invalid(
-                    "board_unavailable",
+                    BoardErrorCode::BoardUnavailable,
                     format!("invalid stored repository key: {error}"),
                 )
             })

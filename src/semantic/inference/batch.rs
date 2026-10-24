@@ -1,4 +1,5 @@
 use super::{MAX_BATCH_INPUTS, MAX_BATCH_PADDED_TOKENS, MAX_INPUT_TOKENS};
+use crate::coded_error::CodedContext;
 use crate::semantic::Embedding;
 use anyhow::{Context, Result, bail};
 use fastembed::TextEmbedding;
@@ -11,9 +12,10 @@ fn token_length(model: &TextEmbedding, text: &str, index: usize) -> Result<usize
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
     let length = encoded.len();
     if length > MAX_INPUT_TOKENS {
-        bail!(
-            "semantic_unavailable: input at batch index {index} exceeds {MAX_INPUT_TOKENS} model tokens (got {length})"
-        );
+        bail!(coded!(
+            SemanticUnavailable,
+            "input at batch index {index} exceeds {MAX_INPUT_TOKENS} model tokens (got {length})"
+        ));
     }
     Ok(length)
 }
@@ -21,9 +23,10 @@ fn token_length(model: &TextEmbedding, text: &str, index: usize) -> Result<usize
 pub(super) fn plan_batch_ranges(token_lengths: &[usize]) -> Result<Vec<Range<usize>>> {
     for (index, &length) in token_lengths.iter().enumerate() {
         if length > MAX_INPUT_TOKENS {
-            bail!(
-                "semantic_unavailable: input at batch index {index} exceeds {MAX_INPUT_TOKENS} model tokens (got {length})"
-            );
+            bail!(coded!(
+                SemanticUnavailable,
+                "input at batch index {index} exceeds {MAX_INPUT_TOKENS} model tokens (got {length})"
+            ));
         }
     }
     let mut ranges = Vec::with_capacity(token_lengths.len().div_ceil(MAX_BATCH_INPUTS));
@@ -41,9 +44,10 @@ pub(super) fn plan_batch_ranges(token_lengths: &[usize]) -> Result<Vec<Range<usi
             end += 1;
         }
         if end == start {
-            bail!(
-                "semantic_unavailable: input at batch index {start} cannot fit the padded token limit"
-            );
+            bail!(coded!(
+                SemanticUnavailable,
+                "input at batch index {start} cannot fit the padded token limit"
+            ));
         }
         ranges.push(start..end);
         start = end;
@@ -72,11 +76,12 @@ pub(super) fn infer_batch(model: &mut TextEmbedding, texts: &[&str]) -> Result<V
                 )
             })?;
         if batch.len() != range.len() {
-            bail!(
-                "semantic_unavailable: model returned {} embeddings for {} inputs",
+            bail!(coded!(
+                SemanticUnavailable,
+                "model returned {} embeddings for {} inputs",
                 batch.len(),
                 range.len()
-            );
+            ));
         }
         for (offset, vector) in batch.iter().enumerate() {
             embeddings.push(Embedding::from_values(vector).with_context(|| {
@@ -178,11 +183,12 @@ fn infer_one_planned_batch(
         )
     })?;
     if batch.len() != texts.len() {
-        bail!(
-            "semantic_unavailable: model returned {} embeddings for {} inputs",
+        bail!(coded!(
+            SemanticUnavailable,
+            "model returned {} embeddings for {} inputs",
             batch.len(),
             texts.len()
-        );
+        ));
     }
     batch
         .iter()
@@ -201,5 +207,5 @@ fn infer_one_planned_batch(
 pub(super) fn infer(model: &mut TextEmbedding, text: &str) -> Result<Embedding> {
     infer_batch(model, &[text])?
         .pop()
-        .context("semantic_unavailable: missing model output")
+        .with_coded_context(|| coded!(SemanticUnavailable, "missing model output"))
 }

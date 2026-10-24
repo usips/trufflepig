@@ -1,7 +1,8 @@
 //! Populate an unpublished in-memory store with current source files.
 use super::{Store, regions, scan};
+use crate::coded_error::CodedContext;
 use crate::{extract::Extraction, identity::ContentRevision};
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use rusqlite::{OptionalExtension, params};
 
 /// Registers all paths in one in-memory transaction before the shared path filter binds.
@@ -64,10 +65,15 @@ pub(crate) fn insert(
                 [&revision],
                 |row| row.get(0),
             )
-            .context("source_revision_collision: current content row disappeared")?;
+            .with_coded_context(|| {
+                coded!(SourceRevisionCollision, "current content row disappeared")
+            })?;
         ensure!(
             stored.as_slice() == bytes,
-            "source_revision_collision: one revision names different current bytes"
+            coded!(
+                SourceRevisionCollision,
+                "one revision names different current bytes"
+            )
         );
     }
     let existing: Option<(i64, Option<String>)> = tx
@@ -92,7 +98,10 @@ pub(crate) fn insert(
             id
         }
         Some((_, Some(_))) => {
-            anyhow::bail!("current_source_duplicate: path already has a source snapshot")
+            anyhow::bail!(coded!(
+                CurrentSourceDuplicate,
+                "path already has a source snapshot"
+            ))
         }
         None => {
             tx.execute(

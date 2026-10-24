@@ -8,7 +8,10 @@ pub(super) fn probe_board_api(args: &[String]) -> Option<Result<String>> {
         .any(|arg| arg == "--board-api-version" || arg.starts_with("--board-api-version="));
     requested.then(|| {
         if args.len() != 1 || args[0] != "--board-api-version" {
-            bail!("invalid_options: --board-api-version must be the only argument");
+            bail!(coded!(
+                InvalidOptions,
+                "--board-api-version must be the only argument"
+            ));
         }
         Ok(format!("{}\n", crate::board::board_protocol::BOARD_API))
     })

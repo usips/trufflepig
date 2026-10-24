@@ -57,7 +57,10 @@ pub(super) fn render(mut value: Value, budget: &OutputBudget) -> Result<String> 
             return Ok(output);
         }
     }
-    bail!("budget_too_small: owner response and provenance do not fit")
+    bail!(coded!(
+        BudgetTooSmall,
+        "owner response and provenance do not fit"
+    ))
 }
 
 fn compact_session(value: &mut Value) {

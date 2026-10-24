@@ -1,4 +1,5 @@
-//! Typed board failures and transport error classification.
+//! Typed board failures and their classification of crate-wide error codes.
+use crate::coded_error::{CodedError, ErrorCode};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -46,35 +47,34 @@ impl BoardErrorCode {
         }
     }
 
-    /// Reads only a leading code after recognized transport wrappers.
-    pub fn leading(message: &str) -> Option<(Self, &str)> {
-        let (label, detail) = leading_error_code(message)?;
-        let code = match label {
-            "stale_revision" => Self::StaleRevision,
-            "claim_conflict" => Self::ClaimConflict,
-            "board_unavailable" => Self::BoardUnavailable,
-            "schema_newer" => Self::SchemaNewer,
-            "board_initialization_required" => Self::BoardInitializationRequired,
-            "invalid_reference" => Self::InvalidReference,
-            "invalid_kind" => Self::InvalidKind,
-            "invalid_worker" => Self::InvalidWorker,
-            "invalid_body" => Self::InvalidBody,
-            "invalid_actor" => Self::InvalidActor,
-            "invalid_state" => Self::InvalidState,
-            "invalid_options" => Self::InvalidOptions,
-            "usage" => Self::Usage,
-            "board_api_mismatch" => Self::BoardApiMismatch,
-            "board_remote_unsupported" => Self::BoardRemoteUnsupported,
-            "database is locked" => Self::DatabaseLocked,
-            "daemon_busy" => Self::DaemonBusy,
-            // Vocabulary prefixes such as invalid_role are validation answers, not storage faults.
-            label if label.starts_with("invalid_") => Self::InvalidOptions,
+    /// The board classification of a crate-wide code; other `invalid_*`
+    /// vocabulary codes are validation answers, not storage faults.
+    pub fn from_code(code: ErrorCode) -> Option<Self> {
+        Some(match code {
+            ErrorCode::StaleRevision => Self::StaleRevision,
+            ErrorCode::ClaimConflict => Self::ClaimConflict,
+            ErrorCode::BoardUnavailable => Self::BoardUnavailable,
+            ErrorCode::SchemaNewer => Self::SchemaNewer,
+            ErrorCode::BoardInitializationRequired => Self::BoardInitializationRequired,
+            ErrorCode::InvalidReference => Self::InvalidReference,
+            ErrorCode::InvalidKind => Self::InvalidKind,
+            ErrorCode::InvalidWorker => Self::InvalidWorker,
+            ErrorCode::InvalidBody => Self::InvalidBody,
+            ErrorCode::InvalidActor => Self::InvalidActor,
+            ErrorCode::InvalidState => Self::InvalidState,
+            ErrorCode::InvalidOptions => Self::InvalidOptions,
+            ErrorCode::Usage => Self::Usage,
+            ErrorCode::BoardApiMismatch => Self::BoardApiMismatch,
+            ErrorCode::BoardRemoteUnsupported => Self::BoardRemoteUnsupported,
+            ErrorCode::DatabaseLocked => Self::DatabaseLocked,
+            ErrorCode::DaemonBusy => Self::DaemonBusy,
+            code if code.as_str().starts_with("invalid_") => Self::InvalidOptions,
             _ => return None,
-        };
-        Some((code, detail))
+        })
     }
 
-    /// Preserves typed errors and inspects each actual error-chain cause.
+    /// Classifies typed errors: a [`BoardError`], then SQLite's typed code,
+    /// then the first crate-wide code with a board classification.
     pub fn from_error(error: &anyhow::Error) -> Option<Self> {
         if let Some(typed) = error
             .chain()
@@ -88,9 +88,7 @@ impl BoardErrorCode {
         {
             return Some(sqlite_board_code(sqlite));
         }
-        error
-            .chain()
-            .find_map(|cause| Self::leading(&cause.to_string()).map(|(code, _)| code))
+        board_coded_error(error).map(|(code, _)| code)
     }
 
     pub fn is_domain_answer(self) -> bool {
@@ -122,20 +120,12 @@ impl std::fmt::Display for BoardError {
     }
 }
 impl std::error::Error for BoardError {}
-/// Explanations remain free text; only repeated `daemon:` wrappers are removed.
-pub fn leading_error_code(mut message: &str) -> Option<(&str, &str)> {
-    loop {
-        message = message.trim_start();
-        if message.trim_end() == BoardErrorCode::DatabaseLocked.as_str() {
-            return Some((BoardErrorCode::DatabaseLocked.as_str(), ""));
-        }
-        let (code, detail) = message.split_once(':')?;
-        if code == "daemon" {
-            message = detail;
-        } else {
-            return Some((code, detail.trim_start()));
-        }
-    }
+/// The first [`CodedError`] in `error`'s chain that has a board classification.
+fn board_coded_error(error: &anyhow::Error) -> Option<(BoardErrorCode, &CodedError)> {
+    error.chain().find_map(|cause| {
+        let coded = cause.downcast_ref::<CodedError>()?;
+        BoardErrorCode::from_code(coded.code()).map(|code| (code, coded))
+    })
 }
 
 /// Constraint violations and datatype mismatches classify as invalid state;
@@ -168,10 +158,8 @@ impl From<anyhow::Error> for BoardError {
         {
             return Self::new(sqlite_board_code(sqlite), format!("{error:#}"));
         }
-        for cause in error.chain() {
-            if let Some((code, detail)) = BoardErrorCode::leading(&cause.to_string()) {
-                return Self::new(code, detail);
-            }
+        if let Some((code, coded)) = board_coded_error(&error) {
+            return Self::new(code, coded.message());
         }
         Self::new(BoardErrorCode::BoardUnavailable, format!("{error:#}"))
     }

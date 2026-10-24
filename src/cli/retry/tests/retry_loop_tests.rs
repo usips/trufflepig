@@ -1,4 +1,5 @@
 use super::*;
+use crate::coded_error::error_code;
 use std::{
     cell::Cell,
     collections::VecDeque,
@@ -126,9 +127,10 @@ fn retry_after_hint_is_honored_and_capped_at_two_seconds() {
         Duration::from_secs(10),
         vec![
             (
-                Err(anyhow::anyhow!(
-                    "daemon_busy: pool=root retry_after_ms=5000"
-                )),
+                Err(anyhow::anyhow!(coded!(
+                    DaemonBusy,
+                    "pool=root retry_after_ms=5000"
+                ))),
                 QUICK,
             ),
             (Ok("recovered".into()), QUICK),
@@ -251,7 +253,7 @@ fn unavailable_busy_fallback_returns_the_original_busy_error() {
     );
 
     let error = fake.result.unwrap_err();
-    assert_eq!(leading_board_code(&error), Some(BoardErrorCode::DaemonBusy));
+    assert_eq!(error_code(&error), Some(ErrorCode::DaemonBusy));
     assert_eq!(fake.attempts, 1);
     assert!(fake.waits.is_empty());
     assert_eq!(fake.fallbacks, 1);
@@ -433,16 +435,17 @@ fn expired_busy_fallback_keeps_the_busy_reply_code() {
         "expired-busy-fallback",
         QUICK + Duration::from_millis(5),
         vec![(
-            Err(anyhow::anyhow!(
-                "daemon: daemon_busy: pool=root retry_after_ms=250"
-            )),
+            Err(relayed("daemon: daemon_busy: pool=root retry_after_ms=250")),
             QUICK,
         )],
-        Some(Err(anyhow::anyhow!("timed_out: query deadline expired"))),
+        Some(Err(anyhow::anyhow!(coded!(
+            TimedOut,
+            "query deadline expired"
+        )))),
     );
 
     let error = fake.result.unwrap_err();
-    assert_eq!(leading_board_code(&error), Some(BoardErrorCode::DaemonBusy));
+    assert_eq!(error_code(&error), Some(ErrorCode::DaemonBusy));
     assert!(format!("{error:#}").contains("timed_out: query deadline expired"));
     assert!(format!("{error:#}").contains("retry_after_ms=250"));
     assert_eq!(fake.attempts, 1);
@@ -738,10 +741,10 @@ fn diagnostic_busy_lock_and_typed_timeout_do_not_use_busy_fallback() {
         ("timeout", 5),
     ] {
         let make_error = || match kind {
-            "diagnostic" => anyhow::anyhow!("invalid_body: daemon_busy: retry_after_ms=725"),
-            "wrapped_busy" => anyhow::anyhow!("daemon_busy: retry_after_ms=725")
-                .context("invalid_body: outer error"),
-            "database_locked" => anyhow::anyhow!("database is locked"),
+            "diagnostic" => anyhow::anyhow!(coded!(InvalidBody, "daemon_busy: retry_after_ms=725")),
+            "wrapped_busy" => anyhow::anyhow!(coded!(DaemonBusy, "retry_after_ms=725"))
+                .with_coded_context(|| coded!(InvalidBody, "outer error")),
+            "database_locked" => relayed("database is locked"),
             "timeout" => anyhow::Error::new(DaemonReplyTimeout::new(
                 Duration::from_secs(1),
                 Duration::from_secs(20),

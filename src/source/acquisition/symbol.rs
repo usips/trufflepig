@@ -68,7 +68,11 @@ pub(crate) fn read_symbol(
     read_first: impl FnOnce(&str, Hit) -> Result<AcquiredSource>,
 ) -> Result<AcquiredSource> {
     if found.hits.is_empty() {
-        bail!(no_definition(store, query, origin)?);
+        bail!(coded!(
+            NoDefinition,
+            "{}",
+            no_definition(store, query, origin)?
+        ));
     }
     let imports = found.hits.iter().filter(|hit| hit.kind == "import").count();
     let declarations = found.hits.len() - imports;
@@ -124,7 +128,7 @@ pub(crate) fn read_symbol(
     Ok(source)
 }
 
-/// `no_definition` naming the active filters and, when they excluded every
+/// The `no_definition` message naming the active filters and, when they excluded every
 /// namesake, how many exist without them and where the best one is.
 fn no_definition(store: &Store, query: &Query, origin: &InvocationDirectory) -> Result<String> {
     let name = &query.text;
@@ -147,7 +151,7 @@ fn no_definition(store: &Store, query: &Query, origin: &InvocationDirectory) -> 
                 .map(|(key, value)| format!("{key}{value}")),
         )
         .collect();
-    let mut message = format!("no_definition: no indexed definition named `{name}`");
+    let mut message = format!("no indexed definition named `{name}`");
     if !filters.is_empty() {
         message.push_str(&format!(" matching {}", filters.join(" ")));
         let unfiltered = Query {

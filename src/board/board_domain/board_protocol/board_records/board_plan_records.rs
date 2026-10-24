@@ -33,7 +33,7 @@ impl PlanLifecycleState {
         match value {
             "open" => Ok(Self::Open),
             "closed" => Ok(Self::Closed),
-            _ => bail!("invalid_state: unknown plan lifecycle '{value}'"),
+            _ => bail!(coded!(InvalidState, "unknown plan lifecycle '{value}'")),
         }
     }
 
@@ -59,7 +59,7 @@ impl RevisionSource {
             "create" => Ok(Self::Create),
             "accept" => Ok(Self::Accept),
             "direct" => Ok(Self::Direct),
-            _ => bail!("invalid_state: unknown revision source '{value}'"),
+            _ => bail!(coded!(InvalidState, "unknown revision source '{value}'")),
         }
     }
     pub fn as_str(self) -> &'static str {
@@ -115,7 +115,7 @@ impl ClaimEndReason {
             "reassigned" => Ok(Self::Reassigned),
             "resumed" => Ok(Self::Resumed),
             "session_ended" => Ok(Self::SessionEnded),
-            _ => bail!("invalid_state: unknown claim end reason '{value}'"),
+            _ => bail!(coded!(InvalidState, "unknown claim end reason '{value}'")),
         }
     }
 

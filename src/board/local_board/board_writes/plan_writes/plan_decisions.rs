@@ -12,7 +12,7 @@ pub(in crate::board::local_board) fn accept(
     let decision_ctx = ctx.with_authority(require_authority(tx, ctx, plan)?);
     if state != "open" {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("proposal {proposal} is {state}"),
         ));
     }
@@ -83,7 +83,7 @@ pub(in crate::board::local_board) fn reject(
     let decision_ctx = ctx.with_authority(require_authority(tx, ctx, plan)?);
     if state != "open" {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("proposal {proposal} is {state}"),
         ));
     }

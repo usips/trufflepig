@@ -87,9 +87,7 @@ pub(super) fn decorate_source_unavailable(
 }
 
 fn is_source_unavailable(error: &Error) -> bool {
-    error
-        .chain()
-        .any(|cause| cause.to_string().starts_with("source_unavailable:"))
+    crate::coded_error::ErrorCode::SourceUnavailable.is_anywhere_in(error)
 }
 
 fn relative_target(target: &str) -> Option<PathBuf> {
@@ -246,7 +244,7 @@ mod tests {
     }
 
     fn missing() -> Error {
-        anyhow::anyhow!("source_unavailable: path missing or unsafe")
+        anyhow::anyhow!(coded!(SourceUnavailable, "path missing or unsafe"))
     }
 
     fn decorate(
@@ -329,7 +327,7 @@ mod tests {
                 "target: {target}"
             );
         }
-        let unrelated = anyhow::anyhow!("invalid_path: traversal is unsupported");
+        let unrelated = anyhow::anyhow!(coded!(InvalidPath, "traversal is unsupported"));
         let expected = unrelated.to_string();
         assert_eq!(
             decorate(&config, &member, "valid.rs", unrelated).to_string(),

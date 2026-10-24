@@ -155,7 +155,7 @@ fn expired_board_mutation_never_creates_the_database() {
             QueryDeadline::after(Duration::ZERO),
         )
         .unwrap_err();
-    assert!(crate::daemon::deadline::is_timed_out(&error));
+    assert!(crate::coded_error::ErrorCode::TimedOut.is_code_of(&error));
     assert!(!database.exists());
 }
 
@@ -169,7 +169,7 @@ fn writer_lock_wait_respects_the_accepted_deadline() {
         &QueryDeadline::after(Duration::from_millis(20)),
         "writer",
     );
-    assert!(crate::daemon::deadline::is_timed_out(&result.unwrap_err()));
+    assert!(crate::coded_error::ErrorCode::TimedOut.is_code_of(&result.unwrap_err()));
     assert!(started.elapsed() < Duration::from_millis(150));
     drop(held);
 }

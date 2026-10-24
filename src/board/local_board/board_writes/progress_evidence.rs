@@ -1,5 +1,6 @@
 //! Append-only task progress facts and review verdicts.
 
+use crate::board::board_protocol::BoardErrorCode;
 use rusqlite::{Transaction, params};
 
 use super::super::{BoardError, WriteContext, invalid, sql_error, sql_number};
@@ -26,7 +27,7 @@ pub(in crate::board::local_board) fn write_progress(
 ) -> Result<(), BoardError> {
     if worker.is_some_and(|worker| worker.task != task) {
         return Err(invalid(
-            "invalid_worker",
+            BoardErrorCode::InvalidWorker,
             "progress worker belongs to a different task",
         ));
     }
@@ -100,7 +101,7 @@ pub(in crate::board::local_board) fn write_verdict(
         .map_err(sql_error)?;
     if already_recorded {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("review entry {entry} already has a verdict"),
         ));
     }

@@ -182,7 +182,10 @@ fn spool_client_deadline_expires_while_fresh_heartbeat_is_not_drained() {
     let started = Instant::now();
     let error = spool::request(&dir, &["status".to_owned()], &context, deadline).unwrap_err();
 
-    assert!(deadline::is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
     assert!(
         started.elapsed() < Duration::from_secs(1),
         "spool client exceeded its injected deadline: {:?}",

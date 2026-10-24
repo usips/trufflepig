@@ -4,8 +4,9 @@ use crate::board::{
     board_grammar::{self, BoardCommand},
     board_protocol::{AgentClaims, BoardOp},
 };
+use crate::coded_error::CodedContext;
 use crate::{cli::Arguments, daemon::deadline::QueryDeadline, diagnostics::RequestContext};
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, bail, ensure};
 use std::{
     error::Error as StdError,
     fmt,
@@ -66,8 +67,11 @@ impl BoardClientTransport {
         let encoded = crate::daemon::request_encoded_size(&forwarded, context)?;
         ensure!(
             encoded <= crate::daemon::MAX_DAEMON_REQUEST_BYTES,
-            "invalid_body: encoded board request is {encoded} bytes; maximum is {} bytes; split the plan",
-            crate::daemon::MAX_DAEMON_REQUEST_BYTES
+            coded!(
+                InvalidBody,
+                "encoded board request is {encoded} bytes; maximum is {} bytes; split the plan",
+                crate::daemon::MAX_DAEMON_REQUEST_BYTES
+            )
         );
         self.run_prepared(
             &forwarded,
@@ -101,8 +105,8 @@ impl BoardClientTransport {
                     command,
                     BoardCommand::Op(crate::board::BoardOp::Feedback { .. })
                 ) && error
-                    .downcast_ref::<BoardRequestDeadlineExpired>()
-                    .is_some() =>
+                    .chain()
+                    .any(|cause| cause.is::<BoardRequestDeadlineExpired>()) =>
             {
                 failed_request(
                     command, options, context, load, spool, deadline, false, error,
@@ -181,12 +185,15 @@ impl BoardClientTransport {
             self.probed_api = Some(reported);
             ensure!(
                 reported == BOARD_API,
-                concat!(
-                    "board_api_mismatch: router board API is {reported}; client expects {BOARD_API}; ",
-                    "restart trufflepig-system.service"
-                ),
-                reported = reported,
-                BOARD_API = BOARD_API
+                coded!(
+                    BoardApiMismatch,
+                    concat!(
+                        "router board API is {reported}; client expects {BOARD_API}; ",
+                        "restart trufflepig-system.service"
+                    ),
+                    reported = reported,
+                    BOARD_API = BOARD_API
+                )
             );
             check_deadline(deadline)?;
             if let Some(runtime) = runtime {
@@ -196,9 +203,12 @@ impl BoardClientTransport {
         }
         ensure!(
             self.probed_api == Some(BOARD_API),
-            "board_api_mismatch: router board API is {}; client expects {BOARD_API}; restart trufflepig-system.service",
-            self.probed_api
-                .expect("successful probe retains the router API")
+            coded!(
+                BoardApiMismatch,
+                "router board API is {}; client expects {BOARD_API}; restart trufflepig-system.service",
+                self.probed_api
+                    .expect("successful probe retains the router API")
+            )
         );
         check_deadline(deadline)?;
         match gateway.request(forwarded, context, deadline) {
@@ -243,12 +253,8 @@ impl std::error::Error for BoardRequestDeadlineExpired {}
 
 fn check_deadline(deadline: &QueryDeadline) -> Result<()> {
     if deadline.expired() {
-        return Err(
-            anyhow::Error::new(BoardRequestDeadlineExpired).context(format!(
-                "{}: board request deadline expired",
-                crate::daemon::deadline::TIMED_OUT
-            )),
-        );
+        return Err(anyhow::Error::new(BoardRequestDeadlineExpired)
+            .with_coded_context(|| coded!(TimedOut, "board request deadline expired")));
     }
     Ok(())
 }
@@ -342,31 +348,38 @@ fn request_receipt_key(
 }
 
 fn parse_probe(status: &str) -> Result<(u32, PathBuf)> {
-    let status: serde_json::Value = serde_json::from_str(status).context(
-        "board_api_mismatch: router returned an invalid status; restart trufflepig-system.service",
-    )?;
+    let status: serde_json::Value = serde_json::from_str(status).with_coded_context(|| {
+        coded!(
+            BoardApiMismatch,
+            "router returned an invalid status; restart trufflepig-system.service"
+        )
+    })?;
     let api = status
         .get("board_api")
         .and_then(serde_json::Value::as_u64)
         .and_then(|api| u32::try_from(api).ok())
-        .context(
-            "board_api_mismatch: router lacks board capability; restart trufflepig-system.service",
-        )?;
+        .with_coded_context(|| {
+            coded!(
+                BoardApiMismatch,
+                "router lacks board capability; restart trufflepig-system.service"
+            )
+        })?;
     let Some(path) = status.get("board_db").and_then(serde_json::Value::as_str) else {
         if let Some(detail) = status
             .get("board_error")
             .and_then(serde_json::Value::as_str)
         {
-            bail!("board_unavailable: router board error: {detail}");
+            bail!(coded!(BoardUnavailable, "router board error: {detail}"));
         }
-        bail!(
-            "board_api_mismatch: router omitted its database path; restart trufflepig-system.service"
-        );
+        bail!(coded!(
+            BoardApiMismatch,
+            "router omitted its database path; restart trufflepig-system.service"
+        ));
     };
     let database = PathBuf::from(path);
     ensure!(
         database.is_absolute(),
-        "board_api_mismatch: router database path is not absolute"
+        coded!(BoardApiMismatch, "router database path is not absolute")
     );
     Ok((api, database))
 }
@@ -398,7 +411,7 @@ fn local_reply(
                 &config,
                 spool,
                 deadline,
-                anyhow::anyhow!("board_unavailable: router owns migration"),
+                anyhow::anyhow!(coded!(BoardUnavailable, "router owns migration")),
             );
         }
         check_deadline(deadline)?;
@@ -444,7 +457,7 @@ fn refuse_stale_storage_beside_router(
         Err(error)
             if !config.db_path.exists() || LocalBoard::needs_writable_initialization(&error) =>
         {
-            bail!("board_unavailable: router owns migration")
+            bail!(coded!(BoardUnavailable, "router owns migration"))
         }
         Err(error) => {
             let error = anyhow::Error::from(error);

@@ -1,6 +1,7 @@
 //! Query-only access: no DDL, no writes to `index.sqlite3`, bounded waits, and an
 //! optional worktree view that reads its own bytes through a parent's index.
 use super::{Store, StoreAccess, encode_path};
+use crate::coded_error::CodedContext;
 use crate::daemon::deadline::QueryDeadline;
 use anyhow::{Context, Result, bail, ensure};
 use rusqlite::{Connection, Error as SqliteError, ErrorCode, OpenFlags, OptionalExtension};
@@ -10,7 +11,6 @@ use std::{path::Path, time::Duration};
 const READ_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
 /// SQLite virtual-machine steps between deadline checks.
 const DEADLINE_CHECK_STEPS: i32 = 4_096;
-const INDEX_WARMING: &str = "index_warming: initial index is not published";
 /// A small page cache; reads of multi-gigabyte indexes go through a 256 MiB map.
 const READER_PRAGMAS: &str =
     "PRAGMA query_only=ON; PRAGMA cache_size=-2048; PRAGMA mmap_size=268435456;";
@@ -27,7 +27,7 @@ impl Store {
         let cache = match cache.canonicalize() {
             Ok(cache) => cache,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                bail!(INDEX_WARMING);
+                bail!(index_warming());
             }
             Err(error) => {
                 return Err(super::index_cache_unavailable(cache, error.into()));
@@ -40,7 +40,7 @@ impl Store {
             ));
         }
         let database = cache.join("index.sqlite3");
-        ensure!(database.is_file(), INDEX_WARMING);
+        ensure!(database.is_file(), index_warming());
         let conn = Connection::open_with_flags(
             &database,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -58,7 +58,7 @@ impl Store {
             stored_root == encode_path(&root),
             "cache belongs to another repository root"
         );
-        ensure!(generation > 0, INDEX_WARMING);
+        ensure!(generation > 0, index_warming());
         Ok(Self {
             conn,
             index_root: root.clone(),
@@ -107,7 +107,7 @@ impl Store {
     pub fn reading_from(mut self, read_root: &Path, results_cache: &Path) -> Result<Self> {
         ensure!(
             self.access == StoreAccess::Reader,
-            "read_only_store: only a query-only store reads another root"
+            coded!(ReadOnlyStore, "only a query-only store reads another root")
         );
         let read_root = read_root.canonicalize().context("canonicalize read root")?;
         ensure!(read_root.is_dir(), "read root is not a directory");
@@ -118,9 +118,14 @@ impl Store {
     }
 }
 
+/// [`Store::open_read`]'s unpublished-index answer.
+fn index_warming() -> crate::coded_error::CodedError {
+    coded!(IndexWarming, "initial index is not published")
+}
+
 /// Whether `error` is [`Store::open_read`]'s unpublished-index answer.
 pub fn is_index_warming(error: &anyhow::Error) -> bool {
-    error.to_string().starts_with("index_warming:")
+    crate::coded_error::ErrorCode::IndexWarming.is_code_of(error)
 }
 
 /// Whether SQLite returned its specific `CANTOPEN` result while opening an index.
@@ -139,14 +144,14 @@ fn published_state(conn: &Connection) -> Result<(String, i64)> {
     let revision: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
     ensure!(
         revision == super::schema::INDEX_SCHEMA_REVISION,
-        INDEX_WARMING
+        index_warming()
     );
     let has_meta: bool = conn.query_row(
         "SELECT count(*)>0 FROM sqlite_master WHERE type='table' AND name='meta'",
         [],
         |row| row.get(0),
     )?;
-    ensure!(has_meta, INDEX_WARMING);
+    ensure!(has_meta, index_warming());
     let read = |key: &str| -> Result<Option<String>> {
         Ok(conn
             .query_row("SELECT value FROM meta WHERE key=?1", [key], |row| {
@@ -154,7 +159,9 @@ fn published_state(conn: &Connection) -> Result<(String, i64)> {
             })
             .optional()?)
     };
-    let root = read("root")?.context(INDEX_WARMING)?;
-    let generation = read("generation")?.context(INDEX_WARMING)?.parse()?;
+    let root = read("root")?.with_coded_context(index_warming)?;
+    let generation = read("generation")?
+        .with_coded_context(index_warming)?
+        .parse()?;
     Ok((root, generation))
 }

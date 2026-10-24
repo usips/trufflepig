@@ -1,5 +1,6 @@
 //! Recipient SQL shared by event, attention, and reminder readers.
 
+use crate::board::board_protocol::BoardErrorCode;
 use rusqlite::Row;
 
 use crate::board::board_actor::HarnessLabel;
@@ -20,7 +21,7 @@ pub(in crate::board::local_board) fn actor_origin_from_row(
     match (harness, session) {
         (None, None) if peer_ip.is_none() => Ok(None),
         (None, None) => Err(invalid(
-            "board_unavailable",
+            BoardErrorCode::BoardUnavailable,
             "stored peer IP has no origin identity",
         )),
         (Some(harness), Some(session)) => {
@@ -28,21 +29,22 @@ pub(in crate::board::local_board) fn actor_origin_from_row(
                 .map(|value| {
                     value.parse::<IpAddr>().map_err(|error| {
                         invalid(
-                            "board_unavailable",
+                            BoardErrorCode::BoardUnavailable,
                             format!("invalid stored origin peer IP: {error}"),
                         )
                     })
                 })
                 .transpose()?;
             Ok(Some(ActorOrigin {
-                harness: HarnessLabel::parse(&harness)
-                    .map_err(|error| invalid("board_unavailable", error.to_string()))?,
+                harness: HarnessLabel::parse(&harness).map_err(|error| {
+                    invalid(BoardErrorCode::BoardUnavailable, error.to_string())
+                })?,
                 session,
                 peer_ip,
             }))
         }
         _ => Err(invalid(
-            "board_unavailable",
+            BoardErrorCode::BoardUnavailable,
             "stored origin has only one identity component",
         )),
     }
@@ -61,13 +63,13 @@ pub(in crate::board::local_board) fn authority_from_row(
             let entry = EntryId::new(sqlite_u64(entry)?).map_err(BoardError::from)?;
             AuthoritySource::parse(&format!("grant:{entry}"))
                 .map(Some)
-                .map_err(|error| invalid("board_unavailable", error.to_string()))
+                .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))
         }
         (Some(basis), None) => AuthoritySource::parse(basis)
             .map(Some)
-            .map_err(|error| invalid("board_unavailable", error.to_string())),
+            .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string())),
         _ => Err(invalid(
-            "board_unavailable",
+            BoardErrorCode::BoardUnavailable,
             "stored authority has an invalid grant reference",
         )),
     }

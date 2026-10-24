@@ -202,10 +202,11 @@ pub fn fit_items(
 
 pub(super) fn require_fits(text: String, budget: &OutputBudget) -> Result<String> {
     if !budget.fits(&text) {
-        bail!(
-            "budget_too_small: complete board response exceeds {} o200k_base tokens",
+        bail!(coded!(
+            BudgetTooSmall,
+            "complete board response exceeds {} o200k_base tokens",
             budget.limit
-        );
+        ));
     }
     Ok(text)
 }

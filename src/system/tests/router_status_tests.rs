@@ -233,6 +233,9 @@ fn router_does_not_reset_an_expired_accepted_deadline() {
             deadline: QueryDeadline::after(Duration::ZERO),
         })
         .unwrap_err();
-    assert!(crate::daemon::deadline::is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
     assert!(!cache.exists(), "expired request spawned an owner daemon");
 }

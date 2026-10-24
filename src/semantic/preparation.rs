@@ -148,7 +148,10 @@ pub fn wait_timeout(
     timeout: Duration,
 ) -> Result<PreparationWait> {
     if captured_generation <= 0 {
-        bail!("preparation_unavailable: invalid captured source generation");
+        bail!(coded!(
+            PreparationUnavailable,
+            "invalid captured source generation"
+        ));
     }
     let started = Instant::now();
     loop {
@@ -169,9 +172,10 @@ pub fn wait_timeout(
             }
         }
         if current_generation < captured_generation {
-            bail!(
-                "preparation_unavailable: captured generation {captured_generation} is ahead of index generation {current_generation}"
-            );
+            bail!(coded!(
+                PreparationUnavailable,
+                "captured generation {captured_generation} is ahead of index generation {current_generation}"
+            ));
         }
         if started.elapsed() >= timeout {
             return Ok(timeout_wait(captured_generation));
@@ -189,10 +193,16 @@ pub fn run_foreground<W: EmbeddingWorker>(
     let mut index = open_index(root, cache)?;
     let generation = read_generation(&index)?;
     if generation <= 0 {
-        bail!("preparation_unavailable: no published source generation");
+        bail!(coded!(
+            PreparationUnavailable,
+            "no published source generation"
+        ));
     }
     let Some(_lease) = cache::PreparationLease::try_acquire(cache)? else {
-        bail!("preparation_busy: another process owns the preparation sweep");
+        bail!(coded!(
+            PreparationBusy,
+            "another process owns the preparation sweep"
+        ));
     };
     let mut preparation = cache::PreparationCache::open(cache)?;
     let _ = prepare_generation(&mut index, &mut preparation, &mut worker, generation, true)?;
@@ -406,7 +416,10 @@ fn request_schedule_with_reset_inner(
     let index = open_index(root, cache)?;
     let generation = read_generation(&index)?;
     if generation <= 0 {
-        bail!("preparation_unavailable: no published source generation");
+        bail!(coded!(
+            PreparationUnavailable,
+            "no published source generation"
+        ));
     }
     let mut preparation = cache::PreparationCache::open(cache)?;
     let requested = preparation.request(generation)?;
@@ -786,14 +799,20 @@ fn open_index(root: &Path, cache: &Path) -> Result<Connection> {
         .canonicalize()
         .context("canonicalize preparation repository root")?;
     if !root.is_dir() {
-        bail!("preparation_unavailable: repository root is not a directory");
+        bail!(coded!(
+            PreparationUnavailable,
+            "repository root is not a directory"
+        ));
     }
     let cache = cache.canonicalize().or_else(|_| {
         std::fs::create_dir_all(cache)?;
         cache.canonicalize()
     })?;
     if root.starts_with(&cache) {
-        bail!("preparation_unavailable: cache must not contain repository root");
+        bail!(coded!(
+            PreparationUnavailable,
+            "cache must not contain repository root"
+        ));
     }
     let connection = Connection::open(cache.join("index.sqlite3"))?;
     connection.busy_timeout(Duration::from_secs(10))?;
@@ -804,7 +823,10 @@ fn open_index(root: &Path, cache: &Path) -> Result<Connection> {
         .optional()?;
     let expected_root = crate::store::encode_path(&root);
     if stored_root.as_deref() != Some(expected_root.as_str()) {
-        bail!("preparation_cache_mismatch: cache belongs to another repository root");
+        bail!(coded!(
+            PreparationCacheMismatch,
+            "cache belongs to another repository root"
+        ));
     }
     Ok(connection)
 }

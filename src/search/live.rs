@@ -1,5 +1,6 @@
 use super::*;
-use crate::daemon::deadline::{QueryDeadline, TIMED_OUT, is_timed_out};
+use crate::coded_error::CodedContext;
+use crate::daemon::deadline::QueryDeadline;
 use anyhow::{Result, bail};
 use std::path::Path;
 
@@ -51,7 +52,10 @@ fn check_live_deadline(deadline: &QueryDeadline, checkpoint: LiveRegexCheckpoint
         _ => deadline.time_expired(),
     };
     if expired {
-        bail!("{TIMED_OUT}: live regex deadline expired or client disconnected");
+        bail!(coded!(
+            TimedOut,
+            "live regex deadline expired or client disconnected"
+        ));
     }
     Ok(())
 }
@@ -70,10 +74,14 @@ fn live_regex_with_checkpoint(
         store, query, paths, cache, hits, coverage, truncated, checkpoint,
     );
     match result {
-        Err(error) if is_timed_out(&error) => Err(error.context(format!(
-            "{TIMED_OUT}: live regex scan incomplete; discarded {} partial hits",
-            hits.len()
-        ))),
+        Err(error) if crate::coded_error::ErrorCode::TimedOut.is_code_of(&error) => Err(error
+            .with_coded_context(|| {
+                coded!(
+                    TimedOut,
+                    "live regex scan incomplete; discarded {} partial hits",
+                    hits.len()
+                )
+            })),
         result => result,
     }
 }
@@ -150,7 +158,7 @@ fn live_regex_scan(
         checkpoint(entry.path(), LiveRegexCheckpoint::AfterRead)?;
         let source = match read {
             Ok(bytes) => bytes,
-            Err(error) if error.to_string().starts_with("source_excluded") => {
+            Err(error) if crate::coded_error::ErrorCode::SourceExcluded.is_code_of(&error) => {
                 excluded += 1;
                 continue;
             }

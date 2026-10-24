@@ -103,13 +103,16 @@ pub(in crate::board::local_board) fn post(
     verdict: Option<&ReviewVerdict>,
     trusted_head: Option<&crate::identity::GitOid>,
 ) -> Result<BoardReply, BoardError> {
-    let plan = target
-        .plan_id()
-        .ok_or_else(|| invalid("invalid_reference", "post requires a plan or task"))?;
+    let plan = target.plan_id().ok_or_else(|| {
+        invalid(
+            BoardErrorCode::InvalidReference,
+            "post requires a plan or task",
+        )
+    })?;
     require_plan(tx, plan)?;
     if (progress.is_some() || verdict.is_some()) && !matches!(target, BoardRef::Task(_)) {
         return Err(invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             "structured progress and verdict require a task",
         ));
     }
@@ -122,14 +125,17 @@ pub(in crate::board::local_board) fn post(
             )
             .map_err(sql_error)?;
         if !exists {
-            return Err(invalid("invalid_reference", format!("unknown task {task}")));
+            return Err(invalid(
+                BoardErrorCode::InvalidReference,
+                format!("unknown task {task}"),
+            ));
         }
     }
     if let Some(previous) = supersedes {
         let prior = read_entry(tx, previous)?;
         if prior.plan != Some(plan) {
             return Err(invalid(
-                "invalid_reference",
+                BoardErrorCode::InvalidReference,
                 "superseded entry belongs to a different plan",
             ));
         }

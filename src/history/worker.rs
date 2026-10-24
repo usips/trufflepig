@@ -3,6 +3,7 @@
 mod heartbeat;
 #[cfg(test)]
 mod tests;
+use crate::coded_error::CodedContext;
 pub use heartbeat::Heartbeat;
 
 use super::{History, git::GitRepository};
@@ -65,7 +66,12 @@ pub fn resolve_cache(
         std::env::var_os("XDG_CACHE_HOME")
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
-            .context("history_cache_unavailable: set --history-cache or XDG_CACHE_HOME")?
+            .with_coded_context(|| {
+                coded!(
+                    HistoryCacheUnavailable,
+                    "set --history-cache or XDG_CACHE_HOME"
+                )
+            })?
             .join("trufflepig")
             .join("history")
     };
@@ -103,14 +109,20 @@ pub fn register(root: &Path, cache: &Path) -> Result<()> {
     if !path.exists()
         && fs::read_dir(&directory)?.take(MAX_REGISTRATIONS).count() >= MAX_REGISTRATIONS
     {
-        bail!("history_registration_limit: too many registered roots");
+        bail!(coded!(
+            HistoryRegistrationLimit,
+            "too many registered roots"
+        ));
     }
     let record = serde_json::to_vec(&Registration {
         root,
         heartbeat_ms: clock_ms()?,
     })?;
     if record.len() as u64 > MAX_REGISTRATION_BYTES {
-        bail!("history_registration_limit: root path exceeds registration bound");
+        bail!(coded!(
+            HistoryRegistrationLimit,
+            "root path exceeds registration bound"
+        ));
     }
     let mut pending = tempfile::NamedTempFile::new_in(cache)?;
     pending.write_all(&record)?;

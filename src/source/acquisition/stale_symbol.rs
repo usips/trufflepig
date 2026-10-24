@@ -62,7 +62,7 @@ fn published_revision(store: &Store, path: &str) -> Result<Option<String>> {
 }
 
 fn is_stale_source(error: &anyhow::Error) -> bool {
-    error.to_string().starts_with("stale_source:")
+    crate::coded_error::ErrorCode::StaleSource.is_code_of(error)
 }
 
 /// Waits while a daemon serves this index for a generation after `seen`. A
@@ -119,10 +119,13 @@ fn liveness_probe_result(result: Result<bool>, deadline: &QueryDeadline) -> Resu
             check_query_deadline(deadline)?;
             Ok(serving)
         }
-        Err(error) if crate::daemon::deadline::is_timed_out(&error) && !deadline.expired() => {
+        Err(error)
+            if crate::coded_error::ErrorCode::TimedOut.is_code_of(&error)
+                && !deadline.expired() =>
+        {
             Ok(true)
         }
-        Err(error) if crate::daemon::deadline::is_timed_out(&error) => Err(error),
+        Err(error) if crate::coded_error::ErrorCode::TimedOut.is_code_of(&error) => Err(error),
         Err(_) if deadline.expired() => Err(query_timeout_error()),
         Err(_) => Ok(false),
     }
@@ -136,10 +139,7 @@ fn check_query_deadline(deadline: &QueryDeadline) -> Result<()> {
 }
 
 fn query_timeout_error() -> anyhow::Error {
-    anyhow::anyhow!(
-        "{}: stale symbol republish wait",
-        crate::daemon::deadline::TIMED_OUT
-    )
+    anyhow::anyhow!(coded!(TimedOut, "stale symbol republish wait"))
 }
 
 /// `hit`'s definition in its original container, located in the file's current

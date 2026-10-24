@@ -110,24 +110,30 @@ impl BoardOptions {
     /// Reject board-specific options outside their command families.
     pub fn validate_for_verb(&self, verb: Option<&str>) -> Result<()> {
         if !matches!(verb, Some("board" | "feedback")) && self.has_options() {
-            bail!("invalid_options: board options require board or feedback");
+            bail!(coded!(
+                InvalidOptions,
+                "board options require board or feedback"
+            ));
         }
         if self.all && self.project.is_some() {
-            bail!("invalid_options: --project and --all are mutually exclusive");
+            bail!(coded!(
+                InvalidOptions,
+                "--project and --all are mutually exclusive"
+            ));
         }
         if self
             .project
             .as_ref()
             .is_some_and(|selector| selector.trim().is_empty())
         {
-            bail!("invalid_options: --project requires a name or ID");
+            bail!(coded!(InvalidOptions, "--project requires a name or ID"));
         }
         if self
             .recent_calls
             .as_ref()
             .is_some_and(|text| text.len() > 2_048)
         {
-            bail!("invalid_options: --recent-calls exceeds 2048 bytes");
+            bail!(coded!(InvalidOptions, "--recent-calls exceeds 2048 bytes"));
         }
         Ok(())
     }

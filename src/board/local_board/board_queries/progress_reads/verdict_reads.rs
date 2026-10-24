@@ -1,3 +1,4 @@
+use crate::board::board_protocol::BoardErrorCode;
 use std::convert::TryFrom;
 
 use rusqlite::{Connection, OptionalExtension, params};
@@ -62,7 +63,7 @@ fn decode_verdict(kind: &str, count: Option<i64>) -> Result<ReviewVerdict, Board
         ("findings", Some(count)) => Ok(ReviewVerdict::Findings(verdict_count(count)?)),
         ("blocking", Some(count)) => Ok(ReviewVerdict::Blocking(verdict_count(count)?)),
         _ => Err(invalid(
-            "board_unavailable",
+            BoardErrorCode::BoardUnavailable,
             "invalid stored review verdict",
         )),
     }
@@ -72,7 +73,7 @@ fn verdict_count(count: i64) -> Result<u32, BoardError> {
     let count = sqlite_u64(count)?;
     u32::try_from(count).map_err(|_| {
         invalid(
-            "board_unavailable",
+            BoardErrorCode::BoardUnavailable,
             "stored review verdict count exceeds u32",
         )
     })

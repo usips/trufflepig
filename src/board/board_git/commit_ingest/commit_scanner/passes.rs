@@ -44,11 +44,14 @@ pub(super) fn parse_stats(bytes: &[u8]) -> Result<HashMap<GitOid, (u64, u64, u64
     if bytes.is_empty() {
         return Ok(HashMap::new());
     }
-    ensure!(bytes[0] == 0, "board_scan: invalid Git stats framing");
+    ensure!(
+        bytes[0] == 0,
+        coded!(BoardScan, "invalid Git stats framing")
+    );
     let fields: Vec<_> = bytes[1..].split(|byte| *byte == 0).collect();
     ensure!(
         fields.len() % 2 == 0,
-        "board_scan: incomplete Git stats record"
+        coded!(BoardScan, "incomplete Git stats record")
     );
     let mut stats = HashMap::with_capacity(fields.len() / 2);
     for record in fields.chunks_exact(2) {
@@ -65,11 +68,11 @@ pub(super) fn parse_grep_log(bytes: &[u8]) -> Result<Vec<GitOid>> {
     if bytes.is_empty() {
         return Ok(Vec::new());
     }
-    ensure!(bytes[0] == 0, "board_scan: invalid Git grep framing");
+    ensure!(bytes[0] == 0, coded!(BoardScan, "invalid Git grep framing"));
     let fields: Vec<_> = bytes[1..].split(|byte| *byte == 0).collect();
     ensure!(
         fields.len() % 5 == 0,
-        "board_scan: incomplete Git grep record"
+        coded!(BoardScan, "incomplete Git grep record")
     );
     let mut oids = Vec::with_capacity(fields.len() / 5);
     for record in fields.chunks_exact(5) {

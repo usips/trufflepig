@@ -1,5 +1,6 @@
 //! Delegated holder resolution and holder-conflict errors.
 use super::*;
+use crate::board::board_protocol::BoardErrorCode;
 
 pub(super) struct ResolvedDelegate {
     actor_id: i64,
@@ -35,7 +36,7 @@ pub(super) fn resolve_delegate(
     // Raw requests skip the CLI parser, so the reserved-harness rule is repeated here.
     if target.harness.is_reserved() {
         return Err(invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             format!(
                 "{task} cannot be delegated to reserved harness {}",
                 target.harness
@@ -51,11 +52,16 @@ pub(super) fn resolve_delegate(
         )
         .optional()
         .map_err(sql_error)?
-        .ok_or_else(|| invalid("invalid_reference", format!("unknown plan {}", task.plan)))?;
+        .ok_or_else(|| {
+            invalid(
+                BoardErrorCode::InvalidReference,
+                format!("unknown plan {}", task.plan),
+            )
+        })?;
     // Standing is the delegator's, never the delegate's: the plan owner's user.
     if ctx.actor.user != owner {
         return Err(invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             format!("{task} delegation requires the plan owner's user"),
         ));
     }
@@ -78,7 +84,7 @@ pub(super) fn resolve_delegate(
 
 pub(super) fn claim_conflict(task: TaskId, claim: &ClaimRecord, now: i64) -> BoardError {
     invalid(
-        "claim_conflict",
+        BoardErrorCode::ClaimConflict,
         format!(
             "{task} held by {} ({}/{}) since {}, active {}s ago (last activity {})",
             claim.actor,

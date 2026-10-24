@@ -1,6 +1,6 @@
 use super::{Fixture, coverage_line, search_without_waiting};
 use crate::{
-    daemon::deadline::{QueryDeadline, is_timed_out},
+    daemon::deadline::QueryDeadline,
     search::InvocationDirectory,
     store::{Store, encode_path, read_seed_outcome},
     workspace::{
@@ -287,7 +287,10 @@ fn exhausted_shared_slice_keeps_parent_show_answer_without_own_index() {
         Ok(_) => panic!("an original peer cancellation must fail the read"),
         Err(error) => error,
     };
-    assert!(is_timed_out(&error), "{error:#}");
+    assert!(
+        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        "{error:#}"
+    );
     assert!(!cache.join("index.sqlite3").exists());
     assert!(!cache.join("index.lock").exists());
 }

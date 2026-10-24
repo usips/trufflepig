@@ -3,6 +3,7 @@ use super::{
     BoardTextPayload,
     board_syntax_validation::{check_flags, fixed_words, optional_text, recipient, word},
 };
+use crate::coded_error::CodedContext;
 use crate::{
     board::{
         board_ids::{BoardRef, EntryId},
@@ -15,7 +16,7 @@ use crate::{
     cli::Arguments,
     identity::GitOid,
 };
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, bail, ensure};
 
 pub(super) fn parse_v10(
     options: &Arguments,
@@ -114,8 +115,11 @@ fn progress_input(options: &Arguments) -> Result<Option<ProgressInput>> {
         .map(|value| {
             let (current, total) = value
                 .split_once('/')
-                .context("invalid_progress: --step must be K/N")?;
-            ensure!(!total.contains('/'), "invalid_progress: --step must be K/N");
+                .with_coded_context(|| coded!(InvalidProgress, "--step must be K/N"))?;
+            ensure!(
+                !total.contains('/'),
+                coded!(InvalidProgress, "--step must be K/N")
+            );
             Ok::<_, anyhow::Error>(ProgressStep {
                 current: current.parse()?,
                 total: total.parse()?,
@@ -128,10 +132,10 @@ fn progress_input(options: &Arguments) -> Result<Option<ProgressInput>> {
         .map(|value| {
             let (passed, failed) = value
                 .split_once('/')
-                .context("invalid_progress: --tests must be PASSED/FAILED")?;
+                .with_coded_context(|| coded!(InvalidProgress, "--tests must be PASSED/FAILED"))?;
             ensure!(
                 !failed.contains('/'),
-                "invalid_progress: --tests must be PASSED/FAILED"
+                coded!(InvalidProgress, "--tests must be PASSED/FAILED")
             );
             Ok::<_, anyhow::Error>(ProgressTests {
                 passed: passed.parse()?,
@@ -143,18 +147,18 @@ fn progress_input(options: &Arguments) -> Result<Option<ProgressInput>> {
         .gates
         .iter()
         .map(|value| {
-            let (name, status) = value
-                .split_once('=')
-                .context("invalid_progress: --gate must be NAME=pass|fail|running")?;
+            let (name, status) = value.split_once('=').with_coded_context(|| {
+                coded!(InvalidProgress, "--gate must be NAME=pass|fail|running")
+            })?;
             ensure!(
                 !status.contains('='),
-                "invalid_progress: --gate must be NAME=pass|fail|running"
+                coded!(InvalidProgress, "--gate must be NAME=pass|fail|running")
             );
             let status = match status {
                 "pass" => GateStatus::Pass,
                 "fail" => GateStatus::Fail,
                 "running" => GateStatus::Running,
-                _ => bail!("invalid_progress: unknown gate status '{status}'"),
+                _ => bail!(coded!(InvalidProgress, "unknown gate status '{status}'")),
             };
             Ok::<_, anyhow::Error>(ProgressGateInput {
                 name: name.to_owned(),
@@ -175,7 +179,8 @@ fn progress_input(options: &Arguments) -> Result<Option<ProgressInput>> {
 
 fn parse_grant(options: &Arguments, payload: &BoardTextPayload) -> Result<BoardOp> {
     check_flags(options, &["board", "to", "for", "text"])?;
-    let grantee = recipient(options)?.context("invalid_options: grant requires --to WHO")?;
+    let grantee = recipient(options)?
+        .with_coded_context(|| coded!(InvalidOptions, "grant requires --to WHO"))?;
     let expires_in = options
         .board
         .for_value
@@ -186,7 +191,7 @@ fn parse_grant(options: &Arguments, payload: &BoardTextPayload) -> Result<BoardO
         fixed_words(options, 2, 2, "board grant --board triage --to WHO")?;
         ensure!(
             scope == "triage",
-            "invalid_options: --board supports only triage"
+            coded!(InvalidOptions, "--board supports only triage")
         );
         return Ok(BoardOp::Grant {
             plan: None,
@@ -205,7 +210,7 @@ fn parse_grant(options: &Arguments, payload: &BoardTextPayload) -> Result<BoardO
     let plan =
         match word(options, 2, "board grant P7 ROLE[,ROLE...] --to WHO")?.parse::<BoardRef>()? {
             BoardRef::Plan(plan) => plan,
-            _ => bail!("invalid_reference: grant requires a plan P#"),
+            _ => bail!(coded!(InvalidReference, "grant requires a plan P#")),
         };
     let roles = word(options, 3, "board grant P7 ROLE[,ROLE...] --to WHO")?
         .split(',')
@@ -231,7 +236,7 @@ fn parse_revoke(options: &Arguments) -> Result<BoardOp> {
 fn parse_worker(options: &Arguments, payload: &BoardTextPayload) -> Result<BoardOp> {
     let task = match word(options, 2, "board worker P7.3 add|end ...")?.parse::<BoardRef>()? {
         BoardRef::Task(task) => task,
-        _ => bail!("invalid_reference: worker requires a task P#.N"),
+        _ => bail!(coded!(InvalidReference, "worker requires a task P#.N")),
     };
     match options.words.get(3).map(String::as_str) {
         Some("add") => {
@@ -249,20 +254,17 @@ fn parse_worker(options: &Arguments, payload: &BoardTextPayload) -> Result<Board
                 .as_deref()
                 .map(WorkerRole::parse)
                 .transpose()?
-                .context("invalid_options: worker add requires --role")?;
+                .with_coded_context(|| coded!(InvalidOptions, "worker add requires --role"))?;
             let model = options
                 .board
                 .model
                 .clone()
-                .context("invalid_options: worker add requires --model")?;
+                .with_coded_context(|| coded!(InvalidOptions, "worker add requires --model"))?;
             let effort = options.board.effort.clone();
-            let scope = EntryText::new(
-                options
-                    .board
-                    .scope
-                    .clone()
-                    .context("invalid_options: worker add requires --scope")?,
-            )?;
+            let scope =
+                EntryText::new(options.board.scope.clone().with_coded_context(|| {
+                    coded!(InvalidOptions, "worker add requires --scope")
+                })?)?;
             let files = options
                 .board
                 .files
@@ -295,9 +297,10 @@ fn parse_worker(options: &Arguments, payload: &BoardTextPayload) -> Result<Board
                 "done" => WorkerEndReason::Done,
                 "failed" => WorkerEndReason::Failed,
                 "stopped" => WorkerEndReason::Stopped,
-                other => bail!(
-                    "invalid_state: worker end expects done, failed, or stopped, received '{other}'"
-                ),
+                other => bail!(coded!(
+                    InvalidState,
+                    "worker end expects done, failed, or stopped, received '{other}'"
+                )),
             };
             Ok(BoardOp::WorkerEnd {
                 worker: WorkerAddress::new(task, handle)?,
@@ -305,7 +308,10 @@ fn parse_worker(options: &Arguments, payload: &BoardTextPayload) -> Result<Board
                 note: optional_text(&payload.text)?,
             })
         }
-        _ => bail!("usage: board worker P7.3 add HANDLE ... | end HANDLE STATE [NOTE...]"),
+        _ => bail!(coded!(
+            Usage,
+            "board worker P7.3 add HANDLE ... | end HANDLE STATE [NOTE...]"
+        )),
     }
 }
 
@@ -319,15 +325,15 @@ fn parse_duration(value: &str) -> Result<u64> {
     };
     ensure!(
         !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()),
-        "invalid_duration: use positive seconds or Ns, Nm, Nh, or Nd"
+        coded!(InvalidDuration, "use positive seconds or Ns, Nm, Nh, or Nd")
     );
     let seconds = digits
         .parse::<u64>()?
         .checked_mul(multiplier)
-        .context("invalid_duration: duration is too large")?;
+        .with_coded_context(|| coded!(InvalidDuration, "duration is too large"))?;
     ensure!(
         (1..=crate::board::board_protocol::PROGRESS_ETA_LIMIT_SECS).contains(&seconds),
-        "invalid_duration: duration must be 1..=365 days"
+        coded!(InvalidDuration, "duration must be 1..=365 days")
     );
     Ok(seconds)
 }

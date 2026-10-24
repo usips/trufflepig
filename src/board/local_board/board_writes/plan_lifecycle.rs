@@ -8,6 +8,7 @@ use super::super::{
     sql_error, sql_number,
 };
 use crate::board::board_ids::{EntryId, PlanId};
+use crate::board::board_protocol::BoardErrorCode;
 use crate::board::board_protocol::{
     AuthorityRole, BoardChange, BoardReply, BoardResult, PlanLifecycleState,
 };
@@ -29,7 +30,7 @@ pub(in crate::board::local_board) fn require_open(
     match PlanLifecycleState::parse(&state).map_err(BoardError::from)? {
         PlanLifecycleState::Open => Ok(()),
         PlanLifecycleState::Closed => Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("{plan} is closed; reopen it before starting new work"),
         )),
     }
@@ -85,7 +86,7 @@ fn set_lifecycle(
     )?
     .ok_or_else(|| {
         invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             format!("{} lacks decide authority for {plan}", ctx.actor),
         )
     })?;
@@ -100,7 +101,7 @@ fn set_lifecycle(
     let stored = PlanLifecycleState::parse(&stored).map_err(BoardError::from)?;
     if stored != expected {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             match next {
                 PlanLifecycleState::Closed => format!("{plan} is already closed"),
                 PlanLifecycleState::Open => format!("{plan} is already open"),
@@ -111,13 +112,13 @@ fn set_lifecycle(
         tx, plan,
     )? {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("{plan} has a live claim or worker"),
         ));
     }
     if next == PlanLifecycleState::Closed && has_open_tasks(tx, plan)? {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("{plan} has tasks that are neither done nor transferred"),
         ));
     }
@@ -130,7 +131,7 @@ fn set_lifecycle(
         .map_err(sql_error)?;
     if updated != 1 {
         return Err(invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("{plan} lifecycle changed concurrently"),
         ));
     }

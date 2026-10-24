@@ -6,6 +6,7 @@ mod task_moves;
 pub(in crate::board::local_board) use task_move_authority::is_bound_worker;
 pub(in crate::board::local_board) use task_moves::move_task;
 
+use crate::board::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use super::super::{
@@ -38,8 +39,12 @@ pub(in crate::board::local_board) fn require_task(
         )
         .optional()
         .map_err(sql_error)?;
-    let (title, column, assignee) =
-        stored.ok_or_else(|| invalid("invalid_reference", format!("unknown task {task}")))?;
+    let (title, column, assignee) = stored.ok_or_else(|| {
+        invalid(
+            BoardErrorCode::InvalidReference,
+            format!("unknown task {task}"),
+        )
+    })?;
     Ok(TaskCard {
         title: PlanTitle::new(title).map_err(BoardError::from)?,
         column: column.parse().map_err(BoardError::from)?,
@@ -63,7 +68,7 @@ pub(in crate::board::local_board) fn require_assignee(
             .is_some_and(|assignee| !assignee.matches(actor))
     {
         return Err(invalid(
-            "invalid_actor",
+            BoardErrorCode::InvalidActor,
             format!("{task} is reserved for its assignee"),
         ));
     }
@@ -80,7 +85,7 @@ pub(super) fn normalized_task_recipient(
     };
     if TaskId::parse(recipient.as_str()).is_ok() {
         return Err(invalid(
-            "invalid_options",
+            BoardErrorCode::InvalidOptions,
             "a task cannot be assigned to another task",
         ));
     }
@@ -110,7 +115,7 @@ pub(in crate::board::local_board) fn create_task(
         )?
         .ok_or_else(|| {
             invalid(
-                "invalid_actor",
+                BoardErrorCode::InvalidActor,
                 format!("assigning a recipient to a new task in {plan} requires assign authority"),
             )
         })?;

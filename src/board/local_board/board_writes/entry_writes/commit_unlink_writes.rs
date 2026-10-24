@@ -15,14 +15,14 @@ pub(in crate::board::local_board) fn unlink_commit(
     let Some(repo) = linked_repository(tx, oid, task)? else {
         return replay_unlink(tx, oid, task)?.ok_or_else(|| {
             invalid(
-                "invalid_reference",
+                BoardErrorCode::InvalidReference,
                 format!("unknown commit link {oid} to {task}"),
             )
         });
     };
     let prior = task_link_receipt(tx, &repo, oid, task)?.ok_or_else(|| {
         invalid(
-            "invalid_state",
+            BoardErrorCode::InvalidState,
             format!("commit link {oid} to {task} disappeared"),
         )
     })?;
@@ -162,7 +162,7 @@ fn replay_unlink(
 
 fn ambiguous_link(oid: GitOid, task: TaskId) -> BoardError {
     invalid(
-        "invalid_reference",
+        BoardErrorCode::InvalidReference,
         format!("ambiguous commit link {oid} to {task} across repositories"),
     )
 }

@@ -7,6 +7,7 @@ use super::pool::{PoolSize, PoolSubmitCause, PooledJob, RequestClass, RequestLan
 use super::protocol::{self, DaemonReply, DaemonRequest};
 use super::reconciler::{self, Maintenance};
 use super::spool::{ClaimedSpoolRequest, SpoolServer};
+use crate::coded_error::CodedContext;
 use crate::diagnostics::RequestContext;
 use admission_refusal::{AdmissionRefusal, RefusalCause};
 use anyhow::{Context, Result};
@@ -437,7 +438,7 @@ fn write_result(stream: &UnixStream, result: Result<String>) {
     let budget = result
         .as_ref()
         .err()
-        .filter(|error| super::deadline::is_timed_out(error))
+        .filter(|error| crate::coded_error::ErrorCode::TimedOut.is_code_of(error))
         .map_or(FRAME_TIMEOUT, |_| EXPIRED_REPLY_GRACE);
     let reply = DaemonReply::from_result(result);
     log_reply_failure(
@@ -460,7 +461,9 @@ fn normalize_owned_query_timeout(
             .err()
             .is_some_and(|error| super::DaemonReplyTimeout::from_error(error).is_some());
     if expired_own_budget {
-        result.map_err(|error| error.context("timed_out: query deadline expired"))
+        result.map_err(|error| {
+            error.with_coded_context(|| coded!(TimedOut, "query deadline expired"))
+        })
     } else {
         result
     }
@@ -504,8 +507,9 @@ fn refusal_for_snapshot<'a>(
 
 /// Runs one request, turning a panic into an `internal_error` reply.
 fn guarded_request(handler: &impl DaemonHandler, request: AcceptedRequest) -> Result<String> {
-    catch_unwind(AssertUnwindSafe(|| handler.request(request)))
-        .unwrap_or_else(|panic| anyhow::bail!("internal_error: {}", panic_message(panic.as_ref())))
+    catch_unwind(AssertUnwindSafe(|| handler.request(request))).unwrap_or_else(|panic| {
+        anyhow::bail!(coded!(InternalError, "{}", panic_message(panic.as_ref())))
+    })
 }
 
 /// The text a panic was raised with.
@@ -533,7 +537,7 @@ fn handle_frame_failure(stream: &UnixStream, failure: FrameFailure) {
                 return;
             }
             let reply = DaemonReply::Failure {
-                message: "timed_out: phase=reading_frame".to_owned(),
+                message: coded!(TimedOut, "phase=reading_frame").to_string(),
             };
             log_reply_failure(
                 "daemon response failed",
@@ -580,9 +584,10 @@ fn intake_frame<H: DaemonHandler>(
     if deadline.expired() {
         write_result(
             &stream,
-            Err(anyhow::anyhow!(
-                "timed_out: query deadline expired before decode"
-            )),
+            Err(anyhow::anyhow!(coded!(
+                TimedOut,
+                "query deadline expired before decode"
+            ))),
         );
         return;
     }
@@ -592,9 +597,10 @@ fn intake_frame<H: DaemonHandler>(
             if deadline.expired() {
                 write_result(
                     &stream,
-                    Err(anyhow::anyhow!(
-                        "timed_out: query deadline expired before classification"
-                    )),
+                    Err(anyhow::anyhow!(coded!(
+                        TimedOut,
+                        "query deadline expired before classification"
+                    ))),
                 );
                 return;
             }
@@ -608,9 +614,10 @@ fn intake_frame<H: DaemonHandler>(
             if deadline.expired() {
                 write_result(
                     &stream,
-                    Err(anyhow::anyhow!(
-                        "timed_out: query deadline expired during classification"
-                    )),
+                    Err(anyhow::anyhow!(coded!(
+                        TimedOut,
+                        "query deadline expired during classification"
+                    ))),
                 );
                 return;
             }
@@ -639,9 +646,10 @@ fn intake_frame<H: DaemonHandler>(
             if deadline.expired() {
                 write_result(
                     &stream,
-                    Err(anyhow::anyhow!(
-                        "timed_out: query deadline expired during admission"
-                    )),
+                    Err(anyhow::anyhow!(coded!(
+                        TimedOut,
+                        "query deadline expired during admission"
+                    ))),
                 );
                 return;
             }
@@ -690,9 +698,10 @@ fn run_connection_request<H: DaemonHandler>(
     fallback: Option<SemanticAdmissionFallback>,
 ) {
     let result = if deadline.expired() {
-        Err(anyhow::anyhow!(
-            "timed_out: query deadline expired or peer closed"
-        ))
+        Err(anyhow::anyhow!(coded!(
+            TimedOut,
+            "query deadline expired or peer closed"
+        )))
     } else {
         guarded_request(
             &*handler,
@@ -705,9 +714,10 @@ fn run_connection_request<H: DaemonHandler>(
     };
     let result = apply_semantic_fallback(result, fallback);
     let result = if result.is_ok() && discards_late_result(class, &deadline) {
-        Err(anyhow::anyhow!(
-            "timed_out: query deadline expired or peer closed"
-        ))
+        Err(anyhow::anyhow!(coded!(
+            TimedOut,
+            "query deadline expired or peer closed"
+        )))
     } else {
         result
     };
@@ -786,9 +796,10 @@ pub(super) fn dispatch_spooled<H: DaemonHandler>(
         }
         let deadline = claimed.deadline(admission.accepted_budget());
         if deadline.time_expired() {
-            claimed.answer_result(Err(anyhow::anyhow!(
-                "timed_out: spooled request expired before classification"
-            )));
+            claimed.answer_result(Err(anyhow::anyhow!(coded!(
+                TimedOut,
+                "spooled request expired before classification"
+            ))));
             continue;
         }
         let (context, args) = match claimed.arguments() {
@@ -804,9 +815,10 @@ pub(super) fn dispatch_spooled<H: DaemonHandler>(
             continue;
         }
         if deadline.time_expired() {
-            claimed.answer_result(Err(anyhow::anyhow!(
-                "timed_out: spooled request expired before classification"
-            )));
+            claimed.answer_result(Err(anyhow::anyhow!(coded!(
+                TimedOut,
+                "spooled request expired before classification"
+            ))));
             continue;
         }
         let classified = match crate::cli::classify_daemon_request(&args) {
@@ -820,9 +832,10 @@ pub(super) fn dispatch_spooled<H: DaemonHandler>(
             continue;
         }
         if deadline.time_expired() {
-            claimed.answer_result(Err(anyhow::anyhow!(
-                "timed_out: spooled request expired during classification"
-            )));
+            claimed.answer_result(Err(anyhow::anyhow!(coded!(
+                TimedOut,
+                "spooled request expired during classification"
+            ))));
             continue;
         }
         let original_class = classified.class;
@@ -840,7 +853,7 @@ pub(super) fn dispatch_spooled<H: DaemonHandler>(
                 .with_active_verb(snapshot.active_verb)
                 .with_root_limit(limit.outstanding, limit.limit);
                 refusal.log();
-                claimed.answer_result(Err(anyhow::anyhow!("{}", refusal.message())));
+                claimed.answer_result(Err(refusal.error().into()));
                 continue;
             }
             Err(error) => {
@@ -852,9 +865,10 @@ pub(super) fn dispatch_spooled<H: DaemonHandler>(
             continue;
         }
         if deadline.time_expired() {
-            claimed.answer_result(Err(anyhow::anyhow!(
-                "timed_out: spooled request expired during admission"
-            )));
+            claimed.answer_result(Err(anyhow::anyhow!(coded!(
+                TimedOut,
+                "spooled request expired during admission"
+            ))));
             continue;
         }
         let class = admitted.class;
@@ -872,9 +886,10 @@ pub(super) fn dispatch_spooled<H: DaemonHandler>(
                         return;
                     }
                     let result = if deadline.expired() {
-                        Err(anyhow::anyhow!(
-                            "timed_out: spooled request expired before dispatch"
-                        ))
+                        Err(anyhow::anyhow!(coded!(
+                            TimedOut,
+                            "spooled request expired before dispatch"
+                        )))
                     } else {
                         guarded_request(
                             &*handler,
@@ -887,7 +902,7 @@ pub(super) fn dispatch_spooled<H: DaemonHandler>(
                     };
                     let result = apply_semantic_fallback(result, fallback);
                     let result = if result.is_ok() && discards_late_result(class, &deadline) {
-                        Err(anyhow::anyhow!("timed_out: query deadline expired"))
+                        Err(anyhow::anyhow!(coded!(TimedOut, "query deadline expired")))
                     } else {
                         result
                     };
@@ -903,7 +918,7 @@ pub(super) fn dispatch_spooled<H: DaemonHandler>(
             {
                 let refusal = refusal_for_snapshot(pool.name(), pool.snapshot(), cause);
                 refusal.log();
-                claimed.answer_result(Err(anyhow::anyhow!("{}", refusal.message())));
+                claimed.answer_result(Err(refusal.error().into()));
             }
         }
     }

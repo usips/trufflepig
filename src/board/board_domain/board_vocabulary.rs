@@ -18,10 +18,16 @@ impl FeedbackImportKey {
     }
     pub fn parse(value: &str) -> Result<Self> {
         let id = uuid::Uuid::parse_str(value).map_err(|_| {
-            anyhow::anyhow!("invalid_options: feedback import key must be a canonical UUID")
+            anyhow::anyhow!(coded!(
+                InvalidOptions,
+                "feedback import key must be a canonical UUID"
+            ))
         })?;
         if id.to_string() != value {
-            bail!("invalid_options: feedback import key must be a canonical UUID");
+            bail!(coded!(
+                InvalidOptions,
+                "feedback import key must be a canonical UUID"
+            ));
         }
         Ok(Self(id))
     }
@@ -49,14 +55,14 @@ impl From<FeedbackImportKey> for String {
 }
 
 macro_rules! vocabulary {
-    ($name:ident, $error:literal, {$($variant:ident => $label:literal),+ $(,)?}) => {
+    ($name:ident, $error:ident, {$($variant:ident => $label:literal),+ $(,)?}) => {
         #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
         pub enum $name { $(#[serde(rename = $label)] $variant),+ }
         impl $name {
             pub fn parse(value: &str) -> Result<Self> {
                 match value {
                     $($label => Ok(Self::$variant),)+
-                    _ => bail!("{}: unknown {} '{}'", $error, stringify!($name), value),
+                    _ => bail!(coded!($error, "unknown {} '{}'", stringify!($name), value)),
                 }
             }
             pub fn as_str(self) -> &'static str { match self { $(Self::$variant => $label),+ } }
@@ -75,7 +81,7 @@ macro_rules! vocabulary {
     };
 }
 
-vocabulary!(EntryKind, "invalid_kind", {
+vocabulary!(EntryKind, InvalidKind, {
     Note => "note", Progress => "progress", Review => "review", Question => "question",
     Answer => "answer", Decision => "decision", Divergence => "divergence", Claim => "claim",
     Commit => "commit", Unlinked => "unlinked", Feedback => "feedback", Task => "task",
@@ -99,29 +105,29 @@ impl EntryKind {
     }
 }
 
-vocabulary!(TaskColumn, "invalid_state", {
+vocabulary!(TaskColumn, InvalidState, {
     Todo => "todo", Doing => "doing", Review => "review", Done => "done", Blocked => "blocked",
     Transferred => "transferred",
 });
-vocabulary!(ProposalState, "invalid_state", {
+vocabulary!(ProposalState, InvalidState, {
     Open => "open", Accepted => "accepted", Rejected => "rejected", Superseded => "superseded",
 });
-vocabulary!(FeedbackKind, "invalid_kind", {
+vocabulary!(FeedbackKind, InvalidKind, {
     Blocked => "blocked", Confused => "confused", Wrong => "wrong", Missing => "missing",
 });
-vocabulary!(FeedbackState, "invalid_state", {
+vocabulary!(FeedbackState, InvalidState, {
     Open => "open", Triaged => "triaged", Fixed => "fixed", Wontfix => "wontfix", Duplicate => "duplicate",
 });
 
-vocabulary!(AuthorityRole, "invalid_role", {
+vocabulary!(AuthorityRole, InvalidRole, {
     Triage => "triage", Release => "release", Link => "link", Assign => "assign", Decide => "decide",
 });
 
-vocabulary!(WorkerRole, "invalid_role", {
+vocabulary!(WorkerRole, InvalidRole, {
     Code => "code", Review => "review", Test => "test", Research => "research",
 });
 
-vocabulary!(WorkerEndReason, "invalid_state", {
+vocabulary!(WorkerEndReason, InvalidState, {
     Done => "done", Failed => "failed", Stopped => "stopped", ClaimEnded => "claim_ended",
 });
 impl FeedbackState {
@@ -139,18 +145,23 @@ macro_rules! bounded_text {
             pub fn new(value: impl Into<String>) -> Result<Self> {
                 let value = value.into();
                 if value.len() > $limit {
-                    bail!(
-                        "invalid_body: {} exceeds {} bytes (received {})",
+                    bail!(coded!(
+                        InvalidBody,
+                        "{} exceeds {} bytes (received {})",
                         stringify!($name),
                         $limit,
                         value.len()
-                    );
+                    ));
                 }
                 if value.contains('\0') {
-                    bail!("invalid_body: text contains a NUL byte");
+                    bail!(coded!(InvalidBody, "text contains a NUL byte"));
                 }
                 if !$blank && value.trim().is_empty() {
-                    bail!("invalid_body: {} must not be blank", stringify!($name));
+                    bail!(coded!(
+                        InvalidBody,
+                        "{} must not be blank",
+                        stringify!($name)
+                    ));
                 }
                 Ok(Self(value))
             }

@@ -10,6 +10,7 @@ mod rerank_executor;
 mod scheduler;
 mod status;
 
+use crate::coded_error::CodedContext;
 pub use admission::{AdmissionController, AdmissionLimits, AdmissionTicket};
 pub use protocol::{
     Handshake, PROTOCOL_VERSION, read_frame, read_frame_with_deadline, write_frame,
@@ -186,9 +187,9 @@ pub fn stop(_: &Path) -> Result<WorkerStatus> {
     protocol::write_request_with_deadline(&mut stream, &request, deadline)?;
     match protocol::read_reply_with_deadline(&mut stream, deadline)? {
         WorkerReply::Status(status) => Ok(status),
-        WorkerReply::Error { message } => bail!("semantic_worker: {message}"),
+        WorkerReply::Error { message } => bail!(coded!(SemanticWorker, "{message}")),
         WorkerReply::Embeddings { .. } | WorkerReply::Scores { .. } => {
-            bail!("semantic_worker: invalid stop response")
+            bail!(coded!(SemanticWorker, "invalid stop response"))
         }
     }
 }
@@ -199,7 +200,7 @@ pub fn embed_query(cache_identity: &Path, text: &str) -> Result<Embedding> {
     results
         .into_iter()
         .next()
-        .context("semantic_worker: missing query embedding")
+        .with_coded_context(|| coded!(SemanticWorker, "missing query embedding"))
 }
 
 /// Submit a bounded batch to the shared worker.
@@ -220,11 +221,14 @@ pub fn embed(kind: EmbedKind, root_id: &Path, texts: &[String]) -> Result<Vec<Em
     let cache = worker_cache_dir()?;
     let remaining = deadline_instant.saturating_duration_since(Instant::now());
     if remaining.is_zero() {
-        bail!("semantic_timeout: request exceeded its deadline before send");
+        bail!(coded!(
+            SemanticTimeout,
+            "request exceeded its deadline before send"
+        ));
     }
     let deadline_ms = SystemTime::now()
         .checked_add(remaining)
-        .context("semantic_worker: system clock overflow")?
+        .with_coded_context(|| coded!(SemanticWorker, "system clock overflow"))?
         .duration_since(UNIX_EPOCH)?
         .as_millis() as u64;
     let request = WorkerRequest::new(
@@ -243,7 +247,7 @@ pub fn embed(kind: EmbedKind, root_id: &Path, texts: &[String]) -> Result<Vec<Em
                 || error.kind() == ErrorKind::ConnectionRefused =>
         {
             let _ = ensure_started_until(root_id, deadline_instant)?;
-            bail!("semantic_loading: inference worker is starting")
+            bail!(coded!(SemanticLoading, "inference worker is starting"))
         }
         Err(error) => return Err(error.into()),
     };
@@ -254,9 +258,9 @@ pub fn embed(kind: EmbedKind, root_id: &Path, texts: &[String]) -> Result<Vec<Em
             .into_iter()
             .map(|values| Embedding::from_values(&values))
             .collect(),
-        WorkerReply::Error { message } => bail!("semantic_worker: {message}"),
+        WorkerReply::Error { message } => bail!(coded!(SemanticWorker, "{message}")),
         WorkerReply::Status(_) | WorkerReply::Scores { .. } => {
-            bail!("semantic_worker: invalid embedding response")
+            bail!(coded!(SemanticWorker, "invalid embedding response"))
         }
     }
 }
@@ -271,7 +275,7 @@ pub fn embed_foreground_query(root_id: &Path, text: &str) -> Result<Embedding> {
     embed_foreground(root_id, &[text.to_owned()])?
         .into_iter()
         .next()
-        .context("semantic_worker: missing embedding")
+        .with_coded_context(|| coded!(SemanticWorker, "missing embedding"))
 }
 
 /// Run the worker command in the foreground. Both configured models begin
@@ -314,11 +318,14 @@ fn require_foreground_cuda_mask(config: &InferenceConfig) -> Result<()> {
     }
     let expected = config
         .cuda_visible_devices()
-        .context("inference_config_invalid: cuda requires gpu_uuid")?;
+        .with_coded_context(|| coded!(InferenceConfigInvalid, "cuda requires gpu_uuid"))?;
     let visible = env::var("CUDA_VISIBLE_DEVICES").unwrap_or_default();
     ensure!(
         visible == expected,
-        "semantic_cuda: foreground inference requires CUDA_VISIBLE_DEVICES={expected}"
+        coded!(
+            SemanticCuda,
+            "foreground inference requires CUDA_VISIBLE_DEVICES={expected}"
+        )
     );
     Ok(())
 }
@@ -343,7 +350,10 @@ fn ensure_started_until(cache_identity: &Path, deadline: Instant) -> Result<Work
     }
     ensure!(
         Instant::now() < deadline,
-        "semantic_timeout: request exceeded its deadline while starting worker"
+        coded!(
+            SemanticTimeout,
+            "request exceeded its deadline while starting worker"
+        )
     );
     start_worker(cache_identity, &config, &cache)?;
     Ok(WorkerStatus::loading(&config))

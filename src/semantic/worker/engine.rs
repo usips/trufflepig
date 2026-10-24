@@ -1,4 +1,6 @@
 use super::super::Embedding;
+#[cfg(feature = "semantic")]
+use crate::coded_error::CodedContext;
 use crate::semantic::{
     VerifiedAssetDigests,
     runtime_config::{InferenceConfig, InferenceProvider},
@@ -47,13 +49,14 @@ impl Drop for DynamicLibraryGuard {
 fn preload_library(path: &Path) -> Result<DynamicLibraryGuard> {
     use std::{ffi::CString, os::unix::ffi::OsStrExt};
     let path = CString::new(path.as_os_str().as_bytes())
-        .map_err(|_| anyhow::anyhow!("semantic_unavailable: invalid CUDA preload path"))?;
+        .map_err(|_| anyhow::anyhow!(coded!(SemanticUnavailable, "invalid CUDA preload path")))?;
     let handle = unsafe { libc::dlopen(path.as_ptr(), libc::RTLD_NOW | libc::RTLD_GLOBAL) };
     if handle.is_null() {
-        bail!(
-            "semantic_unavailable: cannot preload CUDA library {}",
+        bail!(coded!(
+            SemanticUnavailable,
+            "cannot preload CUDA library {}",
             path.to_string_lossy()
-        );
+        ));
     }
     Ok(DynamicLibraryGuard(handle))
 }
@@ -88,7 +91,7 @@ fn open_cpu(
 ) -> Result<Box<dyn Engine>> {
     let model = config
         .model_dir()
-        .context("semantic_worker: model directory is not configured")?;
+        .with_coded_context(|| coded!(SemanticWorker, "model directory is not configured"))?;
     let provider =
         crate::semantic::SemanticProviderConfig::cpu().with_arena_max_bytes(config.arena_bytes);
     let engine = match config.runtime_library() {
@@ -125,10 +128,10 @@ fn open_cuda(
             .cuda_device()?
             .context("cuda device is not configured")?,
     )
-    .context("cuda_unavailable: device ordinal does not fit i32")?;
+    .with_coded_context(|| coded!(CudaUnavailable, "device ordinal does not fit i32"))?;
     let model = config
         .model_dir()
-        .context("semantic_worker: model directory is not configured")?;
+        .with_coded_context(|| coded!(SemanticWorker, "model directory is not configured"))?;
     let provider = embed_cuda_provider(ordinal, config.arena_bytes);
     let preload = config
         .cuda_preload_library
@@ -183,7 +186,10 @@ pub fn open_rerank_engine(
 ) -> Result<Box<dyn RerankEngine>> {
     config.validate()?;
     if !config.rerank_enabled() {
-        anyhow::bail!("rerank_unavailable: rerank_model_dir is not configured");
+        anyhow::bail!(coded!(
+            RerankUnavailable,
+            "rerank_model_dir is not configured"
+        ));
     }
     match config.provider {
         InferenceProvider::Cpu => open_rerank_cpu(config, digests),
@@ -231,7 +237,7 @@ fn open_rerank_cuda(
             .rerank_cuda_device()?
             .context("cuda device is not configured")?,
     )
-    .context("cuda_unavailable: device ordinal does not fit i32")?;
+    .with_coded_context(|| coded!(CudaUnavailable, "device ordinal does not fit i32"))?;
     let model = config.rerank_model_dir()?;
     let provider = rerank_cuda_provider(ordinal, config.arena_bytes);
     let preload = config

@@ -7,7 +7,8 @@ use super::{
     resolve_home_index, worktree_reads::unextractable,
 };
 use crate::{
-    daemon::deadline::{QueryDeadline, TIMED_OUT, is_timed_out},
+    coded_error::{ErrorCode, error_code},
+    daemon::deadline::QueryDeadline,
     identity::{ByteSpan, ContentRevision},
     results::{Hit, ResultEntry},
     search::{InvocationDirectory, Query},
@@ -81,24 +82,28 @@ pub(in crate::workspace) fn acquire_home_read(
             Ok((store, source, None))
         }
         HomeIndexSource::Parent(mut view) => {
-            ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+            ensure!(
+                !deadline.expired(),
+                coded!(TimedOut, "query deadline expired")
+            );
             let (source, read) = acquire_through_parent(&mut view, target, side, origin, deadline)?;
             Ok((view.store, source, read))
         }
         HomeIndexSource::Warming { .. } if !target.starts_with("sym:") => {
             acquire_current_path(member, cache, target, side, origin, deadline)
         }
-        HomeIndexSource::Warming { reason } => anyhow::bail!(
-            "index_warming: {} has no published index yet{}; retry shortly",
+        HomeIndexSource::Warming { reason } => anyhow::bail!(coded!(
+            IndexWarming,
+            "{} has no published index yet{}; retry shortly",
             member.display_name(),
             reason
                 .map(|reason| format!(" ({reason})"))
                 .unwrap_or_default()
-        ),
+        )),
         HomeIndexSource::Unavailable { .. } if !target.starts_with("sym:") => {
             acquire_current_path(member, cache, target, side, origin, deadline)
         }
-        HomeIndexSource::Unavailable { reason } => anyhow::bail!(reason),
+        HomeIndexSource::Unavailable { error } => Err(error),
     }
 }
 
@@ -109,7 +114,10 @@ fn maintain_worktree_index(
     maintenance_deadline: &QueryDeadline,
     wait_for_writer: bool,
 ) -> Result<Option<crate::store::Coverage>> {
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     if maintenance_deadline.expired() {
         return Ok(None);
     }
@@ -121,13 +129,21 @@ fn maintain_worktree_index(
                 store.index_available_until(maintenance_deadline.clone())
             }
         });
-    ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+    ensure!(
+        !deadline.expired(),
+        coded!(TimedOut, "query deadline expired")
+    );
     match attempt {
         Ok(coverage) => Ok(coverage),
         Err(error) => {
             let error = maintenance_deadline.classify(error);
-            if is_timed_out(&error) && maintenance_deadline.expired() {
-                ensure!(!deadline.expired(), "{TIMED_OUT}: query deadline expired");
+            if crate::coded_error::ErrorCode::TimedOut.is_code_of(&error)
+                && maintenance_deadline.expired()
+            {
+                ensure!(
+                    !deadline.expired(),
+                    coded!(TimedOut, "query deadline expired")
+                );
                 Ok(None)
             } else {
                 Err(error)
@@ -171,10 +187,11 @@ pub(crate) fn acquire_through_parent(
             Ok(source) => return Ok((source, None)),
             Err(error) => error,
         };
-        let message = error.to_string();
-        if !target.starts_with("sym:")
-            || !(message.starts_with("stale_source") || message.starts_with("no_definition"))
-        {
+        let answerable_from_worktree = matches!(
+            error_code(&error),
+            Some(ErrorCode::StaleSource | ErrorCode::NoDefinition)
+        );
+        if !target.starts_with("sym:") || !answerable_from_worktree {
             return Err(error);
         }
     }
@@ -188,7 +205,10 @@ pub(crate) fn acquire_through_parent(
             .worktree_symbols(store, &query, parent, origin, &mut hashes, deadline)?;
     anyhow::ensure!(
         !symbols.incomplete || !symbols.hits.is_empty(),
-        "worktree_search_incomplete: exact symbol lookup could not inspect every changed file"
+        coded!(
+            WorktreeSearchIncomplete,
+            "exact symbol lookup could not inspect every changed file"
+        )
     );
     found.hits = symbols.hits;
     let read = std::cell::Cell::new(None);
@@ -200,7 +220,7 @@ pub(crate) fn acquire_through_parent(
                 read.set(reextracted.then_some(ParentRead::Reextracted));
                 Ok(source)
             }
-            Err(error) if error.to_string().starts_with("stale_source") => {
+            Err(error) if ErrorCode::StaleSource.is_code_of(&error) => {
                 let (source, how) = reextracted_entry(store, handle, &entry)?.ok_or(error)?;
                 read.set(Some(how));
                 Ok(source)

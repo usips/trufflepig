@@ -34,18 +34,18 @@ pub(super) fn since_uncommitted(
     let old_tree = comparison::tree(history, Some(revision))?;
     let (entries, publication, excluded, truncated) = store.with_publication(|conn, publication| {
         let metadata_estimate: i64 = conn.query_row("SELECT coalesce(sum(length(CAST(path AS BLOB))+coalesce(length(CAST(revision AS BLOB)),0)+length(CAST(status AS BLOB))+256),0) FROM files", [], |row| row.get(0))?;
-        ensure!(metadata_estimate >= 0 && metadata_estimate <= TREE_BYTES as i64, "history_resource_limited: working tree metadata exceeds staging limit");
+        ensure!(metadata_estimate >= 0 && metadata_estimate <= TREE_BYTES as i64, coded!(HistoryResourceLimited, "working tree metadata exceeds staging limit"));
         let mut metadata_bytes = 0;
         let mut files = BTreeMap::new();
         let mut query = conn.prepare("SELECT path,revision,status FROM files ORDER BY path")?;
         for row in query.query_map([], |row| Ok((row.get::<_, String>(0)?, (row.get::<_, Option<String>>(1)?, row.get::<_, String>(2)?))))? {
             let (path, file) = row?;
             metadata_bytes += path.capacity() + file.0.as_ref().map_or(0, String::capacity) + file.1.capacity() + 256;
-            ensure!(metadata_bytes <= TREE_BYTES, "history_resource_limited: working tree metadata exceeds staging limit");
+            ensure!(metadata_bytes <= TREE_BYTES, coded!(HistoryResourceLimited, "working tree metadata exceeds staging limit"));
             files.insert(path, file);
         }
-        let path_count = old_tree.len().checked_add(files.len()).ok_or_else(|| anyhow::anyhow!("history_resource_limited: path count overflow"))?;
-        ensure!(path_count <= MAX_PATH_VECTOR_BYTES / std::mem::size_of::<&String>(), "history_resource_limited: path references exceed staging limit");
+        let path_count = old_tree.len().checked_add(files.len()).ok_or_else(|| anyhow::anyhow!(coded!(HistoryResourceLimited, "path count overflow")))?;
+        ensure!(path_count <= MAX_PATH_VECTOR_BYTES / std::mem::size_of::<&String>(), coded!(HistoryResourceLimited, "path references exceed staging limit"));
         let mut paths = Vec::with_capacity(path_count);
         paths.extend(old_tree.keys().chain(files.keys()));
         paths.sort_unstable();
@@ -72,13 +72,13 @@ pub(super) fn since_uncommitted(
             };
             let new = current.and_then(|(revision, _)| revision.as_ref()).map(|revision| {
                 let length: i64 = conn.query_row("SELECT length(bytes) FROM contents WHERE revision=?1", [revision], |row| row.get(0))?;
-                ensure!(length >= 0 && length <= super::MAX_BLOB_BYTES as i64, "history_resource_limited: working tree source exceeds blob limit");
+                ensure!(length >= 0 && length <= super::MAX_BLOB_BYTES as i64, coded!(HistoryResourceLimited, "working tree source exceeds blob limit"));
                 let bytes: Vec<u8> = conn.query_row("SELECT bytes FROM contents WHERE revision=?1", [revision], |row| row.get(0))?;
-                ensure!(ContentRevision::of(&bytes) == ContentRevision::parse(revision)?, "working_tree_unavailable: published content identity mismatch");
+                ensure!(ContentRevision::of(&bytes) == ContentRevision::parse(revision)?, coded!(WorkingTreeUnavailable, "published content identity mismatch"));
                 Ok::<_, anyhow::Error>(bytes)
             }).transpose()?;
             if let Some(expected) = target.as_ref().and_then(|target| target.revision.as_deref()) {
-                ensure!(new.as_deref().is_some_and(|bytes| ContentRevision::of(bytes).to_string() == expected), "stale_handle: selected source differs from published revision");
+                ensure!(new.as_deref().is_some_and(|bytes| ContentRevision::of(bytes).to_string() == expected), coded!(StaleHandle, "selected source differs from published revision"));
             }
             if old.is_none() && new.is_none() && current.is_some() {
                 excluded += 1;
@@ -155,7 +155,10 @@ fn retain_entry(
 ) -> Result<()> {
     ensure!(
         cost <= ENTRY_BYTES.saturating_sub(*staged),
-        "history_resource_limited: result entries exceed staging limit"
+        coded!(
+            HistoryResourceLimited,
+            "result entries exceed staging limit"
+        )
     );
     *staged += cost;
     entries.push(entry);

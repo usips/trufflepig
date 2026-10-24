@@ -6,6 +6,7 @@ mod recent_task_windows;
 #[cfg(test)]
 mod tests;
 
+use crate::board::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, Row, params};
 
 #[cfg(test)]
@@ -184,7 +185,7 @@ pub(in crate::board::local_board) fn task_window(
         after.validate().map_err(BoardError::from)?;
         if after.plan != plan {
             return Err(invalid(
-                "invalid_reference",
+                BoardErrorCode::InvalidReference,
                 "task cursor belongs to a different plan",
             ));
         }
@@ -193,7 +194,7 @@ pub(in crate::board::local_board) fn task_window(
         ceiling.validate().map_err(BoardError::from)?;
         if ceiling.plan != plan {
             return Err(invalid(
-                "invalid_reference",
+                BoardErrorCode::InvalidReference,
                 "task ceiling belongs to a different plan",
             ));
         }

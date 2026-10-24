@@ -83,7 +83,7 @@ fn missing_map_path_names_the_nearest_indexed_paths() {
         ("crates/core/src/luau/payload_heap.rs", b"fn heap() {}\n"),
         ("crates/core/src/script/host.rs", b"fn host() {}\n"),
     ]);
-    let miss = |path: &str| map_miss(&map(&store, path).unwrap()).unwrap().to_owned();
+    let miss = |path: &str| map_miss(&map(&store, path).unwrap()).unwrap().to_string();
     let error = miss("crates/core/src/script/contract/payload_heap.rs");
     assert_eq!(
         error,

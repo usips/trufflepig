@@ -75,7 +75,10 @@ impl BoardHost {
             .with_system_origin("ingest")?;
         let reply = self.handle_by(&request, deadline)?;
         let BoardResult::Repositories(targets) = reply.result else {
-            bail!("board_api_mismatch: repositories backend returned an unexpected result");
+            bail!(coded!(
+                BoardApiMismatch,
+                "repositories backend returned an unexpected result"
+            ));
         };
         Ok(targets
             .into_iter()

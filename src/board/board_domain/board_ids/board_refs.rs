@@ -35,7 +35,10 @@ impl BoardRef {
             return EntryId::parse(value).map(Self::Entry);
         }
         GitOid::parse(value).map(Self::Commit).map_err(|_| {
-            anyhow::anyhow!("invalid_reference: expected plan, revision, task, entry, or full oid")
+            anyhow::anyhow!(coded!(
+                InvalidReference,
+                "expected plan, revision, task, entry, or full oid"
+            ))
         })
     }
     pub fn plan_id(self) -> Option<PlanId> {

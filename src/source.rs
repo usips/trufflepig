@@ -1,6 +1,7 @@
 //! Reads are confined to the root and use one buffer for revision verification and output.
-use crate::{output::OutputBudget, store::Store};
-use anyhow::{Context, Result, bail, ensure};
+use crate::coded_error::CodedContext;
+use crate::{coded_error::CodeDetail, output::OutputBudget, store::Store};
+use anyhow::{Result, bail, ensure};
 use serde_json::json;
 use std::{
     ffi::CString,
@@ -15,17 +16,23 @@ pub const MAX_READ_BYTES: usize = 16 * 1024 * 1024;
 
 pub fn read_contained(root: &Path, relative: &Path, limit: usize) -> Result<Vec<u8>> {
     if relative.is_absolute() {
-        bail!(
-            "invalid_path: absolute paths are unsupported; use a root-relative path for project files, or your harness file reader for external files"
-        );
+        bail!(coded!(
+            InvalidPath,
+            "absolute paths are unsupported; use a root-relative path for project files, or your harness file reader for external files"
+        ));
     }
     let parts = relative.components().collect::<Vec<_>>();
     if parts.is_empty() || parts.iter().any(|p| !matches!(p, Component::Normal(_))) {
-        bail!("invalid_path: use a root-relative path without parent components");
+        bail!(coded!(
+            InvalidPath,
+            "use a root-relative path without parent components"
+        ));
     }
-    let mut file = File::open(root).context("source_unavailable: cannot open repository root")?;
+    let mut file = File::open(root)
+        .with_coded_context(|| coded!(SourceUnavailable, "cannot open repository root"))?;
     for (i, part) in parts.iter().enumerate() {
-        let name = CString::new(part.as_os_str().as_bytes()).context("invalid_path: NUL byte")?;
+        let name = CString::new(part.as_os_str().as_bytes())
+            .with_coded_context(|| coded!(InvalidPath, "NUL byte"))?;
         let flags = libc::O_RDONLY
             | libc::O_CLOEXEC
             | libc::O_NOFOLLOW
@@ -38,23 +45,28 @@ pub fn read_contained(root: &Path, relative: &Path, limit: usize) -> Result<Vec<
         // Each open is relative to the held directory descriptor; symlinks are never followed.
         let fd = unsafe { libc::openat(file.as_raw_fd(), name.as_ptr(), flags) };
         if fd < 0 {
-            return Err(std::io::Error::last_os_error())
-                .context("source_unavailable: path missing or unsafe");
+            return Err(std::io::Error::last_os_error()).with_coded_context(|| {
+                coded!(SourceUnavailable, "path missing or unsafe")
+                    .with_detail(CodeDetail::PathMissingOrUnsafe)
+            });
         }
         // openat returned a new owned descriptor.
         file = unsafe { File::from_raw_fd(fd) };
     }
     let metadata = file.metadata()?;
     if !metadata.is_file() {
-        bail!("source_unavailable: source is not a regular file");
+        bail!(
+            coded!(SourceUnavailable, "source is not a regular file")
+                .with_detail(CodeDetail::NotRegularFile)
+        );
     }
     if metadata.len() > limit as u64 {
-        bail!("source_excluded: file exceeds read limit");
+        bail!(coded!(SourceExcluded, "file exceeds read limit"));
     }
     let mut bytes = Vec::with_capacity((metadata.len() as usize).min(limit));
     file.take(limit as u64 + 1).read_to_end(&mut bytes)?;
     if bytes.len() > limit {
-        bail!("source_excluded: file grew beyond read limit");
+        bail!(coded!(SourceExcluded, "file grew beyond read limit"));
     }
     Ok(bytes)
 }
@@ -75,7 +87,10 @@ pub fn line_span(bytes: &[u8], start: usize, end: usize) -> (usize, usize) {
 
 fn current_span(bytes: &[u8], first: usize, last: usize) -> Result<(usize, usize)> {
     if first == 0 || last < first {
-        bail!("invalid_range: lines must be one-based and inclusive");
+        bail!(coded!(
+            InvalidRange,
+            "lines must be one-based and inclusive"
+        ));
     }
     let mut line = 1;
     let mut start = if first == 1 { Some(0) } else { None };
@@ -93,7 +108,7 @@ fn current_span(bytes: &[u8], first: usize, last: usize) -> Result<(usize, usize
         }
     }
     Ok((
-        start.context("invalid_range: first line is beyond end of file")?,
+        start.with_coded_context(|| coded!(InvalidRange, "first line is beyond end of file"))?,
         end,
     ))
 }
@@ -130,7 +145,7 @@ pub(crate) fn render_owned(
 ) -> Result<String> {
     let metadata = metadata
         .as_object()
-        .context("invalid_metadata: source metadata must be an object")?;
+        .with_coded_context(|| coded!(InvalidMetadata, "source metadata must be an object"))?;
     let AcquiredSource {
         bytes,
         path,
@@ -197,7 +212,10 @@ pub(crate) fn render_owned(
         let object = value.as_object_mut().expect("source response object");
         ensure!(
             metadata.keys().all(|key| !object.contains_key(key)),
-            "invalid_metadata: source metadata collides with response identity"
+            coded!(
+                InvalidMetadata,
+                "source metadata collides with response identity"
+            )
         );
         object.extend(metadata.clone());
         let text = match budget.format {
@@ -208,7 +226,10 @@ pub(crate) fn render_owned(
             return Ok(text);
         }
         if rows.pop().is_none() {
-            bail!("budget_too_small: source line and response envelope do not fit");
+            bail!(coded!(
+                BudgetTooSmall,
+                "source line and response envelope do not fit"
+            ));
         }
     }
 }

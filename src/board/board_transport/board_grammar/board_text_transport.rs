@@ -1,5 +1,6 @@
 //! Normalized command text and body preflight for client transport.
 use super::{BoardCommand, parse};
+use crate::coded_error::CodedContext;
 use crate::{
     board::{
         board_protocol::BoardOp,
@@ -7,7 +8,7 @@ use crate::{
     },
     cli::Arguments,
 };
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
@@ -49,7 +50,7 @@ pub fn normalize_args(
     let root = options
         .root
         .canonicalize()
-        .context("invalid_root: cannot open board cwd")?;
+        .with_coded_context(|| coded!(InvalidRoot, "cannot open board cwd"))?;
     Ok(crate::cli::normalized_args(&forwarded, &root))
 }
 
@@ -104,19 +105,27 @@ pub(super) fn command_text(options: &Arguments, body: Option<&str>) -> Result<Bo
         .unwrap_or_default();
     if let Some(encoded) = &options.board.board_payload {
         if !positional.is_empty() || options.board.board_text.is_some() {
-            bail!("invalid_options: text supplied twice");
+            bail!(coded!(InvalidOptions, "text supplied twice"));
         }
-        let mut payload: BoardTextPayload = serde_json::from_str(encoded)
-            .context("invalid_options: --board-payload must be a normalized board payload")?;
+        let mut payload: BoardTextPayload =
+            serde_json::from_str(encoded).with_coded_context(|| {
+                coded!(
+                    InvalidOptions,
+                    "--board-payload must be a normalized board payload"
+                )
+            })?;
         if body.is_some() && payload.body.is_some() {
-            bail!("invalid_options: body supplied twice");
+            bail!(coded!(InvalidOptions, "body supplied twice"));
         }
         payload.body = payload.body.or_else(|| body.map(str::to_owned));
         return Ok(payload);
     }
     if let Some(raw) = &options.board.board_text {
         if !positional.is_empty() {
-            bail!("invalid_options: positional text conflicts with --board-text");
+            bail!(coded!(
+                InvalidOptions,
+                "positional text conflicts with --board-text"
+            ));
         }
         return Ok(BoardTextPayload {
             text: raw.clone(),

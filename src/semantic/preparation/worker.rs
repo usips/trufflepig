@@ -60,11 +60,12 @@ impl EmbeddingWorker for ForegroundWorker {
             Ok(vectors) if vectors.len() == inputs.len() => {
                 Ok(vectors.into_iter().map(Ok).collect())
             }
-            Ok(vectors) => Err(anyhow::anyhow!(
-                "preparation_worker_failed: foreground returned {} vectors for {} inputs",
+            Ok(vectors) => Err(anyhow::anyhow!(coded!(
+                PreparationWorkerFailed,
+                "foreground returned {} vectors for {} inputs",
                 vectors.len(),
                 inputs.len()
-            )),
+            ))),
             Err(error) => Err(error),
         }
     }
@@ -100,11 +101,12 @@ impl EmbeddingWorker for SharedWorker {
             Ok(vectors) if vectors.len() == inputs.len() => {
                 Ok(vectors.into_iter().map(Ok).collect())
             }
-            Ok(vectors) => Err(anyhow::anyhow!(
-                "preparation_worker_failed: worker returned {} vectors for {} inputs",
+            Ok(vectors) => Err(anyhow::anyhow!(coded!(
+                PreparationWorkerFailed,
+                "worker returned {} vectors for {} inputs",
                 vectors.len(),
                 inputs.len()
-            )),
+            ))),
             Err(error) => Err(error),
         }
     }
@@ -155,11 +157,12 @@ fn run_one_batch<W: EmbeddingWorker>(
     let results = match worker.embed_batch(batch) {
         Ok(results) if results.len() == batch.len() => results,
         Ok(results) => {
-            let error = anyhow::anyhow!(
-                "preparation_worker_failed: worker returned {} results for {} inputs",
+            let error = anyhow::anyhow!(coded!(
+                PreparationWorkerFailed,
+                "worker returned {} results for {} inputs",
                 results.len(),
                 batch.len()
-            );
+            ));
             return handle_batch_error(worker, batch, error, complete);
         }
         Err(error) => return handle_batch_error(worker, batch, error, complete),

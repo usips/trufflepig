@@ -26,7 +26,9 @@ impl AuthoritySource {
             "delegator" => Ok(Self::Delegator),
             _ => value
                 .strip_prefix("grant:")
-                .ok_or_else(|| anyhow::anyhow!("invalid_authority: unknown source '{value}'"))?
+                .ok_or_else(|| {
+                    anyhow::anyhow!(coded!(InvalidAuthority, "unknown source '{value}'"))
+                })?
                 .parse::<EntryId>()
                 .map(Self::Grant),
         }

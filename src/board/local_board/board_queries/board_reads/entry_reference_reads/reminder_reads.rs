@@ -94,7 +94,7 @@ pub(in crate::board::local_board) fn open_entries(
         parameters,
     )?;
     let total = usize::try_from(total)
-        .map_err(|_| invalid("board_unavailable", "invalid reminder count"))?;
+        .map_err(|_| invalid(BoardErrorCode::BoardUnavailable, "invalid reminder count"))?;
     let omitted = total.saturating_sub(records.len());
     Ok((records, omitted, total == OPEN_REMINDER_COUNT_CAP as usize))
 }

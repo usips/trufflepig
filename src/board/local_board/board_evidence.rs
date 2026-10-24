@@ -134,6 +134,9 @@ pub(in crate::board) fn require_plan(conn: &Connection, plan: PlanId) -> Result<
     if exists {
         Ok(())
     } else {
-        Err(invalid("invalid_reference", format!("unknown plan {plan}")))
+        Err(invalid(
+            BoardErrorCode::InvalidReference,
+            format!("unknown plan {plan}"),
+        ))
     }
 }

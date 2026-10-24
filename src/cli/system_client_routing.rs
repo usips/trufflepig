@@ -44,7 +44,7 @@ pub(super) fn system_command(
         Some("stop") => render(&crate::system::stop()?),
         Some("dir") => match crate::system::dir() {
             Some(dir) => Ok(format!("{}\n", dir.display())),
-            None => anyhow::bail!("system_unavailable: no runtime dir"),
+            None => anyhow::bail!(coded!(SystemUnavailable, "no runtime dir")),
         },
         Some("prune") => {
             let report = crate::system::sweep::sweep(
@@ -71,9 +71,10 @@ pub(super) fn system_command(
             render(&format!("{{\"status\":\"{status}\"}}"))
         }
         Some(other) => {
-            anyhow::bail!(
-                "usage: system status | system ensure | system stop | system prune | system dir (got {other})"
-            )
+            anyhow::bail!(coded!(
+                Usage,
+                "system status | system ensure | system stop | system prune | system dir (got {other})"
+            ))
         }
     }
 }

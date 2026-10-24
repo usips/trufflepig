@@ -3,6 +3,7 @@ use crate::board::{
     board_protocol::{self, BoardOp},
     domain_answer, domain_error, prepare_client,
 };
+use crate::coded_error::CodedContext;
 
 #[test]
 fn captured_body_survives_file_changes_between_retries() {
@@ -73,11 +74,11 @@ fn typed_transient_cause_wins_over_domain_looking_context() {
         board_protocol::BoardErrorCode::BoardUnavailable,
         "temporarily offline",
     ))
-    .context("invalid_body: context is diagnostic prose");
+    .with_coded_context(|| coded!(InvalidBody, "context is diagnostic prose"));
     assert!(!domain_error(&error));
     assert!(!domain_error(
         &anyhow::Error::new(std::io::Error::from(std::io::ErrorKind::BrokenPipe))
-            .context("budget_too_small: diagnostic context")
+            .with_coded_context(|| coded!(BudgetTooSmall, "diagnostic context"))
     ));
 }
 
@@ -172,9 +173,10 @@ fn schema_words_in_transport_prose_do_not_advise_upgrade() {
     let args: Vec<String> = ["board", "inbox"].map(str::to_owned).into();
     let options = crate::cli::parse(&args).unwrap();
     let command = board_grammar::parse(&options, None).unwrap();
-    let error = anyhow::anyhow!(
-        "board_unavailable: transport note quotes schema version 99 is newer than supported 8"
-    );
+    let error = anyhow::anyhow!(coded!(
+        BoardUnavailable,
+        "transport note quotes schema version 99 is newer than supported 8"
+    ));
     let refusal = crate::board::unavailable_or_queue(
         &command,
         &options,
