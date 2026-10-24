@@ -181,8 +181,9 @@ or the command ends with `# tp-fallback: reason`; it nudges the rest, including 
 
 `TRUFFLEPIG_AGENT_STEER` overrides `steer.<harness>` in `agent-runtime.json`,
 which `install.sh --steer MODE` records for the selected Claude, Kimi, or Muse
-installation. Symbol, body, and outline commands are suggested only for Rust,
-TypeScript, JavaScript, C#, PHP, Luau, and DreamMaker; other files get `re:` equivalents.
+installation. Symbol, body, outline, and `refs` commands are suggested only for Rust,
+TypeScript, JavaScript, C#, PHP, Luau, and DreamMaker; docs paths and other languages get `re:`
+equivalents, and bare all-caps markers such as `TODO` are not steered.
 Codex, Grok, Gemini, omp, and OpenCode do not install steering hooks and report steering as `off`.
 
 `trufflepig-audit --adoption` compares Trufflepig navigation calls with the

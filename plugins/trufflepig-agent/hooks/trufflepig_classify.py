@@ -18,7 +18,8 @@ from trufflepig_shell import GrepCall, cat_files, git_subcommand, parse_grep, se
 # Cheap prefilter: skip parsing commands that cannot contain a search program.
 MAYBE_SEARCH = re.compile(r"\b(rg|grep|egrep|fgrep|ugrep|ag|ack|find|fd|bfs|sed|cat)\b")
 PROGRAMS = {"grep", "egrep", "fgrep", "ugrep", "rg", "ag", "ack", "find", "bfs", "fd", "git", "sed", "cat"}
-DEFINITION_KEYWORDS = ("fn", "struct", "enum", "trait", "impl", "type", "mod", "class", "def",
+# Declaration keywords of the structurally parsed languages (Rust, TS/JS, C#, PHP, Luau, DreamMaker).
+DEFINITION_KEYWORDS = ("fn", "struct", "enum", "trait", "impl", "type", "mod", "class",
                        "const", "static", "interface", "function", "proc", "union", "macro_rules!",
                        "record", "namespace")
 KEYWORD_ALTERNATIVES = "|".join(re.escape(k) for k in DEFINITION_KEYWORDS)
@@ -28,6 +29,10 @@ CSHARP_RECORD = re.compile(r"(?:^|[^A-Za-z0-9_])record\s+(?:(?:class|struct)\s+)
 CSHARP_DELEGATE = re.compile(
     r"(?:^|[^A-Za-z0-9_])delegate\s+[A-Za-z_][A-Za-z0-9_.$<>?,\[\]]*\s+([A-Za-z_][A-Za-z0-9_]*)")
 IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*$")
+# Documentation scopes: `refs` and `sym:` never see them; `re:` does.
+DOCS_PATH = re.compile(r"(^|/)(docs?|documentation)(/|$)|\.(md|markdown|rst|adoc|txt)$", re.I)
+# A bare all-caps word (TODO, FIXME, HTTP) is a text marker, not an identifier worth steering.
+ALL_CAPS_WORD = re.compile(r"^[A-Z][A-Z0-9]*$")
 NON_CODE_PATH = re.compile(r"(^|/)(target|node_modules|\.git|logs?)(/|$)|\.(log|jsonl|out|txt|csv)$|^/(tmp|proc|sys|dev)(/|$)")
 EXTENSION_LANGUAGES = {"rs": "rust", "ts": "ts", "tsx": "ts", "mts": "ts", "cts": "ts",
                        "js": "js", "jsx": "js", "mjs": "js", "cjs": "js", "cs": "csharp",
@@ -177,12 +182,21 @@ def classify_grep(call: GrepCall, cwd: Path, checkout: Path, piped: bool) -> Sea
     pattern = call.pattern
     alternatives = split_alternatives(pattern)
     known = extensions(single_files, call.includes, call.types)
-    # Symbols and outlines exist only for structurally parsed languages; other files
-    # are lexical text, where an equivalent regex search still works.
-    structured = not known or bool(known & STRUCTURED)
+    # Symbols, references, and outlines exist only for structurally parsed languages;
+    # docs and files of other languages are lexical text, where `re:` still works.
+    # A scope with no language evidence keeps the structural translation.
+    text_scope = any(DOCS_PATH.search(text) for text in (*paths, *prefixes))
+    structured = not text_scope and (not known or bool(known & STRUCTURED))
     regex_query = "re:" + bre_to_regex(re.escape(pattern) if literal else pattern, call) + \
         (" " + filters if filters else "")
+    if alternatives and all(ALL_CAPS_WORD.match(a) for a in alternatives):
+        return None
     names = [] if literal else definition_names(pattern)
+    if names and all(definition_names(a) for a in alternatives) and not structured:
+        hint = f"trufflepig-agent search {quote(regex_query)}"
+        if call.after >= 5:
+            hint += ", then `trufflepig-agent show HANDLE` for the surrounding lines"
+        return Search("regex", call.program, pattern, hint, paths)
     if names and all(definition_names(a) for a in alternatives):
         if structured:
             query = f"sym:{names[0]}" + (f" {filters}" if filters else "")
@@ -205,9 +219,8 @@ def classify_grep(call: GrepCall, cwd: Path, checkout: Path, piped: bool) -> Sea
                       " and ".join(f"trufflepig-agent map {quote(p)}" for p in single_files[:2]), paths)
     if only_files:
         return None  # a targeted read of known files gains little from an index
-    if alternatives and all(IDENTIFIER.match(a) for a in alternatives) and \
-            all("_" in a or "::" in a or re.search(r"[a-z][A-Z]|^[A-Z][a-z]+[A-Z]", a) or a.isupper() and len(a) > 3
-                for a in alternatives):
+    if structured and alternatives and all(IDENTIFIER.match(a) for a in alternatives) and \
+            all("_" in a or "::" in a or re.search(r"[a-z][A-Z]|^[A-Z][a-z]+[A-Z]", a) for a in alternatives):
         if len(alternatives) == 1:
             hint = f"trufflepig-agent refs {quote(alternatives[0])}"
             if filters:
@@ -259,6 +272,20 @@ def classify_find(program: str, args: list[str], cwd: Path, checkout: Path) -> S
     return files_search(program, names, roots, cwd, checkout)
 
 
+def file_name_terms(name: str) -> str:
+    """Plain-query terms for a file-name pattern. A structured extension becomes a
+    `lang:` filter elsewhere, so it is dropped; any other extension stays a term,
+    since `lang:text` alone also matches TOML, JSON, and license files."""
+    base_name = name.rsplit("/", 1)[-1]
+    match = re.search(r"\.([A-Za-z0-9]+)$", base_name)
+    extension = match.group(1).lower() if match else ""
+    keep_extension = bool(extension) and extension not in STRUCTURED
+    if not re.search(r"[*?\[\]]", base_name):
+        return base_name if keep_extension or not extension else base_name[:-len(extension) - 1]
+    stem = re.sub(r"[*?\[\]]", " ", base_name[:-len(extension) - 1] if extension else base_name).strip()
+    return f"{stem} .{extension}".strip() if keep_extension else stem
+
+
 def files_search(program: str, names: list[str], roots: list[str], cwd: Path, checkout: Path) -> Search | None:
     """Translate a file-name search. `file:` is a path prefix, so a base-name pattern
     becomes a filename-weighted plain search restricted to files."""
@@ -271,9 +298,7 @@ def files_search(program: str, names: list[str], roots: list[str], cwd: Path, ch
     language = language_filter([n for n in names if "*" in n], [], [])
     base = f"file:{prefixes[0]}" if len(prefixes) == 1 and prefixes[0] else ""
     name = names[0] if names else ""
-    stem = re.sub(r"[*?\[\]]", " ", name.rsplit("/", 1)[-1])
-    stem = re.sub(r"\.[A-Za-z0-9]+\s*$", "", stem).strip() if "." in stem else stem.strip()
-    query = " ".join(part for part in (stem, base, language, "kind:file") if part)
+    query = " ".join(part for part in (file_name_terms(name), base, language, "kind:file") if part)
     return Search("files", program, name, f"trufflepig-agent search {quote(query)}", roots)
 
 
