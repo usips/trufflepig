@@ -23,19 +23,27 @@ pub(super) fn publish(
         append_observations(&transaction, publication)?;
         transaction.execute_batch(
             "DELETE FROM relationships; DELETE FROM occurrences; DELETE FROM definitions;
-             DELETE FROM documents; DELETE FROM regions; DELETE FROM files;
-             INSERT OR IGNORE INTO contents SELECT * FROM staged.contents;
-             INSERT INTO files SELECT * FROM staged.files;
-             INSERT INTO definitions SELECT * FROM staged.definitions;
-             INSERT INTO occurrences SELECT * FROM staged.occurrences;
-             INSERT INTO relationships SELECT * FROM staged.relationships;
-             INSERT INTO regions SELECT * FROM staged.regions;
-             INSERT INTO documents(rowid,name,expanded,body,path) SELECT rowid,name,expanded,body,path FROM staged.documents;
+             DELETE FROM documents; DELETE FROM regions; DELETE FROM files;",
+        )?;
+        transaction.execute_batch(
+            "INSERT OR IGNORE INTO contents(revision,bytes) SELECT revision,bytes FROM staged.contents;
+             INSERT INTO files(id,path,revision,language,status,bytes)
+                 SELECT id,path,revision,language,status,bytes FROM staged.files;
+             INSERT INTO definitions(id,file_id,name,kind,start,end,container)
+                 SELECT id,file_id,name,kind,start,end,container FROM staged.definitions;
+             INSERT INTO occurrences(id,file_id,name,start,end,role,target,candidates,provenance)
+                 SELECT id,file_id,name,start,end,role,target,candidates,provenance FROM staged.occurrences;
+             INSERT INTO relationships(source,target,kind,file_id,start,end,provenance)
+                 SELECT source,target,kind,file_id,start,end,provenance FROM staged.relationships;
+             INSERT INTO regions(id,file_id,start,end,name,kind,body)
+                 SELECT id,file_id,start,end,name,kind,body FROM staged.regions;
+             INSERT INTO documents(rowid,name,expanded,body,path)
+                 SELECT rowid,name,expanded,body,path FROM staged.documents;
              DELETE FROM extraction_cache;
-             INSERT INTO extraction_cache SELECT * FROM staged.extraction_cache;
+             INSERT INTO extraction_cache(revision,grammar,version,facts)
+                 SELECT revision,grammar,version,facts FROM staged.extraction_cache;
              DELETE FROM contents WHERE revision NOT IN (SELECT revision FROM files WHERE revision IS NOT NULL);
-             UPDATE meta SET value=CAST(value AS INTEGER)+1 WHERE key='generation';
-             DROP TABLE IF EXISTS result_sets;"
+             UPDATE meta SET value=CAST(value AS INTEGER)+1 WHERE key='generation';",
         )?;
         transaction.execute(
             "UPDATE meta SET value=?1 WHERE key='coverage'",

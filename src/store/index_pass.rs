@@ -3,8 +3,8 @@
 //! ([coherent publication](../../docs/index-contract.md#coherent-publication)).
 use super::index_checkpoint::IndexCheckpoint;
 use super::{
-    Coverage, Publication, Store, encode_path, index_checkpoint, index_deadline, php_resolver,
-    publish, scan, schema,
+    Coverage, Publication, Store, encode_path, index_checkpoint, index_deadline, live_index,
+    php_resolver, publish, scan, schema,
 };
 use crate::daemon::deadline::QueryDeadline;
 use anyhow::{Context, Result};
@@ -15,14 +15,35 @@ const STAGED_PRAGMAS: &str =
     "PRAGMA journal_mode=DELETE; PRAGMA synchronous=OFF; PRAGMA cache_size=-4096;";
 
 impl Store {
-    /// Stages and publishes while `_writer_lock` holds the writer lease.
+    /// Stages and publishes while `_writer_lock` holds the writer lease. A
+    /// corrupt live index found by an unbounded pass is quarantined and
+    /// recreated; the next pass rebuilds it.
     pub(super) fn index_leased(
         &mut self,
         _writer_lock: std::fs::File,
         resolve_staged: impl FnOnce(&mut Connection) -> Result<()>,
         deadline: Option<&QueryDeadline>,
     ) -> Result<Option<Coverage>> {
-        self.index_pass(resolve_staged, deadline)
+        let result = self.index_pass(resolve_staged, deadline);
+        if let Err(error) = &result
+            && deadline.is_none()
+            && live_index::is_index_corrupt(error)
+            && live_index::fails_quick_check(&self.conn)
+        {
+            self.replace_corrupt_index()
+                .context("quarantine corrupt index after failed pass")?;
+        }
+        result
+    }
+
+    fn replace_corrupt_index(&mut self) -> Result<()> {
+        drop(std::mem::replace(
+            &mut self.conn,
+            Connection::open_in_memory()?,
+        ));
+        live_index::quarantine(&self.cache)?;
+        self.conn = live_index::open_initialized(&self.cache, &self.index_root, None)?;
+        Ok(())
     }
 
     fn index_pass(
@@ -46,7 +67,7 @@ impl Store {
         check_slice(&mut checkpoint, deadline)?;
         let (directory, mut staged, capture_started_ms) = open_staged(&self.cache, deadline)
             .map_err(|error| interrupted(&mut checkpoint, deadline, error))?;
-        let staged_path = directory.path().join("index.sqlite3");
+        let staged_path = directory.path().join(live_index::INDEX_NAME);
         let (coverage, scan_fingerprint) = if use_checkpoint {
             index_checkpoint::stage(
                 &mut checkpoint,
@@ -140,7 +161,7 @@ fn open_staged(
     let directory = tempfile::Builder::new()
         .prefix("stage-")
         .tempdir_in(cache)?;
-    let staged = Connection::open(directory.path().join("index.sqlite3"))?;
+    let staged = Connection::open(directory.path().join(live_index::INDEX_NAME))?;
     if let Some(deadline) = deadline {
         index_deadline::install(&staged, deadline)?;
     }

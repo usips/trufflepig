@@ -11,6 +11,9 @@ const READ_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
 /// SQLite virtual-machine steps between deadline checks.
 const DEADLINE_CHECK_STEPS: i32 = 4_096;
 const INDEX_WARMING: &str = "index_warming: initial index is not published";
+/// A small page cache; reads of multi-gigabyte indexes go through a 256 MiB map.
+const READER_PRAGMAS: &str =
+    "PRAGMA query_only=ON; PRAGMA cache_size=-2048; PRAGMA mmap_size=268435456;";
 
 impl Store {
     /// Opens a published index read-only for one query. A missing database or
@@ -43,7 +46,7 @@ impl Store {
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
         conn.busy_timeout(deadline.cap(READ_BUSY_TIMEOUT))?;
-        conn.execute_batch("PRAGMA query_only=ON; PRAGMA cache_size=-2048;")?;
+        conn.execute_batch(READER_PRAGMAS)?;
         let handler_deadline = deadline.clone();
         conn.progress_handler(
             DEADLINE_CHECK_STEPS,
@@ -131,8 +134,13 @@ pub fn is_index_cannot_open(error: &anyhow::Error) -> bool {
 }
 
 /// The recorded root and generation; an index whose schema is still being
-/// created reads as warming.
+/// created, or stamped with another schema revision, reads as warming.
 fn published_state(conn: &Connection) -> Result<(String, i64)> {
+    let revision: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    ensure!(
+        revision == super::schema::INDEX_SCHEMA_REVISION,
+        INDEX_WARMING
+    );
     let has_meta: bool = conn.query_row(
         "SELECT count(*)>0 FROM sqlite_master WHERE type='table' AND name='meta'",
         [],

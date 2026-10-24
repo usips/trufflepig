@@ -8,6 +8,7 @@ mod index_pass;
 mod inheritance;
 #[cfg(test)]
 mod inheritance_cache_tests;
+mod live_index;
 mod module_config;
 mod module_resolver;
 mod paths;
@@ -36,7 +37,7 @@ pub use cache_access::{
 pub use index_checkpoint::{IndexProgress, IndexProgressPhase, read_index_progress};
 pub use paths::{decode_path, encode_path};
 pub use read_access::{is_index_cannot_open, is_index_warming};
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 pub(crate) use scan::{MAX_SOURCE_BYTES, extraction_cache_version};
 pub use seed::{
     SeedOutcome, ensure_seeded, ensure_seeded_until, ensure_seeded_within, read_seed_outcome,
@@ -160,59 +161,7 @@ impl Store {
         if let Some(deadline) = &deadline {
             index_deadline::check(deadline)?;
         }
-        let conn = Connection::open(cache.join("index.sqlite3"))
-            .map_err(|error| cache_access::index_cache_unavailable(&cache, error.into()))?;
-        let initialized = (|| -> Result<()> {
-            if let Some(deadline) = &deadline {
-                index_deadline::install(&conn, deadline)?;
-            } else {
-                conn.busy_timeout(index_deadline::SQLITE_DEFAULT_BUSY_TIMEOUT)?;
-            }
-            conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA cache_size=-8192; PRAGMA foreign_keys=ON;")?;
-            schema::create(&conn)?;
-            publish::create_journal(&conn)?;
-            conn.execute(
-                "INSERT OR IGNORE INTO meta(key,value) VALUES('index_epoch',?1)",
-                [uuid::Uuid::new_v4().to_string()],
-            )?;
-            let stored_root: Option<String> = conn
-                .query_row("SELECT value FROM meta WHERE key='root'", [], |row| {
-                    row.get(0)
-                })
-                .optional()?;
-            let encoded_root = encode_path(&root);
-            anyhow::ensure!(
-                stored_root
-                    .as_ref()
-                    .is_none_or(|stored| stored == &encoded_root),
-                "cache belongs to another repository root"
-            );
-            conn.execute(
-                "INSERT OR IGNORE INTO meta(key,value) VALUES('root',?1)",
-                [&encoded_root],
-            )?;
-            if let Some(deadline) = &deadline {
-                index_deadline::check(deadline)?;
-            }
-            Ok(())
-        })();
-        let initialized = if deadline.is_some() {
-            match (initialized, index_deadline::clear(&conn)) {
-                (Err(primary), _) => Err(primary),
-                (Ok(()), Err(cleanup)) => Err(cleanup.into()),
-                (Ok(()), Ok(())) => Ok(()),
-            }
-        } else {
-            initialized
-        };
-        let initialized = initialized.map_err(|error| {
-            let error = cache_access::index_cache_unavailable(&cache, error);
-            match &deadline {
-                Some(deadline) => index_deadline::classify(deadline, error),
-                None => error,
-            }
-        });
-        initialized?;
+        let conn = live_index::open(&cache, &root, deadline.as_ref())?;
         Ok(Self {
             conn,
             index_root: root.clone(),
@@ -470,5 +419,3 @@ fn resolve_all(staged: &mut Connection) -> Result<()> {
     php_resolver::resolve(staged)?;
     module_resolver::resolve(staged)
 }
-
-use rusqlite::OptionalExtension;

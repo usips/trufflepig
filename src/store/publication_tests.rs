@@ -301,3 +301,106 @@ fn publish_while_query_never_locks() {
     }
     assert!(publication_result.unwrap() > 1);
 }
+
+#[test]
+fn publication_copies_staged_columns_by_name() {
+    let (directory, mut store) = fixture();
+    let staged_path = directory.path().join("permuted.sqlite3");
+    let staged = rusqlite::Connection::open(&staged_path).unwrap();
+    staged
+        .execute_batch(
+            "CREATE TABLE contents(bytes BLOB NOT NULL,revision TEXT PRIMARY KEY);
+             CREATE TABLE files(bytes INTEGER,status TEXT,language TEXT,revision TEXT,path TEXT,id INTEGER PRIMARY KEY);
+             CREATE TABLE definitions(container TEXT,end INTEGER,start INTEGER,kind TEXT,name TEXT,file_id INTEGER,id INTEGER PRIMARY KEY);
+             CREATE TABLE occurrences(provenance TEXT,candidates TEXT,target INTEGER,role TEXT,end INTEGER,start INTEGER,name TEXT,file_id INTEGER,id INTEGER PRIMARY KEY);
+             CREATE TABLE relationships(provenance TEXT,end INTEGER,start INTEGER,file_id INTEGER,kind TEXT,target INTEGER,source INTEGER);
+             CREATE TABLE regions(body TEXT,kind TEXT,name TEXT,end INTEGER,start INTEGER,file_id INTEGER,id INTEGER PRIMARY KEY);
+             CREATE TABLE documents(path TEXT,body TEXT,expanded TEXT,name TEXT,id INTEGER PRIMARY KEY);
+             CREATE TABLE extraction_cache(facts TEXT,version INTEGER,grammar TEXT,revision TEXT);
+             INSERT INTO contents VALUES(x'6162','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+             INSERT INTO files VALUES(2,'read','rust','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','lib.rs',5);
+             INSERT INTO definitions VALUES(NULL,2,0,'function','alpha',5,9);
+             INSERT INTO occurrences VALUES('syntax','[9]',9,'call',2,0,'alpha',5,11);
+             INSERT INTO relationships VALUES('syntax',2,0,5,'calls',9,9);
+             INSERT INTO regions VALUES('ab','file','lib.rs',2,0,5,13);
+             INSERT INTO documents VALUES('lib.rs','ab','lib rs ab','lib.rs',13);
+             INSERT INTO extraction_cache VALUES('{}',1,'rs','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');",
+        )
+        .unwrap();
+    drop(staged);
+    let publication = Publication {
+        index_epoch: "epoch".into(),
+        generation: 1,
+        root: encode_path(&store.root),
+        capture_started_ms: 1,
+        capture_completed_ms: 1,
+    };
+    publish::publish(
+        &mut store.conn,
+        &staged_path,
+        &Coverage::default(),
+        "fingerprint",
+        &publication,
+    )
+    .unwrap();
+
+    type FileRow = (i64, String, String, String, String, i64);
+    let file: FileRow = store
+        .conn
+        .query_row(
+            "SELECT id,path,revision,language,status,bytes FROM files",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        file,
+        (
+            5,
+            "lib.rs".into(),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            "rust".into(),
+            "read".into(),
+            2
+        )
+    );
+    let occurrence: (i64, String, String, String) = store
+        .conn
+        .query_row(
+            "SELECT file_id,name,candidates,provenance FROM occurrences WHERE id=11",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        occurrence,
+        (5, "alpha".into(), "[9]".into(), "syntax".into())
+    );
+    let matched: i64 = store
+        .conn
+        .query_row(
+            "SELECT rowid FROM documents WHERE documents MATCH 'expanded:rs'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(matched, 13);
+    let version: i64 = store
+        .conn
+        .query_row(
+            "SELECT version FROM extraction_cache WHERE revision='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(version, 1);
+}
