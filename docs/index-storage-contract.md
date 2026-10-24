@@ -102,9 +102,11 @@ ids included. Otherwise publication diffs (`src/store/publish/publication_diff.r
 
 The result is the full rebuild's rows up to row ids, stat columns, and row order.
 Foreign keys are off inside the transaction: children are deleted before parents,
-and per-row parent probes would scan unindexed relationship columns. FTS5 delete
-markers are bounded by a `merge` of 8 pages per changed document (at least 64) on
-each publication, or an `optimize` when a quarter or more of the documents changed.
+and per-row parent probes would scan unindexed relationship columns. FTS5 drops
+delete markers only when a merge reaches its oldest segment, so the `documents_churn`
+meta counts documents deleted or inserted since the last `optimize`; once it reaches
+a quarter of all documents, the publication runs `optimize` and resets it. FTS5
+automerge bounds segment counts in between.
 
 After a committed publication the writer reclaims space, best effort:
 `PRAGMA incremental_vacuum` returns free pages to the filesystem, then

@@ -348,3 +348,45 @@ fn journal_records_every_kind_of_change() {
             .all(|change| change.generation == baseline + 1)
     );
 }
+
+#[test]
+fn lexical_documents_follow_edits_between_optimizations() {
+    let mut tree = Tree::new(true);
+    for file in 0..20 {
+        tree.write(
+            &format!("f{file}.rs"),
+            &format!("pub fn unchanged_{file}() {{}}\n"),
+        );
+    }
+    tree.write("edited.rs", "pub fn obsolete_marker() {}\n");
+    tree.store.index().unwrap();
+    tree.write("edited.rs", "pub fn replacement_marker() {}\n");
+    tree.store.index().unwrap();
+    let churn: i64 = tree
+        .store
+        .conn
+        .query_row(
+            "SELECT CAST(value AS INTEGER) FROM meta WHERE key='documents_churn'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(churn > 0, "a small edit defers optimize");
+    let matches = |term: &str| -> i64 {
+        tree.store
+            .conn
+            .query_row(
+                "SELECT count(*) FROM documents WHERE documents MATCH ?1",
+                [term],
+                |row| row.get(0),
+            )
+            .unwrap()
+    };
+    assert_eq!(matches("obsolete_marker"), 0);
+    assert_eq!(matches("replacement_marker"), 1);
+    assert_eq!(matches("unchanged_7"), 1);
+    tree.store
+        .conn
+        .execute_batch("INSERT INTO documents(documents) VALUES('integrity-check');")
+        .unwrap();
+}

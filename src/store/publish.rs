@@ -12,13 +12,13 @@ pub(super) use observation_journal::{create_journal, observations_since};
 
 use super::{Coverage, Publication, regions};
 use anyhow::Result;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 
-/// FTS5 pages a merge may write per changed document, and its floor; the
-/// negative `merge` argument lets it fold even two segments together.
-const MERGE_PAGES_PER_DOCUMENT: usize = 8;
-const MIN_MERGE_PAGES: usize = 64;
+/// FTS5 drops delete markers only when a merge reaches its oldest segment, so
+/// `optimize` runs once the documents changed since the last one reach this
+/// fraction of all documents; automerge bounds segment counts in between.
+const OPTIMIZE_CHURN_DIVISOR: i64 = 4;
 
 pub(super) fn publish(
     conn: &mut Connection,
@@ -59,6 +59,7 @@ fn publish_attached(
         transaction.query_row("SELECT count(*) FROM main.files", [], |row| row.get(0))?;
     if live_files == 0 {
         replace_all(&transaction)?;
+        set_meta(&transaction, "documents_churn", "0")?;
     } else {
         let diff = publication_diff::plan(&transaction)?;
         let churn = diff_writes::apply(&transaction, &diff)?;
@@ -108,25 +109,29 @@ fn replace_all(tx: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// Bounds FTS5 delete markers: a merge sized by the churn, or a full optimize
-/// once a quarter or more of the documents changed.
+/// Bounds FTS5 delete markers to a quarter of the documents, amortizing each
+/// `optimize` over the churn that made it necessary.
 fn compact_documents(tx: &Connection, changed: usize) -> Result<()> {
     if changed == 0 {
         return Ok(());
     }
+    let previous: i64 = tx
+        .query_row(
+            "SELECT CAST(value AS INTEGER) FROM meta WHERE key='documents_churn'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?
+        .unwrap_or(0);
+    let churn = previous.saturating_add(i64::try_from(changed)?);
     let total: i64 = tx.query_row("SELECT count(*) FROM main.regions", [], |row| row.get(0))?;
-    if changed.saturating_mul(4) >= usize::try_from(total)?.max(1) {
+    let churn = if churn.saturating_mul(OPTIMIZE_CHURN_DIVISOR) >= total.max(1) {
         tx.execute_batch("INSERT INTO main.documents(documents) VALUES('optimize');")?;
+        0
     } else {
-        let pages = changed
-            .saturating_mul(MERGE_PAGES_PER_DOCUMENT)
-            .max(MIN_MERGE_PAGES);
-        tx.execute(
-            "INSERT INTO main.documents(documents,rank) VALUES('merge',?1)",
-            [-i64::try_from(pages)?],
-        )?;
-    }
-    Ok(())
+        churn
+    };
+    set_meta(tx, "documents_churn", &churn.to_string())
 }
 
 fn set_meta(tx: &Connection, key: &str, value: &str) -> Result<()> {
