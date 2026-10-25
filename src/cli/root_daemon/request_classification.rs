@@ -68,7 +68,8 @@ pub(crate) fn classify(args: &[String]) -> Result<ClassifiedDaemonRequest> {
         | "forget-logs"
         | "semantic-worker-serve" => RequestLane::Maintenance,
         "semantic" if semantic_work(&options.words) => RequestLane::Maintenance,
-        "board" | "feedback" | "system" => RequestLane::Board,
+        "board" | "feedback" => RequestLane::Board,
+        "system" => RequestLane::Control,
         _ => RequestLane::Query,
     };
     let roots = if lane == RequestLane::Maintenance {

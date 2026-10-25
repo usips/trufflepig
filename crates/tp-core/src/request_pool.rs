@@ -23,10 +23,12 @@ pub enum RequestLane {
     Maintenance,
     Regex,
     Semantic,
-    /// `board`, `feedback`, and the `system` status probe, which the router
-    /// answers in-process; a reserved lane keeps them available while source
-    /// proxies fill `Query`.
+    /// `board` and `feedback`, which the router answers in-process; a reserved
+    /// lane keeps them available while source proxies fill `Query`.
     Board,
+    /// The `system status` probe that precedes Board dispatch; it never waits
+    /// behind the Board work it checks.
+    Control,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

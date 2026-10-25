@@ -109,7 +109,7 @@ fn outstanding_limit(tier: AdmissionTier, lane: RequestLane) -> Option<usize> {
         RequestLane::Maintenance => Some(2),
         RequestLane::Regex => Some(3),
         RequestLane::Semantic => Some(2),
-        RequestLane::Query | RequestLane::Board => None,
+        RequestLane::Query | RequestLane::Board | RequestLane::Control => None,
     }
 }
 
@@ -189,12 +189,13 @@ mod tests {
 
     #[test]
     fn outstanding_limits_match_the_runtime_contract() {
-        let cases: [(AdmissionTier, RequestLane, Option<usize>); 15] = [
+        let cases: [(AdmissionTier, RequestLane, Option<usize>); 18] = [
             (AdmissionTier::Router, RequestLane::Maintenance, Some(2)),
             (AdmissionTier::Router, RequestLane::Regex, Some(3)),
             (AdmissionTier::Router, RequestLane::Semantic, Some(2)),
             (AdmissionTier::Router, RequestLane::Query, None),
             (AdmissionTier::Router, RequestLane::Board, None),
+            (AdmissionTier::Router, RequestLane::Control, None),
             (
                 AdmissionTier::Coordinator,
                 RequestLane::Maintenance,
@@ -204,11 +205,13 @@ mod tests {
             (AdmissionTier::Coordinator, RequestLane::Semantic, Some(2)),
             (AdmissionTier::Coordinator, RequestLane::Query, None),
             (AdmissionTier::Coordinator, RequestLane::Board, None),
+            (AdmissionTier::Coordinator, RequestLane::Control, None),
             (AdmissionTier::Root, RequestLane::Maintenance, None),
             (AdmissionTier::Root, RequestLane::Regex, None),
             (AdmissionTier::Root, RequestLane::Semantic, None),
             (AdmissionTier::Root, RequestLane::Query, None),
             (AdmissionTier::Root, RequestLane::Board, None),
+            (AdmissionTier::Root, RequestLane::Control, None),
         ];
         for (tier, lane, expected) in cases {
             assert_eq!(

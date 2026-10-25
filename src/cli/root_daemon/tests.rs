@@ -180,18 +180,16 @@ fn daemon_request_class_routes_flags_and_regex_queries_to_controlled_lanes() {
             verb: "unknown",
         }
     );
-    for (args, verb) in [
-        (&["board", "show", "P7"][..], "board"),
-        (&["feedback", "ls", "--open"][..], "feedback"),
-        (&["system", "status"][..], "system"),
+    for (args, lane, verb) in [
+        (&["board", "show", "P7"][..], RequestLane::Board, "board"),
+        (
+            &["feedback", "ls", "--open"][..],
+            RequestLane::Board,
+            "feedback",
+        ),
+        (&["system", "status"][..], RequestLane::Control, "system"),
     ] {
-        assert_eq!(
-            class(args),
-            RequestClass {
-                lane: RequestLane::Board,
-                verb,
-            }
-        );
+        assert_eq!(class(args), RequestClass { lane, verb });
     }
 }
 

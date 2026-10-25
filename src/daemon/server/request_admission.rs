@@ -9,8 +9,12 @@ use std::time::{Duration, Instant};
 use tp_core::request_pool::{PoolSize, RequestClass, RequestLane, RequestPool};
 
 const FRAME_INGRESS_WORKERS: usize = 2;
+const ROUTER_BOARD_LANE: PoolSize = PoolSize {
+    workers: 8,
+    queue: 32,
+};
 /// Bounds socket frame reads separately from request execution and routes work
-/// to tier-sized query, maintenance, regex, semantic, and board queues.
+/// to tier-sized query, maintenance, regex, semantic, board, and control queues.
 pub(in crate::daemon) struct RequestAdmission {
     tier: AdmissionTier,
     accepted_budget: Duration,
@@ -20,6 +24,7 @@ pub(in crate::daemon) struct RequestAdmission {
     regex: Arc<RequestPool>,
     semantic: Arc<RequestPool>,
     board: Arc<RequestPool>,
+    control: Arc<RequestPool>,
     root_work_limits: RootWorkLimits,
 }
 
@@ -68,6 +73,10 @@ impl RequestAdmission {
                 &format!("{name}-board"),
                 lane_size(tier, RequestLane::Board),
             )?),
+            control: Arc::new(RequestPool::new(
+                &format!("{name}-control"),
+                lane_size(tier, RequestLane::Control),
+            )?),
             root_work_limits: RootWorkLimits::default(),
         })
     }
@@ -91,6 +100,7 @@ impl RequestAdmission {
             RequestLane::Regex => (self.regex.name(), &self.regex),
             RequestLane::Semantic => (self.semantic.name(), &self.semantic),
             RequestLane::Board => (self.board.name(), &self.board),
+            RequestLane::Control => (self.control.name(), &self.control),
         }
     }
 
@@ -163,6 +173,7 @@ impl RequestAdmission {
             &self.regex,
             &self.semantic,
             &self.board,
+            &self.control,
         ] {
             if !pool.drain(end.saturating_duration_since(Instant::now())) {
                 return false;
@@ -178,6 +189,7 @@ impl RequestAdmission {
         self.regex.shutdown();
         self.semantic.shutdown();
         self.board.shutdown();
+        self.control.shutdown();
     }
 }
 
@@ -219,12 +231,14 @@ fn lane_size(tier: AdmissionTier, lane: RequestLane) -> PoolSize {
             workers: 1,
             queue: 8,
         },
-        // Only the router answers board commands; other tiers keep a minimal lane.
-        (AdmissionTier::Router, RequestLane::Board) => PoolSize {
-            workers: 4,
-            queue: 32,
+        // Only the router answers board and status commands; other tiers keep
+        // minimal lanes.
+        (AdmissionTier::Router, RequestLane::Board) => ROUTER_BOARD_LANE,
+        (AdmissionTier::Router, RequestLane::Control) => PoolSize {
+            workers: 2,
+            queue: 16,
         },
-        (_, RequestLane::Board) => PoolSize {
+        (_, RequestLane::Board | RequestLane::Control) => PoolSize {
             workers: 1,
             queue: 8,
         },
@@ -242,15 +256,18 @@ mod tests {
             (AdmissionTier::Router, RequestLane::Maintenance, (16, 32)),
             (AdmissionTier::Router, RequestLane::Regex, (16, 32)),
             (AdmissionTier::Router, RequestLane::Semantic, (8, 16)),
-            (AdmissionTier::Router, RequestLane::Board, (4, 32)),
+            (AdmissionTier::Router, RequestLane::Board, (8, 32)),
+            (AdmissionTier::Router, RequestLane::Control, (2, 16)),
             (AdmissionTier::Coordinator, RequestLane::Maintenance, (4, 8)),
             (AdmissionTier::Coordinator, RequestLane::Regex, (4, 8)),
             (AdmissionTier::Coordinator, RequestLane::Semantic, (2, 8)),
             (AdmissionTier::Coordinator, RequestLane::Board, (1, 8)),
+            (AdmissionTier::Coordinator, RequestLane::Control, (1, 8)),
             (AdmissionTier::Root, RequestLane::Maintenance, (1, 8)),
             (AdmissionTier::Root, RequestLane::Regex, (2, 8)),
             (AdmissionTier::Root, RequestLane::Semantic, (1, 8)),
             (AdmissionTier::Root, RequestLane::Board, (1, 8)),
+            (AdmissionTier::Root, RequestLane::Control, (1, 8)),
         ];
         for (tier, lane, expected) in cases {
             let size = lane_size(tier, lane);
