@@ -1,7 +1,10 @@
 use crate::cli::{normalized_args, parse};
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use serde_json::{Value, json};
-use tp_core::output::{OutputBudget, OutputFormat, lines_format::COVERAGE_KEY};
+use tp_core::{
+    coded_error::CodedContext,
+    output::{OutputBudget, OutputFormat, lines_format::COVERAGE_KEY},
+};
 use tp_index::search::Query;
 
 const FALLBACK_BUDGET_RESERVE: usize = 128;
@@ -130,12 +133,14 @@ impl SemanticAdmissionFallback {
                 "expected object or array"
             ));
         }
-        budget.render(&value).map_err(|error| {
-            anyhow!(coded!(
+        // The render failure stays the typed source, so its code counts for
+        // outcomes in-process as it does in relayed text.
+        budget.render(&value).with_coded_context(|| {
+            coded!(
                 SemanticFallbackOutputTooLarge,
-                "fallback coverage does not fit --budget {}: {error:#}",
+                "fallback coverage does not fit --budget {}",
                 self.budget
-            ))
+            )
         })
     }
 
@@ -338,5 +343,44 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("semantic_fallback_output_too_large"));
+    }
+
+    /// An oversized JSON annotation as raised in the daemon, and as its client
+    /// reads the relayed reply text.
+    fn oversized_json_annotation() -> (anyhow::Error, anyhow::Error) {
+        let fallback = SemanticAdmissionFallback {
+            outstanding: 2,
+            limit: 2,
+            budget: 1,
+            format: OutputFormat::Json,
+        };
+        let output = r#"{"coverage":{"indexed_files":3},"hits":[],"next":null}"#;
+        let local = fallback.annotate(output).unwrap_err();
+        let relayed = tp_core::coded_error::relayed_error(format!("daemon: {local:#}"));
+        (local, relayed)
+    }
+
+    #[test]
+    fn oversized_json_annotation_renders_its_render_failure_unchanged() {
+        let (local, _) = oversized_json_annotation();
+        assert_eq!(
+            format!("{local:#}"),
+            "semantic_fallback_output_too_large: fallback coverage does not fit --budget 1: \
+             budget_too_small: complete response exceeds 1 o200k_base tokens"
+        );
+    }
+
+    #[test]
+    fn oversized_json_annotation_classifies_in_process_as_relayed() {
+        use crate::{cli::emission::error_outcome, diagnostics::Outcome};
+        use tp_core::coded_error::{ErrorCode, named_codes};
+        let (local, relayed) = oversized_json_annotation();
+        assert!(ErrorCode::BudgetTooSmall.is_anywhere_in(&local));
+        assert_eq!(
+            named_codes(&local).collect::<Vec<_>>(),
+            named_codes(&relayed).collect::<Vec<_>>()
+        );
+        assert_eq!(error_outcome(&local), Outcome::BudgetTooSmall);
+        assert_eq!(error_outcome(&relayed), Outcome::BudgetTooSmall);
     }
 }

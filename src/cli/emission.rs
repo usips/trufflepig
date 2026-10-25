@@ -1,5 +1,7 @@
 //! One client emission boundary for execution, parsing, and delivery failures.
 mod outcome_classes;
+#[cfg(test)]
+pub(crate) use outcome_classes::error_outcome;
 
 use super::emitted_evidence::{SavedEntries, capture_emitted};
 use super::{Arguments, request_context};

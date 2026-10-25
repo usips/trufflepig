@@ -5,7 +5,7 @@ use tp_core::coded_error::{ErrorCode, named_codes};
 /// The most specific outcome any code `error` names ([`named_codes`]: every
 /// coded layer and codes inside relayed text), in the precedence budget,
 /// stale, unavailable, invalid input; uncoded is a failure.
-pub(super) fn error_outcome(error: &anyhow::Error) -> Outcome {
+pub(crate) fn error_outcome(error: &anyhow::Error) -> Outcome {
     const PRECEDENCE: [Outcome; 4] = [
         Outcome::BudgetTooSmall,
         Outcome::Stale,
