@@ -157,23 +157,35 @@ the same output budget. See the [workspace contract](workspace-contract.md).
 
 ## Cache-free current-source discovery
 
-`search` and `map FILE` accept `--no-cache` to discover current files without
-opening or writing the selected index or result cache. Search keeps the normal
-exact, lexical, path, language, kind, and live-regex rules over bounded current
-bytes; semantic retrieval and reranking are unavailable and coverage says so.
-Filter-only `kind:file` queries catalog paths without extracting source. Free-text
-file queries also search body content within the current-source bounds. Scoped
-queries bind their normal path filters before reading or extracting source.
-`map FILE` outlines exactly one current root-relative file. `refs` remains an
-index-only operation.
+`search`, `refs NAME`, and `map PATH` accept `--no-cache` to discover current
+files without opening or writing the selected index or result cache. Search keeps
+the normal exact, lexical, path, language, kind, and live-regex rules over bounded
+current bytes; semantic retrieval and reranking are unavailable and coverage says
+so. Scoped queries bind their normal path filters before reading source, and
+reading starts in the invocation directory. `refs` resolves name candidates in
+the extracted current files. `map PATH` outlines one file, or up to 256 files
+under a directory prefix.
+
+A literal prefilter reads bytes without extraction: `sym:` and `refs` need the
+final name segment case-sensitively, and free text needs each lowercase token of
+one term in order, separated only by non-alphanumeric bytes, in the bytes or
+path. Text files with diacritic letters always pass, since lexical retrieval
+folds them; regex and non-ASCII queries are not prefiltered. A ruled-out file
+counts as searched (`prefiltered_files`). Filter-only `kind:file` queries catalog
+paths without reading source; free-text `kind:file` queries rank path matches
+first and read bodies only while the page has room (`body_lane`).
 
 The source walk remains inside the selected repository root, does not follow
 symlinks, excludes `.git`, `target`, `node_modules`, `.trufflepig`, and the
 selected cache, and observes shared file, byte, fact, walk, hit, and deadline
-limits. Every omitted or unreadable source is reflected in coverage. Empty
-results claim `absence: exhaustive` only when the bounded current-source
-coverage is complete; otherwise they report `absence: not_proven` and a
-truncated page. A cache-free hit carries a revision-bound `read:path:` handle
+limits. Reading stops at three quarters of the remaining deadline; the deadline,
+like any other limit, ends the scan with the hits found so far, `complete:
+false`, and `current_source.limit`. Partial pages carry a `hint` and, when a
+narrower scope exists, a `next_step` command. Every omitted or unreadable source
+is reflected in coverage. Empty results claim `absence: exhaustive` only when the
+bounded current-source coverage is complete; otherwise they report `absence:
+not_proven` and a truncated page. Coverage detail shrinks before hits do to fit
+the output budget. A cache-free hit carries a revision-bound `read:path:` handle
 that `show` can resolve from current bytes without a persisted result set.
 
 An automatic cache-free retry occurs only when the selected cache is refused

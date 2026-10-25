@@ -23,6 +23,12 @@ pub(crate) fn register_paths<'a>(
     Ok(())
 }
 
+/// Assigns global name candidates to unresolved occurrences among the files read
+/// so far, as indexing does before module and PHP resolution.
+pub(crate) fn resolve_name_candidates(store: &mut Store) -> Result<()> {
+    super::resolve::references(&mut store.conn)
+}
+
 /// Records why a registered path has no searchable current-byte snapshot.
 pub(crate) fn mark_unavailable(
     store: &Store,

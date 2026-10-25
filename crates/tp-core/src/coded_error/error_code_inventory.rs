@@ -152,7 +152,6 @@ error_codes! {
     StaleResult => "stale_result",
     StaleRevision => "stale_revision",
     StaleSource => "stale_source",
-    StatelessMapRequiresFile => "stateless_map_requires_file",
     SystemUnavailable => "system_unavailable",
     TimedOut => "timed_out",
     UncertainSymbolCorrespondence => "uncertain_symbol_correspondence",

@@ -54,7 +54,11 @@ fn cache_free_lookup_preserves_an_unusable_selected_cache_path() {
     fs::create_dir(&root).unwrap();
     fs::write(root.join("lib.rs"), "pub struct LocatedHere;\n").unwrap();
     fs::write(&cache, b"keep selected cache identity").unwrap();
-    for command in [vec!["search", "sym:LocatedHere"], vec!["map", "lib.rs"]] {
+    for command in [
+        vec!["search", "sym:LocatedHere"],
+        vec!["map", "lib.rs"],
+        vec!["refs", "LocatedHere"],
+    ] {
         let mut extra = vec!["--no-daemon", "--diagnostics", "off"];
         extra.extend(command);
         let output = cli::run(&args(&root, &cache, &extra)).unwrap();
@@ -98,15 +102,49 @@ fn post_dispatch_result_corruption_does_not_start_current_source_fallback() {
 fn cache_free_option_rejects_index_only_commands_before_cache_access() {
     let scratch = tempfile::tempdir().unwrap();
     let cache = scratch.path().join("absent-cache");
-    for command in [
-        vec!["refs", "identifier"],
-        vec!["show", "sym:identifier"],
-        vec!["index"],
-    ] {
+    for command in [vec!["show", "sym:identifier"], vec!["index"]] {
         let mut extra = vec!["--no-cache"];
         extra.extend(command);
         let error = cli::run(&args(scratch.path(), &cache, &extra)).unwrap_err();
         assert!(error.to_string().contains("invalid_options"), "{error:#}");
+        assert!(
+            error.to_string().contains("--no-cache search 'sym:NAME'"),
+            "the refusal names the cache-free alternative: {error:#}"
+        );
         assert!(!cache.exists());
     }
+}
+
+#[test]
+fn cache_free_refs_and_directory_map_answer_from_current_bytes() {
+    let scratch = tempfile::tempdir().unwrap();
+    let root = scratch.path().join("repo");
+    let cache = scratch.path().join("absent-cache");
+    fs::create_dir_all(root.join("src/stream")).unwrap();
+    fs::write(root.join("src/stream/a.rs"), "pub fn wired() {}\n").unwrap();
+    fs::write(root.join("src/stream/b.rs"), "fn use_it() { wired(); }\n").unwrap();
+    let refs = cli::run(&args(&root, &cache, &["--no-cache", "refs", "wired"])).unwrap();
+    let page: Value = serde_json::from_str(&refs).unwrap();
+    assert_eq!(page["hits"].as_array().unwrap().len(), 2, "{page}");
+    assert_eq!(page["coverage"]["complete"], true, "{page}");
+    let handle = page["hits"][1]["handle"].as_str().unwrap();
+    let shown = cli::run(&args(&root, &cache, &["--no-cache", "show", handle])).unwrap();
+    assert!(shown.contains("use_it"), "{shown}");
+
+    let map = cli::run(&args(&root, &cache, &["--no-cache", "map", "src/stream"])).unwrap();
+    let page: Value = serde_json::from_str(&map).unwrap();
+    let names: Vec<_> = page["hits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|hit| hit["name"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(names, ["wired", "use_it"], "{page}");
+    assert!(
+        page["hits"][1]["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("src/stream/b.rs")
+    );
+    assert!(!cache.exists());
 }

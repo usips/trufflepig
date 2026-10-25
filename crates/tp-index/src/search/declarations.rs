@@ -46,6 +46,14 @@ impl InvocationDirectory {
         tp_core::path_codec::decode_path(&self.0)
     }
 
+    /// Whether `path` lies below a non-root invocation directory.
+    pub(crate) fn encloses(&self, path: &str) -> bool {
+        !self.0.is_empty()
+            && path
+                .strip_prefix(&self.0)
+                .is_some_and(|rest| rest.starts_with('/'))
+    }
+
     /// Leading directory components shared with `path`'s directory.
     fn shared_depth(&self, path: &str) -> usize {
         if self.0.is_empty() {

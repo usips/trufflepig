@@ -43,7 +43,7 @@ pub fn index_cache_unavailable(cache: &Path, error: anyhow::Error) -> anyhow::Er
     marked.with_coded_context(|| {
         coded!(
             IndexCacheUnavailable,
-            "selected cache {} is unavailable; choose a writable path with `--cache` or set `XDG_CACHE_HOME` to a writable directory. For a bounded cache-free source read, use `show path:FILE[:START-END]` with FILE relative to the selected repository or member root",
+            "selected cache {} is unavailable; choose a writable path with `--cache` or set `XDG_CACHE_HOME` to a writable directory. For cache-free lookup, rerun `search`, `refs`, or `map` with `--no-cache` (for `show sym:NAME`, search `sym:NAME` and show its handle), or read `show path:FILE[:START-END]` with FILE relative to the selected repository or member root",
             cache.display()
         )
         .with_detail(CodeDetail::SelectedCacheRefusal)

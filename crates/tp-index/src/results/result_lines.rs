@@ -104,7 +104,15 @@ pub(crate) fn single_repo_coverage(coverage: &Value) -> String {
     let mut partial = Vec::with_capacity(3);
     let unsearched = count("current_source_unsearched");
     if unsearched > 0 {
-        partial.push(format!("{unsearched} unsearched: current_source_recheck"));
+        // Cache-free scans name the limit that stopped them; index pages name the recheck.
+        let reason = match &coverage["current_source"] {
+            Value::Object(current) => current
+                .get("limit")
+                .and_then(Value::as_str)
+                .unwrap_or("unread"),
+            _ => "current_source_recheck",
+        };
+        partial.push(format!("{unsearched} unsearched: {reason}"));
     }
     for (key, label) in [
         ("live_read_failures", "read_error"),

@@ -16,7 +16,7 @@ use tp_index::{
 pub(super) fn eligible(options: &Arguments) -> bool {
     matches!(
         options.words.first().map(String::as_str),
-        Some("search" | "map")
+        Some("search" | "map" | "refs")
     )
 }
 
@@ -108,17 +108,18 @@ pub(super) fn run(
     let verb = scope
         .words
         .first()
-        .with_coded_context(|| coded!(Usage, "search QUERY | map FILE"))?;
+        .with_coded_context(|| coded!(Usage, "search QUERY | refs NAME | map PATH"))?;
     let text = scope.words[1..].join(" ");
-    ensure!(
-        !text.starts_with("refs:"),
-        coded!(CacheFreeUnsupported, "refs requires an index")
-    );
+    let references = verb == "refs" || (verb == "search" && text.starts_with("refs:"));
     ensure!(
         verb != "map" || scope.words.len() == 2,
-        coded!(Usage, "--no-cache map FILE")
+        coded!(Usage, "--no-cache map PATH")
     );
-    let query = Query::parse(&text)?;
+    let query = if references || verb == "map" {
+        Query::default()
+    } else {
+        Query::parse(&text)?
+    };
     let mut queue = scope.members;
     let mut answers: Vec<(usize, ResultSet)> = Vec::with_capacity(roots.len());
     let mut coverage = Vec::with_capacity(roots.len());
@@ -140,18 +141,23 @@ pub(super) fn run(
             );
             member.verify_identity()?;
             let exclusion = hashed_member_cache(&member.root, options.cache.as_deref())?;
+            let origin = InvocationDirectory::within(&member.root, &invocation);
             if verb == "map" {
-                stateless::map_file(&member.root, &exclusion, &text, deadline)
+                stateless::map_path(&member.root, &exclusion, &text, deadline)
+            } else if references {
+                stateless::refs(&member.root, &exclusion, &text, &origin, deadline)
             } else {
-                let origin = InvocationDirectory::within(&member.root, &invocation);
                 stateless::search(
                     &member.root,
                     &exclusion,
                     &query,
                     &origin,
                     deadline,
-                    options.sem,
-                    options.rerank,
+                    stateless::CurrentSearchOptions {
+                        page_limit: options.limit,
+                        semantic_requested: options.sem,
+                        rerank_requested: options.rerank,
+                    },
                 )
             }
         })();
@@ -161,7 +167,7 @@ pub(super) fn run(
                     !set.truncated && set.coverage.get("partial") != Some(&Value::Bool(true));
                 let widen = scope.implicit_home
                     && position == 1
-                    && verb == "search"
+                    && verb != "map"
                     && set.hits.is_empty()
                     && complete;
                 let mut row = json!({"member":member.name(),"root":encode_path(&member.root),
@@ -191,9 +197,11 @@ pub(super) fn run(
             }
         }
     }
+    // Members that ran into the deadline already returned partial coverage; only
+    // a cancelled caller discards the finished answers.
     ensure!(
-        !deadline.expired(),
-        coded!(TimedOut, "query deadline expired")
+        !deadline.cancelled(),
+        coded!(TimedOut, "query was cancelled")
     );
     ensure!(
         !answers.is_empty(),
@@ -221,12 +229,7 @@ pub(super) fn run(
         })
         .collect();
     let budget = OutputBudget::new(options.budget)?.with_format(options.output_format());
-    let rendered = stateless::render_members(&parts, &metadata, options.limit, &budget)?;
-    ensure!(
-        !deadline.expired(),
-        coded!(TimedOut, "query deadline expired")
-    );
-    Ok(rendered)
+    stateless::render_members(&parts, &metadata, options.limit, &budget)
 }
 
 #[cfg(test)]

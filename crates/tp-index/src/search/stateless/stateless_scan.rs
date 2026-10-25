@@ -1,25 +1,27 @@
-use super::{coverage, handles};
+//! Cache-free search: walk, order, prefilter and read current files into an
+//! unpublished store, then run the normal lanes over what was read. `kind:file`
+//! text answers path matches first and reads bodies only for a short page.
+use super::{
+    CurrentSearchOptions,
+    coverage::{self, CurrentCoverage, FollowUp, LIMIT_BODIES_SKIPPED, LIMIT_DEADLINE},
+    current_walk::{self, MAX_WALK_ENTRIES},
+    handles,
+    literal_prefilter::LiteralPrefilter,
+    read_cutoff::ReadCutoff,
+    source_reads::{self, MAX_CURRENT_FILE_BYTES, MAX_CURRENT_FILES},
+};
 use crate::{
-    results::{MAX_HITS, ResultSet},
+    results::{Hit, MAX_HITS, ResultSet},
     search::{self, InvocationDirectory, Query, telemetry::RetrievalTrace},
-    source::{self, MAX_READ_BYTES},
+    source,
     store::{self, Store},
 };
-use anyhow::{Context, Result, bail, ensure};
-use ignore::WalkBuilder;
+use anyhow::{Result, bail, ensure};
 use serde_json::json;
-use std::path::Path;
-use tp_core::{
-    coded_error::{CodeDetail, ErrorCode},
-    query_deadline::QueryDeadline,
-};
+use std::{collections::HashMap, path::Path};
+use tp_core::{coded_error::ErrorCode, query_deadline::QueryDeadline};
 
-const MAX_CURRENT_FILES: usize = 4_096;
-const MAX_WALK_ENTRIES: usize = 65_536;
-const MAX_FILENAME_PATHS: usize = MAX_WALK_ENTRIES;
-pub(super) const MAX_CURRENT_FILE_BYTES: usize = 2 * 1024 * 1024;
-const MAX_CURRENT_SOURCE_BYTES: usize = 32 * 1024 * 1024;
-const MAX_CURRENT_SOURCE_FACTS: usize = 250_000;
+const MAX_SOURCE_BYTES_FOR_FILENAME_HITS: usize = 32 * 1024 * 1024;
 
 pub(super) fn search_root(
     root: &Path,
@@ -27,48 +29,18 @@ pub(super) fn search_root(
     query: &Query,
     origin: &InvocationDirectory,
     deadline: &QueryDeadline,
-    semantic_requested: bool,
-    rerank_requested: bool,
+    options: CurrentSearchOptions,
+    mut cutoff: ReadCutoff,
 ) -> Result<ResultSet> {
-    check_deadline(deadline)?;
+    check_entry(deadline)?;
     let store = Store::unpublished(root, cache_exclusion)?.with_query_deadline(deadline.clone());
     validate_cache_exclusion(&store.root, cache_exclusion)?;
-    let mut current = coverage::CurrentCoverage::default();
+    let mut current = CurrentCoverage::default();
     let needs_path_catalog = !query.path.is_empty();
     let file_query = !query.regex && query.kind == "file";
     let filename_only = file_query && query.text.is_empty();
     let live_regex_only = query.regex && !needs_path_catalog;
-    let mut paths = Vec::new();
-
-    if !live_regex_only {
-        let path_limit = if file_query || needs_path_catalog {
-            MAX_FILENAME_PATHS
-        } else {
-            MAX_CURRENT_FILES
-        };
-        paths = current_paths(&store, cache_exclusion, path_limit, deadline, &mut current)?;
-        if needs_path_catalog && (!current.complete || current.path_catalog_truncated) {
-            current.complete = false;
-            current.unsearched_lower_bound |= current.path_catalog_truncated;
-            current.unsearched_files = current.unsearched_files.max(1);
-            return Ok(empty_set(
-                current,
-                query,
-                semantic_requested,
-                rerank_requested,
-            ));
-        }
-        store::current_source::register_paths(&store, paths.iter().map(String::as_str))?;
-        if !query.regex && !filename_only {
-            if needs_path_catalog {
-                let selected = query.path.bind(&store.conn)?;
-                paths.retain(|path| selected.matches(path));
-            }
-            read_current_sources(&store, &paths, deadline, &mut current)?;
-        }
-    }
-
-    check_deadline(deadline)?;
+    let mut prefilter = LiteralPrefilter::for_search(query);
     let mut effective_query = Query {
         text: query.text.clone(),
         path: query.path.clone(),
@@ -79,237 +51,171 @@ pub(super) fn search_root(
     };
     // A linked worktree stores its Git pointer as a file rather than a directory.
     effective_query.path.exclude(".git");
-    let mut trace = RetrievalTrace::disabled();
-    let mut set = search::search_prepared(
-        &store,
-        &effective_query,
-        cache_exclusion,
-        None,
-        None,
-        &mut trace,
-        deadline,
-    )?;
+    let mut paths = Vec::new();
+    let mut path_first = None;
+
+    if !live_regex_only {
+        let path_limit = if file_query || needs_path_catalog || prefilter.is_some() {
+            MAX_WALK_ENTRIES
+        } else {
+            MAX_CURRENT_FILES
+        };
+        let start = store.root.clone();
+        paths = current_walk::current_paths(
+            &store,
+            &start,
+            cache_exclusion,
+            path_limit,
+            &mut cutoff,
+            &mut current,
+        )?;
+        if needs_path_catalog && (!current.complete || current.path_catalog_truncated) {
+            // `file:` binding needs the whole catalog; a partial one proves nothing.
+            current.complete = false;
+            current.unsearched_lower_bound |= current.path_catalog_truncated;
+            current.unsearched_files = current.unsearched_files.max(1);
+            return Ok(empty_set(current, query, options));
+        }
+        store::current_source::register_paths(&store, paths.iter().map(String::as_str))?;
+        if !query.regex && !filename_only {
+            if needs_path_catalog {
+                let selected = query.path.bind(&store.conn)?;
+                paths.retain(|path| selected.matches(path));
+            }
+            current_walk::order_for_reading(&mut paths, origin);
+            if file_query {
+                let found = run_lanes(&store, &effective_query, cache_exclusion, deadline)?;
+                if found.hits.len() >= options.page_limit.max(1) {
+                    current.body_lane = Some("skipped");
+                    current.stop(LIMIT_BODIES_SKIPPED, paths.len(), None);
+                } else {
+                    source_reads::read_current_sources(
+                        &store,
+                        &paths,
+                        prefilter.as_mut(),
+                        &mut cutoff,
+                        &mut current,
+                    )?;
+                    current.body_lane = Some(if current.limit.is_some() {
+                        "partial"
+                    } else {
+                        "complete"
+                    });
+                }
+                path_first = Some(found);
+            } else {
+                source_reads::read_current_sources(
+                    &store,
+                    &paths,
+                    prefilter.as_mut(),
+                    &mut cutoff,
+                    &mut current,
+                )?;
+            }
+        }
+    }
+
+    ensure!(
+        !deadline.cancelled(),
+        coded!(TimedOut, "stateless current-source query was cancelled")
+    );
+    let mut set = match path_first {
+        Some(found) if current.body_lane == Some("skipped") => found,
+        Some(found) => {
+            let mut set = run_lanes(&store, &effective_query, cache_exclusion, deadline)?;
+            put_path_hits_first(&mut set, found.hits);
+            set
+        }
+        None => run_lanes(&store, &effective_query, cache_exclusion, deadline)?,
+    };
     if query.exact {
         search::rank_definitions(&mut set.hits, origin);
     }
-
     if query.regex {
         current = live_coverage(&set, query);
         if needs_path_catalog {
             current.walked_files = paths.len();
         }
     }
+    // A cache-free page has no continuation, so hits past a page (with headroom
+    // for dropped ones) never need verified handles.
+    let verified_hits = options.page_limit.saturating_mul(2).max(16);
+    if set.hits.len() > verified_hits {
+        set.hits.truncate(verified_hits);
+        set.truncated = true;
+    }
     if file_query {
         attach_filename_handles(&store.root, &mut set, deadline, &mut current)?;
     } else {
-        let missing_handles = handles::attach_current_handles(&store.root, &mut set, deadline)?;
-        if missing_handles > 0 {
-            current.unsearched_files = current.unsearched_files.saturating_add(missing_handles);
-            current.complete = false;
-        }
+        handles::attach_current_handles(&store.root, &mut set, deadline, &mut current)?;
     }
     coverage::apply(
         &mut set,
         &current,
-        query,
-        semantic_requested,
-        rerank_requested,
+        FollowUp::Search(query),
+        options.semantic_requested,
+        options.rerank_requested,
     );
     Ok(set)
 }
 
-pub(super) fn map_current_file(
-    root: &Path,
+fn run_lanes(
+    store: &Store,
+    query: &Query,
     cache_exclusion: &Path,
-    path: &str,
     deadline: &QueryDeadline,
 ) -> Result<ResultSet> {
-    check_deadline(deadline)?;
-    let root = root
-        .canonicalize()
-        .context("canonicalize repository root")?;
-    ensure!(root.is_dir(), "repository root is not a directory");
-    validate_cache_exclusion(&root, cache_exclusion)?;
-    let relative = current_relative_path(path)?;
-    ensure!(
-        !root
-            .join(&relative)
-            .starts_with(normalized_path(cache_exclusion)),
-        coded!(
-            SourceExcluded,
-            "current map path is inside the selected cache"
-        )
-    );
-    ensure!(
-        !relative.components().any(|part| match part {
-            std::path::Component::Normal(name) => matches!(
-                name.to_str(),
-                Some(".git" | "target" | "node_modules" | ".trufflepig")
-            ),
-            _ => false,
-        }),
-        coded!(
-            SourceExcluded,
-            "current map path is inside an excluded directory"
-        )
-    );
-    let encoded_path = tp_core::path_codec::encode_path(&relative);
-    let bytes = match source::read_contained(&root, &relative, MAX_READ_BYTES) {
-        Ok(bytes) => bytes,
-        Err(error) if CodeDetail::NotRegularFile.is_anywhere_in(&error) => {
-            bail!(coded!(
-                StatelessMapRequiresFile,
-                "map requires one current file path"
-            ))
-        }
-        Err(error) => return Err(error),
-    };
-    check_deadline(deadline)?;
-    ensure!(
-        !bytes.contains(&0),
-        coded!(SourceExcluded, "current map path is binary")
-    );
-    let extraction =
-        source::usable_extraction(&encoded_path, tp_extract::extract(&encoded_path, &bytes))?;
-    check_deadline(deadline)?;
-    let revision = tp_core::identity::ContentRevision::of(&bytes).to_string();
-    let facts_indexed = extraction_fact_count(&extraction);
-    let mut definitions = extraction.definitions;
-    search::outline_extracted(&mut definitions);
-    let truncated = definitions.len() > MAX_HITS;
-    definitions.truncate(MAX_HITS);
-    let mut hits = Vec::with_capacity(definitions.len());
-    for definition in definitions {
-        check_deadline(deadline)?;
-        let (start_line, end_line) = source::line_span(&bytes, definition.start, definition.end);
-        let handle = crate::source::acquisition::stateless_hit_handle(
-            &root,
-            &relative,
-            &bytes,
-            definition.start,
-            definition.end,
-        )?;
-        hits.push(crate::results::Hit {
-            handle,
-            path: encoded_path.clone(),
-            revision: Some(revision.clone()),
-            start: definition.start,
-            end: definition.end,
-            start_line,
-            end_line,
-            name: definition.name,
-            kind: definition.kind,
-            container: definition.container,
-            provenance: Some("stateless_current_source_map".into()),
-            resolution: None,
-            candidates: Vec::new(),
-            target: None,
-            repeats: None,
-            snippet: None,
-            differs: false,
-        });
-    }
-    check_deadline(deadline)?;
-    let mut current = coverage::CurrentCoverage {
-        walked_files: 1,
-        read_files: 1,
-        bytes_read: bytes.len(),
-        facts_indexed,
-        ..coverage::CurrentCoverage::default()
-    };
-    if !matches!(
-        extraction.status.as_str(),
-        "ok" | "parsed" | "complete" | "lexical_only" | "recovered"
-    ) {
-        current.parse_failures = 1;
-        current.complete = false;
-    }
-    current.complete &= !truncated;
-    let mut set = ResultSet {
-        generation: 0,
-        coverage: json!({"source":"current_source_map"}),
-        truncated,
-        hits,
-    };
-    coverage::apply(&mut set, &current, &Query::default(), false, false);
-    Ok(set)
+    let mut trace = RetrievalTrace::disabled();
+    search::search_prepared(
+        store,
+        query,
+        cache_exclusion,
+        None,
+        None,
+        &mut trace,
+        deadline,
+    )
 }
 
-fn current_paths(
-    store: &Store,
-    cache_exclusion: &Path,
-    max_paths: usize,
-    deadline: &QueryDeadline,
-    current: &mut coverage::CurrentCoverage,
-) -> Result<Vec<String>> {
-    let mut caches = vec![
-        normalized_path(cache_exclusion),
-        normalized_path(store.results_cache()),
-    ];
-    caches.sort();
-    caches.dedup();
-    let mut walker = WalkBuilder::new(&store.root);
-    walker
-        .hidden(false)
-        .require_git(false)
-        .follow_links(false)
-        .sort_by_file_path(|left, right| left.cmp(right));
-    walker.filter_entry(move |entry| {
-        entry.file_name() != ".git"
-            && !caches.iter().any(|cache| entry.path().starts_with(cache))
-            && (!entry.file_type().is_some_and(|kind| kind.is_dir())
-                || !matches!(
-                    entry.file_name().to_str(),
-                    Some("target" | "node_modules" | ".trufflepig")
-                ))
-    });
-    let mut paths = Vec::with_capacity(max_paths.min(MAX_WALK_ENTRIES));
-    let mut entries = 0usize;
-    for entry in walker.build() {
-        check_deadline(deadline)?;
-        entries += 1;
-        if entries > MAX_WALK_ENTRIES {
-            current.path_catalog_truncated = true;
-            current.unsearched_lower_bound = true;
-            current.unsearched_files = current.unsearched_files.saturating_add(1);
-            current.complete = false;
-            break;
+/// Path-lane hits lead in their own order (taking the body run's copy of the
+/// same file when it has one); body-only matches follow.
+fn put_path_hits_first(set: &mut ResultSet, path_hits: Vec<Hit>) {
+    let mut body: HashMap<String, Hit> = HashMap::with_capacity(set.hits.len());
+    let mut rest = Vec::with_capacity(set.hits.len());
+    let named: std::collections::HashSet<&str> =
+        path_hits.iter().map(|hit| hit.path.as_str()).collect();
+    for hit in std::mem::take(&mut set.hits) {
+        if named.contains(hit.path.as_str()) {
+            body.entry(hit.path.clone()).or_insert(hit);
+        } else {
+            rest.push(hit);
         }
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(_) => {
-                current.walk_failures += 1;
-                current.complete = false;
-                continue;
-            }
-        };
-        if !entry.file_type().is_some_and(|kind| kind.is_file()) {
-            continue;
-        }
-        current.walked_files += 1;
-        if paths.len() == max_paths {
-            current.path_catalog_truncated = true;
-            current.unsearched_lower_bound = true;
-            current.unsearched_files = current.unsearched_files.saturating_add(1);
-            current.complete = false;
-            break;
-        }
-        let relative = entry.path().strip_prefix(&store.root)?;
-        paths.push(tp_core::path_codec::encode_path(relative));
     }
-    Ok(paths)
+    let mut hits: Vec<Hit> = Vec::with_capacity(path_hits.len() + rest.len());
+    for hit in path_hits {
+        hits.push(body.remove(&hit.path).unwrap_or(hit));
+    }
+    hits.extend(rest);
+    set.truncated |= hits.len() > MAX_HITS;
+    hits.truncate(MAX_HITS);
+    set.hits = hits;
 }
 
+/// Verifies `kind:file` hits from current bytes in rank order; reading stops at
+/// the deadline or byte cap and leaves the remainder unsearched.
 fn attach_filename_handles(
     root: &Path,
     set: &mut ResultSet,
     deadline: &QueryDeadline,
-    current: &mut coverage::CurrentCoverage,
+    current: &mut CurrentCoverage,
 ) -> Result<()> {
     let mut hits = std::mem::take(&mut set.hits).into_iter();
     let mut retained = Vec::with_capacity(hits.len());
     while let Some(mut hit) = hits.next() {
-        check_deadline(deadline)?;
+        if deadline.expired() {
+            current.stop(LIMIT_DEADLINE, 1 + hits.count(), None);
+            break;
+        }
         let relative = tp_core::path_codec::decode_path(&hit.path)?;
         let bytes = match source::read_contained(root, &relative, MAX_CURRENT_FILE_BYTES) {
             Ok(bytes) if !bytes.contains(&0) => bytes,
@@ -335,7 +241,7 @@ fn attach_filename_handles(
         } else {
             current.bytes_read.saturating_add(bytes.len())
         };
-        if next_bytes > MAX_CURRENT_SOURCE_BYTES {
+        if next_bytes > MAX_SOURCE_BYTES_FOR_FILENAME_HITS {
             current.unsearched_files = current.unsearched_files.saturating_add(1 + hits.count());
             current.complete = false;
             break;
@@ -368,83 +274,13 @@ fn attach_filename_handles(
     Ok(())
 }
 
-fn read_current_sources(
-    store: &Store,
-    paths: &[String],
-    deadline: &QueryDeadline,
-    current: &mut coverage::CurrentCoverage,
-) -> Result<()> {
-    for (index, encoded_path) in paths.iter().enumerate() {
-        check_deadline(deadline)?;
-        let relative = tp_core::path_codec::decode_path(encoded_path)?;
-        let bytes = match source::read_contained(&store.root, &relative, MAX_CURRENT_FILE_BYTES) {
-            Ok(bytes) => bytes,
-            Err(error) if ErrorCode::SourceExcluded.is_code_of(&error) => {
-                store::current_source::mark_unavailable(store, encoded_path, "source_excluded", 0)?;
-                current.excluded_files += 1;
-                current.complete = false;
-                continue;
-            }
-            Err(_) => {
-                store::current_source::mark_unavailable(
-                    store,
-                    encoded_path,
-                    "source_unavailable",
-                    0,
-                )?;
-                current.read_failures += 1;
-                current.complete = false;
-                continue;
-            }
-        };
-        if bytes.contains(&0) {
-            store::current_source::mark_unavailable(store, encoded_path, "binary", bytes.len())?;
-            current.excluded_files += 1;
-            current.complete = false;
-            continue;
-        }
-        let next_bytes = current.bytes_read.saturating_add(bytes.len());
-        if next_bytes > MAX_CURRENT_SOURCE_BYTES {
-            current.unsearched_files = current
-                .unsearched_files
-                .saturating_add(paths.len().saturating_sub(index));
-            current.complete = false;
-            break;
-        }
-        let extraction = tp_extract::extract(encoded_path, &bytes);
-        let facts = extraction_fact_count(&extraction);
-        let next_facts = current.facts_indexed.saturating_add(facts);
-        if next_facts > MAX_CURRENT_SOURCE_FACTS {
-            current.unsearched_files = current
-                .unsearched_files
-                .saturating_add(paths.len().saturating_sub(index));
-            current.complete = false;
-            break;
-        }
-        check_deadline(deadline)?;
-        if !matches!(
-            extraction.status.as_str(),
-            "ok" | "parsed" | "complete" | "lexical_only" | "recovered"
-        ) {
-            current.parse_failures += 1;
-            current.complete = false;
-        }
-        store::current_source::insert(store, encoded_path, &bytes, &extraction)?;
-        current.read_files += 1;
-        current.bytes_read = next_bytes;
-        current.facts_indexed = next_facts;
-    }
-    Ok(())
-}
-
-fn live_coverage(set: &ResultSet, query: &Query) -> coverage::CurrentCoverage {
+fn live_coverage(set: &ResultSet, query: &Query) -> CurrentCoverage {
     let value = &set.coverage;
     let checked = value["live_checked_files"].as_u64().unwrap_or(0) as usize;
     let excluded = value["live_excluded_files"].as_u64().unwrap_or(0) as usize;
     let read_failures = value["live_read_failures"].as_u64().unwrap_or(0) as usize;
     let walk_failures = value["live_walk_failures"].as_u64().unwrap_or(0) as usize;
-    let kind_filter = !query.kind.is_empty();
-    let mut current = coverage::CurrentCoverage {
+    let mut current = CurrentCoverage {
         walked_files: checked
             .saturating_add(excluded)
             .saturating_add(read_failures),
@@ -454,20 +290,20 @@ fn live_coverage(set: &ResultSet, query: &Query) -> coverage::CurrentCoverage {
         walk_failures,
         unsearched_files: 0,
         complete: read_failures == 0 && walk_failures == 0 && excluded == 0 && !set.truncated,
-        ..coverage::CurrentCoverage::default()
+        ..CurrentCoverage::default()
     };
-    if kind_filter {
+    if !query.kind.is_empty() {
         current.unsearched_unknown = true;
         current.complete = false;
     }
     current
 }
 
-fn empty_set(
-    current: coverage::CurrentCoverage,
+/// A truncated empty page whose coverage explains why nothing was searched.
+pub(super) fn empty_set(
+    current: CurrentCoverage,
     query: &Query,
-    semantic_requested: bool,
-    rerank_requested: bool,
+    options: CurrentSearchOptions,
 ) -> ResultSet {
     let mut set = ResultSet {
         generation: 0,
@@ -478,37 +314,31 @@ fn empty_set(
     coverage::apply(
         &mut set,
         &current,
-        query,
-        semantic_requested,
-        rerank_requested,
+        FollowUp::Search(query),
+        options.semantic_requested,
+        options.rerank_requested,
     );
     set
 }
 
-fn current_relative_path(path: &str) -> Result<std::path::PathBuf> {
+/// One root-relative path made only of normal components (`./` allowed).
+pub(super) fn current_relative_path(path: &str) -> Result<std::path::PathBuf> {
     let path = path.strip_prefix("./").unwrap_or(path);
+    let path = path.trim_end_matches('/');
     let relative = tp_core::path_codec::decode_path(path)?;
     ensure!(
         !relative.as_os_str().is_empty()
             && relative
                 .components()
                 .all(|part| matches!(part, std::path::Component::Normal(_))),
-        coded!(InvalidPath, "use one root-relative current file path")
+        coded!(InvalidPath, "use one root-relative current path")
     );
     Ok(relative)
 }
 
-fn extraction_fact_count(extraction: &tp_extract::Extraction) -> usize {
-    extraction
-        .definitions
-        .len()
-        .saturating_add(extraction.occurrences.len())
-        .saturating_add(extraction.relationships.len())
-}
-
-fn validate_cache_exclusion(root: &Path, cache: &Path) -> Result<()> {
+pub(super) fn validate_cache_exclusion(root: &Path, cache: &Path) -> Result<()> {
     ensure!(
-        !root.starts_with(normalized_path(cache)),
+        !root.starts_with(current_walk::normalized_path(cache)),
         coded!(
             InvalidCache,
             "selected cache cannot contain the repository root"
@@ -517,23 +347,12 @@ fn validate_cache_exclusion(root: &Path, cache: &Path) -> Result<()> {
     Ok(())
 }
 
-fn normalized_path(path: &Path) -> std::path::PathBuf {
-    path.canonicalize().unwrap_or_else(|_| {
-        if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            std::env::current_dir()
-                .map(|current| current.join(path))
-                .unwrap_or_else(|_| path.to_path_buf())
-        }
-    })
-}
-
-fn check_deadline(deadline: &QueryDeadline) -> Result<()> {
+/// Nothing has been read when a scan starts after its deadline, so that fails.
+pub(super) fn check_entry(deadline: &QueryDeadline) -> Result<()> {
     if deadline.expired() {
         bail!(coded!(
             TimedOut,
-            "stateless current-source query deadline expired"
+            "stateless current-source query deadline expired before reading"
         ));
     }
     Ok(())
@@ -569,10 +388,10 @@ mod filename_handle_tests {
         )?;
         assert_eq!(set.hits.len(), 1);
         assert!(set.hits[0].revision.is_none());
-        let mut current = coverage::CurrentCoverage {
+        let mut current = CurrentCoverage {
             complete: false,
             unsearched_files: 1,
-            ..coverage::CurrentCoverage::default()
+            ..CurrentCoverage::default()
         };
         attach_filename_handles(&root, &mut set, &deadline, &mut current)?;
         assert_eq!(set.hits.len(), 1);
