@@ -179,6 +179,8 @@ Storage defaults to `$XDG_DATA_HOME/trufflepig/board.sqlite3`, else the passwd h
 `~/.local/share` ancestors), and a pre-existing group/world-accessible parent is refused — open
 paths never chmod, read paths never modify the filesystem. The DB records its resolved path and uses
 forward `user_version` migrations; shipped steps 1–13 are immutable and byte-pinned. Schema 13 adds plan lifecycle state and immutable task succession; see the [lifecycle contract](board-lifecycle.md).
+This ladder (`board_database.rs`, `board_schema_v10.rs` legacy rewrites) is the deliberate exception to "no compatibility layers":
+board data is durable user history, while index and result caches are rebuildable and rebuild on mismatch.
 Schema 12 adds nullable request-actor attribution to retained operation receipts; pre-v12 rows have unknown ownership and are not returned by receipt readback. Dedupe replay and permanent feedback imports remain available.
 Schema 11 adds nullable `origin_ip` columns to `entries` and `events` and clears API dedupe replies. Schema 10 upgrades v9 atomically. It preserves actor rows, entries, references, manual link receipts, session cursors, and claims
 without rewriting historical actors; clears API 9 dedupe replies; and appends a system-authored Grant
