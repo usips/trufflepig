@@ -10,12 +10,20 @@ const IDLE_IO_PRIORITY: libc::c_long = 3 << 13;
 /// `IOPRIO_WHO_PROCESS`; with id 0 it names the calling thread.
 const IOPRIO_WHO_THREAD: libc::c_long = 1;
 
-/// Lowers the calling thread, and threads it spawns later, to
-/// [`BACKGROUND_NICE`] and idle I/O. Failures leave the priority unchanged.
+/// Lowers the calling thread, and threads it spawns later, to at least
+/// [`BACKGROUND_NICE`] and idle I/O. A thread already nicer keeps its value:
+/// with a permissive `RLIMIT_NICE` an absolute set would raise it instead.
+/// Failures leave the priority unchanged.
 pub fn lower_current_thread() {
-    // SAFETY: plain syscalls on the calling thread with constant arguments.
+    // SAFETY: plain syscalls on the calling thread with constant arguments;
+    // errno is cleared first because -1 is a valid nice value.
     unsafe {
-        libc::setpriority(libc::PRIO_PROCESS, 0, BACKGROUND_NICE);
+        *libc::__errno_location() = 0;
+        let current = libc::getpriority(libc::PRIO_PROCESS, 0);
+        let known = *libc::__errno_location() == 0;
+        if !known || current < BACKGROUND_NICE {
+            libc::setpriority(libc::PRIO_PROCESS, 0, BACKGROUND_NICE);
+        }
         libc::syscall(libc::SYS_ioprio_set, IOPRIO_WHO_THREAD, 0, IDLE_IO_PRIORITY);
     }
 }
