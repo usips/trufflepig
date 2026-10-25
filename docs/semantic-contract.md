@@ -130,6 +130,11 @@ Preparation resumes after root-daemon restarts and retries transient worker
 failures. An explicit `semantic prepare` reconciles terminal `completed` and
 `capacity` runs against the current cache and retries failed content. Ordinary
 scheduling does not reopen terminal runs or repeatedly retry failed content.
+Run state is bound to the index epoch. A recreated index restarts generations,
+so the first request, sweep, or status read against it discards prior runs and
+clamps the persisted request to the new generation; the root stays opted in and
+content-keyed vectors are reused
+(`crates/tp-index/src/semantic_preparation/preparation_cache.rs`).
 
 Source-region retrieval is cache-only. Search never embeds candidate regions on
 the query path. Query preparation may obtain one query vector from the worker;

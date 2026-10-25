@@ -341,6 +341,118 @@ fn explicit_retry_refills_missing_vectors_after_terminal_run() -> Result<()> {
     Ok(())
 }
 
+/// Leaves the run state of an index that has since been recreated: completed
+/// runs at generations above the new index's, bound to another epoch.
+fn seed_prior_epoch_runs(
+    cache: &std::path::Path,
+    generations: std::ops::RangeInclusive<i64>,
+) -> Result<()> {
+    let preparation = preparation_cache::PreparationCache::open(cache)?;
+    preparation.db.execute(
+        "INSERT INTO preparation_epoch(id,index_epoch) VALUES(1,'prior-epoch')",
+        [],
+    )?;
+    for generation in generations.clone() {
+        preparation.db.execute(
+            "INSERT INTO preparation_runs
+             (generation,state,cursor,total,cached,missing,failures,error,updated_ms)
+             VALUES(?1,'completed',1,1,1,0,0,NULL,0)",
+            [generation],
+        )?;
+    }
+    preparation.db.execute(
+        "UPDATE preparation_requests SET requested_generation=?1 WHERE id=1",
+        [*generations.end()],
+    )?;
+    Ok(())
+}
+
+#[test]
+fn recreated_index_prepares_despite_a_full_prior_epoch_window() -> Result<()> {
+    let (root, cache) = fixture("fn one() {}\nfn two() {}\n")?;
+    seed_prior_epoch_runs(cache.path(), 3_607..=3_862)?;
+    let manager = PreparationManager::new(successful_worker());
+    let receipt = manager.schedule(root.path(), cache.path())?;
+    let waited = manager.wait_timeout(
+        root.path(),
+        cache.path(),
+        receipt.captured_generation,
+        Duration::from_secs(3),
+    )?;
+    assert_eq!(waited.state, PreparationState::Completed);
+    let current = status(root.path(), cache.path())?;
+    assert_eq!(current.state, PreparationState::Completed);
+    assert_eq!((current.cached, current.missing), (current.total, 0));
+
+    let preparation = preparation_cache::PreparationCache::open(cache.path())?;
+    let stale: i64 = preparation.db.query_row(
+        "SELECT count(*) FROM preparation_runs WHERE generation>?1",
+        [receipt.captured_generation],
+        |row| row.get(0),
+    )?;
+    assert_eq!(stale, 0);
+    assert_eq!(
+        preparation.requested_generation()?,
+        receipt.captured_generation
+    );
+    Ok(())
+}
+
+#[test]
+fn prior_epoch_terminal_run_does_not_skip_the_recreated_index() -> Result<()> {
+    let (root, cache) = fixture("fn one() {}\n")?;
+    let generation = Store::open(root.path(), cache.path())?.generation()?;
+    seed_prior_epoch_runs(cache.path(), generation..=generation)?;
+    let manager = PreparationManager::new(successful_worker());
+    let receipt = manager.schedule(root.path(), cache.path())?;
+    manager.wait_timeout(
+        root.path(),
+        cache.path(),
+        receipt.captured_generation,
+        Duration::from_secs(3),
+    )?;
+    let current = status(root.path(), cache.path())?;
+    assert_eq!(current.state, PreparationState::Completed);
+    assert_eq!((current.cached, current.missing), (current.total, 0));
+    Ok(())
+}
+
+#[test]
+fn epoch_rebind_keeps_the_opt_in_and_content_completions() -> Result<()> {
+    let cache_dir = tempfile::tempdir()?;
+    seed_prior_epoch_runs(cache_dir.path(), 900..=900)?;
+    let mut preparation = preparation_cache::PreparationCache::open(cache_dir.path())?;
+    preparation.fail("failed-content", "permanent input failure")?;
+    let recreated = |generation| PublishedGeneration {
+        index_epoch: "recreated-epoch".into(),
+        generation,
+    };
+
+    preparation.bind_epoch(&recreated(0))?;
+    assert!(preparation.run(900)?.is_some(), "unpublished index rebinds");
+    preparation.bind_epoch(&recreated(3))?;
+    assert!(preparation.run(900)?.is_none());
+    assert_eq!(preparation.requested_generation()?, 3);
+    assert_eq!(preparation.completion("failed-content")?, Some(false));
+
+    let never_requested = tempfile::tempdir()?;
+    let mut fresh = preparation_cache::PreparationCache::open(never_requested.path())?;
+    fresh.bind_epoch(&recreated(3))?;
+    assert_eq!(fresh.requested_generation()?, 0);
+    Ok(())
+}
+
+#[test]
+fn begun_run_survives_a_full_retention_window() -> Result<()> {
+    let cache_dir = tempfile::tempdir()?;
+    seed_prior_epoch_runs(cache_dir.path(), 1_000..=1_255)?;
+    let mut preparation = preparation_cache::PreparationCache::open(cache_dir.path())?;
+    let begun = preparation.begin(1, 4, false)?;
+    assert_eq!(begun.state, PreparationState::Running);
+    assert!(preparation.run(1)?.is_some());
+    Ok(())
+}
+
 #[test]
 fn content_keys_change_when_region_text_changes() {
     assert_ne!(content_key("old"), content_key("new"));

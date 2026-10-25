@@ -1,7 +1,7 @@
-use super::{PreparationState, PreparationStatus};
+use super::{PreparationState, PreparationStatus, PublishedGeneration};
 use anyhow::{Context, Result, bail};
 use fs2::FileExt;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use std::{
     fs::{self, File, OpenOptions},
     io::ErrorKind,
@@ -15,6 +15,7 @@ use tp_semantic::embedding_cache::EmbeddingCache;
 use tp_semantic::embedding_cache::EmbeddingCacheSnapshot;
 
 const RUN_RETENTION: i64 = 256;
+const PREPARATION_DATABASE: &str = "preparation.sqlite3";
 
 #[derive(Clone, Debug)]
 pub(super) struct RunRecord {
@@ -43,11 +44,14 @@ pub(super) enum CachedSnapshot {
 impl PreparationCache {
     pub(super) fn open(directory: &Path) -> Result<Self> {
         fs::create_dir_all(directory).context("create preparation cache directory")?;
-        let db = Connection::open(directory.join("preparation.sqlite3"))?;
+        let db = Connection::open(directory.join(PREPARATION_DATABASE))?;
         db.busy_timeout(std::time::Duration::from_secs(10))?;
         db.execute_batch(
             "PRAGMA journal_mode=WAL;
              PRAGMA synchronous=FULL;
+             CREATE TABLE IF NOT EXISTS preparation_epoch(
+                 id INTEGER PRIMARY KEY CHECK(id=1),
+                 index_epoch TEXT NOT NULL);
              CREATE TABLE IF NOT EXISTS preparation_requests(
                  id INTEGER PRIMARY KEY CHECK(id=1),
                  requested_generation INTEGER NOT NULL);
@@ -77,6 +81,40 @@ impl PreparationCache {
             #[cfg(feature = "semantic")]
             embedding_cache,
         })
+    }
+
+    /// Whether a root has ever requested preparation; opening would create its state.
+    pub(super) fn exists(directory: &Path) -> bool {
+        directory.join(PREPARATION_DATABASE).is_file()
+    }
+
+    /// Binds run state to a published index epoch. A recreated index restarts its
+    /// generations, so runs are discarded and the request is clamped, keeping the
+    /// opt-in; completions and vectors are keyed by content and survive.
+    pub(super) fn bind_epoch(&mut self, published: &PublishedGeneration) -> Result<()> {
+        if published.generation <= 0
+            || bound_epoch(&self.db)?.as_deref() == Some(published.index_epoch.as_str())
+        {
+            return Ok(());
+        }
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if bound_epoch(&tx)?.as_deref() == Some(published.index_epoch.as_str()) {
+            return Ok(());
+        }
+        tx.execute("DELETE FROM preparation_runs", [])?;
+        tx.execute(
+            "UPDATE preparation_requests
+             SET requested_generation=min(requested_generation,?1) WHERE id=1",
+            [published.generation],
+        )?;
+        tx.execute(
+            "INSERT INTO preparation_epoch(id,index_epoch) VALUES(1,?1)
+             ON CONFLICT(id) DO UPDATE SET index_epoch=excluded.index_epoch",
+            [&published.index_epoch],
+        )?;
+        Ok(tx.commit()?)
     }
 
     pub(super) fn requested_generation(&self) -> Result<i64> {
@@ -440,12 +478,13 @@ impl PreparationCache {
         })
     }
 
-    fn prune_runs(&mut self, _newest: i64) -> Result<()> {
+    /// Keeps the newest generations and always the run just begun.
+    fn prune_runs(&mut self, newest: i64) -> Result<()> {
         self.db.execute(
             "DELETE FROM preparation_runs
-             WHERE generation NOT IN
+             WHERE generation<>?2 AND generation NOT IN
                (SELECT generation FROM preparation_runs ORDER BY generation DESC LIMIT ?1)",
-            [RUN_RETENTION],
+            params![RUN_RETENTION, newest],
         )?;
         Ok(())
     }
@@ -463,6 +502,58 @@ impl PreparationCache {
         )?;
         Ok(())
     }
+}
+
+/// Whether a persisted request still needs a sweep of `published`. Reads without
+/// creating state; a run bound to another epoch is stale and the sweep rebinds it.
+pub(super) fn has_pending_sweep(directory: &Path, published: &PublishedGeneration) -> Result<bool> {
+    if published.generation <= 0 || !PreparationCache::exists(directory) {
+        return Ok(false);
+    }
+    let db = Connection::open(directory.join(PREPARATION_DATABASE))?;
+    db.busy_timeout(std::time::Duration::from_secs(1))?;
+    let requested: Option<i64> = db
+        .query_row(
+            "SELECT requested_generation FROM preparation_requests WHERE id=1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if requested.is_none_or(|requested| requested <= 0) {
+        return Ok(false);
+    }
+    if bound_epoch(&db)?.as_deref() != Some(published.index_epoch.as_str()) {
+        return Ok(true);
+    }
+    let state: Option<String> = db
+        .query_row(
+            "SELECT state FROM preparation_runs WHERE generation=?1",
+            [published.generation],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(!state
+        .as_deref()
+        .is_some_and(|state| matches!(state, "completed" | "failed" | "capacity")))
+}
+
+/// The index epoch run state belongs to; `None` before the first bind.
+fn bound_epoch(db: &Connection) -> Result<Option<String>> {
+    let table: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='preparation_epoch')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !table {
+        return Ok(None);
+    }
+    Ok(db
+        .query_row(
+            "SELECT index_epoch FROM preparation_epoch WHERE id=1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?)
 }
 
 /// Cross-process lease for the one background sweep allowed for a root.

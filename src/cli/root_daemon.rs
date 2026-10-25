@@ -11,7 +11,6 @@ use crate::{
     diagnostics::DiagnosticQueue,
 };
 use anyhow::Result;
-use rusqlite::OptionalExtension;
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -20,7 +19,10 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use tp_index::{semantic_preparation::PreparationManager, store::Store};
+use tp_index::{
+    semantic_preparation::{self, PreparationManager},
+    store::Store,
+};
 use tp_semantic::SemanticSession;
 
 const PREPARATION_CHECK_INTERVAL: Duration = Duration::from_secs(1);
@@ -182,39 +184,9 @@ pub(super) fn schedule_pending_preparation(
     root: &Path,
     cache: &Path,
 ) -> Result<()> {
-    let path = cache.join("preparation.sqlite3");
-    if !path.is_file() {
-        return Ok(());
+    if semantic_preparation::has_pending_request(root, cache)? {
+        manager.schedule(root, cache)?;
     }
-    let connection = rusqlite::Connection::open(path)?;
-    connection.busy_timeout(Duration::from_secs(1))?;
-    let requested: i64 = match connection.query_row(
-        "SELECT requested_generation FROM preparation_requests WHERE id=1",
-        [],
-        |row| row.get(0),
-    ) {
-        Ok(requested) => requested,
-        Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(()),
-        Err(error) => return Err(error.into()),
-    };
-    let generation = Store::open(root, cache)?.generation()?;
-    if requested <= 0 || generation <= 0 {
-        return Ok(());
-    }
-    let state: Option<String> = connection
-        .query_row(
-            "SELECT state FROM preparation_runs WHERE generation=?1",
-            [generation],
-            |row| row.get(0),
-        )
-        .optional()?;
-    if state
-        .as_deref()
-        .is_some_and(|state| matches!(state, "completed" | "failed" | "capacity"))
-    {
-        return Ok(());
-    }
-    manager.schedule(root, cache)?;
     Ok(())
 }
 

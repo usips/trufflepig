@@ -111,6 +111,14 @@ impl PreparationWait {
     }
 }
 
+/// One published generation and the index epoch that numbers it; a recreated
+/// index restarts generations under a new epoch.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PublishedGeneration {
+    index_epoch: String,
+    generation: i64,
+}
+
 /// Text and its immutable cache identity; no index row identity crosses the worker boundary.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EmbeddingInput {
@@ -127,6 +135,16 @@ pub fn schedule(root: &Path, cache: &Path) -> Result<ScheduleReceipt> {
 /// Explicitly retries a terminal current-generation preparation run.
 pub fn retry(root: &Path, cache: &Path) -> Result<ScheduleReceipt> {
     request_schedule_with_reset(root, cache)
+}
+
+/// Whether a root that requested preparation still needs a sweep of its published
+/// generation; a root that never requested it stays without preparation state.
+pub fn has_pending_request(root: &Path, cache: &Path) -> Result<bool> {
+    if !preparation_cache::PreparationCache::exists(cache) {
+        return Ok(false);
+    }
+    let store = crate::store::Store::open(root, cache)?;
+    preparation_cache::has_pending_sweep(cache, &read_published_generation(&store.conn)?)
 }
 
 /// Returns current-generation counts from the index and verified embedding cache.
@@ -187,8 +205,8 @@ pub fn run_foreground<W: EmbeddingWorker>(
     mut worker: W,
 ) -> Result<PreparationStatus> {
     let mut index = open_index(root, cache)?;
-    let generation = read_generation(&index)?;
-    if generation <= 0 {
+    let published = read_published_generation(&index)?;
+    if published.generation <= 0 {
         bail!(coded!(
             PreparationUnavailable,
             "no published source generation"
@@ -201,7 +219,14 @@ pub fn run_foreground<W: EmbeddingWorker>(
         ));
     };
     let mut preparation = preparation_cache::PreparationCache::open(cache)?;
-    let _ = prepare_generation(&mut index, &mut preparation, &mut worker, generation, true)?;
+    preparation.bind_epoch(&published)?;
+    let _ = prepare_generation(
+        &mut index,
+        &mut preparation,
+        &mut worker,
+        published.generation,
+        true,
+    )?;
     current_status(&mut index, &mut preparation)
 }
 
@@ -400,7 +425,8 @@ fn request_schedule_with_reset_inner(
     reset_terminal: bool,
 ) -> Result<ScheduleReceipt> {
     let index = open_index(root, cache)?;
-    let generation = read_generation(&index)?;
+    let published = read_published_generation(&index)?;
+    let generation = published.generation;
     if generation <= 0 {
         bail!(coded!(
             PreparationUnavailable,
@@ -408,6 +434,7 @@ fn request_schedule_with_reset_inner(
         ));
     }
     let mut preparation = preparation_cache::PreparationCache::open(cache)?;
+    preparation.bind_epoch(&published)?;
     let requested = preparation.request(generation)?;
     let reset = reset_terminal && preparation.reset_terminal(generation)?;
     Ok(ScheduleReceipt {
@@ -424,10 +451,12 @@ fn process_pending_context<W: EmbeddingWorker>(
 ) -> Result<()> {
     let mut reset_terminal = reset_terminal;
     loop {
-        let current_generation = read_generation(index)?;
+        let published = read_published_generation(index)?;
+        let current_generation = published.generation;
         if current_generation <= 0 {
             return Ok(());
         }
+        preparation.bind_epoch(&published)?;
         preparation.supersede_older(current_generation)?;
         let requested = preparation.requested_generation()?.max(current_generation);
         let generation = requested.min(current_generation);
@@ -665,7 +694,8 @@ fn current_status(
     index: &mut Connection,
     preparation: &mut preparation_cache::PreparationCache,
 ) -> Result<PreparationStatus> {
-    let generation = read_generation(index)?;
+    let published = read_published_generation(index)?;
+    let generation = published.generation;
     if generation <= 0 {
         return Ok(PreparationStatus {
             generation,
@@ -678,6 +708,7 @@ fn current_status(
             error: None,
         });
     }
+    preparation.bind_epoch(&published)?;
     let (observed, total, cached, missing, failures) =
         current_counts(index, preparation, generation)?;
     if observed != generation {
@@ -826,6 +857,25 @@ fn read_generation(connection: &Connection) -> Result<i64> {
             row.get::<_, String>(0)
         })?
         .parse()?)
+}
+
+/// Reads the epoch and generation in one statement so both name the same publication.
+fn read_published_generation(connection: &Connection) -> Result<PublishedGeneration> {
+    let (index_epoch, generation) = connection.query_row(
+        "SELECT (SELECT value FROM meta WHERE key='index_epoch'),
+                (SELECT value FROM meta WHERE key='generation')",
+        [],
+        |row| {
+            Ok((
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, Option<String>>(1)?,
+            ))
+        },
+    )?;
+    Ok(PublishedGeneration {
+        index_epoch: index_epoch.context("index epoch missing")?,
+        generation: generation.context("index generation missing")?.parse()?,
+    })
 }
 
 fn estimate_tokens(text: &str) -> usize {
