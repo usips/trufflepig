@@ -4,7 +4,13 @@ version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-only"
 
-[dependencies]
+[workspace]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
 anyhow = "1"
 blake3 = "1"
 clap = { version = "4", features = ["derive"] }
@@ -32,8 +38,39 @@ tree-sitter-luau = "=1.2.0"
 tree-sitter-c-sharp = "=0.23.5"
 tree-sitter-php = "=0.24.2"
 uuid = { version = "1", features = ["v4"] }
-fastembed = { version = "=6.1.0", default-features = false, features = ["ort-load-dynamic"], optional = true }
-ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic"], optional = true }
+fastembed = { version = "=6.1.0", default-features = false, features = ["ort-load-dynamic"] }
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic"] }
+
+[dependencies]
+anyhow.workspace = true
+blake3.workspace = true
+clap.workspace = true
+fs2.workspace = true
+ignore.workspace = true
+imara-diff.workspace = true
+quick-xml.workspace = true
+libc.workspace = true
+notify.workspace = true
+pulldown-cmark.workspace = true
+regex.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+streaming-iterator.workspace = true
+tempfile.workspace = true
+toml.workspace = true
+tiktoken-rs.workspace = true
+tree-sitter.workspace = true
+tree-sitter-rust.workspace = true
+tree-sitter-typescript.workspace = true
+tree-sitter-javascript.workspace = true
+tree-sitter-luau.workspace = true
+tree-sitter-c-sharp.workspace = true
+tree-sitter-php.workspace = true
+uuid.workspace = true
+fastembed = { workspace = true, optional = true }
+ort = { workspace = true, optional = true }
 
 [features]
 semantic = ["dep:fastembed", "dep:ort"]
@@ -44,7 +81,7 @@ name = "semantic_benchmark"
 required-features = ["semantic"]
 
 # Dependencies (bundled SQLite, tree-sitter grammars, blake3, tiktoken) run
-# optimized in debug builds; the crate itself keeps fast incremental builds.
+# optimized in debug builds; workspace crates keep fast incremental builds.
 [profile.dev.package."*"]
 opt-level = 3
 
