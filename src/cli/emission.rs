@@ -94,7 +94,7 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
                 (
                     render(options.budget, &json!({"error":message})),
                     outcome,
-                    2,
+                    crate::system::router_lifecycle::exit_status(&error).unwrap_or(2),
                 )
             }
         },

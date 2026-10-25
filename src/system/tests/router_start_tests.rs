@@ -72,6 +72,7 @@ fn ensure_reports_a_running_router_despite_unresolvable_board_database() {
         cache_base: None,
         sweeps: Mutex::new(SweepClock::default()),
         board: tp_board::BoardHost::default(),
+        lifecycle: Default::default(),
     };
     let worker_runtime = runtime.clone();
     let worker = std::thread::spawn(move || daemon::serve_router(&worker_runtime, &spool, router));

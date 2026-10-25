@@ -12,6 +12,7 @@ fn router_status_reports_supported_and_file_schema_versions() {
         cache_base: None,
         sweeps: Mutex::new(SweepClock::default()),
         board: tp_board::BoardHost::with_config(config),
+        lifecycle: Default::default(),
     };
     let reply = router
         .request(AcceptedRequest {
@@ -29,6 +30,10 @@ fn router_status_reports_supported_and_file_schema_versions() {
     );
     assert_eq!(status["executable_replaced"], serde_json::json!(false));
     assert!(status["executable_error"].is_null());
+    assert_eq!(
+        status["lifecycle"],
+        serde_json::json!({ "supervisor": "detached" })
+    );
     assert_eq!(status["board_api"], tp_board::BOARD_API);
     assert_eq!(status["board_db"], serde_json::json!(database));
     assert_eq!(status["schema_supported"], tp_board::SCHEMA_VERSION);
@@ -48,6 +53,7 @@ fn router_status_reports_migrated_schema_after_startup_migration() {
         cache_base: None,
         sweeps: Mutex::new(SweepClock::default()),
         board,
+        lifecycle: Default::default(),
     };
     let reply = router
         .request(AcceptedRequest {
@@ -71,6 +77,7 @@ fn router_status_omits_the_schema_file_of_an_absent_database() {
         cache_base: None,
         sweeps: Mutex::new(SweepClock::default()),
         board: tp_board::BoardHost::with_config(tp_board::BoardConfig::for_database(&database)),
+        lifecycle: Default::default(),
     };
     let reply = router
         .request(AcceptedRequest {
@@ -98,6 +105,7 @@ fn router_status_omits_board_fields_when_the_database_path_is_not_absolute() {
         board: tp_board::BoardHost::with_config(tp_board::BoardConfig::for_database(
             "relative.sqlite3",
         )),
+        lifecycle: Default::default(),
     };
     let reply = router
         .request(AcceptedRequest {
@@ -142,6 +150,7 @@ fn router_status_survives_a_database_pin_write_failure() {
         cache_base: None,
         sweeps: Mutex::new(SweepClock::default()),
         board: tp_board::BoardHost::with_config(tp_board::BoardConfig::for_database(&database)),
+        lifecycle: Default::default(),
     };
     let reply = router
         .request(AcceptedRequest {
@@ -168,6 +177,7 @@ fn board_routes_without_workspace_or_owner_daemon() {
         cache_base: None,
         sweeps: Mutex::new(SweepClock::default()),
         board: tp_board::BoardHost::with_config(tp_board::BoardConfig::for_database(&database)),
+        lifecycle: Default::default(),
     };
     let args: Vec<String> = [
         "--root",
@@ -206,6 +216,7 @@ fn router_does_not_reset_an_expired_accepted_deadline() {
         cache_base: None,
         sweeps: Mutex::new(SweepClock::default()),
         board: tp_board::BoardHost::default(),
+        lifecycle: Default::default(),
     };
     let args: Vec<String> = [
         "--no-workspace",

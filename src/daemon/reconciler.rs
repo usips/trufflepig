@@ -173,6 +173,14 @@ pub(super) fn run<H: DaemonHandler>(
         if survive(state, || handler.idle()).is_none() {
             return;
         }
+        match survive(state, || handler.requested_exit()) {
+            None => return,
+            Some(Some(exit)) => {
+                state.fail(exit);
+                return;
+            }
+            Some(None) => {}
+        }
         std::thread::sleep(MAINTENANCE_TICK);
     }
 }

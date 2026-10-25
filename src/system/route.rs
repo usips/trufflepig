@@ -22,6 +22,7 @@ use tp_core::{
 
 pub(super) fn route(
     board: &tp_board::BoardHost,
+    lifecycle: &super::RouterLifecycle,
     runtime: Option<&Path>,
     args: Vec<String>,
     context: RequestContext,
@@ -37,6 +38,7 @@ pub(super) fn route(
             "board_api": tp_board::BOARD_API,
             "schema_supported": tp_board::SCHEMA_VERSION,
             "process_id": std::process::id(),
+            "lifecycle": lifecycle.status(),
         });
         match std::env::current_exe() {
             Ok(executable) => {
@@ -100,11 +102,13 @@ pub(super) fn route(
         let executable = current_background_executable(&cache, BackgroundOwner::SystemRouter)?;
         let mut command = Command::new(&executable);
         command.args(normalized_args(&server, &server.root));
+        lifecycle.prepare_child(&mut command);
         ensure!(
             !forwarding.expired(),
             coded!(TimedOut, "query deadline expired")
         );
         let child = spawn_background_for(&mut command, &executable, "workspace daemon", &cache)?;
+        lifecycle.record_spawn(&cache);
         return forward_spawned(
             &cache,
             &args,
@@ -161,11 +165,13 @@ pub(super) fn route(
         .arg("--cache")
         .arg(&cache)
         .arg("serve");
+    lifecycle.prepare_child(&mut command);
     ensure!(
         !forwarding.expired(),
         coded!(TimedOut, "query deadline expired")
     );
     let child = spawn_background_for(&mut command, &executable, "root daemon", &cache)?;
+    lifecycle.record_spawn(&cache);
     forward_spawned(&cache, &args, &context, &child, forwarding, "root daemon")
 }
 

@@ -13,6 +13,7 @@ mod cross_root_admission_tests;
 mod failures;
 mod frame_ingress;
 mod request_lanes;
+mod requested_exit_tests;
 mod semantic_fallback_tests;
 mod tier_deadlines;
 
