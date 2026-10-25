@@ -187,7 +187,7 @@ without rewriting historical actors; clears API 9 dedupe replies; and appends a 
 entry/event for each legacy steward before dropping `plans.steward`. Each migrated grant carries all five roles,
 no expiry, and the former owner-user, harness, and plan scope. Origin, grant, worker, progress, verdict, and
 claim-attribution evidence is additive. Empty/relative DB overrides and newer schemas are refused. Board data is
-outside cache sweeps and `forget-logs`; entries and revisions remain durable. WAL requires local disk.
+outside cache sweeps and `forget-logs`; entries and revisions remain durable. WAL requires local disk; the writer sets `journal_size_limit` to 64 MiB, and router maintenance runs a PASSIVE then TRUNCATE checkpoint each minute with no busy wait, so an open reader snapshot defers it.
 Configuration is `~/.config/trufflepig/board.toml` with unknown fields denied: mode, user, host, url,
 token_file, claim_ttl_minutes, repos. Config checks cache for two seconds, backs off unchanged failures for 60
 seconds, and applies TTL changes to existing readers/writer. `mode = "remote"` fails `board_remote_unsupported`
