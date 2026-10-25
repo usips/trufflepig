@@ -1,14 +1,17 @@
 //! Pinned embeddings, shared inference, and bounded exact vector ranking.
 //! Inputs contain source text only; callers join cached vectors to their read snapshot.
 
+#[macro_use]
+extern crate tp_core;
+
 use anyhow::{Result, bail};
 #[cfg(feature = "semantic")]
 use std::cmp::Ordering;
 
 mod content_identity;
-pub(crate) use content_identity::content_key;
+pub use content_identity::content_key;
 #[cfg(feature = "semantic")]
-pub(crate) mod embedding_cache;
+pub mod embedding_cache;
 #[cfg(feature = "semantic")]
 mod inference;
 #[cfg(feature = "semantic")]

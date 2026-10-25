@@ -5,7 +5,7 @@ use super::engine::{RerankEngine, open_rerank_engine};
 use super::load_retry::LoadRetry;
 use super::protocol::{self, WorkerCommand, WorkerReply, write_reply};
 use super::{QueuedConnection, RunningConnection, now_ms};
-use crate::semantic::{VerifiedAssetDigests, runtime_config::InferenceConfig};
+use crate::{VerifiedAssetDigests, runtime_config::InferenceConfig};
 use std::{
     collections::VecDeque,
     os::unix::net::UnixStream,
@@ -449,10 +449,10 @@ fn rerank_inference_loop(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::semantic::runtime_config::InferenceConfig;
-    use crate::semantic::worker::AdmissionController;
-    use crate::semantic::worker::admission::AdmissionLimits;
-    use crate::semantic::worker::protocol::WorkerRequest;
+    use crate::runtime_config::InferenceConfig;
+    use crate::worker::AdmissionController;
+    use crate::worker::admission::AdmissionLimits;
+    use crate::worker::protocol::WorkerRequest;
     use std::io::Read;
 
     fn queued_rerank(config: &InferenceConfig, deadline_ms: u64) -> (QueuedConnection, UnixStream) {

@@ -1576,6 +1576,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "tp-semantic"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "fastembed",
+ "fs2",
+ "libc",
+ "ort",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "toml",
+ "tp-core",
+]
+
+[[package]]
 name = "tracing"
 version = "0.1.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1681,13 +1700,11 @@ dependencies = [
  "anyhow",
  "blake3",
  "clap",
- "fastembed",
  "fs2",
  "ignore",
  "imara-diff",
  "libc",
  "notify",
- "ort",
  "pulldown-cmark",
  "quick-xml",
  "regex",
@@ -1701,6 +1718,7 @@ dependencies = [
  "toml",
  "tp-core",
  "tp-extract",
+ "tp-semantic",
  "tree-sitter",
  "tree-sitter-c-sharp",
  "tree-sitter-javascript",

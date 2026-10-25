@@ -2,10 +2,8 @@ use super::super::*;
 
 #[test]
 fn reconciliation_resumes_preparation_and_new_generations() -> anyhow::Result<()> {
-    use crate::{
-        semantic::{DIMENSIONS, Embedding},
-        semantic_preparation,
-    };
+    use crate::semantic_preparation;
+    use tp_semantic::{DIMENSIONS, Embedding};
     let root = tempfile::tempdir()?;
     let cache = tempfile::tempdir()?;
     std::fs::write(root.path().join("source.rs"), "fn example() {}")?;

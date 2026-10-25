@@ -23,7 +23,7 @@ pub(crate) fn with_shape(
 }
 
 pub(crate) fn run_batches<S: AsRef<str>>(
-    engine: &mut trufflepig::SemanticInferenceEngine,
+    engine: &mut tp_semantic::SemanticInferenceEngine,
     name: &str,
     inputs: &[S],
     iterations: usize,
@@ -70,7 +70,7 @@ pub(crate) fn run_batches<S: AsRef<str>>(
 }
 
 pub(crate) fn run_long_probe(
-    engine: &mut trufflepig::SemanticInferenceEngine,
+    engine: &mut tp_semantic::SemanticInferenceEngine,
 ) -> serde_json::Value {
     // The old 8192-token shape must be rejected before ONNX inference now that
     // the public per-input bound is 4096. The model reports the exact count.

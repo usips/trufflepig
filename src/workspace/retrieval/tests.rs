@@ -153,9 +153,8 @@ fn expired_workspace_search_identifies_the_unanswered_home() {
         deadline: QueryDeadline::after(std::time::Duration::ZERO),
         policy: super::HomeIndexPolicy::IndexInline,
     };
-    let error =
-        super::search_with_policy(&request, &mut crate::semantic::SemanticSession::default())
-            .expect_err("an expired home query cannot prove absence");
+    let error = super::search_with_policy(&request, &mut tp_semantic::SemanticSession::default())
+        .expect_err("an expired home query cannot prove absence");
 
     let message = format!("{error:#}");
     assert!(message.starts_with("timed_out:"), "{message}");

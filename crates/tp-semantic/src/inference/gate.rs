@@ -48,7 +48,7 @@ fn cpu_cuda_comparison(
             "CPU/CUDA comparison requires a CUDA provider"
         ));
     }
-    let mut digests = crate::semantic::VerifiedAssetDigests::default();
+    let mut digests = crate::VerifiedAssetDigests::default();
     let mut cpu = SemanticInferenceEngine::open_with_provider(
         model_dir,
         SemanticProviderConfig::cpu(),
@@ -141,7 +141,7 @@ pub fn run_gate(model_dir: &Path) -> Result<Value> {
     let mut model = super::provider::load_verified_model(
         model_dir,
         SemanticProviderConfig::cpu(),
-        &mut crate::semantic::VerifiedAssetDigests::default(),
+        &mut crate::VerifiedAssetDigests::default(),
     )?;
     let initialized_ms = started.elapsed().as_millis();
     let cosine = check_parity(&mut model)?;

@@ -9,7 +9,6 @@ use super::{
 use crate::{
     cli::{Arguments, normalized_args},
     daemon::{self, AcceptedRequest, DaemonHandler},
-    semantic::SemanticSession,
 };
 use anyhow::{Context, Result, ensure};
 use std::{
@@ -23,6 +22,7 @@ use tp_core::{
     query_deadline::QueryDeadline,
     request_context::RequestContext,
 };
+use tp_semantic::SemanticSession;
 
 /// Applies workspace config defaults and absolutizes path options for routing.
 pub(crate) fn apply_config(config: &WorkspaceConfig, options: &Arguments) -> Result<Arguments> {

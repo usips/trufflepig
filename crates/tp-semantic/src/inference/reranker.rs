@@ -2,7 +2,7 @@
 //! Bounds admission before tokenizing; scores return in caller order.
 
 use super::{RERANK_BATCH_SIZE, SemanticProviderConfig, check_rerank_bounds, provider};
-use crate::semantic::VerifiedAssetDigests;
+use crate::VerifiedAssetDigests;
 use anyhow::{Result, bail};
 use fastembed::TextRerank;
 use std::path::Path;
@@ -42,8 +42,8 @@ impl RerankInferenceEngine {
 
     /// Scores each document against `query`, one score per document, in
     /// caller order. Rejects requests exceeding
-    /// [`RERANK_MAX_DOCUMENTS`](crate::semantic::RERANK_MAX_DOCUMENTS) or
-    /// [`RERANK_MAX_DOCUMENT_BYTES`](crate::semantic::RERANK_MAX_DOCUMENT_BYTES)
+    /// [`RERANK_MAX_DOCUMENTS`](crate::RERANK_MAX_DOCUMENTS) or
+    /// [`RERANK_MAX_DOCUMENT_BYTES`](crate::RERANK_MAX_DOCUMENT_BYTES)
     /// before running the model.
     pub fn score(&mut self, query: &str, documents: &[&str]) -> Result<Vec<f32>> {
         check_rerank_bounds(query, documents)?;
@@ -126,7 +126,7 @@ fn scores_in_caller_order(results: Vec<(usize, f32)>, count: usize) -> Result<Ve
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::semantic::{RERANK_MAX_DOCUMENT_BYTES, RERANK_MAX_DOCUMENTS};
+    use crate::{RERANK_MAX_DOCUMENT_BYTES, RERANK_MAX_DOCUMENTS};
 
     #[test]
     fn scores_reorder_into_caller_order() {

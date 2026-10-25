@@ -47,16 +47,16 @@ fn run() -> anyhow::Result<serde_json::Value> {
     let inputs = load_inputs(&args.inputs)?;
     let started = Instant::now();
     let provider = match args.provider.as_str() {
-        "cpu" => trufflepig::SemanticProviderConfig::cpu(),
-        "cuda" => trufflepig::SemanticProviderConfig::cuda(args.ordinal),
+        "cpu" => tp_semantic::SemanticProviderConfig::cpu(),
+        "cuda" => tp_semantic::SemanticProviderConfig::cuda(args.ordinal),
         value => anyhow::bail!("provider must be cpu or cuda, got {value}"),
     }
     .with_arena_max_bytes(args.arena_bytes);
-    let mut engine = trufflepig::SemanticInferenceEngine::open_with_runtime(
+    let mut engine = tp_semantic::SemanticInferenceEngine::open_with_runtime(
         &args.model_dir,
         provider,
         &args.runtime,
-        &mut trufflepig::VerifiedAssetDigests::default(),
+        &mut tp_semantic::VerifiedAssetDigests::default(),
     )?;
     let initialize_ms = started.elapsed().as_millis();
     let source_texts = inputs

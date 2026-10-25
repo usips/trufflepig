@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 pub(super) const NORMALIZATION: &str = "l2";
 /// The pinned model and tokenizer manifest.
 pub(super) const MODEL_MANIFEST: &[u8] =
-    include_bytes!("../../evaluation/semantic_gate/model.json");
+    include_bytes!("../../../evaluation/semantic_gate/model.json");
 
 /// Keys bind source content to every input that can change its vector.
 pub fn content_key(text: &str) -> String {

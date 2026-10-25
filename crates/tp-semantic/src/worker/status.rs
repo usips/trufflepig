@@ -1,7 +1,7 @@
 //! Worker status snapshot shared by control commands and CLI output.
 
 use super::protocol::Handshake;
-use crate::semantic::runtime_config::InferenceConfig;
+use crate::runtime_config::InferenceConfig;
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum WorkerState {

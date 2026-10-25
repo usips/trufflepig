@@ -11,8 +11,8 @@ mod member_search;
 mod tests;
 
 use super::{WorkspaceConfig, home_index::HomeIndexPolicy, result_cache::WorkspaceResults};
+use crate::cli::Arguments;
 use crate::workspace::workspace_discovery::WorkspaceMembers;
-use crate::{cli::Arguments, semantic::SemanticSession};
 use anyhow::Result;
 use member_fusion::MemberFusion;
 use member_scope::{Scope, scope};
@@ -21,6 +21,7 @@ use std::path::Path;
 use tp_core::{
     output::OutputBudget, query_deadline::QueryDeadline, request_context::RequestContext,
 };
+use tp_semantic::SemanticSession;
 
 /// One workspace retrieval command (`search`, `refs`, or `map`) and where it
 /// reads and persists results.

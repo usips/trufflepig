@@ -134,7 +134,7 @@ pub fn search(
 ) -> Result<ResultSet> {
     // Query inference precedes the snapshot. Candidate vectors use source bodies from that snapshot.
     let deadline = tp_core::query_deadline::QueryDeadline::start();
-    let mut session = crate::semantic::SemanticSession::default();
+    let mut session = tp_semantic::SemanticSession::default();
     search_with_session(
         store,
         query,
@@ -153,7 +153,7 @@ pub fn search_with_session(
     semantic: bool,
     rerank: bool,
     cache: &std::path::Path,
-    session: &mut crate::semantic::SemanticSession,
+    session: &mut tp_semantic::SemanticSession,
     trace: &mut telemetry::RetrievalTrace,
     deadline: &tp_core::query_deadline::QueryDeadline,
 ) -> Result<ResultSet> {
@@ -198,7 +198,7 @@ pub fn search_prepared(
     store: &Store,
     query: &Query,
     cache: &std::path::Path,
-    semantic_query: Option<crate::semantic::Embedding>,
+    semantic_query: Option<tp_semantic::Embedding>,
     reranker: Option<&dyn RerankScorer>,
     trace: &mut telemetry::RetrievalTrace,
     deadline: &tp_core::query_deadline::QueryDeadline,

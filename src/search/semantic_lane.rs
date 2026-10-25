@@ -4,9 +4,10 @@ use super::{
     file_ranking::FusionPolicy,
     telemetry::{Lane, LaneOutcome, RetrievalTrace},
 };
-use crate::{results::Hit, semantic::Embedding, store::Store};
+use crate::{results::Hit, store::Store};
 use anyhow::Result;
 use std::path::Path;
+use tp_semantic::Embedding;
 
 #[cfg(test)]
 mod tests;
@@ -83,8 +84,8 @@ fn retrieve(
     hits: &mut Vec<Hit>,
     coverage: &mut serde_json::Value,
 ) -> Result<bool> {
-    use crate::semantic::{SemanticHit, content_key, embedding_cache::EmbeddingCache};
     use std::collections::BinaryHeap;
+    use tp_semantic::{SemanticHit, content_key, embedding_cache::EmbeddingCache};
     const FILE_LIMIT: usize = 1000;
     let cache = EmbeddingCache::open_query(directory)?;
     let vectors = cache.begin_snapshot()?;
@@ -176,5 +177,5 @@ fn retrieve(
     _: &mut Vec<Hit>,
     _: &mut serde_json::Value,
 ) -> Result<bool> {
-    Err(crate::semantic::unavailable())
+    Err(tp_semantic::unavailable())
 }

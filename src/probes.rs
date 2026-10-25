@@ -5,10 +5,7 @@ mod semantic_probe;
 #[cfg(test)]
 mod tests;
 
-use crate::{
-    semantic::SemanticSession,
-    store::{Coverage, Store},
-};
+use crate::store::{Coverage, Store};
 use anyhow::Result;
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
@@ -16,6 +13,7 @@ use std::{
     path::Path,
     time::{Duration, Instant},
 };
+use tp_semantic::SemanticSession;
 
 const SQL_BUDGET: Duration = Duration::from_millis(100);
 
@@ -75,7 +73,7 @@ pub struct DoctorReport {
 
 /// SQL checks stop at 100 ms; extraction samples at most four 64 KiB files.
 pub fn doctor(store: &Store, cache: &Path, session: &SemanticSession) -> Result<DoctorReport> {
-    let initializations = crate::semantic::model_initializations();
+    let initializations = tp_semantic::model_initializations();
     let mut checks = Vec::with_capacity(6);
     for (name, sql) in [
         (ProbeName::StructuralIntegrity, "PRAGMA quick_check(1)"),
@@ -88,7 +86,7 @@ pub fn doctor(store: &Store, cache: &Path, session: &SemanticSession) -> Result<
     checks.push(semantic_probe::check(cache));
     let mut initialization = ProbeResult::new(ProbeName::ModelInitialization);
     initialization.checked = 1;
-    if crate::semantic::model_initializations() != initializations {
+    if tp_semantic::model_initializations() != initializations {
         initialization.outcome = ProbeOutcome::Failed;
     }
     checks.push(initialization);

@@ -17,7 +17,7 @@ pub use status::{WorkerState, WorkerStatus};
 use tp_core::coded_error::CodedContext;
 
 use super::Embedding;
-use crate::semantic::{VerifiedAssetDigests, runtime_config::InferenceConfig};
+use crate::{VerifiedAssetDigests, runtime_config::InferenceConfig};
 use anyhow::{Context, Result, bail, ensure};
 pub use client::RERANK_DEADLINE;
 #[cfg(feature = "semantic")]
@@ -76,7 +76,7 @@ impl ForegroundSession {
         #[cfg(not(feature = "semantic"))]
         {
             let _ = root_id;
-            return Err(crate::semantic::unavailable());
+            return Err(crate::unavailable());
         }
         let config = InferenceConfig::load()?;
         require_foreground_cuda_mask(&config)?;
@@ -111,7 +111,7 @@ pub fn ensure_started(cache_identity: &Path) -> Result<WorkerStatus> {
     #[cfg(not(feature = "semantic"))]
     {
         let _ = cache_identity;
-        return Err(crate::semantic::unavailable());
+        return Err(crate::unavailable());
     }
     let config = InferenceConfig::load()?;
     let cache = worker_cache_dir()?;
@@ -154,7 +154,7 @@ fn start_worker(cache_identity: &Path, config: &InferenceConfig, cache: &Path) -
 pub fn status(_: &Path) -> Result<WorkerStatus> {
     #[cfg(not(feature = "semantic"))]
     {
-        return Err(crate::semantic::unavailable());
+        return Err(crate::unavailable());
     }
     let config = InferenceConfig::load()?;
     let cache = worker_cache_dir()?;
@@ -169,7 +169,7 @@ pub fn status(_: &Path) -> Result<WorkerStatus> {
 pub fn stop(_: &Path) -> Result<WorkerStatus> {
     #[cfg(not(feature = "semantic"))]
     {
-        return Err(crate::semantic::unavailable());
+        return Err(crate::unavailable());
     }
     let config = InferenceConfig::load()?;
     let cache = worker_cache_dir()?;
@@ -212,7 +212,7 @@ pub fn embed(kind: EmbedKind, root_id: &Path, texts: &[String]) -> Result<Vec<Em
     #[cfg(not(feature = "semantic"))]
     {
         let _ = (kind, root_id, texts);
-        return Err(crate::semantic::unavailable());
+        return Err(crate::unavailable());
     }
     let started = Instant::now();
     let budget = match kind {
@@ -276,7 +276,7 @@ pub fn serve(cache_override: Option<&Path>) -> Result<()> {
     #[cfg(not(feature = "semantic"))]
     {
         let _ = cache_override;
-        return Err(crate::semantic::unavailable());
+        return Err(crate::unavailable());
     }
     let config = InferenceConfig::load()?;
     prepare_runtime(&config)?;
@@ -305,7 +305,7 @@ fn prepare_runtime(config: &InferenceConfig) -> Result<()> {
 }
 
 fn require_foreground_cuda_mask(config: &InferenceConfig) -> Result<()> {
-    if config.provider != crate::semantic::runtime_config::InferenceProvider::Cuda {
+    if config.provider != crate::runtime_config::InferenceProvider::Cuda {
         return Ok(());
     }
     let expected = config

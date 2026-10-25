@@ -17,7 +17,7 @@ use std::{
 
 #[cfg(test)]
 use cache_format::CacheStatus;
-pub(crate) use snapshot::EmbeddingCacheSnapshot;
+pub use snapshot::EmbeddingCacheSnapshot;
 
 const PAGE_SIZE: u64 = 4096;
 const MIN_LIMIT: u64 = 64 * 1024;
@@ -26,7 +26,7 @@ const DELETE_CHUNK: usize = 256;
 const SCHEMA_VERSION: i64 = 2;
 
 /// Evictable content cache; SQLite capacity includes table and index overhead.
-pub(crate) struct EmbeddingCache {
+pub struct EmbeddingCache {
     db: Connection,
     database_path: PathBuf,
     max_entries: u64,
@@ -36,7 +36,7 @@ pub(crate) struct EmbeddingCache {
 }
 
 impl EmbeddingCache {
-    pub(crate) fn open(directory: &Path) -> Result<Self> {
+    pub fn open(directory: &Path) -> Result<Self> {
         Self::with_limit(directory, CACHE_BYTES)
     }
 
@@ -105,7 +105,7 @@ impl EmbeddingCache {
     ///
     /// Query preparation must not wait on the background writer or perform
     /// DDL. A missing or locked cache is treated as a cache miss by callers.
-    pub(crate) fn open_query(directory: &Path) -> Result<Self> {
+    pub fn open_query(directory: &Path) -> Result<Self> {
         Self::open_existing(directory, OpenFlags::SQLITE_OPEN_READ_ONLY, Duration::ZERO)
     }
 
@@ -199,7 +199,7 @@ impl EmbeddingCache {
     }
 
     /// Opens a stable read transaction for cached-only candidate retrieval.
-    pub(crate) fn begin_snapshot(&self) -> Result<EmbeddingCacheSnapshot> {
+    pub fn begin_snapshot(&self) -> Result<EmbeddingCacheSnapshot> {
         snapshot::open(
             &self.database_path,
             Arc::clone(&self.counters),
@@ -234,12 +234,12 @@ impl EmbeddingCache {
         self.counters.status()
     }
 
-    pub(crate) fn put(&mut self, key: &str, vector: &super::Embedding) -> Result<()> {
+    pub fn put(&mut self, key: &str, vector: &super::Embedding) -> Result<()> {
         self.put_many(std::iter::once((key, vector)))
     }
 
     /// Writes one bounded batch and updates count/recency metadata once.
-    pub(crate) fn put_many<I, E>(&mut self, entries: I) -> Result<()>
+    pub fn put_many<I, E>(&mut self, entries: I) -> Result<()>
     where
         I: IntoIterator<Item = E>,
         E: CachePutItem,
@@ -357,7 +357,7 @@ fn has_current_schema(db: &Connection) -> Result<bool> {
     Ok(required.iter().all(|name| columns.contains(*name)))
 }
 
-pub(crate) trait CachePutItem {
+pub trait CachePutItem {
     fn key(&self) -> &str;
     fn vector(&self) -> &super::Embedding;
 }

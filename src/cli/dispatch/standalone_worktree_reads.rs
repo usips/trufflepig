@@ -19,7 +19,7 @@ pub(super) fn retrieve_read(
     mut fallback: Option<crate::workspace::ParentFallback>,
     verb: &str,
     options: &Arguments,
-    session: &mut crate::semantic::SemanticSession,
+    session: &mut tp_semantic::SemanticSession,
     context: &tp_core::request_context::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
     preparation_manager: Option<&crate::semantic_preparation::PreparationManager>,

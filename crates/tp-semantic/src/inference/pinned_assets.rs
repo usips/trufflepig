@@ -1,7 +1,7 @@
 //! Pinned model asset verification against manifest SHA-256 digests.
 //! A [`VerifiedAssetDigests`] memo lets a reload skip unchanged files.
 
-use crate::semantic::VerifiedAssetDigests;
+use crate::VerifiedAssetDigests;
 use anyhow::{Context, Result, bail};
 use sha2::{Digest, Sha256};
 use std::{fs, io::Read, path::Path};

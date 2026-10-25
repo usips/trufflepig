@@ -226,7 +226,7 @@ fn search_all_with_deadline(
         &results,
         &options,
         &request_context,
-        &mut crate::semantic::SemanticSession::default(),
+        &mut tp_semantic::SemanticSession::default(),
         deadline,
     )
 }

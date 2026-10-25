@@ -15,7 +15,7 @@ pub(super) struct CacheCounters {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct CacheStatus {
+pub struct CacheStatus {
     pub corrupt_misses: u64,
     pub provenance_misses: u64,
 }

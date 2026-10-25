@@ -1,5 +1,4 @@
 use super::*;
-use crate::semantic::Embedding;
 use crate::store::Store;
 use anyhow::{Context, Result};
 use std::{
@@ -8,6 +7,7 @@ use std::{
     time::Duration,
 };
 use tempfile::TempDir;
+use tp_semantic::Embedding;
 
 fn fixture(source: &str) -> Result<(TempDir, TempDir)> {
     let root = tempfile::tempdir()?;
@@ -19,7 +19,7 @@ fn fixture(source: &str) -> Result<(TempDir, TempDir)> {
 }
 
 fn fake_embedding() -> Embedding {
-    let mut values = [0.0; crate::semantic::DIMENSIONS];
+    let mut values = [0.0; tp_semantic::DIMENSIONS];
     values[0] = 1.0;
     Embedding(values)
 }

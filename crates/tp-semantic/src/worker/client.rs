@@ -1,5 +1,5 @@
 use super::{WorkerStatus, lease, protocol};
-use crate::semantic::runtime_config::InferenceConfig;
+use crate::runtime_config::InferenceConfig;
 use anyhow::{Result, bail};
 #[cfg(feature = "semantic")]
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -33,7 +33,7 @@ pub fn rerank_query(
     #[cfg(not(feature = "semantic"))]
     {
         let _ = (cache_identity, query, documents, budget);
-        return Err(crate::semantic::unavailable());
+        return Err(crate::unavailable());
     }
     let started = Instant::now();
     let deadline_instant = started + budget.min(RERANK_DEADLINE);

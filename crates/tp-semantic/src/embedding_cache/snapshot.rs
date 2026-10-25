@@ -1,7 +1,7 @@
 #[cfg(test)]
 use super::MAX_BATCH_ENTRIES;
 use super::cache_format;
-use crate::semantic::Embedding;
+use crate::Embedding;
 use anyhow::Result;
 #[cfg(test)]
 use anyhow::bail;
@@ -13,14 +13,14 @@ use std::collections::HashMap;
 use std::{path::Path, sync::Arc, time::Duration};
 
 /// A read transaction that keeps all cache lookups on one SQLite snapshot.
-pub(crate) struct EmbeddingCacheSnapshot {
+pub struct EmbeddingCacheSnapshot {
     db: Connection,
     counters: Arc<cache_format::CacheCounters>,
     manifest_digest: String,
 }
 
 impl EmbeddingCacheSnapshot {
-    pub(crate) fn get(&self, key: &str) -> Result<Option<Embedding>> {
+    pub fn get(&self, key: &str) -> Result<Option<Embedding>> {
         let mut statement = self.db.prepare_cached(
             "SELECT e.vector,p.model_revision,p.input_version,p.dimensions,
                     p.normalization,p.manifest_digest
@@ -112,7 +112,7 @@ impl EmbeddingCacheSnapshot {
         Ok(result)
     }
 
-    pub(crate) fn status(&self) -> cache_format::CacheStatus {
+    pub fn status(&self) -> cache_format::CacheStatus {
         self.counters.status()
     }
 }

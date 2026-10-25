@@ -6,7 +6,6 @@ use crate::{
     diagnostics::{DiagnosticsMode, EventStage, Operation, Outcome, RequestEvent},
     results::ResultSet,
     search::{self, Query, telemetry::RetrievalTrace},
-    semantic::{Embedding, SemanticSession},
     store::Store,
     workspace::{
         coordinator, hashed_member_cache,
@@ -25,6 +24,7 @@ use std::{
     time::Instant,
 };
 use tp_core::coded_error::{CodedContext, CodedError, ErrorCode};
+use tp_semantic::{Embedding, SemanticSession};
 
 /// The parsed command every member runs, with its query vector prepared once.
 pub(super) struct MemberCommand<'w> {

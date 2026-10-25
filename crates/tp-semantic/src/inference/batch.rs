@@ -1,5 +1,5 @@
 use super::{MAX_BATCH_INPUTS, MAX_BATCH_PADDED_TOKENS, MAX_INPUT_TOKENS};
-use crate::semantic::Embedding;
+use crate::Embedding;
 use anyhow::{Context, Result, bail};
 use fastembed::TextEmbedding;
 use std::ops::Range;

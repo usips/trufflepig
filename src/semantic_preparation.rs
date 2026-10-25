@@ -22,7 +22,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::semantic::content_key;
+use tp_semantic::content_key;
 
 pub const SNAPSHOT_WINDOW: usize = 256;
 pub const MAX_BATCH: usize = 8;

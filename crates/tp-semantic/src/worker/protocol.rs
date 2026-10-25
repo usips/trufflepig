@@ -1,8 +1,6 @@
 use super::scheduler::RequestClass;
-use crate::semantic::runtime_config::InferenceConfig;
-use crate::semantic::{
-    MODEL_NAME, MODEL_REVISION, RERANKER_NAME, RERANKER_REVISION, check_rerank_bounds,
-};
+use crate::runtime_config::InferenceConfig;
+use crate::{MODEL_NAME, MODEL_REVISION, RERANKER_NAME, RERANKER_REVISION, check_rerank_bounds};
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -306,7 +304,7 @@ mod tests {
 
     #[test]
     fn serialized_embedding_reply_is_well_below_frame_limit() {
-        use crate::semantic::DIMENSIONS;
+        use crate::DIMENSIONS;
         let values = vec![vec![0.0; DIMENSIONS]; MAX_INPUTS];
         let bytes = serde_json::to_vec(&WorkerReply::Embeddings { values }).unwrap();
         assert!(bytes.len() < FRAME_LIMIT);
@@ -314,7 +312,7 @@ mod tests {
 
     #[test]
     fn serialized_scores_reply_is_well_below_frame_limit() {
-        use crate::semantic::RERANK_MAX_DOCUMENTS;
+        use crate::RERANK_MAX_DOCUMENTS;
         let values = vec![0.0_f32; RERANK_MAX_DOCUMENTS];
         let bytes = serde_json::to_vec(&WorkerReply::Scores { values }).unwrap();
         assert!(bytes.len() < FRAME_LIMIT);
@@ -322,7 +320,7 @@ mod tests {
 
     #[test]
     fn rerank_request_over_document_limit_fails_validation() {
-        use crate::semantic::RERANK_MAX_DOCUMENTS;
+        use crate::RERANK_MAX_DOCUMENTS;
         let command = WorkerCommand::Rerank {
             root_id: "root".into(),
             query: "query".into(),
@@ -335,7 +333,7 @@ mod tests {
 
     #[test]
     fn worst_case_rerank_request_stays_under_frame_limit() -> Result<()> {
-        use crate::semantic::RERANK_MAX_DOCUMENTS;
+        use crate::RERANK_MAX_DOCUMENTS;
         let request = WorkerRequest {
             handshake: Handshake {
                 protocol: PROTOCOL_VERSION,

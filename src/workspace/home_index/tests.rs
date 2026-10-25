@@ -122,8 +122,7 @@ fn search_without_waiting(fixture: &Fixture, root: &Path, words: &[&str]) -> Str
         deadline,
         policy: HomeIndexPolicy::AwaitDaemon(Duration::ZERO),
     };
-    retrieval::search_with_policy(&request, &mut crate::semantic::SemanticSession::default())
-        .unwrap()
+    retrieval::search_with_policy(&request, &mut tp_semantic::SemanticSession::default()).unwrap()
 }
 
 fn coverage_line(text: &str) -> &str {

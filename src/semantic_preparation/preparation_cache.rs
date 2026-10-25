@@ -1,9 +1,4 @@
 use super::{PreparationState, PreparationStatus};
-use crate::semantic::Embedding;
-#[cfg(feature = "semantic")]
-use crate::semantic::embedding_cache::EmbeddingCache;
-#[cfg(feature = "semantic")]
-use crate::semantic::embedding_cache::EmbeddingCacheSnapshot;
 use anyhow::{Context, Result, bail};
 use fs2::FileExt;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -13,6 +8,11 @@ use std::{
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
+use tp_semantic::Embedding;
+#[cfg(feature = "semantic")]
+use tp_semantic::embedding_cache::EmbeddingCache;
+#[cfg(feature = "semantic")]
+use tp_semantic::embedding_cache::EmbeddingCacheSnapshot;
 
 const RUN_RETENTION: i64 = 256;
 

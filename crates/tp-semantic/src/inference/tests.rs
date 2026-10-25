@@ -61,7 +61,7 @@ fn reranker_scores_relevant_document_higher() {
         std::path::Path::new(&model_dir),
         SemanticProviderConfig::cpu(),
         std::path::Path::new(&runtime_library),
-        &mut crate::semantic::VerifiedAssetDigests::default(),
+        &mut crate::VerifiedAssetDigests::default(),
     )
     .unwrap();
     let scores = engine

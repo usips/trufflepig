@@ -403,7 +403,7 @@ fn filter_only_queries_and_reference_identities_are_useful() {
 #[test]
 fn rerank_gate_excludes_exact_and_regex_queries() {
     let (_root, cache, store) = fixture(&[("a.md", b"marker\n")]);
-    let mut session = crate::semantic::SemanticSession::default();
+    let mut session = tp_semantic::SemanticSession::default();
     for text in ["sym:marker", "re:marker"] {
         let query = Query::parse(text).unwrap();
         let mut trace = telemetry::RetrievalTrace::disabled();
@@ -429,7 +429,7 @@ fn rerank_gate_excludes_exact_and_regex_queries() {
 #[test]
 fn filter_only_queries_skip_semantic_preparation_and_reranking() {
     let (_root, cache, store) = fixture(&[("lib.rs", b"authentication flow\n")]);
-    let mut session = crate::semantic::SemanticSession::default();
+    let mut session = tp_semantic::SemanticSession::default();
     session.set_no_daemon(true);
     let mut trace = telemetry::RetrievalTrace::default();
     let filter_only = Query::parse("kind:file file:lib.rs").unwrap();

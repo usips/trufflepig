@@ -27,7 +27,7 @@ pub fn local(
         cache,
         options,
         daemon_running,
-        &mut crate::semantic::SemanticSession::default(),
+        &mut tp_semantic::SemanticSession::default(),
         &context,
         None,
         None,
@@ -40,13 +40,13 @@ pub(super) fn local_with_session(
     cache: &Path,
     options: &Arguments,
     daemon_running: bool,
-    session: &mut crate::semantic::SemanticSession,
+    session: &mut tp_semantic::SemanticSession,
     context: &tp_core::request_context::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
     preparation_manager: Option<&crate::semantic_preparation::PreparationManager>,
     deadline: QueryDeadline,
 ) -> Result<String> {
-    let initializations = crate::semantic::model_initializations();
+    let initializations = tp_semantic::model_initializations();
     let started = std::time::Instant::now();
     let result = local_dispatch(
         root,
@@ -59,7 +59,7 @@ pub(super) fn local_with_session(
         preparation_manager,
         deadline,
     );
-    let unexpected = crate::semantic::model_initializations().saturating_sub(initializations);
+    let unexpected = tp_semantic::model_initializations().saturating_sub(initializations);
     if unexpected > 0
         && options.diagnostics != "off"
         && !options.sem
@@ -100,7 +100,7 @@ fn local_dispatch(
     cache: &Path,
     options: &Arguments,
     daemon_running: bool,
-    session: &mut crate::semantic::SemanticSession,
+    session: &mut tp_semantic::SemanticSession,
     context: &tp_core::request_context::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
     preparation_manager: Option<&crate::semantic_preparation::PreparationManager>,
@@ -174,7 +174,7 @@ fn local_dispatch(
             .get(1)
             .with_coded_context(|| coded!(Usage, "semantic-check MODEL_DIRECTORY"))?;
         return match options.words.get(2).map(String::as_str) {
-            None => budget.render(&crate::semantic::run_gate(Path::new(path))?),
+            None => budget.render(&tp_semantic::run_gate(Path::new(path))?),
             Some("cuda") => {
                 ensure_semantic_check_arity(options)?;
                 let ordinal = options
@@ -187,15 +187,15 @@ fn local_dispatch(
                     .context("invalid CUDA device ordinal")?;
                 #[cfg(feature = "semantic")]
                 {
-                    budget.render(&crate::semantic::run_gpu_gate(
+                    budget.render(&tp_semantic::run_gpu_gate(
                         Path::new(path),
-                        crate::semantic::SemanticProviderConfig::cuda(ordinal),
+                        tp_semantic::SemanticProviderConfig::cuda(ordinal),
                     )?)
                 }
                 #[cfg(not(feature = "semantic"))]
                 {
                     let _ = ordinal;
-                    Err(crate::semantic::unavailable())
+                    Err(tp_semantic::unavailable())
                 }
             }
             Some(provider) => bail!(coded!(

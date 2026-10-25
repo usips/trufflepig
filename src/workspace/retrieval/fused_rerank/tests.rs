@@ -247,7 +247,7 @@ fn the_request_budget_is_the_query_deadline_remainder() {
     rerank(&mut workspace, &scorer, &QueryDeadline::start());
     assert_eq!(
         scorer.requests.borrow()[0].1,
-        crate::semantic::worker::RERANK_DEADLINE
+        tp_semantic::worker::RERANK_DEADLINE
     );
 }
 

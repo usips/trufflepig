@@ -220,7 +220,7 @@ mod tests {
         assert!(!options.sem);
         assert!(!options.rerank);
         assert!(
-            crate::semantic::SemanticSession::new()
+            tp_semantic::SemanticSession::new()
                 .prepare(options.sem, root.path(), "authentication")
                 .unwrap()
                 .is_none()

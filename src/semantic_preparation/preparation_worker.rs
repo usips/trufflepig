@@ -1,7 +1,7 @@
 use super::{EmbeddingInput, MAX_BATCH, MAX_MODEL_TOKENS, MAX_PADDED_TOKENS};
-use crate::semantic::Embedding;
 use anyhow::Result;
 use std::path::{Path, PathBuf};
+use tp_semantic::Embedding;
 
 /// A caller-owned inference worker. Calls are serialized by the preparation thread.
 pub trait EmbeddingWorker: Send {
@@ -41,13 +41,13 @@ pub struct SharedWorker {
 
 /// Adapts the local foreground session for `--no-daemon` preparation.
 pub struct ForegroundWorker {
-    session: crate::semantic::worker::ForegroundSession,
+    session: tp_semantic::worker::ForegroundSession,
 }
 
 impl ForegroundWorker {
     pub fn open(root_id: impl AsRef<Path>) -> Result<Self> {
         Ok(Self {
-            session: crate::semantic::worker::ForegroundSession::open(root_id.as_ref())?,
+            session: tp_semantic::worker::ForegroundSession::open(root_id.as_ref())?,
         })
     }
 }
@@ -95,8 +95,8 @@ impl EmbeddingWorker for SharedWorker {
             .iter()
             .map(|input| input.text.clone())
             .collect::<Vec<_>>();
-        match crate::semantic::worker::embed(
-            crate::semantic::worker::EmbedKind::Background,
+        match tp_semantic::worker::embed(
+            tp_semantic::worker::EmbedKind::Background,
             &self.root_id,
             &texts,
         ) {
@@ -319,7 +319,7 @@ mod tests {
             seen.push(batch.len());
             Ok(batch
                 .iter()
-                .map(|_| Ok(Embedding([1.0; crate::semantic::DIMENSIONS])))
+                .map(|_| Ok(Embedding([1.0; tp_semantic::DIMENSIONS])))
                 .collect())
         });
         let inputs = (0..17).map(|_| input(1)).collect::<Vec<_>>();

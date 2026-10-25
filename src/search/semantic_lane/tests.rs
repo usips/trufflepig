@@ -1,13 +1,14 @@
 #[cfg(feature = "semantic")]
 use crate::{
     search::{self, Query},
-    semantic::{
-        DIMENSIONS, Embedding, SemanticSession, content_key, embedding_cache::EmbeddingCache,
-    },
     store::Store,
 };
 #[cfg(feature = "semantic")]
 use tp_core::query_deadline::QueryDeadline;
+#[cfg(feature = "semantic")]
+use tp_semantic::{
+    DIMENSIONS, Embedding, SemanticSession, content_key, embedding_cache::EmbeddingCache,
+};
 
 #[cfg(feature = "semantic")]
 fn fixture(files: &[(&str, &[u8])]) -> (tempfile::TempDir, tempfile::TempDir, Store) {
@@ -257,7 +258,7 @@ fn no_daemon_search_uses_cached_query_and_source_vectors_without_model() -> anyh
     cache_vector(cache.path(), query, &vector);
     cache_vector(cache.path(), "fn cached_source() {}", &vector);
 
-    let initializations = crate::semantic::model_initializations();
+    let initializations = tp_semantic::model_initializations();
     let mut session = SemanticSession::new();
     session.set_no_daemon(true);
     let result = search::search_with_session(
@@ -279,7 +280,7 @@ fn no_daemon_search_uses_cached_query_and_source_vectors_without_model() -> anyh
     assert_eq!(result.coverage["semantic_pending"], 0);
     assert!(!session.is_loaded());
     assert_eq!(session.initializations(), 0);
-    assert_eq!(crate::semantic::model_initializations(), initializations);
+    assert_eq!(tp_semantic::model_initializations(), initializations);
     Ok(())
 }
 

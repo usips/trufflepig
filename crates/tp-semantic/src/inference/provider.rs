@@ -1,6 +1,6 @@
 use super::pinned_assets::{read_verified_asset, verify_asset_digest};
 use super::{MAX_INPUT_TOKENS, RERANK_MAX_TOKENS, SemanticProvider, SemanticProviderConfig};
-use crate::semantic::VerifiedAssetDigests;
+use crate::VerifiedAssetDigests;
 use anyhow::{Context, Result};
 use fastembed::{
     InitOptionsUserDefined, OnnxSource, Pooling, RerankInitOptionsUserDefined, TextEmbedding,
@@ -9,8 +9,8 @@ use fastembed::{
 use std::path::Path;
 use tp_core::coded_error::CodedContext;
 
-const MODEL_MANIFEST: &str = include_str!("../../../evaluation/semantic_gate/model.json");
-const RERANKER_MANIFEST: &str = include_str!("../../../evaluation/semantic_gate/reranker.json");
+const MODEL_MANIFEST: &str = include_str!("../../../../evaluation/semantic_gate/model.json");
+const RERANKER_MANIFEST: &str = include_str!("../../../../evaluation/semantic_gate/reranker.json");
 
 pub(super) fn provider_dispatches(
     provider: SemanticProviderConfig,

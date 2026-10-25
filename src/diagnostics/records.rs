@@ -87,7 +87,7 @@ pub struct RequestEvent {
     pub stderr_accepted_bytes: usize,
     pub receipt: Option<DeliveryReceipt>,
     pub retrieval: Option<crate::search::telemetry::RetrievalTrace>,
-    pub residency: Option<crate::semantic::ResidencySample>,
+    pub residency: Option<tp_semantic::ResidencySample>,
     pub probes: Vec<crate::probes::ProbeResult>,
     pub coverage: Option<crate::store::Coverage>,
     pub emitted: Vec<EmittedIdentity>,

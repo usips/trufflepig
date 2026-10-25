@@ -237,7 +237,7 @@ fn direct_with_deadline(
         &cache,
         options,
         false,
-        &mut crate::semantic::SemanticSession::default(),
+        &mut tp_semantic::SemanticSession::default(),
         context,
         None,
         None,

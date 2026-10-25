@@ -1,7 +1,7 @@
 use super::{ProbeName, ProbeOutcome, ProbeResult, connection};
-use crate::semantic::{DIMENSIONS, INPUT_VERSION, MODEL_REVISION};
 use anyhow::Result;
 use std::{path::Path, time::Instant};
+use tp_semantic::{DIMENSIONS, INPUT_VERSION, MODEL_REVISION};
 
 pub(super) fn check(cache: &Path) -> ProbeResult {
     let started = Instant::now();

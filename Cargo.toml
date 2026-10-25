@@ -5,7 +5,7 @@ edition = "2024"
 license = "GPL-3.0-only"
 
 [workspace]
-members = ["crates/tp-core", "crates/tp-extract"]
+members = ["crates/tp-core", "crates/tp-extract", "crates/tp-semantic"]
 
 [workspace.package]
 version = "0.1.0"
@@ -43,6 +43,7 @@ fastembed = { version = "=6.1.0", default-features = false, features = ["ort-loa
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic"] }
 tp-core = { path = "crates/tp-core" }
 tp-extract = { path = "crates/tp-extract" }
+tp-semantic = { path = "crates/tp-semantic" }
 
 [dependencies]
 anyhow.workspace = true
@@ -74,19 +75,15 @@ tree-sitter-php.workspace = true
 uuid.workspace = true
 tp-core.workspace = true
 tp-extract.workspace = true
-fastembed = { workspace = true, optional = true }
-ort = { workspace = true, optional = true }
+tp-semantic.workspace = true
 
 [dev-dependencies]
 tp-core = { workspace = true, features = ["test-support"] }
+tp-semantic = { workspace = true, features = ["test-support"] }
 
 [features]
-semantic = ["dep:fastembed", "dep:ort"]
-semantic-cuda = ["semantic", "ort/cuda"]
-
-[[example]]
-name = "semantic_benchmark"
-required-features = ["semantic"]
+semantic = ["tp-semantic/semantic"]
+semantic-cuda = ["semantic", "tp-semantic/semantic-cuda"]
 
 # Dependencies (bundled SQLite, tree-sitter grammars, blake3, tiktoken) run
 # optimized in debug builds; workspace crates keep fast incremental builds.

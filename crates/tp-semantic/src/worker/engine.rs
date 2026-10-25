@@ -1,5 +1,5 @@
 use super::super::Embedding;
-use crate::semantic::{
+use crate::{
     VerifiedAssetDigests,
     runtime_config::{InferenceConfig, InferenceProvider},
 };
@@ -22,7 +22,7 @@ pub trait RerankEngine: Send {
 
 #[cfg(feature = "semantic")]
 struct ModelEngine {
-    engine: crate::semantic::SemanticInferenceEngine,
+    engine: crate::SemanticInferenceEngine,
     // Struct fields drop in declaration order, so the model releases its
     // provider before this process-global preload is closed.
     _preload: Option<DynamicLibraryGuard>,
@@ -92,15 +92,12 @@ fn open_cpu(
     let model = config
         .model_dir()
         .with_coded_context(|| coded!(SemanticWorker, "model directory is not configured"))?;
-    let provider =
-        crate::semantic::SemanticProviderConfig::cpu().with_arena_max_bytes(config.arena_bytes);
+    let provider = crate::SemanticProviderConfig::cpu().with_arena_max_bytes(config.arena_bytes);
     let engine = match config.runtime_library() {
-        Ok(runtime) => crate::semantic::SemanticInferenceEngine::open_with_runtime(
-            model, provider, runtime, digests,
-        )?,
-        Err(_) => {
-            crate::semantic::SemanticInferenceEngine::open_with_provider(model, provider, digests)?
+        Ok(runtime) => {
+            crate::SemanticInferenceEngine::open_with_runtime(model, provider, runtime, digests)?
         }
+        Err(_) => crate::SemanticInferenceEngine::open_with_provider(model, provider, digests)?,
     };
     Ok(Box::new(ModelEngine {
         engine,
@@ -114,7 +111,7 @@ fn open_cpu(
     _: &Path,
     _: &mut VerifiedAssetDigests,
 ) -> Result<Box<dyn Engine>> {
-    Err(crate::semantic::unavailable())
+    Err(crate::unavailable())
 }
 
 #[cfg(feature = "semantic")]
@@ -139,12 +136,10 @@ fn open_cuda(
         .map(preload_library)
         .transpose()?;
     let engine = match config.runtime_library() {
-        Ok(runtime) => crate::semantic::SemanticInferenceEngine::open_with_runtime(
-            model, provider, runtime, digests,
-        )?,
-        Err(_) => {
-            crate::semantic::SemanticInferenceEngine::open_with_provider(model, provider, digests)?
+        Ok(runtime) => {
+            crate::SemanticInferenceEngine::open_with_runtime(model, provider, runtime, digests)?
         }
+        Err(_) => crate::SemanticInferenceEngine::open_with_provider(model, provider, digests)?,
     };
     Ok(Box::new(ModelEngine {
         engine,
@@ -158,12 +153,12 @@ fn open_cuda(
     _: &Path,
     _: &mut VerifiedAssetDigests,
 ) -> Result<Box<dyn Engine>> {
-    Err(crate::semantic::unavailable())
+    Err(crate::unavailable())
 }
 
 #[cfg(feature = "semantic")]
 struct ModelRerankEngine {
-    engine: crate::semantic::RerankInferenceEngine,
+    engine: crate::RerankInferenceEngine,
     // Declared after `engine` so the model releases its provider before this
     // process-global preload is closed; see `ModelEngine`.
     _preload: Option<DynamicLibraryGuard>,
@@ -203,15 +198,12 @@ fn open_rerank_cpu(
     digests: &mut VerifiedAssetDigests,
 ) -> Result<Box<dyn RerankEngine>> {
     let model = config.rerank_model_dir()?;
-    let provider =
-        crate::semantic::SemanticProviderConfig::cpu().with_arena_max_bytes(config.arena_bytes);
+    let provider = crate::SemanticProviderConfig::cpu().with_arena_max_bytes(config.arena_bytes);
     let engine = match config.runtime_library() {
-        Ok(runtime) => crate::semantic::RerankInferenceEngine::open_with_runtime(
-            model, provider, runtime, digests,
-        )?,
-        Err(_) => {
-            crate::semantic::RerankInferenceEngine::open_with_provider(model, provider, digests)?
+        Ok(runtime) => {
+            crate::RerankInferenceEngine::open_with_runtime(model, provider, runtime, digests)?
         }
+        Err(_) => crate::RerankInferenceEngine::open_with_provider(model, provider, digests)?,
     };
     Ok(Box::new(ModelRerankEngine {
         engine,
@@ -224,7 +216,7 @@ fn open_rerank_cpu(
     _: &InferenceConfig,
     _: &mut VerifiedAssetDigests,
 ) -> Result<Box<dyn RerankEngine>> {
-    Err(crate::semantic::unavailable())
+    Err(crate::unavailable())
 }
 
 #[cfg(feature = "semantic")]
@@ -246,12 +238,10 @@ fn open_rerank_cuda(
         .map(preload_library)
         .transpose()?;
     let engine = match config.runtime_library() {
-        Ok(runtime) => crate::semantic::RerankInferenceEngine::open_with_runtime(
-            model, provider, runtime, digests,
-        )?,
-        Err(_) => {
-            crate::semantic::RerankInferenceEngine::open_with_provider(model, provider, digests)?
+        Ok(runtime) => {
+            crate::RerankInferenceEngine::open_with_runtime(model, provider, runtime, digests)?
         }
+        Err(_) => crate::RerankInferenceEngine::open_with_provider(model, provider, digests)?,
     };
     Ok(Box::new(ModelRerankEngine {
         engine,
@@ -264,19 +254,19 @@ fn open_rerank_cuda(
     _: &InferenceConfig,
     _: &mut VerifiedAssetDigests,
 ) -> Result<Box<dyn RerankEngine>> {
-    Err(crate::semantic::unavailable())
+    Err(crate::unavailable())
 }
 
 /// The embedder keeps TF32 off: its vectors are cached and parity-gated.
 #[cfg(feature = "semantic")]
-fn embed_cuda_provider(ordinal: i32, arena_bytes: u64) -> crate::semantic::SemanticProviderConfig {
-    crate::semantic::SemanticProviderConfig::cuda(ordinal).with_arena_max_bytes(arena_bytes)
+fn embed_cuda_provider(ordinal: i32, arena_bytes: u64) -> crate::SemanticProviderConfig {
+    crate::SemanticProviderConfig::cuda(ordinal).with_arena_max_bytes(arena_bytes)
 }
 
 /// Rerank scores are never cached, so the reranker enables TF32 for speed.
 #[cfg(feature = "semantic")]
-fn rerank_cuda_provider(ordinal: i32, arena_bytes: u64) -> crate::semantic::SemanticProviderConfig {
-    crate::semantic::SemanticProviderConfig::cuda(ordinal)
+fn rerank_cuda_provider(ordinal: i32, arena_bytes: u64) -> crate::SemanticProviderConfig {
+    crate::SemanticProviderConfig::cuda(ordinal)
         .with_arena_max_bytes(arena_bytes)
         .with_tf32(true)
 }
@@ -289,6 +279,6 @@ mod tests {
     fn only_the_reranker_enables_tf32() {
         assert!(!embed_cuda_provider(0, 1).tf32);
         assert!(rerank_cuda_provider(0, 1).tf32);
-        assert!(!crate::semantic::SemanticProviderConfig::cpu().tf32);
+        assert!(!crate::SemanticProviderConfig::cpu().tf32);
     }
 }

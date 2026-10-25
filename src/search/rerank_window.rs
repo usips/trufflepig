@@ -11,7 +11,7 @@ use super::{
     path_prior::PathPrior,
     telemetry::{Lane, LaneOutcome, RetrievalTrace},
 };
-use crate::{results::Hit, semantic, store::Store};
+use crate::{results::Hit, store::Store};
 use anyhow::Result;
 use rusqlite::OptionalExtension;
 use std::{
@@ -24,7 +24,7 @@ use tp_core::query_deadline::QueryDeadline;
 mod tests;
 
 /// Fused hits eligible for cross-encoder scoring, from the top of the fused order.
-pub const RERANK_WINDOW: usize = semantic::RERANK_MAX_DOCUMENTS;
+pub const RERANK_WINDOW: usize = tp_semantic::RERANK_MAX_DOCUMENTS;
 
 /// Scores (query, document) pairs within `budget` (capped by the worker's own
 /// deadline); implemented by `SemanticSession` over the shared worker and by
@@ -39,7 +39,7 @@ pub trait RerankScorer {
     ) -> Result<Vec<f32>>;
 }
 
-impl RerankScorer for semantic::SemanticSession {
+impl RerankScorer for tp_semantic::SemanticSession {
     fn score(
         &self,
         cache_identity: &Path,
@@ -51,7 +51,7 @@ impl RerankScorer for semantic::SemanticSession {
     }
 }
 
-const BODY_CLAMP_BYTES: usize = semantic::RERANK_MAX_DOCUMENT_BYTES;
+const BODY_CLAMP_BYTES: usize = tp_semantic::RERANK_MAX_DOCUMENT_BYTES;
 
 /// What one rerank stage reports as `rerank_status`, `rerank_reason`, and
 /// `rerank_window` in coverage.
@@ -99,7 +99,7 @@ pub(super) fn apply(
         policy,
         cache,
         scorer,
-        budget: semantic::worker::RERANK_DEADLINE,
+        budget: tp_semantic::worker::RERANK_DEADLINE,
     };
     let window = &mut hits[..window];
     let (outcome, _) = stage.run(
@@ -139,7 +139,7 @@ impl MergedRerank<'_> {
         let budget = self
             .deadline
             .remaining()
-            .min(semantic::worker::RERANK_DEADLINE);
+            .min(tp_semantic::worker::RERANK_DEADLINE);
         if budget.is_zero() && !text.is_empty() && !items.is_empty() {
             trace.record(Lane::Rerank, started, &[], LaneOutcome::Failed, false);
             let reason = coded!(SemanticTimeout, "query deadline expired before rerank");

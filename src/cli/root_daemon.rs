@@ -9,7 +9,6 @@ use super::{Arguments, dispatch::local_with_session, emission, parse};
 use crate::{
     daemon::{self, AcceptedRequest, DaemonHandler},
     diagnostics::DiagnosticQueue,
-    semantic::SemanticSession,
     semantic_preparation::PreparationManager,
     store::Store,
 };
@@ -23,6 +22,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
+use tp_semantic::SemanticSession;
 
 const PREPARATION_CHECK_INTERVAL: Duration = Duration::from_secs(1);
 const PROBE_INTERVAL: Duration = Duration::from_secs(30);

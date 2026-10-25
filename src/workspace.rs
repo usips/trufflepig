@@ -309,7 +309,7 @@ pub(crate) fn local(
     cache: &Path,
     options: &Arguments,
     context: &RequestContext,
-    session: &mut crate::semantic::SemanticSession,
+    session: &mut tp_semantic::SemanticSession,
     deadline: tp_core::query_deadline::QueryDeadline,
 ) -> Result<String> {
     let incoming_deadline = deadline;
