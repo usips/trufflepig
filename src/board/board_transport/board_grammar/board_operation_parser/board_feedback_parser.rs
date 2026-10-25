@@ -5,17 +5,17 @@ use super::{
 };
 use crate::coded_error::CodedContext;
 use crate::{
+    board::board_grammar::BoardArguments,
     board::{
         board_ids::{EntryId, PlanId},
         board_protocol::{BoardOp, FeedbackMetadata, RecentCall},
         board_vocabulary::{EntryText, FeedbackImportKey, FeedbackKind, FeedbackState},
     },
-    cli::Arguments,
 };
 use anyhow::Result;
 
 pub(super) fn parse_feedback(
-    options: &Arguments,
+    options: &BoardArguments,
     payload: BoardTextPayload,
 ) -> Result<BoardCommand> {
     let verb = word(
@@ -76,7 +76,10 @@ pub(super) fn parse_feedback(
     Ok(BoardCommand::Op(op))
 }
 
-fn feedback_metadata(options: &Arguments, steer_mode: Option<String>) -> Result<FeedbackMetadata> {
+fn feedback_metadata(
+    options: &BoardArguments,
+    steer_mode: Option<String>,
+) -> Result<FeedbackMetadata> {
     let recent_calls = options
         .board
         .recent_calls

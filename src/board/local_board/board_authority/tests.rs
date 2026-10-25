@@ -1,4 +1,3 @@
-use crate::board::board_actor::{BoardActor, BoardRecipient, HarnessLabel};
 use crate::board::board_backend::BoardBackend;
 use crate::board::board_ids::{EntryId, PlanId};
 use crate::board::board_protocol::{
@@ -6,10 +5,14 @@ use crate::board::board_protocol::{
 };
 use crate::board::board_vocabulary::{EntryKind, PlanText, PlanTitle};
 use crate::board::local_board::LocalBoard;
+use crate::{
+    board::board_actor::{BoardActor, BoardRecipient},
+    request_context::HarnessLabel,
+};
 use std::time::Duration;
 
 fn database() -> (tempfile::TempDir, LocalBoard) {
-    let directory = crate::board::board_test_support::scratch("board-authority-");
+    let directory = crate::test_fixtures::scratch("board-authority-");
     let board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),

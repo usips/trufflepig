@@ -43,7 +43,7 @@ pub(super) fn initialize(conn: &Connection, repository: &GitRepository) -> Resul
         CREATE TABLE IF NOT EXISTS views(tip TEXT PRIMARY KEY,cutoff INTEGER NOT NULL,created INTEGER NOT NULL,updated INTEGER NOT NULL,visited INTEGER NOT NULL DEFAULT 0,complete INTEGER NOT NULL DEFAULT 0,boundary TEXT NOT NULL DEFAULT 'pending',failure TEXT);
         CREATE TABLE IF NOT EXISTS traversal(tip TEXT NOT NULL,depth INTEGER NOT NULL,oid TEXT NOT NULL,eligible INTEGER NOT NULL,PRIMARY KEY(tip,depth));
         CREATE TABLE IF NOT EXISTS changes(before_oid TEXT NOT NULL,after_oid TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(before_oid,after_oid));")?;
-    let identity = crate::store::encode_path(&repository.common_dir);
+    let identity = crate::path_codec::encode_path(&repository.common_dir);
     let previous: Option<String> = conn
         .query_row("SELECT common_dir FROM identity", [], |r| r.get(0))
         .optional()?;
@@ -85,7 +85,7 @@ pub(super) fn status(history: &History) -> Result<Value> {
         None,
     ));
     Ok(
-        json!({"tip":history.tip,"cutoff":cutoff,"max_visited":MAX_COMMITS,"visited":visited,"complete":complete,"coverage":boundary,"failure":failure,"traversal":"first_parent","changes":"computed_on_demand","source_archive":false,"worker_running":worker::is_running(&history.cache).unwrap_or(false)}),
+        json!({"tip":history.tip,"cutoff":cutoff,"max_visited":MAX_COMMITS,"visited":visited,"complete":complete,"coverage":boundary,"failure":failure,"traversal":"first_parent","changes":"computed_on_demand","source_archive":false,"worker_running":history_worker::is_running(&history.cache).unwrap_or(false)}),
     )
 }
 
@@ -102,7 +102,7 @@ pub(super) fn index(history: &mut History) -> Result<Value> {
     )?;
     let result = index_batch(history);
     if let Err(error) = result {
-        let category = if super::resource_limits::is_resource_limited(&error) {
+        let category = if crate::git_runner::is_resource_limited(&error) {
             "resource_limited"
         } else {
             "unavailable"

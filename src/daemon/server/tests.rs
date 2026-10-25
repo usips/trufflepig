@@ -1,8 +1,8 @@
-use super::super::deadline::QueryDeadline;
 use super::super::tests::scratch;
-use super::super::{SOCKET_NAME, request, stop};
 use super::*;
-use crate::diagnostics::RequestContext;
+use crate::daemon_transport::{SOCKET_NAME, request, stop};
+use crate::query_deadline::QueryDeadline;
+use crate::request_context::RequestContext;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Barrier;
@@ -128,9 +128,9 @@ fn daemon_serves_recovers_protocol_errors_watches_and_stops() {
         .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();
     bad_client
-        .write_all(&((protocol::REQUEST_LIMIT + 1) as u32).to_be_bytes())
+        .write_all(&((daemon_wire_protocol::REQUEST_LIMIT + 1) as u32).to_be_bytes())
         .unwrap();
-    let bad_reply = protocol::read_reply(&mut bad_client);
+    let bad_reply = daemon_wire_protocol::read_reply(&mut bad_client);
     let reply = served.ask(&["search", "a\nb"]);
     std::fs::write(served.root.join("changed.rs"), "fn changed() {}\n").unwrap();
     let watched = receiver.recv_timeout(Duration::from_secs(5));
@@ -274,11 +274,11 @@ fn router_answers_spooled_requests_on_its_workers() {
             let spool = spool.clone();
             std::thread::spawn(move || {
                 let args = vec!["search".to_owned(), client.to_string()];
-                super::super::spool::request(
+                crate::daemon_transport::spool::request(
                     &spool,
                     &args,
                     &RequestContext::new(None, None),
-                    QueryDeadline::after(super::super::CLIENT_REPLY_WAIT),
+                    QueryDeadline::after(crate::daemon_transport::CLIENT_REPLY_WAIT),
                 )
             })
         })
@@ -304,10 +304,10 @@ fn connect_probe_sees_a_serving_daemon_without_disturbing_it() {
         },
     );
     for _ in 0..8 {
-        assert!(super::super::running(&served.cache));
+        assert!(crate::daemon_transport::running(&served.cache));
     }
     assert_eq!(served.ask(&["status"]).unwrap().as_deref(), Some("status"));
     let cache = served.cache.clone();
     served.stop().unwrap();
-    assert!(!super::super::running(&cache));
+    assert!(!crate::daemon_transport::running(&cache));
 }

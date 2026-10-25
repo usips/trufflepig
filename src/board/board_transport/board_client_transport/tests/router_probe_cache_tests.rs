@@ -1,12 +1,7 @@
-mod cli_retry_probe;
-
 use super::*;
 
 #[test]
 fn router_api_is_probed_once_before_dispatch_and_mismatch_never_falls_back() {
-    if cli_retry_probe::run_isolated() {
-        return;
-    }
     let directory = scratch();
     let database = directory.path().join("board.sqlite3");
     let status =

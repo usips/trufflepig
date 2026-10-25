@@ -1,6 +1,6 @@
 use crate::board::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
 use crate::board::board_protocol::BoardOp;
-use crate::cli::parse;
+use crate::board::board_test_support::parse_board_arguments as parse;
 
 #[test]
 fn project_selectors_survive_router_normalization_for_each_read() {
@@ -12,8 +12,8 @@ fn project_selectors_survive_router_normalization_for_each_read() {
             let args: Vec<_> = words.into_iter().map(str::to_owned).collect();
             let options = parse(&args).unwrap();
             let original = board_parse(&options, None).unwrap();
-            let forwarded = normalize_args(&args, &options, None).unwrap();
-            let forwarded = parse(&forwarded).unwrap();
+            let forwarded = normalize_args(&options, None).unwrap();
+            let forwarded = crate::board::board_test_support::round_trip(&forwarded);
             assert_eq!(forwarded.board.project.as_deref(), Some(selector));
             assert_eq!(board_parse(&forwarded, None).unwrap(), original);
         }
@@ -105,9 +105,13 @@ fn v10_repeated_progress_and_worker_flags_survive_router_normalization() {
         let args = command.into_iter().map(str::to_owned).collect::<Vec<_>>();
         let options = parse(&args).unwrap();
         let original = board_parse(&options, None).unwrap();
-        let forwarded = normalize_args(&args, &options, None).unwrap();
+        let forwarded = normalize_args(&options, None).unwrap();
         assert_eq!(
-            board_parse(&parse(&forwarded).unwrap(), None).unwrap(),
+            board_parse(
+                &crate::board::board_test_support::round_trip(&forwarded),
+                None
+            )
+            .unwrap(),
             original
         );
     }

@@ -7,14 +7,13 @@ pub(crate) mod board_markup;
 pub mod board_projects;
 pub(crate) mod board_web;
 use crate::coded_error::CodedContext;
-pub use board_domain::{
-    board_actor, board_collections, board_ids, board_protocol, board_vocabulary,
-};
+pub use board_domain::{board_actor, board_ids, board_protocol, board_vocabulary};
 pub mod board_transport;
 pub use board_transport::{board_backend, board_config, board_grammar, feedback_outbox};
 pub mod board_git;
 pub use board_git::{commit_ingest, commit_trailers, repo_identity, review_packet};
 pub mod board_render;
+pub(crate) mod board_runtime_markers;
 #[cfg(test)]
 pub(crate) mod board_test_support;
 pub mod local_board;
@@ -23,24 +22,23 @@ mod tests;
 
 pub use board_backend::{BoardBackend, BoardHost};
 pub use board_config::BoardConfig;
-pub use board_protocol::{
-    BOARD_API, BoardError, BoardOp, BoardReply, BoardRequest, BoardRequestKey,
-};
+pub use board_protocol::{BOARD_API, BoardError, BoardOp, BoardRequest, BoardRequestKey};
 pub use local_board::SCHEMA_VERSION;
 
-use crate::{cli::Arguments, daemon::deadline::QueryDeadline, diagnostics::RequestContext};
+use crate::{query_deadline::QueryDeadline, request_context::RequestContext};
 use anyhow::{Result, bail, ensure};
+use board_grammar::BoardArguments;
 use board_grammar::BoardCommand;
 use std::io::Read;
 
 /// Captures stdin/file bodies and feedback identity once, including across retries.
-pub(crate) fn prepare_client(args: &[String], options: &Arguments) -> Result<Vec<String>> {
+pub(crate) fn prepare_client(options: &BoardArguments) -> Result<BoardArguments> {
     board_grammar::validate_before_body(options)?;
     let body = read_body(options)?;
-    board_grammar::normalize_args(args, options, body.as_deref())
+    board_grammar::normalize_args(options, body.as_deref())
 }
 
-fn read_body(options: &Arguments) -> Result<Option<String>> {
+fn read_body(options: &BoardArguments) -> Result<Option<String>> {
     let Some(path) = &options.board.body else {
         return Ok(None);
     };
@@ -80,7 +78,7 @@ pub(crate) fn feedback_lookup_wait(deadline: &QueryDeadline) -> std::time::Durat
 
 fn unavailable_or_queue(
     command: &BoardCommand,
-    options: &Arguments,
+    options: &BoardArguments,
     context: &RequestContext,
     config: &BoardConfig,
     spool: &std::path::Path,

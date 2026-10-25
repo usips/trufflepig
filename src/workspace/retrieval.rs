@@ -11,12 +11,10 @@ mod member_search;
 mod tests;
 
 use super::{WorkspaceConfig, home_index::HomeIndexPolicy, result_cache::WorkspaceResults};
+use crate::workspace::workspace_discovery::WorkspaceMembers;
 use crate::{
-    cli::Arguments,
-    daemon::deadline::QueryDeadline,
-    diagnostics::RequestContext,
-    output::OutputBudget,
-    semantic::SemanticSession,
+    cli::Arguments, output::OutputBudget, query_deadline::QueryDeadline,
+    request_context::RequestContext, semantic::SemanticSession,
 };
 use anyhow::Result;
 use member_fusion::MemberFusion;

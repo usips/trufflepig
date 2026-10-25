@@ -2,7 +2,10 @@
 //! deletions, and coverage changes, bounded by window, count, and bytes
 //! ([coherent publication](../../../docs/index-contract.md#coherent-publication)).
 use crate::identity::ContentRevision;
-use crate::store::{Publication, PublicationChange, PublicationObservations, decode_path};
+use crate::{
+    path_codec::decode_path,
+    store::{Publication, PublicationChange, PublicationObservations},
+};
 use anyhow::Result;
 use rusqlite::{Connection, params};
 

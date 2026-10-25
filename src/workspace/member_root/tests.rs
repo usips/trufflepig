@@ -152,7 +152,7 @@ fn home_root_keeps_configured_root_for_nested_repository() {
 
 #[test]
 fn expired_probe_budget_fails_parent_probes_closed() {
-    use crate::daemon::deadline::QueryDeadline;
+    use crate::query_deadline::QueryDeadline;
 
     assert_eq!(GIT_PROBE_TIMEOUT, Duration::from_secs(2));
     let (scratch, member) = repository();

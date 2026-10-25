@@ -10,8 +10,9 @@ use crate::coded_error::CodedContext;
 use crate::{
     background_process::{BackgroundOwner, current_background_executable, spawn_background_for},
     cli::{Arguments, normalized_args},
-    daemon::{self, AcceptedRequest, DaemonHandler, deadline::QueryDeadline},
-    diagnostics::RequestContext,
+    daemon::{self, AcceptedRequest, DaemonHandler},
+    query_deadline::QueryDeadline,
+    request_context::RequestContext,
     semantic::SemanticSession,
 };
 use anyhow::{Context, Result, ensure};
@@ -48,19 +49,6 @@ pub(crate) fn apply_config(config: &WorkspaceConfig, options: &Arguments) -> Res
         options.ignore_revs_file = Some(std::path::absolute(ignore)?);
     }
     Ok(options)
-}
-
-pub fn run(
-    config: WorkspaceConfig,
-    options: &Arguments,
-    context: &RequestContext,
-) -> Result<String> {
-    run_with_deadline(
-        config,
-        options,
-        context,
-        QueryDeadline::after(daemon::CLIENT_REPLY_WAIT),
-    )
 }
 
 /// Runs a workspace command with the caller's absolute request budget.
@@ -108,7 +96,7 @@ pub(crate) fn run_with_deadline(
         return crate::output::OutputBudget::new(options.budget)?.render(&serde_json::from_str::<
             serde_json::Value,
         >(
-            &daemon::stop(&cache)?,
+            &crate::daemon_transport::stop(&cache)?,
         )?);
     }
     let metadata_only = verb == "semantic"
@@ -159,7 +147,9 @@ pub(crate) fn run_with_deadline(
         !deadline.expired(),
         coded!(TimedOut, "query deadline expired")
     );
-    if let Some(reply) = daemon::request_by(&cache, &args, context, deadline.clone())? {
+    if let Some(reply) =
+        crate::daemon_transport::request_by(&cache, &args, context, deadline.clone())?
+    {
         return wait_if_semantic_prepare(&config, &options, reply);
     }
     ensure!(
@@ -193,10 +183,12 @@ pub(crate) fn run_with_deadline(
     let child = spawn_background_for(&mut command, &executable, "workspace coordinator", &cache)?;
     let started = Instant::now();
     while started.elapsed() < Duration::from_secs(3) && !deadline.expired() {
-        if let Some(reply) = daemon::request_by(&cache, &args, context, deadline.clone())? {
+        if let Some(reply) =
+            crate::daemon_transport::request_by(&cache, &args, context, deadline.clone())?
+        {
             return wait_if_semantic_prepare(&config, &options, reply);
         }
-        if child.exited() && !daemon::running_by(&cache, &deadline)? {
+        if child.exited() && !crate::daemon_transport::running_by(&cache, &deadline)? {
             break;
         }
         std::thread::sleep(Duration::from_millis(25).min(deadline.remaining()));
@@ -227,20 +219,23 @@ fn wait_if_semantic_prepare(
             .get(1)
             .is_some_and(|command| command == "prepare")
     {
-        crate::cli::semantic::wait_for_workspace(config, options, reply)
+        crate::cli::semantic_commands::wait_for_workspace(config, options, reply)
     } else {
         Ok(reply)
     }
 }
 fn serve(config: &WorkspaceConfig, cache: &Path) -> Result<()> {
-    WorkspaceResults::create(cache, &QueryDeadline::after(daemon::CLIENT_REPLY_WAIT))
-        .with_coded_context(|| {
-            coded!(
-                CoordinatorCacheCreateFailed,
-                "cannot create workspace coordinator cache {}",
-                cache.display()
-            )
-        })?;
+    WorkspaceResults::create(
+        cache,
+        &QueryDeadline::after(crate::daemon_transport::CLIENT_REPLY_WAIT),
+    )
+    .with_coded_context(|| {
+        coded!(
+            CoordinatorCacheCreateFailed,
+            "cannot create workspace coordinator cache {}",
+            cache.display()
+        )
+    })?;
     daemon::serve_coordinator(
         config
             .path
@@ -311,7 +306,7 @@ pub(super) fn ensure_member(
         coded!(TimedOut, "query deadline expired")
     );
     // Probing the startup lock instead could make a starting daemon exit.
-    if daemon::running_by(&cache, deadline)? {
+    if crate::daemon_transport::running_by(&cache, deadline)? {
         return Ok(());
     }
     let mut local = super::member_options(options, member, deadline)?;
@@ -330,7 +325,7 @@ pub(super) fn ensure_member(
         coded!(TimedOut, "query deadline expired")
     );
     // Resolve from the original override: default worktree history stays shared.
-    local.resolved_history_cache = crate::history::worker::resolve_cache(
+    local.resolved_history_cache = crate::history::history_worker::resolve_cache(
         &member.root,
         options.cache.as_deref().map(|_| cache.as_path()),
         options.history_cache.as_deref(),

@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use fs2::FileExt;
 use rusqlite::Connection;
 use std::fs::{self, OpenOptions};
@@ -51,7 +51,7 @@ fn retain_fixture_sources(
         let path = entry.unwrap().path();
         let bytes = fs::read(&path).unwrap();
         let relative = path.strip_prefix(root).unwrap();
-        let path = crate::store::encode_path(relative);
+        let path = crate::path_codec::encode_path(relative);
         let revision = blake3::hash(&bytes).to_hex().to_string();
         let extraction = crate::extract::extract(&path, &bytes);
         checkpoint
@@ -160,7 +160,7 @@ fn one_stalled_slice_does_not_require_maintenance_when_the_next_slice_progresses
     let (_directory, root, cache, store) = fixture();
     fs::write(root.join("sample.rs"), "pub fn progressing() {}\n").unwrap();
     let source = fs::read(root.join("sample.rs")).unwrap();
-    let path = crate::store::encode_path(Path::new("sample.rs"));
+    let path = crate::path_codec::encode_path(Path::new("sample.rs"));
     let revision = blake3::hash(&source).to_hex().to_string();
     let extraction = crate::extract::extract(&path, &source);
     let budget = QueryDeadline::start();
@@ -532,7 +532,7 @@ fn committed_extraction_survives_mark_seen_failure_and_bounded_retry() {
     let (_directory, root, cache, store) = fixture();
     let source = b"pub fn retry_after_mark_seen() {}\n";
     fs::write(root.join("sample.rs"), source).unwrap();
-    let path = crate::store::encode_path(Path::new("sample.rs"));
+    let path = crate::path_codec::encode_path(Path::new("sample.rs"));
     let revision = blake3::hash(source).to_hex().to_string();
     let mut extraction = crate::extract::extract(&path, source);
     extraction.status = "recovered".to_owned();

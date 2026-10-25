@@ -301,11 +301,19 @@ fn board_scope_preserves_cursor_and_write_safety() {
 fn a_full_reply_wait_is_not_a_fast_transport_retry() {
     let error = io(ErrorKind::WouldBlock);
     assert_eq!(
-        RetryPolicy::classify(RetryScope::Read, &error, crate::daemon::PROXY_REPLY_WAIT),
+        RetryPolicy::classify(
+            RetryScope::Read,
+            &error,
+            crate::daemon_transport::PROXY_REPLY_WAIT
+        ),
         RetryPolicy::Fail
     );
     assert_eq!(
-        RetryPolicy::classify(RetryScope::Read, &busy(), crate::daemon::PROXY_REPLY_WAIT),
+        RetryPolicy::classify(
+            RetryScope::Read,
+            &busy(),
+            crate::daemon_transport::PROXY_REPLY_WAIT
+        ),
         RetryPolicy::Retry(CONTENTION_RETRY_DELAY)
     );
 }

@@ -1,14 +1,10 @@
-mod reply_timeout_tests;
-mod spool_transport_tests;
-
 use super::reconciler::{
     DEBOUNCE, MAX_DEBOUNCE, RECONCILE_INTERVAL, ReconcileSchedule, WATCHED_RECONCILE_INTERVAL,
     indexed_path,
 };
 use super::*;
-use std::io::Cursor;
 use std::sync::{Arc, Barrier};
-use std::time::{Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 pub(super) fn scratch() -> tempfile::TempDir {
     tempfile::Builder::new()
@@ -76,33 +72,6 @@ fn daemon_preserves_unlocked_active_socket_and_recovers_stale_socket() {
 }
 
 #[test]
-fn daemon_protocol_rejects_oversized_and_truncated_frames() {
-    let header = ((protocol::REQUEST_LIMIT + 1) as u32).to_be_bytes();
-    assert!(protocol::read_request(&mut Cursor::new(header)).is_err());
-    let bytes = [0, 0, 0, 8, b'{'];
-    assert!(protocol::read_request(&mut Cursor::new(bytes)).is_err());
-    let request = DaemonRequest::Arguments {
-        context: crate::diagnostics::RequestContext::new(None, None),
-        args: vec![String::new(); 257],
-    };
-    assert!(protocol::write_request(&mut Vec::new(), &request).is_err());
-}
-
-#[test]
-fn daemon_protocol_bounds_complete_serialized_response() {
-    let reply = DaemonReply::Success {
-        output: "\0".repeat(1024 * 1024),
-    };
-    let mut wire = Vec::new();
-    protocol::write_reply(&mut wire, &reply).unwrap();
-    assert!(wire.len() < 1024);
-    assert!(matches!(
-        protocol::read_reply(&mut Cursor::new(wire)).unwrap(),
-        DaemonReply::Failure { .. }
-    ));
-}
-
-#[test]
 fn daemon_reconciliation_has_debounce_deadline_and_periodic_recovery() {
     let start = Instant::now();
     let mut schedule = ReconcileSchedule::new(start, RECONCILE_INTERVAL);
@@ -136,16 +105,6 @@ fn watcher_ignores_churn_in_pruned_build_and_vcs_trees() {
 }
 
 #[test]
-fn daemon_connect_unreachability_includes_sandbox_permission_denial() {
-    assert!(unreachable(ErrorKind::NotFound));
-    assert!(unreachable(ErrorKind::ConnectionRefused));
-    assert!(unreachable(ErrorKind::PermissionDenied));
-    assert!(unreachable(ErrorKind::NotADirectory));
-    assert!(!unreachable(ErrorKind::ConnectionReset));
-    assert!(!unreachable(ErrorKind::TimedOut));
-}
-
-#[test]
 fn daemon_shutdown_unlocks_inherited_file_description() {
     let scratch = scratch();
     let socket = DaemonSocket::bind(scratch.path()).unwrap();
@@ -156,16 +115,28 @@ fn daemon_shutdown_unlocks_inherited_file_description() {
     assert!(replacement.path.exists());
 }
 
+#[cfg(target_os = "linux")]
 #[test]
-fn encoded_request_limit_counts_json_escaping() {
-    let context = crate::diagnostics::RequestContext::new(None, None);
-    let args = vec![
-        "board".to_owned(),
-        "\"".repeat(super::MAX_DAEMON_REQUEST_BYTES / 2),
-    ];
-    let bytes = super::request_encoded_size(&args, &context).unwrap();
-    assert!(args.iter().map(String::len).sum::<usize>() < super::MAX_DAEMON_REQUEST_BYTES);
-    assert!(bytes > super::MAX_DAEMON_REQUEST_BYTES);
-    let request = super::arguments(&args, &context);
-    assert_eq!(bytes, serde_json::to_vec(&request).unwrap().len());
+fn daemon_bind_preserves_a_socket_when_its_backlog_probe_times_out() {
+    let scratch = scratch();
+    let path = scratch.path().join(SOCKET_NAME);
+    let listener = socket_connect::tests::backlog_zero_listener(&path);
+    let first =
+        socket_connect::connect_by(&path, &QueryDeadline::after(Duration::from_secs(1))).unwrap();
+    let original_inode = fs::symlink_metadata(&path).unwrap().ino();
+
+    let error = DaemonSocket::bind(scratch.path())
+        .err()
+        .expect("a full listener backlog must not be treated as a stale socket");
+
+    assert!(
+        error
+            .to_string()
+            .contains("inspect existing repository socket")
+    );
+    let metadata = fs::symlink_metadata(&path).unwrap();
+    assert!(metadata.file_type().is_socket());
+    assert_eq!(metadata.ino(), original_inode);
+    drop(first);
+    drop(listener);
 }

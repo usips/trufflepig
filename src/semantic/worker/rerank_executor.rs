@@ -450,8 +450,9 @@ fn rerank_inference_loop(
 mod tests {
     use super::*;
     use crate::semantic::runtime_config::InferenceConfig;
+    use crate::semantic::worker::AdmissionController;
+    use crate::semantic::worker::admission::AdmissionLimits;
     use crate::semantic::worker::protocol::WorkerRequest;
-    use crate::semantic::worker::{AdmissionController, AdmissionLimits};
     use std::io::Read;
 
     fn queued_rerank(config: &InferenceConfig, deadline_ms: u64) -> (QueuedConnection, UnixStream) {

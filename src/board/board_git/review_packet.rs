@@ -3,11 +3,12 @@
 mod history_drills;
 mod ssot_diff;
 #[cfg(test)]
+pub(crate) use ssot_diff::SsotHunk;
+#[cfg(test)]
 mod tests;
 use history_drills::HistoryDrillGate;
-pub use ssot_diff::{SsotDiff, SsotHunk, build_ssot_diff};
+pub use ssot_diff::{SsotDiff, build_ssot_diff};
 
-use crate::board::board_actor::HarnessLabel;
 use crate::board::board_ids::PlanRevision;
 use crate::board::board_protocol::{
     ClaimRecord, EntryRecord, FeedbackRecord, LinkedCommit, ManualCommitLink, PlanRecord,
@@ -15,6 +16,7 @@ use crate::board::board_protocol::{
 };
 use crate::board::commit_trailers::coauthors_match_claim;
 use crate::identity::GitOid;
+use crate::request_context::HarnessLabel;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 

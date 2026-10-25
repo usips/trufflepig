@@ -2,8 +2,9 @@
 //! quarantine, and space reclamation after publication. The index is a
 //! rebuildable cache, so another revision or a corrupt file is replaced, never
 //! migrated ([storage contract](../../docs/index-storage-contract.md)).
-use super::{cache_access, encode_path, index_deadline, publish, schema};
-use crate::daemon::deadline::QueryDeadline;
+use super::{cache_access, index_deadline, publish, schema};
+use crate::path_codec::encode_path;
+use crate::query_deadline::QueryDeadline;
 use anyhow::{Context, Result};
 use rusqlite::{
     Connection, Error as SqliteError, ErrorCode, OptionalExtension, Transaction,

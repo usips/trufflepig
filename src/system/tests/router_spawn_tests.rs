@@ -9,7 +9,7 @@ fn isolated_router_test(name: &str) -> bool {
     if std::env::var(MARKER).as_deref() == Ok(name) {
         return false;
     }
-    let directory = crate::board::board_test_support::scratch("router-spawn-case-");
+    let directory = crate::test_fixtures::scratch("router-spawn-case-");
     let test = format!("system::tests::router_spawn_tests::{name}");
     let output = Command::new(std::env::current_exe().unwrap())
         .env(MARKER, name)
@@ -44,13 +44,13 @@ fn running_router_answers_without_the_long_wait() {
     if isolated_router_test("running_router_answers_without_the_long_wait") {
         return;
     }
-    let runtime = dir().unwrap();
+    let runtime = system_dir().unwrap();
     let worker = std::thread::spawn(serve);
     let ping = ["system".into(), "status".into()];
     let context = RequestContext::new(None, None);
     let deadline = QueryDeadline::after(Duration::from_secs(3));
     loop {
-        if daemon::request_by(&runtime, &ping, &context, deadline.clone())
+        if crate::daemon_transport::request_by(&runtime, &ping, &context, deadline.clone())
             .unwrap()
             .is_some()
         {
@@ -65,7 +65,7 @@ fn running_router_answers_without_the_long_wait() {
         panic!("an answering router needs no spawn")
     });
     let elapsed = started.elapsed();
-    daemon::stop(&runtime).unwrap();
+    crate::daemon_transport::stop(&runtime).unwrap();
     worker.join().unwrap().unwrap();
     ensured.unwrap();
     assert!(
@@ -81,7 +81,7 @@ fn initial_status_probe_leaves_time_for_spawn() {
         return;
     }
     // A fresh but undrained spool must not consume the whole startup cap.
-    let _spool = daemon::spool::SpoolServer::open(&spool_dir()).unwrap();
+    let _spool = crate::daemon_transport::spool::SpoolServer::open(&spool_dir()).unwrap();
     let spawned_before = crate::background_process::spawned_count();
     let _error = ensure_with(Duration::from_secs(2), start_router).unwrap_err();
     assert_eq!(
@@ -93,9 +93,9 @@ fn initial_status_probe_leaves_time_for_spawn() {
 
 #[test]
 fn status_probe_uses_spool_without_a_runtime_directory() {
-    let directory = crate::board::board_test_support::scratch("router-spool-only-");
+    let directory = crate::test_fixtures::scratch("router-spool-only-");
     let spool = directory.path().join("spool");
-    let mut server = daemon::spool::SpoolServer::open(&spool).unwrap();
+    let mut server = crate::daemon_transport::spool::SpoolServer::open(&spool).unwrap();
     let stopped = Arc::new(AtomicBool::new(false));
     let worker_stopped = Arc::clone(&stopped);
     let worker = std::thread::spawn(move || {
@@ -133,7 +133,7 @@ fn managed_start_waits_for_the_unit_router_without_a_child() {
     if isolated_router_test("managed_start_waits_for_the_unit_router_without_a_child") {
         return;
     }
-    let runtime = dir().unwrap();
+    let runtime = system_dir().unwrap();
     let unit = unit_owning(&runtime);
     // The first baseline read fails, which is not a failed start; the router
     // binds 600 ms after the unit start, so the watch reads `activating` first.
@@ -171,7 +171,7 @@ fn managed_start_waits_for_the_unit_router_without_a_child() {
         systemctl.show_count() >= 1,
         "the watch read the unit while it was activating"
     );
-    daemon::stop(&runtime).unwrap();
+    crate::daemon_transport::stop(&runtime).unwrap();
     worker
         .into_inner()
         .expect("the unit start ran the router")
@@ -185,7 +185,7 @@ fn unit_that_fails_at_startup_bails_before_the_deadline() {
     if isolated_router_test("unit_that_fails_at_startup_bails_before_the_deadline") {
         return;
     }
-    let runtime = dir().unwrap();
+    let runtime = system_dir().unwrap();
     let unit = unit_owning(&runtime);
     let systemctl = super::managed_unit_tests::FakeSystemctl::new([
         Ok("ActiveState=activating\nNRestarts=0"),
@@ -222,7 +222,7 @@ fn unit_that_keeps_restarting_bails_once_nrestarts_passes_its_baseline() {
     if isolated_router_test("unit_that_keeps_restarting_bails_once_nrestarts_passes_its_baseline") {
         return;
     }
-    let runtime = dir().unwrap();
+    let runtime = system_dir().unwrap();
     let unit = unit_owning(&runtime);
     let systemctl = super::managed_unit_tests::FakeSystemctl::new([
         Ok("ActiveState=activating\nNRestarts=0"),

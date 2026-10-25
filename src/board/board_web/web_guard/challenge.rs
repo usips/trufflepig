@@ -142,7 +142,7 @@ mod tests {
 
     #[test]
     fn proof_prefixes_a_domain_label_before_nonce_and_address() {
-        let directory = crate::board::board_test_support::scratch("board-challenge-");
+        let directory = crate::test_fixtures::scratch("board-challenge-");
         let path = directory.path().join("token");
         std::fs::write(&path, "0123456789abcdef".repeat(4)).unwrap();
         #[cfg(unix)]
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn proof_binds_token_nonce_and_listener_address() {
-        let directory = crate::board::board_test_support::scratch("board-challenge-");
+        let directory = crate::test_fixtures::scratch("board-challenge-");
         let token = BoardWebToken::rotate_at(&directory.path().join("token")).unwrap();
         let other = BoardWebToken::rotate_at(&directory.path().join("other")).unwrap();
         let nonce = ChallengeNonce::generate().unwrap();

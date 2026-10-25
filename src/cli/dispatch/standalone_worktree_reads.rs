@@ -2,8 +2,8 @@
 use super::Arguments;
 use crate::{
     coded_error::{CodeDetail, CodedContext, ErrorCode, coded_error, error_detail},
-    daemon::deadline::QueryDeadline,
     output::OutputBudget,
+    query_deadline::QueryDeadline,
     results, search, source,
     store::{Store, is_index_cache_unavailable, is_index_cannot_open, is_index_warming},
 };
@@ -18,9 +18,9 @@ pub(super) fn retrieve_read(
     verb: &str,
     options: &Arguments,
     session: &mut crate::semantic::SemanticSession,
-    context: &crate::diagnostics::RequestContext,
+    context: &crate::request_context::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
-    preparation_manager: Option<&crate::semantic::preparation::PreparationManager>,
+    preparation_manager: Option<&crate::semantic_preparation::PreparationManager>,
     budget: &OutputBudget,
     deadline: &QueryDeadline,
 ) -> Result<String> {
@@ -344,12 +344,12 @@ fn validate_parent_worktree(
         coded!(StaleResult, "linked worktree is unavailable; search again")
     })?;
     ensure!(
-        crate::store::encode_path(&member.root) == identity.worktree_root
+        crate::path_codec::encode_path(&member.root) == identity.worktree_root
             && worktree_metadata.dev() == identity.worktree_device
             && worktree_metadata.ino() == identity.worktree_inode,
         coded!(StaleResult, "linked worktree was replaced; search again")
     );
-    let parent_root = crate::store::decode_path(&identity.root)?
+    let parent_root = crate::path_codec::decode_path(&identity.root)?
         .canonicalize()
         .with_coded_context(|| {
             coded!(StaleResult, "parent checkout is unavailable; search again")

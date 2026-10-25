@@ -16,6 +16,7 @@ impl LocalBoard {
         )
     }
 
+    #[cfg(test)]
     pub fn open_path(path: &Path, claim_ttl: Duration) -> Result<Self, BoardError> {
         Self::open_path_with_timeout(path, claim_ttl, Duration::from_secs(5))
     }
@@ -103,6 +104,7 @@ impl LocalBoard {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn path(&self) -> &Path {
         &self.path
     }

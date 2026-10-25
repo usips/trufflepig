@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn router_status_reports_supported_and_file_schema_versions() {
-    let directory = crate::board::board_test_support::scratch("board-status-");
+    let directory = crate::test_fixtures::scratch("board-status-");
     let database = directory.path().join("board.sqlite3");
     let executable = std::env::current_exe().unwrap();
     let config = crate::board::BoardConfig::for_database(&database);
@@ -37,7 +37,7 @@ fn router_status_reports_supported_and_file_schema_versions() {
 
 #[test]
 fn router_status_reports_migrated_schema_after_startup_migration() {
-    let directory = crate::board::board_test_support::scratch("board-status-");
+    let directory = crate::test_fixtures::scratch("board-status-");
     let database = directory.path().join("board.sqlite3");
     crate::board::local_board::seed_storage_schema(&database, crate::board::SCHEMA_VERSION - 1)
         .unwrap();
@@ -65,7 +65,7 @@ fn router_status_reports_migrated_schema_after_startup_migration() {
 
 #[test]
 fn router_status_omits_the_schema_file_of_an_absent_database() {
-    let directory = crate::board::board_test_support::scratch("board-status-");
+    let directory = crate::test_fixtures::scratch("board-status-");
     let database = directory.path().join("board.sqlite3");
     let router = SystemRouter {
         runtime: Some(directory.path().join("runtime")),
@@ -92,7 +92,7 @@ fn router_status_omits_the_schema_file_of_an_absent_database() {
 
 #[test]
 fn router_status_omits_board_fields_when_the_database_path_is_not_absolute() {
-    let directory = crate::board::board_test_support::scratch("board-status-");
+    let directory = crate::test_fixtures::scratch("board-status-");
     let runtime = directory.path().join("runtime");
     let router = SystemRouter {
         runtime: Some(runtime.clone()),
@@ -134,7 +134,7 @@ fn router_status_omits_board_fields_when_the_database_path_is_not_absolute() {
 
 #[test]
 fn router_status_survives_a_database_pin_write_failure() {
-    let directory = crate::board::board_test_support::scratch("board-status-");
+    let directory = crate::test_fixtures::scratch("board-status-");
     let runtime = directory.path().join("runtime");
     std::fs::create_dir(&runtime).unwrap();
     // A directory where the pin belongs makes the marker write fail on any uid.
@@ -165,7 +165,7 @@ fn router_status_survives_a_database_pin_write_failure() {
 
 #[test]
 fn board_routes_without_workspace_or_owner_daemon() {
-    let directory = crate::board::board_test_support::scratch("board-transport-");
+    let directory = crate::test_fixtures::scratch("board-transport-");
     let cache = directory.path().join("owner-cache");
     let database = directory.path().join("data/board.sqlite3");
     let router = SystemRouter {
@@ -205,8 +205,8 @@ fn board_routes_without_workspace_or_owner_daemon() {
 
 #[test]
 fn router_does_not_reset_an_expired_accepted_deadline() {
-    let root = crate::board::board_test_support::scratch("router-deadline-");
-    let cache_directory = crate::board::board_test_support::scratch("router-cache-");
+    let root = crate::test_fixtures::scratch("router-deadline-");
+    let cache_directory = crate::test_fixtures::scratch("router-cache-");
     let cache = cache_directory.path().join("cache");
     let router = SystemRouter {
         runtime: None,

@@ -1,5 +1,5 @@
-use super::super::pool::RequestLane;
 use super::AdmissionTier;
+use crate::request_pool::RequestLane;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};

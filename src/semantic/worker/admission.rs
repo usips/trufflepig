@@ -89,6 +89,7 @@ impl AdmissionController {
         })
     }
 
+    #[cfg(test)]
     pub fn counts(&self) -> (usize, usize, usize) {
         let state = self.state.lock().expect("admission state poisoned");
         (state.queued, state.inflight, state.raw_input_bytes)

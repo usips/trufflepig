@@ -12,13 +12,14 @@ mod transport_acceptance;
 mod unlink_grammar_tests;
 mod warning_suppression_acceptance;
 
-use super::board_actor::{BoardActor, HarnessLabel};
+use super::board_actor::BoardActor;
 use super::board_backend::BoardHost;
 use super::board_config::BoardConfig;
 use super::board_grammar;
-use crate::cli::{self, Arguments};
-use crate::daemon::deadline::QueryDeadline;
-use crate::diagnostics::RequestContext;
+use crate::board::board_grammar::BoardArguments;
+use crate::query_deadline::QueryDeadline;
+use crate::request_context::HarnessLabel;
+use crate::request_context::RequestContext;
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::Value;
@@ -35,7 +36,7 @@ struct EdgeFixture {
 
 impl EdgeFixture {
     fn new() -> Self {
-        let scratch = crate::board::board_test_support::scratch("acceptance-");
+        let scratch = crate::test_fixtures::scratch("acceptance-");
         let root = scratch.path().join("repository");
         std::fs::create_dir(&root).unwrap();
         // An unborn fixture prevents Git discovery from reaching the real checkout.
@@ -52,11 +53,11 @@ impl EdgeFixture {
         }
     }
 
-    fn options(&self, words: &[&str]) -> Arguments {
+    fn options(&self, words: &[&str]) -> BoardArguments {
         self.options_at(&self.root, words)
     }
 
-    fn options_at(&self, root: &Path, words: &[&str]) -> Arguments {
+    fn options_at(&self, root: &Path, words: &[&str]) -> BoardArguments {
         let mut args = vec![
             "--root".into(),
             root.to_str().unwrap().into(),
@@ -66,7 +67,7 @@ impl EdgeFixture {
             "json".into(),
         ];
         args.extend(words.iter().map(|word| (*word).to_owned()));
-        cli::parse(&args).unwrap()
+        crate::board::board_test_support::parse_board_arguments(&args).unwrap()
     }
 
     fn run(&self, words: &[&str], harness: &str, session: &str) -> Value {
@@ -76,13 +77,13 @@ impl EdgeFixture {
 
     fn run_options(
         &self,
-        options: Arguments,
+        options: BoardArguments,
         harness: &str,
         session: &str,
         body: Option<&str>,
     ) -> Result<Value> {
-        let forwarded = board_grammar::normalize_args(&[], &options, body)?;
-        let parsed = cli::parse(&forwarded)?;
+        let forwarded = board_grammar::normalize_args(&options, body)?;
+        let parsed = crate::board::board_test_support::round_trip(&forwarded);
         let output = self
             .host
             .run(&parsed, &context(harness, session), QueryDeadline::start())?;
@@ -107,15 +108,13 @@ impl EdgeFixture {
         grantor_session: &str,
     ) -> Value {
         let options = self.options(&["board", "grant", plan, role, "--to", grantee]);
-        let forwarded = board_grammar::normalize_args(&[], &options, None).unwrap();
-        let options = cli::parse(&forwarded).unwrap();
+        let forwarded = board_grammar::normalize_args(&options, None).unwrap();
+        let options = crate::board::board_test_support::round_trip(&forwarded);
         let actor = self.actor("human", grantor_session);
         let context = RequestContext::with_origin(
             Some(grantor_session.to_owned()),
             Some("human".to_owned()),
-            Some(crate::board::board_protocol::ActorOrigin::from_actor(
-                &actor,
-            )),
+            Some(actor.origin()),
         );
         let response = self
             .host

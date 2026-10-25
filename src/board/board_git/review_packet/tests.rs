@@ -1,5 +1,5 @@
+mod packet_manual_link_tests;
 mod review_claim_lane_tests;
-mod review_manual_link_tests;
 
 mod review_diff;
 mod warning_suppression;

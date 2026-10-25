@@ -3,7 +3,7 @@ use super::Arguments;
 use anyhow::Result;
 use std::{collections::HashMap, path::PathBuf};
 
-pub fn request_context(options: &Arguments) -> Result<crate::diagnostics::RequestContext> {
+pub fn request_context(options: &Arguments) -> Result<crate::request_context::RequestContext> {
     let environment = std::env::vars_os()
         .map(|(key, value)| {
             (
@@ -19,8 +19,8 @@ fn resolved_request_context(
     options: &Arguments,
     environment: &HashMap<String, String>,
     ancestors: &[String],
-) -> Result<crate::diagnostics::RequestContext> {
-    use crate::board::board_actor::{HarnessLabel, validate_actor_component};
+) -> Result<crate::request_context::RequestContext> {
+    use crate::request_context::{HarnessLabel, validate_actor_component};
 
     let detected = native_harness(environment, ancestors).or_else(|| process_harness(ancestors));
     let fallback = nonempty(environment.get("TRUFFLEPIG_AGENT_HARNESS"));
@@ -73,32 +73,32 @@ fn resolved_request_context(
     }
     let origin = observed
         .as_deref()
-        .map(
-            |harness| -> Result<crate::board::board_protocol::ActorOrigin> {
-                let origin_session = provider_session
-                    .clone()
-                    .or_else(|| wrapper_session.clone())
-                    .or_else(|| agent_session.clone())
-                    .unwrap_or_else(|| "unattributed".to_owned());
-                validate_actor_component(&origin_session, "session")?;
-                Ok(crate::board::board_protocol::ActorOrigin {
-                    harness: HarnessLabel::parse(harness)?,
-                    session: origin_session,
-                    peer_ip: None,
-                })
-            },
-        )
+        .map(|harness| -> Result<crate::request_context::ActorOrigin> {
+            let origin_session = provider_session
+                .clone()
+                .or_else(|| wrapper_session.clone())
+                .or_else(|| agent_session.clone())
+                .unwrap_or_else(|| "unattributed".to_owned());
+            validate_actor_component(&origin_session, "session")?;
+            Ok(crate::request_context::ActorOrigin {
+                harness: HarnessLabel::parse(harness)?,
+                session: origin_session,
+                peer_ip: None,
+            })
+        })
         .transpose()?;
     let diagnostic_session = options
         .session
         .clone()
         .or_else(|| nonempty(environment.get("TRUFFLEPIG_SESSION")));
-    Ok(crate::diagnostics::RequestContext::with_diagnostic_session(
-        session,
-        client,
-        origin,
-        diagnostic_session,
-    ))
+    Ok(
+        crate::request_context::RequestContext::with_diagnostic_session(
+            session,
+            client,
+            origin,
+            diagnostic_session,
+        ),
+    )
 }
 
 fn nonempty(value: Option<&String>) -> Option<String> {

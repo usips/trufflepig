@@ -1,17 +1,20 @@
 use super::*;
-use crate::board::{
-    board_actor::{AgentVendor, BoardRecipient},
-    board_ids::TaskId,
-    board_protocol::{
-        ActorOrigin, AuthorityRole, AuthoritySource, ClaimEndReason, CommitClaimBasis,
-        CommitClaimLink, CommitCoauthor, GateStatus, GrantRecord, GrantSource, LinkedCommit,
-        PendingNotice, PendingNoticeKind, PendingNoticeReason, PendingReply, ProgressEvidence,
-        ProgressFact, ProgressGateFact, ProgressHead, ProgressStep, ProgressTests, ReviewVerdict,
-        TaskView, WorkerAddress, WorkerHandle, WorkerRecord, WorkerRole,
-    },
-    board_vocabulary::{EntryText, PlanTitle, TaskColumn},
-};
 use crate::identity::GitOid;
+use crate::{
+    board::{
+        board_actor::{AgentVendor, BoardRecipient},
+        board_ids::TaskId,
+        board_protocol::{
+            AuthorityRole, AuthoritySource, ClaimEndReason, CommitClaimBasis, CommitClaimLink,
+            CommitCoauthor, GateStatus, GrantRecord, GrantSource, LinkedCommit, PendingNotice,
+            PendingNoticeKind, PendingNoticeReason, PendingReply, ProgressEvidence, ProgressFact,
+            ProgressGateFact, ProgressHead, ProgressStep, ProgressTests, ReviewVerdict, TaskView,
+            WorkerAddress, WorkerHandle, WorkerRecord, WorkerRole,
+        },
+        board_vocabulary::{EntryText, PlanTitle, TaskColumn},
+    },
+    request_context::ActorOrigin,
+};
 
 fn detailed_task() -> TaskView {
     let task = TaskId::new(PlanId::new(7).unwrap(), 3).unwrap();
@@ -489,7 +492,7 @@ fn plan_lines_render_grant_rows_and_manage_permission() {
             source: GrantSource::Owner,
         }],
         can_manage_grants: true,
-        task_ceiling: crate::board::board_collections::TaskCeiling {
+        task_ceiling: crate::board::board_domain::board_collections::TaskCeiling {
             plan: plan_id,
             ordinal: 0,
         },

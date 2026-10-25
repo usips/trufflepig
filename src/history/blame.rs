@@ -15,7 +15,7 @@ pub(super) fn blame(
         Ok(target) => target.context("missing target")?,
         Err(response) => return Ok(response),
     };
-    let decoded = crate::store::decode_path(&target.path)?;
+    let decoded = crate::path_codec::decode_path(&target.path)?;
     let path = history
         .repository
         .repository_path(decoded.to_str().context("blame path is not UTF-8")?)?;

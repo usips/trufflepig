@@ -7,10 +7,10 @@ use crate::coded_error::ErrorCode;
 
 pub(super) fn request_pending(
     args: &[String],
-    context: &crate::diagnostics::RequestContext,
+    context: &crate::request_context::RequestContext,
     no_daemon: bool,
     system_dir: impl FnOnce() -> Option<PathBuf>,
-    deadline: crate::daemon::deadline::QueryDeadline,
+    deadline: crate::query_deadline::QueryDeadline,
 ) -> Result<String> {
     if no_daemon {
         anyhow::bail!(coded!(
@@ -24,7 +24,7 @@ pub(super) fn request_pending(
         !deadline.expired(),
         coded!(TimedOut, "board pending request deadline expired")
     );
-    crate::daemon::request_by(&directory, args, context, deadline)?
+    crate::daemon_transport::request_by(&directory, args, context, deadline)?
         .with_coded_context(|| coded!(BoardUnavailable, "no running router for pending notices"))
 }
 
@@ -37,8 +37,8 @@ impl ClientCommand {
     pub(super) fn run(
         &mut self,
         args: &[String],
-        context: &crate::diagnostics::RequestContext,
-        deadline: crate::daemon::deadline::QueryDeadline,
+        context: &crate::request_context::RequestContext,
+        deadline: crate::query_deadline::QueryDeadline,
     ) -> Result<String> {
         if let Some(answer) = board_api_probe::probe_board_api(args) {
             return answer;
@@ -51,10 +51,10 @@ impl ClientCommand {
             .map(String::as_str)
             .unwrap_or("status");
         if verb == "semantic-worker-serve" {
-            return semantic::serve_worker(&options);
+            return semantic_commands::serve_worker(&options);
         }
         if verb == "semantic" && options.words.get(1).is_some_and(|verb| verb == "worker") {
-            return semantic::worker_command(&options);
+            return semantic_commands::worker_command(&options);
         }
         if verb == "ws" && options.words.get(1).is_some_and(|v| v == "discover") {
             return crate::workspace::discover_paths(&options.words[2..], options.budget);
@@ -74,7 +74,7 @@ impl ClientCommand {
         }
         if verb == "board" && options.words.get(1).is_some_and(|word| word == "web") {
             let crate::board::board_grammar::BoardCommand::Web { target } =
-                crate::board::board_grammar::parse(&options, None)?
+                crate::board::board_grammar::parse(&options.board_arguments(), None)?
             else {
                 unreachable!("web grammar produces a web command");
             };
@@ -82,7 +82,7 @@ impl ClientCommand {
         }
         if verb == "board" && options.words.get(1).is_some_and(|word| word == "pending") {
             let crate::board::board_grammar::BoardCommand::Op(_) =
-                crate::board::board_grammar::parse(&options, None)?
+                crate::board::board_grammar::parse(&options.board_arguments(), None)?
             else {
                 unreachable!("pending grammar produces an operation");
             };
@@ -90,12 +90,20 @@ impl ClientCommand {
                 args,
                 context,
                 options.no_daemon,
-                crate::system::dir,
+                crate::runtime_paths::system_dir,
                 deadline,
             );
         }
         if matches!(verb, "board" | "feedback") {
-            return self.board.run(args, &options, context, deadline);
+            let forwarded = super::board_request_bridge::board_forwarded_args(&options)?;
+            let replay = parse(&forwarded)?;
+            return self.board.run(
+                &forwarded,
+                &replay.board_arguments(),
+                context,
+                crate::system::ensure_by,
+                deadline,
+            );
         }
         if options.no_cache {
             return super::direct_with_deadline(&options, context, deadline);
@@ -115,16 +123,20 @@ impl ClientCommand {
             {
                 forwarded.push("--wait".into());
             }
-            let routed = crate::system::request_by(&forwarded, context, deadline.clone()).and_then(
-                |reply| match reply {
-                    Some(reply) => Ok(Some(reply)),
-                    None if !deadline.expired() => {
-                        let _ = crate::system::ensure_by(deadline.clone());
-                        crate::system::request_by(&forwarded, context, deadline.clone())
-                    }
-                    None => Ok(None),
-                },
-            );
+            let routed =
+                crate::daemon_transport::router_request_by(&forwarded, context, deadline.clone())
+                    .and_then(|reply| match reply {
+                        Some(reply) => Ok(Some(reply)),
+                        None if !deadline.expired() => {
+                            let _ = crate::system::ensure_by(deadline.clone());
+                            crate::daemon_transport::router_request_by(
+                                &forwarded,
+                                context,
+                                deadline.clone(),
+                            )
+                        }
+                        None => Ok(None),
+                    });
             match routed {
                 Ok(Some(reply)) => {
                     return system_reply(&applied, &root, verb, config.as_ref(), reply);
@@ -146,8 +158,8 @@ impl ClientCommand {
     pub(super) fn run_after_busy_exhaustion(
         &mut self,
         args: &[String],
-        context: &crate::diagnostics::RequestContext,
-        deadline: crate::daemon::deadline::QueryDeadline,
+        context: &crate::request_context::RequestContext,
+        deadline: crate::query_deadline::QueryDeadline,
     ) -> Option<Result<String>> {
         let options = local_path_show_fallback_options(args)?;
         Some(super::direct_with_deadline(&options, context, deadline))
@@ -178,13 +190,14 @@ fn local_path_show_fallback_options(args: &[String]) -> Option<Arguments> {
 /// expired spool wait leaves the router for direct execution; other router
 /// errors remain answers.
 fn leaves_router_for_direct_execution(error: &anyhow::Error) -> bool {
-    daemon::spool::is_local_spool_timeout(error) || ErrorCode::DaemonUnavailable.is_named_in(error)
+    crate::daemon_transport::spool::is_local_spool_timeout(error)
+        || ErrorCode::DaemonUnavailable.is_named_in(error)
 }
 
 /// A cache refusal in any layer admits the local current-path reader, unless
 /// any layer reports a timeout.
 fn index_cache_fallback_options(args: &[String], error: &anyhow::Error) -> Option<Arguments> {
-    let timed_out = crate::daemon::DaemonReplyTimeout::from_error(error).is_some()
+    let timed_out = crate::daemon_transport::DaemonReplyTimeout::from_error(error).is_some()
         || ErrorCode::TimedOut.is_anywhere_in(error)
         || ErrorCode::DaemonReplyTimeout.is_anywhere_in(error);
     if timed_out || !ErrorCode::IndexCacheUnavailable.is_anywhere_in(error) {

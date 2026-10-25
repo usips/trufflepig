@@ -11,7 +11,7 @@ use super::{
     path_prior::PathPrior,
     telemetry::{Lane, LaneOutcome, RetrievalTrace},
 };
-use crate::{daemon::deadline::QueryDeadline, results::Hit, semantic, store::Store};
+use crate::{query_deadline::QueryDeadline, results::Hit, semantic, store::Store};
 use anyhow::Result;
 use rusqlite::OptionalExtension;
 use std::{

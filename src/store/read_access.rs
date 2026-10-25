@@ -1,8 +1,9 @@
 //! Query-only access: no DDL, no writes to `index.sqlite3`, bounded waits, and an
 //! optional worktree view that reads its own bytes through a parent's index.
-use super::{Store, StoreAccess, encode_path};
+use super::{Store, StoreAccess};
 use crate::coded_error::CodedContext;
-use crate::daemon::deadline::QueryDeadline;
+use crate::path_codec::encode_path;
+use crate::query_deadline::QueryDeadline;
 use anyhow::{Context, Result, bail, ensure};
 use rusqlite::{Connection, Error as SqliteError, ErrorCode, OpenFlags, OptionalExtension};
 use std::{path::Path, time::Duration};

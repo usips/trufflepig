@@ -2,17 +2,20 @@ use super::super::*;
 
 #[test]
 fn reconciliation_resumes_preparation_and_new_generations() -> anyhow::Result<()> {
-    use crate::semantic::{DIMENSIONS, Embedding, preparation};
+    use crate::{
+        semantic::{DIMENSIONS, Embedding},
+        semantic_preparation,
+    };
     let root = tempfile::tempdir()?;
     let cache = tempfile::tempdir()?;
     std::fs::write(root.path().join("source.rs"), "fn example() {}")?;
     let mut store = Store::open(root.path(), cache.path())?;
     store.index()?;
-    let receipt = preparation::schedule(root.path(), cache.path())?;
+    let receipt = semantic_preparation::schedule(root.path(), cache.path())?;
     let database = rusqlite::Connection::open(cache.path().join("preparation.sqlite3"))?;
     database.execute("INSERT INTO preparation_runs(generation,state,cursor,total,cached,missing,failures,error,updated_ms) VALUES(?1,'running',0,1,0,1,0,NULL,0)", [receipt.captured_generation])?;
-    let manager = preparation::PreparationManager::new(preparation::ClosureWorker(
-        |inputs: &[preparation::EmbeddingInput]| {
+    let manager = semantic_preparation::PreparationManager::new(
+        semantic_preparation::ClosureWorker(|inputs: &[semantic_preparation::EmbeddingInput]| {
             Ok(inputs
                 .iter()
                 .map(|_| {
@@ -21,26 +24,32 @@ fn reconciliation_resumes_preparation_and_new_generations() -> anyhow::Result<()
                     Ok(Embedding(vector))
                 })
                 .collect())
-        },
-    ));
+        }),
+    );
     root_daemon::schedule_pending_preparation(&manager, root.path(), cache.path())?;
-    let done = preparation::wait_timeout(
+    let done = semantic_preparation::wait_timeout(
         root.path(),
         cache.path(),
         receipt.captured_generation,
         Duration::from_secs(3),
     )?;
-    assert_eq!(done.state, preparation::PreparationState::Completed);
+    assert_eq!(
+        done.state,
+        semantic_preparation::PreparationState::Completed
+    );
     std::fs::write(root.path().join("source.rs"), "fn changed() {}")?;
     store.index()?;
     root_daemon::schedule_pending_preparation(&manager, root.path(), cache.path())?;
-    let done = preparation::wait_timeout(
+    let done = semantic_preparation::wait_timeout(
         root.path(),
         cache.path(),
         store.generation()?,
         Duration::from_secs(3),
     )?;
-    assert_eq!(done.state, preparation::PreparationState::Completed);
+    assert_eq!(
+        done.state,
+        semantic_preparation::PreparationState::Completed
+    );
     Ok(())
 }
 
@@ -128,11 +137,14 @@ fn system_routes_gates_internal_and_local_verbs() {
 fn system_dir_prints_the_resolved_runtime_path() {
     let args = ["system".to_owned(), "dir".to_owned()];
     let options = parse(&args).unwrap();
-    let context = crate::diagnostics::RequestContext::new(None, None);
+    let context = crate::request_context::RequestContext::new(None, None);
     let output = system_command(&options, &context).unwrap();
     assert_eq!(
         output,
-        format!("{}\n", crate::system::dir().unwrap().display())
+        format!(
+            "{}\n",
+            crate::runtime_paths::system_dir().unwrap().display()
+        )
     );
 }
 

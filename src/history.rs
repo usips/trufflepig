@@ -4,20 +4,18 @@ mod blame;
 mod command_tests;
 mod commands;
 mod comparison;
-pub mod git;
-mod resource_limits;
+pub mod history_worker;
 pub mod source_diff;
 mod staging;
 mod storage;
 mod targets;
 #[cfg(test)]
 mod tests;
-pub mod worker;
 mod working_tree;
 
+use crate::git_runner::GitRepository;
 use crate::{identity::GitOid, output::OutputBudget, store::Store};
 use anyhow::Result;
-use git::GitRepository;
 use rusqlite::Connection;
 use serde_json::Value;
 use std::path::{Path, PathBuf};

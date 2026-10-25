@@ -572,7 +572,8 @@ fn current_path_fallback_under_held_router(budget: Duration) -> Vec<Vec<String>>
     let root = std::path::PathBuf::from(std::env::var_os("TRUFFLEPIG_RETRY_TEST_ROOT").unwrap());
     let cache = std::path::PathBuf::from(std::env::var_os("TRUFFLEPIG_RETRY_TEST_CACHE").unwrap());
     let system_dir = std::path::PathBuf::from(std::env::var_os("TRUFFLEPIG_SYSTEM_DIR").unwrap());
-    let listener = UnixListener::bind(system_dir.join(crate::daemon::SOCKET_NAME)).unwrap();
+    let listener =
+        UnixListener::bind(system_dir.join(crate::daemon_transport::SOCKET_NAME)).unwrap();
     listener.set_nonblocking(true).unwrap();
     let requests = Arc::new(Mutex::new(Vec::<Vec<String>>::new()));
     let stopping = Arc::new(AtomicBool::new(false));

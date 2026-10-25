@@ -1,5 +1,5 @@
 use super::super::run;
-use crate::workspace::config::CONFIG_NAME;
+use crate::workspace_config::CONFIG_NAME;
 use serde_json::Value;
 use std::{fs, path::PathBuf, process::Command};
 
@@ -151,7 +151,7 @@ fn workspace_list_json_encodes_non_utf8_member_paths() {
     let value: Value = serde_json::from_str(&output).unwrap();
     assert_eq!(
         value["workspaces"][0]["members"][0]["root"],
-        crate::store::encode_path(&root)
+        crate::path_codec::encode_path(&root)
     );
     assert_eq!(value["workspaces"][0]["members"][0]["available"], true);
 }

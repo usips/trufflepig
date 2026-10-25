@@ -1,8 +1,8 @@
 use super::*;
-use crate::board::board_actor::{BoardActor, HarnessLabel};
 use crate::board::board_ids::{EventSeq, PlanId};
 use crate::board::board_protocol::BoardResult;
 use crate::board::board_vocabulary::EntryText;
+use crate::{board::board_actor::BoardActor, request_context::HarnessLabel};
 use rusqlite::{Connection, Transaction};
 
 struct LifecycleDatabase {
@@ -12,7 +12,7 @@ struct LifecycleDatabase {
 
 impl LifecycleDatabase {
     fn new(task_column: &str) -> Self {
-        let directory = crate::board::board_test_support::scratch("plan-lifecycle-tests-");
+        let directory = crate::test_fixtures::scratch("plan-lifecycle-tests-");
         let path = directory.path().join("board.sqlite3");
         let conn = crate::board::local_board::board_database::open(&path)
             .unwrap()

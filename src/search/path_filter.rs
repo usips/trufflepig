@@ -123,7 +123,7 @@ fn names_file(path: &str, values: &[String]) -> bool {
     })
 }
 
-/// Strips `./` and percent-encodes raw bytes as [`crate::store::encode_path`]
+/// Strips `./` and percent-encodes raw bytes as [`crate::path_codec::encode_path`]
 /// does; valid `%HH` escapes pass through with uppercase hexadecimal digits.
 fn encoded_value(value: &str) -> Option<String> {
     let mut value = value;

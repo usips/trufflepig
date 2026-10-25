@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
-    daemon::deadline::QueryDeadline,
     output::{OutputBudget, OutputFormat},
+    query_deadline::QueryDeadline,
     results::{ChangeEntry, Hit, ResultEntry, ResultSet, StoredResultSet, load_entries},
     store::{Store, read_index_progress},
 };
@@ -145,7 +145,7 @@ fn stateless_member_pages_round_robin_and_preserve_coverage_and_fallback_metadat
     assert_eq!(page["hits"][0]["member"], "first");
     assert_eq!(
         page["members"]["first"],
-        crate::store::encode_path(&first_root)
+        crate::path_codec::encode_path(&first_root)
     );
     assert_eq!(page["coverage"][1]["coverage"]["absence"], "exhaustive");
     assert_eq!(page["cache_fallback"]["status"], "index_cache_unavailable");

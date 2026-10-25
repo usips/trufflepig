@@ -4,7 +4,8 @@ Trufflepig is a pre-alpha search engine for agentic coders navigating
 complex repositories. Favor clear contracts, searchable names, and a
 small, coherent implementation.
 
-No compatibility layers. Change callers with their contracts; remove
+No compatibility layers (board schema migrations are the one exception; see
+`docs/board-contract.md`). Change callers with their contracts; remove
 obsolete paths instead of preserving a bad design.
 
 ## Verification and commits

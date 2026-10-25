@@ -27,10 +27,13 @@ pub(crate) const BODY_LIMIT: usize = 256 * 1024;
 #[cfg(test)]
 mod serialized_entry_transport_tests {
     use super::BODY_LIMIT;
-    use crate::board::{
-        board_actor::{BoardActor, HarnessLabel},
-        board_protocol::{BoardOp, BoardRequest},
-        board_vocabulary::{ENTRY_TEXT_LIMIT, EntryKind, EntryText},
+    use crate::{
+        board::{
+            board_actor::BoardActor,
+            board_protocol::{BoardOp, BoardRequest},
+            board_vocabulary::{ENTRY_TEXT_LIMIT, EntryKind, EntryText},
+        },
+        request_context::HarnessLabel,
     };
 
     #[test]

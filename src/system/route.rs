@@ -1,15 +1,16 @@
 //! Request routing from the system daemon to workspace, root, and board owners.
 
-use super::{dir, record_board_database};
+use crate::board::board_runtime_markers::record_board_database;
 use crate::coded_error::CodedContext;
+use crate::runtime_paths::system_dir;
 use crate::{
     background_process::{
         BackgroundChild, BackgroundOwner, background_executable_replaced,
         current_background_executable, spawn_background_for,
     },
     cli::normalized_args,
-    daemon::{self, deadline::QueryDeadline},
-    diagnostics::RequestContext,
+    query_deadline::QueryDeadline,
+    request_context::RequestContext,
 };
 use anyhow::{Result, bail, ensure};
 use std::{
@@ -27,7 +28,7 @@ pub(super) fn route(
     deadline: QueryDeadline,
 ) -> Result<String> {
     // Preserve time spent queued at this router, and cap every forwarded wait.
-    let forwarding = deadline.capped(daemon::PROXY_REPLY_WAIT);
+    let forwarding = deadline.capped(crate::daemon_transport::PROXY_REPLY_WAIT);
     let options = crate::cli::parse(&args)?;
     let verb = options.words.first().map(String::as_str);
     if verb == Some("system") {
@@ -70,15 +71,17 @@ pub(super) fn route(
         return Ok(serde_json::to_string(&status)?);
     }
     if matches!(verb, Some("board" | "feedback")) {
-        return board.run(&options, &context, deadline);
+        return board.run(&options.board_arguments(), &context, deadline);
     }
     if let Some(config) = crate::workspace::resolve(&options)? {
         let cache = crate::workspace::cache_path(&config, options.cache.as_deref())?;
         if verb == Some("stop") {
             refuse_router_stop(&cache)?;
-            return daemon::stop(&cache);
+            return crate::daemon_transport::stop(&cache);
         }
-        if let Some(reply) = daemon::request_by(&cache, &args, &context, forwarding.clone())? {
+        if let Some(reply) =
+            crate::daemon_transport::request_by(&cache, &args, &context, forwarding.clone())?
+        {
             return Ok(reply);
         }
         let mut server = options.clone();
@@ -118,9 +121,11 @@ pub(super) fn route(
     let cache = crate::cli::cache_path(&root, options.cache.as_deref())?;
     if verb == Some("stop") {
         refuse_router_stop(&cache)?;
-        return daemon::stop(&cache);
+        return crate::daemon_transport::stop(&cache);
     }
-    if let Some(reply) = daemon::request_by(&cache, &args, &context, forwarding.clone())? {
+    if let Some(reply) =
+        crate::daemon_transport::request_by(&cache, &args, &context, forwarding.clone())?
+    {
         return Ok(reply);
     }
     fs::create_dir_all(&cache).map_err(|error| {
@@ -134,7 +139,7 @@ pub(super) fn route(
         crate::store::index_cache_unavailable(&cache, context)
     })?;
     let history_cache = options.resolved_history_cache.clone().or_else(|| {
-        crate::history::worker::resolve_cache(
+        crate::history::history_worker::resolve_cache(
             &root,
             options.cache.as_deref(),
             options.history_cache.as_deref(),
@@ -177,7 +182,7 @@ fn board_schema_version(database: &Path) -> Option<i64> {
 
 /// Refuses a stop aimed at this router's own socket directory.
 fn refuse_router_stop(cache: &Path) -> Result<()> {
-    if let Some(dir) = dir() {
+    if let Some(dir) = system_dir() {
         ensure!(
             cache != dir,
             coded!(InvalidCache, "cannot stop the system router")
@@ -201,10 +206,12 @@ fn forward_spawned(
     );
     let deadline = Instant::now() + forwarding.cap(Duration::from_secs(3));
     while Instant::now() < deadline {
-        if let Some(reply) = daemon::request_by(cache, args, context, forwarding.clone())? {
+        if let Some(reply) =
+            crate::daemon_transport::request_by(cache, args, context, forwarding.clone())?
+        {
             return Ok(reply);
         }
-        if child.exited() && !daemon::running_by(cache, &forwarding)? {
+        if child.exited() && !crate::daemon_transport::running_by(cache, &forwarding)? {
             break;
         }
         std::thread::sleep(Duration::from_millis(25).min(forwarding.remaining()));

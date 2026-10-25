@@ -21,7 +21,7 @@ directory, so linked worktrees share immutable Git facts. An explicit `--cache` 
 history; `--history-cache DIRECTORY` selects a shared history-cache base. In workspace mode,
 `--cache` supplies an isolated base with coordinator state and separate member caches.
 A per-user system daemon gives agent harnesses one endpoint to allowlist. Its
-socket is `daemon.sock` in the system directory (`src/system.rs:dir_from`):
+socket is `daemon.sock` in the system directory (`src/runtime_paths.rs:dir_from`):
 `$TRUFFLEPIG_SYSTEM_DIR` when absolute, else
 `$XDG_RUNTIME_DIR/trufflepig/system` (the allowlist target) when absolute, else
 `/run/user/<uid>/trufflepig/system` when that login-session directory exists, is
@@ -31,7 +31,7 @@ every step, and with no absolute candidate there is no directory
 (`system_unavailable`). `trufflepig system dir` prints the resolved directory.
 For source operations, the router forwards requests to the owning workspace coordinator or per-root
 daemon, starting a missing target and proxying the reply within 28 s
-(`src/daemon.rs:PROXY_REPLY_WAIT`), spawn wait included. Router replies, including
+(`src/daemon_transport.rs:PROXY_REPLY_WAIT`), spawn wait included. Router replies, including
 `timed_out` errors, remain answers. An unreachable router gets one `system ensure`
 attempt within the client's 30 s budget, then one retry (`src/cli/client_command.rs`).
 That attempt starts the router through the installed unit when the unit owns the
@@ -91,7 +91,7 @@ before the socket closes, so the peer reads the refusal.
 An incomplete frame expires after 5 s with `timed_out: phase=reading_frame`;
 two ingress workers decode and classify complete frames, and classification may
 perform I/O (`src/daemon/server.rs`, `src/daemon/server/ingress_frames.rs`).
-Request work then enters bounded lanes (`src/daemon/pool.rs`,
+Request work then enters bounded lanes (`src/request_pool.rs`,
 `src/daemon/server/request_admission.rs`): query
 lanes have 16 router, 8 coordinator, and 4 root workers, each with a 64-request
 queue. Maintenance, regex, and semantic lanes have router widths/queues 16/32,
@@ -121,7 +121,7 @@ read-only Board operations use the same local cap after parsing, while writes an
 (`src/board/board_transport/board_backend/board_dispatch/host_run.rs:local_read_deadline`). Query-only
 index reads cap lock waits and interrupt long SQL statements at expiry. Deadline
 checks are cooperative; a blocking system call can outlive the budget
-(`src/daemon/deadline.rs`).
+(`src/query_deadline.rs`).
 Inline index maintenance uses at most 2 s per root/member and reserves 250 ms from
 the original read budget; workspace member slices share the original 20 s deadline
 ([index contract](index-contract.md#coherent-publication)).
@@ -141,7 +141,7 @@ expired, the router reports `timed_out` before classification.
 5 s frame budget), releases the socket, and drains accepted work for up to
 28 s, then rejects queued work and returns so the daemon process exits; requests
 still running at that point may lose their reply. Liveness checks connect to the
-socket (`src/daemon.rs:running`) and never touch the startup lock. `system
+socket (`src/daemon_transport.rs:running`) and never touch the startup lock. `system
 ensure` uses one absolute 120 s startup deadline for status probes, the start, and
 socket/spool polling. Its initial status probe waits at most 250 ms; a bound
 router then gets the remaining startup budget without a second start. A unit-owned
@@ -156,7 +156,7 @@ probe or process after expiry and reports
 `system_unavailable: router still starting after 120 s`. Clients allow at most
 30 s for the read/retry operation, including startup, transport, backoff, and
 fallback, and at most five read attempts with fresh request IDs
-(`src/daemon.rs:CLIENT_REPLY_WAIT`, `src/cli/retry.rs`). A spooled
+(`src/daemon_transport.rs:CLIENT_REPLY_WAIT`, `src/cli/retry.rs`). A spooled
 request whose claiming router stops beating fails at once with
 `daemon_unavailable`. Lane queue refusals include pool, queue depth/capacity,
 cause, bounded `retry_after_ms`, and a retry hint. Read retries

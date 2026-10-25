@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::repo_identity::tests::FixtureRegistration;
 
 #[test]
 fn registry_and_config_edits_invalidate_the_project_cache() {

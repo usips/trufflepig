@@ -117,7 +117,7 @@ fn member_timeout_diagnostic_requires_an_unanswered_timed_out_member() {
 fn expired_workspace_search_identifies_the_unanswered_home() {
     use crate::{
         cli,
-        daemon::deadline::QueryDeadline,
+        query_deadline::QueryDeadline,
         workspace::{
             WorkspaceConfig, cache_path, result_cache::WorkspaceResults, test_fixture::Fixture,
         },

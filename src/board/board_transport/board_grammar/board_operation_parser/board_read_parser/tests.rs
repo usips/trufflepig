@@ -1,4 +1,4 @@
-use crate::cli::parse;
+use crate::board::board_test_support::parse_board_arguments as parse;
 mod done_grammar_tests;
 
 #[test]
@@ -53,9 +53,13 @@ fn board_collection_grammar_uses_frozen_typed_cursors_and_required_show_targets(
         let args = words.iter().map(|word| (*word).into()).collect::<Vec<_>>();
         let options = parse(&args).unwrap();
         let original = board_parse(&options, None).unwrap();
-        let forwarded = normalize_args(&args, &options, None).unwrap();
+        let forwarded = normalize_args(&options, None).unwrap();
         assert_eq!(
-            board_parse(&parse(&forwarded).unwrap(), None).unwrap(),
+            board_parse(
+                &crate::board::board_test_support::round_trip(&forwarded),
+                None
+            )
+            .unwrap(),
             original,
             "{words:?}"
         );
@@ -186,10 +190,12 @@ fn board_search_round_trip_preserves_raw_query_and_plan_scope() {
     ]
     .map(str::to_owned);
     let options = parse(&args).unwrap();
-    let forwarded = normalize_args(&args, &options, None).unwrap();
-    let BoardCommand::Op(BoardOp::Search { query, plan, limit }) =
-        board_parse(&parse(&forwarded).unwrap(), None).unwrap()
-    else {
+    let forwarded = normalize_args(&options, None).unwrap();
+    let BoardCommand::Op(BoardOp::Search { query, plan, limit }) = board_parse(
+        &crate::board::board_test_support::round_trip(&forwarded),
+        None,
+    )
+    .unwrap() else {
         panic!("search");
     };
     assert_eq!(query, "\"parser scope\" OR feedback");

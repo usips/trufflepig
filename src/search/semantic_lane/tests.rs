@@ -1,6 +1,6 @@
 #[cfg(feature = "semantic")]
 use crate::{
-    daemon::deadline::QueryDeadline,
+    query_deadline::QueryDeadline,
     search::{self, Query},
     semantic::{
         DIMENSIONS, Embedding, SemanticSession, content_key, embedding_cache::EmbeddingCache,

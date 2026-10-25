@@ -4,7 +4,7 @@ use crate::board::{
     board_ids::BoardRef,
     board_protocol::{BoardOp, BoardRequest},
 };
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use anyhow::Result;
 use std::time::Duration;
 
@@ -34,7 +34,7 @@ impl BoardHost {
         let spec = format!("{head}^{{commit}}");
         for target in targets {
             check_deadline(deadline)?;
-            if let Ok(output) = crate::history::git::run_bounded(
+            if let Ok(output) = crate::git_runner::run_bounded(
                 &target.registration.common_dir,
                 &["rev-parse", "--verify", "--end-of-options", &spec],
                 deadline.cap(Duration::from_secs(2)),

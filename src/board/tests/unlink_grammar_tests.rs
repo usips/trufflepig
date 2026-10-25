@@ -4,7 +4,7 @@ use super::*;
 fn unlink_grammar_and_wire_carry_only_a_full_oid_and_task() {
     let oid = "0123456789abcdef0123456789abcdef01234567";
     let args = ["board", "unlink", oid, "P7.3"].map(str::to_owned);
-    let options = cli::parse(&args).unwrap();
+    let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
     let board_grammar::BoardCommand::Op(op) = board_grammar::parse(&options, None).unwrap() else {
         panic!("expected board operation")
     };
@@ -41,7 +41,7 @@ fn unlink_grammar_rejects_invalid_addresses_and_cross_verb_flags_before_body_rea
             .iter()
             .map(|word| (*word).to_owned())
             .collect::<Vec<_>>();
-        let options = cli::parse(&args).unwrap();
+        let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
         assert!(
             board_grammar::validate_before_body(&options).is_err(),
             "{words:?}"

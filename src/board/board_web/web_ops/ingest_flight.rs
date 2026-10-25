@@ -51,7 +51,7 @@ impl Default for IngestFlight {
                 next: String::new(),
             }),
             #[cfg(test)]
-            scan_budget: crate::daemon::CLIENT_REPLY_WAIT,
+            scan_budget: crate::daemon_transport::CLIENT_REPLY_WAIT,
         }
     }
 }

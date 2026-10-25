@@ -20,8 +20,8 @@ use crate::board::{
     local_board::LocalBoard,
     repo_identity::RepoIdentityCache,
 };
-use crate::daemon::deadline::QueryDeadline;
 use crate::identity::GitOid;
+use crate::query_deadline::QueryDeadline;
 use anyhow::Result;
 use board_writer::check_deadline;
 pub(crate) use board_writer::ensure_feedback_import;

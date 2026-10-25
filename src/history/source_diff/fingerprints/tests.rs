@@ -1,7 +1,8 @@
 use super::*;
 use crate::{
     extract,
-    history::source_diff::{DeclarationRelation, correspond_declarations, diff_sources},
+    history::source_diff::{DeclarationRelation, correspond_declarations},
+    line_diff::diff_sources,
 };
 
 fn facts(bytes: &[u8], extraction: &extract::Extraction) -> Vec<FingerprintFact> {

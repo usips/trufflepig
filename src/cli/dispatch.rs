@@ -2,8 +2,8 @@
 use super::{Arguments, emission, request_context, validate};
 use crate::coded_error::CodedContext;
 use crate::{
-    daemon::deadline::QueryDeadline,
     output::OutputBudget,
+    query_deadline::QueryDeadline,
     store::{
         IndexProgressPhase, Store, index_cache_unavailable, is_index_cache_unavailable,
         is_index_cannot_open, is_index_warming, preflight_results_cache,
@@ -44,9 +44,9 @@ pub(super) fn local_with_session(
     options: &Arguments,
     daemon_running: bool,
     session: &mut crate::semantic::SemanticSession,
-    context: &crate::diagnostics::RequestContext,
+    context: &crate::request_context::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
-    preparation_manager: Option<&crate::semantic::preparation::PreparationManager>,
+    preparation_manager: Option<&crate::semantic_preparation::PreparationManager>,
     deadline: QueryDeadline,
 ) -> Result<String> {
     let initializations = crate::semantic::model_initializations();
@@ -104,9 +104,9 @@ fn local_dispatch(
     options: &Arguments,
     daemon_running: bool,
     session: &mut crate::semantic::SemanticSession,
-    context: &crate::diagnostics::RequestContext,
+    context: &crate::request_context::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
-    preparation_manager: Option<&crate::semantic::preparation::PreparationManager>,
+    preparation_manager: Option<&crate::semantic_preparation::PreparationManager>,
     deadline: QueryDeadline,
 ) -> Result<String> {
     validate(options)?;
@@ -169,7 +169,7 @@ fn local_dispatch(
         return Ok(rendered);
     }
     if verb == "semantic" {
-        return super::semantic::local(root, cache, options, preparation_manager);
+        return super::semantic_commands::local(root, cache, options, preparation_manager);
     }
     if verb == "semantic-check" {
         let path = options
@@ -286,7 +286,7 @@ fn local_dispatch(
             .clone()
             .map(Ok)
             .unwrap_or_else(|| {
-                crate::history::worker::resolve_cache(
+                crate::history::history_worker::resolve_cache(
                     root,
                     options.cache.as_deref(),
                     options.history_cache.as_deref(),
@@ -308,7 +308,7 @@ fn local_dispatch(
                     budget.render(&status)
                 } else {
                     let status = history.schedule()?;
-                    crate::history::worker::start(root, &history_cache)?;
+                    crate::history::history_worker::start(root, &history_cache)?;
                     budget.render(&status)
                 }
             }
@@ -443,7 +443,7 @@ fn read_store(
     } else if options.no_daemon {
         true
     } else {
-        !crate::daemon::running_by(cache, deadline)?
+        !crate::daemon_transport::running_by(cache, deadline)?
     };
     if reconciles {
         let preserve_parent_response = verb == "show"

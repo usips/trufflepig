@@ -1,7 +1,7 @@
 //! The maintenance thread: watches the root, schedules reconciliation, detects a
 //! vanished root, drains the spool, and runs idle work. Requests never wait on it.
 use super::server::{DaemonHandler, RequestAdmission, ServerState};
-use super::spool::SpoolServer;
+use crate::daemon_transport::spool::SpoolServer;
 use notify::{EventKind, RecursiveMode, Watcher};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};

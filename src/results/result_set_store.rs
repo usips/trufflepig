@@ -2,7 +2,7 @@
 //! index so saving a query's results never waits behind a publication.
 use super::{MAX_BYTES, MAX_HITS, StoredResultSet, now};
 use crate::coded_error::CodedContext;
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::{path::Path, thread, time::Duration};

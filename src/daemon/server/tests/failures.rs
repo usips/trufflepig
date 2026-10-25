@@ -42,7 +42,7 @@ fn full_pool_answers_daemon_busy() {
             context: RequestContext::new(None, None),
             args: vec![word.to_owned()],
         };
-        protocol::write_request(&mut stream, &request).unwrap();
+        daemon_wire_protocol::write_request(&mut stream, &request).unwrap();
         stream
     };
     let first = raw("candidate-one");
@@ -51,7 +51,7 @@ fn full_pool_answers_daemon_busy() {
     for (label, mut stream) in [("candidate-one", first), ("candidate-two", second)] {
         let reply_tx = reply_tx.clone();
         std::thread::spawn(move || {
-            let reply = protocol::read_reply(&mut stream);
+            let reply = daemon_wire_protocol::read_reply(&mut stream);
             let _ = reply_tx.send((label, reply));
         });
     }

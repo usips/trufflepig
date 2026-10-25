@@ -43,7 +43,7 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
     let (context, context_error) = match request_context(options) {
         Ok(context) => (context, None),
         Err(error) => (
-            crate::diagnostics::RequestContext::new(
+            crate::request_context::RequestContext::new(
                 options.session.clone(),
                 options.client.clone(),
             ),
@@ -241,7 +241,7 @@ fn paging_flag(arg: &str) -> bool {
 }
 
 fn retry_budget(current: usize) -> Option<usize> {
-    let maximum = super::MAX_BUDGET;
+    let maximum = crate::output::MAX_BUDGET;
     (current < maximum).then(|| current.saturating_mul(2).max(2_000).min(maximum))
 }
 
@@ -250,7 +250,7 @@ pub(super) fn retry_hint(current: usize) -> String {
         Some(suggestion) => format!("retry with -b {suggestion}"),
         None => format!(
             "maximum budget is {}; narrow the request",
-            super::MAX_BUDGET
+            crate::output::MAX_BUDGET
         ),
     }
 }

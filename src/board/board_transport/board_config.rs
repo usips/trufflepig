@@ -1,14 +1,13 @@
 //! Strict board configuration with passwd-derived identity and durable data paths.
-use crate::board::board_actor::{BoardActor, HarnessLabel, validate_actor_component};
 use crate::board::board_ids::RepoKey;
 use crate::coded_error::CodedContext;
+use crate::{
+    board::board_actor::BoardActor,
+    request_context::{HarnessLabel, validate_actor_component},
+};
 use anyhow::{Result, bail};
 use serde::Deserialize;
-use std::{
-    collections::BTreeMap,
-    env, fs,
-    path::{Path, PathBuf},
-};
+use std::{collections::BTreeMap, env, fs, path::PathBuf};
 
 pub const DEFAULT_CLAIM_TTL_MINUTES: u64 = 120;
 
@@ -92,7 +91,8 @@ impl BoardConfig {
     }
 
     /// Test/local embedding configuration; does not inspect or mutate process env.
-    pub fn for_database(path: impl AsRef<Path>) -> Self {
+    #[cfg(test)]
+    pub fn for_database(path: impl AsRef<std::path::Path>) -> Self {
         Self {
             mode: BoardMode::Local,
             user: "test".into(),

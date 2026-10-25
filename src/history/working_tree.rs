@@ -5,8 +5,9 @@ use super::{History, comparison, source_diff, targets::Target};
 use crate::{
     identity::{ByteSpan, ContentRevision, GitOid},
     output::OutputBudget,
+    path_codec::encode_path,
     results::{self, ChangeEntry, HistoricalSource, Hit, ResultEntry},
-    store::{PublicationChange, Store, encode_path},
+    store::{PublicationChange, Store},
 };
 use anyhow::{Result, ensure};
 use rusqlite::OptionalExtension;
@@ -171,7 +172,8 @@ fn changed_spans(
     new: Option<&[u8]>,
     target: Option<&Target>,
 ) -> Result<(Vec<ChangedSpans>, bool)> {
-    let differences = source_diff::diff_sources(old.unwrap_or_default(), new.unwrap_or_default());
+    let differences =
+        crate::line_diff::diff_sources(old.unwrap_or_default(), new.unwrap_or_default());
     if let Some(target) = target.filter(|target| target.symbol.is_some()) {
         let before = crate::extract::extract(path, old.unwrap_or_default());
         let after = crate::extract::extract(path, new.unwrap_or_default());

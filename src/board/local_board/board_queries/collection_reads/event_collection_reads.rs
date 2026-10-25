@@ -4,7 +4,6 @@ use crate::board::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, params};
 
 use super::{COLLECTION_LIMIT, sequence_window, validate_limit};
-use crate::board::board_actor::HarnessLabel;
 use crate::board::board_domain::board_collections::{
     EntriesPage, EntryCursor, EventPage, HistoryPage, RevisionHistoryRecord,
 };
@@ -16,6 +15,7 @@ use crate::board::local_board::{
     BoardError, actor_from_row, board_feed, invalid, require_plan, row_number, sql_error,
     sql_number,
 };
+use crate::request_context::HarnessLabel;
 
 const EVENT_LIMIT: usize = 500;
 

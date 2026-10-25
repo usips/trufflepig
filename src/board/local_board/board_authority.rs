@@ -7,11 +7,14 @@ mod tests;
 pub(in crate::board) use authority_writes::{write_grant, write_revoke};
 
 use super::{invalid, require_plan, sql_error, sql_number};
-use crate::board::board_actor::{BoardActor, BoardRecipient, HarnessLabel};
 use crate::board::board_ids::{EntryId, PlanId};
 use crate::board::board_protocol::BoardErrorCode;
 use crate::board::board_protocol::{
     AuthorityRole, AuthoritySource, BoardError, GrantRecord, GrantSource,
+};
+use crate::{
+    board::board_actor::{BoardActor, BoardRecipient},
+    request_context::HarnessLabel,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 

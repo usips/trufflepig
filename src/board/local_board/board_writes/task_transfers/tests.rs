@@ -1,5 +1,4 @@
 use super::*;
-use crate::board::board_actor::{BoardActor, HarnessLabel};
 use crate::board::board_ids::EventSeq;
 use crate::board::board_protocol::{BoardResult, ReadScope, TaskOrder};
 use crate::board::board_vocabulary::{EntryText, TaskColumn};
@@ -7,6 +6,7 @@ use crate::board::local_board::board_queries::board_reads::{open_entries, task_v
 use crate::board::local_board::board_queries::collection_nested::{
     TaskSelection, overview_task_window, tasks_page,
 };
+use crate::{board::board_actor::BoardActor, request_context::HarnessLabel};
 use rusqlite::{Connection, Transaction};
 
 struct TransferDatabase {
@@ -16,7 +16,7 @@ struct TransferDatabase {
 
 impl TransferDatabase {
     fn new() -> Self {
-        let directory = crate::board::board_test_support::scratch("task-transfer-tests-");
+        let directory = crate::test_fixtures::scratch("task-transfer-tests-");
         let path = directory.path().join("board.sqlite3");
         let conn = crate::board::local_board::board_database::open(&path)
             .unwrap()

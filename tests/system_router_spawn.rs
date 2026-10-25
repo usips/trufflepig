@@ -7,11 +7,7 @@ use std::{
     process::{Child, Command, Output, Stdio},
     time::{Duration, Instant},
 };
-use trufflepig::{
-    board::{BOARD_API, SCHEMA_VERSION},
-    daemon::{self, deadline::QueryDeadline},
-    diagnostics::RequestContext,
-};
+use trufflepig::{BOARD_API, PROXY_REPLY_WAIT, QueryDeadline, RequestContext, SCHEMA_VERSION};
 
 struct EnsureProcess(Option<Child>);
 
@@ -217,7 +213,7 @@ fn ensure_spawns_and_waits_for_a_real_router() {
         ensuring.child().id(),
         "ensure spawned the router child"
     );
-    let error = daemon::request_by(
+    let error = trufflepig::request_by(
         &runtime,
         &["system".into(), "status".into()],
         &RequestContext::new(None, None),
@@ -265,7 +261,7 @@ fn ensure_spawns_and_waits_for_a_real_router() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let reply = daemon::request_by(
+    let reply = trufflepig::request_by(
         &runtime,
         &["system".into(), "status".into()],
         &RequestContext::new(None, None),
@@ -279,7 +275,7 @@ fn ensure_spawns_and_waits_for_a_real_router() {
     assert_eq!(status["board_api"], BOARD_API);
     assert_eq!(status["schema_file"], SCHEMA_VERSION);
     assert_eq!(status["board_db"], serde_json::json!(database));
-    daemon::stop(&runtime).unwrap();
-    router.reap(Instant::now() + daemon::PROXY_REPLY_WAIT + Duration::from_secs(2));
+    trufflepig::stop(&runtime).unwrap();
+    router.reap(Instant::now() + PROXY_REPLY_WAIT + Duration::from_secs(2));
     assert!(!runtime.join("daemon.sock").exists());
 }

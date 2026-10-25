@@ -22,7 +22,7 @@ fn manual_request(actor: BoardActor, task: TaskId) -> BoardRequest {
 
 #[test]
 fn task_receipts_replay_their_own_events_across_callers_and_reopen() {
-    let directory = crate::board::board_test_support::scratch("board-fixture-");
+    let directory = crate::test_fixtures::scratch("board-fixture-");
     let path = directory.path().join("board.sqlite3");
     let mut board = LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap();
     let (owner, first_task) = manual_link_plan(&mut board);
@@ -97,7 +97,7 @@ fn task_receipts_replay_their_own_events_across_callers_and_reopen() {
 
 #[test]
 fn concurrent_same_task_links_share_one_manual_receipt() {
-    let directory = crate::board::board_test_support::scratch("board-fixture-");
+    let directory = crate::test_fixtures::scratch("board-fixture-");
     let path = directory.path().join("board.sqlite3");
     let mut setup = LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap();
     let (owner, task) = manual_link_plan(&mut setup);
@@ -143,7 +143,7 @@ fn concurrent_same_task_links_share_one_manual_receipt() {
 
 #[test]
 fn plan_only_scan_repair_reuses_entry_and_records_manual_task_event() {
-    let directory = crate::board::board_test_support::scratch("board-fixture-");
+    let directory = crate::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -201,7 +201,7 @@ fn plan_only_scan_repair_reuses_entry_and_records_manual_task_event() {
 
 #[test]
 fn scan_task_link_keeps_scan_source_and_null_receipt() {
-    let directory = crate::board::board_test_support::scratch("board-fixture-");
+    let directory = crate::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -250,7 +250,7 @@ fn scan_task_link_keeps_scan_source_and_null_receipt() {
 
 #[test]
 fn manual_link_with_unknown_historical_receipt_returns_invalid_state() {
-    let directory = crate::board::board_test_support::scratch("board-fixture-");
+    let directory = crate::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),

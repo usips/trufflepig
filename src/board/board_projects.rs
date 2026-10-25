@@ -12,9 +12,9 @@ use super::{
     local_board::LocalBoard, repo_identity::RepoIdentityCache,
 };
 use crate::{
-    daemon::deadline::QueryDeadline,
-    history::git::common_dir_bounded,
-    workspace::config::{
+    git_runner::common_dir_bounded,
+    query_deadline::QueryDeadline,
+    workspace_config::{
         RegisteredWorkspace, RegisteredWorkspaceMember, registered_workspaces_from,
     },
 };
@@ -70,6 +70,7 @@ enum FileStamp {
 
 impl ProjectResolver {
     /// An explicit registry keeps embedded callers and fixtures independent of env.
+    #[cfg(test)]
     pub fn with_registry(registry: impl Into<PathBuf>) -> Self {
         Self {
             registry: Some(registry.into()),
@@ -88,7 +89,7 @@ impl ProjectResolver {
         let registry = self
             .registry
             .clone()
-            .or_else(crate::workspace::config::registry_path);
+            .or_else(crate::workspace_config::registry_path);
         let registry_stamp = registry
             .as_ref()
             .map(|path| (path.clone(), file_stamp(path)));

@@ -31,7 +31,7 @@ pub(super) fn system_routes(options: &Arguments, verb: &str) -> bool {
 /// Handles the `system` verb against the per-user routing daemon.
 pub(super) fn system_command(
     options: &Arguments,
-    context: &crate::diagnostics::RequestContext,
+    context: &crate::request_context::RequestContext,
 ) -> Result<String> {
     let render = |json: &str| -> Result<String> {
         OutputBudget::new(options.budget)?.render(&serde_json::from_str::<serde_json::Value>(json)?)
@@ -42,7 +42,7 @@ pub(super) fn system_command(
             render("{\"status\":\"ok\"}")
         }
         Some("stop") => render(&crate::system::stop()?),
-        Some("dir") => match crate::system::dir() {
+        Some("dir") => match crate::runtime_paths::system_dir() {
             Some(dir) => Ok(format!("{}\n", dir.display())),
             None => anyhow::bail!(coded!(SystemUnavailable, "no runtime dir")),
         },
@@ -59,7 +59,7 @@ pub(super) fn system_command(
         }
         None | Some("status") => {
             let ping = vec!["system".to_owned(), "status".to_owned()];
-            let status = if crate::system::request(&ping, context)
+            let status = if crate::daemon_transport::router_request(&ping, context)
                 .ok()
                 .flatten()
                 .is_some()
@@ -84,7 +84,7 @@ pub(super) fn system_reply(
     options: &Arguments,
     root: &Path,
     verb: &str,
-    config: Option<&crate::workspace::config::WorkspaceConfig>,
+    config: Option<&crate::workspace_config::WorkspaceConfig>,
     reply: String,
 ) -> Result<String> {
     if let Some(config) = config {
@@ -95,14 +95,14 @@ pub(super) fn system_reply(
                 .get(1)
                 .is_some_and(|command| command == "prepare")
         {
-            return semantic::wait_for_workspace(config, options, reply);
+            return semantic_commands::wait_for_workspace(config, options, reply);
         }
         return Ok(reply);
     }
     let reply = wait_for_history(root, options, reply)?;
     if verb == "semantic" {
         let cache = cache_path(root, options.cache.as_deref())?;
-        semantic::wait_for_schedule(root, &cache, options, reply)
+        semantic_commands::wait_for_schedule(root, &cache, options, reply)
     } else {
         Ok(reply)
     }

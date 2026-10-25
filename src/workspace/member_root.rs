@@ -5,8 +5,8 @@
 #[cfg(test)]
 mod tests;
 
-use super::config::{Member, MemberIdentity};
-use crate::history::git;
+use crate::git_runner;
+use crate::workspace_config::{Member, MemberIdentity};
 use anyhow::{Context, Result, ensure};
 use std::{
     fs,
@@ -125,7 +125,7 @@ pub(crate) fn member_common_dir(member: &Member, timeout: Duration) -> Option<Pa
     let dot_git = member.root.join(".git");
     match fs::metadata(&dot_git) {
         Ok(metadata) if metadata.is_dir() => dot_git.canonicalize().ok(),
-        Ok(_) => git::common_dir_bounded(&member.root, timeout).ok(),
+        Ok(_) => git_runner::common_dir_bounded(&member.root, timeout).ok(),
         Err(_) => None,
     }
 }
@@ -141,7 +141,7 @@ pub(crate) fn linked_root_of_member(
     if linked_worktree_top(&candidate)? != candidate || candidate == member.root {
         return None;
     }
-    let common = git::common_dir_bounded(&candidate, timeout).ok()?;
+    let common = git_runner::common_dir_bounded(&candidate, timeout).ok()?;
     (member_common_dir(member, timeout) == Some(common)).then_some(candidate)
 }
 
@@ -156,7 +156,7 @@ pub(crate) fn standalone_worktree(start: &Path, timeout: Duration) -> Option<Mem
     let name = parent
         .file_name()
         .and_then(|name| name.to_str())
-        .filter(|name| super::config::valid_name(name))
+        .filter(|name| crate::workspace_config::valid_name(name))
         .unwrap_or("checkout")
         .to_owned();
     let member = Member {
@@ -198,7 +198,7 @@ pub(crate) fn home_root(
     let Some(top) = top else {
         return Ok(None);
     };
-    let Ok(common) = git::common_dir_bounded(&top, timeout) else {
+    let Ok(common) = git_runner::common_dir_bounded(&top, timeout) else {
         return Ok(None);
     };
     for member in members {

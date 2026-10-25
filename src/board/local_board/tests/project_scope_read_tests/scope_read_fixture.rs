@@ -12,7 +12,7 @@ pub(super) struct ScopeFixture {
 
 impl ScopeFixture {
     pub(super) fn new() -> Self {
-        let directory = crate::board::board_test_support::scratch("project-scope-");
+        let directory = crate::test_fixtures::scratch("project-scope-");
         let mut board = LocalBoard::open_path(
             &directory.path().join("board.sqlite3"),
             Duration::from_secs(120),

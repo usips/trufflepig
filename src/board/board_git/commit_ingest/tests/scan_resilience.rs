@@ -1,4 +1,5 @@
 use super::*;
+use crate::board::repo_identity::tests::FixtureRegistration;
 use std::io::Write;
 use std::process::{Command, Stdio};
 

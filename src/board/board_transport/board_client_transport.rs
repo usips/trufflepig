@@ -5,7 +5,10 @@ use crate::board::{
     board_protocol::{AgentClaims, BoardOp},
 };
 use crate::coded_error::CodedContext;
-use crate::{cli::Arguments, daemon::deadline::QueryDeadline, diagnostics::RequestContext};
+use crate::{
+    board::board_grammar::BoardArguments, query_deadline::QueryDeadline,
+    request_context::RequestContext,
+};
 use anyhow::{Result, bail, ensure};
 use std::{
     error::Error as StdError,
@@ -38,7 +41,10 @@ trait BoardGateway {
     }
 }
 
-struct SystemGateway;
+/// Routes through the system router; `ensure_router` starts it when absent.
+struct SystemGateway {
+    ensure_router: fn(QueryDeadline) -> Result<()>,
+}
 impl BoardGateway for SystemGateway {
     fn request(
         &mut self,
@@ -46,49 +52,50 @@ impl BoardGateway for SystemGateway {
         context: &RequestContext,
         deadline: &QueryDeadline,
     ) -> Result<Option<String>> {
-        crate::system::request_by(args, context, deadline.clone())
+        crate::daemon_transport::router_request_by(args, context, deadline.clone())
     }
     fn ensure(&mut self, deadline: &QueryDeadline) -> Result<()> {
-        crate::system::ensure_by(deadline.clone())
+        (self.ensure_router)(deadline.clone())
     }
 }
 
 impl BoardClientTransport {
+    /// Sends a prepared request: `forwarded` is the router argv for `options`,
+    /// and `ensure_router` starts the system router when none answers.
     pub(crate) fn run(
         &mut self,
-        args: &[String],
-        options: &Arguments,
+        forwarded: &[String],
+        options: &BoardArguments,
         context: &RequestContext,
+        ensure_router: fn(QueryDeadline) -> Result<()>,
         deadline: QueryDeadline,
     ) -> Result<String> {
-        let forwarded = crate::board::prepare_client(args, options)?;
-        let options = crate::cli::parse(&forwarded)?;
-        let command = board_grammar::parse(&options, None)?;
-        let encoded = crate::daemon::request_encoded_size(&forwarded, context)?;
+        let command = board_grammar::parse(options, None)?;
+        let encoded = crate::daemon_transport::request_encoded_size(forwarded, context)?;
         ensure!(
-            encoded <= crate::daemon::MAX_DAEMON_REQUEST_BYTES,
+            encoded <= crate::daemon_transport::MAX_DAEMON_REQUEST_BYTES,
             coded!(
                 InvalidBody,
                 "encoded board request is {encoded} bytes; maximum is {} bytes; split the plan",
-                crate::daemon::MAX_DAEMON_REQUEST_BYTES
+                crate::daemon_transport::MAX_DAEMON_REQUEST_BYTES
             )
         );
         self.run_prepared(
-            &forwarded,
-            &options,
+            forwarded,
+            options,
             &command,
             context,
-            &mut SystemGateway,
+            &mut SystemGateway { ensure_router },
             &mut BoardConfig::load,
-            crate::system::dir().as_deref(),
-            &crate::system::spool_dir(),
+            crate::runtime_paths::system_dir().as_deref(),
+            &crate::runtime_paths::spool_dir(),
             &deadline,
         )
     }
     fn run_prepared(
         &mut self,
         forwarded: &[String],
-        options: &Arguments,
+        options: &BoardArguments,
         command: &BoardCommand,
         context: &RequestContext,
         gateway: &mut dyn BoardGateway,
@@ -119,7 +126,7 @@ impl BoardClientTransport {
     fn run_prepared_inner(
         &mut self,
         forwarded: &[String],
-        options: &Arguments,
+        options: &BoardArguments,
         command: &BoardCommand,
         context: &RequestContext,
         gateway: &mut dyn BoardGateway,
@@ -153,7 +160,10 @@ impl BoardClientTransport {
                     );
                 }
                 recent = runtime.is_some_and(|runtime| {
-                    crate::system::board_router_recently_unavailable(runtime, SystemTime::now())
+                    crate::board::board_runtime_markers::board_router_recently_unavailable(
+                        runtime,
+                        SystemTime::now(),
+                    )
                 });
                 if !recent {
                     check_deadline(deadline)?;
@@ -173,7 +183,7 @@ impl BoardClientTransport {
                 check_deadline(deadline)?;
                 if !recent {
                     if let Some(runtime) = runtime {
-                        let _ = crate::system::mark_board_router_unavailable(
+                        let _ = crate::board::board_runtime_markers::mark_board_router_unavailable(
                             runtime,
                             SystemTime::now(),
                         );
@@ -197,8 +207,9 @@ impl BoardClientTransport {
             );
             check_deadline(deadline)?;
             if let Some(runtime) = runtime {
-                let _ = crate::system::record_board_database(runtime, &database);
-                crate::system::clear_board_router_unavailable(runtime);
+                let _ =
+                    crate::board::board_runtime_markers::record_board_database(runtime, &database);
+                crate::board::board_runtime_markers::clear_board_router_unavailable(runtime);
             }
         }
         ensure!(
@@ -214,7 +225,7 @@ impl BoardClientTransport {
         match gateway.request(forwarded, context, deadline) {
             Ok(Some(reply)) => {
                 if let Some(runtime) = runtime {
-                    crate::system::clear_board_router_unavailable(runtime);
+                    crate::board::board_runtime_markers::clear_board_router_unavailable(runtime);
                 }
                 Ok(reply)
             }
@@ -228,8 +239,10 @@ impl BoardClientTransport {
                     );
                 }
                 if let Some(runtime) = runtime {
-                    let _ =
-                        crate::system::mark_board_router_unavailable(runtime, SystemTime::now());
+                    let _ = crate::board::board_runtime_markers::mark_board_router_unavailable(
+                        runtime,
+                        SystemTime::now(),
+                    );
                 }
                 local_reply(options, command, context, load, runtime, spool, deadline)
             }
@@ -261,7 +274,7 @@ fn check_deadline(deadline: &QueryDeadline) -> Result<()> {
 
 fn failed_request(
     command: &BoardCommand,
-    options: &Arguments,
+    options: &BoardArguments,
     context: &RequestContext,
     load: &mut dyn FnMut() -> Result<BoardConfig>,
     spool: &Path,
@@ -269,7 +282,7 @@ fn failed_request(
     board_request_attempted: bool,
     error: anyhow::Error,
 ) -> Result<String> {
-    if let Some(timeout) = crate::daemon::DaemonReplyTimeout::from_error(&error)
+    if let Some(timeout) = crate::daemon_transport::DaemonReplyTimeout::from_error(&error)
         && matches!(command, BoardCommand::Op(op) if !op.is_read_only() && !matches!(op, BoardOp::Feedback { .. }))
     {
         if !board_request_attempted {
@@ -302,7 +315,7 @@ fn failed_request(
 
 #[derive(Debug)]
 struct BoardPreflightTimeout {
-    timeout: crate::daemon::DaemonReplyTimeout,
+    timeout: crate::daemon_transport::DaemonReplyTimeout,
 }
 
 impl fmt::Display for BoardPreflightTimeout {
@@ -329,7 +342,7 @@ impl StdError for BoardPreflightTimeout {
 
 #[derive(Debug)]
 struct AmbiguousBoardWriteTimeout {
-    timeout: crate::daemon::DaemonReplyTimeout,
+    timeout: crate::daemon_transport::DaemonReplyTimeout,
     receipt_key: Option<BoardRequestKey>,
 }
 
@@ -356,7 +369,7 @@ impl StdError for AmbiguousBoardWriteTimeout {
 
 fn request_receipt_key(
     command: &BoardCommand,
-    options: &Arguments,
+    options: &BoardArguments,
     context: &RequestContext,
     load: &mut dyn FnMut() -> Result<BoardConfig>,
 ) -> Result<Option<BoardRequestKey>> {
@@ -417,7 +430,7 @@ fn parse_probe(status: &str) -> Result<(u32, PathBuf)> {
 }
 
 fn local_reply(
-    options: &Arguments,
+    options: &BoardArguments,
     command: &BoardCommand,
     context: &RequestContext,
     load: &mut dyn FnMut() -> Result<BoardConfig>,
@@ -428,7 +441,7 @@ fn local_reply(
     check_deadline(deadline)?;
     // A live router owns migration: feedback queues for it to import while
     // other operations run without migrating and refuse stale storage only.
-    if runtime.is_some_and(|runtime| crate::daemon::running(runtime)) {
+    if runtime.is_some_and(|runtime| crate::daemon_transport::running(runtime)) {
         if matches!(
             command,
             BoardCommand::Op(crate::board::BoardOp::Feedback { .. })
@@ -450,7 +463,7 @@ fn local_reply(
         let config = load()?;
         check_deadline(deadline)?;
         if let Some(runtime) = runtime {
-            crate::system::validate_board_database(runtime, &config.db_path)?;
+            crate::board::board_runtime_markers::validate_board_database(runtime, &config.db_path)?;
         }
         check_deadline(deadline)?;
         refuse_stale_storage_beside_router(
@@ -462,7 +475,7 @@ fn local_reply(
     let config = load()?;
     check_deadline(deadline)?;
     if let Some(runtime) = runtime {
-        crate::system::validate_board_database(runtime, &config.db_path)?;
+        crate::board::board_runtime_markers::validate_board_database(runtime, &config.db_path)?;
     }
     run_local(command, options, context, &config, runtime, spool, deadline)
 }
@@ -471,7 +484,7 @@ fn local_reply(
 /// without creating or migrating it; current files proceed to the local run.
 fn refuse_stale_storage_beside_router(
     command: &BoardCommand,
-    options: &Arguments,
+    options: &BoardArguments,
     context: &RequestContext,
     config: &BoardConfig,
     runtime: Option<&Path>,
@@ -506,7 +519,7 @@ fn refuse_stale_storage_beside_router(
 
 fn run_local(
     command: &BoardCommand,
-    options: &Arguments,
+    options: &BoardArguments,
     context: &RequestContext,
     config: &BoardConfig,
     runtime: Option<&Path>,

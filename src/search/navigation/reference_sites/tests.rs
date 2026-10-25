@@ -48,7 +48,7 @@ fn refs_lead_with_the_declaration_then_code_imports_and_tests() {
     assert_eq!(set.coverage["reference_sites"], 7);
     assert_eq!(set.coverage["reference_files"], 3);
     assert_eq!(
-        crate::results::lines::single_repo_coverage(&set.coverage),
+        crate::results::result_lines::single_repo_coverage(&set.coverage),
         "indexed 3/3; refs 7 sites in 3 files"
     );
 }
@@ -142,7 +142,7 @@ fn same_line_sites_collapse_only_with_equal_role_and_resolution() {
     .unwrap();
     assert_eq!(page["repeats"], 2);
     assert!(!page["resolution"].as_str().unwrap().contains('×'));
-    let line = crate::results::lines::entry_line(
+    let line = crate::results::result_lines::entry_line(
         &crate::results::ResultEntry::LiveSource(set.hits[2].clone()),
         None,
         crate::results::HitDetail {

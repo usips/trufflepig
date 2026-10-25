@@ -1,4 +1,3 @@
-use crate::board::board_actor::{BoardActor, BoardRecipient, HarnessLabel};
 use crate::board::board_backend::BoardBackend;
 use crate::board::board_ids::{PlanId, TaskId};
 use crate::board::board_protocol::{
@@ -7,10 +6,14 @@ use crate::board::board_protocol::{
 };
 use crate::board::board_vocabulary::{EntryText, PlanText, PlanTitle, TaskColumn};
 use crate::board::local_board::LocalBoard;
+use crate::{
+    board::board_actor::{BoardActor, BoardRecipient},
+    request_context::HarnessLabel,
+};
 use std::time::Duration;
 
 fn board() -> (tempfile::TempDir, LocalBoard) {
-    let directory = crate::board::board_test_support::scratch("task-move-authority-");
+    let directory = crate::test_fixtures::scratch("task-move-authority-");
     let board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),

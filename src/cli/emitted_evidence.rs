@@ -1,10 +1,10 @@
 //! Preserve only identities present in the final prepared JSON response.
 use crate::diagnostics::{Outcome, RequestEvent};
 use crate::{
-    daemon::deadline::QueryDeadline,
     identity::ResultHandle,
+    path_codec::encode_path,
+    query_deadline::QueryDeadline,
     results::{self, HistoricalSource, RESULTS_DATABASE, ResultEntry, ResultSetStore},
-    store::encode_path,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
@@ -183,7 +183,7 @@ fn capture_emitted_with_resolver(
 ) {
     let Ok(value) = serde_json::from_str::<Value>(response) else {
         // A lines page names its handles in the first column; coverage is not captured.
-        for (rank, handle) in crate::output::lines::emitted_handles(response)
+        for (rank, handle) in crate::output::lines_format::emitted_handles(response)
             .enumerate()
             .take(129)
         {

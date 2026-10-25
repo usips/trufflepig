@@ -1,21 +1,20 @@
 //! Bounded workspace snapshots retain immutable entries independently of member caches.
+mod coverage_lines;
 mod index_progress_source;
-mod lines;
-use super::{
-    config::WorkspaceConfig,
-    member_root::{GIT_PROBE_TIMEOUT, MemberRoot, linked_root_of_member},
-};
+use super::member_root::{GIT_PROBE_TIMEOUT, MemberRoot, linked_root_of_member};
 use crate::coded_error::CodedContext;
+use crate::workspace_config::WorkspaceConfig;
 use crate::{
-    daemon::deadline::QueryDeadline,
     identity::{ResultCursor, ResultHandle},
     output::{OutputBudget, OutputFormat},
+    path_codec::{decode_path, encode_path},
+    query_deadline::QueryDeadline,
     results::{self, HitDetail, ResultEntry},
-    store::{Store, decode_path, encode_path},
+    store::Store,
 };
 use anyhow::{Result, bail, ensure};
+use coverage_lines::{compact_coverage, mark_worktree_differs, member_coverage_summary};
 pub(super) use index_progress_source::IndexProgressSource;
-use lines::{compact_coverage, mark_worktree_differs, member_coverage_summary};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -429,15 +428,16 @@ impl WorkspaceResults {
             match budget.format {
                 OutputFormat::Json => budget.encode(&page_value(&set, id, offset, count, detail)?),
                 OutputFormat::Lines => {
-                    let cursor = results::lines::next_cursor(id, offset, count, set.hits.len());
-                    let text = results::lines::page_text(
+                    let cursor =
+                        results::result_lines::next_cursor(id, offset, count, set.hits.len());
+                    let text = results::result_lines::page_text(
                         set.hits[offset..offset + count].iter().map(|owned| {
                             (Some(set.owners[owned.owner].name.as_str()), &owned.entry)
                         }),
                         detail,
                         &coverage_line,
                         cursor.as_deref().map(|cursor| {
-                            results::lines::more_command(cursor, offset, count, limit)
+                            results::result_lines::more_command(cursor, offset, count, limit)
                         }),
                         set.truncated,
                     );

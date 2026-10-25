@@ -16,8 +16,8 @@ pub(super) use file_stat::TEST_PASS_START_SKEW_NS;
 pub(super) use tree_observation::{StatRefresh, TreeObservation};
 
 use super::{Coverage, index_checkpoint::IndexCheckpoint, index_deadline, regions};
-use crate::daemon::deadline::QueryDeadline;
 use crate::extract::{self, Extraction};
+use crate::query_deadline::QueryDeadline;
 use anyhow::{Context, Result};
 use extraction_reuse::{cached_extraction, insert_extraction_cache, published_extraction};
 use file_stat::FileStat;

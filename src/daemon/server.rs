@@ -2,13 +2,13 @@
 //! Per-root permits limit expensive work while a maintenance thread runs beside requests.
 //! Panics become failures or stop the daemon without stranding accepted sockets.
 use super::DaemonSocket;
-use super::deadline::QueryDeadline;
-use super::pool::{PoolSize, PoolSubmitCause, PooledJob, RequestClass, RequestLane};
-use super::protocol::{self, DaemonReply, DaemonRequest};
 use super::reconciler::{self, Maintenance};
-use super::spool::{ClaimedSpoolRequest, SpoolServer};
 use crate::coded_error::CodedContext;
-use crate::diagnostics::RequestContext;
+use crate::daemon_transport::daemon_wire_protocol::{self, DaemonReply, DaemonRequest};
+use crate::daemon_transport::spool::{ClaimedSpoolRequest, SpoolServer};
+use crate::query_deadline::QueryDeadline;
+use crate::request_context::RequestContext;
+use crate::request_pool::{PoolSize, PoolSubmitCause, PooledJob, RequestClass, RequestLane};
 use admission_refusal::{AdmissionRefusal, RefusalCause};
 use anyhow::{Context, Result};
 use ingress_frames::{
@@ -46,7 +46,7 @@ const ACCEPTS_PER_TURN: usize = 16;
 const MAINTENANCE_STOP_WAIT: Duration = Duration::from_secs(1);
 /// How long a stopping server lets accepted requests finish; their clients wait
 /// no longer than this for a forwarded reply anyway.
-const STOP_DRAIN: Duration = super::PROXY_REPLY_WAIT;
+const STOP_DRAIN: Duration = crate::daemon_transport::PROXY_REPLY_WAIT;
 /// One accepted request; `deadline` starts when the connection is accepted.
 pub struct AcceptedRequest {
     pub context: RequestContext,
@@ -103,7 +103,7 @@ impl AdmissionTier {
         match self {
             Self::Router => Duration::from_secs(28),
             Self::Coordinator => Duration::from_secs(24),
-            Self::Root => super::deadline::QUERY_DEADLINE,
+            Self::Root => crate::query_deadline::QUERY_DEADLINE,
         }
     }
 
@@ -399,7 +399,7 @@ fn write_bounded_reply(
         ends: Instant::now() + budget,
         request_deadline,
     };
-    protocol::write_reply(&mut writer, reply)
+    daemon_wire_protocol::write_reply(&mut writer, reply)
 }
 
 /// Writes one small overload reply without holding the accept loop on a peer.
@@ -410,7 +410,8 @@ fn refuse_busy_nonblocking(stream: &UnixStream, refusal: AdmissionRefusal<'_>) {
         message: refusal.message(),
     };
     let mut encoded = Vec::with_capacity(256);
-    if protocol::write_reply(&mut encoded, &reply).is_err() || stream.set_nonblocking(true).is_err()
+    if daemon_wire_protocol::write_reply(&mut encoded, &reply).is_err()
+        || stream.set_nonblocking(true).is_err()
     {
         return;
     }
@@ -456,10 +457,9 @@ fn normalize_owned_query_timeout(
 ) -> Result<String> {
     let expired_own_budget = bounded_query_class(class)
         && deadline.time_expired()
-        && result
-            .as_ref()
-            .err()
-            .is_some_and(|error| super::DaemonReplyTimeout::from_error(error).is_some());
+        && result.as_ref().err().is_some_and(|error| {
+            crate::daemon_transport::DaemonReplyTimeout::from_error(error).is_some()
+        });
     if expired_own_budget {
         result.map_err(|error| {
             error.with_coded_context(|| coded!(TimedOut, "query deadline expired"))
@@ -494,7 +494,7 @@ fn peer_disconnected(error: &anyhow::Error) -> bool {
 
 fn refusal_for_snapshot<'a>(
     pool: &'a str,
-    snapshot: super::pool::PoolSnapshot,
+    snapshot: crate::request_pool::PoolSnapshot,
     cause: PoolSubmitCause,
 ) -> AdmissionRefusal<'a> {
     let cause = match cause {
@@ -550,10 +550,11 @@ fn handle_frame_failure(stream: &UnixStream, failure: FrameFailure) {
             }
             write_result(
                 stream,
-                Err(
-                    anyhow::anyhow!("daemon frame exceeds {} bytes", protocol::REQUEST_LIMIT)
-                        .context(format!("invalid frame length {length}")),
-                ),
+                Err(anyhow::anyhow!(
+                    "daemon frame exceeds {} bytes",
+                    daemon_wire_protocol::REQUEST_LIMIT
+                )
+                .context(format!("invalid frame length {length}"))),
             );
         }
         FrameFailure::Io(error) => {
@@ -591,7 +592,7 @@ fn intake_frame<H: DaemonHandler>(
         );
         return;
     }
-    let request = protocol::read_request(&mut std::io::Cursor::new(bytes));
+    let request = daemon_wire_protocol::read_request(&mut std::io::Cursor::new(bytes));
     match request {
         Ok(DaemonRequest::Arguments { context, args }) => {
             if deadline.expired() {

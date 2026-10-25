@@ -25,15 +25,15 @@ fn schema_became_newer_gives_upgrade_advice() {
     assert!(error.message.contains("schema became newer"), "{error}");
     let config = crate::board::BoardConfig::for_database(&database);
     let args: Vec<String> = ["board", "inbox"].map(str::to_owned).into();
-    let options = crate::cli::parse(&args).unwrap();
+    let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
     let command = board_grammar::parse(&options, None).unwrap();
     let refusal = unavailable_or_queue(
         &command,
         &options,
-        &crate::diagnostics::RequestContext::new(None, None),
+        &crate::request_context::RequestContext::new(None, None),
         &config,
         directory.path(),
-        &crate::daemon::deadline::QueryDeadline::start(),
+        &crate::query_deadline::QueryDeadline::start(),
         anyhow::Error::new(error),
     )
     .unwrap_err();

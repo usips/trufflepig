@@ -2,7 +2,7 @@
 //! existing own or parent view answers when the slice ends first.
 use crate::{
     coded_error::ErrorCode,
-    daemon::deadline::QueryDeadline,
+    query_deadline::QueryDeadline,
     store::{Store, is_index_cache_unavailable, is_index_warming},
     workspace::{
         home_index::{HomeIndexPolicy, HomeIndexSource, ParentIndexView, resolve_home_index},

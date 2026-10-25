@@ -1,5 +1,5 @@
 use super::IndexCheckpoint;
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use crate::store::{Coverage, index_deadline, scan};
 use anyhow::Result;
 use rusqlite::Connection;

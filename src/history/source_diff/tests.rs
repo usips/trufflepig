@@ -1,47 +1,6 @@
 use super::*;
 use crate::extract::{self, Definition, Extraction};
-
-#[test]
-fn histogram_preserves_original_bytes_and_newlines() {
-    let before = b"\xff\r\nkeep\nlast";
-    let after = b"\xfe\r\nkeep\nlast\n";
-    let diff = diff_sources(before, after);
-    assert_eq!(diff.changes.len(), 2);
-    assert_eq!(diff.changes[0].before, ByteSpan { start: 0, end: 3 });
-    assert_eq!(diff.changes[0].after, ByteSpan { start: 0, end: 3 });
-    assert_eq!(diff.changes[1].before, ByteSpan { start: 8, end: 12 });
-    assert_eq!(diff.changes[1].after, ByteSpan { start: 8, end: 13 });
-    assert_eq!(diff.map_before_line(1), Some(1));
-    assert_eq!(diff.map_before_line(2), None);
-}
-
-#[test]
-fn histogram_handles_empty_insertions_deletions_and_crlf() {
-    for (before, after) in [
-        (&b""[..], &b"a\n"[..]),
-        (&b"a\n"[..], &b""[..]),
-        (&b"a\n"[..], &b"a\r\n"[..]),
-        (&b"a b\n"[..], &b"a  b\n"[..]),
-    ] {
-        let diff = diff_sources(before, after);
-        assert_eq!(diff.changes.len(), 1);
-        assert_eq!(
-            diff.changes[0].before,
-            ByteSpan {
-                start: 0,
-                end: before.len()
-            }
-        );
-        assert_eq!(
-            diff.changes[0].after,
-            ByteSpan {
-                start: 0,
-                end: after.len()
-            }
-        );
-    }
-    assert!(diff_sources(b"", b"").changes.is_empty());
-}
+use crate::line_diff::diff_sources;
 
 fn declarations(before: &[u8], after: &[u8]) -> Vec<DeclarationCorrespondence> {
     correspond_declarations(

@@ -1,10 +1,13 @@
 use super::*;
-use crate::board::{
-    board_actor::{BoardActor, HarnessLabel},
-    board_backend::BoardBackend,
-    board_ids::{BoardRef, TaskId},
-    board_protocol::{BoardReceiptState, BoardRequestKey, ClaimDelegate, ClaimResume},
-    board_vocabulary::{EntryKind, EntryText, PlanText, PlanTitle},
+use crate::{
+    board::{
+        board_actor::BoardActor,
+        board_backend::BoardBackend,
+        board_ids::{BoardRef, TaskId},
+        board_protocol::{BoardReceiptState, BoardRequestKey, ClaimDelegate, ClaimResume},
+        board_vocabulary::{EntryKind, EntryText, PlanText, PlanTitle},
+    },
+    request_context::HarnessLabel,
 };
 use std::time::Duration;
 
@@ -19,7 +22,7 @@ fn actor(harness: &str, session: &str) -> BoardActor {
 }
 
 fn database() -> (tempfile::TempDir, LocalBoard) {
-    let directory = crate::board::board_test_support::scratch("board-write-receipt-");
+    let directory = crate::test_fixtures::scratch("board-write-receipt-");
     let path = directory.path().join("board.sqlite3");
     let board = LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap();
     (directory, board)

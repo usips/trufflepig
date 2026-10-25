@@ -16,10 +16,10 @@ use std::{
     path::{Component, Path},
 };
 
-mod stateless;
+mod stateless_path_read;
 #[cfg(test)]
 mod tests;
-pub(crate) use stateless::{cursor_matches_root, stateless_hit_handle};
+pub(crate) use stateless_path_read::{cursor_matches_root, stateless_hit_handle};
 
 #[derive(Clone, Copy)]
 pub(super) enum PathResultStorage {
@@ -61,8 +61,8 @@ fn acquire_path_with_storage(
         }
         _ => (target, (1, usize::MAX), None),
     };
-    let relative = crate::store::decode_path(path)?;
-    let encoded_path = crate::store::encode_path(&relative);
+    let relative = crate::path_codec::decode_path(path)?;
+    let encoded_path = crate::path_codec::encode_path(&relative);
     let bytes = match read_contained(&store.root, &relative, MAX_READ_BYTES) {
         Ok(bytes) => bytes,
         Err(error) if ErrorCode::SourceUnavailable.is_code_of(&error) => {
@@ -71,7 +71,7 @@ fn acquire_path_with_storage(
                 && read_contained(&store.root, &invocation_relative, MAX_READ_BYTES).is_ok()
                 && let Some(unavailable) = coded_error(&error)
             {
-                let suggested = crate::store::encode_path(&invocation_relative);
+                let suggested = crate::path_codec::encode_path(&invocation_relative);
                 let range = range.map_or_else(String::new, |range| format!(":{range}"));
                 anyhow::bail!(unavailable.appended(&format!(
                     "; path values are relative to the selected member root; use `path:{suggested}{range}`"
@@ -193,10 +193,10 @@ pub(super) fn acquire_path_continuation(
         .with_coded_context(|| coded!(InvalidCursor, "invalid original end byte"))?;
     let revision = ContentRevision::parse(expected_revision)
         .with_coded_context(|| coded!(InvalidCursor, "invalid source revision"))?;
-    let relative = crate::store::decode_path(encoded_path)
+    let relative = crate::path_codec::decode_path(encoded_path)
         .with_coded_context(|| coded!(InvalidCursor, "invalid encoded path"))?;
     ensure!(
-        crate::store::encode_path(&relative) == encoded_path,
+        crate::path_codec::encode_path(&relative) == encoded_path,
         coded!(InvalidCursor, "path is not canonically encoded")
     );
     ensure!(
@@ -238,7 +238,7 @@ pub(super) fn acquire_path_continuation(
     );
     Ok(AcquiredSource {
         bytes,
-        path: crate::store::encode_path(&relative),
+        path: crate::path_codec::encode_path(&relative),
         revision,
         span: ByteSpan::new(offset, original_span.end)?,
         verified: false,
@@ -260,7 +260,7 @@ fn stateless_handle(
     let root_identity = PathCursorRootIdentity::for_root(root);
     format!(
         "path:{root_identity}:{}:{start}-{end}@{revision}",
-        crate::store::encode_path(relative),
+        crate::path_codec::encode_path(relative),
     )
 }
 

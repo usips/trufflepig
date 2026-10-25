@@ -104,9 +104,11 @@ fn expired_local_fallback_does_not_load_or_create_board_storage() {
         .into_iter()
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    let options = crate::cli::parse(&args).unwrap();
-    let forwarded = crate::board::prepare_client(&args, &options).unwrap();
-    let options = crate::cli::parse(&forwarded).unwrap();
+    let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
+    let options = crate::board::board_test_support::round_trip(
+        &crate::board::prepare_client(&options).unwrap(),
+    );
+    let forwarded = crate::board::board_test_support::board_argv(&options);
     let command = board_grammar::parse(&options, None).unwrap();
     let context = RequestContext::new(None, None);
     let mut transport = BoardClientTransport::default();

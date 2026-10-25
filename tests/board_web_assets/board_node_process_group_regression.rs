@@ -1,4 +1,4 @@
-#![cfg(all(unix, board_node_20))]
+#![cfg(unix)]
 
 use std::{
     env,
@@ -47,7 +47,7 @@ pub(crate) fn run_process_group_regression(test_name: &str) {
         return;
     }
 
-    let node = crate::resolve_on_path("node").expect("node on PATH: build probed Node >=20");
+    let node = crate::resolve_on_path("node").expect("node on PATH: the test checked Node >=20");
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/descendant_open_pipes.test.mjs");
     let error = run_node_tests(&node, &[fixture], Duration::from_secs(3))

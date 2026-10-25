@@ -1,8 +1,10 @@
 //! Typed board commands and their client-owned text transport.
+mod board_arguments;
 mod board_operation_parser;
 mod board_options;
 mod board_text_transport;
 
+pub use board_arguments::BoardArguments;
 pub use board_operation_parser::parse;
 pub(crate) use board_operation_parser::validate_board_surface;
 pub use board_options::BoardOptions;

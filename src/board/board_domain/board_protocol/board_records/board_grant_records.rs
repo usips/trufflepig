@@ -22,13 +22,6 @@ impl GrantSource {
             _ => bail!(coded!(InvalidState, "unknown grant source '{value}'")),
         }
     }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Owner => "owner",
-            Self::Migration => "migration",
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

@@ -278,7 +278,7 @@ fn proposal_grammar_accepts_supersedes_and_edit_rejects_it() {
     ]
     .map(str::to_owned)
     .to_vec();
-    let options = crate::cli::parse(&args).unwrap();
+    let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
     let command = crate::board::board_grammar::parse(&options, Some("replacement body")).unwrap();
     let crate::board::board_grammar::BoardCommand::Op(op) = command else {
         panic!("expected op");

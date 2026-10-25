@@ -1,6 +1,6 @@
 use super::*;
 use crate::coded_error::CodedContext;
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use anyhow::{Result, bail};
 use std::path::Path;
 
@@ -147,7 +147,7 @@ fn live_regex_scan(
             continue;
         }
         let relative = entry.path().strip_prefix(&store.root)?;
-        let path = crate::store::encode_path(relative);
+        let path = crate::path_codec::encode_path(relative);
         let language = crate::extract::language(&path);
         if !paths.matches(&path) || (!query.language.is_empty() && query.language != language) {
             continue;

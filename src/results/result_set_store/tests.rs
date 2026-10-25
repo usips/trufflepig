@@ -1,5 +1,5 @@
 use super::*;
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use std::{os::unix::net::UnixStream, sync::Arc, thread, time::Instant};
 use tempfile::tempdir;
 

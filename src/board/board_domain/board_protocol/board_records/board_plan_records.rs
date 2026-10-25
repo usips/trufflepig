@@ -1,13 +1,16 @@
 //! Plan revisions, tasks, claims, and review evidence.
 use super::{EntryRecord, FeedbackRecord, LinkedCommit};
 use crate::board::board_domain::board_collections::{ClaimCursor, EntryCursor, TaskCeiling};
-use crate::board::{
-    board_actor::{AgentVendor, BoardActor, BoardRecipient, HarnessLabel},
-    board_ids::{EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
-    board_protocol::{GrantRecord, ProgressEvidence, WorkerRecord},
-    board_vocabulary::{EntryText, PlanText, PlanTitle, ProposalState, TaskColumn},
-};
 use crate::identity::GitOid;
+use crate::{
+    board::{
+        board_actor::{AgentVendor, BoardActor, BoardRecipient},
+        board_ids::{EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
+        board_protocol::{GrantRecord, ProgressEvidence, WorkerRecord},
+        board_vocabulary::{EntryText, PlanText, PlanTitle, ProposalState, TaskColumn},
+    },
+    request_context::HarnessLabel,
+};
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 

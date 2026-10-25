@@ -134,7 +134,7 @@ fn pages_are_file_first_while_saved_entries_keep_full_identity() {
         hit["file"],
         format!(
             "file://{}",
-            crate::store::encode_path(&root.path().join("lib.rs"))
+            crate::path_codec::encode_path(&root.path().join("lib.rs"))
         )
     );
     assert_eq!(hit["start_line"], 1);
@@ -360,7 +360,7 @@ fn lines_page_fits_more_hits_than_json_for_same_budget() {
             .unwrap();
     let json_hits = json["hits"].as_array().unwrap().len();
     let text = page(&store, &id, 0, 40, &lines_budget(300)).unwrap();
-    let handles: Vec<_> = crate::output::lines::emitted_handles(&text).collect();
+    let handles: Vec<_> = crate::output::lines_format::emitted_handles(&text).collect();
     assert!(
         handles.len() > json_hits,
         "lines {} vs json {json_hits}",

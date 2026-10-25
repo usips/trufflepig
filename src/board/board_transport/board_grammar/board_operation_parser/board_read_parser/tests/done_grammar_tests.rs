@@ -1,7 +1,7 @@
 use crate::board::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
 use crate::board::board_protocol::{BoardOp, TaskOrder};
+use crate::board::board_test_support::parse_board_arguments as parse;
 use crate::board::board_vocabulary::TaskColumn;
-use crate::cli::parse;
 
 #[test]
 fn done_cli_round_trips_plan_project_and_recent_cursor() {
@@ -30,13 +30,20 @@ fn done_cli_round_trips_plan_project_and_recent_cursor() {
             .collect::<Vec<_>>();
         let options = parse(&args).unwrap();
         let original = board_parse(&options, None).unwrap();
-        let forwarded = normalize_args(&args, &options, None).unwrap();
+        let forwarded = normalize_args(&options, None).unwrap();
         assert_eq!(
-            board_parse(&parse(&forwarded).unwrap(), None).unwrap(),
+            board_parse(
+                &crate::board::board_test_support::round_trip(&forwarded),
+                None
+            )
+            .unwrap(),
             original
         );
         if let Some(project) = options.board.project.as_deref() {
-            assert!(forwarded.contains(&format!("--project={project}")));
+            assert!(
+                crate::board::board_test_support::board_argv(&forwarded)
+                    .contains(&format!("--project={project}"))
+            );
         }
     }
     let args = ["board", "done", "P7", "--after=9:P7.3", "-n2"].map(str::to_owned);

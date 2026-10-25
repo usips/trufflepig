@@ -1,9 +1,9 @@
 //! Bounded C# extraction from Tree-sitter's syntax tree.
 //! Names that need overload, receiver, or inheritance analysis stay candidates.
 
-mod declarations;
-mod references;
-mod scopes;
+mod csharp_declarations;
+mod csharp_references;
+mod csharp_scopes;
 #[cfg(test)]
 mod tests;
 
@@ -65,7 +65,7 @@ fn extract_with_deadline(source: &[u8], budget: Duration) -> Extraction {
     let mut bindings = Vec::with_capacity(source.len() / 96);
     let mut declarations = Vec::with_capacity(source.len() / 128);
     let mut owners = HashMap::new();
-    declarations::collect(
+    csharp_declarations::collect(
         tree.root_node(),
         source,
         None,
@@ -79,7 +79,7 @@ fn extract_with_deadline(source: &[u8], budget: Duration) -> Extraction {
     let mut cursor = QueryCursor::new();
     let mut captures = cursor.captures(&query, tree.root_node(), source);
     while let Some((matched, capture_index)) = captures.next() {
-        references::observe(
+        csharp_references::observe(
             matched.captures[*capture_index].node,
             source,
             &index,

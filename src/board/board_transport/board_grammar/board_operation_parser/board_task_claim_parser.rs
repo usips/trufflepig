@@ -5,16 +5,16 @@ use super::{
 };
 use crate::coded_error::CodedContext;
 use crate::{
+    board::board_grammar::BoardArguments,
     board::{
         board_ids::{BoardRef, EntryId},
         board_protocol::{BoardOp, ClaimDelegate, ClaimResume},
         board_vocabulary::{EntryText, PlanTitle, TaskColumn},
     },
-    cli::Arguments,
 };
 use anyhow::{Result, bail};
 
-pub(super) fn parse_task(options: &Arguments, payload: &BoardTextPayload) -> Result<BoardOp> {
+pub(super) fn parse_task(options: &BoardArguments, payload: &BoardTextPayload) -> Result<BoardOp> {
     let target = word(options, 2, "board task P7 TITLE | P7.3 COLUMN")?.parse::<BoardRef>()?;
     match target {
         BoardRef::Plan(plan) => {
@@ -44,7 +44,7 @@ pub(super) fn parse_task(options: &Arguments, payload: &BoardTextPayload) -> Res
     }
 }
 
-pub(super) fn parse_claim(options: &Arguments, payload: &BoardTextPayload) -> Result<BoardOp> {
+pub(super) fn parse_claim(options: &BoardArguments, payload: &BoardTextPayload) -> Result<BoardOp> {
     let target = word(
         options,
         2,

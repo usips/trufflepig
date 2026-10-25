@@ -3,10 +3,10 @@
 mod tests;
 mod trailer_records;
 
-use crate::board::board_actor::{AgentVendor, HarnessLabel};
 use crate::board::board_ids::RepoKey;
 use crate::board::board_protocol::{CommitCoauthor, LinkedCommit};
 use crate::coded_error::CodedContext;
+use crate::{board::board_actor::AgentVendor, request_context::HarnessLabel};
 use anyhow::{Result, ensure};
 use trailer_records::parse_record;
 pub(crate) use trailer_records::shortstat;

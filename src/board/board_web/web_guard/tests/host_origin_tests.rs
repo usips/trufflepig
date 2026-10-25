@@ -74,7 +74,7 @@ fn guards_actual_ephemeral_port_and_literal_loopback_authority() {
             421
         );
     }
-    let directory = crate::board::board_test_support::scratch("web-guard-ipv6-");
+    let directory = crate::test_fixtures::scratch("web-guard-ipv6-");
     let token = BoardWebToken::rotate_at(&directory.path().join("token")).unwrap();
     let ipv6 = WebGuard::with_token("[::1]:32123".parse().unwrap(), token).unwrap();
     assert_eq!(ipv6.authority(), "[::1]:32123");
@@ -141,7 +141,7 @@ fn accepts_all_same_port_aliases_and_requires_matching_request_origin() {
 
 #[test]
 fn default_http_port_uses_browser_normalized_authorities() {
-    let directory = crate::board::board_test_support::scratch("web-guard-port80-");
+    let directory = crate::test_fixtures::scratch("web-guard-port80-");
     let token = BoardWebToken::rotate_at(&directory.path().join("token")).unwrap();
     let guard = WebGuard::with_token("127.0.0.1:80".parse().unwrap(), token).unwrap();
     assert_eq!(guard.origin(), "http://127.0.0.1");
@@ -164,7 +164,7 @@ fn lan_host_requires_an_enabled_listener_canonical_literal_and_exact_port() {
     let (_directory, loopback) = fixture();
     let lan_ip: std::net::Ipv4Addr = "192.168.7.19".parse().unwrap();
     let address = SocketAddr::new(lan_ip.into(), 32123);
-    let directory = crate::board::board_test_support::scratch("web-guard-lan-host-");
+    let directory = crate::test_fixtures::scratch("web-guard-lan-host-");
     let token = BoardWebToken::rotate_at(&directory.path().join("token")).unwrap();
     let specific = WebGuard::with_token(address, token).unwrap();
 
@@ -232,7 +232,7 @@ fn lan_host_requires_an_enabled_listener_canonical_literal_and_exact_port() {
 
 #[test]
 fn wildcard_lan_hosts_are_restricted_to_canonical_192_168_literals() {
-    let directory = crate::board::board_test_support::scratch("web-guard-wildcard-host-");
+    let directory = crate::test_fixtures::scratch("web-guard-wildcard-host-");
     let token = BoardWebToken::rotate_at(&directory.path().join("token")).unwrap();
     let wildcard = WebGuard::with_token("0.0.0.0:32123".parse().unwrap(), token).unwrap();
     assert_eq!(wildcard.authority(), "127.0.0.1:32123");
@@ -272,7 +272,7 @@ fn wildcard_lan_hosts_are_restricted_to_canonical_192_168_literals() {
 
 #[test]
 fn lan_authority_uses_the_canonical_port_eighty_host_form() {
-    let directory = crate::board::board_test_support::scratch("web-guard-lan-port80-");
+    let directory = crate::test_fixtures::scratch("web-guard-lan-port80-");
     let token = BoardWebToken::rotate_at(&directory.path().join("token")).unwrap();
     let guard = WebGuard::with_token("192.168.3.4:80".parse().unwrap(), token).unwrap();
     assert_eq!(guard.origin(), "http://192.168.3.4");

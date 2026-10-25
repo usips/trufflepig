@@ -93,6 +93,7 @@ impl WorkerRequest {
     }
 }
 
+#[cfg(test)]
 pub fn read_frame(reader: &mut impl Read) -> Result<Vec<u8>> {
     let mut header = [0_u8; 4];
     reader

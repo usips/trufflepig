@@ -1,7 +1,11 @@
 use super::*;
 
 fn daemon_timeout() -> anyhow::Error {
-    crate::daemon::DaemonReplyTimeout::new(Duration::from_secs(30), Duration::from_secs(30)).into()
+    crate::daemon_transport::DaemonReplyTimeout::new(
+        Duration::from_secs(30),
+        Duration::from_secs(30),
+    )
+    .into()
 }
 
 fn invoke_counted(
@@ -22,9 +26,10 @@ fn invoke_args_counted(
     runtime: Option<&Path>,
     loads: &mut usize,
 ) -> Result<String> {
-    let options = crate::cli::parse(args)?;
-    let forwarded = crate::board::prepare_client(args, &options)?;
-    let options = crate::cli::parse(&forwarded)?;
+    let options = crate::board::board_test_support::parse_board_arguments(args)?;
+    let options =
+        crate::board::board_test_support::round_trip(&crate::board::prepare_client(&options)?);
+    let forwarded = crate::board::board_test_support::board_argv(&options);
     let command = board_grammar::parse(&options, None)?;
     let spool = database.parent().unwrap().join("spool");
     BoardClientTransport::default().run_prepared(
@@ -65,7 +70,7 @@ fn assert_preflight_timeout(error: &anyhow::Error) {
     assert!(!message.contains("request_key="), "{message}");
     assert!(!message.contains("board receipt"), "{message}");
     assert!(
-        crate::daemon::DaemonReplyTimeout::from_error(error).is_some(),
+        crate::daemon_transport::DaemonReplyTimeout::from_error(error).is_some(),
         "typed timeout was lost: {error:?}"
     );
 }

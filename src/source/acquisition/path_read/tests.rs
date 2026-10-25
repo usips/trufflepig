@@ -231,7 +231,7 @@ fn stateless_identity_encodes_delimiters_and_non_utf8_filenames() {
     for name in names {
         let relative = PathBuf::from(OsStr::from_bytes(name));
         fs::write(root.join(&relative), &bytes).unwrap();
-        let encoded = crate::store::encode_path(&relative);
+        let encoded = crate::path_codec::encode_path(&relative);
         assert!(!encoded.contains(':'));
         assert!(!encoded.contains('@'));
         if name == b"special:@%.txt" {

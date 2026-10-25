@@ -72,7 +72,7 @@ pub(super) fn symbol_correspondence(
             )
         })?;
     ensure_diff_capacity(&old, &new)?;
-    let differences = source_diff::diff_sources(&old, &new);
+    let differences = crate::line_diff::diff_sources(&old, &new);
     let correspondences =
         source_diff::correspond_declarations(&old, &new, &before, &after, &differences);
     let row = correspondences

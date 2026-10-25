@@ -23,7 +23,7 @@ fn silent_and_partial_peers_do_not_hold_ingress_workers() {
             args: vec!["search".to_owned(), "partial".to_owned()],
         };
         let mut frame = Vec::new();
-        protocol::write_request(&mut frame, &request).unwrap();
+        daemon_wire_protocol::write_request(&mut frame, &request).unwrap();
         let split = if stalled.len() == 2 { 2 } else { 6 };
         stream.write_all(&frame[..split]).unwrap();
         stalled.push(stream);
@@ -88,7 +88,7 @@ fn header_and_payload_in_one_write_complete_in_one_poll() {
         args: vec!["status".to_owned()],
     };
     let mut frame = Vec::new();
-    protocol::write_request(&mut frame, &request).unwrap();
+    daemon_wire_protocol::write_request(&mut frame, &request).unwrap();
     client.write_all(&frame).unwrap();
     assert_eq!(
         pending.poll(),
@@ -134,7 +134,7 @@ fn oversized_length_is_rejected_before_payload_allocation() {
     )
     .unwrap();
     client
-        .write_all(&((protocol::REQUEST_LIMIT + 1) as u32).to_be_bytes())
+        .write_all(&((daemon_wire_protocol::REQUEST_LIMIT + 1) as u32).to_be_bytes())
         .unwrap();
     assert_eq!(pending.poll(), FramePoll::Finished);
     assert_eq!(pending.buffered_len(), 0);
@@ -160,7 +160,8 @@ fn expired_socket_frame_returns_typed_failure_with_short_write_grace() {
         .unwrap();
     client.write_all(&[0, 0]).unwrap();
 
-    let DaemonReply::Failure { message } = protocol::read_reply(&mut client).unwrap() else {
+    let DaemonReply::Failure { message } = daemon_wire_protocol::read_reply(&mut client).unwrap()
+    else {
         panic!("expired frame must receive a failure");
     };
     assert_eq!(message, "timed_out: phase=reading_frame");
@@ -194,7 +195,8 @@ fn pending_frame_capacity_refuses_the_next_silent_peer_without_blocking() {
     overflow
         .set_read_timeout(Some(Duration::from_secs(1)))
         .unwrap();
-    let DaemonReply::Failure { message } = protocol::read_reply(&mut overflow).unwrap() else {
+    let DaemonReply::Failure { message } = daemon_wire_protocol::read_reply(&mut overflow).unwrap()
+    else {
         panic!("the peer beyond pending capacity must receive a refusal");
     };
     assert!(message.starts_with("daemon_busy:"), "{message}");
@@ -230,11 +232,12 @@ fn refused_peer_that_writes_late_still_reads_daemon_busy() {
         args: vec!["status".to_owned()],
     };
     let mut frame = Vec::new();
-    protocol::write_request(&mut frame, &request).unwrap();
+    daemon_wire_protocol::write_request(&mut frame, &request).unwrap();
     overflow
         .write_all(&frame)
         .expect("a refused peer's late request must not meet a closed socket");
-    let DaemonReply::Failure { message } = protocol::read_reply(&mut overflow).unwrap() else {
+    let DaemonReply::Failure { message } = daemon_wire_protocol::read_reply(&mut overflow).unwrap()
+    else {
         panic!("the refused peer must read its daemon_busy refusal");
     };
     assert!(message.starts_with("daemon_busy:"), "{message}");
@@ -261,7 +264,7 @@ fn stop_finishes_a_frame_already_being_read() {
         args: vec!["status".to_owned()],
     };
     let mut frame = Vec::new();
-    protocol::write_request(&mut frame, &request).unwrap();
+    daemon_wire_protocol::write_request(&mut frame, &request).unwrap();
     let split = 6;
     let mut partial = UnixStream::connect(served.cache.join(SOCKET_NAME)).unwrap();
     partial
@@ -275,7 +278,8 @@ fn stop_finishes_a_frame_already_being_read() {
     partial
         .write_all(&frame[split..])
         .expect("stop must keep reading a frame it already accepted");
-    let DaemonReply::Success { output } = protocol::read_reply(&mut partial).unwrap() else {
+    let DaemonReply::Success { output } = daemon_wire_protocol::read_reply(&mut partial).unwrap()
+    else {
         panic!("the accepted frame must receive its own answer during stop");
     };
     assert_eq!(output, "status");

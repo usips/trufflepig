@@ -114,12 +114,13 @@ fn current_span(bytes: &[u8], first: usize, last: usize) -> Result<(usize, usize
 }
 
 pub(crate) mod acquisition;
-mod lines;
 mod reextraction;
+mod show_lines;
 pub(crate) use acquisition::AcquiredSource;
 pub use acquisition::SourceSide;
-pub use reextraction::{ReextractedDefinition, reextract_definition, usable_extraction};
+pub use reextraction::{reextract_definition, usable_extraction};
 
+#[cfg(test)]
 pub fn show(store: &Store, target: &str, budget: &OutputBudget) -> Result<String> {
     show_with_side(store, target, None, budget)
 }
@@ -220,7 +221,7 @@ pub(crate) fn render_owned(
         object.extend(metadata.clone());
         let text = match budget.format {
             crate::output::OutputFormat::Json => budget.encode(&value)?,
-            crate::output::OutputFormat::Lines => lines::show_text(&value),
+            crate::output::OutputFormat::Lines => show_lines::show_text(&value),
         };
         if budget.fits(&text) && (!rows.is_empty() || start == end) {
             return Ok(text);

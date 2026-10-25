@@ -1,5 +1,5 @@
 //! Review drill hints use the supported history gate and available local objects.
-use crate::{history::git::run_bounded_strict, identity::GitOid};
+use crate::{git_runner::run_bounded_strict, identity::GitOid};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -130,7 +130,7 @@ fn version_supported(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board::repo_identity::tests::GitFixture;
+    use crate::test_fixtures::GitFixture;
 
     #[test]
     fn history_drills_reject_shallow_boundary_with_missing_raw_parent() {
@@ -159,8 +159,14 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(board_git_2_55), ignore = "requires Git >=2.55")]
     fn history_drills_refuse_old_git_and_unavailable_blob_objects_drill_hint() {
+        if !crate::test_fixtures::git_version::at_least(
+            2,
+            55,
+            "history_drills_refuse_old_git_and_unavailable_blob_objects_drill_hint",
+        ) {
+            return;
+        }
         let fixture = GitFixture::new();
         fixture.commit("root");
         std::fs::write(fixture.root.join("file.txt"), "contents\n").unwrap();

@@ -2,11 +2,11 @@
 use super::{BoardCommand, parse};
 use crate::coded_error::CodedContext;
 use crate::{
+    board::board_grammar::BoardArguments,
     board::{
         board_protocol::BoardOp,
         board_vocabulary::{FEEDBACK_TEXT_LIMIT, FeedbackImportKey, PLAN_TEXT_LIMIT},
     },
-    cli::Arguments,
 };
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
@@ -20,12 +20,9 @@ pub(super) struct BoardTextPayload {
     pub(super) steer_mode: Option<String>,
 }
 
-/// Remove client paths and free positional text before router parsing.
-pub fn normalize_args(
-    _args: &[String],
-    options: &Arguments,
-    body: Option<&str>,
-) -> Result<Vec<String>> {
+/// Remove client paths and free positional text before router forwarding;
+/// the forwarded root is canonical.
+pub fn normalize_args(options: &BoardArguments, body: Option<&str>) -> Result<BoardArguments> {
     let command = parse(options, body)?;
     let mut payload = command_text(options, body)?;
     if let BoardCommand::Op(BoardOp::Feedback { import_key, .. }) = command {
@@ -47,14 +44,14 @@ pub fn normalize_args(
     } else {
         None
     };
-    let root = options
+    forwarded.root = options
         .root
         .canonicalize()
         .with_coded_context(|| coded!(InvalidRoot, "cannot open board cwd"))?;
-    Ok(crate::cli::normalized_args(&forwarded, &root))
+    Ok(forwarded)
 }
 
-fn text_position(options: &Arguments) -> Option<usize> {
+fn text_position(options: &BoardArguments) -> Option<usize> {
     let words = &options.words;
     if matches!(
         (
@@ -99,7 +96,10 @@ fn text_position(options: &Arguments) -> Option<usize> {
     }
 }
 
-pub(super) fn command_text(options: &Arguments, body: Option<&str>) -> Result<BoardTextPayload> {
+pub(super) fn command_text(
+    options: &BoardArguments,
+    body: Option<&str>,
+) -> Result<BoardTextPayload> {
     let positional = text_position(options)
         .map(|start| options.words.get(start..).unwrap_or_default().join(" "))
         .unwrap_or_default();
@@ -143,7 +143,7 @@ pub(super) fn command_text(options: &Arguments, body: Option<&str>) -> Result<Bo
 }
 
 /// Validates references and grammar before reading client-owned bodies.
-pub fn validate_before_body(options: &Arguments) -> Result<()> {
+pub fn validate_before_body(options: &BoardArguments) -> Result<()> {
     let placeholder = options.board.body.as_ref().map(|_| {
         if options.words.first().map(String::as_str) == Some("feedback") {
             "x"
@@ -154,7 +154,7 @@ pub fn validate_before_body(options: &Arguments) -> Result<()> {
     parse(options, placeholder).map(|_| ())
 }
 
-pub fn body_limit(options: &Arguments) -> usize {
+pub fn body_limit(options: &BoardArguments) -> usize {
     if options.words.first().map(String::as_str) == Some("feedback") {
         FEEDBACK_TEXT_LIMIT
     } else {

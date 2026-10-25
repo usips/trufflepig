@@ -1,6 +1,6 @@
 //! Standalone linked-worktree reads keep parent and child result identities separate.
 
-mod cache_progress_tests;
+mod standalone_cache_progress_tests;
 
 use anyhow::{Context, Result, ensure};
 use fs2::FileExt;
@@ -39,7 +39,7 @@ fn cold_parent_fallback_reads_current_worktree_without_child_publication() -> Re
     );
     assert_eq!(
         search["coverage"]["parent_index"]["root"],
-        crate::store::encode_path(&fixture.main)
+        crate::path_codec::encode_path(&fixture.main)
     );
     assert_eq!(search["hits"].as_array().unwrap().len(), 2, "{search}");
     let handle = search["hits"][0]["handle"]
@@ -344,7 +344,7 @@ fn saved_parent_handle_and_more_keep_parent_origin_after_child_publication() -> 
     let error = crate::store::Store::open_read(
         &fixture.worktree,
         &fixture.child_cache,
-        crate::daemon::deadline::QueryDeadline::start(),
+        crate::query_deadline::QueryDeadline::start(),
     )
     .err()
     .context("fixture must deny opening the index")?;
@@ -702,7 +702,7 @@ struct WorktreeFixture {
 
 impl WorktreeFixture {
     fn new() -> Result<Self> {
-        let scratch = crate::board::board_test_support::scratch("standalone-parent-");
+        let scratch = crate::test_fixtures::scratch("standalone-parent-");
         let main = scratch.path().join("main");
         let worktree = scratch.path().join("linked-worktree");
         fs::create_dir_all(main.join("src"))?;
@@ -778,7 +778,7 @@ impl WorktreeFixture {
         Ok(crate::store::Store::open_read(
             &self.main,
             &self.main_cache,
-            crate::daemon::deadline::QueryDeadline::start(),
+            crate::query_deadline::QueryDeadline::start(),
         )?
         .generation()?)
     }
@@ -870,7 +870,7 @@ fn assert_unpublished_index(root: &Path, cache: &Path) -> Result<()> {
     let error = match crate::store::Store::open_read(
         root,
         cache,
-        crate::daemon::deadline::QueryDeadline::start(),
+        crate::query_deadline::QueryDeadline::start(),
     ) {
         Ok(_) => anyhow::bail!("generation-zero index must be warming"),
         Err(error) => error,
@@ -901,7 +901,7 @@ fn in_isolated_child(case: &str) -> Result<bool> {
         return Ok(true);
     }
 
-    let directory = crate::board::board_test_support::scratch("standalone-parent-process-");
+    let directory = crate::test_fixtures::scratch("standalone-parent-process-");
     let paths = [
         "home", "cache", "config", "data", "runtime", "system", "spool", "tmp",
     ]

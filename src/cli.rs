@@ -1,5 +1,6 @@
 //! Linux command dispatch; stdout contains one budgeted JSON response.
 mod board_api_probe;
+mod board_request_bridge;
 mod client_command;
 use crate::coded_error::CodedContext;
 use client_command::ClientCommand;
@@ -14,14 +15,12 @@ mod stateless_dispatch;
 pub(crate) use root_daemon::{ClassifiedDaemonRequest, classify_daemon_request};
 mod system_client_routing;
 use system_client_routing::{system_command, system_reply, system_routes};
-pub(crate) mod semantic;
+pub(crate) mod semantic_commands;
 use crate::{
     background_process::spawn_background,
-    daemon::{
-        self, CLIENT_REPLY_WAIT,
-        deadline::{QUERY_DEADLINE, QueryDeadline},
-    },
+    daemon_transport::CLIENT_REPLY_WAIT,
     output::OutputBudget,
+    query_deadline::{QUERY_DEADLINE, QueryDeadline},
     store::Store,
 };
 use anyhow::{Context, Result};
@@ -30,7 +29,7 @@ use dispatch::local_with_session;
 mod arguments;
 pub(crate) use arguments::normalized_args;
 use arguments::validate;
-pub use arguments::{Arguments, MAX_BUDGET, SHOW_BUDGET, parse};
+pub use arguments::{Arguments, SHOW_BUDGET, parse};
 #[cfg(test)]
 mod emission_tests;
 #[cfg(test)]
@@ -43,6 +42,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(test)]
 pub fn run(args: &[String]) -> Result<String> {
     if let Some(answer) = board_api_probe::probe_board_api(args) {
         return answer;
@@ -56,9 +56,10 @@ pub fn run(args: &[String]) -> Result<String> {
 /// Absent routers, unavailable owners and local spool timeouts reach direct execution.
 /// A pre-dispatch index-cache refusal may route a current-path show to local source.
 /// Other router replies remain answers.
+#[cfg(test)]
 pub fn run_with_context(
     args: &[String],
-    context: &crate::diagnostics::RequestContext,
+    context: &crate::request_context::RequestContext,
 ) -> Result<String> {
     if let Some(answer) = board_api_probe::probe_board_api(args) {
         return answer;
@@ -73,7 +74,7 @@ pub fn run_with_context(
 /// deadline, including peer cancellation, bounds those waits and sub-requests.
 pub(crate) fn run_direct(
     args: &[String],
-    context: &crate::diagnostics::RequestContext,
+    context: &crate::request_context::RequestContext,
     deadline: QueryDeadline,
 ) -> Result<String> {
     let options = parse(args)?;
@@ -83,7 +84,7 @@ pub(crate) fn run_direct(
 
 fn direct_with_deadline(
     options: &Arguments,
-    context: &crate::diagnostics::RequestContext,
+    context: &crate::request_context::RequestContext,
     deadline: QueryDeadline,
 ) -> Result<String> {
     let verb = options
@@ -123,7 +124,7 @@ fn direct_with_deadline(
         seed_linked_worktree_cache(&root, &cache);
     }
     if verb == "history-serve" {
-        return crate::history::worker::serve(
+        return crate::history::history_worker::serve(
             options
                 .history_cache
                 .as_deref()
@@ -138,7 +139,9 @@ fn direct_with_deadline(
         Store::open(&root, &cache)?;
         return OutputBudget::new(options.budget)?.render(&serde_json::from_str::<
             serde_json::Value,
-        >(&daemon::stop(&cache)?)?);
+        >(
+            &crate::daemon_transport::stop(&cache)?,
+        )?);
     }
     let metadata_only = verb == "semantic"
         && options
@@ -151,7 +154,9 @@ fn direct_with_deadline(
         && !matches!(verb, "index" | "init" | "semantic-check")
     {
         let args = normalized_args(options, &root);
-        if let Some(response) = daemon::request_by(&cache, &args, context, deadline.clone())? {
+        if let Some(response) =
+            crate::daemon_transport::request_by(&cache, &args, context, deadline.clone())?
+        {
             return root_reply(&root, &cache, options, response);
         }
         if !deadline.expired() {
@@ -163,7 +168,7 @@ fn direct_with_deadline(
                     format!("cannot create root daemon cache {}", cache.display())
                 })?;
                 let history_cache = options.resolved_history_cache.clone().or_else(|| {
-                    crate::history::worker::resolve_cache(
+                    crate::history::history_worker::resolve_cache(
                         &root,
                         options.cache.as_deref(),
                         options.history_cache.as_deref(),
@@ -205,12 +210,17 @@ fn direct_with_deadline(
                 Ok(child) => {
                     let spawn_deadline = Instant::now() + deadline.cap(Duration::from_secs(3));
                     while Instant::now() < spawn_deadline {
-                        if let Some(response) =
-                            daemon::request_by(&cache, &args, context, deadline.clone())?
-                        {
+                        if let Some(response) = crate::daemon_transport::request_by(
+                            &cache,
+                            &args,
+                            context,
+                            deadline.clone(),
+                        )? {
                             return root_reply(&root, &cache, options, response);
                         }
-                        if child.exited() && !daemon::running_by(&cache, &deadline)? {
+                        if child.exited()
+                            && !crate::daemon_transport::running_by(&cache, &deadline)?
+                        {
                             break;
                         }
                         std::thread::sleep(Duration::from_millis(25));
@@ -239,7 +249,7 @@ fn direct_with_deadline(
 fn root_reply(root: &Path, cache: &Path, options: &Arguments, response: String) -> Result<String> {
     let response = wait_for_history(root, options, response)?;
     if options.words.first().is_some_and(|verb| verb == "semantic") {
-        semantic::wait_for_schedule(root, cache, options, response)
+        semantic_commands::wait_for_schedule(root, cache, options, response)
     } else {
         Ok(response)
     }
@@ -297,7 +307,7 @@ fn wait_for_history(root: &Path, options: &Arguments, response: String) -> Resul
         .clone()
         .map(Ok)
         .unwrap_or_else(|| {
-            crate::history::worker::resolve_cache(
+            crate::history::history_worker::resolve_cache(
                 root,
                 options.cache.as_deref(),
                 options.history_cache.as_deref(),

@@ -6,10 +6,10 @@ use serde::{Deserialize, Serialize};
 use std::{
     env, fs,
     path::{Path, PathBuf},
-    process::Command,
     time::Duration,
 };
 
+#[cfg(feature = "semantic")]
 mod cuda_identity;
 
 pub const DEFAULT_ARENA_BYTES: u64 = 10 * 1024 * 1024 * 1024;
@@ -158,6 +158,7 @@ impl InferenceConfig {
         self.idle_unload_seconds.map(Duration::from_secs)
     }
 
+    #[cfg(feature = "semantic")]
     pub fn model_dir(&self) -> Result<&Path> {
         self.model_dir.as_deref().with_coded_context(|| {
             coded!(
@@ -167,6 +168,7 @@ impl InferenceConfig {
         })
     }
 
+    #[cfg(feature = "semantic")]
     pub fn runtime_library(&self) -> Result<&Path> {
         self.runtime_library.as_deref().with_coded_context(|| {
             coded!(
@@ -176,6 +178,7 @@ impl InferenceConfig {
         })
     }
 
+    #[cfg(feature = "semantic")]
     /// Resolve the configured UUID to the current CUDA ordinal at process start.
     pub fn cuda_device(&self) -> Result<Option<u32>> {
         if self.provider != InferenceProvider::Cuda {
@@ -190,6 +193,7 @@ impl InferenceConfig {
         self.rerank_model_dir.is_some()
     }
 
+    #[cfg(any(test, feature = "semantic"))]
     pub fn rerank_model_dir(&self) -> Result<&Path> {
         self.rerank_model_dir.as_deref().with_coded_context(|| {
             coded!(
@@ -199,6 +203,7 @@ impl InferenceConfig {
         })
     }
 
+    #[cfg(feature = "semantic")]
     /// Resolve the configured reranker UUID to its CUDA ordinal, falling back
     /// to the shared `gpu_uuid` when `rerank_gpu_uuid` is unset.
     pub fn rerank_cuda_device(&self) -> Result<Option<u32>> {
@@ -233,42 +238,9 @@ impl InferenceConfig {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CudaDevice {
-    pub uuid: String,
-    pub ordinal: u32,
-}
-
+#[cfg(feature = "semantic")]
 pub fn resolve_cuda_uuid(wanted: &str) -> Result<u32> {
     cuda_identity::resolve_cuda_uuid(wanted)
-}
-
-pub fn enumerate_cuda_devices() -> Result<Vec<CudaDevice>> {
-    let output = Command::new("nvidia-smi")
-        .args(["--query-gpu=uuid,index", "--format=csv,noheader,nounits"])
-        .output()
-        .with_coded_context(|| coded!(CudaUnavailable, "nvidia-smi is unavailable"))?;
-    if !output.status.success() {
-        bail!(coded!(
-            CudaUnavailable,
-            "nvidia-smi failed with status {}",
-            output.status
-        ));
-    }
-    let mut devices = Vec::new();
-    for line in String::from_utf8_lossy(&output.stdout).lines() {
-        let mut fields = line.split(',').map(str::trim);
-        let uuid = fields.next().unwrap_or_default();
-        let ordinal = fields.next().unwrap_or_default().parse::<u32>();
-        if uuid.is_empty() || ordinal.is_err() {
-            bail!(coded!(CudaUnavailable, "malformed nvidia-smi GPU row"));
-        }
-        devices.push(CudaDevice {
-            uuid: uuid.to_owned(),
-            ordinal: ordinal.unwrap_or_default(),
-        });
-    }
-    Ok(devices)
 }
 
 #[cfg(test)]

@@ -1,6 +1,8 @@
 use super::*;
-use crate::board::{
-    board_projects::ProjectResolver, board_protocol::ReadScope, repo_identity::tests::GitFixture,
+use crate::board::repo_identity::tests::FixtureRegistration;
+use crate::{
+    board::{board_projects::ProjectResolver, board_protocol::ReadScope},
+    test_fixtures::GitFixture,
 };
 use serde_json::json;
 use std::fs;
@@ -118,7 +120,7 @@ fn projects_wire_encodes_unavailable_non_utf8_member_path() {
     let reply = fixture.wire_projects();
     let wire =
         serde_json::to_value(&reply).expect("Projects JSON preserves unavailable Unix paths");
-    let expected = crate::store::encode_path(&base.join("missing"));
+    let expected = crate::path_codec::encode_path(&base.join("missing"));
     assert_eq!(
         wire["result"]["data"][0]["unavailable"][0]["root"],
         expected

@@ -1,13 +1,14 @@
 //! Registry listing is independent of workspace discovery and index state.
 
-use super::{Arguments, OutputBudget, config, encode_path};
+use super::{Arguments, OutputBudget, encode_path};
+use crate::workspace_config;
 use anyhow::{Result, ensure};
 use serde_json::json;
 use std::fmt::Write;
 
 pub(crate) fn list(options: &Arguments) -> Result<String> {
     ensure!(options.words.len() == 2, coded!(Usage, "ws list"));
-    let workspaces = config::registered_workspaces()?;
+    let workspaces = workspace_config::registered_workspaces()?;
     let budget = OutputBudget::new(options.budget)?;
     if options.json {
         let rows: Vec<_> = workspaces

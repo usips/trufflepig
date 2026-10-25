@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    daemon::deadline::QueryDeadline,
+    query_deadline::QueryDeadline,
     search::{self, Query},
     semantic::SemanticSession,
     store::Store,

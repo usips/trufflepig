@@ -1,0 +1,28 @@
+use super::*;
+
+#[test]
+fn preparation_wait_terminates_when_root_daemon_dies() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let cache = tempfile::tempdir()?;
+    std::fs::write(root.path().join("source.rs"), "fn example() {}")?;
+    let mut store = crate::store::Store::open(root.path(), cache.path())?;
+    store.index()?;
+    let receipt = semantic_preparation::schedule(root.path(), cache.path())?;
+    let result = wait_until_terminal(root.path(), cache.path(), receipt.captured_generation)?;
+    assert!(result.is_terminal());
+    assert_eq!(
+        result.status.error.as_deref(),
+        Some("preparation_daemon_stopped")
+    );
+    Ok(())
+}
+
+#[test]
+fn preparation_wait_checks_for_a_listening_daemon() -> Result<()> {
+    let cache = tempfile::tempdir()?;
+    let listener = std::os::unix::net::UnixListener::bind(cache.path().join("daemon.sock"))?;
+    assert!(crate::daemon_transport::running(cache.path()));
+    drop(listener);
+    assert!(!crate::daemon_transport::running(cache.path()));
+    Ok(())
+}

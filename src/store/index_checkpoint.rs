@@ -7,8 +7,8 @@ mod tests;
 pub use checkpoint_progress::read as read_index_progress;
 pub use checkpoint_progress::{IndexProgress, IndexProgressPhase};
 
-use crate::daemon::deadline::QueryDeadline;
 use crate::extract::Extraction;
+use crate::query_deadline::QueryDeadline;
 use crate::store::{Coverage, index_deadline, php_resolver, scan};
 use anyhow::{Context, Result};
 use checkpoint_progress::{self as progress_io, ProgressRecord};
@@ -63,7 +63,7 @@ impl IndexCheckpoint {
         if let Some(deadline) = deadline {
             index_deadline::check(deadline)?;
         }
-        let root = crate::store::encode_path(root);
+        let root = crate::path_codec::encode_path(root);
         let contract = contract_revision();
         let base_epoch: String = conn.query_row(
             "SELECT value FROM meta WHERE key='index_epoch'",

@@ -5,7 +5,7 @@ The board dashboard is a local human interface to the [durable board](board-cont
 `192.168.0.0/16`, or `0.0.0.0` for LAN access; other bind addresses fail. Connections are restricted
 to loopback and `192.168.0.0/16` regardless of binding. The default remains loopback.
 The installed unit passes `--listen 127.0.0.1:0`: a port-0 bind retakes the port recorded in
-`system::dir()/board-web.port` (plain decimal, 0600, re-recorded at every bind and never removed
+`runtime_paths::system_dir()/board-web.port` (plain decimal, 0600, re-recorded at every bind and never removed
 on exit), falling back to an ephemeral port after any recorded-port bind error. It reports
 `board-serve: recorded port N unusable (<error>); using M`. Clients discover the actual bound
 port through `board-web.json`.

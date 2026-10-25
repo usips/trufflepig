@@ -3,11 +3,12 @@
 //! lines. Snippets stay while `SNIPPET_PAGE_FLOOR` hits fit; then names are
 //! dropped first and a lone ambiguous JSON hit trims candidates.
 
-mod stateless;
+mod stateless_page;
 #[cfg(test)]
 mod tests;
 
-use super::{HitDetail, StoredResultSet, compact_entry_for_page, lines, load_entries};
+use super::{HitDetail, StoredResultSet, compact_entry_for_page, load_entries};
+use crate::results::result_lines;
 use crate::{
     identity::ResultCursor,
     output::{OutputBudget, OutputFormat},
@@ -60,7 +61,7 @@ pub(crate) fn snippet_page(
     })
 }
 
-pub(crate) use stateless::{stateless_page, stateless_page_members};
+pub(crate) use stateless_page::{stateless_page, stateless_page_members};
 
 pub fn page(
     store: &Store,
@@ -77,7 +78,7 @@ pub fn page(
     let available = set.hits.len() - offset;
     let max_count = available.min(limit).min(budget.limit);
     let compact_live = set.coverage["endpoint"] != "published_working_tree";
-    let coverage_line = lines::single_repo_coverage(&set.coverage);
+    let coverage_line = result_lines::single_repo_coverage(&set.coverage);
     let render_detail =
         |count: usize, detail: HitDetail, candidate_limit: Option<usize>| -> Result<String> {
             match budget.format {
@@ -92,8 +93,8 @@ pub fn page(
                     compact_live,
                 )?),
                 OutputFormat::Lines => {
-                    let cursor = lines::next_cursor(id, offset, count, set.hits.len());
-                    Ok(lines::page_text(
+                    let cursor = result_lines::next_cursor(id, offset, count, set.hits.len());
+                    Ok(result_lines::page_text(
                         set.hits[offset..offset + count]
                             .iter()
                             .map(|entry| (None, entry)),
@@ -101,7 +102,7 @@ pub fn page(
                         &coverage_line,
                         cursor
                             .as_deref()
-                            .map(|cursor| lines::more_command(cursor, offset, count, limit)),
+                            .map(|cursor| result_lines::more_command(cursor, offset, count, limit)),
                         set.truncated,
                     ))
                 }

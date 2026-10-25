@@ -26,7 +26,7 @@ struct AcceptHarness {
 }
 
 fn accept_harness_with(reader: event_stream::FeedReader) -> AcceptHarness {
-    let directory = crate::board::board_test_support::scratch("web-ring-stop-");
+    let directory = crate::test_fixtures::scratch("web-ring-stop-");
     let config = BoardConfig::for_database(directory.path().join("web.sqlite3"));
     let store = WebStore::open_at(
         BoardConfigCache::with_config(config),

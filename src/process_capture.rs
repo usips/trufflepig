@@ -1,6 +1,6 @@
 //! Bounded subprocess capture with process-group cleanup.
 
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use std::{
     io::{self, Read, Write},
     os::{fd::AsRawFd, unix::process::CommandExt},

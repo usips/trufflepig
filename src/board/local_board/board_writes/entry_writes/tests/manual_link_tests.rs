@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn manual_commit_link_records_manual_source_and_names_the_linker() {
-    let directory = crate::board::board_test_support::scratch("board-fixture-");
+    let directory = crate::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -65,7 +65,7 @@ fn manual_commit_link_records_manual_source_and_names_the_linker() {
 
 #[test]
 fn manual_commit_link_is_idempotent_and_returns_the_original_receipt() {
-    let directory = crate::board::board_test_support::scratch("board-fixture-");
+    let directory = crate::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -131,7 +131,7 @@ fn manual_link_attempt(
 
 #[test]
 fn manual_commit_link_authority_requires_owner_or_link_grant() {
-    let directory = crate::board::board_test_support::scratch("board-fixture-");
+    let directory = crate::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -161,7 +161,7 @@ fn manual_commit_link_authority_requires_owner_or_link_grant() {
 
 #[test]
 fn agent_without_link_grant_cannot_link() {
-    let directory = crate::board::board_test_support::scratch("board-fixture-");
+    let directory = crate::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -183,7 +183,7 @@ fn agent_without_link_grant_cannot_link() {
 
 #[test]
 fn cli_harness_cannot_link() {
-    let directory = crate::board::board_test_support::scratch("board-fixture-");
+    let directory = crate::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -205,7 +205,7 @@ fn cli_harness_cannot_link() {
 
 #[test]
 fn relinking_to_another_task_writes_an_event() {
-    let directory = crate::board::board_test_support::scratch("board-fixture-");
+    let directory = crate::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -260,7 +260,7 @@ fn relinking_to_another_task_writes_an_event() {
 
 #[test]
 fn manual_commit_link_requires_a_host_resolved_commit() {
-    let directory = crate::board::board_test_support::scratch("board-fixture-");
+    let directory = crate::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -286,7 +286,7 @@ fn manual_commit_link_requires_a_host_resolved_commit() {
 
 #[test]
 fn manual_commit_link_rejects_unknown_plans_and_tasks() {
-    let directory = crate::board::board_test_support::scratch("board-fixture-");
+    let directory = crate::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -318,7 +318,7 @@ fn manual_commit_link_rejects_unknown_plans_and_tasks() {
 
 #[test]
 fn scan_links_keep_scan_source_beside_manual_links() {
-    let directory = crate::board::board_test_support::scratch("board-fixture-");
+    let directory = crate::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),

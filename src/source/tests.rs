@@ -85,7 +85,9 @@ fn historical_fixture(
     let commit = GitOid::parse(&git(root.path(), &["rev-parse", "HEAD"])).unwrap();
     let blob = GitOid::parse(&git(root.path(), &["rev-parse", "HEAD:lib.rs"])).unwrap();
     let identity = HistoricalSource {
-        repository: crate::store::encode_path(&root.path().join(".git").canonicalize().unwrap()),
+        repository: crate::path_codec::encode_path(
+            &root.path().join(".git").canonicalize().unwrap(),
+        ),
         commit,
         blob,
         revision: crate::identity::ContentRevision::of(bytes.as_bytes()),
@@ -217,11 +219,13 @@ fn historical_reads_decode_repository_and_non_utf8_file_paths() {
         .unwrap();
     assert!(output.status.success());
     let identity = HistoricalSource {
-        repository: crate::store::encode_path(&root.path().join(".git").canonicalize().unwrap()),
+        repository: crate::path_codec::encode_path(
+            &root.path().join(".git").canonicalize().unwrap(),
+        ),
         commit: GitOid::parse(&git(root.path(), &["rev-parse", "HEAD"])).unwrap(),
         blob: GitOid::parse(std::str::from_utf8(&output.stdout).unwrap().trim()).unwrap(),
         revision: crate::identity::ContentRevision::of(bytes),
-        path: crate::store::encode_path(filename),
+        path: crate::path_codec::encode_path(filename),
         span: ByteSpan::new(0, bytes.len()).unwrap(),
     };
     assert!(identity.repository.contains("%25"));
@@ -262,5 +266,3 @@ fn historical_content_revision_must_match_verified_blob() {
             .contains("historical content revision does not match")
     );
 }
-
-mod published_spans;

@@ -1,6 +1,7 @@
 use super::super::admission_refusal::{AdmissionRefusal, RefusalCause};
-use super::super::{DaemonReply, protocol, refuse_busy_nonblocking};
-use crate::diagnostics::RequestContext;
+use super::super::refuse_busy_nonblocking;
+use crate::daemon_transport::daemon_wire_protocol::{self, DaemonReply};
+use crate::request_context::RequestContext;
 use std::io::{Error, ErrorKind};
 use std::os::unix::net::UnixStream;
 
@@ -12,15 +13,15 @@ fn refused_socket_reply_keeps_busy_code_and_bounded_queue_diagnostics() {
     let refusal_message = refusal.message();
     refuse_busy_nonblocking(&server, refusal);
 
-    protocol::write_request(
+    daemon_wire_protocol::write_request(
         &mut client,
-        &protocol::DaemonRequest::Arguments {
+        &daemon_wire_protocol::DaemonRequest::Arguments {
             context: RequestContext::new(None, None),
             args: vec!["search".to_owned(), "private query".to_owned()],
         },
     )
     .unwrap();
-    let reply = protocol::read_reply(&mut client).unwrap();
+    let reply = daemon_wire_protocol::read_reply(&mut client).unwrap();
     let DaemonReply::Failure { message } = reply else {
         panic!("refusal must use the failure reply variant");
     };

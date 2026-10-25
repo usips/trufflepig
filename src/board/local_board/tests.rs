@@ -21,7 +21,7 @@ fn actor(harness: &str, session: &str) -> BoardActor {
 }
 
 fn database() -> (LocalBoard, PathBuf) {
-    let path = crate::board::board_test_support::scratch("board-storage-")
+    let path = crate::test_fixtures::scratch("board-storage-")
         .keep()
         .join("board.sqlite3");
     (

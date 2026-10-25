@@ -4,7 +4,7 @@
 
 use crate::coded_error::CodedContext;
 use crate::process_capture::{self, CaptureError};
-use crate::{background_process::BackgroundChild, daemon::deadline::QueryDeadline};
+use crate::{background_process::BackgroundChild, query_deadline::QueryDeadline};
 use anyhow::{Context, Result, anyhow};
 use std::{
     ffi::OsString,

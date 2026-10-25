@@ -4,7 +4,7 @@
 //! files. Each Git probe is bounded; one that fails or times out leaves the set
 //! incomplete. A result is reused from `<worktree cache>/divergence.json` briefly.
 
-use crate::{history::git, store::encode_path};
+use crate::{git_runner, path_codec::encode_path};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeSet,
@@ -175,19 +175,20 @@ fn compute(
         let probes = [
             parent_head.map(|head| {
                 let args = ["diff", "--name-only", "-z", "--no-renames", head, "--"];
-                scope.spawn(move || git::run_bounded(worktree_root, &args, GIT_PROBE_TIMEOUT))
+                scope
+                    .spawn(move || git_runner::run_bounded(worktree_root, &args, GIT_PROBE_TIMEOUT))
             }),
             Some(scope.spawn(|| {
                 let args = ["ls-files", "-z", "-o", "--exclude-standard"];
-                git::run_bounded(worktree_root, &args, GIT_PROBE_TIMEOUT)
+                git_runner::run_bounded(worktree_root, &args, GIT_PROBE_TIMEOUT)
             })),
             Some(scope.spawn(|| {
                 let args = ["diff", "--name-only", "-z", "--no-renames", "HEAD", "--"];
-                git::run_bounded(parent_root, &args, GIT_PROBE_TIMEOUT)
+                git_runner::run_bounded(parent_root, &args, GIT_PROBE_TIMEOUT)
             })),
             Some(scope.spawn(|| {
                 let args = ["ls-files", "-z", "-o", "--exclude-standard"];
-                git::run_bounded(parent_root, &args, GIT_PROBE_TIMEOUT)
+                git_runner::run_bounded(parent_root, &args, GIT_PROBE_TIMEOUT)
             })),
         ];
         probes.map(|probe| probe.and_then(|handle| handle.join().ok()?.ok()))
@@ -209,7 +210,7 @@ fn compute(
 
 /// `HEAD` and the Git index stamp of the checkout at `root`.
 fn head_and_index(root: &Path) -> Option<(String, GitIndexStamp)> {
-    let output = git::run_bounded(
+    let output = git_runner::run_bounded(
         root,
         &["rev-parse", "HEAD", "--git-path", "index"],
         GIT_PROBE_TIMEOUT,

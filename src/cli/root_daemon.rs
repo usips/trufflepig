@@ -9,7 +9,8 @@ use super::{Arguments, dispatch::local_with_session, emission, parse};
 use crate::{
     daemon::{self, AcceptedRequest, DaemonHandler},
     diagnostics::DiagnosticQueue,
-    semantic::{SemanticSession, preparation::PreparationManager},
+    semantic::SemanticSession,
+    semantic_preparation::PreparationManager,
     store::Store,
 };
 use anyhow::Result;
@@ -31,7 +32,7 @@ const PROBE_INTERVAL: Duration = Duration::from_secs(30);
 /// schema and opens the diagnostics journal while reads answer `index_warming`.
 pub(super) fn serve(root: &Path, cache: &Path, options: &Arguments) -> Result<()> {
     let history_cache = options.resolved_history_cache.clone().or_else(|| {
-        crate::history::worker::resolve_cache(
+        crate::history::history_worker::resolve_cache(
             root,
             options.cache.as_deref(),
             options.history_cache.as_deref(),
@@ -40,7 +41,7 @@ pub(super) fn serve(root: &Path, cache: &Path, options: &Arguments) -> Result<()
     });
     let _heartbeat = history_cache
         .as_ref()
-        .and_then(|path| crate::history::worker::Heartbeat::start(root, path).ok());
+        .and_then(|path| crate::history::history_worker::Heartbeat::start(root, path).ok());
     daemon::serve(root, cache, RootDaemon::open(root, cache, options))
 }
 
@@ -69,7 +70,7 @@ impl RootDaemon {
             root: root.to_owned(),
             cache: cache.to_owned(),
             diagnostics,
-            preparation: PreparationManager::new(crate::semantic::preparation::SharedWorker::new(
+            preparation: PreparationManager::new(crate::semantic_preparation::SharedWorker::new(
                 root,
             )),
             log_queue: RwLock::new(None),
@@ -106,7 +107,7 @@ impl RootDaemon {
             .iter()
             .any(|p| matches!(p.outcome, crate::probes::ProbeOutcome::Failed));
         let mut event = crate::diagnostics::RequestEvent::new(
-            crate::diagnostics::RequestContext::new(None, None),
+            crate::request_context::RequestContext::new(None, None),
             crate::diagnostics::Operation::Doctor,
             if failed {
                 crate::diagnostics::Outcome::Failure

@@ -3,8 +3,9 @@ use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn board_transport_preserves_markdown_body_text_flags_and_feedback_key() {
-    use crate::board::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
+    use crate::board::board_grammar::BoardCommand;
     use crate::board::board_protocol::BoardOp;
+    use crate::cli::board_request_bridge::{board_parse, normalize_args};
     let args = [
         "board",
         "propose",
@@ -18,7 +19,7 @@ fn board_transport_preserves_markdown_body_text_flags_and_feedback_key() {
     let options = parse(&args).unwrap();
     let body = "- one\n- two\n\"quoted\" \\ body";
     let original = board_parse(&options, Some(body)).unwrap();
-    let forwarded = normalize_args(&args, &options, Some(body)).unwrap();
+    let forwarded = normalize_args(&options, Some(body)).unwrap();
     assert!(
         !forwarded
             .iter()
@@ -46,7 +47,7 @@ fn board_transport_preserves_markdown_body_text_flags_and_feedback_key() {
     let mut args = args.to_vec();
     args[2] = "--board-text=- missing bytes".into();
     let options = parse(&args).unwrap();
-    let forwarded = normalize_args(&args, &options, None).unwrap();
+    let forwarded = normalize_args(&options, None).unwrap();
     let routed = parse(&forwarded).unwrap();
     assert_eq!(routed.board.agent_model.as_deref(), Some("gpt-6"));
     assert_eq!(routed.board.agent_effort.as_deref(), Some("xhigh"));
@@ -64,7 +65,7 @@ fn board_transport_preserves_markdown_body_text_flags_and_feedback_key() {
 
 #[test]
 fn board_transport_rejects_ambiguous_text_and_oversized_feedback_audit() {
-    use crate::board::board_grammar::parse as board_parse;
+    use crate::cli::board_request_bridge::board_parse;
     let options = parse(&[
         "board".into(),
         "post".into(),
@@ -110,11 +111,11 @@ fn board_transport_rejects_ambiguous_text_and_oversized_feedback_audit() {
 
 #[test]
 fn claim_resume_without_scope_survives_router_normalization() {
-    use crate::board::board_grammar::{normalize_args, parse as board_parse};
+    use crate::cli::board_request_bridge::{board_parse, normalize_args};
     let args = ["board", "claim", "P7.3", "--resume"].map(str::to_owned);
     let options = parse(&args).unwrap();
     let command = board_parse(&options, None).unwrap();
-    let forwarded = normalize_args(&args, &options, None).unwrap();
+    let forwarded = normalize_args(&options, None).unwrap();
     let routed = parse(&forwarded).unwrap();
     assert_eq!(board_parse(&routed, None).unwrap(), command);
     for words in [
@@ -137,8 +138,9 @@ fn claim_resume_without_scope_survives_router_normalization() {
 
 #[test]
 fn claim_resume_accepts_an_optional_entry_target() {
-    use crate::board::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
+    use crate::board::board_grammar::BoardCommand;
     use crate::board::board_protocol::{BoardOp, ClaimResume};
+    use crate::cli::board_request_bridge::{board_parse, normalize_args};
     for words in [
         &["board", "claim", "P7.3", "--resume"][..],
         &["board", "claim", "P7.3", "--resume=E42"][..],
@@ -149,7 +151,7 @@ fn claim_resume_accepts_an_optional_entry_target() {
             .collect::<Vec<_>>();
         let options = parse(&args).unwrap();
         let command = board_parse(&options, None).unwrap();
-        let forwarded = normalize_args(&args, &options, None).unwrap();
+        let forwarded = normalize_args(&options, None).unwrap();
         let routed = parse(&forwarded).unwrap();
         assert_eq!(board_parse(&routed, None).unwrap(), command);
     }
@@ -185,8 +187,9 @@ fn claim_resume_accepts_an_optional_entry_target() {
 
 #[test]
 fn claim_resume_value_requires_equals_and_leaves_positionals_alone() {
-    use crate::board::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
+    use crate::board::board_grammar::BoardCommand;
     use crate::board::board_protocol::{BoardOp, ClaimResume};
+    use crate::cli::board_request_bridge::{board_parse, normalize_args};
     // Scope words after a bare `--resume` stay scope; nothing is eaten.
     let args = ["board", "claim", "P7.3", "--resume", "fresh", "scope"].map(str::to_owned);
     let options = parse(&args).unwrap();
@@ -216,7 +219,7 @@ fn claim_resume_value_requires_equals_and_leaves_positionals_alone() {
     let args = ["board", "claim", "P7.3", "--resume=E485"].map(str::to_owned);
     let options = parse(&args).unwrap();
     let command = board_parse(&options, None).unwrap();
-    let forwarded = normalize_args(&args, &options, None).unwrap();
+    let forwarded = normalize_args(&options, None).unwrap();
     let routed = parse(&forwarded).unwrap();
     assert_eq!(board_parse(&routed, None).unwrap(), command);
     let BoardCommand::Op(BoardOp::ClaimTask { resume, .. }) = command else {
@@ -235,8 +238,9 @@ fn claim_resume_value_requires_equals_and_leaves_positionals_alone() {
 
 #[test]
 fn claim_resume_space_form_entry_token_points_at_equals_form() {
-    use crate::board::board_grammar::{BoardCommand, parse as board_parse};
+    use crate::board::board_grammar::BoardCommand;
     use crate::board::board_protocol::{BoardOp, ClaimResume};
+    use crate::cli::board_request_bridge::board_parse;
     let args = ["board", "claim", "P7.3", "--resume", "E5"].map(str::to_owned);
     let options = parse(&args).unwrap();
     let error = board_parse(&options, None).unwrap_err().to_string();
@@ -257,8 +261,9 @@ fn claim_resume_space_form_entry_token_points_at_equals_form() {
 
 #[test]
 fn claim_for_delegates_to_a_session_under_the_caller() {
-    use crate::board::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
+    use crate::board::board_grammar::BoardCommand;
     use crate::board::board_protocol::BoardOp;
+    use crate::cli::board_request_bridge::{board_parse, normalize_args};
     for words in [
         &["board", "claim", "P7.3", "scope", "--for", "codex/c7"][..],
         &["board", "claim", "P7.3", "scope", "--for=codex/c7"][..],
@@ -269,7 +274,7 @@ fn claim_for_delegates_to_a_session_under_the_caller() {
             .collect::<Vec<_>>();
         let options = parse(&args).unwrap();
         let command = board_parse(&options, None).unwrap();
-        let forwarded = normalize_args(&args, &options, None).unwrap();
+        let forwarded = normalize_args(&options, None).unwrap();
         let routed = parse(&forwarded).unwrap();
         assert_eq!(board_parse(&routed, None).unwrap(), command);
     }
@@ -319,11 +324,11 @@ fn claim_for_delegates_to_a_session_under_the_caller() {
 
 #[test]
 fn board_inbox_all_scope_survives_router_normalization() {
-    use crate::board::board_grammar::{normalize_args, parse as board_parse};
+    use crate::cli::board_request_bridge::{board_parse, normalize_args};
     let args = ["board", "inbox", "42", "--all"].map(str::to_owned);
     let options = parse(&args).unwrap();
     let command = board_parse(&options, None).unwrap();
-    let forwarded = normalize_args(&args, &options, None).unwrap();
+    let forwarded = normalize_args(&options, None).unwrap();
     let routed = parse(&forwarded).unwrap();
     assert_eq!(board_parse(&routed, None).unwrap(), command);
     assert!(matches!(
@@ -339,8 +344,9 @@ fn board_inbox_all_scope_survives_router_normalization() {
 
 #[test]
 fn board_text_is_always_raw_and_payload_is_separate() {
-    use crate::board::board_grammar::{BoardCommand, parse as board_parse};
+    use crate::board::board_grammar::BoardCommand;
     use crate::board::board_protocol::BoardOp;
+    use crate::cli::board_request_bridge::board_parse;
     let raw =
         r#"{"text":"decoded title","body":"injected body","import_key":null,"steer_mode":null}"#;
     let options = parse(&["board".into(), "new".into(), format!("--board-text={raw}")]).unwrap();
@@ -367,7 +373,7 @@ fn board_pending_waits_for_slow_existing_router_without_startup() -> anyhow::Res
     };
 
     let directory = tempfile::tempdir()?;
-    let socket_path = directory.path().join(crate::daemon::SOCKET_NAME);
+    let socket_path = directory.path().join(crate::daemon_transport::SOCKET_NAME);
     let listener = UnixListener::bind(&socket_path)?;
     let responder = thread::spawn(move || -> std::io::Result<()> {
         let (mut stream, _) = listener.accept()?;
@@ -385,26 +391,26 @@ fn board_pending_waits_for_slow_existing_router_without_startup() -> anyhow::Res
     });
 
     let args = ["board", "pending"].map(str::to_owned);
-    let context = crate::diagnostics::RequestContext::new(None, None);
+    let context = crate::request_context::RequestContext::new(None, None);
     let output = super::super::client_command::request_pending(
         &args,
         &context,
         false,
         || Some(directory.path().to_owned()),
-        crate::daemon::deadline::QueryDeadline::after(Duration::from_secs(2)),
+        crate::query_deadline::QueryDeadline::after(Duration::from_secs(2)),
     );
     let responder_result = responder.join().expect("router responder thread panicked");
     assert_eq!(output?, "pending notices");
     responder_result?;
 
     let absent = tempfile::tempdir()?;
-    let absent_socket = absent.path().join(crate::daemon::SOCKET_NAME);
+    let absent_socket = absent.path().join(crate::daemon_transport::SOCKET_NAME);
     let error = super::super::client_command::request_pending(
         &args,
         &context,
         false,
         || Some(absent.path().to_owned()),
-        crate::daemon::deadline::QueryDeadline::after(Duration::from_secs(1)),
+        crate::query_deadline::QueryDeadline::after(Duration::from_secs(1)),
     )
     .unwrap_err()
     .to_string();
@@ -419,7 +425,7 @@ fn board_pending_waits_for_slow_existing_router_without_startup() -> anyhow::Res
         &context,
         true,
         || panic!("--no-daemon must be rejected before resolving the router"),
-        crate::daemon::deadline::QueryDeadline::after(Duration::from_secs(1)),
+        crate::query_deadline::QueryDeadline::after(Duration::from_secs(1)),
     )
     .unwrap_err()
     .to_string();
@@ -437,7 +443,7 @@ fn board_pending_does_not_contact_a_router_after_its_deadline() -> anyhow::Resul
     };
 
     let directory = tempfile::tempdir()?;
-    let socket_path = directory.path().join(crate::daemon::SOCKET_NAME);
+    let socket_path = directory.path().join(crate::daemon_transport::SOCKET_NAME);
     let listener = UnixListener::bind(&socket_path)?;
     listener.set_nonblocking(true)?;
     let responder = thread::spawn(move || -> std::io::Result<bool> {
@@ -465,14 +471,14 @@ fn board_pending_does_not_contact_a_router_after_its_deadline() -> anyhow::Resul
         }
     });
     let args = ["board", "pending"].map(str::to_owned);
-    let context = crate::diagnostics::RequestContext::new(None, None);
+    let context = crate::request_context::RequestContext::new(None, None);
 
     let error = super::super::client_command::request_pending(
         &args,
         &context,
         false,
         || Some(directory.path().to_owned()),
-        crate::daemon::deadline::QueryDeadline::after(std::time::Duration::ZERO),
+        crate::query_deadline::QueryDeadline::after(std::time::Duration::ZERO),
     )
     .unwrap_err();
 
@@ -489,7 +495,7 @@ fn board_pending_does_not_contact_a_router_after_its_deadline() -> anyhow::Resul
 #[test]
 fn contextual_board_api_probe_exits_before_client_dispatch() -> anyhow::Result<()> {
     let args = ["--board-api-version".to_owned()];
-    let context = crate::diagnostics::RequestContext::new(None, None);
+    let context = crate::request_context::RequestContext::new(None, None);
 
     assert_eq!(
         crate::cli::run_with_context(&args, &context)?,
@@ -500,7 +506,7 @@ fn contextual_board_api_probe_exits_before_client_dispatch() -> anyhow::Result<(
 
 #[test]
 fn board_edges_reject_search_flags_and_ignore_budget_text_after_separator() {
-    use crate::board::board_grammar::parse as board_parse;
+    use crate::cli::board_request_bridge::board_parse;
     for flag in [
         "--sem",
         "--no-sem",
@@ -552,7 +558,7 @@ fn body_preflight_rejects_bad_grammar_before_client_reads() {
     ] {
         let options = parse(&words.iter().map(|word| (*word).into()).collect::<Vec<_>>()).unwrap();
         assert!(
-            validate_before_body(&options).is_err(),
+            validate_before_body(&options.board_arguments()).is_err(),
             "accepted {words:?}"
         );
     }
@@ -563,9 +569,9 @@ fn body_preflight_rejects_bad_grammar_before_client_reads() {
         "--body=-".into(),
     ])
     .unwrap();
-    validate_before_body(&feedback).unwrap();
+    validate_before_body(&feedback.board_arguments()).unwrap();
     assert_eq!(
-        body_limit(&feedback),
+        body_limit(&feedback.board_arguments()),
         crate::board::board_vocabulary::FEEDBACK_TEXT_LIMIT
     );
     let plan = parse(&[
@@ -576,16 +582,17 @@ fn body_preflight_rejects_bad_grammar_before_client_reads() {
         "--body=-".into(),
     ])
     .unwrap();
-    validate_before_body(&plan).unwrap();
+    validate_before_body(&plan.board_arguments()).unwrap();
     assert_eq!(
-        body_limit(&plan),
+        body_limit(&plan.board_arguments()),
         crate::board::board_vocabulary::PLAN_TEXT_LIMIT
     );
 }
 
 #[test]
 fn board_web_and_foreground_server_validate_without_workspace_dispatch() {
-    use crate::board::board_grammar::{BoardCommand, parse as board_parse};
+    use crate::board::board_grammar::BoardCommand;
+    use crate::cli::board_request_bridge::board_parse;
     for target in ["P7", "P7@12", "E512"] {
         let options = parse(&["board".into(), "web".into(), target.into()]).unwrap();
         assert!(matches!(
@@ -626,4 +633,22 @@ fn board_web_and_foreground_server_validate_without_workspace_dispatch() {
         let options = parse(&words.iter().map(|word| (*word).into()).collect::<Vec<_>>()).unwrap();
         assert!(validate(&options).is_err(), "{words:?}");
     }
+}
+
+#[test]
+fn board_forwarding_drops_client_identity_flags() {
+    use crate::cli::board_request_bridge::normalize_args;
+    let args = ["board", "new", "Edge plan"].map(str::to_owned);
+    let mut options = parse(&args).unwrap();
+    options.client = Some("human".into());
+    options.session = Some("forged-session".into());
+    let forwarded = normalize_args(&options, None).unwrap();
+    assert!(
+        !forwarded
+            .iter()
+            .any(|arg| arg.starts_with("--client") || arg.starts_with("--session"))
+    );
+    let routed = parse(&forwarded).unwrap();
+    assert!(routed.client.is_none());
+    assert!(routed.session.is_none());
 }

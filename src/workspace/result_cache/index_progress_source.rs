@@ -1,4 +1,7 @@
-use crate::store::{IndexProgress, decode_path, encode_path, read_index_progress};
+use crate::{
+    path_codec::{decode_path, encode_path},
+    store::{IndexProgress, read_index_progress},
+};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 

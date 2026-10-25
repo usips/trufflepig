@@ -176,3 +176,5 @@ fn source_region_handles_keep_range_without_symbol_inference() {
         Some(crate::identity::ByteSpan { start: 0, end: 5 })
     );
 }
+
+mod published_afterspan_tests;

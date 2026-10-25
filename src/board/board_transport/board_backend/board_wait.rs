@@ -6,7 +6,7 @@ use crate::{
         board_ids::EventSeq,
         board_protocol::{BoardOp, BoardReply, BoardRequest, BoardResult, InboxWait},
     },
-    daemon::deadline::QueryDeadline,
+    query_deadline::QueryDeadline,
 };
 use anyhow::Result;
 use std::{

@@ -2,7 +2,8 @@
 //! Inputs contain source text only; callers join cached vectors to their read snapshot.
 
 use anyhow::{Result, bail};
-use std::{cmp::Ordering, collections::BinaryHeap};
+#[cfg(feature = "semantic")]
+use std::cmp::Ordering;
 
 mod content_identity;
 pub(crate) use content_identity::content_key;
@@ -12,11 +13,9 @@ pub(crate) mod embedding_cache;
 mod inference;
 #[cfg(feature = "semantic")]
 pub use inference::{
-    RerankInferenceEngine, SemanticInferenceEngine, SemanticProvider, SemanticProviderConfig,
-    compare_cpu_cuda, run_gate, run_gpu_gate,
+    RerankInferenceEngine, SemanticInferenceEngine, SemanticProviderConfig, run_gate, run_gpu_gate,
 };
 
-pub mod preparation;
 pub mod runtime_config;
 pub mod worker;
 
@@ -27,6 +26,7 @@ pub use verified_assets::VerifiedAssetDigests;
 
 pub const MODEL_REVISION: &str = "516f4baf13dec4ddddda8631e019b5737c8bc250";
 pub const DIMENSIONS: usize = 768;
+#[cfg(feature = "semantic")]
 pub const CACHE_BYTES: u64 = 5 * 1024 * 1024 * 1024;
 pub const MODEL_NAME: &str = "jinaai/jina-embeddings-v2-base-code";
 pub const INPUT_VERSION: &str = "source-only-mean-l2-v2-regions4096-max4096";
@@ -39,7 +39,9 @@ pub const RERANK_MAX_DOCUMENTS: usize = 32;
 /// Maximum bytes accepted for the rerank query and for each document.
 pub const RERANK_MAX_DOCUMENT_BYTES: usize = 4096;
 /// Maximum tokenized (query, document) pair length; tokenizer truncation stays on.
+#[cfg(feature = "semantic")]
 pub const RERANK_MAX_TOKENS: usize = 1024;
+#[cfg(feature = "semantic")]
 /// Length-sorted documents per reranker batch; each batch pads to its longest
 /// pair, and larger batches measured slower with higher peak memory.
 pub const RERANK_BATCH_SIZE: usize = 8;
@@ -105,17 +107,21 @@ impl Embedding {
         Ok(Self(result))
     }
 
+    #[cfg(feature = "semantic")]
     pub fn cosine(&self, other: &Self) -> f32 {
         self.0.iter().zip(other.0.iter()).map(|(a, b)| a * b).sum()
     }
 }
 
+#[cfg(feature = "semantic")]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SemanticHit {
     pub id: u64,
     pub score: f32,
 }
+#[cfg(feature = "semantic")]
 impl Eq for SemanticHit {}
+#[cfg(feature = "semantic")]
 impl Ord for SemanticHit {
     fn cmp(&self, other: &Self) -> Ordering {
         other
@@ -124,40 +130,14 @@ impl Ord for SemanticHit {
             .then_with(|| self.id.cmp(&other.id))
     }
 }
+#[cfg(feature = "semantic")]
 impl PartialOrd for SemanticHit {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-/// Candidates must already satisfy snapshot and query filters; memory is O(limit).
-pub fn search_top_k(
-    query: &Embedding,
-    candidates: impl Iterator<Item = (u64, Embedding)>,
-    limit: usize,
-) -> Vec<SemanticHit> {
-    let mut heap = BinaryHeap::with_capacity(limit.saturating_add(1));
-    if limit == 0 {
-        return Vec::new();
-    }
-    for (id, vector) in candidates {
-        let hit = SemanticHit {
-            id,
-            score: query.cosine(&vector),
-        };
-        if !hit.score.is_finite() {
-            continue;
-        }
-        heap.push(hit);
-        if heap.len() > limit {
-            heap.pop();
-        }
-    }
-    let mut hits = heap.into_vec();
-    hits.sort_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.id.cmp(&b.id)));
-    hits
-}
-
+#[cfg(not(feature = "semantic"))]
 pub fn unavailable() -> anyhow::Error {
     anyhow::anyhow!(coded!(
         SemanticUnavailable,
@@ -173,41 +153,6 @@ pub fn run_gate(_: &std::path::Path) -> Result<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn semantic_top_k_is_exact_and_ties_are_stable() {
-        let mut values = [0.0; DIMENSIONS];
-        values[0] = 1.0;
-        let query = Embedding(values);
-        let hits = search_top_k(
-            &query,
-            [9, 2, 5].into_iter().map(|id| (id, query.clone())),
-            2,
-        );
-        assert_eq!(hits.iter().map(|h| h.id).collect::<Vec<_>>(), [2, 5]);
-        assert!(search_top_k(&query, std::iter::empty(), 0).is_empty());
-    }
-    #[test]
-    fn semantic_top_k_prefers_higher_cosine() {
-        let mut values = [0.0; DIMENSIONS];
-        values[0] = 1.0;
-        let query = Embedding(values);
-        let mut perpendicular = [0.0; DIMENSIONS];
-        perpendicular[1] = 1.0;
-        let mut opposite = values;
-        opposite[0] = -1.0;
-        let hits = search_top_k(
-            &query,
-            [
-                (1, Embedding(opposite)),
-                (2, query.clone()),
-                (3, Embedding(perpendicular)),
-            ]
-            .into_iter(),
-            2,
-        );
-        assert_eq!(hits.iter().map(|hit| hit.id).collect::<Vec<_>>(), [2, 3]);
-    }
-
     #[cfg(not(feature = "semantic"))]
     #[test]
     fn semantic_disabled_is_actionable() {

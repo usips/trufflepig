@@ -1,9 +1,8 @@
 //! Captured user/host identity and explicitly claimed harness/session labels.
+use crate::request_context::{ActorOrigin, HarnessLabel, validate_actor_component};
 use anyhow::{Result, bail};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{fmt, str::FromStr};
-
-pub const ACTOR_COMPONENT_LIMIT: usize = 256;
 
 #[cfg(test)]
 mod tests;
@@ -40,67 +39,6 @@ impl AgentVendor {
     }
 }
 
-pub(crate) fn validate_actor_component(value: &str, component: &str) -> Result<()> {
-    if value.is_empty()
-        || value.len() > ACTOR_COMPONENT_LIMIT
-        || value.chars().any(|character| {
-            character.is_whitespace() || character.is_control() || matches!(character, '/' | '@')
-        })
-    {
-        bail!(coded!(
-            InvalidActor,
-            "{component} must contain 1..256 bytes without whitespace, controls, '/' or '@'"
-        ));
-    }
-    Ok(())
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
-pub struct HarnessLabel(String);
-impl HarnessLabel {
-    pub fn parse(value: &str) -> Result<Self> {
-        if let Some(email) = value.strip_prefix("git:") {
-            if email.is_empty()
-                || value.len() > ACTOR_COMPONENT_LIMIT
-                || email.chars().any(|character| {
-                    character.is_whitespace() || character.is_control() || character == '/'
-                })
-            {
-                bail!(coded!(InvalidActor, "invalid git co-author label"));
-            }
-            return Ok(Self(value.to_owned()));
-        }
-        if value.is_empty()
-            || value.len() > ACTOR_COMPONENT_LIMIT
-            || !value.bytes().all(|byte| {
-                byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-')
-            })
-        {
-            bail!(coded!(
-                InvalidActor,
-                "harness must be a lowercase identifier"
-            ));
-        }
-        Ok(Self(value.to_owned()))
-    }
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-    pub fn is_human(&self) -> bool {
-        self.as_str() == "human"
-    }
-    pub fn is_cli(&self) -> bool {
-        self.as_str() == "cli"
-    }
-    pub fn is_system(&self) -> bool {
-        self.as_str() == "system"
-    }
-    /// Human, CLI, system, and git labels that no request may act as or delegate to.
-    pub fn is_reserved(&self) -> bool {
-        self.is_human() || self.is_cli() || self.is_system() || self.as_str().starts_with("git:")
-    }
-}
 /// Vendor attribution follows the claimed model, then the harness fallback.
 pub fn claim_vendor(harness: &HarnessLabel, model: Option<&str>) -> AgentVendor {
     if harness.is_human() {
@@ -139,29 +77,6 @@ pub fn claim_vendor(harness: &HarnessLabel, model: Option<&str>) -> AgentVendor 
             "muse" => AgentVendor::Muse,
             _ => AgentVendor::Unknown,
         }
-    }
-}
-
-impl fmt::Display for HarnessLabel {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-impl FromStr for HarnessLabel {
-    type Err = anyhow::Error;
-    fn from_str(value: &str) -> Result<Self> {
-        Self::parse(value)
-    }
-}
-impl TryFrom<String> for HarnessLabel {
-    type Error = anyhow::Error;
-    fn try_from(value: String) -> Result<Self> {
-        Self::parse(&value)
-    }
-}
-impl From<HarnessLabel> for String {
-    fn from(value: HarnessLabel) -> Self {
-        value.0
     }
 }
 
@@ -221,6 +136,14 @@ impl BoardActor {
     }
     pub fn identity(&self) -> String {
         self.to_string()
+    }
+    /// The harness and session this actor asserts, without its user or host.
+    pub fn origin(&self) -> ActorOrigin {
+        ActorOrigin {
+            harness: self.harness.clone(),
+            session: self.session.clone(),
+            peer_ip: None,
+        }
     }
 }
 impl fmt::Display for BoardActor {

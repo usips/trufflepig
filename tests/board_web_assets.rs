@@ -11,16 +11,16 @@ mod board_web_assets {
     mod board_node_temporary_files;
     mod board_web_asset_node_runner;
 
-    #[cfg(all(unix, board_node_20))]
+    #[cfg(unix)]
     pub(super) use self::board_node_process_group_regression::{
         run_isolated_reaping_probe, run_process_group_regression,
     };
-    #[cfg(all(unix, board_node_20))]
+    #[cfg(unix)]
     pub(super) use self::board_node_temporary_files::node_temporary_directory;
     pub(super) use self::board_web_asset_node_runner::{run_node_program, run_node_tests};
 }
 
-#[cfg(all(unix, board_node_20))]
+#[cfg(unix)]
 use board_web_assets::{
     node_temporary_directory, run_isolated_reaping_probe, run_process_group_regression,
 };
@@ -61,6 +61,53 @@ fn resolve_on_path(name: &str) -> Option<PathBuf> {
     None
 }
 
+/// The `node` on `PATH` when it is Node >=20. Otherwise prints why `test`
+/// skips; the build never probes tools on `PATH`.
+fn node_20(test: &str) -> Option<PathBuf> {
+    let node = resolve_on_path("node");
+    let major = node
+        .as_ref()
+        .and_then(|node| {
+            std::process::Command::new(node)
+                .arg("--version")
+                .output()
+                .ok()
+        })
+        .filter(|output| output.status.success())
+        .and_then(|output| node_major(&output.stdout));
+    match (node, major) {
+        (Some(node), Some(major)) if major >= 20 => Some(node),
+        (_, major) => {
+            let found = major.map_or("none".to_owned(), |major| format!("v{major}"));
+            eprintln!("skipped {test}: requires Node >=20 (found {found})");
+            None
+        }
+    }
+}
+
+/// Parses `node --version` stdout into its major version.
+fn node_major(bytes: &[u8]) -> Option<u32> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    text.trim()
+        .strip_prefix('v')?
+        .split('.')
+        .next()?
+        .parse()
+        .ok()
+}
+
+#[test]
+fn node_version_parsing_requires_a_v_prefixed_major() {
+    for major in [20, 21, 22] {
+        assert_eq!(
+            node_major(format!("v{major}.1.0\n").as_bytes()),
+            Some(major)
+        );
+    }
+    assert_eq!(node_major(b"22.1.0"), None);
+    assert_eq!(node_major(&[0xff]), None);
+}
+
 /// Sorted `*.test.mjs` files beneath the board asset test directory.
 fn asset_test_files() -> Vec<PathBuf> {
     let tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/board/board_web/assets/tests");
@@ -99,10 +146,11 @@ fn collect_asset_test_files(directory: &Path, files: &mut Vec<PathBuf>) {
 }
 
 #[test]
-#[cfg_attr(not(board_node_20), ignore = "requires Node >=20")]
 fn board_asset_tests_pass_under_node() {
+    let Some(node) = node_20("board_asset_tests_pass_under_node") else {
+        return;
+    };
     let files = asset_test_files();
-    let node = resolve_on_path("node").expect("node on PATH: build probed Node >=20");
     let output =
         run_node_tests(&node, &files, NODE_TEST_TIMEOUT).unwrap_or_else(|error| panic!("{error}"));
     if output.status.success() {
@@ -117,9 +165,10 @@ fn board_asset_tests_pass_under_node() {
 }
 
 #[test]
-#[cfg_attr(not(board_node_20), ignore = "requires Node >=20")]
 fn leaked_timer_fails_instead_of_hanging() {
-    let node = resolve_on_path("node").expect("node on PATH: build probed Node >=20");
+    let Some(node) = node_20("leaked_timer_fails_instead_of_hanging") else {
+        return;
+    };
     let fixture =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/leaked_timer.test.mjs");
     let error = run_node_tests(&node, &[fixture], Duration::from_secs(3))
@@ -131,9 +180,10 @@ fn leaked_timer_fails_instead_of_hanging() {
 }
 
 #[test]
-#[cfg_attr(not(board_node_20), ignore = "requires Node >=20")]
 fn chatty_suite_passes_within_deadline() {
-    let node = resolve_on_path("node").expect("node on PATH: build probed Node >=20");
+    let Some(node) = node_20("chatty_suite_passes_within_deadline") else {
+        return;
+    };
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/noisy_pass.mjs");
     let output = run_node_program(&node, &fixture, Duration::from_secs(10))
         .expect("noisy passing Node test completes");
@@ -153,9 +203,10 @@ fn chatty_suite_passes_within_deadline() {
 }
 
 #[test]
-#[cfg_attr(not(board_node_20), ignore = "requires Node >=20")]
 fn noisy_node_failure_preserves_both_streams_and_diagnostic() {
-    let node = resolve_on_path("node").expect("node on PATH: build probed Node >=20");
+    let Some(node) = node_20("noisy_node_failure_preserves_both_streams_and_diagnostic") else {
+        return;
+    };
     let fixture =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/noisy_failure.mjs");
     let output = run_node_program(&node, &fixture, Duration::from_secs(30))
@@ -173,18 +224,24 @@ fn noisy_node_failure_preserves_both_streams_and_diagnostic() {
 }
 
 #[test]
-#[cfg(all(unix, board_node_20))]
+#[cfg(unix)]
 fn timeout_reaps_the_process_group() {
+    if node_20("timeout_reaps_the_process_group").is_none() {
+        return;
+    }
     run_process_group_regression("timeout_reaps_the_process_group");
 }
 
 #[test]
-#[cfg(all(unix, board_node_20))]
+#[cfg(unix)]
 fn timeout_bounds_escaped_descendant_pipe_wait() {
+    if node_20("timeout_bounds_escaped_descendant_pipe_wait").is_none() {
+        return;
+    }
     if !run_isolated_reaping_probe("timeout_bounds_escaped_descendant_pipe_wait") {
         return;
     }
-    let node = resolve_on_path("node").expect("node on PATH: build probed Node >=20");
+    let node = resolve_on_path("node").expect("node on PATH: the test checked Node >=20");
     let directory =
         tempfile::tempdir_in(node_temporary_directory().expect("disk scratch directory"))
             .expect("escaped-pipe fixture directory");
@@ -253,7 +310,7 @@ fn timeout_bounds_escaped_descendant_pipe_wait() {
     });
 }
 
-#[cfg(all(unix, board_node_20))]
+#[cfg(unix)]
 fn unix_process_is_absent(pid: u32) -> bool {
     let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
     result == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)

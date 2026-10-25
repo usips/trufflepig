@@ -1,11 +1,11 @@
 //! Session comparisons retain line and occurrence identities without retaining source bodies.
 
 use super::{
-    DeclarationCorrespondence, SourceDiff,
+    DeclarationCorrespondence,
     correspondence::{MatchFact, match_facts},
-    diff_interned, line_offsets,
 };
 use crate::identity::{ByteSpan, ContentRevision};
+use crate::line_diff::{SourceDiff, diff_interned, line_offsets};
 use anyhow::{Result, ensure};
 use imara_diff::{InternedInput, TokenSource};
 use serde::{Deserialize, Serialize};

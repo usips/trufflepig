@@ -1,7 +1,7 @@
 use tree_sitter::Node;
 
 use super::names::{Import, final_segment, qualified, text};
-use super::scopes::{NamespaceRegion, namespace_at, namespace_region_at};
+use super::php_scopes::{NamespaceRegion, namespace_at, namespace_region_at};
 
 pub(super) fn collect(root: Node<'_>, source: &[u8], regions: &[NamespaceRegion]) -> Vec<Import> {
     let mut imports = Vec::with_capacity(source.len() / 256);

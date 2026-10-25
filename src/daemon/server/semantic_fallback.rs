@@ -1,6 +1,6 @@
 use crate::{
     cli::{normalized_args, parse},
-    output::{OutputBudget, OutputFormat, lines::COVERAGE_KEY},
+    output::{OutputBudget, OutputFormat, lines_format::COVERAGE_KEY},
     search::Query,
 };
 use anyhow::{Context, Result, anyhow, bail, ensure};
@@ -226,7 +226,10 @@ mod tests {
                 .is_none()
         );
         let classified = crate::cli::classify_daemon_request(&lexical_args).unwrap();
-        assert_eq!(classified.class.lane, crate::daemon::RequestLane::Query);
+        assert_eq!(
+            classified.class.lane,
+            crate::request_pool::RequestLane::Query
+        );
         assert!(classified.roots.is_empty());
     }
 

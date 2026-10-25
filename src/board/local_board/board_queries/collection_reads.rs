@@ -17,8 +17,6 @@ use super::super::{BoardError, WriteContext, invalid, max_seq, sql_error};
 use crate::board::board_ids::EventSeq;
 
 #[cfg(test)]
-use crate::board::board_actor::HarnessLabel;
-#[cfg(test)]
 use crate::board::board_domain::board_collections::{
     AttentionReply, EntriesPage, EntryCursor, FeedbackPage,
 };
@@ -28,6 +26,8 @@ use crate::board::board_ids::{EntryId, PlanId, PlanRevision, RepoKey, TaskId};
 use crate::board::board_protocol::{BoardResult, RevisionSource};
 #[cfg(test)]
 use crate::board::board_vocabulary::{EntryKind, FeedbackKind};
+#[cfg(test)]
+use crate::request_context::HarnessLabel;
 #[cfg(test)]
 use rusqlite::params;
 

@@ -170,7 +170,7 @@ impl Drop for EndpointGuard {
 }
 
 pub(super) fn link(target: Option<BoardRef>) -> Result<String> {
-    let runtime = crate::system::dir()
+    let runtime = crate::runtime_paths::system_dir()
         .with_coded_context(|| coded!(BoardUnavailable, "no runtime directory"))?;
     link_at(&runtime, &BoardConfig::load()?, target)
 }
@@ -225,7 +225,7 @@ fn link_at(runtime: &Path, config: &BoardConfig, target: Option<BoardRef>) -> Re
             "running web database differs from configured database"
         )
     );
-    crate::system::validate_board_database(runtime, &config.db_path)?;
+    crate::board::board_runtime_markers::validate_board_database(runtime, &config.db_path)?;
     let token = BoardWebToken::read_at(&runtime.join("board-web.token"))?;
     let guard = WebGuard::with_token(endpoint.address, token.clone())
         .with_coded_context(|| coded!(BoardUnavailable, "invalid web listener address"))?;

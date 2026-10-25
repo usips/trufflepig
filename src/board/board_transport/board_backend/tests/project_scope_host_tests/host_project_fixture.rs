@@ -4,7 +4,7 @@ use crate::board::{
     board_protocol::BOARD_API,
     board_vocabulary::{PlanText, PlanTitle},
 };
-use crate::workspace::config::WorkspaceConfig;
+use crate::workspace_config::WorkspaceConfig;
 use std::path::Path;
 
 pub(super) struct HostProjectFixture {
@@ -17,7 +17,7 @@ pub(super) struct HostProjectFixture {
 
 impl HostProjectFixture {
     pub(super) fn new() -> Self {
-        let directory = crate::board::board_test_support::scratch("project-host-");
+        let directory = crate::test_fixtures::scratch("project-host-");
         let config = BoardConfig::for_database(directory.path().join("storage/board.sqlite3"));
         let registry = directory.path().join("workspaces.toml");
         let host = BoardHost::with_config(config.clone());

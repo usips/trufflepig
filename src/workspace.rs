@@ -1,30 +1,25 @@
 //! Explicit multi-root retrieval with persisted ownership and one final output budget.
-pub mod config;
 mod coordinator;
 mod current_path_hints;
 mod home_index;
 pub mod member_root;
-mod navigation;
 mod owned_response;
+mod owner_navigation;
 mod result_cache;
 mod retrieval;
 mod stateless_queries;
 #[cfg(test)]
 mod test_fixture;
+pub(crate) mod workspace_discovery;
 mod workspace_list;
 mod worktree_cache;
 use crate::coded_error::CodedContext;
+use crate::workspace_config::{self, WorkspaceConfig};
 use crate::{
-    cli::Arguments,
-    daemon::deadline::QueryDeadline,
-    diagnostics::RequestContext,
-    output::OutputBudget,
-    search::InvocationDirectory,
-    store::{Store, encode_path},
+    cli::Arguments, output::OutputBudget, path_codec::encode_path, query_deadline::QueryDeadline,
+    request_context::RequestContext, search::InvocationDirectory, store::Store,
 };
 use anyhow::{Context, Result, bail, ensure};
-use config::WorkspaceConfig;
-pub use coordinator::run;
 pub(crate) use coordinator::{apply_config, run_with_deadline};
 pub(crate) use home_index::{
     ParentFallback, ParentIndexIdentity, ParentIndexView, WorktreeHashes, acquire_through_parent,
@@ -34,6 +29,7 @@ use member_root::MemberRoot;
 use result_cache::WorkspaceResults;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
+use workspace_discovery::WorkspaceMembers;
 pub(crate) use workspace_list::list;
 
 pub fn resolve(options: &Arguments) -> Result<Option<WorkspaceConfig>> {
@@ -41,14 +37,14 @@ pub fn resolve(options: &Arguments) -> Result<Option<WorkspaceConfig>> {
         .root
         .canonicalize()
         .with_coded_context(|| coded!(InvalidRoot, "cannot resolve workspace home"))?;
-    let config = config::discover(
+    let config = workspace_discovery::discover(
         &start,
         options.workspace.as_deref(),
         options.no_workspace,
         options.explicit_root,
     )?;
     if let (Some(config), Some(cache)) = (&config, &options.cache) {
-        let base = config::resolve_path(cache, &std::env::current_dir()?)?;
+        let base = workspace_config::resolve_path(cache, &std::env::current_dir()?)?;
         ensure!(
             config
                 .member_roots(&start)?
@@ -173,7 +169,7 @@ fn is_local_query(options: &Arguments) -> bool {
 
 fn local_execution_deadline(options: &Arguments, incoming: &QueryDeadline) -> QueryDeadline {
     if is_local_query(options) {
-        incoming.capped(crate::daemon::deadline::QUERY_DEADLINE)
+        incoming.capped(crate::query_deadline::QUERY_DEADLINE)
     } else {
         incoming.clone()
     }
@@ -192,7 +188,7 @@ fn member_options(
         member_cache(member, options.cache.as_deref())?
     };
     local.cache = Some(cache);
-    local.resolved_history_cache = crate::history::worker::resolve_cache(
+    local.resolved_history_cache = crate::history::history_worker::resolve_cache(
         &member.root,
         options
             .cache
@@ -313,7 +309,7 @@ pub(crate) fn local(
     options: &Arguments,
     context: &RequestContext,
     session: &mut crate::semantic::SemanticSession,
-    deadline: crate::daemon::deadline::QueryDeadline,
+    deadline: crate::query_deadline::QueryDeadline,
 ) -> Result<String> {
     let incoming_deadline = deadline;
     let local_deadline = local_execution_deadline(options, &incoming_deadline);
@@ -328,7 +324,12 @@ pub(crate) fn local(
     }
     let budget = OutputBudget::new(options.budget)?;
     if verb == "semantic" {
-        return crate::cli::semantic::workspace(config, options, context, &incoming_deadline);
+        return crate::cli::semantic_commands::workspace(
+            config,
+            options,
+            context,
+            &incoming_deadline,
+        );
     }
     if verb == "ws" {
         return inspect(config, options, &budget, &local_deadline);
@@ -344,10 +345,10 @@ pub(crate) fn local(
             options.limit,
             &page_budget,
         ),
-        "show" => navigation::read(config, &results, options, &page_budget),
-        "ctx" => navigation::read(config, &results, options, &budget),
+        "show" => owner_navigation::read(config, &results, options, &page_budget),
+        "ctx" => owner_navigation::read(config, &results, options, &budget),
         "hist" | "since" | "diff" | "blame" => {
-            navigation::history(config, &results, options, &budget)
+            owner_navigation::history(config, &results, options, &budget)
         }
         "index" | "init" | "status" | "doctor" | "hist-index" | "hist-status" | "session"
         | "audit" | "forget-logs" | "semantic-check" => {
@@ -463,8 +464,8 @@ pub fn discover_paths(paths: &[String], budget: usize) -> Result<String> {
     );
     let mut members = toml::map::Map::new();
     for path in paths {
-        let root =
-            config::resolve_path(Path::new(path), &std::env::current_dir()?)?.canonicalize()?;
+        let root = workspace_config::resolve_path(Path::new(path), &std::env::current_dir()?)?
+            .canonicalize()?;
         ensure!(
             root.is_dir(),
             coded!(InvalidWorkspace, "member must be a directory")
@@ -474,7 +475,7 @@ pub fn discover_paths(paths: &[String], budget: usize) -> Result<String> {
             .and_then(|s| s.to_str())
             .with_coded_context(|| coded!(InvalidWorkspace, "choose a member name explicitly"))?;
         ensure!(
-            config::valid_name(name) && !members.contains_key(name),
+            workspace_config::valid_name(name) && !members.contains_key(name),
             coded!(
                 InvalidWorkspace,
                 "member name is invalid or duplicated; write named members explicitly"

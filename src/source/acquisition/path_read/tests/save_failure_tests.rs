@@ -1,5 +1,5 @@
 use super::{blocked_cache, page, source_bytes, test_directory};
-use crate::{daemon::deadline::QueryDeadline, output::OutputBudget, source::show, store::Store};
+use crate::{output::OutputBudget, query_deadline::QueryDeadline, source::show, store::Store};
 use std::{
     fs,
     os::unix::{fs::PermissionsExt, net::UnixStream},

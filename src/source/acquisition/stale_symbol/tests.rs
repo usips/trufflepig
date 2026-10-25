@@ -1,6 +1,6 @@
 use super::super::acquire;
 use super::{await_republish, liveness_probe_result};
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use crate::search::InvocationDirectory;
 use crate::source::line_span;
 use crate::{output::OutputBudget, store::Store};
@@ -26,7 +26,8 @@ fn serving_daemon_fixture() -> ServingDaemonFixture {
     let mut store = Store::open(root.path(), cache.path()).unwrap();
     store.index().unwrap();
     let generation = store.generation().unwrap();
-    let listener = UnixListener::bind(cache.path().join(crate::daemon::SOCKET_NAME)).unwrap();
+    let listener =
+        UnixListener::bind(cache.path().join(crate::daemon_transport::SOCKET_NAME)).unwrap();
     ServingDaemonFixture {
         _root: root,
         _cache: cache,

@@ -59,7 +59,7 @@ Only committed generations are queryable. A reader holds one snapshot through
 candidate retrieval and graph joins. Readers are query-only
 (`src/store/read_access.rs:open_read`): they open the index read-only, run no
 schema or metadata writes, wait at most 2 s on a lock, and are interrupted when
-the request's 20 s query deadline (`src/daemon/deadline.rs`) expires, answering
+the request's 20 s query deadline (`src/query_deadline.rs`) expires, answering
 `timed_out`; inline work uses that original deadline without pausing it. A missing
 index or generation 0 answers `index_warming`. Only indexing, sessions, and the
 reconciler open the writer (`Store::open`). A reader
@@ -132,10 +132,10 @@ A per-user system daemon routes requests to the owning workspace coordinator or
 per-root daemon as a single endpoint agent harnesses can allowlist; see
 `src/system.rs`. It runs no watcher and no index: it starts the target daemon
 when missing and proxies the reply. Its socket lives in a per-user runtime
-directory (`src/system.rs:dir`). Clients treat connect errors `NotFound`,
+directory (`src/runtime_paths.rs:system_dir`). Clients treat connect errors `NotFound`,
 `ConnectionRefused`, and `PermissionDenied` as "no daemon" and fall back
-(`src/daemon.rs:unreachable`), first to the router's file spool
-(`src/daemon/spool.rs`, directory `src/system.rs:spool_dir`), which carries the
+(`src/daemon_transport.rs:unreachable`), first to the router's file spool
+(`src/daemon_transport/spool.rs`, directory `src/runtime_paths.rs:spool_dir`), which carries the
 same JSON request and reply bodies through atomically renamed files and is served
 by the router's workers. The frame protocol and its limits apply unchanged per
 hop; concurrency is in the [runtime contract](runtime-contract.md).

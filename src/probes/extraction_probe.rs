@@ -1,7 +1,9 @@
 use super::{ProbeName, ProbeOutcome, ProbeResult};
 use crate::{
-    extract, source,
-    store::{Store, decode_path, extraction_cache_version},
+    extract,
+    path_codec::decode_path,
+    source,
+    store::{Store, extraction_cache_version},
 };
 use anyhow::Result;
 use rusqlite::OptionalExtension;

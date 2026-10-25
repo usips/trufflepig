@@ -7,7 +7,7 @@ use crate::{
         board_protocol::{BoardError, BoardOp, BoardReply, BoardRequest},
         local_board::LocalBoard,
     },
-    daemon::deadline::QueryDeadline,
+    query_deadline::QueryDeadline,
 };
 use anyhow::{Result, bail};
 #[cfg(test)]

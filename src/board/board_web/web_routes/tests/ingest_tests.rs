@@ -81,7 +81,7 @@ fn rerun_after_a_slow_first_scan_still_succeeds() {
     );
     let runtime = fixture._directory.path().join("runtime");
     std::fs::create_dir_all(&runtime).unwrap();
-    let socket = runtime.join(crate::daemon::SOCKET_NAME);
+    let socket = runtime.join(crate::daemon_transport::SOCKET_NAME);
     let board_db = fixture.config.db_path.to_string_lossy().into_owned();
     // Fake router: instant status probes, a slow first scan, a faster rerun.
     // Under one inherited budget the rerun's work cannot fit what the first

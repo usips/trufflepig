@@ -3,7 +3,7 @@ use super::{
     BoardCommand,
     board_text_transport::{BoardTextPayload, command_text},
 };
-use crate::cli::Arguments;
+use crate::board::board_grammar::BoardArguments;
 use anyhow::{Result, bail};
 
 mod board_command_parser;
@@ -17,7 +17,7 @@ use board_command_parser::parse_board;
 use board_feedback_parser::parse_feedback;
 
 /// Parse board/feedback words without reading client-owned files.
-pub fn parse(options: &Arguments, body: Option<&str>) -> Result<BoardCommand> {
+pub fn parse(options: &BoardArguments, body: Option<&str>) -> Result<BoardCommand> {
     let verb = options.words.first().map(String::as_str);
     options.board.validate_for_verb(verb)?;
     validate_board_surface(options)?;
@@ -69,22 +69,12 @@ pub fn parse(options: &Arguments, body: Option<&str>) -> Result<BoardCommand> {
 }
 
 /// Reject source-search options on board command surfaces.
-pub(crate) fn validate_board_surface(options: &Arguments) -> Result<()> {
-    for (flag, present) in [
-        ("sem", options.sem),
-        ("no-sem", options.no_sem),
-        ("rerank", options.rerank),
-        ("no-rerank", options.no_rerank),
-        ("member", options.member.is_some()),
-        ("cache", options.cache.is_some()),
-        ("no-cache", options.no_cache),
-    ] {
-        if present {
-            bail!(coded!(
-                InvalidOptions,
-                "--{flag} is not valid for a board command"
-            ));
-        }
+pub(crate) fn validate_board_surface(options: &BoardArguments) -> Result<()> {
+    if let Some(flag) = options.search_flag {
+        bail!(coded!(
+            InvalidOptions,
+            "--{flag} is not valid for a board command"
+        ));
     }
     Ok(())
 }

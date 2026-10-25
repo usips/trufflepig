@@ -1,5 +1,5 @@
 use super::*;
-use crate::diagnostics::{Operation, RequestContext};
+use crate::{diagnostics::Operation, request_context::RequestContext};
 use serde_json::json;
 
 #[test]

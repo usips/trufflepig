@@ -81,7 +81,7 @@ fn exhausted_busy_fallback_reads_current_source_from_the_requested_root() {
         "show".to_owned(),
         "path:src/lib.rs".to_owned(),
     ];
-    let context = crate::diagnostics::RequestContext::new(
+    let context = crate::request_context::RequestContext::new(
         Some("fallback-session".to_owned()),
         Some("codex".to_owned()),
     );
@@ -91,7 +91,7 @@ fn exhausted_busy_fallback_reads_current_source_from_the_requested_root() {
         .run_after_busy_exhaustion(
             &arguments,
             &context,
-            crate::daemon::deadline::QueryDeadline::after(Duration::from_secs(5)),
+            crate::query_deadline::QueryDeadline::after(Duration::from_secs(5)),
         )
         .expect("current path show should be eligible")
         .unwrap();
@@ -128,7 +128,7 @@ fn current_path_show_survives_refused_daemon_cache_creation() {
         "path:src/lib.rs".to_owned(),
     ];
     let options = parse(&arguments).unwrap();
-    let context = crate::diagnostics::RequestContext::new(
+    let context = crate::request_context::RequestContext::new(
         Some("startup-fallback".to_owned()),
         Some("codex".to_owned()),
     );
@@ -136,7 +136,7 @@ fn current_path_show_survives_refused_daemon_cache_creation() {
     let response = super::super::direct_with_deadline(
         &options,
         &context,
-        crate::daemon::deadline::QueryDeadline::after(Duration::from_secs(5)),
+        crate::query_deadline::QueryDeadline::after(Duration::from_secs(5)),
     )
     .unwrap();
     let response: serde_json::Value = serde_json::from_str(&response).unwrap();
@@ -163,14 +163,14 @@ fn exhausted_busy_fallback_keeps_the_original_expired_deadline() {
         "show".to_owned(),
         "path:missing.rs".to_owned(),
     ];
-    let context = crate::diagnostics::RequestContext::new(None, None);
+    let context = crate::request_context::RequestContext::new(None, None);
 
     let mut command = ClientCommand::default();
     let error = command
         .run_after_busy_exhaustion(
             &arguments,
             &context,
-            crate::daemon::deadline::QueryDeadline::after(Duration::ZERO),
+            crate::query_deadline::QueryDeadline::after(Duration::ZERO),
         )
         .expect("current path show should be eligible")
         .unwrap_err();
@@ -203,7 +203,7 @@ fn cache_refusal_fallback_requires_an_exact_code_and_current_path_show() {
         .with_coded_context(|| coded!(TimedOut, "enclosing request expired"));
     assert!(index_cache_fallback_options(&eligible, &nested_timeout).is_none());
 
-    let typed_timeout = anyhow::Error::new(crate::daemon::DaemonReplyTimeout::new(
+    let typed_timeout = anyhow::Error::new(crate::daemon_transport::DaemonReplyTimeout::new(
         Duration::from_millis(5),
         Duration::from_millis(5),
     ))

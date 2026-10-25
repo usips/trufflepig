@@ -4,7 +4,7 @@
 //! freed pages to the filesystem.
 
 use super::{commit, execute_sql};
-use crate::daemon::deadline::QueryDeadline;
+use crate::query_deadline::QueryDeadline;
 use anyhow::Result;
 use rusqlite::{Connection, Transaction, TransactionBehavior};
 

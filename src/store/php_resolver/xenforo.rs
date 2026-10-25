@@ -315,7 +315,7 @@ fn addon_location(path: &str, suffix: &str) -> Option<(String, String)> {
     {
         return None;
     }
-    let decoded = crate::store::decode_path(tail).ok()?;
+    let decoded = crate::path_codec::decode_path(tail).ok()?;
     let id = decoded.to_str()?.to_owned();
     Some((id, format!("src/addons/{tail}")))
 }

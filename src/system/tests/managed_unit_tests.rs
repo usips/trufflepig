@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_fixtures::env_lookup;
 use std::{
     cell::{Cell, RefCell},
     collections::VecDeque,
@@ -108,14 +109,14 @@ fn unit_system_dir_takes_the_last_assignment_and_empty_resets_the_list() {
 fn unit_path_prefers_an_absolute_xdg_config_home_then_home() {
     let unit = managed_unit::UNIT_NAME;
     assert_eq!(
-        managed_unit::unit_path_from(lookup(&[
+        managed_unit::unit_path_from(env_lookup(&[
             ("XDG_CONFIG_HOME", "/xdg"),
             ("HOME", "/home/josh"),
         ])),
         Some(PathBuf::from(format!("/xdg/systemd/user/{unit}")))
     );
     assert_eq!(
-        managed_unit::unit_path_from(lookup(&[
+        managed_unit::unit_path_from(env_lookup(&[
             ("XDG_CONFIG_HOME", "relative/config"),
             ("HOME", "/home/josh"),
         ])),
@@ -123,7 +124,7 @@ fn unit_path_prefers_an_absolute_xdg_config_home_then_home() {
             "/home/josh/.config/systemd/user/{unit}"
         )))
     );
-    assert_eq!(managed_unit::unit_path_from(lookup(&[])), None);
+    assert_eq!(managed_unit::unit_path_from(env_lookup(&[])), None);
 }
 
 #[test]
@@ -357,7 +358,7 @@ fn systemctl_command_drains_output_while_waiting() {
 
 #[test]
 fn systemctl_command_bounds_descendant_pipe_and_reaps_owned_child() {
-    let scratch = crate::board::board_test_support::scratch("systemctl-deadline-");
+    let scratch = crate::test_fixtures::scratch("systemctl-deadline-");
     let pid_path = scratch.path().join("parent-pid");
     let marker_path = scratch.path().join("descendant-survived");
     let mut command = Command::new("sh");
@@ -402,7 +403,7 @@ fn systemctl_command_bounds_descendant_pipe_and_reaps_owned_child() {
 
 #[test]
 fn systemctl_command_kills_and_reaps_owned_child_when_deadline_expires() {
-    let scratch = crate::board::board_test_support::scratch("systemctl-child-");
+    let scratch = crate::test_fixtures::scratch("systemctl-child-");
     let pid_path = scratch.path().join("pid");
     let mut command = Command::new("sh");
     command

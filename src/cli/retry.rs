@@ -2,8 +2,8 @@
 use super::Arguments;
 use crate::board::board_protocol::{BoardError, BoardErrorCode};
 use crate::coded_error::{CodedError, ErrorCode};
-use crate::daemon::{DaemonReplyTimeout, deadline::QueryDeadline};
-use crate::diagnostics::RequestContext;
+use crate::request_context::RequestContext;
+use crate::{daemon_transport::DaemonReplyTimeout, query_deadline::QueryDeadline};
 use anyhow::Result;
 use std::io::ErrorKind;
 use std::time::{Duration, Instant};
@@ -274,7 +274,7 @@ pub(super) fn run_with_retry(
     context: &RequestContext,
 ) -> Result<String> {
     let read_deadline = (RetryScope::for_options(options) == RetryScope::Read)
-        .then(|| QueryDeadline::after(crate::daemon::CLIENT_REPLY_WAIT));
+        .then(|| QueryDeadline::after(crate::daemon_transport::CLIENT_REPLY_WAIT));
     run_with_retry_deadline(args, options, context, read_deadline)
 }
 
@@ -291,7 +291,7 @@ fn run_with_retry_deadline(
         && options.words.get(1).is_some_and(|word| word == "web");
     let args = if options.is_board() && !is_web {
         let parsed = super::parse(args)?;
-        prepared = crate::board::prepare_client(args, &parsed)?;
+        prepared = super::board_request_bridge::board_forwarded_args(&parsed)?;
         prepared.as_slice()
     } else {
         args

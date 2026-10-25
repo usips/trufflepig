@@ -77,14 +77,14 @@ pub(crate) struct WebStore {
 
 impl WebStore {
     fn open(cache: BoardConfigCache) -> Result<Self> {
-        let runtime = crate::system::dir()
+        let runtime = crate::runtime_paths::system_dir()
             .with_coded_context(|| coded!(BoardUnavailable, "no router runtime directory"))?;
         Self::open_at(cache, runtime)
     }
 
     fn open_at(mut cache: BoardConfigCache, runtime: PathBuf) -> Result<Self> {
         let config = cache.get(Instant::now())?;
-        crate::system::validate_board_database(&runtime, &config.db_path)?;
+        crate::board::board_runtime_markers::validate_board_database(&runtime, &config.db_path)?;
         web_ops::check_router_identity(&runtime, &config.db_path)?;
         let writer = LocalBoard::open(&config)?;
         let readers = ReaderPool::new(&config)?;
@@ -99,8 +99,11 @@ impl WebStore {
 
     fn config(&self, expires: Instant) -> Result<BoardConfig, BoardError> {
         let config = lock_until(&self.config, expires)?.get(Instant::now())?;
-        crate::system::validate_board_database(&self.runtime, &config.db_path)
-            .map_err(BoardError::from)?;
+        crate::board::board_runtime_markers::validate_board_database(
+            &self.runtime,
+            &config.db_path,
+        )
+        .map_err(BoardError::from)?;
         Ok(config)
     }
 
@@ -111,7 +114,7 @@ impl WebStore {
     ) -> Result<Vec<ResolvedProject>, BoardError> {
         let config = self.config(expires)?;
         let mut projects = lock_until(&self.projects, expires)?;
-        let deadline = crate::daemon::deadline::QueryDeadline::after(
+        let deadline = crate::query_deadline::QueryDeadline::after(
             expires.saturating_duration_since(Instant::now()),
         );
         projects.resolve(&config, host, deadline)

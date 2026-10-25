@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::{ActorOrigin, ReadScope};
+use crate::board::board_protocol::ReadScope;
 
 #[test]
 fn event_batches_return_stored_claim_snapshots_without_entry_joins() {

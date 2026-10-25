@@ -2,13 +2,17 @@ use super::*;
 use crate::board::{
     board_actor::BoardActor,
     board_backend::BoardBackend,
-    board_protocol::{ActorOrigin, BoardOp, BoardRequest, BoardResult},
+    board_protocol::{BoardOp, BoardRequest, BoardResult},
     board_vocabulary::{PlanText, PlanTitle},
     local_board::LocalBoard,
 };
 
 fn reply_timeout() -> anyhow::Error {
-    crate::daemon::DaemonReplyTimeout::new(Duration::from_secs(30), Duration::from_secs(30)).into()
+    crate::daemon_transport::DaemonReplyTimeout::new(
+        Duration::from_secs(30),
+        Duration::from_secs(30),
+    )
+    .into()
 }
 
 fn capability_status(database: &Path) -> String {
@@ -165,7 +169,7 @@ fn client_post_key_matches_the_actual_host_receipt_with_claims_and_origin() {
     let context = RequestContext::with_origin(
         Some("receipt-integration".into()),
         Some("human".into()),
-        Some(ActorOrigin::from_actor(&actor)),
+        Some(actor.origin()),
     );
     let words = [
         "board".to_owned(),
@@ -174,7 +178,7 @@ fn client_post_key_matches_the_actual_host_receipt_with_claims_and_origin() {
         "note".to_owned(),
         "host-shaped request".to_owned(),
     ];
-    let mut options = crate::cli::parse(&words).unwrap();
+    let mut options = crate::board::board_test_support::parse_board_arguments(&words).unwrap();
     options.root = directory.path().to_path_buf();
     options.board.agent_model = Some("gpt-6-luna".into());
     options.board.agent_effort = Some("xhigh".into());
@@ -192,7 +196,8 @@ fn client_post_key_matches_the_actual_host_receipt_with_claims_and_origin() {
     .unwrap();
 
     let receipt_words = ["board".to_owned(), "receipt".to_owned(), key.to_string()];
-    let mut receipt_options = crate::cli::parse(&receipt_words).unwrap();
+    let mut receipt_options =
+        crate::board::board_test_support::parse_board_arguments(&receipt_words).unwrap();
     receipt_options.root = directory.path().to_path_buf();
     let result = host
         .run(
@@ -210,14 +215,14 @@ fn client_post_key_matches_the_actual_host_receipt_with_claims_and_origin() {
     let other_actor = BoardActor::new(
         "test",
         "localhost",
-        crate::board::board_actor::HarnessLabel::parse("codex").unwrap(),
+        crate::request_context::HarnessLabel::parse("codex").unwrap(),
         "other-session",
     )
     .unwrap();
     let other_context = RequestContext::with_origin(
         Some("other-session".into()),
         Some("codex".into()),
-        Some(ActorOrigin::from_actor(&other_actor)),
+        Some(other_actor.origin()),
     );
     let hidden = host
         .run(
