@@ -19,6 +19,7 @@ semantic retrieval requires an explicit `--sem` request.
 - [Authoritative storage and publication](index-contract.md)
 - [Index database revision, recovery, and reclamation](index-storage-contract.md)
 - [Cache ownership, daemon lifecycle, and transport](runtime-contract.md)
+- [Router binary replacement, read fallback, and daemon placement](router-lifecycle.md)
 - [Plan revisions, task claims, commit links, and storage](board-contract.md)
 - [Board and feedback command grammar](board-cli-contract.md)
 - [Feedback filing, triage, and the durable outbox](board-feedback-contract.md)

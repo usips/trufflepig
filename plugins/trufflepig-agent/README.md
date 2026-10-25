@@ -76,11 +76,12 @@ trufflepig-audit --harness codex --since 1 --json
 
 ## Runtime recovery and upgrades
 
-A daemon rejecting a flag such as `--format` while direct execution accepts it
-indicates a client/daemon mismatch. Reinstall the binary and restart the router
-**and its children**. The supplied unit uses `KillMode=control-group`; installer
-reloads that policy before stopping the old service. Detached daemons started
-outside the service require explicit shutdown in their owning root/workspace:
+A daemon rejecting a flag such as `--format` while direct execution accepts it indicates a
+client/daemon mismatch. Reinstall the binary and restart the router **and its children**
+(`KillMode=control-group`; the installer reloads it before stopping the old service). The unit
+router restarts itself and its daemons once a replaced binary settles, and keeps spawned daemons
+in a low-weight slice ([router lifecycle](../../docs/router-lifecycle.md)). Detached daemons
+started outside the service require explicit shutdown in their owning root/workspace:
 
 ```sh
 trufflepig --no-workspace --root /path/to/repository stop
