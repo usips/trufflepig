@@ -2,11 +2,11 @@
 
 `<cache>/index.sqlite3` is a rebuildable cache of the working tree. Publication
 semantics are in the [index contract](index-contract.md); this document covers the
-database file itself (`src/store/live_index.rs`, `src/store/schema.rs`).
+database file itself (`crates/tp-index/src/store/live_index.rs`, `crates/tp-index/src/store/schema.rs`).
 
 ## Schema revision
 
-`PRAGMA user_version` holds `src/store/schema.rs:INDEX_SCHEMA_REVISION`. Bump it
+`PRAGMA user_version` holds `crates/tp-index/src/store/schema.rs:INDEX_SCHEMA_REVISION`. Bump it
 on any table, column, or index change. There are no migrations:
 
 - The writer (`Store::open`) creates the schema in an empty database and stamps
@@ -17,7 +17,7 @@ on any table, column, or index change. There are no migrations:
   it, opening answers `index_warming` and leaves the file untouched.
 - Readers (`Store::open_read`) answer `index_warming` for another revision.
 - A worktree seed stamps its staged database with the same revision
-  (`src/store/seed.rs`).
+  (`crates/tp-index/src/store/seed.rs`).
 
 New databases use `auto_vacuum=INCREMENTAL`; a discarded database gets one
 `VACUUM` after its tables are dropped, which also returns its old pages.
@@ -37,14 +37,14 @@ quarantine, never by repair:
 - A held lease leaves a corrupt file in place; its writer recovers it.
 
 Selected-cache refusals (read-only or unopenable caches) are separate; see
-`src/store/cache_access.rs`. Retained checkpoint corruption follows
-`src/store/index_checkpoint/checkpoint_storage.rs:is_disposable_stage_error`.
+`crates/tp-index/src/store/cache_access.rs`. Retained checkpoint corruption follows
+`crates/tp-index/src/store/index_checkpoint/checkpoint_storage.rs:is_disposable_stage_error`.
 
 ## Unchanged files
 
 `files` records each file's `stat_size`, `stat_mtime_ns`, `stat_ctime_ns`,
-`stat_inode`, and `stat_device` (`src/store/scan/file_stat.rs`). A pass first walks
-and stats the tree (`src/store/scan/tree_observation.rs`): a file whose stat equals
+`stat_inode`, and `stat_device` (`crates/tp-index/src/store/scan/file_stat.rs`). A pass first walks
+and stats the tree (`crates/tp-index/src/store/scan/tree_observation.rs`): a file whose stat equals
 the recorded one keeps its published revision without being read or hashed. Other
 files are read and hashed, holding at most 16 MiB before staging. When every file
 matches the publication and the fingerprint is unchanged, the pass stages and
@@ -66,7 +66,7 @@ order by row id. Every file's facts are staged, reusing the published extraction
 for a revision that stands. Bytes, extraction cache rows, and regions are staged
 only for files listed in the staged-only `restaged` table: a new or changed
 revision, or every file when the live `regions_contract` meta differs from
-`src/store/regions.rs:contract`. Published bytes of the other revisions are then
+`crates/tp-index/src/store/regions.rs:contract`. Published bytes of the other revisions are then
 copied from the live index, so resolvers read the complete tree. The pass creates
 the secondary indexes after the scan and before resolution. Inserts reuse
 statements compiled once per connection.
@@ -84,7 +84,7 @@ dependents would duplicate each resolver's lookup rules and drift with them.
 ## Publication storage
 
 An index holding no files receives every staged row by explicit column names,
-ids included. Otherwise publication diffs (`src/store/publish/publication_diff.rs`):
+ids included. Otherwise publication diffs (`crates/tp-index/src/store/publish/publication_diff.rs`):
 
 - Files pair by path; a path keeps its `files.id`, and an added path gets a fresh id.
 - A file whose definition sequence is unchanged keeps its definition ids. Otherwise
@@ -127,8 +127,8 @@ corrupts the WAL; the next reconcile republishes it.
 
 ## Extraction cache identity
 
-Durable extractions key on `src/store/scan.rs:extraction_cache_version`: the
+Durable extractions key on `crates/tp-index/src/store/scan.rs:extraction_cache_version`: the
 extraction contract revision plus the locked versions of every `tree-sitter*`
-crate, which `build.rs` reads from `Cargo.lock` into
-`TRUFFLEPIG_GRAMMAR_VERSIONS`. Other dependency changes keep cached facts. Bump
+crate, which `crates/tp-index/build.rs` reads from the workspace `Cargo.lock`
+into `TRUFFLEPIG_GRAMMAR_VERSIONS`. Other dependency changes keep cached facts. Bump
 `EXTRACTION_CONTRACT_REVISION` for any extractor change.

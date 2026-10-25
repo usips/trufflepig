@@ -12,7 +12,7 @@ determinism claim for a fixed model and provider.
 
 `re:<pattern>` searches live files. Path, language, and kind filters apply before
 result limits, and every lane and live walk shares one path matcher
-([`PathFilter`](../src/search/path_filter.rs)). Values are percent-encoded like
+([`PathFilter`](../crates/tp-index/src/search/path_filter.rs)). Values are percent-encoded like
 indexed paths (`file:café/` and `file:caf%C3%A9/` agree). A bare `%` is encoded as
 a literal percent; valid `%HH` escapes are accepted case-insensitively, so use
 `%25` when a literal percent precedes two hex digits. A `file:` value matches the
@@ -71,7 +71,7 @@ errors, never an alias to a newer set. Retention is bounded by 32 MiB total,
 records its payload size, so eviction never rereads payloads, and a save that
 removes sets returns up to 1,024 free pages to the filesystem. `results.sqlite3`
 is a versioned cache: an opener that finds another `user_version` drops its sets
-and rebuilds the file (`src/results/result_set_store/result_set_schema.rs`).
+and rebuilds the file (`crates/tp-index/src/results/result_set_store/result_set_schema.rs`).
 
 Reference targets and candidates carry explicit path, revision, and byte spans.
 A page may shorten a candidate list while reporting `candidates_total` and
@@ -115,7 +115,7 @@ control bytes, and non-ASCII bytes. `show` reports invalid source bytes as
 Output never injects ANSI control sequences through repository text. The CLI
 emits one JSON object plus newline by default; `--json` accepts that same format.
 `--format lines` selects the tab-separated renderer for result pages and `show`
-(`src/results/result_lines.rs`, `src/source/show_lines.rs`); it carries the same handles,
+(`crates/tp-index/src/results/result_lines.rs`, `crates/tp-index/src/source/show_lines.rs`); it carries the same handles,
 paths, line spans, cursors, and truncation flags with a one-line coverage summary,
 keeps byte-escaped text verbatim, and never applies to errors or other verbs.
 

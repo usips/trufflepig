@@ -36,6 +36,31 @@ These documents specify required behavior. Executable tests and evaluation
 reports establish what the implementation actually verifies; a requirement alone
 is not evidence of support or measured performance.
 
+## Workspace crates
+
+The repository root is the `trufflepig` binary package and the Cargo workspace.
+Library crates live under `crates/`; each depends only on crates listed before it.
+
+| Crate | Owns | Workspace dependencies |
+| --- | --- | --- |
+| `tp-extract` | tree-sitter and DreamMaker extraction | none |
+| `tp-core` | error codes, identities, output, deadlines, request context, process, Git and spool transport, build identity | none |
+| `tp-semantic` | embeddings, rerank, the inference worker; `semantic` and `semantic-cuda` features | `tp-core` |
+| `tp-index` | store, publication, sources, search, results, semantic preparation, probes | `tp-core`, `tp-extract`, `tp-semantic` |
+| `tp-history` | Git history, blame, and source diffs | `tp-core`, `tp-extract`, `tp-index` |
+| `tp-board` | plan board, feedback, board web UI and its assets | `tp-core` |
+| `trufflepig` (root) | `cli`, `daemon`, `system`, `workspace`, `diagnostics`, `main.rs` | all of the above |
+
+The root package forwards `semantic` and `semantic-cuda` to `tp-index` and
+`tp-semantic`. Each library exposes only what other crates use; helpers that
+other crates' tests need sit behind that crate's `test-support` feature, which
+dependents enable through `[dev-dependencies]`. The root `build.rs` hashes every
+workspace source into the build id, and `src/cli/emission.rs:execute` installs
+it as `crates/tp-core/src/build_identity.rs:BuildIdentity` at startup, so
+libraries read it at runtime and do not rebuild on unrelated edits.
+`crates/tp-index/build.rs` derives the extraction-cache grammar versions from
+the workspace `Cargo.lock`.
+
 ## Scope boundaries
 
 Repository content is data, never executable instructions. Trufflepig does not

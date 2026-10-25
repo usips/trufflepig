@@ -7,10 +7,10 @@ query and options determine the order ([retrieval contract](retrieval-contract.m
 
 Ordinary queries collapse each retrieval lane to its first region per file
 before a 1,000-file lane cap. Lanes run in this order
-([`concept_query`](../src/search/concept_query.rs)):
+([`concept_query`](../crates/tp-index/src/search/concept_query.rs)):
 
 - exact definitions of the whole text; for `A::b`, the definitions of `b`
-  that `sym:A::b` resolves ([`qualified_name`](../src/search/qualified_name.rs));
+  that `sym:A::b` resolves ([`qualified_name`](../crates/tp-index/src/search/qualified_name.rs));
 - identifier occurrences: for a single identifier-shaped token (with `_`,
   `::`, a lower-to-upper case change, or letters and digits), files with an
   occurrence of that name (for `A::b`, of `b` in files that also use `A`), most
@@ -42,7 +42,7 @@ phrase lane alone.
 A path prior multiplies each lane contribution of test paths and Markdown
 files (including `AGENTS.md`, `CLAUDE.md`) by 0.7: a demoted file at lane rank
 `r` scores like an undemoted one at rank `1.43r + 26`. A test path
-([`path_class`](../src/search/path_class.rs)) has a `tests/`, `__tests__/`,
+([`path_class`](../crates/tp-index/src/search/path_class.rs)) has a `tests/`, `__tests__/`,
 `spec/` or `testdata/` directory, or a `test/` one not followed by `src/`; a
 `tests` or `*_tests` stem; a `.test.` or `.spec.` name; or is `*_test.go`,
 `*_test.py`, `test_*.py` or `*_spec.rb`. Bare `test` stems, other `*_test`
@@ -52,7 +52,7 @@ when the query names tests (`test`, `tests`, `testing`, `spec`, `fixture`) or a
 (`doc`, `docs`, `documentation`, `readme`, `markdown`, `md`, `agents`,
 `claude`, `guide`), sets `lang:text`, or `file:` selects a doc path or `docs/`.
 `kind:file` queries and, outside identifier queries, files whose basename holds
-every query term are never demoted ([`path_prior`](../src/search/path_prior.rs));
+every query term are never demoted ([`path_prior`](../crates/tp-index/src/search/path_prior.rs));
 demoted files remain eligible. Semantic file ranks then fuse with the combined
 ranking at equal weight, the prior applying once to them and the identifier
 tiers holding; literal queries skip them. After the current-source check, an

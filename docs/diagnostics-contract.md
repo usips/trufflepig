@@ -103,7 +103,7 @@ full-span evidence rule belongs to the [navigation replay](navigation-evaluation
 ## Error codes
 
 Failures render as `code: message`: a stable snake_case code, then human text.
-`ErrorCode` in `src/coded_error/error_code_inventory.rs` lists every code.
+`ErrorCode` in `crates/tp-core/src/coded_error/error_code_inventory.rs` lists every code.
 Producers raise a `CodedError` with `coded!` and attach one as context with
 `CodedContext::with_coded_context`, which keeps the code visible through wrapping
 errors; `{error:#}` renders exactly as plain anyhow context would.
@@ -136,6 +136,6 @@ a detached HEAD is `symbolic-ref -q` exit 1, and only Git's `LC_ALL=C` "not a gi
 repository" fatal message is read as text. Other text reads are third-party
 wording with no typed form: SQLite schema and FTS5 syntax faults, board storage
 access, OS errno text relayed to client retry, semantic worker runtime failures,
-and serialized coverage reasons. `src/coded_error/text_match_guard.rs` lists the
+and serialized coverage reasons. `crates/tp-core/src/coded_error/text_match_guard.rs` lists the
 ones its test would flag; the test rejects new rendered-text branches and
 plain-text codes.

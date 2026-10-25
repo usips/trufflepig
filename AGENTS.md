@@ -11,8 +11,9 @@ obsolete paths instead of preserving a bad design.
 ## Verification and commits
 
 - Start with the narrowest relevant test, for example
-  `cargo test <name_substring>`. Expand verification when the change
-  crosses boundaries or leaves uncertainty.
+  `cargo test -p <crate> <name_substring>` (crates: `docs/DESIGN.md`).
+  Expand verification when the change crosses boundaries or leaves
+  uncertainty.
 - Run full suites sparingly, at meaningful checkpoints. Do not repeat
   broad checks without a new change, failure, or unresolved concern.
 - Add tests for meaningful behavior and regressions, not to mirror the

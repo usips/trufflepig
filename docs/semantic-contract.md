@@ -162,6 +162,9 @@ status commands.
 The worker begins loading each configured model (`model_dir`,
 `rerank_model_dir`) when it starts, on that model's executor thread, so the
 first query need not trigger a cold start and status answers meanwhile.
+Every request carries a handshake of protocol version, build id
+(`crates/tp-core/src/build_identity.rs:BuildIdentity`), configuration, and model
+fingerprint; the worker answers any other handshake with `handshake_mismatch`.
 
 `semantic worker status` reports whether the per-user worker is running, its
 selected provider and GPU identity, whether the model is loaded, and pending

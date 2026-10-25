@@ -4,7 +4,7 @@
 
 SQLite WAL with FTS5 (`<cache>/index.sqlite3`) holds source revisions, definitions,
 occurrences, relationships, and lexical documents. Immutable result sets use a separate
-`<cache>/results.sqlite3` (`src/results/result_set_store.rs`), so saving query results
+`<cache>/results.sqlite3` (`crates/tp-index/src/results/result_set_store.rs`), so saving query results
 never waits behind publication; the file's revision, recovery, and space are in the
 [storage lifecycle](index-storage-contract.md). Index-backed reads preflight the
 selected writable result cache before parent lookup. Occurrence identity is
@@ -48,7 +48,7 @@ windows, 4,096 observations, and 4 MiB of observation payloads. Sessions persist
 their own baseline fingerprints outside the replaceable live index; see [diagnostics](diagnostics-contract.md).
 
 An exclusive writer lease covers staging through publication. A checkpoint resumes
-only for a matching root, index contract, base epoch, and generation; mismatches reset (`src/store/index_checkpoint.rs`). A bounded slice commits its new extractions in batches of 250 ms or 256 files and at expiry; extractions served by the published index are reused, not copied. An unbounded reconcile reads retained extractions and writes none.
+only for a matching root, index contract, base epoch, and generation; mismatches reset (`crates/tp-index/src/store/index_checkpoint.rs`). A bounded slice commits its new extractions in batches of 250 ms or 256 files and at expiry; extractions served by the published index are reused, not copied. An unbounded reconcile reads retained extractions and writes none.
 
 Parsing cancellation retains lexical coverage and a parse-failure status. It
 publishes no structural facts represented as freshly parsed. The parser is reset
@@ -57,9 +57,9 @@ separately labeled and cannot strengthen resolver certainty.
 
 Only committed generations are queryable. A reader holds one snapshot through
 candidate retrieval and graph joins. Readers are query-only
-(`src/store/read_access.rs:open_read`): they open the index read-only, run no
+(`crates/tp-index/src/store/read_access.rs:open_read`): they open the index read-only, run no
 schema or metadata writes, wait at most 2 s on a lock, and are interrupted when
-the request's 20 s query deadline (`src/query_deadline.rs`) expires, answering
+the request's 20 s query deadline (`crates/tp-core/src/query_deadline.rs`) expires, answering
 `timed_out`; inline work uses that original deadline without pausing it. A missing
 index or generation 0 answers `index_warming`. Only indexing, sessions, and the
 reconciler open the writer (`Store::open`). A reader
@@ -76,7 +76,7 @@ hashes each file once and at most 128 files (`home_index/hit_verification.rs`).
 Plain and `sym:` searches re-run normal retrieval against at most 64 changed
 files without publishing an index. Parent fallback also examines divergent
 files and refreshes discovery on a miss; own-index reads verify returned
-candidates (`src/search/current_candidate_reads.rs`). Removed matches disappear;
+candidates (`crates/tp-index/src/search/current_candidate_reads.rs`). Removed matches disappear;
 current references, lexical evidence, and snippets retain current coordinates.
 Unchecked or unextractable paths make coverage partial and truncated. Stale
 semantic candidates become current-source representatives with semantic coverage
@@ -85,11 +85,11 @@ marked unverified. Current-byte hits never differ; re-read files count as differ
 failed extraction can serve parent bytes with `verified: false` and `source: parent_index`.
 Through a root's own index, a stale `sym:` read waits up to 3 s for a daemon
 republish, then answers from current bytes with `freshness: unpublished`
-(`src/source/acquisition/stale_symbol.rs`). Inline prep uses at most 2 s per
+(`crates/tp-index/src/source/acquisition/stale_symbol.rs`). Inline prep uses at most 2 s per
 root/member, reserving 250 ms from the original read deadline. A published root or
 verified parent view remains usable while the writer lease is held. Three consecutive eligible full
 slices that expire without saving new durable file facts report `maintenance_required` with `index`/`init` guidance
-(`src/store/index_deadline.rs`).
+(`crates/tp-index/src/store/index_deadline.rs`).
 
 ## Semantic preparation
 
@@ -111,7 +111,7 @@ generation, progress, cached inputs, missing inputs, and failures.
 Each canonical root has one daemon, protected by an exclusive startup lock and
 a length-prefixed JSON Unix socket protocol. Worktrees keep separate databases,
 seeded from the member's (or main checkout's) cache as a warm start
-(`src/store/seed.rs`): the seed copies content-addressed extraction facts and
+(`crates/tp-index/src/store/seed.rs`): the seed copies content-addressed extraction facts and
 embeddings but never a publication, so the first reconcile publishes generation 1
 for the worktree root. Workspace parent reads use the configured member cache under
 the selected workspace base; standalone parent reads use the main checkout's default
@@ -132,10 +132,10 @@ A per-user system daemon routes requests to the owning workspace coordinator or
 per-root daemon as a single endpoint agent harnesses can allowlist; see
 `src/system.rs`. It runs no watcher and no index: it starts the target daemon
 when missing and proxies the reply. Its socket lives in a per-user runtime
-directory (`src/runtime_paths.rs:system_dir`). Clients treat connect errors `NotFound`,
+directory (`crates/tp-core/src/runtime_paths.rs:system_dir`). Clients treat connect errors `NotFound`,
 `ConnectionRefused`, and `PermissionDenied` as "no daemon" and fall back
-(`src/daemon_transport.rs:unreachable`), first to the router's file spool
-(`src/daemon_transport/spool.rs`, directory `src/runtime_paths.rs:spool_dir`), which carries the
+(`crates/tp-core/src/daemon_transport.rs:unreachable`), first to the router's file spool
+(`crates/tp-core/src/daemon_transport/spool.rs`, directory `crates/tp-core/src/runtime_paths.rs:spool_dir`), which carries the
 same JSON request and reply bodies through atomically renamed files and is served
 by the router's workers. The frame protocol and its limits apply unchanged per
 hop; concurrency is in the [runtime contract](runtime-contract.md).
@@ -168,7 +168,7 @@ Sources containing NUL or exceeding the read cap remain file records with an
 exclusion reason. General current-source reads have a separate 16 MiB cap.
 Stage files live in the selected cache; completion clears progress and removes them, while interruptions may retain a valid checkpoint. The next writer lease holder or [router sweep](runtime-contract.md#cache-and-daemon) removes other stale stages.
 Progress (`scanning`, `finalizing`, `maintenance_required`) shows completed/reused counts and `index` guidance; status/pages/`more` refresh it from the verified root and selected cache.
-Saved results omit phases; refresh is read-only and skips seed/index (`src/workspace/result_cache/index_progress_source.rs`, `src/results/page.rs`, `src/workspace/result_cache.rs`).
+Saved results omit phases; refresh is read-only and skips seed/index (`src/workspace/result_cache/index_progress_source.rs`, `crates/tp-index/src/results/page.rs`, `src/workspace/result_cache.rs`).
 Result and embedding retention limits are in the [retrieval](retrieval-contract.md) and
 [semantic](semantic-contract.md) contracts. Measure cold and warm cost before changing
 storage architecture.

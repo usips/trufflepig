@@ -228,7 +228,8 @@ def benchmark(args) -> dict:
     frozen = freeze_inputs(args.selected_files, args.source_root, frozen_path)
     binary = args.binary
     if not args.no_build:
-        subprocess.run(["cargo", "build", "--release", "--features", "semantic-cuda", "--example", "semantic_benchmark"],
+        subprocess.run(["cargo", "build", "--release", "-p", "tp-semantic", "--features", "semantic-cuda",
+                        "--example", "semantic_benchmark"],
                        check=True, cwd=args.repo_root, timeout=args.build_timeout)
     if not binary.exists():
         raise RuntimeError(f"benchmark binary does not exist: {binary}")
