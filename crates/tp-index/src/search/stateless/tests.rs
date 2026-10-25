@@ -1,4 +1,5 @@
 mod filename_scan;
+mod page_budget;
 mod partial_scans;
 mod scoped_lookup;
 
