@@ -1,7 +1,7 @@
 use crate::coded_error::CodedContext;
 use crate::{
     cli::{Arguments, parse},
-    daemon::pool::{RequestClass, RequestLane},
+    request_pool::{RequestClass, RequestLane},
     search::Query,
     workspace::{config::WorkspaceConfig, member_root::MemberRoot},
 };

@@ -1,6 +1,6 @@
 //! Client side of the daemon wire: length-framed JSON over Unix sockets, a
 //! file spool for sandboxed clients, and the limits and waits that clients,
-//! forwarding daemons, and servers share. Servers live in `crate::daemon`.
+//! forwarding daemons, and servers share. Servers live in the `daemon` module.
 
 pub(crate) mod daemon_wire_protocol;
 pub(crate) mod socket_connect;

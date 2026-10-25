@@ -2,7 +2,6 @@
 //! beside one maintenance thread that reconciles filesystem updates.
 //! Clients reach them through `crate::daemon_transport`.
 
-pub(crate) mod pool;
 mod reconciler;
 mod server;
 #[cfg(test)]
@@ -18,7 +17,6 @@ use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 
-pub(crate) use pool::{PoolSize, RequestClass, RequestLane, RequestPool};
 pub use server::{AcceptedRequest, DaemonHandler};
 
 /// Serves a per-root index daemon: watches `root`, reconciles on the
@@ -28,7 +26,7 @@ pub fn serve(root: &Path, cache: &Path, handler: impl DaemonHandler) -> Result<(
     let profile = server::ServeProfile {
         name: "root",
         watching: true,
-        pool: pool::ROOT_POOL,
+        pool: crate::request_pool::ROOT_POOL,
         tier: server::AdmissionTier::Root,
         spool: None,
     };
@@ -40,7 +38,7 @@ pub fn serve_coordinator(root: &Path, cache: &Path, handler: impl DaemonHandler)
     let profile = server::ServeProfile {
         name: "coordinator",
         watching: false,
-        pool: pool::COORDINATOR_POOL,
+        pool: crate::request_pool::COORDINATOR_POOL,
         tier: server::AdmissionTier::Coordinator,
         spool: None,
     };
@@ -52,7 +50,7 @@ pub fn serve_router(dir: &Path, spool: &Path, handler: impl DaemonHandler) -> Re
     let profile = server::ServeProfile {
         name: "router",
         watching: false,
-        pool: pool::ROUTER_POOL,
+        pool: crate::request_pool::ROUTER_POOL,
         tier: server::AdmissionTier::Router,
         spool: Some(spool),
     };

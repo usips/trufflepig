@@ -17,6 +17,7 @@ pub mod probes;
 pub(crate) mod process_capture;
 pub mod query_deadline;
 pub mod request_context;
+pub mod request_pool;
 pub mod results;
 pub mod runtime_paths;
 pub mod search;

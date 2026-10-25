@@ -1,8 +1,8 @@
-use super::super::pool::{PoolSize, RequestClass, RequestLane, RequestPool};
 use super::AdmissionTier;
 use super::root_work_limits::{RootLimitRefusal, RootWorkLimits, RootWorkPermit};
 use super::semantic_fallback::SemanticAdmissionFallback;
 use crate::cli::{ClassifiedDaemonRequest, classify_daemon_request};
+use crate::request_pool::{PoolSize, RequestClass, RequestLane, RequestPool};
 use anyhow::{Result, anyhow, ensure};
 use std::path::PathBuf;
 use std::sync::Arc;

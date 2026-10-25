@@ -1,8 +1,8 @@
 use super::*;
 use crate::{
-    daemon::{RequestClass, RequestLane},
     query_deadline::QueryDeadline,
     request_context::RequestContext,
+    request_pool::{RequestClass, RequestLane},
     store::Store,
 };
 

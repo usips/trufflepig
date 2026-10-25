@@ -2,13 +2,13 @@
 //! Per-root permits limit expensive work while a maintenance thread runs beside requests.
 //! Panics become failures or stop the daemon without stranding accepted sockets.
 use super::DaemonSocket;
-use super::pool::{PoolSize, PoolSubmitCause, PooledJob, RequestClass, RequestLane};
 use super::reconciler::{self, Maintenance};
 use crate::coded_error::CodedContext;
 use crate::daemon_transport::daemon_wire_protocol::{self, DaemonReply, DaemonRequest};
 use crate::daemon_transport::spool::{ClaimedSpoolRequest, SpoolServer};
 use crate::query_deadline::QueryDeadline;
 use crate::request_context::RequestContext;
+use crate::request_pool::{PoolSize, PoolSubmitCause, PooledJob, RequestClass, RequestLane};
 use admission_refusal::{AdmissionRefusal, RefusalCause};
 use anyhow::{Context, Result};
 use ingress_frames::{
@@ -494,7 +494,7 @@ fn peer_disconnected(error: &anyhow::Error) -> bool {
 
 fn refusal_for_snapshot<'a>(
     pool: &'a str,
-    snapshot: super::pool::PoolSnapshot,
+    snapshot: crate::request_pool::PoolSnapshot,
     cause: PoolSubmitCause,
 ) -> AdmissionRefusal<'a> {
     let cause = match cause {

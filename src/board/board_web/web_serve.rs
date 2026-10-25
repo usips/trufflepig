@@ -13,7 +13,7 @@ use super::{
     web_ops, web_routes,
 };
 use crate::coded_error::CodedContext;
-use crate::daemon::{PoolSize, RequestPool};
+use crate::request_pool::{PoolSize, RequestPool};
 use anyhow::Result;
 use std::{
     io::{self, IsTerminal, Write},

@@ -91,7 +91,7 @@ before the socket closes, so the peer reads the refusal.
 An incomplete frame expires after 5 s with `timed_out: phase=reading_frame`;
 two ingress workers decode and classify complete frames, and classification may
 perform I/O (`src/daemon/server.rs`, `src/daemon/server/ingress_frames.rs`).
-Request work then enters bounded lanes (`src/daemon/pool.rs`,
+Request work then enters bounded lanes (`src/request_pool.rs`,
 `src/daemon/server/request_admission.rs`): query
 lanes have 16 router, 8 coordinator, and 4 root workers, each with a 64-request
 queue. Maintenance, regex, and semantic lanes have router widths/queues 16/32,

@@ -226,7 +226,10 @@ mod tests {
                 .is_none()
         );
         let classified = crate::cli::classify_daemon_request(&lexical_args).unwrap();
-        assert_eq!(classified.class.lane, crate::daemon::RequestLane::Query);
+        assert_eq!(
+            classified.class.lane,
+            crate::request_pool::RequestLane::Query
+        );
         assert!(classified.roots.is_empty());
     }
 

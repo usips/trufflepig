@@ -1,8 +1,8 @@
 use super::*;
 use crate::{
-    daemon::{RequestPool, pool::PooledJob},
     daemon_transport::request_by,
     query_deadline::QueryDeadline,
+    request_pool::{PooledJob, RequestPool},
 };
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
