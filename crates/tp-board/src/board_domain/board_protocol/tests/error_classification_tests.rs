@@ -142,6 +142,23 @@ fn typed_errors_preserve_domain_prefixes_and_database_lock_classification() {
 }
 
 #[test]
+fn coded_context_keeps_its_source_chain_in_the_board_message() {
+    use tp_core::coded_error::CodedContext;
+    let inner: anyhow::Result<()> =
+        Err(anyhow::anyhow!("permission denied").context("open marker"));
+    let error = BoardError::from(
+        inner
+            .with_coded_context(|| coded!(BoardUnavailable, "board marker unreadable"))
+            .unwrap_err(),
+    );
+    assert_eq!(error.code, BoardErrorCode::BoardUnavailable);
+    assert_eq!(
+        error.to_string(),
+        "board_unavailable: board marker unreadable: open marker: permission denied"
+    );
+}
+
+#[test]
 fn invalid_worker_is_a_domain_error() {
     let error = BoardError::from(anyhow::anyhow!(coded!(
         InvalidWorker,

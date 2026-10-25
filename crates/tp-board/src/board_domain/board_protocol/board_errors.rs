@@ -128,6 +128,19 @@ fn board_coded_error(error: &anyhow::Error) -> Option<(BoardErrorCode, &CodedErr
     })
 }
 
+/// A coded error's message after its code, followed by its source chain as
+/// `{error:#}` renders it, so `with_coded_context` keeps the inner failure.
+fn coded_message_with_sources(coded: &CodedError) -> String {
+    let mut message = coded.message().to_owned();
+    let mut cause = std::error::Error::source(coded);
+    while let Some(inner) = cause {
+        message.push_str(": ");
+        message.push_str(&inner.to_string());
+        cause = inner.source();
+    }
+    message
+}
+
 /// Constraint violations and datatype mismatches classify as invalid state;
 /// too-big storage keeps its distinct body code for CLI callers. Only
 /// contention maps to the locked code; corrupt, not-a-database, and other
@@ -159,7 +172,7 @@ impl From<anyhow::Error> for BoardError {
             return Self::new(sqlite_board_code(sqlite), format!("{error:#}"));
         }
         if let Some((code, coded)) = board_coded_error(&error) {
-            return Self::new(code, coded.message());
+            return Self::new(code, coded_message_with_sources(coded));
         }
         Self::new(BoardErrorCode::BoardUnavailable, format!("{error:#}"))
     }
