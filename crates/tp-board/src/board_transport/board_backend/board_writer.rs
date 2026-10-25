@@ -3,7 +3,9 @@
 use super::{BoardBackend, BoardHost};
 use crate::{
     board_ids::EventSeq,
-    board_protocol::{BoardError, BoardOp, BoardReply, BoardRequest},
+    board_protocol::{
+        BoardError, BoardOp, BoardReply, BoardRequest, BoardResult, ByeOutcome, ByeReply,
+    },
     local_board::LocalBoard,
 };
 use anyhow::{Result, bail};
@@ -112,6 +114,11 @@ impl BoardHost {
             reply.validate()?;
             return Ok(reply);
         }
+        if matches!(request.op, BoardOp::Bye)
+            && let Some(reply) = settled_bye(&config, request, deadline)
+        {
+            return Ok(reply);
+        }
         let (reply, seq) = {
             let mut backend = lock_before(&self.inner.backend, deadline, "writer")?;
             if backend.is_none() {
@@ -149,6 +156,31 @@ impl BoardHost {
         }
         Ok(reply)
     }
+}
+
+/// Answers a bye with nothing to end from a reader, so hook byes from sessions
+/// that never said hello neither take the writer nor create storage. Any read
+/// failure defers to the writer path.
+fn settled_bye(
+    config: &crate::BoardConfig,
+    request: &BoardRequest,
+    deadline: &QueryDeadline,
+) -> Option<BoardReply> {
+    if !config.db_path.exists() {
+        return Some(BoardReply::new(
+            format!("local:{}", config.db_path.display()),
+            BoardResult::Bye(ByeReply {
+                outcome: ByeOutcome::NoSession,
+                entry: None,
+                seq: None,
+            }),
+        ));
+    }
+    LocalBoard::open_read_with_timeout(config, deadline.cap(Duration::from_secs(5)))
+        .ok()?
+        .settled_bye(&request.actor)
+        .ok()
+        .flatten()
 }
 
 pub(super) struct BoardHostBackendAccess<'a>(pub(super) &'a BoardHost, pub(super) QueryDeadline);

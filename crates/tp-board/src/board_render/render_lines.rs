@@ -10,7 +10,9 @@ pub(super) use diff_lines::diff_lines;
 pub(super) use line_cells::{cell, footer, recipient};
 pub(super) use record_lines::{claim_line, entry_line};
 
-use crate::board_protocol::{BoardReceiptState, BoardResult, FeedbackVia, InboxWait};
+use crate::board_protocol::{
+    BoardReceiptState, BoardResult, ByeOutcome, ByeReply, FeedbackVia, InboxWait,
+};
 use line_cells::{author, source_suffix, vendor_suffix};
 use record_lines::{plan_lines, revision_lines};
 use std::fmt::Write;
@@ -134,6 +136,7 @@ pub(super) fn lines_result(result: &BoardResult) -> String {
         )
         .unwrap(),
         BoardResult::Cursor(seq) => writeln!(text, "cursor {seq}").unwrap(),
+        BoardResult::Bye(bye) => writeln!(text, "{}", bye_line(bye)).unwrap(),
         BoardResult::Change(change) => writeln!(
             text,
             "{} seq={} plan={} revision={} task={} deduplicated={}",
@@ -254,4 +257,20 @@ pub(super) fn lines_result(result: &BoardResult) -> String {
         }
     }
     text
+}
+
+/// One line that tells a fresh bye from a repeated or empty one; a repeat
+/// labels the original bye's cursor and reports that nothing was written.
+pub(super) fn bye_line(bye: &ByeReply) -> String {
+    match (bye.outcome, bye.entry, bye.seq) {
+        (ByeOutcome::Ended, Some(entry), Some(seq)) => {
+            format!("bye ended session {entry} cursor {seq}")
+        }
+        (ByeOutcome::Ended, ..) => "bye ended session".into(),
+        (ByeOutcome::AlreadyEnded, Some(entry), Some(seq)) => {
+            format!("bye already ended; original bye {entry} cursor {seq}; no new event")
+        }
+        (ByeOutcome::AlreadyEnded, ..) => "bye already ended; no new event".into(),
+        (ByeOutcome::NoSession, ..) => "bye no session; nothing to end".into(),
+    }
 }

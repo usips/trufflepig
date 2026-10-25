@@ -25,7 +25,7 @@ mod tests {
     fn board_api_capability_exits_before_dispatch_and_emission_diagnostics() {
         let args = ["--board-api-version".to_owned()];
         let expected = format!("{}\n", tp_board::board_protocol::BOARD_API);
-        assert_eq!(tp_board::board_protocol::BOARD_API, 13);
+        assert_eq!(tp_board::board_protocol::BOARD_API, 14);
         assert_eq!(crate::cli::run(&args).unwrap(), expected);
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();

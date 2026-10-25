@@ -559,9 +559,10 @@ fn worker_bye_stops_only_its_node_and_ends_its_lead_claims() {
     .unwrap();
 
     let first = write(&mut conn, &worker_actor, 1010, |tx, ctx| bye(tx, ctx)).unwrap();
-    let BoardResult::Cursor(first_cursor) = first.result else {
-        panic!("expected bye cursor")
+    let BoardResult::Bye(first_bye) = first.result else {
+        panic!("expected bye result")
     };
+    assert_eq!(first_bye.outcome, crate::board_protocol::ByeOutcome::Ended);
     let worker = worker_for_address(&conn, &address).unwrap().unwrap();
     assert_eq!(worker.record.state, Some(WorkerEndReason::Stopped));
     assert_eq!(worker.ended_at, Some(1010));
@@ -623,10 +624,17 @@ fn worker_bye_stops_only_its_node_and_ends_its_lead_claims() {
         .unwrap();
     assert_eq!(first_bye_events, 1);
     let second = write(&mut conn, &worker_actor, 1011, |tx, ctx| bye(tx, ctx)).unwrap();
-    let BoardResult::Cursor(second_cursor) = second.result else {
-        panic!("expected idempotent bye cursor")
+    let BoardResult::Bye(second_bye) = second.result else {
+        panic!("expected idempotent bye result")
     };
-    assert_eq!(second_cursor, first_cursor);
+    assert_eq!(
+        second_bye.outcome,
+        crate::board_protocol::ByeOutcome::AlreadyEnded
+    );
+    assert_eq!(
+        (second_bye.entry, second_bye.seq),
+        (first_bye.entry, first_bye.seq)
+    );
     let second_bye_events: i64 = conn
         .query_row("SELECT count(*) FROM events WHERE kind='bye'", [], |row| {
             row.get(0)

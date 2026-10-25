@@ -1,50 +1,75 @@
 //! Agent-session shutdown and its claim cleanup.
 
-use crate::board_protocol::BoardErrorCode;
-use rusqlite::{OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use super::super::super::{
-    BoardError, EntryDraft, WriteContext, insert_entry, insert_event, invalid, max_seq, row_number,
+    BoardError, EntryDraft, WriteContext, insert_entry, insert_event, lookup_actor, row_number,
     sql_error, sql_number,
 };
 use super::{active_bound_worker_for_actor, end_claim};
-use crate::board_ids::{EventSeq, TaskId};
-use crate::board_protocol::{BoardReply, BoardResult, ClaimEndReason, WorkerEndReason};
+use crate::board_actor::BoardActor;
+use crate::board_ids::{EntryId, EventSeq, TaskId};
+use crate::board_protocol::{
+    BoardReply, BoardResult, ByeOutcome, ByeReply, ClaimEndReason, WorkerEndReason,
+};
 use crate::board_vocabulary::{EntryKind, TaskColumn};
 
+/// The reply to a bye that writes nothing: the identity has no recorded session,
+/// or its session already ended. `None` means a live session must end.
+pub(in crate::local_board) fn settled_bye(
+    conn: &Connection,
+    actor: &BoardActor,
+) -> Result<Option<BoardReply>, BoardError> {
+    let Some(actor_id) = lookup_actor(conn, actor)? else {
+        return Ok(Some(bye_reply(ByeOutcome::NoSession, None)));
+    };
+    let ended_at: Option<Option<i64>> = conn
+        .query_row(
+            "SELECT ended_at FROM agent_sessions WHERE actor_id=?1",
+            [actor_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(sql_error)?;
+    match ended_at {
+        None => Ok(Some(bye_reply(ByeOutcome::NoSession, None))),
+        Some(None) => Ok(None),
+        Some(Some(_)) => {
+            let original = conn
+                .query_row(
+                    "SELECT id,seq FROM entries WHERE actor_id=?1 AND kind=?2 ORDER BY seq DESC LIMIT 1",
+                    params![actor_id, EntryKind::Bye.as_str()],
+                    |row| Ok((row_number(row, 0)?, row_number(row, 1)?)),
+                )
+                .optional()
+                .map_err(sql_error)?;
+            let original = original
+                .map(|(entry, seq)| Ok::<_, BoardError>((EntryId::new(entry)?, EventSeq::new(seq))))
+                .transpose()?;
+            Ok(Some(bye_reply(ByeOutcome::AlreadyEnded, original)))
+        }
+    }
+}
+
+fn bye_reply(outcome: ByeOutcome, bye: Option<(EntryId, EventSeq)>) -> BoardReply {
+    BoardReply::new(
+        "local",
+        BoardResult::Bye(ByeReply {
+            outcome,
+            entry: bye.map(|(entry, _)| entry),
+            seq: bye.map(|(_, seq)| seq),
+        }),
+    )
+}
+
+/// Ends the caller's live session; an ended session reports its original bye.
 pub(in crate::local_board) fn bye(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
 ) -> Result<BoardReply, BoardError> {
-    let ended_at: Option<i64> = tx
-        .query_row(
-            "SELECT ended_at FROM agent_sessions WHERE actor_id=?1",
-            [ctx.actor_id],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(sql_error)?
-        .ok_or_else(|| {
-            invalid(
-                BoardErrorCode::BoardUnavailable,
-                "agent session row is missing",
-            )
-        })?;
-    if ended_at.is_some() {
-        let previous_bye: Option<u64> = tx
-            .query_row(
-                "SELECT seq FROM events WHERE actor_id=?1 AND kind='bye' ORDER BY seq DESC LIMIT 1",
-                [ctx.actor_id],
-                |row| row_number(row, 0),
-            )
-            .optional()
-            .map_err(sql_error)?;
-        return Ok(BoardReply::new(
-            "local",
-            BoardResult::Cursor(EventSeq::new(previous_bye.unwrap_or(max_seq(tx)?.get()))),
-        ));
+    if let Some(settled) = settled_bye(tx, &ctx.actor)? {
+        return Ok(settled);
     }
-
     let bound_worker = active_bound_worker_for_actor(tx, ctx.actor_id)?;
     if let Some(worker) = &bound_worker {
         tx.execute(
@@ -120,5 +145,5 @@ pub(in crate::local_board) fn bye(
         None,
         &summary,
     )?;
-    Ok(BoardReply::new("local", BoardResult::Cursor(ctx.seq)))
+    Ok(bye_reply(ByeOutcome::Ended, Some((entry, ctx.seq))))
 }

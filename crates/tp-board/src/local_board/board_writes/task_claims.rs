@@ -18,7 +18,7 @@ pub(in crate::local_board) use claim_activity::{
 };
 pub(in crate::local_board) use claim_history::{active_claim, read_claims_window, read_tasks};
 use claim_holders::{claim_conflict, resolve_delegate};
-pub(in crate::local_board) use session_lifecycle::bye;
+pub(in crate::local_board) use session_lifecycle::{bye, settled_bye};
 pub(in crate::local_board) use worker_lifecycle::{
     add_worker, attach_worker_post, bind_worker, end_worker, end_workers_for_claim,
 };

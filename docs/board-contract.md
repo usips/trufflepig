@@ -52,7 +52,7 @@ planless feedback by the grantor's owner user; see [grants](board-cli-contract.m
 
 ## Backend, transport, and deadlines
 
-Every operation uses API 13 `BoardRequest` with actor, operation, claims, and optional client origin
+Every operation uses API 14 `BoardRequest` with actor, operation, claims, and optional client origin
 `{harness, session}`. Clients cannot supply `peer_ip`; only trusted web ingress records it.
 The client forwards origin unchanged; external `system` origins are rejected. The host independently
 validates progress heads and carries that trusted value outside
