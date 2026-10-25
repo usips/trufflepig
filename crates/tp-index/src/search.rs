@@ -31,7 +31,7 @@ pub use navigation::{
     reference_summary, references,
 };
 pub use path_filter::{BoundPathFilter, PathFilter};
-pub use rerank_window::{MergedRerank, RerankOutcome, RerankScorer};
+pub use rerank_window::{FinalRerank, RerankOutcome, RerankScorer};
 
 use concept_query::ConceptQuery;
 pub use current_bytes::{search_file as search_current_file, semantic_representative};

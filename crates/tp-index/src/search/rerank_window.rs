@@ -115,7 +115,7 @@ pub(super) fn apply(
 /// merged multi-root ranking, or a parent-index answer after its worktree
 /// recheck), as a single scorer request whose budget is the query deadline's
 /// remainder, capped by the worker's rerank deadline.
-pub struct MergedRerank<'a> {
+pub struct FinalRerank<'a> {
     pub query: &'a Query,
     /// Worker scheduling identity for the request.
     pub cache: &'a Path,
@@ -123,7 +123,7 @@ pub struct MergedRerank<'a> {
     pub deadline: &'a QueryDeadline,
 }
 
-impl MergedRerank<'_> {
+impl FinalRerank<'_> {
     /// Reorders the first [`RERANK_WINDOW`] items in place. `hit_of` exposes
     /// each item's hit and `store_of` the store holding its indexed body; items
     /// without either stay unscored. Returns the outcome and, per reordered

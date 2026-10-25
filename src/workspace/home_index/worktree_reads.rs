@@ -11,7 +11,7 @@ use tp_extract::Definition;
 use tp_index::{
     results::{Hit, ResultSet},
     search::{
-        BoundPathFilter, InvocationDirectory, MergedRerank, Query, RerankScorer,
+        BoundPathFilter, FinalRerank, InvocationDirectory, Query, RerankScorer,
         telemetry::RetrievalTrace,
     },
     source,
@@ -48,7 +48,7 @@ pub(super) struct WorktreeSymbols {
 
 /// The opt-in rerank of a standalone parent-index search, run after the
 /// worktree recheck so a replaced hit, whose revision has no indexed body in
-/// the parent, stays unscored ([`MergedRerank`]).
+/// the parent, stays unscored ([`FinalRerank`]).
 pub(crate) struct ParentRerank<'a> {
     pub scorer: &'a dyn RerankScorer,
     pub trace: &'a mut RetrievalTrace,
@@ -56,7 +56,7 @@ pub(crate) struct ParentRerank<'a> {
 
 impl ParentRerank<'_> {
     fn run(self, store: &Store, query: &Query, found: &mut ResultSet, deadline: &QueryDeadline) {
-        let rerank = MergedRerank {
+        let rerank = FinalRerank {
             query,
             cache: store.index_cache(),
             scorer: self.scorer,

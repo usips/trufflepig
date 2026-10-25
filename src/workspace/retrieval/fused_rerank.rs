@@ -7,7 +7,7 @@ use crate::diagnostics::{EventStage, Operation, Outcome, RequestEvent};
 use std::time::Instant;
 use tp_index::{
     results::ResultEntry,
-    search::{MergedRerank, RerankOutcome, RerankScorer, telemetry::RetrievalTrace},
+    search::{FinalRerank, RerankOutcome, RerankScorer, telemetry::RetrievalTrace},
 };
 
 #[cfg(test)]
@@ -25,7 +25,7 @@ pub(super) fn rerank_once(
     }
     let started = Instant::now();
     let mut trace = command.trace();
-    let rerank = MergedRerank {
+    let rerank = FinalRerank {
         query: &command.query,
         cache: request.cache,
         scorer,
@@ -50,7 +50,7 @@ pub(super) fn rerank_once(
 /// `rerank_window` the count of its own hits that scored.
 fn rerank_merged_window(
     fused: &mut FusedMembers,
-    rerank: &MergedRerank,
+    rerank: &FinalRerank,
     trace: &mut RetrievalTrace,
 ) -> RerankOutcome {
     let stores = std::mem::take(&mut fused.stores);

@@ -144,7 +144,7 @@ fn rerank(
     let cache = tempfile::tempdir().unwrap();
     let mut trace = RetrievalTrace::default();
     let query = Query::parse("marker").unwrap();
-    let rerank = MergedRerank {
+    let rerank = FinalRerank {
         query: &query,
         cache: cache.path(),
         scorer,
