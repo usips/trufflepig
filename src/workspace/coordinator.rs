@@ -92,6 +92,7 @@ pub(crate) fn run_with_deadline(
         .map(String::as_str)
         .unwrap_or("status");
     if verb == "workspace-serve" {
+        crate::system::daemon_scope::enter_from_environment();
         return serve(&config, &cache).map(|()| String::new());
     }
     if verb == "stop" {

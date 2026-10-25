@@ -265,6 +265,8 @@ pub fn serve(cache: &Path) -> Result<()> {
         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => return Ok(()),
         Err(error) => return Err(error).context("acquire history worker lock"),
     }
+    // Git ingestion is background work; interactive daemons keep priority.
+    tp_core::background_priority::lower_current_thread();
     let mut hints = None;
     loop {
         let roots = active_roots(cache, clock_ms()?)?;

@@ -145,6 +145,9 @@ impl ClientCommand {
                     if let Some(fallback_options) = index_cache_fallback_options(args, &error) {
                         return super::direct_with_deadline(&fallback_options, context, deadline);
                     }
+                    if let Some(fallback_options) = replaced_binary_read_options(&options, &error) {
+                        return super::direct_with_deadline(&fallback_options, context, deadline);
+                    }
                     if !leaves_router_for_direct_execution(&error) {
                         return Err(error);
                     }
@@ -192,6 +195,19 @@ fn local_path_show_fallback_options(args: &[String]) -> Option<Arguments> {
 fn leaves_router_for_direct_execution(error: &anyhow::Error) -> bool {
     tp_core::daemon_transport::spool::is_local_spool_timeout(error)
         || ErrorCode::DaemonUnavailable.is_named_in(error)
+}
+
+/// A read refused because an owner runs a replaced binary is a pre-dispatch
+/// refusal; it runs locally with `--no-daemon`. Writes keep the refusal.
+fn replaced_binary_read_options(options: &Arguments, error: &anyhow::Error) -> Option<Arguments> {
+    if super::retry::RetryScope::for_options(options) != super::retry::RetryScope::Read
+        || !ErrorCode::RouterBinaryReplaced.is_named_in(error)
+    {
+        return None;
+    }
+    let mut local = options.clone();
+    local.no_daemon = true;
+    Some(local)
 }
 
 /// A cache refusal in any layer admits the local current-path reader, unless

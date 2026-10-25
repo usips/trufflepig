@@ -56,6 +56,8 @@ if command == "is-enabled":
     if "--quiet" not in sys.argv:
         sys.stdout.write(status + "\n")
     sys.exit(0 if status in ("enabled", "enabled-runtime") else 1)
+if command == "set-property":
+    sys.exit(0)
 for unit in units:
     known_without_file = (command in ("stop", "disable")
                           and (unit in units_state or unit in enabled_state))

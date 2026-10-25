@@ -177,16 +177,11 @@ contention-only writes allow at most two attempts after explicit pre-dispatch
 busy or database contention; other writes have no retry guarantee
 (`src/cli/retry.rs`).
 Workspace `index` and `init` run in the client, never on a coordinator worker.
-Daemons have no build-version negotiation. Stop them before replacing binaries.
-On Linux, `router_binary_replaced` identifies the owning process, executable, and
-cache (`crates/tp-core/src/background_process.rs`). Repair only that owner. Rerun a replaced
-foreground command with the current binary. Restart the router's owning unit with
-`systemctl --user restart trufflepig-system.service`, or for a detached router run
-`trufflepig system stop` then `trufflepig system ensure`. A detached router holding the
-daemon lock while the unit is installed blocks the unit: stop it with `trufflepig system
-stop` (or kill its PID), then run `systemctl --user restart trufflepig-system.service`.
-For a root or coordinator owner, restart its unit or stop its detached daemon with that
-root and cache before retrying. Very long cache paths can exceed Unix socket limits; use a shorter
+Daemons have no build-version negotiation. On Linux, `router_binary_replaced` identifies the
+owning process, executable, and cache. A unit-supervised router restarts itself onto a settled
+replacement; routed reads it refuses run locally; detached routers and daemons need the manual
+recovery in the [router lifecycle](router-lifecycle.md), which also places spawned daemons in a
+low-weight slice. Very long cache paths can exceed Unix socket limits; use a shorter
 `--cache` path. Watcher fallback and resource limits are documented in the
 [index contract](index-contract.md).
 

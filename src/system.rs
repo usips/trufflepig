@@ -1,8 +1,10 @@
 //! Per-user system daemon routing CLI requests to owning workspace or root daemons.
 //! Each request is proxied on its own worker, bounded by `tp_core::daemon_transport::PROXY_REPLY_WAIT`.
 
+pub(crate) mod daemon_scope;
 mod managed_unit;
 mod route;
+pub(crate) mod router_lifecycle;
 pub mod sweep;
 
 use tp_core::coded_error::CodedContext;
@@ -13,12 +15,13 @@ mod tests;
 use crate::daemon::{self, AcceptedRequest, DaemonHandler};
 use anyhow::{Result, bail};
 use route::route;
+use router_lifecycle::{RouterLifecycle, SPAWNED_STOP_WAIT};
 use std::{
     fs,
     io::ErrorKind,
     path::PathBuf,
     process::Command,
-    sync::Mutex,
+    sync::{Arc, Mutex},
     thread::JoinHandle,
     time::{Duration, Instant, SystemTime},
 };
@@ -220,19 +223,29 @@ fn poll_budget_spent(error: &anyhow::Error) -> bool {
 /// Serves the system daemon, proxying socket and spooled requests to their
 /// owners concurrently and sweeping the default cache base at startup and every
 /// `SWEEP_INTERVAL` on a background thread, so a slow daemon stop never
-/// blocks the request path.
+/// blocks the request path. A supervised router returns
+/// [`router_lifecycle::RouterRestart`] after draining for a replaced binary.
 pub fn serve() -> Result<()> {
     let runtime =
         system_dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?;
+    let lifecycle = Arc::new(RouterLifecycle::from_environment(Some(&runtime)));
     let router = SystemRouter {
         runtime: Some(runtime.clone()),
         cache_base: crate::cli::cache_base().ok(),
         sweeps: Mutex::new(SweepClock::default()),
         board: tp_board::BoardHost::default(),
+        lifecycle: Arc::clone(&lifecycle),
     };
     // Migration runs in `on_bound`, after the socket binds and before the
     // accept loop, so waiting clients queue instead of spawning a second router.
-    daemon::serve_router(&runtime, &spool_dir(), router)
+    let served = daemon::serve_router(&runtime, &spool_dir(), router);
+    if let Err(error) = &served
+        && router_lifecycle::exit_status(error).is_some()
+    {
+        // Old-binary daemons close cleanly before the unit replaces the router.
+        lifecycle.stop_spawned(SPAWNED_STOP_WAIT);
+    }
+    served
 }
 
 /// The router's request handler; each request is routed independently.
@@ -241,6 +254,7 @@ struct SystemRouter {
     cache_base: Option<PathBuf>,
     sweeps: Mutex<SweepClock>,
     board: tp_board::BoardHost,
+    lifecycle: Arc<RouterLifecycle>,
 }
 
 #[derive(Default)]
@@ -260,11 +274,18 @@ impl DaemonHandler for SystemRouter {
     fn request(&self, request: AcceptedRequest) -> Result<String> {
         route(
             &self.board,
+            &self.lifecycle,
             self.runtime.as_deref(),
             request.args,
             request.context,
             request.deadline,
         )
+    }
+
+    fn requested_exit(&self) -> Option<anyhow::Error> {
+        self.lifecycle
+            .tick(Instant::now(), SystemTime::now())
+            .map(anyhow::Error::new)
     }
 
     fn idle(&self) {

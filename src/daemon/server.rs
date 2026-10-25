@@ -67,6 +67,11 @@ pub trait DaemonHandler: Send + Sync + 'static {
     }
     /// Periodic maintenance on the maintenance thread.
     fn idle(&self) {}
+    /// Checked after each `idle`: an error stops the server, which drains
+    /// accepted requests and then returns that error.
+    fn requested_exit(&self) -> Option<anyhow::Error> {
+        None
+    }
 }
 
 /// Stop flag plus the first fatal maintenance error.

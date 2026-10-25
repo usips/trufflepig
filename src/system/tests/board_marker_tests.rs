@@ -13,6 +13,7 @@ fn losing_router_start_cannot_replace_the_live_database_marker() {
         cache_base: None,
         sweeps: Mutex::new(SweepClock::default()),
         board: tp_board::BoardHost::with_config(tp_board::BoardConfig::for_database(database)),
+        lifecycle: Default::default(),
     };
     let live = router(&live_database);
     let live_runtime = runtime.clone();
