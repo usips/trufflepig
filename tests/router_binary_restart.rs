@@ -1,7 +1,12 @@
 //! A private router running from a scratch copy of the binary leaves for a
-//! replacement only when systemd supervises it.
+//! replacement only when systemd supervises it; clients run refused reads locally.
 #![cfg(target_os = "linux")]
 
+use std::os::unix::net::UnixListener;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+};
 use std::{
     fs,
     os::unix::fs::PermissionsExt,
@@ -9,6 +14,7 @@ use std::{
     process::{Child, Command, ExitStatus, Stdio},
     time::{Duration, Instant},
 };
+use tp_core::daemon_transport::daemon_wire_protocol::{self, DaemonReply};
 use tp_core::daemon_transport::{request_by, running, stop};
 use tp_core::{query_deadline::QueryDeadline, request_context::RequestContext};
 
@@ -202,4 +208,101 @@ fn detached_router_keeps_serving_after_a_replacement() {
         .wait_exit(Duration::from_secs(40))
         .expect("router stops");
     assert_eq!(status.code(), Some(0));
+}
+
+const REPLACED_REFUSAL: &str = "daemon: router_binary_replaced: executable /opt/trufflepig (deleted) for cache /cache/root was deleted after the system router started; restart the owning unit with `systemctl --user restart trufflepig-system.service`";
+
+/// A router stub that refuses every request as `router_binary_replaced`.
+struct ReplacedRouterStub {
+    stop: Arc<AtomicBool>,
+    served: Arc<AtomicUsize>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl ReplacedRouterStub {
+    fn start(runtime: &Path) -> Self {
+        fs::create_dir_all(runtime).unwrap();
+        let listener = UnixListener::bind(runtime.join("daemon.sock")).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let (stop, served) = (
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicUsize::new(0)),
+        );
+        let (stopping, counting) = (Arc::clone(&stop), Arc::clone(&served));
+        let thread = std::thread::spawn(move || {
+            while !stopping.load(Ordering::Acquire) {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    std::thread::sleep(Duration::from_millis(5));
+                    continue;
+                };
+                stream.set_nonblocking(false).unwrap();
+                if daemon_wire_protocol::read_request(&mut stream).is_ok() {
+                    counting.fetch_add(1, Ordering::AcqRel);
+                    let reply = DaemonReply::Failure {
+                        message: REPLACED_REFUSAL.to_owned(),
+                    };
+                    let _ = daemon_wire_protocol::write_reply(&mut stream, &reply);
+                }
+            }
+        });
+        Self {
+            stop,
+            served,
+            thread: Some(thread),
+        }
+    }
+}
+
+impl Drop for ReplacedRouterStub {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+#[test]
+fn reads_refused_for_a_replaced_router_run_locally_and_writes_keep_the_refusal() {
+    let directory = scratch();
+    let root = directory.path().join("repo");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("lib.rs"), "pub fn local_fallback_probe() {}\n").unwrap();
+    let runtime = directory.path().join("runtime");
+    let stub = ReplacedRouterStub::start(&runtime);
+    let run = |words: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_trufflepig"))
+            .args(["--no-workspace", "--root"])
+            .arg(&root)
+            .arg("--cache")
+            .arg(directory.path().join("root-cache"))
+            .args(words)
+            .env("TRUFFLEPIG_SYSTEM_DIR", &runtime)
+            .env("TRUFFLEPIG_SPOOL_DIR", directory.path().join("spool"))
+            .env("XDG_CONFIG_HOME", directory.path().join("config"))
+            .env("XDG_DATA_HOME", directory.path().join("data"))
+            .env("XDG_CACHE_HOME", directory.path().join("cache"))
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    };
+
+    let read = run(&["show", "path:lib.rs"]);
+    let stdout = String::from_utf8_lossy(&read.stdout);
+    let stderr = String::from_utf8_lossy(&read.stderr);
+    assert!(read.status.success(), "{stdout}{stderr}");
+    assert!(stdout.contains("local_fallback_probe"), "{stdout}");
+    let after_read = stub.served.load(Ordering::Acquire);
+    assert!(after_read >= 1, "the read reached the router first");
+    assert!(
+        !running(&directory.path().join("root-cache")),
+        "the fallback runs with --no-daemon and starts no root daemon"
+    );
+
+    let write = run(&["hist-index"]);
+    let stderr = String::from_utf8_lossy(&write.stderr);
+    assert_eq!(write.status.code(), Some(2), "{stderr}");
+    assert!(stderr.contains("router_binary_replaced:"), "{stderr}");
+    assert!(stderr.contains("systemctl --user restart"), "{stderr}");
+    assert!(stub.served.load(Ordering::Acquire) > after_read);
 }
