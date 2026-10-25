@@ -3,13 +3,7 @@ use super::{
     current_background_executable, spawn_background, spawn_background_for,
     validate_background_executable,
 };
-use std::{
-    io,
-    os::unix::fs::PermissionsExt,
-    path::PathBuf,
-    process::{Command, Stdio},
-    time::{Duration, Instant},
-};
+use std::{io, path::PathBuf, process::Command};
 
 #[test]
 fn deleted_executable_has_typed_owner_specific_recovery_advice() {
@@ -110,102 +104,18 @@ fn live_and_near_suffix_executables_are_accepted() {
 #[cfg(target_os = "linux")]
 #[test]
 fn deleted_executable_is_detected_in_a_running_process() {
-    const CACHE: &str = "TRUFFLEPIG_TEST_REPLACED_EXECUTABLE_CACHE";
-    const ROOT: &str = "TRUFFLEPIG_TEST_REPLACED_EXECUTABLE_ROOT";
-    const READY: &str = "TRUFFLEPIG_TEST_REPLACED_EXECUTABLE_READY";
-    const RELEASE: &str = "TRUFFLEPIG_TEST_REPLACED_EXECUTABLE_RELEASE";
-
-    let directory = tempfile::tempdir().unwrap();
-    let executable = directory.path().join("copied-test-binary");
-    std::fs::copy(std::env::current_exe().unwrap(), &executable).unwrap();
-    let mut permissions = std::fs::metadata(&executable).unwrap().permissions();
-    permissions.set_mode(permissions.mode() | 0o111);
-    std::fs::set_permissions(&executable, permissions).unwrap();
-    let cache = directory.path().join("root-cache");
-    let root = directory.path().join("repository-root");
-    std::fs::create_dir(&root).unwrap();
-    let ready = directory.path().join("child-ready");
-    let release = directory.path().join("child-release");
-
-    let mut command = Command::new(&executable);
-    command
-        .args([
-            "--exact",
-            "background_process::tests::deleted_executable_child_entry",
-            "--nocapture",
-        ])
-        .env(CACHE, &cache)
-        .env(ROOT, &root)
-        .env(READY, &ready)
-        .env(RELEASE, &release)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    // Parallel tests may fork while fs::copy's destination is writable, inheriting its descriptor.
-    // That keeps the copied inode busy until the forked process execs and closes the descriptor.
-    let spawn_deadline = Instant::now() + Duration::from_secs(1);
-    let mut child = loop {
-        match command.spawn() {
-            Ok(child) => break child,
-            Err(error) if error.raw_os_error() == Some(libc::ETXTBSY) => {
-                let remaining = spawn_deadline.saturating_duration_since(Instant::now());
-                assert!(
-                    !remaining.is_zero(),
-                    "copied test executable remained ETXTBSY for 1 second: {error}"
-                );
-                std::thread::sleep(Duration::from_millis(10).min(remaining));
-                assert!(
-                    Instant::now() < spawn_deadline,
-                    "copied test executable remained ETXTBSY for 1 second: {error}"
-                );
-            }
-            Err(error) => panic!("failed to spawn copied test process: {error}"),
-        }
-    };
-
-    let ready_deadline = Instant::now() + Duration::from_secs(10);
-    while !ready.exists() && Instant::now() < ready_deadline && child.try_wait().unwrap().is_none()
-    {
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    if !ready.exists() {
-        let _ = child.kill();
-        let output = child.wait_with_output().unwrap();
-        panic!("copied test process did not become ready: {output:?}");
-    }
-
-    std::fs::remove_file(&executable).unwrap();
-    std::fs::write(&release, b"continue").unwrap();
-    let exit_deadline = Instant::now() + Duration::from_secs(10);
-    while Instant::now() < exit_deadline && child.try_wait().unwrap().is_none() {
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    if child.try_wait().unwrap().is_none() {
-        let _ = child.kill();
-    }
-    let output = child.wait_with_output().unwrap();
-    assert!(output.status.success(), "{output:?}");
+    crate::test_fixtures::unlinked_executable::run_unlinked(
+        "background_process::tests::deleted_executable_child_entry",
+    );
 }
 
 #[cfg(target_os = "linux")]
 #[test]
 fn deleted_executable_child_entry() {
-    let (Some(cache), Some(ready), Some(release)) = (
-        std::env::var_os("TRUFFLEPIG_TEST_REPLACED_EXECUTABLE_CACHE"),
-        std::env::var_os("TRUFFLEPIG_TEST_REPLACED_EXECUTABLE_READY"),
-        std::env::var_os("TRUFFLEPIG_TEST_REPLACED_EXECUTABLE_RELEASE"),
-    ) else {
+    let Some(child) = crate::test_fixtures::unlinked_executable::unlinked_child() else {
         return;
     };
-    let ready = PathBuf::from(ready);
-    let release = PathBuf::from(release);
-    std::fs::write(ready, b"ready").unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while !release.exists() {
-        assert!(Instant::now() < deadline, "parent did not release child");
-        std::thread::sleep(Duration::from_millis(10));
-    }
-
-    let cache = PathBuf::from(cache);
+    let cache = child.cache;
     let raw_executable = std::env::current_exe().unwrap();
     let spawn_error = Command::new(&raw_executable).spawn().unwrap_err();
     assert_eq!(
@@ -223,31 +133,6 @@ fn deleted_executable_child_entry() {
     assert!(error.to_string().starts_with("router_binary_replaced:"));
     assert!(error.to_string().contains("root-cache"));
     assert!(error.to_string().contains("trufflepig system stop"));
-
-    let root = std::env::var_os("TRUFFLEPIG_TEST_REPLACED_EXECUTABLE_ROOT")
-        .map(PathBuf::from)
-        .expect("isolated history root");
-    let error = crate::history::worker::start(&root, &cache)
-        .expect_err("history start rejects the deleted running executable");
-    let replaced = error
-        .downcast_ref::<ReplacedExecutable>()
-        .expect("history start preserves the typed replaced-executable error");
-    assert_eq!(replaced.executable, raw_executable);
-    assert_eq!(replaced.cache, cache.canonicalize().unwrap());
-    assert_eq!(replaced.owner, BackgroundOwner::RootDaemon);
-    let message = format!("{error:#}");
-    assert!(message.starts_with("router_binary_replaced:"), "{message}");
-    assert!(
-        message.contains(cache.canonicalize().unwrap().to_string_lossy().as_ref()),
-        "{message}"
-    );
-    assert!(message.contains("the root daemon started"), "{message}");
-    assert!(
-        message.contains("stop the detached root daemon for this cache"),
-        "{message}"
-    );
-    assert!(!message.contains("trufflepig system stop"), "{message}");
-    assert!(!message.contains("trufflepig-system.service"), "{message}");
 }
 
 #[test]

@@ -1,6 +1,8 @@
 //! One history worker per cache/common-directory pair, leased by root daemons.
 
 mod heartbeat;
+#[cfg(all(test, target_os = "linux"))]
+mod replaced_executable_tests;
 #[cfg(test)]
 mod tests;
 use crate::coded_error::CodedContext;

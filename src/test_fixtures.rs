@@ -2,6 +2,8 @@
 //! Scratch directories are owner-only because board opens refuse
 //! group/world-accessible database parents they did not create.
 mod git_fixture;
+#[cfg(target_os = "linux")]
+pub(crate) mod unlinked_executable;
 
 pub(crate) use git_fixture::GitFixture;
 use std::ffi::OsString;

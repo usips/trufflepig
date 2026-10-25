@@ -1,10 +1,42 @@
+//! A history live-source span stays bounded when `show` pages through it.
 use super::*;
+use crate::source::show;
+
+/// One committed `lib.rs` with a 220-line body.
+fn committed_fixture() -> (tempfile::TempDir, tempfile::TempDir, Store) {
+    let root = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    git(root.path(), &["init", "-q"]);
+    git(
+        root.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(root.path(), &["config", "user.name", "Test"]);
+    let bytes = format!(
+        "fn original() {{\n{}\n}}\n",
+        "    original();\n".repeat(220)
+    );
+    std::fs::write(root.path().join("lib.rs"), bytes).unwrap();
+    git(root.path(), &["add", "lib.rs"]);
+    git(
+        root.path(),
+        &[
+            "-c",
+            "core.hooksPath=/dev/null",
+            "commit",
+            "-qm",
+            "original",
+        ],
+    );
+    let store = Store::open(root.path(), cache.path()).unwrap();
+    (root, cache, store)
+}
 
 #[test]
 fn published_afterspan_bounds_show_and_immutable_continuation() {
-    let (root, cache, mut store, _) = historical_fixture("sha1");
+    let (root, cache, mut store) = committed_fixture();
     let history_cache = tempfile::tempdir().unwrap();
-    let history = crate::history::History::open(root.path(), history_cache.path()).unwrap();
+    let history = History::open(root.path(), history_cache.path()).unwrap();
     let bytes = format!(
         "fn original() {{\n{}{}{}\n}}\n",
         "    original();\n".repeat(10),
