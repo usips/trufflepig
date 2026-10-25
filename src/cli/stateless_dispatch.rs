@@ -10,7 +10,7 @@ use tp_index::search::{InvocationDirectory, Query, stateless};
 pub(super) fn eligible(options: &Arguments) -> bool {
     matches!(
         options.words.first().map(String::as_str),
-        Some("search" | "map")
+        Some("search" | "map" | "refs")
     )
 }
 
@@ -53,55 +53,57 @@ fn run_with_metadata(
         !deadline.expired(),
         coded!(TimedOut, "query deadline expired")
     );
+    let text = options.words.get(1..).unwrap_or_default().join(" ");
+    let invocation = options.root.canonicalize()?;
+    let origin = InvocationDirectory::within(root, &invocation);
     let set = match options.words.first().map(String::as_str) {
+        Some("search") if text.starts_with("refs:") => {
+            stateless::refs(root, cache, &text, &origin, deadline)?
+        }
         Some("search") => {
-            let text = options.words[1..].join(" ");
-            ensure!(
-                !text.starts_with("refs:"),
-                coded!(CacheFreeUnsupported, "refs requires an index")
-            );
             let query = Query::parse(&text)?;
-            let invocation = options.root.canonicalize()?;
-            let origin = InvocationDirectory::within(root, &invocation);
             stateless::search(
                 root,
                 cache,
                 &query,
                 &origin,
                 deadline,
-                options.sem,
-                options.rerank,
+                stateless::CurrentSearchOptions {
+                    page_limit: options.limit,
+                    semantic_requested: options.sem,
+                    rerank_requested: options.rerank,
+                },
             )?
         }
+        Some("refs") => stateless::refs(root, cache, &text, &origin, deadline)?,
         Some("map") => {
             ensure!(
                 options.words.len() == 2,
-                coded!(Usage, "--no-cache map FILE")
+                coded!(Usage, "--no-cache map PATH")
             );
-            stateless::map_file(
+            stateless::map_path(
                 root,
                 cache,
                 options
                     .words
                     .get(1)
-                    .with_coded_context(|| coded!(Usage, "map FILE"))?,
+                    .with_coded_context(|| coded!(Usage, "map PATH"))?,
                 deadline,
             )?
         }
-        _ => anyhow::bail!(coded!(CacheFreeUnsupported, "use search or map FILE")),
+        _ => anyhow::bail!(coded!(
+            CacheFreeUnsupported,
+            "use search, refs NAME, or map PATH"
+        )),
     };
+    // A scan that ran into its deadline already returned partial coverage; only
+    // a cancelled caller discards the finished page.
     ensure!(
-        !deadline.expired(),
-        coded!(TimedOut, "query deadline expired")
+        !deadline.cancelled(),
+        coded!(TimedOut, "query was cancelled")
     );
     let budget = OutputBudget::new(options.budget)?.with_format(options.output_format());
-    let rendered =
-        stateless::render_with_metadata(root, None, &set, metadata, options.limit, &budget)?;
-    ensure!(
-        !deadline.expired(),
-        coded!(TimedOut, "query deadline expired")
-    );
-    Ok(rendered)
+    stateless::render_with_metadata(root, None, &set, metadata, options.limit, &budget)
 }
 
 #[cfg(test)]

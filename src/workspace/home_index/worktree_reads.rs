@@ -271,9 +271,18 @@ impl ParentFallback {
         let mut unextractable_paths = HashSet::new();
         let mut current_by_path = std::collections::HashMap::with_capacity(changed.len());
         let mut truncated = false;
+        // Re-extraction stops early enough to leave a quarter of the remaining
+        // deadline for the answer; unchecked files keep their parent hits, unverified.
+        let remaining = deadline.remaining();
+        let recheck_deadline = deadline.capped(remaining.saturating_sub(remaining / 4));
         for path in changed {
-            check_deadline(deadline)?;
-            match current_file_hits(store, path, query, &parent, deadline) {
+            if recheck_deadline.expired() {
+                unextractable_paths.insert(path.to_owned());
+                incomplete = true;
+                unsearched_paths += 1;
+                continue;
+            }
+            match current_file_hits(store, path, query, &parent, &recheck_deadline) {
                 Ok((hits, file_truncated)) => {
                     truncated |= file_truncated;
                     current_by_path.insert(path.to_owned(), hits);

@@ -1,4 +1,4 @@
-use super::{create_root, deadline};
+use super::{create_root, deadline, options};
 use crate::{
     search::{InvocationDirectory, Query},
     source,
@@ -31,8 +31,7 @@ fn filter_only_file_lookup_reaches_past_catalog_cap_without_parsing_sources() ->
         &Query::parse("kind:file file:a05_baselines.rs")?,
         &InvocationDirectory::root(),
         &deadline(),
-        false,
-        false,
+        options(),
     )?;
 
     assert_eq!(result.hits.len(), 1);
@@ -75,8 +74,7 @@ fn file_kind_text_query_finds_content_without_a_matching_filename() -> Result<()
         &Query::parse("zzbodyonlymarker kind:file")?,
         &InvocationDirectory::root(),
         &deadline(),
-        false,
-        false,
+        options(),
     )?;
     let hit = result.hits.iter().find(|hit| hit.path == "unrelated.rs");
     let hit = hit.expect("free-text file queries search body content");

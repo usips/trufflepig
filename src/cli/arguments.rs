@@ -306,7 +306,7 @@ pub(super) fn validate(options: &Arguments) -> Result<()> {
         .map(String::as_str)
         .unwrap_or("status");
     if options.no_cache
-        && !matches!(verb, "search" | "map")
+        && !matches!(verb, "search" | "map" | "refs")
         && !(verb == "show"
             && options.words.get(1).is_some_and(|target| {
                 tp_index::source::acquisition::is_current_path_target(target)
@@ -314,7 +314,8 @@ pub(super) fn validate(options: &Arguments) -> Result<()> {
     {
         bail!(coded!(
             InvalidOptions,
-            "--no-cache supports search, map FILE, and current-path show"
+            "--no-cache supports search, refs NAME, map PATH, and current-path show; \
+             for `show sym:NAME` run `--no-cache search 'sym:NAME'` and show its read:path: handle"
         ));
     }
     if options.no_daemon && (verb == "serve" || verb.ends_with("-serve")) {

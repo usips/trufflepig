@@ -19,8 +19,7 @@ fn scoped_symbol_lookup_parses_only_selected_files_after_a_large_catalog() -> Re
         &Query::parse("sym:tick_hz file:src/spec/")?,
         &InvocationDirectory::root(),
         &deadline(),
-        false,
-        false,
+        options(),
     )?;
     assert!(
         result
@@ -41,8 +40,7 @@ fn scoped_symbol_lookup_parses_only_selected_files_after_a_large_catalog() -> Re
         &Query::parse("sym:absent file:src/spec/")?,
         &InvocationDirectory::root(),
         &deadline(),
-        false,
-        false,
+        options(),
     )?;
     assert!(absent.hits.is_empty());
     assert_eq!(absent.coverage["absence"], "exhaustive");
