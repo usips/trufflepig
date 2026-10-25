@@ -4,11 +4,8 @@ use super::Arguments;
 use crate::coded_error::CodedContext;
 use crate::workspace::workspace_discovery::WorkspaceMembers;
 use crate::{
-    output::OutputBudget,
-    query_deadline::QueryDeadline,
-    semantic::{preparation, worker},
-    workspace,
-    workspace_config::WorkspaceConfig,
+    output::OutputBudget, query_deadline::QueryDeadline, semantic::worker, semantic_preparation,
+    workspace, workspace_config::WorkspaceConfig,
 };
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
@@ -20,7 +17,7 @@ pub(crate) fn local(
     root: &Path,
     cache: &Path,
     options: &Arguments,
-    manager: Option<&preparation::PreparationManager>,
+    manager: Option<&semantic_preparation::PreparationManager>,
 ) -> Result<String> {
     let budget = OutputBudget::new(options.budget)?;
     let command = options
@@ -86,14 +83,14 @@ fn prepare(
     root: &Path,
     cache: &Path,
     options: &Arguments,
-    manager: Option<&preparation::PreparationManager>,
+    manager: Option<&semantic_preparation::PreparationManager>,
     budget: &OutputBudget,
 ) -> Result<String> {
     if options.no_daemon {
-        let worker = preparation::ForegroundWorker::open(root)?;
-        return budget.render(&serde_json::to_value(preparation::run_foreground(
-            root, cache, worker,
-        )?)?);
+        let worker = semantic_preparation::ForegroundWorker::open(root)?;
+        return budget.render(&serde_json::to_value(
+            semantic_preparation::run_foreground(root, cache, worker)?,
+        )?);
     }
 
     // Start the shared worker before waking a manager so its first background
@@ -101,7 +98,7 @@ fn prepare(
     let worker = worker::ensure_started(root).ok();
     let receipt = match manager {
         Some(manager) => manager.retry(root, cache)?,
-        None => preparation::retry(root, cache)?,
+        None => semantic_preparation::retry(root, cache)?,
     };
     // Model admission remains asynchronous; only socket/process creation is
     // requested by this command.
@@ -120,7 +117,7 @@ fn status(
     _options: &Arguments,
     budget: &OutputBudget,
 ) -> Result<String> {
-    let preparation = preparation::status(root, cache)?;
+    let preparation = semantic_preparation::status(root, cache)?;
     budget.render(&serde_json::to_value(preparation)?)
 }
 
@@ -188,19 +185,19 @@ fn wait_until_terminal(
     root: &Path,
     cache: &Path,
     generation: i64,
-) -> Result<preparation::PreparationWait> {
+) -> Result<semantic_preparation::PreparationWait> {
     let started = std::time::Instant::now();
     loop {
         let mut waited =
-            preparation::wait_timeout(root, cache, generation, Duration::from_secs(1))?;
+            semantic_preparation::wait_timeout(root, cache, generation, Duration::from_secs(1))?;
         if waited.status.error.as_deref() != Some("preparation_wait_timeout") {
             return Ok(waited);
         }
         if !crate::daemon_transport::running(cache)
             || started.elapsed() >= Duration::from_secs(3600)
         {
-            waited.state = preparation::PreparationState::Failed;
-            waited.status.state = preparation::PreparationState::Failed;
+            waited.state = semantic_preparation::PreparationState::Failed;
+            waited.status.state = semantic_preparation::PreparationState::Failed;
             waited.status.error = Some(
                 if started.elapsed() >= Duration::from_secs(3600) {
                     "preparation_wait_deadline"

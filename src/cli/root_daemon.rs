@@ -9,7 +9,8 @@ use super::{Arguments, dispatch::local_with_session, emission, parse};
 use crate::{
     daemon::{self, AcceptedRequest, DaemonHandler},
     diagnostics::DiagnosticQueue,
-    semantic::{SemanticSession, preparation::PreparationManager},
+    semantic::SemanticSession,
+    semantic_preparation::PreparationManager,
     store::Store,
 };
 use anyhow::Result;
@@ -69,7 +70,7 @@ impl RootDaemon {
             root: root.to_owned(),
             cache: cache.to_owned(),
             diagnostics,
-            preparation: PreparationManager::new(crate::semantic::preparation::SharedWorker::new(
+            preparation: PreparationManager::new(crate::semantic_preparation::SharedWorker::new(
                 root,
             )),
             log_queue: RwLock::new(None),

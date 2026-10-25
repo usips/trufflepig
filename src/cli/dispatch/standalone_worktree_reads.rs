@@ -20,7 +20,7 @@ pub(super) fn retrieve_read(
     session: &mut crate::semantic::SemanticSession,
     context: &crate::request_context::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
-    preparation_manager: Option<&crate::semantic::preparation::PreparationManager>,
+    preparation_manager: Option<&crate::semantic_preparation::PreparationManager>,
     budget: &OutputBudget,
     deadline: &QueryDeadline,
 ) -> Result<String> {

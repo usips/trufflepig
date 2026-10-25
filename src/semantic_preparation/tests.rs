@@ -119,7 +119,7 @@ fn retryable_cold_worker_errors_do_not_poison_content() -> Result<()> {
     assert_eq!(status.failures, 0);
     assert_eq!(status.missing, 0);
 
-    let preparation = cache::PreparationCache::open(_cache.path())?;
+    let preparation = preparation_cache::PreparationCache::open(_cache.path())?;
     assert_eq!(
         preparation.completion(&content_key("fn one() {}\n"))?,
         Some(true)
@@ -157,7 +157,7 @@ fn permanent_batch_errors_are_split_to_the_bad_input() -> Result<()> {
         .collect::<Vec<_>>();
     let mut worker = SplittingWorker;
     let mut outcomes = Vec::new();
-    worker::run_batches_grouped(&mut worker, &inputs, |batch, results| {
+    preparation_worker::run_batches_grouped(&mut worker, &inputs, |batch, results| {
         for (input, result) in batch.iter().zip(results) {
             outcomes.push((input.content_key.clone(), result.is_ok()));
         }
@@ -195,7 +195,7 @@ fn wait_reports_a_captured_generation_as_superseded() -> Result<()> {
 #[test]
 fn completion_metadata_is_pruned_to_current_content() -> Result<()> {
     let (root, cache) = fixture("fn one() {}\n")?;
-    let mut preparation = cache::PreparationCache::open(cache.path())?;
+    let mut preparation = preparation_cache::PreparationCache::open(cache.path())?;
     preparation.fail("orphan-content", "stale")?;
     preparation.prune_completions([content_key("fn one() {}\n")])?;
     assert_eq!(preparation.completion("orphan-content")?, None);
@@ -208,13 +208,13 @@ fn completion_metadata_is_pruned_to_current_content() -> Result<()> {
 #[test]
 fn running_run_restarts_from_its_persisted_cursor() -> Result<()> {
     let cache_dir = tempfile::tempdir()?;
-    let mut preparation = cache::PreparationCache::open(cache_dir.path())?;
+    let mut preparation = preparation_cache::PreparationCache::open(cache_dir.path())?;
     let started = preparation.begin(7, 300, false)?;
     assert_eq!(started.cursor, 0);
     preparation.progress(7, 256, 300, 250, 5, 1)?;
     drop(preparation);
 
-    let mut reopened = cache::PreparationCache::open(cache_dir.path())?;
+    let mut reopened = preparation_cache::PreparationCache::open(cache_dir.path())?;
     let resumed = reopened.begin(7, 300, false)?;
     assert_eq!(resumed.state, PreparationState::Running);
     assert_eq!(resumed.cursor, 256);
@@ -227,7 +227,7 @@ fn running_run_restarts_from_its_persisted_cursor() -> Result<()> {
 #[test]
 fn worker_error_upserts_a_failed_run_before_begin() -> Result<()> {
     let cache_dir = tempfile::tempdir()?;
-    let mut preparation = cache::PreparationCache::open(cache_dir.path())?;
+    let mut preparation = preparation_cache::PreparationCache::open(cache_dir.path())?;
     preparation.record_worker_error(9, "fake worker setup failure")?;
     let failed = preparation.run(9)?.context("worker error run missing")?;
     assert_eq!(failed.state, PreparationState::Failed);
@@ -245,7 +245,7 @@ fn worker_error_upserts_a_failed_run_before_begin() -> Result<()> {
 #[test]
 fn completed_run_reports_capacity_after_vector_eviction() -> Result<()> {
     let cache_dir = tempfile::tempdir()?;
-    let mut preparation = cache::PreparationCache::open(cache_dir.path())?;
+    let mut preparation = preparation_cache::PreparationCache::open(cache_dir.path())?;
     preparation.begin(11, 1, false)?;
     preparation.finish(11, PreparationState::Completed, 1, 1, 1, 0, 0, None)?;
     let status = preparation.counts_for_status(11, 1, 0, 1, 0)?;
@@ -299,7 +299,7 @@ fn explicit_retry_refills_missing_vectors_after_terminal_run() -> Result<()> {
     let completed = run_foreground(root.path(), cache.path(), successful_worker())?;
     assert_eq!(completed.state, PreparationState::Completed);
 
-    let preparation = cache::PreparationCache::open(cache.path())?;
+    let preparation = preparation_cache::PreparationCache::open(cache.path())?;
     preparation.db.execute(
         "DELETE FROM preparation_completions WHERE content_key=?1",
         [&source_key],

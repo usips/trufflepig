@@ -16,7 +16,6 @@ pub use inference::{
     compare_cpu_cuda, run_gate, run_gpu_gate,
 };
 
-pub mod preparation;
 pub mod runtime_config;
 pub mod worker;
 

@@ -7,7 +7,7 @@ fn preparation_wait_terminates_when_root_daemon_dies() -> Result<()> {
     std::fs::write(root.path().join("source.rs"), "fn example() {}")?;
     let mut store = crate::store::Store::open(root.path(), cache.path())?;
     store.index()?;
-    let receipt = preparation::schedule(root.path(), cache.path())?;
+    let receipt = semantic_preparation::schedule(root.path(), cache.path())?;
     let result = wait_until_terminal(root.path(), cache.path(), receipt.captured_generation)?;
     assert!(result.is_terminal());
     assert_eq!(

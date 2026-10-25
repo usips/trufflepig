@@ -23,6 +23,7 @@ pub mod results;
 pub mod runtime_paths;
 pub mod search;
 pub mod semantic;
+pub mod semantic_preparation;
 pub mod source;
 pub mod store;
 pub mod system;

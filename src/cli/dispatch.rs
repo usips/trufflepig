@@ -46,7 +46,7 @@ pub(super) fn local_with_session(
     session: &mut crate::semantic::SemanticSession,
     context: &crate::request_context::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
-    preparation_manager: Option<&crate::semantic::preparation::PreparationManager>,
+    preparation_manager: Option<&crate::semantic_preparation::PreparationManager>,
     deadline: QueryDeadline,
 ) -> Result<String> {
     let initializations = crate::semantic::model_initializations();
@@ -106,7 +106,7 @@ fn local_dispatch(
     session: &mut crate::semantic::SemanticSession,
     context: &crate::request_context::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
-    preparation_manager: Option<&crate::semantic::preparation::PreparationManager>,
+    preparation_manager: Option<&crate::semantic_preparation::PreparationManager>,
     deadline: QueryDeadline,
 ) -> Result<String> {
     validate(options)?;

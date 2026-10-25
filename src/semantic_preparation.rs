@@ -4,10 +4,10 @@
 //! the index read transaction before serialized inference. Progress and
 //! outcomes survive process restarts and are keyed by content, never region IDs.
 
-mod cache;
-mod worker;
+mod preparation_cache;
+mod preparation_worker;
 
-pub use worker::{ClosureWorker, EmbeddingWorker, ForegroundWorker, SharedWorker};
+pub use preparation_worker::{ClosureWorker, EmbeddingWorker, ForegroundWorker, SharedWorker};
 
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -130,7 +130,7 @@ pub fn retry(root: &Path, cache: &Path) -> Result<ScheduleReceipt> {
 /// Returns current-generation counts from the index and verified embedding cache.
 pub fn status(root: &Path, cache: &Path) -> Result<PreparationStatus> {
     let mut index = open_index(root, cache)?;
-    let mut preparation = cache::PreparationCache::open(cache)?;
+    let mut preparation = preparation_cache::PreparationCache::open(cache)?;
     current_status(&mut index, &mut preparation)
 }
 
@@ -156,7 +156,7 @@ pub fn wait_timeout(
     loop {
         let index = open_index(root, cache)?;
         let current_generation = read_generation(&index)?;
-        let preparation = cache::PreparationCache::open(cache)?;
+        let preparation = preparation_cache::PreparationCache::open(cache)?;
         if current_generation > captured_generation {
             let status = superseded_status(captured_generation, &preparation);
             return Ok(PreparationWait {
@@ -197,13 +197,13 @@ pub fn run_foreground<W: EmbeddingWorker>(
             "no published source generation"
         ));
     }
-    let Some(_lease) = cache::PreparationLease::try_acquire(cache)? else {
+    let Some(_lease) = preparation_cache::PreparationLease::try_acquire(cache)? else {
         bail!(coded!(
             PreparationBusy,
             "another process owns the preparation sweep"
         ));
     };
-    let mut preparation = cache::PreparationCache::open(cache)?;
+    let mut preparation = preparation_cache::PreparationCache::open(cache)?;
     let _ = prepare_generation(&mut index, &mut preparation, &mut worker, generation, true)?;
     current_status(&mut index, &mut preparation)
 }
@@ -329,9 +329,9 @@ impl Drop for PreparationManager {
 struct WorkerContext {
     root: PathBuf,
     cache: PathBuf,
-    _lease: cache::PreparationLease,
+    _lease: preparation_cache::PreparationLease,
     index: Connection,
-    preparation: cache::PreparationCache,
+    preparation: preparation_cache::PreparationCache,
 }
 
 fn worker_loop<W: EmbeddingWorker>(
@@ -352,11 +352,11 @@ fn worker_loop<W: EmbeddingWorker>(
                     .as_ref()
                     .is_some_and(|context| context.root == root && context.cache == cache);
                 if !same_context {
-                    context = match cache::PreparationLease::try_acquire(&cache) {
+                    context = match preparation_cache::PreparationLease::try_acquire(&cache) {
                         Ok(Some(lease)) => {
                             match (
                                 open_index(&root, &cache),
-                                cache::PreparationCache::open(&cache),
+                                preparation_cache::PreparationCache::open(&cache),
                             ) {
                                 (Ok(index), Ok(preparation)) => Some(WorkerContext {
                                     root: root.clone(),
@@ -420,7 +420,7 @@ fn request_schedule_with_reset_inner(
             "no published source generation"
         ));
     }
-    let mut preparation = cache::PreparationCache::open(cache)?;
+    let mut preparation = preparation_cache::PreparationCache::open(cache)?;
     let requested = preparation.request(generation)?;
     let reset = reset_terminal && preparation.reset_terminal(generation)?;
     Ok(ScheduleReceipt {
@@ -431,7 +431,7 @@ fn request_schedule_with_reset_inner(
 
 fn process_pending_context<W: EmbeddingWorker>(
     index: &mut Connection,
-    preparation: &mut cache::PreparationCache,
+    preparation: &mut preparation_cache::PreparationCache,
     worker: &mut W,
     reset_terminal: bool,
 ) -> Result<()> {
@@ -459,11 +459,11 @@ fn process_pending_context<W: EmbeddingWorker>(
 
 fn prepare_generation<W: EmbeddingWorker>(
     index: &mut Connection,
-    preparation: &mut cache::PreparationCache,
+    preparation: &mut preparation_cache::PreparationCache,
     worker: &mut W,
     generation: i64,
     reset_terminal: bool,
-) -> Result<Option<cache::RunRecord>> {
+) -> Result<Option<preparation_cache::RunRecord>> {
     let (observed, total) = snapshot_size(index, generation)?;
     if observed != generation {
         preparation.supersede_generation(
@@ -529,16 +529,19 @@ fn prepare_generation<W: EmbeddingWorker>(
         let retry_started = Instant::now();
         let mut retry_delay = Duration::from_millis(50);
         loop {
-            let inference = worker::run_batches_grouped(worker, &pending, |batch, results| {
-                let mut completed = Vec::with_capacity(results.len());
-                for (input, result) in batch.iter().zip(results) {
-                    match result {
-                        Ok(embedding) => completed.push((input.content_key.clone(), embedding)),
-                        Err(error) => preparation.fail(&input.content_key, &error.to_string())?,
+            let inference =
+                preparation_worker::run_batches_grouped(worker, &pending, |batch, results| {
+                    let mut completed = Vec::with_capacity(results.len());
+                    for (input, result) in batch.iter().zip(results) {
+                        match result {
+                            Ok(embedding) => completed.push((input.content_key.clone(), embedding)),
+                            Err(error) => {
+                                preparation.fail(&input.content_key, &error.to_string())?
+                            }
+                        }
                     }
-                }
-                preparation.complete_many(completed.into_iter())
-            });
+                    preparation.complete_many(completed.into_iter())
+                });
             match inference {
                 Ok(()) => break,
                 Err(error) if worker.is_retryable_batch_error(&error) => {
@@ -627,7 +630,7 @@ fn prepare_generation<W: EmbeddingWorker>(
 }
 
 fn pending_inputs(
-    preparation: &cache::PreparationCache,
+    preparation: &preparation_cache::PreparationCache,
     units: &[EmbeddingInput],
 ) -> Result<Vec<EmbeddingInput>> {
     let cache_snapshot = preparation.snapshot()?;
@@ -649,9 +652,9 @@ fn pending_inputs(
 }
 
 fn classify_units(
-    preparation: &cache::PreparationCache,
+    preparation: &preparation_cache::PreparationCache,
     units: &[EmbeddingInput],
-    cache_snapshot: &cache::CachedSnapshot,
+    cache_snapshot: &preparation_cache::CachedSnapshot,
 ) -> Result<(usize, usize, usize)> {
     let mut cached = 0;
     let mut missing = 0;
@@ -673,7 +676,7 @@ fn classify_units(
 
 fn current_status(
     index: &mut Connection,
-    preparation: &mut cache::PreparationCache,
+    preparation: &mut preparation_cache::PreparationCache,
 ) -> Result<PreparationStatus> {
     let generation = read_generation(index)?;
     if generation <= 0 {
@@ -698,7 +701,7 @@ fn current_status(
 
 fn current_counts(
     index: &mut Connection,
-    preparation: &cache::PreparationCache,
+    preparation: &preparation_cache::PreparationCache,
     generation: i64,
 ) -> Result<(i64, usize, usize, usize, usize)> {
     let mut offset = 0;
@@ -842,7 +845,7 @@ fn estimate_tokens(text: &str) -> usize {
     text.len().div_ceil(4).max(1)
 }
 
-fn wait_from_run(generation: i64, run: cache::RunRecord) -> PreparationWait {
+fn wait_from_run(generation: i64, run: preparation_cache::RunRecord) -> PreparationWait {
     let status = PreparationStatus {
         generation,
         state: run.state,
@@ -860,7 +863,10 @@ fn wait_from_run(generation: i64, run: cache::RunRecord) -> PreparationWait {
     }
 }
 
-fn superseded_status(generation: i64, preparation: &cache::PreparationCache) -> PreparationStatus {
+fn superseded_status(
+    generation: i64,
+    preparation: &preparation_cache::PreparationCache,
+) -> PreparationStatus {
     let run = preparation.run(generation).ok().flatten();
     let (cursor, total, cached, missing, failures, error) = run
         .map(|run| {
@@ -904,7 +910,10 @@ fn timeout_wait(generation: i64) -> PreparationWait {
     }
 }
 
-fn record_worker_error_in_cache(preparation: &mut cache::PreparationCache, message: String) {
+fn record_worker_error_in_cache(
+    preparation: &mut preparation_cache::PreparationCache,
+    message: String,
+) {
     let Ok(requested) = preparation.requested_generation() else {
         return;
     };
@@ -914,7 +923,7 @@ fn record_worker_error_in_cache(preparation: &mut cache::PreparationCache, messa
 }
 
 fn record_worker_error(cache: &Path, message: String) {
-    let Ok(mut preparation) = cache::PreparationCache::open(cache) else {
+    let Ok(mut preparation) = preparation_cache::PreparationCache::open(cache) else {
         return;
     };
     record_worker_error_in_cache(&mut preparation, message);

@@ -238,7 +238,7 @@ impl MemberSearch<'_> {
             HomeIndexSource::Unavailable { error } => return Err(error),
         };
         let preparation_error = if command.semantic && !options.no_daemon {
-            crate::semantic::preparation::schedule(&member.root, &member_cache).err()
+            crate::semantic_preparation::schedule(&member.root, &member_cache).err()
         } else {
             None
         };
