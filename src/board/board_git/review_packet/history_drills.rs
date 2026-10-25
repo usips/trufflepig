@@ -159,8 +159,14 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(board_git_2_55), ignore = "requires Git >=2.55")]
     fn history_drills_refuse_old_git_and_unavailable_blob_objects_drill_hint() {
+        if !crate::test_fixtures::git_version::at_least(
+            2,
+            55,
+            "history_drills_refuse_old_git_and_unavailable_blob_objects_drill_hint",
+        ) {
+            return;
+        }
         let fixture = GitFixture::new();
         fixture.commit("root");
         std::fs::write(fixture.root.join("file.txt"), "contents\n").unwrap();

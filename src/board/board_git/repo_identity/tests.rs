@@ -74,8 +74,14 @@ fn origin_label_removes_url_credentials() {
 }
 
 #[test]
-#[cfg_attr(not(board_git_2_46), ignore = "requires Git >=2.46")]
 fn reftable_repository_registration_resolves_symbolic_head() {
+    if !crate::test_fixtures::git_version::at_least(
+        2,
+        46,
+        "reftable_repository_registration_resolves_symbolic_head",
+    ) {
+        return;
+    }
     let fixture = GitFixture::new();
     fixture.commit("root");
     fixture.git(&["refs", "migrate", "--ref-format=reftable"]);

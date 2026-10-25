@@ -72,8 +72,14 @@ fn real_branch_ingestion_survives_host_reopening_and_review_identifies_crossed_c
 }
 
 #[test]
-#[cfg_attr(not(board_git_2_55), ignore = "requires Git >=2.55")]
 fn real_branch_ingestion_survives_host_reopening_and_review_identifies_crossed_claims_drill_hint() {
+    if !crate::test_fixtures::git_version::at_least(
+        2,
+        55,
+        "real_branch_ingestion_survives_host_reopening_and_review_identifies_crossed_claims_drill_hint",
+    ) {
+        return;
+    }
     let (fixture, linked_oid) = ingest_crossed_claim();
     let review = fixture.run(&["board", "review", "P1@1", "codex"], "codex", "reviewer");
     let packet = review

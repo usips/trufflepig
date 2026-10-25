@@ -1,13 +1,15 @@
-#![cfg(board_node_20)]
-
 use std::{env, path::PathBuf, process::Command, time::Duration};
 
 use super::run_node_program;
 
 #[test]
 fn failed_program_prints_tail_and_every_not_ok() {
+    if crate::node_20("failed_program_prints_tail_and_every_not_ok").is_none() {
+        return;
+    }
     if env::var_os("TRUFFLEPIG_NODE_DIAGNOSTIC_PROBE").is_some() {
-        let node = crate::resolve_on_path("node").expect("node on PATH: build probed Node >=20");
+        let node =
+            crate::resolve_on_path("node").expect("node on PATH: the test checked Node >=20");
         let fixture =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/diagnostic_failure.mjs");
         let output = run_node_program(&node, &fixture, Duration::from_secs(10))

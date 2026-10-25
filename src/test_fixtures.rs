@@ -2,6 +2,7 @@
 //! Scratch directories are owner-only because board opens refuse
 //! group/world-accessible database parents they did not create.
 mod git_fixture;
+pub(crate) mod git_version;
 #[cfg(target_os = "linux")]
 pub(crate) mod unlinked_executable;
 
