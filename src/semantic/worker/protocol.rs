@@ -9,12 +9,12 @@ use std::{
     io::{ErrorKind, Read, Write},
     time::Instant,
 };
+use tp_core::build_identity::BuildIdentity;
 
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const FRAME_LIMIT: usize = 1024 * 1024;
 pub const MAX_INPUTS: usize = 8;
 pub const MAX_RAW_INPUT_BYTES: usize = 8 * 1024 * 1024;
-const BUILD_ID: &str = env!("TRUFFLEPIG_BUILD_ID");
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -42,7 +42,7 @@ impl Handshake {
         );
         Self {
             protocol: PROTOCOL_VERSION,
-            build: BUILD_ID.into(),
+            build: BuildIdentity::current().build_id().into(),
             config: config.fingerprint(),
             model: blake3::hash(model.as_bytes()).to_hex().to_string(),
         }

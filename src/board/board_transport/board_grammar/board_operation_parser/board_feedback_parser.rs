@@ -12,6 +12,7 @@ use crate::{
     },
 };
 use anyhow::Result;
+use tp_core::build_identity::BuildIdentity;
 use tp_core::coded_error::CodedContext;
 
 pub(super) fn parse_feedback(
@@ -92,8 +93,8 @@ fn feedback_metadata(
         .transpose()?
         .unwrap_or_default();
     Ok(FeedbackMetadata {
-        version: env!("CARGO_PKG_VERSION").into(),
-        build_id: option_env!("TRUFFLEPIG_BUILD_ID").map(str::to_owned),
+        version: BuildIdentity::current().version().into(),
+        build_id: BuildIdentity::installed().map(|build| build.build_id().to_owned()),
         repo_key: None,
         cwd: if options.root.is_absolute() {
             String::new()

@@ -7,9 +7,11 @@ use crate::diagnostics::{DiagnosticsMode, Operation, Outcome, RequestEvent};
 use clap::{CommandFactory, Parser};
 use serde_json::{Value, json};
 use std::{io::Write, time::Instant};
+use tp_core::build_identity::BuildIdentity;
 use tp_core::output::OutputBudget;
 
 pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write) -> i32 {
+    BuildIdentity::new(env!("CARGO_PKG_VERSION"), env!("TRUFFLEPIG_BUILD_ID")).install();
     if let Some(answer) = super::board_api_probe::probe_board_api(args) {
         return match answer {
             Ok(output) => {

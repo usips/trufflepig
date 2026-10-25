@@ -7,6 +7,7 @@
 #[macro_use]
 pub mod coded_error;
 pub mod background_process;
+pub mod build_identity;
 pub mod daemon_transport;
 pub mod git_runner;
 pub mod identity;
