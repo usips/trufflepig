@@ -202,7 +202,7 @@ pub(super) fn open_with_timeout(
         ));
     }
     for version in locked_version..SCHEMA_VERSION {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         slowed_migration_step();
         tx.execute_batch(migration_step(version)?)
             .map_err(sql_error)?;
@@ -260,7 +260,7 @@ fn retry_busy<T>(
 
 /// Sleeps once per applied migration step while the router test holds
 /// migration open; unset outside that test, so migration timing never changes.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn slowed_migration_step() {
     let delay = std::env::var("TRUFFLEPIG_SYSTEM_TEST_MIGRATION_STEP_DELAY_MS")
         .ok()
