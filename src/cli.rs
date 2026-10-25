@@ -124,7 +124,7 @@ fn direct_with_deadline(
         seed_linked_worktree_cache(&root, &cache);
     }
     if verb == "history-serve" {
-        return crate::history::history_worker::serve(
+        return tp_history::history_worker::serve(
             options
                 .history_cache
                 .as_deref()
@@ -168,7 +168,7 @@ fn direct_with_deadline(
                     format!("cannot create root daemon cache {}", cache.display())
                 })?;
                 let history_cache = options.resolved_history_cache.clone().or_else(|| {
-                    crate::history::history_worker::resolve_cache(
+                    tp_history::history_worker::resolve_cache(
                         &root,
                         options.cache.as_deref(),
                         options.history_cache.as_deref(),
@@ -307,13 +307,13 @@ fn wait_for_history(root: &Path, options: &Arguments, response: String) -> Resul
         .clone()
         .map(Ok)
         .unwrap_or_else(|| {
-            crate::history::history_worker::resolve_cache(
+            tp_history::history_worker::resolve_cache(
                 root,
                 options.cache.as_deref(),
                 options.history_cache.as_deref(),
             )
         })?;
-    let mut history = crate::history::History::open(root, &cache)?;
+    let mut history = tp_history::History::open(root, &cache)?;
     if let Some(tip) = initial["tip"].as_str() {
         history.tip = tp_core::identity::GitOid::parse(tip)?;
     }

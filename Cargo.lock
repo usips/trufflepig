@@ -1576,6 +1576,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "tp-history"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "fs2",
+ "imara-diff",
+ "notify",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tp-core",
+ "tp-extract",
+ "tp-index",
+]
+
+[[package]]
 name = "tp-index"
 version = "0.1.0"
 dependencies = [
@@ -1741,6 +1759,7 @@ dependencies = [
  "toml",
  "tp-core",
  "tp-extract",
+ "tp-history",
  "tp-index",
  "tp-semantic",
  "tree-sitter",

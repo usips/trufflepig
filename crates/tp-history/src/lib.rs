@@ -1,4 +1,8 @@
 //! First-parent history uses captured tips and immutable local Git objects.
+
+#[macro_use]
+extern crate tp_core;
+
 mod blame;
 #[cfg(test)]
 mod command_tests;

@@ -190,7 +190,7 @@ fn member_options(
         member_cache(member, options.cache.as_deref())?
     };
     local.cache = Some(cache);
-    local.resolved_history_cache = crate::history::history_worker::resolve_cache(
+    local.resolved_history_cache = tp_history::history_worker::resolve_cache(
         &member.root,
         options
             .cache

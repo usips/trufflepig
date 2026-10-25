@@ -5,7 +5,6 @@ pub(crate) mod board;
 pub(crate) mod cli;
 pub(crate) mod daemon;
 pub(crate) mod diagnostics;
-pub(crate) mod history;
 pub(crate) mod system;
 pub(crate) mod workspace;
 

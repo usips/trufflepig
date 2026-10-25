@@ -4,7 +4,7 @@ use tp_core::background_process::{BackgroundOwner, ReplacedExecutable};
 #[test]
 fn history_start_rejects_a_deleted_running_executable() {
     tp_core::test_fixtures::unlinked_executable::run_unlinked(
-        "history::history_worker::replaced_executable_tests::history_start_child_entry",
+        "history_worker::replaced_executable_tests::history_start_child_entry",
     );
 }
 

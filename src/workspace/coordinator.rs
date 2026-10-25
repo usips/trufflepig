@@ -325,7 +325,7 @@ pub(super) fn ensure_member(
         coded!(TimedOut, "query deadline expired")
     );
     // Resolve from the original override: default worktree history stays shared.
-    local.resolved_history_cache = crate::history::history_worker::resolve_cache(
+    local.resolved_history_cache = tp_history::history_worker::resolve_cache(
         &member.root,
         options.cache.as_deref().map(|_| cache.as_path()),
         options.history_cache.as_deref(),

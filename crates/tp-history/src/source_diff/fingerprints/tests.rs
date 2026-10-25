@@ -1,5 +1,5 @@
 use super::*;
-use crate::history::source_diff::{DeclarationRelation, correspond_declarations};
+use crate::source_diff::{DeclarationRelation, correspond_declarations};
 use tp_core::line_diff::diff_sources;
 
 fn facts(bytes: &[u8], extraction: &tp_extract::Extraction) -> Vec<FingerprintFact> {

@@ -284,13 +284,13 @@ fn local_dispatch(
             .clone()
             .map(Ok)
             .unwrap_or_else(|| {
-                crate::history::history_worker::resolve_cache(
+                tp_history::history_worker::resolve_cache(
                     root,
                     options.cache.as_deref(),
                     options.history_cache.as_deref(),
                 )
             })?;
-        let mut history = crate::history::History::open(root, &history_cache)?;
+        let mut history = tp_history::History::open(root, &history_cache)?;
         if options.no_daemon && verb == "hist" {
             history.index()?;
         }
@@ -306,7 +306,7 @@ fn local_dispatch(
                     budget.render(&status)
                 } else {
                     let status = history.schedule()?;
-                    crate::history::history_worker::start(root, &history_cache)?;
+                    tp_history::history_worker::start(root, &history_cache)?;
                     budget.render(&status)
                 }
             }

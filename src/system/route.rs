@@ -139,7 +139,7 @@ pub(super) fn route(
         tp_index::store::index_cache_unavailable(&cache, context)
     })?;
     let history_cache = options.resolved_history_cache.clone().or_else(|| {
-        crate::history::history_worker::resolve_cache(
+        tp_history::history_worker::resolve_cache(
             &root,
             options.cache.as_deref(),
             options.history_cache.as_deref(),
