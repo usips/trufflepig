@@ -17,8 +17,8 @@ use crate::cli::Arguments;
 use anyhow::{Context, Result, bail, ensure};
 pub(crate) use coordinator::{apply_config, run_with_deadline};
 pub(crate) use home_index::{
-    ParentFallback, ParentIndexIdentity, ParentIndexView, WorktreeHashes, acquire_through_parent,
-    reextracted_entry, standalone_parent_view,
+    ParentFallback, ParentIndexIdentity, ParentIndexView, ParentRerank, WorktreeHashes,
+    acquire_through_parent, reextracted_entry, standalone_parent_view,
 };
 use member_root::MemberRoot;
 use result_cache::WorkspaceResults;

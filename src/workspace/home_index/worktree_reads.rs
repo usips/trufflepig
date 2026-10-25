@@ -10,10 +10,16 @@ use tp_core::{identity::ContentRevision, path_codec::decode_path, query_deadline
 use tp_extract::Definition;
 use tp_index::{
     results::{Hit, ResultSet},
-    search::{BoundPathFilter, InvocationDirectory, Query},
+    search::{
+        BoundPathFilter, InvocationDirectory, MergedRerank, Query, RerankScorer,
+        telemetry::RetrievalTrace,
+    },
     source,
     store::Store,
 };
+
+#[cfg(test)]
+mod tests;
 
 /// Most changed files re-evaluated for one search query.
 const MAX_RECHECKED_FILES: usize = 64;
@@ -40,6 +46,32 @@ pub(super) struct WorktreeSymbols {
     pub truncated: bool,
 }
 
+/// The opt-in rerank of a standalone parent-index search, run after the
+/// worktree recheck so a replaced hit, whose revision has no indexed body in
+/// the parent, stays unscored ([`MergedRerank`]).
+pub(crate) struct ParentRerank<'a> {
+    pub scorer: &'a dyn RerankScorer,
+    pub trace: &'a mut RetrievalTrace,
+}
+
+impl ParentRerank<'_> {
+    fn run(self, store: &Store, query: &Query, found: &mut ResultSet, deadline: &QueryDeadline) {
+        let rerank = MergedRerank {
+            query,
+            cache: store.index_cache(),
+            scorer: self.scorer,
+            deadline,
+        };
+        let (outcome, _) = rerank.run(
+            &mut found.hits,
+            |hit| Some(hit),
+            |_| Some(store),
+            self.trace,
+        );
+        outcome.record(&mut found.coverage);
+    }
+}
+
 /// Worktree bytes exist but their definitions cannot be known.
 pub(super) fn unextractable(error: &anyhow::Error) -> bool {
     use tp_core::coded_error::{ErrorCode, error_code};
@@ -51,14 +83,16 @@ pub(super) fn unextractable(error: &anyhow::Error) -> bool {
 
 impl ParentFallback {
     /// Completes a parent-index answer from worktree bytes: searches recheck
-    /// changed files, and `map` of a changed file re-extracts it.
-    /// Returns the changed files it found, for the answer's differing count.
+    /// changed files, then run `rerank` if given; `map` of a changed file
+    /// re-extracts it. Returns the changed files it found, for the answer's
+    /// differing count.
     pub(crate) fn complete_answer(
         &mut self,
         store: &Store,
         request: (&str, &[String], &Query, &InvocationDirectory),
         found: &mut ResultSet,
         hashes: &mut WorktreeHashes,
+        rerank: Option<ParentRerank<'_>>,
         deadline: &QueryDeadline,
     ) -> Result<HashSet<String>> {
         check_deadline(deadline)?;
@@ -88,13 +122,8 @@ impl ParentFallback {
             let symbols = self.worktree_symbols(store, query, parent, origin, hashes, deadline)?;
             found.hits = symbols.hits;
             found.truncated |= symbols.truncated;
-            if !symbols.changed.is_empty() && found.coverage["rerank_status"] == "ready" {
-                found.coverage["rerank_status"] = "unavailable".into();
-                found.coverage["rerank_reason"] =
-                    "current-source replacements were not reranked".into();
-                if let Some(coverage) = found.coverage.as_object_mut() {
-                    coverage.remove("rerank_window");
-                }
+            if let Some(rerank) = rerank {
+                rerank.run(store, query, found, deadline);
             }
             if symbols.incomplete {
                 found.truncated = true;

@@ -106,7 +106,10 @@ Failures render as `code: message`: a stable snake_case code, then human text.
 `ErrorCode` in `crates/tp-core/src/coded_error/error_code_inventory.rs` lists every code.
 Producers raise a `CodedError` with `coded!` and attach one as context with
 `CodedContext::with_coded_context`, which keeps the code visible through wrapping
-errors; `{error:#}` renders exactly as plain anyhow context would.
+errors; `{error:#}` renders exactly as plain anyhow context would. A coded
+error that reports an inner error keeps it as that source rather than
+formatting it into its message, so the inner codes count in-process as they
+do in relayed text.
 
 Control flow matches codes, never rendered text. `error_code` returns the
 outermost code in an error chain, `ErrorCode::is_anywhere_in` checks every layer,

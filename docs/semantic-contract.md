@@ -94,7 +94,10 @@ file hit's first 4,096 bytes) read from the indexed content of the hit's
 revision. The stage follows the
 [current-source check](index-contract.md#coherent-publication), so a hit replaced from
 current bytes has no indexed document and stays unscored; no hit is scored on
-stale indexed text.
+stale indexed text. A linked worktree answered from its parent's index
+([workspace contract](workspace-contract.md#retrieval-and-output)) reranks
+after swapping in its changed files' current candidates, under the
+workspace deadline rule below; the replacements stay unscored.
 
 A workspace query reranks once: members search without reranking, their
 ranks interleave as the [workspace contract](workspace-contract.md) describes,
