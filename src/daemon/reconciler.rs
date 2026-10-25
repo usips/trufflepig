@@ -70,17 +70,6 @@ pub(super) fn indexed_path(root: &Path, path: &Path) -> bool {
     })
 }
 
-/// Lowers the calling thread (and threads it spawns later) to nice 10 and idle
-/// I/O; on Linux both apply per thread, so request workers keep normal priority.
-fn lower_priority() {
-    // SAFETY: plain syscalls on the calling thread with constant arguments.
-    unsafe {
-        libc::setpriority(libc::PRIO_PROCESS, 0, 10);
-        // IOPRIO_WHO_PROCESS = 1; IOPRIO_CLASS_IDLE = 3 in the top three bits.
-        libc::syscall(libc::SYS_ioprio_set, 1, 0, 3 << 13);
-    }
-}
-
 fn watch(root: &Path, cache: &Path, dirty: Arc<AtomicBool>) -> Option<notify::RecommendedWatcher> {
     let cache = cache.to_owned();
     let watched_root = root.to_owned();
@@ -150,7 +139,7 @@ pub(super) fn run<H: DaemonHandler>(
         return;
     }
     if maintenance.watching {
-        lower_priority();
+        tp_core::background_priority::lower_current_thread();
     }
     let interval = if watcher.is_some() {
         WATCHED_RECONCILE_INTERVAL

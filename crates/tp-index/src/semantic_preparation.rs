@@ -324,6 +324,8 @@ fn worker_loop<W: EmbeddingWorker>(
     mut worker: W,
     wake: Arc<Wake>,
 ) {
+    // Background preparation yields to the daemon's request workers.
+    tp_core::background_priority::lower_current_thread();
     let mut context: Option<WorkerContext> = None;
     while let Ok(command) = receiver.recv() {
         match command {

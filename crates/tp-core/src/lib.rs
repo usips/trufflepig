@@ -6,6 +6,7 @@
 // First, so `coded!` is in textual scope for every later module.
 #[macro_use]
 pub mod coded_error;
+pub mod background_priority;
 pub mod background_process;
 pub mod build_identity;
 pub mod daemon_transport;
