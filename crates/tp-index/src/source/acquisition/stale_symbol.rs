@@ -12,7 +12,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use tp_core::query_deadline::QueryDeadline;
+use tp_core::{coded_error::coded_error, query_deadline::QueryDeadline};
 
 /// Longest a stale `sym:` read waits for a serving daemon to republish.
 const REPUBLISH_WAIT: Duration = Duration::from_secs(3);
@@ -37,11 +37,17 @@ pub(super) fn acquire_symbol_entry(
         read => return read,
     };
     let republished = await_republish(store, seen)?;
-    // Binary or unextractable current bytes leave the stale answer standing.
+    // Binary or unextractable current bytes leave the stale answer standing,
+    // still coded `stale_source` so callers can re-read through a parent.
     let mut source = match acquire_reextracted(store, &hit) {
         Ok(Some(source)) => source,
         Ok(None) => return Err(error),
-        Err(unavailable) => bail!("{error}; current bytes: {unavailable:#}"),
+        Err(unavailable) => {
+            let stale = coded_error(&error).expect("is_stale_source checked a coded error");
+            return Err(stale
+                .appended(&format!("; current bytes: {unavailable:#}"))
+                .into());
+        }
     };
     if republished && published_revision(store, &hit.path)? == Some(source.revision.to_string()) {
         source.verified = true;

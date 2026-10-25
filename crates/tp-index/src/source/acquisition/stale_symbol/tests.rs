@@ -92,6 +92,11 @@ fn sym_read_falls_back_to_current_bytes() {
     let message = format!("{binary:#}");
     assert!(message.starts_with("stale_source:"), "{message}");
     assert!(message.contains("source_excluded"), "{message}");
+    // Typed, not just text, so parent-index callers can re-read current bytes.
+    assert!(
+        tp_core::coded_error::ErrorCode::StaleSource.is_code_of(&binary),
+        "{message}"
+    );
 
     std::fs::write(
         root.path().join("lib.rs"),
