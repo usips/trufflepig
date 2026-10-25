@@ -90,7 +90,7 @@ fn unavailable_marker_skips_ensure_without_extending_its_deadline() {
         before
     );
     let expired = SystemTime::now() - Duration::from_secs(31);
-    crate::system::mark_board_router_unavailable(&runtime, expired).unwrap();
+    crate::board::board_runtime_markers::mark_board_router_unavailable(&runtime, expired).unwrap();
     invoke(
         &["board", "show"],
         &mut gateway,
@@ -134,8 +134,11 @@ fn every_local_client_path_refuses_a_different_router_database_pin() {
     let directory = scratch();
     let runtime = directory.path().join("runtime");
     let database = directory.path().join("client.sqlite3");
-    crate::system::record_board_database(&runtime, &directory.path().join("router.sqlite3"))
-        .unwrap();
+    crate::board::board_runtime_markers::record_board_database(
+        &runtime,
+        &directory.path().join("router.sqlite3"),
+    )
+    .unwrap();
     for words in [vec!["--no-daemon", "board", "show"], vec!["board", "show"]] {
         let error = invoke(
             &words,

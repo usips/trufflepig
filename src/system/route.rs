@@ -1,6 +1,6 @@
 //! Request routing from the system daemon to workspace, root, and board owners.
 
-use super::record_board_database;
+use crate::board::board_runtime_markers::record_board_database;
 use crate::coded_error::CodedContext;
 use crate::runtime_paths::system_dir;
 use crate::{

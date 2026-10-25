@@ -153,7 +153,10 @@ impl BoardClientTransport {
                     );
                 }
                 recent = runtime.is_some_and(|runtime| {
-                    crate::system::board_router_recently_unavailable(runtime, SystemTime::now())
+                    crate::board::board_runtime_markers::board_router_recently_unavailable(
+                        runtime,
+                        SystemTime::now(),
+                    )
                 });
                 if !recent {
                     check_deadline(deadline)?;
@@ -173,7 +176,7 @@ impl BoardClientTransport {
                 check_deadline(deadline)?;
                 if !recent {
                     if let Some(runtime) = runtime {
-                        let _ = crate::system::mark_board_router_unavailable(
+                        let _ = crate::board::board_runtime_markers::mark_board_router_unavailable(
                             runtime,
                             SystemTime::now(),
                         );
@@ -197,8 +200,9 @@ impl BoardClientTransport {
             );
             check_deadline(deadline)?;
             if let Some(runtime) = runtime {
-                let _ = crate::system::record_board_database(runtime, &database);
-                crate::system::clear_board_router_unavailable(runtime);
+                let _ =
+                    crate::board::board_runtime_markers::record_board_database(runtime, &database);
+                crate::board::board_runtime_markers::clear_board_router_unavailable(runtime);
             }
         }
         ensure!(
@@ -214,7 +218,7 @@ impl BoardClientTransport {
         match gateway.request(forwarded, context, deadline) {
             Ok(Some(reply)) => {
                 if let Some(runtime) = runtime {
-                    crate::system::clear_board_router_unavailable(runtime);
+                    crate::board::board_runtime_markers::clear_board_router_unavailable(runtime);
                 }
                 Ok(reply)
             }
@@ -228,8 +232,10 @@ impl BoardClientTransport {
                     );
                 }
                 if let Some(runtime) = runtime {
-                    let _ =
-                        crate::system::mark_board_router_unavailable(runtime, SystemTime::now());
+                    let _ = crate::board::board_runtime_markers::mark_board_router_unavailable(
+                        runtime,
+                        SystemTime::now(),
+                    );
                 }
                 local_reply(options, command, context, load, runtime, spool, deadline)
             }
@@ -450,7 +456,7 @@ fn local_reply(
         let config = load()?;
         check_deadline(deadline)?;
         if let Some(runtime) = runtime {
-            crate::system::validate_board_database(runtime, &config.db_path)?;
+            crate::board::board_runtime_markers::validate_board_database(runtime, &config.db_path)?;
         }
         check_deadline(deadline)?;
         refuse_stale_storage_beside_router(
@@ -462,7 +468,7 @@ fn local_reply(
     let config = load()?;
     check_deadline(deadline)?;
     if let Some(runtime) = runtime {
-        crate::system::validate_board_database(runtime, &config.db_path)?;
+        crate::board::board_runtime_markers::validate_board_database(runtime, &config.db_path)?;
     }
     run_local(command, options, context, &config, runtime, spool, deadline)
 }

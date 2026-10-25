@@ -1,17 +1,12 @@
 //! Per-user system daemon routing CLI requests to owning workspace or root daemons.
 //! Each request is proxied on its own worker, bounded by `crate::daemon_transport::PROXY_REPLY_WAIT`.
 
-mod board_runtime;
 mod managed_unit;
 mod route;
 pub mod sweep;
 
 use crate::coded_error::CodedContext;
 use crate::runtime_paths::{spool_dir, system_dir};
-pub(crate) use board_runtime::{
-    board_router_recently_unavailable, clear_board_router_unavailable,
-    mark_board_router_unavailable, record_board_database, validate_board_database,
-};
 #[cfg(test)]
 mod tests;
 

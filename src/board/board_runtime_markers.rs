@@ -165,3 +165,6 @@ pub(crate) fn mark_board_router_unavailable(runtime: &Path, now: SystemTime) -> 
 pub(crate) fn clear_board_router_unavailable(runtime: &Path) {
     let _ = fs::remove_file(runtime.join("board-router-unavailable.json"));
 }
+
+#[cfg(test)]
+mod tests;

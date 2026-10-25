@@ -4,7 +4,6 @@ mod router_spawn_tests;
 mod router_start_tests;
 mod router_status_tests;
 
-use super::board_runtime::{BoardDatabaseMarker, board_database_marker_matches};
 use super::*;
 use std::path::Path;
 

@@ -15,6 +15,7 @@ pub use board_transport::{board_backend, board_config, board_grammar, feedback_o
 pub mod board_git;
 pub use board_git::{commit_ingest, commit_trailers, repo_identity, review_packet};
 pub mod board_render;
+pub(crate) mod board_runtime_markers;
 #[cfg(test)]
 pub(crate) mod board_test_support;
 pub mod local_board;
