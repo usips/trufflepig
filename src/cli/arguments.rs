@@ -1,8 +1,8 @@
 //! Parsed client options and explicit daemon argument forwarding.
-use crate::board::board_grammar::{BoardArguments, BoardOptions};
 use anyhow::{Result, bail};
 use clap::Parser;
 use std::path::{Path, PathBuf};
+use tp_board::board_grammar::{BoardArguments, BoardOptions};
 use tp_core::{output::MAX_BUDGET, output::OutputFormat};
 use tp_index::results;
 
@@ -324,12 +324,12 @@ pub(super) fn validate(options: &Arguments) -> Result<()> {
         bail!(coded!(InvalidOptions, "--listen requires board-serve"));
     }
     if verb == "board-serve" {
-        crate::board::board_grammar::validate_board_surface(&options.board_arguments())?;
+        tp_board::board_grammar::validate_board_surface(&options.board_arguments())?;
         if options.words.len() != 1 {
             bail!(coded!(Usage, "board-serve [--listen 127.0.0.1:7341]"));
         }
         let address = options.board_listen_address();
-        if crate::board::board_web::web_guard::require_supported_bind_address(address).is_err() {
+        if tp_board::board_web::web_guard::require_supported_bind_address(address).is_err() {
             bail!(coded!(
                 InvalidOptions,
                 "unsupported board-serve bind address"

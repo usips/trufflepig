@@ -9,7 +9,7 @@ use super::{
     http_wire,
     web_guard::{BoardWebToken, WebGuard},
 };
-use crate::board::{board_config::BoardConfig, board_ids::BoardRef, board_protocol::BOARD_API};
+use crate::{board_config::BoardConfig, board_ids::BoardRef, board_protocol::BOARD_API};
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -225,7 +225,7 @@ fn link_at(runtime: &Path, config: &BoardConfig, target: Option<BoardRef>) -> Re
             "running web database differs from configured database"
         )
     );
-    crate::board::board_runtime_markers::validate_board_database(runtime, &config.db_path)?;
+    crate::board_runtime_markers::validate_board_database(runtime, &config.db_path)?;
     let token = BoardWebToken::read_at(&runtime.join("board-web.token"))?;
     let guard = WebGuard::with_token(endpoint.address, token.clone())
         .with_coded_context(|| coded!(BoardUnavailable, "invalid web listener address"))?;

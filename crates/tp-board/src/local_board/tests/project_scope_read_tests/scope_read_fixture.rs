@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_actor::BoardRecipient;
+use crate::board_actor::BoardRecipient;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 
@@ -102,7 +102,7 @@ impl ScopeFixture {
             .handle(&BoardRequest::new(
                 actor("codex", "reader"),
                 BoardOp::Feedback {
-                    kind: crate::board::board_vocabulary::FeedbackKind::Wrong,
+                    kind: crate::board_vocabulary::FeedbackKind::Wrong,
                     summary: EntryText::new(summary).unwrap(),
                     body: None,
                     plan,
@@ -128,7 +128,7 @@ impl ScopeFixture {
     pub(super) fn read(&mut self, scope: Value, mut op: Value) -> BoardReply {
         op["scope"] = scope;
         let request: BoardRequest = serde_json::from_value(json!({
-            "api": crate::board::BOARD_API,
+            "api": crate::BOARD_API,
             "actor": actor("codex", "reader"),
             "op": op,
         }))

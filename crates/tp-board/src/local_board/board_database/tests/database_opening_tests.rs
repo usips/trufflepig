@@ -33,7 +33,7 @@ fn writable_open_refuses_a_group_or_world_accessible_parent_without_touching_it(
     };
     assert_eq!(
         error.code,
-        crate::board::board_protocol::BoardErrorCode::BoardUnavailable
+        crate::board_protocol::BoardErrorCode::BoardUnavailable
     );
     assert!(
         error.message.contains("chmod 0700"),

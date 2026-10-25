@@ -1,21 +1,21 @@
 //! Idempotent commit links and their task activity evidence.
 
 use super::*;
-use crate::board::board_actor::{BoardActor, claim_vendor};
-use crate::board::board_protocol::WorkerAddress;
-use crate::board::commit_trailers::coauthors_prove_claim;
-use crate::board::local_board::board_queries::worker_reads::worker_for_address;
+use crate::board_actor::{BoardActor, claim_vendor};
+use crate::board_protocol::WorkerAddress;
+use crate::commit_trailers::coauthors_prove_claim;
+use crate::local_board::board_queries::worker_reads::worker_for_address;
 use std::collections::{BTreeMap, BTreeSet};
 
 mod manual_commit_link_writes;
-pub(in crate::board::local_board) use manual_commit_link_writes::link_commit;
+pub(in crate::local_board) use manual_commit_link_writes::link_commit;
 
 struct ClaimAttribution {
     entry: EntryId,
     actor_id: i64,
 }
 
-pub(in crate::board::local_board) fn link_commits(
+pub(in crate::local_board) fn link_commits(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     commits: &[LinkedCommit],
@@ -185,7 +185,7 @@ fn validate_links(
 ) -> Result<BTreeMap<PlanId, BTreeSet<u64>>, BoardError> {
     let mut requested = commit.plans.clone();
     requested.extend(commit.worker_refs.iter().map(|worker| {
-        crate::board::board_protocol::CommitPlanLink {
+        crate::board_protocol::CommitPlanLink {
             plan_id: worker.task.plan,
             task_ordinal: Some(worker.task.ordinal),
         }
@@ -463,7 +463,7 @@ fn linked_commit_summary(
         }
         (coauthors, tasks)
     };
-    let coauthors: Vec<crate::board::board_protocol::CommitCoauthor> =
+    let coauthors: Vec<crate::board_protocol::CommitCoauthor> =
         serde_json::from_str(&coauthors_json)
             .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))?;
     let mut model_names = BTreeSet::new();
@@ -498,7 +498,7 @@ fn linked_commit_summary(
 }
 
 /// Conservatively fills claim links for existing rows after schema upgrades.
-pub(in crate::board::local_board) fn backfill_commit_claim_links(
+pub(in crate::local_board) fn backfill_commit_claim_links(
     tx: &Transaction<'_>,
     now: i64,
 ) -> Result<usize, BoardError> {
@@ -549,7 +549,7 @@ pub(in crate::board::local_board) fn backfill_commit_claim_links(
         let oid = oid
             .parse::<tp_core::identity::GitOid>()
             .map_err(BoardError::from)?;
-        let coauthors: Vec<crate::board::board_protocol::CommitCoauthor> =
+        let coauthors: Vec<crate::board_protocol::CommitCoauthor> =
             serde_json::from_str(&coauthors)
                 .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))?;
         let worker_refs: Vec<WorkerAddress> = serde_json::from_str(&workers)

@@ -1,10 +1,10 @@
 //! Stored task cards and immutable lease history windows.
 
 use super::*;
-use crate::board::board_protocol::BoardErrorCode;
-use crate::board::local_board::board_queries::collection_nested::{TASK_SELECT, task_row};
+use crate::board_protocol::BoardErrorCode;
+use crate::local_board::board_queries::collection_nested::{TASK_SELECT, task_row};
 
-pub(in crate::board::local_board) fn read_tasks(
+pub(in crate::local_board) fn read_tasks(
     conn: &Connection,
     plan: PlanId,
 ) -> Result<Vec<TaskRecord>, BoardError> {
@@ -31,7 +31,7 @@ const CLAIM_SELECT: &str = concat!(
     "LEFT JOIN actors d ON d.id=c.delegated_by"
 );
 
-pub(in crate::board::local_board) fn active_claim(
+pub(in crate::local_board) fn active_claim(
     conn: &Connection,
     task: TaskId,
     now: i64,
@@ -52,7 +52,7 @@ pub(in crate::board::local_board) fn active_claim(
         .transpose()
 }
 
-pub(in crate::board::local_board) fn read_claims_window(
+pub(in crate::local_board) fn read_claims_window(
     conn: &Connection,
     plan: PlanId,
     start: i64,

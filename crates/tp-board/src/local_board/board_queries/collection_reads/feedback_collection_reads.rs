@@ -1,19 +1,19 @@
 //! Bounded global feedback pages and metadata decoding for individual entries.
 
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, params};
 
 use super::{COLLECTION_LIMIT, count, sequence_window, validate_limit};
-use crate::board::board_domain::board_collections::{EntryCursor, FeedbackPage};
-use crate::board::board_ids::EventSeq;
-use crate::board::board_protocol::{
+use crate::board_domain::board_collections::{EntryCursor, FeedbackPage};
+use crate::board_ids::EventSeq;
+use crate::board_protocol::{
     BoardReply, BoardResult, EntryRecord, EntryState, FeedbackMetadata, FeedbackRecord,
 };
-use crate::board::board_vocabulary::FeedbackKind;
-use crate::board::local_board::board_queries::board_reads;
-use crate::board::local_board::{BoardError, invalid, sql_error, sql_number};
+use crate::board_vocabulary::FeedbackKind;
+use crate::local_board::board_queries::board_reads;
+use crate::local_board::{BoardError, invalid, sql_error, sql_number};
 
-pub(in crate::board::local_board) fn feedback_page(
+pub(in crate::local_board) fn feedback_page(
     conn: &Connection,
     open_only: bool,
     after: Option<EntryCursor>,
@@ -82,7 +82,7 @@ pub(in crate::board::local_board) fn feedback_page(
     ))
 }
 
-pub(in crate::board::local_board) fn feedback_record(
+pub(in crate::local_board) fn feedback_record(
     conn: &Connection,
     entry: EntryRecord,
 ) -> Result<FeedbackRecord, BoardError> {

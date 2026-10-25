@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn challenge_route_answers_unauthenticated_with_a_verifiable_proof() {
     let fixture = render_fixture();
-    let nonce = crate::board::board_web::web_guard::ChallengeNonce::generate().unwrap();
+    let nonce = crate::board_web::web_guard::ChallengeNonce::generate().unwrap();
     let reply = challenge_post(
         &fixture,
         &serde_json::json!({"api": BOARD_API, "nonce": nonce.to_hex()}),

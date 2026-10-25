@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::ReadScope;
+use crate::board_protocol::ReadScope;
 
 #[test]
 fn panicked_board_write_rolls_back_then_reopens_for_durable_writes() {
@@ -15,8 +15,8 @@ fn panicked_board_write_rolls_back_then_reopens_for_durable_writes() {
         BoardRequest::new(
             actor.clone(),
             BoardOp::New {
-                title: crate::board::board_vocabulary::PlanTitle::new(title).unwrap(),
-                body: crate::board::board_vocabulary::PlanText::new("").unwrap(),
+                title: crate::board_vocabulary::PlanTitle::new(title).unwrap(),
+                body: crate::board_vocabulary::PlanText::new("").unwrap(),
                 repo_key: None,
             },
         )
@@ -72,7 +72,7 @@ fn poisoned_writer_reopens_durable_board_and_recovers_other_locks() {
         directory.path().join("board.sqlite3"),
     ));
     let context = RequestContext::new(None, None);
-    let create = crate::board::board_test_support::parse_board_arguments(&[
+    let create = crate::board_test_support::parse_board_arguments(&[
         "board".into(),
         "new".into(),
         "Survives panic".into(),
@@ -84,11 +84,10 @@ fn poisoned_writer_reopens_durable_board_and_recovers_other_locks() {
     poison(&host.inner.sequence);
     poison(&host.inner.ingestor);
     let show =
-        crate::board::board_test_support::parse_board_arguments(&["board".into(), "show".into()])
-            .unwrap();
+        crate::board_test_support::parse_board_arguments(&["board".into(), "show".into()]).unwrap();
     let reply = host.run(&show, &context, QueryDeadline::start()).unwrap();
     assert!(reply.contains("Survives panic"));
-    let create = crate::board::board_test_support::parse_board_arguments(&[
+    let create = crate::board_test_support::parse_board_arguments(&[
         "board".into(),
         "new".into(),
         "Recovered writer".into(),
@@ -117,9 +116,8 @@ fn host_reads_existing_board_without_initializing_or_waiting_for_writer() {
             .handle(&BoardRequest::new(
                 actor.clone(),
                 BoardOp::New {
-                    title: crate::board::board_vocabulary::PlanTitle::new("Readable board")
-                        .unwrap(),
-                    body: crate::board::board_vocabulary::PlanText::new("").unwrap(),
+                    title: crate::board_vocabulary::PlanTitle::new("Readable board").unwrap(),
+                    body: crate::board_vocabulary::PlanText::new("").unwrap(),
                     repo_key: None,
                 },
             ))
@@ -156,7 +154,7 @@ fn expired_board_mutation_never_creates_the_database() {
     let directory = tp_core::test_fixtures::scratch("board-transport-");
     let database = directory.path().join("data/board.sqlite3");
     let host = BoardHost::with_config(BoardConfig::for_database(&database));
-    let options = crate::board::board_test_support::parse_board_arguments(&[
+    let options = crate::board_test_support::parse_board_arguments(&[
         "board".into(),
         "new".into(),
         "Never created".into(),
@@ -212,7 +210,7 @@ fn host_bootstraps_writable_legacy_storage_but_keeps_readonly_initialization_err
         .unwrap_err();
     assert_eq!(
         error.downcast_ref::<BoardError>().map(|error| error.code),
-        Some(crate::board::board_protocol::BoardErrorCode::BoardInitializationRequired)
+        Some(crate::board_protocol::BoardErrorCode::BoardInitializationRequired)
     );
     assert!(host.inner.backend.lock().unwrap().is_none());
     std::fs::set_permissions(&config.db_path, std::fs::Permissions::from_mode(0o600)).unwrap();
@@ -245,7 +243,7 @@ fn ensure_writer_migrates_once_for_router_startup() {
         .unwrap()
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, crate::board::SCHEMA_VERSION);
+    assert_eq!(version, crate::SCHEMA_VERSION);
     assert!(host.inner.backend.lock().unwrap().is_some());
     host.ensure_writer(QueryDeadline::start()).unwrap();
     assert!(host.inner.backend.lock().unwrap().is_some());
@@ -255,14 +253,13 @@ fn ensure_writer_migrates_once_for_router_startup() {
 fn ensure_writer_migrates_stale_storage_for_router_startup() {
     let directory = tp_core::test_fixtures::scratch("board-runtime-");
     let database = directory.path().join("board.sqlite3");
-    crate::board::local_board::seed_storage_schema(&database, crate::board::SCHEMA_VERSION - 1)
-        .unwrap();
+    crate::local_board::seed_storage_schema(&database, crate::SCHEMA_VERSION - 1).unwrap();
     let host = BoardHost::with_config(BoardConfig::for_database(&database));
     host.ensure_writer(QueryDeadline::start()).unwrap();
     let version: i64 = rusqlite::Connection::open(&database)
         .unwrap()
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, crate::board::SCHEMA_VERSION);
+    assert_eq!(version, crate::SCHEMA_VERSION);
     assert!(host.inner.backend.lock().unwrap().is_some());
 }

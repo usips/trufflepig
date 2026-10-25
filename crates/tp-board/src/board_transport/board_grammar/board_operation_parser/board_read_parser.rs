@@ -1,18 +1,20 @@
 //! Read-only collection commands and typed continuation cursors.
-use crate::board::board_protocol::ReadScope;
+use crate::board_protocol::ReadScope;
 use tp_core::coded_error::CodedContext;
+#[cfg(test)]
+mod done_grammar_tests;
 #[cfg(test)]
 mod tests;
 use super::{
     BoardTextPayload,
     board_syntax_validation::{check_flags, fixed_words, word},
 };
-use crate::board::board_grammar::BoardArguments;
-use crate::board::board_ids::{BoardRef, EventSeq, PlanId};
-use crate::board::board_protocol::{
+use crate::board_grammar::BoardArguments;
+use crate::board_ids::{BoardRef, EventSeq, PlanId};
+use crate::board_protocol::{
     BoardOp, BoardRequestKey, EntryCursor, OverviewCursor, TaskCursor, TaskOrder,
 };
-use crate::board::board_vocabulary::TaskColumn;
+use crate::board_vocabulary::TaskColumn;
 use anyhow::{Result, bail, ensure};
 
 pub(super) fn parse_read(

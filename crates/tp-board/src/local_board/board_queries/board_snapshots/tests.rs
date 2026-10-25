@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::{
+use crate::{
     board_actor::BoardActor,
     board_backend::BoardBackend,
     board_ids::{BoardRef, TaskId},
@@ -26,7 +26,7 @@ fn database() -> (tempfile::TempDir, LocalBoard) {
     (directory, board)
 }
 
-fn create_plan(board: &mut LocalBoard, actor: BoardActor) -> crate::board::board_ids::PlanId {
+fn create_plan(board: &mut LocalBoard, actor: BoardActor) -> crate::board_ids::PlanId {
     let reply = board
         .handle(&BoardRequest::new(
             actor,

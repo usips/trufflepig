@@ -1,4 +1,4 @@
-use crate::board::{
+use crate::{
     board_grammar::{self, BoardCommand},
     board_protocol::{self, BoardOp},
     domain_answer, domain_error, prepare_client,
@@ -17,12 +17,12 @@ fn captured_body_survives_file_changes_between_retries() {
         "new".into(),
         "Trial".into(),
     ];
-    let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
+    let options = crate::board_test_support::parse_board_arguments(&args).unwrap();
     let prepared = prepare_client(&options).unwrap();
     std::fs::write(&body_path, "changed before replay").unwrap();
-    let prepared_options = crate::board::board_test_support::round_trip(&prepared);
+    let prepared_options = crate::board_test_support::round_trip(&prepared);
     let replay = prepare_client(&prepared_options).unwrap();
-    let replay_options = crate::board::board_test_support::round_trip(&replay);
+    let replay_options = crate::board_test_support::round_trip(&replay);
     let BoardCommand::Op(BoardOp::New { body, .. }) =
         board_grammar::parse(&replay_options, None).unwrap()
     else {
@@ -44,7 +44,7 @@ fn body_preflight_precedes_file_reads_and_byte_limits_precede_utf8() {
     ]
     .map(str::to_owned)
     .into();
-    let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
+    let options = crate::board_test_support::parse_board_arguments(&args).unwrap();
     let error = prepare_client(&options).unwrap_err();
     assert!(
         error.to_string().starts_with("invalid_reference:"),
@@ -60,7 +60,7 @@ fn body_preflight_precedes_file_reads_and_byte_limits_precede_utf8() {
         "blocked".into(),
         "summary".into(),
     ];
-    let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
+    let options = crate::board_test_support::parse_board_arguments(&args).unwrap();
     let error = prepare_client(&options).unwrap_err();
     assert!(
         error.to_string().contains("body exceeds 4096 bytes"),
@@ -135,19 +135,19 @@ fn oversized_write_reports_size_code_instead_of_invalid_state() {
 #[test]
 fn newer_schema_refusal_advises_upgrade() {
     let directory = tp_core::test_fixtures::scratch("board-schema-");
-    let config = crate::board::BoardConfig::for_database(directory.path().join("board.sqlite3"));
+    let config = crate::BoardConfig::for_database(directory.path().join("board.sqlite3"));
     let args: Vec<String> = ["board", "inbox"].map(str::to_owned).into();
-    let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
+    let options = crate::board_test_support::parse_board_arguments(&args).unwrap();
     let command = board_grammar::parse(&options, None).unwrap();
     let context = tp_core::request_context::RequestContext::new(None, None);
     let error = anyhow::Error::new(board_protocol::BoardError::new(
         board_protocol::BoardErrorCode::SchemaNewer,
         format!(
             "schema version 99 is newer than supported {}",
-            crate::board::SCHEMA_VERSION
+            crate::SCHEMA_VERSION
         ),
     ));
-    let refusal = crate::board::unavailable_or_queue(
+    let refusal = crate::unavailable_or_queue(
         &command,
         &options,
         &context,
@@ -161,7 +161,7 @@ fn newer_schema_refusal_advises_upgrade() {
         refusal.to_string(),
         format!(
             "schema_newer: schema version 99 is newer than supported {}; upgrade trufflepig",
-            crate::board::SCHEMA_VERSION
+            crate::SCHEMA_VERSION
         )
     );
 }
@@ -169,15 +169,15 @@ fn newer_schema_refusal_advises_upgrade() {
 #[test]
 fn schema_words_in_transport_prose_do_not_advise_upgrade() {
     let directory = tp_core::test_fixtures::scratch("board-schema-prose-");
-    let config = crate::board::BoardConfig::for_database(directory.path().join("board.sqlite3"));
+    let config = crate::BoardConfig::for_database(directory.path().join("board.sqlite3"));
     let args: Vec<String> = ["board", "inbox"].map(str::to_owned).into();
-    let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
+    let options = crate::board_test_support::parse_board_arguments(&args).unwrap();
     let command = board_grammar::parse(&options, None).unwrap();
     let error = anyhow::anyhow!(coded!(
         BoardUnavailable,
         "transport note quotes schema version 99 is newer than supported 8"
     ));
-    let refusal = crate::board::unavailable_or_queue(
+    let refusal = crate::unavailable_or_queue(
         &command,
         &options,
         &tp_core::request_context::RequestContext::new(None, None),

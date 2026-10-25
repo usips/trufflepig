@@ -13,7 +13,7 @@ mod tests;
 pub use sequence_poller::{SequencePoller, SequenceWake};
 
 use super::http_audit::HttpAudit;
-use crate::board::{
+use crate::{
     board_ids::{EventSeq, PlanId},
     board_protocol::{BoardError, BoardErrorCode, EventRecord},
 };

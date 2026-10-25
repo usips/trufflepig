@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::ClaimResume;
+use crate::board_protocol::ClaimResume;
 
 #[test]
 fn inbox_refreshes_held_leases_without_a_housekeeping_event() {
@@ -54,7 +54,7 @@ fn inbox_refreshes_held_leases_without_a_housekeeping_event() {
         .unwrap_err();
     assert_eq!(
         error.code,
-        crate::board::board_protocol::BoardErrorCode::InvalidReference
+        crate::board_protocol::BoardErrorCode::InvalidReference
     );
 }
 
@@ -122,7 +122,7 @@ fn scan_watermark_skips_own_and_irrelevant_events_but_preserves_next_foreign_eve
     assert_eq!(first.events[0].seq.get(), 3);
     assert_eq!(first.scanned_through.get(), 5);
     assert!(first.query_truncated);
-    let rendered = crate::board::board_render::render_reply(
+    let rendered = crate::board_render::render_reply(
         &BoardReply::new("local", BoardResult::Inbox(first.clone())),
         &tp_core::output::OutputBudget::new(2000).unwrap(),
     )

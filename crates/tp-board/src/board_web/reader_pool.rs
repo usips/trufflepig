@@ -1,8 +1,6 @@
 //! Four query-only slots, reopening any connection discarded after panicking work.
 use super::deadline_error;
-use crate::board::{
-    board_config::BoardConfig, board_protocol::BoardError, local_board::LocalBoard,
-};
+use crate::{board_config::BoardConfig, board_protocol::BoardError, local_board::LocalBoard};
 use std::{
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     sync::{Condvar, Mutex},
@@ -125,7 +123,7 @@ impl Drop for ReaderLease<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board::{
+    use crate::{
         board_backend::BoardBackend,
         board_protocol::{BoardOp, BoardRequest, BoardResult, ReadScope},
         board_vocabulary::{PlanText, PlanTitle},
@@ -219,7 +217,7 @@ mod tests {
         let error = lease_many(&pool, &config, 5, started + Duration::from_millis(30)).unwrap_err();
         assert_eq!(
             error.code,
-            crate::board::board_protocol::BoardErrorCode::DaemonBusy
+            crate::board_protocol::BoardErrorCode::DaemonBusy
         );
         assert!(started.elapsed() < Duration::from_secs(1));
         lease_many(&pool, &config, 4, Instant::now() + Duration::from_secs(1)).unwrap();

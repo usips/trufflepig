@@ -1,8 +1,8 @@
 //! Normalized command text and body preflight for client transport.
 use super::{BoardCommand, parse};
 use crate::{
-    board::board_grammar::BoardArguments,
-    board::{
+    board_grammar::BoardArguments,
+    {
         board_protocol::BoardOp,
         board_vocabulary::{FEEDBACK_TEXT_LIMIT, FeedbackImportKey, PLAN_TEXT_LIMIT},
     },

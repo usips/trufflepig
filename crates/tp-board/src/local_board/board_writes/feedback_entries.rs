@@ -3,30 +3,28 @@
 mod feedback_imports;
 mod feedback_transitions;
 
-pub(in crate::board::local_board) use feedback_imports::{imported_reply, remember_import};
-pub(in crate::board::local_board) use feedback_transitions::close_feedback;
+pub(in crate::local_board) use feedback_imports::{imported_reply, remember_import};
+pub(in crate::local_board) use feedback_transitions::close_feedback;
 
 use super::super::{
     EntryDraft, WriteContext, insert_entry, insert_event, invalid, read_entry, require_plan,
     sql_error, sqlite_id, sqlite_u64,
 };
-use crate::board::board_actor::{BoardActor, BoardRecipient};
-use crate::board::board_ids::EntryId;
-use crate::board::board_protocol::BoardErrorCode;
-use crate::board::board_protocol::{
+use crate::board_actor::{BoardActor, BoardRecipient};
+use crate::board_ids::EntryId;
+use crate::board_protocol::BoardErrorCode;
+use crate::board_protocol::{
     AuthorityRole, AuthoritySource, BoardChange, BoardError, BoardOp, BoardReply, BoardResult,
     EntryRecord,
 };
 #[cfg(test)]
-use crate::board::board_protocol::{FeedbackMetadata, FeedbackRecord};
+use crate::board_protocol::{FeedbackMetadata, FeedbackRecord};
 #[cfg(test)]
-use crate::board::board_vocabulary::FeedbackKind;
-use crate::board::board_vocabulary::{
-    EntryKind, FEEDBACK_TEXT_LIMIT, FeedbackImportKey, FeedbackState,
-};
+use crate::board_vocabulary::FeedbackKind;
+use crate::board_vocabulary::{EntryKind, FEEDBACK_TEXT_LIMIT, FeedbackImportKey, FeedbackState};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
-pub(in crate::board::local_board) fn write_feedback(
+pub(in crate::local_board) fn write_feedback(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     op: &BoardOp,
@@ -157,7 +155,7 @@ fn read_feedback(conn: &Connection, open_only: bool) -> Result<Vec<FeedbackRecor
     Ok(records)
 }
 
-pub(in crate::board::local_board) fn can_manage_feedback(
+pub(in crate::local_board) fn can_manage_feedback(
     conn: &Connection,
     actor: &BoardActor,
     report: &EntryRecord,
@@ -166,7 +164,7 @@ pub(in crate::board::local_board) fn can_manage_feedback(
     Ok(feedback_authority(conn, actor, report, now)?.is_some())
 }
 
-pub(in crate::board::local_board) fn feedback_authority(
+pub(in crate::local_board) fn feedback_authority(
     conn: &Connection,
     actor: &BoardActor,
     report: &EntryRecord,

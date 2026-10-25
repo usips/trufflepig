@@ -1,8 +1,8 @@
 //! Builds board requests from the global command line. Board grammar sees only
 //! `BoardArguments`; the CLI owns parsing, defaults, and router argv.
 use super::{Arguments, normalized_args};
-use crate::board::board_grammar::BoardArguments;
 use anyhow::Result;
+use tp_board::board_grammar::BoardArguments;
 
 impl Arguments {
     /// The board view of these arguments, naming the first source-search flag.
@@ -34,7 +34,7 @@ impl Arguments {
 
 /// Reads the client-owned body once and returns the router argv that replays it.
 pub(super) fn board_forwarded_args(options: &Arguments) -> Result<Vec<String>> {
-    let forwarded = crate::board::prepare_client(&options.board_arguments())?;
+    let forwarded = tp_board::prepare_client(&options.board_arguments())?;
     Ok(replay_args(options, forwarded))
 }
 
@@ -49,7 +49,7 @@ fn replay_args(options: &Arguments, forwarded: BoardArguments) -> Vec<String> {
 /// Router argv for `options` with `body` as the already-read client body.
 #[cfg(test)]
 pub(super) fn normalize_args(options: &Arguments, body: Option<&str>) -> Result<Vec<String>> {
-    let forwarded = crate::board::board_grammar::normalize_args(&options.board_arguments(), body)?;
+    let forwarded = tp_board::board_grammar::normalize_args(&options.board_arguments(), body)?;
     Ok(replay_args(options, forwarded))
 }
 
@@ -58,6 +58,6 @@ pub(super) fn normalize_args(options: &Arguments, body: Option<&str>) -> Result<
 pub(super) fn board_parse(
     options: &Arguments,
     body: Option<&str>,
-) -> Result<crate::board::board_grammar::BoardCommand> {
-    crate::board::board_grammar::parse(&options.board_arguments(), body)
+) -> Result<tp_board::board_grammar::BoardCommand> {
+    tp_board::board_grammar::parse(&options.board_arguments(), body)
 }

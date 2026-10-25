@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::{
+use crate::{
     board_actor::{AgentVendor, BoardRecipient},
     board_ids::TaskId,
     board_protocol::{
@@ -125,7 +125,7 @@ fn detailed_task() -> TaskView {
     newest.authority = Some(AuthoritySource::Grant(EntryId::new(4).unwrap()));
     newest.verdict = Some(ReviewVerdict::Findings(2));
     let commit = LinkedCommit {
-        repo_key: crate::board::board_ids::RepoKey::from_roots([oid()]).unwrap(),
+        repo_key: crate::board_ids::RepoKey::from_roots([oid()]).unwrap(),
         oid: oid(),
         subject: "Link task evidence".into(),
         committed_at: 198,
@@ -457,7 +457,7 @@ fn pending_lines_show_a_notice_without_one_payload_as_invalid() {
 fn plan_lines_render_grant_rows_and_manage_permission() {
     let plan_id = PlanId::new(7).unwrap();
     let plan = PlanRecord {
-        lifecycle_state: crate::board::board_protocol::PlanLifecycleState::Open,
+        lifecycle_state: crate::board_protocol::PlanLifecycleState::Open,
         id: plan_id,
         title: PlanTitle::new("Grant visibility").unwrap(),
         owner_user: "josh".into(),
@@ -469,8 +469,8 @@ fn plan_lines_render_grant_rows_and_manage_permission() {
         repo_keys: Vec::new(),
         plan,
         revision: RevisionRecord {
-            id: crate::board::board_ids::PlanRevision::new(plan_id, 1).unwrap(),
-            body: crate::board::board_vocabulary::PlanText::new("# Grant visibility\n").unwrap(),
+            id: crate::board_ids::PlanRevision::new(plan_id, 1).unwrap(),
+            body: crate::board_vocabulary::PlanText::new("# Grant visibility\n").unwrap(),
             source: RevisionSource::Create,
             entry: EntryId::new(1).unwrap(),
             actor: actor(),
@@ -490,7 +490,7 @@ fn plan_lines_render_grant_rows_and_manage_permission() {
             source: GrantSource::Owner,
         }],
         can_manage_grants: true,
-        task_ceiling: crate::board::board_domain::board_collections::TaskCeiling {
+        task_ceiling: crate::board_domain::board_collections::TaskCeiling {
             plan: plan_id,
             ordinal: 0,
         },

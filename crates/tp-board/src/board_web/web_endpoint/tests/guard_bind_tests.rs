@@ -88,7 +88,7 @@ fn privileged_recorded_port_falls_back() {
             .env(CHILD, "1")
             .env("TRUFFLEPIG_BOARD_WEB_TEST_RUNTIME", &runtime)
             .args([
-                "board::board_web::web_endpoint::tests::guard_bind_tests::privileged_recorded_port_falls_back",
+                "board_web::web_endpoint::tests::guard_bind_tests::privileged_recorded_port_falls_back",
                 "--exact",
                 "--nocapture",
             ])
@@ -136,7 +136,7 @@ fn taken_persisted_port_falls_back_with_a_one_line_notice() {
             .env("TRUFFLEPIG_BOARD_WEB_TEST_RUNTIME", &runtime)
             .env("TRUFFLEPIG_BOARD_WEB_TEST_TAKEN", taken.to_string())
             .args([
-                "board::board_web::web_endpoint::tests::guard_bind_tests::taken_persisted_port_falls_back_with_a_one_line_notice",
+                "board_web::web_endpoint::tests::guard_bind_tests::taken_persisted_port_falls_back_with_a_one_line_notice",
                 "--exact",
                 "--nocapture",
             ])

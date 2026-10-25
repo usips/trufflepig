@@ -2,12 +2,12 @@ use super::*;
 
 fn router_with_newer_storage(database: &Path) -> FakeGateway {
     let config = BoardConfig::for_database(database);
-    drop(crate::board::local_board::LocalBoard::open(&config).unwrap());
+    drop(crate::local_board::LocalBoard::open(&config).unwrap());
     rusqlite::Connection::open(database)
         .unwrap()
-        .pragma_update(None, "user_version", crate::board::SCHEMA_VERSION + 1)
+        .pragma_update(None, "user_version", crate::SCHEMA_VERSION + 1)
         .unwrap();
-    let error = crate::board::local_board::LocalBoard::open(&config)
+    let error = crate::local_board::LocalBoard::open(&config)
         .err()
         .expect("newer storage is refused");
     let status = serde_json::json!({

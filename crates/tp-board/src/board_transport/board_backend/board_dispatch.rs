@@ -2,7 +2,7 @@
 mod host_run;
 #[cfg(test)]
 mod tests;
-use crate::board::board_protocol::{BoardOp, ReadScope, RepoRegistration};
+use crate::board_protocol::{BoardOp, ReadScope, RepoRegistration};
 
 /// Bare CLI reads use the caller's repository; explicit scopes remain concrete.
 fn scope_read_repo_key(op: &mut BoardOp, registration: Option<&RepoRegistration>, all: bool) {

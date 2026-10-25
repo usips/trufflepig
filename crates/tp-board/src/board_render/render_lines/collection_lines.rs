@@ -1,6 +1,6 @@
 //! Bounded collection pages retain their sequence boundaries in line output.
 use super::{author, cell, claim_line, entry_line, source_suffix, vendor_suffix};
-use crate::board::board_protocol::{BoardResult, FeedbackVia};
+use crate::board_protocol::{BoardResult, FeedbackVia};
 use std::fmt::Write;
 
 pub(super) fn lines(text: &mut String, result: &BoardResult) {

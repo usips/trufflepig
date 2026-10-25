@@ -91,7 +91,7 @@ fn unavailable_marker_skips_ensure_without_extending_its_deadline() {
         before
     );
     let expired = SystemTime::now() - Duration::from_secs(31);
-    crate::board::board_runtime_markers::mark_board_router_unavailable(&runtime, expired).unwrap();
+    crate::board_runtime_markers::mark_board_router_unavailable(&runtime, expired).unwrap();
     invoke(
         &["board", "show"],
         &mut gateway,
@@ -135,7 +135,7 @@ fn every_local_client_path_refuses_a_different_router_database_pin() {
     let directory = scratch();
     let runtime = directory.path().join("runtime");
     let database = directory.path().join("client.sqlite3");
-    crate::board::board_runtime_markers::record_board_database(
+    crate::board_runtime_markers::record_board_database(
         &runtime,
         &directory.path().join("router.sqlite3"),
     )
@@ -191,8 +191,7 @@ fn failed_capability_probe_queues_feedback_once_with_its_stable_key() {
 fn live_router_refuses_stale_schema_without_migrating() {
     let directory = scratch();
     let database = directory.path().join("board.sqlite3");
-    crate::board::local_board::seed_storage_schema(&database, crate::board::SCHEMA_VERSION - 1)
-        .unwrap();
+    crate::local_board::seed_storage_schema(&database, crate::SCHEMA_VERSION - 1).unwrap();
     let runtime = directory.path().join("runtime");
     std::fs::create_dir_all(&runtime).unwrap();
     let _listener = std::os::unix::net::UnixListener::bind(
@@ -215,5 +214,5 @@ fn live_router_refuses_stale_schema_without_migrating() {
         .unwrap()
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, crate::board::SCHEMA_VERSION - 1);
+    assert_eq!(version, crate::SCHEMA_VERSION - 1);
 }

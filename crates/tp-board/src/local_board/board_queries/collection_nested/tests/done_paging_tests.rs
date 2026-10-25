@@ -1,7 +1,7 @@
 use super::*;
-use crate::board::board_backend::BoardBackend;
-use crate::board::board_protocol::ReadScope;
-use crate::board::board_protocol::{BoardOp, BoardRequest};
+use crate::board_backend::BoardBackend;
+use crate::board_protocol::ReadScope;
+use crate::board_protocol::{BoardOp, BoardRequest};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 
@@ -164,7 +164,7 @@ fn done_recent_rejects_through_without_historical_task_versions() {
         .unwrap_err();
     assert_eq!(
         error.code,
-        crate::board::board_protocol::BoardErrorCode::InvalidOptions
+        crate::board_protocol::BoardErrorCode::InvalidOptions
     );
     assert!(error.message.contains("through"));
 }

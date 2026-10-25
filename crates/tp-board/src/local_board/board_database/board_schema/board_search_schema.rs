@@ -1,6 +1,6 @@
 //! Atomic external-content FTS creation, source triggers, and durable target rebuild.
 
-pub(in crate::board::local_board::board_database) const SCHEMA_V3: &str = r#"
+pub(in crate::local_board::board_database) const SCHEMA_V3: &str = r#"
 CREATE TABLE search_documents(
  rowid INTEGER PRIMARY KEY, target TEXT NOT NULL UNIQUE,
  plan_id INTEGER REFERENCES plans(id),
@@ -68,7 +68,7 @@ INSERT INTO search_documents(target,plan_id,source,body)
 INSERT INTO board_text(board_text,rank) VALUES('integrity-check',1);
 "#;
 
-pub(in crate::board::local_board::board_database) const SCHEMA_V6: &str = r#"
+pub(in crate::local_board::board_database) const SCHEMA_V6: &str = r#"
 CREATE TABLE plan_text(
  plan_id INTEGER PRIMARY KEY, title TEXT NOT NULL
 );

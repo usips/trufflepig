@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::repo_identity::tests::FixtureRegistration;
+use crate::repo_identity::tests::FixtureRegistration;
 use tp_core::test_fixtures::GitFixture;
 use tp_core::workspace_config::WorkspaceConfig;
 
@@ -125,7 +125,7 @@ fn existing_corrupt_board_is_not_treated_as_absent() {
         .unwrap_err();
     assert_eq!(
         error.code,
-        crate::board::board_protocol::BoardErrorCode::BoardUnavailable
+        crate::board_protocol::BoardErrorCode::BoardUnavailable
     );
     assert_eq!(fs::read(&fixture.config.db_path).unwrap(), before);
 }

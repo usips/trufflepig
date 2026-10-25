@@ -1,9 +1,9 @@
 use super::*;
-use crate::board::board_actor::BoardActor;
-use crate::board::board_protocol::ReadScope;
-use crate::board::board_protocol::{BoardErrorCode, EntryState};
-use crate::board::board_vocabulary::ProposalState;
-use crate::board::local_board::LocalBoard;
+use crate::board_actor::BoardActor;
+use crate::board_protocol::ReadScope;
+use crate::board_protocol::{BoardErrorCode, EntryState};
+use crate::board_vocabulary::ProposalState;
+use crate::local_board::LocalBoard;
 use std::time::Duration;
 
 pub(super) fn database() -> (tempfile::TempDir, LocalBoard) {

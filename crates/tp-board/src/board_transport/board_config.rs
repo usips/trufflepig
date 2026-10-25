@@ -1,6 +1,6 @@
 //! Strict board configuration with passwd-derived identity and durable data paths.
-use crate::board::board_actor::BoardActor;
-use crate::board::board_ids::RepoKey;
+use crate::board_actor::BoardActor;
+use crate::board_ids::RepoKey;
 use anyhow::{Result, bail};
 use serde::Deserialize;
 use std::{collections::BTreeMap, env, fs, path::PathBuf};
@@ -67,7 +67,7 @@ impl BoardConfig {
         defaults.token_file = file.token_file;
         let mut repos = BTreeMap::new();
         for (origin, key) in file.repos {
-            let origin = crate::board::repo_identity::normalize_origin_label(&origin)?;
+            let origin = crate::repo_identity::normalize_origin_label(&origin)?;
             if let Some(previous) = repos.insert(origin.clone(), key.clone()) {
                 if previous != key {
                     bail!(coded!(
@@ -89,7 +89,7 @@ impl BoardConfig {
     }
 
     /// Test/local embedding configuration; does not inspect or mutate process env.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn for_database(path: impl AsRef<std::path::Path>) -> Self {
         Self {
             mode: BoardMode::Local,

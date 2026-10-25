@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::AgentClaims;
+use crate::board_protocol::AgentClaims;
 
 #[test]
 fn entry_and_event_vendor_use_stored_model_snapshots() {

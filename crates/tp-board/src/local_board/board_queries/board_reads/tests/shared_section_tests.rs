@@ -37,7 +37,7 @@ fn shared_sections_follow_rendered_heading_titles_and_task_coverage() {
     ) else {
         panic!("expected plan view");
     };
-    let headings = crate::board::board_markup::headings(body);
+    let headings = crate::board_markup::headings(body);
     assert_eq!(
         headings
             .iter()

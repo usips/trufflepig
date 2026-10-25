@@ -1,10 +1,10 @@
 use super::*;
-use crate::board::board_protocol::ReadScope;
+use crate::board_protocol::ReadScope;
 
 #[test]
 fn feedback_outcome_keeps_the_to_whom_gate() {
-    use crate::board::board_protocol::FeedbackMetadata;
-    use crate::board::board_vocabulary::{FeedbackKind, FeedbackState};
+    use crate::board_protocol::FeedbackMetadata;
+    use crate::board_vocabulary::{FeedbackKind, FeedbackState};
     let (_directory, mut board) = database();
     let BoardResult::Change(report) = call(
         &mut board,

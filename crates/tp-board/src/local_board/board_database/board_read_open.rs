@@ -1,14 +1,14 @@
 //! Read-only database opening for query paths that never create or migrate.
 
 use super::{SCHEMA_VERSION, io_error, sql_error, unavailable};
-use crate::board::board_protocol::{BoardError, BoardErrorCode};
+use crate::board_protocol::{BoardError, BoardErrorCode};
 use rusqlite::{Connection, OpenFlags};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// A query-only connection refuses absent or unmigrated storage and never
 /// creates, migrates, or chmods it: read paths leave the filesystem untouched.
-pub(in crate::board::local_board) fn open_read_with_timeout(
+pub(in crate::local_board) fn open_read_with_timeout(
     path: &Path,
     timeout: Duration,
 ) -> Result<(Connection, PathBuf), BoardError> {

@@ -1,6 +1,6 @@
 //! One capability probe precedes board dispatch; local fallback requires the database pin.
-use crate::board::board_grammar::BoardArguments;
-use crate::board::{
+use crate::board_grammar::BoardArguments;
+use crate::{
     BOARD_API, BoardConfig, BoardHost, BoardRequest, BoardRequestKey,
     board_grammar::{self, BoardCommand},
     board_protocol::{AgentClaims, BoardOp},
@@ -19,7 +19,7 @@ mod local_access;
 
 /// Retains the router capability only while this transport serves requests.
 #[derive(Default)]
-pub(crate) struct BoardClientTransport {
+pub struct BoardClientTransport {
     probed_api: Option<u32>,
 }
 
@@ -60,7 +60,7 @@ impl BoardGateway for SystemGateway {
 impl BoardClientTransport {
     /// Sends a prepared request: `forwarded` is the router argv for `options`,
     /// and `ensure_router` starts the system router when none answers.
-    pub(crate) fn run(
+    pub fn run(
         &mut self,
         forwarded: &[String],
         options: &BoardArguments,
@@ -106,12 +106,10 @@ impl BoardClientTransport {
             forwarded, options, command, context, gateway, load, runtime, spool, deadline,
         ) {
             Err(error)
-                if matches!(
-                    command,
-                    BoardCommand::Op(crate::board::BoardOp::Feedback { .. })
-                ) && error
-                    .chain()
-                    .any(|cause| cause.is::<BoardRequestDeadlineExpired>()) =>
+                if matches!(command, BoardCommand::Op(crate::BoardOp::Feedback { .. }))
+                    && error
+                        .chain()
+                        .any(|cause| cause.is::<BoardRequestDeadlineExpired>()) =>
             {
                 failed_request(
                     command, options, context, load, spool, deadline, false, error,
@@ -158,7 +156,7 @@ impl BoardClientTransport {
                     );
                 }
                 recent = runtime.is_some_and(|runtime| {
-                    crate::board::board_runtime_markers::board_router_recently_unavailable(
+                    crate::board_runtime_markers::board_router_recently_unavailable(
                         runtime,
                         SystemTime::now(),
                     )
@@ -181,7 +179,7 @@ impl BoardClientTransport {
                 check_deadline(deadline)?;
                 if !recent {
                     if let Some(runtime) = runtime {
-                        let _ = crate::board::board_runtime_markers::mark_board_router_unavailable(
+                        let _ = crate::board_runtime_markers::mark_board_router_unavailable(
                             runtime,
                             SystemTime::now(),
                         );
@@ -205,9 +203,8 @@ impl BoardClientTransport {
             );
             check_deadline(deadline)?;
             if let Some(runtime) = runtime {
-                let _ =
-                    crate::board::board_runtime_markers::record_board_database(runtime, &database);
-                crate::board::board_runtime_markers::clear_board_router_unavailable(runtime);
+                let _ = crate::board_runtime_markers::record_board_database(runtime, &database);
+                crate::board_runtime_markers::clear_board_router_unavailable(runtime);
             }
         }
         ensure!(
@@ -223,7 +220,7 @@ impl BoardClientTransport {
         match gateway.request(forwarded, context, deadline) {
             Ok(Some(reply)) => {
                 if let Some(runtime) = runtime {
-                    crate::board::board_runtime_markers::clear_board_router_unavailable(runtime);
+                    crate::board_runtime_markers::clear_board_router_unavailable(runtime);
                 }
                 Ok(reply)
             }
@@ -237,7 +234,7 @@ impl BoardClientTransport {
                     );
                 }
                 if let Some(runtime) = runtime {
-                    let _ = crate::board::board_runtime_markers::mark_board_router_unavailable(
+                    let _ = crate::board_runtime_markers::mark_board_router_unavailable(
                         runtime,
                         SystemTime::now(),
                     );
@@ -298,16 +295,11 @@ fn failed_request(
         }
         .into());
     }
-    if matches!(
-        command,
-        BoardCommand::Op(crate::board::BoardOp::Feedback { .. })
-    ) {
+    if matches!(command, BoardCommand::Op(crate::BoardOp::Feedback { .. })) {
         let config = load()?;
-        crate::board::unavailable_or_queue(
-            command, options, context, &config, spool, deadline, error,
-        )
+        crate::unavailable_or_queue(command, options, context, &config, spool, deadline, error)
     } else {
-        Err(crate::board::schema_upgrade_advice(error))
+        Err(crate::schema_upgrade_advice(error))
     }
 }
 
@@ -440,14 +432,11 @@ fn local_reply(
     // A live router owns migration: feedback queues for it to import while
     // other operations run without migrating and refuse stale storage only.
     if runtime.is_some_and(|runtime| tp_core::daemon_transport::running(runtime)) {
-        if matches!(
-            command,
-            BoardCommand::Op(crate::board::BoardOp::Feedback { .. })
-        ) {
+        if matches!(command, BoardCommand::Op(crate::BoardOp::Feedback { .. })) {
             check_deadline(deadline)?;
             let config = load()?;
             check_deadline(deadline)?;
-            return crate::board::unavailable_or_queue(
+            return crate::unavailable_or_queue(
                 command,
                 options,
                 context,
@@ -461,7 +450,7 @@ fn local_reply(
         let config = load()?;
         check_deadline(deadline)?;
         if let Some(runtime) = runtime {
-            crate::board::board_runtime_markers::validate_board_database(runtime, &config.db_path)?;
+            crate::board_runtime_markers::validate_board_database(runtime, &config.db_path)?;
         }
         check_deadline(deadline)?;
         refuse_stale_storage_beside_router(
@@ -473,7 +462,7 @@ fn local_reply(
     let config = load()?;
     check_deadline(deadline)?;
     if let Some(runtime) = runtime {
-        crate::board::board_runtime_markers::validate_board_database(runtime, &config.db_path)?;
+        crate::board_runtime_markers::validate_board_database(runtime, &config.db_path)?;
     }
     run_local(command, options, context, &config, runtime, spool, deadline)
 }
@@ -489,7 +478,7 @@ fn refuse_stale_storage_beside_router(
     spool: &Path,
     deadline: &QueryDeadline,
 ) -> Result<()> {
-    use crate::board::local_board::LocalBoard;
+    use crate::local_board::LocalBoard;
     check_deadline(deadline)?;
     let timeout = deadline.cap(std::time::Duration::from_secs(5));
     check_deadline(deadline)?;
@@ -507,10 +496,8 @@ fn refuse_stale_storage_beside_router(
             if local_access::is_storage_access_failure(&error) {
                 return Err(local_access::storage_access_advice(error, config, runtime));
             }
-            crate::board::unavailable_or_queue(
-                command, options, context, config, spool, deadline, error,
-            )
-            .map(|_| ())
+            crate::unavailable_or_queue(command, options, context, config, spool, deadline, error)
+                .map(|_| ())
         }
     }
 }
@@ -529,16 +516,13 @@ fn run_local(
         Ok(reply) => Ok(reply),
         Err(error)
             if local_access::is_storage_access_failure(&error)
-                && !matches!(
-                    command,
-                    BoardCommand::Op(crate::board::BoardOp::Feedback { .. })
-                ) =>
+                && !matches!(command, BoardCommand::Op(crate::BoardOp::Feedback { .. })) =>
         {
             Err(local_access::storage_access_advice(error, config, runtime))
         }
-        Err(error) => crate::board::unavailable_or_queue(
-            command, options, context, config, spool, deadline, error,
-        ),
+        Err(error) => {
+            crate::unavailable_or_queue(command, options, context, config, spool, deadline, error)
+        }
     }
 }
 

@@ -1,8 +1,8 @@
 use super::*;
-use crate::board::board_domain::board_collections::OverviewCursor;
-use crate::board::board_ids::TaskId;
-use crate::board::board_protocol::ReadScope;
-use crate::board::board_vocabulary::{PlanTitle, TaskColumn};
+use crate::board_domain::board_collections::OverviewCursor;
+use crate::board_ids::TaskId;
+use crate::board_protocol::ReadScope;
+use crate::board_vocabulary::{PlanTitle, TaskColumn};
 
 fn large_entries() -> Vec<EntryRecord> {
     (11..15)
@@ -215,10 +215,10 @@ fn overview_nested_fallback_keeps_task_membership_ceiling() {
         .collect::<Vec<_>>()
         .join(",");
     let second_plan = PlanOverview {
-        repo_keys: vec![crate::board::board_ids::RepoKey::parse(&repo_key).unwrap()],
+        repo_keys: vec![crate::board_ids::RepoKey::parse(&repo_key).unwrap()],
         updated_seq: EventSeq::new(18),
         plan: PlanRecord {
-            lifecycle_state: crate::board::board_protocol::PlanLifecycleState::Open,
+            lifecycle_state: crate::board_protocol::PlanLifecycleState::Open,
             id: next_plan,
             title: PlanTitle::new("Next").unwrap(),
             owner_user: "josh".into(),
@@ -248,7 +248,7 @@ fn overview_nested_fallback_keeps_task_membership_ceiling() {
                     repo_keys: Vec::new(),
                     updated_seq: EventSeq::new(20),
                     plan: PlanRecord {
-                        lifecycle_state: crate::board::board_protocol::PlanLifecycleState::Open,
+                        lifecycle_state: crate::board_protocol::PlanLifecycleState::Open,
                         id: plan,
                         title: PlanTitle::new("Trial").unwrap(),
                         owner_user: "josh".into(),

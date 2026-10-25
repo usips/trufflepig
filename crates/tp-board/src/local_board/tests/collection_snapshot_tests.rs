@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::ReadScope;
+use crate::board_protocol::ReadScope;
 
 #[test]
 fn collection_dispatch_reports_snapshot_without_registering_reader_actor() {

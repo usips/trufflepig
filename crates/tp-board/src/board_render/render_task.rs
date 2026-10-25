@@ -1,7 +1,7 @@
 //! Task detail rendering keeps the task and current claim ahead of nested history.
 
 use super::{BoardOmitted, RenderedBoard, fit_items, render_complete, require_fits};
-use crate::board::board_protocol::{BoardReply, BoardResult, ClaimRecord, LinkedCommit, TaskView};
+use crate::board_protocol::{BoardReply, BoardResult, ClaimRecord, LinkedCommit, TaskView};
 use anyhow::Result;
 use tp_core::output::{OutputBudget, OutputFormat};
 

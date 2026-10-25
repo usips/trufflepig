@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::ReadScope;
+use crate::board_protocol::ReadScope;
 
 #[test]
 fn read_contract_rejects_missing_show_target_and_invalid_claim_cursors() {
@@ -7,7 +7,7 @@ fn read_contract_rejects_missing_show_target_and_invalid_claim_cursors() {
     assert!(
         serde_json::from_value::<BoardOp>(serde_json::json!({"op":"show","target":null})).is_err()
     );
-    for claim in [0, crate::board::board_ids::MAX_BOARD_NUMBER + 1] {
+    for claim in [0, crate::board_ids::MAX_BOARD_NUMBER + 1] {
         let operation = BoardOp::Claims {
             scope: ReadScope::All,
             plan: Some(PlanId::new(1).unwrap()),
@@ -63,7 +63,7 @@ fn task_read_contract_validates_ceilings_and_requires_captured_membership() {
         },
         TaskCeiling {
             plan,
-            ordinal: crate::board::board_ids::MAX_BOARD_NUMBER + 1,
+            ordinal: crate::board_ids::MAX_BOARD_NUMBER + 1,
         },
     ] {
         assert!(
@@ -223,7 +223,7 @@ fn task_continuations_reject_foreign_and_out_of_range_cursors() {
         TaskId { plan, ordinal: 0 },
         TaskId {
             plan,
-            ordinal: crate::board::board_ids::MAX_BOARD_NUMBER + 1,
+            ordinal: crate::board_ids::MAX_BOARD_NUMBER + 1,
         },
     ] {
         let operation = BoardOp::Tasks {
@@ -258,7 +258,7 @@ fn task_continuations_reject_foreign_and_out_of_range_cursors() {
     .unwrap();
     TaskCeiling {
         plan,
-        ordinal: crate::board::board_ids::MAX_BOARD_NUMBER,
+        ordinal: crate::board_ids::MAX_BOARD_NUMBER,
     }
     .validate()
     .unwrap();

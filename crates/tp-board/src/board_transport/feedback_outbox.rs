@@ -2,11 +2,11 @@
 
 mod board_spool;
 
-use crate::board::BoardBackend;
-use crate::board::board_protocol::{
+use crate::BoardBackend;
+use crate::board_protocol::{
     BOARD_API, BoardError, BoardErrorCode, BoardOp, BoardReply, BoardRequest, BoardResult,
 };
-use crate::board::board_vocabulary::FeedbackImportKey;
+use crate::board_vocabulary::FeedbackImportKey;
 use board_spool::{private_directory, publish_atomic, sync_directory};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};

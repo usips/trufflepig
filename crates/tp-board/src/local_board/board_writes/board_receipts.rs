@@ -2,11 +2,11 @@
 
 use super::super::*;
 
-pub(in crate::board::local_board) fn is_dedupable(op: &BoardOp) -> bool {
+pub(in crate::local_board) fn is_dedupable(op: &BoardOp) -> bool {
     op.is_dedupable()
 }
 
-pub(in crate::board::local_board) fn request_dedupe_key(
+pub(in crate::local_board) fn request_dedupe_key(
     request: &BoardRequest,
 ) -> Result<String, BoardError> {
     request
@@ -15,7 +15,7 @@ pub(in crate::board::local_board) fn request_dedupe_key(
         .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))
 }
 
-pub(in crate::board::local_board) fn read_receipt(
+pub(in crate::local_board) fn read_receipt(
     tx: &rusqlite::Transaction<'_>,
     key: BoardRequestKey,
     actor_id: i64,
@@ -60,7 +60,7 @@ fn unknown_receipt(key: BoardRequestKey) -> BoardReceipt {
     }
 }
 
-pub(in crate::board::local_board) fn receipt_current(
+pub(in crate::local_board) fn receipt_current(
     tx: &Transaction<'_>,
     ctx: &super::super::WriteContext,
     request: &BoardRequest,

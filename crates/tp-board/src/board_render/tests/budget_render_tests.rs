@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::ReadScope;
+use crate::board_protocol::ReadScope;
 
 #[test]
 fn warnings_survive_list_fitting_and_lines_cannot_inject_metadata() {
@@ -48,7 +48,7 @@ fn fit_items_binary_search_counts_complete_responses() {
 
 #[test]
 fn committed_change_receipt_survives_a_tiny_output_budget() {
-    use crate::board::board_ids::{PlanRevision, TaskId};
+    use crate::board_ids::{PlanRevision, TaskId};
     let reply = BoardReply::new(
         "local",
         BoardResult::Change(BoardChange {

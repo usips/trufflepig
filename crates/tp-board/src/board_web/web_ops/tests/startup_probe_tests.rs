@@ -92,7 +92,7 @@ fn startup_opens_a_current_database_without_a_router() {
     let directory = tp_core::test_fixtures::scratch("web-probe-");
     let database = directory.path().join("board.sqlite3");
     let config = BoardConfig::for_database(&database);
-    drop(crate::board::local_board::LocalBoard::open(&config).unwrap());
+    drop(crate::local_board::LocalBoard::open(&config).unwrap());
     // The supported schema constant tracks the migrated storage schema.
     assert_eq!(
         local_schema_version(&database).unwrap(),
@@ -201,7 +201,7 @@ fn startup_migration_outlives_ordinary_web_request_timeout() {
         "schema_file": SCHEMA_VERSION, "schema_supported": SCHEMA_VERSION,
     })
     .to_string();
-    let ordinary_request_timeout = crate::board::board_web::http_wire::REQUEST_TIMEOUT;
+    let ordinary_request_timeout = crate::board_web::http_wire::REQUEST_TIMEOUT;
     let status_available_after = ordinary_request_timeout + Duration::from_millis(100);
     let started = std::time::Instant::now();
 

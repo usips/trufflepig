@@ -50,7 +50,7 @@ fn populated_m1_feedback_uuid_replay_survives_schema_and_dedupe_upgrade() {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
     }
     legacy
-        .execute_batch(crate::board::local_board::board_database::legacy_schema())
+        .execute_batch(crate::local_board::board_database::legacy_schema())
         .unwrap();
     let key = FeedbackImportKey::parse("aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa").unwrap();
     legacy
@@ -86,13 +86,10 @@ fn populated_m1_feedback_uuid_replay_survives_schema_and_dedupe_upgrade() {
         },
     );
     let reply = board.handle(&request).unwrap();
-    assert_eq!(reply.api, crate::board::board_protocol::BOARD_API);
+    assert_eq!(reply.api, crate::board_protocol::BOARD_API);
     let replayed = changed(reply);
     assert!(replayed.deduplicated);
-    assert_eq!(
-        replayed.entry,
-        crate::board::board_ids::EntryId::new(1).unwrap()
-    );
+    assert_eq!(replayed.entry, crate::board_ids::EntryId::new(1).unwrap());
     assert_eq!(replayed.seq.get(), 1);
     assert_eq!(board.max_seq().unwrap().get(), 1);
     assert_eq!(read_feedback(&board.conn, false).unwrap().len(), 1);

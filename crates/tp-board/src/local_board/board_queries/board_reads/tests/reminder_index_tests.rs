@@ -32,7 +32,8 @@ fn reminder_count_query_drives_from_the_kind_index() {
             .unwrap();
     }
     board.conn.execute_batch("ANALYZE;").unwrap();
-    let predicate = crate::board::local_board::board_queries::board_reads::entry_reference_reads::reminder_predicate();
+    let predicate =
+        crate::local_board::board_queries::board_reads::entry_reference_reads::reminder_predicate();
     let plan: Vec<String> = board
         .conn
         .prepare(&format!(
@@ -97,7 +98,8 @@ fn reminder_rows_query_drives_from_the_kind_index() {
             .unwrap();
     }
     board.conn.execute_batch("ANALYZE;").unwrap();
-    let predicate = crate::board::local_board::board_queries::board_reads::entry_reference_reads::reminder_predicate();
+    let predicate =
+        crate::local_board::board_queries::board_reads::entry_reference_reads::reminder_predicate();
     let plan: Vec<String> = board
         .conn
         .prepare(&format!(

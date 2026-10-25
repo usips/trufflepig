@@ -4,7 +4,7 @@ use super::super::{
     web_ops::{self, WebRequest},
 };
 use super::invalid;
-use crate::board::{
+use crate::{
     board_ids::{BoardRef, PlanRevision},
     board_protocol::{BOARD_API, BoardError, BoardOp, BoardReply, BoardResult},
     review_packet::build_ssot_diff,

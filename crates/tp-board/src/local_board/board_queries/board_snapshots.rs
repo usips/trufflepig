@@ -29,7 +29,7 @@ impl LocalBoard {
         Ok((latest, events))
     }
 
-    pub(in crate::board::local_board) fn dispatch_read(
+    pub(in crate::local_board) fn dispatch_read(
         &mut self,
         request: &BoardRequest,
     ) -> Result<BoardReply, BoardError> {

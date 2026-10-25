@@ -1,6 +1,6 @@
 //! Reply writers: JSON results and board/HTTP error envelopes.
 use super::super::http_wire::{self, HttpError};
-use crate::board::board_protocol::{BoardError, BoardErrorCode};
+use crate::board_protocol::{BoardError, BoardErrorCode};
 use std::net::TcpStream;
 
 pub(super) fn send_json_result(

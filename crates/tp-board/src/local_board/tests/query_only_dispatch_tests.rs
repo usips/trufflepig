@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::ReadScope;
+use crate::board_protocol::ReadScope;
 
 #[test]
 fn show_uses_read_connection_while_writer_transaction_is_held() {
@@ -41,7 +41,7 @@ fn readonly_dispatch_leaves_actors_sessions_and_claims_untouched() {
         .handle(&BoardRequest::new(
             actor("codex", "c1"),
             BoardOp::ClaimTask {
-                task: crate::board::board_ids::TaskId::new(plan, 1).unwrap(),
+                task: crate::board_ids::TaskId::new(plan, 1).unwrap(),
                 scope: Some(EntryText::new("scope").unwrap()),
                 resume: ClaimResume::No,
                 delegate: None,
@@ -166,7 +166,7 @@ fn readonly_open_answers_all_read_kinds_without_write_permissions() {
             target: BoardRef::Plan(plan),
         },
         BoardOp::Review {
-            base: crate::board::board_ids::PlanRevision::new(plan, 1).unwrap(),
+            base: crate::board_ids::PlanRevision::new(plan, 1).unwrap(),
             agent: None,
         },
         BoardOp::FeedbackList {

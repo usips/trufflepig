@@ -12,7 +12,7 @@ fn review_uses_claim_intervals_and_coauthors_to_flag_crossed_lanes() {
         claimed_at: 110,
         last_active: 120,
         ended_at: Some(150),
-        end_reason: Some(crate::board::board_protocol::ClaimEndReason::Released),
+        end_reason: Some(crate::board_protocol::ClaimEndReason::Released),
         stale: false,
         model: Some("opus".into()),
         effort: None,

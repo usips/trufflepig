@@ -89,8 +89,8 @@ fn readonly_cantopen_and_permission_errors_report_local_storage_paths() {
         "database directory is not writable",
         "Permission denied (os error 13)",
     ] {
-        let error = anyhow::Error::new(crate::board::board_protocol::BoardError::new(
-            crate::board::board_protocol::BoardErrorCode::BoardUnavailable,
+        let error = anyhow::Error::new(crate::board_protocol::BoardError::new(
+            crate::board_protocol::BoardErrorCode::BoardUnavailable,
             detail,
         ));
         assert!(super::super::local_access::is_storage_access_failure(
@@ -109,8 +109,8 @@ fn readonly_cantopen_and_permission_errors_report_local_storage_paths() {
         assert!(!message.contains("system ensure"), "{message}");
     }
 
-    let unrelated = anyhow::Error::new(crate::board::board_protocol::BoardError::new(
-        crate::board::board_protocol::BoardErrorCode::BoardUnavailable,
+    let unrelated = anyhow::Error::new(crate::board_protocol::BoardError::new(
+        crate::board_protocol::BoardErrorCode::BoardUnavailable,
         "database is corrupt",
     ));
     assert!(!super::super::local_access::is_storage_access_failure(
@@ -126,8 +126,7 @@ fn local_readonly_database_after_unreachable_router_reports_access_permissions()
     let runtime = directory.path().join("runtime");
     std::fs::create_dir_all(&runtime).unwrap();
     let database = directory.path().join("board.sqlite3");
-    crate::board::local_board::seed_storage_schema(&database, crate::board::SCHEMA_VERSION)
-        .unwrap();
+    crate::local_board::seed_storage_schema(&database, crate::SCHEMA_VERSION).unwrap();
     std::fs::set_permissions(&database, std::fs::Permissions::from_mode(0o400)).unwrap();
     let mut gateway = FakeGateway::default();
 
@@ -175,8 +174,7 @@ fn local_readonly_database_directory_after_unreachable_router_reports_access_per
     std::fs::create_dir(&database_dir).unwrap();
     std::fs::set_permissions(&database_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
     let database = database_dir.join("board.sqlite3");
-    crate::board::local_board::seed_storage_schema(&database, crate::board::SCHEMA_VERSION)
-        .unwrap();
+    crate::local_board::seed_storage_schema(&database, crate::SCHEMA_VERSION).unwrap();
     std::fs::set_permissions(&database_dir, std::fs::Permissions::from_mode(0o500)).unwrap();
     let mut gateway = FakeGateway::default();
 

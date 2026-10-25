@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::{BoardConfig, SCHEMA_VERSION, local_board::LocalBoard};
+use crate::{BoardConfig, SCHEMA_VERSION, local_board::LocalBoard};
 
 #[test]
 fn schema_upgrade_keeps_queued_feedback_pending() {

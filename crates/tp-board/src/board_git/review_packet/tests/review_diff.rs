@@ -25,19 +25,17 @@ fn adjacent_diff_context_contains_only_unchanged_lines() {
 
 #[test]
 fn insertion_diff_header_counts_the_context_it_displays() {
-    let reply = crate::board::board_protocol::BoardReply::new(
+    let reply = crate::board_protocol::BoardReply::new(
         "local",
-        crate::board::board_protocol::BoardResult::Diff(
-            crate::board::board_protocol::RevisionDiff {
-                before: revision(1, "A\nB\n"),
-                after: revision(2, "A\nX\nB\n"),
-            },
-        ),
+        crate::board_protocol::BoardResult::Diff(crate::board_protocol::RevisionDiff {
+            before: revision(1, "A\nB\n"),
+            after: revision(2, "A\nX\nB\n"),
+        }),
     );
     let budget = OutputBudget::new(500)
         .unwrap()
         .with_format(OutputFormat::Lines);
-    let rendered = crate::board::board_render::render_reply(&reply, &budget).unwrap();
+    let rendered = crate::board_render::render_reply(&reply, &budget).unwrap();
     assert!(rendered.text.contains("@@ -1,2 +1,3 @@\n A\n+X\n B\n"));
 }
 
@@ -88,7 +86,7 @@ fn trimmed_review() -> (ReviewPacket, String, serde_json::Value) {
     linked.oid = oid;
     source.commits.push(linked.clone());
     let repositories = vec![RepoScanTarget {
-        registration: crate::board::board_protocol::RepoRegistration {
+        registration: crate::board_protocol::RepoRegistration {
             root_commits: Vec::new(),
             registration_error: None,
             origin_override: None,

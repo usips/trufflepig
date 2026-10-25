@@ -30,7 +30,7 @@ fn show_entry_recovers_full_large_proposal_and_keeps_decided_evidence() {
     assert_eq!(view.proposal.as_ref().unwrap().body.as_str(), body);
     assert!(view.can_decide);
     assert_eq!(view.plan_head_revision, Some(1));
-    let rendered = crate::board::board_render::render_reply(
+    let rendered = crate::board_render::render_reply(
         &BoardReply::new("local", BoardResult::Entry(view)),
         &tp_core::output::OutputBudget::new(32768)
             .unwrap()

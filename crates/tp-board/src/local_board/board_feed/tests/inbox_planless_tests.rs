@@ -1,10 +1,10 @@
 use super::*;
-use crate::board::board_protocol::ReadScope;
+use crate::board_protocol::ReadScope;
 
 #[test]
 fn planless_events_stay_out_of_scoped_inboxes_but_own_feedback_outcomes_arrive() {
-    use crate::board::board_protocol::FeedbackMetadata;
-    use crate::board::board_vocabulary::{FeedbackKind, FeedbackState};
+    use crate::board_protocol::FeedbackMetadata;
+    use crate::board_vocabulary::{FeedbackKind, FeedbackState};
     let (_directory, mut board) = database();
     let plan_a = plan(&mut board);
     let BoardResult::Change(created_b) = call(
@@ -213,8 +213,8 @@ fn hello_events_stay_out_of_every_inbox_including_all() {
 
 #[test]
 fn feedback_outcomes_reach_new_sessions_of_the_reporting_harness() {
-    use crate::board::board_protocol::FeedbackMetadata;
-    use crate::board::board_vocabulary::{FeedbackKind, FeedbackState};
+    use crate::board_protocol::FeedbackMetadata;
+    use crate::board_vocabulary::{FeedbackKind, FeedbackState};
     let (_directory, mut board) = database();
     let BoardResult::Change(report) = call(
         &mut board,

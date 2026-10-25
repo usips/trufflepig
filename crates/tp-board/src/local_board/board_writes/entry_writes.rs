@@ -10,17 +10,15 @@ mod commit_link_writes;
 mod commit_unlink_writes;
 mod repository_writes;
 
-use crate::board::board_actor::BoardRecipient;
-use crate::board::board_ids::TaskId;
-use crate::board::board_vocabulary::EntryText;
-pub(in crate::board::local_board) use commit_link_writes::backfill_commit_claim_links;
-pub(in crate::board::local_board) use commit_link_writes::{link_commit, link_commits};
-pub(in crate::board::local_board) use commit_unlink_writes::unlink_commit;
-pub(in crate::board::local_board) use repository_writes::{
-    forget_repo_path, record_scan, register_repo,
-};
+use crate::board_actor::BoardRecipient;
+use crate::board_ids::TaskId;
+use crate::board_vocabulary::EntryText;
+pub(in crate::local_board) use commit_link_writes::backfill_commit_claim_links;
+pub(in crate::local_board) use commit_link_writes::{link_commit, link_commits};
+pub(in crate::local_board) use commit_unlink_writes::unlink_commit;
+pub(in crate::local_board) use repository_writes::{forget_repo_path, record_scan, register_repo};
 
-pub(in crate::board::local_board) fn hello(
+pub(in crate::local_board) fn hello(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     model: &str,
@@ -91,7 +89,7 @@ pub(in crate::board::local_board) fn hello(
     ))
 }
 
-pub(in crate::board::local_board) fn post(
+pub(in crate::local_board) fn post(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     target: &BoardRef,
@@ -217,9 +215,7 @@ pub(in crate::board::local_board) fn post(
 
 /// Truncates a commit summary to the entry text limit on a char boundary.
 fn bounded_summary(text: &str) -> String {
-    let mut end = text
-        .len()
-        .min(crate::board::board_vocabulary::ENTRY_TEXT_LIMIT);
+    let mut end = text.len().min(crate::board_vocabulary::ENTRY_TEXT_LIMIT);
     while !text.is_char_boundary(end) {
         end -= 1;
     }

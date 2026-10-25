@@ -1,14 +1,14 @@
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 use std::convert::TryFrom;
 
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::super::super::{BoardError, invalid, sql_error, sql_number, sqlite_u64};
-use crate::board::board_protocol::{ReviewVerdict, WorkerAddress};
+use crate::board_protocol::{ReviewVerdict, WorkerAddress};
 
-pub(in crate::board::local_board) fn verdict_for_entry(
+pub(in crate::local_board) fn verdict_for_entry(
     conn: &Connection,
-    entry: crate::board::board_ids::EntryId,
+    entry: crate::board_ids::EntryId,
 ) -> Result<Option<ReviewVerdict>, BoardError> {
     let row = conn
         .query_row(
@@ -22,7 +22,7 @@ pub(in crate::board::local_board) fn verdict_for_entry(
         .transpose()
 }
 
-pub(in crate::board::local_board) fn latest_worker_verdict(
+pub(in crate::local_board) fn latest_worker_verdict(
     conn: &Connection,
     worker: &WorkerAddress,
 ) -> Result<Option<ReviewVerdict>, BoardError> {

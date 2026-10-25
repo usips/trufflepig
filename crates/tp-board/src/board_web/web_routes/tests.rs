@@ -1,12 +1,12 @@
 use super::route_render::proposal_diff;
 use super::*;
-use crate::board::board_backend::BoardBackend;
-use crate::board::board_web::event_stream::{
+use crate::board_backend::BoardBackend;
+use crate::board_web::event_stream::{
     EventStreams, FeedReader, ReplayBatch, SequencePoller, StreamRequest,
 };
-use crate::board::board_web::web_guard::{BoardWebToken, WebGuard};
-use crate::board::board_web::{WebStore, web_ops};
-use crate::board::{
+use crate::board_web::web_guard::{BoardWebToken, WebGuard};
+use crate::board_web::{WebStore, web_ops};
+use crate::{
     board_config::{BoardConfig, BoardConfigCache},
     board_ids::{BoardRef, EventSeq, PlanId, PlanRevision},
     board_protocol::{BoardOp, BoardReply, BoardRequest, BoardResult},
@@ -50,7 +50,7 @@ fn every_ui_module_is_a_public_asset() {
             }
         }
     }
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/board/board_web/assets");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/board_web/assets");
     let mut modules = Vec::new();
     collect(&root, &root, &mut modules);
     assert!(
@@ -208,8 +208,8 @@ fn read_until(client: &mut TcpStream, needle: &str) -> String {
     let mut bytes = Vec::new();
     let mut buffer = [0; 4096];
     while !String::from_utf8_lossy(&bytes).contains(needle) {
-        let count = crate::board::board_test_support::read_ignoring_interrupts(client, &mut buffer)
-            .unwrap();
+        let count =
+            crate::board_test_support::read_ignoring_interrupts(client, &mut buffer).unwrap();
         assert!(count > 0, "stream closed before {needle}");
         bytes.extend_from_slice(&buffer[..count]);
     }

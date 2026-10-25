@@ -1,5 +1,5 @@
 use super::{allowed_url, render};
-use crate::board::board_markup::headings;
+use crate::board_markup::headings;
 
 mod empty_hex_tests;
 

@@ -3,8 +3,8 @@ use super::super::{
     BoardError, actor_from_row, delegated_actor_from_row, invalid, row_number, sql_error,
     sql_number, sqlite_u64,
 };
-use crate::board::board_protocol::BoardErrorCode;
-use crate::board::{
+use crate::board_protocol::BoardErrorCode;
+use crate::{
     board_ids::{EntryId, EventSeq, PlanId, RepoKey, TaskId},
     board_protocol::{
         CommitClaimBasis, CommitClaimLink, CommitPlanLink, LinkedCommit, ManualCommitLink,
@@ -19,7 +19,7 @@ const PLAN_WINDOW: &str = concat!(
     "AND c.committed_at>=?2 AND c.committed_at<=?3"
 );
 
-pub(in crate::board::local_board) fn linked_commits_bounded(
+pub(in crate::local_board) fn linked_commits_bounded(
     conn: &Connection,
     plan: PlanId,
     start: i64,
@@ -55,7 +55,7 @@ pub(in crate::board::local_board) fn linked_commits_bounded(
     Ok((commits, omitted))
 }
 
-pub(in crate::board::local_board) fn linked_commits_all(
+pub(in crate::local_board) fn linked_commits_all(
     conn: &Connection,
     plan: PlanId,
     start: i64,
@@ -65,7 +65,7 @@ pub(in crate::board::local_board) fn linked_commits_all(
 }
 
 /// Reads only task-level links, newest first internally and chronological in the reply.
-pub(in crate::board::local_board) fn linked_commits_for_task(
+pub(in crate::local_board) fn linked_commits_for_task(
     conn: &Connection,
     task: TaskId,
     limit: usize,
@@ -132,7 +132,7 @@ pub(in crate::board::local_board) fn linked_commits_for_task(
     Ok((commits, omitted, latest_at))
 }
 
-pub(in crate::board::local_board) fn manual_commit_links_window(
+pub(in crate::local_board) fn manual_commit_links_window(
     conn: &Connection,
     plan: PlanId,
     start: i64,
@@ -230,7 +230,7 @@ fn read_plan_window(
     Ok(result)
 }
 
-pub(in crate::board::local_board) fn linked_commit_for_entry(
+pub(in crate::local_board) fn linked_commit_for_entry(
     conn: &Connection,
     entry: EntryId,
 ) -> Result<Option<LinkedCommit>, BoardError> {

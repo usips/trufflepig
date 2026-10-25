@@ -7,16 +7,14 @@ use super::super::{
     BoardError, EntryDraft, WriteContext, insert_entry, insert_event, invalid, require_plan,
     sql_error, sql_number, sqlite_id,
 };
-use crate::board::board_actor::BoardRecipient;
-use crate::board::board_ids::{EntryId, PlanId, TaskId};
-use crate::board::board_protocol::BoardErrorCode;
-use crate::board::board_protocol::{
-    AuthorityRole, AuthoritySource, BoardChange, BoardReply, BoardResult,
-};
-use crate::board::board_vocabulary::{EntryKind, EntryText, PlanTitle, TaskColumn};
+use crate::board_actor::BoardRecipient;
+use crate::board_ids::{EntryId, PlanId, TaskId};
+use crate::board_protocol::BoardErrorCode;
+use crate::board_protocol::{AuthorityRole, AuthoritySource, BoardChange, BoardReply, BoardResult};
+use crate::board_vocabulary::{EntryKind, EntryText, PlanTitle, TaskColumn};
 use rusqlite::{OptionalExtension, Transaction, params};
 
-pub(in crate::board::local_board) fn transfer_task(
+pub(in crate::local_board) fn transfer_task(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     task: TaskId,
@@ -174,7 +172,7 @@ pub(in crate::board::local_board) fn transfer_task(
     Ok(change_reply(&authorized, entry, task, destination_task))
 }
 
-pub(in crate::board::local_board) fn require_current(
+pub(in crate::local_board) fn require_current(
     conn: &rusqlite::Connection,
     task: TaskId,
 ) -> Result<(), BoardError> {
@@ -208,19 +206,13 @@ fn require_authority(
     plan: PlanId,
     role: AuthorityRole,
 ) -> Result<AuthoritySource, BoardError> {
-    crate::board::local_board::board_authority::authority_for(
-        conn,
-        &ctx.actor,
-        Some(plan),
-        role,
-        ctx.now,
-    )?
-    .ok_or_else(|| {
-        invalid(
-            BoardErrorCode::InvalidActor,
-            format!("{} lacks {role} authority for {plan}", ctx.actor),
-        )
-    })
+    crate::local_board::board_authority::authority_for(conn, &ctx.actor, Some(plan), role, ctx.now)?
+        .ok_or_else(|| {
+            invalid(
+                BoardErrorCode::InvalidActor,
+                format!("{} lacks {role} authority for {plan}", ctx.actor),
+            )
+        })
 }
 
 fn audit_source(source: &AuthoritySource) -> Result<(&'static str, Option<i64>), BoardError> {

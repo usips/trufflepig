@@ -3,7 +3,7 @@
 //! token-keyed HMAC, so callers never send the token itself.
 
 use super::http_wire;
-use crate::board::{
+use crate::{
     board_protocol::BOARD_API,
     board_web::web_guard::{ChallengeNonce, WebGuard},
 };

@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::repo_identity::tests::FixtureRegistration;
+use crate::repo_identity::tests::FixtureRegistration;
 
 #[test]
 fn common_directory_keeps_plan_links_when_root_set_extends() {

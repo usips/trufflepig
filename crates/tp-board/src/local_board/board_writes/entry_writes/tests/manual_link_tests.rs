@@ -118,7 +118,7 @@ fn manual_link_attempt(
     board: &mut LocalBoard,
     actor: BoardActor,
     task: TaskId,
-) -> Result<crate::board::board_protocol::BoardReply, crate::board::board_protocol::BoardError> {
+) -> Result<crate::board_protocol::BoardReply, crate::board_protocol::BoardError> {
     board.handle(&BoardRequest::new(
         actor,
         BoardOp::LinkCommit {
@@ -143,7 +143,7 @@ fn manual_commit_link_authority_requires_owner_or_link_grant() {
         let error = manual_link_attempt(&mut board, actor, task).unwrap_err();
         assert_eq!(
             error.code,
-            crate::board::board_protocol::BoardErrorCode::InvalidActor,
+            crate::board_protocol::BoardErrorCode::InvalidActor,
             "outsider {harness}: {error}"
         );
     }
@@ -172,7 +172,7 @@ fn agent_without_link_grant_cannot_link() {
         manual_link_attempt(&mut board, manual_link_actor("fixture", "kimi"), task).unwrap_err();
     assert_eq!(
         error.code,
-        crate::board::board_protocol::BoardErrorCode::InvalidActor,
+        crate::board_protocol::BoardErrorCode::InvalidActor,
         "{error}"
     );
     assert_eq!(
@@ -194,7 +194,7 @@ fn cli_harness_cannot_link() {
         manual_link_attempt(&mut board, manual_link_actor("fixture", "cli"), task).unwrap_err();
     assert_eq!(
         error.code,
-        crate::board::board_protocol::BoardErrorCode::InvalidActor,
+        crate::board_protocol::BoardErrorCode::InvalidActor,
         "{error}"
     );
     assert_eq!(
@@ -279,7 +279,7 @@ fn manual_commit_link_requires_a_host_resolved_commit() {
         .unwrap_err();
     assert_eq!(
         error.code,
-        crate::board::board_protocol::BoardErrorCode::InvalidOptions,
+        crate::board_protocol::BoardErrorCode::InvalidOptions,
         "{error}"
     );
 }
@@ -310,7 +310,7 @@ fn manual_commit_link_rejects_unknown_plans_and_tasks() {
             .unwrap_err();
         assert_eq!(
             error.code,
-            crate::board::board_protocol::BoardErrorCode::InvalidReference,
+            crate::board_protocol::BoardErrorCode::InvalidReference,
             "{target}: {error}"
         );
     }

@@ -1,6 +1,6 @@
 //! Project selection and counted wire replies at the serving-host boundary.
 use super::ResolvedProject;
-use crate::board::{
+use crate::{
     board_config::BoardConfig,
     board_ids::EventSeq,
     board_protocol::{

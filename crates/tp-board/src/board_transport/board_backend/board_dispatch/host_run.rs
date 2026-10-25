@@ -10,8 +10,8 @@ use super::super::{
 };
 use super::scope_read_repo_key;
 use crate::{
-    board::board_grammar::BoardArguments,
-    board::{
+    board_grammar::BoardArguments,
+    {
         board_grammar::{self, BoardCommand},
         board_protocol::{
             AgentClaims, BoardError, BoardErrorCode, BoardOp, BoardReply, BoardRequest,
@@ -37,9 +37,9 @@ impl BoardHost {
         actor_host: &str,
         deadline: &QueryDeadline,
     ) -> Result<()> {
-        crate::board::board_projects::validate_scope_selection(op)?;
+        crate::board_projects::validate_scope_selection(op)?;
         let projects = self.projects(actor_host, deadline)?;
-        crate::board::board_projects::select_scope(op, selector, &projects).map_err(Into::into)
+        crate::board_projects::select_scope(op, selector, &projects).map_err(Into::into)
     }
 
     /// Dispatches concrete reads and writes, holding the writer only for backend work.
@@ -85,7 +85,7 @@ impl BoardHost {
                     | BoardOp::Pending { .. }
                     | BoardOp::Receipt { .. }
             ) {
-            Ok(crate::board::repo_identity::RegistrationProbe {
+            Ok(crate::repo_identity::RegistrationProbe {
                 registration: None,
                 warning: None,
                 status: None,
@@ -160,7 +160,7 @@ impl BoardHost {
                             if let Some(configured) = &proposed.origin_override {
                                 if configured != &target.registration.repo_key {
                                     return Err(BoardError::new(
-                                        crate::board::board_protocol::BoardErrorCode::InvalidOptions,
+                                        crate::board_protocol::BoardErrorCode::InvalidOptions,
                                         format!(
                                             concat!(
                                                 "origin override {configured} conflicts with ",
@@ -186,7 +186,7 @@ impl BoardHost {
             if let Some(registration) = &registration {
                 metadata.repo_key = Some(registration.repo_key.clone());
             }
-            crate::board::enrich_feedback_cwd(
+            crate::enrich_feedback_cwd(
                 metadata,
                 &options.root,
                 deadline.cap(Duration::from_secs(2)),
@@ -269,7 +269,7 @@ fn local_read_deadline(command: &BoardCommand, deadline: QueryDeadline) -> Query
 
 fn origin_request(
     context: &RequestContext,
-    actor: crate::board::board_actor::BoardActor,
+    actor: crate::board_actor::BoardActor,
     op: BoardOp,
 ) -> BoardRequest {
     let mut request = BoardRequest::new(actor, op);

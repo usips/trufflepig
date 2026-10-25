@@ -16,7 +16,7 @@ use super::board_actor::BoardActor;
 use super::board_backend::BoardHost;
 use super::board_config::BoardConfig;
 use super::board_grammar;
-use crate::board::board_grammar::BoardArguments;
+use crate::board_grammar::BoardArguments;
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::Value;
@@ -67,7 +67,7 @@ impl EdgeFixture {
             "json".into(),
         ];
         args.extend(words.iter().map(|word| (*word).to_owned()));
-        crate::board::board_test_support::parse_board_arguments(&args).unwrap()
+        crate::board_test_support::parse_board_arguments(&args).unwrap()
     }
 
     fn run(&self, words: &[&str], harness: &str, session: &str) -> Value {
@@ -83,7 +83,7 @@ impl EdgeFixture {
         body: Option<&str>,
     ) -> Result<Value> {
         let forwarded = board_grammar::normalize_args(&options, body)?;
-        let parsed = crate::board::board_test_support::round_trip(&forwarded);
+        let parsed = crate::board_test_support::round_trip(&forwarded);
         let output = self
             .host
             .run(&parsed, &context(harness, session), QueryDeadline::start())?;
@@ -109,7 +109,7 @@ impl EdgeFixture {
     ) -> Value {
         let options = self.options(&["board", "grant", plan, role, "--to", grantee]);
         let forwarded = board_grammar::normalize_args(&options, None).unwrap();
-        let options = crate::board::board_test_support::round_trip(&forwarded);
+        let options = crate::board_test_support::round_trip(&forwarded);
         let actor = self.actor("human", grantor_session);
         let context = RequestContext::with_origin(
             Some(grantor_session.to_owned()),

@@ -175,7 +175,7 @@ fn board_writes_persist_the_socket_peer_instead_of_forwarded_headers() {
             "api": BOARD_API,
             "op": BoardOp::Post {
                 target: BoardRef::Plan(plan),
-                kind: crate::board::board_vocabulary::EntryKind::Note,
+                kind: crate::board_vocabulary::EntryKind::Note,
                 body: EntryText::new("peer provenance").unwrap(),
                 to: None,
                 supersedes: None,

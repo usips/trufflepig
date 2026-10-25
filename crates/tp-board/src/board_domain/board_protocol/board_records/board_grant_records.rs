@@ -1,5 +1,5 @@
 //! Authority grants visible in plan views.
-use crate::board::{
+use crate::{
     board_actor::BoardRecipient,
     board_ids::{EntryId, PlanId},
     board_protocol::AuthorityRole,

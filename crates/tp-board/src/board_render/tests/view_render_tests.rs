@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn show_preserves_labor_and_uncovered_sections_while_trimming_the_body() {
-    use crate::board::{
+    use crate::{
         board_ids::{PlanRevision, TaskId},
         board_vocabulary::{PlanText, PlanTitle, TaskColumn},
     };
@@ -53,7 +53,7 @@ fn show_preserves_labor_and_uncovered_sections_while_trimming_the_body() {
         can_change_lifecycle: false,
         repo_keys: Vec::new(),
         plan: PlanRecord {
-            lifecycle_state: crate::board::board_protocol::PlanLifecycleState::Open,
+            lifecycle_state: crate::board_protocol::PlanLifecycleState::Open,
             id: plan,
             title: PlanTitle::new("Trial").unwrap(),
             owner_user: "josh".into(),
@@ -136,7 +136,7 @@ fn show_preserves_labor_and_uncovered_sections_while_trimming_the_body() {
 
 #[test]
 fn plan_budget_keeps_body_and_tasks_ahead_of_commit_rows() {
-    use crate::board::{
+    use crate::{
         board_ids::{PlanRevision, TaskId},
         board_vocabulary::{PlanText, PlanTitle, TaskColumn},
     };
@@ -148,7 +148,7 @@ fn plan_budget_keeps_body_and_tasks_ahead_of_commit_rows() {
         can_change_lifecycle: false,
         repo_keys: Vec::new(),
         plan: PlanRecord {
-            lifecycle_state: crate::board::board_protocol::PlanLifecycleState::Open,
+            lifecycle_state: crate::board_protocol::PlanLifecycleState::Open,
             id: plan,
             title: PlanTitle::new("Trial").unwrap(),
             owner_user: "josh".into(),
@@ -216,7 +216,7 @@ fn plan_budget_keeps_body_and_tasks_ahead_of_commit_rows() {
 
 #[test]
 fn plan_trim_keeps_newest_entries_behind_a_before_cursor() {
-    use crate::board::{
+    use crate::{
         board_ids::PlanRevision,
         board_vocabulary::{PlanText, PlanTitle},
     };
@@ -232,7 +232,7 @@ fn plan_trim_keeps_newest_entries_behind_a_before_cursor() {
         can_change_lifecycle: false,
         repo_keys: Vec::new(),
         plan: PlanRecord {
-            lifecycle_state: crate::board::board_protocol::PlanLifecycleState::Open,
+            lifecycle_state: crate::board_protocol::PlanLifecycleState::Open,
             id: plan,
             title: PlanTitle::new("Trial").unwrap(),
             owner_user: "josh".into(),

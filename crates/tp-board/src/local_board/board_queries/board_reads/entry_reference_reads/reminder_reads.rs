@@ -1,9 +1,9 @@
 //! Open-reminder predicate and capped reminder totals.
 use super::*;
-use crate::board::local_board::board_queries::board_reads::recipient_predicates::{
+use crate::local_board::board_queries::board_reads::recipient_predicates::{
     addressed_to_actor_sql, task_entry_sql, task_owner_human_question_sql,
 };
-use crate::board::local_board::board_queries::read_scope_sql::ScopeSql;
+use crate::local_board::board_queries::read_scope_sql::ScopeSql;
 
 /// Reminder totals are exact up to this cap; larger backlogs report a lower bound.
 const OPEN_REMINDER_COUNT_CAP: u64 = 200;
@@ -12,7 +12,7 @@ const OPEN_REMINDER_COUNT_CAP: u64 = 200;
 /// ?4 scope kind, ?5 JSON keys, ?6 through. The kind prefix drives the scan from
 /// `entries_kind_state`; authorship matches user and harness so a new session
 /// of the same harness keeps its reminders; proposal currency is as of ?6.
-pub(in crate::board::local_board::board_queries::board_reads) fn reminder_predicate() -> String {
+pub(in crate::local_board::board_queries::board_reads) fn reminder_predicate() -> String {
     let strict_scope = ScopeSql::strict_plan_predicate("e.plan_id", 4, 5);
     let addressed = addressed_to_actor_sql("e.to_whom", "?1", "?2", "?3");
     let task_entry = task_entry_sql("e.id");
@@ -50,7 +50,7 @@ pub(in crate::board::local_board::board_queries::board_reads) fn reminder_predic
     )
 }
 
-pub(in crate::board::local_board) fn open_entries(
+pub(in crate::local_board) fn open_entries(
     conn: &Connection,
     ctx: &WriteContext,
     scope: &ReadScope,

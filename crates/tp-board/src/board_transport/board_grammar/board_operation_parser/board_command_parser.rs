@@ -7,10 +7,10 @@ use super::{
     board_syntax_validation::{check_flags, fixed_words, optional_text, word},
     board_task_claim_parser::{parse_claim, parse_task},
 };
-use crate::board::board_protocol::ReadScope;
+use crate::board_protocol::ReadScope;
 use crate::{
-    board::board_grammar::BoardArguments,
-    board::{
+    board_grammar::BoardArguments,
+    {
         board_ids::{BoardRef, EntryId, EventSeq, PlanRevision},
         board_protocol::BoardOp,
         board_vocabulary::{EntryText, PlanText, PlanTitle},

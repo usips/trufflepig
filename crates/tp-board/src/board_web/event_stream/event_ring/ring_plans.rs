@@ -1,9 +1,9 @@
 //! Plan filter leases: relevance reads stop when the stream drops.
 use super::EventRing;
-use crate::board::board_ids::PlanId;
+use crate::board_ids::PlanId;
 
 /// Unregisters the plan filter on drop so relevance reads stop with the stream.
-pub(in crate::board::board_web::event_stream) struct PlanLease {
+pub(in crate::board_web::event_stream) struct PlanLease {
     pub(super) ring: EventRing,
     pub(super) plan: PlanId,
 }

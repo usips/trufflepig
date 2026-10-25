@@ -3,31 +3,31 @@
 mod task_move_authority;
 mod task_moves;
 
-pub(in crate::board::local_board) use task_move_authority::is_bound_worker;
-pub(in crate::board::local_board) use task_moves::move_task;
+pub(in crate::local_board) use task_move_authority::is_bound_worker;
+pub(in crate::local_board) use task_moves::move_task;
 
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use super::super::{
     BoardError, EntryDraft, WriteContext, insert_entry, insert_event, invalid, require_plan,
     row_number, sql_error, sql_number,
 };
-use crate::board::board_actor::{BoardActor, BoardRecipient};
-use crate::board::board_ids::{EntryId, PlanId, TaskId};
-use crate::board::board_protocol::{AuthorityRole, BoardReply};
-use crate::board::board_vocabulary::{EntryKind, PlanTitle, TaskColumn};
+use crate::board_actor::{BoardActor, BoardRecipient};
+use crate::board_ids::{EntryId, PlanId, TaskId};
+use crate::board_protocol::{AuthorityRole, BoardReply};
+use crate::board_vocabulary::{EntryKind, PlanTitle, TaskColumn};
 
 #[cfg(test)]
 mod tests;
 
-pub(in crate::board::local_board) struct TaskCard {
+pub(in crate::local_board) struct TaskCard {
     title: PlanTitle,
-    pub(in crate::board::local_board) column: TaskColumn,
+    pub(in crate::local_board) column: TaskColumn,
     assignee: Option<BoardRecipient>,
 }
 
-pub(in crate::board::local_board) fn require_task(
+pub(in crate::local_board) fn require_task(
     conn: &Connection,
     task: TaskId,
 ) -> Result<TaskCard, BoardError> {
@@ -56,7 +56,7 @@ pub(in crate::board::local_board) fn require_task(
     })
 }
 
-pub(in crate::board::local_board) fn require_assignee(
+pub(in crate::local_board) fn require_assignee(
     card: &TaskCard,
     actor: &BoardActor,
     task: TaskId,
@@ -92,7 +92,7 @@ pub(super) fn normalized_task_recipient(
     Ok(Some(recipient))
 }
 
-pub(in crate::board::local_board) fn create_task(
+pub(in crate::local_board) fn create_task(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     plan: PlanId,
@@ -144,7 +144,7 @@ pub(in crate::board::local_board) fn create_task(
     Ok(task_ctx.change_reply(entry, Some(task.plan), None, Some(task)))
 }
 
-pub(in crate::board::local_board) fn allocate_task(
+pub(in crate::local_board) fn allocate_task(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     plan: PlanId,

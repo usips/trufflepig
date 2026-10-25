@@ -1,5 +1,5 @@
 //! Authority evidence codes carried by Board v10 records.
-use crate::board::board_ids::EntryId;
+use crate::board_ids::EntryId;
 use anyhow::Result;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{fmt, str::FromStr};

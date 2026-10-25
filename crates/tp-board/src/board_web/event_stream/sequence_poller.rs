@@ -1,6 +1,6 @@
 //! A bounded cadence observes committed sequence changes without retaining readers.
 
-use crate::board::{board_ids::EventSeq, board_protocol::BoardError};
+use crate::{board_ids::EventSeq, board_protocol::BoardError};
 use std::{
     io,
     panic::{AssertUnwindSafe, catch_unwind},

@@ -1,6 +1,6 @@
 use super::*;
-use crate::board::board_ids::PlanId;
-use crate::board::repo_identity::tests::FixtureRegistration;
+use crate::board_ids::PlanId;
+use crate::repo_identity::tests::FixtureRegistration;
 use serde_json::{Value, json};
 use std::fs;
 use tp_core::test_fixtures::GitFixture;

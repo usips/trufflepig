@@ -40,7 +40,7 @@ pub(super) fn populated_v1(directory: &tempfile::TempDir) -> (PathBuf, Vec<i64>)
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
     }
-    conn.execute_batch(crate::board::local_board::board_database::legacy_schema())
+    conn.execute_batch(crate::local_board::board_database::legacy_schema())
         .unwrap();
     conn.pragma_update(None, "user_version", 1).unwrap();
     conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();

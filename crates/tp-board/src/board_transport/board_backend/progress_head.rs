@@ -1,6 +1,6 @@
 //! Local Git verification of progress evidence before acquiring the writer.
 use super::{BoardHost, board_writer::check_deadline};
-use crate::board::{
+use crate::{
     board_ids::BoardRef,
     board_protocol::{BoardOp, BoardRequest},
 };

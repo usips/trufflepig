@@ -12,7 +12,7 @@ const ALLOWED: &[(&str, &str)] = &[
     ),
     // BoardError flattens SQLite and OS causes into its wire message.
     (
-        "src/board/board_transport/board_client_transport/local_access.rs",
+        "crates/tp-board/src/board_transport/board_client_transport/local_access.rs",
         "cause.to_string().to_ascii_lowercase()",
     ),
     // Provider and runtime failures arrive as text across the worker process boundary.

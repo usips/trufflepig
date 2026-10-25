@@ -85,10 +85,9 @@ fn queue_full_refusal_delivers_the_busy_reply_before_closing() {
     // the reply must sit unread client-side before the read, so a reset
     // cannot slip past already-consumed bytes on either side.
     peek_until(&mut server, b"Host: x");
-    let busy =
-        http_wire::unavailable_response(1, crate::board::board_web::web_serve::QUEUE_FULL_BODY);
-    let drains = std::sync::Arc::new(crate::board::board_web::web_serve::RefusalDrains::default());
-    crate::board::board_web::web_serve::refuse_connection(server, &busy, &drains);
+    let busy = http_wire::unavailable_response(1, crate::board_web::web_serve::QUEUE_FULL_BODY);
+    let drains = std::sync::Arc::new(crate::board_web::web_serve::RefusalDrains::default());
+    crate::board_web::web_serve::refuse_connection(server, &busy, &drains);
     peek_until(&mut client, b"daemon_busy");
     // A reset may already have destroyed the connection; the body read below
     // is the assertion.

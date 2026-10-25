@@ -1,22 +1,20 @@
 //! Plan overview and actor-specific attention within the caller's read transaction.
 mod attention_predicates;
 
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 pub(super) use attention_predicates::attention_predicate;
 use rusqlite::{Connection, params};
 
 use super::{ACTIVE_TASKS, COLLECTION_LIMIT, claim_ttl, count, sequence_window, validate_limit};
-use crate::board::board_domain::board_collections::{
+use crate::board_domain::board_collections::{
     AttentionReply, EntryCursor, OverviewCursor, OverviewReply, PlanOverview,
 };
-use crate::board::board_ids::EventSeq;
-use crate::board::board_protocol::{BoardReply, BoardResult, ReadScope};
-use crate::board::board_vocabulary::EntryKind;
-use crate::board::local_board::board_queries::read_scope_sql::{ScopeSql, plan_repo_keys};
-use crate::board::local_board::board_queries::{board_reads, collection_nested};
-use crate::board::local_board::{
-    BoardError, WriteContext, invalid, row_number, sql_error, sql_number,
-};
+use crate::board_ids::EventSeq;
+use crate::board_protocol::{BoardReply, BoardResult, ReadScope};
+use crate::board_vocabulary::EntryKind;
+use crate::local_board::board_queries::read_scope_sql::{ScopeSql, plan_repo_keys};
+use crate::local_board::board_queries::{board_reads, collection_nested};
+use crate::local_board::{BoardError, WriteContext, invalid, row_number, sql_error, sql_number};
 
 const NESTED_LIMIT: usize = 20;
 
@@ -34,7 +32,7 @@ fn open_question(through: &str) -> String {
     )
 }
 
-pub(in crate::board::local_board) fn overview(
+pub(in crate::local_board) fn overview(
     conn: &Connection,
     ctx: &WriteContext,
     scope: &ReadScope,
@@ -197,7 +195,7 @@ pub(in crate::board::local_board) fn overview(
     ))
 }
 
-pub(in crate::board::local_board) fn attention(
+pub(in crate::local_board) fn attention(
     conn: &Connection,
     ctx: &WriteContext,
     scope: &ReadScope,

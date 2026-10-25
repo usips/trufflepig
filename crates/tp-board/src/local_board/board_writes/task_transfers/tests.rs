@@ -1,10 +1,10 @@
 use super::*;
-use crate::board::board_actor::BoardActor;
-use crate::board::board_ids::EventSeq;
-use crate::board::board_protocol::{BoardResult, ReadScope, TaskOrder};
-use crate::board::board_vocabulary::{EntryText, TaskColumn};
-use crate::board::local_board::board_queries::board_reads::{open_entries, task_view};
-use crate::board::local_board::board_queries::collection_nested::{
+use crate::board_actor::BoardActor;
+use crate::board_ids::EventSeq;
+use crate::board_protocol::{BoardResult, ReadScope, TaskOrder};
+use crate::board_vocabulary::{EntryText, TaskColumn};
+use crate::local_board::board_queries::board_reads::{open_entries, task_view};
+use crate::local_board::board_queries::collection_nested::{
     TaskSelection, overview_task_window, tasks_page,
 };
 use rusqlite::{Connection, Transaction};
@@ -19,9 +19,7 @@ impl TransferDatabase {
     fn new() -> Self {
         let directory = tp_core::test_fixtures::scratch("task-transfer-tests-");
         let path = directory.path().join("board.sqlite3");
-        let conn = crate::board::local_board::board_database::open(&path)
-            .unwrap()
-            .0;
+        let conn = crate::local_board::board_database::open(&path).unwrap().0;
         conn.execute_batch(
             "INSERT INTO actors(id,user,host,harness,session)
                VALUES(1,'josh','test-host','human','owner'),
@@ -67,14 +65,14 @@ fn write(
     let tx = conn
         .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .unwrap();
-    let actor_id = crate::board::local_board::ensure_actor(&tx, actor, now).unwrap();
+    let actor_id = crate::local_board::ensure_actor(&tx, actor, now).unwrap();
     let ctx = WriteContext {
         actor_id,
         actor: actor.clone(),
         model: Some("test-model".into()),
         effort: Some("xhigh".into()),
         now,
-        seq: EventSeq::new(crate::board::local_board::max_seq(&tx).unwrap().get() + 1),
+        seq: EventSeq::new(crate::local_board::max_seq(&tx).unwrap().get() + 1),
         claim_ttl_secs: 120,
         via: None,
         origin: None,
@@ -304,7 +302,7 @@ fn transfer_preserves_source_and_destination_provenance_and_routes_open_question
         &recipient,
         &ReadScope::All,
         20,
-        crate::board::local_board::max_seq(&database.conn).unwrap(),
+        crate::local_board::max_seq(&database.conn).unwrap(),
     )
     .unwrap();
     assert!(
@@ -323,7 +321,7 @@ fn transfer_preserves_source_and_destination_provenance_and_routes_open_question
         &plan_owner,
         &ReadScope::All,
         20,
-        crate::board::local_board::max_seq(&database.conn).unwrap(),
+        crate::local_board::max_seq(&database.conn).unwrap(),
     )
     .unwrap();
     assert!(

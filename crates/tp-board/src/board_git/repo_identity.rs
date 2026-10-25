@@ -1,6 +1,6 @@
 //! Portable root-commit identity and host-local repository registration.
-use crate::board::board_ids::{PlanId, RepoKey};
-use crate::board::board_protocol::RepoRegistration;
+use crate::board_ids::{PlanId, RepoKey};
+use crate::board_protocol::RepoRegistration;
 use anyhow::{Result, ensure};
 use std::collections::BTreeMap;
 use std::ffi::OsString;

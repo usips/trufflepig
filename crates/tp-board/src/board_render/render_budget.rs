@@ -5,8 +5,8 @@ mod collection_budget;
 pub(super) use collection_budget::render_collections;
 
 use super::{cell, footer, lines_result};
-use crate::board::board_ids::{EventSeq, PlanId};
-use crate::board::board_protocol::{BoardReply, BoardResult};
+use crate::board_ids::{EventSeq, PlanId};
+use crate::board_protocol::{BoardReply, BoardResult};
 use anyhow::{Result, bail};
 use serde::Serialize;
 use std::fmt::Write;
@@ -161,7 +161,7 @@ pub(super) fn committed_receipt(result: &BoardResult) -> Option<String> {
             change.deduplicated
         ),
         BoardResult::Receipt(receipt)
-            if receipt.state == crate::board::board_protocol::BoardReceiptState::Committed =>
+            if receipt.state == crate::board_protocol::BoardReceiptState::Committed =>
         {
             let Some(change) = &receipt.change else {
                 return None;

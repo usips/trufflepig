@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use rusqlite::Connection;
 
 use super::{BoardError, invalid, sql_error};
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 
 mod board_read_open;
 mod board_schema;
@@ -49,8 +49,8 @@ fn migration_step(from: i64) -> Result<&'static str, BoardError> {
 
 /// Builds a stale fixture by applying migration steps up to `version`, for
 /// migration tests; skips the open path's permission and journal checks.
-#[cfg(test)]
-pub(crate) fn seed_storage_schema(path: &Path, version: i64) -> Result<(), BoardError> {
+#[cfg(any(test, feature = "test-support"))]
+pub fn seed_storage_schema(path: &Path, version: i64) -> Result<(), BoardError> {
     let connection = Connection::open(path).map_err(sql_error)?;
     #[cfg(unix)]
     {

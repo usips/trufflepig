@@ -1,10 +1,10 @@
 //! Worker-binding checks for task card writes.
 
 use super::{BoardError, sql_error, sql_number};
-use crate::board::board_ids::TaskId;
+use crate::board_ids::TaskId;
 use rusqlite::{Transaction, params};
 
-pub(in crate::board::local_board) fn is_bound_worker(
+pub(in crate::local_board) fn is_bound_worker(
     tx: &Transaction<'_>,
     task: TaskId,
     actor_id: i64,

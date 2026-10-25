@@ -17,7 +17,7 @@ use super::{
     web_guard::{ChallengeNonce, RouteAccess, WebGuard},
     web_ops::{self, WebRequest},
 };
-use crate::board::board_protocol::{BOARD_API, BoardError, BoardErrorCode};
+use crate::board_protocol::{BOARD_API, BoardError, BoardErrorCode};
 use route_events::{stream_request, stream_subscription};
 use route_ingest::{ApiRequest, ingest_accepted};
 use route_render::{decode_render_target, render_diff, render_plan, render_proposal};

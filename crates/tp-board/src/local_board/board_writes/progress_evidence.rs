@@ -1,12 +1,12 @@
 //! Append-only task progress facts and review verdicts.
 
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 use rusqlite::{Transaction, params};
 
 use super::super::{BoardError, WriteContext, invalid, sql_error, sql_number};
-use crate::board::board_ids::{EntryId, TaskId};
-use crate::board::board_protocol::{GateStatus, ProgressInput, ReviewVerdict, WorkerAddress};
-use crate::board::board_vocabulary::EntryKind;
+use crate::board_ids::{EntryId, TaskId};
+use crate::board_protocol::{GateStatus, ProgressInput, ReviewVerdict, WorkerAddress};
+use crate::board_vocabulary::EntryKind;
 use authorization::{
     current_claim, require_progress_author, require_verdict_author, task_entry_worker,
 };
@@ -16,7 +16,7 @@ use validation::validate_progress;
 mod authorization;
 mod validation;
 
-pub(in crate::board::local_board) fn write_progress(
+pub(in crate::local_board) fn write_progress(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     entry: EntryId,
@@ -76,7 +76,7 @@ pub(in crate::board::local_board) fn write_progress(
     Ok(())
 }
 
-pub(in crate::board::local_board) fn write_verdict(
+pub(in crate::local_board) fn write_verdict(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     entry: EntryId,

@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn populated_v1_duplicate_checkout_paths_keep_first_key_and_all_evidence() {
-    use crate::board::board_ids::RepoKey;
+    use crate::board_ids::RepoKey;
     use tp_core::identity::GitOid;
     let directory = directory();
     let path = directory.path().join("board.sqlite3");
@@ -154,8 +154,8 @@ fn populated_v1_duplicate_checkout_paths_keep_first_key_and_all_evidence() {
             .unwrap()
             .is_none()
     );
-    let crate::board::board_protocol::BoardResult::Repositories(targets) =
-        crate::board::local_board::board_queries::board_reads::repositories(&conn, None)
+    let crate::board_protocol::BoardResult::Repositories(targets) =
+        crate::local_board::board_queries::board_reads::repositories(&conn, None)
             .unwrap()
             .result
     else {

@@ -1,6 +1,6 @@
 //! Current task-linked commit identities independent of review windows and plans.
 use super::super::{BoardError, sql_error};
-use crate::board::board_ids::RepoKey;
+use crate::board_ids::RepoKey;
 use rusqlite::{Connection, params};
 use std::collections::BTreeSet;
 use tp_core::identity::GitOid;
@@ -8,7 +8,7 @@ use tp_core::identity::GitOid;
 #[cfg(test)]
 mod tests;
 
-pub(in crate::board::local_board) fn linked_commit_oids(
+pub(in crate::local_board) fn linked_commit_oids(
     conn: &Connection,
     repo_key: &RepoKey,
     oids: &[GitOid],

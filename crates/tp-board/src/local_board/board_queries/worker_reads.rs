@@ -1,21 +1,21 @@
 //! Bounded worker registry reads for task and claim projections.
 
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use super::super::{
     BoardError, delegated_actor_from_row, invalid, row_number, sql_error, sql_number,
 };
-use crate::board::board_ids::{EntryId, TaskId};
-use crate::board::board_protocol::{
+use crate::board_ids::{EntryId, TaskId};
+use crate::board_protocol::{
     WorkerAddress, WorkerEndReason, WorkerHandle, WorkerRecord, WorkerRole,
 };
-use crate::board::board_vocabulary::EntryText;
+use crate::board_vocabulary::EntryText;
 
-pub(in crate::board::local_board) const MAX_CLAIM_WORKERS: usize = 20;
+pub(in crate::local_board) const MAX_CLAIM_WORKERS: usize = 20;
 
 #[derive(Debug)]
-pub(in crate::board::local_board) struct StoredWorker {
+pub(in crate::local_board) struct StoredWorker {
     pub id: i64,
     pub record: WorkerRecord,
     pub claim_id: i64,
@@ -25,7 +25,7 @@ pub(in crate::board::local_board) struct StoredWorker {
 }
 
 #[derive(Debug)]
-pub(in crate::board::local_board) struct ActiveWorkerBinding {
+pub(in crate::local_board) struct ActiveWorkerBinding {
     pub worker_id: i64,
     pub claim_id: i64,
     pub address: WorkerAddress,
@@ -42,7 +42,7 @@ const WORKER_SELECT: &str = concat!(
     "LEFT JOIN actors a ON a.id=w.actor_id"
 );
 
-pub(in crate::board::local_board) fn workers_for_claim(
+pub(in crate::local_board) fn workers_for_claim(
     conn: &Connection,
     task: TaskId,
     claim_entry: EntryId,
@@ -93,7 +93,7 @@ pub(in crate::board::local_board) fn workers_for_claim(
     Ok((workers, omitted))
 }
 
-pub(in crate::board::local_board) fn worker_for_address(
+pub(in crate::local_board) fn worker_for_address(
     conn: &Connection,
     address: &WorkerAddress,
 ) -> Result<Option<StoredWorker>, BoardError> {
@@ -116,7 +116,7 @@ pub(in crate::board::local_board) fn worker_for_address(
         .transpose()
 }
 
-pub(in crate::board::local_board) fn active_bound_worker_for_actor(
+pub(in crate::local_board) fn active_bound_worker_for_actor(
     conn: &Connection,
     actor_id: i64,
 ) -> Result<Option<StoredWorker>, BoardError> {
@@ -131,7 +131,7 @@ pub(in crate::board::local_board) fn active_bound_worker_for_actor(
         .transpose()
 }
 
-pub(in crate::board::local_board) fn active_worker_binding(
+pub(in crate::local_board) fn active_worker_binding(
     conn: &Connection,
     actor_id: i64,
     task: TaskId,
@@ -187,7 +187,7 @@ fn stored_worker_from_row(row: &Row<'_>, conn: &Connection) -> Result<StoredWork
     let claim_entry =
         EntryId::new(row_number(row, 2).map_err(sql_error)?).map_err(BoardError::from)?;
     let entry = EntryId::new(row_number(row, 3).map_err(sql_error)?).map_err(BoardError::from)?;
-    let plan = crate::board::board_ids::PlanId::new(row_number(row, 4).map_err(sql_error)?)
+    let plan = crate::board_ids::PlanId::new(row_number(row, 4).map_err(sql_error)?)
         .map_err(BoardError::from)?;
     let ordinal = row_number(row, 5).map_err(sql_error)?;
     let task = TaskId::new(plan, ordinal).map_err(BoardError::from)?;

@@ -1,16 +1,16 @@
 //! Prefix fitting preserves each collection's continuation and membership boundary.
 use super::{BoardOmitted, fit_items, render_complete, require_fits};
-use crate::board::board_protocol::{
+use crate::board_protocol::{
     BoardReply, BoardResult, EntryCursor, EntryRecord, OverviewCursor, ReadScope, TaskCursor,
     TaskOrder, TaskRecord,
 };
-use crate::board::board_render::RenderedBoard;
-use crate::board::board_render::render_scope_hints::cli_scope_flag;
-use crate::board::board_vocabulary::TaskColumn;
+use crate::board_render::RenderedBoard;
+use crate::board_render::render_scope_hints::cli_scope_flag;
+use crate::board_vocabulary::TaskColumn;
 use anyhow::{Result, bail};
 use tp_core::output::OutputBudget;
 
-pub(in crate::board::board_render) fn render_collections(
+pub(in crate::board_render) fn render_collections(
     reply: &BoardReply,
     budget: &OutputBudget,
     project: Option<&str>,

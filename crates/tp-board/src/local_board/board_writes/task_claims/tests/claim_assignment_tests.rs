@@ -129,7 +129,7 @@ fn creator_move_authority_does_not_bypass_assignees_or_active_claims() {
     );
     let assigned = create_task_for_actor(&mut conn, &creator, &assignee, 1020, "assigned card");
     write(&mut conn, &owner, 1025, |tx, ctx| {
-        crate::board::local_board::board_authority::write_revoke(
+        crate::local_board::board_authority::write_revoke(
             tx,
             ctx,
             &BoardOp::Revoke {
@@ -386,10 +386,10 @@ fn plain_release_moves_reject_revoked_expired_and_wrong_plan_assign_grants() {
         let grant = create_assign_grant(&mut conn, &grantor, &assigner, plan, 1015, None);
         assert_exact_assign_grant(&conn, grant, plan, &assigner, None, None);
         let reply = write(&mut conn, &grantor, 1016, |tx, ctx| {
-            crate::board::local_board::board_authority::write_revoke(
+            crate::local_board::board_authority::write_revoke(
                 tx,
                 ctx,
-                &crate::board::board_protocol::BoardOp::Revoke {
+                &crate::board_protocol::BoardOp::Revoke {
                     entry: grant.clone(),
                 },
             )
@@ -611,14 +611,14 @@ fn create_assign_grant(
     plan: PlanId,
     now: i64,
     expires_in: Option<u64>,
-) -> crate::board::board_ids::EntryId {
+) -> crate::board_ids::EntryId {
     let reply = write(conn, grantor, now, |tx, ctx| {
-        crate::board::local_board::board_authority::write_grant(
+        crate::local_board::board_authority::write_grant(
             tx,
             ctx,
-            &crate::board::board_protocol::BoardOp::Grant {
+            &crate::board_protocol::BoardOp::Grant {
                 plan: Some(plan),
-                roles: vec![crate::board::board_protocol::AuthorityRole::Assign],
+                roles: vec![crate::board_protocol::AuthorityRole::Assign],
                 grantee: BoardRecipient::for_actor(assigner),
                 expires_in,
                 note: None,
@@ -634,11 +634,11 @@ fn create_assign_grant(
 
 fn assert_exact_assign_grant(
     conn: &Connection,
-    grant: crate::board::board_ids::EntryId,
+    grant: crate::board_ids::EntryId,
     plan: PlanId,
     assigner: &BoardActor,
     expires_at: Option<i64>,
-    revoked_by: Option<crate::board::board_ids::EntryId>,
+    revoked_by: Option<crate::board_ids::EntryId>,
 ) {
     let grant_id = i64::try_from(grant.get()).unwrap();
     assert_grant_role(conn, grant_id, "assign");

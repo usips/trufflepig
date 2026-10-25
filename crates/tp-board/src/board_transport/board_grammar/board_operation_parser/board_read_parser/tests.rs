@@ -1,10 +1,9 @@
-use crate::board::board_test_support::parse_board_arguments as parse;
-mod done_grammar_tests;
+use crate::board_test_support::parse_board_arguments as parse;
 
 #[test]
 fn pending_grammar_builds_a_bounded_notice_cursor() {
-    use crate::board::board_grammar::{BoardCommand, parse as board_parse};
-    use crate::board::board_protocol::BoardOp;
+    use crate::board_grammar::{BoardCommand, parse as board_parse};
+    use crate::board_protocol::BoardOp;
 
     let args = ["board", "pending", "0"].map(str::to_owned);
     let options = parse(&args).unwrap();
@@ -21,8 +20,8 @@ fn pending_grammar_builds_a_bounded_notice_cursor() {
 
 #[test]
 fn board_collection_grammar_uses_frozen_typed_cursors_and_required_show_targets() {
-    use crate::board::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
-    use crate::board::board_protocol::{BoardOp, EntryCursor, OverviewCursor};
+    use crate::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
+    use crate::board_protocol::{BoardOp, EntryCursor, OverviewCursor};
     let examples = [
         vec!["board", "show"],
         vec!["board", "show", "--after=12:P7", "--through=90", "-n3"],
@@ -55,11 +54,7 @@ fn board_collection_grammar_uses_frozen_typed_cursors_and_required_show_targets(
         let original = board_parse(&options, None).unwrap();
         let forwarded = normalize_args(&options, None).unwrap();
         assert_eq!(
-            board_parse(
-                &crate::board::board_test_support::round_trip(&forwarded),
-                None
-            )
-            .unwrap(),
+            board_parse(&crate::board_test_support::round_trip(&forwarded), None).unwrap(),
             original,
             "{words:?}"
         );
@@ -124,7 +119,7 @@ fn board_collection_grammar_uses_frozen_typed_cursors_and_required_show_targets(
 
 #[test]
 fn board_collection_grammar_rejects_wrong_cursor_types_and_cross_command_flags() {
-    use crate::board::board_grammar::parse as board_parse;
+    use crate::board_grammar::parse as board_parse;
     for words in [
         vec!["board", "feed", "P7", "12", "--after=13"],
         vec!["board", "feed", "12", "13"],
@@ -151,8 +146,8 @@ fn board_collection_grammar_rejects_wrong_cursor_types_and_cross_command_flags()
 
 #[test]
 fn receipt_grammar_requires_a_full_hexadecimal_request_key() {
-    use crate::board::board_grammar::{BoardCommand, parse as board_parse};
-    use crate::board::board_protocol::BoardOp;
+    use crate::board_grammar::{BoardCommand, parse as board_parse};
+    use crate::board_protocol::BoardOp;
 
     let key = "ab".repeat(32);
     let args = ["board", "receipt", &key].map(str::to_owned);
@@ -180,8 +175,8 @@ fn receipt_grammar_requires_a_full_hexadecimal_request_key() {
 
 #[test]
 fn board_search_round_trip_preserves_raw_query_and_plan_scope() {
-    use crate::board::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
-    use crate::board::board_protocol::BoardOp;
+    use crate::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
+    use crate::board_protocol::BoardOp;
     let args = [
         "board",
         "search",
@@ -191,11 +186,9 @@ fn board_search_round_trip_preserves_raw_query_and_plan_scope() {
     .map(str::to_owned);
     let options = parse(&args).unwrap();
     let forwarded = normalize_args(&options, None).unwrap();
-    let BoardCommand::Op(BoardOp::Search { query, plan, limit }) = board_parse(
-        &crate::board::board_test_support::round_trip(&forwarded),
-        None,
-    )
-    .unwrap() else {
+    let BoardCommand::Op(BoardOp::Search { query, plan, limit }) =
+        board_parse(&crate::board_test_support::round_trip(&forwarded), None).unwrap()
+    else {
         panic!("search");
     };
     assert_eq!(query, "\"parser scope\" OR feedback");

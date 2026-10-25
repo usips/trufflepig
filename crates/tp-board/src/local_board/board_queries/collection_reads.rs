@@ -6,26 +6,26 @@ mod feedback_collection_reads;
 #[cfg(test)]
 mod tests;
 
-pub(in crate::board::local_board) use action_collection_reads::{attention, overview};
-pub(in crate::board::local_board) use event_collection_reads::{entries_page, feed, history};
-pub(in crate::board::local_board) use feedback_collection_reads::{feedback_page, feedback_record};
+pub(in crate::local_board) use action_collection_reads::{attention, overview};
+pub(in crate::local_board) use event_collection_reads::{entries_page, feed, history};
+pub(in crate::local_board) use feedback_collection_reads::{feedback_page, feedback_record};
 
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, Params};
 
 use super::super::{BoardError, WriteContext, invalid, max_seq, sql_error};
-use crate::board::board_ids::EventSeq;
+use crate::board_ids::EventSeq;
 
 #[cfg(test)]
-use crate::board::board_domain::board_collections::{
+use crate::board_domain::board_collections::{
     AttentionReply, EntriesPage, EntryCursor, FeedbackPage,
 };
 #[cfg(test)]
-use crate::board::board_ids::{EntryId, PlanId, PlanRevision, RepoKey, TaskId};
+use crate::board_ids::{EntryId, PlanId, PlanRevision, RepoKey, TaskId};
 #[cfg(test)]
-use crate::board::board_protocol::{BoardResult, RevisionSource};
+use crate::board_protocol::{BoardResult, RevisionSource};
 #[cfg(test)]
-use crate::board::board_vocabulary::{EntryKind, FeedbackKind};
+use crate::board_vocabulary::{EntryKind, FeedbackKind};
 #[cfg(test)]
 use rusqlite::params;
 #[cfg(test)]
@@ -38,7 +38,7 @@ pub(super) const ACTIVE_TASKS: &str = concat!(
     "WHERE transferred.source_plan=t.plan_id AND transferred.source_ordinal=t.ordinal)"
 );
 
-pub(in crate::board::local_board) fn validate_limit(
+pub(in crate::local_board) fn validate_limit(
     limit: usize,
     maximum: usize,
 ) -> Result<(), BoardError> {
@@ -51,7 +51,7 @@ pub(in crate::board::local_board) fn validate_limit(
     Ok(())
 }
 
-pub(in crate::board::local_board) fn sequence_window(
+pub(in crate::local_board) fn sequence_window(
     conn: &Connection,
     after: Option<EventSeq>,
     through: Option<EventSeq>,
@@ -74,7 +74,7 @@ pub(in crate::board::local_board) fn sequence_window(
     Ok((after, through))
 }
 
-pub(in crate::board::local_board) fn count(
+pub(in crate::local_board) fn count(
     conn: &Connection,
     sql: &str,
     parameters: impl Params,
@@ -86,6 +86,6 @@ pub(in crate::board::local_board) fn count(
         .map_err(|_| invalid(BoardErrorCode::BoardUnavailable, "invalid collection count"))
 }
 
-pub(in crate::board::local_board) fn claim_ttl(ctx: &WriteContext) -> u64 {
+pub(in crate::local_board) fn claim_ttl(ctx: &WriteContext) -> u64 {
     ctx.claim_ttl_secs.max(0) as u64
 }

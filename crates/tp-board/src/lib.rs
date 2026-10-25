@@ -2,10 +2,14 @@
 //! The client reads bodies and normalizes text before socket or spool transport.
 //! Fallback queues feedback and never migrates beside a live router;
 //! ambiguous replies never replay writes.
+
+#[macro_use]
+extern crate tp_core;
+
 pub mod board_domain;
 pub(crate) mod board_markup;
 pub mod board_projects;
-pub(crate) mod board_web;
+pub mod board_web;
 pub use board_domain::{board_actor, board_ids, board_protocol, board_vocabulary};
 use tp_core::coded_error::CodedContext;
 pub mod board_transport;
@@ -13,7 +17,7 @@ pub use board_transport::{board_backend, board_config, board_grammar, feedback_o
 pub mod board_git;
 pub use board_git::{commit_ingest, commit_trailers, repo_identity, review_packet};
 pub mod board_render;
-pub(crate) mod board_runtime_markers;
+pub mod board_runtime_markers;
 #[cfg(test)]
 pub(crate) mod board_test_support;
 pub mod local_board;
@@ -32,7 +36,7 @@ use std::io::Read;
 use tp_core::{query_deadline::QueryDeadline, request_context::RequestContext};
 
 /// Captures stdin/file bodies and feedback identity once, including across retries.
-pub(crate) fn prepare_client(options: &BoardArguments) -> Result<BoardArguments> {
+pub fn prepare_client(options: &BoardArguments) -> Result<BoardArguments> {
     board_grammar::validate_before_body(options)?;
     let body = read_body(options)?;
     board_grammar::normalize_args(options, body.as_deref())

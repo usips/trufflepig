@@ -1,6 +1,6 @@
 use super::*;
-use crate::board::repo_identity::tests::FixtureRegistration;
-use crate::board::{board_projects::ProjectResolver, board_protocol::ReadScope};
+use crate::repo_identity::tests::FixtureRegistration;
+use crate::{board_projects::ProjectResolver, board_protocol::ReadScope};
 use serde_json::json;
 use std::fs;
 use tp_core::test_fixtures::GitFixture;
@@ -124,7 +124,7 @@ fn projects_wire_encodes_unavailable_non_utf8_member_path() {
         expected
     );
     assert!(expected.contains("%FF"));
-    let lines = crate::board::board_render::render_reply(
+    let lines = crate::board_render::render_reply(
         &reply,
         &tp_core::output::OutputBudget::new(4000)
             .unwrap()

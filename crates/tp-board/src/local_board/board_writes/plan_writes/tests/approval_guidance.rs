@@ -138,18 +138,18 @@ fn only_owner_human_can_create_or_revoke_plan_grants() {
         .unwrap_err();
     assert_eq!(error.code, BoardErrorCode::InvalidActor);
     assert!(
-        crate::board::local_board::authority_for(
+        crate::local_board::authority_for(
             &board.conn,
             &actor("josh", "claude", "grantee"),
             Some(plan),
             AuthorityRole::Decide,
-            crate::board::local_board::unix_now().unwrap(),
+            crate::local_board::unix_now().unwrap(),
         )
         .unwrap()
         .is_some()
     );
     assert!(
-        crate::board::local_board::board_authority::can_manage_grants(
+        crate::local_board::board_authority::can_manage_grants(
             &board.conn,
             &actor("josh", "human", "owner"),
             plan,
@@ -157,7 +157,7 @@ fn only_owner_human_can_create_or_revoke_plan_grants() {
         .unwrap()
     );
     assert!(
-        !crate::board::local_board::board_authority::can_manage_grants(
+        !crate::local_board::board_authority::can_manage_grants(
             &board.conn,
             &actor("josh", "claude", "grantee"),
             plan,
@@ -171,7 +171,7 @@ fn only_owner_human_can_create_or_revoke_plan_grants() {
         ))
         .unwrap();
     let history =
-        crate::board::local_board::board_authority::read_grants(&board.conn, Some(plan)).unwrap();
+        crate::local_board::board_authority::read_grants(&board.conn, Some(plan)).unwrap();
     assert_eq!(history.len(), 1);
     assert!(history[0].revoked_by.is_some());
 }

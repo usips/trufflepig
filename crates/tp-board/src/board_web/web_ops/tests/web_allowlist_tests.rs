@@ -49,7 +49,7 @@ fn web_identity_is_local_human_and_unspoofable() {
         api: BOARD_API,
         project: None,
         op: BoardOp::Show {
-            target: crate::board::board_ids::BoardRef::parse("P1").unwrap(),
+            target: crate::board_ids::BoardRef::parse("P1").unwrap(),
         },
     }
     .into_request(&config, peer_ip())
@@ -76,11 +76,8 @@ fn review_is_refused_over_the_web_allowlist() {
         api: BOARD_API,
         project: None,
         op: BoardOp::Review {
-            base: crate::board::board_ids::PlanRevision::new(
-                crate::board::board_ids::PlanId::new(1).unwrap(),
-                1,
-            )
-            .unwrap(),
+            base: crate::board_ids::PlanRevision::new(crate::board_ids::PlanId::new(1).unwrap(), 1)
+                .unwrap(),
             agent: None,
         },
     };
@@ -97,11 +94,8 @@ fn link_commit_is_refused_over_the_web_allowlist() {
         project: None,
         op: BoardOp::LinkCommit {
             oid: tp_core::identity::GitOid::parse(&"a".repeat(40)).unwrap(),
-            task: crate::board::board_ids::TaskId::new(
-                crate::board::board_ids::PlanId::new(1).unwrap(),
-                1,
-            )
-            .unwrap(),
+            task: crate::board_ids::TaskId::new(crate::board_ids::PlanId::new(1).unwrap(), 1)
+                .unwrap(),
             resolution: None,
         },
     };

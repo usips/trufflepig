@@ -1,9 +1,9 @@
 //! Bounded retries for transient failures, restricted by operation safety.
 use super::Arguments;
-use crate::board::board_protocol::{BoardError, BoardErrorCode};
 use anyhow::Result;
 use std::io::ErrorKind;
 use std::time::{Duration, Instant};
+use tp_board::board_protocol::{BoardError, BoardErrorCode};
 use tp_core::coded_error::{CodedError, ErrorCode};
 use tp_core::request_context::RequestContext;
 use tp_core::{daemon_transport::DaemonReplyTimeout, query_deadline::QueryDeadline};

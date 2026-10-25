@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(in crate::board::local_board) fn register_repo(
+pub(in crate::local_board) fn register_repo(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     registration: &RepoRegistration,
@@ -37,7 +37,7 @@ pub(in crate::board::local_board) fn register_repo(
             }
         }
         let rekeyed = registration.origin_override.is_none()
-            && crate::board::repo_identity::root_sets_diverged(&roots, &registration.root_commits);
+            && crate::repo_identity::root_sets_diverged(&roots, &registration.root_commits);
         if !rekeyed {
             registration.repo_key = initial_key;
             if !roots.is_empty() {
@@ -93,7 +93,7 @@ pub(in crate::board::local_board) fn register_repo(
     ))
 }
 
-pub(in crate::board::local_board) fn forget_repo_path(
+pub(in crate::local_board) fn forget_repo_path(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     repo_key: &RepoKey,
@@ -118,7 +118,7 @@ pub(in crate::board::local_board) fn forget_repo_path(
     Ok(BoardReply::new("local", BoardResult::RepoPathForgotten))
 }
 
-pub(in crate::board::local_board) fn record_scan(
+pub(in crate::local_board) fn record_scan(
     tx: &Transaction<'_>,
     repo_key: &RepoKey,
     host: &str,

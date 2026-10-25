@@ -1,24 +1,24 @@
 //! Claim windows over live leases with stable entry cursors.
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, Row, params};
 
 use super::NESTED_PAGE_LIMIT;
-use crate::board::board_actor::claim_vendor;
-use crate::board::board_domain::board_collections::{ClaimCursor, ClaimPage, ClaimView};
-use crate::board::board_ids::{EntryId, EventSeq, PlanId, TaskId};
-use crate::board::board_protocol::{BoardReply, BoardResult, ClaimRecord, ReadScope};
-use crate::board::board_vocabulary::EntryText;
-use crate::board::local_board::board_queries::collection_reads::{
+use crate::board_actor::claim_vendor;
+use crate::board_domain::board_collections::{ClaimCursor, ClaimPage, ClaimView};
+use crate::board_ids::{EntryId, EventSeq, PlanId, TaskId};
+use crate::board_protocol::{BoardReply, BoardResult, ClaimRecord, ReadScope};
+use crate::board_vocabulary::EntryText;
+use crate::local_board::board_queries::collection_reads::{
     claim_ttl, count, sequence_window, validate_limit,
 };
-use crate::board::local_board::board_queries::read_scope_sql::ScopeSql;
-use crate::board::local_board::{
+use crate::local_board::board_queries::read_scope_sql::ScopeSql;
+use crate::local_board::{
     BoardError, WriteContext, actor_from_row, delegated_actor_from_row, invalid, require_plan,
     row_number, sql_error, sql_number,
 };
 
 #[allow(clippy::too_many_arguments)]
-pub(in crate::board::local_board) fn claims_page(
+pub(in crate::local_board) fn claims_page(
     conn: &Connection,
     ctx: &WriteContext,
     plan: Option<PlanId>,
@@ -37,7 +37,7 @@ pub(in crate::board::local_board) fn claims_page(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(in crate::board::local_board) fn claim_window(
+pub(in crate::local_board) fn claim_window(
     conn: &Connection,
     ctx: &WriteContext,
     plan: Option<PlanId>,

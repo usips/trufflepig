@@ -7,9 +7,9 @@ use std::{
     process::{Child, Command, Output, Stdio},
     time::{Duration, Instant},
 };
+use tp_board::{BOARD_API, SCHEMA_VERSION};
 use tp_core::daemon_transport::{PROXY_REPLY_WAIT, request_by, stop};
 use tp_core::{query_deadline::QueryDeadline, request_context::RequestContext};
-use trufflepig::{BOARD_API, SCHEMA_VERSION};
 
 struct EnsureProcess(Option<Child>);
 

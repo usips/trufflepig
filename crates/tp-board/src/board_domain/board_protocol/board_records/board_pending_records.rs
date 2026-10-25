@@ -1,6 +1,6 @@
 //! Bounded notices returned by the read-only pending operation.
 use super::{EntryRecord, EventRecord};
-use crate::board::board_ids::EventSeq;
+use crate::board_ids::EventSeq;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

@@ -1,5 +1,5 @@
 //! Exact per-commit warning identities and current board-wide link suppression.
-use crate::board::{board_backend::BoardBackend, board_ids::RepoKey};
+use crate::{board_backend::BoardBackend, board_ids::RepoKey};
 use anyhow::Result;
 use tp_core::identity::GitOid;
 

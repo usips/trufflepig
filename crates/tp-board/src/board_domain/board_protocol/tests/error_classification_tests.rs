@@ -157,9 +157,8 @@ fn invalid_worker_is_a_domain_error() {
 
 #[test]
 fn unregistered_invalid_prefixes_are_domain_options() {
-    let error = BoardError::from(
-        crate::board::board_vocabulary::AuthorityRole::parse("owner").unwrap_err(),
-    );
+    let error =
+        BoardError::from(crate::board_vocabulary::AuthorityRole::parse("owner").unwrap_err());
     assert_eq!(error.code, BoardErrorCode::InvalidOptions);
     assert_eq!(
         error.to_string(),

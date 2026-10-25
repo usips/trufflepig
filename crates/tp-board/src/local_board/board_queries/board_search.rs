@@ -3,20 +3,20 @@
 #[cfg(test)]
 mod tests;
 
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, params};
 
 use super::super::{BoardError, invalid, require_plan, sql_error, sql_number, sqlite_u64};
-use crate::board::board_ids::{BoardRef, PlanId};
-use crate::board::board_protocol::{
+use crate::board_ids::{BoardRef, PlanId};
+use crate::board_protocol::{
     BoardReply, BoardResult, BoardSearchHit, BoardSearchReply, BoardSearchSource,
 };
-use crate::board::board_vocabulary::ENTRY_TEXT_LIMIT;
+use crate::board_vocabulary::ENTRY_TEXT_LIMIT;
 
 const SEARCH_LIMIT: usize = 50;
 const SNIPPET_BYTES: usize = 512;
 
-pub(in crate::board::local_board) fn search(
+pub(in crate::local_board) fn search(
     conn: &Connection,
     query: &str,
     plan: Option<PlanId>,

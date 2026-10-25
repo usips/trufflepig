@@ -1,9 +1,9 @@
 //! Lease activity updates from board and matching commit evidence.
 
 use super::*;
-use crate::board::commit_trailers::coauthors_match_claim;
+use crate::commit_trailers::coauthors_match_claim;
 
-pub(in crate::board::local_board) fn refresh_plan_claims(
+pub(in crate::local_board) fn refresh_plan_claims(
     tx: &Transaction<'_>,
     actor_id: i64,
     plan: PlanId,
@@ -16,7 +16,7 @@ pub(in crate::board::local_board) fn refresh_plan_claims(
     Ok(())
 }
 
-pub(in crate::board::local_board) fn refresh_inbox_claims(
+pub(in crate::local_board) fn refresh_inbox_claims(
     tx: &Transaction<'_>,
     actor_id: i64,
     now: i64,
@@ -29,7 +29,7 @@ pub(in crate::board::local_board) fn refresh_inbox_claims(
     Ok(())
 }
 
-pub(in crate::board::local_board) fn refresh_commit_claims(
+pub(in crate::local_board) fn refresh_commit_claims(
     tx: &Transaction<'_>,
     plan: PlanId,
     ordinal: u64,

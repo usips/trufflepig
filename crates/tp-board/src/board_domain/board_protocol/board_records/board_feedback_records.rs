@@ -1,6 +1,6 @@
 //! Feedback audit metadata and classified entry records.
 use super::EntryRecord;
-use crate::board::{
+use crate::{
     board_ids::RepoKey,
     board_protocol::bounded_metadata,
     board_vocabulary::{FeedbackKind, FeedbackState},

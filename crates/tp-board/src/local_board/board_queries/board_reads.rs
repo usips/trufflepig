@@ -11,29 +11,27 @@ use super::super::{
     BoardError, WriteContext, actor_from_row, invalid, require_plan, row_number, sql_error,
     sql_number, sqlite_u64,
 };
-use crate::board::board_actor::BoardRecipient;
-use crate::board::board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision, RepoKey};
-use crate::board::board_protocol::*;
-use crate::board::board_vocabulary::{EntryKind, EntryText, PlanText, PlanTitle, ProposalState};
-use crate::board::local_board::board_writes::task_claims;
+use crate::board_actor::BoardRecipient;
+use crate::board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision, RepoKey};
+use crate::board_protocol::*;
+use crate::board_vocabulary::{EntryKind, EntryText, PlanText, PlanTitle, ProposalState};
+use crate::local_board::board_writes::task_claims;
 use tp_core::request_context::HarnessLabel;
 
 mod entry_reference_reads;
 mod plan_history_reads;
-pub(in crate::board::local_board) mod recipient_predicates;
+pub(in crate::local_board) mod recipient_predicates;
 mod repository_reads;
 mod review_evidence_reads;
-pub(in crate::board::local_board) mod task_lineage;
+pub(in crate::local_board) mod task_lineage;
 mod task_view_reads;
 
-pub(in crate::board::local_board) use entry_reference_reads::{
-    entries, entry, entry_view, open_entries,
-};
-pub(in crate::board::local_board) use plan_history_reads::plan_row;
+pub(in crate::local_board) use entry_reference_reads::{entries, entry, entry_view, open_entries};
+pub(in crate::local_board) use plan_history_reads::plan_row;
 use plan_history_reads::{plan, plan_view, revision};
-pub(in crate::board::local_board) use repository_reads::repositories;
-pub(in crate::board::local_board) use review_evidence_reads::review;
-pub(in crate::board::local_board) use task_view_reads::task_view;
+pub(in crate::local_board) use repository_reads::repositories;
+pub(in crate::local_board) use review_evidence_reads::review;
+pub(in crate::local_board) use task_view_reads::task_view;
 
 const RECENT_ENTRIES: i64 = 20;
 const PLAN_ENTRY_CAP: u64 = 200;
@@ -45,7 +43,7 @@ const OPEN_QUESTION: &str = concat!(
     "AND NOT EXISTS(SELECT 1 FROM entries correction WHERE correction.supersedes=e.id)"
 );
 
-pub(in crate::board::local_board) fn show(
+pub(in crate::local_board) fn show(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     target: &BoardRef,
@@ -90,7 +88,7 @@ fn decode_json<T: serde::de::DeserializeOwned>(body: String) -> Result<T, BoardE
         .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))
 }
 
-pub(in crate::board::local_board) fn linked_commits_bounded(
+pub(in crate::local_board) fn linked_commits_bounded(
     conn: &Connection,
     plan: PlanId,
     start: i64,
@@ -100,7 +98,7 @@ pub(in crate::board::local_board) fn linked_commits_bounded(
     super::board_commits::linked_commits_bounded(conn, plan, start, end, limit)
 }
 
-pub(in crate::board::local_board) fn linked_commit_for_entry(
+pub(in crate::local_board) fn linked_commit_for_entry(
     conn: &Connection,
     entry: EntryId,
 ) -> Result<Option<LinkedCommit>, BoardError> {

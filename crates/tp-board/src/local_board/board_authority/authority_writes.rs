@@ -1,18 +1,16 @@
 //! Owner-created grant and revocation evidence.
 
 use super::*;
-use crate::board::board_actor::BoardRecipient;
-use crate::board::board_ids::{EntryId, PlanId};
-use crate::board::board_protocol::BoardErrorCode;
-use crate::board::board_protocol::{
-    AuthorityRole, AuthoritySource, BoardError, BoardOp, BoardReply,
-};
-use crate::board::board_vocabulary::EntryKind;
+use crate::board_actor::BoardRecipient;
+use crate::board_ids::{EntryId, PlanId};
+use crate::board_protocol::BoardErrorCode;
+use crate::board_protocol::{AuthorityRole, AuthoritySource, BoardError, BoardOp, BoardReply};
+use crate::board_vocabulary::EntryKind;
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::super::{EntryDraft, WriteContext, insert_entry, insert_event};
 
-pub(in crate::board) fn write_grant(
+pub(crate) fn write_grant(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     op: &BoardOp,
@@ -135,7 +133,7 @@ pub(in crate::board) fn write_grant(
     Ok(owner_ctx.change_reply(entry, *plan, None, None))
 }
 
-pub(in crate::board) fn write_revoke(
+pub(crate) fn write_revoke(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     op: &BoardOp,
@@ -221,7 +219,7 @@ pub(in crate::board) fn write_revoke(
 }
 
 fn require_owner_human(
-    actor: &crate::board::board_actor::BoardActor,
+    actor: &crate::board_actor::BoardActor,
     owner_user: &str,
     action: &str,
 ) -> Result<(), BoardError> {
@@ -240,7 +238,7 @@ fn note_suffix(note: Option<&str>) -> String {
 }
 
 fn bounded_entry_text(mut text: String) -> String {
-    let limit = crate::board::board_vocabulary::ENTRY_TEXT_LIMIT;
+    let limit = crate::board_vocabulary::ENTRY_TEXT_LIMIT;
     let mut end = text.len().min(limit);
     while !text.is_char_boundary(end) {
         end -= 1;

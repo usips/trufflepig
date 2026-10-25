@@ -12,16 +12,14 @@ mod worker_lifecycle;
 use super::super::board_queries::worker_reads::{
     active_bound_worker_for_actor, active_worker_binding, worker_for_address,
 };
-use crate::board::board_protocol::BoardErrorCode;
-pub(in crate::board::local_board) use claim_activity::{
+use crate::board_protocol::BoardErrorCode;
+pub(in crate::local_board) use claim_activity::{
     refresh_commit_claims, refresh_inbox_claims, refresh_plan_claims,
 };
-pub(in crate::board::local_board) use claim_history::{
-    active_claim, read_claims_window, read_tasks,
-};
+pub(in crate::local_board) use claim_history::{active_claim, read_claims_window, read_tasks};
 use claim_holders::{claim_conflict, resolve_delegate};
-pub(in crate::board::local_board) use session_lifecycle::bye;
-pub(in crate::board::local_board) use worker_lifecycle::{
+pub(in crate::local_board) use session_lifecycle::bye;
+pub(in crate::local_board) use worker_lifecycle::{
     add_worker, attach_worker_post, bind_worker, end_worker, end_workers_for_claim,
 };
 
@@ -35,22 +33,22 @@ use super::super::{
 use super::task_writes::{allocate_task, require_assignee, require_task};
 #[cfg(test)]
 use super::task_writes::{create_task, move_task};
-use crate::board::board_actor::{BoardActor, BoardRecipient, claim_vendor};
-use crate::board::board_ids::{EntryId, EventSeq, PlanId, TaskId};
-use crate::board::board_protocol::{
+use crate::board_actor::{BoardActor, BoardRecipient, claim_vendor};
+use crate::board_ids::{EntryId, EventSeq, PlanId, TaskId};
+use crate::board_protocol::{
     BoardReply, ClaimDelegate, ClaimEndReason, ClaimRecord, ClaimResume, CommitCoauthor, TaskRecord,
 };
-use crate::board::board_vocabulary::{EntryKind, EntryText, PlanTitle, TaskColumn};
+use crate::board_vocabulary::{EntryKind, EntryText, PlanTitle, TaskColumn};
 
 /// Idle time required before a bare `--resume` may replace a live lease.
-pub(in crate::board::local_board) const RESUME_IDLE_GRACE_SECS: i64 = 600;
+pub(in crate::local_board) const RESUME_IDLE_GRACE_SECS: i64 = 600;
 
-pub(in crate::board::local_board) struct StoredClaim {
-    pub(in crate::board::local_board) actor_id: i64,
-    pub(in crate::board::local_board) record: ClaimRecord,
+pub(in crate::local_board) struct StoredClaim {
+    pub(in crate::local_board) actor_id: i64,
+    pub(in crate::local_board) record: ClaimRecord,
 }
 
-pub(in crate::board::local_board) fn carve_claim(
+pub(in crate::local_board) fn carve_claim(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     plan: PlanId,
@@ -63,7 +61,7 @@ pub(in crate::board::local_board) fn carve_claim(
     claim_task(tx, ctx, task, Some(scope), ClaimResume::No, None)
 }
 
-pub(in crate::board::local_board) fn claim_task(
+pub(in crate::local_board) fn claim_task(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     task: TaskId,
@@ -101,7 +99,7 @@ pub(in crate::board::local_board) fn claim_task(
                 tx,
                 &ctx.actor,
                 Some(task.plan),
-                crate::board::board_protocol::AuthorityRole::Assign,
+                crate::board_protocol::AuthorityRole::Assign,
                 ctx.now,
             )?;
             if !assigned_to_actor && assign_authority.is_none() {
@@ -339,7 +337,7 @@ pub(in crate::board::local_board) fn claim_task(
     Ok(ctx.change_reply(entry, Some(task.plan), None, Some(task)))
 }
 
-pub(in crate::board::local_board) fn end_claim(
+pub(in crate::local_board) fn end_claim(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     task: TaskId,

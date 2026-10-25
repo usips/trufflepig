@@ -10,7 +10,7 @@ mod progress_head;
 #[cfg(test)]
 mod tests;
 
-use crate::board::{
+use crate::{
     board_config::{BoardConfig, BoardConfigCache},
     board_ids::{EventSeq, RepoKey},
     board_projects::{ProjectResolver, ResolvedProject},
@@ -109,7 +109,7 @@ impl BoardHost {
         config.get(Instant::now()).map_err(Into::into)
     }
 
-    pub(crate) fn database_path(&self) -> Result<std::path::PathBuf> {
+    pub fn database_path(&self) -> Result<std::path::PathBuf> {
         let mut config = self.inner.config.lock().unwrap_or_else(|poisoned| {
             self.inner.config.clear_poison();
             poisoned.into_inner()
@@ -125,7 +125,7 @@ impl BoardHost {
 
     /// The latest board configuration failure, for `system status` to report
     /// when no database path is available; `None` means unloaded or healthy.
-    pub(crate) fn config_error(&self) -> Option<String> {
+    pub fn config_error(&self) -> Option<String> {
         let config = self.inner.config.lock().unwrap_or_else(|poisoned| {
             self.inner.config.clear_poison();
             poisoned.into_inner()

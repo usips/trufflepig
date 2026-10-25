@@ -1,8 +1,8 @@
 use super::*;
-use crate::board::board_actor::BoardActor;
-use crate::board::board_ids::{EventSeq, PlanId};
-use crate::board::board_protocol::BoardResult;
-use crate::board::board_vocabulary::EntryText;
+use crate::board_actor::BoardActor;
+use crate::board_ids::{EventSeq, PlanId};
+use crate::board_protocol::BoardResult;
+use crate::board_vocabulary::EntryText;
 use rusqlite::{Connection, Transaction};
 use tp_core::request_context::HarnessLabel;
 
@@ -15,9 +15,7 @@ impl LifecycleDatabase {
     fn new(task_column: &str) -> Self {
         let directory = tp_core::test_fixtures::scratch("plan-lifecycle-tests-");
         let path = directory.path().join("board.sqlite3");
-        let conn = crate::board::local_board::board_database::open(&path)
-            .unwrap()
-            .0;
+        let conn = crate::local_board::board_database::open(&path).unwrap().0;
         conn.execute(
             "INSERT INTO actors(id,user,host,harness,session) VALUES(1,'josh','test-host','human','owner')",
             [],
@@ -69,14 +67,14 @@ fn write(
     let tx = conn
         .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .unwrap();
-    let actor_id = crate::board::local_board::ensure_actor(&tx, actor, now).unwrap();
+    let actor_id = crate::local_board::ensure_actor(&tx, actor, now).unwrap();
     let ctx = WriteContext {
         actor_id,
         actor: actor.clone(),
         model: Some("test-model".into()),
         effort: Some("xhigh".into()),
         now,
-        seq: EventSeq::new(crate::board::local_board::max_seq(&tx).unwrap().get() + 1),
+        seq: EventSeq::new(crate::local_board::max_seq(&tx).unwrap().get() + 1),
         claim_ttl_secs: 120,
         via: None,
         origin: None,

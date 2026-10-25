@@ -1,17 +1,17 @@
 //! Event, revision, and entry pages with source-sequence keysets.
 
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, params};
 
 use super::{COLLECTION_LIMIT, sequence_window, validate_limit};
-use crate::board::board_domain::board_collections::{
+use crate::board_domain::board_collections::{
     EntriesPage, EntryCursor, EventPage, HistoryPage, RevisionHistoryRecord,
 };
-use crate::board::board_ids::{EntryId, EventSeq, PlanId, PlanRevision, TaskId};
-use crate::board::board_protocol::{BoardReply, BoardResult, ReadScope, RevisionSource};
-use crate::board::board_vocabulary::{EntryKind, EntryText};
-use crate::board::local_board::board_queries::board_reads;
-use crate::board::local_board::{
+use crate::board_ids::{EntryId, EventSeq, PlanId, PlanRevision, TaskId};
+use crate::board_protocol::{BoardReply, BoardResult, ReadScope, RevisionSource};
+use crate::board_vocabulary::{EntryKind, EntryText};
+use crate::local_board::board_queries::board_reads;
+use crate::local_board::{
     BoardError, actor_from_row, board_feed, invalid, require_plan, row_number, sql_error,
     sql_number,
 };
@@ -19,7 +19,7 @@ use tp_core::request_context::HarnessLabel;
 
 const EVENT_LIMIT: usize = 500;
 
-pub(in crate::board::local_board) fn feed(
+pub(in crate::local_board) fn feed(
     conn: &Connection,
     plan: Option<PlanId>,
     scope: &ReadScope,
@@ -52,7 +52,7 @@ pub(in crate::board::local_board) fn feed(
     ))
 }
 
-pub(in crate::board::local_board) fn history(
+pub(in crate::local_board) fn history(
     conn: &Connection,
     plan: PlanId,
     after: Option<EventSeq>,
@@ -112,7 +112,7 @@ pub(in crate::board::local_board) fn history(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(in crate::board::local_board) fn entries_page(
+pub(in crate::local_board) fn entries_page(
     conn: &Connection,
     plan: Option<PlanId>,
     kind: Option<EntryKind>,

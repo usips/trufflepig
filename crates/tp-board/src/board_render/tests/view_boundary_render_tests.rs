@@ -12,8 +12,8 @@ fn entry_prefix_preserves_metadata_and_recomputes_cursors() {
         .collect::<Vec<_>>();
     let feedback = FeedbackRecord {
         entry: primary.clone(),
-        kind: crate::board::board_vocabulary::FeedbackKind::Missing,
-        state: crate::board::board_vocabulary::FeedbackState::Open,
+        kind: crate::board_vocabulary::FeedbackKind::Missing,
+        state: crate::board_vocabulary::FeedbackState::Open,
         metadata: FeedbackMetadata {
             version: "frozen-version".into(),
             cwd: "/checkout".into(),

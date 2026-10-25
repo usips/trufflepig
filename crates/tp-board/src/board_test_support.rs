@@ -1,5 +1,5 @@
 //! Board-only test helpers; disk scratch lives in `tp_core::test_fixtures`.
-use crate::board::board_grammar::{BoardArguments, BoardOptions};
+use crate::board_grammar::{BoardArguments, BoardOptions};
 use std::io::Read;
 use std::path::PathBuf;
 use tp_core::output::OutputFormat;

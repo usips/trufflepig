@@ -4,7 +4,7 @@ use super::{
     BoardHost, BoardMaintenanceClock,
     board_writer::{BoardHostBackendAccess, lock_before},
 };
-use crate::board::{
+use crate::{
     board_actor::BoardActor,
     board_protocol::{BoardError, BoardOp, BoardRequest, BoardResult, RepoScanTarget},
 };
@@ -38,7 +38,7 @@ impl BoardMaintenanceClock {
     pub(super) fn import_finished(
         &mut self,
         now: Instant,
-        summary: &crate::board::feedback_outbox::ImportSummary,
+        summary: &crate::feedback_outbox::ImportSummary,
     ) {
         if summary.pending == 0 {
             self.import_retry_at = None;
@@ -65,7 +65,7 @@ impl BoardHost {
     pub(super) fn repositories(
         &self,
         actor: &BoardActor,
-        plan: Option<crate::board::board_ids::PlanId>,
+        plan: Option<crate::board_ids::PlanId>,
         deadline: &QueryDeadline,
     ) -> Result<Vec<RepoScanTarget>> {
         let system_actor = BoardActor::system(&actor.user, &actor.host)?;
@@ -87,12 +87,9 @@ impl BoardHost {
     pub(super) fn ingest(
         &self,
         actor: &BoardActor,
-        plan: Option<crate::board::board_ids::PlanId>,
+        plan: Option<crate::board_ids::PlanId>,
         deadline: &QueryDeadline,
-    ) -> Result<(
-        Vec<RepoScanTarget>,
-        crate::board::commit_ingest::IngestReport,
-    )> {
+    ) -> Result<(Vec<RepoScanTarget>, crate::commit_ingest::IngestReport)> {
         let actor = BoardActor::system(&actor.user, &actor.host)?;
         let mut targets = self.repositories(&actor, plan, deadline)?;
         let mut ingestor = match lock_before(&self.inner.ingestor, deadline, "ingest") {
@@ -100,9 +97,9 @@ impl BoardHost {
             Err(error) => {
                 return Ok((
                     targets,
-                    crate::board::commit_ingest::IngestReport {
+                    crate::commit_ingest::IngestReport {
                         errors: vec![format!("{error:#}")],
-                        ..crate::board::commit_ingest::IngestReport::default()
+                        ..crate::commit_ingest::IngestReport::default()
                     },
                 ));
             }
@@ -161,7 +158,7 @@ impl BoardHost {
                     let error = match outcome {
                         Ok(Err(error)) => error,
                         _ => BoardError::new(
-                            crate::board::board_protocol::BoardErrorCode::BoardUnavailable,
+                            crate::board_protocol::BoardErrorCode::BoardUnavailable,
                             "maintenance worker panicked",
                         ),
                     };
@@ -169,7 +166,7 @@ impl BoardHost {
                     if clock.running_import {
                         clock.import_finished(
                             now,
-                            &crate::board::feedback_outbox::ImportSummary {
+                            &crate::feedback_outbox::ImportSummary {
                                 pending: 1,
                                 ..Default::default()
                             },
@@ -216,7 +213,7 @@ impl BoardHost {
                 }))
                 .unwrap_or_else(|_| {
                     Err(BoardError::new(
-                        crate::board::board_protocol::BoardErrorCode::BoardUnavailable,
+                        crate::board_protocol::BoardErrorCode::BoardUnavailable,
                         "maintenance worker panicked",
                     ))
                 })
@@ -236,11 +233,11 @@ impl BoardHost {
         &self,
         ingest_due: bool,
         import_due: bool,
-    ) -> std::result::Result<Option<crate::board::feedback_outbox::ImportSummary>, BoardError> {
+    ) -> std::result::Result<Option<crate::feedback_outbox::ImportSummary>, BoardError> {
         let config = self.config().map_err(BoardError::from)?;
         let actor = config.system_actor().map_err(BoardError::from)?;
         let summary = if import_due {
-            Some(crate::board::feedback_outbox::import_pending(
+            Some(crate::feedback_outbox::import_pending(
                 &tp_core::runtime_paths::spool_dir(),
                 &mut BoardHostBackendAccess(self, QueryDeadline::after(Duration::from_secs(15))),
             )?)

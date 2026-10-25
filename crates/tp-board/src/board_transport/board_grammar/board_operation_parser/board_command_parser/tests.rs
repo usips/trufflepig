@@ -1,5 +1,5 @@
-use crate::board::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
-use crate::board::board_protocol::BoardOp;
+use crate::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
+use crate::board_protocol::BoardOp;
 
 #[test]
 fn transfer_and_lifecycle_notes_survive_cli_forwarding() {
@@ -12,15 +12,11 @@ fn transfer_and_lifecycle_notes_survive_cli_forwarding() {
             .iter()
             .map(|word| (*word).to_owned())
             .collect::<Vec<_>>();
-        let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
+        let options = crate::board_test_support::parse_board_arguments(&args).unwrap();
         let original = board_parse(&options, None).unwrap();
         let forwarded = normalize_args(&options, None).unwrap();
         assert_eq!(
-            board_parse(
-                &crate::board::board_test_support::round_trip(&forwarded),
-                None
-            )
-            .unwrap(),
+            board_parse(&crate::board_test_support::round_trip(&forwarded), None).unwrap(),
             original
         );
         match original {
@@ -63,7 +59,7 @@ fn transfer_and_lifecycle_require_notes_and_reject_unrelated_options() {
             .iter()
             .map(|word| (*word).to_owned())
             .collect::<Vec<_>>();
-        let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
+        let options = crate::board_test_support::parse_board_arguments(&args).unwrap();
         assert!(board_parse(&options, None).is_err(), "{words:?}");
     }
 }

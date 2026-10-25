@@ -16,7 +16,7 @@ fn event_stream_rejects_a_bad_plan_filter_before_success() {
 #[test]
 fn event_stream_capacity_refusal_answers_503_with_retry_after() {
     let fixture = render_fixture();
-    let permits: Vec<_> = (0..crate::board::board_web::event_stream::STREAM_LIMIT)
+    let permits: Vec<_> = (0..crate::board_web::event_stream::STREAM_LIMIT)
         .map(|_| fixture.state.streams.reserve().unwrap())
         .collect();
     let reply = render_get(&fixture, "/api/v1/events");

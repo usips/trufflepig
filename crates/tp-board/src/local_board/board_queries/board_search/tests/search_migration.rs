@@ -17,7 +17,7 @@ fn board_search_migrates_populated_v1_through_v11_without_losing_rows() {
             .conn
             .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
             .unwrap(),
-        crate::board::SCHEMA_VERSION
+        crate::SCHEMA_VERSION
     );
     assert_eq!(
         legacy_search_fixture::counts(&board.conn),
@@ -135,7 +135,7 @@ fn board_search_v5_to_v6_migration_indexes_every_existing_title() {
     let directory = tp_core::test_fixtures::scratch("board-search-");
     let path = directory.path().join("v5.sqlite3");
     // Seed the exact v5 bytes: v5 is the last step without title search.
-    crate::board::local_board::seed_storage_schema(&path, 5).unwrap();
+    crate::local_board::seed_storage_schema(&path, 5).unwrap();
     let conn = Connection::open(&path).unwrap();
     conn.execute_batch(
         r#"
@@ -158,7 +158,7 @@ INSERT INTO entries(id,plan_id,kind,body,actor_id,seq,created_at)
             .conn
             .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
             .unwrap(),
-        crate::board::SCHEMA_VERSION
+        crate::SCHEMA_VERSION
     );
     assert_eq!(
         board

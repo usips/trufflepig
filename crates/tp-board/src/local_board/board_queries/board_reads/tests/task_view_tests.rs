@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::ClaimResume;
+use crate::board_protocol::ClaimResume;
 
 fn create_task(board: &mut LocalBoard, plan: PlanId, title: &str) -> TaskId {
     let BoardResult::Change(change) = call(
@@ -44,7 +44,7 @@ fn post_task(
     change.entry
 }
 
-fn show_task(board: &mut LocalBoard, task: TaskId) -> crate::board::board_protocol::TaskView {
+fn show_task(board: &mut LocalBoard, task: TaskId) -> crate::board_protocol::TaskView {
     let BoardResult::TaskView(view) = call(
         board,
         "codex",

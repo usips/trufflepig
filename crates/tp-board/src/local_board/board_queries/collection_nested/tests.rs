@@ -1,10 +1,10 @@
 use super::*;
-use crate::board::board_actor::BoardActor;
-use crate::board::board_domain::board_collections::{EntryCursor, OverviewCursor, OverviewReply};
-use crate::board::board_protocol::BoardErrorCode;
-use crate::board::board_protocol::ReadScope;
-use crate::board::board_vocabulary::EntryKind;
-use crate::board::local_board::{LocalBoard, board_queries::collection_reads};
+use crate::board_actor::BoardActor;
+use crate::board_domain::board_collections::{EntryCursor, OverviewCursor, OverviewReply};
+use crate::board_protocol::BoardErrorCode;
+use crate::board_protocol::ReadScope;
+use crate::board_vocabulary::EntryKind;
+use crate::local_board::{LocalBoard, board_queries::collection_reads};
 use std::time::Duration;
 use tp_core::request_context::HarnessLabel;
 

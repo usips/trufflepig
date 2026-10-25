@@ -1,7 +1,7 @@
 use super::*;
-use crate::board::board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision};
-use crate::board::board_protocol::{BoardSearchHit, BoardSearchSource};
-use crate::board::board_render::render_reply;
+use crate::board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision};
+use crate::board_protocol::{BoardSearchHit, BoardSearchSource};
+use crate::board_render::render_reply;
 use tp_core::output::OutputFormat;
 
 fn search_reply(count: u64, truncated: bool) -> BoardReply {

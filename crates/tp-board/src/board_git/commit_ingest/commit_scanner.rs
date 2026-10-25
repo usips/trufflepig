@@ -2,7 +2,7 @@
 mod passes;
 
 use super::COMMIT_LIMIT;
-use crate::board::{
+use crate::{
     board_protocol::{LinkedCommit, RepoRegistration},
     commit_trailers::{LOG_FORMAT, ParsedCommit, parse_log},
     repo_identity::{detached_head, remaining},

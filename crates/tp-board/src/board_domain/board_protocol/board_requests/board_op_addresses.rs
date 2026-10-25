@@ -1,6 +1,6 @@
 //! Read classification and plan attribution for every board operation.
 use super::{BoardOp, ReadScope};
-use crate::board::board_ids::PlanId;
+use crate::board_ids::PlanId;
 
 impl BoardOp {
     pub fn is_read_only(&self) -> bool {

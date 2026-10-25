@@ -6,7 +6,7 @@ use super::super::{
 };
 use super::invalid;
 use super::route_replies::{send_board_error, send_error};
-use crate::board::board_protocol::BoardError;
+use crate::board_protocol::BoardError;
 use std::net::TcpStream;
 
 /// A refused spawn (capacity reached, thread spawn failed) still answers the

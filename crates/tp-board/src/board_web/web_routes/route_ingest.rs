@@ -4,7 +4,7 @@ use super::super::{
     web_ops::{relay_flight, relay_ingest},
 };
 use super::route_replies::send_error;
-use crate::board::board_protocol::{BOARD_API, BoardError, BoardErrorCode};
+use crate::board_protocol::{BOARD_API, BoardError, BoardErrorCode};
 use serde::Deserialize;
 use std::{net::TcpStream, sync::Arc, time::Instant};
 

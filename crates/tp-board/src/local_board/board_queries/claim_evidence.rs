@@ -1,15 +1,15 @@
 //! Bounded claim evidence shared by task and collection reads.
 use super::{progress_reads, worker_reads};
-use crate::board::board_ids::{EntryId, EventSeq, TaskId};
-use crate::board::board_vocabulary::EntryText;
-use crate::board::local_board::{
+use crate::board_ids::{EntryId, EventSeq, TaskId};
+use crate::board_vocabulary::EntryText;
+use crate::local_board::{
     BoardError, WriteContext, actor_from_row, delegated_actor_from_row, row_number, sql_error,
     sql_number,
 };
-use crate::board::{board_actor::claim_vendor, board_protocol::*};
+use crate::{board_actor::claim_vendor, board_protocol::*};
 use rusqlite::{Connection, OptionalExtension, params};
 
-pub(in crate::board::local_board) fn question_summary(
+pub(in crate::local_board) fn question_summary(
     conn: &Connection,
     task: TaskId,
     through: EventSeq,
@@ -38,7 +38,7 @@ pub(in crate::board::local_board) fn question_summary(
     Ok((count.max(0) as usize, entry, oldest.map(|(_, at)| at)))
 }
 
-pub(in crate::board::local_board) fn hydrate_claim(
+pub(in crate::local_board) fn hydrate_claim(
     conn: &Connection,
     ctx: &WriteContext,
     claim: &mut ClaimRecord,
@@ -75,7 +75,7 @@ pub(in crate::board::local_board) fn hydrate_claim(
     Ok(())
 }
 
-pub(in crate::board::local_board) fn claims_for_task(
+pub(in crate::local_board) fn claims_for_task(
     conn: &Connection,
     ctx: &WriteContext,
     task: TaskId,

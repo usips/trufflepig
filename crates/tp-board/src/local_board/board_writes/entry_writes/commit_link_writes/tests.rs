@@ -1,11 +1,11 @@
 use super::*;
-use crate::board::board_ids::{PlanId, TaskId};
-use crate::board::board_protocol::{
+use crate::board_ids::{PlanId, TaskId};
+use crate::board_protocol::{
     BoardOp, BoardRequest, BoardResult, ClaimResume, CommitCoauthor, CommitLinkResult,
     CommitPlanLink, LinkedCommit, WorkerAddress,
 };
-use crate::board::board_vocabulary::{EntryText, PlanText, PlanTitle};
-use crate::board::local_board::LocalBoard;
+use crate::board_vocabulary::{EntryText, PlanText, PlanTitle};
+use crate::local_board::LocalBoard;
 use rusqlite::params;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tp_core::identity::GitOid;
@@ -118,7 +118,7 @@ fn linked_commit(
     let oid = GitOid::parse(&oid_letter.to_string().repeat(40)).unwrap();
     let root = GitOid::parse(&"f".repeat(40)).unwrap();
     LinkedCommit {
-        repo_key: crate::board::board_ids::RepoKey::from_roots([root]).unwrap(),
+        repo_key: crate::board_ids::RepoKey::from_roots([root]).unwrap(),
         oid,
         subject: format!("Commit subject {oid_letter}"),
         committed_at,
@@ -380,7 +380,7 @@ fn takeover_intervals_keep_commits_with_the_original_claim_and_leave_boundary_un
             original,
             BoardOp::TaskMove {
                 task,
-                column: crate::board::board_vocabulary::TaskColumn::Todo,
+                column: crate::board_vocabulary::TaskColumn::Todo,
                 to: None,
             },
         ))
@@ -473,7 +473,7 @@ fn overlapping_claim_windows_stay_unassigned_even_when_only_one_vendor_matches()
             original,
             BoardOp::TaskMove {
                 task,
-                column: crate::board::board_vocabulary::TaskColumn::Todo,
+                column: crate::board_vocabulary::TaskColumn::Todo,
                 to: None,
             },
         ))

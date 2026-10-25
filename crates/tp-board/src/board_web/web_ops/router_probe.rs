@@ -1,6 +1,6 @@
 //! Router identity and schema probing for startup and ingest relay.
 use super::super::deadline_error;
-use crate::board::{
+use crate::{
     SCHEMA_VERSION,
     board_protocol::{BOARD_API, BoardError, BoardErrorCode},
 };

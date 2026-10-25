@@ -1,7 +1,7 @@
 //! Immutable task succession lookups shared by task and reminder reads.
 
 use super::*;
-use crate::board::board_ids::{EventSeq, TaskId};
+use crate::board_ids::{EventSeq, TaskId};
 use rusqlite::OptionalExtension;
 
 pub(super) const TASK_LINEAGE_CTE: &str = concat!(
@@ -39,13 +39,13 @@ pub(super) fn entry_predicate(entry_id: &str) -> String {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(in crate::board::local_board) struct TaskLineageLinks {
-    pub(in crate::board::local_board) predecessor: Option<TaskId>,
-    pub(in crate::board::local_board) successor: Option<TaskId>,
-    pub(in crate::board::local_board) transfer_entry: Option<EntryId>,
+pub(in crate::local_board) struct TaskLineageLinks {
+    pub(in crate::local_board) predecessor: Option<TaskId>,
+    pub(in crate::local_board) successor: Option<TaskId>,
+    pub(in crate::local_board) transfer_entry: Option<EntryId>,
 }
 
-pub(in crate::board::local_board) fn links(
+pub(in crate::local_board) fn links(
     conn: &Connection,
     task: TaskId,
 ) -> Result<TaskLineageLinks, BoardError> {
@@ -85,7 +85,7 @@ pub(in crate::board::local_board) fn links(
     })
 }
 
-pub(in crate::board::local_board) fn task_ids(
+pub(in crate::local_board) fn task_ids(
     conn: &Connection,
     task: TaskId,
 ) -> Result<Vec<TaskId>, BoardError> {
@@ -126,7 +126,7 @@ pub(in crate::board::local_board) fn task_ids(
     Ok(ids)
 }
 
-pub(in crate::board::local_board) fn canonical_task(
+pub(in crate::local_board) fn canonical_task(
     conn: &Connection,
     task: TaskId,
 ) -> Result<TaskId, BoardError> {
@@ -151,7 +151,7 @@ pub(in crate::board::local_board) fn canonical_task(
     .map_err(BoardError::from)
 }
 
-pub(in crate::board::local_board) fn has_live_claims_or_workers(
+pub(in crate::local_board) fn has_live_claims_or_workers(
     conn: &Connection,
     task: TaskId,
 ) -> Result<bool, BoardError> {
@@ -166,7 +166,7 @@ pub(in crate::board::local_board) fn has_live_claims_or_workers(
     .map_err(sql_error)
 }
 
-pub(in crate::board::local_board) fn plan_has_live_claims_or_workers(
+pub(in crate::local_board) fn plan_has_live_claims_or_workers(
     conn: &Connection,
     plan: PlanId,
 ) -> Result<bool, BoardError> {
@@ -228,7 +228,7 @@ pub(super) fn open_question_summary(
     Ok((count.max(0) as usize, entry, oldest.map(|(_, at)| at)))
 }
 
-pub(in crate::board::local_board) fn task_id_from_pair(
+pub(in crate::local_board) fn task_id_from_pair(
     plan: Option<i64>,
     ordinal: Option<i64>,
 ) -> Result<Option<TaskId>, BoardError> {

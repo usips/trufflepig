@@ -1,6 +1,6 @@
 //! Typed progress input and field-level evidence facts.
 use super::WorkerAddress;
-use crate::board::board_ids::EntryId;
+use crate::board_ids::EntryId;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use tp_core::identity::GitOid;

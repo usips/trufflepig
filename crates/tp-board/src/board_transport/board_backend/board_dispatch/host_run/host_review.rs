@@ -1,7 +1,7 @@
 //! Review scans and packet rendering within the request deadline.
 
 use super::*;
-use crate::board::{board_ids::PlanRevision, commit_ingest::IngestReport};
+use crate::{board_ids::PlanRevision, commit_ingest::IngestReport};
 use std::time::Instant;
 use tp_core::request_context::HarnessLabel;
 
@@ -69,7 +69,7 @@ impl BoardHost {
                     warnings.push("review git scan deadline reached".to_owned());
                     break;
                 }
-                match crate::board::commit_ingest::find_unlinked(
+                match crate::commit_ingest::find_unlinked(
                     &target.registration,
                     evidence.base.created_at,
                     agent,
@@ -77,7 +77,7 @@ impl BoardHost {
                 ) {
                     Ok(mut scan) => {
                         unlinked.extend(scan.commits);
-                        if let Err(error) = crate::board::commit_ingest::suppress_linked_warnings(
+                        if let Err(error) = crate::commit_ingest::suppress_linked_warnings(
                             &BoardHostBackendAccess(self, deadline.clone()),
                             &target.registration.repo_key,
                             &mut scan.warnings,
@@ -94,9 +94,8 @@ impl BoardHost {
             }
         }
         warnings.extend(reply.warnings.clone());
-        let packet = crate::board::review_packet::assemble_review(
-            evidence, agent, &targets, unlinked, warnings,
-        );
-        Ok(crate::board::board_render::render_review(&packet, budget, &reply.backend)?.text)
+        let packet =
+            crate::review_packet::assemble_review(evidence, agent, &targets, unlinked, warnings);
+        Ok(crate::board_render::render_review(&packet, budget, &reply.backend)?.text)
     }
 }

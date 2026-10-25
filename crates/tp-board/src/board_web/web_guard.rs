@@ -212,7 +212,7 @@ fn is_lan_ipv4(ip: Ipv4Addr) -> bool {
     octets[0] == 192 && octets[1] == 168
 }
 
-pub(crate) fn require_supported_bind_address(address: SocketAddr) -> io::Result<()> {
+pub fn require_supported_bind_address(address: SocketAddr) -> io::Result<()> {
     let ip_allowed = match address.ip() {
         IpAddr::V4(ip) => ip == Ipv4Addr::LOCALHOST || ip.is_unspecified() || is_lan_ipv4(ip),
         IpAddr::V6(ip) => ip == Ipv6Addr::LOCALHOST,

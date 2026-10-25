@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::ReadScope;
+use crate::board_protocol::ReadScope;
 
 #[test]
 fn database_failure_retains_report_and_post_commit_replay_removes_it_once() {
@@ -161,8 +161,8 @@ fn garbage_database_imports_stay_pending_without_quarantine() {
 #[test]
 fn imported_feedback_sets_server_provenance_and_direct_feedback_does_not() {
     let directory = scratch();
-    let config = crate::board::BoardConfig::for_database(directory.path().join("board.sqlite3"));
-    let mut backend = crate::board::local_board::LocalBoard::open(&config).unwrap();
+    let config = crate::BoardConfig::for_database(directory.path().join("board.sqlite3"));
+    let mut backend = crate::local_board::LocalBoard::open(&config).unwrap();
     let direct = report();
     backend.handle(&direct).unwrap();
     let mut imported = report();
@@ -201,8 +201,9 @@ fn imported_feedback_sets_server_provenance_and_direct_feedback_does_not() {
     assert_eq!(
         entries
             .iter()
-            .filter(|feedback| feedback.entry.via
-                == Some(crate::board::board_protocol::FeedbackVia::Outbox))
+            .filter(
+                |feedback| feedback.entry.via == Some(crate::board_protocol::FeedbackVia::Outbox)
+            )
             .count(),
         1
     );

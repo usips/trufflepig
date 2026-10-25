@@ -1,7 +1,7 @@
 //! Search results fit as complete immutable hits with explicit budget omissions.
 use super::render_budget::{BoardOmitted, render_complete, require_fits};
 use super::{RenderedBoard, fit_items};
-use crate::board::board_protocol::{BoardReply, BoardResult, BoardSearchReply};
+use crate::board_protocol::{BoardReply, BoardResult, BoardSearchReply};
 use anyhow::{Result, bail};
 use tp_core::output::OutputBudget;
 #[cfg(test)]

@@ -4,15 +4,15 @@ use super::*;
 
 const RECENT_DONE_LIMIT: usize = 5;
 
-pub(in crate::board::local_board) struct OverviewTaskWindow {
-    pub(in crate::board::local_board) tasks: Vec<TaskRecord>,
-    pub(in crate::board::local_board) omitted: usize,
-    pub(in crate::board::local_board) ceiling: TaskCeiling,
-    pub(in crate::board::local_board) done_count: usize,
-    pub(in crate::board::local_board) recent_done: Vec<TaskRecord>,
+pub(in crate::local_board) struct OverviewTaskWindow {
+    pub(in crate::local_board) tasks: Vec<TaskRecord>,
+    pub(in crate::local_board) omitted: usize,
+    pub(in crate::local_board) ceiling: TaskCeiling,
+    pub(in crate::local_board) done_count: usize,
+    pub(in crate::local_board) recent_done: Vec<TaskRecord>,
 }
 
-pub(in crate::board::local_board) fn overview_task_window(
+pub(in crate::local_board) fn overview_task_window(
     conn: &Connection,
     plan: PlanId,
     limit: usize,

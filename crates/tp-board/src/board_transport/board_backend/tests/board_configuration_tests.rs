@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::ClaimResume;
+use crate::board_protocol::ClaimResume;
 
 #[test]
 fn maintenance_import_backoff_caps_and_recovers_without_hot_polling() {
@@ -8,7 +8,7 @@ fn maintenance_import_backoff_caps_and_recovers_without_hot_polling() {
     assert!(clock.check_due(now));
     assert!(!clock.check_due(now + Duration::from_millis(1)));
     assert!(clock.check_due(now + Duration::from_secs(2)));
-    let pending = crate::board::feedback_outbox::ImportSummary {
+    let pending = crate::feedback_outbox::ImportSummary {
         pending: 1,
         ..Default::default()
     };
@@ -36,8 +36,8 @@ fn configuration_ttl_refresh_changes_existing_writer_claim_policy() {
     let create = BoardRequest::new(
         actor.clone(),
         BoardOp::New {
-            title: crate::board::board_vocabulary::PlanTitle::new("TTL test").unwrap(),
-            body: crate::board::board_vocabulary::PlanText::new("").unwrap(),
+            title: crate::board_vocabulary::PlanTitle::new("TTL test").unwrap(),
+            body: crate::board_vocabulary::PlanText::new("").unwrap(),
             repo_key: None,
         },
     );
@@ -52,8 +52,8 @@ fn configuration_ttl_refresh_changes_existing_writer_claim_policy() {
                 actor.clone(),
                 BoardOp::CarveClaim {
                     plan,
-                    title: crate::board::board_vocabulary::PlanTitle::new("Owned task").unwrap(),
-                    scope: crate::board::board_vocabulary::EntryText::new("ttl policy").unwrap(),
+                    title: crate::board_vocabulary::PlanTitle::new("Owned task").unwrap(),
+                    scope: crate::board_vocabulary::EntryText::new("ttl policy").unwrap(),
                     section: None,
                 },
             ),
@@ -75,7 +75,7 @@ fn configuration_ttl_refresh_changes_existing_writer_claim_policy() {
         takeover,
         BoardOp::ClaimTask {
             task,
-            scope: Some(crate::board::board_vocabulary::EntryText::new("new owner").unwrap()),
+            scope: Some(crate::board_vocabulary::EntryText::new("new owner").unwrap()),
             resume: ClaimResume::No,
             delegate: None,
         },
@@ -129,7 +129,7 @@ fn backend_rejects_client_only_web_before_opening_board_database() {
     let directory = tp_core::test_fixtures::scratch("board-web-client-only-");
     let database = directory.path().join("absent.sqlite3");
     let host = BoardHost::with_config(BoardConfig::for_database(&database));
-    let options = crate::board::board_test_support::parse_board_arguments(&[
+    let options = crate::board_test_support::parse_board_arguments(&[
         "board".into(),
         "web".into(),
         "P1".into(),

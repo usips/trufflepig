@@ -4,7 +4,7 @@ use super::{
     OverviewCursor, ProgressInput, RepoRegistration, ReviewVerdict, TaskCeiling, TaskCursor,
     TaskOrder, WorkerAddress, WorkerHandle, validate_claim,
 };
-use crate::board::{
+use crate::{
     board_actor::{BoardActor, BoardRecipient},
     board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
     board_vocabulary::{

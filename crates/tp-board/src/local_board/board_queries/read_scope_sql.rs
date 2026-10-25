@@ -1,11 +1,11 @@
 //! Shared plan membership predicates with a single JSON repository-key binding.
-use crate::board::board_ids::{PlanId, RepoKey};
-use crate::board::board_protocol::BoardErrorCode;
-use crate::board::board_protocol::ReadScope;
-use crate::board::local_board::{BoardError, invalid, sql_error, sql_number};
+use crate::board_ids::{PlanId, RepoKey};
+use crate::board_protocol::BoardErrorCode;
+use crate::board_protocol::ReadScope;
+use crate::local_board::{BoardError, invalid, sql_error, sql_number};
 use rusqlite::Connection;
 
-pub(in crate::board::local_board) struct ScopeSql {
+pub(in crate::local_board) struct ScopeSql {
     pub kind: i64,
     pub keys_json: String,
 }
@@ -51,7 +51,7 @@ impl ScopeSql {
     }
 }
 
-pub(in crate::board::local_board) fn plan_repo_keys(
+pub(in crate::local_board) fn plan_repo_keys(
     conn: &Connection,
     plan: PlanId,
 ) -> Result<Vec<RepoKey>, BoardError> {

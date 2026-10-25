@@ -1,6 +1,6 @@
 use super::*;
-use crate::board::board_ids::TaskId;
-use crate::board::board_vocabulary::{PlanText, PlanTitle};
+use crate::board_ids::TaskId;
+use crate::board_vocabulary::{PlanText, PlanTitle};
 
 fn manual_link_actor(user: &str, harness: &str) -> BoardActor {
     BoardActor::new(

@@ -58,7 +58,7 @@ fn config_reload_reaches_reader_ttl_and_attention_without_events() {
             .handle(&BoardRequest::new(
                 actor,
                 BoardOp::Propose {
-                    base: crate::board::board_ids::PlanRevision::new(plan, 1).unwrap(),
+                    base: crate::board_ids::PlanRevision::new(plan, 1).unwrap(),
                     body: PlanText::new("new\n").unwrap(),
                     summary: EntryText::new("proposal").unwrap(),
                     supersedes: None,

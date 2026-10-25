@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::AuthorityRole;
+use crate::board_protocol::AuthorityRole;
 
 #[test]
 fn terminal_feedback_cannot_be_changed_to_another_terminal_state() {
@@ -34,7 +34,7 @@ fn terminal_feedback_cannot_be_changed_to_another_terminal_state() {
         .unwrap_err();
     assert_eq!(
         error.code,
-        crate::board::board_protocol::BoardErrorCode::InvalidState
+        crate::board_protocol::BoardErrorCode::InvalidState
     );
     assert_eq!(
         read_feedback(&board.conn, false).unwrap()[0].state,
@@ -58,7 +58,7 @@ fn only_the_exact_reporter_gets_the_reporter_close_path() {
         .unwrap_err();
     assert_eq!(
         error.code,
-        crate::board::board_protocol::BoardErrorCode::InvalidActor
+        crate::board_protocol::BoardErrorCode::InvalidActor
     );
     board
         .handle(&BoardRequest::new(
@@ -98,7 +98,7 @@ fn feedback_triage_and_close_require_owner_authority() {
             .unwrap_err();
         assert_eq!(
             error.code,
-            crate::board::board_protocol::BoardErrorCode::InvalidActor
+            crate::board_protocol::BoardErrorCode::InvalidActor
         );
     }
     board
@@ -135,9 +135,8 @@ fn plan_feedback_requires_owner_or_explicit_triage_grant() {
             .handle(&BoardRequest::new(
                 actor("owner"),
                 BoardOp::New {
-                    title: crate::board::board_vocabulary::PlanTitle::new("Feedback scope")
-                        .unwrap(),
-                    body: crate::board::board_vocabulary::PlanText::new("").unwrap(),
+                    title: crate::board_vocabulary::PlanTitle::new("Feedback scope").unwrap(),
+                    body: crate::board_vocabulary::PlanText::new("").unwrap(),
                     repo_key: None,
                 },
             ))
@@ -200,9 +199,8 @@ fn harness_session_grants_normalize_to_the_owner_identity() {
             .handle(&BoardRequest::new(
                 actor("owner"),
                 BoardOp::New {
-                    title: crate::board::board_vocabulary::PlanTitle::new("Recipient scope")
-                        .unwrap(),
-                    body: crate::board::board_vocabulary::PlanText::new("").unwrap(),
+                    title: crate::board_vocabulary::PlanTitle::new("Recipient scope").unwrap(),
+                    body: crate::board_vocabulary::PlanText::new("").unwrap(),
                     repo_key: None,
                 },
             ))
@@ -337,8 +335,8 @@ fn board_triage_grants_cover_only_planless_reports_from_the_grant_owner() {
         ))
         .unwrap();
     let (
-        crate::board::board_protocol::BoardResult::Change(triaged_change),
-        crate::board::board_protocol::BoardResult::Change(replay_change),
+        crate::board_protocol::BoardResult::Change(triaged_change),
+        crate::board_protocol::BoardResult::Change(replay_change),
     ) = (triaged.result, replay.result)
     else {
         panic!("expected triage change receipts");
@@ -357,7 +355,7 @@ fn board_triage_grants_cover_only_planless_reports_from_the_grant_owner() {
             ))
             .unwrap_err()
             .code,
-        crate::board::board_protocol::BoardErrorCode::InvalidActor
+        crate::board_protocol::BoardErrorCode::InvalidActor
     );
     assert_eq!(
         board
@@ -370,7 +368,7 @@ fn board_triage_grants_cover_only_planless_reports_from_the_grant_owner() {
             ))
             .unwrap_err()
             .code,
-        crate::board::board_protocol::BoardErrorCode::InvalidActor
+        crate::board_protocol::BoardErrorCode::InvalidActor
     );
 }
 
@@ -382,8 +380,8 @@ fn triage_grants_enforce_role_expiry_and_revocation() {
             .handle(&BoardRequest::new(
                 actor("owner"),
                 BoardOp::New {
-                    title: crate::board::board_vocabulary::PlanTitle::new("Grant scope").unwrap(),
-                    body: crate::board::board_vocabulary::PlanText::new("").unwrap(),
+                    title: crate::board_vocabulary::PlanTitle::new("Grant scope").unwrap(),
+                    body: crate::board_vocabulary::PlanText::new("").unwrap(),
                     repo_key: None,
                 },
             ))
@@ -491,7 +489,7 @@ fn triage_grants_enforce_role_expiry_and_revocation() {
 fn grant(
     board: &mut LocalBoard,
     actor: BoardActor,
-    plan: Option<crate::board::board_ids::PlanId>,
+    plan: Option<crate::board_ids::PlanId>,
     roles: Vec<AuthorityRole>,
     grantee: &str,
     expires_in: Option<u64>,

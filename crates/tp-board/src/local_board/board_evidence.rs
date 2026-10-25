@@ -2,12 +2,12 @@
 
 use super::*;
 
-pub(in crate::board) fn insert_entry(
+pub(crate) fn insert_entry(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     entry: &EntryDraft,
 ) -> Result<EntryId, BoardError> {
-    crate::board::board_vocabulary::EntryText::new(entry.body.clone()).map_err(BoardError::from)?;
+    crate::board_vocabulary::EntryText::new(entry.body.clone()).map_err(BoardError::from)?;
     let (authority_basis, authority_entry) = authority_audit_values(ctx.authority.as_ref())?;
     let id: u64 = tx
         .query_row(
@@ -55,7 +55,7 @@ pub(in crate::board) fn insert_entry(
     Ok(id)
 }
 
-pub(in crate::board) fn insert_event(
+pub(crate) fn insert_event(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     plan: Option<PlanId>,
@@ -64,7 +64,7 @@ pub(in crate::board) fn insert_event(
     to: Option<&BoardRecipient>,
     summary: &str,
 ) -> Result<(), BoardError> {
-    crate::board::board_vocabulary::EntryText::new(summary.to_owned()).map_err(BoardError::from)?;
+    crate::board_vocabulary::EntryText::new(summary.to_owned()).map_err(BoardError::from)?;
     let (authority_basis, authority_entry) = authority_audit_values(ctx.authority.as_ref())?;
     tx.execute(
         concat!(
@@ -96,7 +96,7 @@ pub(in crate::board) fn insert_event(
     Ok(())
 }
 
-pub(in crate::board) fn can_accept(
+pub(crate) fn can_accept(
     conn: &Connection,
     actor: &BoardActor,
     plan: PlanId,
@@ -123,7 +123,7 @@ fn authority_audit_values(
     })
 }
 
-pub(in crate::board) fn require_plan(conn: &Connection, plan: PlanId) -> Result<(), BoardError> {
+pub(crate) fn require_plan(conn: &Connection, plan: PlanId) -> Result<(), BoardError> {
     let exists: bool = conn
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM plans WHERE id=?1)",

@@ -6,7 +6,7 @@ mod ring_drain;
 mod ring_plans;
 
 use super::REPLAY_LIMIT;
-use crate::board::board_ids::{EventSeq, PlanId};
+use crate::board_ids::{EventSeq, PlanId};
 pub(super) use ring_drain::Drain;
 use ring_plans::PlanLease;
 use std::{

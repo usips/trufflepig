@@ -1,8 +1,8 @@
 //! Revision diffs retain their recovery hint when the body exceeds the budget.
 
 use super::{BoardOmitted, RenderedBoard, cell, diff_lines, footer, require_fits};
-use crate::board::board_protocol::{BoardReply, RevisionDiff};
-use crate::board::review_packet::{SsotDiff, build_ssot_diff};
+use crate::board_protocol::{BoardReply, RevisionDiff};
+use crate::review_packet::{SsotDiff, build_ssot_diff};
 use anyhow::Result;
 use std::fmt::Write;
 use tp_core::output::{OutputBudget, OutputFormat};

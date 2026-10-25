@@ -6,7 +6,7 @@ use super::{
     event_ring::{EventRing, RingFrame},
     sequence_poller::{POLL_INTERVAL, SequenceWake, WakeResult},
 };
-use crate::board::{
+use crate::{
     board_ids::EventSeq,
     board_protocol::{BoardError, BoardErrorCode, EventRecord},
 };

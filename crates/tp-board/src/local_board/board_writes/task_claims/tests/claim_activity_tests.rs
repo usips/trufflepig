@@ -225,8 +225,7 @@ fn muse_claim_refreshes_from_meta_com_coauthor() {
         params![sql_number(task.plan.get()), sql_number(task.ordinal)],
     )
     .unwrap();
-    let coauthor =
-        crate::board::commit_trailers::parse_coauthor("Muse Spark <noreply@meta.com>").unwrap();
+    let coauthor = crate::commit_trailers::parse_coauthor("Muse Spark <noreply@meta.com>").unwrap();
     write(&mut conn, &holder, 1100, |tx, ctx| {
         refresh_commit_claims(tx, task.plan, task.ordinal, &[coauthor], 1050, ctx.now)?;
         Ok(ctx.change_reply(EntryId::new(1).unwrap(), Some(task.plan), None, Some(task)))

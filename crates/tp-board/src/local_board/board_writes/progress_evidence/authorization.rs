@@ -1,11 +1,11 @@
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::super::super::{BoardError, WriteContext, invalid, sql_error, sql_number};
 use super::super::task_claims::{StoredClaim, active_claim};
-use crate::board::board_ids::{EntryId, TaskId};
-use crate::board::board_protocol::WorkerAddress;
-use crate::board::board_vocabulary::EntryKind;
+use crate::board_ids::{EntryId, TaskId};
+use crate::board_protocol::WorkerAddress;
+use crate::board_vocabulary::EntryKind;
 
 pub(super) fn current_claim(
     tx: &Transaction<'_>,

@@ -1,6 +1,6 @@
 use super::*;
-use crate::board::board_ids::PlanId;
-use crate::board::board_protocol::{CommitPlanLink, WORKER_REF_LIMIT, WorkerAddress};
+use crate::board_ids::PlanId;
+use crate::board_protocol::{CommitPlanLink, WORKER_REF_LIMIT, WorkerAddress};
 use tp_core::identity::GitOid;
 
 #[test]

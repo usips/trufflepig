@@ -1,9 +1,9 @@
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::super::super::{BoardError, invalid, row_number, sql_error};
-use crate::board::board_ids::EntryId;
-use crate::board::board_protocol::{
+use crate::board_ids::EntryId;
+use crate::board_protocol::{
     GateStatus, ProgressFact, ProgressGateFact, ProgressHead, ProgressStep, ProgressTests,
 };
 use tp_core::identity::GitOid;

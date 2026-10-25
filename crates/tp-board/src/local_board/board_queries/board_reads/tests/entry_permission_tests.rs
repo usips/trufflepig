@@ -58,7 +58,7 @@ fn entry_feedback_detail_preserves_metadata_and_shared_management_authority() {
                     body: Some(EntryText::new("reproduction steps").unwrap()),
                     plan: linked_plan,
                     metadata: metadata.clone(),
-                    import_key: Some(crate::board::board_vocabulary::FeedbackImportKey::new()),
+                    import_key: Some(crate::board_vocabulary::FeedbackImportKey::new()),
                 },
             ))
             .unwrap();
@@ -88,7 +88,7 @@ fn entry_feedback_detail_preserves_metadata_and_shared_management_authority() {
         assert!(!triaged.can_triage && triaged.can_close);
         assert_eq!(
             triaged.feedback.as_ref().unwrap().state,
-            crate::board::board_vocabulary::FeedbackState::Triaged
+            crate::board_vocabulary::FeedbackState::Triaged
         );
     }
 }

@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_runtime_markers::validate_board_database;
+use tp_board::board_runtime_markers::validate_board_database;
 
 #[test]
 fn losing_router_start_cannot_replace_the_live_database_marker() {
@@ -12,9 +12,7 @@ fn losing_router_start_cannot_replace_the_live_database_marker() {
         runtime: Some(runtime.clone()),
         cache_base: None,
         sweeps: Mutex::new(SweepClock::default()),
-        board: crate::board::BoardHost::with_config(crate::board::BoardConfig::for_database(
-            database,
-        )),
+        board: tp_board::BoardHost::with_config(tp_board::BoardConfig::for_database(database)),
     };
     let live = router(&live_database);
     let live_runtime = runtime.clone();

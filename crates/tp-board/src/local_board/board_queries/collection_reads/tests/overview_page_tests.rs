@@ -1,7 +1,7 @@
 use super::*;
-use crate::board::board_domain::board_collections::OverviewCursor;
-use crate::board::board_ids::EventSeq;
-use crate::board::board_protocol::ReadScope;
+use crate::board_domain::board_collections::OverviewCursor;
+use crate::board_ids::EventSeq;
+use crate::board_protocol::ReadScope;
 
 #[test]
 fn collection_overview_caps_nested_rows_and_reports_exact_omissions() {

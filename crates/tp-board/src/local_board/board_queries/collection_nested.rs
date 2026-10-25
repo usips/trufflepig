@@ -6,7 +6,7 @@ mod recent_task_windows;
 #[cfg(test)]
 mod tests;
 
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, Row, params};
 
 #[cfg(test)]
@@ -14,23 +14,23 @@ use super::super::WriteContext;
 use super::super::{BoardError, invalid, require_plan, row_number, sql_error, sql_number};
 use super::board_reads::task_lineage;
 use super::collection_reads::{ACTIVE_TASKS, count, sequence_window, validate_limit};
-use crate::board::board_actor::BoardRecipient;
+use crate::board_actor::BoardRecipient;
 #[cfg(test)]
-use crate::board::board_domain::board_collections::ClaimCursor;
-use crate::board::board_domain::board_collections::{TaskCeiling, TaskPage};
+use crate::board_domain::board_collections::ClaimCursor;
+use crate::board_domain::board_collections::{TaskCeiling, TaskPage};
 #[cfg(test)]
-use crate::board::board_ids::{EntryId, RepoKey};
-use crate::board::board_ids::{EventSeq, PlanId, TaskId};
-use crate::board::board_protocol::{
+use crate::board_ids::{EntryId, RepoKey};
+use crate::board_ids::{EventSeq, PlanId, TaskId};
+use crate::board_protocol::{
     BoardOp, BoardReply, BoardResult, DoneTasksPage, ReadScope, TaskCursor, TaskOrder, TaskRecord,
 };
-use crate::board::board_vocabulary::{PlanTitle, TaskColumn};
-pub(in crate::board::local_board) use claim_windows::{claim_window, claims_page};
-pub(in crate::board::local_board) use overview_task_windows::overview_task_window;
+use crate::board_vocabulary::{PlanTitle, TaskColumn};
+pub(in crate::local_board) use claim_windows::{claim_window, claims_page};
+pub(in crate::local_board) use overview_task_windows::overview_task_window;
 use recent_task_windows::recent_task_window;
 
 const NESTED_PAGE_LIMIT: usize = 200;
-pub(in crate::board::local_board) const TASK_SELECT: &str = concat!(
+pub(in crate::local_board) const TASK_SELECT: &str = concat!(
     "SELECT t.ordinal,t.title,CASE WHEN outgoing.source_plan IS NULL THEN t.column_name ELSE 'transferred' END,",
     "t.assignee,t.section,t.seq,completion.created_at,t.plan_id,",
     "incoming.source_plan,incoming.source_ordinal,outgoing.destination_plan,outgoing.destination_ordinal ",
@@ -46,7 +46,7 @@ const TASK_COLUMN_FILTER: &str = concat!(
     "WHERE transferred.source_plan=t.plan_id AND transferred.source_ordinal=t.ordinal)))"
 );
 
-pub(in crate::board::local_board) fn task_row(
+pub(in crate::local_board) fn task_row(
     row: &Row<'_>,
     plan: PlanId,
 ) -> Result<TaskRecord, BoardError> {
@@ -82,13 +82,13 @@ pub(in crate::board::local_board) fn task_row(
 }
 
 #[derive(Clone, Copy, Default)]
-pub(in crate::board::local_board) struct TaskSelection {
+pub(in crate::local_board) struct TaskSelection {
     pub column: Option<TaskColumn>,
     pub order: TaskOrder,
     pub before: Option<TaskCursor>,
 }
 
-pub(in crate::board::local_board) fn tasks_page(
+pub(in crate::local_board) fn tasks_page(
     conn: &Connection,
     plan: PlanId,
     after: Option<TaskId>,
@@ -139,7 +139,7 @@ pub(in crate::board::local_board) fn tasks_page(
     Ok(BoardReply::new("local", BoardResult::Tasks(page)))
 }
 
-pub(in crate::board::local_board) fn done_tasks_page(
+pub(in crate::local_board) fn done_tasks_page(
     conn: &Connection,
     scope: &ReadScope,
     before: Option<TaskCursor>,
@@ -171,7 +171,7 @@ fn task_ceiling(conn: &Connection, plan: PlanId) -> Result<TaskCeiling, BoardErr
     Ok(TaskCeiling { plan, ordinal })
 }
 
-pub(in crate::board::local_board) fn task_window(
+pub(in crate::local_board) fn task_window(
     conn: &Connection,
     plan: PlanId,
     after: Option<TaskId>,

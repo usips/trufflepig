@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::repo_identity::tests::FixtureRegistration;
+use crate::repo_identity::tests::FixtureRegistration;
 
 #[test]
 fn common_directory_rekeys_when_unrelated_repository_replaces_content() {
@@ -140,7 +140,7 @@ fn disjoint_roots_rekey_starts_without_copied_plan_links() {
     let mut replaced = second.registration();
     replaced.common_dir = original.common_dir.clone();
     assert_ne!(original.repo_key, replaced.repo_key);
-    assert!(crate::board::repo_identity::root_sets_diverged(
+    assert!(crate::repo_identity::root_sets_diverged(
         &original.root_commits,
         &replaced.root_commits
     ));

@@ -2,8 +2,8 @@
 
 use super::render_scope_hints::cli_scope_flag;
 use super::{BoardOmitted, RenderedBoard, fit_items, render_complete, require_fits};
-use crate::board::board_protocol::{BoardReply, BoardResult, InboxReply};
-use crate::board::board_vocabulary::EntryKind;
+use crate::board_protocol::{BoardReply, BoardResult, InboxReply};
+use crate::board_vocabulary::EntryKind;
 use anyhow::{Result, bail};
 use tp_core::output::OutputBudget;
 

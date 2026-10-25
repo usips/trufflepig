@@ -1,6 +1,6 @@
 use super::*;
-use crate::board::board_ids::TaskId;
-use crate::board::board_vocabulary::{PlanTitle, TaskColumn};
+use crate::board_ids::TaskId;
+use crate::board_vocabulary::{PlanTitle, TaskColumn};
 
 fn overview_with_recent_done() -> BoardReply {
     let plan = PlanId::new(7).unwrap();
@@ -22,7 +22,7 @@ fn overview_with_recent_done() -> BoardReply {
                 repo_keys: Vec::new(),
                 updated_seq: EventSeq::new(70),
                 plan: PlanRecord {
-                    lifecycle_state: crate::board::board_protocol::PlanLifecycleState::Open,
+                    lifecycle_state: crate::board_protocol::PlanLifecycleState::Open,
                     id: plan,
                     title: PlanTitle::new("Trial").unwrap(),
                     owner_user: "josh".into(),

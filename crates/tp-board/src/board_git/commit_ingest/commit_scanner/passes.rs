@@ -1,5 +1,5 @@
 //! Body-free second passes: per-commit statistics and misplaced-trailer grep.
-use crate::board::commit_trailers::shortstat;
+use crate::commit_trailers::shortstat;
 use anyhow::{Result, ensure};
 use std::collections::HashMap;
 use tp_core::identity::GitOid;

@@ -3,7 +3,7 @@
 mod review_packet_text;
 
 use super::{RenderedBoard, fit_items};
-use crate::board::review_packet::ReviewPacket;
+use crate::review_packet::ReviewPacket;
 use anyhow::{Result, bail};
 use review_packet_text::review_text;
 use serde::Serialize;

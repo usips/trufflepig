@@ -9,12 +9,12 @@ mod tests;
 use history_drills::HistoryDrillGate;
 pub use ssot_diff::{SsotDiff, build_ssot_diff};
 
-use crate::board::board_ids::PlanRevision;
-use crate::board::board_protocol::{
+use crate::board_ids::PlanRevision;
+use crate::board_protocol::{
     ClaimRecord, EntryRecord, FeedbackRecord, LinkedCommit, ManualCommitLink, PlanRecord,
     ProposalRecord, RepoScanTarget, ReviewEvidence, TaskRecord,
 };
-use crate::board::commit_trailers::coauthors_match_claim;
+use crate::commit_trailers::coauthors_match_claim;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tp_core::identity::GitOid;
@@ -58,12 +58,12 @@ pub struct ReviewCommit {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CrossedCommit {
-    pub repo_key: crate::board::board_ids::RepoKey,
+    pub repo_key: crate::board_ids::RepoKey,
     pub oid: tp_core::identity::GitOid,
-    pub task: crate::board::board_ids::TaskId,
-    pub claimant: crate::board::board_actor::BoardActor,
-    pub claim_entry: crate::board::board_ids::EntryId,
-    pub scope: crate::board::board_vocabulary::EntryText,
+    pub task: crate::board_ids::TaskId,
+    pub claimant: crate::board_actor::BoardActor,
+    pub claim_entry: crate::board_ids::EntryId,
+    pub scope: crate::board_vocabulary::EntryText,
 }
 
 /// Assemble evidence only; git scans and board reads belong to the caller.
@@ -126,11 +126,10 @@ pub fn assemble_review(
     let mut drill_gate = HistoryDrillGate::default();
     // Linked identities leave the unlinked list. The caller filters scan
     // warnings per repository before flattening them into packet diagnostics.
-    let linked_ids: std::collections::BTreeSet<(crate::board::board_ids::RepoKey, GitOid)> =
-        commits
-            .iter()
-            .map(|commit| (commit.repo_key.clone(), commit.oid))
-            .collect();
+    let linked_ids: std::collections::BTreeSet<(crate::board_ids::RepoKey, GitOid)> = commits
+        .iter()
+        .map(|commit| (commit.repo_key.clone(), commit.oid))
+        .collect();
     let linked = commits
         .into_iter()
         .map(|commit| {

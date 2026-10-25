@@ -3,15 +3,15 @@
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::super::{BoardError, row_number, sql_error, sql_number};
-use crate::board::board_ids::{EntryId, PlanId, TaskId};
-use crate::board::board_protocol::{ProgressEvidence, WorkerAddress};
+use crate::board_ids::{EntryId, PlanId, TaskId};
+use crate::board_protocol::{ProgressEvidence, WorkerAddress};
 
 mod progress_value_reads;
 mod verdict_reads;
 
-pub(in crate::board::local_board) use verdict_reads::{latest_worker_verdict, verdict_for_entry};
+pub(in crate::local_board) use verdict_reads::{latest_worker_verdict, verdict_for_entry};
 
-pub(in crate::board::local_board) fn progress_for_claim(
+pub(in crate::local_board) fn progress_for_claim(
     conn: &Connection,
     claim_entry: EntryId,
     worker: Option<&WorkerAddress>,

@@ -4,7 +4,7 @@ use super::*;
 
 impl LocalBoard {
     /// Checks manual link authority without creating actor or event state.
-    pub(in crate::board) fn require_commit_link_authority(
+    pub(crate) fn require_commit_link_authority(
         &mut self,
         actor: &BoardActor,
         plan: PlanId,
@@ -16,7 +16,7 @@ impl LocalBoard {
 }
 
 /// Resolves the actor's current link authority for a plan.
-pub(in crate::board::local_board) fn require_link_authority(
+pub(in crate::local_board) fn require_link_authority(
     tx: &Transaction<'_>,
     actor: &BoardActor,
     plan: PlanId,
@@ -39,20 +39,20 @@ pub(in crate::board::local_board) fn require_link_authority(
 }
 
 /// The shared plan-level commit entry and its original entry sequence.
-pub(in crate::board::local_board) struct PlanCommitEntry {
-    pub(in crate::board::local_board) entry: EntryId,
-    pub(in crate::board::local_board) seq: EventSeq,
+pub(in crate::local_board) struct PlanCommitEntry {
+    pub(in crate::local_board) entry: EntryId,
+    pub(in crate::local_board) seq: EventSeq,
 }
 
 /// Existing scan links do not have task-specific manual event receipts.
-pub(in crate::board::local_board) enum TaskLinkReceipt {
+pub(in crate::local_board) enum TaskLinkReceipt {
     Manual(EventSeq),
     ManualWithoutEvent,
     Scan,
 }
 
 /// The entry associated with an existing plan-level commit link, if any.
-pub(in crate::board::local_board) fn plan_commit_entry(
+pub(in crate::local_board) fn plan_commit_entry(
     tx: &Transaction<'_>,
     commit: &LinkedCommit,
     plan: PlanId,
@@ -81,7 +81,7 @@ pub(in crate::board::local_board) fn plan_commit_entry(
 }
 
 /// The durable receipt for an existing commit-to-task association.
-pub(in crate::board::local_board) fn task_link_receipt(
+pub(in crate::local_board) fn task_link_receipt(
     tx: &Transaction<'_>,
     repo: &RepoKey,
     oid: tp_core::identity::GitOid,
@@ -116,7 +116,7 @@ pub(in crate::board::local_board) fn task_link_receipt(
 }
 
 /// Creates the commit entry and `manual` plan link for a first-time link.
-pub(in crate::board::local_board) fn record_plan_link(
+pub(in crate::local_board) fn record_plan_link(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     commit: &LinkedCommit,

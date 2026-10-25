@@ -1,7 +1,7 @@
 //! Shared flag, word-count, recipient, and optional-text validation.
 use crate::{
-    board::board_grammar::BoardArguments,
-    board::{board_actor::BoardRecipient, board_vocabulary::EntryText},
+    board_grammar::BoardArguments,
+    {board_actor::BoardRecipient, board_vocabulary::EntryText},
 };
 use anyhow::{Result, bail};
 use tp_core::coded_error::CodedContext;

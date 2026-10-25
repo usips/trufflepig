@@ -1,13 +1,13 @@
-use crate::board::board_protocol::ReadScope;
+use crate::board_protocol::ReadScope;
 mod feedback_authority_tests;
 mod feedback_replay_tests;
 
 use super::*;
-use crate::board::board_actor::BoardActor;
-use crate::board::board_backend::BoardBackend;
-use crate::board::board_protocol::{BoardRequest, RecentCall};
-use crate::board::board_vocabulary::{EntryText, FeedbackImportKey};
-use crate::board::local_board::LocalBoard;
+use crate::board_actor::BoardActor;
+use crate::board_backend::BoardBackend;
+use crate::board_protocol::{BoardRequest, RecentCall};
+use crate::board_vocabulary::{EntryText, FeedbackImportKey};
+use crate::local_board::LocalBoard;
 use std::time::Duration;
 use tp_core::request_context::HarnessLabel;
 
@@ -125,7 +125,7 @@ fn feedback_metadata_is_retained_and_closure_reaches_sibling_sessions() {
         actor("original"),
         BoardOp::Inbox {
             scope: ReadScope::All,
-            after: Some(crate::board::board_ids::EventSeq::new(closed.seq.get() - 1)),
+            after: Some(crate::board_ids::EventSeq::new(closed.seq.get() - 1)),
             limit: 20,
         },
     );
@@ -143,7 +143,7 @@ fn feedback_metadata_is_retained_and_closure_reaches_sibling_sessions() {
         actor("sibling-session"),
         BoardOp::Inbox {
             scope: ReadScope::All,
-            after: Some(crate::board::board_ids::EventSeq::new(closed.seq.get() - 1)),
+            after: Some(crate::board_ids::EventSeq::new(closed.seq.get() - 1)),
             limit: 20,
         },
     );
@@ -160,7 +160,7 @@ fn feedback_metadata_is_retained_and_closure_reaches_sibling_sessions() {
 fn feedback_from_an_unregistered_repository_retains_its_portable_identity() {
     let (_dir, mut board) = board();
     let mut request = report("original");
-    let repo = crate::board::board_ids::RepoKey::parse(&"a".repeat(40)).unwrap();
+    let repo = crate::board_ids::RepoKey::parse(&"a".repeat(40)).unwrap();
     let BoardOp::Feedback { metadata, .. } = &mut request.op else {
         unreachable!()
     };

@@ -15,7 +15,7 @@ fn configured_repository_identity_conflicts_block_reads_and_writes_before_mutati
         ];
         args.extend(words.iter().map(|word| (*word).to_owned()));
         host.run(
-            &crate::board::board_test_support::parse_board_arguments(&args).unwrap(),
+            &crate::board_test_support::parse_board_arguments(&args).unwrap(),
             &RequestContext::new(None, None),
             QueryDeadline::start(),
         )
@@ -27,7 +27,7 @@ fn configured_repository_identity_conflicts_block_reads_and_writes_before_mutati
             row.get(0)
         })
         .unwrap();
-    let conflicting = crate::board::board_ids::RepoKey::parse(&"f".repeat(40)).unwrap();
+    let conflicting = crate::board_ids::RepoKey::parse(&"f".repeat(40)).unwrap();
     assert_ne!(existing, conflicting.as_str());
     config
         .repos
@@ -42,7 +42,7 @@ fn configured_repository_identity_conflicts_block_reads_and_writes_before_mutati
         let error = run(&words).unwrap_err();
         assert_eq!(
             error.downcast_ref::<BoardError>().map(|error| error.code),
-            Some(crate::board::board_protocol::BoardErrorCode::InvalidOptions)
+            Some(crate::board_protocol::BoardErrorCode::InvalidOptions)
         );
         assert!(error.to_string().contains(&existing));
         assert!(error.to_string().contains(conflicting.as_str()));
@@ -82,7 +82,7 @@ fn repository_failures_warn_once_for_writes_and_remain_visible_on_reads() {
             fixture.root.to_string_lossy().into_owned(),
         ];
         args.extend(words.iter().map(|word| (*word).to_owned()));
-        let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
+        let options = crate::board_test_support::parse_board_arguments(&args).unwrap();
         host.run(
             &options,
             &RequestContext::new(None, None),

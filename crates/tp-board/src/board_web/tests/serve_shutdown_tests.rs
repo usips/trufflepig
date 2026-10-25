@@ -104,7 +104,7 @@ fn run_shutdown_child(runtime: &Path, name: &str) -> ExitStatus {
     let child = Command::new(std::env::current_exe().unwrap())
         .env(CHILD_RUNTIME, runtime)
         .args([
-            &format!("board::board_web::tests::serve_shutdown_tests::{name}"),
+            &format!("board_web::tests::serve_shutdown_tests::{name}"),
             "--exact",
             "--nocapture",
         ])

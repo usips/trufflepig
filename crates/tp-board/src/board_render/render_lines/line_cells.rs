@@ -1,12 +1,12 @@
 //! Escaped cells keep user-authored text inside controlled line-format grammar.
 
-use crate::board::board_actor::{AgentVendor, BoardActor, BoardRecipient};
-use crate::board::board_ids::PlanId;
-use crate::board::board_protocol::AuthoritySource;
+use crate::board_actor::{AgentVendor, BoardActor, BoardRecipient};
+use crate::board_ids::PlanId;
+use crate::board_protocol::AuthoritySource;
 use std::fmt::Write;
 use tp_core::request_context::ActorOrigin;
 
-pub(in crate::board::board_render) fn author(
+pub(in crate::board_render) fn author(
     actor: &BoardActor,
     model: Option<&str>,
     effort: Option<&str>,
@@ -19,12 +19,12 @@ pub(in crate::board::board_render) fn author(
     )
 }
 
-pub(in crate::board::board_render) fn recipient(to: &Option<BoardRecipient>) -> String {
+pub(in crate::board_render) fn recipient(to: &Option<BoardRecipient>) -> String {
     to.as_ref()
         .map_or_else(String::new, |to| format!(" (to {})", cell(to.as_str())))
 }
 
-pub(in crate::board::board_render) fn source_suffix(
+pub(in crate::board_render) fn source_suffix(
     origin: Option<&ActorOrigin>,
     authority: Option<&AuthoritySource>,
 ) -> String {
@@ -47,7 +47,7 @@ pub(in crate::board::board_render) fn source_suffix(
     suffix
 }
 
-pub(in crate::board::board_render) fn vendor_suffix(vendor: AgentVendor) -> &'static str {
+pub(in crate::board_render) fn vendor_suffix(vendor: AgentVendor) -> &'static str {
     if vendor == AgentVendor::System {
         "\tvendor=system"
     } else {
@@ -55,11 +55,7 @@ pub(in crate::board::board_render) fn vendor_suffix(vendor: AgentVendor) -> &'st
     }
 }
 
-pub(in crate::board::board_render) fn footer(
-    text: &mut String,
-    backend: &str,
-    plan: Option<PlanId>,
-) {
+pub(in crate::board_render) fn footer(text: &mut String, backend: &str, plan: Option<PlanId>) {
     writeln!(text, "backend: {}", cell(backend)).unwrap();
     if let Some(plan) = plan {
         writeln!(text, "commit trailer: Plan: {plan}").unwrap();
@@ -67,7 +63,7 @@ pub(in crate::board::board_render) fn footer(
 }
 
 /// Keep user-authored text inside one controlled line, including terminal escapes.
-pub(in crate::board::board_render) fn cell(text: &str) -> String {
+pub(in crate::board_render) fn cell(text: &str) -> String {
     let mut escaped = String::with_capacity(text.len());
     for ch in text.chars() {
         match ch {

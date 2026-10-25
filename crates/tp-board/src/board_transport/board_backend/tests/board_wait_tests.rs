@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::ReadScope;
+use crate::board_protocol::ReadScope;
 
 #[test]
 fn unchanged_waiting_inbox_uses_sequence_gate_and_returns_empty_under_writer_lock() {
@@ -34,7 +34,7 @@ fn unchanged_waiting_inbox_uses_sequence_gate_and_returns_empty_under_writer_loc
         "no deadline remains"
     ))));
     assert!(waiter_transient(&anyhow::Error::new(BoardError::new(
-        crate::board::board_protocol::BoardErrorCode::DatabaseLocked,
+        crate::board_protocol::BoardErrorCode::DatabaseLocked,
         "writer held"
     ))));
     assert!(!waiter_transient(&anyhow::anyhow!(coded!(

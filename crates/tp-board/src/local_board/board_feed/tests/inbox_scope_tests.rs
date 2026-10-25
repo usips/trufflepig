@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn inbox_scope_keeps_repo_news_addressed_messages_and_own_feedback_outcomes() {
-    use crate::board::board_vocabulary::{FeedbackKind, FeedbackState};
+    use crate::board_vocabulary::{FeedbackKind, FeedbackState};
     let (_directory, mut board) = database();
     let first = plan(&mut board);
     let BoardResult::Change(second) = call(
@@ -124,7 +124,7 @@ fn inbox_scope_keeps_repo_news_addressed_messages_and_own_feedback_outcomes() {
             summary: EntryText::new("my report").unwrap(),
             body: None,
             plan: None,
-            metadata: crate::board::board_protocol::FeedbackMetadata::default(),
+            metadata: crate::board_protocol::FeedbackMetadata::default(),
             import_key: None,
         },
     ) else {

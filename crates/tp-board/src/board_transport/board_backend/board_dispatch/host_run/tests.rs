@@ -64,7 +64,7 @@ fn local_board_read_deadline_preserves_claim_cancellation() {
 fn local_board_write_and_ingest_keep_the_incoming_deadline() {
     let commands = [
         BoardCommand::Op(BoardOp::AcknowledgeInbox {
-            rendered_through: crate::board::board_ids::EventSeq::new(1),
+            rendered_through: crate::board_ids::EventSeq::new(1),
         }),
         BoardCommand::Ingest,
     ];

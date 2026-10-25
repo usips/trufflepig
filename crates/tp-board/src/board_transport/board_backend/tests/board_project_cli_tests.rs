@@ -80,7 +80,7 @@ impl ProjectCliFixture {
         ];
         args.extend(words.iter().map(|word| (*word).to_owned()));
         self.host.run(
-            &crate::board::board_test_support::parse_board_arguments(&args)?,
+            &crate::board_test_support::parse_board_arguments(&args)?,
             &RequestContext::new(Some("project-cli-reader".into()), Some(client.into())),
             QueryDeadline::start(),
         )

@@ -1,6 +1,6 @@
 //! Delegated holder resolution and holder-conflict errors.
 use super::*;
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 
 pub(super) struct ResolvedDelegate {
     actor_id: i64,

@@ -278,15 +278,14 @@ fn proposal_grammar_accepts_supersedes_and_edit_rejects_it() {
     ]
     .map(str::to_owned)
     .to_vec();
-    let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
-    let command = crate::board::board_grammar::parse(&options, Some("replacement body")).unwrap();
-    let crate::board::board_grammar::BoardCommand::Op(op) = command else {
+    let options = crate::board_test_support::parse_board_arguments(&args).unwrap();
+    let command = crate::board_grammar::parse(&options, Some("replacement body")).unwrap();
+    let crate::board_grammar::BoardCommand::Op(op) = command else {
         panic!("expected op");
     };
     assert_eq!(serde_json::to_value(op).unwrap()["supersedes"], "E2");
     let mut edit_options = options;
     edit_options.words[1] = "edit".to_owned();
-    let error =
-        crate::board::board_grammar::parse(&edit_options, Some("replacement body")).unwrap_err();
+    let error = crate::board_grammar::parse(&edit_options, Some("replacement body")).unwrap_err();
     assert!(error.to_string().starts_with("invalid_options:"));
 }

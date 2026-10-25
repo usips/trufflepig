@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::{BoardChange, BoardErrorCode};
+use crate::board_protocol::{BoardChange, BoardErrorCode};
 
 pub(super) fn unlink_request(actor: BoardActor, task: TaskId) -> BoardRequest {
     let op = serde_json::from_value(serde_json::json!({

@@ -1,6 +1,6 @@
 //! Manual commit links resolve one oid in the plan's registered repositories.
 use super::BoardHost;
-use crate::board::{
+use crate::{
     board_ids::TaskId,
     board_protocol::{BoardError, BoardErrorCode, BoardOp, BoardRequest},
     local_board::LocalBoard,
@@ -54,7 +54,7 @@ impl BoardHost {
                 )
                 .into());
             }
-            resolved = Some(crate::board::commit_ingest::read_commit(
+            resolved = Some(crate::commit_ingest::read_commit(
                 &target.registration,
                 oid,
                 deadline.remaining(),

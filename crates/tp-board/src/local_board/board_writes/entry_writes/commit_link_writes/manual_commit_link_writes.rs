@@ -8,7 +8,7 @@ use super::*;
 /// Manual links name the linker and record `manual` provenance. Relinking the
 /// same task replays the original receipt; linking another task of the plan
 /// writes a new event without duplicating the plan link.
-pub(in crate::board::local_board) fn link_commit(
+pub(in crate::local_board) fn link_commit(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     task: TaskId,

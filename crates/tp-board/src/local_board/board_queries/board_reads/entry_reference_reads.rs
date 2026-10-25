@@ -3,12 +3,12 @@ mod reminder_reads;
 
 use super::recipient_predicates::{actor_origin_from_row, authority_from_row};
 use super::*;
-use crate::board::board_actor::claim_vendor;
-pub(in crate::board::local_board) use reminder_reads::open_entries;
+use crate::board_actor::claim_vendor;
+pub(in crate::local_board) use reminder_reads::open_entries;
 #[cfg(test)]
 pub(super) use reminder_reads::reminder_predicate;
 
-pub(in crate::board::local_board) fn entry(
+pub(in crate::local_board) fn entry(
     conn: &Connection,
     id: EntryId,
 ) -> Result<EntryRecord, BoardError> {
@@ -94,9 +94,7 @@ pub(in crate::board::local_board) fn entry(
         state,
         origin: actor_origin_from_row(row, 16, 17, 18)?,
         authority: authority_from_row(row, 19, 20)?,
-        verdict: crate::board::local_board::board_queries::progress_reads::verdict_for_entry(
-            conn, id,
-        )?,
+        verdict: crate::local_board::board_queries::progress_reads::verdict_for_entry(conn, id)?,
         refs: Vec::new(),
         seq: EventSeq::new(row_number(row, 13).map_err(sql_error)?),
         created_at: row.get(14).map_err(sql_error)?,
@@ -118,7 +116,7 @@ pub(in crate::board::local_board) fn entry(
     Ok(record)
 }
 
-pub(in crate::board::local_board) fn entries(
+pub(in crate::local_board) fn entries(
     conn: &Connection,
     sql: &str,
     parameters: impl Params,
@@ -134,7 +132,7 @@ pub(in crate::board::local_board) fn entries(
         .collect()
 }
 
-pub(in crate::board::local_board) fn entry_view(
+pub(in crate::local_board) fn entry_view(
     conn: &Connection,
     ctx: &WriteContext,
     id: EntryId,
@@ -213,7 +211,7 @@ pub(in crate::board::local_board) fn entry_view(
     };
     let authority = entry
         .plan
-        .map(|plan| crate::board::local_board::can_accept(conn, &ctx.actor, plan))
+        .map(|plan| crate::local_board::can_accept(conn, &ctx.actor, plan))
         .transpose()?
         .unwrap_or(false);
     let can_decide = authority
@@ -230,14 +228,14 @@ pub(in crate::board::local_board) fn entry_view(
         )
         .map_err(sql_error)?;
     let feedback_authority =
-        crate::board::local_board::board_writes::feedback_entries::can_manage_feedback(
+        crate::local_board::board_writes::feedback_entries::can_manage_feedback(
             conn, &ctx.actor, &entry, ctx.now,
         )?;
     let can_triage = feedback_authority
         && matches!(
             entry.state,
             Some(EntryState::Feedback(
-                crate::board::board_vocabulary::FeedbackState::Open
+                crate::board_vocabulary::FeedbackState::Open
             ))
         );
     let can_close = feedback_authority
@@ -248,7 +246,7 @@ pub(in crate::board::local_board) fn entry_view(
         .transpose()?;
     let feedback = if entry.kind == EntryKind::Feedback {
         Some(
-            crate::board::local_board::board_queries::collection_reads::feedback_record(
+            crate::local_board::board_queries::collection_reads::feedback_record(
                 conn,
                 entry.clone(),
             )?,
@@ -277,7 +275,7 @@ pub(in crate::board::local_board) fn entry_view(
         backrefs_omitted,
         replies_next_after,
         backrefs_next_after,
-        through: crate::board::local_board::max_seq(conn)?,
+        through: crate::local_board::max_seq(conn)?,
         proposal,
         feedback,
         linked_commit,

@@ -1,11 +1,11 @@
 use super::*;
-use crate::board::board_protocol::ReadScope;
+use crate::board_protocol::ReadScope;
 
 #[test]
 fn attention_entry_query_drives_from_the_kind_index() {
     let (_directory, board) = database();
     let predicate =
-        crate::board::local_board::board_queries::collection_reads::action_collection_reads::attention_predicate();
+        crate::local_board::board_queries::collection_reads::action_collection_reads::attention_predicate();
     let plan: Vec<String> = board
         .conn
         .prepare(&format!(

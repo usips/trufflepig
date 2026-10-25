@@ -110,7 +110,7 @@ fn node_version_parsing_requires_a_v_prefixed_major() {
 
 /// Sorted `*.test.mjs` files beneath the board asset test directory.
 fn asset_test_files() -> Vec<PathBuf> {
-    let tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/board/board_web/assets/tests");
+    let tests = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/board_web/assets/tests");
     // Node >=21 treats a `--test` directory argument as a single module and
     // dies with MODULE_NOT_FOUND (nodejs/node#64555); explicit files run
     // identically on every Node >=20.

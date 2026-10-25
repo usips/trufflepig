@@ -1,6 +1,6 @@
 //! Configuration snapshots retry on source changes without changing database identity.
 use super::{BoardConfig, BoardConfigSource};
-use crate::board::board_protocol::{BoardError, BoardErrorCode};
+use crate::board_protocol::{BoardError, BoardErrorCode};
 use std::{
     fs,
     io::ErrorKind,

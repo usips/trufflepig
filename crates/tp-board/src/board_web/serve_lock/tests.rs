@@ -14,7 +14,7 @@ fn second_bind_refuses_and_leaves_token_untouched() {
             .env("TRUFFLEPIG_BOARD_DB", directory.path().join("web.sqlite3"))
             .env("XDG_CONFIG_HOME", directory.path().join("config"))
             .args([
-                "board::board_web::serve_lock::tests::second_bind_refuses_and_leaves_token_untouched",
+                "board_web::serve_lock::tests::second_bind_refuses_and_leaves_token_untouched",
                 "--exact",
             ])
             .output()

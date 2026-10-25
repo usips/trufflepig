@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::ReadScope;
+use crate::board_protocol::ReadScope;
 
 #[test]
 fn delegated_claim_refreshes_on_holder_commits_not_delegator_commits() {
@@ -50,7 +50,7 @@ fn delegated_claim_refreshes_on_holder_commits_not_delegator_commits() {
     assert_eq!(history[0].actor, coder);
     assert_eq!(history[0].delegated_by, Some(orchestrator.clone()));
     assert_eq!(history[0].model.as_deref(), Some("Codex"));
-    let entry = crate::board::local_board::read_entry(&conn, history[0].entry).unwrap();
+    let entry = crate::local_board::read_entry(&conn, history[0].entry).unwrap();
     assert_eq!(entry.actor, coder);
     let (event_actor, to_whom, summary): (String, Option<String>, String) = conn
         .query_row(
@@ -188,7 +188,7 @@ fn delegated_claim_event_reaches_delegate_inbox_with_via_summary() {
         summary.contains(&format!("(via {})", orchestrator.identity())),
         "{summary}"
     );
-    let entry = crate::board::local_board::read_entry(&conn, change.entry).unwrap();
+    let entry = crate::local_board::read_entry(&conn, change.entry).unwrap();
     assert_eq!(entry.actor, coder);
     let last_seen: i64 = conn
         .query_row(

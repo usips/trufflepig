@@ -6,9 +6,9 @@ mod project_scope_read_tests;
 mod query_only_dispatch_tests;
 
 use super::*;
-use crate::board::board_actor::BoardRecipient;
-use crate::board::board_protocol::AuthorityRole;
-use crate::board::board_vocabulary::{EntryText, PlanText, PlanTitle};
+use crate::board_actor::BoardRecipient;
+use crate::board_protocol::AuthorityRole;
+use crate::board_vocabulary::{EntryText, PlanText, PlanTitle};
 
 fn actor(harness: &str, session: &str) -> BoardActor {
     BoardActor::new(
@@ -65,7 +65,7 @@ fn local_board_immutable_revisions_cas_and_owner_authority() {
             },
         ))
         .unwrap();
-    let base = crate::board::board_ids::PlanRevision::new(plan, 1).unwrap();
+    let base = crate::board_ids::PlanRevision::new(plan, 1).unwrap();
     let proposed = board
         .handle(&BoardRequest::new(
             actor("codex", "c1"),
@@ -192,18 +192,18 @@ fn local_board_replay_upgrades_receipts_stamped_with_an_older_api() {
         },
     );
     let first = board.handle(&request).unwrap();
-    assert_eq!(first.api, crate::board::BOARD_API);
+    assert_eq!(first.api, crate::BOARD_API);
     let stored = rusqlite::Connection::open(&path).unwrap();
     stored.busy_timeout(Duration::from_secs(5)).unwrap();
     stored
         .execute(
             "UPDATE operation_dedupes SET reply_json=json_set(reply_json,'$.api',?1)",
-            [crate::board::BOARD_API - 1],
+            [crate::BOARD_API - 1],
         )
         .unwrap();
     drop(stored);
     let replayed = board.handle(&request).unwrap();
-    assert_eq!(replayed.api, crate::board::BOARD_API);
+    assert_eq!(replayed.api, crate::BOARD_API);
     replayed.validate().unwrap();
     let BoardResult::Change(change) = replayed.result else {
         panic!("new plan receipt");

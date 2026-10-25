@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::{BoardError, BoardErrorCode};
+use crate::board_protocol::{BoardError, BoardErrorCode};
 
 fn link_diagnostics_fixture() -> (EdgeFixture, String) {
     let fixture = EdgeFixture::new();

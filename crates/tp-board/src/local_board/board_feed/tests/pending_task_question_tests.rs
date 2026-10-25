@@ -1,6 +1,6 @@
 use super::*;
-use crate::board::board_actor::BoardRecipient;
-use crate::board::board_protocol::{
+use crate::board_actor::BoardRecipient;
+use crate::board_protocol::{
     ClaimResume, PendingNoticeReason, WorkerAddress, WorkerEndReason, WorkerHandle, WorkerRole,
 };
 
@@ -22,7 +22,7 @@ fn create_task(board: &mut LocalBoard, plan: PlanId) -> TaskId {
         .expect("task creation includes its task reference")
 }
 
-fn task_question(board: &mut LocalBoard, task: TaskId) -> crate::board::board_ids::EntryId {
+fn task_question(board: &mut LocalBoard, task: TaskId) -> crate::board_ids::EntryId {
     task_question_to(board, task, None, "Question with no task name in its prose")
 }
 
@@ -31,7 +31,7 @@ fn task_question_to(
     task: TaskId,
     to: Option<&str>,
     body: &str,
-) -> crate::board::board_ids::EntryId {
+) -> crate::board_ids::EntryId {
     let BoardResult::Change(change) = call(
         board,
         "claude",
@@ -64,7 +64,7 @@ fn pending(board: &mut LocalBoard, harness: &str, after: EventSeq) -> PendingRep
     }
 }
 
-fn has_question(reply: &PendingReply, entry: crate::board::board_ids::EntryId) -> bool {
+fn has_question(reply: &PendingReply, entry: crate::board_ids::EntryId) -> bool {
     reply.notices.iter().any(|notice| {
         notice
             .entry
@@ -217,7 +217,7 @@ fn open_task_questions_follow_the_current_holder_and_remain_with_the_owner() {
         "codex",
         BoardOp::TaskMove {
             task,
-            column: crate::board::board_vocabulary::TaskColumn::Todo,
+            column: crate::board_vocabulary::TaskColumn::Todo,
             to: None,
         },
     );
@@ -478,7 +478,7 @@ fn lead_release_notifies_the_bound_worker_that_its_claim_ended() {
         "codex",
         BoardOp::TaskMove {
             task,
-            column: crate::board::board_vocabulary::TaskColumn::Todo,
+            column: crate::board_vocabulary::TaskColumn::Todo,
             to: None,
         },
     );
@@ -530,7 +530,7 @@ fn post_to_a_nonexistent_task_recipient_is_refused() {
         .unwrap_err();
     assert_eq!(
         error.code,
-        crate::board::board_protocol::BoardErrorCode::InvalidReference
+        crate::board_protocol::BoardErrorCode::InvalidReference
     );
     assert_eq!(board.max_seq().unwrap(), before);
 }

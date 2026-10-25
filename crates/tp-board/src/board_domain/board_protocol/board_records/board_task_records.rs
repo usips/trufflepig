@@ -1,6 +1,6 @@
 //! Bounded task detail records.
 use super::{ClaimRecord, EntryRecord, LinkedCommit, TaskRecord};
-use crate::board::board_ids::{EntryId, EventSeq};
+use crate::board_ids::{EntryId, EventSeq};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

@@ -228,7 +228,7 @@ pub fn serve() -> Result<()> {
         runtime: Some(runtime.clone()),
         cache_base: crate::cli::cache_base().ok(),
         sweeps: Mutex::new(SweepClock::default()),
-        board: crate::board::BoardHost::default(),
+        board: tp_board::BoardHost::default(),
     };
     // Migration runs in `on_bound`, after the socket binds and before the
     // accept loop, so waiting clients queue instead of spawning a second router.
@@ -240,7 +240,7 @@ struct SystemRouter {
     runtime: Option<PathBuf>,
     cache_base: Option<PathBuf>,
     sweeps: Mutex<SweepClock>,
-    board: crate::board::BoardHost,
+    board: tp_board::BoardHost,
 }
 
 #[derive(Default)]

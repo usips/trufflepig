@@ -7,15 +7,15 @@ use super::super::{
     BoardError, EntryDraft, WriteContext, insert_entry, insert_event, invalid, require_plan,
     sql_error, sql_number,
 };
-use crate::board::board_ids::{EntryId, PlanId};
-use crate::board::board_protocol::BoardErrorCode;
-use crate::board::board_protocol::{
+use crate::board_ids::{EntryId, PlanId};
+use crate::board_protocol::BoardErrorCode;
+use crate::board_protocol::{
     AuthorityRole, BoardChange, BoardReply, BoardResult, PlanLifecycleState,
 };
-use crate::board::board_vocabulary::{EntryKind, EntryText};
+use crate::board_vocabulary::{EntryKind, EntryText};
 use rusqlite::{Transaction, params};
 
-pub(in crate::board::local_board) fn require_open(
+pub(in crate::local_board) fn require_open(
     conn: &rusqlite::Connection,
     plan: PlanId,
 ) -> Result<(), BoardError> {
@@ -36,7 +36,7 @@ pub(in crate::board::local_board) fn require_open(
     }
 }
 
-pub(in crate::board::local_board) fn close_plan(
+pub(in crate::local_board) fn close_plan(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     plan: PlanId,
@@ -52,7 +52,7 @@ pub(in crate::board::local_board) fn close_plan(
     )
 }
 
-pub(in crate::board::local_board) fn reopen_plan(
+pub(in crate::local_board) fn reopen_plan(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     plan: PlanId,
@@ -77,7 +77,7 @@ fn set_lifecycle(
     next: PlanLifecycleState,
 ) -> Result<BoardReply, BoardError> {
     require_plan(tx, plan)?;
-    let authority = crate::board::local_board::board_authority::authority_for(
+    let authority = crate::local_board::board_authority::authority_for(
         tx,
         &ctx.actor,
         Some(plan),

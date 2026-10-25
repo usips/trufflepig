@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::ReadScope;
+use crate::board_protocol::ReadScope;
 
 fn evidence(id: u64) -> EntryRecord {
     serde_json::from_value(serde_json::json!({
@@ -57,8 +57,8 @@ fn collection_render_feedback_keeps_metadata_and_accumulates_omissions() {
             entry.kind = EntryKind::Feedback;
             FeedbackRecord {
                 entry,
-                kind: crate::board::board_vocabulary::FeedbackKind::Missing,
-                state: crate::board::board_vocabulary::FeedbackState::Open,
+                kind: crate::board_vocabulary::FeedbackKind::Missing,
+                state: crate::board_vocabulary::FeedbackState::Open,
                 metadata: FeedbackMetadata {
                     version: "test-version".into(),
                     cwd: "/checkout".into(),
@@ -151,7 +151,7 @@ fn collection_attention_keeps_spooled_feedback_provenance_in_json_and_lines() {
 
 #[test]
 fn delegated_claims_render_the_holder_and_its_delegator() {
-    use crate::board::board_ids::TaskId;
+    use crate::board_ids::TaskId;
     let plan = PlanId::new(7).unwrap();
     let delegator = BoardActor::new(
         "josh",

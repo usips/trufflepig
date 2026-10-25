@@ -4,8 +4,8 @@ use super::{
     board_syntax_validation::{check_flags, fixed_words, optional_text, recipient, word},
 };
 use crate::{
-    board::board_grammar::BoardArguments,
-    board::{
+    board_grammar::BoardArguments,
+    {
         board_ids::{BoardRef, EntryId},
         board_protocol::{BoardOp, ClaimDelegate, ClaimResume},
         board_vocabulary::{EntryText, PlanTitle, TaskColumn},

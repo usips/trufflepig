@@ -1,7 +1,7 @@
 mod scope_read_fixture;
 
 use super::*;
-use crate::board::board_vocabulary::EntryKind;
+use crate::board_vocabulary::EntryKind;
 use scope_read_fixture::ScopeFixture;
 use serde_json::json;
 
@@ -202,7 +202,7 @@ fn repo_scope_retains_addressed_messages_and_own_feedback() {
 
 #[test]
 fn shared_commit_event_respects_requested_plan_scope_intersection() {
-    use crate::board::board_protocol::{CommitPlanLink, LinkedCommit};
+    use crate::board_protocol::{CommitPlanLink, LinkedCommit};
     let mut fixture = ScopeFixture::new();
     let start = fixture.board.max_seq().unwrap();
     let commits = [0, 2]

@@ -3,7 +3,7 @@ use super::{
     BoardCommand,
     board_text_transport::{BoardTextPayload, command_text},
 };
-use crate::board::board_grammar::BoardArguments;
+use crate::board_grammar::BoardArguments;
 use anyhow::{Result, bail};
 
 mod board_command_parser;
@@ -69,7 +69,7 @@ pub fn parse(options: &BoardArguments, body: Option<&str>) -> Result<BoardComman
 }
 
 /// Reject source-search options on board command surfaces.
-pub(crate) fn validate_board_surface(options: &BoardArguments) -> Result<()> {
+pub fn validate_board_surface(options: &BoardArguments) -> Result<()> {
     if let Some(flag) = options.search_flag {
         bail!(coded!(
             InvalidOptions,

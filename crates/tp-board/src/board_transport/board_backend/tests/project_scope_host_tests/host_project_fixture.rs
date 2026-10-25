@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::{
+use crate::{
     board_ids::PlanId,
     board_protocol::BOARD_API,
     board_vocabulary::{PlanText, PlanTitle},

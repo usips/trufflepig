@@ -43,7 +43,7 @@ fn collection_feedback_pages_filter_states_and_keep_frozen_shared_sequences() {
     assert_eq!(first.feedback[0].kind, FeedbackKind::Missing);
     assert_eq!(
         first.feedback[0].state,
-        crate::board::board_vocabulary::FeedbackState::Open
+        crate::board_vocabulary::FeedbackState::Open
     );
     assert_eq!(first.omitted, 2);
     assert_eq!(first.through, EventSeq::new(5));

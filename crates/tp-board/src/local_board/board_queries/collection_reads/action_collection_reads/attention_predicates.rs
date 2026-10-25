@@ -1,7 +1,7 @@
 //! Attention predicate over joined entries and actors.
 use super::*;
-use crate::board::board_protocol::AuthorityRole;
-use crate::board::local_board::board_queries::board_reads::recipient_predicates::{
+use crate::board_protocol::AuthorityRole;
+use crate::local_board::board_queries::board_reads::recipient_predicates::{
     addressed_to_actor_sql, task_entry_sql, task_owner_human_question_sql,
 };
 
@@ -10,8 +10,7 @@ use crate::board::local_board::board_queries::board_reads::recipient_predicates:
 /// ?10 through, ?11 authority time).
 /// The kind prefix drives the scan from `entries_kind_state`; own unaddressed questions
 /// stay out of "Needs you" and proposal currency reads the head as of ?10.
-pub(in crate::board::local_board::board_queries::collection_reads) fn attention_predicate() -> String
-{
+pub(in crate::local_board::board_queries::collection_reads) fn attention_predicate() -> String {
     let strict_scope = ScopeSql::strict_plan_predicate("e.plan_id", 6, 7);
     let exact_author = "a.user=?1 AND a.host=?2 AND a.harness=?3 AND a.session=?4";
     let addressed = addressed_to_actor_sql("e.to_whom", "?1", "?3", "?5");
@@ -24,7 +23,7 @@ pub(in crate::board::local_board::board_queries::collection_reads) fn attention_
         "(SELECT max(number) FROM revisions head_at WHERE head_at.plan_id=p.plan_id ",
         "AND head_at.seq<=?10)"
     );
-    let decide_authority = crate::board::local_board::board_authority::authority_predicate_sql(
+    let decide_authority = crate::local_board::board_authority::authority_predicate_sql(
         AuthorityRole::Decide,
         "p.plan_id",
         "head.owner_user",

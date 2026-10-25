@@ -3,9 +3,9 @@
 mod tests;
 mod trailer_records;
 
-use crate::board::board_actor::AgentVendor;
-use crate::board::board_ids::RepoKey;
-use crate::board::board_protocol::{CommitCoauthor, LinkedCommit};
+use crate::board_actor::AgentVendor;
+use crate::board_ids::RepoKey;
+use crate::board_protocol::{CommitCoauthor, LinkedCommit};
 use anyhow::{Result, ensure};
 use tp_core::coded_error::CodedContext;
 use tp_core::request_context::HarnessLabel;

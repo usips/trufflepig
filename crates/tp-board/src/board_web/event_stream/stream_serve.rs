@@ -7,7 +7,7 @@ use super::{
     sequence_poller::{POLL_INTERVAL, WakeResult},
     stream_socket,
 };
-use crate::board::{board_ids::EventSeq, board_protocol::BoardErrorCode};
+use crate::{board_ids::EventSeq, board_protocol::BoardErrorCode};
 use std::{
     io,
     net::TcpStream,

@@ -4,8 +4,8 @@ use super::{
     board_syntax_validation::{check_flags, fixed_words, optional_text, recipient, word},
 };
 use crate::{
-    board::board_grammar::BoardArguments,
-    board::{
+    board_grammar::BoardArguments,
+    {
         board_ids::{BoardRef, EntryId},
         board_protocol::{
             BoardOp, GateStatus, ProgressGateInput, ProgressInput, ProgressStep, ProgressTests,
@@ -332,7 +332,7 @@ fn parse_duration(value: &str) -> Result<u64> {
         .checked_mul(multiplier)
         .with_coded_context(|| coded!(InvalidDuration, "duration is too large"))?;
     ensure!(
-        (1..=crate::board::board_protocol::PROGRESS_ETA_LIMIT_SECS).contains(&seconds),
+        (1..=crate::board_protocol::PROGRESS_ETA_LIMIT_SECS).contains(&seconds),
         coded!(InvalidDuration, "duration must be 1..=365 days")
     );
     Ok(seconds)

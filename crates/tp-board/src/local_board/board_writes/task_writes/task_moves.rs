@@ -2,11 +2,11 @@
 
 use super::super::task_claims::{active_claim, claim_task, end_claim};
 use super::*;
-use crate::board::board_protocol::BoardErrorCode;
-use crate::board::board_protocol::{AuthorityRole, AuthoritySource, ClaimEndReason, ClaimResume};
-use crate::board::board_vocabulary::{EntryKind, EntryText, TaskColumn};
+use crate::board_protocol::BoardErrorCode;
+use crate::board_protocol::{AuthorityRole, AuthoritySource, ClaimEndReason, ClaimResume};
+use crate::board_vocabulary::{EntryKind, EntryText, TaskColumn};
 
-pub(in crate::board::local_board) fn move_task(
+pub(in crate::local_board) fn move_task(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     task: TaskId,

@@ -1,10 +1,10 @@
 use super::*;
-use crate::board::board_actor::{AgentVendor, BoardActor, claim_vendor};
-use crate::board::board_ids::{BoardRef, EntryId, EventSeq, PlanId};
-use crate::board::board_protocol::ReadScope;
-use crate::board::board_protocol::*;
-use crate::board::board_vocabulary::{EntryKind, EntryText, ProposalState};
-use crate::board::review_packet::{ReviewPacket, SsotDiff};
+use crate::board_actor::{AgentVendor, BoardActor, claim_vendor};
+use crate::board_ids::{BoardRef, EntryId, EventSeq, PlanId};
+use crate::board_protocol::ReadScope;
+use crate::board_protocol::*;
+use crate::board_vocabulary::{EntryKind, EntryText, ProposalState};
+use crate::review_packet::{ReviewPacket, SsotDiff};
 use tp_core::request_context::HarnessLabel;
 
 mod budget_render_tests;
@@ -93,13 +93,13 @@ fn inbox(advancing: bool) -> InboxReply {
 }
 
 fn review_packet() -> ReviewPacket {
-    use crate::board::{board_ids::PlanRevision, board_vocabulary::PlanTitle};
+    use crate::{board_ids::PlanRevision, board_vocabulary::PlanTitle};
     let plan = PlanId::new(7).unwrap();
     let base = PlanRevision::new(plan, 1).unwrap();
     let head = PlanRevision::new(plan, 2).unwrap();
     ReviewPacket {
         plan: PlanRecord {
-            lifecycle_state: crate::board::board_protocol::PlanLifecycleState::Open,
+            lifecycle_state: crate::board_protocol::PlanLifecycleState::Open,
             id: plan,
             title: PlanTitle::new("Review trial").unwrap(),
             owner_user: "josh".into(),
@@ -130,7 +130,7 @@ fn review_packet() -> ReviewPacket {
 }
 
 fn review_commit(number: u64) -> super::super::review_packet::ReviewCommit {
-    use crate::board::board_ids::RepoKey;
+    use crate::board_ids::RepoKey;
     use tp_core::identity::GitOid;
     super::super::review_packet::ReviewCommit {
         commit: LinkedCommit {

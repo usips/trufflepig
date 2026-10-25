@@ -5,10 +5,10 @@ mod stored_feedback_upgrade_tests;
 
 use super::board_spool::private_directory_owned_by;
 use super::*;
-use crate::board::board_actor::BoardActor;
-use crate::board::board_ids::{EntryId, EventSeq, RepoKey};
-use crate::board::board_protocol::{BoardChange, FeedbackMetadata};
-use crate::board::board_vocabulary::{EntryText, FeedbackKind};
+use crate::board_actor::BoardActor;
+use crate::board_ids::{EntryId, EventSeq, RepoKey};
+use crate::board_protocol::{BoardChange, FeedbackMetadata};
+use crate::board_vocabulary::{EntryText, FeedbackKind};
 use std::collections::{BTreeSet, HashMap};
 use std::fs::File;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};

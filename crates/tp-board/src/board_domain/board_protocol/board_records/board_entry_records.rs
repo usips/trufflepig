@@ -1,8 +1,8 @@
 //! Entries, inbox events, and mutation addresses.
 use super::{FeedbackRecord, LinkedCommit, ProposalRecord};
-use crate::board::board_domain::board_collections::EntryCursor;
-use crate::board::board_protocol::{AuthoritySource, ReadScope, ReviewVerdict};
-use crate::board::{
+use crate::board_domain::board_collections::EntryCursor;
+use crate::board_protocol::{AuthoritySource, ReadScope, ReviewVerdict};
+use crate::{
     board_actor::{AgentVendor, BoardActor, BoardRecipient},
     board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
     board_vocabulary::{EntryKind, EntryText, FeedbackState, ProposalState},

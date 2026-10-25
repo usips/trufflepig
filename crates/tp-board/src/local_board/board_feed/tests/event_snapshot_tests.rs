@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::ReadScope;
+use crate::board_protocol::ReadScope;
 
 #[test]
 fn event_batches_return_stored_claim_snapshots_without_entry_joins() {
@@ -13,10 +13,10 @@ fn event_batches_return_stored_claim_snapshots_without_entry_joins() {
     )
     .unwrap();
     let tx = board.conn.transaction().unwrap();
-    let actor_id = crate::board::local_board::lookup_actor(&tx, &actor)
+    let actor_id = crate::local_board::lookup_actor(&tx, &actor)
         .unwrap()
         .unwrap();
-    let ctx = crate::board::local_board::WriteContext {
+    let ctx = crate::local_board::WriteContext {
         actor_id,
         actor,
         model: Some("event model".into()),
@@ -28,7 +28,7 @@ fn event_batches_return_stored_claim_snapshots_without_entry_joins() {
         origin: None,
         authority: None,
     };
-    crate::board::local_board::insert_event(
+    crate::local_board::insert_event(
         &tx,
         &ctx,
         Some(plan),
@@ -94,8 +94,7 @@ fn entry_and_event_origin_round_trip_the_observed_peer_ip() {
         BoardOp::Post {
             target: BoardRef::Plan(plan),
             kind: EntryKind::Note,
-            body: crate::board::board_vocabulary::EntryText::new("peer-addressed evidence")
-                .unwrap(),
+            body: crate::board_vocabulary::EntryText::new("peer-addressed evidence").unwrap(),
             to: None,
             supersedes: None,
             progress: None,
@@ -107,8 +106,7 @@ fn entry_and_event_origin_round_trip_the_observed_peer_ip() {
         panic!("post should create an entry")
     };
     let entry =
-        crate::board::local_board::board_queries::board_reads::entry(&board.conn, change.entry)
-            .unwrap();
+        crate::local_board::board_queries::board_reads::entry(&board.conn, change.entry).unwrap();
     assert_eq!(entry.origin.unwrap().peer_ip, Some(peer_ip));
 
     let (_, events) = board
@@ -120,8 +118,8 @@ fn entry_and_event_origin_round_trip_the_observed_peer_ip() {
 
 #[test]
 fn imported_feedback_provenance_reaches_normal_inbox_and_shared_event_feed() {
-    use crate::board::board_protocol::{FeedbackMetadata, FeedbackVia};
-    use crate::board::board_vocabulary::{FeedbackImportKey, FeedbackKind};
+    use crate::board_protocol::{FeedbackMetadata, FeedbackVia};
+    use crate::board_vocabulary::{FeedbackImportKey, FeedbackKind};
     let (_directory, mut board) = database();
     let reported = BoardActor::new(
         "josh",
@@ -163,7 +161,7 @@ fn imported_feedback_provenance_reaches_normal_inbox_and_shared_event_feed() {
         "outbox"
     );
     let reply = BoardReply::new("test", BoardResult::Inbox(inbox));
-    let lines = crate::board::board_render::render_reply(
+    let lines = crate::board_render::render_reply(
         &reply,
         &tp_core::output::OutputBudget::new(4000)
             .unwrap()

@@ -27,7 +27,7 @@ fn entry_drill_keeps_large_proposal_before_long_reverse_references() {
             entry: entry.id,
             plan: entry.plan.unwrap(),
             base_revision: 1,
-            body: crate::board::board_vocabulary::PlanText::new(body.clone()).unwrap(),
+            body: crate::board_vocabulary::PlanText::new(body.clone()).unwrap(),
             state: ProposalState::Open,
             decision_entry: None,
             result_revision: None,
@@ -81,7 +81,7 @@ fn entry_drill_keeps_large_proposal_before_long_reverse_references() {
 
 #[test]
 fn claim_line_shows_the_lease_entry() {
-    use crate::board::board_ids::TaskId;
+    use crate::board_ids::TaskId;
     let plan = PlanId::new(7).unwrap();
     let claim = ClaimRecord {
         task: TaskId::new(plan, 3).unwrap(),

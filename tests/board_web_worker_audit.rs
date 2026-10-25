@@ -157,7 +157,7 @@ impl Router {
                 OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
             ) && connection
                 .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
-                .is_ok_and(|version| version == trufflepig::SCHEMA_VERSION)
+                .is_ok_and(|version| version == tp_board::SCHEMA_VERSION)
             {
                 return;
             }

@@ -14,7 +14,7 @@ pub(super) struct BoardDatabaseMarker {
     pub(super) database: PathBuf,
 }
 
-pub(crate) fn record_board_database(runtime: &Path, database: &Path) -> Result<()> {
+pub fn record_board_database(runtime: &Path, database: &Path) -> Result<()> {
     use std::{io::Write, os::unix::fs::OpenOptionsExt};
     ensure!(
         database.is_absolute(),
@@ -86,7 +86,7 @@ pub(super) fn board_database_marker_matches(
     Ok(bytes == expected)
 }
 
-pub(crate) fn validate_board_database(runtime: &Path, database: &Path) -> Result<()> {
+pub fn validate_board_database(runtime: &Path, database: &Path) -> Result<()> {
     let bytes = match fs::read(runtime.join("board-backend.json")) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),

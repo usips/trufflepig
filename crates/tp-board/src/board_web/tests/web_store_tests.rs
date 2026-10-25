@@ -150,7 +150,7 @@ fn changed_router_marker_refuses_web_writes_after_startup() {
     store
         .config(Instant::now() + Duration::from_secs(1))
         .unwrap();
-    crate::board::board_runtime_markers::record_board_database(
+    crate::board_runtime_markers::record_board_database(
         &runtime,
         &directory.path().join("router.sqlite3"),
     )

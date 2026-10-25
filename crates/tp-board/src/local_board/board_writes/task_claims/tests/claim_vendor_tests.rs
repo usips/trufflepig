@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::{AgentClaims, ReadScope};
+use crate::board_protocol::{AgentClaims, ReadScope};
 
 #[test]
 fn claim_record_carries_vendor() {
@@ -116,7 +116,7 @@ fn delegated_vendor_records_use_each_evidence_actor() {
         serde_json::to_value(&history[0]).unwrap()["vendor"],
         "codex"
     );
-    let entry = crate::board::local_board::read_entry(&conn, change.entry).unwrap();
+    let entry = crate::local_board::read_entry(&conn, change.entry).unwrap();
     assert_eq!(entry.actor, coder);
     assert_eq!(serde_json::to_value(&entry).unwrap()["vendor"], "codex");
     let (_, events) = backend

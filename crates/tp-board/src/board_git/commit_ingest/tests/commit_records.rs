@@ -1,6 +1,6 @@
 use super::*;
-use crate::board::board_protocol::CommitPlanLink;
-use crate::board::repo_identity::tests::FixtureRegistration;
+use crate::board_protocol::CommitPlanLink;
+use crate::repo_identity::tests::FixtureRegistration;
 
 #[test]
 fn native_trailers_link_case_insensitively_and_exclude_body_mentions() {
@@ -65,9 +65,7 @@ fn unknown_plan_worker_handle_warns_and_keeps_its_task_link() {
     fixture.commit("worker work\n\nPlan-Worker: P7.3/agent-1");
     let target = target(&fixture);
     let mut backend = TestBackend {
-        unknown_workers: vec![
-            crate::board::board_protocol::WorkerAddress::parse("P7.3/agent-1").unwrap(),
-        ],
+        unknown_workers: vec![crate::board_protocol::WorkerAddress::parse("P7.3/agent-1").unwrap()],
         ..TestBackend::default()
     };
     let report = RepoIngestor::default()

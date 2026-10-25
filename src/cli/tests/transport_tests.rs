@@ -1,11 +1,11 @@
 use super::super::*;
-use crate::board::board_protocol::ReadScope;
+use tp_board::board_protocol::ReadScope;
 
 #[test]
 fn board_transport_preserves_markdown_body_text_flags_and_feedback_key() {
-    use crate::board::board_grammar::BoardCommand;
-    use crate::board::board_protocol::BoardOp;
     use crate::cli::board_request_bridge::{board_parse, normalize_args};
+    use tp_board::board_grammar::BoardCommand;
+    use tp_board::board_protocol::BoardOp;
     let args = [
         "board",
         "propose",
@@ -138,9 +138,9 @@ fn claim_resume_without_scope_survives_router_normalization() {
 
 #[test]
 fn claim_resume_accepts_an_optional_entry_target() {
-    use crate::board::board_grammar::BoardCommand;
-    use crate::board::board_protocol::{BoardOp, ClaimResume};
     use crate::cli::board_request_bridge::{board_parse, normalize_args};
+    use tp_board::board_grammar::BoardCommand;
+    use tp_board::board_protocol::{BoardOp, ClaimResume};
     for words in [
         &["board", "claim", "P7.3", "--resume"][..],
         &["board", "claim", "P7.3", "--resume=E42"][..],
@@ -168,7 +168,7 @@ fn claim_resume_accepts_an_optional_entry_target() {
     else {
         panic!("expected an explicit entry resume: {op:?}")
     };
-    assert_eq!(entry, crate::board::board_ids::EntryId::new(42).unwrap());
+    assert_eq!(entry, tp_board::board_ids::EntryId::new(42).unwrap());
     assert!(scope.is_none());
     let args = ["board", "claim", "P7.3", "fresh", "scope", "--resume"].map(str::to_owned);
     let options = parse(&args).unwrap();
@@ -187,9 +187,9 @@ fn claim_resume_accepts_an_optional_entry_target() {
 
 #[test]
 fn claim_resume_value_requires_equals_and_leaves_positionals_alone() {
-    use crate::board::board_grammar::BoardCommand;
-    use crate::board::board_protocol::{BoardOp, ClaimResume};
     use crate::cli::board_request_bridge::{board_parse, normalize_args};
+    use tp_board::board_grammar::BoardCommand;
+    use tp_board::board_protocol::{BoardOp, ClaimResume};
     // Scope words after a bare `--resume` stay scope; nothing is eaten.
     let args = ["board", "claim", "P7.3", "--resume", "fresh", "scope"].map(str::to_owned);
     let options = parse(&args).unwrap();
@@ -227,7 +227,7 @@ fn claim_resume_value_requires_equals_and_leaves_positionals_alone() {
     };
     assert_eq!(
         resume,
-        ClaimResume::Entry(crate::board::board_ids::EntryId::new(485).unwrap())
+        ClaimResume::Entry(tp_board::board_ids::EntryId::new(485).unwrap())
     );
     // Space form with a bare entry token is rejected: it meant --resume=E42.
     let args = ["board", "claim", "P7.3", "--resume", "E42"].map(str::to_owned);
@@ -238,9 +238,9 @@ fn claim_resume_value_requires_equals_and_leaves_positionals_alone() {
 
 #[test]
 fn claim_resume_space_form_entry_token_points_at_equals_form() {
-    use crate::board::board_grammar::BoardCommand;
-    use crate::board::board_protocol::{BoardOp, ClaimResume};
     use crate::cli::board_request_bridge::board_parse;
+    use tp_board::board_grammar::BoardCommand;
+    use tp_board::board_protocol::{BoardOp, ClaimResume};
     let args = ["board", "claim", "P7.3", "--resume", "E5"].map(str::to_owned);
     let options = parse(&args).unwrap();
     let error = board_parse(&options, None).unwrap_err().to_string();
@@ -254,16 +254,16 @@ fn claim_resume_space_form_entry_token_points_at_equals_form() {
     };
     assert_eq!(
         resume,
-        ClaimResume::Entry(crate::board::board_ids::EntryId::new(5).unwrap())
+        ClaimResume::Entry(tp_board::board_ids::EntryId::new(5).unwrap())
     );
     assert!(scope.is_none());
 }
 
 #[test]
 fn claim_for_delegates_to_a_session_under_the_caller() {
-    use crate::board::board_grammar::BoardCommand;
-    use crate::board::board_protocol::BoardOp;
     use crate::cli::board_request_bridge::{board_parse, normalize_args};
+    use tp_board::board_grammar::BoardCommand;
+    use tp_board::board_protocol::BoardOp;
     for words in [
         &["board", "claim", "P7.3", "scope", "--for", "codex/c7"][..],
         &["board", "claim", "P7.3", "scope", "--for=codex/c7"][..],
@@ -333,20 +333,18 @@ fn board_inbox_all_scope_survives_router_normalization() {
     assert_eq!(board_parse(&routed, None).unwrap(), command);
     assert!(matches!(
         command,
-        crate::board::board_grammar::BoardCommand::Op(
-            crate::board::board_protocol::BoardOp::Inbox {
-                scope: ReadScope::All,
-                ..
-            }
-        )
+        tp_board::board_grammar::BoardCommand::Op(tp_board::board_protocol::BoardOp::Inbox {
+            scope: ReadScope::All,
+            ..
+        })
     ));
 }
 
 #[test]
 fn board_text_is_always_raw_and_payload_is_separate() {
-    use crate::board::board_grammar::BoardCommand;
-    use crate::board::board_protocol::BoardOp;
     use crate::cli::board_request_bridge::board_parse;
+    use tp_board::board_grammar::BoardCommand;
+    use tp_board::board_protocol::BoardOp;
     let raw =
         r#"{"text":"decoded title","body":"injected body","import_key":null,"steer_mode":null}"#;
     let options = parse(&["board".into(), "new".into(), format!("--board-text={raw}")]).unwrap();
@@ -503,7 +501,7 @@ fn contextual_board_api_probe_exits_before_client_dispatch() -> anyhow::Result<(
 
     assert_eq!(
         crate::cli::run_with_context(&args, &context)?,
-        format!("{}\n", crate::board::board_protocol::BOARD_API)
+        format!("{}\n", tp_board::board_protocol::BOARD_API)
     );
     Ok(())
 }
@@ -547,7 +545,7 @@ fn board_edges_reject_search_flags_and_ignore_budget_text_after_separator() {
 
 #[test]
 fn body_preflight_rejects_bad_grammar_before_client_reads() {
-    use crate::board::board_grammar::{body_limit, validate_before_body};
+    use tp_board::board_grammar::{body_limit, validate_before_body};
     for words in [
         &["board", "show", "P1", "--body=-"][..],
         &["board", "propose", "not-a-revision", "summary", "--body=-"][..],
@@ -576,7 +574,7 @@ fn body_preflight_rejects_bad_grammar_before_client_reads() {
     validate_before_body(&feedback.board_arguments()).unwrap();
     assert_eq!(
         body_limit(&feedback.board_arguments()),
-        crate::board::board_vocabulary::FEEDBACK_TEXT_LIMIT
+        tp_board::board_vocabulary::FEEDBACK_TEXT_LIMIT
     );
     let plan = parse(&[
         "board".into(),
@@ -589,14 +587,14 @@ fn body_preflight_rejects_bad_grammar_before_client_reads() {
     validate_before_body(&plan.board_arguments()).unwrap();
     assert_eq!(
         body_limit(&plan.board_arguments()),
-        crate::board::board_vocabulary::PLAN_TEXT_LIMIT
+        tp_board::board_vocabulary::PLAN_TEXT_LIMIT
     );
 }
 
 #[test]
 fn board_web_and_foreground_server_validate_without_workspace_dispatch() {
-    use crate::board::board_grammar::BoardCommand;
     use crate::cli::board_request_bridge::board_parse;
+    use tp_board::board_grammar::BoardCommand;
     for target in ["P7", "P7@12", "E512"] {
         let options = parse(&["board".into(), "web".into(), target.into()]).unwrap();
         assert!(matches!(

@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::{
+use crate::{
     board_actor::BoardActor,
     board_backend::BoardBackend,
     board_ids::{EntryId, EventSeq},

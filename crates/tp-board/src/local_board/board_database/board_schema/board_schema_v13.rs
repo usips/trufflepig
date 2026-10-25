@@ -1,6 +1,6 @@
 //! Explicit plan lifecycle and immutable task succession.
 
-pub(in crate::board::local_board::board_database) const SCHEMA_V13: &str = r#"
+pub(in crate::local_board::board_database) const SCHEMA_V13: &str = r#"
 ALTER TABLE plans ADD COLUMN lifecycle_state TEXT NOT NULL DEFAULT 'open'
  CHECK(lifecycle_state IN ('open','closed'));
 CREATE TABLE task_transfers(

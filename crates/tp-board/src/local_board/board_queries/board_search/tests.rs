@@ -1,10 +1,10 @@
 use super::*;
-use crate::board::board_actor::BoardActor;
-use crate::board::board_backend::BoardBackend;
-use crate::board::board_ids::{EntryId, PlanRevision};
-use crate::board::board_protocol::{BoardChange, BoardErrorCode, BoardOp, BoardRequest};
-use crate::board::board_vocabulary::{EntryKind, EntryText, PlanText, PlanTitle};
-use crate::board::local_board::LocalBoard;
+use crate::board_actor::BoardActor;
+use crate::board_backend::BoardBackend;
+use crate::board_ids::{EntryId, PlanRevision};
+use crate::board_protocol::{BoardChange, BoardErrorCode, BoardOp, BoardRequest};
+use crate::board_vocabulary::{EntryKind, EntryText, PlanText, PlanTitle};
+use crate::local_board::LocalBoard;
 use serde_json::{Value, json};
 use std::time::Duration;
 use tp_core::request_context::HarnessLabel;

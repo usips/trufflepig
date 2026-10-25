@@ -1,6 +1,6 @@
 use super::*;
-use crate::board::board_ids::EntryId;
-use crate::board::board_protocol::{GateStatus, ReviewVerdict, WorkerHandle};
+use crate::board_ids::EntryId;
+use crate::board_protocol::{GateStatus, ReviewVerdict, WorkerHandle};
 
 fn database() -> Connection {
     let connection = Connection::open_in_memory().unwrap();

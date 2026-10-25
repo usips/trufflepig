@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::{ClaimDelegate, ReadScope};
+use crate::board_protocol::{ClaimDelegate, ReadScope};
 use tp_core::request_context::ActorOrigin;
 
 #[test]

@@ -5,7 +5,7 @@ mod read_collections_tests;
 mod request_validation_tests;
 
 use super::*;
-use crate::board::{
+use crate::{
     board_actor::BoardActor,
     board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision, TaskId},
     board_vocabulary::{EntryKind, EntryText, FeedbackState},

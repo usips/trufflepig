@@ -4,20 +4,18 @@ mod authority_writes;
 #[cfg(test)]
 mod tests;
 
-pub(in crate::board) use authority_writes::{write_grant, write_revoke};
+pub(crate) use authority_writes::{write_grant, write_revoke};
 
 use super::{invalid, require_plan, sql_error, sql_number};
-use crate::board::board_actor::{BoardActor, BoardRecipient};
-use crate::board::board_ids::{EntryId, PlanId};
-use crate::board::board_protocol::BoardErrorCode;
-use crate::board::board_protocol::{
-    AuthorityRole, AuthoritySource, BoardError, GrantRecord, GrantSource,
-};
+use crate::board_actor::{BoardActor, BoardRecipient};
+use crate::board_ids::{EntryId, PlanId};
+use crate::board_protocol::BoardErrorCode;
+use crate::board_protocol::{AuthorityRole, AuthoritySource, BoardError, GrantRecord, GrantSource};
 use rusqlite::{Connection, OptionalExtension, params};
 use tp_core::request_context::HarnessLabel;
 
 /// Returns the grant or owner authority that covers a plan at `now`.
-pub(in crate::board) fn authority_for(
+pub(crate) fn authority_for(
     conn: &Connection,
     actor: &BoardActor,
     plan: Option<PlanId>,
@@ -28,7 +26,7 @@ pub(in crate::board) fn authority_for(
 }
 
 /// Returns owner-visible grant history, newest first, capped at 200 rows.
-pub(in crate::board::local_board) fn read_grants(
+pub(in crate::local_board) fn read_grants(
     conn: &Connection,
     plan: Option<PlanId>,
 ) -> Result<Vec<GrantRecord>, BoardError> {
@@ -70,7 +68,7 @@ pub(in crate::board::local_board) fn read_grants(
 }
 
 /// Grant management is restricted to the plan's human owner.
-pub(in crate::board::local_board) fn can_manage_grants(
+pub(in crate::local_board) fn can_manage_grants(
     conn: &Connection,
     actor: &BoardActor,
     plan: PlanId,
@@ -87,7 +85,7 @@ pub(in crate::board::local_board) fn can_manage_grants(
 }
 
 /// Resolves planless feedback authority against the report owner's user.
-pub(in crate::board) fn authority_for_feedback(
+pub(crate) fn authority_for_feedback(
     conn: &Connection,
     actor: &BoardActor,
     plan: Option<PlanId>,
@@ -160,7 +158,7 @@ fn authority_for_owner(
 }
 
 /// Builds the shared SQLite predicate used by attention and task reads.
-pub(in crate::board) fn authority_predicate_sql(
+pub(crate) fn authority_predicate_sql(
     role: AuthorityRole,
     plan_id_sql: &str,
     owner_user_sql: &str,
@@ -193,9 +191,7 @@ pub(in crate::board) fn authority_predicate_sql(
 }
 
 /// A bare label is harness-wide scope; reserved harnesses can never match a grant.
-pub(in crate::board::local_board) fn validate_grantee(
-    grantee: &BoardRecipient,
-) -> Result<(), BoardError> {
+pub(in crate::local_board) fn validate_grantee(grantee: &BoardRecipient) -> Result<(), BoardError> {
     let harness = match BoardActor::parse(grantee.as_str()) {
         Ok(actor) => actor.harness,
         Err(_) => HarnessLabel::parse(grantee.as_str()).map_err(|_| {

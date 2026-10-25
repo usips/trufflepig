@@ -1,6 +1,6 @@
 //! Validates operation semantics and bounded request metadata.
 use super::BoardOp;
-use crate::board::{
+use crate::{
     board_ids::{BoardRef, MAX_BOARD_NUMBER, TaskId},
     board_protocol::{
         COAUTHOR_LIMIT, LINK_LIMIT, PROGRESS_ETA_LIMIT_SECS, TaskOrder, WORKER_FILE_LIMIT,
@@ -136,7 +136,7 @@ impl BoardOp {
                 if let Some(effort) = effort {
                     validate_claim(effort, "effort")?;
                 }
-                crate::board::board_protocol::WorkerHandle::parse(handle.as_str())?;
+                crate::board_protocol::WorkerHandle::parse(handle.as_str())?;
                 if files.is_empty() || files.len() > WORKER_FILE_LIMIT {
                     bail!(coded!(
                         InvalidOptions,
@@ -411,7 +411,7 @@ impl BoardOp {
 }
 
 /// Bounds one commit's metadata the same way on scan and manual-link paths.
-fn validate_commit_metadata(commit: &crate::board::board_protocol::LinkedCommit) -> Result<()> {
+fn validate_commit_metadata(commit: &crate::board_protocol::LinkedCommit) -> Result<()> {
     bounded_metadata(&commit.subject, 1024, "commit subject")?;
     bounded_metadata(&commit.author, 1024, "commit author")?;
     if commit.coauthors.len() > COAUTHOR_LIMIT
@@ -469,9 +469,9 @@ fn validate_commit_metadata(commit: &crate::board::board_protocol::LinkedCommit)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board::board_ids::PlanId;
-    use crate::board::board_protocol::FeedbackMetadata;
-    use crate::board::board_vocabulary::{EntryText, FeedbackKind};
+    use crate::board_ids::PlanId;
+    use crate::board_protocol::FeedbackMetadata;
+    use crate::board_vocabulary::{EntryText, FeedbackKind};
 
     fn feedback_op(summary: &str, body: Option<&str>) -> BoardOp {
         BoardOp::Feedback {

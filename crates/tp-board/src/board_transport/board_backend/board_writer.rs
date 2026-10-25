@@ -1,7 +1,7 @@
 //! Deadline-bound writer access and imported-feedback dispatch.
 
 use super::{BoardBackend, BoardHost};
-use crate::board::{
+use crate::{
     board_ids::EventSeq,
     board_protocol::{BoardError, BoardOp, BoardReply, BoardRequest},
     local_board::LocalBoard,
@@ -20,7 +20,7 @@ impl BoardHost {
     /// router calls this after binding but before accepting connections, so
     /// waiting clients queue while status never races migration; request paths
     /// call it lazily, and starters ignore failure to keep serving.
-    pub(crate) fn ensure_writer(&self, deadline: QueryDeadline) -> Result<()> {
+    pub fn ensure_writer(&self, deadline: QueryDeadline) -> Result<()> {
         check_deadline(&deadline)?;
         let config = self.config()?;
         let mut backend = lock_before(&self.inner.backend, &deadline, "writer")?;
@@ -63,7 +63,7 @@ impl BoardHost {
         if matches!(request.op, BoardOp::Projects) {
             let config = self.config()?;
             let projects = self.projects(&request.actor.host, deadline)?;
-            return crate::board::board_projects::project_reply(&config, projects, deadline)
+            return crate::board_projects::project_reply(&config, projects, deadline)
                 .map_err(Into::into);
         }
         if !imported
@@ -181,7 +181,7 @@ impl BoardBackend for BoardHostBackendAccess<'_> {
     }
     fn linked_commit_oids(
         &self,
-        repo_key: &crate::board::board_ids::RepoKey,
+        repo_key: &crate::board_ids::RepoKey,
         oids: &[tp_core::identity::GitOid],
     ) -> std::result::Result<std::collections::BTreeSet<tp_core::identity::GitOid>, BoardError>
     {
@@ -202,7 +202,7 @@ pub(crate) fn ensure_feedback_import(
         }
     ) {
         return Err(BoardError::new(
-            crate::board::board_protocol::BoardErrorCode::InvalidOptions,
+            crate::board_protocol::BoardErrorCode::InvalidOptions,
             "import requires feedback with its permanent identity",
         ));
     }

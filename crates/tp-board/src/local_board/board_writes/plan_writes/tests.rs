@@ -1,8 +1,8 @@
 use super::*;
-use crate::board::board_actor::BoardRecipient;
-use crate::board::board_backend::BoardBackend;
-use crate::board::board_ids::PlanRevision;
-use crate::board::board_protocol::AuthorityRole;
+use crate::board_actor::BoardRecipient;
+use crate::board_backend::BoardBackend;
+use crate::board_ids::PlanRevision;
+use crate::board_protocol::AuthorityRole;
 use std::time::Duration;
 
 mod approval_guidance;

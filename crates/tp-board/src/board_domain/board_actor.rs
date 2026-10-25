@@ -182,7 +182,7 @@ impl<'de> Deserialize<'de> for BoardActor {
 pub struct BoardRecipient(String);
 impl BoardRecipient {
     pub fn parse(value: &str) -> Result<Self> {
-        if crate::board::board_ids::TaskId::parse(value).is_ok() {
+        if crate::board_ids::TaskId::parse(value).is_ok() {
             return Ok(Self(value.to_owned()));
         }
         if let Some((harness, session)) = value.split_once('/')

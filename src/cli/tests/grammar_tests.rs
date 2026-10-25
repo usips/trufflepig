@@ -88,9 +88,9 @@ fn board_flags_are_rejected_on_source_search_verbs() {
 
 #[test]
 fn board_grammar_accepts_current_commands_and_skill_examples() {
-    use crate::board::board_grammar::BoardCommand;
-    use crate::board::board_protocol::BoardOp;
     use crate::cli::board_request_bridge::board_parse;
+    use tp_board::board_grammar::BoardCommand;
+    use tp_board::board_protocol::BoardOp;
     let examples: &[(&[&str], Option<&str>, &str)] = &[
         (&["board", "hello", "gpt-6.1-sol", "xhigh"], None, "hello"),
         (
@@ -450,12 +450,12 @@ fn board_grammar_accepts_current_commands_and_skill_examples() {
 
 #[test]
 fn board_v10_grammar_builds_typed_evidence_and_worker_operations() {
-    use crate::board::board_grammar::BoardCommand;
-    use crate::board::board_protocol::{
+    use crate::cli::board_request_bridge::board_parse;
+    use tp_board::board_grammar::BoardCommand;
+    use tp_board::board_protocol::{
         BoardOp, GateStatus, ProgressStep, ProgressTests, ReviewVerdict, WorkerEndReason,
         WorkerRole,
     };
-    use crate::cli::board_request_bridge::board_parse;
 
     let args = [
         "board",

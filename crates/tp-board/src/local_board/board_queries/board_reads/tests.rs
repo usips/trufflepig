@@ -13,11 +13,11 @@ mod shared_section_tests;
 mod task_view_tests;
 
 use super::*;
-use crate::board::board_actor::BoardActor;
-use crate::board::board_backend::BoardBackend;
-use crate::board::board_ids::{RevisionSpan, TaskId};
-use crate::board::board_vocabulary::{FeedbackKind, TaskColumn};
-use crate::board::local_board::LocalBoard;
+use crate::board_actor::BoardActor;
+use crate::board_backend::BoardBackend;
+use crate::board_ids::{RevisionSpan, TaskId};
+use crate::board_vocabulary::{FeedbackKind, TaskColumn};
+use crate::local_board::LocalBoard;
 use std::time::Duration;
 
 fn database() -> (tempfile::TempDir, LocalBoard) {

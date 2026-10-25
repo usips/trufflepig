@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests;
 
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
@@ -18,13 +18,13 @@ use super::{
     BoardError, WriteContext, actor_from_row, invalid, max_seq, row_number, sql_error, sql_number,
     sqlite_u64,
 };
-use crate::board::board_actor::{BoardRecipient, claim_vendor};
-use crate::board::board_ids::{BoardRef, EntryId, EventSeq, PlanId};
-use crate::board::board_protocol::{
+use crate::board_actor::{BoardRecipient, claim_vendor};
+use crate::board_ids::{BoardRef, EntryId, EventSeq, PlanId};
+use crate::board_protocol::{
     AuthorityRole, BoardReply, BoardResult, EventRecord, FeedbackVia, InboxReply, InboxWait,
     PendingNotice, PendingNoticeKind, PendingNoticeReason, PendingReply, ReadScope, WorkerAddress,
 };
-use crate::board::board_vocabulary::{EntryKind, EntryText};
+use crate::board_vocabulary::{EntryKind, EntryText};
 
 const FIRST_FEED_LIMIT: usize = 20;
 /// A first inbox examines at most this many of the newest events for its seed.
@@ -330,7 +330,7 @@ fn pending_candidates() -> String {
          WHERE task_ref.entry_id=e.id AND {task_ref_addressed})))"
     );
     let open_question = open_question_at("?9");
-    let decide_authority = crate::board::local_board::board_authority::authority_predicate_sql(
+    let decide_authority = crate::local_board::board_authority::authority_predicate_sql(
         AuthorityRole::Decide,
         "p.plan_id",
         "head.owner_user",
@@ -341,7 +341,7 @@ fn pending_candidates() -> String {
         identity,
         "?7",
     );
-    let triage_authority = crate::board::local_board::board_authority::authority_predicate_sql(
+    let triage_authority = crate::local_board::board_authority::authority_predicate_sql(
         AuthorityRole::Triage,
         "e.plan_id",
         "coalesce((SELECT managed.owner_user FROM plans managed WHERE managed.id=e.plan_id),author.user)",

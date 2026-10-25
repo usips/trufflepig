@@ -1,10 +1,10 @@
 //! Plan, revision, entry, and claim records share their line-format presentation.
 
 use super::{author, cell, recipient, source_suffix, vendor_suffix};
-use crate::board::board_protocol::{
+use crate::board_protocol::{
     ClaimRecord, EntryRecord, FeedbackVia, GrantSource, PlanView, RevisionRecord,
 };
-use crate::board::board_vocabulary::TaskColumn;
+use crate::board_vocabulary::TaskColumn;
 use std::fmt::Write;
 
 pub(super) fn plan_lines(text: &mut String, view: &PlanView) {
@@ -101,7 +101,7 @@ pub(super) fn revision_lines(text: &mut String, revision: &RevisionRecord) {
     }
 }
 
-pub(in crate::board::board_render) fn entry_line(text: &mut String, entry: &EntryRecord) {
+pub(in crate::board_render) fn entry_line(text: &mut String, entry: &EntryRecord) {
     let source = source_suffix(entry.origin.as_ref(), entry.authority.as_ref());
     let vendor = vendor_suffix(entry.vendor);
     let verdict = entry
@@ -130,7 +130,7 @@ pub(in crate::board::board_render) fn entry_line(text: &mut String, entry: &Entr
     .unwrap();
 }
 
-pub(in crate::board::board_render) fn claim_line(text: &mut String, claim: &ClaimRecord) {
+pub(in crate::board_render) fn claim_line(text: &mut String, claim: &ClaimRecord) {
     let holder = author(
         &claim.actor,
         claim.model.as_deref(),

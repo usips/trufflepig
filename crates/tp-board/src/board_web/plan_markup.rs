@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 
-use crate::board::board_markup::{Heading, heading_model};
+use crate::board_markup::{Heading, heading_model};
 use pulldown_cmark::{CowStr, Event, Parser, Tag, TagEnd, html};
 use serde::Serialize;
 

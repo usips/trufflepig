@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(in crate::board::local_board) fn accept(
+pub(in crate::local_board) fn accept(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     proposal: EntryId,
@@ -16,7 +16,7 @@ pub(in crate::board::local_board) fn accept(
             format!("proposal {proposal} is {state}"),
         ));
     }
-    let base = crate::board::board_ids::PlanRevision::new(plan, base).map_err(BoardError::from)?;
+    let base = crate::board_ids::PlanRevision::new(plan, base).map_err(BoardError::from)?;
     advance_head(tx, base)?;
     let summary = note.map_or_else(|| format!("accepted {proposal}"), |n| n.as_str().to_owned());
     let event_summary =
@@ -73,7 +73,7 @@ pub(in crate::board::local_board) fn accept(
     ))
 }
 
-pub(in crate::board::local_board) fn reject(
+pub(in crate::local_board) fn reject(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     proposal: EntryId,
@@ -124,7 +124,7 @@ fn decision_summary(action: &str, proposal: EntryId, author: &str, detail: Optio
     let Some(detail) = detail else {
         return prefix;
     };
-    let limit = crate::board::board_vocabulary::ENTRY_TEXT_LIMIT;
+    let limit = crate::board_vocabulary::ENTRY_TEXT_LIMIT;
     let available = limit.saturating_sub(prefix.len() + 2);
     let truncated = detail.len() > available;
     let mut end = detail

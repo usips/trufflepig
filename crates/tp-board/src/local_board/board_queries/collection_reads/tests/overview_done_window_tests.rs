@@ -1,16 +1,16 @@
 use super::*;
-use crate::board::board_ids::TaskId;
-use crate::board::board_protocol::ClaimResume;
-use crate::board::board_vocabulary::{EntryText, TaskColumn};
-use crate::board::local_board::board_queries::collection_nested;
-use crate::board::local_board::board_writes::task_claims::claim_task;
-use crate::board::local_board::board_writes::task_writes::move_task;
+use crate::board_ids::TaskId;
+use crate::board_protocol::ClaimResume;
+use crate::board_vocabulary::{EntryText, TaskColumn};
+use crate::local_board::board_queries::collection_nested;
+use crate::local_board::board_writes::task_claims::claim_task;
+use crate::local_board::board_writes::task_writes::move_task;
 use serde_json::{Value, json};
 
 fn move_seeded_task(board: &LocalBoard, ordinal: u64, column: TaskColumn, seq: u64, now: i64) {
     let mut ctx = context();
     let tx = board.conn.unchecked_transaction().unwrap();
-    let card = crate::board::local_board::board_writes::task_writes::require_task(
+    let card = crate::local_board::board_writes::task_writes::require_task(
         &tx,
         TaskId::new(plan(1), ordinal).unwrap(),
     )
@@ -33,10 +33,10 @@ fn move_seeded_task(board: &LocalBoard, ordinal: u64, column: TaskColumn, seq: u
         )
         .unwrap()
     };
-    ctx.actor_id = crate::board::local_board::ensure_actor(&tx, &ctx.actor, now).unwrap();
+    ctx.actor_id = crate::local_board::ensure_actor(&tx, &ctx.actor, now).unwrap();
     ctx.seq = EventSeq::new(
         seq.max(
-            crate::board::local_board::max_seq(&tx)
+            crate::local_board::max_seq(&tx)
                 .unwrap()
                 .get()
                 .saturating_add(1),
@@ -48,7 +48,7 @@ fn move_seeded_task(board: &LocalBoard, ordinal: u64, column: TaskColumn, seq: u
         let scope = EntryText::new("overview fixture ownership").unwrap();
         claim_task(&tx, &ctx, task, Some(&scope), ClaimResume::No, None).unwrap();
         ctx.seq = EventSeq::new(
-            crate::board::local_board::max_seq(&tx)
+            crate::local_board::max_seq(&tx)
                 .unwrap()
                 .get()
                 .saturating_add(1),
@@ -217,8 +217,7 @@ fn task_done_at_tracks_completion_and_clears_when_reopened() {
     let tasks = serde_json::to_value(&page.tasks).unwrap();
     assert_eq!(tasks[0]["done_at"], json!(900));
     let tasks =
-        crate::board::local_board::board_writes::task_claims::read_tasks(&board.conn, plan(1))
-            .unwrap();
+        crate::local_board::board_writes::task_claims::read_tasks(&board.conn, plan(1)).unwrap();
     let tasks = serde_json::to_value(tasks).unwrap();
     assert_eq!(tasks[0]["done_at"], json!(900));
 }

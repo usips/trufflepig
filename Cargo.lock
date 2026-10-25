@@ -1543,6 +1543,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
 
 [[package]]
+name = "tp-board"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "clap",
+ "fs2",
+ "libc",
+ "pulldown-cmark",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "toml",
+ "tp-core",
+ "uuid",
+]
+
+[[package]]
 name = "tp-core"
 version = "0.1.0"
 dependencies = [
@@ -1757,6 +1777,7 @@ dependencies = [
  "tempfile",
  "tiktoken-rs",
  "toml",
+ "tp-board",
  "tp-core",
  "tp-extract",
  "tp-history",

@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn default_review_budget_bounds_proposals_commits_tasks_and_claims() {
-    use crate::board::{
+    use crate::{
         board_ids::TaskId,
         board_vocabulary::{PlanText, PlanTitle, TaskColumn},
         review_packet::CrossedCommit,
@@ -119,7 +119,7 @@ fn default_review_budget_bounds_proposals_commits_tasks_and_claims() {
 
 #[test]
 fn review_refits_recent_entries_after_trimming_diff() {
-    use crate::board::review_packet::SsotHunk;
+    use crate::review_packet::SsotHunk;
     let mut packet = review_packet();
     let mut recent = entry(100);
     recent.kind = EntryKind::Progress;
@@ -162,10 +162,10 @@ fn review_recovery_hint_uses_the_accepted_cli_grammar() {
         .split_whitespace()
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
-    let command = crate::board::board_grammar::parse(&options, None).unwrap();
+    let options = crate::board_test_support::parse_board_arguments(&args).unwrap();
+    let command = crate::board_grammar::parse(&options, None).unwrap();
     assert!(
-        matches!(command, crate::board::board_grammar::BoardCommand::Op(BoardOp::Review { base, agent: Some(agent) })
+        matches!(command, crate::board_grammar::BoardCommand::Op(BoardOp::Review { base, agent: Some(agent) })
         if base == packet.base && agent.as_str() == "codex")
     );
 }
@@ -191,7 +191,7 @@ fn review_commit_trimming_uses_one_chronological_window() {
 
 #[test]
 fn review_budget_keeps_each_manual_link_set_with_its_commit() {
-    use crate::board::{
+    use crate::{
         board_ids::{EntryId, EventSeq, TaskId},
         board_protocol::ManualCommitLink,
     };
@@ -227,7 +227,7 @@ fn review_budget_keeps_each_manual_link_set_with_its_commit() {
 
 #[test]
 fn review_json_keeps_linked_by_null_when_historical_attribution_is_unknown() {
-    use crate::board::{board_ids::TaskId, board_protocol::ManualCommitLink};
+    use crate::{board_ids::TaskId, board_protocol::ManualCommitLink};
 
     let mut packet = review_packet();
     let mut linked = review_commit(101);

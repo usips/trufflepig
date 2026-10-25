@@ -4,9 +4,7 @@ use super::{
     AttentionReply, BOARD_API, ClaimPage, DoneTasksPage, EntriesPage, EventPage, FeedbackPage,
     HistoryPage, OverviewReply, TaskPage,
 };
-use crate::board::{
-    board_actor::BoardActor, board_ids::EventSeq, board_vocabulary::FeedbackImportKey,
-};
+use crate::{board_actor::BoardActor, board_ids::EventSeq, board_vocabulary::FeedbackImportKey};
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 

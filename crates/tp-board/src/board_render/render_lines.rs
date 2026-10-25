@@ -10,7 +10,7 @@ pub(super) use diff_lines::diff_lines;
 pub(super) use line_cells::{cell, footer, recipient};
 pub(super) use record_lines::{claim_line, entry_line};
 
-use crate::board::board_protocol::{BoardReceiptState, BoardResult, FeedbackVia, InboxWait};
+use crate::board_protocol::{BoardReceiptState, BoardResult, FeedbackVia, InboxWait};
 use line_cells::{author, source_suffix, vendor_suffix};
 use record_lines::{plan_lines, revision_lines};
 use std::fmt::Write;

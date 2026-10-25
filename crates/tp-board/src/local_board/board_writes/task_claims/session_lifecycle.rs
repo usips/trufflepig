@@ -1,6 +1,6 @@
 //! Agent-session shutdown and its claim cleanup.
 
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::super::super::{
@@ -8,11 +8,11 @@ use super::super::super::{
     sql_error, sql_number,
 };
 use super::{active_bound_worker_for_actor, end_claim};
-use crate::board::board_ids::{EventSeq, TaskId};
-use crate::board::board_protocol::{BoardReply, BoardResult, ClaimEndReason, WorkerEndReason};
-use crate::board::board_vocabulary::{EntryKind, TaskColumn};
+use crate::board_ids::{EventSeq, TaskId};
+use crate::board_protocol::{BoardReply, BoardResult, ClaimEndReason, WorkerEndReason};
+use crate::board_vocabulary::{EntryKind, TaskColumn};
 
-pub(in crate::board::local_board) fn bye(
+pub(in crate::local_board) fn bye(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
 ) -> Result<BoardReply, BoardError> {
@@ -67,7 +67,7 @@ pub(in crate::board::local_board) fn bye(
         .map_err(sql_error)?;
     for row in rows {
         let (plan, ordinal) = row.map_err(sql_error)?;
-        let plan = crate::board::board_ids::PlanId::new(plan).map_err(BoardError::from)?;
+        let plan = crate::board_ids::PlanId::new(plan).map_err(BoardError::from)?;
         tasks.push(TaskId::new(plan, ordinal).map_err(BoardError::from)?);
     }
 

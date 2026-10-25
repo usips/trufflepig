@@ -1,12 +1,12 @@
 //! Local Git scans; only accepted complete scans advance edge-local digests.
-use crate::board::board_actor::BoardActor;
-use crate::board::board_backend::BoardBackend;
-use crate::board::board_ids::{PlanId, RepoKey, TaskId};
-use crate::board::board_protocol::{
+use crate::board_actor::BoardActor;
+use crate::board_backend::BoardBackend;
+use crate::board_ids::{PlanId, RepoKey, TaskId};
+use crate::board_protocol::{
     BoardOp, BoardRequest, BoardResult, LinkedCommit, RepoRegistration, RepoScanTarget,
     WorkerAddress,
 };
-use crate::board::commit_trailers::attributed_to;
+use crate::commit_trailers::attributed_to;
 use anyhow::{Result, ensure};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -205,7 +205,7 @@ impl RepoIngestor {
             .filter(|record| !record.commit.plans.is_empty())
             .map(|record| record.commit)
             .collect();
-        let mut result = crate::board::board_protocol::CommitLinkResult::default();
+        let mut result = crate::board_protocol::CommitLinkResult::default();
         let system_actor = BoardActor::new(
             actor.user.clone(),
             actor.host.clone(),

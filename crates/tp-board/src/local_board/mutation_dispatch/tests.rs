@@ -1,13 +1,13 @@
 use super::super::*;
-use crate::board::board_actor::{BoardActor, BoardRecipient};
-use crate::board::board_backend::BoardBackend;
-use crate::board::board_ids::{BoardRef, EntryId, PlanId, TaskId};
-use crate::board::board_protocol::{
+use crate::board_actor::{BoardActor, BoardRecipient};
+use crate::board_backend::BoardBackend;
+use crate::board_ids::{BoardRef, EntryId, PlanId, TaskId};
+use crate::board_protocol::{
     AuthorityRole, AuthoritySource, BoardErrorCode, BoardOp, BoardReply, BoardRequest, BoardResult,
     ClaimResume, ProgressInput, ProgressStep, WorkerAddress, WorkerEndReason, WorkerHandle,
     WorkerRole,
 };
-use crate::board::board_vocabulary::{EntryKind, EntryText, PlanText, PlanTitle};
+use crate::board_vocabulary::{EntryKind, EntryText, PlanText, PlanTitle};
 use std::time::Duration;
 use tp_core::request_context::HarnessLabel;
 
@@ -28,7 +28,7 @@ fn database() -> (tempfile::TempDir, LocalBoard) {
     (directory, board)
 }
 
-fn change(reply: BoardReply) -> crate::board::board_protocol::BoardChange {
+fn change(reply: BoardReply) -> crate::board_protocol::BoardChange {
     let BoardResult::Change(change) = reply.result else {
         panic!("expected mutation receipt");
     };

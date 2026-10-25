@@ -3,7 +3,7 @@
 use super::*;
 
 /// Aliases include content-deduped requests, so their UUIDs never expire.
-pub(in crate::board::local_board) fn remember_import(
+pub(in crate::local_board) fn remember_import(
     tx: &Transaction<'_>,
     key: &FeedbackImportKey,
     entry: EntryId,
@@ -16,7 +16,7 @@ pub(in crate::board::local_board) fn remember_import(
     Ok(())
 }
 
-pub(in crate::board::local_board) fn imported_reply(
+pub(in crate::local_board) fn imported_reply(
     conn: &Connection,
     key: &FeedbackImportKey,
 ) -> Result<Option<BoardReply>, BoardError> {

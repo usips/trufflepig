@@ -71,7 +71,7 @@ fn ensure_reports_a_running_router_despite_unresolvable_board_database() {
         runtime: Some(runtime.clone()),
         cache_base: None,
         sweeps: Mutex::new(SweepClock::default()),
-        board: crate::board::BoardHost::default(),
+        board: tp_board::BoardHost::default(),
     };
     let worker_runtime = runtime.clone();
     let worker = std::thread::spawn(move || daemon::serve_router(&worker_runtime, &spool, router));
@@ -93,8 +93,8 @@ fn ensure_reports_a_running_router_despite_unresolvable_board_database() {
         .unwrap();
     let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
     assert_eq!(status["status"], "ok");
-    assert_eq!(status["board_api"], crate::board::BOARD_API);
-    assert_eq!(status["schema_supported"], crate::board::SCHEMA_VERSION);
+    assert_eq!(status["board_api"], tp_board::BOARD_API);
+    assert_eq!(status["schema_supported"], tp_board::SCHEMA_VERSION);
     assert!(status["board_db"].is_null());
     assert!(status["schema_file"].is_null());
     assert!(
@@ -124,7 +124,7 @@ fn ensure_waits_for_a_migrating_router_without_spawning_a_second() {
         // The child process owns the router environment; parallel tests never see it.
         let directory = tp_core::test_fixtures::scratch("router-migration-");
         let database = directory.path().join("board.sqlite3");
-        crate::board::local_board::seed_storage_schema(&database, crate::board::SCHEMA_VERSION - 1)
+        tp_board::local_board::seed_storage_schema(&database, tp_board::SCHEMA_VERSION - 1)
             .unwrap();
         let status = std::process::Command::new(std::env::current_exe().unwrap())
             .env(MARKER, "1")
@@ -167,8 +167,8 @@ fn ensure_waits_for_a_migrating_router_without_spawning_a_second() {
         .unwrap()
         .expect("router answers status after migration");
     let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
-    assert_eq!(status["schema_supported"], crate::board::SCHEMA_VERSION);
-    assert_eq!(status["schema_file"], crate::board::SCHEMA_VERSION);
+    assert_eq!(status["schema_supported"], tp_board::SCHEMA_VERSION);
+    assert_eq!(status["schema_file"], tp_board::SCHEMA_VERSION);
     tp_core::daemon_transport::stop(&runtime).unwrap();
     worker.join().unwrap().unwrap();
 }
@@ -187,7 +187,7 @@ fn ensure_waits_for_a_slow_spawned_router() {
         // The child process owns the router environment; parallel tests never see it.
         let directory = tp_core::test_fixtures::scratch("router-slow-spawn-");
         let database = directory.path().join("board.sqlite3");
-        crate::board::local_board::seed_storage_schema(&database, crate::board::SCHEMA_VERSION - 1)
+        tp_board::local_board::seed_storage_schema(&database, tp_board::SCHEMA_VERSION - 1)
             .unwrap();
         let status = std::process::Command::new(std::env::current_exe().unwrap())
             .env(MARKER, "1")
@@ -250,7 +250,7 @@ fn ensure_gives_up_after_the_cap() {
         // The child process owns the router environment; parallel tests never see it.
         let directory = tp_core::test_fixtures::scratch("router-hung-spawn-");
         let database = directory.path().join("board.sqlite3");
-        crate::board::local_board::seed_storage_schema(&database, crate::board::SCHEMA_VERSION - 1)
+        tp_board::local_board::seed_storage_schema(&database, tp_board::SCHEMA_VERSION - 1)
             .unwrap();
         let status = std::process::Command::new(std::env::current_exe().unwrap())
             .env(MARKER, "1")

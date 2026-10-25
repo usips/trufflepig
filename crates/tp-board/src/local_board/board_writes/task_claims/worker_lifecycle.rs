@@ -1,6 +1,6 @@
 //! Claim-scoped worker registration, binding, and activity.
 
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::super::super::{
@@ -10,15 +10,15 @@ use super::super::super::{
 use super::{
     active_bound_worker_for_actor, active_claim, active_worker_binding, worker_for_address,
 };
-use crate::board::board_actor::{BoardActor, BoardRecipient};
-use crate::board::board_ids::{EntryId, TaskId};
-use crate::board::board_protocol::{
+use crate::board_actor::{BoardActor, BoardRecipient};
+use crate::board_ids::{EntryId, TaskId};
+use crate::board_protocol::{
     AuthorityRole, AuthoritySource, BoardReply, WORKER_FILE_LIMIT, WORKER_FILE_PATH_LIMIT,
     WorkerAddress, WorkerEndReason, WorkerHandle, WorkerRole,
 };
-use crate::board::board_vocabulary::{ENTRY_TEXT_LIMIT, EntryKind, EntryText};
+use crate::board_vocabulary::{ENTRY_TEXT_LIMIT, EntryKind, EntryText};
 
-pub(in crate::board::local_board) fn add_worker(
+pub(in crate::local_board) fn add_worker(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     task: TaskId,
@@ -133,7 +133,7 @@ pub(in crate::board::local_board) fn add_worker(
     Ok(write_ctx.change_reply(entry, Some(task.plan), None, Some(task)))
 }
 
-pub(in crate::board::local_board) fn end_worker(
+pub(in crate::local_board) fn end_worker(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     address: &WorkerAddress,
@@ -221,7 +221,7 @@ pub(in crate::board::local_board) fn end_worker(
     Ok(write_ctx.change_reply(entry, Some(address.task.plan), None, Some(address.task)))
 }
 
-pub(in crate::board::local_board) fn bind_worker(
+pub(in crate::local_board) fn bind_worker(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     address: &WorkerAddress,
@@ -314,7 +314,7 @@ fn refresh_worker_and_parent(
     Ok(())
 }
 
-pub(in crate::board::local_board) fn attach_worker_post(
+pub(in crate::local_board) fn attach_worker_post(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     task: TaskId,
@@ -350,7 +350,7 @@ pub(in crate::board::local_board) fn attach_worker_post(
 
 /// Ends the live claim's workers as `claim_ended`. Each bound worker also gets a `worker_end`
 /// entry addressed to its session, which `board pending` delivers after the lease closes.
-pub(in crate::board::local_board) fn end_workers_for_claim(
+pub(in crate::local_board) fn end_workers_for_claim(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     task: TaskId,

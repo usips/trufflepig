@@ -4,8 +4,8 @@ use super::{
     board_syntax_validation::{check_flags, fixed_words, optional_text, word},
 };
 use crate::{
-    board::board_grammar::BoardArguments,
-    board::{
+    board_grammar::BoardArguments,
+    {
         board_ids::{EntryId, PlanId},
         board_protocol::{BoardOp, FeedbackMetadata, RecentCall},
         board_vocabulary::{EntryText, FeedbackImportKey, FeedbackKind, FeedbackState},

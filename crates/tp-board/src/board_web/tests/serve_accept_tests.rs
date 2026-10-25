@@ -59,8 +59,7 @@ fn drain_admission_stops_at_the_cap_and_reopens_on_release() {
 #[test]
 fn queue_full_flood_caps_concurrent_drain_threads() {
     let drains = Arc::new(RefusalDrains::default());
-    let busy =
-        http_wire::unavailable_response(1, crate::board::board_web::web_serve::QUEUE_FULL_BODY);
+    let busy = http_wire::unavailable_response(1, crate::board_web::web_serve::QUEUE_FULL_BODY);
     // Held clients keep every admitted drain inside its read so all
     // refusals overlap; without a cap the peak equals the flood size.
     let mut held = Vec::new();

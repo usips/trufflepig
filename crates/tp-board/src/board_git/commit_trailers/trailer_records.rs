@@ -1,7 +1,7 @@
 //! One NUL-framed log record parsed into a linked commit with warnings.
 use super::{ParsedCommit, parse_coauthor};
-use crate::board::board_ids::{PlanId, RepoKey, TaskId};
-use crate::board::board_protocol::{
+use crate::board_ids::{PlanId, RepoKey, TaskId};
+use crate::board_protocol::{
     COAUTHOR_LIMIT, CommitCoauthor, CommitPlanLink, LINK_LIMIT, LinkedCommit, WORKER_REF_LIMIT,
     WorkerAddress,
 };
@@ -234,7 +234,7 @@ pub(crate) fn shortstat(value: &str) -> Result<(u64, u64, u64)> {
             .parse()
             .with_coded_context(|| coded!(BoardScan, "invalid shortstat count"))?;
         ensure!(
-            count <= crate::board::board_ids::MAX_BOARD_NUMBER,
+            count <= crate::board_ids::MAX_BOARD_NUMBER,
             coded!(BoardScan, "shortstat count exceeds storage limit")
         );
         match label {

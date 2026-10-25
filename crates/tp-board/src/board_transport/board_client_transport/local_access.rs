@@ -1,5 +1,5 @@
 use super::{BoardConfig, BoardGateway};
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 use anyhow::Result;
 use std::{
     io,

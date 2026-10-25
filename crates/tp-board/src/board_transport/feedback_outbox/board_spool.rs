@@ -1,7 +1,7 @@
 //! Private spool creation and atomic feedback record publication.
 
 use super::{QueuedFeedback, invalid_record, io_error, json_error, new_import_key, read_record};
-use crate::board::board_protocol::BoardError;
+use crate::board_protocol::BoardError;
 use std::{
     fs::{self, File, OpenOptions},
     io::Write,

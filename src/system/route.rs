@@ -1,6 +1,5 @@
 //! Request routing from the system daemon to workspace, root, and board owners.
 
-use crate::board::board_runtime_markers::record_board_database;
 use crate::cli::normalized_args;
 use anyhow::{Result, bail, ensure};
 use std::{
@@ -9,6 +8,7 @@ use std::{
     process::Command,
     time::{Duration, Instant},
 };
+use tp_board::board_runtime_markers::record_board_database;
 use tp_core::coded_error::CodedContext;
 use tp_core::runtime_paths::system_dir;
 use tp_core::{
@@ -21,7 +21,7 @@ use tp_core::{
 };
 
 pub(super) fn route(
-    board: &crate::board::BoardHost,
+    board: &tp_board::BoardHost,
     runtime: Option<&Path>,
     args: Vec<String>,
     context: RequestContext,
@@ -34,8 +34,8 @@ pub(super) fn route(
     if verb == Some("system") {
         let mut status = serde_json::json!({
             "status": "ok",
-            "board_api": crate::board::BOARD_API,
-            "schema_supported": crate::board::SCHEMA_VERSION,
+            "board_api": tp_board::BOARD_API,
+            "schema_supported": tp_board::SCHEMA_VERSION,
             "process_id": std::process::id(),
         });
         match std::env::current_exe() {

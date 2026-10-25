@@ -1,12 +1,12 @@
 use super::*;
-use crate::board::{board_grammar, unavailable_or_queue};
+use crate::{board_grammar, unavailable_or_queue};
 use std::cell::Cell;
 
 thread_local! {
     static SCHEMA_UPGRADE_BEFORE_LOCK: Cell<Option<i64>> = const { Cell::new(None) };
 }
 
-pub(in crate::board::local_board::board_database) fn upgrade_schema_before_lock(path: &Path) {
+pub(in crate::local_board::board_database) fn upgrade_schema_before_lock(path: &Path) {
     if let Some(version) = SCHEMA_UPGRADE_BEFORE_LOCK.with(|pending| pending.take()) {
         Connection::open(path)
             .unwrap()
@@ -23,9 +23,9 @@ fn schema_became_newer_gives_upgrade_advice() {
     SCHEMA_UPGRADE_BEFORE_LOCK.with(|pending| pending.set(Some(SCHEMA_VERSION + 1)));
     let error = open(&database).unwrap_err();
     assert!(error.message.contains("schema became newer"), "{error}");
-    let config = crate::board::BoardConfig::for_database(&database);
+    let config = crate::BoardConfig::for_database(&database);
     let args: Vec<String> = ["board", "inbox"].map(str::to_owned).into();
-    let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
+    let options = crate::board_test_support::parse_board_arguments(&args).unwrap();
     let command = board_grammar::parse(&options, None).unwrap();
     let refusal = unavailable_or_queue(
         &command,

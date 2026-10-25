@@ -1,6 +1,6 @@
 use super::*;
-use crate::board::board_actor::BoardRecipient;
-use crate::board::board_protocol::ReadScope;
+use crate::board_actor::BoardRecipient;
+use crate::board_protocol::ReadScope;
 
 #[test]
 fn proposal_decisions_broadcast_to_author_and_other_participants() {
@@ -96,7 +96,7 @@ fn proposal_decisions_broadcast_to_author_and_other_participants() {
 
 #[test]
 fn proposal_decisions_preserve_maximum_bodies_and_bound_broadcast_summaries() {
-    let limit = crate::board::board_vocabulary::ENTRY_TEXT_LIMIT;
+    let limit = crate::board_vocabulary::ENTRY_TEXT_LIMIT;
     for detail in ["x".repeat(limit), "é".repeat(limit / 2)] {
         for accept in [true, false] {
             let (_directory, mut board) = database();

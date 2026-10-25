@@ -13,7 +13,7 @@ pub(super) fn probe_board_api(args: &[String]) -> Option<Result<String>> {
                 "--board-api-version must be the only argument"
             ));
         }
-        Ok(format!("{}\n", crate::board::board_protocol::BOARD_API))
+        Ok(format!("{}\n", tp_board::board_protocol::BOARD_API))
     })
 }
 
@@ -24,8 +24,8 @@ mod tests {
     #[test]
     fn board_api_capability_exits_before_dispatch_and_emission_diagnostics() {
         let args = ["--board-api-version".to_owned()];
-        let expected = format!("{}\n", crate::board::board_protocol::BOARD_API);
-        assert_eq!(crate::board::board_protocol::BOARD_API, 13);
+        let expected = format!("{}\n", tp_board::board_protocol::BOARD_API);
+        assert_eq!(tp_board::board_protocol::BOARD_API, 13);
         assert_eq!(crate::cli::run(&args).unwrap(), expected);
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();

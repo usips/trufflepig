@@ -1,10 +1,10 @@
 //! Unified diff lines preserve context coordinates and missing-newline markers.
 
 use super::cell;
-use crate::board::review_packet::SsotDiff;
+use crate::review_packet::SsotDiff;
 use std::fmt::Write;
 
-pub(in crate::board::board_render) fn diff_lines(text: &mut String, diff: &SsotDiff) {
+pub(in crate::board_render) fn diff_lines(text: &mut String, diff: &SsotDiff) {
     for hunk in &diff.hunks {
         let context = hunk.context_before.len() + hunk.context_after.len();
         let before_count = hunk.removed.len() + context;

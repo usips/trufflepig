@@ -1,6 +1,6 @@
 //! Atomic API 10 evidence, authority, worker, and progress schema.
 
-pub(in crate::board::local_board::board_database) const SCHEMA_V10: &str = r#"
+pub(in crate::local_board::board_database) const SCHEMA_V10: &str = r#"
 ALTER TABLE entries ADD COLUMN origin_harness TEXT;
 ALTER TABLE entries ADD COLUMN origin_session TEXT;
 ALTER TABLE entries ADD COLUMN authority_entry INTEGER REFERENCES entries(id);

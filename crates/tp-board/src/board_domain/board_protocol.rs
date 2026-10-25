@@ -10,7 +10,7 @@ mod board_verdict;
 mod tests;
 
 pub use super::board_collections::*;
-pub use crate::board::board_vocabulary::{AuthorityRole, WorkerEndReason, WorkerRole};
+pub use crate::board_vocabulary::{AuthorityRole, WorkerEndReason, WorkerRole};
 pub use board_authority_codes::AuthoritySource;
 pub use board_errors::{BoardError, BoardErrorCode};
 pub use board_identity::{WorkerAddress, WorkerHandle};

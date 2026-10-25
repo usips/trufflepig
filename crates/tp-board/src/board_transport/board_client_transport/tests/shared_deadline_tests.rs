@@ -104,11 +104,9 @@ fn expired_local_fallback_does_not_load_or_create_board_storage() {
         .into_iter()
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
-    let options = crate::board::board_test_support::round_trip(
-        &crate::board::prepare_client(&options).unwrap(),
-    );
-    let forwarded = crate::board::board_test_support::board_argv(&options);
+    let options = crate::board_test_support::parse_board_arguments(&args).unwrap();
+    let options = crate::board_test_support::round_trip(&crate::prepare_client(&options).unwrap());
+    let forwarded = crate::board_test_support::board_argv(&options);
     let command = board_grammar::parse(&options, None).unwrap();
     let context = RequestContext::new(None, None);
     let mut transport = BoardClientTransport::default();
@@ -283,14 +281,13 @@ fn expired_local_socket_access_check_spools_feedback_once() {
 #[test]
 fn feedback_lookups_use_the_caller_budget_then_a_fixed_allowance() {
     assert_eq!(
-        crate::board::feedback_lookup_wait(&QueryDeadline::after(Duration::from_secs(10))),
+        crate::feedback_lookup_wait(&QueryDeadline::after(Duration::from_secs(10))),
         Duration::from_secs(2)
     );
-    let short =
-        crate::board::feedback_lookup_wait(&QueryDeadline::after(Duration::from_millis(100)));
+    let short = crate::feedback_lookup_wait(&QueryDeadline::after(Duration::from_millis(100)));
     assert!(short <= Duration::from_millis(100), "{short:?}");
     assert_eq!(
-        crate::board::feedback_lookup_wait(&QueryDeadline::after(Duration::ZERO)),
+        crate::feedback_lookup_wait(&QueryDeadline::after(Duration::ZERO)),
         Duration::from_millis(250)
     );
 }

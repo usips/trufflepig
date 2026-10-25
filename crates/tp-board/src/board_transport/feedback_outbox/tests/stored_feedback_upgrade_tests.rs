@@ -1,7 +1,7 @@
 use super::super::*;
 use super::{RejectedImport, scratch};
-use crate::board::board_protocol::{BOARD_API, FeedbackVia};
-use crate::board::local_board::LocalBoard;
+use crate::board_protocol::{BOARD_API, FeedbackVia};
+use crate::local_board::LocalBoard;
 
 // Persisted API 1 feedback layout, independent of the current serializer.
 const SAVED_M1_FEEDBACK: &str = r#"{
@@ -37,7 +37,7 @@ const SAVED_M1_FEEDBACK: &str = r#"{
 fn saved_m1_feedback_import_preserves_content_provenance_and_permanent_replay_key() {
     assert_eq!(BOARD_API, 13);
     let directory = scratch();
-    let config = crate::board::BoardConfig::for_database(directory.path().join("board.sqlite3"));
+    let config = crate::BoardConfig::for_database(directory.path().join("board.sqlite3"));
     let mut backend = LocalBoard::open(&config).unwrap();
     let stored: QueuedFeedback = serde_json::from_str(SAVED_M1_FEEDBACK).unwrap();
     assert_eq!(stored.request.api, 1);

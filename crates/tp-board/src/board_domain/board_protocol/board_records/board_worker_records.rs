@@ -1,5 +1,5 @@
 //! Worker lifetimes attached to task claims.
-use crate::board::{
+use crate::{
     board_actor::BoardActor,
     board_ids::EntryId,
     board_protocol::{ProgressEvidence, ReviewVerdict, WorkerAddress},

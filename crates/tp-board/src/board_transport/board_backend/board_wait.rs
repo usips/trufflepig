@@ -1,7 +1,7 @@
 //! Sequence-gated inbox waiting and bounded waiter admission.
 
 use super::{BoardHost, board_writer::recover_lock};
-use crate::board::{
+use crate::{
     board_ids::EventSeq,
     board_protocol::{BoardOp, BoardReply, BoardRequest, BoardResult, InboxWait},
 };
@@ -39,7 +39,7 @@ impl BoardHost {
                 let config = self.config()?;
                 return Ok(BoardReply::new(
                     format!("local:{}", config.db_path.display()),
-                    BoardResult::Inbox(crate::board::board_protocol::InboxReply {
+                    BoardResult::Inbox(crate::board_protocol::InboxReply {
                         scope: scope.clone(),
                         actor: request.actor.clone(),
                         cursor,
@@ -155,6 +155,6 @@ fn set_wait(reply: &mut BoardReply, wait: InboxWait) {
 
 pub(super) fn waiter_transient(error: &anyhow::Error) -> bool {
     tp_core::coded_error::ErrorCode::TimedOut.is_code_of(error)
-        || crate::board::board_protocol::BoardErrorCode::from_error(error)
-            == Some(crate::board::board_protocol::BoardErrorCode::DatabaseLocked)
+        || crate::board_protocol::BoardErrorCode::from_error(error)
+            == Some(crate::board_protocol::BoardErrorCode::DatabaseLocked)
 }

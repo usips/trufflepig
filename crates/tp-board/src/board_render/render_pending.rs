@@ -1,7 +1,7 @@
 //! Pending notices remain read-only and keep their generation with the page.
 
 use super::{BoardOmitted, RenderedBoard, fit_items, render_complete, require_fits};
-use crate::board::board_protocol::{BoardReply, BoardResult, PendingReply};
+use crate::board_protocol::{BoardReply, BoardResult, PendingReply};
 use anyhow::Result;
 use tp_core::output::OutputBudget;
 

@@ -11,7 +11,7 @@ mod signal_shutdown;
 #[cfg(test)]
 mod tests;
 mod web_endpoint;
-pub(crate) mod web_guard;
+pub mod web_guard;
 mod web_ops;
 mod web_routes;
 mod web_serve;
@@ -84,7 +84,7 @@ impl WebStore {
 
     fn open_at(mut cache: BoardConfigCache, runtime: PathBuf) -> Result<Self> {
         let config = cache.get(Instant::now())?;
-        crate::board::board_runtime_markers::validate_board_database(&runtime, &config.db_path)?;
+        crate::board_runtime_markers::validate_board_database(&runtime, &config.db_path)?;
         web_ops::check_router_identity(&runtime, &config.db_path)?;
         let writer = LocalBoard::open(&config)?;
         let readers = ReaderPool::new(&config)?;
@@ -99,11 +99,8 @@ impl WebStore {
 
     fn config(&self, expires: Instant) -> Result<BoardConfig, BoardError> {
         let config = lock_until(&self.config, expires)?.get(Instant::now())?;
-        crate::board::board_runtime_markers::validate_board_database(
-            &self.runtime,
-            &config.db_path,
-        )
-        .map_err(BoardError::from)?;
+        crate::board_runtime_markers::validate_board_database(&self.runtime, &config.db_path)
+            .map_err(BoardError::from)?;
         Ok(config)
     }
 

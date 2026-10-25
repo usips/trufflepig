@@ -5,13 +5,13 @@ fn router_status_reports_supported_and_file_schema_versions() {
     let directory = tp_core::test_fixtures::scratch("board-status-");
     let database = directory.path().join("board.sqlite3");
     let executable = std::env::current_exe().unwrap();
-    let config = crate::board::BoardConfig::for_database(&database);
-    drop(crate::board::local_board::LocalBoard::open(&config).unwrap());
+    let config = tp_board::BoardConfig::for_database(&database);
+    drop(tp_board::local_board::LocalBoard::open(&config).unwrap());
     let router = SystemRouter {
         runtime: Some(directory.path().join("runtime")),
         cache_base: None,
         sweeps: Mutex::new(SweepClock::default()),
-        board: crate::board::BoardHost::with_config(config),
+        board: tp_board::BoardHost::with_config(config),
     };
     let reply = router
         .request(AcceptedRequest {
@@ -29,20 +29,19 @@ fn router_status_reports_supported_and_file_schema_versions() {
     );
     assert_eq!(status["executable_replaced"], serde_json::json!(false));
     assert!(status["executable_error"].is_null());
-    assert_eq!(status["board_api"], crate::board::BOARD_API);
+    assert_eq!(status["board_api"], tp_board::BOARD_API);
     assert_eq!(status["board_db"], serde_json::json!(database));
-    assert_eq!(status["schema_supported"], crate::board::SCHEMA_VERSION);
-    assert_eq!(status["schema_file"], crate::board::SCHEMA_VERSION);
+    assert_eq!(status["schema_supported"], tp_board::SCHEMA_VERSION);
+    assert_eq!(status["schema_file"], tp_board::SCHEMA_VERSION);
 }
 
 #[test]
 fn router_status_reports_migrated_schema_after_startup_migration() {
     let directory = tp_core::test_fixtures::scratch("board-status-");
     let database = directory.path().join("board.sqlite3");
-    crate::board::local_board::seed_storage_schema(&database, crate::board::SCHEMA_VERSION - 1)
-        .unwrap();
-    let config = crate::board::BoardConfig::for_database(&database);
-    let board = crate::board::BoardHost::with_config(config);
+    tp_board::local_board::seed_storage_schema(&database, tp_board::SCHEMA_VERSION - 1).unwrap();
+    let config = tp_board::BoardConfig::for_database(&database);
+    let board = tp_board::BoardHost::with_config(config);
     board.ensure_writer(QueryDeadline::start()).unwrap();
     let router = SystemRouter {
         runtime: Some(directory.path().join("runtime")),
@@ -59,8 +58,8 @@ fn router_status_reports_migrated_schema_after_startup_migration() {
         .unwrap();
     let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
     assert_eq!(status["status"], "ok");
-    assert_eq!(status["schema_supported"], crate::board::SCHEMA_VERSION);
-    assert_eq!(status["schema_file"], crate::board::SCHEMA_VERSION);
+    assert_eq!(status["schema_supported"], tp_board::SCHEMA_VERSION);
+    assert_eq!(status["schema_file"], tp_board::SCHEMA_VERSION);
 }
 
 #[test]
@@ -71,9 +70,7 @@ fn router_status_omits_the_schema_file_of_an_absent_database() {
         runtime: Some(directory.path().join("runtime")),
         cache_base: None,
         sweeps: Mutex::new(SweepClock::default()),
-        board: crate::board::BoardHost::with_config(crate::board::BoardConfig::for_database(
-            &database,
-        )),
+        board: tp_board::BoardHost::with_config(tp_board::BoardConfig::for_database(&database)),
     };
     let reply = router
         .request(AcceptedRequest {
@@ -85,7 +82,7 @@ fn router_status_omits_the_schema_file_of_an_absent_database() {
     let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
     assert_eq!(status["status"], "ok");
     assert_eq!(status["board_db"], serde_json::json!(database));
-    assert_eq!(status["schema_supported"], crate::board::SCHEMA_VERSION);
+    assert_eq!(status["schema_supported"], tp_board::SCHEMA_VERSION);
     assert!(status["schema_file"].is_null());
     assert!(!database.exists(), "status must not create the database");
 }
@@ -98,7 +95,7 @@ fn router_status_omits_board_fields_when_the_database_path_is_not_absolute() {
         runtime: Some(runtime.clone()),
         cache_base: None,
         sweeps: Mutex::new(SweepClock::default()),
-        board: crate::board::BoardHost::with_config(crate::board::BoardConfig::for_database(
+        board: tp_board::BoardHost::with_config(tp_board::BoardConfig::for_database(
             "relative.sqlite3",
         )),
     };
@@ -111,8 +108,8 @@ fn router_status_omits_board_fields_when_the_database_path_is_not_absolute() {
         .unwrap();
     let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
     assert_eq!(status["status"], "ok");
-    assert_eq!(status["board_api"], crate::board::BOARD_API);
-    assert_eq!(status["schema_supported"], crate::board::SCHEMA_VERSION);
+    assert_eq!(status["board_api"], tp_board::BOARD_API);
+    assert_eq!(status["schema_supported"], tp_board::SCHEMA_VERSION);
     assert!(status["board_db"].is_null());
     assert!(status["schema_file"].is_null());
     assert!(
@@ -144,9 +141,7 @@ fn router_status_survives_a_database_pin_write_failure() {
         runtime: Some(runtime.clone()),
         cache_base: None,
         sweeps: Mutex::new(SweepClock::default()),
-        board: crate::board::BoardHost::with_config(crate::board::BoardConfig::for_database(
-            &database,
-        )),
+        board: tp_board::BoardHost::with_config(tp_board::BoardConfig::for_database(&database)),
     };
     let reply = router
         .request(AcceptedRequest {
@@ -158,7 +153,7 @@ fn router_status_survives_a_database_pin_write_failure() {
     let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
     assert_eq!(status["status"], "ok");
     assert_eq!(status["board_db"], serde_json::json!(database));
-    assert_eq!(status["schema_supported"], crate::board::SCHEMA_VERSION);
+    assert_eq!(status["schema_supported"], tp_board::SCHEMA_VERSION);
     assert!(status["schema_file"].is_null());
     assert!(runtime.join("board-backend.json").is_dir());
 }
@@ -172,9 +167,7 @@ fn board_routes_without_workspace_or_owner_daemon() {
         runtime: None,
         cache_base: None,
         sweeps: Mutex::new(SweepClock::default()),
-        board: crate::board::BoardHost::with_config(crate::board::BoardConfig::for_database(
-            &database,
-        )),
+        board: tp_board::BoardHost::with_config(tp_board::BoardConfig::for_database(&database)),
     };
     let args: Vec<String> = [
         "--root",
@@ -212,7 +205,7 @@ fn router_does_not_reset_an_expired_accepted_deadline() {
         runtime: None,
         cache_base: None,
         sweeps: Mutex::new(SweepClock::default()),
-        board: crate::board::BoardHost::default(),
+        board: tp_board::BoardHost::default(),
     };
     let args: Vec<String> = [
         "--no-workspace",

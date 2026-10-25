@@ -40,7 +40,7 @@ pub(super) fn insert_revision(
 
 pub(super) fn require_base(
     tx: &Transaction<'_>,
-    base: crate::board::board_ids::PlanRevision,
+    base: crate::board_ids::PlanRevision,
 ) -> Result<(), BoardError> {
     require_plan(tx, base.plan)?;
     let exists: bool = tx
@@ -62,7 +62,7 @@ pub(super) fn require_base(
 
 pub(super) fn advance_head(
     tx: &Transaction<'_>,
-    base: crate::board::board_ids::PlanRevision,
+    base: crate::board_ids::PlanRevision,
 ) -> Result<(), BoardError> {
     require_base(tx, base)?;
     let updated = tx

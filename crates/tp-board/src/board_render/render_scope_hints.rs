@@ -1,5 +1,5 @@
 //! CLI continuation flags retain the caller's project selector.
-use crate::board::board_protocol::ReadScope;
+use crate::board_protocol::ReadScope;
 
 pub(super) fn cli_scope_flag(scope: &ReadScope, project: Option<&str>) -> String {
     if let Some(selector) = project {

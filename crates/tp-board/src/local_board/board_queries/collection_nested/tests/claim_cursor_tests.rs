@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::ReadScope;
+use crate::board_protocol::ReadScope;
 
 #[test]
 fn collection_claims_preserve_duplicate_entry_ids_and_actual_actor_scope() {

@@ -1,7 +1,7 @@
 use super::*;
-use crate::board::board_actor::BoardActor;
-use crate::board::board_ids::EventSeq;
-use crate::board::board_protocol::{ProgressStep, ProgressTests};
+use crate::board_actor::BoardActor;
+use crate::board_ids::EventSeq;
+use crate::board_protocol::{ProgressStep, ProgressTests};
 use tp_core::request_context::HarnessLabel;
 
 fn write_context(now: i64) -> WriteContext {
@@ -87,7 +87,7 @@ fn an_ended_worker_cannot_write_progress() {
         )
         .unwrap();
     let transaction = connection.transaction().unwrap();
-    let task = TaskId::new(crate::board::board_ids::PlanId::new(1).unwrap(), 1).unwrap();
+    let task = TaskId::new(crate::board_ids::PlanId::new(1).unwrap(), 1).unwrap();
     assert!(
         authorization::active_worker_id(&transaction, &write_context(100), task, 12, "reviewer")
             .is_err()

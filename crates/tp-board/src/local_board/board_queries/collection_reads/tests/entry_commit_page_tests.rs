@@ -1,8 +1,6 @@
 use super::*;
-use crate::board::board_backend::BoardBackend;
-use crate::board::board_protocol::{
-    BoardOp, BoardRequest, CommitCoauthor, CommitPlanLink, LinkedCommit,
-};
+use crate::board_backend::BoardBackend;
+use crate::board_protocol::{BoardOp, BoardRequest, CommitCoauthor, CommitPlanLink, LinkedCommit};
 use tp_core::identity::GitOid;
 
 #[test]

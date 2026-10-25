@@ -1,4 +1,4 @@
-use crate::board::board_protocol::ReadScope;
+use crate::board_protocol::ReadScope;
 mod event_snapshot_tests;
 mod event_vendor_tests;
 mod feedback_gate_tests;
@@ -9,12 +9,12 @@ mod inbox_watermark_tests;
 mod pending_task_question_tests;
 
 use super::*;
-use crate::board::board_actor::BoardActor;
-use crate::board::board_backend::BoardBackend;
-use crate::board::board_ids::{RepoKey, TaskId};
-use crate::board::board_protocol::{BoardOp, BoardRequest};
-use crate::board::board_vocabulary::{EntryKind, PlanText, PlanTitle};
-use crate::board::local_board::LocalBoard;
+use crate::board_actor::BoardActor;
+use crate::board_backend::BoardBackend;
+use crate::board_ids::{RepoKey, TaskId};
+use crate::board_protocol::{BoardOp, BoardRequest};
+use crate::board_vocabulary::{EntryKind, PlanText, PlanTitle};
+use crate::local_board::LocalBoard;
 use std::time::Duration;
 use tp_core::request_context::HarnessLabel;
 

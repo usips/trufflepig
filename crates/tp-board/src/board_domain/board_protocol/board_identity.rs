@@ -1,5 +1,5 @@
 //! Client and worker identities carried by Board v11 evidence.
-use crate::board::board_ids::TaskId;
+use crate::board_ids::TaskId;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::{fmt, str::FromStr};

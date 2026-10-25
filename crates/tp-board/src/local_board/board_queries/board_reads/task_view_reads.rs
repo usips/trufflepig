@@ -1,22 +1,22 @@
 //! Exact-task detail reads with bounded claim, entry, and commit evidence.
 
 use super::*;
-use crate::board::board_ids::TaskId;
-use crate::board::board_protocol::TaskView;
-use crate::board::local_board::board_queries::collection_nested::{TASK_SELECT, task_row};
-use crate::board::local_board::board_queries::{board_commits, claim_evidence};
+use crate::board_ids::TaskId;
+use crate::board_protocol::TaskView;
+use crate::local_board::board_queries::collection_nested::{TASK_SELECT, task_row};
+use crate::local_board::board_queries::{board_commits, claim_evidence};
 use rusqlite::OptionalExtension;
 
 const TASK_ENTRY_LIMIT: usize = 50;
 const TASK_CLAIM_LIMIT: usize = 21;
 const TASK_COMMIT_LIMIT: usize = 50;
 
-pub(in crate::board::local_board) fn task_view(
+pub(in crate::local_board) fn task_view(
     conn: &Connection,
     ctx: &WriteContext,
     task: TaskId,
 ) -> Result<TaskView, BoardError> {
-    let through = crate::board::local_board::max_seq(conn)?;
+    let through = crate::local_board::max_seq(conn)?;
     let task_row_result = conn
         .query_row(
             &format!("{TASK_SELECT} WHERE t.plan_id=?1 AND t.ordinal=?2 AND t.seq<=?3"),

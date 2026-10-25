@@ -16,11 +16,11 @@ use std::path::PathBuf;
 use std::sync::{Arc, Barrier};
 
 use super::*;
-use crate::board::board_actor::BoardActor;
-use crate::board::board_backend::BoardBackend;
-use crate::board::board_protocol::{BoardOp, BoardRequest, BoardResult};
-use crate::board::board_vocabulary::TaskColumn;
-use crate::board::local_board::LocalBoard;
+use crate::board_actor::BoardActor;
+use crate::board_backend::BoardBackend;
+use crate::board_protocol::{BoardOp, BoardRequest, BoardResult};
+use crate::board_vocabulary::TaskColumn;
+use crate::local_board::LocalBoard;
 use tp_core::request_context::HarnessLabel;
 
 struct ClaimDatabase {
@@ -49,7 +49,7 @@ impl ClaimDatabase {
     }
 
     fn connect(&self) -> Connection {
-        crate::board::local_board::board_database::open(&self.path)
+        crate::local_board::board_database::open(&self.path)
             .unwrap()
             .0
     }
@@ -113,14 +113,14 @@ fn write(
     let tx = conn
         .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .unwrap();
-    let actor_id = crate::board::local_board::ensure_actor(&tx, actor, now).unwrap();
+    let actor_id = crate::local_board::ensure_actor(&tx, actor, now).unwrap();
     let ctx = WriteContext {
         actor_id,
         actor: actor.clone(),
         model: Some("test-model".into()),
         effort: Some("xhigh".into()),
         now,
-        seq: EventSeq::new(crate::board::local_board::max_seq(&tx).unwrap().get() + 1),
+        seq: EventSeq::new(crate::local_board::max_seq(&tx).unwrap().get() + 1),
         claim_ttl_secs: 120,
         via: None,
         origin: None,

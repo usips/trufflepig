@@ -1,5 +1,5 @@
 //! Concrete repository scopes resolved by the serving host before board reads.
-use crate::board::board_ids::RepoKey;
+use crate::board_ids::RepoKey;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 

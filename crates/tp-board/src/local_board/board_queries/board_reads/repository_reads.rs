@@ -1,7 +1,7 @@
 //! Registered checkout paths and associated plan boundaries.
 
 use super::*;
-use crate::board::local_board::LocalBoard;
+use crate::local_board::LocalBoard;
 use rusqlite::OptionalExtension;
 
 impl LocalBoard {
@@ -9,7 +9,7 @@ impl LocalBoard {
     pub(crate) fn plan_repo_keys(&self, plan: PlanId) -> Result<Vec<RepoKey>, BoardError> {
         let conn = self.reader.as_ref().unwrap_or(&self.conn);
         require_plan(conn, plan)?;
-        crate::board::local_board::board_queries::read_scope_sql::plan_repo_keys(conn, plan)
+        crate::local_board::board_queries::read_scope_sql::plan_repo_keys(conn, plan)
     }
 
     /// Durable host/path identity; paths use the same lossy encoding as registration writes.
@@ -29,7 +29,7 @@ impl LocalBoard {
     }
 }
 
-pub(in crate::board::local_board) fn repositories(
+pub(in crate::local_board) fn repositories(
     conn: &Connection,
     plan: Option<PlanId>,
 ) -> Result<BoardReply, BoardError> {
@@ -83,7 +83,7 @@ pub(in crate::board::local_board) fn repositories(
                     .get::<_, Option<String>>(1)
                     .map_err(sql_error)?
                     .as_deref()
-                    .map(crate::board::repo_identity::normalize_origin_label)
+                    .map(crate::repo_identity::normalize_origin_label)
                     .transpose()
                     .map_err(|error| {
                         invalid(BoardErrorCode::BoardUnavailable, error.to_string())

@@ -1,5 +1,4 @@
 //! The real CLI retries a contended board read with one capability probe.
-use crate::board::BOARD_API;
 use std::{
     io::{Read, Write},
     os::unix::net::{UnixListener, UnixStream},
@@ -7,6 +6,7 @@ use std::{
     process::{Command, Stdio},
     time::{Duration, Instant},
 };
+use tp_board::BOARD_API;
 use tp_core::test_fixtures::scratch;
 
 const CHILD_MODE: &str = "TRUFFLEPIG_BOARD_RETRY_PROBE_CHILD";

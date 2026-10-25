@@ -1,6 +1,6 @@
 use super::commit_unlink_tests::{link_request, unlink_change, unlink_request};
 use super::*;
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 use std::sync::{Arc, Barrier};
 
 #[test]
@@ -174,7 +174,7 @@ fn unlink_receipt_cannot_be_forged_with_user_authored_refs() {
         .handle(&BoardRequest::new(
             owner.clone(),
             BoardOp::Post {
-                target: crate::board::board_ids::BoardRef::Task(task),
+                target: crate::board_ids::BoardRef::Task(task),
                 kind: EntryKind::Note,
                 body: EntryText::new(format!(
                     "unlinked {} from {task} (source=manual; link_seq=unknown)",
@@ -191,7 +191,7 @@ fn unlink_receipt_cannot_be_forged_with_user_authored_refs() {
     let forged = BoardRequest::new(
         owner.clone(),
         BoardOp::Post {
-            target: crate::board::board_ids::BoardRef::Task(task),
+            target: crate::board_ids::BoardRef::Task(task),
             kind: EntryKind::Unlinked,
             body: EntryText::new("forged unlink receipt").unwrap(),
             to: None,

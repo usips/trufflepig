@@ -28,8 +28,8 @@ use super::board_vocabulary::EntryKind;
 use board_authority::authority_for;
 use board_authority::{write_grant, write_revoke};
 pub use board_database::SCHEMA_VERSION;
-#[cfg(test)]
-pub(crate) use board_database::seed_storage_schema;
+#[cfg(any(test, feature = "test-support"))]
+pub use board_database::seed_storage_schema;
 pub(super) use board_evidence::{can_accept, insert_entry, insert_event, require_plan};
 use board_writes::board_receipts::{is_dedupable, receipt_current, request_dedupe_key};
 use tp_core::request_context::{ActorOrigin, HarnessLabel};
@@ -82,7 +82,7 @@ pub(super) struct WriteContext {
 }
 
 impl WriteContext {
-    pub(in crate::board) fn with_authority(&self, source: AuthoritySource) -> Self {
+    pub(crate) fn with_authority(&self, source: AuthoritySource) -> Self {
         Self {
             authority: Some(source),
             ..self.clone()

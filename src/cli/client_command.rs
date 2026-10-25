@@ -1,7 +1,7 @@
 //! Client dispatch with board capability state owned across retries.
 
 use super::*;
-use crate::board::board_transport::board_client_transport::BoardClientTransport;
+use tp_board::board_transport::board_client_transport::BoardClientTransport;
 use tp_core::coded_error::CodedContext;
 use tp_core::coded_error::ErrorCode;
 
@@ -64,7 +64,7 @@ impl ClientCommand {
         }
         if verb == "board-serve" {
             let address = options.board_listen_address();
-            return crate::board::board_web::serve(address).map(|()| String::new());
+            return tp_board::board_web::serve(address).map(|()| String::new());
         }
         if verb == "system-serve" {
             return crate::system::serve().map(|()| String::new());
@@ -73,16 +73,16 @@ impl ClientCommand {
             return system_command(&options, context);
         }
         if verb == "board" && options.words.get(1).is_some_and(|word| word == "web") {
-            let crate::board::board_grammar::BoardCommand::Web { target } =
-                crate::board::board_grammar::parse(&options.board_arguments(), None)?
+            let tp_board::board_grammar::BoardCommand::Web { target } =
+                tp_board::board_grammar::parse(&options.board_arguments(), None)?
             else {
                 unreachable!("web grammar produces a web command");
             };
-            return crate::board::board_web::link(target);
+            return tp_board::board_web::link(target);
         }
         if verb == "board" && options.words.get(1).is_some_and(|word| word == "pending") {
-            let crate::board::board_grammar::BoardCommand::Op(_) =
-                crate::board::board_grammar::parse(&options.board_arguments(), None)?
+            let tp_board::board_grammar::BoardCommand::Op(_) =
+                tp_board::board_grammar::parse(&options.board_arguments(), None)?
             else {
                 unreachable!("pending grammar produces an operation");
             };

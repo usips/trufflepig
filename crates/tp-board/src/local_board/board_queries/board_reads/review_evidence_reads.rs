@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(in crate::board::local_board) fn review(
+pub(in crate::local_board) fn review(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     base: PlanRevision,
@@ -38,7 +38,7 @@ pub(in crate::board::local_board) fn review(
     let open_feedback = feedback_for_plan(tx, plan.id)?;
     let commits = linked_commits(tx, plan.id, base.created_at, ctx.now)?;
     let manual_links =
-        crate::board::local_board::board_queries::board_commits::manual_commit_links_window(
+        crate::local_board::board_queries::board_commits::manual_commit_links_window(
             tx,
             plan.id,
             base.created_at,
@@ -182,7 +182,5 @@ fn linked_commits(
     start: i64,
     end: i64,
 ) -> Result<Vec<LinkedCommit>, BoardError> {
-    crate::board::local_board::board_queries::board_commits::linked_commits_all(
-        conn, plan, start, end,
-    )
+    crate::local_board::board_queries::board_commits::linked_commits_all(conn, plan, start, end)
 }

@@ -8,7 +8,7 @@ use std::{
 
 const CHILD_MODE: &str = "TRUFFLEPIG_BOARD_WEB_CLEAN_RESTART_CHILD";
 const TEST_NAME: &str = concat!(
-    "board::board_web::web_endpoint::tests::guard_bind_tests::",
+    "board_web::web_endpoint::tests::guard_bind_tests::",
     "clean_exit_keeps_the_bound_port_for_the_next_start"
 );
 const SUCCESS_MARKER: &str = "board-web clean restart child: retained exact port";

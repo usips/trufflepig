@@ -1,8 +1,8 @@
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 use std::convert::TryFrom;
 
 use super::super::super::{BoardError, WriteContext, invalid};
-use crate::board::board_protocol::ProgressInput;
+use crate::board_protocol::ProgressInput;
 use tp_core::identity::GitOid;
 
 pub(super) struct StoredProgressFields {

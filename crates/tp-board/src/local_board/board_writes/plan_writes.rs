@@ -10,13 +10,13 @@ use super::super::*;
 mod plan_decisions;
 mod plan_revision_storage;
 
-use crate::board::board_vocabulary::{EntryText, PlanText, PlanTitle};
-pub(in crate::board::local_board) use plan_decisions::{accept, reject};
+use crate::board_vocabulary::{EntryText, PlanText, PlanTitle};
+pub(in crate::local_board) use plan_decisions::{accept, reject};
 use plan_revision_storage::{
     advance_head, insert_revision, proposal_data, require_authority, require_base, store_text,
 };
 
-pub(in crate::board::local_board) fn new_plan(
+pub(in crate::local_board) fn new_plan(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     title: &PlanTitle,
@@ -77,10 +77,10 @@ pub(in crate::board::local_board) fn new_plan(
     Ok(reply)
 }
 
-pub(in crate::board::local_board) fn propose(
+pub(in crate::local_board) fn propose(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
-    base: crate::board::board_ids::PlanRevision,
+    base: crate::board_ids::PlanRevision,
     body: &PlanText,
     summary: &EntryText,
     supersedes: Option<EntryId>,
@@ -133,10 +133,10 @@ pub(in crate::board::local_board) fn propose(
     Ok(ctx.change_reply(entry, Some(base.plan), None, None))
 }
 
-pub(in crate::board::local_board) fn edit(
+pub(in crate::local_board) fn edit(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
-    base: crate::board::board_ids::PlanRevision,
+    base: crate::board_ids::PlanRevision,
     body: &PlanText,
     summary: &EntryText,
 ) -> Result<BoardReply, BoardError> {

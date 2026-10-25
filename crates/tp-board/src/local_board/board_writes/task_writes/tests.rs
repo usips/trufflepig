@@ -1,12 +1,12 @@
-use crate::board::board_actor::{BoardActor, BoardRecipient};
-use crate::board::board_backend::BoardBackend;
-use crate::board::board_ids::{PlanId, TaskId};
-use crate::board::board_protocol::{
+use crate::board_actor::{BoardActor, BoardRecipient};
+use crate::board_backend::BoardBackend;
+use crate::board_ids::{PlanId, TaskId};
+use crate::board_protocol::{
     AuthorityRole, BoardOp, BoardRequest, BoardResult, ClaimResume, WorkerAddress, WorkerHandle,
     WorkerRole,
 };
-use crate::board::board_vocabulary::{EntryText, PlanText, PlanTitle, TaskColumn};
-use crate::board::local_board::LocalBoard;
+use crate::board_vocabulary::{EntryText, PlanText, PlanTitle, TaskColumn};
+use crate::local_board::LocalBoard;
 use std::time::Duration;
 use tp_core::request_context::HarnessLabel;
 
@@ -30,9 +30,7 @@ fn actor(harness: &str, session: &str) -> BoardActor {
     .unwrap()
 }
 
-fn change(
-    reply: crate::board::board_protocol::BoardReply,
-) -> crate::board::board_protocol::BoardChange {
+fn change(reply: crate::board_protocol::BoardReply) -> crate::board_protocol::BoardChange {
     let BoardResult::Change(change) = reply.result else {
         panic!("expected change reply");
     };
@@ -201,7 +199,7 @@ fn creating_an_assigned_task_requires_and_audits_assign_authority() {
         .unwrap_err();
     assert_eq!(
         error.code,
-        crate::board::board_protocol::BoardErrorCode::InvalidActor
+        crate::board_protocol::BoardErrorCode::InvalidActor
     );
     let task_recipient = TaskId::new(plan, 999).unwrap();
     let invalid_target = board
@@ -217,7 +215,7 @@ fn creating_an_assigned_task_requires_and_audits_assign_authority() {
         .unwrap_err();
     assert_eq!(
         invalid_target.code,
-        crate::board::board_protocol::BoardErrorCode::InvalidOptions
+        crate::board_protocol::BoardErrorCode::InvalidOptions
     );
     let after_entries: i64 = board
         .conn
@@ -366,7 +364,7 @@ fn release_grant_ends_live_other_claims_only_into_todo_or_blocked() {
         .unwrap_err();
     assert_eq!(
         denied.code,
-        crate::board::board_protocol::BoardErrorCode::InvalidActor
+        crate::board_protocol::BoardErrorCode::InvalidActor
     );
     assert_eq!(task_column(&board, task), "doing");
     assert_eq!(open_claim_end_reason(&board, task), None);
@@ -564,7 +562,7 @@ fn task_move_recipients_expand_for_the_caller_and_refuse_task_addresses() {
         .unwrap_err();
     assert_eq!(
         error.code,
-        crate::board::board_protocol::BoardErrorCode::InvalidOptions
+        crate::board_protocol::BoardErrorCode::InvalidOptions
     );
     board
         .handle(&BoardRequest::new(
@@ -587,7 +585,7 @@ fn task_move_recipients_expand_for_the_caller_and_refuse_task_addresses() {
         .handle(&BoardRequest::new(
             codex.clone(),
             BoardOp::Inbox {
-                scope: crate::board::board_protocol::ReadScope::All,
+                scope: crate::board_protocol::ReadScope::All,
                 after: None,
                 limit: 50,
             },

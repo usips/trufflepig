@@ -2,7 +2,7 @@
 
 use super::super::read_scope_sql::plan_repo_keys;
 use super::*;
-use crate::board::board_protocol::ReadScope;
+use crate::board_protocol::ReadScope;
 
 pub(super) fn plan(conn: &Connection, id: PlanId) -> Result<PlanRecord, BoardError> {
     let mut statement = conn
@@ -18,7 +18,7 @@ pub(super) fn plan(conn: &Connection, id: PlanId) -> Result<PlanRecord, BoardErr
     plan_row(row)
 }
 
-pub(in crate::board::local_board) fn plan_row(row: &Row<'_>) -> Result<PlanRecord, BoardError> {
+pub(in crate::local_board) fn plan_row(row: &Row<'_>) -> Result<PlanRecord, BoardError> {
     Ok(PlanRecord {
         id: PlanId::new(row_number(row, 0).map_err(sql_error)?).map_err(BoardError::from)?,
         title: PlanTitle::new(row.get::<_, String>(1).map_err(sql_error)?)
@@ -73,8 +73,8 @@ pub(super) fn plan_view(
         conn,
         PlanRevision::new(id, plan.head_revision).map_err(BoardError::from)?,
     )?;
-    let through = crate::board::local_board::max_seq(conn)?;
-    let tasks = crate::board::local_board::board_queries::collection_nested::task_window(
+    let through = crate::local_board::max_seq(conn)?;
+    let tasks = crate::local_board::board_queries::collection_nested::task_window(
         conn,
         id,
         None,
@@ -87,7 +87,7 @@ pub(super) fn plan_view(
     let tasks_next_after = tasks.next_after;
     let task_ceiling = tasks.ceiling;
     let tasks = tasks.tasks;
-    let claims = crate::board::local_board::board_queries::collection_nested::claim_window(
+    let claims = crate::local_board::board_queries::collection_nested::claim_window(
         conn,
         ctx,
         Some(id),
@@ -152,8 +152,8 @@ pub(super) fn plan_view(
             sections_without_tasks.push(section);
         }
     }
-    let can_edit = crate::board::local_board::can_accept(conn, &ctx.actor, id)?;
-    let can_change_lifecycle = crate::board::local_board::board_authority::authority_for(
+    let can_edit = crate::local_board::can_accept(conn, &ctx.actor, id)?;
+    let can_change_lifecycle = crate::local_board::board_authority::authority_for(
         conn,
         &ctx.actor,
         Some(id),
@@ -174,8 +174,8 @@ pub(super) fn plan_view(
     let mut entries = recent;
     entries.extend(extras);
     Ok(PlanView {
-        grants: crate::board::local_board::board_authority::read_grants(conn, Some(id))?,
-        can_manage_grants: crate::board::local_board::board_authority::can_manage_grants(
+        grants: crate::local_board::board_authority::read_grants(conn, Some(id))?,
+        can_manage_grants: crate::local_board::board_authority::can_manage_grants(
             conn, &ctx.actor, id,
         )?,
         repo_keys: plan_repo_keys(conn, plan.id)?,
@@ -203,7 +203,7 @@ pub(super) fn plan_view(
 }
 
 fn uncovered_sections(body: &str, tasks: &[TaskRecord]) -> Vec<String> {
-    let headings = crate::board::board_markup::headings(body);
+    let headings = crate::board_markup::headings(body);
     let mut sections = Vec::with_capacity(headings.len());
     for heading in headings {
         if heading.title.is_empty()

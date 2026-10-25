@@ -1,6 +1,6 @@
 //! SSOT body diffs between plan revisions, with bounded context lines.
 
-use crate::board::board_ids::PlanRevision;
+use crate::board_ids::PlanRevision;
 use serde::{Deserialize, Serialize};
 use tp_core::line_diff::diff_sources;
 
@@ -23,8 +23,8 @@ pub struct SsotHunk {
 }
 
 pub fn build_ssot_diff(
-    before: &crate::board::board_protocol::RevisionRecord,
-    after: &crate::board::board_protocol::RevisionRecord,
+    before: &crate::board_protocol::RevisionRecord,
+    after: &crate::board_protocol::RevisionRecord,
 ) -> SsotDiff {
     let before_text = before.body.as_str();
     let after_text = after.body.as_str();

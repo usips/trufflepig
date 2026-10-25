@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::{BoardChange, BoardReply};
+use crate::board_protocol::{BoardChange, BoardReply};
 use std::sync::{Arc, Barrier};
 
 fn change(reply: BoardReply) -> BoardChange {
@@ -272,7 +272,7 @@ fn manual_link_with_unknown_historical_receipt_returns_invalid_state() {
         .unwrap_err();
     assert_eq!(
         error.code,
-        crate::board::board_protocol::BoardErrorCode::InvalidState,
+        crate::board_protocol::BoardErrorCode::InvalidState,
         "{error}"
     );
     assert_eq!(

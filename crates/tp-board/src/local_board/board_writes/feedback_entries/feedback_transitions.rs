@@ -1,9 +1,9 @@
 //! Feedback authority and terminal triage decisions.
 
 use super::*;
-use crate::board::board_protocol::BoardErrorCode;
+use crate::board_protocol::BoardErrorCode;
 
-pub(in crate::board::local_board) fn close_feedback(
+pub(in crate::local_board) fn close_feedback(
     tx: &Transaction<'_>,
     ctx: &WriteContext,
     op: &BoardOp,

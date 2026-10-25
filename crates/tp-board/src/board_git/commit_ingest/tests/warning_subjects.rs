@@ -1,6 +1,6 @@
 use super::super::commit_warnings::commit_warning_oid;
 use super::*;
-use crate::board::repo_identity::tests::FixtureRegistration;
+use crate::repo_identity::tests::FixtureRegistration;
 
 #[test]
 fn subject_line_plan_is_not_misplaced() {

@@ -4,7 +4,7 @@ mod web_allowlist_tests;
 
 use super::router_probe::{local_schema_version, router_confirms_schema, unavailable};
 use super::*;
-use crate::board::{
+use crate::{
     SCHEMA_VERSION,
     board_config::BoardConfig,
     board_protocol::{BOARD_API, BoardErrorCode, BoardOp},

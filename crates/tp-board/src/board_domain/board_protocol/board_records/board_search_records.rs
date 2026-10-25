@@ -1,5 +1,5 @@
 //! Bounded search results retain canonical targets and plain text snippets.
-use crate::board::board_ids::{BoardRef, PlanId};
+use crate::board_ids::{BoardRef, PlanId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

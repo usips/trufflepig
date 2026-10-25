@@ -1,6 +1,6 @@
 //! Browser operation requests: allowlisted ops under captured local identity.
 use super::super::WebStore;
-use crate::board::{
+use crate::{
     board_backend::BoardBackend,
     board_config::BoardConfig,
     board_protocol::{BOARD_API, BoardError, BoardErrorCode, BoardOp, BoardReply, BoardRequest},
@@ -97,16 +97,16 @@ pub(crate) fn execute(
     let project = request.project.take();
     let mut request = request.into_request(&config, peer_ip)?;
     if let Some(selector) = project {
-        crate::board::board_projects::validate_scope_selection(&mut request.op)?;
+        crate::board_projects::validate_scope_selection(&mut request.op)?;
         let projects = store.projects(&request.actor.host, expires)?;
-        crate::board::board_projects::select_scope(&mut request.op, &selector, &projects)?;
+        crate::board_projects::select_scope(&mut request.op, &selector, &projects)?;
     }
     if matches!(request.op, BoardOp::Projects) {
         let projects = store.projects(&request.actor.host, expires)?;
         let deadline = tp_core::query_deadline::QueryDeadline::after(
             expires.saturating_duration_since(Instant::now()),
         );
-        return crate::board::board_projects::project_reply(&config, projects, &deadline);
+        return crate::board_projects::project_reply(&config, projects, &deadline);
     }
     let reply = if request.op.is_read_only() {
         store

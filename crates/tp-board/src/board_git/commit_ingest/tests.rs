@@ -7,11 +7,11 @@ mod scan_resilience;
 mod warning_subjects;
 
 use super::*;
-use crate::board::board_ids::EventSeq;
-use crate::board::board_protocol::{
+use crate::board_ids::EventSeq;
+use crate::board_protocol::{
     BoardError, BoardErrorCode, BoardReply, CommitLinkResult, WorkerAddress,
 };
-use crate::board::repo_identity::tests::FixtureRegistration;
+use crate::repo_identity::tests::FixtureRegistration;
 use std::collections::BTreeSet;
 use tp_core::identity::GitOid;
 use tp_core::request_context::ActorOrigin;

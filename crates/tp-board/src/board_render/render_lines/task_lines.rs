@@ -2,7 +2,7 @@
 
 use super::line_cells::{author, source_suffix, vendor_suffix};
 use super::{cell, claim_line, entry_line};
-use crate::board::board_protocol::{
+use crate::board_protocol::{
     ClaimRecord, CommitClaimBasis, GateStatus, LinkedCommit, PendingReply, ProgressEvidence,
     ProgressGateFact, TaskView, WorkerRecord,
 };
@@ -284,8 +284,8 @@ pub(super) fn pending_lines(text: &mut String, reply: &PendingReply) {
                     "{}\tkind={} reason={}",
                     notice.seq,
                     match notice.kind {
-                        crate::board::board_protocol::PendingNoticeKind::Entry => "entry",
-                        crate::board::board_protocol::PendingNoticeKind::Event => "event",
+                        crate::board_protocol::PendingNoticeKind::Entry => "entry",
+                        crate::board_protocol::PendingNoticeKind::Event => "event",
                     },
                     reason
                 )
@@ -307,16 +307,16 @@ pub(super) fn pending_lines(text: &mut String, reply: &PendingReply) {
     }
 }
 
-fn notice_reason_label(reason: &crate::board::board_protocol::PendingNoticeReason) -> &'static str {
+fn notice_reason_label(reason: &crate::board_protocol::PendingNoticeReason) -> &'static str {
     match reason {
-        crate::board::board_protocol::PendingNoticeReason::Mention => "mention",
-        crate::board::board_protocol::PendingNoticeReason::Question => "question",
-        crate::board::board_protocol::PendingNoticeReason::Claim => "claim",
-        crate::board::board_protocol::PendingNoticeReason::Worker => "worker",
+        crate::board_protocol::PendingNoticeReason::Mention => "mention",
+        crate::board_protocol::PendingNoticeReason::Question => "question",
+        crate::board_protocol::PendingNoticeReason::Claim => "claim",
+        crate::board_protocol::PendingNoticeReason::Worker => "worker",
     }
 }
 
-fn event_line(text: &mut String, event: &crate::board::board_protocol::EventRecord) {
+fn event_line(text: &mut String, event: &crate::board_protocol::EventRecord) {
     writeln!(
         text,
         "event {}\t{}\t{}\t{}{}{}",

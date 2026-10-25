@@ -117,15 +117,15 @@ fn unrecognized_git_coauthor_ingests_and_reply_evidence_round_trips() {
             },
         ))
         .unwrap();
-    let decoded: crate::board::board_protocol::BoardReply =
+    let decoded: crate::board_protocol::BoardReply =
         serde_json::from_str(&serde_json::to_string(&reply).unwrap()).unwrap();
-    let crate::board::board_protocol::BoardResult::Plan(view) = decoded.result else {
+    let crate::board_protocol::BoardResult::Plan(view) = decoded.result else {
         panic!("expected plan view");
     };
     let scanned_entry = view
         .entries
         .iter()
-        .find(|entry| entry.kind == crate::board::board_vocabulary::EntryKind::Commit)
+        .find(|entry| entry.kind == crate::board_vocabulary::EntryKind::Commit)
         .expect("scan should create a commit entry");
     assert!(scanned_entry.actor.harness.is_system());
     assert_eq!(scanned_entry.actor.session, "ingest");

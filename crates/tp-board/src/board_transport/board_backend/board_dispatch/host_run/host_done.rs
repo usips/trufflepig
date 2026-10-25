@@ -1,6 +1,6 @@
 //! Explicit-plan Done validates project membership before the unchanged Tasks read.
 use super::*;
-use crate::board::{
+use crate::{
     board_projects::project_read_helpers::select_project, board_protocol::TaskOrder,
     board_vocabulary::TaskColumn, local_board::LocalBoard,
 };
@@ -58,7 +58,7 @@ impl BoardHost {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board::{
+    use crate::{
         board_backend::BoardBackend,
         board_config::BoardConfig,
         board_ids::RepoKey,
@@ -154,7 +154,7 @@ mod tests {
             let mut args = vec!["--root".to_owned(), root.to_string_lossy().into_owned()];
             args.extend(words.iter().map(|word| (*word).to_owned()));
             self.host.run(
-                &crate::board::board_test_support::parse_board_arguments(&args).unwrap(),
+                &crate::board_test_support::parse_board_arguments(&args).unwrap(),
                 &RequestContext::new(None, None),
                 QueryDeadline::after(Duration::from_secs(2)),
             )

@@ -1,5 +1,5 @@
 use super::*;
-use crate::board::board_protocol::{WorkerAddress, WorkerEndReason, WorkerHandle, WorkerRole};
+use crate::board_protocol::{WorkerAddress, WorkerEndReason, WorkerHandle, WorkerRole};
 
 fn register_worker(
     conn: &mut Connection,
@@ -260,7 +260,7 @@ fn task_lifetime_handle_cannot_be_reused_after_takeover() {
     .unwrap_err();
     assert_eq!(
         error.code,
-        crate::board::board_protocol::BoardErrorCode::InvalidWorker,
+        crate::board_protocol::BoardErrorCode::InvalidWorker,
         "{error}"
     );
 }

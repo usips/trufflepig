@@ -1,0 +1,28 @@
+[package]
+name = "tp-board"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[features]
+# Test-only hooks for other workspace crates' tests.
+test-support = []
+
+[dependencies]
+anyhow.workspace = true
+blake3.workspace = true
+clap.workspace = true
+fs2.workspace = true
+libc.workspace = true
+pulldown-cmark.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+toml.workspace = true
+uuid.workspace = true
+tp-core.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tp-core = { workspace = true, features = ["test-support"] }

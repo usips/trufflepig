@@ -1,6 +1,6 @@
 use super::*;
-use crate::board::board_ids::TaskId;
-use crate::board::board_vocabulary::{PlanTitle, TaskColumn};
+use crate::board_ids::TaskId;
+use crate::board_vocabulary::{PlanTitle, TaskColumn};
 
 fn done_tasks() -> Vec<TaskRecord> {
     let plan = PlanId::new(7).unwrap();

@@ -3,10 +3,10 @@ use super::render_task::{
     commit_detail_counts, plan_claim_detail_counts, trim_commit_details, trim_plan_claim_details,
 };
 use super::{BoardOmitted, RenderedBoard, fit_items, render_complete, require_fits};
-use crate::board::board_protocol::{
+use crate::board_protocol::{
     BoardReply, BoardResult, EntryCursor, EntryRecord, EntryView, PlanView,
 };
-use crate::board::board_vocabulary::PlanText;
+use crate::board_vocabulary::PlanText;
 use anyhow::Result;
 use tp_core::output::OutputBudget;
 

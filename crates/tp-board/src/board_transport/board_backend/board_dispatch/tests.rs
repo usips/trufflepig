@@ -1,7 +1,7 @@
 use super::*;
-use crate::board::board_ids::{PlanId, RepoKey};
-use crate::board::board_protocol::ReadScope;
-use crate::board::board_vocabulary::{PlanText, PlanTitle};
+use crate::board_ids::{PlanId, RepoKey};
+use crate::board_protocol::ReadScope;
+use crate::board_vocabulary::{PlanText, PlanTitle};
 use std::path::PathBuf;
 
 fn registration() -> RepoRegistration {

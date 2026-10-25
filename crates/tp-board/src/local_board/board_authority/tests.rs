@@ -1,11 +1,11 @@
-use crate::board::board_actor::{BoardActor, BoardRecipient};
-use crate::board::board_backend::BoardBackend;
-use crate::board::board_ids::{EntryId, PlanId};
-use crate::board::board_protocol::{
+use crate::board_actor::{BoardActor, BoardRecipient};
+use crate::board_backend::BoardBackend;
+use crate::board_ids::{EntryId, PlanId};
+use crate::board_protocol::{
     AuthorityRole, BoardError, BoardErrorCode, BoardOp, BoardRequest, BoardResult, ReadScope,
 };
-use crate::board::board_vocabulary::{EntryKind, PlanText, PlanTitle};
-use crate::board::local_board::LocalBoard;
+use crate::board_vocabulary::{EntryKind, PlanText, PlanTitle};
+use crate::local_board::LocalBoard;
 use std::time::Duration;
 use tp_core::request_context::HarnessLabel;
 

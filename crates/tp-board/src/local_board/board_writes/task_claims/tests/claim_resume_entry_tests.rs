@@ -94,7 +94,7 @@ fn show_lists_the_claim_entry_for_resume_targeting() {
             holder.clone(),
             BoardOp::New {
                 title: PlanTitle::new("Claims").unwrap(),
-                body: crate::board::board_vocabulary::PlanText::new("# Scope").unwrap(),
+                body: crate::board_vocabulary::PlanText::new("# Scope").unwrap(),
                 repo_key: None,
             },
         ))
@@ -122,7 +122,7 @@ fn show_lists_the_claim_entry_for_resume_targeting() {
         .handle(&BoardRequest::new(
             holder,
             BoardOp::Show {
-                target: crate::board::board_ids::BoardRef::Task(carve.task.unwrap()),
+                target: crate::board_ids::BoardRef::Task(carve.task.unwrap()),
             },
         ))
         .unwrap();

@@ -1,11 +1,11 @@
 //! Subscriber reads: one consistent drain decision per cursor.
 use super::super::sequence_poller::WakeResult;
 use super::{EventRing, covered_of};
-use crate::board::board_ids::{EventSeq, PlanId};
+use crate::board_ids::{EventSeq, PlanId};
 use std::{sync::Arc, time::Duration};
 
 /// One drain decision for a subscriber cursor.
-pub(in crate::board::board_web::event_stream) enum Drain {
+pub(in crate::board_web::event_stream) enum Drain {
     Frames {
         frames: Vec<Arc<[u8]>>,
         cursor: EventSeq,
@@ -32,7 +32,7 @@ pub(in crate::board::board_web::event_stream) enum Drain {
 impl EventRing {
     /// Reads one consistent drain decision; frame bytes are cloned under the
     /// lock so no socket write happens inside it.
-    pub(in crate::board::board_web::event_stream) fn drain(
+    pub(in crate::board_web::event_stream) fn drain(
         &self,
         cursor: EventSeq,
         plan: Option<PlanId>,
@@ -87,7 +87,7 @@ impl EventRing {
         }
     }
 
-    pub(in crate::board::board_web::event_stream) fn wait(
+    pub(in crate::board_web::event_stream) fn wait(
         &self,
         observed: u64,
         timeout: Duration,
@@ -112,7 +112,7 @@ impl EventRing {
     }
 
     /// Waits out a feed outage: returns when the ring recovers or stops.
-    pub(in crate::board::board_web::event_stream) fn wait_recovery(&self, timeout: Duration) {
+    pub(in crate::board_web::event_stream) fn wait_recovery(&self, timeout: Duration) {
         let state = self.lock();
         let _ = self
             .0

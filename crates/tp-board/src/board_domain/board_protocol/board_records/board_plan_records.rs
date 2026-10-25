@@ -1,7 +1,7 @@
 //! Plan revisions, tasks, claims, and review evidence.
 use super::{EntryRecord, FeedbackRecord, LinkedCommit};
-use crate::board::board_domain::board_collections::{ClaimCursor, EntryCursor, TaskCeiling};
-use crate::board::{
+use crate::board_domain::board_collections::{ClaimCursor, EntryCursor, TaskCeiling};
+use crate::{
     board_actor::{AgentVendor, BoardActor, BoardRecipient},
     board_ids::{EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
     board_protocol::{GrantRecord, ProgressEvidence, WorkerRecord},

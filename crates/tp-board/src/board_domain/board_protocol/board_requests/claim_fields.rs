@@ -1,6 +1,6 @@
 //! Delegated-holder and resume-intent fields carried by claim requests.
-use crate::board::board_actor::BoardActor;
-use crate::board::board_ids::EntryId;
+use crate::board_actor::BoardActor;
+use crate::board_ids::EntryId;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use tp_core::request_context::{HarnessLabel, validate_actor_component};
