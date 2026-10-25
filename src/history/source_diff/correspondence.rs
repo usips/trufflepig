@@ -1,9 +1,9 @@
 //! Declaration correspondence preserves occurrence indexes and incomplete extraction evidence.
 
-use crate::extract::{Definition, Extraction};
 use crate::line_diff::{SourceDiff, line_offsets};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, hash::Hash};
+use tp_extract::{Definition, Extraction};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

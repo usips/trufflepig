@@ -16,7 +16,6 @@ pub(super) use file_stat::TEST_PASS_START_SKEW_NS;
 pub(super) use tree_observation::{StatRefresh, TreeObservation};
 
 use super::{Coverage, index_checkpoint::IndexCheckpoint, index_deadline, regions};
-use crate::extract::{self, Extraction};
 use crate::query_deadline::QueryDeadline;
 use anyhow::{Context, Result};
 use extraction_reuse::{cached_extraction, insert_extraction_cache, published_extraction};
@@ -24,6 +23,7 @@ use file_stat::FileStat;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use scan_tally::ScanTally;
 use std::path::Path;
+use tp_extract::Extraction;
 use tree_observation::{FileSource, ObservedFile};
 
 pub(crate) const MAX_SOURCE_BYTES: u64 = 2 * 1024 * 1024;
@@ -179,7 +179,7 @@ fn file_extraction(
     }
     let Some(revision) = revision else {
         let facts = Extraction {
-            language: extract::language(&file.path).to_owned(),
+            language: tp_extract::language(&file.path).to_owned(),
             status: file.read_status.to_owned(),
             ..Extraction::default()
         };

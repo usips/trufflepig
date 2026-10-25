@@ -2,11 +2,12 @@
 use super::{Query, search_current_file, semantic_representative};
 use crate::coded_error::CodedContext;
 use crate::{
-    extract::Extraction, identity::ContentRevision, path_codec::decode_path,
-    query_deadline::QueryDeadline, results::Hit, source, store::Store,
+    identity::ContentRevision, path_codec::decode_path, query_deadline::QueryDeadline,
+    results::Hit, source, store::Store,
 };
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
+use tp_extract::Extraction;
 
 const MAX_CHECKED_FILES: usize = 128;
 const MAX_REEXTRACTED_FILES: usize = 64;
@@ -92,25 +93,24 @@ fn recheck_with_current_search(
             continue;
         }
         reextracted += 1;
-        let current =
-            source::usable_extraction(&hit.path, crate::extract::extract(&hit.path, &bytes))
-                .and_then(|extraction| {
-                    let (mut current, incomplete) =
-                        current_search(store, query, &hit.path, &bytes, &extraction, deadline)?;
-                    let semantic = hits.iter().any(|candidate| {
-                        candidate.path == hit.path
-                            && candidate.provenance.as_deref() == Some("semantic")
-                    });
-                    if semantic {
-                        semantic_unverified += 1;
-                        if let Some(candidate) =
-                            semantic_representative(query, &hit.path, &bytes, &extraction)
-                        {
-                            current.push(candidate);
-                        }
-                    }
-                    Ok((current, incomplete))
+        let current = source::usable_extraction(&hit.path, tp_extract::extract(&hit.path, &bytes))
+            .and_then(|extraction| {
+                let (mut current, incomplete) =
+                    current_search(store, query, &hit.path, &bytes, &extraction, deadline)?;
+                let semantic = hits.iter().any(|candidate| {
+                    candidate.path == hit.path
+                        && candidate.provenance.as_deref() == Some("semantic")
                 });
+                if semantic {
+                    semantic_unverified += 1;
+                    if let Some(candidate) =
+                        semantic_representative(query, &hit.path, &bytes, &extraction)
+                    {
+                        current.push(candidate);
+                    }
+                }
+                Ok((current, incomplete))
+            });
         match current {
             Ok((current, incomplete)) => {
                 *truncated |= incomplete;

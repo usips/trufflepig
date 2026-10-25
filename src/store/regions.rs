@@ -1,7 +1,7 @@
-use crate::extract::Definition;
 use anyhow::Result;
 use rusqlite::{Transaction, params};
 use std::cmp::Reverse;
+use tp_extract::Definition;
 
 const REGION_BYTES: usize = 4096;
 

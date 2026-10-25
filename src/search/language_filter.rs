@@ -1,4 +1,4 @@
-//! `lang:` values: the recorded language names of [`crate::extract::language`]
+//! `lang:` values: the recorded language names of [`tp_extract::language`]
 //! and their aliases. Unknown names fail instead of silently matching nothing.
 use anyhow::{Result, bail};
 

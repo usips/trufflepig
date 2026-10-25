@@ -148,7 +148,7 @@ fn live_regex_scan(
         }
         let relative = entry.path().strip_prefix(&store.root)?;
         let path = crate::path_codec::encode_path(relative);
-        let language = crate::extract::language(&path);
+        let language = tp_extract::language(&path);
         if !paths.matches(&path) || (!query.language.is_empty() && query.language != language) {
             continue;
         }
@@ -186,7 +186,7 @@ fn live_regex_scan(
             None
         } else {
             checkpoint(entry.path(), LiveRegexCheckpoint::BeforeExtract)?;
-            let extraction = Some(crate::extract::extract(&path, &source));
+            let extraction = Some(tp_extract::extract(&path, &source));
             checkpoint(entry.path(), LiveRegexCheckpoint::AfterExtract)?;
             extraction
         };

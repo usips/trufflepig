@@ -4,7 +4,6 @@
 //! the indexed revision ([`WorktreeHashes`]).
 use super::{ParentFallback, WorktreeDivergence, hit_verification::WorktreeHashes};
 use crate::{
-    extract::Definition,
     identity::ContentRevision,
     path_codec::decode_path,
     query_deadline::QueryDeadline,
@@ -16,6 +15,7 @@ use crate::{
 use anyhow::{Result, ensure};
 use rusqlite::OptionalExtension;
 use std::collections::HashSet;
+use tp_extract::Definition;
 
 /// Most changed files re-evaluated for one search query.
 const MAX_RECHECKED_FILES: usize = 64;
@@ -353,7 +353,7 @@ fn current_file_hits(
             "{path} is binary; the index does not extract it"
         )
     );
-    let extraction = source::usable_extraction(path, crate::extract::extract(path, &bytes))?;
+    let extraction = source::usable_extraction(path, tp_extract::extract(path, &bytes))?;
     check_deadline(deadline)?;
     let (mut hits, truncated) =
         crate::search::search_current_file(store, query, path, &bytes, &extraction, deadline)?;
@@ -393,7 +393,7 @@ fn reextracted_map(store: &Store, path: &str) -> Option<Vec<Hit>> {
         return None;
     }
     let revision = ContentRevision::of(&bytes).to_string();
-    let extraction = source::usable_extraction(path, crate::extract::extract(path, &bytes));
+    let extraction = source::usable_extraction(path, tp_extract::extract(path, &bytes));
     let mut definitions = extraction.ok()?.definitions;
     crate::search::outline_extracted(&mut definitions);
     Some(
@@ -430,5 +430,5 @@ fn definition_hit(path: &str, bytes: &[u8], revision: &str, definition: Definiti
 /// Filters a changed path as the query's `file:` (bound once) and `lang:` words would.
 fn query_admits_path(query: &Query, paths: Option<&BoundPathFilter>, path: &str) -> bool {
     paths.is_none_or(|paths| paths.matches(path))
-        && (query.language.is_empty() || crate::extract::language(path) == query.language)
+        && (query.language.is_empty() || tp_extract::language(path) == query.language)
 }

@@ -2,12 +2,12 @@
 //! disk: extracts one file in memory without touching any index.
 use super::{line_span, read_contained};
 use crate::{
-    extract::Extraction,
     identity::{ByteSpan, ContentRevision},
     results::Hit,
 };
 use anyhow::{Result, bail, ensure};
 use std::path::Path;
+use tp_extract::Extraction;
 
 /// One definition located in a file's current bytes; unpublished, so unverified
 /// against any index generation.
@@ -67,7 +67,7 @@ pub fn reextract_definition(root: &Path, hit: &Hit) -> Result<Option<Reextracted
             hit.path
         )
     );
-    let extraction = usable_extraction(&hit.path, crate::extract::extract(&hit.path, &bytes))?;
+    let extraction = usable_extraction(&hit.path, tp_extract::extract(&hit.path, &bytes))?;
     let Some(definition) = extraction
         .definitions
         .into_iter()

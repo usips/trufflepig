@@ -1,6 +1,6 @@
 use tree_sitter::Node;
 
-use crate::extract::php_markers::{Marker, encode};
+use crate::php_markers::{Marker, encode};
 
 use super::names::{canonical, final_segment, terminal_name, text};
 use super::php_declarations::Catalog;

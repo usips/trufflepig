@@ -1,7 +1,7 @@
 //! Inserts one file's extracted facts into a staged or in-memory index.
-use crate::extract::Extraction;
 use anyhow::Result;
 use rusqlite::{Transaction, params};
+use tp_extract::Extraction;
 
 /// Inserts one file's extracted facts with statements compiled once per connection.
 pub(in crate::store) fn insert_facts(

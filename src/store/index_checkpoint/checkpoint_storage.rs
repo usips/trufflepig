@@ -1,10 +1,10 @@
-use crate::extract::Extraction;
 use crate::query_deadline::QueryDeadline;
 use crate::store::index_deadline;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, Error as SqliteError, ErrorCode, OptionalExtension, params};
 use std::path::Path;
 use std::time::{Duration, Instant};
+use tp_extract::Extraction;
 
 /// A bounded slice commits its open batch this often or after this many files.
 const COMMIT_INTERVAL: Duration = Duration::from_millis(250);

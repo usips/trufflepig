@@ -1,6 +1,6 @@
 use tree_sitter::Node;
 
-use crate::extract::php_markers::{ClassRole, Marker, ParentKind, Visibility, encode};
+use crate::php_markers::{ClassRole, Marker, ParentKind, Visibility, encode};
 
 use super::Extraction;
 use super::names::{canonical, final_segment, text};

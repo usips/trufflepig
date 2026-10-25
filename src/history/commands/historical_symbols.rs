@@ -31,7 +31,7 @@ pub(super) fn symbol_correspondence(
         .map(|s| history.repository.blob(&s.blob))
         .transpose()?
         .unwrap_or_default();
-    let before = crate::extract::extract(
+    let before = tp_extract::extract(
         entry
             .before
             .as_ref()
@@ -39,7 +39,7 @@ pub(super) fn symbol_correspondence(
             .unwrap_or(&target.path),
         &old,
     );
-    let after = crate::extract::extract(
+    let after = tp_extract::extract(
         entry
             .after
             .as_ref()

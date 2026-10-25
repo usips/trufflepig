@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use super::super::{Definition, Extraction, Occurrence, Relationship};
 use super::extract;
-use crate::extract::php_markers::{self, ClassRole, Marker, ParentKind, Visibility};
+use crate::php_markers::{self, ClassRole, Marker, ParentKind, Visibility};
 
 fn definition<'a>(extraction: &'a Extraction, name: &str, kind: &str) -> &'a Definition {
     extraction

@@ -49,22 +49,22 @@ fn extraction_contract_revision_rebuilds_unchanged_language_facts() {
             .try_into()
             .unwrap(),
     );
-    let stale = crate::extract::Extraction {
+    let stale = tp_extract::Extraction {
         language: "text".into(),
         status: "complete".into(),
-        definitions: vec![crate::extract::Definition {
+        definitions: vec![tp_extract::Definition {
             name: "StaleFact".into(),
             kind: "class".into(),
             start: 0,
             end: 1,
             container: None,
         }],
-        ..crate::extract::Extraction::default()
+        ..tp_extract::Extraction::default()
     };
-    let old_php_lexical_only = crate::extract::Extraction {
+    let old_php_lexical_only = tp_extract::Extraction {
         language: "text".into(),
         status: "lexical_only".into(),
-        ..crate::extract::Extraction::default()
+        ..tp_extract::Extraction::default()
     };
     for (path, bytes, facts) in [
         ("wallet.js", javascript.as_slice(), &stale),

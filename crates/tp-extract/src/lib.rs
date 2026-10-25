@@ -6,7 +6,7 @@ mod bindings;
 mod csharp;
 mod dreammaker;
 mod php;
-pub(crate) mod php_markers;
+pub mod php_markers;
 #[cfg(test)]
 mod resolution_tests;
 mod syntax;

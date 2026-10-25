@@ -7,7 +7,6 @@ pub(crate) mod cli;
 pub(crate) mod daemon;
 pub(crate) mod daemon_transport;
 pub(crate) mod diagnostics;
-pub(crate) mod extract;
 pub(crate) mod git_runner;
 pub(crate) mod history;
 pub(crate) mod identity;

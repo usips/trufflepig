@@ -1,0 +1,19 @@
+[package]
+name = "tp-extract"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+serde.workspace = true
+streaming-iterator.workspace = true
+tree-sitter.workspace = true
+tree-sitter-rust.workspace = true
+tree-sitter-typescript.workspace = true
+tree-sitter-javascript.workspace = true
+tree-sitter-luau.workspace = true
+tree-sitter-c-sharp.workspace = true
+tree-sitter-php.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

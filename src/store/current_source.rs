@@ -1,9 +1,10 @@
 //! Populate an unpublished in-memory store with current source files.
 use super::{Store, regions, scan};
 use crate::coded_error::CodedContext;
-use crate::{extract::Extraction, identity::ContentRevision};
+use crate::identity::ContentRevision;
 use anyhow::{Result, ensure};
 use rusqlite::{OptionalExtension, params};
+use tp_extract::Extraction;
 
 /// Registers all paths in one in-memory transaction before the shared path filter binds.
 pub(crate) fn register_paths<'a>(
@@ -15,7 +16,7 @@ pub(crate) fn register_paths<'a>(
         "INSERT OR IGNORE INTO files(path,revision,language,status,bytes) VALUES(?1,NULL,?2,'unread',0)",
     )?;
     for path in paths {
-        register.execute(params![path, crate::extract::language(path)])?;
+        register.execute(params![path, tp_extract::language(path)])?;
     }
     drop(register);
     tx.commit()?;
@@ -32,12 +33,12 @@ pub(crate) fn mark_unavailable(
     let tx = store.conn.unchecked_transaction()?;
     let updated = tx.execute(
         "UPDATE files SET language=?2,status=?3,bytes=?4 WHERE path=?1 AND revision IS NULL",
-        params![path, crate::extract::language(path), status, length as i64],
+        params![path, tp_extract::language(path), status, length as i64],
     )?;
     if updated == 0 {
         tx.execute(
             "INSERT INTO files(path,revision,language,status,bytes) VALUES(?1,NULL,?2,?3,?4)",
-            params![path, crate::extract::language(path), status, length as i64],
+            params![path, tp_extract::language(path), status, length as i64],
         )?;
     }
     tx.commit()?;
@@ -140,7 +141,7 @@ mod tests {
         let cache = root.join("selected-cache");
         let store = Store::unpublished(&root, &cache).unwrap();
         let bytes = b"pub fn shared_source() {}\n";
-        let extraction = crate::extract::extract("lib/a.rs", bytes);
+        let extraction = tp_extract::extract("lib/a.rs", bytes);
 
         register_paths(&store, ["lib/a.rs", "nested/lib/b.rs"]).unwrap();
         mark_unavailable(&store, "nested/lib/blocked.rs", "source_unavailable", 0).unwrap();
@@ -185,7 +186,7 @@ mod tests {
             &store,
             "lib.rs",
             bytes,
-            &crate::extract::extract("lib.rs", bytes),
+            &tp_extract::extract("lib.rs", bytes),
         )
         .unwrap_err();
         assert!(error.to_string().starts_with("source_revision_collision:"));

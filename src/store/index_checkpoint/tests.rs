@@ -53,7 +53,7 @@ fn retain_fixture_sources(
         let relative = path.strip_prefix(root).unwrap();
         let path = crate::path_codec::encode_path(relative);
         let revision = blake3::hash(&bytes).to_hex().to_string();
-        let extraction = crate::extract::extract(&path, &bytes);
+        let extraction = tp_extract::extract(&path, &bytes);
         checkpoint
             .completed_file(
                 &path,
@@ -162,7 +162,7 @@ fn one_stalled_slice_does_not_require_maintenance_when_the_next_slice_progresses
     let source = fs::read(root.join("sample.rs")).unwrap();
     let path = crate::path_codec::encode_path(Path::new("sample.rs"));
     let revision = blake3::hash(&source).to_hex().to_string();
-    let extraction = crate::extract::extract(&path, &source);
+    let extraction = tp_extract::extract(&path, &source);
     let budget = QueryDeadline::start();
 
     let mut stalled = IndexCheckpoint::open(&store.conn, &root, &cache, Some(&budget)).unwrap();
@@ -534,7 +534,7 @@ fn committed_extraction_survives_mark_seen_failure_and_bounded_retry() {
     fs::write(root.join("sample.rs"), source).unwrap();
     let path = crate::path_codec::encode_path(Path::new("sample.rs"));
     let revision = blake3::hash(source).to_hex().to_string();
-    let mut extraction = crate::extract::extract(&path, source);
+    let mut extraction = tp_extract::extract(&path, source);
     extraction.status = "recovered".to_owned();
     let budget = QueryDeadline::start();
     let mut checkpoint = IndexCheckpoint::open(&store.conn, &root, &cache, Some(&budget)).unwrap();

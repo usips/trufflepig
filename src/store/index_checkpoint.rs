@@ -7,7 +7,6 @@ mod tests;
 pub use checkpoint_progress::read as read_index_progress;
 pub use checkpoint_progress::{IndexProgress, IndexProgressPhase};
 
-use crate::extract::Extraction;
 use crate::query_deadline::QueryDeadline;
 use crate::store::{Coverage, index_deadline, php_resolver, scan};
 use anyhow::{Context, Result};
@@ -16,6 +15,7 @@ use checkpoint_storage::CheckpointStorage;
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+use tp_extract::Extraction;
 
 const CHECKPOINT_DIRECTORY: &str = "stage-index-checkpoint";
 const CHECKPOINT_DATABASE: &str = "prepared.sqlite3";

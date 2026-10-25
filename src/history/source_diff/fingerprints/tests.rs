@@ -1,11 +1,10 @@
 use super::*;
 use crate::{
-    extract,
     history::source_diff::{DeclarationRelation, correspond_declarations},
     line_diff::diff_sources,
 };
 
-fn facts(bytes: &[u8], extraction: &extract::Extraction) -> Vec<FingerprintFact> {
+fn facts(bytes: &[u8], extraction: &tp_extract::Extraction) -> Vec<FingerprintFact> {
     extraction
         .definitions
         .iter()
@@ -49,8 +48,8 @@ fn fingerprint_and_original_byte_histograms_and_occurrences_agree() {
         let hashed_diff = diff_fingerprints(&before_lines, &after_lines).unwrap();
         assert_eq!(original_diff.changes, hashed_diff.changes);
         assert_eq!(original_diff.unchanged_lines, hashed_diff.unchanged_lines);
-        let old = extract::extract("a.rs", before);
-        let new = extract::extract("a.rs", after);
+        let old = tp_extract::extract("a.rs", before);
+        let new = tp_extract::extract("a.rs", after);
         let original_matches = correspond_declarations(before, after, &old, &new, &original_diff);
         let hashed_matches = correspond_fingerprints(
             &facts(before, &old),

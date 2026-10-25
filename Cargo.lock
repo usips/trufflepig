@@ -1543,6 +1543,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
 
 [[package]]
+name = "tp-extract"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "streaming-iterator",
+ "tree-sitter",
+ "tree-sitter-c-sharp",
+ "tree-sitter-javascript",
+ "tree-sitter-luau",
+ "tree-sitter-php",
+ "tree-sitter-rust",
+ "tree-sitter-typescript",
+]
+
+[[package]]
 name = "tracing"
 version = "0.1.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1666,6 +1682,7 @@ dependencies = [
  "tempfile",
  "tiktoken-rs",
  "toml",
+ "tp-extract",
  "tree-sitter",
  "tree-sitter-c-sharp",
  "tree-sitter-javascript",

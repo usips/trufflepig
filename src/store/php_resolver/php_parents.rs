@@ -2,10 +2,10 @@ use super::hierarchy_index::{
     PhpClassFact, PhpClassKind, PhpClassRole, PhpHierarchyIndex, PhpMethodFact, PhpParentCandidate,
     PhpParentKind, PhpParentStatus, PhpVisibility,
 };
-use crate::extract::php_markers::{self, ClassRole, DecodedMarker, Marker, ParentKind, Visibility};
 use anyhow::Result;
 use rusqlite::{Connection, params};
 use std::collections::HashMap;
+use tp_extract::php_markers::{self, ClassRole, DecodedMarker, Marker, ParentKind, Visibility};
 
 mod projection;
 pub(super) use projection::project;

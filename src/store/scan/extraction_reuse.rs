@@ -1,8 +1,8 @@
 //! Durable extraction facts keyed by revision, grammar, and
 //! [`extraction_cache_version`] ([cache identity](../../../docs/index-storage-contract.md#extraction-cache-identity)).
-use crate::extract::{self, Extraction};
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use tp_extract::Extraction;
 
 const MAX_FACTS: usize = 50_000;
 pub(in crate::store) const EXTRACTION_CONTRACT_REVISION: u32 = 6;
@@ -66,7 +66,7 @@ pub(in crate::store) fn cached_extraction(
     if let Some(extraction) = published_extraction(previous, path, revision, cache_version)? {
         return Ok((extraction, true));
     }
-    let mut extraction = extract::extract(path, source);
+    let mut extraction = tp_extract::extract(path, source);
     limit_facts(&mut extraction);
     Ok((extraction, false))
 }

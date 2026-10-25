@@ -1,10 +1,10 @@
 use super::Store;
 use super::seed::{SeedOutcome, ensure_seeded, ensure_seeded_with_limit, read_seed_outcome};
-use crate::extract::{Definition, Extraction};
 use crate::path_codec::encode_path;
 use rusqlite::{Connection, params};
 use std::fs;
 use std::path::{Path, PathBuf};
+use tp_extract::{Definition, Extraction};
 
 struct SeedFixture {
     _directory: tempfile::TempDir,

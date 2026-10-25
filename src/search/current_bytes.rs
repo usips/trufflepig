@@ -1,7 +1,6 @@
 //! Re-run ordinary search lanes against bounded current-file snapshots.
 use super::{Query, search_prepared, telemetry::RetrievalTrace};
 use crate::{
-    extract::Extraction,
     identity::ContentRevision,
     query_deadline::QueryDeadline,
     results::Hit,
@@ -9,6 +8,7 @@ use crate::{
     store::{Store, current_source},
 };
 use anyhow::Result;
+use tp_extract::Extraction;
 
 /// Runs the normal exact, occurrence, lexical, and filename lanes on one current file.
 pub(crate) fn search_file(
@@ -102,7 +102,7 @@ mod tests {
     #[test]
     fn semantic_representative_previews_current_file_bytes() {
         let bytes = b"pub struct CurrentSemanticName;\n";
-        let extraction = crate::extract::extract("src/lib.rs", bytes);
+        let extraction = tp_extract::extract("src/lib.rs", bytes);
         let query = Query::parse("CurrentSemanticName").unwrap();
         let hit = semantic_representative(&query, "src/lib.rs", bytes, &extraction).unwrap();
         let revision = ContentRevision::of(bytes).to_string();

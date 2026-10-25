@@ -4,13 +4,13 @@
 //! prefix lists one row per file naming its top-level items. A path with no
 //! indexed file fails with `no_indexed_path` and up to three nearest paths.
 use crate::{
-    extract::Definition,
     results::{Hit, MAX_HITS, ResultSet},
     search::{BoundPathFilter, PathFilter, hit_row, snippets},
     store::Store,
 };
 use anyhow::Result;
 use rusqlite::params;
+use tp_extract::Definition;
 
 /// Longest item-name list a directory row carries before summarizing as `+N`.
 const DIRECTORY_ROW_NAMES: usize = 90;
@@ -91,7 +91,7 @@ fn sql_kinds(kinds: &[&str]) -> String {
 pub fn outline_extracted(definitions: &mut Vec<Definition>) {
     definitions.retain(|definition| {
         OUTLINE_KINDS.contains(&definition.kind.as_str())
-            && definition.container.as_deref() != Some(crate::extract::FOREIGN_ITEM_CONTAINER)
+            && definition.container.as_deref() != Some(tp_extract::FOREIGN_ITEM_CONTAINER)
     });
     definitions.sort_by_key(|definition| {
         (
@@ -122,7 +122,7 @@ fn file_outline(store: &Store, path: &str) -> Result<Vec<Hit>> {
             params![
                 path,
                 (MAX_HITS + 1) as i64,
-                crate::extract::FOREIGN_ITEM_CONTAINER
+                tp_extract::FOREIGN_ITEM_CONTAINER
             ],
             hit_row,
         )?
@@ -160,7 +160,7 @@ fn directory_outline(store: &Store, paths: &BoundPathFilter) -> Result<Vec<Hit>>
     ))?;
     let mut rows = stmt.query(params![
         (MAX_HITS + 1) as i64,
-        crate::extract::FOREIGN_ITEM_CONTAINER
+        tp_extract::FOREIGN_ITEM_CONTAINER
     ])?;
     let mut hits: Vec<Hit> = Vec::with_capacity(64);
     let mut hidden = 0usize;

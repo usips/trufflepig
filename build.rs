@@ -30,6 +30,7 @@ fn main() {
     );
     let mut files = vec![manifest.join("Cargo.toml"), manifest.join("Cargo.lock")];
     collect_files(&manifest.join("src"), &mut files);
+    collect_files(&manifest.join("crates"), &mut files);
     files.sort_by(|left, right| left.cmp(right));
     files.dedup();
 

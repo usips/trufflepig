@@ -167,10 +167,8 @@ pub(super) fn map_current_file(
         !bytes.contains(&0),
         coded!(SourceExcluded, "current map path is binary")
     );
-    let extraction = source::usable_extraction(
-        &encoded_path,
-        crate::extract::extract(&encoded_path, &bytes),
-    )?;
+    let extraction =
+        source::usable_extraction(&encoded_path, tp_extract::extract(&encoded_path, &bytes))?;
     check_deadline(deadline)?;
     let revision = crate::identity::ContentRevision::of(&bytes).to_string();
     let facts_indexed = extraction_fact_count(&extraction);
@@ -411,7 +409,7 @@ fn read_current_sources(
             current.complete = false;
             break;
         }
-        let extraction = crate::extract::extract(encoded_path, &bytes);
+        let extraction = tp_extract::extract(encoded_path, &bytes);
         let facts = extraction_fact_count(&extraction);
         let next_facts = current.facts_indexed.saturating_add(facts);
         if next_facts > MAX_CURRENT_SOURCE_FACTS {
@@ -498,7 +496,7 @@ fn current_relative_path(path: &str) -> Result<std::path::PathBuf> {
     Ok(relative)
 }
 
-fn extraction_fact_count(extraction: &crate::extract::Extraction) -> usize {
+fn extraction_fact_count(extraction: &tp_extract::Extraction) -> usize {
     extraction
         .definitions
         .len()

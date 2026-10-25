@@ -1,6 +1,6 @@
 use super::{Store, live_index, php_resolver, scan, schema};
-use crate::extract::{self, Extraction, Occurrence, php_markers::MARKER_KIND};
 use rusqlite::{Connection, params};
+use tp_extract::{Extraction, Occurrence, php_markers::MARKER_KIND};
 
 const CHILD_PATH: &str = "src/addons/Owner/Addon/Impl.php";
 const CHILD_SOURCE: &str = "<?php\nnamespace Owner\\Addon;\nclass Impl extends \\XFCP_Base { public function run() { return parent::run(); } }\n";
@@ -66,7 +66,7 @@ fn prior_extraction_cache_version(revision: u32) -> i64 {
 #[test]
 fn extraction_revision_rebuilds_markerless_php_cache_facts() {
     let mut fixture = inheritance_cache_fixture();
-    let extracted = extract::extract(CHILD_PATH, CHILD_SOURCE.as_bytes());
+    let extracted = tp_extract::extract(CHILD_PATH, CHILD_SOURCE.as_bytes());
     assert!(
         php_marker_count(&extracted) > 0,
         "fixture must produce PHP markers"

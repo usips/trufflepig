@@ -175,8 +175,8 @@ fn changed_spans(
     let differences =
         crate::line_diff::diff_sources(old.unwrap_or_default(), new.unwrap_or_default());
     if let Some(target) = target.filter(|target| target.symbol.is_some()) {
-        let before = crate::extract::extract(path, old.unwrap_or_default());
-        let after = crate::extract::extract(path, new.unwrap_or_default());
+        let before = tp_extract::extract(path, old.unwrap_or_default());
+        let after = tp_extract::extract(path, new.unwrap_or_default());
         let correspondence = source_diff::correspond_declarations(
             old.unwrap_or_default(),
             new.unwrap_or_default(),

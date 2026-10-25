@@ -48,7 +48,7 @@ const RAISERS: &[&str] = &[
 fn non_test_code_matches_codes_not_rendered_text() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut violations = Vec::new();
-    for path in rust_sources(&root.join("src")) {
+    for path in workspace_sources(root) {
         let relative = path.strip_prefix(root).unwrap().display().to_string();
         if is_test_file(&relative) {
             continue;
@@ -78,6 +78,15 @@ fn non_test_code_matches_codes_not_rendered_text() {
         "match error codes with ErrorCode and raise them with coded!:\n{}",
         violations.join("\n")
     );
+}
+
+/// Rust files under the root package's `src/` and every `crates/*/src/`.
+fn workspace_sources(root: &Path) -> Vec<PathBuf> {
+    let mut found = rust_sources(&root.join("src"));
+    for entry in std::fs::read_dir(root.join("crates")).unwrap() {
+        found.extend(rust_sources(&entry.unwrap().path().join("src")));
+    }
+    found
 }
 
 fn rust_sources(directory: &Path) -> Vec<PathBuf> {

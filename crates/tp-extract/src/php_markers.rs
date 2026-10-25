@@ -3,24 +3,24 @@
 use super::Relationship;
 use std::ops::Range;
 
-pub(crate) const MARKER_KIND: &str = "__trufflepig_php_marker_v1";
+pub const MARKER_KIND: &str = "__trufflepig_php_marker_v1";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ClassRole {
+pub enum ClassRole {
     Ordinary,
     Proxy,
     Unknown,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ParentKind {
+pub enum ParentKind {
     Ordinary,
     Proxy,
     Unknown,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Visibility {
+pub enum Visibility {
     Public,
     Protected,
     Private,
@@ -28,7 +28,7 @@ pub(crate) enum Visibility {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum Marker {
+pub enum Marker {
     Class {
         role: ClassRole,
         conditional: bool,
@@ -50,7 +50,7 @@ pub(crate) enum Marker {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct DecodedMarker {
+pub struct DecodedMarker {
     pub source: i64,
     pub target: Option<i64>,
     pub start: i64,
@@ -94,7 +94,7 @@ pub(crate) fn decode(relationship: &Relationship) -> Option<Marker> {
         .then_some(marker)
 }
 
-pub(crate) fn decode_fields(
+pub fn decode_fields(
     kind: &str,
     provenance: &str,
     source: i64,

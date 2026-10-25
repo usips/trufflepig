@@ -30,7 +30,7 @@ pub(super) fn resolve(conn: &mut Connection) -> Result<()> {
     parent_projection::resolve_parent_calls(conn, &hierarchy, &mut budget)?;
     conn.execute(
         "DELETE FROM relationships WHERE kind=?1",
-        [crate::extract::php_markers::MARKER_KIND],
+        [tp_extract::php_markers::MARKER_KIND],
     )?;
     Ok(())
 }

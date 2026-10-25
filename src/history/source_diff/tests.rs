@@ -1,13 +1,13 @@
 use super::*;
-use crate::extract::{self, Definition, Extraction};
 use crate::line_diff::diff_sources;
+use tp_extract::{Definition, Extraction};
 
 fn declarations(before: &[u8], after: &[u8]) -> Vec<DeclarationCorrespondence> {
     correspond_declarations(
         before,
         after,
-        &extract::extract("a.rs", before),
-        &extract::extract("a.rs", after),
+        &tp_extract::extract("a.rs", before),
+        &tp_extract::extract("a.rs", after),
         &diff_sources(before, after),
     )
 }
@@ -49,7 +49,7 @@ fn declaration_correspondence_distinguishes_edit_move_and_deletion() {
 #[test]
 fn incomplete_extraction_cannot_prove_deletion_or_addition() {
     let before = b"fn present() {}\n";
-    let extraction = extract::extract("a.rs", before);
+    let extraction = tp_extract::extract("a.rs", before);
     for status in [
         "parse_error",
         "cancelled",

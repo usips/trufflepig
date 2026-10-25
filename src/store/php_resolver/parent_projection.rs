@@ -1,9 +1,9 @@
 use super::hierarchy_index::PhpHierarchyIndex;
 use super::parent_lookup;
-use crate::extract::php_markers::{self, Marker};
 use crate::store::inheritance::DerivedBudget;
 use anyhow::{Result, bail, ensure};
 use rusqlite::{Connection, Statement, params};
+use tp_extract::php_markers::{self, Marker};
 
 const MAX_PARENT_CALL_MARKERS: usize = 200_000;
 const MAX_PARENT_CALL_CANDIDATES: usize = 64;

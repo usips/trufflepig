@@ -1,6 +1,5 @@
 use super::{ProbeName, ProbeOutcome, ProbeResult};
 use crate::{
-    extract,
     path_codec::decode_path,
     source,
     store::{Store, extraction_cache_version},
@@ -65,7 +64,7 @@ fn samples(store: &Store, cache: &Path, report: &mut ProbeResult, started: Insta
             report.unverified += 1;
             continue;
         };
-        let extracted = extract::extract(&path, &bytes);
+        let extracted = tp_extract::extract(&path, &bytes);
         if matches!(extracted.status.as_str(), "cancelled" | "fact_limit") {
             report.unverified += 1;
             continue;
@@ -106,7 +105,7 @@ fn samples(store: &Store, cache: &Path, report: &mut ProbeResult, started: Insta
 fn published_definitions_match(
     conn: &rusqlite::Connection,
     path: &str,
-    extracted: &extract::Extraction,
+    extracted: &tp_extract::Extraction,
 ) -> Result<Option<bool>> {
     const MAX_DEFINITIONS: usize = 1024;
     if extracted.definitions.len() > MAX_DEFINITIONS {
