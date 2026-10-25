@@ -4,7 +4,7 @@
 use super::engine::{RerankEngine, open_rerank_engine};
 use super::load_retry::LoadRetry;
 use super::protocol::{self, WorkerCommand, WorkerReply, write_reply};
-use super::{QueuedConnection, RunningConnection, now_ms};
+use super::worker_runtime::{QueuedConnection, RunningConnection, now_ms};
 use crate::{VerifiedAssetDigests, runtime_config::InferenceConfig};
 use std::{
     collections::VecDeque,
