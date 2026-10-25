@@ -73,7 +73,7 @@ pub(super) fn entries(
                 .repository
                 .blob(&entry.after.as_ref().expect("postimage").blob)?;
             ensure_diff_capacity(&old, &new)?;
-            let changes = source_diff::diff_sources(&old, &new);
+            let changes = crate::line_diff::diff_sources(&old, &new);
             truncated |= changes.changes.len()
                 > results::MAX_HITS
                     .saturating_sub(entries.len())

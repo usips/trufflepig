@@ -11,6 +11,7 @@ pub mod extract;
 pub mod git_runner;
 pub mod history;
 pub mod identity;
+pub mod line_diff;
 pub mod output;
 pub mod path_codec;
 pub mod probes;

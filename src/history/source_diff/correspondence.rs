@@ -1,7 +1,7 @@
 //! Declaration correspondence preserves occurrence indexes and incomplete extraction evidence.
 
-use super::{SourceDiff, line_offsets};
 use crate::extract::{Definition, Extraction};
+use crate::line_diff::{SourceDiff, line_offsets};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, hash::Hash};
 
