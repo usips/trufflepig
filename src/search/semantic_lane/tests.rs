@@ -1,12 +1,13 @@
 #[cfg(feature = "semantic")]
 use crate::{
-    query_deadline::QueryDeadline,
     search::{self, Query},
     semantic::{
         DIMENSIONS, Embedding, SemanticSession, content_key, embedding_cache::EmbeddingCache,
     },
     store::Store,
 };
+#[cfg(feature = "semantic")]
+use tp_core::query_deadline::QueryDeadline;
 
 #[cfg(feature = "semantic")]
 fn fixture(files: &[(&str, &[u8])]) -> (tempfile::TempDir, tempfile::TempDir, Store) {

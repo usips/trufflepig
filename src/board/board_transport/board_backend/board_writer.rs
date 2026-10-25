@@ -1,13 +1,10 @@
 //! Deadline-bound writer access and imported-feedback dispatch.
 
 use super::{BoardBackend, BoardHost};
-use crate::{
-    board::{
-        board_ids::EventSeq,
-        board_protocol::{BoardError, BoardOp, BoardReply, BoardRequest},
-        local_board::LocalBoard,
-    },
-    query_deadline::QueryDeadline,
+use crate::board::{
+    board_ids::EventSeq,
+    board_protocol::{BoardError, BoardOp, BoardReply, BoardRequest},
+    local_board::LocalBoard,
 };
 use anyhow::{Result, bail};
 #[cfg(test)]
@@ -16,6 +13,7 @@ use std::{
     sync::{Mutex, MutexGuard, TryLockError},
     time::Duration,
 };
+use tp_core::query_deadline::QueryDeadline;
 
 impl BoardHost {
     /// Opens the writer, creating and migrating the database when needed. The
@@ -184,8 +182,9 @@ impl BoardBackend for BoardHostBackendAccess<'_> {
     fn linked_commit_oids(
         &self,
         repo_key: &crate::board::board_ids::RepoKey,
-        oids: &[crate::identity::GitOid],
-    ) -> std::result::Result<std::collections::BTreeSet<crate::identity::GitOid>, BoardError> {
+        oids: &[tp_core::identity::GitOid],
+    ) -> std::result::Result<std::collections::BTreeSet<tp_core::identity::GitOid>, BoardError>
+    {
         self.0
             .linked_commit_oids_by(repo_key, oids, &self.1)
             .map_err(BoardError::from)

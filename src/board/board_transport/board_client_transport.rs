@@ -1,13 +1,9 @@
 //! One capability probe precedes board dispatch; local fallback requires the database pin.
+use crate::board::board_grammar::BoardArguments;
 use crate::board::{
     BOARD_API, BoardConfig, BoardHost, BoardRequest, BoardRequestKey,
     board_grammar::{self, BoardCommand},
     board_protocol::{AgentClaims, BoardOp},
-};
-use crate::coded_error::CodedContext;
-use crate::{
-    board::board_grammar::BoardArguments, query_deadline::QueryDeadline,
-    request_context::RequestContext,
 };
 use anyhow::{Result, bail, ensure};
 use std::{
@@ -16,6 +12,8 @@ use std::{
     path::{Path, PathBuf},
     time::SystemTime,
 };
+use tp_core::coded_error::CodedContext;
+use tp_core::{query_deadline::QueryDeadline, request_context::RequestContext};
 
 mod local_access;
 
@@ -52,7 +50,7 @@ impl BoardGateway for SystemGateway {
         context: &RequestContext,
         deadline: &QueryDeadline,
     ) -> Result<Option<String>> {
-        crate::daemon_transport::router_request_by(args, context, deadline.clone())
+        tp_core::daemon_transport::router_request_by(args, context, deadline.clone())
     }
     fn ensure(&mut self, deadline: &QueryDeadline) -> Result<()> {
         (self.ensure_router)(deadline.clone())
@@ -71,13 +69,13 @@ impl BoardClientTransport {
         deadline: QueryDeadline,
     ) -> Result<String> {
         let command = board_grammar::parse(options, None)?;
-        let encoded = crate::daemon_transport::request_encoded_size(forwarded, context)?;
+        let encoded = tp_core::daemon_transport::request_encoded_size(forwarded, context)?;
         ensure!(
-            encoded <= crate::daemon_transport::MAX_DAEMON_REQUEST_BYTES,
+            encoded <= tp_core::daemon_transport::MAX_DAEMON_REQUEST_BYTES,
             coded!(
                 InvalidBody,
                 "encoded board request is {encoded} bytes; maximum is {} bytes; split the plan",
-                crate::daemon_transport::MAX_DAEMON_REQUEST_BYTES
+                tp_core::daemon_transport::MAX_DAEMON_REQUEST_BYTES
             )
         );
         self.run_prepared(
@@ -87,8 +85,8 @@ impl BoardClientTransport {
             context,
             &mut SystemGateway { ensure_router },
             &mut BoardConfig::load,
-            crate::runtime_paths::system_dir().as_deref(),
-            &crate::runtime_paths::spool_dir(),
+            tp_core::runtime_paths::system_dir().as_deref(),
+            &tp_core::runtime_paths::spool_dir(),
             &deadline,
         )
     }
@@ -282,7 +280,7 @@ fn failed_request(
     board_request_attempted: bool,
     error: anyhow::Error,
 ) -> Result<String> {
-    if let Some(timeout) = crate::daemon_transport::DaemonReplyTimeout::from_error(&error)
+    if let Some(timeout) = tp_core::daemon_transport::DaemonReplyTimeout::from_error(&error)
         && matches!(command, BoardCommand::Op(op) if !op.is_read_only() && !matches!(op, BoardOp::Feedback { .. }))
     {
         if !board_request_attempted {
@@ -315,7 +313,7 @@ fn failed_request(
 
 #[derive(Debug)]
 struct BoardPreflightTimeout {
-    timeout: crate::daemon_transport::DaemonReplyTimeout,
+    timeout: tp_core::daemon_transport::DaemonReplyTimeout,
 }
 
 impl fmt::Display for BoardPreflightTimeout {
@@ -342,7 +340,7 @@ impl StdError for BoardPreflightTimeout {
 
 #[derive(Debug)]
 struct AmbiguousBoardWriteTimeout {
-    timeout: crate::daemon_transport::DaemonReplyTimeout,
+    timeout: tp_core::daemon_transport::DaemonReplyTimeout,
     receipt_key: Option<BoardRequestKey>,
 }
 
@@ -441,7 +439,7 @@ fn local_reply(
     check_deadline(deadline)?;
     // A live router owns migration: feedback queues for it to import while
     // other operations run without migrating and refuse stale storage only.
-    if runtime.is_some_and(|runtime| crate::daemon_transport::running(runtime)) {
+    if runtime.is_some_and(|runtime| tp_core::daemon_transport::running(runtime)) {
         if matches!(
             command,
             BoardCommand::Op(crate::board::BoardOp::Feedback { .. })

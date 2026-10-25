@@ -6,7 +6,7 @@ use crate::board::board_ids::EntryId;
 use crate::board::board_protocol::{
     GateStatus, ProgressFact, ProgressGateFact, ProgressHead, ProgressStep, ProgressTests,
 };
-use crate::identity::GitOid;
+use tp_core::identity::GitOid;
 
 pub(super) fn latest_head(
     conn: &Connection,

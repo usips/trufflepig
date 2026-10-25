@@ -1,15 +1,15 @@
 use super::*;
-use crate::{
-    daemon_transport::request_by,
-    query_deadline::QueryDeadline,
-    request_pool::{PooledJob, RequestPool},
-};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
+use tp_core::{
+    daemon_transport::request_by,
+    query_deadline::QueryDeadline,
+    request_pool::{PooledJob, RequestPool},
+};
 
 const CLIENT_BUDGET: Duration = Duration::from_secs(12);
 const TEST_WAIT: Duration = Duration::from_secs(5);
@@ -326,11 +326,12 @@ fn disconnect_forwarded_request(
 ) {
     let query = "re:disconnect".to_owned();
     let args = workspace_args(config, root, &["search", "ws:all", &query]);
-    let mut client = UnixStream::connect(cache.join(crate::daemon_transport::SOCKET_NAME)).unwrap();
-    crate::daemon_transport::daemon_wire_protocol::write_request(
+    let mut client =
+        UnixStream::connect(cache.join(tp_core::daemon_transport::SOCKET_NAME)).unwrap();
+    tp_core::daemon_transport::daemon_wire_protocol::write_request(
         &mut client,
-        &crate::daemon_transport::daemon_wire_protocol::DaemonRequest::Arguments {
-            context: crate::request_context::RequestContext::new(None, None),
+        &tp_core::daemon_transport::daemon_wire_protocol::DaemonRequest::Arguments {
+            context: tp_core::request_context::RequestContext::new(None, None),
             args,
         },
     )
@@ -340,7 +341,7 @@ fn disconnect_forwarded_request(
     reader.set_read_timeout(Some(TEST_WAIT)).unwrap();
     let (events_tx, query_for_reader) = (events_tx.clone(), query.clone());
     let reply_reader = std::thread::spawn(move || {
-        let _ = crate::daemon_transport::daemon_wire_protocol::read_reply(&mut reader);
+        let _ = tp_core::daemon_transport::daemon_wire_protocol::read_reply(&mut reader);
         let _ = events_tx.send(DisconnectEvent::ClientReply(query_for_reader));
     });
 

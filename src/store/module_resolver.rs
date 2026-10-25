@@ -1,8 +1,8 @@
 use super::module_config as config;
-use crate::path_codec::{decode_path, encode_path};
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::{Path, PathBuf};
+use tp_core::path_codec::{decode_path, encode_path};
 
 pub(super) fn resolve(conn: &mut Connection) -> Result<()> {
     let transaction = conn.transaction()?;

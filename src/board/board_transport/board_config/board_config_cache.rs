@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn cached_configuration_errors_retry_on_mtime_and_keep_the_database_pin() {
-        let directory = crate::test_fixtures::scratch("board-runtime-");
+        let directory = tp_core::test_fixtures::scratch("board-runtime-");
         let path = directory.path().join("board.toml");
         let database = directory.path().join("board.sqlite3");
         fs::write(&path, "broken = true").unwrap();

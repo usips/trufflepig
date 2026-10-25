@@ -1,7 +1,8 @@
 use super::*;
+use crate::board::board_actor::BoardActor;
 use crate::board::board_ids::EventSeq;
 use crate::board::board_protocol::{ProgressStep, ProgressTests};
-use crate::{board::board_actor::BoardActor, request_context::HarnessLabel};
+use tp_core::request_context::HarnessLabel;
 
 fn write_context(now: i64) -> WriteContext {
     WriteContext {

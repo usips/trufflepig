@@ -1,7 +1,7 @@
 use super::*;
 
 fn daemon_timeout() -> anyhow::Error {
-    crate::daemon_transport::DaemonReplyTimeout::new(
+    tp_core::daemon_transport::DaemonReplyTimeout::new(
         Duration::from_secs(30),
         Duration::from_secs(30),
     )
@@ -70,7 +70,7 @@ fn assert_preflight_timeout(error: &anyhow::Error) {
     assert!(!message.contains("request_key="), "{message}");
     assert!(!message.contains("board receipt"), "{message}");
     assert!(
-        crate::daemon_transport::DaemonReplyTimeout::from_error(error).is_some(),
+        tp_core::daemon_transport::DaemonReplyTimeout::from_error(error).is_some(),
         "typed timeout was lost: {error:?}"
     );
 }

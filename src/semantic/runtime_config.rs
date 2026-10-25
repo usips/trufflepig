@@ -1,6 +1,5 @@
 //! User-wide inference runtime configuration.
 
-use crate::coded_error::CodedContext;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -8,6 +7,7 @@ use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
+use tp_core::coded_error::CodedContext;
 
 #[cfg(feature = "semantic")]
 mod cuda_identity;

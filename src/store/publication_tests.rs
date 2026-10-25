@@ -1,6 +1,6 @@
 use super::*;
-use crate::path_codec::{decode_path, encode_path};
-use crate::query_deadline::QueryDeadline;
+use tp_core::path_codec::{decode_path, encode_path};
+use tp_core::query_deadline::QueryDeadline;
 
 fn fixture() -> (tempfile::TempDir, Store) {
     let directory = tempfile::tempdir().unwrap();
@@ -205,7 +205,7 @@ fn open_read_interrupts_statements_after_its_deadline() {
         )
         .map_err(anyhow::Error::from)
         .unwrap_err();
-    assert!(crate::coded_error::ErrorCode::TimedOut.is_code_of(&deadline.classify(error)));
+    assert!(tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&deadline.classify(error)));
 }
 
 #[test]
@@ -237,7 +237,7 @@ fn parent_view_reads_worktree_bytes() {
     let live = crate::search::search(&view, &query, false, &parent_cache).unwrap();
     assert_eq!(live.hits.len(), 1);
     assert_eq!(live.hits[0].path, "lib.rs");
-    let budget = crate::output::OutputBudget::new(600).unwrap();
+    let budget = tp_core::output::OutputBudget::new(600).unwrap();
     let read = crate::source::show(&view, "path:lib.rs:1-1", &budget).unwrap();
     assert!(read.contains("edited in worktree"), "{read}");
     let indexed = crate::search::definitions(

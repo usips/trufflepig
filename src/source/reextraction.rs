@@ -1,12 +1,10 @@
 //! Current-bytes definition lookup for files whose published revision is behind
 //! disk: extracts one file in memory without touching any index.
 use super::{line_span, read_contained};
-use crate::{
-    identity::{ByteSpan, ContentRevision},
-    results::Hit,
-};
+use crate::results::Hit;
 use anyhow::{Result, bail, ensure};
 use std::path::Path;
+use tp_core::identity::{ByteSpan, ContentRevision};
 use tp_extract::Extraction;
 
 /// One definition located in a file's current bytes; unpublished, so unverified
@@ -56,7 +54,7 @@ impl ReextractedDefinition {
 pub fn reextract_definition(root: &Path, hit: &Hit) -> Result<Option<ReextractedDefinition>> {
     let bytes = read_contained(
         root,
-        &crate::path_codec::decode_path(&hit.path)?,
+        &tp_core::path_codec::decode_path(&hit.path)?,
         crate::store::MAX_SOURCE_BYTES as usize,
     )?;
     ensure!(

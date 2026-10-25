@@ -2,10 +2,7 @@
 
 use super::super::current_span;
 use super::{AcquiredSource, MAX_READ_BYTES, read_contained};
-use crate::coded_error::CodedContext;
 use crate::{
-    coded_error::{ErrorCode, coded_error},
-    identity::{ByteSpan, ContentRevision},
     results::{self, Hit, ResultEntry},
     search::InvocationDirectory,
     store::Store,
@@ -14,6 +11,11 @@ use anyhow::{Result, ensure};
 use std::{
     os::unix::ffi::OsStrExt,
     path::{Component, Path},
+};
+use tp_core::coded_error::CodedContext;
+use tp_core::{
+    coded_error::{ErrorCode, coded_error},
+    identity::{ByteSpan, ContentRevision},
 };
 
 mod stateless_path_read;
@@ -61,8 +63,8 @@ fn acquire_path_with_storage(
         }
         _ => (target, (1, usize::MAX), None),
     };
-    let relative = crate::path_codec::decode_path(path)?;
-    let encoded_path = crate::path_codec::encode_path(&relative);
+    let relative = tp_core::path_codec::decode_path(path)?;
+    let encoded_path = tp_core::path_codec::encode_path(&relative);
     let bytes = match read_contained(&store.root, &relative, MAX_READ_BYTES) {
         Ok(bytes) => bytes,
         Err(error) if ErrorCode::SourceUnavailable.is_code_of(&error) => {
@@ -71,7 +73,7 @@ fn acquire_path_with_storage(
                 && read_contained(&store.root, &invocation_relative, MAX_READ_BYTES).is_ok()
                 && let Some(unavailable) = coded_error(&error)
             {
-                let suggested = crate::path_codec::encode_path(&invocation_relative);
+                let suggested = tp_core::path_codec::encode_path(&invocation_relative);
                 let range = range.map_or_else(String::new, |range| format!(":{range}"));
                 anyhow::bail!(unavailable.appended(&format!(
                     "; path values are relative to the selected member root; use `path:{suggested}{range}`"
@@ -119,7 +121,7 @@ fn acquire_path_with_storage(
             ) {
                 Ok(set) => format!("{set}:1"),
                 Err(error)
-                    if !crate::coded_error::ErrorCode::TimedOut.is_code_of(&error)
+                    if !tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error)
                         && crate::store::is_index_cache_unavailable(&error) =>
                 {
                     stateless_handle(&store.root, &relative, start, end, &revision_text)
@@ -193,10 +195,10 @@ pub(super) fn acquire_path_continuation(
         .with_coded_context(|| coded!(InvalidCursor, "invalid original end byte"))?;
     let revision = ContentRevision::parse(expected_revision)
         .with_coded_context(|| coded!(InvalidCursor, "invalid source revision"))?;
-    let relative = crate::path_codec::decode_path(encoded_path)
+    let relative = tp_core::path_codec::decode_path(encoded_path)
         .with_coded_context(|| coded!(InvalidCursor, "invalid encoded path"))?;
     ensure!(
-        crate::path_codec::encode_path(&relative) == encoded_path,
+        tp_core::path_codec::encode_path(&relative) == encoded_path,
         coded!(InvalidCursor, "path is not canonically encoded")
     );
     ensure!(
@@ -238,7 +240,7 @@ pub(super) fn acquire_path_continuation(
     );
     Ok(AcquiredSource {
         bytes,
-        path: crate::path_codec::encode_path(&relative),
+        path: tp_core::path_codec::encode_path(&relative),
         revision,
         span: ByteSpan::new(offset, original_span.end)?,
         verified: false,
@@ -260,7 +262,7 @@ fn stateless_handle(
     let root_identity = PathCursorRootIdentity::for_root(root);
     format!(
         "path:{root_identity}:{}:{start}-{end}@{revision}",
-        crate::path_codec::encode_path(relative),
+        tp_core::path_codec::encode_path(relative),
     )
 }
 

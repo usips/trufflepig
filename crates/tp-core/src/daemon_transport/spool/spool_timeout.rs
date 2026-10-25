@@ -7,12 +7,12 @@ pub(super) fn local_spool_timeout() -> CodedError {
     coded!(TimedOut, "spooled request deadline expired").with_detail(CodeDetail::LocalSpoolTimeout)
 }
 
-pub(crate) fn is_local_spool_timeout(error: &anyhow::Error) -> bool {
+pub fn is_local_spool_timeout(error: &anyhow::Error) -> bool {
     CodeDetail::LocalSpoolTimeout.is_anywhere_in(error)
 }
 
 /// Whether `error` is a `timed_out` answer or a locally expired spool wait.
-pub(crate) fn is_spool_or_coded_timeout(error: &anyhow::Error) -> bool {
+pub fn is_spool_or_coded_timeout(error: &anyhow::Error) -> bool {
     ErrorCode::TimedOut.is_code_of(error) || is_local_spool_timeout(error)
 }
 

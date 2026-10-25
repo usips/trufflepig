@@ -30,7 +30,7 @@ pub(super) fn unlink_change(reply: BoardReply) -> BoardChange {
 
 #[test]
 fn unlink_removes_task_link_and_writes_event() {
-    let directory = crate::test_fixtures::scratch("board-unlink-");
+    let directory = tp_core::test_fixtures::scratch("board-unlink-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -116,7 +116,7 @@ fn unlink_removes_task_link_and_writes_event() {
 
 #[test]
 fn unlink_requires_owner_or_link_grant() {
-    let directory = crate::test_fixtures::scratch("board-unlink-");
+    let directory = tp_core::test_fixtures::scratch("board-unlink-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -169,7 +169,7 @@ fn unlink_requires_owner_or_link_grant() {
 
 #[test]
 fn unlink_replay_is_idempotent() {
-    let directory = crate::test_fixtures::scratch("board-unlink-");
+    let directory = tp_core::test_fixtures::scratch("board-unlink-");
     let path = directory.path().join("board.sqlite3");
     let mut board = LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap();
     let (owner, task) = manual_link_plan(&mut board);

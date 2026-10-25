@@ -1,7 +1,7 @@
 use super::*;
 use crate::board::repo_identity::tests::FixtureRegistration;
-use crate::test_fixtures::GitFixture;
-use crate::workspace_config::WorkspaceConfig;
+use tp_core::test_fixtures::GitFixture;
+use tp_core::workspace_config::WorkspaceConfig;
 
 mod project_fixture;
 use project_fixture::ProjectFixture;

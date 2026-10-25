@@ -5,14 +5,10 @@ mod heartbeat;
 mod replaced_executable_tests;
 #[cfg(test)]
 mod tests;
-use crate::coded_error::CodedContext;
 pub use heartbeat::Heartbeat;
+use tp_core::coded_error::CodedContext;
 
 use super::History;
-use crate::background_process::{
-    BackgroundChild, BackgroundOwner, current_background_executable, spawn_background_for,
-};
-use crate::git_runner::GitRepository;
 use anyhow::{Context, Result, bail};
 use fs2::FileExt;
 use notify::{EventKind, RecursiveMode, Watcher};
@@ -24,6 +20,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc::{Receiver, sync_channel};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tp_core::background_process::{
+    BackgroundChild, BackgroundOwner, current_background_executable, spawn_background_for,
+};
+use tp_core::git_runner::GitRepository;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 const REGISTRATION_TTL: Duration = Duration::from_secs(15);

@@ -5,7 +5,7 @@ edition = "2024"
 license = "GPL-3.0-only"
 
 [workspace]
-members = ["crates/tp-extract"]
+members = ["crates/tp-core", "crates/tp-extract"]
 
 [workspace.package]
 version = "0.1.0"
@@ -41,6 +41,7 @@ tree-sitter-php = "=0.24.2"
 uuid = { version = "1", features = ["v4"] }
 fastembed = { version = "=6.1.0", default-features = false, features = ["ort-load-dynamic"] }
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic"] }
+tp-core = { path = "crates/tp-core" }
 tp-extract = { path = "crates/tp-extract" }
 
 [dependencies]
@@ -71,9 +72,13 @@ tree-sitter-luau.workspace = true
 tree-sitter-c-sharp.workspace = true
 tree-sitter-php.workspace = true
 uuid.workspace = true
+tp-core.workspace = true
 tp-extract.workspace = true
 fastembed = { workspace = true, optional = true }
 ort = { workspace = true, optional = true }
+
+[dev-dependencies]
+tp-core = { workspace = true, features = ["test-support"] }
 
 [features]
 semantic = ["dep:fastembed", "dep:ort"]

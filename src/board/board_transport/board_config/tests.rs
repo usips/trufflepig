@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn repository_identity_overrides_use_strict_typed_repo_keys() {
-    let directory = crate::test_fixtures::scratch("board-config-");
+    let directory = tp_core::test_fixtures::scratch("board-config-");
     let defaults = || BoardConfig::for_database(directory.path().join("overrides.sqlite3"));
     let key = "a".repeat(40);
     let input = format!("[repos]\n'https://example.test/repo' = '{key}'");
@@ -13,7 +13,7 @@ fn repository_identity_overrides_use_strict_typed_repo_keys() {
 
 #[test]
 fn repository_overrides_normalize_detected_origins_and_reject_conflicting_aliases() {
-    let directory = crate::test_fixtures::scratch("board-config-");
+    let directory = tp_core::test_fixtures::scratch("board-config-");
     let defaults =
         || BoardConfig::for_database(directory.path().join("normalized-overrides.sqlite3"));
     let first = "a".repeat(40);
@@ -45,7 +45,7 @@ fn relative_board_database_configuration_is_rejected() {
 fn strict_config_rejects_unknown_fields_and_invalid_ttl() {
     let defaults = || {
         BoardConfig::for_database(
-            crate::test_fixtures::scratch("board-config-")
+            tp_core::test_fixtures::scratch("board-config-")
                 .path()
                 .join("board.sqlite3"),
         )
@@ -81,7 +81,7 @@ fn remote_mode_is_preserved_but_explicitly_unsupported() {
     let config = BoardConfig::from_toml(
         "mode = 'remote'\nurl = 'https://board.example'",
         BoardConfig::for_database(
-            crate::test_fixtures::scratch("board-config-")
+            tp_core::test_fixtures::scratch("board-config-")
                 .path()
                 .join("board.sqlite3"),
         ),

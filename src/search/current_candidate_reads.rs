@@ -1,12 +1,10 @@
 //! Verify published-index candidates against bounded current-source snapshots.
 use super::{Query, search_current_file, semantic_representative};
-use crate::coded_error::CodedContext;
-use crate::{
-    identity::ContentRevision, path_codec::decode_path, query_deadline::QueryDeadline,
-    results::Hit, source, store::Store,
-};
+use crate::{results::Hit, source, store::Store};
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
+use tp_core::coded_error::CodedContext;
+use tp_core::{identity::ContentRevision, path_codec::decode_path, query_deadline::QueryDeadline};
 use tp_extract::Extraction;
 
 const MAX_CHECKED_FILES: usize = 128;
@@ -59,7 +57,7 @@ fn recheck_with_current_search(
         if deadline.expired() {
             anyhow::bail!(
                 coded!(TimedOut, "current-source recheck deadline expired")
-                    .with_detail(crate::coded_error::CodeDetail::CurrentSourceRecheck)
+                    .with_detail(tp_core::coded_error::CodeDetail::CurrentSourceRecheck)
             );
         }
         let Some(revision) = hit.revision.as_deref() else {
@@ -119,7 +117,7 @@ fn recheck_with_current_search(
             Err(error) if current_search_timed_out(&error) => {
                 return Err(error.with_coded_context(|| {
                     coded!(TimedOut, "current-source recheck interrupted")
-                        .with_detail(crate::coded_error::CodeDetail::CurrentSourceRecheck)
+                        .with_detail(tp_core::coded_error::CodeDetail::CurrentSourceRecheck)
                 }));
             }
             Err(_) => {
@@ -168,7 +166,7 @@ fn recheck_with_current_search(
 
 /// A `timed_out` code in any layer: context may wrap the interrupted search.
 fn current_search_timed_out(error: &anyhow::Error) -> bool {
-    crate::coded_error::ErrorCode::TimedOut.is_anywhere_in(error)
+    tp_core::coded_error::ErrorCode::TimedOut.is_anywhere_in(error)
 }
 
 fn missing(error: &anyhow::Error) -> bool {

@@ -3,7 +3,6 @@
 //! any planted entry; reads never create files or mint secrets.
 
 use super::super::board_web_secrets::{constant_time_equal, fill_random, hex_encode};
-use crate::coded_error::CodedContext;
 use anyhow::{Result, ensure};
 use std::{
     fs::{self, File, OpenOptions},
@@ -11,6 +10,7 @@ use std::{
     os::unix::fs::{MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
 };
+use tp_core::coded_error::CodedContext;
 
 const TOKEN_BYTES: usize = 64;
 
@@ -21,7 +21,7 @@ impl BoardWebToken {
     /// Rotate to a fresh token; board-serve calls this on every start so a
     /// leaked token dies with the service that published it.
     pub(crate) fn rotate() -> Result<Self> {
-        let directory = crate::runtime_paths::system_dir()
+        let directory = tp_core::runtime_paths::system_dir()
             .with_coded_context(|| coded!(BoardWebToken, "no runtime directory"))?;
         fs::create_dir_all(&directory)
             .with_coded_context(|| coded!(BoardWebToken, "create runtime directory"))?;

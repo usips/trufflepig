@@ -1,14 +1,14 @@
 //! Acquire and verify one immutable identity before rendering its remaining byte range.
 use super::{MAX_READ_BYTES, read_contained};
-use crate::coded_error::CodedContext;
 use crate::{
-    identity::{ByteSpan, ContentRevision, ResultHandle},
     results::{self, HistoricalSource, ResultEntry},
     search::InvocationDirectory,
     store::Store,
 };
 use anyhow::{Result, bail, ensure};
 use std::path::Component;
+use tp_core::coded_error::CodedContext;
+use tp_core::identity::{ByteSpan, ContentRevision, ResultHandle};
 
 mod path_read;
 pub(crate) use path_read::{cursor_matches_root, stateless_hit_handle};
@@ -179,7 +179,7 @@ pub(crate) fn acquire_entry(
                 })?)?;
             let bytes = read_contained(
                 &store.root,
-                &crate::path_codec::decode_path(&hit.path)?,
+                &tp_core::path_codec::decode_path(&hit.path)?,
                 MAX_READ_BYTES,
             )?;
             let revision = ContentRevision::of(&bytes);
@@ -240,15 +240,15 @@ fn acquire_historical(
     side: SourceSide,
     identity: HistoricalSource,
 ) -> Result<AcquiredSource> {
-    let repository = crate::git_runner::GitRepository::discover(&store.root)?;
+    let repository = tp_core::git_runner::GitRepository::discover(&store.root)?;
     ensure!(
-        repository.common_dir == crate::path_codec::decode_path(&identity.repository)?,
+        repository.common_dir == tp_core::path_codec::decode_path(&identity.repository)?,
         coded!(
             ScopeBoundary,
             "historical source belongs to another repository"
         )
     );
-    let decoded = crate::path_codec::decode_path(&identity.path)?;
+    let decoded = tp_core::path_codec::decode_path(&identity.path)?;
     ensure!(
         !decoded.as_os_str().is_empty()
             && decoded

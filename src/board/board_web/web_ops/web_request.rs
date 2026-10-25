@@ -103,7 +103,7 @@ pub(crate) fn execute(
     }
     if matches!(request.op, BoardOp::Projects) {
         let projects = store.projects(&request.actor.host, expires)?;
-        let deadline = crate::query_deadline::QueryDeadline::after(
+        let deadline = tp_core::query_deadline::QueryDeadline::after(
             expires.saturating_duration_since(Instant::now()),
         );
         return crate::board::board_projects::project_reply(&config, projects, &deadline);

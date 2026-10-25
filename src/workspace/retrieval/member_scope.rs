@@ -1,7 +1,7 @@
 //! Which members a query searches, from its selectors and the home member.
-use crate::coded_error::CodedContext;
 use crate::{cli::Arguments, workspace::member_root::MemberRoot};
 use anyhow::{Result, ensure};
+use tp_core::coded_error::CodedContext;
 
 /// Members to search. Without a selector, only the home member is searched when
 /// one exists (`implicit_home`); `search` widens to all members when home has no

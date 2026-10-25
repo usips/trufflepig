@@ -1,16 +1,16 @@
 //! History start refuses a running executable that was replaced on disk.
-use crate::background_process::{BackgroundOwner, ReplacedExecutable};
+use tp_core::background_process::{BackgroundOwner, ReplacedExecutable};
 
 #[test]
 fn history_start_rejects_a_deleted_running_executable() {
-    crate::test_fixtures::unlinked_executable::run_unlinked(
+    tp_core::test_fixtures::unlinked_executable::run_unlinked(
         "history::history_worker::replaced_executable_tests::history_start_child_entry",
     );
 }
 
 #[test]
 fn history_start_child_entry() {
-    let Some(child) = crate::test_fixtures::unlinked_executable::unlinked_child() else {
+    let Some(child) = tp_core::test_fixtures::unlinked_executable::unlinked_child() else {
         return;
     };
     let raw_executable = std::env::current_exe().unwrap();

@@ -24,15 +24,15 @@ const ORPHAN_AGE: Duration = Duration::from_secs(300);
 const QUARANTINE_AGE: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
 mod spool_client;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 mod spool_test_deadline;
 mod spool_timeout;
 
 use spool_client::check_deadline;
 pub use spool_client::request;
-#[cfg(test)]
-pub(crate) use spool_test_deadline::{expire_after_next_publication, publication_expired};
-pub(crate) use spool_timeout::{is_local_spool_timeout, is_spool_or_coded_timeout};
+#[cfg(any(test, feature = "test-support"))]
+pub use spool_test_deadline::{expire_after_next_publication, publication_expired};
+pub use spool_timeout::{is_local_spool_timeout, is_spool_or_coded_timeout};
 
 /// Serves one spool directory from a daemon's maintenance ticks.
 pub struct SpoolServer {
@@ -124,9 +124,7 @@ pub struct ClaimedSpoolRequest {
 
 impl ClaimedSpoolRequest {
     /// Reads and validates the arguments before assigning the request to a lane.
-    pub(crate) fn arguments(
-        &self,
-    ) -> Result<(crate::request_context::RequestContext, Vec<String>)> {
+    pub fn arguments(&self) -> Result<(crate::request_context::RequestContext, Vec<String>)> {
         let request = fs::read(&self.claim)
             .context("read spooled daemon request")
             .and_then(|bytes| {
@@ -140,7 +138,7 @@ impl ClaimedSpoolRequest {
     }
 
     /// Whether the client still owns this queued claim.
-    pub(crate) fn is_claimed(&self) -> bool {
+    pub fn is_claimed(&self) -> bool {
         match fs::symlink_metadata(&self.claim) {
             Err(error) if error.kind() == ErrorKind::NotFound => false,
             _ => true,
@@ -149,7 +147,7 @@ impl ClaimedSpoolRequest {
 
     /// Starts the accepted-age budget at request publication, including time
     /// spent queued before this daemon claims the file.
-    pub(crate) fn deadline(&self, accepted_budget: Duration) -> QueryDeadline {
+    pub fn deadline(&self, accepted_budget: Duration) -> QueryDeadline {
         let budget = match fs::metadata(&self.claim) {
             Ok(metadata) => match metadata.modified() {
                 Ok(modified) => {
@@ -173,12 +171,12 @@ impl ClaimedSpoolRequest {
     }
 
     /// Publishes a completed or pre-dispatch failure result.
-    pub(crate) fn answer_result(self, result: Result<String>) {
+    pub fn answer_result(self, result: Result<String>) {
         self.publish(DaemonReply::from_result(result));
     }
 
     /// Decodes and validates the request, runs `handler`, and publishes its reply.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn answer(
         self,
         handler: impl FnOnce(crate::request_context::RequestContext, Vec<String>) -> Result<String>,
@@ -190,7 +188,7 @@ impl ClaimedSpoolRequest {
     }
 
     /// Publishes a failure without running the request.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn refuse(self, message: &str) {
         self.publish(DaemonReply::Failure {
             message: message.to_owned(),

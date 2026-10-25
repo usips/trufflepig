@@ -1,5 +1,5 @@
 use super::*;
-use crate::coded_error::CodedContext;
+use tp_core::coded_error::CodedContext;
 
 pub(super) fn symbol_entries(
     history: &History,
@@ -72,7 +72,7 @@ pub(super) fn symbol_correspondence(
             )
         })?;
     ensure_diff_capacity(&old, &new)?;
-    let differences = crate::line_diff::diff_sources(&old, &new);
+    let differences = tp_core::line_diff::diff_sources(&old, &new);
     let correspondences =
         source_diff::correspond_declarations(&old, &new, &before, &after, &differences);
     let row = correspondences

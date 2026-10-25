@@ -1,7 +1,5 @@
 use super::{Fixture, coverage_line, search_without_waiting};
 use crate::{
-    path_codec::encode_path,
-    query_deadline::QueryDeadline,
     search::InvocationDirectory,
     store::{Store, read_seed_outcome},
     workspace::{
@@ -18,6 +16,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+use tp_core::{path_codec::encode_path, query_deadline::QueryDeadline};
 
 #[test]
 fn fresh_worktree_read_seeds_parent_facts_and_marks_cache_root() {
@@ -289,7 +288,7 @@ fn exhausted_shared_slice_keeps_parent_show_answer_without_own_index() {
         Err(error) => error,
     };
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
     assert!(!cache.join("index.sqlite3").exists());

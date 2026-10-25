@@ -1,6 +1,4 @@
 //! Selected-cache errors retain their cause and carry an explicit refusal marker.
-use crate::coded_error::{CodeDetail, CodedContext, ErrorCode};
-use crate::query_deadline::QueryDeadline;
 use anyhow::{Result, bail};
 use rusqlite::{Error as SqliteError, ErrorCode as SqliteCode};
 use std::{
@@ -11,6 +9,8 @@ use std::{
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
+use tp_core::coded_error::{CodeDetail, CodedContext, ErrorCode};
+use tp_core::query_deadline::QueryDeadline;
 
 #[derive(Debug)]
 struct SelectedCacheRefusal;

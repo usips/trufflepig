@@ -7,9 +7,6 @@ use super::{
     resolve_home_index, worktree_reads::unextractable,
 };
 use crate::{
-    coded_error::{ErrorCode, error_code},
-    identity::{ByteSpan, ContentRevision},
-    query_deadline::QueryDeadline,
     results::{Hit, ResultEntry},
     search::{InvocationDirectory, Query},
     source::{self, AcquiredSource, SourceSide, acquisition},
@@ -20,6 +17,11 @@ use anyhow::{Result, ensure};
 use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
 use std::path::Path;
+use tp_core::{
+    coded_error::{ErrorCode, error_code},
+    identity::{ByteSpan, ContentRevision},
+    query_deadline::QueryDeadline,
+};
 
 /// How a parent-index `show` reached bytes other than the verified indexed ones.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -137,7 +139,7 @@ fn maintain_worktree_index(
         Ok(coverage) => Ok(coverage),
         Err(error) => {
             let error = maintenance_deadline.classify(error);
-            if crate::coded_error::ErrorCode::TimedOut.is_code_of(&error)
+            if tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error)
                 && maintenance_deadline.expired()
             {
                 ensure!(
@@ -247,7 +249,7 @@ pub(crate) fn reextracted_entry(
     if names_whole_file(hit) {
         let bytes = source::read_contained(
             root,
-            &crate::path_codec::decode_path(&hit.path)?,
+            &tp_core::path_codec::decode_path(&hit.path)?,
             source::MAX_READ_BYTES,
         )?;
         let source = AcquiredSource {

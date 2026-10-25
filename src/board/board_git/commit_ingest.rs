@@ -1,4 +1,5 @@
 //! Local Git scans; only accepted complete scans advance edge-local digests.
+use crate::board::board_actor::BoardActor;
 use crate::board::board_backend::BoardBackend;
 use crate::board::board_ids::{PlanId, RepoKey, TaskId};
 use crate::board::board_protocol::{
@@ -6,11 +7,11 @@ use crate::board::board_protocol::{
     WorkerAddress,
 };
 use crate::board::commit_trailers::attributed_to;
-use crate::{board::board_actor::BoardActor, request_context::HarnessLabel};
 use anyhow::{Result, ensure};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+use tp_core::request_context::HarnessLabel;
 
 mod commit_scanner;
 mod commit_warnings;
@@ -347,7 +348,7 @@ pub fn find_unlinked(
 /// Reads one commit's metadata exactly as a scan does, without trailer links.
 pub fn read_commit(
     registration: &RepoRegistration,
-    oid: crate::identity::GitOid,
+    oid: tp_core::identity::GitOid,
     timeout: Duration,
 ) -> Result<LinkedCommit> {
     commit_scanner::read_commit(registration, oid, Instant::now() + timeout)

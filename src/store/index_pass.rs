@@ -7,10 +7,10 @@ use super::{
     Coverage, Publication, Store, index_checkpoint, index_deadline, live_index, php_resolver,
     publish, regions, scan, schema,
 };
-use crate::path_codec::encode_path;
-use crate::query_deadline::QueryDeadline;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension};
+use tp_core::path_codec::encode_path;
+use tp_core::query_deadline::QueryDeadline;
 
 /// The staged build is discarded on failure, so it keeps no journal and never syncs.
 const STAGED_PRAGMAS: &str =

@@ -1,11 +1,10 @@
 use crate::{
-    identity::ContentRevision,
-    query_deadline::QueryDeadline,
     results::ResultSet,
     source::{self, acquisition::stateless_hit_handle},
 };
 use anyhow::{Result, bail};
 use std::{collections::HashMap, path::Path};
+use tp_core::{identity::ContentRevision, query_deadline::QueryDeadline};
 
 /// Attaches root-bound current-path cursors and discards hits without a verified revision.
 pub(super) fn attach_current_handles(
@@ -24,7 +23,7 @@ pub(super) fn attach_current_handles(
     }
     for (encoded_path, indices) in by_path {
         check_deadline(deadline)?;
-        let relative = crate::path_codec::decode_path(&encoded_path)?;
+        let relative = tp_core::path_codec::decode_path(&encoded_path)?;
         let bytes = source::read_contained(root, &relative, source::MAX_READ_BYTES)?;
         let revision = ContentRevision::of(&bytes).to_string();
         for index in indices {

@@ -11,18 +11,18 @@ use super::{
     board_config::BoardConfig, board_ids::RepoKey, board_protocol::BoardError,
     local_board::LocalBoard, repo_identity::RepoIdentityCache,
 };
-use crate::{
-    git_runner::common_dir_bounded,
-    query_deadline::QueryDeadline,
-    workspace_config::{
-        RegisteredWorkspace, RegisteredWorkspaceMember, registered_workspaces_from,
-    },
-};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
     time::{Duration, Instant, SystemTime},
+};
+use tp_core::{
+    git_runner::common_dir_bounded,
+    query_deadline::QueryDeadline,
+    workspace_config::{
+        RegisteredWorkspace, RegisteredWorkspaceMember, registered_workspaces_from,
+    },
 };
 
 const PROJECT_CACHE_TTL: Duration = Duration::from_secs(60);
@@ -89,7 +89,7 @@ impl ProjectResolver {
         let registry = self
             .registry
             .clone()
-            .or_else(crate::workspace_config::registry_path);
+            .or_else(tp_core::workspace_config::registry_path);
         let registry_stamp = registry
             .as_ref()
             .map(|path| (path.clone(), file_stamp(path)));

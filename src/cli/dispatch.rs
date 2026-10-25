@@ -1,16 +1,13 @@
 //! Local dispatch against published live and captured historical identities.
 use super::{Arguments, emission, request_context, validate};
-use crate::coded_error::CodedContext;
-use crate::{
-    output::OutputBudget,
-    query_deadline::QueryDeadline,
-    store::{
-        IndexProgressPhase, Store, index_cache_unavailable, is_index_cache_unavailable,
-        is_index_cannot_open, is_index_warming, preflight_results_cache,
-    },
+use crate::store::{
+    IndexProgressPhase, Store, index_cache_unavailable, is_index_cache_unavailable,
+    is_index_cannot_open, is_index_warming, preflight_results_cache,
 };
 use anyhow::{Context, Result, bail, ensure};
 use std::path::Path;
+use tp_core::coded_error::CodedContext;
+use tp_core::{output::OutputBudget, query_deadline::QueryDeadline};
 
 #[cfg(test)]
 mod cache_read_tests;
@@ -44,7 +41,7 @@ pub(super) fn local_with_session(
     options: &Arguments,
     daemon_running: bool,
     session: &mut crate::semantic::SemanticSession,
-    context: &crate::request_context::RequestContext,
+    context: &tp_core::request_context::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
     preparation_manager: Option<&crate::semantic_preparation::PreparationManager>,
     deadline: QueryDeadline,
@@ -104,7 +101,7 @@ fn local_dispatch(
     options: &Arguments,
     daemon_running: bool,
     session: &mut crate::semantic::SemanticSession,
-    context: &crate::request_context::RequestContext,
+    context: &tp_core::request_context::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
     preparation_manager: Option<&crate::semantic_preparation::PreparationManager>,
     deadline: QueryDeadline,
@@ -443,7 +440,7 @@ fn read_store(
     } else if options.no_daemon {
         true
     } else {
-        !crate::daemon_transport::running_by(cache, deadline)?
+        !tp_core::daemon_transport::running_by(cache, deadline)?
     };
     if reconciles {
         let preserve_parent_response = verb == "show"
@@ -475,7 +472,7 @@ fn read_store(
 
 fn classify_query_error(deadline: &QueryDeadline, error: anyhow::Error) -> anyhow::Error {
     let error = deadline.classify(error);
-    if deadline.expired() && !crate::coded_error::ErrorCode::TimedOut.is_code_of(&error) {
+    if deadline.expired() && !tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error) {
         error.with_coded_context(|| coded!(TimedOut, "query deadline expired"))
     } else {
         error
@@ -593,7 +590,7 @@ fn maintenance_slice_ended(
     original: &QueryDeadline,
     error: &anyhow::Error,
 ) -> bool {
-    crate::coded_error::ErrorCode::TimedOut.is_code_of(error)
+    tp_core::coded_error::ErrorCode::TimedOut.is_code_of(error)
         && !original.expired()
         && maintenance.expired()
 }

@@ -7,16 +7,14 @@ mod tests;
 pub(in crate::board) use authority_writes::{write_grant, write_revoke};
 
 use super::{invalid, require_plan, sql_error, sql_number};
+use crate::board::board_actor::{BoardActor, BoardRecipient};
 use crate::board::board_ids::{EntryId, PlanId};
 use crate::board::board_protocol::BoardErrorCode;
 use crate::board::board_protocol::{
     AuthorityRole, AuthoritySource, BoardError, GrantRecord, GrantSource,
 };
-use crate::{
-    board::board_actor::{BoardActor, BoardRecipient},
-    request_context::HarnessLabel,
-};
 use rusqlite::{Connection, OptionalExtension, params};
+use tp_core::request_context::HarnessLabel;
 
 /// Returns the grant or owner authority that covers a plan at `now`.
 pub(in crate::board) fn authority_for(

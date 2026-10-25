@@ -1,10 +1,8 @@
 use super::super::{hashed_member_cache, member_cache_until, member_root::MemberRoot};
-use crate::workspace_config::WorkspaceConfig;
-use crate::{
-    query_deadline::QueryDeadline, system::sweep::CACHE_ROOT_MARKER,
-    workspace::test_fixture::Fixture,
-};
+use crate::{system::sweep::CACHE_ROOT_MARKER, workspace::test_fixture::Fixture};
 use std::{os::unix::net::UnixStream, path::PathBuf, sync::Arc, time::Duration};
+use tp_core::query_deadline::QueryDeadline;
+use tp_core::workspace_config::WorkspaceConfig;
 
 #[test]
 fn expired_read_deadline_creates_no_worktree_cache_side_effects() {
@@ -17,7 +15,7 @@ fn expired_read_deadline_creates_no_worktree_cache_side_effects() {
     .unwrap_err();
 
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
     assert_no_cache_side_effects(&cache);
@@ -33,7 +31,7 @@ fn cancelled_read_deadline_creates_no_worktree_cache_side_effects() {
     let error = member_cache_until(&member, Some(&explicit_cache), &deadline).unwrap_err();
 
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
     assert_no_cache_side_effects(&cache);

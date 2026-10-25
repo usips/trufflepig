@@ -29,9 +29,7 @@ mod seed_tests;
 mod tests;
 mod worktree_seed_source;
 
-use crate::coded_error::CodedContext;
-use crate::query_deadline::QueryDeadline;
-use crate::{identity::ContentRevision, results::ResultSetStore};
+use crate::results::ResultSetStore;
 use anyhow::{Context, Result};
 pub use cache_access::{
     index_cache_unavailable, is_index_cache_unavailable, preflight_results_cache,
@@ -46,6 +44,9 @@ pub use seed::{ensure_seeded, ensure_seeded_until, ensure_seeded_within, read_se
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use tp_core::coded_error::CodedContext;
+use tp_core::identity::ContentRevision;
+use tp_core::query_deadline::QueryDeadline;
 pub(crate) use worktree_seed_source::linked_worktree_main_checkout;
 
 pub use index_deadline::inline_maintenance_deadline;

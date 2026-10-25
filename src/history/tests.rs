@@ -173,7 +173,7 @@ fn source_region_handles_keep_range_without_symbol_inference() {
     assert!(target.symbol.is_none());
     assert_eq!(
         target.span,
-        Some(crate::identity::ByteSpan { start: 0, end: 5 })
+        Some(tp_core::identity::ByteSpan { start: 0, end: 5 })
     );
 }
 

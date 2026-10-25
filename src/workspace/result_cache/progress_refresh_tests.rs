@@ -1,8 +1,5 @@
 use super::*;
 use crate::{
-    output::{OutputBudget, OutputFormat},
-    path_codec::encode_path,
-    query_deadline::QueryDeadline,
     results::{ChangeEntry, ResultEntry},
     store::{Store, read_index_progress},
 };
@@ -14,6 +11,11 @@ use std::{
     path::Path,
     thread,
     time::{Duration, Instant},
+};
+use tp_core::{
+    output::{OutputBudget, OutputFormat},
+    path_codec::encode_path,
+    query_deadline::QueryDeadline,
 };
 
 fn create_sources(root: &Path) -> Result<()> {
@@ -58,7 +60,7 @@ fn retain_real_progress(
         .index_available_until(QueryDeadline::after(Duration::from_secs(5)).with_claim_path(claim));
     assert!(watcher.join().expect("progress watcher did not panic"));
     assert!(
-        crate::coded_error::ErrorCode::TimedOut
+        tp_core::coded_error::ErrorCode::TimedOut
             .is_code_of(&result.expect_err("claim cancellation interrupts the pass"))
     );
     assert!(read_index_progress(root, cache).is_some_and(|progress| progress.completed_files > 0));

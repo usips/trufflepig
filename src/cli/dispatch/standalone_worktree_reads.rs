@@ -1,14 +1,16 @@
 //! Standalone linked-worktree read routing and immutable parent-result ownership.
 use super::Arguments;
 use crate::{
-    coded_error::{CodeDetail, CodedContext, ErrorCode, coded_error, error_detail},
-    output::OutputBudget,
-    query_deadline::QueryDeadline,
     results, search, source,
     store::{Store, is_index_cache_unavailable, is_index_cannot_open, is_index_warming},
 };
 use anyhow::{Result, bail, ensure};
 use std::{os::unix::fs::MetadataExt, path::Path};
+use tp_core::{
+    coded_error::{CodeDetail, CodedContext, ErrorCode, coded_error, error_detail},
+    output::OutputBudget,
+    query_deadline::QueryDeadline,
+};
 
 pub(super) fn retrieve_read(
     root: &Path,
@@ -18,7 +20,7 @@ pub(super) fn retrieve_read(
     verb: &str,
     options: &Arguments,
     session: &mut crate::semantic::SemanticSession,
-    context: &crate::request_context::RequestContext,
+    context: &tp_core::request_context::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
     preparation_manager: Option<&crate::semantic_preparation::PreparationManager>,
     budget: &OutputBudget,
@@ -278,7 +280,7 @@ fn parent_result_store(
 }
 
 fn result_set_id(handle: &str) -> Result<String> {
-    let parsed: crate::identity::ResultHandle = handle.parse()?;
+    let parsed: tp_core::identity::ResultHandle = handle.parse()?;
     Ok(parsed.set.simple().to_string())
 }
 
@@ -314,7 +316,7 @@ fn parent_result_store_for_set(
     let parent =
         Store::open_read(&parent_root, &parent_cache, deadline.clone()).map_err(|error| {
             let error = super::classify_query_error(&deadline, error);
-            if crate::coded_error::ErrorCode::TimedOut.is_code_of(&error) {
+            if tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error) {
                 error
             } else {
                 anyhow::anyhow!(coded!(
@@ -344,12 +346,12 @@ fn validate_parent_worktree(
         coded!(StaleResult, "linked worktree is unavailable; search again")
     })?;
     ensure!(
-        crate::path_codec::encode_path(&member.root) == identity.worktree_root
+        tp_core::path_codec::encode_path(&member.root) == identity.worktree_root
             && worktree_metadata.dev() == identity.worktree_device
             && worktree_metadata.ino() == identity.worktree_inode,
         coded!(StaleResult, "linked worktree was replaced; search again")
     );
-    let parent_root = crate::path_codec::decode_path(&identity.root)?
+    let parent_root = tp_core::path_codec::decode_path(&identity.root)?
         .canonicalize()
         .with_coded_context(|| {
             coded!(StaleResult, "parent checkout is unavailable; search again")
@@ -370,7 +372,7 @@ pub(super) fn more_read(
     limit: usize,
     budget: &OutputBudget,
 ) -> Result<String> {
-    let cursor: crate::identity::ResultCursor = cursor.parse()?;
+    let cursor: tp_core::identity::ResultCursor = cursor.parse()?;
     let set_id = cursor.set.simple().to_string();
     let set = results::load_entries(store, &set_id)?;
     if let Some(value) = set.coverage.get("parent_index") {
@@ -397,7 +399,7 @@ fn save_parent_identity(
     handle: &str,
     identity: &crate::workspace::ParentIndexIdentity,
 ) -> Result<String> {
-    let parsed: crate::identity::ResultHandle = handle.parse()?;
+    let parsed: tp_core::identity::ResultHandle = handle.parse()?;
     let mut set = results::load_entries(store, &parsed.set.simple().to_string())?;
     identity.validate_publication(store)?;
     ensure!(
@@ -465,7 +467,7 @@ fn target_handle(target: &str) -> Option<String> {
         _ => target,
     };
     target
-        .parse::<crate::identity::ResultHandle>()
+        .parse::<tp_core::identity::ResultHandle>()
         .ok()
         .map(|handle| handle.to_string())
 }

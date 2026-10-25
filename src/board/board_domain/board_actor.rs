@@ -1,8 +1,8 @@
 //! Captured user/host identity and explicitly claimed harness/session labels.
-use crate::request_context::{ActorOrigin, HarnessLabel, validate_actor_component};
 use anyhow::{Result, bail};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{fmt, str::FromStr};
+use tp_core::request_context::{ActorOrigin, HarnessLabel, validate_actor_component};
 
 #[cfg(test)]
 mod tests;

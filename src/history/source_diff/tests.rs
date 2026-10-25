@@ -1,5 +1,5 @@
 use super::*;
-use crate::line_diff::diff_sources;
+use tp_core::line_diff::diff_sources;
 use tp_extract::{Definition, Extraction};
 
 fn declarations(before: &[u8], after: &[u8]) -> Vec<DeclarationCorrespondence> {

@@ -13,6 +13,7 @@ use std::fmt;
 /// `bail!(coded!(StaleSource, "{path} changed"))` renders
 /// `stale_source: PATH changed`. Attach one with [`CodedContext`], not
 /// anyhow's `context`, so the code stays visible through wrapping errors.
+#[macro_export]
 macro_rules! coded {
     ($code:ident, $($message:tt)+) => {
         $crate::coded_error::CodedError::new(
@@ -25,7 +26,7 @@ macro_rules! coded {
 impl ErrorCode {
     /// Reads the code that leads relayed text, after any `daemon:` relay
     /// wrappers, with the detail that follows it.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn leading(text: &str) -> Option<(Self, &str)> {
         leading_with_wrappers(text).map(|(code, detail, _)| (code, detail))
     }

@@ -30,7 +30,7 @@ pub(super) fn entries(
                 let status = match file.mode.as_str() {
                     "120000" => "symlink_excluded",
                     "160000" => "gitlink_excluded",
-                    _ if crate::git_runner::is_resource_limited(&error) => "resource_excluded",
+                    _ if tp_core::git_runner::is_resource_limited(&error) => "resource_excluded",
                     _ => "object_unavailable",
                 };
                 let excluded_entry = ResultEntry::Change(crate::results::ChangeEntry {
@@ -73,7 +73,7 @@ pub(super) fn entries(
                 .repository
                 .blob(&entry.after.as_ref().expect("postimage").blob)?;
             ensure_diff_capacity(&old, &new)?;
-            let changes = crate::line_diff::diff_sources(&old, &new);
+            let changes = tp_core::line_diff::diff_sources(&old, &new);
             truncated |= changes.changes.len()
                 > results::MAX_HITS
                     .saturating_sub(entries.len())

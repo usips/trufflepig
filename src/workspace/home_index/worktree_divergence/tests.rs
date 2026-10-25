@@ -1,5 +1,4 @@
 use super::{GitIndexStamp, WorktreeDivergence, head_and_index};
-use crate::path_codec::encode_path;
 use crate::workspace::test_fixture::Fixture;
 use std::{
     fs::{self, File, FileTimes},
@@ -9,6 +8,7 @@ use std::{
     process::Command,
     time::{Duration, UNIX_EPOCH},
 };
+use tp_core::path_codec::encode_path;
 
 struct TwoWorktrees {
     _fixture: Fixture,

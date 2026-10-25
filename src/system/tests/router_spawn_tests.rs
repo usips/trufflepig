@@ -9,7 +9,7 @@ fn isolated_router_test(name: &str) -> bool {
     if std::env::var(MARKER).as_deref() == Ok(name) {
         return false;
     }
-    let directory = crate::test_fixtures::scratch("router-spawn-case-");
+    let directory = tp_core::test_fixtures::scratch("router-spawn-case-");
     let test = format!("system::tests::router_spawn_tests::{name}");
     let output = Command::new(std::env::current_exe().unwrap())
         .env(MARKER, name)
@@ -50,7 +50,7 @@ fn running_router_answers_without_the_long_wait() {
     let context = RequestContext::new(None, None);
     let deadline = QueryDeadline::after(Duration::from_secs(3));
     loop {
-        if crate::daemon_transport::request_by(&runtime, &ping, &context, deadline.clone())
+        if tp_core::daemon_transport::request_by(&runtime, &ping, &context, deadline.clone())
             .unwrap()
             .is_some()
         {
@@ -59,20 +59,20 @@ fn running_router_answers_without_the_long_wait() {
         assert!(!deadline.expired(), "router did not become ready");
         std::thread::sleep(Duration::from_millis(10));
     }
-    let spawned_before = crate::background_process::spawned_count();
+    let spawned_before = tp_core::background_process::spawned_count();
     let started = Instant::now();
     let ensured = ensure_with(ROUTER_START_WAIT, |_| {
         panic!("an answering router needs no spawn")
     });
     let elapsed = started.elapsed();
-    crate::daemon_transport::stop(&runtime).unwrap();
+    tp_core::daemon_transport::stop(&runtime).unwrap();
     worker.join().unwrap().unwrap();
     ensured.unwrap();
     assert!(
         elapsed < Duration::from_secs(1),
         "status probe took {elapsed:?}"
     );
-    assert_eq!(crate::background_process::spawned_count(), spawned_before);
+    assert_eq!(tp_core::background_process::spawned_count(), spawned_before);
 }
 
 #[test]
@@ -81,11 +81,11 @@ fn initial_status_probe_leaves_time_for_spawn() {
         return;
     }
     // A fresh but undrained spool must not consume the whole startup cap.
-    let _spool = crate::daemon_transport::spool::SpoolServer::open(&spool_dir()).unwrap();
-    let spawned_before = crate::background_process::spawned_count();
+    let _spool = tp_core::daemon_transport::spool::SpoolServer::open(&spool_dir()).unwrap();
+    let spawned_before = tp_core::background_process::spawned_count();
     let _error = ensure_with(Duration::from_secs(2), start_router).unwrap_err();
     assert_eq!(
-        crate::background_process::spawned_count() - spawned_before,
+        tp_core::background_process::spawned_count() - spawned_before,
         1,
         "the initial status probe must leave time to attempt the spawn"
     );
@@ -93,9 +93,9 @@ fn initial_status_probe_leaves_time_for_spawn() {
 
 #[test]
 fn status_probe_uses_spool_without_a_runtime_directory() {
-    let directory = crate::test_fixtures::scratch("router-spool-only-");
+    let directory = tp_core::test_fixtures::scratch("router-spool-only-");
     let spool = directory.path().join("spool");
-    let mut server = crate::daemon_transport::spool::SpoolServer::open(&spool).unwrap();
+    let mut server = tp_core::daemon_transport::spool::SpoolServer::open(&spool).unwrap();
     let stopped = Arc::new(AtomicBool::new(false));
     let worker_stopped = Arc::clone(&stopped);
     let worker = std::thread::spawn(move || {
@@ -142,7 +142,7 @@ fn managed_start_waits_for_the_unit_router_without_a_child() {
         Ok("ActiveState=activating\nNRestarts=0"),
     ]);
     let worker = std::cell::RefCell::new(None);
-    let spawned_before = crate::background_process::spawned_count();
+    let spawned_before = tp_core::background_process::spawned_count();
     let ensured = ensure_until(
         QueryDeadline::after(Duration::from_secs(10)),
         Duration::from_secs(10),
@@ -164,14 +164,14 @@ fn managed_start_waits_for_the_unit_router_without_a_child() {
             )
         },
     );
-    let spawned = crate::background_process::spawned_count() - spawned_before;
+    let spawned = tp_core::background_process::spawned_count() - spawned_before;
     ensured.unwrap();
     assert_eq!(spawned, 0, "a unit-owned start spawns no detached router");
     assert!(
         systemctl.show_count() >= 1,
         "the watch read the unit while it was activating"
     );
-    crate::daemon_transport::stop(&runtime).unwrap();
+    tp_core::daemon_transport::stop(&runtime).unwrap();
     worker
         .into_inner()
         .expect("the unit start ran the router")

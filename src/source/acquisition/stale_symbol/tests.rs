@@ -1,15 +1,16 @@
 use super::super::acquire;
 use super::{await_republish, liveness_probe_result};
-use crate::query_deadline::QueryDeadline;
 use crate::search::InvocationDirectory;
 use crate::source::line_span;
-use crate::{output::OutputBudget, store::Store};
+use crate::store::Store;
 use std::{
     os::unix::net::{UnixListener, UnixStream},
     sync::Arc,
     thread,
     time::{Duration, Instant},
 };
+use tp_core::output::OutputBudget;
+use tp_core::query_deadline::QueryDeadline;
 
 struct ServingDaemonFixture {
     _root: tempfile::TempDir,
@@ -27,7 +28,7 @@ fn serving_daemon_fixture() -> ServingDaemonFixture {
     store.index().unwrap();
     let generation = store.generation().unwrap();
     let listener =
-        UnixListener::bind(cache.path().join(crate::daemon_transport::SOCKET_NAME)).unwrap();
+        UnixListener::bind(cache.path().join(tp_core::daemon_transport::SOCKET_NAME)).unwrap();
     ServingDaemonFixture {
         _root: root,
         _cache: cache,
@@ -151,7 +152,7 @@ fn stale_republish_wait_obeys_query_deadline() {
     let error = await_republish(&store, fixture.generation).unwrap_err();
 
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
     assert!(started.elapsed() < Duration::from_millis(250));
@@ -170,7 +171,7 @@ fn stale_republish_probe_preserves_daemon_liveness_semantics() {
     let caller_timeout = anyhow::anyhow!(coded!(TimedOut, "phase=connecting"));
     let error = liveness_probe_result(Err(caller_timeout), &expired_deadline).unwrap_err();
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
 
@@ -195,7 +196,7 @@ fn stale_republish_wait_observes_cancellation_promptly() {
 
     cancel.join().unwrap();
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
     assert!(started.elapsed() < Duration::from_millis(250));

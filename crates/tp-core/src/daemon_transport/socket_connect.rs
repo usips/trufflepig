@@ -9,7 +9,7 @@ use std::time::Duration;
 const CONNECT_WAIT_SLICE: Duration = Duration::from_millis(100);
 const BACKLOG_RETRY_DELAY: Duration = Duration::from_millis(25);
 
-pub(crate) fn connect_by(path: &Path, deadline: &QueryDeadline) -> io::Result<UnixStream> {
+pub fn connect_by(path: &Path, deadline: &QueryDeadline) -> io::Result<UnixStream> {
     let (address, address_length) = socket_address(path)?;
     loop {
         check_deadline(deadline)?;
@@ -211,5 +211,10 @@ fn is_connected(error: &io::Error) -> bool {
     error.raw_os_error() == Some(libc::EISCONN)
 }
 
+#[cfg(any(test, feature = "test-support"))]
+mod backlog_listener;
 #[cfg(test)]
-pub(crate) mod tests;
+mod tests;
+
+#[cfg(any(test, feature = "test-support"))]
+pub use backlog_listener::backlog_zero_listener;

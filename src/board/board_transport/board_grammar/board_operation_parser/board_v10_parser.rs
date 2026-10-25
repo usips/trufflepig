@@ -3,7 +3,6 @@ use super::{
     BoardTextPayload,
     board_syntax_validation::{check_flags, fixed_words, optional_text, recipient, word},
 };
-use crate::coded_error::CodedContext;
 use crate::{
     board::board_grammar::BoardArguments,
     board::{
@@ -14,9 +13,10 @@ use crate::{
         },
         board_vocabulary::{AuthorityRole, EntryKind, EntryText, WorkerEndReason, WorkerRole},
     },
-    identity::GitOid,
 };
 use anyhow::{Result, bail, ensure};
+use tp_core::coded_error::CodedContext;
+use tp_core::identity::GitOid;
 
 pub(super) fn parse_v10(
     options: &BoardArguments,

@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn manual_commit_link_records_manual_source_and_names_the_linker() {
-    let directory = crate::test_fixtures::scratch("board-fixture-");
+    let directory = tp_core::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -13,7 +13,7 @@ fn manual_commit_link_records_manual_source_and_names_the_linker() {
         .handle(&BoardRequest::new(
             owner.clone(),
             BoardOp::LinkCommit {
-                oid: crate::identity::GitOid::parse(&"b".repeat(40)).unwrap(),
+                oid: tp_core::identity::GitOid::parse(&"b".repeat(40)).unwrap(),
                 task,
                 resolution: Some(Box::new(manual_link_resolution())),
             },
@@ -65,14 +65,14 @@ fn manual_commit_link_records_manual_source_and_names_the_linker() {
 
 #[test]
 fn manual_commit_link_is_idempotent_and_returns_the_original_receipt() {
-    let directory = crate::test_fixtures::scratch("board-fixture-");
+    let directory = tp_core::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
     )
     .unwrap();
     let (owner, task) = manual_link_plan(&mut board);
-    let oid = crate::identity::GitOid::parse(&"b".repeat(40)).unwrap();
+    let oid = tp_core::identity::GitOid::parse(&"b".repeat(40)).unwrap();
     let request = || {
         BoardRequest::new(
             owner.clone(),
@@ -122,7 +122,7 @@ fn manual_link_attempt(
     board.handle(&BoardRequest::new(
         actor,
         BoardOp::LinkCommit {
-            oid: crate::identity::GitOid::parse(&"b".repeat(40)).unwrap(),
+            oid: tp_core::identity::GitOid::parse(&"b".repeat(40)).unwrap(),
             task,
             resolution: Some(Box::new(manual_link_resolution())),
         },
@@ -131,7 +131,7 @@ fn manual_link_attempt(
 
 #[test]
 fn manual_commit_link_authority_requires_owner_or_link_grant() {
-    let directory = crate::test_fixtures::scratch("board-fixture-");
+    let directory = tp_core::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -161,7 +161,7 @@ fn manual_commit_link_authority_requires_owner_or_link_grant() {
 
 #[test]
 fn agent_without_link_grant_cannot_link() {
-    let directory = crate::test_fixtures::scratch("board-fixture-");
+    let directory = tp_core::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -183,7 +183,7 @@ fn agent_without_link_grant_cannot_link() {
 
 #[test]
 fn cli_harness_cannot_link() {
-    let directory = crate::test_fixtures::scratch("board-fixture-");
+    let directory = tp_core::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -205,7 +205,7 @@ fn cli_harness_cannot_link() {
 
 #[test]
 fn relinking_to_another_task_writes_an_event() {
-    let directory = crate::test_fixtures::scratch("board-fixture-");
+    let directory = tp_core::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -260,7 +260,7 @@ fn relinking_to_another_task_writes_an_event() {
 
 #[test]
 fn manual_commit_link_requires_a_host_resolved_commit() {
-    let directory = crate::test_fixtures::scratch("board-fixture-");
+    let directory = tp_core::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -271,7 +271,7 @@ fn manual_commit_link_requires_a_host_resolved_commit() {
         .handle(&BoardRequest::new(
             owner,
             BoardOp::LinkCommit {
-                oid: crate::identity::GitOid::parse(&"b".repeat(40)).unwrap(),
+                oid: tp_core::identity::GitOid::parse(&"b".repeat(40)).unwrap(),
                 task,
                 resolution: None,
             },
@@ -286,14 +286,14 @@ fn manual_commit_link_requires_a_host_resolved_commit() {
 
 #[test]
 fn manual_commit_link_rejects_unknown_plans_and_tasks() {
-    let directory = crate::test_fixtures::scratch("board-fixture-");
+    let directory = tp_core::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
     )
     .unwrap();
     let (owner, task) = manual_link_plan(&mut board);
-    let oid = crate::identity::GitOid::parse(&"b".repeat(40)).unwrap();
+    let oid = tp_core::identity::GitOid::parse(&"b".repeat(40)).unwrap();
     for target in [
         TaskId::new(PlanId::new(99).unwrap(), 1).unwrap(),
         TaskId::new(task.plan, 99).unwrap(),
@@ -318,14 +318,14 @@ fn manual_commit_link_rejects_unknown_plans_and_tasks() {
 
 #[test]
 fn scan_links_keep_scan_source_beside_manual_links() {
-    let directory = crate::test_fixtures::scratch("board-fixture-");
+    let directory = tp_core::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
     )
     .unwrap();
     let (owner, task) = manual_link_plan(&mut board);
-    let scanned_oid = crate::identity::GitOid::parse(&"c".repeat(40)).unwrap();
+    let scanned_oid = tp_core::identity::GitOid::parse(&"c".repeat(40)).unwrap();
     let mut scanned = manual_link_resolution();
     scanned.oid = scanned_oid;
     scanned.repo_key = RepoKey::from_roots([scanned_oid]).unwrap();
@@ -359,7 +359,7 @@ fn scan_links_keep_scan_source_beside_manual_links() {
         .handle(&BoardRequest::new(
             owner,
             BoardOp::LinkCommit {
-                oid: crate::identity::GitOid::parse(&"b".repeat(40)).unwrap(),
+                oid: tp_core::identity::GitOid::parse(&"b".repeat(40)).unwrap(),
                 task,
                 resolution: Some(Box::new(manual_link_resolution())),
             },

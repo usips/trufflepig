@@ -190,7 +190,7 @@ fn provided_foreign_get_origin_is_forbidden_even_with_correct_token() {
 
 #[test]
 fn socket_parsed_post_reaches_same_auth_checks() {
-    let directory = crate::test_fixtures::scratch("web-guard-socket-");
+    let directory = tp_core::test_fixtures::scratch("web-guard-socket-");
     let token = BoardWebToken::rotate_at(&directory.path().join("token")).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let guard = WebGuard::with_token(listener.local_addr().unwrap(), token).unwrap();

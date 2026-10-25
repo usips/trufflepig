@@ -1,16 +1,13 @@
 //! Manual commit links resolve one oid in the plan's registered repositories.
 use super::BoardHost;
-use crate::{
-    board::{
-        board_ids::TaskId,
-        board_protocol::{BoardError, BoardErrorCode, BoardOp, BoardRequest},
-        local_board::LocalBoard,
-    },
-    identity::GitOid,
-    query_deadline::QueryDeadline,
+use crate::board::{
+    board_ids::TaskId,
+    board_protocol::{BoardError, BoardErrorCode, BoardOp, BoardRequest},
+    local_board::LocalBoard,
 };
 use anyhow::Result;
 use std::time::Duration;
+use tp_core::{identity::GitOid, query_deadline::QueryDeadline};
 
 impl BoardHost {
     /// Fills a manual link's resolution from Git before the write dispatch.
@@ -43,7 +40,7 @@ impl BoardHost {
         let mut resolved = None;
         for target in &targets {
             let spec = format!("{oid}^{{commit}}");
-            let Ok(peeled) = crate::git_runner::run_bounded(
+            let Ok(peeled) = tp_core::git_runner::run_bounded(
                 &target.registration.common_dir,
                 &["rev-parse", "--verify", "--end-of-options", spec.as_str()],
                 deadline.cap(Duration::from_secs(5)),

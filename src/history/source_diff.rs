@@ -1,5 +1,5 @@
 //! Conservative declaration correspondence and session fingerprints over
-//! `crate::line_diff` changes.
+//! `tp_core::line_diff` changes.
 
 mod correspondence;
 mod fingerprints;

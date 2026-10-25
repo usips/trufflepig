@@ -1,6 +1,6 @@
 use super::*;
-use crate::output::{OutputBudget, OutputFormat};
 use crate::{search, source};
+use tp_core::output::{OutputBudget, OutputFormat};
 
 fn fixture() -> (tempfile::TempDir, tempfile::TempDir, Store) {
     let root = tempfile::tempdir().unwrap();
@@ -134,7 +134,7 @@ fn pages_are_file_first_while_saved_entries_keep_full_identity() {
         hit["file"],
         format!(
             "file://{}",
-            crate::path_codec::encode_path(&root.path().join("lib.rs"))
+            tp_core::path_codec::encode_path(&root.path().join("lib.rs"))
         )
     );
     assert_eq!(hit["start_line"], 1);
@@ -217,7 +217,7 @@ fn candidate_pages_report_omissions_and_allow_larger_replay() {
 #[test]
 fn historical_entries_share_cache_and_reject_live_context() {
     let (_root, _cache, store) = fixture();
-    let oid = crate::identity::GitOid::parse(&"a".repeat(40)).unwrap();
+    let oid = tp_core::identity::GitOid::parse(&"a".repeat(40)).unwrap();
     let change = ChangeEntry {
         handle: String::new(),
         name: "alpha".into(),
@@ -227,9 +227,9 @@ fn historical_entries_share_cache_and_reject_live_context() {
             repository: "/repo/.git".into(),
             commit: oid,
             blob: oid,
-            revision: crate::identity::ContentRevision::of(b""),
+            revision: tp_core::identity::ContentRevision::of(b""),
             path: "lib.rs".into(),
-            span: crate::identity::ByteSpan::new(0, 12).unwrap(),
+            span: tp_core::identity::ByteSpan::new(0, 12).unwrap(),
         }),
         correspondence: "exact".into(),
     };
@@ -360,7 +360,7 @@ fn lines_page_fits_more_hits_than_json_for_same_budget() {
             .unwrap();
     let json_hits = json["hits"].as_array().unwrap().len();
     let text = page(&store, &id, 0, 40, &lines_budget(300)).unwrap();
-    let handles: Vec<_> = crate::output::lines_format::emitted_handles(&text).collect();
+    let handles: Vec<_> = tp_core::output::lines_format::emitted_handles(&text).collect();
     assert!(
         handles.len() > json_hits,
         "lines {} vs json {json_hits}",
@@ -381,7 +381,7 @@ fn lines_page_fits_more_hits_than_json_for_same_budget() {
 #[test]
 fn lines_more_renders_commit_and_change_entries() {
     let (_root, _cache, store) = fixture();
-    let oid = crate::identity::GitOid::parse(&"b".repeat(40)).unwrap();
+    let oid = tp_core::identity::GitOid::parse(&"b".repeat(40)).unwrap();
     let change = ChangeEntry {
         handle: String::new(),
         name: "alpha".into(),
@@ -391,9 +391,9 @@ fn lines_more_renders_commit_and_change_entries() {
             repository: "/repo/.git".into(),
             commit: oid,
             blob: oid,
-            revision: crate::identity::ContentRevision::of(b""),
+            revision: tp_core::identity::ContentRevision::of(b""),
             path: "lib.rs".into(),
-            span: crate::identity::ByteSpan::new(0, 12).unwrap(),
+            span: tp_core::identity::ByteSpan::new(0, 12).unwrap(),
         }),
         correspondence: "exact".into(),
     };

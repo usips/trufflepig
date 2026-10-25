@@ -41,7 +41,7 @@ fn feedback_content_dedupe_ignores_session_and_observation_metadata() {
 
 #[test]
 fn populated_m1_feedback_uuid_replay_survives_schema_and_dedupe_upgrade() {
-    let directory = crate::test_fixtures::scratch("board-test-");
+    let directory = tp_core::test_fixtures::scratch("board-test-");
     let path = directory.path().join("legacy-feedback.sqlite3");
     let legacy = rusqlite::Connection::open(&path).unwrap();
     #[cfg(unix)]

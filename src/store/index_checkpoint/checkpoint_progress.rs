@@ -61,7 +61,7 @@ pub fn read(root: &Path, cache: &Path) -> Option<IndexProgress> {
     let stage_metadata = std::fs::symlink_metadata(&stage).ok()?;
     let database_metadata =
         std::fs::symlink_metadata(stage.join(super::CHECKPOINT_DATABASE)).ok()?;
-    if record.root != crate::path_codec::encode_path(&root)
+    if record.root != tp_core::path_codec::encode_path(&root)
         || record.contract != super::contract_revision()
         || !stage_metadata.file_type().is_dir()
         || !database_metadata.file_type().is_file()

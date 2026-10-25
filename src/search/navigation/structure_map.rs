@@ -55,7 +55,7 @@ pub fn map(store: &Store, path: &str) -> Result<ResultSet> {
 const MAP_MISS_KEY: &str = "no_indexed_path";
 
 /// The `no_indexed_path` error of a `map` result whose path matched no file.
-pub fn map_miss(set: &ResultSet) -> Option<crate::coded_error::CodedError> {
+pub fn map_miss(set: &ResultSet) -> Option<tp_core::coded_error::CodedError> {
     set.coverage[MAP_MISS_KEY]
         .as_str()
         .map(|detail| coded!(NoIndexedPath, "{detail}"))

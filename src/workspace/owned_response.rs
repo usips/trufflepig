@@ -1,7 +1,7 @@
 //! Owner summaries retain repository provenance and outcomes within the final budget.
-use crate::output::OutputBudget;
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
+use tp_core::output::OutputBudget;
 
 pub(super) fn render(mut value: Value, budget: &OutputBudget) -> Result<String> {
     if let Ok(output) = budget.render(&value) {

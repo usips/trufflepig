@@ -124,8 +124,8 @@ fn claim_was_removed(path: &Path) -> bool {
 
 /// Writes enough Rust sources under `root` that reconciling them outlasts a
 /// 100 ms query budget, plus one file defining `pub fn NAME`.
-#[cfg(test)]
-pub(crate) fn write_slow_reconcile_fixture(root: &std::path::Path, name: &str) {
+#[cfg(any(test, feature = "test-support"))]
+pub fn write_slow_reconcile_fixture(root: &std::path::Path, name: &str) {
     let mut body = String::with_capacity(64 * 48);
     for item in 0..64 {
         body.push_str(&format!(

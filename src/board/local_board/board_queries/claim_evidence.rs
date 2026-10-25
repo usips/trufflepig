@@ -69,7 +69,7 @@ pub(in crate::board::local_board) fn hydrate_claim(
         |r| Ok((r.get(0)?,r.get(1)?))).optional().map_err(sql_error)?;
     claim.latest_commit = latest
         .as_ref()
-        .map(|(oid, _)| crate::identity::GitOid::parse(oid).map_err(BoardError::from))
+        .map(|(oid, _)| tp_core::identity::GitOid::parse(oid).map_err(BoardError::from))
         .transpose()?;
     claim.latest_commit_at = latest.map(|(_, at)| at);
     Ok(())

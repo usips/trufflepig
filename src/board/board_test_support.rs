@@ -1,8 +1,8 @@
-//! Board-only test helpers; disk scratch lives in `crate::test_fixtures`.
+//! Board-only test helpers; disk scratch lives in `tp_core::test_fixtures`.
 use crate::board::board_grammar::{BoardArguments, BoardOptions};
-use crate::output::OutputFormat;
 use std::io::Read;
 use std::path::PathBuf;
+use tp_core::output::OutputFormat;
 
 /// Reads into `buffer`, retrying interrupted syscalls: signal tests run
 /// beside blocking test reads under the full suite, so a raw `read` can

@@ -9,16 +9,17 @@ mod inbox_watermark_tests;
 mod pending_task_question_tests;
 
 use super::*;
+use crate::board::board_actor::BoardActor;
 use crate::board::board_backend::BoardBackend;
 use crate::board::board_ids::{RepoKey, TaskId};
 use crate::board::board_protocol::{BoardOp, BoardRequest};
 use crate::board::board_vocabulary::{EntryKind, PlanText, PlanTitle};
 use crate::board::local_board::LocalBoard;
-use crate::{board::board_actor::BoardActor, request_context::HarnessLabel};
 use std::time::Duration;
+use tp_core::request_context::HarnessLabel;
 
 fn database() -> (tempfile::TempDir, LocalBoard) {
-    let directory = crate::test_fixtures::scratch("board-test-");
+    let directory = tp_core::test_fixtures::scratch("board-test-");
     let board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(7200),

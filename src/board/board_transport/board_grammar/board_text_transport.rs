@@ -1,6 +1,5 @@
 //! Normalized command text and body preflight for client transport.
 use super::{BoardCommand, parse};
-use crate::coded_error::CodedContext;
 use crate::{
     board::board_grammar::BoardArguments,
     board::{
@@ -10,6 +9,7 @@ use crate::{
 };
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
+use tp_core::coded_error::CodedContext;
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]

@@ -6,13 +6,9 @@ use super::{
     WorkspaceConfig, cache_path, hashed_member_cache, local, member_root::MemberRoot,
     result_cache::WorkspaceResults,
 };
-use crate::coded_error::CodedContext;
 use crate::{
-    background_process::{BackgroundOwner, current_background_executable, spawn_background_for},
     cli::{Arguments, normalized_args},
     daemon::{self, AcceptedRequest, DaemonHandler},
-    query_deadline::QueryDeadline,
-    request_context::RequestContext,
     semantic::SemanticSession,
 };
 use anyhow::{Context, Result, ensure};
@@ -20,6 +16,12 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     time::{Duration, Instant},
+};
+use tp_core::coded_error::CodedContext;
+use tp_core::{
+    background_process::{BackgroundOwner, current_background_executable, spawn_background_for},
+    query_deadline::QueryDeadline,
+    request_context::RequestContext,
 };
 
 /// Applies workspace config defaults and absolutizes path options for routing.
@@ -93,11 +95,9 @@ pub(crate) fn run_with_deadline(
         return serve(&config, &cache).map(|()| String::new());
     }
     if verb == "stop" {
-        return crate::output::OutputBudget::new(options.budget)?.render(&serde_json::from_str::<
-            serde_json::Value,
-        >(
-            &crate::daemon_transport::stop(&cache)?,
-        )?);
+        return tp_core::output::OutputBudget::new(options.budget)?.render(
+            &serde_json::from_str::<serde_json::Value>(&tp_core::daemon_transport::stop(&cache)?)?,
+        );
     }
     let metadata_only = verb == "semantic"
         && options
@@ -148,7 +148,7 @@ pub(crate) fn run_with_deadline(
         coded!(TimedOut, "query deadline expired")
     );
     if let Some(reply) =
-        crate::daemon_transport::request_by(&cache, &args, context, deadline.clone())?
+        tp_core::daemon_transport::request_by(&cache, &args, context, deadline.clone())?
     {
         return wait_if_semantic_prepare(&config, &options, reply);
     }
@@ -184,11 +184,11 @@ pub(crate) fn run_with_deadline(
     let started = Instant::now();
     while started.elapsed() < Duration::from_secs(3) && !deadline.expired() {
         if let Some(reply) =
-            crate::daemon_transport::request_by(&cache, &args, context, deadline.clone())?
+            tp_core::daemon_transport::request_by(&cache, &args, context, deadline.clone())?
         {
             return wait_if_semantic_prepare(&config, &options, reply);
         }
-        if child.exited() && !crate::daemon_transport::running_by(&cache, &deadline)? {
+        if child.exited() && !tp_core::daemon_transport::running_by(&cache, &deadline)? {
             break;
         }
         std::thread::sleep(Duration::from_millis(25).min(deadline.remaining()));
@@ -227,7 +227,7 @@ fn wait_if_semantic_prepare(
 fn serve(config: &WorkspaceConfig, cache: &Path) -> Result<()> {
     WorkspaceResults::create(
         cache,
-        &QueryDeadline::after(crate::daemon_transport::CLIENT_REPLY_WAIT),
+        &QueryDeadline::after(tp_core::daemon_transport::CLIENT_REPLY_WAIT),
     )
     .with_coded_context(|| {
         coded!(
@@ -306,7 +306,7 @@ pub(super) fn ensure_member(
         coded!(TimedOut, "query deadline expired")
     );
     // Probing the startup lock instead could make a starting daemon exit.
-    if crate::daemon_transport::running_by(&cache, deadline)? {
+    if tp_core::daemon_transport::running_by(&cache, deadline)? {
         return Ok(());
     }
     let mut local = super::member_options(options, member, deadline)?;

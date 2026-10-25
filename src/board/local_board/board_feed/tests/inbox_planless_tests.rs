@@ -19,12 +19,12 @@ fn planless_events_stay_out_of_scoped_inboxes_but_own_feedback_outcomes_arrive()
         panic!("missing plan");
     };
     let plan_b = created_b.plan.unwrap();
-    let repo_a = RepoKey::from_roots([crate::identity::GitOid::parse(
+    let repo_a = RepoKey::from_roots([tp_core::identity::GitOid::parse(
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     )
     .unwrap()])
     .unwrap();
-    let repo_b = RepoKey::from_roots([crate::identity::GitOid::parse(
+    let repo_b = RepoKey::from_roots([tp_core::identity::GitOid::parse(
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     )
     .unwrap()])

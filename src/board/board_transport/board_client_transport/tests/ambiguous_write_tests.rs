@@ -8,7 +8,7 @@ use crate::board::{
 };
 
 fn reply_timeout() -> anyhow::Error {
-    crate::daemon_transport::DaemonReplyTimeout::new(
+    tp_core::daemon_transport::DaemonReplyTimeout::new(
         Duration::from_secs(30),
         Duration::from_secs(30),
     )
@@ -215,7 +215,7 @@ fn client_post_key_matches_the_actual_host_receipt_with_claims_and_origin() {
     let other_actor = BoardActor::new(
         "test",
         "localhost",
-        crate::request_context::HarnessLabel::parse("codex").unwrap(),
+        tp_core::request_context::HarnessLabel::parse("codex").unwrap(),
         "other-session",
     )
     .unwrap();

@@ -7,10 +7,10 @@ pub(super) use collection_budget::render_collections;
 use super::{cell, footer, lines_result};
 use crate::board::board_ids::{EventSeq, PlanId};
 use crate::board::board_protocol::{BoardReply, BoardResult};
-use crate::output::{OutputBudget, OutputFormat};
 use anyhow::{Result, bail};
 use serde::Serialize;
 use std::fmt::Write;
+use tp_core::output::{OutputBudget, OutputFormat};
 
 #[derive(Clone, Copy, Default, Serialize)]
 pub(super) struct BoardOmitted {

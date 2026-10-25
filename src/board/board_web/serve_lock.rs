@@ -2,13 +2,13 @@
 #[cfg(test)]
 mod tests;
 
-use crate::coded_error::CodedContext;
 use anyhow::Result;
 use std::{
     fs::{self, File, OpenOptions},
     os::unix::fs::OpenOptionsExt,
     path::Path,
 };
+use tp_core::coded_error::CodedContext;
 
 const LOCK_FILE: &str = "board-web.lock";
 

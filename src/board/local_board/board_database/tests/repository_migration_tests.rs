@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn populated_v1_duplicate_checkout_paths_keep_first_key_and_all_evidence() {
     use crate::board::board_ids::RepoKey;
-    use crate::identity::GitOid;
+    use tp_core::identity::GitOid;
     let directory = directory();
     let path = directory.path().join("board.sqlite3");
     let legacy = Connection::open(&path).unwrap();

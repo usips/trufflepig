@@ -1,7 +1,7 @@
 use super::*;
 use crate::board::board_ids::PlanId;
 use crate::board::board_protocol::{CommitPlanLink, WORKER_REF_LIMIT, WorkerAddress};
-use crate::identity::GitOid;
+use tp_core::identity::GitOid;
 
 #[test]
 fn vendor_attribution_uses_email_domain_and_retains_model_claim() {

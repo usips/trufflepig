@@ -2,8 +2,8 @@ use super::board_wait::{BoardInboxWaiterPermit, MAX_WAITERS, waiter_transient};
 use super::board_writer::lock_before;
 use super::*;
 use crate::board::board_protocol::{BoardOp, BoardResult, InboxWait};
-use crate::request_context::RequestContext;
 use std::sync::atomic::Ordering;
+use tp_core::request_context::RequestContext;
 
 mod board_configuration_tests;
 mod board_project_cli_tests;

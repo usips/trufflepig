@@ -2,8 +2,8 @@
 mod board_api_probe;
 mod board_request_bridge;
 mod client_command;
-use crate::coded_error::CodedContext;
 use client_command::ClientCommand;
+use tp_core::coded_error::CodedContext;
 mod client_identity;
 pub use client_identity::request_context;
 mod dispatch;
@@ -16,16 +16,16 @@ pub(crate) use root_daemon::{ClassifiedDaemonRequest, classify_daemon_request};
 mod system_client_routing;
 use system_client_routing::{system_command, system_reply, system_routes};
 pub(crate) mod semantic_commands;
-use crate::{
+use crate::store::Store;
+use anyhow::{Context, Result};
+pub use dispatch::local;
+use dispatch::local_with_session;
+use tp_core::{
     background_process::spawn_background,
     daemon_transport::CLIENT_REPLY_WAIT,
     output::OutputBudget,
     query_deadline::{QUERY_DEADLINE, QueryDeadline},
-    store::Store,
 };
-use anyhow::{Context, Result};
-pub use dispatch::local;
-use dispatch::local_with_session;
 mod arguments;
 pub(crate) use arguments::normalized_args;
 use arguments::validate;
@@ -59,7 +59,7 @@ pub fn run(args: &[String]) -> Result<String> {
 #[cfg(test)]
 pub fn run_with_context(
     args: &[String],
-    context: &crate::request_context::RequestContext,
+    context: &tp_core::request_context::RequestContext,
 ) -> Result<String> {
     if let Some(answer) = board_api_probe::probe_board_api(args) {
         return answer;
@@ -74,7 +74,7 @@ pub fn run_with_context(
 /// deadline, including peer cancellation, bounds those waits and sub-requests.
 pub(crate) fn run_direct(
     args: &[String],
-    context: &crate::request_context::RequestContext,
+    context: &tp_core::request_context::RequestContext,
     deadline: QueryDeadline,
 ) -> Result<String> {
     let options = parse(args)?;
@@ -84,7 +84,7 @@ pub(crate) fn run_direct(
 
 fn direct_with_deadline(
     options: &Arguments,
-    context: &crate::request_context::RequestContext,
+    context: &tp_core::request_context::RequestContext,
     deadline: QueryDeadline,
 ) -> Result<String> {
     let verb = options
@@ -140,7 +140,7 @@ fn direct_with_deadline(
         return OutputBudget::new(options.budget)?.render(&serde_json::from_str::<
             serde_json::Value,
         >(
-            &crate::daemon_transport::stop(&cache)?,
+            &tp_core::daemon_transport::stop(&cache)?,
         )?);
     }
     let metadata_only = verb == "semantic"
@@ -155,12 +155,12 @@ fn direct_with_deadline(
     {
         let args = normalized_args(options, &root);
         if let Some(response) =
-            crate::daemon_transport::request_by(&cache, &args, context, deadline.clone())?
+            tp_core::daemon_transport::request_by(&cache, &args, context, deadline.clone())?
         {
             return root_reply(&root, &cache, options, response);
         }
         if !deadline.expired() {
-            let spawn: Result<crate::background_process::BackgroundChild> = (|| {
+            let spawn: Result<tp_core::background_process::BackgroundChild> = (|| {
                 if deadline.expired() {
                     anyhow::bail!(coded!(TimedOut, "query deadline expired"));
                 }
@@ -175,9 +175,9 @@ fn direct_with_deadline(
                     )
                     .ok()
                 });
-                let executable = crate::background_process::current_background_executable(
+                let executable = tp_core::background_process::current_background_executable(
                     &cache,
-                    crate::background_process::BackgroundOwner::Command,
+                    tp_core::background_process::BackgroundOwner::Command,
                 )?;
                 let mut command = Command::new(&executable);
                 if let Some(history_cache) = history_cache {
@@ -210,7 +210,7 @@ fn direct_with_deadline(
                 Ok(child) => {
                     let spawn_deadline = Instant::now() + deadline.cap(Duration::from_secs(3));
                     while Instant::now() < spawn_deadline {
-                        if let Some(response) = crate::daemon_transport::request_by(
+                        if let Some(response) = tp_core::daemon_transport::request_by(
                             &cache,
                             &args,
                             context,
@@ -219,7 +219,7 @@ fn direct_with_deadline(
                             return root_reply(&root, &cache, options, response);
                         }
                         if child.exited()
-                            && !crate::daemon_transport::running_by(&cache, &deadline)?
+                            && !tp_core::daemon_transport::running_by(&cache, &deadline)?
                         {
                             break;
                         }
@@ -315,7 +315,7 @@ fn wait_for_history(root: &Path, options: &Arguments, response: String) -> Resul
         })?;
     let mut history = crate::history::History::open(root, &cache)?;
     if let Some(tip) = initial["tip"].as_str() {
-        history.tip = crate::identity::GitOid::parse(tip)?;
+        history.tip = tp_core::identity::GitOid::parse(tip)?;
     }
     let mut status = history.status()?;
     while status["complete"] == false && status["failure"].is_null() {

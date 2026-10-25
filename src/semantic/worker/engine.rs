@@ -1,6 +1,4 @@
 use super::super::Embedding;
-#[cfg(feature = "semantic")]
-use crate::coded_error::CodedContext;
 use crate::semantic::{
     VerifiedAssetDigests,
     runtime_config::{InferenceConfig, InferenceProvider},
@@ -9,6 +7,8 @@ use anyhow::Result;
 #[cfg(feature = "semantic")]
 use anyhow::{Context, bail};
 use std::path::Path;
+#[cfg(feature = "semantic")]
+use tp_core::coded_error::CodedContext;
 
 pub trait Engine: Send {
     fn embed_batch(&mut self, texts: &[String]) -> Result<Vec<Embedding>>;

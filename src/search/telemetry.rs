@@ -119,7 +119,7 @@ impl RetrievalTrace {
         self.query_preparation_us = None;
         self.coverage = None;
         if self.enabled {
-            self.root_identity = blake3::hash(crate::path_codec::encode_path(root).as_bytes())
+            self.root_identity = blake3::hash(tp_core::path_codec::encode_path(root).as_bytes())
                 .to_hex()
                 .to_string();
         }

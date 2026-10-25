@@ -1,9 +1,9 @@
 //! Populate an unpublished in-memory store with current source files.
 use super::{Store, regions, scan};
-use crate::coded_error::CodedContext;
-use crate::identity::ContentRevision;
 use anyhow::{Result, ensure};
 use rusqlite::{OptionalExtension, params};
+use tp_core::coded_error::CodedContext;
+use tp_core::identity::ContentRevision;
 use tp_extract::Extraction;
 
 /// Registers all paths in one in-memory transaction before the shared path filter binds.

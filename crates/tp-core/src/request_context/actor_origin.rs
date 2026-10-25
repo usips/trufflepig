@@ -101,7 +101,7 @@ pub struct ActorOrigin {
 }
 
 impl ActorOrigin {
-    pub(crate) fn system(session: impl Into<String>) -> Result<Self> {
+    pub fn system(session: impl Into<String>) -> Result<Self> {
         let origin = Self {
             harness: HarnessLabel::parse("system")?,
             session: session.into(),
@@ -115,7 +115,7 @@ impl ActorOrigin {
         self.validate_for_request(false)
     }
 
-    pub(crate) fn validate_for_request(&self, trusted_internal: bool) -> Result<()> {
+    pub fn validate_for_request(&self, trusted_internal: bool) -> Result<()> {
         HarnessLabel::parse(self.harness.as_str())?;
         if self.harness.is_system() && !trusted_internal {
             bail!(coded!(

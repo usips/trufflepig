@@ -8,7 +8,7 @@ fn tree_staging_rejects_expanding_paths_and_dense_entries() {
     for index in 0..40 {
         expanded.extend_from_slice(format!("100644 blob {oid}\t{index}{long_path}\0").as_bytes());
     }
-    assert!(expanded.len() < crate::git_runner::MAX_OUTPUT_BYTES);
+    assert!(expanded.len() < tp_core::git_runner::MAX_OUTPUT_BYTES);
     assert!(
         parse_tree(&expanded)
             .unwrap_err()
@@ -19,7 +19,7 @@ fn tree_staging_rejects_expanding_paths_and_dense_entries() {
     for index in 0..25_000 {
         dense.extend_from_slice(format!("100644 blob {oid}\tfile_{index}\0").as_bytes());
     }
-    assert!(dense.len() < crate::git_runner::MAX_OUTPUT_BYTES);
+    assert!(dense.len() < tp_core::git_runner::MAX_OUTPUT_BYTES);
     assert!(
         parse_tree(&dense)
             .unwrap_err()

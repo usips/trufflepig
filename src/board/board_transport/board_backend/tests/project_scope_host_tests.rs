@@ -1,11 +1,9 @@
 use super::*;
 use crate::board::repo_identity::tests::FixtureRegistration;
-use crate::{
-    board::{board_projects::ProjectResolver, board_protocol::ReadScope},
-    test_fixtures::GitFixture,
-};
+use crate::board::{board_projects::ProjectResolver, board_protocol::ReadScope};
 use serde_json::json;
 use std::fs;
+use tp_core::test_fixtures::GitFixture;
 mod host_project_fixture;
 use host_project_fixture::HostProjectFixture;
 
@@ -120,7 +118,7 @@ fn projects_wire_encodes_unavailable_non_utf8_member_path() {
     let reply = fixture.wire_projects();
     let wire =
         serde_json::to_value(&reply).expect("Projects JSON preserves unavailable Unix paths");
-    let expected = crate::path_codec::encode_path(&base.join("missing"));
+    let expected = tp_core::path_codec::encode_path(&base.join("missing"));
     assert_eq!(
         wire["result"]["data"][0]["unavailable"][0]["root"],
         expected
@@ -128,9 +126,9 @@ fn projects_wire_encodes_unavailable_non_utf8_member_path() {
     assert!(expected.contains("%FF"));
     let lines = crate::board::board_render::render_reply(
         &reply,
-        &crate::output::OutputBudget::new(4000)
+        &tp_core::output::OutputBudget::new(4000)
             .unwrap()
-            .with_format(crate::output::OutputFormat::Lines),
+            .with_format(tp_core::output::OutputFormat::Lines),
     )
     .unwrap()
     .text;

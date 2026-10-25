@@ -11,7 +11,7 @@ use std::{
 };
 
 fn fixture() -> (tempfile::TempDir, PathBuf, BoardConfig) {
-    let directory = crate::test_fixtures::scratch("web-endpoint-");
+    let directory = tp_core::test_fixtures::scratch("web-endpoint-");
     let runtime = directory.path().join("runtime");
     fs::create_dir_all(&runtime).unwrap();
     let config = BoardConfig::for_database(directory.path().join("web.sqlite3"));

@@ -2,9 +2,9 @@
 //! keyed by the worktree path, warmed from the configured member's cache when
 //! that cache exists. Never shares one database between two roots.
 
-use crate::query_deadline::QueryDeadline;
 use anyhow::{Result, ensure};
 use std::path::{Path, PathBuf};
+use tp_core::query_deadline::QueryDeadline;
 
 #[cfg(test)]
 mod tests;

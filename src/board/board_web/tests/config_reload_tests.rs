@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn config_reload_reaches_reader_ttl_and_attention_without_events() {
-    let directory = crate::test_fixtures::scratch("web-config-");
+    let directory = tp_core::test_fixtures::scratch("web-config-");
     let config_path = directory.path().join("board.toml");
     std::fs::write(&config_path, "user = 'owner'\nclaim_ttl_minutes = 120\n").unwrap();
     let defaults = BoardConfig::for_database(directory.path().join("board.sqlite3"));

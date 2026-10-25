@@ -24,7 +24,7 @@ pub(super) fn in_child(case: &str) -> Result<bool> {
     if std::env::var(CHILD_CASE).as_deref() == Ok(case) {
         return Ok(true);
     }
-    let directory = crate::test_fixtures::scratch("sf-");
+    let directory = tp_core::test_fixtures::scratch("sf-");
     for name in ["r", "c", "d", "s"] {
         fs::create_dir(directory.path().join(name))?;
     }
@@ -107,7 +107,7 @@ impl StubDaemon {
     }
 
     fn start(directory: &Path, reply: Value) -> Result<Self> {
-        let listener = UnixListener::bind(directory.join(crate::daemon_transport::SOCKET_NAME))?;
+        let listener = UnixListener::bind(directory.join(tp_core::daemon_transport::SOCKET_NAME))?;
         listener.set_nonblocking(true)?;
         let stop = Arc::new(AtomicBool::new(false));
         let stopping = stop.clone();

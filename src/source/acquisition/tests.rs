@@ -1,5 +1,5 @@
 use super::*;
-use crate::output::OutputBudget;
+use tp_core::output::OutputBudget;
 
 #[test]
 fn owned_read_survives_member_result_eviction_and_keeps_provenance() {

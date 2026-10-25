@@ -1,8 +1,8 @@
 //! SSOT body diffs between plan revisions, with bounded context lines.
 
 use crate::board::board_ids::PlanRevision;
-use crate::line_diff::diff_sources;
 use serde::{Deserialize, Serialize};
+use tp_core::line_diff::diff_sources;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SsotDiff {

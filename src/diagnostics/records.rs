@@ -1,6 +1,6 @@
 use super::DeliveryReceipt;
-use crate::request_context::RequestContext;
 use serde::{Deserialize, Serialize};
+use tp_core::request_context::RequestContext;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq, clap::ValueEnum)]
 #[serde(rename_all = "snake_case")]

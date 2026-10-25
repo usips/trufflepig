@@ -132,7 +132,7 @@ mod tests {
     };
 
     fn fixture() -> (tempfile::TempDir, BoardConfig, ReaderPool) {
-        let directory = crate::test_fixtures::scratch("web-readers-");
+        let directory = tp_core::test_fixtures::scratch("web-readers-");
         let config = BoardConfig::for_database(directory.path().join("board.sqlite3"));
         LocalBoard::open(&config).unwrap();
         let readers = ReaderPool::new(&config).unwrap();

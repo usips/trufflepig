@@ -1,11 +1,9 @@
 //! Delegated-holder and resume-intent fields carried by claim requests.
+use crate::board::board_actor::BoardActor;
 use crate::board::board_ids::EntryId;
-use crate::{
-    board::board_actor::BoardActor,
-    request_context::{HarnessLabel, validate_actor_component},
-};
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
+use tp_core::request_context::{HarnessLabel, validate_actor_component};
 
 /// Delegated holder named by `--for HARNESS/SESSION`; the lease holder
 /// resolves under the delegator's own user and host.

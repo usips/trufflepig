@@ -1,7 +1,7 @@
 use super::*;
-use crate::query_deadline::QueryDeadline;
 use std::{os::unix::net::UnixStream, sync::Arc, thread, time::Instant};
 use tempfile::tempdir;
+use tp_core::query_deadline::QueryDeadline;
 
 fn set() -> StoredResultSet {
     StoredResultSet {
@@ -25,7 +25,7 @@ fn expired_open_does_not_create_cache() {
     };
 
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
     assert!(started.elapsed() < Duration::from_secs(1));
@@ -63,7 +63,7 @@ fn save_lock_wait_uses_remaining_original_budget_and_rolls_back() {
     lock.execute_batch("ROLLBACK").unwrap();
 
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
     assert!(elapsed < Duration::from_millis(500), "elapsed: {elapsed:?}");
@@ -85,7 +85,7 @@ fn load_refuses_after_its_original_deadline_expires() {
     let error = store.load(&id).unwrap_err();
 
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
 }
@@ -110,7 +110,7 @@ fn peer_drop_cancels_a_locked_save_without_persisting_rows() {
     lock.execute_batch("ROLLBACK").unwrap();
 
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
     assert!(elapsed < Duration::from_secs(1), "elapsed: {elapsed:?}");
@@ -144,7 +144,7 @@ fn peer_drop_interrupts_a_long_sqlite_vm_query() {
     closer.join().unwrap();
 
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
     assert!(elapsed < Duration::from_secs(1), "elapsed: {elapsed:?}");

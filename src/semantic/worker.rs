@@ -10,17 +10,14 @@ mod rerank_executor;
 mod scheduler;
 mod status;
 
-use crate::coded_error::CodedContext;
 pub use admission::{AdmissionController, AdmissionTicket};
 pub use protocol::Handshake;
 pub use scheduler::{FairScheduler, RequestClass};
 pub use status::{WorkerState, WorkerStatus};
+use tp_core::coded_error::CodedContext;
 
 use super::Embedding;
-use crate::{
-    background_process::{BackgroundOwner, current_background_executable, spawn_background_for},
-    semantic::{VerifiedAssetDigests, runtime_config::InferenceConfig},
-};
+use crate::semantic::{VerifiedAssetDigests, runtime_config::InferenceConfig};
 use anyhow::{Context, Result, bail, ensure};
 pub use client::RERANK_DEADLINE;
 #[cfg(feature = "semantic")]
@@ -45,6 +42,9 @@ use std::{
     },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
+use tp_core::background_process::{
+    BackgroundOwner, current_background_executable, spawn_background_for,
 };
 
 #[cfg(any(test, feature = "semantic"))]

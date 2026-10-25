@@ -21,8 +21,8 @@ fn preparation_wait_terminates_when_root_daemon_dies() -> Result<()> {
 fn preparation_wait_checks_for_a_listening_daemon() -> Result<()> {
     let cache = tempfile::tempdir()?;
     let listener = std::os::unix::net::UnixListener::bind(cache.path().join("daemon.sock"))?;
-    assert!(crate::daemon_transport::running(cache.path()));
+    assert!(tp_core::daemon_transport::running(cache.path()));
     drop(listener);
-    assert!(!crate::daemon_transport::running(cache.path()));
+    assert!(!tp_core::daemon_transport::running(cache.path()));
     Ok(())
 }

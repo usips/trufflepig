@@ -5,8 +5,6 @@
 #[cfg(test)]
 mod tests;
 
-use crate::git_runner;
-use crate::workspace_config::{Member, MemberIdentity};
 use anyhow::{Context, Result, ensure};
 use std::{
     fs,
@@ -14,6 +12,8 @@ use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
+use tp_core::git_runner;
+use tp_core::workspace_config::{Member, MemberIdentity};
 
 /// Longest one parent-route Git probe may run, matching worktree divergence.
 pub(crate) const GIT_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -156,7 +156,7 @@ pub(crate) fn standalone_worktree(start: &Path, timeout: Duration) -> Option<Mem
     let name = parent
         .file_name()
         .and_then(|name| name.to_str())
-        .filter(|name| crate::workspace_config::valid_name(name))
+        .filter(|name| tp_core::workspace_config::valid_name(name))
         .unwrap_or("checkout")
         .to_owned();
     let member = Member {

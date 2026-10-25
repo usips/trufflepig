@@ -1,8 +1,8 @@
 //! CUDA driver UUID enumeration and ordinal resolution.
 
-use crate::coded_error::CodedContext;
 use anyhow::{Result, bail};
 use std::{ffi::CString, ptr::NonNull};
+use tp_core::coded_error::CodedContext;
 
 const CUDA_UUID_BYTES: usize = 16;
 const MAX_CUDA_DEVICES: usize = 64;

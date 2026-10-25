@@ -3,9 +3,6 @@
 use super::staging::{ENTRY_BYTES, TREE_BYTES};
 use super::{History, comparison, source_diff, targets::Target};
 use crate::{
-    identity::{ByteSpan, ContentRevision, GitOid},
-    output::OutputBudget,
-    path_codec::encode_path,
     results::{self, ChangeEntry, HistoricalSource, Hit, ResultEntry},
     store::{PublicationChange, Store},
 };
@@ -13,6 +10,11 @@ use anyhow::{Result, ensure};
 use rusqlite::OptionalExtension;
 use serde_json::json;
 use std::collections::BTreeMap;
+use tp_core::{
+    identity::{ByteSpan, ContentRevision, GitOid},
+    output::OutputBudget,
+    path_codec::encode_path,
+};
 
 const MAX_PATH_VECTOR_BYTES: usize = 1024 * 1024;
 const MAX_DIFF_LINES: usize = 100_000;
@@ -173,7 +175,7 @@ fn changed_spans(
     target: Option<&Target>,
 ) -> Result<(Vec<ChangedSpans>, bool)> {
     let differences =
-        crate::line_diff::diff_sources(old.unwrap_or_default(), new.unwrap_or_default());
+        tp_core::line_diff::diff_sources(old.unwrap_or_default(), new.unwrap_or_default());
     if let Some(target) = target.filter(|target| target.symbol.is_some()) {
         let before = tp_extract::extract(path, old.unwrap_or_default());
         let after = tp_extract::extract(path, new.unwrap_or_default());

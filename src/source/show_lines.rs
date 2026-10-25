@@ -2,9 +2,9 @@
 //! header, then `LINE<TAB>text` rows, then the footer. Row text is the JSON `text` field,
 //! so byte-escaped lines keep their `\xNN` escapes and are flagged once.
 
-use crate::output::lines_format::{NextCommand, footer};
 use serde_json::Value;
 use std::fmt::Write;
+use tp_core::output::lines_format::{NextCommand, footer};
 
 pub(crate) fn show_text(value: &Value) -> String {
     let rows = value["lines"].as_array().map(Vec::as_slice).unwrap_or(&[]);

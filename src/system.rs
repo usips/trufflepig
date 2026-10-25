@@ -1,23 +1,16 @@
 //! Per-user system daemon routing CLI requests to owning workspace or root daemons.
-//! Each request is proxied on its own worker, bounded by `crate::daemon_transport::PROXY_REPLY_WAIT`.
+//! Each request is proxied on its own worker, bounded by `tp_core::daemon_transport::PROXY_REPLY_WAIT`.
 
 mod managed_unit;
 mod route;
 pub mod sweep;
 
-use crate::coded_error::CodedContext;
-use crate::runtime_paths::{spool_dir, system_dir};
+use tp_core::coded_error::CodedContext;
+use tp_core::runtime_paths::{spool_dir, system_dir};
 #[cfg(test)]
 mod tests;
 
-use crate::{
-    background_process::{
-        BackgroundChild, BackgroundOwner, current_background_executable, spawn_background_for,
-    },
-    daemon::{self, AcceptedRequest, DaemonHandler},
-    query_deadline::QueryDeadline,
-    request_context::RequestContext,
-};
+use crate::daemon::{self, AcceptedRequest, DaemonHandler};
 use anyhow::{Result, bail};
 use route::route;
 use std::{
@@ -30,10 +23,17 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 use sweep::{SWEEP_GRACE, SWEEP_INTERVAL, sweep};
+use tp_core::{
+    background_process::{
+        BackgroundChild, BackgroundOwner, current_background_executable, spawn_background_for,
+    },
+    query_deadline::QueryDeadline,
+    request_context::RequestContext,
+};
 
 /// Stops a listening system daemon through its socket.
 pub fn stop() -> Result<String> {
-    crate::daemon_transport::stop(
+    tp_core::daemon_transport::stop(
         &system_dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?,
     )
 }
@@ -93,7 +93,7 @@ fn ensure_until<'run>(
     }
     ensure_router_starting(deadline.clone(), start_wait)?;
     let dir = system_dir().with_coded_context(|| coded!(SystemUnavailable, "no runtime dir"))?;
-    let started = if crate::daemon_transport::running_by(&dir, &deadline)? {
+    let started = if tp_core::daemon_transport::running_by(&dir, &deadline)? {
         None
     } else {
         ensure_router_starting(deadline.clone(), start_wait)?;
@@ -121,7 +121,7 @@ fn ensure_until<'run>(
         // A racing spawn exits on the socket bind while its winner serves; a
         // spawn that is gone with no listener fails before the cap.
         if child.as_ref().is_some_and(BackgroundChild::exited)
-            && !crate::daemon_transport::running_by(&dir, &deadline)?
+            && !tp_core::daemon_transport::running_by(&dir, &deadline)?
         {
             bail!(coded!(
                 SystemUnavailable,
@@ -132,7 +132,7 @@ fn ensure_until<'run>(
         // A unit that failed or crash-loops has no child to exit, so its state
         // decides the start; a router that already answers is left to the poll.
         if let Some(state) = unit.as_mut().and_then(|unit| unit.failure(Instant::now()))
-            && !crate::daemon_transport::running_by(&dir, &deadline)?
+            && !tp_core::daemon_transport::running_by(&dir, &deadline)?
         {
             return Err(managed_unit::did_not_start(&state));
         }
@@ -184,12 +184,12 @@ fn poll_at(
         return Ok(None);
     }
     if let Some(dir) = runtime {
-        let reply = match crate::daemon_transport::request_by(dir, ping, context, deadline.clone())
-        {
-            Ok(reply) => reply,
-            Err(error) if poll_budget_spent(&error) => None,
-            Err(error) => return Err(error),
-        };
+        let reply =
+            match tp_core::daemon_transport::request_by(dir, ping, context, deadline.clone()) {
+                Ok(reply) => reply,
+                Err(error) if poll_budget_spent(&error) => None,
+                Err(error) => return Err(error),
+            };
         if let Some(reply) = reply {
             return Ok((!deadline.expired()).then_some(reply));
         }
@@ -197,7 +197,7 @@ fn poll_at(
     if deadline.expired() {
         return Ok(None);
     }
-    match crate::daemon_transport::spool::request(spool, ping, context, deadline.clone()) {
+    match tp_core::daemon_transport::spool::request(spool, ping, context, deadline.clone()) {
         Ok(_) if deadline.expired() => Ok(None),
         Ok(reply) => Ok(reply),
         Err(error) if poll_budget_spent(&error) => Ok(None),
@@ -207,8 +207,8 @@ fn poll_at(
 
 /// Whether a bounded poll error only reports its own expired budget.
 fn poll_budget_spent(error: &anyhow::Error) -> bool {
-    crate::daemon_transport::spool::is_spool_or_coded_timeout(error)
-        || crate::daemon_transport::DaemonReplyTimeout::from_error(error).is_some()
+    tp_core::daemon_transport::spool::is_spool_or_coded_timeout(error)
+        || tp_core::daemon_transport::DaemonReplyTimeout::from_error(error).is_some()
         || error.chain().any(|cause| {
             matches!(
                 cause.downcast_ref::<std::io::Error>(),

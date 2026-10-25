@@ -1,8 +1,8 @@
-use crate::path_codec::encode_path;
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::Value;
 use std::path::{Component, Path, PathBuf};
+use tp_core::path_codec::encode_path;
 
 pub(super) fn normalized(path: &Path) -> Option<PathBuf> {
     let mut result = PathBuf::new();

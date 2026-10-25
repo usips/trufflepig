@@ -1,6 +1,5 @@
 //! Reads are confined to the root and use one buffer for revision verification and output.
-use crate::coded_error::CodedContext;
-use crate::{coded_error::CodeDetail, output::OutputBudget, store::Store};
+use crate::store::Store;
 use anyhow::{Result, bail, ensure};
 use serde_json::json;
 use std::{
@@ -11,6 +10,8 @@ use std::{
     os::unix::ffi::OsStrExt,
     path::{Component, Path},
 };
+use tp_core::coded_error::CodedContext;
+use tp_core::{coded_error::CodeDetail, output::OutputBudget};
 
 pub const MAX_READ_BYTES: usize = 16 * 1024 * 1024;
 
@@ -220,8 +221,8 @@ pub(crate) fn render_owned(
         );
         object.extend(metadata.clone());
         let text = match budget.format {
-            crate::output::OutputFormat::Json => budget.encode(&value)?,
-            crate::output::OutputFormat::Lines => show_lines::show_text(&value),
+            tp_core::output::OutputFormat::Json => budget.encode(&value)?,
+            tp_core::output::OutputFormat::Lines => show_lines::show_text(&value),
         };
         if budget.fits(&text) && (!rows.is_empty() || start == end) {
             return Ok(text);

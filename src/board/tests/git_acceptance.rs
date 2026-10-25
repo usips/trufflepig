@@ -73,7 +73,7 @@ fn real_branch_ingestion_survives_host_reopening_and_review_identifies_crossed_c
 
 #[test]
 fn real_branch_ingestion_survives_host_reopening_and_review_identifies_crossed_claims_drill_hint() {
-    if !crate::test_fixtures::git_version::at_least(
+    if !tp_core::test_fixtures::git_version::at_least(
         2,
         55,
         "real_branch_ingestion_survives_host_reopening_and_review_identifies_crossed_claims_drill_hint",

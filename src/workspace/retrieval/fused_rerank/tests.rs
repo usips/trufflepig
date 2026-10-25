@@ -1,6 +1,5 @@
 use super::*;
 use crate::{
-    query_deadline::QueryDeadline,
     results::Hit,
     search::{self, Query, RERANK_WINDOW, telemetry::Lane},
     store::Store,
@@ -8,6 +7,7 @@ use crate::{
 };
 use serde_json::json;
 use std::{cell::RefCell, path::Path, time::Duration};
+use tp_core::query_deadline::QueryDeadline;
 
 const MEMBERS: [&str; 2] = ["alpha", "beta"];
 const FILES_PER_MEMBER: usize = 20;
@@ -32,7 +32,7 @@ impl RerankScorer for RecordingScorer {
         self.requests.borrow_mut().push((documents.len(), budget));
         if let Some(failure) = self.failure {
             // The worker client raises its relayed failures as coded errors.
-            let coded = crate::coded_error::CodedError::from_relayed(failure.to_owned());
+            let coded = tp_core::coded_error::CodedError::from_relayed(failure.to_owned());
             anyhow::bail!(coded.expect("fake failures carry a registered code"));
         }
         Ok(documents

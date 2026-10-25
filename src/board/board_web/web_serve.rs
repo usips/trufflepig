@@ -12,8 +12,6 @@ use super::{
     web_guard::{WebGuard, allowed_peer_ip, normalize_peer_ip},
     web_ops, web_routes,
 };
-use crate::coded_error::CodedContext;
-use crate::request_pool::{PoolSize, RequestPool};
 use anyhow::Result;
 use std::{
     io::{self, IsTerminal, Write},
@@ -24,6 +22,8 @@ use std::{
     },
     time::{Duration, Instant},
 };
+use tp_core::coded_error::CodedContext;
+use tp_core::request_pool::{PoolSize, RequestPool};
 
 const WEB_POOL: PoolSize = PoolSize {
     workers: 8,
@@ -40,7 +40,7 @@ pub(crate) struct BoardWebServer {
 
 impl BoardWebServer {
     pub(crate) fn bind(address: SocketAddr, published: &PublishedEndpoint) -> Result<Self> {
-        let runtime = crate::runtime_paths::system_dir()
+        let runtime = tp_core::runtime_paths::system_dir()
             .with_coded_context(|| coded!(BoardUnavailable, "no router runtime directory"))?;
         let serve_lock = serve_lock::acquire_at(&runtime)?;
         let listener = web_endpoint::bind_listener(&runtime, address)?;

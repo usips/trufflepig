@@ -3,8 +3,6 @@
 //! rebuildable cache, so another revision or a corrupt file is replaced, never
 //! migrated ([storage contract](../../docs/index-storage-contract.md)).
 use super::{cache_access, index_deadline, publish, schema};
-use crate::path_codec::encode_path;
-use crate::query_deadline::QueryDeadline;
 use anyhow::{Context, Result};
 use rusqlite::{
     Connection, Error as SqliteError, ErrorCode, OptionalExtension, Transaction,
@@ -12,6 +10,8 @@ use rusqlite::{
 };
 use std::path::Path;
 use std::time::Duration;
+use tp_core::path_codec::encode_path;
+use tp_core::query_deadline::QueryDeadline;
 
 pub(super) const INDEX_NAME: &str = "index.sqlite3";
 /// The most recent corrupt index, kept for inspection; each quarantine replaces it.

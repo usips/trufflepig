@@ -11,7 +11,7 @@ use crate::{
 use anyhow::{Context, Result, anyhow, bail, ensure};
 pub use git_command_failure::GitCommandFailed;
 use git_resource_limits::ResourceLimitExceeded;
-pub(crate) use git_resource_limits::is_resource_limited;
+pub use git_resource_limits::is_resource_limited;
 use std::ffi::{OsStr, OsString};
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Component, Path, PathBuf};
@@ -32,7 +32,7 @@ pub struct GitRepository {
 
 /// Canonical Git common directory of `directory`'s repository or worktree.
 /// Runs only `rev-parse`, without the history version gate.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn common_dir(directory: &Path) -> Result<PathBuf> {
     common_dir_bounded(directory, COMMAND_TIMEOUT)
 }

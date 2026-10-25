@@ -1,5 +1,5 @@
 use super::*;
-use crate::coded_error::{CodedContext, CodedError};
+use tp_core::coded_error::{CodedContext, CodedError};
 
 mod retry_loop_tests;
 
@@ -20,7 +20,7 @@ fn terminal_io_timeout(kind: ErrorKind, phase: &str) -> anyhow::Error {
 
 /// Types reply text as the daemon client boundary does.
 fn relayed(text: &str) -> anyhow::Error {
-    crate::coded_error::relayed_error(text.to_owned())
+    tp_core::coded_error::relayed_error(text.to_owned())
 }
 
 fn busy() -> anyhow::Error {
@@ -304,7 +304,7 @@ fn a_full_reply_wait_is_not_a_fast_transport_retry() {
         RetryPolicy::classify(
             RetryScope::Read,
             &error,
-            crate::daemon_transport::PROXY_REPLY_WAIT
+            tp_core::daemon_transport::PROXY_REPLY_WAIT
         ),
         RetryPolicy::Fail
     );
@@ -312,7 +312,7 @@ fn a_full_reply_wait_is_not_a_fast_transport_retry() {
         RetryPolicy::classify(
             RetryScope::Read,
             &busy(),
-            crate::daemon_transport::PROXY_REPLY_WAIT
+            tp_core::daemon_transport::PROXY_REPLY_WAIT
         ),
         RetryPolicy::Retry(CONTENTION_RETRY_DELAY)
     );

@@ -1,8 +1,8 @@
 use super::IndexCheckpoint;
-use crate::query_deadline::QueryDeadline;
 use crate::store::{Coverage, index_deadline, scan};
 use anyhow::Result;
 use rusqlite::Connection;
+use tp_core::query_deadline::QueryDeadline;
 
 pub(super) fn stage(
     checkpoint: &mut IndexCheckpoint,

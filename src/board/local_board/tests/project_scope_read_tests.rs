@@ -208,7 +208,7 @@ fn shared_commit_event_respects_requested_plan_scope_intersection() {
     let commits = [0, 2]
         .map(|index| LinkedCommit {
             repo_key: fixture.keys[index].clone(),
-            oid: crate::identity::GitOid::parse(&format!("{:040x}", index + 8)).unwrap(),
+            oid: tp_core::identity::GitOid::parse(&format!("{:040x}", index + 8)).unwrap(),
             subject: "shared batch event".into(),
             committed_at: 10,
             author: "Josh".into(),

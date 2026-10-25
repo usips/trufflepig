@@ -2,8 +2,8 @@
 //! the global options board grammar and dispatch honor. The CLI builds it from
 //! its own arguments; board never parses the global command line.
 use super::BoardOptions;
-use crate::output::OutputFormat;
 use std::path::PathBuf;
+use tp_core::output::OutputFormat;
 
 /// Board request fields, independent of the CLI's global argument type.
 #[derive(Clone, Debug)]

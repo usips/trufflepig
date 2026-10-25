@@ -127,7 +127,7 @@ fn expired_cache_free_workspace_request_does_not_probe_or_scan() {
     )
     .unwrap_err();
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
     assert_eq!(fs::read_dir(fixture.cache.path()).unwrap().count(), 0);

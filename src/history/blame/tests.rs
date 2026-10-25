@@ -1,7 +1,7 @@
 use super::*;
-use crate::identity::ByteSpan;
 use crate::results::{self, ChangeEntry, HistoricalSource, Hit, ResultEntry};
 use std::process::Command;
+use tp_core::identity::ByteSpan;
 
 fn git(root: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
@@ -151,10 +151,10 @@ fn blame_historical_target_uses_its_own_commit_and_span() {
         status: "modified".into(),
         before: None,
         after: Some(HistoricalSource {
-            repository: crate::path_codec::encode_path(&history.repository.common_dir),
+            repository: tp_core::path_codec::encode_path(&history.repository.common_dir),
             commit,
             blob,
-            revision: crate::identity::ContentRevision::of(
+            revision: tp_core::identity::ContentRevision::of(
                 &history.repository.blob(&blob).unwrap(),
             ),
             path: "a.rs".into(),

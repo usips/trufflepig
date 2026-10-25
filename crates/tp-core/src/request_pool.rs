@@ -8,17 +8,17 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 /// One unit of daemon work: read a request, dispatch it, write its reply.
-pub(crate) type PooledJob = Box<dyn FnOnce() + Send + 'static>;
+pub type PooledJob = Box<dyn FnOnce() + Send + 'static>;
 
 /// Worker and queue sizes for one daemon tier.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct PoolSize {
+pub struct PoolSize {
     pub workers: usize,
     pub queue: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) enum RequestLane {
+pub enum RequestLane {
     Query,
     Maintenance,
     Regex,
@@ -30,19 +30,19 @@ pub(crate) enum RequestLane {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct RequestClass {
+pub struct RequestClass {
     pub lane: RequestLane,
     pub verb: &'static str,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum PoolSubmitCause {
+pub enum PoolSubmitCause {
     Full,
     Closed,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct PoolSnapshot {
+pub struct PoolSnapshot {
     pub queue_depth: usize,
     pub queue_capacity: usize,
     pub active_verb: Option<&'static str>,
@@ -60,24 +60,24 @@ struct PoolMetrics {
 }
 
 /// Router: many clients, each request waits on a coordinator or root daemon.
-pub(crate) const ROUTER_POOL: PoolSize = PoolSize {
+pub const ROUTER_POOL: PoolSize = PoolSize {
     workers: 16,
     queue: 64,
 };
 /// Workspace coordinator: fans each query out across members.
-pub(crate) const COORDINATOR_POOL: PoolSize = PoolSize {
+pub const COORDINATOR_POOL: PoolSize = PoolSize {
     workers: 8,
     queue: 64,
 };
 /// Per-root daemon: query-only reads beside the reconciler's writer.
-pub(crate) const ROOT_POOL: PoolSize = PoolSize {
+pub const ROOT_POOL: PoolSize = PoolSize {
     workers: 4,
     queue: 64,
 };
 
 /// Threads sharing one bounded queue. Shutdown rejects queued work after the
 /// drain window and detaches any worker whose active request has not finished.
-pub(crate) struct RequestPool {
+pub struct RequestPool {
     name: String,
     sender: Mutex<Option<mpsc::SyncSender<QueuedJob>>>,
     receiver: Arc<Mutex<mpsc::Receiver<QueuedJob>>>,
@@ -151,7 +151,7 @@ impl RequestPool {
         })
     }
 
-    pub(crate) fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         &self.name
     }
 
@@ -161,7 +161,7 @@ impl RequestPool {
     }
 
     /// Queues daemon work with a stable request verb for pool diagnostics.
-    pub(crate) fn submit_labeled(
+    pub fn submit_labeled(
         &self,
         verb: &'static str,
         job: PooledJob,
@@ -205,7 +205,7 @@ impl RequestPool {
         }
     }
 
-    pub(crate) fn snapshot(&self) -> PoolSnapshot {
+    pub fn snapshot(&self) -> PoolSnapshot {
         let metrics = self
             .metrics
             .lock()

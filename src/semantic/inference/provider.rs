@@ -1,6 +1,5 @@
 use super::pinned_assets::{read_verified_asset, verify_asset_digest};
 use super::{MAX_INPUT_TOKENS, RERANK_MAX_TOKENS, SemanticProvider, SemanticProviderConfig};
-use crate::coded_error::CodedContext;
 use crate::semantic::VerifiedAssetDigests;
 use anyhow::{Context, Result};
 use fastembed::{
@@ -8,6 +7,7 @@ use fastembed::{
     TextRerank, TokenizerFiles, UserDefinedEmbeddingModel, UserDefinedRerankingModel,
 };
 use std::path::Path;
+use tp_core::coded_error::CodedContext;
 
 const MODEL_MANIFEST: &str = include_str!("../../../evaluation/semantic_gate/model.json");
 const RERANKER_MANIFEST: &str = include_str!("../../../evaluation/semantic_gate/reranker.json");

@@ -1,12 +1,12 @@
 use super::super::request_admission::RequestAdmission;
 use super::*;
-use crate::request_context::RequestContext;
 use std::fs::File;
 use std::io::Write;
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant, SystemTime};
+use tp_core::request_context::RequestContext;
 
 fn one_worker() -> PoolSize {
     PoolSize {
@@ -313,7 +313,7 @@ fn an_existing_typed_reply_timeout_survives_request_expiry() {
                 released.lock().unwrap().recv().unwrap();
                 assert!(request.deadline.expired());
                 Err(anyhow::Error::new(
-                    crate::daemon_transport::DaemonReplyTimeout::new(
+                    tp_core::daemon_transport::DaemonReplyTimeout::new(
                         Duration::from_millis(40),
                         Duration::from_millis(25),
                     ),
@@ -459,7 +459,7 @@ fn disconnecting_an_active_query_expires_its_deadline_and_releases_the_worker() 
 fn old_spooled_request_waiting_in_a_lane_never_reaches_the_handler() {
     let scratch = scratch();
     let spool_dir = scratch.path().join("spool");
-    let mut spool = crate::daemon_transport::spool::SpoolServer::open(&spool_dir).unwrap();
+    let mut spool = tp_core::daemon_transport::spool::SpoolServer::open(&spool_dir).unwrap();
     let id = uuid::Uuid::new_v4();
     let request_path = spool_dir.join(format!("{id}.request"));
     let reply_path = spool_dir.join(format!("{id}.reply"));
@@ -526,7 +526,7 @@ fn old_spooled_request_waiting_in_a_lane_never_reaches_the_handler() {
 fn removing_an_active_spool_claim_cancels_its_query_deadline() {
     let scratch = scratch();
     let spool_dir = scratch.path().join("active-spool");
-    let mut spool = crate::daemon_transport::spool::SpoolServer::open(&spool_dir).unwrap();
+    let mut spool = tp_core::daemon_transport::spool::SpoolServer::open(&spool_dir).unwrap();
     let id = uuid::Uuid::new_v4();
     let request_path = spool_dir.join(format!("{id}.request"));
     let claim_path = spool_dir.join(format!("{id}.claimed"));

@@ -10,7 +10,6 @@ use super::{
     web_guard::{BoardWebToken, WebGuard},
 };
 use crate::board::{board_config::BoardConfig, board_ids::BoardRef, board_protocol::BOARD_API};
-use crate::coded_error::CodedContext;
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -21,6 +20,7 @@ use std::{
     path::{Path, PathBuf},
     time::Instant,
 };
+use tp_core::coded_error::CodedContext;
 
 const ENDPOINT_FILE: &str = "board-web.json";
 const ENDPOINT_LIMIT: u64 = 16 * 1024;
@@ -170,7 +170,7 @@ impl Drop for EndpointGuard {
 }
 
 pub(super) fn link(target: Option<BoardRef>) -> Result<String> {
-    let runtime = crate::runtime_paths::system_dir()
+    let runtime = tp_core::runtime_paths::system_dir()
         .with_coded_context(|| coded!(BoardUnavailable, "no runtime directory"))?;
     link_at(&runtime, &BoardConfig::load()?, target)
 }

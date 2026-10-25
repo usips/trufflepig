@@ -18,7 +18,7 @@ fn installed() -> Option<(u32, u32)> {
 
 /// True when the installed Git is at least `major.minor`; otherwise reports
 /// the skipped `test` on stderr.
-pub(crate) fn at_least(major: u32, minor: u32, test: &str) -> bool {
+pub fn at_least(major: u32, minor: u32, test: &str) -> bool {
     let found = installed();
     let supported = found.is_some_and(|version| version >= (major, minor));
     if !supported {

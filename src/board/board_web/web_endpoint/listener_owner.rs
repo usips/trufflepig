@@ -2,12 +2,12 @@
 //! A squatter binding the published port while board-serve is down must never
 //! pass as the real service, so its socket uid must equal our euid.
 
-use crate::coded_error::CodedContext;
 use anyhow::{Result, bail};
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     path::Path,
 };
+use tp_core::coded_error::CodedContext;
 
 const PROC_NET_TCP: &str = "/proc/net/tcp";
 const PROC_NET_TCP6: &str = "/proc/net/tcp6";
@@ -131,7 +131,7 @@ mod tests {
 
     #[test]
     fn owned_listen_row_is_accepted_and_foreign_uid_is_refused() {
-        let directory = crate::test_fixtures::scratch("web-listener-");
+        let directory = tp_core::test_fixtures::scratch("web-listener-");
         let address: SocketAddr = "127.0.0.1:7341".parse().unwrap();
         // SAFETY: geteuid has no preconditions and cannot fail.
         let euid = unsafe { libc::geteuid() };
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn non_listen_states_and_other_addresses_do_not_count() {
-        let directory = crate::test_fixtures::scratch("web-listener-");
+        let directory = tp_core::test_fixtures::scratch("web-listener-");
         let address: SocketAddr = "127.0.0.1:7341".parse().unwrap();
         // SAFETY: geteuid has no preconditions and cannot fail.
         let euid = unsafe { libc::geteuid() };
@@ -161,7 +161,7 @@ mod tests {
 
     #[test]
     fn ipv6_loopback_rows_parse_from_tcp6_tables() {
-        let directory = crate::test_fixtures::scratch("web-listener-");
+        let directory = tp_core::test_fixtures::scratch("web-listener-");
         let address: SocketAddr = "[::1]:7341".parse().unwrap();
         // SAFETY: geteuid has no preconditions and cannot fail.
         let euid = unsafe { libc::geteuid() };

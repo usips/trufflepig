@@ -1,5 +1,5 @@
 use super::*;
-use crate::identity::GitOid;
+use tp_core::identity::GitOid;
 
 #[test]
 fn canonical_addresses_round_trip_and_reject_zero_and_padding() {

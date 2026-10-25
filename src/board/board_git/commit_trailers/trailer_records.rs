@@ -5,12 +5,12 @@ use crate::board::board_protocol::{
     COAUTHOR_LIMIT, CommitCoauthor, CommitPlanLink, LINK_LIMIT, LinkedCommit, WORKER_REF_LIMIT,
     WorkerAddress,
 };
-use crate::coded_error::CodedContext;
-use crate::identity::GitOid;
 use anyhow::{Result, ensure};
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::str::FromStr;
+use tp_core::coded_error::CodedContext;
+use tp_core::identity::GitOid;
 
 pub(super) struct ParsedLogRecord {
     pub(super) commit: ParsedCommit,

@@ -2,15 +2,15 @@
 
 use super::*;
 use crate::board::board_transport::board_client_transport::BoardClientTransport;
-use crate::coded_error::CodedContext;
-use crate::coded_error::ErrorCode;
+use tp_core::coded_error::CodedContext;
+use tp_core::coded_error::ErrorCode;
 
 pub(super) fn request_pending(
     args: &[String],
-    context: &crate::request_context::RequestContext,
+    context: &tp_core::request_context::RequestContext,
     no_daemon: bool,
     system_dir: impl FnOnce() -> Option<PathBuf>,
-    deadline: crate::query_deadline::QueryDeadline,
+    deadline: tp_core::query_deadline::QueryDeadline,
 ) -> Result<String> {
     if no_daemon {
         anyhow::bail!(coded!(
@@ -24,7 +24,7 @@ pub(super) fn request_pending(
         !deadline.expired(),
         coded!(TimedOut, "board pending request deadline expired")
     );
-    crate::daemon_transport::request_by(&directory, args, context, deadline)?
+    tp_core::daemon_transport::request_by(&directory, args, context, deadline)?
         .with_coded_context(|| coded!(BoardUnavailable, "no running router for pending notices"))
 }
 
@@ -37,8 +37,8 @@ impl ClientCommand {
     pub(super) fn run(
         &mut self,
         args: &[String],
-        context: &crate::request_context::RequestContext,
-        deadline: crate::query_deadline::QueryDeadline,
+        context: &tp_core::request_context::RequestContext,
+        deadline: tp_core::query_deadline::QueryDeadline,
     ) -> Result<String> {
         if let Some(answer) = board_api_probe::probe_board_api(args) {
             return answer;
@@ -90,7 +90,7 @@ impl ClientCommand {
                 args,
                 context,
                 options.no_daemon,
-                crate::runtime_paths::system_dir,
+                tp_core::runtime_paths::system_dir,
                 deadline,
             );
         }
@@ -124,12 +124,12 @@ impl ClientCommand {
                 forwarded.push("--wait".into());
             }
             let routed =
-                crate::daemon_transport::router_request_by(&forwarded, context, deadline.clone())
+                tp_core::daemon_transport::router_request_by(&forwarded, context, deadline.clone())
                     .and_then(|reply| match reply {
                         Some(reply) => Ok(Some(reply)),
                         None if !deadline.expired() => {
                             let _ = crate::system::ensure_by(deadline.clone());
-                            crate::daemon_transport::router_request_by(
+                            tp_core::daemon_transport::router_request_by(
                                 &forwarded,
                                 context,
                                 deadline.clone(),
@@ -158,8 +158,8 @@ impl ClientCommand {
     pub(super) fn run_after_busy_exhaustion(
         &mut self,
         args: &[String],
-        context: &crate::request_context::RequestContext,
-        deadline: crate::query_deadline::QueryDeadline,
+        context: &tp_core::request_context::RequestContext,
+        deadline: tp_core::query_deadline::QueryDeadline,
     ) -> Option<Result<String>> {
         let options = local_path_show_fallback_options(args)?;
         Some(super::direct_with_deadline(&options, context, deadline))
@@ -190,14 +190,14 @@ fn local_path_show_fallback_options(args: &[String]) -> Option<Arguments> {
 /// expired spool wait leaves the router for direct execution; other router
 /// errors remain answers.
 fn leaves_router_for_direct_execution(error: &anyhow::Error) -> bool {
-    crate::daemon_transport::spool::is_local_spool_timeout(error)
+    tp_core::daemon_transport::spool::is_local_spool_timeout(error)
         || ErrorCode::DaemonUnavailable.is_named_in(error)
 }
 
 /// A cache refusal in any layer admits the local current-path reader, unless
 /// any layer reports a timeout.
 fn index_cache_fallback_options(args: &[String], error: &anyhow::Error) -> Option<Arguments> {
-    let timed_out = crate::daemon_transport::DaemonReplyTimeout::from_error(error).is_some()
+    let timed_out = tp_core::daemon_transport::DaemonReplyTimeout::from_error(error).is_some()
         || ErrorCode::TimedOut.is_anywhere_in(error)
         || ErrorCode::DaemonReplyTimeout.is_anywhere_in(error);
     if timed_out || !ErrorCode::IndexCacheUnavailable.is_anywhere_in(error) {

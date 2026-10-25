@@ -1,6 +1,5 @@
 use super::{ProbeName, ProbeOutcome, ProbeResult};
 use crate::{
-    path_codec::decode_path,
     source,
     store::{Store, extraction_cache_version},
 };
@@ -10,6 +9,7 @@ use std::{
     path::Path,
     time::{Duration, Instant},
 };
+use tp_core::path_codec::decode_path;
 
 const SAMPLE_BYTES: usize = 64 * 1024;
 const SAMPLE_FILES: usize = 4;

@@ -1,10 +1,10 @@
 //! Review drill hints use the supported history gate and available local objects.
-use crate::{git_runner::run_bounded_strict, identity::GitOid};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
+use tp_core::{git_runner::run_bounded_strict, identity::GitOid};
 
 pub(super) struct HistoryDrillGate {
     deadline: Instant,
@@ -130,7 +130,7 @@ fn version_supported(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_fixtures::GitFixture;
+    use tp_core::test_fixtures::GitFixture;
 
     #[test]
     fn history_drills_reject_shallow_boundary_with_missing_raw_parent() {
@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn history_drills_refuse_old_git_and_unavailable_blob_objects_drill_hint() {
-        if !crate::test_fixtures::git_version::at_least(
+        if !tp_core::test_fixtures::git_version::at_least(
             2,
             55,
             "history_drills_refuse_old_git_and_unavailable_blob_objects_drill_hint",

@@ -1,7 +1,8 @@
 use super::test_fixture::{Fixture, git};
 use super::*;
-use crate::{cli, output::OutputBudget, store::Store};
+use crate::{cli, store::Store};
 use std::fs;
+use tp_core::output::OutputBudget;
 
 mod query_execution_deadline_tests;
 
@@ -179,7 +180,7 @@ fn explicit_scopes_limit_members_and_unavailable_members_remain_visible() {
 /// Runs `search sym:SharedThing ws:all` (`--no-daemon`) from `engine` with a fresh deadline.
 fn search_all_with_deadline(
     fixture: &Fixture,
-    deadline_factory: impl FnOnce() -> crate::query_deadline::QueryDeadline,
+    deadline_factory: impl FnOnce() -> tp_core::query_deadline::QueryDeadline,
 ) -> Result<String> {
     let workspace_path = fixture
         .config
@@ -214,7 +215,7 @@ fn search_all_with_deadline(
     let config = WorkspaceConfig::load(&fixture.config)?;
     let cache = cache_path(&config, Some(fixture.cache.path()))?;
     let setup_deadline =
-        crate::query_deadline::QueryDeadline::after(std::time::Duration::from_secs(5));
+        tp_core::query_deadline::QueryDeadline::after(std::time::Duration::from_secs(5));
     WorkspaceResults::create(&cache, &setup_deadline)?;
     let request_context = cli::request_context(&options)?;
     let deadline = deadline_factory();
@@ -236,12 +237,12 @@ fn expired_query_deadline_answers_timed_out() {
     let mut deadline_factory_invoked = false;
     let error = search_all_with_deadline(&fixture, || {
         deadline_factory_invoked = true;
-        crate::query_deadline::QueryDeadline::after(std::time::Duration::ZERO)
+        tp_core::query_deadline::QueryDeadline::after(std::time::Duration::ZERO)
     })
     .unwrap_err();
     assert!(deadline_factory_invoked);
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
 }
@@ -273,7 +274,7 @@ fn member_slices_end_before_the_original_budget_and_later_members_get_the_remain
     let mut started = None;
     let mut original_deadline = None;
     let error = search_all_with_deadline(&fixture, || {
-        let deadline = crate::query_deadline::QueryDeadline::after(budget);
+        let deadline = tp_core::query_deadline::QueryDeadline::after(budget);
         started = Some(std::time::Instant::now());
         original_deadline = Some(deadline.clone());
         deadline
@@ -286,7 +287,7 @@ fn member_slices_end_before_the_original_budget_and_later_members_get_the_remain
     let unavailable = error.to_string()
         == "workspace_unavailable: no selected member has an available published index; inspect ws status or use --no-daemon";
     assert!(
-        unavailable || crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        unavailable || tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
     assert!(
@@ -314,7 +315,7 @@ fn member_slices_end_before_the_original_budget_and_later_members_get_the_remain
         let error = Store::open_read(
             root,
             cache,
-            crate::query_deadline::QueryDeadline::after(std::time::Duration::from_millis(100)),
+            tp_core::query_deadline::QueryDeadline::after(std::time::Duration::from_millis(100)),
         )
         .err()
         .expect("every writer-locked member remains unpublished");
@@ -516,14 +517,14 @@ fn lines_format_prefixes_member_and_summarizes_coverage() {
         .lines()
         .filter(|line| !line.starts_with("  "))
         .collect();
-    let hits: Vec<_> = crate::output::lines_format::emitted_handles(&output).collect();
+    let hits: Vec<_> = tp_core::output::lines_format::emitted_handles(&output).collect();
     assert_eq!(hits.len(), 3, "{output}");
     for (line, member) in lines.iter().zip(["pack", "engine", "upstream"]) {
         let mut fields = line.split('\t');
         fields
             .next()
             .unwrap()
-            .parse::<crate::identity::ResultHandle>()
+            .parse::<tp_core::identity::ResultHandle>()
             .unwrap();
         assert_eq!(fields.next().unwrap(), format!("{member}/lib.rs:1-1"));
         assert_eq!(fields.next().unwrap(), "SharedThing");
@@ -714,7 +715,7 @@ fn member_navigation_reads_every_word_and_ranks_from_the_invocation_directory() 
         )
         .unwrap();
     assert_eq!(
-        crate::output::lines_format::emitted_handles(&refs).count(),
+        tp_core::output::lines_format::emitted_handles(&refs).count(),
         2,
         "{refs}"
     );

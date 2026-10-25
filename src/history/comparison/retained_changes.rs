@@ -1,5 +1,5 @@
 use super::*;
-use crate::coded_error::CodedContext;
+use tp_core::coded_error::CodedContext;
 
 pub(super) fn compare_trees(
     old: BTreeMap<String, TreeFile>,

@@ -1,17 +1,15 @@
 //! Entries, inbox events, and mutation addresses.
 use super::{FeedbackRecord, LinkedCommit, ProposalRecord};
 use crate::board::board_domain::board_collections::EntryCursor;
+use crate::board::board_protocol::{AuthoritySource, ReadScope, ReviewVerdict};
 use crate::board::{
     board_actor::{AgentVendor, BoardActor, BoardRecipient},
     board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
     board_vocabulary::{EntryKind, EntryText, FeedbackState, ProposalState},
 };
-use crate::{
-    board::board_protocol::{AuthoritySource, ReadScope, ReviewVerdict},
-    request_context::ActorOrigin,
-};
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
+use tp_core::request_context::ActorOrigin;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "state", rename_all = "snake_case")]

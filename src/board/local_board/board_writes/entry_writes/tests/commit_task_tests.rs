@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn commit_tasks_retain_all_valid_links_and_unknown_task_falls_back() {
-    let directory = crate::test_fixtures::scratch("board-fixture-");
+    let directory = tp_core::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -42,7 +42,7 @@ fn commit_tasks_retain_all_valid_links_and_unknown_task_falls_back() {
             ))
             .unwrap();
     }
-    let oid = crate::identity::GitOid::parse(&"a".repeat(40)).unwrap();
+    let oid = tp_core::identity::GitOid::parse(&"a".repeat(40)).unwrap();
     let key = RepoKey::from_roots([oid]).unwrap();
     let commit = LinkedCommit {
         repo_key: key,

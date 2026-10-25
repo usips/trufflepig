@@ -120,7 +120,7 @@ fn daemon_shutdown_unlocks_inherited_file_description() {
 fn daemon_bind_preserves_a_socket_when_its_backlog_probe_times_out() {
     let scratch = scratch();
     let path = scratch.path().join(SOCKET_NAME);
-    let listener = socket_connect::tests::backlog_zero_listener(&path);
+    let listener = socket_connect::backlog_zero_listener(&path);
     let first =
         socket_connect::connect_by(&path, &QueryDeadline::after(Duration::from_secs(1))).unwrap();
     let original_inode = fs::symlink_metadata(&path).unwrap().ino();

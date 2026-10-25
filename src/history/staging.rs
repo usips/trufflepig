@@ -20,7 +20,7 @@ const _: () = assert!(
         + CACHE_BYTES
         + ENTRY_BYTES
         + HUNK_BYTES
-        + crate::git_runner::MAX_OUTPUT_BYTES
+        + tp_core::git_runner::MAX_OUTPUT_BYTES
         <= MAX_STAGING
 );
 

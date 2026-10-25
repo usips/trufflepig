@@ -2,8 +2,8 @@
 //! file spool for sandboxed clients, and the limits and waits that clients,
 //! forwarding daemons, and servers share. Servers live in the `daemon` module.
 
-pub(crate) mod daemon_wire_protocol;
-pub(crate) mod socket_connect;
+pub mod daemon_wire_protocol;
+pub mod socket_connect;
 pub mod spool;
 #[cfg(test)]
 mod tests;
@@ -19,27 +19,27 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-pub(crate) use transport_failure::{DaemonReplyTimeout, DeadlineRead, DeadlineWrite};
+pub use transport_failure::{DaemonReplyTimeout, DeadlineRead, DeadlineWrite};
 
-pub(crate) const SOCKET_NAME: &str = "daemon.sock";
+pub const SOCKET_NAME: &str = "daemon.sock";
 /// Longest a client waits for any daemon reply, over the socket or the spool.
 pub const CLIENT_REPLY_WAIT: Duration = Duration::from_secs(30);
 /// Longest a daemon waits on the daemon it forwards to; shorter than
 /// [`CLIENT_REPLY_WAIT`] so the client receives the forwarding failure.
 pub const PROXY_REPLY_WAIT: Duration = Duration::from_secs(28);
 const REQUEST_WRITE_WAIT: Duration = Duration::from_secs(5);
-pub(crate) const RUNNING_PROBE_WAIT: Duration = Duration::from_millis(100);
+pub const RUNNING_PROBE_WAIT: Duration = Duration::from_millis(100);
 
 /// Maximum encoded JSON request size, excluding its length prefix.
-pub(crate) const MAX_DAEMON_REQUEST_BYTES: usize = daemon_wire_protocol::REQUEST_LIMIT;
+pub const MAX_DAEMON_REQUEST_BYTES: usize = daemon_wire_protocol::REQUEST_LIMIT;
 
 /// Measures the exact wire request before client-side routing or fallback.
-pub(crate) fn request_encoded_size(args: &[String], context: &RequestContext) -> Result<usize> {
+pub fn request_encoded_size(args: &[String], context: &RequestContext) -> Result<usize> {
     Ok(serde_json::to_vec(&arguments(args, context))?.len())
 }
 
 /// Returns `None` only when no daemon is listening; protocol errors stay errors.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn request(cache: &Path, args: &[String], context: &RequestContext) -> Result<Option<String>> {
     request_by(
         cache,
@@ -97,7 +97,7 @@ fn connect_timed_out(error: &anyhow::Error) -> bool {
 }
 
 /// Checks for a daemon without treating an expired or cancelled connect as absence.
-pub(crate) fn running_by(cache: &Path, deadline: &QueryDeadline) -> Result<bool> {
+pub fn running_by(cache: &Path, deadline: &QueryDeadline) -> Result<bool> {
     let path = cache.join(SOCKET_NAME);
     match socket_connect::connect_by(&path, deadline) {
         Ok(_stream) => Ok(true),
@@ -116,7 +116,7 @@ pub fn router_request(args: &[String], context: &RequestContext) -> Result<Optio
 }
 
 /// Sends a system request through the router, then spool, under one deadline.
-pub(crate) fn router_request_by(
+pub fn router_request_by(
     args: &[String],
     context: &RequestContext,
     deadline: QueryDeadline,

@@ -1,14 +1,15 @@
 use super::*;
-use crate::{diagnostics::Operation, request_context::RequestContext};
+use crate::diagnostics::Operation;
 use serde_json::json;
+use tp_core::request_context::RequestContext;
 
 #[test]
 fn diff_and_later_pages_preserve_preimage_identity() {
     let root = tempfile::tempdir().unwrap();
     let cache = tempfile::tempdir().unwrap();
     let store = crate::store::Store::open(root.path(), cache.path()).unwrap();
-    let oid = crate::identity::GitOid::parse(&"a".repeat(40)).unwrap();
-    let revision = crate::identity::ContentRevision::of(b"historical source");
+    let oid = tp_core::identity::GitOid::parse(&"a".repeat(40)).unwrap();
+    let revision = tp_core::identity::ContentRevision::of(b"historical source");
     let id = results::save_entries(
         &store,
         1,
@@ -23,7 +24,7 @@ fn diff_and_later_pages_preserve_preimage_identity() {
                 blob: oid,
                 revision,
                 path: "a.rs".into(),
-                span: crate::identity::ByteSpan::new(10, 40).unwrap(),
+                span: tp_core::identity::ByteSpan::new(10, 40).unwrap(),
             }),
             after: None,
             correspondence: "exact".into(),
@@ -90,7 +91,7 @@ fn saved_handles_preserve_identity_and_report_unresolved_handles() {
     std::fs::write(root.path().join("lib.rs"), "fn alpha() {}\n").unwrap();
     let mut store = crate::store::Store::open(root.path(), cache.path()).unwrap();
     store.index().unwrap();
-    let revision = crate::identity::ContentRevision::of(b"fn alpha() {}\n").to_string();
+    let revision = tp_core::identity::ContentRevision::of(b"fn alpha() {}\n").to_string();
     let id = results::save_entries(
         &store,
         1,
@@ -298,7 +299,7 @@ fn commit_handles_and_malformed_values_have_no_source_loss() {
     });
     let mut event = event();
     let mut calls = 0;
-    let oid = crate::identity::GitOid::parse(&"a".repeat(40)).unwrap();
+    let oid = tp_core::identity::GitOid::parse(&"a".repeat(40)).unwrap();
     let mut resolve = |_handle: &ResultHandle| {
         calls += 1;
         Ok(ResolvedEntry {

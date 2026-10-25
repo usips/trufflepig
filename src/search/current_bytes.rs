@@ -1,13 +1,12 @@
 //! Re-run ordinary search lanes against bounded current-file snapshots.
 use super::{Query, search_prepared, telemetry::RetrievalTrace};
 use crate::{
-    identity::ContentRevision,
-    query_deadline::QueryDeadline,
     results::Hit,
     source,
     store::{Store, current_source},
 };
 use anyhow::Result;
+use tp_core::{identity::ContentRevision, query_deadline::QueryDeadline};
 use tp_extract::Extraction;
 
 /// Runs the normal exact, occurrence, lexical, and filename lanes on one current file.

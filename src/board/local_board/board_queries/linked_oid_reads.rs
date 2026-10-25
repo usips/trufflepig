@@ -1,9 +1,9 @@
 //! Current task-linked commit identities independent of review windows and plans.
 use super::super::{BoardError, sql_error};
 use crate::board::board_ids::RepoKey;
-use crate::identity::GitOid;
 use rusqlite::{Connection, params};
 use std::collections::BTreeSet;
+use tp_core::identity::GitOid;
 
 #[cfg(test)]
 mod tests;

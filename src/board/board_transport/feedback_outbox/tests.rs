@@ -5,17 +5,18 @@ mod stored_feedback_upgrade_tests;
 
 use super::board_spool::private_directory_owned_by;
 use super::*;
+use crate::board::board_actor::BoardActor;
 use crate::board::board_ids::{EntryId, EventSeq, RepoKey};
 use crate::board::board_protocol::{BoardChange, FeedbackMetadata};
 use crate::board::board_vocabulary::{EntryText, FeedbackKind};
-use crate::identity::GitOid;
-use crate::{board::board_actor::BoardActor, request_context::HarnessLabel};
 use std::collections::{BTreeSet, HashMap};
 use std::fs::File;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use tp_core::identity::GitOid;
+use tp_core::request_context::HarnessLabel;
 
 fn scratch() -> tempfile::TempDir {
-    crate::test_fixtures::scratch("feedback-outbox-")
+    tp_core::test_fixtures::scratch("feedback-outbox-")
 }
 
 fn report() -> BoardRequest {

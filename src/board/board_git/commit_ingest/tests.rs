@@ -8,16 +8,14 @@ mod warning_subjects;
 
 use super::*;
 use crate::board::board_ids::EventSeq;
-use crate::board::repo_identity::tests::FixtureRegistration;
-use crate::identity::GitOid;
-use crate::test_fixtures::GitFixture;
-use crate::{
-    board::board_protocol::{
-        BoardError, BoardErrorCode, BoardReply, CommitLinkResult, WorkerAddress,
-    },
-    request_context::ActorOrigin,
+use crate::board::board_protocol::{
+    BoardError, BoardErrorCode, BoardReply, CommitLinkResult, WorkerAddress,
 };
+use crate::board::repo_identity::tests::FixtureRegistration;
 use std::collections::BTreeSet;
+use tp_core::identity::GitOid;
+use tp_core::request_context::ActorOrigin;
+use tp_core::test_fixtures::GitFixture;
 
 #[derive(Default)]
 struct TestBackend {

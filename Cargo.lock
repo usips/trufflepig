@@ -1543,6 +1543,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
 
 [[package]]
+name = "tp-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "imara-diff",
+ "libc",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tiktoken-rs",
+ "toml",
+ "uuid",
+]
+
+[[package]]
 name = "tp-extract"
 version = "0.1.0"
 dependencies = [
@@ -1682,6 +1699,7 @@ dependencies = [
  "tempfile",
  "tiktoken-rs",
  "toml",
+ "tp-core",
  "tp-extract",
  "tree-sitter",
  "tree-sitter-c-sharp",

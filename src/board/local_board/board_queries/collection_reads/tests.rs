@@ -7,7 +7,7 @@ use crate::board::local_board::LocalBoard;
 use std::time::Duration;
 
 pub(super) fn database() -> (tempfile::TempDir, LocalBoard) {
-    let directory = crate::test_fixtures::scratch("trufflepig-collections-");
+    let directory = tp_core::test_fixtures::scratch("trufflepig-collections-");
     let board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(20),

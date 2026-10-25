@@ -1,12 +1,12 @@
 use super::super::tests::scratch;
 use super::*;
-use crate::daemon_transport::{SOCKET_NAME, request, stop};
-use crate::query_deadline::QueryDeadline;
-use crate::request_context::RequestContext;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Barrier;
 use std::time::Instant;
+use tp_core::daemon_transport::{SOCKET_NAME, request, stop};
+use tp_core::query_deadline::QueryDeadline;
+use tp_core::request_context::RequestContext;
 
 mod admission_refusal_tests;
 mod cross_root_admission_tests;
@@ -274,11 +274,11 @@ fn router_answers_spooled_requests_on_its_workers() {
             let spool = spool.clone();
             std::thread::spawn(move || {
                 let args = vec!["search".to_owned(), client.to_string()];
-                crate::daemon_transport::spool::request(
+                tp_core::daemon_transport::spool::request(
                     &spool,
                     &args,
                     &RequestContext::new(None, None),
-                    QueryDeadline::after(crate::daemon_transport::CLIENT_REPLY_WAIT),
+                    QueryDeadline::after(tp_core::daemon_transport::CLIENT_REPLY_WAIT),
                 )
             })
         })
@@ -304,10 +304,10 @@ fn connect_probe_sees_a_serving_daemon_without_disturbing_it() {
         },
     );
     for _ in 0..8 {
-        assert!(crate::daemon_transport::running(&served.cache));
+        assert!(tp_core::daemon_transport::running(&served.cache));
     }
     assert_eq!(served.ask(&["status"]).unwrap().as_deref(), Some("status"));
     let cache = served.cache.clone();
     served.stop().unwrap();
-    assert!(!crate::daemon_transport::running(&cache));
+    assert!(!tp_core::daemon_transport::running(&cache));
 }

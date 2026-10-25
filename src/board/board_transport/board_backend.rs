@@ -20,8 +20,6 @@ use crate::board::{
     local_board::LocalBoard,
     repo_identity::RepoIdentityCache,
 };
-use crate::identity::GitOid;
-use crate::query_deadline::QueryDeadline;
 use anyhow::Result;
 use board_writer::check_deadline;
 pub(crate) use board_writer::ensure_feedback_import;
@@ -31,6 +29,8 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
 };
+use tp_core::identity::GitOid;
+use tp_core::query_deadline::QueryDeadline;
 
 /// Typed operations return domain evidence; edge rendering and git stay outside it.
 pub trait BoardBackend: Send {

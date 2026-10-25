@@ -1,8 +1,8 @@
 use super::{PathCursorRootIdentity, stateless_handle};
-use crate::coded_error::CodedContext;
-use crate::identity::{ByteSpan, ContentRevision};
 use anyhow::{Context, Result, ensure};
 use std::path::{Component, Path};
+use tp_core::coded_error::CodedContext;
+use tp_core::identity::{ByteSpan, ContentRevision};
 
 /// Builds a process-independent `show` handle for a current hit.
 ///

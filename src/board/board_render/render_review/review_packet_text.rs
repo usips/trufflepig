@@ -3,9 +3,9 @@
 use super::super::{cell, claim_line, diff_lines, entry_line, footer, recipient};
 use super::ReviewRenderOmitted;
 use crate::board::{board_protocol::BOARD_API, review_packet::ReviewPacket};
-use crate::output::{OutputBudget, OutputFormat};
 use anyhow::Result;
 use std::fmt::Write;
+use tp_core::output::{OutputBudget, OutputFormat};
 
 pub(super) fn review_text(
     packet: &ReviewPacket,

@@ -27,9 +27,9 @@ use crate::board::board_protocol::{BoardResult, RevisionSource};
 #[cfg(test)]
 use crate::board::board_vocabulary::{EntryKind, FeedbackKind};
 #[cfg(test)]
-use crate::request_context::HarnessLabel;
-#[cfg(test)]
 use rusqlite::params;
+#[cfg(test)]
+use tp_core::request_context::HarnessLabel;
 
 const COLLECTION_LIMIT: usize = 200;
 pub(super) const ACTIVE_TASKS: &str = concat!(

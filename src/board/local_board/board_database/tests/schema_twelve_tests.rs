@@ -1,18 +1,16 @@
 use super::*;
-use crate::{
-    board::{
-        board_actor::BoardActor,
-        board_backend::BoardBackend,
-        board_ids::{EntryId, EventSeq},
-        board_protocol::{
-            BoardChange, BoardOp, BoardReceiptState, BoardReply, BoardRequest, BoardRequestKey,
-            BoardResult,
-        },
-        local_board::LocalBoard,
+use crate::board::{
+    board_actor::BoardActor,
+    board_backend::BoardBackend,
+    board_ids::{EntryId, EventSeq},
+    board_protocol::{
+        BoardChange, BoardOp, BoardReceiptState, BoardReply, BoardRequest, BoardRequestKey,
+        BoardResult,
     },
-    request_context::HarnessLabel,
+    local_board::LocalBoard,
 };
 use std::time::Duration;
+use tp_core::request_context::HarnessLabel;
 
 #[test]
 fn v12_adds_nullable_receipt_actor_without_rewriting_evidence() {

@@ -6,19 +6,21 @@ use super::{
     result_cache::{MemberSnapshot, OwnedEntry, WorkspaceResults, WorkspaceSet},
     selected_member,
 };
-use crate::coded_error::CodedContext;
 use crate::{
     cli::Arguments,
-    coded_error::{CodeDetail, ErrorCode, coded_error, error_detail},
-    identity::ResultHandle,
-    output::OutputBudget,
-    query_deadline::QueryDeadline,
     results::{self, ResultEntry},
     source::{self, SourceSide, acquisition},
     store::{Store, is_index_warming},
 };
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
+use tp_core::coded_error::CodedContext;
+use tp_core::{
+    coded_error::{CodeDetail, ErrorCode, coded_error, error_detail},
+    identity::ResultHandle,
+    output::OutputBudget,
+    query_deadline::QueryDeadline,
+};
 
 fn address(target: &str) -> Result<(String, Option<SourceSide>, Option<usize>)> {
     if let Some(cursor) = target.strip_prefix("read:") {
@@ -167,7 +169,7 @@ fn read_within(
                     !deadline.expired(),
                     coded!(TimedOut, "query deadline expired")
                 );
-                if crate::coded_error::ErrorCode::TimedOut.is_code_of(&error)
+                if tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error)
                     && maintenance_deadline.expired()
                 {
                     selected_cache
@@ -309,7 +311,7 @@ pub(super) fn history(
     }
     value["workspace"] = config.name.clone().into();
     value["member"] = member.name().into();
-    value["repository"] = crate::path_codec::encode_path(&member.root).into();
+    value["repository"] = tp_core::path_codec::encode_path(&member.root).into();
     render_owned_value(value, budget)
 }
 fn rewrite_handles(value: &mut Value, old: &str, new: &str) {

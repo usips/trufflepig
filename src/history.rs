@@ -13,12 +13,13 @@ mod targets;
 mod tests;
 mod working_tree;
 
-use crate::git_runner::GitRepository;
-use crate::{identity::GitOid, output::OutputBudget, store::Store};
+use crate::store::Store;
 use anyhow::Result;
 use rusqlite::Connection;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+use tp_core::git_runner::GitRepository;
+use tp_core::{identity::GitOid, output::OutputBudget};
 
 pub const MAX_COMMITS: usize = 20_000;
 pub const MAX_BLOB_BYTES: usize = 2 * 1024 * 1024;

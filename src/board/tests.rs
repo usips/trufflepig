@@ -17,15 +17,15 @@ use super::board_backend::BoardHost;
 use super::board_config::BoardConfig;
 use super::board_grammar;
 use crate::board::board_grammar::BoardArguments;
-use crate::query_deadline::QueryDeadline;
-use crate::request_context::HarnessLabel;
-use crate::request_context::RequestContext;
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
+use tp_core::query_deadline::QueryDeadline;
+use tp_core::request_context::HarnessLabel;
+use tp_core::request_context::RequestContext;
 
 struct EdgeFixture {
     scratch: TempDir,
@@ -36,7 +36,7 @@ struct EdgeFixture {
 
 impl EdgeFixture {
     fn new() -> Self {
-        let scratch = crate::test_fixtures::scratch("acceptance-");
+        let scratch = tp_core::test_fixtures::scratch("acceptance-");
         let root = scratch.path().join("repository");
         std::fs::create_dir(&root).unwrap();
         // An unborn fixture prevents Git discovery from reaching the real checkout.

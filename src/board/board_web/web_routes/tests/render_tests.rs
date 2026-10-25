@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn proposal_diff_preserves_all_lines_and_the_earlier_snapshot() {
-    let directory = crate::test_fixtures::scratch("web-proposal-diff-");
+    let directory = tp_core::test_fixtures::scratch("web-proposal-diff-");
     let config = BoardConfig::for_database(directory.path().join("web.sqlite3"));
     let store = WebStore::open_at(
         BoardConfigCache::with_config(config.clone()),

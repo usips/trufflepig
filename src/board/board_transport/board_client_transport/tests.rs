@@ -86,7 +86,7 @@ fn observations_share_expiry(windows: &[(Instant, Instant)]) -> bool {
 }
 
 fn scratch() -> tempfile::TempDir {
-    crate::test_fixtures::scratch("board-client-")
+    tp_core::test_fixtures::scratch("board-client-")
 }
 
 fn invoke(

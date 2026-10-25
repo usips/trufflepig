@@ -4,11 +4,11 @@ use super::{
     DeclarationCorrespondence,
     correspondence::{MatchFact, match_facts},
 };
-use crate::identity::{ByteSpan, ContentRevision};
-use crate::line_diff::{SourceDiff, diff_interned, line_offsets};
 use anyhow::{Result, ensure};
 use imara_diff::{InternedInput, TokenSource};
 use serde::{Deserialize, Serialize};
+use tp_core::identity::{ByteSpan, ContentRevision};
+use tp_core::line_diff::{SourceDiff, diff_interned, line_offsets};
 
 #[cfg(test)]
 mod tests;

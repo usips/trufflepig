@@ -1,5 +1,6 @@
 use super::*;
-use crate::{output::OutputBudget, query_deadline::QueryDeadline, results};
+use crate::results;
+use tp_core::{output::OutputBudget, query_deadline::QueryDeadline};
 
 pub(super) fn fixture(files: &[(&str, &[u8])]) -> (tempfile::TempDir, tempfile::TempDir, Store) {
     let root = tempfile::tempdir().unwrap();
@@ -489,9 +490,9 @@ fn show_symbol_reads_the_best_declaration_and_lists_the_rest() {
             b"/// Refills.\npub fn refill() {\n    let tokens = 1;\n}\n",
         ),
     ]);
-    let budget = crate::output::OutputBudget::new(4000)
+    let budget = tp_core::output::OutputBudget::new(4000)
         .unwrap()
-        .with_format(crate::output::OutputFormat::Lines);
+        .with_format(tp_core::output::OutputFormat::Lines);
     let text = crate::source::show(&store, "sym:refill", &budget).unwrap();
     assert!(text.starts_with("b.rs "), "{text}");
     assert!(text.contains("pub fn refill() {") && text.contains("let tokens = 1;"));

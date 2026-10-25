@@ -1,23 +1,23 @@
 //! Request routing from the system daemon to workspace, root, and board owners.
 
 use crate::board::board_runtime_markers::record_board_database;
-use crate::coded_error::CodedContext;
-use crate::runtime_paths::system_dir;
-use crate::{
-    background_process::{
-        BackgroundChild, BackgroundOwner, background_executable_replaced,
-        current_background_executable, spawn_background_for,
-    },
-    cli::normalized_args,
-    query_deadline::QueryDeadline,
-    request_context::RequestContext,
-};
+use crate::cli::normalized_args;
 use anyhow::{Result, bail, ensure};
 use std::{
     fs,
     path::Path,
     process::Command,
     time::{Duration, Instant},
+};
+use tp_core::coded_error::CodedContext;
+use tp_core::runtime_paths::system_dir;
+use tp_core::{
+    background_process::{
+        BackgroundChild, BackgroundOwner, background_executable_replaced,
+        current_background_executable, spawn_background_for,
+    },
+    query_deadline::QueryDeadline,
+    request_context::RequestContext,
 };
 
 pub(super) fn route(
@@ -28,7 +28,7 @@ pub(super) fn route(
     deadline: QueryDeadline,
 ) -> Result<String> {
     // Preserve time spent queued at this router, and cap every forwarded wait.
-    let forwarding = deadline.capped(crate::daemon_transport::PROXY_REPLY_WAIT);
+    let forwarding = deadline.capped(tp_core::daemon_transport::PROXY_REPLY_WAIT);
     let options = crate::cli::parse(&args)?;
     let verb = options.words.first().map(String::as_str);
     if verb == Some("system") {
@@ -77,10 +77,10 @@ pub(super) fn route(
         let cache = crate::workspace::cache_path(&config, options.cache.as_deref())?;
         if verb == Some("stop") {
             refuse_router_stop(&cache)?;
-            return crate::daemon_transport::stop(&cache);
+            return tp_core::daemon_transport::stop(&cache);
         }
         if let Some(reply) =
-            crate::daemon_transport::request_by(&cache, &args, &context, forwarding.clone())?
+            tp_core::daemon_transport::request_by(&cache, &args, &context, forwarding.clone())?
         {
             return Ok(reply);
         }
@@ -121,10 +121,10 @@ pub(super) fn route(
     let cache = crate::cli::cache_path(&root, options.cache.as_deref())?;
     if verb == Some("stop") {
         refuse_router_stop(&cache)?;
-        return crate::daemon_transport::stop(&cache);
+        return tp_core::daemon_transport::stop(&cache);
     }
     if let Some(reply) =
-        crate::daemon_transport::request_by(&cache, &args, &context, forwarding.clone())?
+        tp_core::daemon_transport::request_by(&cache, &args, &context, forwarding.clone())?
     {
         return Ok(reply);
     }
@@ -207,11 +207,11 @@ fn forward_spawned(
     let deadline = Instant::now() + forwarding.cap(Duration::from_secs(3));
     while Instant::now() < deadline {
         if let Some(reply) =
-            crate::daemon_transport::request_by(cache, args, context, forwarding.clone())?
+            tp_core::daemon_transport::request_by(cache, args, context, forwarding.clone())?
         {
             return Ok(reply);
         }
-        if child.exited() && !crate::daemon_transport::running_by(cache, &forwarding)? {
+        if child.exited() && !tp_core::daemon_transport::running_by(cache, &forwarding)? {
             break;
         }
         std::thread::sleep(Duration::from_millis(25).min(forwarding.remaining()));

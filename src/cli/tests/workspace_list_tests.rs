@@ -1,7 +1,7 @@
 use super::super::run;
-use crate::workspace_config::CONFIG_NAME;
 use serde_json::Value;
 use std::{fs, path::PathBuf, process::Command};
+use tp_core::workspace_config::CONFIG_NAME;
 
 const CHILD_CASE: &str = "TRUFFLEPIG_WORKSPACE_LIST_CASE";
 const FIXTURE_DIR: &str = "TRUFFLEPIG_WORKSPACE_LIST_FIXTURE";
@@ -151,7 +151,7 @@ fn workspace_list_json_encodes_non_utf8_member_paths() {
     let value: Value = serde_json::from_str(&output).unwrap();
     assert_eq!(
         value["workspaces"][0]["members"][0]["root"],
-        crate::path_codec::encode_path(&root)
+        tp_core::path_codec::encode_path(&root)
     );
     assert_eq!(value["workspaces"][0]["members"][0]["available"], true);
 }

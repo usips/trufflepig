@@ -2,11 +2,11 @@ use super::AdmissionTier;
 use super::root_work_limits::{RootLimitRefusal, RootWorkLimits, RootWorkPermit};
 use super::semantic_fallback::SemanticAdmissionFallback;
 use crate::cli::{ClassifiedDaemonRequest, classify_daemon_request};
-use crate::request_pool::{PoolSize, RequestClass, RequestLane, RequestPool};
 use anyhow::{Result, anyhow, ensure};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tp_core::request_pool::{PoolSize, RequestClass, RequestLane, RequestPool};
 
 const FRAME_INGRESS_WORKERS: usize = 2;
 /// Bounds socket frame reads separately from request execution and routes work

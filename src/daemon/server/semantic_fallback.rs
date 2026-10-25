@@ -1,10 +1,10 @@
 use crate::{
     cli::{normalized_args, parse},
-    output::{OutputBudget, OutputFormat, lines_format::COVERAGE_KEY},
     search::Query,
 };
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use serde_json::{Value, json};
+use tp_core::output::{OutputBudget, OutputFormat, lines_format::COVERAGE_KEY};
 
 const FALLBACK_BUDGET_RESERVE: usize = 128;
 
@@ -228,7 +228,7 @@ mod tests {
         let classified = crate::cli::classify_daemon_request(&lexical_args).unwrap();
         assert_eq!(
             classified.class.lane,
-            crate::request_pool::RequestLane::Query
+            tp_core::request_pool::RequestLane::Query
         );
         assert!(classified.roots.is_empty());
     }

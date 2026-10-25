@@ -3,15 +3,16 @@ mod feedback_authority_tests;
 mod feedback_replay_tests;
 
 use super::*;
+use crate::board::board_actor::BoardActor;
 use crate::board::board_backend::BoardBackend;
 use crate::board::board_protocol::{BoardRequest, RecentCall};
 use crate::board::board_vocabulary::{EntryText, FeedbackImportKey};
 use crate::board::local_board::LocalBoard;
-use crate::{board::board_actor::BoardActor, request_context::HarnessLabel};
 use std::time::Duration;
+use tp_core::request_context::HarnessLabel;
 
 fn board() -> (tempfile::TempDir, LocalBoard) {
-    let dir = crate::test_fixtures::scratch("board-test-");
+    let dir = tp_core::test_fixtures::scratch("board-test-");
     let board = LocalBoard::open_path(&dir.path().join("board.sqlite3"), Duration::from_secs(1800))
         .unwrap();
     (dir, board)

@@ -1,11 +1,11 @@
 //! `<cache>/results.sqlite3`: persisted result sets, apart from the published
 //! index so saving a query's results never waits behind a publication.
 use super::{MAX_BYTES, MAX_HITS, StoredResultSet, now};
-use crate::coded_error::CodedContext;
-use crate::query_deadline::QueryDeadline;
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::{path::Path, thread, time::Duration};
+use tp_core::coded_error::CodedContext;
+use tp_core::query_deadline::QueryDeadline;
 
 mod result_set_schema;
 

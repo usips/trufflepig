@@ -1,8 +1,8 @@
 //! Portable repository identities derived from canonical root commits.
-use crate::identity::GitOid;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{fmt, str::FromStr};
+use tp_core::identity::GitOid;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct RepoKey(String);

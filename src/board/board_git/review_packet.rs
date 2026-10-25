@@ -15,10 +15,10 @@ use crate::board::board_protocol::{
     ProposalRecord, RepoScanTarget, ReviewEvidence, TaskRecord,
 };
 use crate::board::commit_trailers::coauthors_match_claim;
-use crate::identity::GitOid;
-use crate::request_context::HarnessLabel;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use tp_core::identity::GitOid;
+use tp_core::request_context::HarnessLabel;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ReviewPacket {
@@ -59,7 +59,7 @@ pub struct ReviewCommit {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CrossedCommit {
     pub repo_key: crate::board::board_ids::RepoKey,
-    pub oid: crate::identity::GitOid,
+    pub oid: tp_core::identity::GitOid,
     pub task: crate::board::board_ids::TaskId,
     pub claimant: crate::board::board_actor::BoardActor,
     pub claim_entry: crate::board::board_ids::EntryId,

@@ -5,9 +5,10 @@ fn silent_fallback_refuses_to_migrate_beside_a_live_router() {
     let directory = scratch();
     let runtime = directory.path().join("runtime");
     std::fs::create_dir_all(&runtime).unwrap();
-    let _listener =
-        std::os::unix::net::UnixListener::bind(runtime.join(crate::daemon_transport::SOCKET_NAME))
-            .unwrap();
+    let _listener = std::os::unix::net::UnixListener::bind(
+        runtime.join(tp_core::daemon_transport::SOCKET_NAME),
+    )
+    .unwrap();
     let database = directory.path().join("board.sqlite3");
     let mut gateway = FakeGateway::default();
     let error = invoke(
@@ -194,9 +195,10 @@ fn live_router_refuses_stale_schema_without_migrating() {
         .unwrap();
     let runtime = directory.path().join("runtime");
     std::fs::create_dir_all(&runtime).unwrap();
-    let _listener =
-        std::os::unix::net::UnixListener::bind(runtime.join(crate::daemon_transport::SOCKET_NAME))
-            .unwrap();
+    let _listener = std::os::unix::net::UnixListener::bind(
+        runtime.join(tp_core::daemon_transport::SOCKET_NAME),
+    )
+    .unwrap();
     let error = invoke(
         &["--no-daemon", "board", "show"],
         &mut FakeGateway::default(),

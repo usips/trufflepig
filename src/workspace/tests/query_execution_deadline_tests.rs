@@ -1,9 +1,9 @@
 use crate::{
     cli,
-    query_deadline::QueryDeadline,
     workspace::{is_local_query, local_execution_deadline},
 };
 use std::{os::unix::net::UnixStream, sync::Arc, time::Duration};
+use tp_core::query_deadline::QueryDeadline;
 
 fn options(words: &[&str]) -> cli::Arguments {
     cli::parse(

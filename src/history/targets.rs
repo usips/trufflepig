@@ -1,17 +1,17 @@
-use crate::coded_error::CodedContext;
 use crate::{
-    identity::{ByteSpan, ResultHandle},
     results::{self, Hit, ResultEntry},
     store::Store,
 };
 use anyhow::Result;
+use tp_core::coded_error::CodedContext;
+use tp_core::identity::{ByteSpan, ResultHandle};
 
 pub(super) struct Target {
     pub path: String,
     pub symbol: Option<String>,
     pub span: Option<ByteSpan>,
     pub revision: Option<String>,
-    pub commit: Option<crate::identity::GitOid>,
+    pub commit: Option<tp_core::identity::GitOid>,
 }
 pub(super) enum Selection {
     Target(Target),
@@ -100,7 +100,7 @@ pub(super) fn resolve(store: &Store, value: &str) -> Result<Selection> {
         }));
     }
     let path = value.strip_prefix("path:").unwrap_or(value).to_owned();
-    let decoded = crate::path_codec::decode_path(&path)?;
+    let decoded = tp_core::path_codec::decode_path(&path)?;
     anyhow::ensure!(
         decoded
             .components()

@@ -96,7 +96,7 @@ fn link_commit_is_refused_over_the_web_allowlist() {
         api: BOARD_API,
         project: None,
         op: BoardOp::LinkCommit {
-            oid: crate::identity::GitOid::parse(&"a".repeat(40)).unwrap(),
+            oid: tp_core::identity::GitOid::parse(&"a".repeat(40)).unwrap(),
             task: crate::board::board_ids::TaskId::new(
                 crate::board::board_ids::PlanId::new(1).unwrap(),
                 1,

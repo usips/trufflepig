@@ -1,9 +1,10 @@
 use super::*;
+use crate::board::board_actor::BoardActor;
 use crate::board::board_ids::{EventSeq, PlanId};
 use crate::board::board_protocol::BoardResult;
 use crate::board::board_vocabulary::EntryText;
-use crate::{board::board_actor::BoardActor, request_context::HarnessLabel};
 use rusqlite::{Connection, Transaction};
+use tp_core::request_context::HarnessLabel;
 
 struct LifecycleDatabase {
     _directory: tempfile::TempDir,
@@ -12,7 +13,7 @@ struct LifecycleDatabase {
 
 impl LifecycleDatabase {
     fn new(task_column: &str) -> Self {
-        let directory = crate::test_fixtures::scratch("plan-lifecycle-tests-");
+        let directory = tp_core::test_fixtures::scratch("plan-lifecycle-tests-");
         let path = directory.path().join("board.sqlite3");
         let conn = crate::board::local_board::board_database::open(&path)
             .unwrap()

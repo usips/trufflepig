@@ -5,12 +5,12 @@
 //! before the process exits.
 
 use super::published_endpoint::{PublishedEndpoint, remove_published_endpoint};
-use crate::coded_error::CodedContext;
 use anyhow::Result;
 use std::{
     sync::Arc,
     thread::{self, JoinHandle},
 };
+use tp_core::coded_error::CodedContext;
 
 const TERMINATION: [i32; 4] = [libc::SIGTERM, libc::SIGINT, libc::SIGHUP, libc::SIGQUIT];
 
@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn blocked_termination_signal_reaches_the_waiter_and_runs_cleanup() {
-        let directory = crate::test_fixtures::scratch("web-signal-");
+        let directory = tp_core::test_fixtures::scratch("web-signal-");
         let descriptor = directory.path().join("board-web.json");
         std::fs::write(&descriptor, "{}").unwrap();
         block(&[libc::SIGUSR1]).unwrap();

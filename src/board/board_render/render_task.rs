@@ -2,8 +2,8 @@
 
 use super::{BoardOmitted, RenderedBoard, fit_items, render_complete, require_fits};
 use crate::board::board_protocol::{BoardReply, BoardResult, ClaimRecord, LinkedCommit, TaskView};
-use crate::output::{OutputBudget, OutputFormat};
 use anyhow::Result;
+use tp_core::output::{OutputBudget, OutputFormat};
 
 #[derive(Clone, Copy)]
 struct TaskTrim {

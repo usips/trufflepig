@@ -165,9 +165,9 @@ fn imported_feedback_provenance_reaches_normal_inbox_and_shared_event_feed() {
     let reply = BoardReply::new("test", BoardResult::Inbox(inbox));
     let lines = crate::board::board_render::render_reply(
         &reply,
-        &crate::output::OutputBudget::new(4000)
+        &tp_core::output::OutputBudget::new(4000)
             .unwrap()
-            .with_format(crate::output::OutputFormat::Lines),
+            .with_format(tp_core::output::OutputFormat::Lines),
     )
     .unwrap()
     .text;

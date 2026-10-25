@@ -211,13 +211,13 @@ mod tests {
     fn maximum_escaped_entry_fits_daemon_request_frame() {
         let text = "\u{1}".repeat(ENTRY_TEXT_LIMIT);
         let args = ["board", "post", "P1", "note", text.as_str()].map(str::to_owned);
-        let context = crate::request_context::RequestContext::new(None, None);
-        let encoded = crate::daemon_transport::request_encoded_size(&args, &context).unwrap();
+        let context = tp_core::request_context::RequestContext::new(None, None);
+        let encoded = tp_core::daemon_transport::request_encoded_size(&args, &context).unwrap();
         assert!(
             encoded > 64 * 1024,
             "fixture must exercise the raised bound"
         );
-        assert!(encoded <= crate::daemon_transport::MAX_DAEMON_REQUEST_BYTES);
+        assert!(encoded <= tp_core::daemon_transport::MAX_DAEMON_REQUEST_BYTES);
     }
 
     #[test]

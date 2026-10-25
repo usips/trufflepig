@@ -4,10 +4,10 @@ mod outcome_classes;
 use super::emitted_evidence::{SavedEntries, capture_emitted};
 use super::{Arguments, request_context};
 use crate::diagnostics::{DiagnosticsMode, Operation, Outcome, RequestEvent};
-use crate::output::OutputBudget;
 use clap::{CommandFactory, Parser};
 use serde_json::{Value, json};
 use std::{io::Write, time::Instant};
+use tp_core::output::OutputBudget;
 
 pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write) -> i32 {
     if let Some(answer) = super::board_api_probe::probe_board_api(args) {
@@ -43,7 +43,7 @@ pub fn execute(args: &[String], stdout: &mut impl Write, stderr: &mut impl Write
     let (context, context_error) = match request_context(options) {
         Ok(context) => (context, None),
         Err(error) => (
-            crate::request_context::RequestContext::new(
+            tp_core::request_context::RequestContext::new(
                 options.session.clone(),
                 options.client.clone(),
             ),
@@ -241,7 +241,7 @@ fn paging_flag(arg: &str) -> bool {
 }
 
 fn retry_budget(current: usize) -> Option<usize> {
-    let maximum = crate::output::MAX_BUDGET;
+    let maximum = tp_core::output::MAX_BUDGET;
     (current < maximum).then(|| current.saturating_mul(2).max(2_000).min(maximum))
 }
 
@@ -250,7 +250,7 @@ pub(super) fn retry_hint(current: usize) -> String {
         Some(suggestion) => format!("retry with -b {suggestion}"),
         None => format!(
             "maximum budget is {}; narrow the request",
-            crate::output::MAX_BUDGET
+            tp_core::output::MAX_BUDGET
         ),
     }
 }

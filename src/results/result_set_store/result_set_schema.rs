@@ -4,9 +4,9 @@
 //! freed pages to the filesystem.
 
 use super::{commit, execute_sql};
-use crate::query_deadline::QueryDeadline;
 use anyhow::Result;
 use rusqlite::{Connection, Transaction, TransactionBehavior};
+use tp_core::query_deadline::QueryDeadline;
 
 /// Bump on any change to the `result_sets` layout.
 pub(super) const RESULT_SCHEMA_VERSION: i64 = 1;

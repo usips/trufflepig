@@ -1,6 +1,6 @@
 use super::*;
-use crate::path_codec::{decode_path, encode_path};
 use std::os::unix::ffi::OsStringExt;
+use tp_core::path_codec::{decode_path, encode_path};
 
 fn fixture() -> (tempfile::TempDir, Store) {
     let directory = tempfile::tempdir().unwrap();

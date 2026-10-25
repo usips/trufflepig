@@ -9,7 +9,6 @@ use super::super::{
     board_writer::{BoardHostBackendAccess, check_deadline, lock_before},
 };
 use super::scope_read_repo_key;
-use crate::coded_error::CodedContext;
 use crate::{
     board::board_grammar::BoardArguments,
     board::{
@@ -20,12 +19,15 @@ use crate::{
         },
         board_render::{render_cli_reply, render_reply},
     },
+};
+use anyhow::{Result, bail};
+use std::time::Duration;
+use tp_core::coded_error::CodedContext;
+use tp_core::{
     output::OutputBudget,
     query_deadline::{QUERY_DEADLINE, QueryDeadline},
     request_context::RequestContext,
 };
-use anyhow::{Result, bail};
-use std::time::Duration;
 
 impl BoardHost {
     pub fn select_project_scope(

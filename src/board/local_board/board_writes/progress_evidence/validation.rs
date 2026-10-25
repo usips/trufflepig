@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 
 use super::super::super::{BoardError, WriteContext, invalid};
 use crate::board::board_protocol::ProgressInput;
-use crate::identity::GitOid;
+use tp_core::identity::GitOid;
 
 pub(super) struct StoredProgressFields {
     pub head_oid: Option<String>,

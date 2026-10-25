@@ -6,7 +6,7 @@ const CHILD: &str = "TRUFFLEPIG_SERVE_LOCK_TEST_CHILD";
 #[test]
 fn second_bind_refuses_and_leaves_token_untouched() {
     if std::env::var_os(CHILD).is_none() {
-        let directory = crate::test_fixtures::scratch("serve-lock-");
+        let directory = tp_core::test_fixtures::scratch("serve-lock-");
         let runtime = directory.path().join("runtime");
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .env(CHILD, "1")

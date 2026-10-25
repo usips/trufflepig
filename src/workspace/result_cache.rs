@@ -2,13 +2,7 @@
 mod coverage_lines;
 mod index_progress_source;
 use super::member_root::{GIT_PROBE_TIMEOUT, MemberRoot, linked_root_of_member};
-use crate::coded_error::CodedContext;
-use crate::workspace_config::WorkspaceConfig;
 use crate::{
-    identity::{ResultCursor, ResultHandle},
-    output::{OutputBudget, OutputFormat},
-    path_codec::{decode_path, encode_path},
-    query_deadline::QueryDeadline,
     results::{self, HitDetail, ResultEntry},
     store::Store,
 };
@@ -23,6 +17,14 @@ use std::{
     path::Path,
     thread,
     time::Duration,
+};
+use tp_core::coded_error::CodedContext;
+use tp_core::workspace_config::WorkspaceConfig;
+use tp_core::{
+    identity::{ResultCursor, ResultHandle},
+    output::{OutputBudget, OutputFormat},
+    path_codec::{decode_path, encode_path},
+    query_deadline::QueryDeadline,
 };
 
 const WORKSPACE_SQL_BUSY_SLICE: Duration = Duration::from_millis(25);
@@ -533,7 +535,7 @@ fn install_deadline(connection: &Connection, deadline: &QueryDeadline) -> Result
 
 fn classify_db_error(deadline: &QueryDeadline, error: anyhow::Error) -> anyhow::Error {
     let error = deadline.classify(error);
-    if deadline.expired() && !crate::coded_error::ErrorCode::TimedOut.is_code_of(&error) {
+    if deadline.expired() && !tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error) {
         error.with_coded_context(|| coded!(TimedOut, "query deadline expired"))
     } else {
         error

@@ -15,7 +15,7 @@ use crate::board::local_board::{
     BoardError, actor_from_row, board_feed, invalid, require_plan, row_number, sql_error,
     sql_number,
 };
-use crate::request_context::HarnessLabel;
+use tp_core::request_context::HarnessLabel;
 
 const EVENT_LIMIT: usize = 500;
 

@@ -54,7 +54,7 @@ pub fn diff_sources(before: &[u8], after: &[u8]) -> SourceDiff {
     diff_interned(&input, &line_offsets(before), &line_offsets(after))
 }
 
-pub(crate) fn diff_interned<T>(
+pub fn diff_interned<T>(
     input: &InternedInput<T>,
     before_offsets: &[usize],
     after_offsets: &[usize],
@@ -100,7 +100,7 @@ pub(crate) fn diff_interned<T>(
     result
 }
 
-pub(crate) fn line_offsets(source: &[u8]) -> Vec<usize> {
+pub fn line_offsets(source: &[u8]) -> Vec<usize> {
     let count = source.iter().filter(|&&byte| byte == b'\n').count();
     let mut offsets = Vec::with_capacity(count + 2);
     offsets.push(0);

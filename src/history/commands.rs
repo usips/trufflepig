@@ -1,6 +1,6 @@
 mod change_entries;
-use crate::coded_error::CodedContext;
 use change_entries::entries;
+use tp_core::coded_error::CodedContext;
 mod historical_render;
 mod historical_symbols;
 use historical_symbols::{symbol_correspondence, symbol_entries};
@@ -10,12 +10,10 @@ use super::{
     comparison::{self, FileChange},
     targets::{Selection, Target},
 };
-use crate::{
-    identity::ByteSpan,
-    results::{self, ResultEntry},
-};
+use crate::results::{self, ResultEntry};
 use anyhow::Context;
 use serde_json::json;
+use tp_core::identity::ByteSpan;
 
 pub(super) fn select(
     store: &mut Store,

@@ -1,6 +1,6 @@
 //! Read-only collection commands and typed continuation cursors.
 use crate::board::board_protocol::ReadScope;
-use crate::coded_error::CodedContext;
+use tp_core::coded_error::CodedContext;
 #[cfg(test)]
 mod tests;
 use super::{

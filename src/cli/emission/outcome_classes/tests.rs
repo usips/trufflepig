@@ -1,6 +1,6 @@
 use super::*;
-use crate::coded_error::{CodedContext, relayed_error};
 use anyhow::anyhow;
+use tp_core::coded_error::{CodedContext, relayed_error};
 
 fn relayed(text: &str) -> anyhow::Error {
     relayed_error(text.to_owned())

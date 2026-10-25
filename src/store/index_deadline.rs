@@ -1,8 +1,8 @@
-use crate::coded_error::CodedContext;
-use crate::query_deadline::QueryDeadline;
 use anyhow::{Result, bail};
 use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 use std::time::Duration;
+use tp_core::coded_error::CodedContext;
+use tp_core::query_deadline::QueryDeadline;
 
 pub(super) const SQLITE_PROGRESS_STEPS: i32 = 4_096;
 pub(super) const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
@@ -62,7 +62,7 @@ pub(super) fn suspend_for_commit(conn: &Connection, deadline: &QueryDeadline) ->
 
 pub(super) fn classify(deadline: &QueryDeadline, error: anyhow::Error) -> anyhow::Error {
     let error = deadline.classify(error);
-    if deadline.expired() && !crate::coded_error::ErrorCode::TimedOut.is_code_of(&error) {
+    if deadline.expired() && !tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error) {
         error.with_coded_context(|| coded!(TimedOut, "query deadline expired"))
     } else {
         error
@@ -72,8 +72,8 @@ pub(super) fn classify(deadline: &QueryDeadline, error: anyhow::Error) -> anyhow
 pub(super) fn is_deadline_interruption(error: &anyhow::Error) -> bool {
     error.chain().any(|cause| {
         cause
-            .downcast_ref::<crate::coded_error::CodedError>()
-            .is_some_and(|coded| coded.code() == crate::coded_error::ErrorCode::TimedOut)
+            .downcast_ref::<tp_core::coded_error::CodedError>()
+            .is_some_and(|coded| coded.code() == tp_core::coded_error::ErrorCode::TimedOut)
             || cause.downcast_ref::<SqliteError>().is_some_and(|error| {
                 matches!(
                     error,

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{output::OutputBudget, search::InvocationDirectory, source::show, store::Store};
+use crate::{search::InvocationDirectory, source::show, store::Store};
 use serde_json::Value;
 use std::{
     ffi::OsStr,
@@ -8,6 +8,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use tempfile::{Builder, TempDir};
+use tp_core::output::OutputBudget;
 
 mod cursor_scope_tests;
 mod save_failure_tests;
@@ -231,7 +232,7 @@ fn stateless_identity_encodes_delimiters_and_non_utf8_filenames() {
     for name in names {
         let relative = PathBuf::from(OsStr::from_bytes(name));
         fs::write(root.join(&relative), &bytes).unwrap();
-        let encoded = crate::path_codec::encode_path(&relative);
+        let encoded = tp_core::path_codec::encode_path(&relative);
         assert!(!encoded.contains(':'));
         assert!(!encoded.contains('@'));
         if name == b"special:@%.txt" {

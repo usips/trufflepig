@@ -51,7 +51,7 @@ fn request_until(
     let write_result = write_request_atomic(request_path, bytes, &deadline, |temporary, bytes| {
         fs::write(temporary, bytes)
     });
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let deadline = if write_result.is_ok() {
         spool_test_deadline::after_publication(request_path, deadline)
     } else {

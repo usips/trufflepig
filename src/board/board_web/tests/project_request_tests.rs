@@ -1,9 +1,10 @@
 use super::*;
+use crate::board::board_ids::PlanId;
 use crate::board::repo_identity::tests::FixtureRegistration;
-use crate::workspace_config::WorkspaceConfig;
-use crate::{board::board_ids::PlanId, test_fixtures::GitFixture};
 use serde_json::{Value, json};
 use std::fs;
+use tp_core::test_fixtures::GitFixture;
+use tp_core::workspace_config::WorkspaceConfig;
 
 struct WebProjectFixture {
     store: WebStore,
@@ -16,7 +17,7 @@ struct WebProjectFixture {
 
 impl WebProjectFixture {
     fn new() -> Self {
-        let directory = crate::test_fixtures::scratch("web-project-request-");
+        let directory = tp_core::test_fixtures::scratch("web-project-request-");
         let repos = std::array::from_fn(|index| {
             let git = GitFixture::new();
             git.commit(&format!("web project {index} root"));

@@ -132,7 +132,7 @@ fn expired_accepted_board_write_never_opens_storage_or_commits_an_event() {
         )
         .unwrap_err();
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
     assert!(

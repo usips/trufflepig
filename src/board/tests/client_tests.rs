@@ -3,11 +3,11 @@ use crate::board::{
     board_protocol::{self, BoardOp},
     domain_answer, domain_error, prepare_client,
 };
-use crate::coded_error::CodedContext;
+use tp_core::coded_error::CodedContext;
 
 #[test]
 fn captured_body_survives_file_changes_between_retries() {
-    let directory = crate::test_fixtures::scratch("board-transport-");
+    let directory = tp_core::test_fixtures::scratch("board-transport-");
     let body_path = directory.path().join("plan.md");
     std::fs::write(&body_path, "- captured plan\n").unwrap();
     let args = vec![
@@ -50,7 +50,7 @@ fn body_preflight_precedes_file_reads_and_byte_limits_precede_utf8() {
         error.to_string().starts_with("invalid_reference:"),
         "{error:#}"
     );
-    let directory = crate::test_fixtures::scratch("board-runtime-");
+    let directory = tp_core::test_fixtures::scratch("board-runtime-");
     let path = directory.path().join("oversized-feedback");
     std::fs::write(&path, vec![0xff; 4097]).unwrap();
     let args = vec![
@@ -134,12 +134,12 @@ fn oversized_write_reports_size_code_instead_of_invalid_state() {
 
 #[test]
 fn newer_schema_refusal_advises_upgrade() {
-    let directory = crate::test_fixtures::scratch("board-schema-");
+    let directory = tp_core::test_fixtures::scratch("board-schema-");
     let config = crate::board::BoardConfig::for_database(directory.path().join("board.sqlite3"));
     let args: Vec<String> = ["board", "inbox"].map(str::to_owned).into();
     let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
     let command = board_grammar::parse(&options, None).unwrap();
-    let context = crate::request_context::RequestContext::new(None, None);
+    let context = tp_core::request_context::RequestContext::new(None, None);
     let error = anyhow::Error::new(board_protocol::BoardError::new(
         board_protocol::BoardErrorCode::SchemaNewer,
         format!(
@@ -153,7 +153,7 @@ fn newer_schema_refusal_advises_upgrade() {
         &context,
         &config,
         directory.path(),
-        &crate::query_deadline::QueryDeadline::start(),
+        &tp_core::query_deadline::QueryDeadline::start(),
         error,
     )
     .unwrap_err();
@@ -168,7 +168,7 @@ fn newer_schema_refusal_advises_upgrade() {
 
 #[test]
 fn schema_words_in_transport_prose_do_not_advise_upgrade() {
-    let directory = crate::test_fixtures::scratch("board-schema-prose-");
+    let directory = tp_core::test_fixtures::scratch("board-schema-prose-");
     let config = crate::board::BoardConfig::for_database(directory.path().join("board.sqlite3"));
     let args: Vec<String> = ["board", "inbox"].map(str::to_owned).into();
     let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
@@ -180,10 +180,10 @@ fn schema_words_in_transport_prose_do_not_advise_upgrade() {
     let refusal = crate::board::unavailable_or_queue(
         &command,
         &options,
-        &crate::request_context::RequestContext::new(None, None),
+        &tp_core::request_context::RequestContext::new(None, None),
         &config,
         directory.path(),
-        &crate::query_deadline::QueryDeadline::start(),
+        &tp_core::query_deadline::QueryDeadline::start(),
         error,
     )
     .unwrap_err();

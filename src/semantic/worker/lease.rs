@@ -1,4 +1,3 @@
-use crate::coded_error::CodedContext;
 use anyhow::{Context, Result, bail};
 use fs2::FileExt;
 use std::{
@@ -10,6 +9,7 @@ use std::{
     },
     path::{Path, PathBuf},
 };
+use tp_core::coded_error::CodedContext;
 
 pub const SOCKET_NAME: &str = "worker.sock";
 const WORKER_LOCK: &str = "worker.lock";

@@ -3,7 +3,7 @@ use crate::board::repo_identity::tests::FixtureRegistration;
 
 #[test]
 fn common_directory_rekeys_when_unrelated_repository_replaces_content() {
-    let fixture = crate::test_fixtures::GitFixture::new();
+    let fixture = tp_core::test_fixtures::GitFixture::new();
     fixture.commit("original root");
     let original = fixture.registration();
     let path = fixture.directory.path().join("board.sqlite3");
@@ -132,9 +132,9 @@ fn common_directory_rekeys_when_unrelated_repository_replaces_content() {
 
 #[test]
 fn disjoint_roots_rekey_starts_without_copied_plan_links() {
-    let first = crate::test_fixtures::GitFixture::new();
+    let first = tp_core::test_fixtures::GitFixture::new();
     first.commit("first root");
-    let second = crate::test_fixtures::GitFixture::new();
+    let second = tp_core::test_fixtures::GitFixture::new();
     second.commit("second root");
     let mut original = first.registration();
     let mut replaced = second.registration();
@@ -144,7 +144,7 @@ fn disjoint_roots_rekey_starts_without_copied_plan_links() {
         &original.root_commits,
         &replaced.root_commits
     ));
-    let directory = crate::test_fixtures::scratch("board-fixture-");
+    let directory = tp_core::test_fixtures::scratch("board-fixture-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),

@@ -2,7 +2,7 @@ use super::*;
 use crate::board::board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision};
 use crate::board::board_protocol::{BoardSearchHit, BoardSearchSource};
 use crate::board::board_render::render_reply;
-use crate::output::OutputFormat;
+use tp_core::output::OutputFormat;
 
 fn search_reply(count: u64, truncated: bool) -> BoardReply {
     let plan = PlanId::new(7).unwrap();

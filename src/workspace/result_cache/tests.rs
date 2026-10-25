@@ -1,5 +1,5 @@
 use super::*;
-use crate::query_deadline::QueryDeadline;
+use tp_core::query_deadline::QueryDeadline;
 
 fn open_results(cache: &std::path::Path) -> Result<WorkspaceResults> {
     let deadline = QueryDeadline::start();

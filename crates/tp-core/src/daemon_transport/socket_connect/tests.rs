@@ -1,10 +1,11 @@
+use super::backlog_listener::backlog_zero_listener;
 use super::*;
 use crate::daemon_transport::DeadlineWrite;
 use std::io::{self, Read, Write};
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::fd::AsRawFd;
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -13,29 +14,6 @@ fn scratch() -> tempfile::TempDir {
         .prefix("trufflepig-connect-")
         .tempdir_in(std::env::var_os("TMPDIR").expect("TMPDIR must name disk-backed scratch"))
         .unwrap()
-}
-
-/// A listening socket with a zero backlog, so the second connect cannot complete.
-pub(crate) fn backlog_zero_listener(path: &Path) -> UnixListener {
-    let (address, length) = socket_address(path).unwrap();
-    // SAFETY: socket has no pointer arguments and returns a fresh descriptor on success.
-    let raw = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0) };
-    assert!(raw >= 0, "{}", io::Error::last_os_error());
-    // SAFETY: raw is a fresh descriptor and becomes owned exactly once here.
-    let descriptor = unsafe { OwnedFd::from_raw_fd(raw) };
-    // SAFETY: descriptor is live and address is valid for the complete syscall.
-    let bound = unsafe {
-        libc::bind(
-            descriptor.as_raw_fd(),
-            (&address as *const libc::sockaddr_un).cast::<libc::sockaddr>(),
-            length,
-        )
-    };
-    assert_eq!(bound, 0, "{}", io::Error::last_os_error());
-    // SAFETY: descriptor is a bound AF_UNIX stream socket.
-    let listening = unsafe { libc::listen(descriptor.as_raw_fd(), 0) };
-    assert_eq!(listening, 0, "{}", io::Error::last_os_error());
-    UnixListener::from(descriptor)
 }
 
 #[test]

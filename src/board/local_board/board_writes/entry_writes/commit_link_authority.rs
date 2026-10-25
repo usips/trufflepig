@@ -84,7 +84,7 @@ pub(in crate::board::local_board) fn plan_commit_entry(
 pub(in crate::board::local_board) fn task_link_receipt(
     tx: &Transaction<'_>,
     repo: &RepoKey,
-    oid: crate::identity::GitOid,
+    oid: tp_core::identity::GitOid,
     task: TaskId,
 ) -> Result<Option<TaskLinkReceipt>, BoardError> {
     let row: Option<(String, Option<i64>)> = tx

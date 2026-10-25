@@ -1,9 +1,9 @@
 use super::super::admission_refusal::{AdmissionRefusal, RefusalCause};
 use super::super::refuse_busy_nonblocking;
-use crate::daemon_transport::daemon_wire_protocol::{self, DaemonReply};
-use crate::request_context::RequestContext;
 use std::io::{Error, ErrorKind};
 use std::os::unix::net::UnixStream;
+use tp_core::daemon_transport::daemon_wire_protocol::{self, DaemonReply};
+use tp_core::request_context::RequestContext;
 
 #[test]
 fn refused_socket_reply_keeps_busy_code_and_bounded_queue_diagnostics() {
@@ -27,8 +27,8 @@ fn refused_socket_reply_keeps_busy_code_and_bounded_queue_diagnostics() {
     };
     assert_eq!(message, refusal_message);
     assert_eq!(
-        crate::coded_error::ErrorCode::leading(&message).map(|(code, _)| code),
-        Some(crate::coded_error::ErrorCode::DaemonBusy)
+        tp_core::coded_error::ErrorCode::leading(&message).map(|(code, _)| code),
+        Some(tp_core::coded_error::ErrorCode::DaemonBusy)
     );
     assert!(message.contains("pool=daemon-ingress queue_depth=8 queue_capacity=8"));
     assert!(message.contains("cause=queue_full retry_after_ms=250"));

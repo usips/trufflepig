@@ -23,7 +23,6 @@ use super::{
     board_protocol::{BoardError, BoardErrorCode},
     local_board::LocalBoard,
 };
-use crate::coded_error::CodedContext;
 use anyhow::Result;
 use event_stream::{EventStreams, ReplayBatch, SequencePoller};
 use reader_pool::ReaderPool;
@@ -32,6 +31,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard, TryLockError},
     time::{Duration, Instant},
 };
+use tp_core::coded_error::CodedContext;
 use web_guard::WebGuard;
 pub use web_serve::serve;
 
@@ -77,7 +77,7 @@ pub(crate) struct WebStore {
 
 impl WebStore {
     fn open(cache: BoardConfigCache) -> Result<Self> {
-        let runtime = crate::runtime_paths::system_dir()
+        let runtime = tp_core::runtime_paths::system_dir()
             .with_coded_context(|| coded!(BoardUnavailable, "no router runtime directory"))?;
         Self::open_at(cache, runtime)
     }
@@ -114,7 +114,7 @@ impl WebStore {
     ) -> Result<Vec<ResolvedProject>, BoardError> {
         let config = self.config(expires)?;
         let mut projects = lock_until(&self.projects, expires)?;
-        let deadline = crate::query_deadline::QueryDeadline::after(
+        let deadline = tp_core::query_deadline::QueryDeadline::after(
             expires.saturating_duration_since(Instant::now()),
         );
         projects.resolve(&config, host, deadline)

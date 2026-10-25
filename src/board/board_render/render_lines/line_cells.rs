@@ -2,8 +2,9 @@
 
 use crate::board::board_actor::{AgentVendor, BoardActor, BoardRecipient};
 use crate::board::board_ids::PlanId;
-use crate::{board::board_protocol::AuthoritySource, request_context::ActorOrigin};
+use crate::board::board_protocol::AuthoritySource;
 use std::fmt::Write;
+use tp_core::request_context::ActorOrigin;
 
 pub(in crate::board::board_render) fn author(
     actor: &BoardActor,

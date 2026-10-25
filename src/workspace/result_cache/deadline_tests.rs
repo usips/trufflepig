@@ -33,7 +33,7 @@ fn workspace_result_save_busy_wait_uses_the_open_deadline() -> Result<()> {
         .unwrap_err();
 
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
     assert!(started.elapsed() < Duration::from_millis(500));
@@ -96,7 +96,7 @@ fn workspace_result_open_rejects_an_expired_deadline() {
         Ok(_) => panic!("expired deadline opened workspace results"),
     };
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
 }

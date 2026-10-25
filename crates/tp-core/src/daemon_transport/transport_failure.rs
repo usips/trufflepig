@@ -8,14 +8,14 @@ const TRANSPORT_IO_SLICE: Duration = Duration::from_millis(100);
 
 /// A reply-read timeout; `deadline_ms` is the relative configured reply wait budget.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct DaemonReplyTimeout {
+pub struct DaemonReplyTimeout {
     wait_ms: u64,
     deadline_ms: u64,
     retry_after_ms: u64,
 }
 
 impl DaemonReplyTimeout {
-    pub(crate) fn new(wait: Duration, deadline: Duration) -> Self {
+    pub fn new(wait: Duration, deadline: Duration) -> Self {
         Self {
             wait_ms: milliseconds(wait),
             deadline_ms: milliseconds(deadline),
@@ -23,11 +23,11 @@ impl DaemonReplyTimeout {
         }
     }
 
-    pub(crate) fn from_error(error: &anyhow::Error) -> Option<&Self> {
+    pub fn from_error(error: &anyhow::Error) -> Option<&Self> {
         error.chain().find_map(|cause| cause.downcast_ref::<Self>())
     }
 
-    pub(crate) fn from_message(message: &str) -> Option<Self> {
+    pub fn from_message(message: &str) -> Option<Self> {
         const PREFIX: &str = "daemon_reply_timeout: phase=awaiting_reply wait_ms=";
         let fields = message.strip_prefix(PREFIX)?;
         let fields = fields.strip_suffix(" replay=read_only")?;
@@ -40,7 +40,7 @@ impl DaemonReplyTimeout {
         })
     }
 
-    pub(crate) fn retry_after(&self) -> Duration {
+    pub fn retry_after(&self) -> Duration {
         Duration::from_millis(self.retry_after_ms)
     }
 
@@ -81,7 +81,7 @@ fn milliseconds(duration: Duration) -> u64 {
     duration.as_millis().min(u128::from(u64::MAX)) as u64
 }
 
-pub(crate) struct DeadlineRead<'a> {
+pub struct DeadlineRead<'a> {
     stream: &'a mut UnixStream,
     deadline: &'a QueryDeadline,
 }
@@ -120,7 +120,7 @@ fn read_deadline_expired() -> io::Error {
     io::Error::new(ErrorKind::TimedOut, "daemon reply deadline expired")
 }
 
-pub(crate) struct DeadlineWrite<'a> {
+pub struct DeadlineWrite<'a> {
     stream: &'a mut UnixStream,
     deadline: &'a QueryDeadline,
 }

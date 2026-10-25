@@ -1,15 +1,12 @@
 //! Portable repository registration and linked commit evidence.
-use crate::{
-    board::{
-        board_actor::BoardActor,
-        board_ids::{EntryId, PlanId, RepoKey, TaskId},
-        board_protocol::WorkerAddress,
-    },
-    identity::GitOid,
-    request_context::HarnessLabel,
+use crate::board::{
+    board_actor::BoardActor,
+    board_ids::{EntryId, PlanId, RepoKey, TaskId},
+    board_protocol::WorkerAddress,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use tp_core::{identity::GitOid, request_context::HarnessLabel};
 
 /// Maximum co-authors per linked commit; the scanner and wire agree.
 pub const COAUTHOR_LIMIT: usize = 64;

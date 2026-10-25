@@ -4,9 +4,6 @@
 //! the indexed revision ([`WorktreeHashes`]).
 use super::{ParentFallback, WorktreeDivergence, hit_verification::WorktreeHashes};
 use crate::{
-    identity::ContentRevision,
-    path_codec::decode_path,
-    query_deadline::QueryDeadline,
     results::{Hit, ResultSet},
     search::{BoundPathFilter, InvocationDirectory, Query},
     source,
@@ -15,6 +12,7 @@ use crate::{
 use anyhow::{Result, ensure};
 use rusqlite::OptionalExtension;
 use std::collections::HashSet;
+use tp_core::{identity::ContentRevision, path_codec::decode_path, query_deadline::QueryDeadline};
 use tp_extract::Definition;
 
 /// Most changed files re-evaluated for one search query.
@@ -44,7 +42,7 @@ pub(super) struct WorktreeSymbols {
 
 /// Worktree bytes exist but their definitions cannot be known.
 pub(super) fn unextractable(error: &anyhow::Error) -> bool {
-    use crate::coded_error::{ErrorCode, error_code};
+    use tp_core::coded_error::{ErrorCode, error_code};
     matches!(
         error_code(error),
         Some(ErrorCode::SourceExcluded | ErrorCode::ExtractionUnavailable)

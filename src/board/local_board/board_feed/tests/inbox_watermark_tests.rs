@@ -124,7 +124,7 @@ fn scan_watermark_skips_own_and_irrelevant_events_but_preserves_next_foreign_eve
     assert!(first.query_truncated);
     let rendered = crate::board::board_render::render_reply(
         &BoardReply::new("local", BoardResult::Inbox(first.clone())),
-        &crate::output::OutputBudget::new(2000).unwrap(),
+        &tp_core::output::OutputBudget::new(2000).unwrap(),
     )
     .unwrap();
     assert_eq!(rendered.acknowledge_seq, Some(EventSeq::new(3)));

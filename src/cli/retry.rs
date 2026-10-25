@@ -1,12 +1,12 @@
 //! Bounded retries for transient failures, restricted by operation safety.
 use super::Arguments;
 use crate::board::board_protocol::{BoardError, BoardErrorCode};
-use crate::coded_error::{CodedError, ErrorCode};
-use crate::request_context::RequestContext;
-use crate::{daemon_transport::DaemonReplyTimeout, query_deadline::QueryDeadline};
 use anyhow::Result;
 use std::io::ErrorKind;
 use std::time::{Duration, Instant};
+use tp_core::coded_error::{CodedError, ErrorCode};
+use tp_core::request_context::RequestContext;
+use tp_core::{daemon_transport::DaemonReplyTimeout, query_deadline::QueryDeadline};
 
 const READ_ATTEMPTS: usize = 5;
 const CONTENTION_ATTEMPTS: usize = 2;
@@ -274,7 +274,7 @@ pub(super) fn run_with_retry(
     context: &RequestContext,
 ) -> Result<String> {
     let read_deadline = (RetryScope::for_options(options) == RetryScope::Read)
-        .then(|| QueryDeadline::after(crate::daemon_transport::CLIENT_REPLY_WAIT));
+        .then(|| QueryDeadline::after(tp_core::daemon_transport::CLIENT_REPLY_WAIT));
     run_with_retry_deadline(args, options, context, read_deadline)
 }
 
@@ -305,7 +305,7 @@ fn run_with_retry_deadline(
     {
         // Build the tokenizer beside the attempts, so an immediately answered read
         // does not pay for it. A fallback that needs it waits on the same one-time init.
-        std::thread::spawn(crate::output::prewarm_tokenizer);
+        std::thread::spawn(tp_core::output::prewarm_tokenizer);
     }
     let mut command = super::ClientCommand::default();
     run_retry_loop(

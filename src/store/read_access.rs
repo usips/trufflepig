@@ -1,12 +1,12 @@
 //! Query-only access: no DDL, no writes to `index.sqlite3`, bounded waits, and an
 //! optional worktree view that reads its own bytes through a parent's index.
 use super::{Store, StoreAccess};
-use crate::coded_error::CodedContext;
-use crate::path_codec::encode_path;
-use crate::query_deadline::QueryDeadline;
 use anyhow::{Context, Result, bail, ensure};
 use rusqlite::{Connection, Error as SqliteError, ErrorCode, OpenFlags, OptionalExtension};
 use std::{path::Path, time::Duration};
+use tp_core::coded_error::CodedContext;
+use tp_core::path_codec::encode_path;
+use tp_core::query_deadline::QueryDeadline;
 
 /// Longest a reader waits on a SQLite lock (capped by its query deadline).
 const READ_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
@@ -120,13 +120,13 @@ impl Store {
 }
 
 /// [`Store::open_read`]'s unpublished-index answer.
-fn index_warming() -> crate::coded_error::CodedError {
+fn index_warming() -> tp_core::coded_error::CodedError {
     coded!(IndexWarming, "initial index is not published")
 }
 
 /// Whether `error` is [`Store::open_read`]'s unpublished-index answer.
 pub fn is_index_warming(error: &anyhow::Error) -> bool {
-    crate::coded_error::ErrorCode::IndexWarming.is_code_of(error)
+    tp_core::coded_error::ErrorCode::IndexWarming.is_code_of(error)
 }
 
 /// Whether SQLite returned its specific `CANTOPEN` result while opening an index.

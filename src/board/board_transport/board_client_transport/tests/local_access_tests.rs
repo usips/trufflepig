@@ -23,7 +23,7 @@ fn denied_router_socket_reports_paths_without_starting_or_opening_local_board() 
     assert!(
         message.contains(
             &runtime
-                .join(crate::daemon_transport::SOCKET_NAME)
+                .join(tp_core::daemon_transport::SOCKET_NAME)
                 .display()
                 .to_string()
         )
@@ -64,7 +64,7 @@ fn denied_router_socket_after_probe_does_not_fall_back_to_a_local_database() {
     assert!(
         message.contains(
             &runtime
-                .join(crate::daemon_transport::SOCKET_NAME)
+                .join(tp_core::daemon_transport::SOCKET_NAME)
                 .display()
                 .to_string()
         )
@@ -81,7 +81,7 @@ fn readonly_cantopen_and_permission_errors_report_local_storage_paths() {
     let runtime = directory.path().join("runtime");
     let database = directory.path().join("board.sqlite3");
     let config = BoardConfig::for_database(&database);
-    let socket = runtime.join(crate::daemon_transport::SOCKET_NAME);
+    let socket = runtime.join(tp_core::daemon_transport::SOCKET_NAME);
 
     for detail in [
         "attempt to write a readonly database",
@@ -147,7 +147,7 @@ fn local_readonly_database_after_unreachable_router_reports_access_permissions()
     assert!(
         message.contains(
             &runtime
-                .join(crate::daemon_transport::SOCKET_NAME)
+                .join(tp_core::daemon_transport::SOCKET_NAME)
                 .display()
                 .to_string()
         ),
@@ -197,7 +197,7 @@ fn local_readonly_database_directory_after_unreachable_router_reports_access_per
     assert!(
         message.contains(
             &runtime
-                .join(crate::daemon_transport::SOCKET_NAME)
+                .join(tp_core::daemon_transport::SOCKET_NAME)
                 .display()
                 .to_string()
         ),

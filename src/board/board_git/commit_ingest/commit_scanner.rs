@@ -7,13 +7,13 @@ use crate::board::{
     commit_trailers::{LOG_FORMAT, ParsedCommit, parse_log},
     repo_identity::{detached_head, remaining},
 };
-use crate::coded_error::CodedContext;
-use crate::git_runner::{run_bounded, run_bounded_strict};
-use crate::identity::GitOid;
 use anyhow::{Result, ensure};
 use passes::{GREP_FORMAT, MISPLACED_PATTERN, STATS_FORMAT, log_args, parse_grep_log, parse_stats};
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
+use tp_core::coded_error::CodedContext;
+use tp_core::git_runner::{run_bounded, run_bounded_strict};
+use tp_core::identity::GitOid;
 
 const TIP_LIMIT: usize = 4096;
 const AUXILIARY_BUDGET: Duration = Duration::from_secs(1);

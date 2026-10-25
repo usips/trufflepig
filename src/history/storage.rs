@@ -43,7 +43,7 @@ pub(super) fn initialize(conn: &Connection, repository: &GitRepository) -> Resul
         CREATE TABLE IF NOT EXISTS views(tip TEXT PRIMARY KEY,cutoff INTEGER NOT NULL,created INTEGER NOT NULL,updated INTEGER NOT NULL,visited INTEGER NOT NULL DEFAULT 0,complete INTEGER NOT NULL DEFAULT 0,boundary TEXT NOT NULL DEFAULT 'pending',failure TEXT);
         CREATE TABLE IF NOT EXISTS traversal(tip TEXT NOT NULL,depth INTEGER NOT NULL,oid TEXT NOT NULL,eligible INTEGER NOT NULL,PRIMARY KEY(tip,depth));
         CREATE TABLE IF NOT EXISTS changes(before_oid TEXT NOT NULL,after_oid TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(before_oid,after_oid));")?;
-    let identity = crate::path_codec::encode_path(&repository.common_dir);
+    let identity = tp_core::path_codec::encode_path(&repository.common_dir);
     let previous: Option<String> = conn
         .query_row("SELECT common_dir FROM identity", [], |r| r.get(0))
         .optional()?;
@@ -102,7 +102,7 @@ pub(super) fn index(history: &mut History) -> Result<Value> {
     )?;
     let result = index_batch(history);
     if let Err(error) = result {
-        let category = if crate::git_runner::is_resource_limited(&error) {
+        let category = if tp_core::git_runner::is_resource_limited(&error) {
             "resource_limited"
         } else {
             "unavailable"

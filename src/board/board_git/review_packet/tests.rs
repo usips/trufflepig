@@ -14,7 +14,7 @@ use crate::board::{
     board_render::render_review,
     board_vocabulary::{EntryKind, EntryText, PlanText, PlanTitle, TaskColumn},
 };
-use crate::{
+use tp_core::{
     identity::GitOid,
     output::{OutputBudget, OutputFormat},
 };

@@ -31,7 +31,7 @@ pub(super) fn system_routes(options: &Arguments, verb: &str) -> bool {
 /// Handles the `system` verb against the per-user routing daemon.
 pub(super) fn system_command(
     options: &Arguments,
-    context: &crate::request_context::RequestContext,
+    context: &tp_core::request_context::RequestContext,
 ) -> Result<String> {
     let render = |json: &str| -> Result<String> {
         OutputBudget::new(options.budget)?.render(&serde_json::from_str::<serde_json::Value>(json)?)
@@ -42,7 +42,7 @@ pub(super) fn system_command(
             render("{\"status\":\"ok\"}")
         }
         Some("stop") => render(&crate::system::stop()?),
-        Some("dir") => match crate::runtime_paths::system_dir() {
+        Some("dir") => match tp_core::runtime_paths::system_dir() {
             Some(dir) => Ok(format!("{}\n", dir.display())),
             None => anyhow::bail!(coded!(SystemUnavailable, "no runtime dir")),
         },
@@ -59,7 +59,7 @@ pub(super) fn system_command(
         }
         None | Some("status") => {
             let ping = vec!["system".to_owned(), "status".to_owned()];
-            let status = if crate::daemon_transport::router_request(&ping, context)
+            let status = if tp_core::daemon_transport::router_request(&ping, context)
                 .ok()
                 .flatten()
                 .is_some()
@@ -84,7 +84,7 @@ pub(super) fn system_reply(
     options: &Arguments,
     root: &Path,
     verb: &str,
-    config: Option<&crate::workspace_config::WorkspaceConfig>,
+    config: Option<&tp_core::workspace_config::WorkspaceConfig>,
     reply: String,
 ) -> Result<String> {
     if let Some(config) = config {

@@ -11,13 +11,14 @@ use super::{
     path_prior::PathPrior,
     telemetry::{Lane, LaneOutcome, RetrievalTrace},
 };
-use crate::{query_deadline::QueryDeadline, results::Hit, semantic, store::Store};
+use crate::{results::Hit, semantic, store::Store};
 use anyhow::Result;
 use rusqlite::OptionalExtension;
 use std::{
     path::Path,
     time::{Duration, Instant},
 };
+use tp_core::query_deadline::QueryDeadline;
 
 #[cfg(test)]
 mod tests;

@@ -1,8 +1,8 @@
 //! Body-free second passes: per-commit statistics and misplaced-trailer grep.
 use crate::board::commit_trailers::shortstat;
-use crate::identity::GitOid;
 use anyhow::{Result, ensure};
 use std::collections::HashMap;
+use tp_core::identity::GitOid;
 
 /// Body-free oid plus shortstat pairing for the bounded statistics pass.
 pub(super) const STATS_FORMAT: &str = "--format=%x00%H%x00";

@@ -15,7 +15,7 @@ fn fifo_descriptor_does_not_block_exit() {
     if let Some(runtime) = std::env::var_os(CHILD_RUNTIME) {
         exit_through_signal_waiter(Path::new(&runtime), false);
     }
-    let directory = crate::test_fixtures::scratch("web-fifo-exit-");
+    let directory = tp_core::test_fixtures::scratch("web-fifo-exit-");
     let descriptor = directory.path().join("board-web.json");
     let path = std::ffi::CString::new(descriptor.as_os_str().as_encoded_bytes()).unwrap();
     // SAFETY: mkfifo receives a fresh scratch path and its result is checked.
@@ -44,7 +44,7 @@ fn signal_exit_removes_the_owned_descriptor() {
     if let Some(runtime) = std::env::var_os(CHILD_RUNTIME) {
         exit_through_signal_waiter(Path::new(&runtime), false);
     }
-    let directory = crate::test_fixtures::scratch("web-owned-exit-");
+    let directory = tp_core::test_fixtures::scratch("web-owned-exit-");
     let runtime = directory.path();
     super::super::web_endpoint::publish(
         runtime,
@@ -65,7 +65,7 @@ fn signal_exit_holds_the_publish_mutex() {
     if let Some(runtime) = std::env::var_os(CHILD_RUNTIME) {
         exit_through_signal_waiter(Path::new(&runtime), true);
     }
-    let directory = crate::test_fixtures::scratch("web-locked-exit-");
+    let directory = tp_core::test_fixtures::scratch("web-locked-exit-");
     let status = run_shutdown_child(directory.path(), "signal_exit_holds_the_publish_mutex");
     assert!(
         status.success(),

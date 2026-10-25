@@ -4,18 +4,16 @@ use super::{
     BoardHost, BoardMaintenanceClock,
     board_writer::{BoardHostBackendAccess, lock_before},
 };
-use crate::{
-    board::{
-        board_actor::BoardActor,
-        board_protocol::{BoardError, BoardOp, BoardRequest, BoardResult, RepoScanTarget},
-    },
-    query_deadline::QueryDeadline,
+use crate::board::{
+    board_actor::BoardActor,
+    board_protocol::{BoardError, BoardOp, BoardRequest, BoardResult, RepoScanTarget},
 };
 use anyhow::{Result, bail};
 use std::{
     sync::TryLockError,
     time::{Duration, Instant},
 };
+use tp_core::query_deadline::QueryDeadline;
 
 const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(60);
 const IDLE_CHECK_INTERVAL: Duration = Duration::from_secs(2);
@@ -192,7 +190,7 @@ impl BoardHost {
             None => None,
         };
         let pending = clock.import_ready(now)
-            && std::fs::read_dir(crate::runtime_paths::spool_dir()).is_ok_and(|entries| {
+            && std::fs::read_dir(tp_core::runtime_paths::spool_dir()).is_ok_and(|entries| {
                 entries.filter_map(std::result::Result::ok).any(|entry| {
                     entry
                         .path()
@@ -243,7 +241,7 @@ impl BoardHost {
         let actor = config.system_actor().map_err(BoardError::from)?;
         let summary = if import_due {
             Some(crate::board::feedback_outbox::import_pending(
-                &crate::runtime_paths::spool_dir(),
+                &tp_core::runtime_paths::spool_dir(),
                 &mut BoardHostBackendAccess(self, QueryDeadline::after(Duration::from_secs(15))),
             )?)
         } else {

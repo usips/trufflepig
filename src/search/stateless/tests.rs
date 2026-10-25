@@ -4,8 +4,6 @@ mod scoped_lookup;
 use super::stateless_scan::MAX_CURRENT_FILE_BYTES;
 use super::*;
 use crate::{
-    output::OutputBudget,
-    query_deadline::QueryDeadline,
     search::{InvocationDirectory, Query},
     source,
     store::Store,
@@ -13,6 +11,7 @@ use crate::{
 use anyhow::Result;
 use serde_json::Value;
 use std::{fs, path::Path, time::Duration};
+use tp_core::{output::OutputBudget, query_deadline::QueryDeadline};
 
 fn deadline() -> QueryDeadline {
     QueryDeadline::after(Duration::from_secs(5))
@@ -255,7 +254,7 @@ fn map_of_a_directory_requires_one_current_file() -> Result<()> {
     fs::create_dir_all(root.join("src"))?;
     let error = map_file(&root, &cache, "src", &deadline()).unwrap_err();
     assert!(
-        crate::coded_error::ErrorCode::StatelessMapRequiresFile.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::StatelessMapRequiresFile.is_code_of(&error),
         "{error:#}"
     );
     Ok(())

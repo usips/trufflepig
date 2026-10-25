@@ -133,7 +133,7 @@ pub fn search(
     cache: &std::path::Path,
 ) -> Result<ResultSet> {
     // Query inference precedes the snapshot. Candidate vectors use source bodies from that snapshot.
-    let deadline = crate::query_deadline::QueryDeadline::start();
+    let deadline = tp_core::query_deadline::QueryDeadline::start();
     let mut session = crate::semantic::SemanticSession::default();
     search_with_session(
         store,
@@ -155,7 +155,7 @@ pub fn search_with_session(
     cache: &std::path::Path,
     session: &mut crate::semantic::SemanticSession,
     trace: &mut telemetry::RetrievalTrace,
-    deadline: &crate::query_deadline::QueryDeadline,
+    deadline: &tp_core::query_deadline::QueryDeadline,
 ) -> Result<ResultSet> {
     use std::time::Instant;
     use telemetry::{Lane, LaneOutcome};
@@ -165,7 +165,7 @@ pub fn search_with_session(
     let (prepared, semantic_status) = match session.prepare(semantic_enabled, cache, &query.text) {
         Ok(prepared) => (prepared, None),
         Err(error) => {
-            let locked = crate::coded_error::ErrorCode::SemanticCacheLocked.is_code_of(&error);
+            let locked = tp_core::coded_error::ErrorCode::SemanticCacheLocked.is_code_of(&error);
             (None, Some((format!("{error:#}"), locked)))
         }
     };
@@ -201,7 +201,7 @@ pub fn search_prepared(
     semantic_query: Option<crate::semantic::Embedding>,
     reranker: Option<&dyn RerankScorer>,
     trace: &mut telemetry::RetrievalTrace,
-    deadline: &crate::query_deadline::QueryDeadline,
+    deadline: &tp_core::query_deadline::QueryDeadline,
 ) -> Result<ResultSet> {
     use std::time::Instant;
     use telemetry::{Lane, LaneOutcome};

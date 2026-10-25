@@ -7,8 +7,8 @@ use crate::board::board_protocol::{
 use crate::board::board_render::RenderedBoard;
 use crate::board::board_render::render_scope_hints::cli_scope_flag;
 use crate::board::board_vocabulary::TaskColumn;
-use crate::output::OutputBudget;
 use anyhow::{Result, bail};
+use tp_core::output::OutputBudget;
 
 pub(in crate::board::board_render) fn render_collections(
     reply: &BoardReply,

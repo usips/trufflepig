@@ -3,12 +3,6 @@
 //! Panics become failures or stop the daemon without stranding accepted sockets.
 use super::DaemonSocket;
 use super::reconciler::{self, Maintenance};
-use crate::coded_error::CodedContext;
-use crate::daemon_transport::daemon_wire_protocol::{self, DaemonReply, DaemonRequest};
-use crate::daemon_transport::spool::{ClaimedSpoolRequest, SpoolServer};
-use crate::query_deadline::QueryDeadline;
-use crate::request_context::RequestContext;
-use crate::request_pool::{PoolSize, PoolSubmitCause, PooledJob, RequestClass, RequestLane};
 use admission_refusal::{AdmissionRefusal, RefusalCause};
 use anyhow::{Context, Result};
 use ingress_frames::{
@@ -25,6 +19,12 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
+use tp_core::coded_error::CodedContext;
+use tp_core::daemon_transport::daemon_wire_protocol::{self, DaemonReply, DaemonRequest};
+use tp_core::daemon_transport::spool::{ClaimedSpoolRequest, SpoolServer};
+use tp_core::query_deadline::QueryDeadline;
+use tp_core::request_context::RequestContext;
+use tp_core::request_pool::{PoolSize, PoolSubmitCause, PooledJob, RequestClass, RequestLane};
 
 mod admission_refusal;
 mod ingress_frames;
@@ -46,7 +46,7 @@ const ACCEPTS_PER_TURN: usize = 16;
 const MAINTENANCE_STOP_WAIT: Duration = Duration::from_secs(1);
 /// How long a stopping server lets accepted requests finish; their clients wait
 /// no longer than this for a forwarded reply anyway.
-const STOP_DRAIN: Duration = crate::daemon_transport::PROXY_REPLY_WAIT;
+const STOP_DRAIN: Duration = tp_core::daemon_transport::PROXY_REPLY_WAIT;
 /// One accepted request; `deadline` starts when the connection is accepted.
 pub struct AcceptedRequest {
     pub context: RequestContext,
@@ -103,7 +103,7 @@ impl AdmissionTier {
         match self {
             Self::Router => Duration::from_secs(28),
             Self::Coordinator => Duration::from_secs(24),
-            Self::Root => crate::query_deadline::QUERY_DEADLINE,
+            Self::Root => tp_core::query_deadline::QUERY_DEADLINE,
         }
     }
 
@@ -439,7 +439,7 @@ fn write_result(stream: &UnixStream, result: Result<String>) {
     let budget = result
         .as_ref()
         .err()
-        .filter(|error| crate::coded_error::ErrorCode::TimedOut.is_code_of(error))
+        .filter(|error| tp_core::coded_error::ErrorCode::TimedOut.is_code_of(error))
         .map_or(FRAME_TIMEOUT, |_| EXPIRED_REPLY_GRACE);
     let reply = DaemonReply::from_result(result);
     log_reply_failure(
@@ -458,7 +458,7 @@ fn normalize_owned_query_timeout(
     let expired_own_budget = bounded_query_class(class)
         && deadline.time_expired()
         && result.as_ref().err().is_some_and(|error| {
-            crate::daemon_transport::DaemonReplyTimeout::from_error(error).is_some()
+            tp_core::daemon_transport::DaemonReplyTimeout::from_error(error).is_some()
         });
     if expired_own_budget {
         result.map_err(|error| {
@@ -494,7 +494,7 @@ fn peer_disconnected(error: &anyhow::Error) -> bool {
 
 fn refusal_for_snapshot<'a>(
     pool: &'a str,
-    snapshot: crate::request_pool::PoolSnapshot,
+    snapshot: tp_core::request_pool::PoolSnapshot,
     cause: PoolSubmitCause,
 ) -> AdmissionRefusal<'a> {
     let cause = match cause {

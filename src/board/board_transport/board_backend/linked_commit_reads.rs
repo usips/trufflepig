@@ -1,12 +1,9 @@
 //! Deadline-bound host reads of current task-linked commit identities.
 use super::{BoardBackend, BoardHost, board_writer::check_deadline};
-use crate::{
-    board::{board_ids::RepoKey, local_board::LocalBoard},
-    identity::GitOid,
-    query_deadline::QueryDeadline,
-};
+use crate::board::{board_ids::RepoKey, local_board::LocalBoard};
 use anyhow::Result;
 use std::{collections::BTreeSet, time::Duration};
+use tp_core::{identity::GitOid, query_deadline::QueryDeadline};
 
 impl BoardHost {
     pub(super) fn linked_commit_oids_by(

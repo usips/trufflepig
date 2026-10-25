@@ -1,6 +1,5 @@
 use super::{create_root, deadline};
 use crate::{
-    output::OutputBudget,
     search::{InvocationDirectory, Query},
     source,
     store::Store,
@@ -8,6 +7,7 @@ use crate::{
 use anyhow::Result;
 use serde_json::Value;
 use std::fs;
+use tp_core::output::OutputBudget;
 
 #[test]
 fn filter_only_file_lookup_reaches_past_catalog_cap_without_parsing_sources() -> Result<()> {

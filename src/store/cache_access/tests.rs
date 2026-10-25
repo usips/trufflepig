@@ -109,7 +109,7 @@ fn deadline_contexts_take_precedence() {
 fn error_code_count(error: &anyhow::Error) -> usize {
     error
         .chain()
-        .filter(|cause| cause.is::<crate::coded_error::CodedError>())
+        .filter(|cause| cause.is::<tp_core::coded_error::CodedError>())
         .count()
 }
 

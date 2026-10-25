@@ -166,7 +166,7 @@ pub(in crate::board::local_board) fn manual_commit_links_window(
         let oid = row
             .get::<_, String>(1)
             .map_err(sql_error)?
-            .parse::<crate::identity::GitOid>()
+            .parse::<tp_core::identity::GitOid>()
             .map_err(BoardError::from)?;
         let task_ordinal = row_number(row, 2).map_err(sql_error)?;
         let entry =
@@ -258,7 +258,7 @@ fn decode_commit(conn: &Connection, row: &rusqlite::Row<'_>) -> Result<LinkedCom
         .map_err(sql_error)?
         .parse()
         .map_err(BoardError::from)?;
-    let oid: crate::identity::GitOid = row
+    let oid: tp_core::identity::GitOid = row
         .get::<_, String>(1)
         .map_err(sql_error)?
         .parse()

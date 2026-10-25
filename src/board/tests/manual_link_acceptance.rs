@@ -34,7 +34,7 @@ fn review_with_agent_names_hand_linker() {
         &["board", "review", "P1@1", "kimi"][..],
     ] {
         let mut options = fixture.options(words);
-        options.format = crate::output::OutputFormat::Lines;
+        options.format = tp_core::output::OutputFormat::Lines;
         let review = fixture
             .host
             .run(

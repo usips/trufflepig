@@ -1,9 +1,9 @@
 use super::*;
-use crate::{
+use crate::store::Store;
+use tp_core::{
     query_deadline::QueryDeadline,
     request_context::RequestContext,
     request_pool::{RequestClass, RequestLane},
-    store::Store,
 };
 
 fn ask(daemon: &RootDaemon, root: &Path, cache: &Path, words: &[&str]) -> Result<String> {
@@ -92,7 +92,7 @@ fn root_daemon_honors_an_expired_accept_time_deadline() {
         )
         .unwrap_err();
         assert!(
-            crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+            tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
             "{words:?}: {error:#}"
         );
     }

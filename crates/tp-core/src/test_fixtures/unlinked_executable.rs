@@ -13,14 +13,14 @@ const READY: &str = "TRUFFLEPIG_TEST_REPLACED_EXECUTABLE_READY";
 const RELEASE: &str = "TRUFFLEPIG_TEST_REPLACED_EXECUTABLE_RELEASE";
 
 /// Paths handed to the child: a cache that does not exist yet and an empty root.
-pub(crate) struct UnlinkedChild {
-    pub(crate) cache: PathBuf,
-    pub(crate) root: PathBuf,
+pub struct UnlinkedChild {
+    pub cache: PathBuf,
+    pub root: PathBuf,
 }
 
 /// Runs `child_test` (its full test path) in a copy of this test binary,
 /// unlinks the copy once the child is ready, and asserts the child passed.
-pub(crate) fn run_unlinked(child_test: &str) {
+pub fn run_unlinked(child_test: &str) {
     let directory = tempfile::tempdir().unwrap();
     let executable = directory.path().join("copied-test-binary");
     std::fs::copy(std::env::current_exe().unwrap(), &executable).unwrap();
@@ -85,7 +85,7 @@ pub(crate) fn run_unlinked(child_test: &str) {
 
 /// In the child started by `run_unlinked`, waits until the parent unlinked the
 /// executable and returns the child paths; returns `None` in a normal test run.
-pub(crate) fn unlinked_child() -> Option<UnlinkedChild> {
+pub fn unlinked_child() -> Option<UnlinkedChild> {
     let (Some(cache), Some(root), Some(ready), Some(release)) = (
         std::env::var_os(CACHE),
         std::env::var_os(ROOT),

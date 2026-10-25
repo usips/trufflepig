@@ -1,8 +1,6 @@
 //! `--no-daemon` member indexing within the query's maintenance slice; an
 //! existing own or parent view answers when the slice ends first.
 use crate::{
-    coded_error::ErrorCode,
-    query_deadline::QueryDeadline,
     store::{Store, is_index_cache_unavailable, is_index_warming},
     workspace::{
         home_index::{HomeIndexPolicy, HomeIndexSource, ParentIndexView, resolve_home_index},
@@ -10,6 +8,7 @@ use crate::{
     },
 };
 use anyhow::{Result, bail};
+use tp_core::{coded_error::ErrorCode, query_deadline::QueryDeadline};
 
 pub(super) fn inline_member_index(
     member: &MemberRoot,

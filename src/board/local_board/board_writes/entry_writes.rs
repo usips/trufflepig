@@ -101,7 +101,7 @@ pub(in crate::board::local_board) fn post(
     supersedes: Option<EntryId>,
     progress: Option<&ProgressInput>,
     verdict: Option<&ReviewVerdict>,
-    trusted_head: Option<&crate::identity::GitOid>,
+    trusted_head: Option<&tp_core::identity::GitOid>,
 ) -> Result<BoardReply, BoardError> {
     let plan = target.plan_id().ok_or_else(|| {
         invalid(

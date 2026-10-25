@@ -1,11 +1,9 @@
 use super::{SNIPPET_PAGE_FLOOR, largest_fitting};
-use crate::{
-    output::{OutputBudget, OutputFormat},
-    results::{Hit, HitDetail, ResultEntry, ResultSet, compact_hit},
-};
+use crate::results::{Hit, HitDetail, ResultEntry, ResultSet, compact_hit};
 use anyhow::{Result, bail};
 use serde_json::{Map, Value, json};
 use std::path::Path;
+use tp_core::output::{OutputBudget, OutputFormat};
 
 /// Renders a current-source result without creating a persisted result set.
 pub(crate) fn stateless_page(
@@ -91,7 +89,7 @@ pub(crate) fn stateless_page_members(
                 if let Some(member) = member {
                     members.insert(
                         (*member).to_owned(),
-                        crate::path_codec::encode_path(root).into(),
+                        tp_core::path_codec::encode_path(root).into(),
                     );
                 }
             }

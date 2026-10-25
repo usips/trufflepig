@@ -1,6 +1,6 @@
 use super::*;
-use crate::background_process::spawn_background;
 use std::{os::unix::net::UnixStream, sync::Arc};
+use tp_core::background_process::spawn_background;
 
 #[test]
 fn ensure_does_not_spawn_when_its_deadline_is_already_expired() {
@@ -48,7 +48,7 @@ fn ensure_does_not_spawn_after_the_request_peer_disconnects() {
 fn ensure_reports_a_running_router_despite_unresolvable_board_database() {
     if std::env::var_os("TRUFFLEPIG_SYSTEM_TEST_RELATIVE_DB").is_none() {
         // The child process owns the board environment; parallel tests never see it.
-        let directory = crate::test_fixtures::scratch("board-lazy-");
+        let directory = tp_core::test_fixtures::scratch("board-lazy-");
         let status = std::process::Command::new(std::env::current_exe().unwrap())
             .env("TRUFFLEPIG_SYSTEM_TEST_RELATIVE_DB", "1")
             .env("TRUFFLEPIG_BOARD_DB", "relative.sqlite3")
@@ -79,7 +79,7 @@ fn ensure_reports_a_running_router_despite_unresolvable_board_database() {
     let context = RequestContext::new(None, None);
     let deadline = Instant::now() + Duration::from_secs(3);
     loop {
-        if crate::daemon_transport::request(&runtime, &ping, &context)
+        if tp_core::daemon_transport::request(&runtime, &ping, &context)
             .unwrap()
             .is_some()
         {
@@ -88,7 +88,7 @@ fn ensure_reports_a_running_router_despite_unresolvable_board_database() {
         assert!(Instant::now() < deadline, "router failed to start");
         std::thread::sleep(Duration::from_millis(10));
     }
-    let reply = crate::daemon_transport::router_request(&ping, &context)
+    let reply = tp_core::daemon_transport::router_request(&ping, &context)
         .unwrap()
         .unwrap();
     let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
@@ -104,13 +104,14 @@ fn ensure_reports_a_running_router_despite_unresolvable_board_database() {
         "{status}"
     );
     crate::system::ensure().unwrap();
-    let error = crate::daemon_transport::router_request(&["board".into(), "show".into()], &context)
-        .unwrap_err();
+    let error =
+        tp_core::daemon_transport::router_request(&["board".into(), "show".into()], &context)
+            .unwrap_err();
     assert!(
         format!("{error:#}").contains("board database path must be absolute"),
         "{error:#}"
     );
-    crate::daemon_transport::stop(&runtime).unwrap();
+    tp_core::daemon_transport::stop(&runtime).unwrap();
     worker.join().unwrap().unwrap();
 }
 
@@ -121,7 +122,7 @@ fn ensure_waits_for_a_migrating_router_without_spawning_a_second() {
     const TEST: &str = "system::tests::router_start_tests::ensure_waits_for_a_migrating_router_without_spawning_a_second";
     if std::env::var_os(MARKER).is_none() {
         // The child process owns the router environment; parallel tests never see it.
-        let directory = crate::test_fixtures::scratch("router-migration-");
+        let directory = tp_core::test_fixtures::scratch("router-migration-");
         let database = directory.path().join("board.sqlite3");
         crate::board::local_board::seed_storage_schema(&database, crate::board::SCHEMA_VERSION - 1)
             .unwrap();
@@ -140,8 +141,8 @@ fn ensure_waits_for_a_migrating_router_without_spawning_a_second() {
         assert!(status.success());
         return;
     }
-    let runtime = crate::runtime_paths::system_dir().expect("child sets TRUFFLEPIG_SYSTEM_DIR");
-    let spawned_before = crate::background_process::spawned_count();
+    let runtime = tp_core::runtime_paths::system_dir().expect("child sets TRUFFLEPIG_SYSTEM_DIR");
+    let spawned_before = tp_core::background_process::spawned_count();
     let worker = std::thread::spawn(crate::system::serve);
     // The slowed migration holds the router for five seconds; the socket binds
     // long before it finishes only when the bind precedes migration.
@@ -149,7 +150,7 @@ fn ensure_waits_for_a_migrating_router_without_spawning_a_second() {
         let deadline = Instant::now() + Duration::from_millis(500);
         let mut bound = false;
         while !bound && Instant::now() < deadline {
-            bound = crate::daemon_transport::running(&runtime);
+            bound = tp_core::daemon_transport::running(&runtime);
             if !bound {
                 std::thread::sleep(Duration::from_millis(10));
             }
@@ -157,18 +158,18 @@ fn ensure_waits_for_a_migrating_router_without_spawning_a_second() {
         bound
     };
     let ensured = crate::system::ensure();
-    let spawned = crate::background_process::spawned_count() - spawned_before;
+    let spawned = tp_core::background_process::spawned_count() - spawned_before;
     assert!(ensured.is_ok(), "ensure waits out migration: {ensured:?}");
     assert!(bound_early, "the router binds its socket before migrating");
     assert_eq!(spawned, 0, "a waiting ensure spawns no second router");
     let ping = vec!["system".to_owned(), "status".to_owned()];
-    let reply = crate::daemon_transport::router_request(&ping, &RequestContext::new(None, None))
+    let reply = tp_core::daemon_transport::router_request(&ping, &RequestContext::new(None, None))
         .unwrap()
         .expect("router answers status after migration");
     let status: serde_json::Value = serde_json::from_str(&reply).unwrap();
     assert_eq!(status["schema_supported"], crate::board::SCHEMA_VERSION);
     assert_eq!(status["schema_file"], crate::board::SCHEMA_VERSION);
-    crate::daemon_transport::stop(&runtime).unwrap();
+    tp_core::daemon_transport::stop(&runtime).unwrap();
     worker.join().unwrap().unwrap();
 }
 
@@ -184,7 +185,7 @@ fn ensure_waits_for_a_slow_spawned_router() {
     }
     if std::env::var_os(MARKER).is_none() {
         // The child process owns the router environment; parallel tests never see it.
-        let directory = crate::test_fixtures::scratch("router-slow-spawn-");
+        let directory = tp_core::test_fixtures::scratch("router-slow-spawn-");
         let database = directory.path().join("board.sqlite3");
         crate::board::local_board::seed_storage_schema(&database, crate::board::SCHEMA_VERSION - 1)
             .unwrap();
@@ -203,9 +204,9 @@ fn ensure_waits_for_a_slow_spawned_router() {
         assert!(status.success());
         return;
     }
-    let runtime = crate::runtime_paths::system_dir().expect("child sets TRUFFLEPIG_SYSTEM_DIR");
+    let runtime = tp_core::runtime_paths::system_dir().expect("child sets TRUFFLEPIG_SYSTEM_DIR");
     let process = SlowRouterProcess(std::cell::Cell::new(None));
-    let spawned_before = crate::background_process::spawned_count();
+    let spawned_before = tp_core::background_process::spawned_count();
     let started = Instant::now();
     super::ensure_with(Duration::from_secs(10), |_| {
         let mut command = Command::new(std::env::current_exe()?);
@@ -218,14 +219,14 @@ fn ensure_waits_for_a_slow_spawned_router() {
     })
     .unwrap();
     assert_eq!(
-        crate::background_process::spawned_count() - spawned_before,
+        tp_core::background_process::spawned_count() - spawned_before,
         1
     );
     assert!(
         started.elapsed() >= Duration::from_secs(3),
         "ensure waits for spawned migration"
     );
-    crate::daemon_transport::stop(&runtime).unwrap();
+    tp_core::daemon_transport::stop(&runtime).unwrap();
     drop(process);
 }
 
@@ -247,7 +248,7 @@ fn ensure_gives_up_after_the_cap() {
     const TEST: &str = "system::tests::router_start_tests::ensure_gives_up_after_the_cap";
     if std::env::var_os(MARKER).is_none() {
         // The child process owns the router environment; parallel tests never see it.
-        let directory = crate::test_fixtures::scratch("router-hung-spawn-");
+        let directory = tp_core::test_fixtures::scratch("router-hung-spawn-");
         let database = directory.path().join("board.sqlite3");
         crate::board::local_board::seed_storage_schema(&database, crate::board::SCHEMA_VERSION - 1)
             .unwrap();

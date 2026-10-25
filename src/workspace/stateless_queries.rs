@@ -1,19 +1,17 @@
 //! Current-source workspace lookup with configured ownership and no persisted results.
 
 use super::{WorkspaceConfig, hashed_member_cache, member_root::MemberRoot};
-use crate::coded_error::CodedContext;
 use crate::workspace::workspace_discovery::WorkspaceMembers;
 use crate::{
     cli::Arguments,
-    output::OutputBudget,
-    path_codec::encode_path,
-    query_deadline::QueryDeadline,
     results::ResultSet,
     search::{InvocationDirectory, Query, stateless},
     store::{is_index_cache_unavailable, preflight_results_cache},
 };
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
+use tp_core::coded_error::CodedContext;
+use tp_core::{output::OutputBudget, path_codec::encode_path, query_deadline::QueryDeadline};
 
 pub(super) fn eligible(options: &Arguments) -> bool {
     matches!(
@@ -180,7 +178,8 @@ pub(super) fn run(
                 }
             }
             Err(error) => {
-                if crate::coded_error::ErrorCode::TimedOut.is_code_of(&error) && answers.is_empty()
+                if tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error)
+                    && answers.is_empty()
                 {
                     return Err(error);
                 }

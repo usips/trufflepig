@@ -24,7 +24,6 @@ use super::board_ids::{
 };
 use super::board_protocol::*;
 use super::board_vocabulary::EntryKind;
-use crate::request_context::{ActorOrigin, HarnessLabel};
 #[cfg(test)]
 use board_authority::authority_for;
 use board_authority::{write_grant, write_revoke};
@@ -33,6 +32,7 @@ pub use board_database::SCHEMA_VERSION;
 pub(crate) use board_database::seed_storage_schema;
 pub(super) use board_evidence::{can_accept, insert_entry, insert_event, require_plan};
 use board_writes::board_receipts::{is_dedupable, receipt_current, request_dedupe_key};
+use tp_core::request_context::{ActorOrigin, HarnessLabel};
 
 pub struct LocalBoard {
     conn: Connection,
@@ -57,8 +57,8 @@ impl BoardBackend for LocalBoard {
     fn linked_commit_oids(
         &self,
         repo_key: &RepoKey,
-        oids: &[crate::identity::GitOid],
-    ) -> Result<std::collections::BTreeSet<crate::identity::GitOid>, BoardError> {
+        oids: &[tp_core::identity::GitOid],
+    ) -> Result<std::collections::BTreeSet<tp_core::identity::GitOid>, BoardError> {
         board_queries::linked_oid_reads::linked_commit_oids(
             self.reader.as_ref().unwrap_or(&self.conn),
             repo_key,

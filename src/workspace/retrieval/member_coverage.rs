@@ -1,7 +1,8 @@
 //! One member's coverage row: what was searched, what could not be, and why.
-use crate::{path_codec::encode_path, store::Store, workspace::member_root::MemberRoot};
+use crate::{store::Store, workspace::member_root::MemberRoot};
 use anyhow::Result;
 use serde_json::{Value, json};
+use tp_core::path_codec::encode_path;
 
 /// Counters of files a search could not examine, with the kind each reports.
 /// Excluded (binary, oversized) files, parse failures (still lexically

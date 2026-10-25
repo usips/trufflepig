@@ -1,8 +1,8 @@
 use super::*;
-use crate::query_deadline::QueryDeadline;
 use crate::search::{Query, search_prepared, tests::fixture};
 use crate::search::{file_ranking::fuse_search_file_lanes, path_prior::PathPrior};
 use anyhow::bail;
+use tp_core::query_deadline::QueryDeadline;
 
 const NEUTRAL: &PathPrior = &PathPrior::neutral();
 const UNTIERED: FusionPolicy = FusionPolicy {

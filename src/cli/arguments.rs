@@ -1,13 +1,12 @@
 //! Parsed client options and explicit daemon argument forwarding.
 use crate::{
     board::board_grammar::{BoardArguments, BoardOptions},
-    output::MAX_BUDGET,
-    output::OutputFormat,
     results,
 };
 use anyhow::{Result, bail};
 use clap::Parser;
 use std::path::{Path, PathBuf};
+use tp_core::{output::MAX_BUDGET, output::OutputFormat};
 
 /// Query and navigation summary printed after the option list by `--help`.
 const QUERY_HELP: &str = "\
@@ -359,9 +358,9 @@ pub(super) fn validate(options: &Arguments) -> Result<()> {
 fn unknown_command_hint(command: &str) -> String {
     if matches!(command, "next" | "page" | "cursor" | "continue") {
         "page with `more CURSOR`, the footer's `next: more CURSOR` line".to_owned()
-    } else if command.parse::<crate::identity::ResultCursor>().is_ok() {
+    } else if command.parse::<tp_core::identity::ResultCursor>().is_ok() {
         format!("use `more {command}` to page")
-    } else if command.parse::<crate::identity::ResultHandle>().is_ok() {
+    } else if command.parse::<tp_core::identity::ResultHandle>().is_ok() {
         format!("use `show {command}` to read a hit")
     } else {
         format!("use `search {command}` for a free-form query")

@@ -12,7 +12,7 @@ pub(super) struct ScopeFixture {
 
 impl ScopeFixture {
     pub(super) fn new() -> Self {
-        let directory = crate::test_fixtures::scratch("project-scope-");
+        let directory = tp_core::test_fixtures::scratch("project-scope-");
         let mut board = LocalBoard::open_path(
             &directory.path().join("board.sqlite3"),
             Duration::from_secs(120),
@@ -25,7 +25,7 @@ impl ScopeFixture {
         });
         let keys = ['1', '2', '3'].map(|digit| {
             RepoKey::from_roots([
-                crate::identity::GitOid::parse(&digit.to_string().repeat(40)).unwrap(),
+                tp_core::identity::GitOid::parse(&digit.to_string().repeat(40)).unwrap(),
             ])
             .unwrap()
         });

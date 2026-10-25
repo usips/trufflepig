@@ -1,5 +1,5 @@
 use super::*;
-use crate::coded_error::CodedError;
+use tp_core::coded_error::CodedError;
 
 /// Types relayed text as the daemon client boundary does.
 fn relayed(text: &str) -> anyhow::Error {
@@ -180,6 +180,8 @@ fn unregistered_invalid_prefixes_are_domain_options() {
 #[test]
 fn daemon_reply_timeout_is_not_a_board_error() {
     let wait = std::time::Duration::from_millis(200);
-    let error = anyhow::Error::new(crate::daemon_transport::DaemonReplyTimeout::new(wait, wait));
+    let error = anyhow::Error::new(tp_core::daemon_transport::DaemonReplyTimeout::new(
+        wait, wait,
+    ));
     assert_eq!(BoardErrorCode::from_error(&error), None);
 }

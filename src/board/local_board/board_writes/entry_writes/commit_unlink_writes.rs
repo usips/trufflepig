@@ -1,7 +1,7 @@
 //! Authorized task link removal with append-only, durable unlink receipts.
 use super::*;
-use crate::identity::GitOid;
 use commit_link_authority::{TaskLinkReceipt, require_link_authority, task_link_receipt};
+use tp_core::identity::GitOid;
 
 pub(in crate::board::local_board) fn unlink_commit(
     tx: &Transaction<'_>,

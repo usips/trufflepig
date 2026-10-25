@@ -1,18 +1,16 @@
 //! Plan revisions, tasks, claims, and review evidence.
 use super::{EntryRecord, FeedbackRecord, LinkedCommit};
 use crate::board::board_domain::board_collections::{ClaimCursor, EntryCursor, TaskCeiling};
-use crate::identity::GitOid;
-use crate::{
-    board::{
-        board_actor::{AgentVendor, BoardActor, BoardRecipient},
-        board_ids::{EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
-        board_protocol::{GrantRecord, ProgressEvidence, WorkerRecord},
-        board_vocabulary::{EntryText, PlanText, PlanTitle, ProposalState, TaskColumn},
-    },
-    request_context::HarnessLabel,
+use crate::board::{
+    board_actor::{AgentVendor, BoardActor, BoardRecipient},
+    board_ids::{EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
+    board_protocol::{GrantRecord, ProgressEvidence, WorkerRecord},
+    board_vocabulary::{EntryText, PlanText, PlanTitle, ProposalState, TaskColumn},
 };
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
+use tp_core::identity::GitOid;
+use tp_core::request_context::HarnessLabel;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PlanRecord {

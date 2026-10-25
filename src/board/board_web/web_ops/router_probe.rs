@@ -4,8 +4,8 @@ use crate::board::{
     SCHEMA_VERSION,
     board_protocol::{BOARD_API, BoardError, BoardErrorCode},
 };
-use crate::{daemon_transport::DaemonReplyTimeout, query_deadline::QueryDeadline};
 use std::{path::Path, time::Duration};
+use tp_core::{daemon_transport::DaemonReplyTimeout, query_deadline::QueryDeadline};
 
 type RouterExchange<'a> =
     dyn FnMut(&[String], QueryDeadline) -> Result<Option<String>, BoardError> + 'a;

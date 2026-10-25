@@ -4,10 +4,11 @@ use crate::board::board_protocol::BoardErrorCode;
 use rusqlite::Row;
 
 use crate::board::board_ids::EntryId;
+use crate::board::board_protocol::AuthoritySource;
 use crate::board::local_board::{BoardError, invalid, sql_error, sqlite_u64};
-use crate::request_context::HarnessLabel;
-use crate::{board::board_protocol::AuthoritySource, request_context::ActorOrigin};
 use std::net::IpAddr;
+use tp_core::request_context::ActorOrigin;
+use tp_core::request_context::HarnessLabel;
 
 pub(in crate::board::local_board) fn actor_origin_from_row(
     row: &Row<'_>,

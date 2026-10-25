@@ -6,14 +6,13 @@ mod stateless_scan;
 mod tests;
 
 use crate::{
-    output::OutputBudget,
-    query_deadline::QueryDeadline,
     results::ResultSet,
     search::{InvocationDirectory, Query},
 };
 use anyhow::Result;
 use serde_json::Value;
 use std::path::Path;
+use tp_core::{output::OutputBudget, query_deadline::QueryDeadline};
 
 /// Searches one already-selected repository using only its current source bytes.
 ///

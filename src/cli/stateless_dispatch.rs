@@ -1,14 +1,11 @@
 //! Local current-source retrieval without persistent cache access.
 
 use super::Arguments;
-use crate::coded_error::CodedContext;
-use crate::{
-    output::OutputBudget,
-    query_deadline::QueryDeadline,
-    search::{InvocationDirectory, Query, stateless},
-};
+use crate::search::{InvocationDirectory, Query, stateless};
 use anyhow::{Result, ensure};
 use std::path::Path;
+use tp_core::coded_error::CodedContext;
+use tp_core::{output::OutputBudget, query_deadline::QueryDeadline};
 
 pub(super) fn eligible(options: &Arguments) -> bool {
     matches!(

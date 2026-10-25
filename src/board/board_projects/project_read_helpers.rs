@@ -9,8 +9,8 @@ use crate::board::{
     },
     local_board::LocalBoard,
 };
-use crate::query_deadline::QueryDeadline;
 use std::time::Duration;
+use tp_core::query_deadline::QueryDeadline;
 
 pub(crate) fn select_scope(
     op: &mut BoardOp,
@@ -97,7 +97,7 @@ pub(crate) fn project_reply(
                     .into_iter()
                     .map(|member| ProjectMemberRecord {
                         name: member.name,
-                        root: crate::path_codec::encode_path(&member.root),
+                        root: tp_core::path_codec::encode_path(&member.root),
                         available: member.available,
                     })
                     .collect(),

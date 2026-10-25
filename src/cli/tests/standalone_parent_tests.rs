@@ -39,7 +39,7 @@ fn cold_parent_fallback_reads_current_worktree_without_child_publication() -> Re
     );
     assert_eq!(
         search["coverage"]["parent_index"]["root"],
-        crate::path_codec::encode_path(&fixture.main)
+        tp_core::path_codec::encode_path(&fixture.main)
     );
     assert_eq!(search["hits"].as_array().unwrap().len(), 2, "{search}");
     let handle = search["hits"][0]["handle"]
@@ -344,7 +344,7 @@ fn saved_parent_handle_and_more_keep_parent_origin_after_child_publication() -> 
     let error = crate::store::Store::open_read(
         &fixture.worktree,
         &fixture.child_cache,
-        crate::query_deadline::QueryDeadline::start(),
+        tp_core::query_deadline::QueryDeadline::start(),
     )
     .err()
     .context("fixture must deny opening the index")?;
@@ -462,7 +462,7 @@ fn no_daemon_read_serves_parent_hit_promptly_while_child_writer_is_held() -> Res
         "sym:WorktreeOnlySymbol".into(),
     ])?;
 
-    let _budget = crate::output::OutputBudget::new(options.budget)?;
+    let _budget = tp_core::output::OutputBudget::new(options.budget)?;
     let started = Instant::now();
     let output = crate::cli::local(&fixture.worktree, &fixture.child_cache, &options, false)?;
     let elapsed = started.elapsed();
@@ -702,7 +702,7 @@ struct WorktreeFixture {
 
 impl WorktreeFixture {
     fn new() -> Result<Self> {
-        let scratch = crate::test_fixtures::scratch("standalone-parent-");
+        let scratch = tp_core::test_fixtures::scratch("standalone-parent-");
         let main = scratch.path().join("main");
         let worktree = scratch.path().join("linked-worktree");
         fs::create_dir_all(main.join("src"))?;
@@ -778,7 +778,7 @@ impl WorktreeFixture {
         Ok(crate::store::Store::open_read(
             &self.main,
             &self.main_cache,
-            crate::query_deadline::QueryDeadline::start(),
+            tp_core::query_deadline::QueryDeadline::start(),
         )?
         .generation()?)
     }
@@ -837,7 +837,7 @@ fn path_cursor_span(root: &Path, start: &Value, end: &Value) -> Result<String> {
 }
 
 fn saved_generation(root: &Path, cache: &Path, handle: &str) -> Result<i64> {
-    let parsed: crate::identity::ResultHandle = handle.parse()?;
+    let parsed: tp_core::identity::ResultHandle = handle.parse()?;
     let store = crate::store::Store::unpublished(root, cache)?;
     Ok(crate::results::load_entries(&store, &parsed.set.simple().to_string())?.generation)
 }
@@ -870,7 +870,7 @@ fn assert_unpublished_index(root: &Path, cache: &Path) -> Result<()> {
     let error = match crate::store::Store::open_read(
         root,
         cache,
-        crate::query_deadline::QueryDeadline::start(),
+        tp_core::query_deadline::QueryDeadline::start(),
     ) {
         Ok(_) => anyhow::bail!("generation-zero index must be warming"),
         Err(error) => error,
@@ -901,7 +901,7 @@ fn in_isolated_child(case: &str) -> Result<bool> {
         return Ok(true);
     }
 
-    let directory = crate::test_fixtures::scratch("standalone-parent-process-");
+    let directory = tp_core::test_fixtures::scratch("standalone-parent-process-");
     let paths = [
         "home", "cache", "config", "data", "runtime", "system", "spool", "tmp",
     ]

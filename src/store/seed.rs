@@ -6,8 +6,6 @@
 //! recorded in `<worktree cache>/seed-outcome.json` ([`read_seed_outcome`]).
 
 use super::live_index;
-use crate::path_codec::encode_path;
-use crate::query_deadline::QueryDeadline;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, TransactionBehavior};
 use serde::{Deserialize, Serialize};
@@ -19,6 +17,8 @@ use std::{
     path::Path,
     time::Duration,
 };
+use tp_core::path_codec::encode_path;
+use tp_core::query_deadline::QueryDeadline;
 
 /// Source indexes above this size are not worth copying at request time.
 pub const MAX_SEED_SOURCE_BYTES: u64 = 2 * 1024 * 1024 * 1024;

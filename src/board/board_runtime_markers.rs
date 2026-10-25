@@ -1,12 +1,12 @@
 //! Runtime markers pin the board database and track recent router failures.
 
-use crate::coded_error::CodedContext;
 use anyhow::{Result, ensure};
 use std::{
     fs,
     path::{Path, PathBuf},
     time::{Duration, SystemTime},
 };
+use tp_core::coded_error::CodedContext;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -1,9 +1,9 @@
 use super::*;
-use crate::test_fixtures::GitFixture;
-use crate::workspace_config::WorkspaceConfig;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use tp_core::test_fixtures::GitFixture;
+use tp_core::workspace_config::WorkspaceConfig;
 
 mod project_cli_read_tests;
 
@@ -124,7 +124,7 @@ fn isolated(test: &str, scenario: impl FnOnce(&Path)) {
         scenario(Path::new(&root));
         return;
     }
-    let directory = crate::test_fixtures::scratch("board-cli-project-");
+    let directory = tp_core::test_fixtures::scratch("board-cli-project-");
     let output = Command::new(std::env::current_exe().unwrap())
         .args([test, "--nocapture"])
         .env(FIXTURE_ROOT, directory.path())

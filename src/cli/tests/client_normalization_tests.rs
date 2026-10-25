@@ -127,10 +127,13 @@ fn client_normalization_forwards_format() {
     assert_eq!(forwarded.format, "lines");
     assert_eq!(
         forwarded.output_format(),
-        crate::output::OutputFormat::Lines
+        tp_core::output::OutputFormat::Lines
     );
     let implicit = parse(&["search".into(), "q".into()]).unwrap();
-    assert_eq!(implicit.output_format(), crate::output::OutputFormat::Json);
+    assert_eq!(
+        implicit.output_format(),
+        tp_core::output::OutputFormat::Json
+    );
 }
 
 #[test]

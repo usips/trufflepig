@@ -1,13 +1,13 @@
 //! The maintenance thread: watches the root, schedules reconciliation, detects a
 //! vanished root, drains the spool, and runs idle work. Requests never wait on it.
 use super::server::{DaemonHandler, RequestAdmission, ServerState};
-use crate::daemon_transport::spool::SpoolServer;
 use notify::{EventKind, RecursiveMode, Watcher};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+use tp_core::daemon_transport::spool::SpoolServer;
 
 /// Periodic recovery reconcile without a watcher (polling mode).
 pub(super) const RECONCILE_INTERVAL: Duration = Duration::from_secs(30);

@@ -10,7 +10,7 @@ pub(super) struct ProjectFixture {
 
 impl ProjectFixture {
     pub fn new() -> Self {
-        let directory = crate::test_fixtures::scratch("board-projects-");
+        let directory = tp_core::test_fixtures::scratch("board-projects-");
         let registry = directory.path().join("workspaces.toml");
         let config = BoardConfig::for_database(directory.path().join("board.sqlite3"));
         Self {
@@ -69,7 +69,7 @@ impl ProjectFixture {
             [key.as_str()],
         )
         .unwrap();
-        let common = crate::git_runner::common_dir(root).unwrap();
+        let common = tp_core::git_runner::common_dir(root).unwrap();
         conn.execute(
             "INSERT INTO repo_paths(repo_key,host,common_dir,root_commits_json) VALUES(?1,?2,?3,'[]')",
             rusqlite::params![key.as_str(), host, common.to_string_lossy().as_ref()],

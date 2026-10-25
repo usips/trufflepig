@@ -1,10 +1,10 @@
 //! Registry listing is independent of workspace discovery and index state.
 
 use super::{Arguments, OutputBudget, encode_path};
-use crate::workspace_config;
 use anyhow::{Result, ensure};
 use serde_json::json;
 use std::fmt::Write;
+use tp_core::workspace_config;
 
 pub(crate) fn list(options: &Arguments) -> Result<String> {
     ensure!(options.words.len() == 2, coded!(Usage, "ws list"));

@@ -2,12 +2,12 @@
 //! checkout: explicit, nearest-ancestor, then registry discovery.
 
 use super::member_root::{self, MemberRoot};
-use crate::workspace_config::{
-    CONFIG_NAME, RegistryDocument, WorkspaceConfig, read_document, registry_path, resolve_path,
-};
 use anyhow::{Context, Result, bail, ensure};
 use std::collections::BTreeSet;
 use std::path::Path;
+use tp_core::workspace_config::{
+    CONFIG_NAME, RegistryDocument, WorkspaceConfig, read_document, registry_path, resolve_path,
+};
 
 /// The workspace selected by `--workspace`, the nearest ancestor configuration,
 /// or the registry; `None` outside every workspace or with `--no-workspace`.

@@ -1,9 +1,9 @@
-use crate::daemon_transport::daemon_wire_protocol::REQUEST_LIMIT;
-use crate::query_deadline::QueryDeadline;
 use std::io::{self, ErrorKind, Read};
 use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::time::{Duration, Instant};
+use tp_core::daemon_transport::daemon_wire_protocol::REQUEST_LIMIT;
+use tp_core::query_deadline::QueryDeadline;
 
 /// Bytes one pending frame may read in one accept-loop turn.
 const READ_SLICE: usize = 8 * 1024;

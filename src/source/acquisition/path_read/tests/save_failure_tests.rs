@@ -1,11 +1,12 @@
 use super::{blocked_cache, page, source_bytes, test_directory};
-use crate::{output::OutputBudget, query_deadline::QueryDeadline, source::show, store::Store};
+use crate::{source::show, store::Store};
 use std::{
     fs,
     os::unix::{fs::PermissionsExt, net::UnixStream},
     sync::Arc,
     time::Duration,
 };
+use tp_core::{output::OutputBudget, query_deadline::QueryDeadline};
 
 #[test]
 fn expired_result_save_deadline_propagates_instead_of_falling_back() {
@@ -20,7 +21,7 @@ fn expired_result_save_deadline_propagates_instead_of_falling_back() {
     let error = show(&store, "path:src.rs", &OutputBudget::new(20_000).unwrap()).unwrap_err();
 
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
 }
@@ -41,7 +42,7 @@ fn dropped_result_save_peer_propagates_cancellation_instead_of_falling_back() {
     let error = show(&store, "path:src.rs", &OutputBudget::new(20_000).unwrap()).unwrap_err();
 
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
 }

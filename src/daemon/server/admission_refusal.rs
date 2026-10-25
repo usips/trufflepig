@@ -81,7 +81,7 @@ impl<'a> AdmissionRefusal<'a> {
     }
 
     /// The refusal as a typed `daemon_busy` error.
-    pub(crate) fn error(&self) -> crate::coded_error::CodedError {
+    pub(crate) fn error(&self) -> tp_core::coded_error::CodedError {
         coded!(DaemonBusy, "{}", self.detail())
     }
 

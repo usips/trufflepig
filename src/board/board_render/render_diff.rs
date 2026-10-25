@@ -3,9 +3,9 @@
 use super::{BoardOmitted, RenderedBoard, cell, diff_lines, footer, require_fits};
 use crate::board::board_protocol::{BoardReply, RevisionDiff};
 use crate::board::review_packet::{SsotDiff, build_ssot_diff};
-use crate::output::{OutputBudget, OutputFormat};
 use anyhow::Result;
 use std::fmt::Write;
+use tp_core::output::{OutputBudget, OutputFormat};
 
 pub(super) fn render_diff(
     reply: &BoardReply,

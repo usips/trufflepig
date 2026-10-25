@@ -1,8 +1,8 @@
 use super::AdmissionTier;
-use crate::request_pool::RequestLane;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use tp_core::request_pool::RequestLane;
 
 type RootWorkKey = (PathBuf, RequestLane);
 type RootWorkCounts = Arc<Mutex<HashMap<RootWorkKey, usize>>>;

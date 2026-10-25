@@ -9,14 +9,14 @@ mod tests;
 
 use super::{HitDetail, StoredResultSet, compact_entry_for_page, load_entries};
 use crate::results::result_lines;
-use crate::{
-    identity::ResultCursor,
-    output::{OutputBudget, OutputFormat},
-    store::Store,
-};
+use crate::store::Store;
 use anyhow::{Result, bail};
 use serde_json::Value;
 use std::path::Path;
+use tp_core::{
+    identity::ResultCursor,
+    output::{OutputBudget, OutputFormat},
+};
 
 /// Pages keep snippets only while at least this many hits (or all available
 /// hits) still fit; otherwise more locators beat fewer previews.

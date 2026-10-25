@@ -1,8 +1,8 @@
 use super::*;
-use crate::workspace_config::registered_workspaces_from;
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::PathBuf;
+use tp_core::workspace_config::registered_workspaces_from;
 
 fn fixture() -> tempfile::TempDir {
     tempfile::tempdir().unwrap()

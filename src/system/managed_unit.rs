@@ -2,9 +2,6 @@
 //! when that unit owns the router runtime directory, so no detached router races
 //! the unit for the daemon lock, and watches the unit while it starts.
 
-use crate::coded_error::CodedContext;
-use crate::process_capture::{self, CaptureError};
-use crate::{background_process::BackgroundChild, query_deadline::QueryDeadline};
 use anyhow::{Context, Result, anyhow};
 use std::{
     ffi::OsString,
@@ -14,6 +11,9 @@ use std::{
     process::Command,
     time::{Duration, Instant},
 };
+use tp_core::coded_error::CodedContext;
+use tp_core::process_capture::{self, CaptureError};
+use tp_core::{background_process::BackgroundChild, query_deadline::QueryDeadline};
 
 /// The user unit that `install.sh --systemd` renders.
 pub(super) const UNIT_NAME: &str = "trufflepig-system.service";

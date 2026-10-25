@@ -13,12 +13,7 @@ mod test_fixture;
 pub(crate) mod workspace_discovery;
 mod workspace_list;
 mod worktree_cache;
-use crate::coded_error::CodedContext;
-use crate::workspace_config::{self, WorkspaceConfig};
-use crate::{
-    cli::Arguments, output::OutputBudget, path_codec::encode_path, query_deadline::QueryDeadline,
-    request_context::RequestContext, search::InvocationDirectory, store::Store,
-};
+use crate::{cli::Arguments, search::InvocationDirectory, store::Store};
 use anyhow::{Context, Result, bail, ensure};
 pub(crate) use coordinator::{apply_config, run_with_deadline};
 pub(crate) use home_index::{
@@ -29,6 +24,12 @@ use member_root::MemberRoot;
 use result_cache::WorkspaceResults;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
+use tp_core::coded_error::CodedContext;
+use tp_core::workspace_config::{self, WorkspaceConfig};
+use tp_core::{
+    output::OutputBudget, path_codec::encode_path, query_deadline::QueryDeadline,
+    request_context::RequestContext,
+};
 use workspace_discovery::WorkspaceMembers;
 pub(crate) use workspace_list::list;
 
@@ -169,7 +170,7 @@ fn is_local_query(options: &Arguments) -> bool {
 
 fn local_execution_deadline(options: &Arguments, incoming: &QueryDeadline) -> QueryDeadline {
     if is_local_query(options) {
-        incoming.capped(crate::query_deadline::QUERY_DEADLINE)
+        incoming.capped(tp_core::query_deadline::QUERY_DEADLINE)
     } else {
         incoming.clone()
     }
@@ -309,7 +310,7 @@ pub(crate) fn local(
     options: &Arguments,
     context: &RequestContext,
     session: &mut crate::semantic::SemanticSession,
-    deadline: crate::query_deadline::QueryDeadline,
+    deadline: tp_core::query_deadline::QueryDeadline,
 ) -> Result<String> {
     let incoming_deadline = deadline;
     let local_deadline = local_execution_deadline(options, &incoming_deadline);

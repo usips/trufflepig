@@ -2,7 +2,6 @@
 //! serving daemon to republish, then locate the definition in current bytes.
 use super::{AcquiredSource, acquire_entry};
 use crate::{
-    query_deadline::QueryDeadline,
     results::{self, Hit, ResultEntry},
     store::Store,
 };
@@ -13,6 +12,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+use tp_core::query_deadline::QueryDeadline;
 
 /// Longest a stale `sym:` read waits for a serving daemon to republish.
 const REPUBLISH_WAIT: Duration = Duration::from_secs(3);
@@ -62,7 +62,7 @@ fn published_revision(store: &Store, path: &str) -> Result<Option<String>> {
 }
 
 fn is_stale_source(error: &anyhow::Error) -> bool {
-    crate::coded_error::ErrorCode::StaleSource.is_code_of(error)
+    tp_core::coded_error::ErrorCode::StaleSource.is_code_of(error)
 }
 
 /// Waits while a daemon serves this index for a generation after `seen`. A
@@ -73,7 +73,7 @@ fn await_republish(store: &Store, seen: i64) -> Result<bool> {
     }
     let serving = match store.query_deadline() {
         Some(deadline) => running_for_republish(store.index_cache(), deadline)?,
-        None => crate::daemon_transport::running(store.index_cache()),
+        None => tp_core::daemon_transport::running(store.index_cache()),
     };
     if !serving {
         return Ok(false);
@@ -109,9 +109,9 @@ fn await_republish(store: &Store, seen: i64) -> Result<bool> {
 /// `running`'s conservative treatment of a busy serving socket.
 fn running_for_republish(cache: &Path, deadline: &QueryDeadline) -> Result<bool> {
     check_query_deadline(deadline)?;
-    let probe_deadline = deadline.capped(crate::daemon_transport::RUNNING_PROBE_WAIT);
+    let probe_deadline = deadline.capped(tp_core::daemon_transport::RUNNING_PROBE_WAIT);
     liveness_probe_result(
-        crate::daemon_transport::running_by(cache, &probe_deadline),
+        tp_core::daemon_transport::running_by(cache, &probe_deadline),
         deadline,
     )
 }
@@ -123,12 +123,12 @@ fn liveness_probe_result(result: Result<bool>, deadline: &QueryDeadline) -> Resu
             Ok(serving)
         }
         Err(error)
-            if crate::coded_error::ErrorCode::TimedOut.is_code_of(&error)
+            if tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error)
                 && !deadline.expired() =>
         {
             Ok(true)
         }
-        Err(error) if crate::coded_error::ErrorCode::TimedOut.is_code_of(&error) => Err(error),
+        Err(error) if tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error) => Err(error),
         Err(_) if deadline.expired() => Err(query_timeout_error()),
         Err(_) => Ok(false),
     }

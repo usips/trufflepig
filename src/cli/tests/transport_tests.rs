@@ -373,7 +373,9 @@ fn board_pending_waits_for_slow_existing_router_without_startup() -> anyhow::Res
     };
 
     let directory = tempfile::tempdir()?;
-    let socket_path = directory.path().join(crate::daemon_transport::SOCKET_NAME);
+    let socket_path = directory
+        .path()
+        .join(tp_core::daemon_transport::SOCKET_NAME);
     let listener = UnixListener::bind(&socket_path)?;
     let responder = thread::spawn(move || -> std::io::Result<()> {
         let (mut stream, _) = listener.accept()?;
@@ -391,26 +393,26 @@ fn board_pending_waits_for_slow_existing_router_without_startup() -> anyhow::Res
     });
 
     let args = ["board", "pending"].map(str::to_owned);
-    let context = crate::request_context::RequestContext::new(None, None);
+    let context = tp_core::request_context::RequestContext::new(None, None);
     let output = super::super::client_command::request_pending(
         &args,
         &context,
         false,
         || Some(directory.path().to_owned()),
-        crate::query_deadline::QueryDeadline::after(Duration::from_secs(2)),
+        tp_core::query_deadline::QueryDeadline::after(Duration::from_secs(2)),
     );
     let responder_result = responder.join().expect("router responder thread panicked");
     assert_eq!(output?, "pending notices");
     responder_result?;
 
     let absent = tempfile::tempdir()?;
-    let absent_socket = absent.path().join(crate::daemon_transport::SOCKET_NAME);
+    let absent_socket = absent.path().join(tp_core::daemon_transport::SOCKET_NAME);
     let error = super::super::client_command::request_pending(
         &args,
         &context,
         false,
         || Some(absent.path().to_owned()),
-        crate::query_deadline::QueryDeadline::after(Duration::from_secs(1)),
+        tp_core::query_deadline::QueryDeadline::after(Duration::from_secs(1)),
     )
     .unwrap_err()
     .to_string();
@@ -425,7 +427,7 @@ fn board_pending_waits_for_slow_existing_router_without_startup() -> anyhow::Res
         &context,
         true,
         || panic!("--no-daemon must be rejected before resolving the router"),
-        crate::query_deadline::QueryDeadline::after(Duration::from_secs(1)),
+        tp_core::query_deadline::QueryDeadline::after(Duration::from_secs(1)),
     )
     .unwrap_err()
     .to_string();
@@ -443,7 +445,9 @@ fn board_pending_does_not_contact_a_router_after_its_deadline() -> anyhow::Resul
     };
 
     let directory = tempfile::tempdir()?;
-    let socket_path = directory.path().join(crate::daemon_transport::SOCKET_NAME);
+    let socket_path = directory
+        .path()
+        .join(tp_core::daemon_transport::SOCKET_NAME);
     let listener = UnixListener::bind(&socket_path)?;
     listener.set_nonblocking(true)?;
     let responder = thread::spawn(move || -> std::io::Result<bool> {
@@ -471,14 +475,14 @@ fn board_pending_does_not_contact_a_router_after_its_deadline() -> anyhow::Resul
         }
     });
     let args = ["board", "pending"].map(str::to_owned);
-    let context = crate::request_context::RequestContext::new(None, None);
+    let context = tp_core::request_context::RequestContext::new(None, None);
 
     let error = super::super::client_command::request_pending(
         &args,
         &context,
         false,
         || Some(directory.path().to_owned()),
-        crate::query_deadline::QueryDeadline::after(std::time::Duration::ZERO),
+        tp_core::query_deadline::QueryDeadline::after(std::time::Duration::ZERO),
     )
     .unwrap_err();
 
@@ -495,7 +499,7 @@ fn board_pending_does_not_contact_a_router_after_its_deadline() -> anyhow::Resul
 #[test]
 fn contextual_board_api_probe_exits_before_client_dispatch() -> anyhow::Result<()> {
     let args = ["--board-api-version".to_owned()];
-    let context = crate::request_context::RequestContext::new(None, None);
+    let context = tp_core::request_context::RequestContext::new(None, None);
 
     assert_eq!(
         crate::cli::run_with_context(&args, &context)?,

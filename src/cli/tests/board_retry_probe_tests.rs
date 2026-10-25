@@ -1,6 +1,5 @@
 //! The real CLI retries a contended board read with one capability probe.
 use crate::board::BOARD_API;
-use crate::test_fixtures::scratch;
 use std::{
     io::{Read, Write},
     os::unix::net::{UnixListener, UnixStream},
@@ -8,6 +7,7 @@ use std::{
     process::{Command, Stdio},
     time::{Duration, Instant},
 };
+use tp_core::test_fixtures::scratch;
 
 const CHILD_MODE: &str = "TRUFFLEPIG_BOARD_RETRY_PROBE_CHILD";
 
@@ -61,9 +61,13 @@ fn cli_board_retry_probes_router_once_with_fresh_request_ids() {
 fn check_real_retry() {
     let runtime = PathBuf::from(std::env::var_os("TRUFFLEPIG_SYSTEM_DIR").unwrap());
     let database = PathBuf::from(std::env::var_os("TRUFFLEPIG_BOARD_DB").unwrap());
-    assert_eq!(crate::runtime_paths::system_dir().as_ref(), Some(&runtime));
+    assert_eq!(
+        tp_core::runtime_paths::system_dir().as_ref(),
+        Some(&runtime)
+    );
     std::fs::create_dir(&runtime).unwrap();
-    let listener = UnixListener::bind(runtime.join(crate::daemon_transport::SOCKET_NAME)).unwrap();
+    let listener =
+        UnixListener::bind(runtime.join(tp_core::daemon_transport::SOCKET_NAME)).unwrap();
     listener.set_nonblocking(true).unwrap();
     let status = serde_json::json!({"board_api": BOARD_API, "board_db": database}).to_string();
     let server = std::thread::spawn(move || serve_attempts(listener, status));
@@ -153,7 +157,7 @@ fn read_request(stream: &mut UnixStream) -> serde_json::Value {
     let mut header = [0; 4];
     stream.read_exact(&mut header).unwrap();
     let size = u32::from_be_bytes(header) as usize;
-    assert!(size <= crate::daemon_transport::MAX_DAEMON_REQUEST_BYTES);
+    assert!(size <= tp_core::daemon_transport::MAX_DAEMON_REQUEST_BYTES);
     let mut bytes = vec![0; size];
     stream.read_exact(&mut bytes).unwrap();
     serde_json::from_slice(&bytes).unwrap()

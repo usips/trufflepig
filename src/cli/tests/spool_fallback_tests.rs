@@ -1,6 +1,7 @@
 use super::spool_fallback_fixture::{DIRECT_REPLY, StubDaemon, args, fixture_dir, in_child};
-use crate::{cli::run_with_context, daemon_transport::spool, request_context::RequestContext};
+use crate::cli::run_with_context;
 use anyhow::Result;
+use tp_core::{daemon_transport::spool, request_context::RequestContext};
 
 #[test]
 fn spool_timeout_falls_back_to_direct() -> Result<()> {

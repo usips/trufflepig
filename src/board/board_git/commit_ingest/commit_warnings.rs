@@ -1,7 +1,7 @@
 //! Exact per-commit warning identities and current board-wide link suppression.
 use crate::board::{board_backend::BoardBackend, board_ids::RepoKey};
-use crate::identity::GitOid;
 use anyhow::Result;
+use tp_core::identity::GitOid;
 
 pub(super) fn commit_warning_oid(warning: &str) -> Option<GitOid> {
     let (oid, _) = warning.strip_prefix("board_scan: ")?.split_once(": ")?;

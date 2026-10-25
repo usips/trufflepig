@@ -1,9 +1,9 @@
 //! Complete board reference parsing and free-text extraction.
 use super::{EntryId, PlanId, PlanRevision, RevisionSpan, TaskId};
-use crate::identity::GitOid;
 use anyhow::Result;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{fmt, str::FromStr};
+use tp_core::identity::GitOid;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum BoardRef {

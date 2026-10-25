@@ -1,13 +1,13 @@
 use super::*;
-use crate::{
-    daemon_transport::request_by, query_deadline::QueryDeadline, request_context::RequestContext,
-};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::Duration;
+use tp_core::{
+    daemon_transport::request_by, query_deadline::QueryDeadline, request_context::RequestContext,
+};
 
 const CLIENT_BUDGET: Duration = Duration::from_secs(12);
 const TEST_WAIT: Duration = Duration::from_secs(5);
@@ -254,10 +254,10 @@ fn saturated_semantic_root_serves_annotated_lexical_search_without_extra_semanti
     assert_eq!(lexical_calls.load(Ordering::Acquire), 1);
 
     let mut client =
-        UnixStream::connect(router_cache.join(crate::daemon_transport::SOCKET_NAME)).unwrap();
-    crate::daemon_transport::daemon_wire_protocol::write_request(
+        UnixStream::connect(router_cache.join(tp_core::daemon_transport::SOCKET_NAME)).unwrap();
+    tp_core::daemon_transport::daemon_wire_protocol::write_request(
         &mut client,
-        &crate::daemon_transport::daemon_wire_protocol::DaemonRequest::Arguments {
+        &tp_core::daemon_transport::daemon_wire_protocol::DaemonRequest::Arguments {
             context: RequestContext::new(None, None),
             args: workspace_args(&config, &router_root),
         },

@@ -7,8 +7,8 @@ use crate::board::board_protocol::{
     BoardReply, BoardResult, EntryCursor, EntryRecord, EntryView, PlanView,
 };
 use crate::board::board_vocabulary::PlanText;
-use crate::output::OutputBudget;
 use anyhow::Result;
+use tp_core::output::OutputBudget;
 
 #[derive(Clone, Copy)]
 struct PlanTrim {

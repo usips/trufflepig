@@ -1,11 +1,10 @@
 use super::{recheck, recheck_with_current_search};
 use crate::{
-    output::OutputBudget,
-    query_deadline::QueryDeadline,
     results,
     search::{self, Query},
     source,
 };
+use tp_core::{output::OutputBudget, query_deadline::QueryDeadline};
 
 #[test]
 fn published_candidates_use_current_names_references_and_text() {
@@ -24,7 +23,7 @@ fn published_candidates_use_current_names_references_and_text() {
             search::search(&store, &Query::parse(query).unwrap(), false, cache.path()).unwrap();
         assert!(!result.hits.is_empty(), "{query}");
         assert!(result.hits.iter().all(|hit| hit.revision.as_deref()
-            == Some(&crate::identity::ContentRevision::of(current).to_string())));
+            == Some(&tp_core::identity::ContentRevision::of(current).to_string())));
         let id = results::save(&store, result).unwrap();
         let shown = source::show(
             &store,
@@ -250,7 +249,7 @@ fn current_search_timeout_propagates_but_ordinary_failure_keeps_unverified_candi
     )
     .unwrap_err();
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&timeout),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&timeout),
         "{timeout:#}"
     );
     assert!(timeout.to_string().starts_with("timed_out:"));
@@ -281,7 +280,7 @@ fn current_search_timeout_propagates_but_ordinary_failure_keeps_unverified_candi
 
 #[test]
 fn current_search_timeout_under_another_coded_layer_still_propagates() {
-    use crate::coded_error::CodedContext;
+    use tp_core::coded_error::CodedContext;
     let (root, cache, store) = search::tests::fixture(&[("lib.rs", b"pub struct OldName;")]);
     let query = Query::parse("OldName file:lib.rs").unwrap();
     let mut hits = search::search(&store, &query, false, cache.path())
@@ -305,7 +304,7 @@ fn current_search_timeout_under_another_coded_layer_still_propagates() {
     )
     .unwrap_err();
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
 }
@@ -332,7 +331,7 @@ fn expired_query_deadline_aborts_candidate_recheck() {
     .unwrap_err();
 
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
     assert!(error.to_string().starts_with("timed_out:"));

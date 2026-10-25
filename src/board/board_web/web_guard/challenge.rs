@@ -7,10 +7,10 @@ use super::super::board_web_secrets::{
     PROOF_HEX_LEN, constant_time_equal, fill_random, hex_encode,
 };
 use super::BoardWebToken;
-use crate::coded_error::CodedContext;
 use anyhow::{Result, ensure};
 use sha2::{Digest, Sha256};
 use std::net::SocketAddr;
+use tp_core::coded_error::CodedContext;
 
 pub(crate) const NONCE_BYTES: usize = 32;
 
@@ -142,7 +142,7 @@ mod tests {
 
     #[test]
     fn proof_prefixes_a_domain_label_before_nonce_and_address() {
-        let directory = crate::test_fixtures::scratch("board-challenge-");
+        let directory = tp_core::test_fixtures::scratch("board-challenge-");
         let path = directory.path().join("token");
         std::fs::write(&path, "0123456789abcdef".repeat(4)).unwrap();
         #[cfg(unix)]
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn proof_binds_token_nonce_and_listener_address() {
-        let directory = crate::test_fixtures::scratch("board-challenge-");
+        let directory = tp_core::test_fixtures::scratch("board-challenge-");
         let token = BoardWebToken::rotate_at(&directory.path().join("token")).unwrap();
         let other = BoardWebToken::rotate_at(&directory.path().join("other")).unwrap();
         let nonce = ChallengeNonce::generate().unwrap();

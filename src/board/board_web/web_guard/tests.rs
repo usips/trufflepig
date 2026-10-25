@@ -8,7 +8,7 @@ use super::*;
 use std::{collections::BTreeMap, io::Write, net::TcpStream, time::Instant};
 
 fn fixture() -> (tempfile::TempDir, WebGuard) {
-    let directory = crate::test_fixtures::scratch("web-guard-");
+    let directory = tp_core::test_fixtures::scratch("web-guard-");
     let token = BoardWebToken::rotate_at(&directory.path().join("board-web.token")).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let guard = WebGuard::with_token(listener.local_addr().unwrap(), token).unwrap();

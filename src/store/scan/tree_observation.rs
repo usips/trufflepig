@@ -5,15 +5,13 @@
 use super::file_stat::{FileStat, PassStart};
 use super::read_source;
 use super::scan_tally::ScanTally;
-use crate::query_deadline::QueryDeadline;
-use crate::{
-    path_codec::encode_path,
-    store::{Coverage, index_deadline},
-};
+use crate::store::{Coverage, index_deadline};
 use anyhow::Result;
 use rusqlite::{Connection, params};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use tp_core::path_codec::encode_path;
+use tp_core::query_deadline::QueryDeadline;
 
 /// Bytes a pass may hold from files read before staging; later files are read while staging.
 const OBSERVATION_READ_BUDGET: usize = 16 * 1024 * 1024;

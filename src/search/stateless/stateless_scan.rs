@@ -1,7 +1,5 @@
 use super::{coverage, handles};
 use crate::{
-    coded_error::{CodeDetail, ErrorCode},
-    query_deadline::QueryDeadline,
     results::{MAX_HITS, ResultSet},
     search::{self, InvocationDirectory, Query, telemetry::RetrievalTrace},
     source::{self, MAX_READ_BYTES},
@@ -11,6 +9,10 @@ use anyhow::{Context, Result, bail, ensure};
 use ignore::WalkBuilder;
 use serde_json::json;
 use std::path::Path;
+use tp_core::{
+    coded_error::{CodeDetail, ErrorCode},
+    query_deadline::QueryDeadline,
+};
 
 const MAX_CURRENT_FILES: usize = 4_096;
 const MAX_WALK_ENTRIES: usize = 65_536;
@@ -151,7 +153,7 @@ pub(super) fn map_current_file(
             "current map path is inside an excluded directory"
         )
     );
-    let encoded_path = crate::path_codec::encode_path(&relative);
+    let encoded_path = tp_core::path_codec::encode_path(&relative);
     let bytes = match source::read_contained(&root, &relative, MAX_READ_BYTES) {
         Ok(bytes) => bytes,
         Err(error) if CodeDetail::NotRegularFile.is_anywhere_in(&error) => {
@@ -170,7 +172,7 @@ pub(super) fn map_current_file(
     let extraction =
         source::usable_extraction(&encoded_path, tp_extract::extract(&encoded_path, &bytes))?;
     check_deadline(deadline)?;
-    let revision = crate::identity::ContentRevision::of(&bytes).to_string();
+    let revision = tp_core::identity::ContentRevision::of(&bytes).to_string();
     let facts_indexed = extraction_fact_count(&extraction);
     let mut definitions = extraction.definitions;
     search::outline_extracted(&mut definitions);
@@ -293,7 +295,7 @@ fn current_paths(
             break;
         }
         let relative = entry.path().strip_prefix(&store.root)?;
-        paths.push(crate::path_codec::encode_path(relative));
+        paths.push(tp_core::path_codec::encode_path(relative));
     }
     Ok(paths)
 }
@@ -308,7 +310,7 @@ fn attach_filename_handles(
     let mut retained = Vec::with_capacity(hits.len());
     while let Some(mut hit) = hits.next() {
         check_deadline(deadline)?;
-        let relative = crate::path_codec::decode_path(&hit.path)?;
+        let relative = tp_core::path_codec::decode_path(&hit.path)?;
         let bytes = match source::read_contained(root, &relative, MAX_CURRENT_FILE_BYTES) {
             Ok(bytes) if !bytes.contains(&0) => bytes,
             Ok(_) => {
@@ -338,7 +340,7 @@ fn attach_filename_handles(
             current.complete = false;
             break;
         }
-        let revision = crate::identity::ContentRevision::of(&bytes).to_string();
+        let revision = tp_core::identity::ContentRevision::of(&bytes).to_string();
         if let Some(expected) = &hit.revision
             && expected != &revision
         {
@@ -374,7 +376,7 @@ fn read_current_sources(
 ) -> Result<()> {
     for (index, encoded_path) in paths.iter().enumerate() {
         check_deadline(deadline)?;
-        let relative = crate::path_codec::decode_path(encoded_path)?;
+        let relative = tp_core::path_codec::decode_path(encoded_path)?;
         let bytes = match source::read_contained(&store.root, &relative, MAX_CURRENT_FILE_BYTES) {
             Ok(bytes) => bytes,
             Err(error) if ErrorCode::SourceExcluded.is_code_of(&error) => {
@@ -485,7 +487,7 @@ fn empty_set(
 
 fn current_relative_path(path: &str) -> Result<std::path::PathBuf> {
     let path = path.strip_prefix("./").unwrap_or(path);
-    let relative = crate::path_codec::decode_path(path)?;
+    let relative = tp_core::path_codec::decode_path(path)?;
     ensure!(
         !relative.as_os_str().is_empty()
             && relative
@@ -540,8 +542,9 @@ fn check_deadline(deadline: &QueryDeadline) -> Result<()> {
 #[cfg(test)]
 mod filename_handle_tests {
     use super::*;
-    use crate::{output::OutputBudget, search::telemetry::RetrievalTrace};
+    use crate::search::telemetry::RetrievalTrace;
     use std::{fs, time::Duration};
+    use tp_core::output::OutputBudget;
 
     #[test]
     fn unparsed_filename_hit_verifies_current_bytes_without_proving_body_coverage() -> Result<()> {

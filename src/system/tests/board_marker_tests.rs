@@ -3,7 +3,7 @@ use crate::board::board_runtime_markers::validate_board_database;
 
 #[test]
 fn losing_router_start_cannot_replace_the_live_database_marker() {
-    let directory = crate::test_fixtures::scratch("board-runtime-");
+    let directory = tp_core::test_fixtures::scratch("board-runtime-");
     let runtime = directory.path().join("runtime");
     let spool = directory.path().join("spool");
     let live_database = directory.path().join("live.sqlite3");
@@ -24,7 +24,7 @@ fn losing_router_start_cannot_replace_the_live_database_marker() {
     let ping = ["system".into(), "status".into()];
     let context = RequestContext::new(None, None);
     loop {
-        if crate::daemon_transport::request(&runtime, &ping, &context)
+        if tp_core::daemon_transport::request(&runtime, &ping, &context)
             .unwrap()
             .is_some()
         {
@@ -37,7 +37,7 @@ fn losing_router_start_cannot_replace_the_live_database_marker() {
     assert!(rejected.is_err());
     let accepted = validate_board_database(&runtime, &live_database);
     let refused = validate_board_database(&runtime, &loser_database);
-    crate::daemon_transport::stop(&runtime).unwrap();
+    tp_core::daemon_transport::stop(&runtime).unwrap();
     worker.join().unwrap().unwrap();
     accepted.unwrap();
     assert!(refused.is_err());

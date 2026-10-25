@@ -1,10 +1,10 @@
 use super::*;
 use crate::{
-    query_deadline::QueryDeadline,
     search::{self, Query},
     semantic::SemanticSession,
     store::Store,
 };
+use tp_core::query_deadline::QueryDeadline;
 
 fn observed(query: &str) -> (crate::results::ResultSet, RetrievalTrace) {
     let root = tempfile::tempdir().unwrap();

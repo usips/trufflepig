@@ -1,20 +1,18 @@
 use super::*;
-use crate::identity::GitOid;
-use crate::{
-    board::{
-        board_actor::{AgentVendor, BoardRecipient},
-        board_ids::TaskId,
-        board_protocol::{
-            AuthorityRole, AuthoritySource, ClaimEndReason, CommitClaimBasis, CommitClaimLink,
-            CommitCoauthor, GateStatus, GrantRecord, GrantSource, LinkedCommit, PendingNotice,
-            PendingNoticeKind, PendingNoticeReason, PendingReply, ProgressEvidence, ProgressFact,
-            ProgressGateFact, ProgressHead, ProgressStep, ProgressTests, ReviewVerdict, TaskView,
-            WorkerAddress, WorkerHandle, WorkerRecord, WorkerRole,
-        },
-        board_vocabulary::{EntryText, PlanTitle, TaskColumn},
+use crate::board::{
+    board_actor::{AgentVendor, BoardRecipient},
+    board_ids::TaskId,
+    board_protocol::{
+        AuthorityRole, AuthoritySource, ClaimEndReason, CommitClaimBasis, CommitClaimLink,
+        CommitCoauthor, GateStatus, GrantRecord, GrantSource, LinkedCommit, PendingNotice,
+        PendingNoticeKind, PendingNoticeReason, PendingReply, ProgressEvidence, ProgressFact,
+        ProgressGateFact, ProgressHead, ProgressStep, ProgressTests, ReviewVerdict, TaskView,
+        WorkerAddress, WorkerHandle, WorkerRecord, WorkerRole,
     },
-    request_context::ActorOrigin,
+    board_vocabulary::{EntryText, PlanTitle, TaskColumn},
 };
+use tp_core::identity::GitOid;
+use tp_core::request_context::ActorOrigin;
 
 fn detailed_task() -> TaskView {
     let task = TaskId::new(PlanId::new(7).unwrap(), 3).unwrap();

@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_fixtures::GitFixture;
+use tp_core::test_fixtures::GitFixture;
 
 /// Registers a fixture repository as the board's fixture host would.
 pub(crate) trait FixtureRegistration {
@@ -75,7 +75,7 @@ fn origin_label_removes_url_credentials() {
 
 #[test]
 fn reftable_repository_registration_resolves_symbolic_head() {
-    if !crate::test_fixtures::git_version::at_least(
+    if !tp_core::test_fixtures::git_version::at_least(
         2,
         46,
         "reftable_repository_registration_resolves_symbolic_head",

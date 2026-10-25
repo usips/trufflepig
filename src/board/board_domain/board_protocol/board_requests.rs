@@ -4,22 +4,20 @@ use super::{
     OverviewCursor, ProgressInput, RepoRegistration, ReviewVerdict, TaskCeiling, TaskCursor,
     TaskOrder, WorkerAddress, WorkerHandle, validate_claim,
 };
-use crate::identity::GitOid;
-use crate::request_context::ActorOrigin;
-use crate::{
-    board::{
-        board_actor::{BoardActor, BoardRecipient},
-        board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
-        board_vocabulary::{
-            EntryKind, EntryText, FeedbackImportKey, FeedbackKind, FeedbackState, PlanText,
-            PlanTitle, TaskColumn, WorkerEndReason, WorkerRole,
-        },
+use crate::board::{
+    board_actor::{BoardActor, BoardRecipient},
+    board_ids::{BoardRef, EntryId, EventSeq, PlanId, PlanRevision, RepoKey, TaskId},
+    board_vocabulary::{
+        EntryKind, EntryText, FeedbackImportKey, FeedbackKind, FeedbackState, PlanText, PlanTitle,
+        TaskColumn, WorkerEndReason, WorkerRole,
     },
-    request_context::HarnessLabel,
 };
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize, de};
 use std::{fmt, path::PathBuf, str::FromStr};
+use tp_core::identity::GitOid;
+use tp_core::request_context::ActorOrigin;
+use tp_core::request_context::HarnessLabel;
 
 mod board_op_addresses;
 mod board_op_validation;
@@ -483,14 +481,14 @@ pub enum BoardOp {
     /// Manual repair link; the board host fills `resolution` from the plan's
     /// registered repositories before dispatch, so the wire carries no metadata.
     LinkCommit {
-        oid: crate::identity::GitOid,
+        oid: tp_core::identity::GitOid,
         task: TaskId,
         #[serde(skip)]
         resolution: Option<Box<LinkedCommit>>,
     },
     /// Removes a stored task association without resolving Git or registering a repository.
     UnlinkCommit {
-        oid: crate::identity::GitOid,
+        oid: tp_core::identity::GitOid,
         task: TaskId,
     },
     Repositories {

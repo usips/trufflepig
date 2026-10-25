@@ -7,7 +7,6 @@ mod tests;
 pub use checkpoint_progress::read as read_index_progress;
 pub use checkpoint_progress::{IndexProgress, IndexProgressPhase};
 
-use crate::query_deadline::QueryDeadline;
 use crate::store::{Coverage, index_deadline, php_resolver, scan};
 use anyhow::{Context, Result};
 use checkpoint_progress::{self as progress_io, ProgressRecord};
@@ -15,6 +14,7 @@ use checkpoint_storage::CheckpointStorage;
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+use tp_core::query_deadline::QueryDeadline;
 use tp_extract::Extraction;
 
 const CHECKPOINT_DIRECTORY: &str = "stage-index-checkpoint";
@@ -63,7 +63,7 @@ impl IndexCheckpoint {
         if let Some(deadline) = deadline {
             index_deadline::check(deadline)?;
         }
-        let root = crate::path_codec::encode_path(root);
+        let root = tp_core::path_codec::encode_path(root);
         let contract = contract_revision();
         let base_epoch: String = conn.query_row(
             "SELECT value FROM meta WHERE key='index_epoch'",

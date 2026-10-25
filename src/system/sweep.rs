@@ -29,7 +29,7 @@ pub const CACHE_ROOT_MARKER: &str = "cache-root";
 pub fn record_cache_root(cache: &Path, root: &Path) {
     let marker = cache.join(CACHE_ROOT_MARKER);
     if !marker.exists() {
-        let _ = fs::write(marker, crate::path_codec::encode_path(root));
+        let _ = fs::write(marker, tp_core::path_codec::encode_path(root));
     }
 }
 
@@ -88,14 +88,14 @@ fn evict_entry(
     let root = match indexed {
         Some(_) => recorded_root(&index_path)?,
         None => {
-            crate::path_codec::decode_path(fs::read_to_string(&marker_path).ok()?.trim()).ok()?
+            tp_core::path_codec::decode_path(fs::read_to_string(&marker_path).ok()?.trim()).ok()?
         }
     };
     if !vanished_root::root_deleted(&root, base, home) {
         return None;
     }
     let daemon_stopped = cache.join("daemon.sock").exists()
-        && crate::daemon_transport::stop(cache).is_ok_and(|reply| reply.contains("\"stopped\""));
+        && tp_core::daemon_transport::stop(cache).is_ok_and(|reply| reply.contains("\"stopped\""));
     let _lock = acquire_daemon_lock(cache)?;
     fs::remove_dir_all(cache).ok()?;
     eprintln!(
@@ -148,7 +148,7 @@ fn recorded_root(index: &Path) -> Option<PathBuf> {
             row.get(0)
         })
         .ok()?;
-    crate::path_codec::decode_path(&encoded).ok()
+    tp_core::path_codec::decode_path(&encoded).ok()
 }
 
 /// Waits briefly for a stopping daemon to release its lease; `None` defers eviction.

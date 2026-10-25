@@ -1,7 +1,7 @@
 //! Tagged persisted identities share one result cache and expiry policy.
 use super::Hit;
-use crate::identity::{ByteSpan, ContentRevision, GitOid};
 use serde::{Deserialize, Serialize};
+use tp_core::identity::{ByteSpan, ContentRevision, GitOid};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HistoricalSource {

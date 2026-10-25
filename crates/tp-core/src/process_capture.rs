@@ -12,13 +12,13 @@ const DRAIN_CHUNK_BYTES: usize = 8192;
 const DRAIN_CHUNKS_PER_TICK: usize = 32;
 const POLL_INTERVAL: Duration = Duration::from_millis(2);
 
-pub(crate) struct CapturedProcess {
-    pub(crate) stdout: Vec<u8>,
-    pub(crate) stderr: Vec<u8>,
-    pub(crate) status: ExitStatus,
+pub struct CapturedProcess {
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+    pub status: ExitStatus,
 }
 
-pub(crate) enum CaptureError {
+pub enum CaptureError {
     Spawn(io::Error),
     MissingPipe(&'static str),
     ConfigurePipe(io::Error),
@@ -49,7 +49,7 @@ impl std::fmt::Debug for CaptureError {
 impl std::error::Error for CaptureError {}
 
 /// Captures one command's output while the deadline and output cap remain live.
-pub(crate) fn capture(
+pub fn capture(
     command: &mut Command,
     input: Option<&[u8]>,
     deadline: &QueryDeadline,

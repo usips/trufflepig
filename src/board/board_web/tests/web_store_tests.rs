@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn bootstrap_line_carries_the_token_only_to_a_terminal() {
-    let directory = crate::test_fixtures::scratch("web-bootstrap-");
+    let directory = tp_core::test_fixtures::scratch("web-bootstrap-");
     let token =
         web_guard::BoardWebToken::rotate_at(&directory.path().join("board-web.token")).unwrap();
     let guard = WebGuard::with_token("127.0.0.1:7341".parse().unwrap(), token).unwrap();
@@ -21,7 +21,7 @@ fn bootstrap_line_carries_the_token_only_to_a_terminal() {
 
 #[test]
 fn web_new_plan_links_a_chosen_repository_and_lists_repository_keys() {
-    let directory = crate::test_fixtures::scratch("web-repo-link-");
+    let directory = tp_core::test_fixtures::scratch("web-repo-link-");
     let config = BoardConfig::for_database(directory.path().join("web.sqlite3"));
     let store = WebStore::open_at(
         BoardConfigCache::with_config(config.clone()),
@@ -74,7 +74,7 @@ fn web_new_plan_links_a_chosen_repository_and_lists_repository_keys() {
 
 #[test]
 fn standalone_web_store_reads_and_writes_without_a_router() {
-    let directory = crate::test_fixtures::scratch("web-standalone-");
+    let directory = tp_core::test_fixtures::scratch("web-standalone-");
     let config = BoardConfig::for_database(directory.path().join("web.sqlite3"));
     let store = WebStore::open_at(
         BoardConfigCache::with_config(config),
@@ -95,7 +95,7 @@ fn standalone_web_store_reads_and_writes_without_a_router() {
 
 #[test]
 fn panicked_web_write_rolls_back_and_reopens_before_next_write() {
-    let directory = crate::test_fixtures::scratch("web-writer-panic-");
+    let directory = tp_core::test_fixtures::scratch("web-writer-panic-");
     let config = BoardConfig::for_database(directory.path().join("web.sqlite3"));
     let store = WebStore::open_at(
         BoardConfigCache::with_config(config),
@@ -139,7 +139,7 @@ fn panicked_web_write_rolls_back_and_reopens_before_next_write() {
 
 #[test]
 fn changed_router_marker_refuses_web_writes_after_startup() {
-    let directory = crate::test_fixtures::scratch("web-marker-");
+    let directory = tp_core::test_fixtures::scratch("web-marker-");
     let runtime = directory.path().join("runtime");
     let config = BoardConfig::for_database(directory.path().join("web.sqlite3"));
     let store = WebStore::open_at(

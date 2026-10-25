@@ -55,7 +55,7 @@ fn manual_link_plan(board: &mut LocalBoard) -> (BoardActor, TaskId) {
 }
 
 fn manual_link_resolution() -> LinkedCommit {
-    let oid = crate::identity::GitOid::parse(&"b".repeat(40)).unwrap();
+    let oid = tp_core::identity::GitOid::parse(&"b".repeat(40)).unwrap();
     LinkedCommit {
         repo_key: RepoKey::from_roots([oid]).unwrap(),
         oid,

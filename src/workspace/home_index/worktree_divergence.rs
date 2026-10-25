@@ -4,7 +4,6 @@
 //! files. Each Git probe is bounded; one that fails or times out leaves the set
 //! incomplete. A result is reused from `<worktree cache>/divergence.json` briefly.
 
-use crate::{git_runner, path_codec::encode_path};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeSet,
@@ -13,6 +12,7 @@ use std::{
     path::{Path, PathBuf},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use tp_core::{git_runner, path_codec::encode_path};
 
 /// Longest one Git probe may run before the divergence is reported incomplete.
 const GIT_PROBE_TIMEOUT: Duration = Duration::from_secs(2);

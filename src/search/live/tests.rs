@@ -1,7 +1,8 @@
 use super::{LiveRegexCheckpoint, check_live_deadline, live_regex, live_regex_with_checkpoint};
-use crate::{query_deadline::QueryDeadline, search::Query, store::Store};
+use crate::{search::Query, store::Store};
 use anyhow::Result;
 use std::{os::unix::net::UnixStream, path::Path, sync::Arc, time::Duration};
+use tp_core::query_deadline::QueryDeadline;
 
 #[test]
 fn binary_files_are_excluded_not_unsearched() {

@@ -1,10 +1,11 @@
 use super::{blocked_cache, page, source_bytes, test_directory};
-use crate::{output::OutputBudget, source::show, store::Store};
+use crate::{source::show, store::Store};
 use serde_json::Value;
 use std::{
     fs,
     os::unix::{fs::PermissionsExt, fs::symlink},
 };
+use tp_core::output::OutputBudget;
 
 #[test]
 fn stateless_cursor_accepts_canonical_root_alias_and_rejects_another_root() {

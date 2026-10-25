@@ -75,7 +75,7 @@ fn trimmed_review() -> (ReviewPacket, String, serde_json::Value) {
         2,
         &format!("context\n{}", "new text for line\n".repeat(1000)),
     );
-    let fixture = crate::test_fixtures::GitFixture::new();
+    let fixture = tp_core::test_fixtures::GitFixture::new();
     let oid = fixture.commit("root");
     let quoted = fixture.directory.path().join("it's here");
     fixture.git(&[
@@ -160,7 +160,7 @@ fn review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint() {
 
 #[test]
 fn review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint_drill_hint() {
-    if !crate::test_fixtures::git_version::at_least(
+    if !tp_core::test_fixtures::git_version::at_least(
         2,
         55,
         "review_trimming_reports_each_omission_and_keeps_drill_and_diff_hint_drill_hint",

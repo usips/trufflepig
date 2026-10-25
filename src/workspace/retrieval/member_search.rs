@@ -3,7 +3,6 @@
 //! window once, so a member answer keeps its store for that stage.
 use super::{WorkspaceQuery, inline_member_index::inline_member_index};
 use crate::{
-    coded_error::{CodedContext, CodedError, ErrorCode},
     diagnostics::{DiagnosticsMode, EventStage, Operation, Outcome, RequestEvent},
     results::ResultSet,
     search::{self, Query, telemetry::RetrievalTrace},
@@ -25,6 +24,7 @@ use std::{
     path::{Path, PathBuf},
     time::Instant,
 };
+use tp_core::coded_error::{CodedContext, CodedError, ErrorCode};
 
 /// The parsed command every member runs, with its query vector prepared once.
 pub(super) struct MemberCommand<'w> {

@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn configured_repository_identity_conflicts_block_reads_and_writes_before_mutation() {
-    let fixture = crate::test_fixtures::GitFixture::new();
+    let fixture = tp_core::test_fixtures::GitFixture::new();
     fixture.commit("portable root");
     fixture.git(&["config", "remote.origin.url", "https://example.test/repo"]);
     let database = fixture.directory.path().join("board.sqlite3");
@@ -66,7 +66,7 @@ fn configured_repository_identity_conflicts_block_reads_and_writes_before_mutati
 
 #[test]
 fn repository_failures_warn_once_for_writes_and_remain_visible_on_reads() {
-    let fixture = crate::test_fixtures::GitFixture::new();
+    let fixture = tp_core::test_fixtures::GitFixture::new();
     fixture.commit("valid repository root");
     std::fs::write(
         fixture.root.join(".git/refs/heads/main"),

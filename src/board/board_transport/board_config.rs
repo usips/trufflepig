@@ -1,13 +1,11 @@
 //! Strict board configuration with passwd-derived identity and durable data paths.
+use crate::board::board_actor::BoardActor;
 use crate::board::board_ids::RepoKey;
-use crate::coded_error::CodedContext;
-use crate::{
-    board::board_actor::BoardActor,
-    request_context::{HarnessLabel, validate_actor_component},
-};
 use anyhow::{Result, bail};
 use serde::Deserialize;
 use std::{collections::BTreeMap, env, fs, path::PathBuf};
+use tp_core::coded_error::CodedContext;
+use tp_core::request_context::{HarnessLabel, validate_actor_component};
 
 pub const DEFAULT_CLAIM_TTL_MINUTES: u64 = 120;
 

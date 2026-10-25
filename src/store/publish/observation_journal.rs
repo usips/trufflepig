@@ -1,13 +1,11 @@
 //! The publication journal: per-generation observations of edits, additions,
 //! deletions, and coverage changes, bounded by window, count, and bytes
 //! ([coherent publication](../../../docs/index-contract.md#coherent-publication)).
-use crate::identity::ContentRevision;
-use crate::{
-    path_codec::decode_path,
-    store::{Publication, PublicationChange, PublicationObservations},
-};
+use crate::store::{Publication, PublicationChange, PublicationObservations};
 use anyhow::Result;
 use rusqlite::{Connection, params};
+use tp_core::identity::ContentRevision;
+use tp_core::path_codec::decode_path;
 
 const MAX_OBSERVATIONS: usize = 4096;
 const MAX_JOURNAL_BYTES: usize = 4 * 1024 * 1024;

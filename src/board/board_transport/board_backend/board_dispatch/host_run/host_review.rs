@@ -1,11 +1,9 @@
 //! Review scans and packet rendering within the request deadline.
 
 use super::*;
-use crate::{
-    board::{board_ids::PlanRevision, commit_ingest::IngestReport},
-    request_context::HarnessLabel,
-};
+use crate::board::{board_ids::PlanRevision, commit_ingest::IngestReport};
 use std::time::Instant;
+use tp_core::request_context::HarnessLabel;
 
 impl BoardHost {
     pub(super) fn run_review(

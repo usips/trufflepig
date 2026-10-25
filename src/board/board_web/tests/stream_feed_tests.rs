@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn event_streams_share_a_dedicated_connection_outside_the_reader_pool() {
-    let directory = crate::test_fixtures::scratch("web-stream-feed-");
+    let directory = tp_core::test_fixtures::scratch("web-stream-feed-");
     let config = BoardConfig::for_database(directory.path().join("web.sqlite3"));
     let store = Arc::new(
         WebStore::open_at(

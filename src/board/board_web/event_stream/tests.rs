@@ -1,12 +1,9 @@
 use super::sequence_poller::WakeResult;
 use super::*;
-use crate::{
-    board::{
-        board_actor::{AgentVendor, BoardActor},
-        board_ids::{BoardRef, EntryId},
-        board_vocabulary::{EntryKind, EntryText},
-    },
-    request_context::HarnessLabel,
+use crate::board::{
+    board_actor::{AgentVendor, BoardActor},
+    board_ids::{BoardRef, EntryId},
+    board_vocabulary::{EntryKind, EntryText},
 };
 use std::{
     io::{Read, Write},
@@ -17,6 +14,7 @@ use std::{
     },
     time::Instant,
 };
+use tp_core::request_context::HarnessLabel;
 
 fn event(seq: u64, summary: &str) -> EventRecord {
     EventRecord {

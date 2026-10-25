@@ -3,7 +3,7 @@ use crate::board::board_backend::BoardBackend;
 use crate::board::board_protocol::{
     BoardOp, BoardRequest, CommitCoauthor, CommitPlanLink, LinkedCommit,
 };
-use crate::identity::GitOid;
+use tp_core::identity::GitOid;
 
 #[test]
 fn collection_entries_page_shared_sequence_commits_without_skips() {

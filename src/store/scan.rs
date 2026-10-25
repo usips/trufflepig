@@ -16,13 +16,13 @@ pub(super) use file_stat::TEST_PASS_START_SKEW_NS;
 pub(super) use tree_observation::{StatRefresh, TreeObservation};
 
 use super::{Coverage, index_checkpoint::IndexCheckpoint, index_deadline, regions};
-use crate::query_deadline::QueryDeadline;
 use anyhow::{Context, Result};
 use extraction_reuse::{cached_extraction, insert_extraction_cache, published_extraction};
 use file_stat::FileStat;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use scan_tally::ScanTally;
 use std::path::Path;
+use tp_core::query_deadline::QueryDeadline;
 use tp_extract::Extraction;
 use tree_observation::{FileSource, ObservedFile};
 
@@ -287,7 +287,7 @@ fn read_source(
         Err(error) => {
             return (
                 None,
-                if crate::coded_error::ErrorCode::SourceExcluded.is_code_of(&error) {
+                if tp_core::coded_error::ErrorCode::SourceExcluded.is_code_of(&error) {
                     "resource_excluded"
                 } else {
                     "read_error"

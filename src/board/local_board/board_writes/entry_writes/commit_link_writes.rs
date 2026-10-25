@@ -315,7 +315,7 @@ fn ensure_scan_plan_link(
 fn task_link_suppressed(
     tx: &Transaction<'_>,
     repo: &RepoKey,
-    oid: crate::identity::GitOid,
+    oid: tp_core::identity::GitOid,
     task: TaskId,
 ) -> Result<bool, BoardError> {
     tx.query_row(
@@ -402,7 +402,7 @@ fn actor_from_columns(row: &rusqlite::Row<'_>, start: usize) -> Result<BoardActo
     BoardActor::new(
         &user,
         &host,
-        crate::request_context::HarnessLabel::parse(&harness).map_err(BoardError::from)?,
+        tp_core::request_context::HarnessLabel::parse(&harness).map_err(BoardError::from)?,
         &session,
     )
     .map_err(BoardError::from)
@@ -547,7 +547,7 @@ pub(in crate::board::local_board) fn backfill_commit_claim_links(
         ) = row.map_err(sql_error)?;
         let repo_key = RepoKey::parse(&repo).map_err(BoardError::from)?;
         let oid = oid
-            .parse::<crate::identity::GitOid>()
+            .parse::<tp_core::identity::GitOid>()
             .map_err(BoardError::from)?;
         let coauthors: Vec<crate::board::board_protocol::CommitCoauthor> =
             serde_json::from_str(&coauthors)

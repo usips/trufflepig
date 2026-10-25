@@ -3,7 +3,7 @@ use crate::board::repo_identity::tests::FixtureRegistration;
 
 #[test]
 fn common_directory_keeps_plan_links_when_root_set_extends() {
-    let fixture = crate::test_fixtures::GitFixture::new();
+    let fixture = tp_core::test_fixtures::GitFixture::new();
     fixture.commit("original root");
     let original = fixture.registration();
     let path = fixture.directory.path().join("board.sqlite3");
@@ -96,10 +96,10 @@ fn common_directory_keeps_plan_links_when_root_set_extends() {
 
 #[test]
 fn common_directory_keeps_identity_when_fetch_extends_root_set() {
-    let fixture = crate::test_fixtures::GitFixture::new();
+    let fixture = tp_core::test_fixtures::GitFixture::new();
     fixture.commit("original root");
     let original = fixture.registration();
-    let foreign = crate::test_fixtures::GitFixture::new();
+    let foreign = tp_core::test_fixtures::GitFixture::new();
     foreign.commit("foreign root");
     let path = fixture.directory.path().join("board.sqlite3");
     let mut board = LocalBoard::open_path(&path, Duration::from_secs(120)).unwrap();
@@ -143,7 +143,7 @@ fn common_directory_keeps_identity_when_fetch_extends_root_set() {
 
 #[test]
 fn common_directory_keeps_first_identity_when_root_set_expands() {
-    let fixture = crate::test_fixtures::GitFixture::new();
+    let fixture = tp_core::test_fixtures::GitFixture::new();
     fixture.commit("original root");
     let first = fixture.registration();
     let path = fixture.directory.path().join("board.sqlite3");

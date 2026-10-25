@@ -1,14 +1,12 @@
 use super::staging::{self, StagingBudget};
 use super::*;
-use crate::coded_error::CodedContext;
-use crate::{
-    identity::ByteSpan,
-    results::{ChangeEntry, HistoricalSource},
-};
+use crate::results::{ChangeEntry, HistoricalSource};
 use anyhow::{Context, ensure};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::os::unix::ffi::OsStrExt;
+use tp_core::coded_error::CodedContext;
+use tp_core::identity::ByteSpan;
 mod retained_changes;
 use retained_changes::{compare_trees, decode_changes};
 #[cfg(test)]
@@ -39,7 +37,7 @@ pub(super) fn tree(
 }
 
 fn scope_file(history: &History, mut file: TreeFile) -> Option<TreeFile> {
-    let prefix = crate::path_codec::encode_path(Path::new(&history.repository.root_prefix));
+    let prefix = tp_core::path_codec::encode_path(Path::new(&history.repository.root_prefix));
     file.path = file.path.strip_prefix(&prefix)?.to_owned();
     Some(file)
 }
@@ -79,7 +77,7 @@ fn parse_tree(data: &[u8]) -> Result<BTreeMap<String, TreeFile>> {
             raw.len() <= staging::PATH_BYTES / 3,
             coded!(HistoryResourceLimited, "historical path staging limit")
         );
-        let path = crate::path_codec::encode_path(Path::new(std::ffi::OsStr::from_bytes(raw)));
+        let path = tp_core::path_codec::encode_path(Path::new(std::ffi::OsStr::from_bytes(raw)));
         budget.reserve(
             path.capacity()
                 + path.len()
@@ -178,10 +176,10 @@ pub(super) fn source(
     );
     let bytes = history.repository.blob(&file.oid)?;
     Ok(HistoricalSource {
-        repository: crate::path_codec::encode_path(&history.repository.common_dir),
+        repository: tp_core::path_codec::encode_path(&history.repository.common_dir),
         commit: *revision,
         blob: file.oid,
-        revision: crate::identity::ContentRevision::of(&bytes),
+        revision: tp_core::identity::ContentRevision::of(&bytes),
         path: file.path.clone(),
         span: ByteSpan::new(0, bytes.len())?,
     })

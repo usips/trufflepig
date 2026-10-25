@@ -4,7 +4,7 @@ use std::cell::Cell;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-pub(crate) struct GitFixture {
+pub struct GitFixture {
     pub directory: tempfile::TempDir,
     pub root: PathBuf,
     clock: Cell<i64>,

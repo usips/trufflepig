@@ -8,7 +8,6 @@ use super::{
     board_task_claim_parser::{parse_claim, parse_task},
 };
 use crate::board::board_protocol::ReadScope;
-use crate::coded_error::CodedContext;
 use crate::{
     board::board_grammar::BoardArguments,
     board::{
@@ -16,9 +15,10 @@ use crate::{
         board_protocol::BoardOp,
         board_vocabulary::{EntryText, PlanText, PlanTitle},
     },
-    request_context::HarnessLabel,
 };
 use anyhow::{Result, bail};
+use tp_core::coded_error::CodedContext;
+use tp_core::request_context::HarnessLabel;
 
 pub(super) fn parse_board(
     options: &BoardArguments,
@@ -155,7 +155,7 @@ pub(super) fn parse_board(
                 "board unlink OID P7.3"
             };
             fixed_words(options, 4, 4, syntax)?;
-            let oid = crate::identity::GitOid::parse(word(options, 2, syntax)?)?;
+            let oid = tp_core::identity::GitOid::parse(word(options, 2, syntax)?)?;
             let task = word(options, 3, syntax)?.parse()?;
             if verb == "link" {
                 BoardOp::LinkCommit {

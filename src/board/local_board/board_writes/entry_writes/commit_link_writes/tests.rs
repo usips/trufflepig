@@ -6,10 +6,10 @@ use crate::board::board_protocol::{
 };
 use crate::board::board_vocabulary::{EntryText, PlanText, PlanTitle};
 use crate::board::local_board::LocalBoard;
-use crate::identity::GitOid;
-use crate::request_context::HarnessLabel;
 use rusqlite::params;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tp_core::identity::GitOid;
+use tp_core::request_context::HarnessLabel;
 
 fn owner() -> BoardActor {
     BoardActor::new(
@@ -179,7 +179,7 @@ fn unix_now() -> i64 {
 
 #[test]
 fn scan_event_keeps_multiplan_task_model_and_claim_evidence_and_is_idempotent() {
-    let directory = crate::test_fixtures::scratch("board-commit-attribution-");
+    let directory = tp_core::test_fixtures::scratch("board-commit-attribution-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -298,7 +298,7 @@ fn scan_event_keeps_multiplan_task_model_and_claim_evidence_and_is_idempotent() 
 
 #[test]
 fn claim_attribution_requires_vendor_and_strict_observed_time_window() {
-    let directory = crate::test_fixtures::scratch("board-commit-window-");
+    let directory = tp_core::test_fixtures::scratch("board-commit-window-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -359,7 +359,7 @@ fn claim_attribution_requires_vendor_and_strict_observed_time_window() {
 
 #[test]
 fn takeover_intervals_keep_commits_with_the_original_claim_and_leave_boundary_unassigned() {
-    let directory = crate::test_fixtures::scratch("board-commit-takeover-");
+    let directory = tp_core::test_fixtures::scratch("board-commit-takeover-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -452,7 +452,7 @@ fn takeover_intervals_keep_commits_with_the_original_claim_and_leave_boundary_un
 
 #[test]
 fn overlapping_claim_windows_stay_unassigned_even_when_only_one_vendor_matches() {
-    let directory = crate::test_fixtures::scratch("board-commit-overlap-");
+    let directory = tp_core::test_fixtures::scratch("board-commit-overlap-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),
@@ -531,7 +531,7 @@ fn overlapping_claim_windows_stay_unassigned_even_when_only_one_vendor_matches()
 
 #[test]
 fn scan_refreshes_matching_claim_activity_at_commit_time() {
-    let directory = crate::test_fixtures::scratch("board-commit-activity-");
+    let directory = tp_core::test_fixtures::scratch("board-commit-activity-");
     let mut board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(120),

@@ -29,12 +29,12 @@ fn inbox_scope_keeps_repo_news_addressed_messages_and_own_feedback_outcomes() {
         panic!("missing plan");
     };
     let third = third.plan.unwrap();
-    let repo = RepoKey::from_roots([crate::identity::GitOid::parse(
+    let repo = RepoKey::from_roots([tp_core::identity::GitOid::parse(
         "1111111111111111111111111111111111111111",
     )
     .unwrap()])
     .unwrap();
-    let foreign = RepoKey::from_roots([crate::identity::GitOid::parse(
+    let foreign = RepoKey::from_roots([tp_core::identity::GitOid::parse(
         "3333333333333333333333333333333333333333",
     )
     .unwrap()])
@@ -230,7 +230,7 @@ fn inbox_scope_keeps_repo_news_addressed_messages_and_own_feedback_outcomes() {
 fn mixed_plan_commit_event_is_visible_via_its_same_sequence_entries() {
     let (_directory, mut board) = database();
     let plan = plan(&mut board);
-    let repo = RepoKey::from_roots([crate::identity::GitOid::parse(
+    let repo = RepoKey::from_roots([tp_core::identity::GitOid::parse(
         "2222222222222222222222222222222222222222",
     )
     .unwrap()])

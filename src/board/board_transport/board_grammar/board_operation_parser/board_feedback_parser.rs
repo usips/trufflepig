@@ -3,7 +3,6 @@ use super::{
     BoardCommand, BoardTextPayload, board_read_parser,
     board_syntax_validation::{check_flags, fixed_words, optional_text, word},
 };
-use crate::coded_error::CodedContext;
 use crate::{
     board::board_grammar::BoardArguments,
     board::{
@@ -13,6 +12,7 @@ use crate::{
     },
 };
 use anyhow::Result;
+use tp_core::coded_error::CodedContext;
 
 pub(super) fn parse_feedback(
     options: &BoardArguments,

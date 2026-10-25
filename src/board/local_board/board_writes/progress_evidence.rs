@@ -7,10 +7,10 @@ use super::super::{BoardError, WriteContext, invalid, sql_error, sql_number};
 use crate::board::board_ids::{EntryId, TaskId};
 use crate::board::board_protocol::{GateStatus, ProgressInput, ReviewVerdict, WorkerAddress};
 use crate::board::board_vocabulary::EntryKind;
-use crate::identity::GitOid;
 use authorization::{
     current_claim, require_progress_author, require_verdict_author, task_entry_worker,
 };
+use tp_core::identity::GitOid;
 use validation::validate_progress;
 
 mod authorization;

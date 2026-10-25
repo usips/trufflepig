@@ -1,7 +1,7 @@
 use super::delivery::DeliveryFailure;
 use super::*;
-use crate::request_context::RequestContext;
 use std::io::{self, Write};
+use tp_core::request_context::RequestContext;
 
 struct PartialWriter {
     limit: usize,
@@ -90,8 +90,8 @@ fn metadata_excludes_raw_queries_and_audit_joins_request_stages() {
 fn native_actor_session_records_without_a_diagnostic_baseline() {
     let temp = tempfile::tempdir().unwrap();
     let log = DiagnosticStore::open(temp.path(), DiagnosticsMode::Metadata).unwrap();
-    let origin = crate::request_context::ActorOrigin {
-        harness: crate::request_context::HarnessLabel::parse("codex").unwrap(),
+    let origin = tp_core::request_context::ActorOrigin {
+        harness: tp_core::request_context::HarnessLabel::parse("codex").unwrap(),
         session: "native-thread-9".into(),
         peer_ip: None,
     };
@@ -304,7 +304,7 @@ fn default_budget_audit_keeps_counts_and_discloses_omitted_session_details() {
     let report = serde_json::json!({"changes":[],"details":"long retained detail ".repeat(1000)});
     log.conn.execute("INSERT INTO diagnostic_sessions(id,started,ended,status,report) VALUES('s',?1,?1,'ended',?2)", rusqlite::params![super::records::now() as i64, report.to_string()]).unwrap();
     let rendered = log
-        .render_audit(&crate::output::OutputBudget::new(600).unwrap(), Some("s"))
+        .render_audit(&tp_core::output::OutputBudget::new(600).unwrap(), Some("s"))
         .unwrap();
     let value: serde_json::Value = serde_json::from_str(&rendered).unwrap();
     assert_eq!(value["output_truncated"], true);

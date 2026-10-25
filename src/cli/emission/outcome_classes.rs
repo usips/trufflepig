@@ -1,6 +1,6 @@
 //! Diagnostics outcomes for failed requests, named by their error codes.
-use crate::coded_error::{ErrorCode, named_codes};
 use crate::diagnostics::Outcome;
+use tp_core::coded_error::{ErrorCode, named_codes};
 
 /// The most specific outcome any code `error` names ([`named_codes`]: every
 /// coded layer and codes inside relayed text), in the precedence budget,

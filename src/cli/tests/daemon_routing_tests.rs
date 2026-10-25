@@ -137,13 +137,13 @@ fn system_routes_gates_internal_and_local_verbs() {
 fn system_dir_prints_the_resolved_runtime_path() {
     let args = ["system".to_owned(), "dir".to_owned()];
     let options = parse(&args).unwrap();
-    let context = crate::request_context::RequestContext::new(None, None);
+    let context = tp_core::request_context::RequestContext::new(None, None);
     let output = system_command(&options, &context).unwrap();
     assert_eq!(
         output,
         format!(
             "{}\n",
-            crate::runtime_paths::system_dir().unwrap().display()
+            tp_core::runtime_paths::system_dir().unwrap().display()
         )
     );
 }

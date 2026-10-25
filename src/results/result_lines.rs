@@ -3,11 +3,11 @@
 //! text, so a lines page carries more hits than the JSON page for the same limit.
 
 use super::{HitDetail, ResultEntry, concise_name};
-use crate::output::lines_format::{
-    COVERAGE_KEY, NextCommand, PAGE_BUDGET_HINT, PAGE_SIZE_HINT, footer,
-};
 use serde_json::Value;
 use std::fmt::Write;
+use tp_core::output::lines_format::{
+    COVERAGE_KEY, NextCommand, PAGE_BUDGET_HINT, PAGE_SIZE_HINT, footer,
+};
 
 /// Renders one entry: `HANDLE<TAB>[MEMBER/]PATH:START-END[<TAB>NAME]` for live
 /// hits, followed by an indented `  LINE: TEXT` snippet line when present,

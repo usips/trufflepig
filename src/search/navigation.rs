@@ -2,20 +2,20 @@
 mod reference_sites;
 mod structure_map;
 
-use crate::coded_error::CodedContext;
 pub use reference_sites::{
     REFERENCE_COVERAGE_KEYS, reference_query, reference_summary, references,
 };
 pub use structure_map::{map, map_miss, outline_extracted};
+use tp_core::coded_error::CodedContext;
 
 use crate::{
-    output::OutputBudget,
     results::{self, DefinitionTarget, Hit},
     store::Store,
 };
 use anyhow::{Result, bail, ensure};
 use rusqlite::{OptionalExtension, params};
 use std::collections::HashSet;
+use tp_core::output::OutputBudget;
 
 pub fn context(store: &Store, handle: &str, budget: &OutputBudget) -> Result<String> {
     let (generation, hit) = results::handle(store, handle)?;

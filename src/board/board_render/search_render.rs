@@ -2,8 +2,8 @@
 use super::render_budget::{BoardOmitted, render_complete, require_fits};
 use super::{RenderedBoard, fit_items};
 use crate::board::board_protocol::{BoardReply, BoardResult, BoardSearchReply};
-use crate::output::OutputBudget;
 use anyhow::{Result, bail};
+use tp_core::output::OutputBudget;
 #[cfg(test)]
 mod tests;
 

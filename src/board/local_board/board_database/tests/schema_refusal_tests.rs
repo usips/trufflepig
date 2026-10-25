@@ -30,10 +30,10 @@ fn schema_became_newer_gives_upgrade_advice() {
     let refusal = unavailable_or_queue(
         &command,
         &options,
-        &crate::request_context::RequestContext::new(None, None),
+        &tp_core::request_context::RequestContext::new(None, None),
         &config,
         directory.path(),
-        &crate::query_deadline::QueryDeadline::start(),
+        &tp_core::query_deadline::QueryDeadline::start(),
         anyhow::Error::new(error),
     )
     .unwrap_err();

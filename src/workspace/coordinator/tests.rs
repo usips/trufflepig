@@ -1,10 +1,11 @@
 use super::*;
-use crate::{query_deadline::QueryDeadline, store::Store, workspace_config::WorkspaceConfig};
+use crate::store::Store;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
     thread::JoinHandle,
 };
+use tp_core::{query_deadline::QueryDeadline, workspace_config::WorkspaceConfig};
 
 /// Two indexed members plus a coordinator served on a test thread.
 struct ServedWorkspace {
@@ -83,7 +84,7 @@ impl ServedWorkspace {
 
     fn ask(&self, flags: &[&str], words: &[&str]) -> Result<String> {
         let args = self.args(flags, words);
-        crate::daemon_transport::request(
+        tp_core::daemon_transport::request(
             &self.coordinator,
             &args,
             &RequestContext::new(None, None),
@@ -119,7 +120,7 @@ impl ServedWorkspace {
 
 impl Drop for ServedWorkspace {
     fn drop(&mut self) {
-        let _ = crate::daemon_transport::stop(&self.coordinator);
+        let _ = tp_core::daemon_transport::stop(&self.coordinator);
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
@@ -172,7 +173,7 @@ impl MemberDaemons {
 impl Drop for MemberDaemons {
     fn drop(&mut self) {
         for (cache, _) in &self.0 {
-            let _ = crate::daemon_transport::stop(cache);
+            let _ = tp_core::daemon_transport::stop(cache);
         }
         for (_, thread) in self.0.drain(..) {
             let _ = thread.join();
@@ -230,7 +231,7 @@ fn coordinator_deadline_starts_at_accept() {
         })
         .unwrap_err();
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
 }
@@ -270,7 +271,7 @@ fn current_path_show_and_continuation_bypass_a_blocked_workspace_cache() {
     assert_eq!(first["workspace"], "coordinated");
     assert_eq!(
         first["repository"],
-        crate::path_codec::encode_path(&workspace.root.path().join("engine"))
+        tp_core::path_codec::encode_path(&workspace.root.path().join("engine"))
     );
     assert!(first["truncated"].as_bool().unwrap(), "{first}");
     let continuation = first["next"].as_str().expect("stateless continuation");
@@ -327,7 +328,7 @@ fn current_path_show_and_continuation_bypass_a_blocked_workspace_cache() {
     )
     .unwrap_err();
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&expired),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&expired),
         "{expired:#}"
     );
     assert_eq!(
@@ -369,7 +370,7 @@ fn coordinator_owner_status_reaches_the_root_daemon_directly() {
     let started = Instant::now();
     let status = workspace.ask(&[], &["status"]);
     let elapsed = started.elapsed();
-    crate::daemon_transport::stop(&engine_cache).unwrap();
+    tp_core::daemon_transport::stop(&engine_cache).unwrap();
     root_daemon.join().unwrap().unwrap();
     let status: serde_json::Value = serde_json::from_str(&status.unwrap()).unwrap();
     assert!(elapsed < Duration::from_secs(5), "status took {elapsed:?}");

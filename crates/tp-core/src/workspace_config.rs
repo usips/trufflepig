@@ -128,8 +128,8 @@ struct SemanticSection {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct RegistryDocument {
-    pub(crate) workspaces: Vec<PathBuf>,
+pub struct RegistryDocument {
+    pub workspaces: Vec<PathBuf>,
 }
 
 impl WorkspaceConfig {
@@ -279,7 +279,7 @@ pub fn resolve_path(path: &Path, base: &Path) -> Result<PathBuf> {
     Ok(resolved)
 }
 
-pub(crate) fn read_document<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
+pub fn read_document<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
     let mut bytes = Vec::new();
     File::open(path)
         .with_context(|| format!("open {}", path.display()))?

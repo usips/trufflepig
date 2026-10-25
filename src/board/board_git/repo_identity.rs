@@ -1,15 +1,17 @@
 //! Portable root-commit identity and host-local repository registration.
 use crate::board::board_ids::{PlanId, RepoKey};
 use crate::board::board_protocol::RepoRegistration;
-use crate::coded_error::CodedContext;
-use crate::git_runner::{GitCommandFailed, common_dir_bounded, run_bounded_strict as run_bounded};
-use crate::identity::GitOid;
 use anyhow::{Result, ensure};
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+use tp_core::coded_error::CodedContext;
+use tp_core::git_runner::{
+    GitCommandFailed, common_dir_bounded, run_bounded_strict as run_bounded,
+};
+use tp_core::identity::GitOid;
 
 mod registration_cache;
 pub use registration_cache::{RegistrationProbe, RepoIdentityCache};

@@ -23,9 +23,10 @@ fn no_daemon_refuses_to_migrate_beside_a_live_router() {
     let directory = scratch();
     let runtime = directory.path().join("runtime");
     std::fs::create_dir_all(&runtime).unwrap();
-    let _listener =
-        std::os::unix::net::UnixListener::bind(runtime.join(crate::daemon_transport::SOCKET_NAME))
-            .unwrap();
+    let _listener = std::os::unix::net::UnixListener::bind(
+        runtime.join(tp_core::daemon_transport::SOCKET_NAME),
+    )
+    .unwrap();
     let database = directory.path().join("board.sqlite3");
     let error = invoke(
         &["--no-daemon", "board", "show"],
@@ -47,9 +48,10 @@ fn no_daemon_feedback_beside_live_router_is_queued() {
     let directory = scratch();
     let runtime = directory.path().join("runtime");
     std::fs::create_dir_all(&runtime).unwrap();
-    let _listener =
-        std::os::unix::net::UnixListener::bind(runtime.join(crate::daemon_transport::SOCKET_NAME))
-            .unwrap();
+    let _listener = std::os::unix::net::UnixListener::bind(
+        runtime.join(tp_core::daemon_transport::SOCKET_NAME),
+    )
+    .unwrap();
     let database = directory.path().join("board.sqlite3");
     let reply = invoke(
         &["--no-daemon", "feedback", "blocked", "router live"],
@@ -81,9 +83,10 @@ fn no_daemon_show_beside_live_router_succeeds_on_current_schema() {
     .unwrap();
     let runtime = directory.path().join("runtime");
     std::fs::create_dir_all(&runtime).unwrap();
-    let _listener =
-        std::os::unix::net::UnixListener::bind(runtime.join(crate::daemon_transport::SOCKET_NAME))
-            .unwrap();
+    let _listener = std::os::unix::net::UnixListener::bind(
+        runtime.join(tp_core::daemon_transport::SOCKET_NAME),
+    )
+    .unwrap();
     let reply = invoke(
         &["--no-daemon", "board", "show"],
         &mut FakeGateway::default(),

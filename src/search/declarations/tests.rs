@@ -1,8 +1,6 @@
 use super::*;
-use crate::{
-    output::{OutputBudget, OutputFormat},
-    search::{PathFilter, search, tests::fixture},
-};
+use crate::search::{PathFilter, search, tests::fixture};
+use tp_core::output::{OutputBudget, OutputFormat};
 
 fn show(store: &Store, target: &str) -> Result<String> {
     let budget = OutputBudget::new(4000)

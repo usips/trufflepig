@@ -1,8 +1,8 @@
 use super::*;
-use crate::coded_error::CodedContext;
-use crate::query_deadline::QueryDeadline;
 use anyhow::{Result, bail};
 use std::path::Path;
+use tp_core::coded_error::CodedContext;
+use tp_core::query_deadline::QueryDeadline;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LiveRegexCheckpoint {
@@ -74,7 +74,7 @@ fn live_regex_with_checkpoint(
         store, query, paths, cache, hits, coverage, truncated, checkpoint,
     );
     match result {
-        Err(error) if crate::coded_error::ErrorCode::TimedOut.is_code_of(&error) => Err(error
+        Err(error) if tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error) => Err(error
             .with_coded_context(|| {
                 coded!(
                     TimedOut,
@@ -147,7 +147,7 @@ fn live_regex_scan(
             continue;
         }
         let relative = entry.path().strip_prefix(&store.root)?;
-        let path = crate::path_codec::encode_path(relative);
+        let path = tp_core::path_codec::encode_path(relative);
         let language = tp_extract::language(&path);
         if !paths.matches(&path) || (!query.language.is_empty() && query.language != language) {
             continue;
@@ -158,7 +158,7 @@ fn live_regex_scan(
         checkpoint(entry.path(), LiveRegexCheckpoint::AfterRead)?;
         let source = match read {
             Ok(bytes) => bytes,
-            Err(error) if crate::coded_error::ErrorCode::SourceExcluded.is_code_of(&error) => {
+            Err(error) if tp_core::coded_error::ErrorCode::SourceExcluded.is_code_of(&error) => {
                 excluded += 1;
                 continue;
             }

@@ -1,14 +1,12 @@
 //! Per-root, coordinator, and router Unix daemons: concurrent request workers
 //! beside one maintenance thread that reconciles filesystem updates.
-//! Clients reach them through `crate::daemon_transport`.
+//! Clients reach them through `tp_core::daemon_transport`.
 
 mod reconciler;
 mod server;
 #[cfg(test)]
 mod tests;
 
-use crate::daemon_transport::{RUNNING_PROBE_WAIT, SOCKET_NAME, socket_connect};
-use crate::query_deadline::QueryDeadline;
 use anyhow::{Context, Result, bail};
 use fs2::FileExt;
 use std::fs::{self, File, OpenOptions};
@@ -16,6 +14,8 @@ use std::io::ErrorKind;
 use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
+use tp_core::daemon_transport::{RUNNING_PROBE_WAIT, SOCKET_NAME, socket_connect};
+use tp_core::query_deadline::QueryDeadline;
 
 pub use server::{AcceptedRequest, DaemonHandler};
 
@@ -26,7 +26,7 @@ pub fn serve(root: &Path, cache: &Path, handler: impl DaemonHandler) -> Result<(
     let profile = server::ServeProfile {
         name: "root",
         watching: true,
-        pool: crate::request_pool::ROOT_POOL,
+        pool: tp_core::request_pool::ROOT_POOL,
         tier: server::AdmissionTier::Root,
         spool: None,
     };
@@ -38,7 +38,7 @@ pub fn serve_coordinator(root: &Path, cache: &Path, handler: impl DaemonHandler)
     let profile = server::ServeProfile {
         name: "coordinator",
         watching: false,
-        pool: crate::request_pool::COORDINATOR_POOL,
+        pool: tp_core::request_pool::COORDINATOR_POOL,
         tier: server::AdmissionTier::Coordinator,
         spool: None,
     };
@@ -50,7 +50,7 @@ pub fn serve_router(dir: &Path, spool: &Path, handler: impl DaemonHandler) -> Re
     let profile = server::ServeProfile {
         name: "router",
         watching: false,
-        pool: crate::request_pool::ROUTER_POOL,
+        pool: tp_core::request_pool::ROUTER_POOL,
         tier: server::AdmissionTier::Router,
         spool: Some(spool),
     };

@@ -147,7 +147,7 @@ fn shorter_root_budget_expires_before_coordinator_and_router_on_socket_path() {
         Duration::from_millis(900),
         Box::new(move |request| {
             std::thread::sleep(Duration::from_millis(80));
-            let result = crate::daemon_transport::request_by(
+            let result = tp_core::daemon_transport::request_by(
                 &root_cache,
                 &request.args,
                 &request.context,
@@ -164,7 +164,7 @@ fn shorter_root_budget_expires_before_coordinator_and_router_on_socket_path() {
         Duration::from_millis(1500),
         Box::new(move |request| {
             std::thread::sleep(Duration::from_millis(80));
-            let result = crate::daemon_transport::request_by(
+            let result = tp_core::daemon_transport::request_by(
                 &coordinator_cache,
                 &request.args,
                 &request.context,
@@ -216,7 +216,7 @@ fn expired_router_budget_leads_over_a_later_root_reply_timeout() {
         AdmissionTier::Router,
         Duration::from_millis(450),
         Box::new(move |request| {
-            match crate::daemon_transport::request_by(
+            match tp_core::daemon_transport::request_by(
                 &root_cache,
                 &request.args,
                 &request.context,
@@ -262,21 +262,23 @@ fn owned_timeout_normalization_requires_expired_bounded_work_and_typed_cause() {
         verb: "status",
     };
     let expired = QueryDeadline::after(Duration::ZERO);
-    let downstream_timeout = anyhow::Error::new(crate::daemon_transport::DaemonReplyTimeout::new(
-        Duration::from_millis(40),
-        Duration::from_millis(450),
-    ));
+    let downstream_timeout =
+        anyhow::Error::new(tp_core::daemon_transport::DaemonReplyTimeout::new(
+            Duration::from_millis(40),
+            Duration::from_millis(450),
+        ));
     let normalized =
         super::super::normalize_owned_query_timeout(class, Err(downstream_timeout), &expired)
             .unwrap_err();
     assert!(normalized.to_string().starts_with("timed_out:"));
-    assert!(crate::daemon_transport::DaemonReplyTimeout::from_error(&normalized).is_some());
+    assert!(tp_core::daemon_transport::DaemonReplyTimeout::from_error(&normalized).is_some());
 
     let live = QueryDeadline::after(Duration::from_secs(1));
-    let downstream_timeout = anyhow::Error::new(crate::daemon_transport::DaemonReplyTimeout::new(
-        Duration::from_millis(40),
-        Duration::from_secs(1),
-    ));
+    let downstream_timeout =
+        anyhow::Error::new(tp_core::daemon_transport::DaemonReplyTimeout::new(
+            Duration::from_millis(40),
+            Duration::from_secs(1),
+        ));
     let preserved =
         super::super::normalize_owned_query_timeout(class, Err(downstream_timeout), &live)
             .unwrap_err();

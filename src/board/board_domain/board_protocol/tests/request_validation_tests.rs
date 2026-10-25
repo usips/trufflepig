@@ -1,6 +1,6 @@
 use super::*;
 use crate::board::board_protocol::{ClaimDelegate, ReadScope};
-use crate::request_context::ActorOrigin;
+use tp_core::request_context::ActorOrigin;
 
 #[test]
 fn claim_delegates_refuse_reserved_harnesses() {

@@ -14,11 +14,11 @@ thread_local! {
     static DEADLINE: Cell<PublicationDeadline> = const { Cell::new(PublicationDeadline::Disabled) };
 }
 
-pub(crate) fn expire_after_next_publication() {
+pub fn expire_after_next_publication() {
     DEADLINE.set(PublicationDeadline::Armed);
 }
 
-pub(crate) fn publication_expired() -> bool {
+pub fn publication_expired() -> bool {
     DEADLINE.get() == PublicationDeadline::Expired
 }
 

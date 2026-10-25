@@ -4,8 +4,6 @@
 //! inside the divergence reuse window). Hits read from current bytes never differ.
 use super::ParentFallback;
 use crate::{
-    identity::ContentRevision,
-    path_codec::decode_path,
     results::Hit,
     source::{self, MAX_READ_BYTES},
 };
@@ -13,6 +11,7 @@ use std::{
     collections::{HashMap, HashSet},
     path::Path,
 };
+use tp_core::{identity::ContentRevision, path_codec::decode_path};
 
 /// Most distinct files hashed for one answer; later files fall back to the
 /// Git divergence (and count as differing when it is incomplete).

@@ -34,7 +34,7 @@ fn actual_no_daemon_worktree_read_serves_parent_hit_promptly_under_held_lease() 
         .unwrap();
     lease.lock_exclusive().unwrap();
 
-    let _budget = crate::output::OutputBudget::new(600).unwrap();
+    let _budget = tp_core::output::OutputBudget::new(600).unwrap();
     let started = Instant::now();
     let output = fixture
         .run_at(
@@ -92,7 +92,7 @@ fn assert_unpublished_index(root: &std::path::Path, cache: &std::path::Path) {
     let error = match crate::store::Store::open_read(
         root,
         cache,
-        crate::query_deadline::QueryDeadline::start(),
+        tp_core::query_deadline::QueryDeadline::start(),
     ) {
         Ok(_) => panic!("generation-zero index must be warming"),
         Err(error) => error,

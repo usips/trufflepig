@@ -39,7 +39,7 @@ struct RequestEvidence {
 impl DiagnosticStore {
     pub fn render_audit(
         &self,
-        budget: &crate::output::OutputBudget,
+        budget: &tp_core::output::OutputBudget,
         session: Option<&str>,
     ) -> Result<String> {
         let mut value = serde_json::to_value(self.audit(session)?)?;

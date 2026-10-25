@@ -6,8 +6,8 @@ pub mod board_domain;
 pub(crate) mod board_markup;
 pub mod board_projects;
 pub(crate) mod board_web;
-use crate::coded_error::CodedContext;
 pub use board_domain::{board_actor, board_ids, board_protocol, board_vocabulary};
+use tp_core::coded_error::CodedContext;
 pub mod board_transport;
 pub use board_transport::{board_backend, board_config, board_grammar, feedback_outbox};
 pub mod board_git;
@@ -25,11 +25,11 @@ pub use board_config::BoardConfig;
 pub use board_protocol::{BOARD_API, BoardError, BoardOp, BoardRequest, BoardRequestKey};
 pub use local_board::SCHEMA_VERSION;
 
-use crate::{query_deadline::QueryDeadline, request_context::RequestContext};
 use anyhow::{Result, bail, ensure};
 use board_grammar::BoardArguments;
 use board_grammar::BoardCommand;
 use std::io::Read;
+use tp_core::{query_deadline::QueryDeadline, request_context::RequestContext};
 
 /// Captures stdin/file bodies and feedback identity once, including across retries.
 pub(crate) fn prepare_client(options: &BoardArguments) -> Result<BoardArguments> {
@@ -110,8 +110,8 @@ fn unavailable_or_queue(
             });
         }
         let reply = feedback_outbox::queue(spool, &request)?;
-        let budget =
-            crate::output::OutputBudget::new(options.budget)?.with_format(options.output_format());
+        let budget = tp_core::output::OutputBudget::new(options.budget)?
+            .with_format(options.output_format());
         return Ok(board_render::render_reply(&reply, &budget)?.text);
     }
     if board_protocol::BoardErrorCode::from_error(&error)
@@ -149,9 +149,9 @@ fn domain_error(error: &anyhow::Error) -> bool {
     }
     error.chain().any(|cause| {
         cause
-            .downcast_ref::<crate::coded_error::CodedError>()
+            .downcast_ref::<tp_core::coded_error::CodedError>()
             .is_some_and(|coded| {
-                use crate::coded_error::ErrorCode;
+                use tp_core::coded_error::ErrorCode;
                 let code = coded.code();
                 code.as_str().starts_with("invalid_")
                     || matches!(code, ErrorCode::BudgetTooSmall | ErrorCode::UnknownCommand)
@@ -162,7 +162,7 @@ fn domain_error(error: &anyhow::Error) -> bool {
 /// Classifies relayed reply text the way the daemon client boundary types it.
 #[cfg(test)]
 fn domain_answer(message: &str) -> bool {
-    domain_error(&crate::coded_error::relayed_error(message.to_owned()))
+    domain_error(&tp_core::coded_error::relayed_error(message.to_owned()))
 }
 
 pub(crate) fn enrich_feedback_cwd(

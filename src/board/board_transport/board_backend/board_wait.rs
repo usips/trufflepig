@@ -1,18 +1,16 @@
 //! Sequence-gated inbox waiting and bounded waiter admission.
 
 use super::{BoardHost, board_writer::recover_lock};
-use crate::{
-    board::{
-        board_ids::EventSeq,
-        board_protocol::{BoardOp, BoardReply, BoardRequest, BoardResult, InboxWait},
-    },
-    query_deadline::QueryDeadline,
+use crate::board::{
+    board_ids::EventSeq,
+    board_protocol::{BoardOp, BoardReply, BoardRequest, BoardResult, InboxWait},
 };
 use anyhow::Result;
 use std::{
     sync::atomic::{AtomicUsize, Ordering},
     time::{Duration, Instant},
 };
+use tp_core::query_deadline::QueryDeadline;
 
 pub(super) const MAX_WAITERS: usize = 6;
 const MAX_INBOX_WAIT: Duration = Duration::from_secs(15);
@@ -156,7 +154,7 @@ fn set_wait(reply: &mut BoardReply, wait: InboxWait) {
 }
 
 pub(super) fn waiter_transient(error: &anyhow::Error) -> bool {
-    crate::coded_error::ErrorCode::TimedOut.is_code_of(error)
+    tp_core::coded_error::ErrorCode::TimedOut.is_code_of(error)
         || crate::board::board_protocol::BoardErrorCode::from_error(error)
             == Some(crate::board::board_protocol::BoardErrorCode::DatabaseLocked)
 }

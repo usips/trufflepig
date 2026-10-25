@@ -2,8 +2,8 @@
 
 use super::{BoardOmitted, RenderedBoard, fit_items, render_complete, require_fits};
 use crate::board::board_protocol::{BoardReply, BoardResult, PendingReply};
-use crate::output::OutputBudget;
 use anyhow::Result;
+use tp_core::output::OutputBudget;
 
 pub(super) fn render_pending(
     reply: &BoardReply,

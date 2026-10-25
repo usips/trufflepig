@@ -1,7 +1,5 @@
 use super::*;
 use crate::{
-    output::{OutputBudget, OutputFormat},
-    query_deadline::QueryDeadline,
     results::{ChangeEntry, Hit, ResultEntry, ResultSet, StoredResultSet, load_entries},
     store::{Store, read_index_progress},
 };
@@ -12,6 +10,10 @@ use std::{
     path::Path,
     thread,
     time::{Duration, Instant},
+};
+use tp_core::{
+    output::{OutputBudget, OutputFormat},
+    query_deadline::QueryDeadline,
 };
 
 fn create_sources(root: &Path) -> Result<()> {
@@ -56,7 +58,7 @@ fn retain_real_progress(
         .index_available_until(QueryDeadline::after(Duration::from_secs(5)).with_claim_path(claim));
     assert!(watcher.join().expect("progress watcher did not panic"));
     assert!(
-        crate::coded_error::ErrorCode::TimedOut
+        tp_core::coded_error::ErrorCode::TimedOut
             .is_code_of(&result.expect_err("claim cancellation interrupts the pass"))
     );
     assert!(read_index_progress(root, cache).is_some_and(|progress| progress.completed_files > 0));
@@ -145,7 +147,7 @@ fn stateless_member_pages_round_robin_and_preserve_coverage_and_fallback_metadat
     assert_eq!(page["hits"][0]["member"], "first");
     assert_eq!(
         page["members"]["first"],
-        crate::path_codec::encode_path(&first_root)
+        tp_core::path_codec::encode_path(&first_root)
     );
     assert_eq!(page["coverage"][1]["coverage"]["absence"], "exhaustive");
     assert_eq!(page["cache_fallback"]["status"], "index_cache_unavailable");

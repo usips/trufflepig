@@ -1,8 +1,9 @@
 //! Typed progress input and field-level evidence facts.
 use super::WorkerAddress;
-use crate::{board::board_ids::EntryId, identity::GitOid};
+use crate::board::board_ids::EntryId;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
+use tp_core::identity::GitOid;
 
 pub const PROGRESS_GATE_NAME_LIMIT: usize = 64;
 pub const PROGRESS_ETA_LIMIT_SECS: u64 = 31_536_000;

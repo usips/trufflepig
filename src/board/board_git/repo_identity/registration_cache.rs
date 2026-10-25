@@ -1,8 +1,8 @@
 //! Cached Git registration, invalidated by local HEAD and ref storage metadata.
 use super::*;
-use crate::coded_error::CodedContext;
 use std::collections::{BTreeSet, HashMap};
 use std::time::SystemTime;
+use tp_core::coded_error::CodedContext;
 
 const REGISTRATION_TTL: Duration = Duration::from_secs(300);
 
@@ -155,7 +155,7 @@ fn bounded_metadata(path: &Path) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_fixtures::GitFixture;
+    use tp_core::test_fixtures::GitFixture;
 
     #[test]
     fn oversized_head_metadata_has_bounded_cached_diagnostics() {

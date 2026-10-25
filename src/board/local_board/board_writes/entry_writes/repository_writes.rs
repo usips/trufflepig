@@ -23,7 +23,7 @@ pub(in crate::board::local_board) fn register_repo(
         |row| Ok((row.get(0)?, row.get(1)?)),
     ).optional().map_err(sql_error)?;
     if let Some((key, roots)) = prior {
-        let roots: Vec<crate::identity::GitOid> = serde_json::from_str(&roots)
+        let roots: Vec<tp_core::identity::GitOid> = serde_json::from_str(&roots)
             .map_err(|error| invalid(BoardErrorCode::BoardUnavailable, error.to_string()))?;
         let initial_key: RepoKey = key.parse().map_err(BoardError::from)?;
         if let Some(configured) = &registration.origin_override {

@@ -1,6 +1,6 @@
 //! Typed board failures and their classification of crate-wide error codes.
-use crate::coded_error::{CodedError, ErrorCode};
 use serde::{Deserialize, Serialize};
+use tp_core::coded_error::{CodedError, ErrorCode};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

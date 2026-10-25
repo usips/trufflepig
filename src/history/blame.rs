@@ -1,7 +1,7 @@
 use super::*;
-use crate::coded_error::CodedContext;
 use anyhow::{Context, ensure};
 use serde_json::json;
+use tp_core::coded_error::CodedContext;
 
 pub(super) fn blame(
     history: &History,
@@ -15,7 +15,7 @@ pub(super) fn blame(
         Ok(target) => target.context("missing target")?,
         Err(response) => return Ok(response),
     };
-    let decoded = crate::path_codec::decode_path(&target.path)?;
+    let decoded = tp_core::path_codec::decode_path(&target.path)?;
     let path = history
         .repository
         .repository_path(decoded.to_str().context("blame path is not UTF-8")?)?;
@@ -56,7 +56,7 @@ pub(super) fn blame(
     };
     let span = target
         .span
-        .unwrap_or(crate::identity::ByteSpan::new(0, bytes.len())?)
+        .unwrap_or(tp_core::identity::ByteSpan::new(0, bytes.len())?)
         .validate(bytes.len())?;
     let (first, last) = crate::source::line_span(&bytes, span.start, span.end);
     let range = format!("{first},{last}");
@@ -229,8 +229,8 @@ fn published_source(
             |row| row.get(0),
         )?;
         ensure!(
-            crate::identity::ContentRevision::of(&bytes)
-                == crate::identity::ContentRevision::parse(&revision)?,
+            tp_core::identity::ContentRevision::of(&bytes)
+                == tp_core::identity::ContentRevision::parse(&revision)?,
             coded!(HistoryUnavailable, "published source identity mismatch")
         );
         Ok((bytes, revision, publication.clone()))

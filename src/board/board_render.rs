@@ -29,8 +29,8 @@ use render_task::render_task;
 use super::board_ids::EventSeq;
 use super::board_protocol::{BOARD_API, BoardReply, BoardResult};
 use super::review_packet::assemble_review;
-use crate::output::{OutputBudget, OutputFormat};
 use anyhow::{Result, bail};
+use tp_core::output::{OutputBudget, OutputFormat};
 
 #[derive(Debug)]
 pub struct RenderedBoard {

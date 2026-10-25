@@ -32,9 +32,9 @@ fn show_entry_recovers_full_large_proposal_and_keeps_decided_evidence() {
     assert_eq!(view.plan_head_revision, Some(1));
     let rendered = crate::board::board_render::render_reply(
         &BoardReply::new("local", BoardResult::Entry(view)),
-        &crate::output::OutputBudget::new(32768)
+        &tp_core::output::OutputBudget::new(32768)
             .unwrap()
-            .with_format(crate::output::OutputFormat::Json),
+            .with_format(tp_core::output::OutputFormat::Json),
     )
     .unwrap();
     let json: serde_json::Value = serde_json::from_str(&rendered.text).unwrap();

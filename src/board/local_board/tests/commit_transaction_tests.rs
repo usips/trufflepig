@@ -5,11 +5,12 @@ fn local_board_commit_scan_events_are_per_commit_atomic_and_idempotent() {
     let (mut board, path) = database();
     let author = actor("human", "h1");
     let plan = new_plan(&mut board, author.clone(), "Trial").plan.unwrap();
-    let root = crate::identity::GitOid::parse("1111111111111111111111111111111111111111").unwrap();
+    let root =
+        tp_core::identity::GitOid::parse("1111111111111111111111111111111111111111").unwrap();
     let repo_key = RepoKey::from_roots([root]).unwrap();
     let commit = |oid: &str| LinkedCommit {
         repo_key: repo_key.clone(),
-        oid: crate::identity::GitOid::parse(oid).unwrap(),
+        oid: tp_core::identity::GitOid::parse(oid).unwrap(),
         subject: "implement task".to_owned(),
         committed_at: unix_now().unwrap(),
         author: "Josh".to_owned(),

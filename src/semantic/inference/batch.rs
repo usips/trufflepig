@@ -1,9 +1,9 @@
 use super::{MAX_BATCH_INPUTS, MAX_BATCH_PADDED_TOKENS, MAX_INPUT_TOKENS};
-use crate::coded_error::CodedContext;
 use crate::semantic::Embedding;
 use anyhow::{Context, Result, bail};
 use fastembed::TextEmbedding;
 use std::ops::Range;
+use tp_core::coded_error::CodedContext;
 
 fn token_length(model: &TextEmbedding, text: &str, index: usize) -> Result<usize> {
     let encoded = model

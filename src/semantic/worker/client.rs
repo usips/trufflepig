@@ -1,6 +1,4 @@
 use super::{WorkerStatus, lease, protocol};
-#[cfg(feature = "semantic")]
-use crate::coded_error::CodedContext;
 use crate::semantic::runtime_config::InferenceConfig;
 use anyhow::{Result, bail};
 #[cfg(feature = "semantic")]
@@ -15,6 +13,8 @@ use std::{
     path::Path,
     time::{Duration, Instant},
 };
+#[cfg(feature = "semantic")]
+use tp_core::coded_error::CodedContext;
 
 const IO_SLICE: Duration = Duration::from_millis(25);
 
@@ -141,7 +141,9 @@ pub(super) fn request_status(
     protocol::write_request_with_deadline(&mut stream, &request, deadline)?;
     match protocol::read_reply_with_deadline(&mut stream, deadline)? {
         protocol::WorkerReply::Status(status) => Ok(status),
-        protocol::WorkerReply::Error { message } => Err(crate::coded_error::relayed_error(message)),
+        protocol::WorkerReply::Error { message } => {
+            Err(tp_core::coded_error::relayed_error(message))
+        }
         protocol::WorkerReply::Embeddings { .. } | protocol::WorkerReply::Scores { .. } => {
             bail!(coded!(SemanticWorker, "invalid status response"))
         }

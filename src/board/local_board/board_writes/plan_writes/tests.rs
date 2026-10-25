@@ -20,7 +20,7 @@ fn actor(user: &str, harness: &str, session: &str) -> BoardActor {
 }
 
 fn database() -> (tempfile::TempDir, LocalBoard) {
-    let directory = crate::test_fixtures::scratch("board-test-");
+    let directory = tp_core::test_fixtures::scratch("board-test-");
     let board = LocalBoard::open_path(
         &directory.path().join("board.sqlite3"),
         Duration::from_secs(7200),
@@ -84,7 +84,7 @@ fn snapshot(board: &LocalBoard, plan: PlanId) -> (u64, Vec<i64>) {
 #[test]
 fn new_plan_links_a_chosen_repository_and_rejects_unknown_keys() {
     let (_directory, mut board) = database();
-    let repo = RepoKey::from_roots([crate::identity::GitOid::parse(
+    let repo = RepoKey::from_roots([tp_core::identity::GitOid::parse(
         "4444444444444444444444444444444444444444",
     )
     .unwrap()])
@@ -116,7 +116,7 @@ fn new_plan_links_a_chosen_repository_and_rejects_unknown_keys() {
         .conn
         .query_row("SELECT COUNT(*) FROM plans", [], |row| row.get(0))
         .unwrap();
-    let unknown = RepoKey::from_roots([crate::identity::GitOid::parse(
+    let unknown = RepoKey::from_roots([tp_core::identity::GitOid::parse(
         "5555555555555555555555555555555555555555",
     )
     .unwrap()])

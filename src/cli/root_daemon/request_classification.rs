@@ -1,14 +1,16 @@
-use crate::coded_error::CodedContext;
 use crate::workspace::workspace_discovery::WorkspaceMembers;
 use crate::{
     cli::{Arguments, parse},
-    request_pool::{RequestClass, RequestLane},
     search::Query,
     workspace::member_root::MemberRoot,
-    workspace_config::WorkspaceConfig,
 };
 use anyhow::{Result, ensure};
 use std::path::PathBuf;
+use tp_core::coded_error::CodedContext;
+use tp_core::{
+    request_pool::{RequestClass, RequestLane},
+    workspace_config::WorkspaceConfig,
+};
 
 pub(crate) struct ClassifiedDaemonRequest {
     pub class: RequestClass,

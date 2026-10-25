@@ -7,7 +7,6 @@ use super::{
     timeout_without_member_answer,
 };
 use crate::{
-    coded_error::{CodeDetail, CodedError, ErrorCode},
     results::ResultEntry,
     search,
     store::{Store, is_index_warming},
@@ -18,6 +17,7 @@ use crate::{
     },
 };
 use anyhow::{Result, ensure};
+use tp_core::coded_error::{CodeDetail, CodedError, ErrorCode};
 
 /// Workspace results as members answer, before interleaving.
 pub(super) struct MemberFusion {

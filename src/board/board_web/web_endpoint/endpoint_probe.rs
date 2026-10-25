@@ -7,13 +7,13 @@ use crate::board::{
     board_protocol::BOARD_API,
     board_web::web_guard::{ChallengeNonce, WebGuard},
 };
-use crate::coded_error::CodedContext;
 use anyhow::{Context, Result, ensure};
 use std::{
     io::{self, Write},
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream},
     time::{Duration, Instant},
 };
+use tp_core::coded_error::CodedContext;
 
 /// Verify the listener holds our token without ever sending it: POST a random
 /// nonce to the unauthenticated challenge route and check the HMAC proof.

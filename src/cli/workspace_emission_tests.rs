@@ -1,10 +1,8 @@
 use super::{emission::execute, run};
 use crate::{
     diagnostics::{DiagnosticStore, DiagnosticsMode, EventStage, RequestEvent},
-    path_codec::encode_path,
     store::Store,
     workspace::member_cache,
-    workspace_config::WorkspaceConfig,
 };
 use serde_json::Value;
 use std::{
@@ -13,6 +11,7 @@ use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
+use tp_core::{path_codec::encode_path, workspace_config::WorkspaceConfig};
 
 struct Fixture {
     root: tempfile::TempDir,
@@ -361,7 +360,7 @@ fn lines_format_records_emitted_handles_and_token_receipt() {
     assert!(stderr.is_empty());
     let text = std::str::from_utf8(&stdout).unwrap();
     assert!(serde_json::from_str::<Value>(text).is_err());
-    let handles: Vec<_> = crate::output::lines_format::emitted_handles(text).collect();
+    let handles: Vec<_> = tp_core::output::lines_format::emitted_handles(text).collect();
     assert_eq!(handles.len(), 2, "{text}");
     let cache = fixture.member_cache("engine");
     let events = deliveries(&cache, 1);

@@ -107,7 +107,7 @@ impl RootDaemon {
             .iter()
             .any(|p| matches!(p.outcome, crate::probes::ProbeOutcome::Failed));
         let mut event = crate::diagnostics::RequestEvent::new(
-            crate::request_context::RequestContext::new(None, None),
+            tp_core::request_context::RequestContext::new(None, None),
             crate::diagnostics::Operation::Doctor,
             if failed {
                 crate::diagnostics::Outcome::Failure

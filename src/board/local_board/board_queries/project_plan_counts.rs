@@ -2,8 +2,8 @@
 use super::super::{BoardError, LocalBoard, invalid, max_seq, sql_error};
 use crate::board::board_ids::{EventSeq, RepoKey};
 use crate::board::board_protocol::BoardErrorCode;
-use crate::query_deadline::QueryDeadline;
 use std::collections::BTreeSet;
+use tp_core::query_deadline::QueryDeadline;
 
 impl LocalBoard {
     pub(crate) fn repo_set_plan_counts(

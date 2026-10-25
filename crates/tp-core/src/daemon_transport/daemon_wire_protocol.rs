@@ -5,13 +5,13 @@ use std::io::{Read, Write};
 use super::DaemonReplyTimeout;
 use crate::coded_error::{CodedError, ErrorCode, UncodedRelayedText};
 
-pub(crate) const REQUEST_LIMIT: usize = 256 * 1024;
+pub const REQUEST_LIMIT: usize = 256 * 1024;
 const RESPONSE_LIMIT: usize = 4 * 1024 * 1024;
 const ARGUMENT_LIMIT: usize = 256;
 
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "command", content = "arguments", deny_unknown_fields)]
-pub(crate) enum DaemonRequest {
+pub enum DaemonRequest {
     Arguments {
         context: crate::request_context::RequestContext,
         args: Vec<String>,
@@ -38,13 +38,13 @@ impl DaemonRequest {
 
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum DaemonReply {
+pub enum DaemonReply {
     Success { output: String },
     Failure { message: String },
 }
 
 impl DaemonReply {
-    pub(crate) fn from_result(result: Result<String>) -> Self {
+    pub fn from_result(result: Result<String>) -> Self {
         match result {
             Ok(output) => Self::Success { output },
             Err(error) => Self::Failure {
@@ -101,23 +101,23 @@ fn write_frame(writer: &mut impl Write, bytes: &[u8], limit: usize) -> Result<()
     Ok(())
 }
 
-pub(crate) fn read_request(reader: &mut impl Read) -> Result<DaemonRequest> {
+pub fn read_request(reader: &mut impl Read) -> Result<DaemonRequest> {
     let request: DaemonRequest = serde_json::from_slice(&read_frame(reader, REQUEST_LIMIT)?)
         .context("decode daemon request")?;
     request.validate()?;
     Ok(request)
 }
 
-pub(crate) fn write_request(writer: &mut impl Write, request: &DaemonRequest) -> Result<()> {
+pub fn write_request(writer: &mut impl Write, request: &DaemonRequest) -> Result<()> {
     request.validate()?;
     write_frame(writer, &serde_json::to_vec(request)?, REQUEST_LIMIT)
 }
 
-pub(crate) fn read_reply(reader: &mut impl Read) -> Result<DaemonReply> {
+pub fn read_reply(reader: &mut impl Read) -> Result<DaemonReply> {
     serde_json::from_slice(&read_frame(reader, RESPONSE_LIMIT)?).context("decode daemon response")
 }
 
-pub(crate) fn write_reply(writer: &mut impl Write, reply: &DaemonReply) -> Result<()> {
+pub fn write_reply(writer: &mut impl Write, reply: &DaemonReply) -> Result<()> {
     let oversized = match reply {
         DaemonReply::Success { output } => output.len() > RESPONSE_LIMIT,
         DaemonReply::Failure { message } => message.len() > RESPONSE_LIMIT,

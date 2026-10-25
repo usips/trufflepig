@@ -14,7 +14,7 @@ fn bounded_reconcile_expiry_preserves_the_previous_publication() -> Result<()> {
     let coverage = serde_json::to_value(initial.coverage()?)?;
     drop(initial);
 
-    crate::query_deadline::write_slow_reconcile_fixture(root.path(), "later");
+    tp_core::query_deadline::write_slow_reconcile_fixture(root.path(), "later");
     let deadline = QueryDeadline::after(Duration::from_millis(100));
     let started = Instant::now();
     let error = Store::open_for_reconcile(root.path(), cache.path(), deadline.clone())
@@ -22,7 +22,7 @@ fn bounded_reconcile_expiry_preserves_the_previous_publication() -> Result<()> {
         .err()
         .expect("the slow reconcile must expire");
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
     assert!(started.elapsed() < Duration::from_secs(2), "{error:#}");
@@ -164,7 +164,7 @@ fn expired_read_does_not_create_a_cache_or_start_reconciliation() -> Result<()> 
         .err()
         .expect("an expired read must not reconcile");
     assert!(
-        crate::coded_error::ErrorCode::TimedOut.is_code_of(&error),
+        tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error),
         "{error:#}"
     );
     assert!(!cache.exists());

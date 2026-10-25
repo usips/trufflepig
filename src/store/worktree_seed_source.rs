@@ -11,7 +11,7 @@ pub(crate) fn linked_worktree_main_checkout(root: &Path, timeout: Duration) -> O
     if !root.join(".git").is_file() {
         return None;
     }
-    let common_dir = crate::git_runner::common_dir_bounded(root, timeout).ok()?;
+    let common_dir = tp_core::git_runner::common_dir_bounded(root, timeout).ok()?;
     if common_dir.file_name()? != ".git" {
         return None;
     }

@@ -46,7 +46,10 @@ const RAISERS: &[&str] = &[
 
 #[test]
 fn non_test_code_matches_codes_not_rendered_text() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("tp-core sits at crates/tp-core in the workspace");
     let mut violations = Vec::new();
     for path in workspace_sources(root) {
         let relative = path.strip_prefix(root).unwrap().display().to_string();
@@ -110,8 +113,12 @@ fn is_test_file(relative: &str) -> bool {
         || relative.ends_with("/text_match_guard.rs")
 }
 
-/// Lines outside `#[cfg(test)]` items, numbered from 1.
+/// Lines outside `#[cfg(test)]` and test-support items, numbered from 1.
 fn non_test_lines(text: &str) -> Vec<(usize, &str)> {
+    const TEST_GATES: [&str; 2] = [
+        "#[cfg(test)]",
+        "#[cfg(any(test, feature = \"test-support\"))]",
+    ];
     let mut kept = Vec::new();
     let mut depth = 0i64;
     let mut test_depth = None;
@@ -119,7 +126,7 @@ fn non_test_lines(text: &str) -> Vec<(usize, &str)> {
     for (index, line) in text.lines().enumerate() {
         let trimmed = line.trim();
         if test_depth.is_none() {
-            if trimmed.starts_with("#[cfg(test)]") {
+            if TEST_GATES.iter().any(|gate| trimmed.starts_with(gate)) {
                 pending_test = true;
                 continue;
             }

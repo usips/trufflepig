@@ -6,11 +6,11 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use crate::query_deadline::QueryDeadline;
 use anyhow::Error;
+use tp_core::query_deadline::QueryDeadline;
 
 use super::member_root::MemberRoot;
-use crate::workspace_config::WorkspaceConfig;
+use tp_core::workspace_config::WorkspaceConfig;
 
 const MAX_MEMBER_ROOT_CHECKS: usize = 32;
 
@@ -88,7 +88,7 @@ pub(super) fn decorate_source_unavailable(
 }
 
 fn is_source_unavailable(error: &Error) -> bool {
-    crate::coded_error::ErrorCode::SourceUnavailable.is_anywhere_in(error)
+    tp_core::coded_error::ErrorCode::SourceUnavailable.is_anywhere_in(error)
 }
 
 fn relative_target(target: &str) -> Option<PathBuf> {
@@ -114,7 +114,7 @@ fn relative_target(target: &str) -> Option<PathBuf> {
         encoded_path = path;
     }
 
-    let relative = crate::path_codec::decode_path(encoded_path).ok()?;
+    let relative = tp_core::path_codec::decode_path(encoded_path).ok()?;
     if relative.as_os_str().is_empty()
         || relative.is_absolute()
         || !relative
@@ -214,11 +214,11 @@ impl StdError for CurrentPathHelp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workspace_config::{Member, MemberIdentity, OutputConfig, SemanticConfig};
     use std::{
         fs,
         os::unix::fs::{MetadataExt, symlink},
     };
+    use tp_core::workspace_config::{Member, MemberIdentity, OutputConfig, SemanticConfig};
 
     fn configured(name: &str, root: &Path) -> Member {
         let root = root.canonicalize().unwrap();

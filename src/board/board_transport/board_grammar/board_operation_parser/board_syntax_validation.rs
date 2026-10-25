@@ -1,10 +1,10 @@
 //! Shared flag, word-count, recipient, and optional-text validation.
-use crate::coded_error::CodedContext;
 use crate::{
     board::board_grammar::BoardArguments,
     board::{board_actor::BoardRecipient, board_vocabulary::EntryText},
 };
 use anyhow::{Result, bail};
+use tp_core::coded_error::CodedContext;
 
 pub(super) fn check_flags(options: &BoardArguments, allowed: &[&str]) -> Result<()> {
     let board = &options.board;
