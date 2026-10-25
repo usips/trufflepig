@@ -51,19 +51,6 @@ pub(crate) fn apply_config(config: &WorkspaceConfig, options: &Arguments) -> Res
     Ok(options)
 }
 
-pub fn run(
-    config: WorkspaceConfig,
-    options: &Arguments,
-    context: &RequestContext,
-) -> Result<String> {
-    run_with_deadline(
-        config,
-        options,
-        context,
-        QueryDeadline::after(crate::daemon_transport::CLIENT_REPLY_WAIT),
-    )
-}
-
 /// Runs a workspace command with the caller's absolute request budget.
 pub(crate) fn run_with_deadline(
     config: WorkspaceConfig,

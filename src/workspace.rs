@@ -20,7 +20,6 @@ use crate::{
     request_context::RequestContext, search::InvocationDirectory, store::Store,
 };
 use anyhow::{Context, Result, bail, ensure};
-pub use coordinator::run;
 pub(crate) use coordinator::{apply_config, run_with_deadline};
 pub(crate) use home_index::{
     ParentFallback, ParentIndexIdentity, ParentIndexView, WorktreeHashes, acquire_through_parent,

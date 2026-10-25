@@ -42,9 +42,7 @@ pub use index_checkpoint::{
 pub use read_access::{is_index_cannot_open, is_index_warming};
 use rusqlite::{Connection, OptionalExtension};
 pub(crate) use scan::{MAX_SOURCE_BYTES, extraction_cache_version};
-pub use seed::{
-    SeedOutcome, ensure_seeded, ensure_seeded_until, ensure_seeded_within, read_seed_outcome,
-};
+pub use seed::{ensure_seeded, ensure_seeded_until, ensure_seeded_within, read_seed_outcome};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -77,6 +75,7 @@ pub struct Publication {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg(test)]
 pub struct PublishedFile {
     pub path: String,
     pub revision: Option<ContentRevision>,
@@ -85,6 +84,7 @@ pub struct PublishedFile {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg(test)]
 pub struct PublishedFiles {
     pub publication: Publication,
     pub files: Vec<PublishedFile>,
@@ -268,6 +268,7 @@ impl Store {
         Ok(result)
     }
 
+    #[cfg(test)]
     pub fn published_files(&self) -> Result<PublishedFiles> {
         self.with_publication(|conn, publication| {
             let count: i64 = conn.query_row("SELECT count(*) FROM files", [], |row| row.get(0))?;
@@ -306,24 +307,6 @@ impl Store {
             coded!(ReadOnlyStore, "indexing requires Store::open")
         );
         self.index_with_resolver(resolve_all)
-    }
-
-    /// [`Store::index`], or `None` at once when another writer (a daemon's scan)
-    /// holds the writer lease, instead of waiting for it.
-    pub fn index_unless_leased(&mut self) -> Result<Option<Coverage>> {
-        anyhow::ensure!(
-            self.access == StoreAccess::Writer,
-            coded!(ReadOnlyStore, "indexing requires Store::open")
-        );
-        let writer_lock = self.writer_lease_file()?;
-        match fs2::FileExt::try_lock_exclusive(&writer_lock) {
-            Ok(()) => self.index_leased(writer_lock, resolve_all, None),
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
-            Err(error) => Err(cache_access::index_cache_unavailable(
-                &self.cache,
-                error.into(),
-            )),
-        }
     }
 
     /// Reconciles within one request deadline, polling briefly for the writer lease.

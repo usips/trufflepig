@@ -300,9 +300,5 @@ fn config_id(path: &Path) -> String {
         .to_string()
 }
 
-pub fn load(path: &Path) -> Result<WorkspaceConfig> {
-    WorkspaceConfig::load(path)
-}
-
 #[cfg(test)]
 mod tests;

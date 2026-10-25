@@ -11,11 +11,9 @@ mod scheduler;
 mod status;
 
 use crate::coded_error::CodedContext;
-pub use admission::{AdmissionController, AdmissionLimits, AdmissionTicket};
-pub use protocol::{
-    Handshake, PROTOCOL_VERSION, read_frame, read_frame_with_deadline, write_frame,
-};
-pub use scheduler::{FairScheduler, RequestClass, RootIdent, ScheduledRequest};
+pub use admission::{AdmissionController, AdmissionTicket};
+pub use protocol::Handshake;
+pub use scheduler::{FairScheduler, RequestClass};
 pub use status::{WorkerState, WorkerStatus};
 
 use super::Embedding;
@@ -24,7 +22,9 @@ use crate::{
     semantic::{VerifiedAssetDigests, runtime_config::InferenceConfig},
 };
 use anyhow::{Context, Result, bail, ensure};
-pub use client::{RERANK_DEADLINE, rerank_query};
+pub use client::RERANK_DEADLINE;
+#[cfg(feature = "semantic")]
+pub use client::rerank_query;
 use client::{configure_io, connect};
 use engine::{Engine, open_engine};
 use lease::{WorkerLease, WorkerSocket, worker_cache_dir};
@@ -47,6 +47,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(any(test, feature = "semantic"))]
 const QUERY_DEADLINE: Duration = Duration::from_millis(500);
 const BACKGROUND_DEADLINE: Duration = Duration::from_secs(60);
 const CONTROL_DEADLINE: Duration = Duration::from_millis(500);
@@ -58,6 +59,7 @@ const MAX_FRAME_READERS: usize = 64;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EmbedKind {
+    #[cfg(feature = "semantic")]
     Query,
     Background,
 }
@@ -97,6 +99,7 @@ impl ForegroundSession {
 impl EmbedKind {
     fn class(self) -> RequestClass {
         match self {
+            #[cfg(feature = "semantic")]
             Self::Query => RequestClass::Query,
             Self::Background => RequestClass::Background,
         }
@@ -195,6 +198,7 @@ pub fn stop(_: &Path) -> Result<WorkerStatus> {
 }
 
 /// Embed one query through the shared worker, bounded end to end to 500 ms.
+#[cfg(feature = "semantic")]
 pub fn embed_query(cache_identity: &Path, text: &str) -> Result<Embedding> {
     let results = embed(EmbedKind::Query, cache_identity, &[text.to_owned()])?;
     results
@@ -212,6 +216,7 @@ pub fn embed(kind: EmbedKind, root_id: &Path, texts: &[String]) -> Result<Vec<Em
     }
     let started = Instant::now();
     let budget = match kind {
+        #[cfg(feature = "semantic")]
         EmbedKind::Query => QUERY_DEADLINE,
         EmbedKind::Background => BACKGROUND_DEADLINE,
     };
@@ -263,19 +268,6 @@ pub fn embed(kind: EmbedKind, root_id: &Path, texts: &[String]) -> Result<Vec<Em
             bail!(coded!(SemanticWorker, "invalid embedding response"))
         }
     }
-}
-
-/// Foreground embedding for `--no-daemon`; it acquires the worker's same lease.
-pub fn embed_foreground(root_id: &Path, texts: &[String]) -> Result<Vec<Embedding>> {
-    let mut session = ForegroundSession::open(root_id)?;
-    session.embed_batch(texts)
-}
-
-pub fn embed_foreground_query(root_id: &Path, text: &str) -> Result<Embedding> {
-    embed_foreground(root_id, &[text.to_owned()])?
-        .into_iter()
-        .next()
-        .with_coded_context(|| coded!(SemanticWorker, "missing embedding"))
 }
 
 /// Run the worker command in the foreground. Both configured models begin

@@ -26,6 +26,7 @@ impl SemanticSession {
     pub fn is_loaded(&self) -> bool {
         false
     }
+    #[cfg(test)]
     pub fn initializations(&self) -> u64 {
         0
     }

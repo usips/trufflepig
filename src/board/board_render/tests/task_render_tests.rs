@@ -492,7 +492,7 @@ fn plan_lines_render_grant_rows_and_manage_permission() {
             source: GrantSource::Owner,
         }],
         can_manage_grants: true,
-        task_ceiling: crate::board::board_collections::TaskCeiling {
+        task_ceiling: crate::board::board_domain::board_collections::TaskCeiling {
             plan: plan_id,
             ordinal: 0,
         },

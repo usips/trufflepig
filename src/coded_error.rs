@@ -24,6 +24,7 @@ macro_rules! coded {
 impl ErrorCode {
     /// Reads the code that leads relayed text, after any `daemon:` relay
     /// wrappers, with the detail that follows it.
+    #[cfg(test)]
     pub fn leading(text: &str) -> Option<(Self, &str)> {
         leading_with_wrappers(text).map(|(code, detail, _)| (code, detail))
     }

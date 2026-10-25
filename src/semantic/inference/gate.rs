@@ -26,14 +26,6 @@ pub(super) fn check_parity(model: &mut TextEmbedding) -> Result<f32> {
     Ok(cosine)
 }
 
-/// Compares cached-bypass CPU and CUDA outputs for both publisher inputs.
-///
-/// Each model still runs the publisher parity gate during initialization. The
-/// returned cosine is the lower of the two per-input CPU/CUDA cosines.
-pub fn compare_cpu_cuda(model_dir: &Path, cuda_provider: SemanticProviderConfig) -> Result<f32> {
-    Ok(cpu_cuda_comparison(model_dir, cuda_provider)?.minimum_cosine)
-}
-
 struct CpuCudaComparison {
     cpu_publisher_parity: f32,
     cuda_publisher_parity: f32,

@@ -3,9 +3,11 @@
 mod history_drills;
 mod ssot_diff;
 #[cfg(test)]
+pub(crate) use ssot_diff::SsotHunk;
+#[cfg(test)]
 mod tests;
 use history_drills::HistoryDrillGate;
-pub use ssot_diff::{SsotDiff, SsotHunk, build_ssot_diff};
+pub use ssot_diff::{SsotDiff, build_ssot_diff};
 
 use crate::board::board_ids::PlanRevision;
 use crate::board::board_protocol::{

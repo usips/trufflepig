@@ -15,9 +15,8 @@ pub use board_authority::AuthoritySource;
 pub use board_errors::{BoardError, BoardErrorCode};
 pub use board_identity::{WorkerAddress, WorkerHandle};
 pub use board_progress::{
-    GateStatus, PROGRESS_ETA_LIMIT_SECS, PROGRESS_GATE_LIMIT, PROGRESS_GATE_NAME_LIMIT,
-    ProgressEvidence, ProgressFact, ProgressGateFact, ProgressGateInput, ProgressHead,
-    ProgressInput, ProgressStep, ProgressTests,
+    GateStatus, PROGRESS_ETA_LIMIT_SECS, ProgressEvidence, ProgressFact, ProgressGateFact,
+    ProgressGateInput, ProgressHead, ProgressInput, ProgressStep, ProgressTests,
 };
 pub use board_records::{
     BoardChange, BoardReceipt, BoardReceiptState, BoardReply, BoardResult, BoardSearchHit,

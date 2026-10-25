@@ -75,6 +75,7 @@ impl DiagnosticQueue {
         }
     }
 
+    #[cfg(test)]
     pub fn dropped(&self) -> u64 {
         self.drops.load(Ordering::Relaxed)
     }

@@ -178,6 +178,7 @@ impl ClaimedSpoolRequest {
     }
 
     /// Decodes and validates the request, runs `handler`, and publishes its reply.
+    #[cfg(test)]
     pub fn answer(
         self,
         handler: impl FnOnce(crate::request_context::RequestContext, Vec<String>) -> Result<String>,
@@ -189,6 +190,7 @@ impl ClaimedSpoolRequest {
     }
 
     /// Publishes a failure without running the request.
+    #[cfg(test)]
     pub fn refuse(self, message: &str) {
         self.publish(DaemonReply::Failure {
             message: message.to_owned(),

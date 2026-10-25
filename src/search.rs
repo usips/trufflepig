@@ -14,6 +14,8 @@ pub mod path_filter;
 mod path_prior;
 mod qualified_name;
 mod rerank_window;
+#[cfg(test)]
+pub(crate) use rerank_window::RERANK_WINDOW;
 mod semantic_lane;
 mod snippets;
 pub(crate) mod stateless;
@@ -22,14 +24,14 @@ pub mod telemetry;
 mod tests;
 pub use declarations::InvocationDirectory;
 pub(crate) use file_ranking::fuse_search_file_lanes as fuse_file_lanes;
-pub use import_trail::{ImportHop, ImportTrail, trace_import};
+pub use import_trail::{ImportHop, trace_import};
 pub(crate) use navigation::context_entry;
 pub use navigation::{
     REFERENCE_COVERAGE_KEYS, context, map, map_miss, outline_extracted, reference_query,
     reference_summary, references,
 };
 pub use path_filter::{BoundPathFilter, PathFilter};
-pub use rerank_window::{MergedRerank, RERANK_WINDOW, RerankOutcome, RerankScorer};
+pub use rerank_window::{MergedRerank, RerankOutcome, RerankScorer};
 
 use concept_query::ConceptQuery;
 pub(crate) use current_bytes::{search_file as search_current_file, semantic_representative};
@@ -123,6 +125,7 @@ pub(super) fn hit_row(row: &Row<'_>) -> rusqlite::Result<Hit> {
     })
 }
 
+#[cfg(test)]
 pub fn search(
     store: &Store,
     query: &Query,
@@ -356,22 +359,6 @@ pub fn definitions(
         truncated,
         hits,
     })
-}
-
-/// Whether an extracted definition answers `query`'s `sym:` name: `name` or
-/// `Qualifier::name` (qualifier matched against `path` and `container`), and `kind:`.
-pub fn names_definition(
-    query: &Query,
-    path: &str,
-    definition: &crate::extract::Definition,
-) -> bool {
-    let name = qualified_name::QualifiedName::parse(&query.text);
-    definition.name == name.name
-        && (query.kind.is_empty() || definition.kind == query.kind)
-        && (!name.is_qualified()
-            || name
-                .matches(path, definition.container.as_deref())
-                .is_some())
 }
 
 /// The one ordering for definition hits from any source (index rows, worktree

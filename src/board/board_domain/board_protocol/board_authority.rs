@@ -34,10 +34,6 @@ impl AuthoritySource {
         }
     }
 
-    pub fn as_str(&self) -> String {
-        self.to_string()
-    }
-
     pub fn basis(&self) -> &'static str {
         match self {
             Self::Owner => "owner",

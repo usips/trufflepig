@@ -1,3 +1,4 @@
+use super::delivery::DeliveryFailure;
 use super::*;
 use crate::request_context::RequestContext;
 use std::io::{self, Write};

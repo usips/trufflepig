@@ -32,6 +32,7 @@ pub struct GitRepository {
 
 /// Canonical Git common directory of `directory`'s repository or worktree.
 /// Runs only `rev-parse`, without the history version gate.
+#[cfg(test)]
 pub fn common_dir(directory: &Path) -> Result<PathBuf> {
     common_dir_bounded(directory, COMMAND_TIMEOUT)
 }
@@ -174,6 +175,7 @@ impl GitRepository {
         Ok(format!("{}{path}", self.root_prefix))
     }
 
+    #[cfg(test)]
     pub fn scoped_path<'a>(&self, path: &'a str) -> Option<&'a str> {
         path.strip_prefix(&self.root_prefix)
     }

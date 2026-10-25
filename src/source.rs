@@ -118,8 +118,9 @@ mod lines;
 mod reextraction;
 pub(crate) use acquisition::AcquiredSource;
 pub use acquisition::SourceSide;
-pub use reextraction::{ReextractedDefinition, reextract_definition, usable_extraction};
+pub use reextraction::{reextract_definition, usable_extraction};
 
+#[cfg(test)]
 pub fn show(store: &Store, target: &str, budget: &OutputBudget) -> Result<String> {
     show_with_side(store, target, None, budget)
 }

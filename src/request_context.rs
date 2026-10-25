@@ -3,9 +3,7 @@
 //! the optional actor origin a harness asserts.
 mod actor_origin;
 
-pub use actor_origin::{
-    ACTOR_COMPONENT_LIMIT, ActorOrigin, HarnessLabel, validate_actor_component,
-};
+pub use actor_origin::{ActorOrigin, HarnessLabel, validate_actor_component};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -39,6 +39,7 @@ pub(crate) fn request_encoded_size(args: &[String], context: &RequestContext) ->
 }
 
 /// Returns `None` only when no daemon is listening; protocol errors stay errors.
+#[cfg(test)]
 pub fn request(cache: &Path, args: &[String], context: &RequestContext) -> Result<Option<String>> {
     request_by(
         cache,

@@ -240,6 +240,7 @@ pub fn save_entries(
     })
 }
 
+#[cfg(test)]
 pub fn load(store: &Store, id: &str) -> Result<ResultSet> {
     let set = load_entries(store, id)?;
     let hits = set

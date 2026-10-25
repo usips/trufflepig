@@ -7,7 +7,9 @@
 mod preparation_cache;
 mod preparation_worker;
 
-pub use preparation_worker::{ClosureWorker, EmbeddingWorker, ForegroundWorker, SharedWorker};
+#[cfg(test)]
+pub(crate) use preparation_worker::ClosureWorker;
+pub use preparation_worker::{EmbeddingWorker, ForegroundWorker, SharedWorker};
 
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -27,7 +29,6 @@ pub const MAX_BATCH: usize = 8;
 pub const MAX_MODEL_TOKENS: usize = 4_096;
 /// Maximum padded token count for one preparation batch.
 pub const MAX_PADDED_TOKENS: usize = 8_192;
-const DEFAULT_WAIT: Duration = Duration::from_secs(60 * 60);
 const RETRY_WINDOW: Duration = Duration::from_secs(60);
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
 
@@ -104,6 +105,7 @@ pub struct PreparationWait {
 }
 
 impl PreparationWait {
+    #[cfg(test)]
     pub fn is_terminal(&self) -> bool {
         self.state.terminal()
     }
@@ -132,11 +134,6 @@ pub fn status(root: &Path, cache: &Path) -> Result<PreparationStatus> {
     let mut index = open_index(root, cache)?;
     let mut preparation = preparation_cache::PreparationCache::open(cache)?;
     current_status(&mut index, &mut preparation)
-}
-
-/// Waits for a captured generation, returning an explicit terminal outcome.
-pub fn wait(root: &Path, cache: &Path, captured_generation: i64) -> Result<PreparationWait> {
-    wait_timeout(root, cache, captured_generation, DEFAULT_WAIT)
 }
 
 /// Bounded variant used by clients that have their own request deadline.
@@ -282,19 +279,7 @@ impl PreparationManager {
         Ok(receipt)
     }
 
-    pub fn status(&self, root: &Path, cache: &Path) -> Result<PreparationStatus> {
-        status(root, cache)
-    }
-
-    pub fn wait(
-        &self,
-        root: &Path,
-        cache: &Path,
-        captured_generation: i64,
-    ) -> Result<PreparationWait> {
-        self.wait_timeout(root, cache, captured_generation, DEFAULT_WAIT)
-    }
-
+    #[cfg(test)]
     pub fn wait_timeout(
         &self,
         root: &Path,

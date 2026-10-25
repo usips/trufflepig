@@ -7,12 +7,6 @@ pub enum RequestClass {
     Background,
 }
 
-pub struct ScheduledRequest<T> {
-    pub class: RequestClass,
-    pub root_id: String,
-    pub request: T,
-}
-
 struct RootQueue<T> {
     query: VecDeque<T>,
     background: VecDeque<T>,
@@ -42,21 +36,6 @@ impl<T> FairScheduler<T> {
         T: RootIdent,
     {
         let root_id = item.root_id().to_owned();
-        let queue = self.roots.entry(root_id.clone()).or_insert_with(|| {
-            self.order.push(root_id.clone());
-            RootQueue {
-                query: VecDeque::new(),
-                background: VecDeque::new(),
-            }
-        });
-        match class {
-            RequestClass::Query => queue.query.push_back(item),
-            RequestClass::Background => queue.background.push_back(item),
-        }
-    }
-
-    pub fn enqueue(&mut self, root_id: impl Into<String>, class: RequestClass, item: T) {
-        let root_id = root_id.into();
         let queue = self.roots.entry(root_id.clone()).or_insert_with(|| {
             self.order.push(root_id.clone());
             RootQueue {

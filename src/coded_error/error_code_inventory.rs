@@ -11,6 +11,7 @@ macro_rules! error_codes {
 
         impl ErrorCode {
             /// Every code, in declaration order.
+            #[cfg(test)]
             pub const ALL: &'static [Self] = &[$(Self::$variant,)+];
 
             pub const fn as_str(self) -> &'static str {

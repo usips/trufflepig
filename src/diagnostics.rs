@@ -12,7 +12,6 @@ pub mod sessions;
 mod tests;
 
 pub use appender::{DiagnosticQueue, best_effort_record};
-pub use audit::AuditReport;
-pub use delivery::{DeliveryFailure, DeliveryReceipt, emit_response};
+pub use delivery::{DeliveryReceipt, emit_response};
 pub use journal::{DiagnosticStore, RecordStatus};
 pub use records::{DiagnosticsMode, EmittedIdentity, EventStage, Operation, Outcome, RequestEvent};

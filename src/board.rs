@@ -7,9 +7,7 @@ pub(crate) mod board_markup;
 pub mod board_projects;
 pub(crate) mod board_web;
 use crate::coded_error::CodedContext;
-pub use board_domain::{
-    board_actor, board_collections, board_ids, board_protocol, board_vocabulary,
-};
+pub use board_domain::{board_actor, board_ids, board_protocol, board_vocabulary};
 pub mod board_transport;
 pub use board_transport::{board_backend, board_config, board_grammar, feedback_outbox};
 pub mod board_git;
@@ -24,9 +22,7 @@ mod tests;
 
 pub use board_backend::{BoardBackend, BoardHost};
 pub use board_config::BoardConfig;
-pub use board_protocol::{
-    BOARD_API, BoardError, BoardOp, BoardReply, BoardRequest, BoardRequestKey,
-};
+pub use board_protocol::{BOARD_API, BoardError, BoardOp, BoardRequest, BoardRequestKey};
 pub use local_board::SCHEMA_VERSION;
 
 use crate::{query_deadline::QueryDeadline, request_context::RequestContext};

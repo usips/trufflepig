@@ -42,6 +42,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(test)]
 pub fn run(args: &[String]) -> Result<String> {
     if let Some(answer) = board_api_probe::probe_board_api(args) {
         return answer;
@@ -55,6 +56,7 @@ pub fn run(args: &[String]) -> Result<String> {
 /// Absent routers, unavailable owners and local spool timeouts reach direct execution.
 /// A pre-dispatch index-cache refusal may route a current-path show to local source.
 /// Other router replies remain answers.
+#[cfg(test)]
 pub fn run_with_context(
     args: &[String],
     context: &crate::request_context::RequestContext,

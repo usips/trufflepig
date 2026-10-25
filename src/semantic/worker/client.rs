@@ -1,7 +1,10 @@
 use super::{WorkerStatus, lease, protocol};
+#[cfg(feature = "semantic")]
 use crate::coded_error::CodedContext;
 use crate::semantic::runtime_config::InferenceConfig;
 use anyhow::{Result, bail};
+#[cfg(feature = "semantic")]
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
     io::{self, ErrorKind},
     os::unix::net::UnixStream,
@@ -10,7 +13,7 @@ use std::{
         unix::ffi::OsStrExt,
     },
     path::Path,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 
 const IO_SLICE: Duration = Duration::from_millis(25);
@@ -20,6 +23,7 @@ pub const RERANK_DEADLINE: Duration = Duration::from_millis(1500);
 
 /// Score (query, document) pairs through the shared worker within `budget`,
 /// capped at [`RERANK_DEADLINE`]. Never loads a model in this process.
+#[cfg(feature = "semantic")]
 pub fn rerank_query(
     cache_identity: &Path,
     query: &str,

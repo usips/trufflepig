@@ -70,6 +70,7 @@ enum FileStamp {
 
 impl ProjectResolver {
     /// An explicit registry keeps embedded callers and fixtures independent of env.
+    #[cfg(test)]
     pub fn with_registry(registry: impl Into<PathBuf>) -> Self {
         Self {
             registry: Some(registry.into()),

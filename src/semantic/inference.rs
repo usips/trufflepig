@@ -7,7 +7,7 @@ mod pinned_assets;
 mod provider;
 mod reranker;
 
-pub use gate::{compare_cpu_cuda, run_gate, run_gpu_gate};
+pub use gate::{run_gate, run_gpu_gate};
 pub use reranker::RerankInferenceEngine;
 // Bounds and their validator live in `crate::semantic` unconditionally so the
 // worker protocol can enforce them without the `semantic` feature; re-export
