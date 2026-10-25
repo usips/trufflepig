@@ -1,13 +1,13 @@
 //! Local dispatch against published live and captured historical identities.
 use super::{Arguments, emission, request_context, validate};
-use crate::store::{
-    IndexProgressPhase, Store, index_cache_unavailable, is_index_cache_unavailable,
-    is_index_cannot_open, is_index_warming, preflight_results_cache,
-};
 use anyhow::{Context, Result, bail, ensure};
 use std::path::Path;
 use tp_core::coded_error::CodedContext;
 use tp_core::{output::OutputBudget, query_deadline::QueryDeadline};
+use tp_index::store::{
+    IndexProgressPhase, Store, index_cache_unavailable, is_index_cache_unavailable,
+    is_index_cannot_open, is_index_warming, preflight_results_cache,
+};
 
 #[cfg(test)]
 mod cache_read_tests;
@@ -43,7 +43,7 @@ pub(super) fn local_with_session(
     session: &mut tp_semantic::SemanticSession,
     context: &tp_core::request_context::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
-    preparation_manager: Option<&crate::semantic_preparation::PreparationManager>,
+    preparation_manager: Option<&tp_index::semantic_preparation::PreparationManager>,
     deadline: QueryDeadline,
 ) -> Result<String> {
     let initializations = tp_semantic::model_initializations();
@@ -74,9 +74,9 @@ pub(super) fn local_with_session(
             crate::diagnostics::Outcome::Failure,
         );
         event.stage = crate::diagnostics::EventStage::Maintenance;
-        event.probes.push(crate::probes::ProbeResult {
-            name: crate::probes::ProbeName::ModelInitialization,
-            outcome: crate::probes::ProbeOutcome::Failed,
+        event.probes.push(tp_index::probes::ProbeResult {
+            name: tp_index::probes::ProbeName::ModelInitialization,
+            outcome: tp_index::probes::ProbeOutcome::Failed,
             checked: unexpected as usize,
             drifted: 0,
             unverified: 0,
@@ -103,7 +103,7 @@ fn local_dispatch(
     session: &mut tp_semantic::SemanticSession,
     context: &tp_core::request_context::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
-    preparation_manager: Option<&crate::semantic_preparation::PreparationManager>,
+    preparation_manager: Option<&tp_index::semantic_preparation::PreparationManager>,
     deadline: QueryDeadline,
 ) -> Result<String> {
     validate(options)?;
@@ -129,13 +129,13 @@ fn local_dispatch(
         bail!(coded!(TimedOut, "query deadline expired"));
     }
     if verb == "show"
-        && let Some(target) = crate::source::acquisition::show_target(&options.words)
-        && crate::source::acquisition::is_current_path_target(&target)
+        && let Some(target) = tp_index::source::acquisition::show_target(&options.words)
+        && tp_index::source::acquisition::is_current_path_target(&target)
     {
         let side = options
             .side
             .as_deref()
-            .map(crate::source::SourceSide::parse)
+            .map(tp_index::source::SourceSide::parse)
             .transpose()?;
         if side.is_some() {
             bail!(coded!(
@@ -150,16 +150,17 @@ fn local_dispatch(
         if deadline.expired() {
             bail!(coded!(TimedOut, "query deadline expired"));
         }
-        let origin = crate::search::InvocationDirectory::within(store.root.as_path(), root);
-        let acquired = crate::source::acquisition::acquire_current_path_without_cache(
+        let origin = tp_index::search::InvocationDirectory::within(store.root.as_path(), root);
+        let acquired = tp_index::source::acquisition::acquire_current_path_without_cache(
             &store, &target, side, &origin,
         )
         .map_err(|error| deadline.classify(error))?;
         if deadline.expired() {
             bail!(coded!(TimedOut, "query deadline expired"));
         }
-        let rendered = crate::source::render_owned(acquired, &page_budget, &serde_json::json!({}))
-            .map_err(|error| deadline.classify(error))?;
+        let rendered =
+            tp_index::source::render_owned(acquired, &page_budget, &serde_json::json!({}))
+                .map_err(|error| deadline.classify(error))?;
         if deadline.expired() {
             bail!(coded!(TimedOut, "query deadline expired"));
         }
@@ -363,7 +364,7 @@ fn local_dispatch(
     }
     let response = match verb {
         "index"|"init"=>{let coverage=store.index()?;budget.render(&serde_json::json!({"generation":store.generation()?,"coverage":coverage}))},
-        "doctor"=>budget.render(&crate::probes::doctor(&store, cache, session)?),
+        "doctor"=>budget.render(&tp_index::probes::doctor(&store, cache, session)?),
         "status"=>budget.render(&serde_json::json!({"generation":store.generation()?,"coverage":store.coverage()?,"semantic_feature":cfg!(feature="semantic"),"tokenizer":"o200k_base"})),
         "show"=>standalone_worktree_reads::show_read(root,cache,store,parent_fallback.take(),options,&page_budget,deadline.clone()),
         "more"=>standalone_worktree_reads::more_read(&store,argument()?,options.limit,&page_budget),
@@ -425,7 +426,7 @@ fn read_store(
 
     let query_needs_fresh_local_index = matches!(verb, "search" | "refs" | "map")
         || verb == "show"
-            && crate::source::acquisition::show_target(&options.words)
+            && tp_index::source::acquisition::show_target(&options.words)
                 .is_some_and(|target| target.starts_with("sym:"));
     let open_error_can_reconcile = open_error.as_ref().is_some_and(|error| {
         is_index_warming(error) || is_index_cache_unavailable(error) || is_index_cannot_open(error)
@@ -444,7 +445,7 @@ fn read_store(
     };
     if reconciles {
         let preserve_parent_response = verb == "show"
-            && crate::source::acquisition::show_target(&options.words)
+            && tp_index::source::acquisition::show_target(&options.words)
                 .is_some_and(|target| target.starts_with("sym:"));
         return reconcile_inline(
             root,
@@ -490,11 +491,11 @@ fn reconcile_inline(
     if deadline.expired() {
         bail!(coded!(TimedOut, "query deadline expired"));
     }
-    let maintenance = crate::store::inline_maintenance_deadline(deadline);
+    let maintenance = tp_index::store::inline_maintenance_deadline(deadline);
     if own_view.is_none()
         && let Some(parent) = parent_view.as_ref()
     {
-        let _ = crate::store::ensure_seeded_within(
+        let _ = tp_index::store::ensure_seeded_within(
             parent.store.index_cache(),
             root,
             cache,
@@ -612,7 +613,7 @@ fn available_or_warming(
 }
 
 fn index_warming_error(root: &Path, cache: &Path, reason: &str) -> anyhow::Error {
-    match crate::store::read_index_progress(root, cache) {
+    match tp_index::store::read_index_progress(root, cache) {
         Some(progress) => {
             let phase = match progress.phase {
                 IndexProgressPhase::Scanning => "scanning",
@@ -653,8 +654,8 @@ fn try_standalone_parent(
 
 /// `status` of an unpublished index without opening a writer or creating cache files.
 fn warming_status(root: &Path, cache: &Path, budget: &OutputBudget) -> Result<String> {
-    let index_progress = crate::store::read_index_progress(root, cache);
-    let mut coverage = serde_json::to_value(crate::store::Coverage::default())?;
+    let index_progress = tp_index::store::read_index_progress(root, cache);
+    let mut coverage = serde_json::to_value(tp_index::store::Coverage::default())?;
     if let Some(progress) = &index_progress {
         coverage["index_progress"] = serde_json::to_value(progress)?;
     }
@@ -679,8 +680,8 @@ fn ensure_semantic_check_arity(options: &Arguments) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source;
     use std::time::Duration;
+    use tp_index::source;
 
     fn words(words: &[&str]) -> Arguments {
         super::super::parse(

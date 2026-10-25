@@ -95,7 +95,7 @@ pub(super) fn route(
                     cache.display()
                 )
             });
-            crate::store::index_cache_unavailable(&cache, context)
+            tp_index::store::index_cache_unavailable(&cache, context)
         })?;
         let executable = current_background_executable(&cache, BackgroundOwner::SystemRouter)?;
         let mut command = Command::new(&executable);
@@ -136,7 +136,7 @@ pub(super) fn route(
                 cache.display()
             )
         });
-        crate::store::index_cache_unavailable(&cache, context)
+        tp_index::store::index_cache_unavailable(&cache, context)
     })?;
     let history_cache = options.resolved_history_cache.clone().or_else(|| {
         crate::history::history_worker::resolve_cache(

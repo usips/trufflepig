@@ -77,7 +77,7 @@ pub(crate) fn entry_line(entry: &ResultEntry, member: Option<&str>, detail: HitD
 
 /// Whether a lane reason means the lane was never configured rather than failed;
 /// coverage summaries omit such lanes.
-pub(crate) fn unconfigured(reason: Option<&str>) -> bool {
+pub fn unconfigured(reason: Option<&str>) -> bool {
     reason.is_some_and(|reason| reason.contains("model_dir") || reason.contains("not configured"))
 }
 
@@ -160,7 +160,7 @@ pub(crate) fn single_repo_coverage(coverage: &Value) -> String {
 
 /// Summarizes retained index preparation without presenting it as published
 /// coverage. Progress is present only while a preparation remains incomplete.
-pub(crate) fn index_progress_summary(progress: &Value) -> Option<String> {
+pub fn index_progress_summary(progress: &Value) -> Option<String> {
     let phase = progress.get("phase")?.as_str()?;
     let completed = progress.get("completed_files")?.as_u64()?;
     let reused = progress.get("reused_files")?.as_u64()?;
@@ -179,7 +179,7 @@ pub(crate) fn index_progress_summary(progress: &Value) -> Option<String> {
 }
 
 /// Renders a page: the entries, the coverage line, then the footer.
-pub(crate) fn page_text<'a>(
+pub fn page_text<'a>(
     entries: impl ExactSizeIterator<Item = (Option<&'a str>, &'a ResultEntry)>,
     detail: HitDetail,
     coverage: &str,
@@ -199,18 +199,13 @@ pub(crate) fn page_text<'a>(
 }
 
 /// Cursor for the entries after this page, `SET@OFFSET`.
-pub(crate) fn next_cursor(id: &str, offset: usize, count: usize, total: usize) -> Option<String> {
+pub fn next_cursor(id: &str, offset: usize, count: usize, total: usize) -> Option<String> {
     (offset + count < total).then(|| format!("{id}@{}", offset + count))
 }
 
 /// `more CURSOR` for a page of `count` hits under a `limit`-hit cap. The first
 /// page names the option that widens it: `-n` when the cap cut it, else `-b`.
-pub(crate) fn more_command(
-    cursor: &str,
-    offset: usize,
-    count: usize,
-    limit: usize,
-) -> NextCommand<'_> {
+pub fn more_command(cursor: &str, offset: usize, count: usize, limit: usize) -> NextCommand<'_> {
     NextCommand {
         verb: "more",
         cursor,

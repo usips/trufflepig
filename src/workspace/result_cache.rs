@@ -2,10 +2,6 @@
 mod coverage_lines;
 mod index_progress_source;
 use super::member_root::{GIT_PROBE_TIMEOUT, MemberRoot, linked_root_of_member};
-use crate::{
-    results::{self, HitDetail, ResultEntry},
-    store::Store,
-};
 use anyhow::{Result, bail, ensure};
 use coverage_lines::{compact_coverage, mark_worktree_differs, member_coverage_summary};
 pub(super) use index_progress_source::IndexProgressSource;
@@ -25,6 +21,10 @@ use tp_core::{
     output::{OutputBudget, OutputFormat},
     path_codec::{decode_path, encode_path},
     query_deadline::QueryDeadline,
+};
+use tp_index::{
+    results::{self, HitDetail, ResultEntry},
+    store::Store,
 };
 
 const WORKSPACE_SQL_BUSY_SLICE: Duration = Duration::from_millis(25);
@@ -76,7 +76,7 @@ impl MemberSnapshot {
         };
         check_deadline()?;
         if let Err(error) = std::fs::create_dir_all(cache) {
-            let error = crate::store::index_cache_unavailable(cache, error.into());
+            let error = tp_index::store::index_cache_unavailable(cache, error.into());
             check_deadline()?;
             return Err(error);
         }
@@ -84,7 +84,7 @@ impl MemberSnapshot {
         let canonical_cache = match cache.canonicalize() {
             Ok(cache) => cache,
             Err(error) => {
-                let error = crate::store::index_cache_unavailable(cache, error.into());
+                let error = tp_index::store::index_cache_unavailable(cache, error.into());
                 check_deadline()?;
                 return Err(error);
             }
@@ -232,7 +232,7 @@ impl WorkspaceResults {
     /// (or local command), never per request.
     pub fn create(cache: &Path, deadline: &QueryDeadline) -> Result<()> {
         Self::create_schema(cache, deadline).map_err(|error| {
-            crate::store::index_cache_unavailable(cache, classify_db_error(deadline, error))
+            tp_index::store::index_cache_unavailable(cache, classify_db_error(deadline, error))
         })
     }
 

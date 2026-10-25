@@ -10,7 +10,7 @@ use tp_core::{identity::ContentRevision, query_deadline::QueryDeadline};
 use tp_extract::Extraction;
 
 /// Runs the normal exact, occurrence, lexical, and filename lanes on one current file.
-pub(crate) fn search_file(
+pub fn search_file(
     parent: &Store,
     query: &Query,
     path: &str,
@@ -35,7 +35,7 @@ pub(crate) fn search_file(
 }
 
 /// A current-source placeholder for an old semantic candidate whose vector is stale.
-pub(crate) fn semantic_representative(
+pub fn semantic_representative(
     query: &Query,
     path: &str,
     bytes: &[u8],

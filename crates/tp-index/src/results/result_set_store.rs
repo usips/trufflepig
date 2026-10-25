@@ -21,7 +21,7 @@ pub const RESULTS_DATABASE: &str = "results.sqlite3";
 
 /// One cache's result-set database; the only writer path a read query uses.
 pub struct ResultSetStore {
-    pub(crate) conn: Connection,
+    pub conn: Connection,
     deadline: Option<QueryDeadline>,
 }
 

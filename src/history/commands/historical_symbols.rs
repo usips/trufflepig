@@ -3,7 +3,7 @@ use tp_core::coded_error::CodedContext;
 
 pub(super) fn symbol_entries(
     history: &History,
-    entry: crate::results::ChangeEntry,
+    entry: tp_index::results::ChangeEntry,
     target: &Target,
 ) -> Result<Vec<ResultEntry>> {
     let (entry, _, _) = symbol_correspondence(history, entry, target)?;
@@ -12,10 +12,10 @@ pub(super) fn symbol_entries(
 
 pub(super) fn symbol_correspondence(
     history: &History,
-    mut entry: crate::results::ChangeEntry,
+    mut entry: tp_index::results::ChangeEntry,
     target: &Target,
 ) -> Result<(
-    Option<crate::results::ChangeEntry>,
+    Option<tp_index::results::ChangeEntry>,
     Option<ByteSpan>,
     Option<String>,
 )> {

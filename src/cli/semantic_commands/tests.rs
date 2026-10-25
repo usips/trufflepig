@@ -5,7 +5,7 @@ fn preparation_wait_terminates_when_root_daemon_dies() -> Result<()> {
     let root = tempfile::tempdir()?;
     let cache = tempfile::tempdir()?;
     std::fs::write(root.path().join("source.rs"), "fn example() {}")?;
-    let mut store = crate::store::Store::open(root.path(), cache.path())?;
+    let mut store = tp_index::store::Store::open(root.path(), cache.path())?;
     store.index()?;
     let receipt = semantic_preparation::schedule(root.path(), cache.path())?;
     let result = wait_until_terminal(root.path(), cache.path(), receipt.captured_generation)?;

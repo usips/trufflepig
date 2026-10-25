@@ -3,7 +3,7 @@
 //! `index.sqlite3` or a [`CACHE_ROOT_MARKER`] are eviction candidates, a grace
 //! period protects caches being created or written, and a root that may sit on an
 //! unmounted volume is kept ([`vanished_root`]). Stage removal runs only while the
-//! cache's writer lease is free (`crate::store::sweep_stale_stages`).
+//! cache's writer lease is free (`tp_index::store::sweep_stale_stages`).
 
 mod vanished_root;
 
@@ -111,7 +111,7 @@ fn evict_entry(
 }
 
 fn remove_stale_stages(cache: &Path) -> Vec<PathBuf> {
-    match crate::store::sweep_stale_stages(cache) {
+    match tp_index::store::sweep_stale_stages(cache) {
         Ok(Some(removed)) => {
             for stage in &removed {
                 eprintln!("trufflepig: removed stale stage {}", stage.display());

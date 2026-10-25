@@ -1,7 +1,7 @@
 use super::*;
-use crate::results::{self, ChangeEntry, HistoricalSource, Hit, ResultEntry};
 use std::process::Command;
 use tp_core::identity::ByteSpan;
+use tp_index::results::{self, ChangeEntry, HistoricalSource, Hit, ResultEntry};
 
 fn git(root: &Path, args: &[&str]) -> String {
     let output = Command::new("git")

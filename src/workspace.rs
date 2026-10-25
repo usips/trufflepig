@@ -13,7 +13,7 @@ mod test_fixture;
 pub(crate) mod workspace_discovery;
 mod workspace_list;
 mod worktree_cache;
-use crate::{cli::Arguments, search::InvocationDirectory, store::Store};
+use crate::cli::Arguments;
 use anyhow::{Context, Result, bail, ensure};
 pub(crate) use coordinator::{apply_config, run_with_deadline};
 pub(crate) use home_index::{
@@ -30,6 +30,7 @@ use tp_core::{
     output::OutputBudget, path_codec::encode_path, query_deadline::QueryDeadline,
     request_context::RequestContext,
 };
+use tp_index::{search::InvocationDirectory, store::Store};
 use workspace_discovery::WorkspaceMembers;
 pub(crate) use workspace_list::list;
 
@@ -233,10 +234,10 @@ pub(super) fn current_path_show(
     if options.words.first().is_none_or(|verb| verb != "show") {
         return Ok(None);
     }
-    let Some(target) = crate::source::acquisition::show_target(&options.words) else {
+    let Some(target) = tp_index::source::acquisition::show_target(&options.words) else {
         return Ok(None);
     };
-    if !crate::source::acquisition::is_current_path_target(&target) {
+    if !tp_index::source::acquisition::is_current_path_target(&target) {
         return Ok(None);
     }
     ensure!(
@@ -262,13 +263,13 @@ pub(super) fn current_path_show(
     let side = options
         .side
         .as_deref()
-        .map(crate::source::SourceSide::parse)
+        .map(tp_index::source::SourceSide::parse)
         .transpose()?;
     ensure!(
         !deadline.expired(),
         coded!(TimedOut, "query deadline expired")
     );
-    let acquired = crate::source::acquisition::acquire_current_path_without_cache(
+    let acquired = tp_index::source::acquisition::acquire_current_path_without_cache(
         &store, &target, side, &origin,
     )
     .map_err(|error| {
@@ -293,7 +294,7 @@ pub(super) fn current_path_show(
         !deadline.expired(),
         coded!(TimedOut, "query deadline expired")
     );
-    let rendered = crate::source::render_owned(acquired, &budget, &metadata)
+    let rendered = tp_index::source::render_owned(acquired, &budget, &metadata)
         .map_err(|error| deadline.classify(error))?;
     ensure!(
         !deadline.expired(),
@@ -418,7 +419,7 @@ fn inspect(
         if let Some(label) = &member.worktree {
             value["worktree"] = label.clone().into();
             if command == "status"
-                && let Some(seed) = crate::store::read_seed_outcome(&cache)
+                && let Some(seed) = tp_index::store::read_seed_outcome(&cache)
             {
                 value["seed"] = seed;
             }
@@ -427,7 +428,7 @@ fn inspect(
             && member.verify_identity().is_ok()
             && cache.join("index.sqlite3").exists()
         {
-            match crate::store::Store::open_read(&member.root, &cache, deadline.clone()) {
+            match tp_index::store::Store::open_read(&member.root, &cache, deadline.clone()) {
                 Ok(store) => {
                     ensure!(
                         !deadline.expired(),
@@ -441,7 +442,7 @@ fn inspect(
                         error.with_coded_context(|| coded!(TimedOut, "query deadline expired"))
                     );
                 }
-                Err(error) if crate::store::is_index_warming(&error) => {
+                Err(error) if tp_index::store::is_index_warming(&error) => {
                     value["generation"] = 0.into();
                     value["state"] = "warming".into();
                 }

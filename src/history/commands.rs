@@ -10,10 +10,10 @@ use super::{
     comparison::{self, FileChange},
     targets::{Selection, Target},
 };
-use crate::results::{self, ResultEntry};
 use anyhow::Context;
 use serde_json::json;
 use tp_core::identity::ByteSpan;
+use tp_index::results::{self, ResultEntry};
 
 pub(super) fn select(
     store: &mut Store,

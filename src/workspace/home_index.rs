@@ -11,7 +11,6 @@ mod worktree_divergence;
 mod worktree_reads;
 
 use super::member_root::{GIT_PROBE_TIMEOUT, MemberRoot, linked_root_of_member};
-use crate::store::{Store, is_index_cache_unavailable, is_index_cannot_open, is_index_warming};
 use anyhow::{Result, bail, ensure};
 pub(super) use hit_verification::DifferingFiles;
 pub(crate) use hit_verification::WorktreeHashes;
@@ -23,6 +22,7 @@ use serde_json::Value;
 use std::{os::unix::fs::MetadataExt, path::Path, time::Duration};
 use tp_core::coded_error::CodedContext;
 use tp_core::{coded_error::ErrorCode, query_deadline::QueryDeadline};
+use tp_index::store::{Store, is_index_cache_unavailable, is_index_cannot_open, is_index_warming};
 pub(super) use worktree_divergence::WorktreeDivergence;
 
 /// How long a daemon-backed query waits for the home member's first publication

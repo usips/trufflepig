@@ -4,9 +4,6 @@
 use super::{WorkspaceQuery, inline_member_index::inline_member_index};
 use crate::{
     diagnostics::{DiagnosticsMode, EventStage, Operation, Outcome, RequestEvent},
-    results::ResultSet,
-    search::{self, Query, telemetry::RetrievalTrace},
-    store::Store,
     workspace::{
         coordinator, hashed_member_cache,
         home_index::{
@@ -24,6 +21,11 @@ use std::{
     time::Instant,
 };
 use tp_core::coded_error::{CodedContext, CodedError, ErrorCode};
+use tp_index::{
+    results::ResultSet,
+    search::{self, Query, telemetry::RetrievalTrace},
+    store::Store,
+};
 use tp_semantic::{Embedding, SemanticSession};
 
 /// The parsed command every member runs, with its query vector prepared once.
@@ -203,7 +205,8 @@ impl MemberSearch<'_> {
         );
         member.verify_identity()?;
         let inline = matches!(request.policy, HomeIndexPolicy::IndexInline);
-        let inline_deadline = inline.then(|| crate::store::inline_maintenance_deadline(deadline));
+        let inline_deadline =
+            inline.then(|| tp_index::store::inline_maintenance_deadline(deadline));
         let cache_deadline = inline_deadline.as_ref().unwrap_or(deadline);
         let member_cache = match member_cache_until(member, explicit_cache, cache_deadline) {
             Ok(cache) => cache,
@@ -238,7 +241,7 @@ impl MemberSearch<'_> {
             HomeIndexSource::Unavailable { error } => return Err(error),
         };
         let preparation_error = if command.semantic && !options.no_daemon {
-            crate::semantic_preparation::schedule(&member.root, &member_cache).err()
+            tp_index::semantic_preparation::schedule(&member.root, &member_cache).err()
         } else {
             None
         };

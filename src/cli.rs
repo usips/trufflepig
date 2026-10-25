@@ -16,7 +16,6 @@ pub(crate) use root_daemon::{ClassifiedDaemonRequest, classify_daemon_request};
 mod system_client_routing;
 use system_client_routing::{system_command, system_reply, system_routes};
 pub(crate) mod semantic_commands;
-use crate::store::Store;
 use anyhow::{Context, Result};
 pub use dispatch::local;
 use dispatch::local_with_session;
@@ -26,6 +25,7 @@ use tp_core::{
     output::OutputBudget,
     query_deadline::{QUERY_DEADLINE, QueryDeadline},
 };
+use tp_index::store::Store;
 mod arguments;
 pub(crate) use arguments::normalized_args;
 use arguments::validate;
@@ -96,7 +96,7 @@ fn direct_with_deadline(
         && options
             .words
             .get(1)
-            .is_some_and(|target| crate::source::acquisition::is_current_path_target(target));
+            .is_some_and(|target| tp_index::source::acquisition::is_current_path_target(target));
     if !matches!(verb, "serve" | "history-serve") {
         if let Some(config) = crate::workspace::resolve(options)? {
             return crate::workspace::run_with_deadline(config, options, context, deadline.clone());
@@ -278,7 +278,7 @@ fn seed_linked_worktree_cache(root: &Path, cache: &Path) {
     if cache.join("index.sqlite3").exists() {
         return;
     }
-    let Some(main_checkout) = crate::store::linked_worktree_main_checkout(
+    let Some(main_checkout) = tp_index::store::linked_worktree_main_checkout(
         root,
         crate::workspace::member_root::GIT_PROBE_TIMEOUT,
     ) else {
@@ -288,7 +288,7 @@ fn seed_linked_worktree_cache(root: &Path, cache: &Path) {
         return;
     };
     if member_cache.join("index.sqlite3").is_file() {
-        crate::store::ensure_seeded(&member_cache, root, cache);
+        tp_index::store::ensure_seeded(&member_cache, root, cache);
     }
 }
 

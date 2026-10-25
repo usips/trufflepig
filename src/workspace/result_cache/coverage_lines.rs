@@ -3,12 +3,12 @@
 //! fallback and failure state visible; only detail reasons are folded away.
 
 use super::OwnedEntry;
-use crate::results::{
+use serde_json::Value;
+use std::collections::HashSet;
+use tp_index::results::{
     ResultEntry,
     result_lines::{index_progress_summary, unconfigured},
 };
-use serde_json::Value;
-use std::collections::HashSet;
 
 /// Ranks retrieval-lane statuses so the summary can report the worst member.
 fn status_rank(status: &str) -> u8 {
@@ -66,7 +66,7 @@ pub(crate) fn member_coverage_summary(values: &[Value]) -> String {
         if value["truncated"].as_bool().unwrap_or(false) {
             part.push_str(" truncated");
         }
-        if let Some(refs) = crate::search::reference_summary(value) {
+        if let Some(refs) = tp_index::search::reference_summary(value) {
             part.push_str(&format!(" ({refs})"));
         }
         parts.push(part);
@@ -186,7 +186,7 @@ pub(crate) fn compact_coverage(values: &[Value]) -> Vec<Value> {
                 "issues",
             ]
             .into_iter()
-            .chain(crate::search::REFERENCE_COVERAGE_KEYS)
+            .chain(tp_index::search::REFERENCE_COVERAGE_KEYS)
             {
                 if let Some(value) = object.get(key) {
                     compact.insert(key.into(), value.clone());

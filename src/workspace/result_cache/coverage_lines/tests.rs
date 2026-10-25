@@ -165,7 +165,7 @@ fn differing_hit_lines_end_with_differs() {
     let hit = |handle: &str, differs: bool| OwnedEntry {
         owner: 0,
         member_rank: 1,
-        entry: ResultEntry::LiveSource(crate::results::Hit {
+        entry: ResultEntry::LiveSource(tp_index::results::Hit {
             handle: handle.into(),
             path: "a.rs".into(),
             revision: None,

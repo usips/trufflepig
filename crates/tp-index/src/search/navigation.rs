@@ -22,7 +22,7 @@ pub fn context(store: &Store, handle: &str, budget: &OutputBudget) -> Result<Str
     context_entry(store, generation, hit, budget, &serde_json::json!({}))
 }
 
-pub(crate) fn context_entry(
+pub fn context_entry(
     store: &Store,
     generation: i64,
     hit: Hit,

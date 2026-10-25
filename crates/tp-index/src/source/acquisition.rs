@@ -11,12 +11,12 @@ use tp_core::coded_error::CodedContext;
 use tp_core::identity::{ByteSpan, ContentRevision, ResultHandle};
 
 mod path_read;
-pub(crate) use path_read::{cursor_matches_root, stateless_hit_handle};
+pub use path_read::{cursor_matches_root, stateless_hit_handle};
 mod symbol;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use symbol::{SymbolSelection, read_symbol, show_target};
+pub use symbol::{SymbolSelection, read_symbol, show_target};
 mod stale_symbol;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -40,7 +40,7 @@ impl SourceSide {
     }
 }
 
-pub(crate) struct AcquiredSource {
+pub struct AcquiredSource {
     pub bytes: Vec<u8>,
     pub path: String,
     pub revision: ContentRevision,
@@ -57,7 +57,7 @@ pub(crate) struct AcquiredSource {
 }
 
 /// Acquires `target`; a `sym:` read ranks namesakes nearest to `origin` first.
-pub(crate) fn acquire(
+pub fn acquire(
     store: &Store,
     target: &str,
     side: Option<SourceSide>,
@@ -115,7 +115,7 @@ pub(crate) fn acquire(
 }
 
 /// Whether `target` names a current file read eligible for a local fallback.
-pub(crate) fn is_current_path_target(target: &str) -> bool {
+pub fn is_current_path_target(target: &str) -> bool {
     if target.starts_with("sym:") {
         return false;
     }
@@ -126,7 +126,7 @@ pub(crate) fn is_current_path_target(target: &str) -> bool {
 }
 
 /// Acquires current path bytes without using the optional result-set cache.
-pub(crate) fn acquire_current_path_without_cache(
+pub fn acquire_current_path_without_cache(
     store: &Store,
     target: &str,
     side: Option<SourceSide>,
@@ -161,7 +161,7 @@ fn acquire_handle(store: &Store, handle: &str, side: Option<SourceSide>) -> Resu
     acquire_entry(store, handle, entry, side)
 }
 
-pub(crate) fn acquire_entry(
+pub fn acquire_entry(
     store: &Store,
     handle: &str,
     entry: ResultEntry,

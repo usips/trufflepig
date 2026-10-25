@@ -111,7 +111,7 @@ pub(crate) fn run_with_deadline(
                 let error = deadline.classify(error);
                 if options.no_daemon
                     && super::stateless_queries::eligible(&options)
-                    && crate::store::is_index_cache_unavailable(&error)
+                    && tp_index::store::is_index_cache_unavailable(&error)
                 {
                     let refusal = super::stateless_queries::cache_failure(&cache, &error);
                     return super::stateless_queries::run(
@@ -164,7 +164,7 @@ pub(crate) fn run_with_deadline(
                 cache.display()
             )
         });
-        crate::store::index_cache_unavailable(&cache, context)
+        tp_index::store::index_cache_unavailable(&cache, context)
     })?;
     ensure!(
         !deadline.expired(),
@@ -318,7 +318,7 @@ pub(super) fn ensure_member(
                 cache.display()
             )
         });
-        crate::store::index_cache_unavailable(&cache, context)
+        tp_index::store::index_cache_unavailable(&cache, context)
     })?;
     ensure!(
         !deadline.expired(),

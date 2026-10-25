@@ -42,7 +42,7 @@ impl StagingBudget {
     }
 }
 
-pub(super) fn entry_charge(entry: &crate::results::ResultEntry) -> Result<usize> {
+pub(super) fn entry_charge(entry: &tp_index::results::ResultEntry) -> Result<usize> {
     struct Counter(usize);
     impl Write for Counter {
         fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
@@ -55,7 +55,7 @@ pub(super) fn entry_charge(entry: &crate::results::ResultEntry) -> Result<usize>
     }
     let mut count = Counter(0);
     serde_json::to_writer(&mut count, entry)?;
-    Ok(count.0 + 2 * std::mem::size_of::<crate::results::ResultEntry>())
+    Ok(count.0 + 2 * std::mem::size_of::<tp_index::results::ResultEntry>())
 }
 
 pub(super) fn bounded_json(value: &impl Serialize, limit: usize) -> Result<String> {

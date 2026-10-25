@@ -1,5 +1,5 @@
 use super::super::*;
-use crate::search;
+use tp_index::search;
 
 #[test]
 fn explicit_search_accepts_command_words() {

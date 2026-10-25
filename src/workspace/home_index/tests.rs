@@ -1,7 +1,6 @@
 use super::{HomeIndexPolicy, WorktreeDivergence};
 use crate::{
     cli,
-    store::Store,
     workspace::{
         WorkspaceConfig, cache_path, member_cache,
         member_root::MemberRoot,
@@ -14,6 +13,7 @@ use fs2::FileExt;
 use serde_json::Value;
 use std::{fs, fs::OpenOptions, path::Path, path::PathBuf, time::Duration};
 use tp_core::query_deadline::QueryDeadline;
+use tp_index::store::Store;
 
 mod map_currentness;
 mod member_cache_reads;
@@ -687,7 +687,8 @@ fn hash_check_catches_changes_git_divergence_misses() {
         &["--format", "lines", "search", "SharedThing"],
     );
     assert!(result_cache.is_dir(), "{result_cache:?}");
-    let seed = crate::store::read_seed_outcome(&result_cache).expect("worktree seed is recorded");
+    let seed =
+        tp_index::store::read_seed_outcome(&result_cache).expect("worktree seed is recorded");
     assert_eq!(seed["outcome"], "seeded", "{seed}");
     assert!(
         seed["extraction_rows"]

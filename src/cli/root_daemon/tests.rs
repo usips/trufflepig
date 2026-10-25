@@ -1,10 +1,10 @@
 use super::*;
-use crate::store::Store;
 use tp_core::{
     query_deadline::QueryDeadline,
     request_context::RequestContext,
     request_pool::{RequestClass, RequestLane},
 };
+use tp_index::store::Store;
 
 fn ask(daemon: &RootDaemon, root: &Path, cache: &Path, words: &[&str]) -> Result<String> {
     ask_by(daemon, root, cache, words, QueryDeadline::start())
@@ -50,7 +50,7 @@ fn root_daemon_answers_index_warming_until_the_first_publication() {
 
     // Reads never index inside a request; the maintenance thread does.
     let error = ask(&daemon, &root, &cache, &["search", "sym:warmed"]).unwrap_err();
-    assert!(crate::store::is_index_warming(&error), "{error:#}");
+    assert!(tp_index::store::is_index_warming(&error), "{error:#}");
     let status: serde_json::Value =
         serde_json::from_str(&ask(&daemon, &root, &cache, &["status"]).unwrap()).unwrap();
     assert_eq!(

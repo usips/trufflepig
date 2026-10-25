@@ -21,7 +21,7 @@ use tp_core::{
 mod stateless_path_read;
 #[cfg(test)]
 mod tests;
-pub(crate) use stateless_path_read::{cursor_matches_root, stateless_hit_handle};
+pub use stateless_path_read::{cursor_matches_root, stateless_hit_handle};
 
 #[derive(Clone, Copy)]
 pub(super) enum PathResultStorage {

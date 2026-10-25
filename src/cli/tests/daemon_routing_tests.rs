@@ -2,7 +2,7 @@ use super::super::*;
 
 #[test]
 fn reconciliation_resumes_preparation_and_new_generations() -> anyhow::Result<()> {
-    use crate::semantic_preparation;
+    use tp_index::semantic_preparation;
     use tp_semantic::{DIMENSIONS, Embedding};
     let root = tempfile::tempdir()?;
     let cache = tempfile::tempdir()?;

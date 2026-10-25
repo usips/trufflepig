@@ -232,7 +232,7 @@ fn saved_parent_handle_and_more_keep_parent_origin_after_child_publication() -> 
         "cursor must start at the first unread byte: {current}"
     );
 
-    let mut child = crate::store::Store::open(&fixture.worktree, &fixture.child_cache)?;
+    let mut child = tp_index::store::Store::open(&fixture.worktree, &fixture.child_cache)?;
     child.index()?;
     assert_eq!(child.generation()?, 1);
     drop(child);
@@ -313,7 +313,7 @@ fn saved_parent_handle_and_more_keep_parent_origin_after_child_publication() -> 
         fixture.main.join("src/new_parent.rs"),
         "pub fn parent_added() {}\n",
     )?;
-    let mut parent = crate::store::Store::open(&fixture.main, &fixture.main_cache)?;
+    let mut parent = tp_index::store::Store::open(&fixture.main, &fixture.main_cache)?;
     parent.index()?;
     assert!(parent.generation()? > fixture.parent_generation);
     drop(parent);
@@ -341,14 +341,14 @@ fn saved_parent_handle_and_more_keep_parent_origin_after_child_publication() -> 
     // Saved pages and path cursors also work when neither index can be opened.
     let child_database = fixture.child_cache.join("index.sqlite3");
     fs::set_permissions(&child_database, fs::Permissions::from_mode(0o000))?;
-    let error = crate::store::Store::open_read(
+    let error = tp_index::store::Store::open_read(
         &fixture.worktree,
         &fixture.child_cache,
         tp_core::query_deadline::QueryDeadline::start(),
     )
     .err()
     .context("fixture must deny opening the index")?;
-    assert!(crate::store::is_index_cannot_open(&error), "{error:#}");
+    assert!(tp_index::store::is_index_cannot_open(&error), "{error:#}");
     for words in [
         vec!["search", "sym:WorktreeOnlySymbol"],
         vec!["map", "src/only.rs"],
@@ -665,7 +665,7 @@ fn explicit_cache_reads_through_parent_and_keeps_selected_result_identity() -> R
     );
 
     let wrong_root_cache = fixture.scratch.path().join("wrong-root-cache");
-    let mut foreign = crate::store::Store::open(&fixture.main, &wrong_root_cache)?;
+    let mut foreign = tp_index::store::Store::open(&fixture.main, &wrong_root_cache)?;
     foreign.index()?;
     drop(foreign);
     let wrong_root_error = invoke(
@@ -720,7 +720,7 @@ impl WorktreeFixture {
         git(&main, &["commit", "--quiet", "-m", "initial fixture"])?;
 
         let main_cache = crate::cli::cache_path(&main, None)?;
-        let mut parent = crate::store::Store::open(&main, &main_cache)?;
+        let mut parent = tp_index::store::Store::open(&main, &main_cache)?;
         parent.index()?;
         let parent_generation = parent.generation()?;
         drop(parent);
@@ -775,7 +775,7 @@ impl WorktreeFixture {
     }
 
     fn current_parent_generation(&self) -> Result<i64> {
-        Ok(crate::store::Store::open_read(
+        Ok(tp_index::store::Store::open_read(
             &self.main,
             &self.main_cache,
             tp_core::query_deadline::QueryDeadline::start(),
@@ -838,8 +838,8 @@ fn path_cursor_span(root: &Path, start: &Value, end: &Value) -> Result<String> {
 
 fn saved_generation(root: &Path, cache: &Path, handle: &str) -> Result<i64> {
     let parsed: tp_core::identity::ResultHandle = handle.parse()?;
-    let store = crate::store::Store::unpublished(root, cache)?;
-    Ok(crate::results::load_entries(&store, &parsed.set.simple().to_string())?.generation)
+    let store = tp_index::store::Store::unpublished(root, cache)?;
+    Ok(tp_index::results::load_entries(&store, &parsed.set.simple().to_string())?.generation)
 }
 
 fn assert_unpublished_index(root: &Path, cache: &Path) -> Result<()> {
@@ -867,7 +867,7 @@ fn assert_unpublished_index(root: &Path, cache: &Path) -> Result<()> {
         "held lease wrote publication records"
     );
 
-    let error = match crate::store::Store::open_read(
+    let error = match tp_index::store::Store::open_read(
         root,
         cache,
         tp_core::query_deadline::QueryDeadline::start(),
@@ -875,7 +875,7 @@ fn assert_unpublished_index(root: &Path, cache: &Path) -> Result<()> {
         Ok(_) => anyhow::bail!("generation-zero index must be warming"),
         Err(error) => error,
     };
-    ensure!(crate::store::is_index_warming(&error), "{error:#}");
+    ensure!(tp_index::store::is_index_warming(&error), "{error:#}");
     Ok(())
 }
 

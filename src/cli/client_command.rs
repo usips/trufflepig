@@ -178,7 +178,7 @@ fn local_path_show_fallback_options(args: &[String]) -> Option<Arguments> {
         || !options
             .words
             .get(1)
-            .is_some_and(|target| crate::source::acquisition::is_current_path_target(target))
+            .is_some_and(|target| tp_index::source::acquisition::is_current_path_target(target))
     {
         return None;
     }

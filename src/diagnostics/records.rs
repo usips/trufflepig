@@ -86,10 +86,10 @@ pub struct RequestEvent {
     pub elapsed_micros: u64,
     pub stderr_accepted_bytes: usize,
     pub receipt: Option<DeliveryReceipt>,
-    pub retrieval: Option<crate::search::telemetry::RetrievalTrace>,
+    pub retrieval: Option<tp_index::search::telemetry::RetrievalTrace>,
     pub residency: Option<tp_semantic::ResidencySample>,
-    pub probes: Vec<crate::probes::ProbeResult>,
-    pub coverage: Option<crate::store::Coverage>,
+    pub probes: Vec<tp_index::probes::ProbeResult>,
+    pub coverage: Option<tp_index::store::Coverage>,
     pub emitted: Vec<EmittedIdentity>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_query: Option<String>,

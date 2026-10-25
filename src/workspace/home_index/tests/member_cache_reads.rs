@@ -1,12 +1,8 @@
 use super::{Fixture, coverage_line, search_without_waiting};
-use crate::{
-    search::InvocationDirectory,
-    store::{Store, read_seed_outcome},
-    workspace::{
-        WorkspaceConfig, hashed_member_cache,
-        home_index::{ParentRead, acquire_home_read},
-        member_root::MemberRoot,
-    },
+use crate::workspace::{
+    WorkspaceConfig, hashed_member_cache,
+    home_index::{ParentRead, acquire_home_read},
+    member_root::MemberRoot,
 };
 use fs2::FileExt;
 use std::{
@@ -17,6 +13,10 @@ use std::{
     time::Duration,
 };
 use tp_core::{path_codec::encode_path, query_deadline::QueryDeadline};
+use tp_index::{
+    search::InvocationDirectory,
+    store::{Store, read_seed_outcome},
+};
 
 #[test]
 fn fresh_worktree_read_seeds_parent_facts_and_marks_cache_root() {
@@ -264,7 +264,7 @@ fn exhausted_shared_slice_keeps_parent_show_answer_without_own_index() {
         "the answer comes from the changed worktree source"
     );
     assert!(
-        cache.join(crate::results::RESULTS_DATABASE).is_file(),
+        cache.join(tp_index::results::RESULTS_DATABASE).is_file(),
         "the parent answer stores its result in the selected cache"
     );
     assert!(!cache.join("index.sqlite3").exists());

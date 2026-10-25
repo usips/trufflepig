@@ -1,10 +1,10 @@
-use crate::{
-    results::{self, Hit, ResultEntry},
-    store::Store,
-};
 use anyhow::Result;
 use tp_core::coded_error::CodedContext;
 use tp_core::identity::{ByteSpan, ResultHandle};
+use tp_index::{
+    results::{self, Hit, ResultEntry},
+    store::Store,
+};
 
 pub(super) struct Target {
     pub path: String,
@@ -79,7 +79,7 @@ pub(super) fn resolve(store: &Store, value: &str) -> Result<Selection> {
         for row in rows {
             let hit = row?;
             anyhow::ensure!(
-                hits.len() < crate::results::MAX_HITS,
+                hits.len() < tp_index::results::MAX_HITS,
                 coded!(HistoryResourceLimited, "symbol candidate staging limit")
             );
             retained.reserve(super::staging::entry_charge(&ResultEntry::LiveSource(

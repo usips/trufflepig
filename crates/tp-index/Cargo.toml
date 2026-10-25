@@ -1,0 +1,33 @@
+[package]
+name = "tp-index"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[features]
+semantic = ["tp-semantic/semantic"]
+# Test-only hooks and fixtures for other workspace crates' tests.
+test-support = []
+
+[dependencies]
+anyhow.workspace = true
+blake3.workspace = true
+fs2.workspace = true
+ignore.workspace = true
+libc.workspace = true
+quick-xml.workspace = true
+regex.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tree-sitter.workspace = true
+tree-sitter-php.workspace = true
+uuid.workspace = true
+tp-core.workspace = true
+tp-extract.workspace = true
+tp-semantic.workspace = true
+
+[dev-dependencies]
+tp-core = { workspace = true, features = ["test-support"] }
+tp-semantic = { workspace = true, features = ["test-support"] }

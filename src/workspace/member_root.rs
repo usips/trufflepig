@@ -149,7 +149,7 @@ pub(crate) fn linked_root_of_member(
 /// Standalone reads use this only after Git identifies their shared common dir.
 pub(crate) fn standalone_worktree(start: &Path, timeout: Duration) -> Option<MemberRoot> {
     let root = start.canonicalize().ok()?;
-    let parent = crate::store::linked_worktree_main_checkout(&root, timeout)?
+    let parent = tp_index::store::linked_worktree_main_checkout(&root, timeout)?
         .canonicalize()
         .ok()?;
     let metadata = fs::metadata(&parent).ok()?;

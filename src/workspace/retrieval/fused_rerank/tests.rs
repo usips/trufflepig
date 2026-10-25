@@ -1,13 +1,13 @@
 use super::*;
-use crate::{
-    results::Hit,
-    search::{self, Query, RERANK_WINDOW, telemetry::Lane},
-    store::Store,
-    workspace::result_cache::{MemberSnapshot, OwnedEntry, WorkspaceSet},
-};
+use crate::workspace::result_cache::{MemberSnapshot, OwnedEntry, WorkspaceSet};
 use serde_json::json;
 use std::{cell::RefCell, path::Path, time::Duration};
 use tp_core::query_deadline::QueryDeadline;
+use tp_index::{
+    results::Hit,
+    search::{self, Query, RERANK_WINDOW, telemetry::Lane},
+    store::Store,
+};
 
 const MEMBERS: [&str; 2] = ["alpha", "beta"];
 const FILES_PER_MEMBER: usize = 20;

@@ -4,12 +4,12 @@ mod session_snapshot;
 #[cfg(test)]
 mod tests;
 
-use crate::store::{PublicationObservations, Store};
 use anyhow::{Result, ensure};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde_json::{Value, json};
 use session_snapshot::SessionSnapshot;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tp_index::store::{PublicationObservations, Store};
 
 const MAX_OPEN_SESSIONS: i64 = 50;
 const MAX_BASELINE_BYTES: u64 = 64 * 1024 * 1024;

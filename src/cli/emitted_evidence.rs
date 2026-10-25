@@ -1,11 +1,11 @@
 //! Preserve only identities present in the final prepared JSON response.
 use crate::diagnostics::{Outcome, RequestEvent};
-use crate::results::{self, HistoricalSource, RESULTS_DATABASE, ResultEntry, ResultSetStore};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tp_core::{identity::ResultHandle, path_codec::encode_path, query_deadline::QueryDeadline};
+use tp_index::results::{self, HistoricalSource, RESULTS_DATABASE, ResultEntry, ResultSetStore};
 
 const AUDIT_DEADLINE: Duration = Duration::from_millis(50);
 const AUDIT_BUSY_SLICE: Duration = Duration::from_millis(25);

@@ -18,7 +18,7 @@ use tp_core::{output::OutputBudget, query_deadline::QueryDeadline};
 ///
 /// Semantic and rerank lanes stay disabled; the coverage object names those
 /// omissions when requested or when the query is otherwise eligible.
-pub(crate) fn search(
+pub fn search(
     root: &Path,
     cache_exclusion: &Path,
     query: &Query,
@@ -39,7 +39,7 @@ pub(crate) fn search(
 }
 
 /// Outlines exactly one current file without consulting a published index.
-pub(crate) fn map_file(
+pub fn map_file(
     root: &Path,
     cache_exclusion: &Path,
     path: &str,
@@ -49,7 +49,7 @@ pub(crate) fn map_file(
 }
 
 /// Renders one stateless page with caller-owned provenance metadata.
-pub(crate) fn render_with_metadata(
+pub fn render_with_metadata(
     root: &Path,
     member: Option<&str>,
     set: &ResultSet,
@@ -61,7 +61,7 @@ pub(crate) fn render_with_metadata(
 }
 
 /// Renders ranked member results in one page and applies one shared output budget.
-pub(crate) fn render_members(
+pub fn render_members(
     parts: &[(&Path, Option<&str>, &ResultSet)],
     metadata: &Value,
     limit: usize,

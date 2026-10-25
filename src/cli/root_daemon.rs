@@ -9,8 +9,6 @@ use super::{Arguments, dispatch::local_with_session, emission, parse};
 use crate::{
     daemon::{self, AcceptedRequest, DaemonHandler},
     diagnostics::DiagnosticQueue,
-    semantic_preparation::PreparationManager,
-    store::Store,
 };
 use anyhow::Result;
 use rusqlite::OptionalExtension;
@@ -22,6 +20,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
+use tp_index::{semantic_preparation::PreparationManager, store::Store};
 use tp_semantic::SemanticSession;
 
 const PREPARATION_CHECK_INTERVAL: Duration = Duration::from_secs(1);
@@ -70,9 +69,9 @@ impl RootDaemon {
             root: root.to_owned(),
             cache: cache.to_owned(),
             diagnostics,
-            preparation: PreparationManager::new(crate::semantic_preparation::SharedWorker::new(
-                root,
-            )),
+            preparation: PreparationManager::new(
+                tp_index::semantic_preparation::SharedWorker::new(root),
+            ),
             log_queue: RwLock::new(None),
             journal_opened: AtomicBool::new(false),
             maintenance: Mutex::new(MaintenanceClock {
@@ -98,14 +97,14 @@ impl RootDaemon {
         let Ok(store) = Store::open(&self.root, &self.cache) else {
             return;
         };
-        let Ok(report) = crate::probes::doctor(&store, &self.cache, &SemanticSession::default())
+        let Ok(report) = tp_index::probes::doctor(&store, &self.cache, &SemanticSession::default())
         else {
             return;
         };
         let failed = report
             .probes
             .iter()
-            .any(|p| matches!(p.outcome, crate::probes::ProbeOutcome::Failed));
+            .any(|p| matches!(p.outcome, tp_index::probes::ProbeOutcome::Failed));
         let mut event = crate::diagnostics::RequestEvent::new(
             tp_core::request_context::RequestContext::new(None, None),
             crate::diagnostics::Operation::Doctor,

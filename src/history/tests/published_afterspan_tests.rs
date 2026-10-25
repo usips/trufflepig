@@ -1,6 +1,6 @@
 //! A history live-source span stays bounded when `show` pages through it.
 use super::*;
-use crate::source::show;
+use tp_index::source::show;
 
 /// One committed `lib.rs` with a 220-line body.
 fn committed_fixture() -> (tempfile::TempDir, tempfile::TempDir, Store) {

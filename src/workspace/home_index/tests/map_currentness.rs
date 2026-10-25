@@ -150,7 +150,7 @@ fn current_map_recheck_resolves_encoded_file_targets() -> anyhow::Result<()> {
     store.index()?;
     fs::write(&file, "pub fn replacement_space_outline() {}\n")?;
     for target in ["space map.rs", "space%20map.rs"] {
-        let mut found = crate::search::map(&store, target)?;
+        let mut found = tp_index::search::map(&store, target)?;
         assert!(found.hits.iter().any(|hit| hit.name == "old_space_outline"));
         assert!(crate::workspace::ParentFallback::refresh_current_map(
             &store, target, &mut found
@@ -180,7 +180,7 @@ fn missing_current_map_source_suppresses_unverified_outline() -> anyhow::Result<
     store.index()?;
     fs::remove_file(&file)?;
 
-    let mut missing = crate::search::map(&store, "lib.rs")?;
+    let mut missing = tp_index::search::map(&store, "lib.rs")?;
     assert!(
         missing.hits.iter().any(|hit| hit.name == "old_after_pass"),
         "fixture must retain the old indexed outline"
@@ -198,7 +198,7 @@ fn missing_current_map_source_suppresses_unverified_outline() -> anyhow::Result<
         "changed source could not be outlined"
     );
 
-    let mut unverified = crate::search::map(&store, "lib.rs")?;
+    let mut unverified = tp_index::search::map(&store, "lib.rs")?;
     assert!(
         unverified
             .hits

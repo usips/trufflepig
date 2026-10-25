@@ -1,7 +1,7 @@
-use crate::store::{IndexProgress, read_index_progress};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tp_core::path_codec::{decode_path, encode_path};
+use tp_index::store::{IndexProgress, read_index_progress};
 
 /// Canonical selected paths used to refresh transient index progress on a page.
 #[derive(Clone, Debug, Deserialize, Serialize)]

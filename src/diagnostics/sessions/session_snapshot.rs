@@ -2,13 +2,13 @@ use crate::history::source_diff::{
     DeclarationRelation, FingerprintFact, FingerprintLines, correspond_fingerprints,
     diff_fingerprints, fingerprint_lines,
 };
-use crate::store::{PublicationObservations, Store};
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use tp_core::identity::{ByteSpan, ContentRevision};
 use tp_core::path_codec::encode_path;
+use tp_index::store::{PublicationObservations, Store};
 
 #[derive(Deserialize, Serialize)]
 pub(super) struct SessionSnapshot {

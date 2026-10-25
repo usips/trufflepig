@@ -23,10 +23,7 @@ use tp_core::{
 pub(crate) const SNIPPET_PAGE_FLOOR: usize = 8;
 
 /// Largest count in `0..=max` for which `fits` holds, assuming monotonicity.
-pub(crate) fn largest_fitting(
-    max: usize,
-    mut fits: impl FnMut(usize) -> Result<bool>,
-) -> Result<usize> {
+pub fn largest_fitting(max: usize, mut fits: impl FnMut(usize) -> Result<bool>) -> Result<usize> {
     let (mut low, mut high) = (0, max);
     while low < high {
         let count = low + (high - low).div_ceil(2);
@@ -40,7 +37,7 @@ pub(crate) fn largest_fitting(
 }
 
 /// Renders the snippet tier when it keeps at least `SNIPPET_PAGE_FLOOR` hits.
-pub(crate) fn snippet_page(
+pub fn snippet_page(
     max_count: usize,
     budget: &OutputBudget,
     render: impl Fn(usize, HitDetail) -> Result<String>,

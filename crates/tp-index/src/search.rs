@@ -14,18 +14,18 @@ pub mod path_filter;
 mod path_prior;
 mod qualified_name;
 mod rerank_window;
-#[cfg(test)]
-pub(crate) use rerank_window::RERANK_WINDOW;
+#[cfg(any(test, feature = "test-support"))]
+pub use rerank_window::RERANK_WINDOW;
 mod semantic_lane;
 mod snippets;
-pub(crate) mod stateless;
+pub mod stateless;
 pub mod telemetry;
 #[cfg(test)]
 mod tests;
 pub use declarations::InvocationDirectory;
 pub(crate) use file_ranking::fuse_search_file_lanes as fuse_file_lanes;
 pub use import_trail::{ImportHop, trace_import};
-pub(crate) use navigation::context_entry;
+pub use navigation::context_entry;
 pub use navigation::{
     REFERENCE_COVERAGE_KEYS, context, map, map_miss, outline_extracted, reference_query,
     reference_summary, references,
@@ -34,7 +34,7 @@ pub use path_filter::{BoundPathFilter, PathFilter};
 pub use rerank_window::{MergedRerank, RerankOutcome, RerankScorer};
 
 use concept_query::ConceptQuery;
-pub(crate) use current_bytes::{search_file as search_current_file, semantic_representative};
+pub use current_bytes::{search_file as search_current_file, semantic_representative};
 use file_ranking::FusionPolicy;
 use path_prior::PathPrior;
 

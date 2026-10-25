@@ -18,7 +18,7 @@ const SYMBOL_ALTERNATIVES: usize = 5;
 /// (tied declarations, then the ranked rest), and the import trail when the
 /// best row was an import.
 #[derive(Debug)]
-pub(crate) struct SymbolSelection {
+pub struct SymbolSelection {
     pub declarations: usize,
     pub imports: usize,
     pub also: Vec<String>,
@@ -28,7 +28,7 @@ pub(crate) struct SymbolSelection {
 /// Imports a `sym:` read passed through, whether they reached the shown
 /// declaration, and how many declarations tied for it (1 when unique).
 #[derive(Debug)]
-pub(crate) struct ImportNote {
+pub struct ImportNote {
     pub hops: Vec<ImportHop>,
     pub followed: bool,
     pub candidates: usize,
@@ -36,7 +36,7 @@ pub(crate) struct ImportNote {
 
 /// The `show` target in command words: a `sym:` target takes every following
 /// word as part of its query (`show sym:X file:src/`); others take one word.
-pub(crate) fn show_target(words: &[String]) -> Option<String> {
+pub fn show_target(words: &[String]) -> Option<String> {
     let first = words.get(1)?;
     Some(if first.starts_with("sym:") {
         words[1..].join(" ")
@@ -60,7 +60,7 @@ pub(super) fn acquire_symbol(
 /// Shows the best of `found` (definitions of `query` in rank order, from the
 /// index or brought up to a worktree): follows a leading import, saves the
 /// candidates, and reads the shown row with `read_first(handle, hit)`.
-pub(crate) fn read_symbol(
+pub fn read_symbol(
     store: &Store,
     query: &Query,
     found: ResultSet,

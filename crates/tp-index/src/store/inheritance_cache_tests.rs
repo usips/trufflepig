@@ -59,7 +59,7 @@ fn prior_extraction_cache_version(revision: u32) -> i64 {
     let mut version = blake3::Hasher::new();
     version.update(b"trufflepig-extraction-cache-v1");
     version.update(&revision.to_le_bytes());
-    version.update(include_bytes!("../../Cargo.lock"));
+    version.update(include_bytes!("../../../../Cargo.lock"));
     i64::from_le_bytes(version.finalize().as_bytes()[..8].try_into().unwrap())
 }
 

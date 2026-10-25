@@ -3,15 +3,15 @@
 //! catches what Git divergence misses (a parent index behind its `HEAD`, edits
 //! inside the divergence reuse window). Hits read from current bytes never differ.
 use super::ParentFallback;
-use crate::{
-    results::Hit,
-    source::{self, MAX_READ_BYTES},
-};
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
 };
 use tp_core::{identity::ContentRevision, path_codec::decode_path};
+use tp_index::{
+    results::Hit,
+    source::{self, MAX_READ_BYTES},
+};
 
 /// Most distinct files hashed for one answer; later files fall back to the
 /// Git divergence (and count as differing when it is incomplete).

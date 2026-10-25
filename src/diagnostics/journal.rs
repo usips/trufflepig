@@ -154,7 +154,7 @@ impl DiagnosticStore {
         Ok(())
     }
 
-    pub fn start_session(&self, store: &mut crate::store::Store) -> Result<serde_json::Value> {
+    pub fn start_session(&self, store: &mut tp_index::store::Store) -> Result<serde_json::Value> {
         ensure!(self.mode != DiagnosticsMode::Off, "diagnostics_disabled");
         let _guard = self
             .lock()?
@@ -167,7 +167,7 @@ impl DiagnosticStore {
 
     pub fn end_session(
         &self,
-        store: &mut crate::store::Store,
+        store: &mut tp_index::store::Store,
         id: &str,
     ) -> Result<serde_json::Value> {
         let _guard = self

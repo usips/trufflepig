@@ -1,10 +1,8 @@
-use crate::{
-    cli::{normalized_args, parse},
-    search::Query,
-};
+use crate::cli::{normalized_args, parse};
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use serde_json::{Value, json};
 use tp_core::output::{OutputBudget, OutputFormat, lines_format::COVERAGE_KEY};
+use tp_index::search::Query;
 
 const FALLBACK_BUDGET_RESERVE: usize = 128;
 

@@ -1576,6 +1576,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "tp-index"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "fs2",
+ "ignore",
+ "libc",
+ "quick-xml",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tp-core",
+ "tp-extract",
+ "tp-semantic",
+ "tree-sitter",
+ "tree-sitter-php",
+ "uuid",
+]
+
+[[package]]
 name = "tp-semantic"
 version = "0.1.0"
 dependencies = [
@@ -1718,6 +1741,7 @@ dependencies = [
  "toml",
  "tp-core",
  "tp-extract",
+ "tp-index",
  "tp-semantic",
  "tree-sitter",
  "tree-sitter-c-sharp",

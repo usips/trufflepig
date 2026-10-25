@@ -1,11 +1,11 @@
 use super::*;
-use crate::store::Store;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
     thread::JoinHandle,
 };
 use tp_core::{query_deadline::QueryDeadline, workspace_config::WorkspaceConfig};
+use tp_index::store::Store;
 
 /// Two indexed members plus a coordinator served on a test thread.
 struct ServedWorkspace {

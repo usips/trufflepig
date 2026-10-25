@@ -22,7 +22,7 @@ pub(super) fn write_lease(cache: &Path) -> Result<WriteLease> {
 
 pub(super) fn schedule(history: &History) -> Result<()> {
     capacity(history)?;
-    let time = crate::results::now();
+    let time = tp_index::results::now();
     history.conn.execute(
         "INSERT OR IGNORE INTO views(tip,cutoff,created,updated) VALUES(?1,?2,?3,?3)",
         params![history.tip.as_str(), time - 2 * 365 * 86400, time],
@@ -78,7 +78,7 @@ pub(super) fn status(history: &History) -> Result<Value> {
         )
         .optional()?;
     let (cutoff, visited, complete, boundary, failure) = row.unwrap_or((
-        crate::results::now() - 2 * 365 * 86400,
+        tp_index::results::now() - 2 * 365 * 86400,
         0,
         false,
         "pending".into(),
@@ -91,7 +91,7 @@ pub(super) fn status(history: &History) -> Result<Value> {
 
 pub(super) fn index(history: &mut History) -> Result<Value> {
     let _writer = write_lease(&history.cache)?;
-    let time = crate::results::now();
+    let time = tp_index::results::now();
     history.conn.execute(
         "INSERT OR IGNORE INTO views(tip,cutoff,created,updated) VALUES(?1,?2,?3,?3)",
         params![history.tip.as_str(), time - 2 * 365 * 86400, time],
@@ -214,13 +214,13 @@ fn index_batch(history: &mut History) -> Result<()> {
             end as i64,
             finished,
             boundary,
-            crate::results::now()
+            tp_index::results::now()
         ],
     )?;
     let obsolete: Option<String> = tx
         .query_row(
             "SELECT tip FROM views WHERE updated<?1 ORDER BY updated LIMIT 1",
-            [crate::results::now() - 30 * 86400],
+            [tp_index::results::now() - 30 * 86400],
             |r| r.get(0),
         )
         .optional()?;

@@ -1,14 +1,12 @@
 //! `--no-daemon` member indexing within the query's maintenance slice; an
 //! existing own or parent view answers when the slice ends first.
-use crate::{
-    store::{Store, is_index_cache_unavailable, is_index_warming},
-    workspace::{
-        home_index::{HomeIndexPolicy, HomeIndexSource, ParentIndexView, resolve_home_index},
-        member_root::MemberRoot,
-    },
+use crate::workspace::{
+    home_index::{HomeIndexPolicy, HomeIndexSource, ParentIndexView, resolve_home_index},
+    member_root::MemberRoot,
 };
 use anyhow::{Result, bail};
 use tp_core::{coded_error::ErrorCode, query_deadline::QueryDeadline};
+use tp_index::store::{Store, is_index_cache_unavailable, is_index_warming};
 
 pub(super) fn inline_member_index(
     member: &MemberRoot,
@@ -38,7 +36,7 @@ pub(super) fn inline_member_index(
     if own_view.is_none()
         && let Some(parent) = parent_view.as_ref()
     {
-        let _ = crate::store::ensure_seeded_within(
+        let _ = tp_index::store::ensure_seeded_within(
             parent.store.index_cache(),
             &member.root,
             member_cache,

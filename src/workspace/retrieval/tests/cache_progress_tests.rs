@@ -11,7 +11,7 @@ fn actual_no_daemon_worktree_read_serves_parent_hit_promptly_under_held_lease() 
     let fixture = Fixture::git_backed();
     let parent = fixture.root.path().join("engine");
     let parent_cache = fixture.member_cache("engine");
-    crate::store::Store::open(&parent, &parent_cache)
+    tp_index::store::Store::open(&parent, &parent_cache)
         .unwrap()
         .index()
         .unwrap();
@@ -89,7 +89,7 @@ fn assert_unpublished_index(root: &std::path::Path, cache: &std::path::Path) {
         "held lease must not record publication"
     );
 
-    let error = match crate::store::Store::open_read(
+    let error = match tp_index::store::Store::open_read(
         root,
         cache,
         tp_core::query_deadline::QueryDeadline::start(),
@@ -97,5 +97,5 @@ fn assert_unpublished_index(root: &std::path::Path, cache: &std::path::Path) {
         Ok(_) => panic!("generation-zero index must be warming"),
         Err(error) => error,
     };
-    assert!(crate::store::is_index_warming(&error), "{error:#}");
+    assert!(tp_index::store::is_index_warming(&error), "{error:#}");
 }

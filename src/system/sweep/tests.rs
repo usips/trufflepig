@@ -1,5 +1,5 @@
 use super::*;
-use crate::store::Store;
+use tp_index::store::Store;
 
 fn scratch() -> tempfile::TempDir {
     tempfile::Builder::new()

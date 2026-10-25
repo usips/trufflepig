@@ -1,7 +1,6 @@
 use super::{emission::execute, run};
 use crate::{
     diagnostics::{DiagnosticStore, DiagnosticsMode, EventStage, RequestEvent},
-    store::Store,
     workspace::member_cache,
 };
 use serde_json::Value;
@@ -12,6 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tp_core::{path_codec::encode_path, workspace_config::WorkspaceConfig};
+use tp_index::store::Store;
 
 struct Fixture {
     root: tempfile::TempDir,

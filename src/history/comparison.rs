@@ -1,12 +1,12 @@
 use super::staging::{self, StagingBudget};
 use super::*;
-use crate::results::{ChangeEntry, HistoricalSource};
 use anyhow::{Context, ensure};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::os::unix::ffi::OsStrExt;
 use tp_core::coded_error::CodedContext;
 use tp_core::identity::ByteSpan;
+use tp_index::results::{ChangeEntry, HistoricalSource};
 mod retained_changes;
 use retained_changes::{compare_trees, decode_changes};
 #[cfg(test)]

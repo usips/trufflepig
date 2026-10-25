@@ -98,7 +98,7 @@ fn workspace_pages_use_absolute_file_locators_and_compact_coverage() -> Result<(
     let root = directory.path().join("member");
     std::fs::create_dir(&root)?;
     let results = open_results(&directory.path().join("cache"))?;
-    let hit = crate::results::Hit {
+    let hit = tp_index::results::Hit {
         handle: String::new(),
         path: "src%20file.rs".into(),
         revision: Some("revision".into()),

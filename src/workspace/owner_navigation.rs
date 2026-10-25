@@ -6,12 +6,7 @@ use super::{
     result_cache::{MemberSnapshot, OwnedEntry, WorkspaceResults, WorkspaceSet},
     selected_member,
 };
-use crate::{
-    cli::Arguments,
-    results::{self, ResultEntry},
-    source::{self, SourceSide, acquisition},
-    store::{Store, is_index_warming},
-};
+use crate::cli::Arguments;
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
 use tp_core::coded_error::CodedContext;
@@ -20,6 +15,11 @@ use tp_core::{
     identity::ResultHandle,
     output::OutputBudget,
     query_deadline::QueryDeadline,
+};
+use tp_index::{
+    results::{self, ResultEntry},
+    source::{self, SourceSide, acquisition},
+    store::{Store, is_index_warming},
 };
 
 fn address(target: &str) -> Result<(String, Option<SourceSide>, Option<usize>)> {
@@ -104,7 +104,7 @@ fn read_within(
                     "historical entries are invalid for live context"
                 ));
             };
-            return crate::search::context_entry(
+            return tp_index::search::context_entry(
                 &store,
                 owner.generation,
                 hit.clone(),
@@ -159,7 +159,7 @@ fn read_within(
     );
     let member = selected_member(config, options)?;
     member.verify_identity()?;
-    let maintenance_deadline = crate::store::inline_maintenance_deadline(deadline);
+    let maintenance_deadline = tp_index::store::inline_maintenance_deadline(deadline);
     let cache = if member.worktree.is_some() {
         let selected_cache = hashed_member_cache(&member.root, options.cache.as_deref())?;
         match member_cache_until(&member, options.cache.as_deref(), &maintenance_deadline) {
@@ -182,7 +182,7 @@ fn read_within(
         member_cache_until(&member, options.cache.as_deref(), deadline)?
     };
     let origin =
-        crate::search::InvocationDirectory::within(&member.root, &options.root.canonicalize()?);
+        tp_index::search::InvocationDirectory::within(&member.root, &options.root.canonicalize()?);
     let (store, mut source, parent_read) = acquire_home_read(
         &member,
         &cache,

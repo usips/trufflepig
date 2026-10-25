@@ -38,7 +38,7 @@ pub(super) fn ensure_until(
     let member_cache = super::hashed_member_cache(configured, explicit)?;
     let worktree_cache = super::hashed_member_cache(effective, explicit)?;
     std::fs::create_dir_all(&worktree_cache)
-        .map_err(|error| crate::store::index_cache_unavailable(&worktree_cache, error.into()))?;
+        .map_err(|error| tp_index::store::index_cache_unavailable(&worktree_cache, error.into()))?;
     ensure!(
         !deadline.expired(),
         coded!(TimedOut, "query deadline expired")
@@ -48,7 +48,8 @@ pub(super) fn ensure_until(
         !deadline.expired(),
         coded!(TimedOut, "query deadline expired")
     );
-    let _ = crate::store::ensure_seeded_until(&member_cache, effective, &worktree_cache, deadline);
+    let _ =
+        tp_index::store::ensure_seeded_until(&member_cache, effective, &worktree_cache, deadline);
     ensure!(
         !deadline.expired(),
         coded!(TimedOut, "query deadline expired")
@@ -61,5 +62,5 @@ fn seed(member_cache: &Path, effective: &Path, worktree_cache: &Path) {
     if worktree_cache.join("index.sqlite3").exists() {
         return;
     }
-    let _ = crate::store::ensure_seeded(member_cache, effective, worktree_cache);
+    let _ = tp_index::store::ensure_seeded(member_cache, effective, worktree_cache);
 }

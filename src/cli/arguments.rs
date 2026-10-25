@@ -1,12 +1,10 @@
 //! Parsed client options and explicit daemon argument forwarding.
-use crate::{
-    board::board_grammar::{BoardArguments, BoardOptions},
-    results,
-};
+use crate::board::board_grammar::{BoardArguments, BoardOptions};
 use anyhow::{Result, bail};
 use clap::Parser;
 use std::path::{Path, PathBuf};
 use tp_core::{output::MAX_BUDGET, output::OutputFormat};
+use tp_index::results;
 
 /// Query and navigation summary printed after the option list by `--help`.
 const QUERY_HELP: &str = "\
@@ -310,10 +308,9 @@ pub(super) fn validate(options: &Arguments) -> Result<()> {
     if options.no_cache
         && !matches!(verb, "search" | "map")
         && !(verb == "show"
-            && options
-                .words
-                .get(1)
-                .is_some_and(|target| crate::source::acquisition::is_current_path_target(target)))
+            && options.words.get(1).is_some_and(|target| {
+                tp_index::source::acquisition::is_current_path_target(target)
+            }))
     {
         bail!(coded!(
             InvalidOptions,

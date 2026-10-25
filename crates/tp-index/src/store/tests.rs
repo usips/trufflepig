@@ -45,7 +45,7 @@ fn extraction_contract_revision_rebuilds_unchanged_language_facts() {
     // A prior release keyed facts by Cargo.lock alone. Poison those rows with
     // valid but stale facts so this scan must miss them using the new contract key.
     let old_version = i64::from_le_bytes(
-        blake3::hash(include_bytes!("../../Cargo.lock")).as_bytes()[..8]
+        blake3::hash(include_bytes!("../../../../Cargo.lock")).as_bytes()[..8]
             .try_into()
             .unwrap(),
     );

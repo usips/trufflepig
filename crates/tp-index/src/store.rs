@@ -47,7 +47,7 @@ use std::time::Duration;
 use tp_core::coded_error::CodedContext;
 use tp_core::identity::ContentRevision;
 use tp_core::query_deadline::QueryDeadline;
-pub(crate) use worktree_seed_source::linked_worktree_main_checkout;
+pub use worktree_seed_source::linked_worktree_main_checkout;
 
 pub use index_deadline::inline_maintenance_deadline;
 
@@ -76,7 +76,7 @@ pub struct Publication {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub struct PublishedFile {
     pub path: String,
     pub revision: Option<ContentRevision>,
@@ -85,7 +85,7 @@ pub struct PublishedFile {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub struct PublishedFiles {
     pub publication: Publication,
     pub files: Vec<PublishedFile>,
@@ -269,7 +269,7 @@ impl Store {
         Ok(result)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn published_files(&self) -> Result<PublishedFiles> {
         self.with_publication(|conn, publication| {
             let count: i64 = conn.query_row("SELECT count(*) FROM files", [], |row| row.get(0))?;

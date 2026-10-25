@@ -33,7 +33,7 @@ pub(super) fn entries(
                     _ if tp_core::git_runner::is_resource_limited(&error) => "resource_excluded",
                     _ => "object_unavailable",
                 };
-                let excluded_entry = ResultEntry::Change(crate::results::ChangeEntry {
+                let excluded_entry = ResultEntry::Change(tp_index::results::ChangeEntry {
                     handle: String::new(),
                     name: file.path.clone(),
                     status: status.into(),

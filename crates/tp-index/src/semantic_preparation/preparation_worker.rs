@@ -17,10 +17,10 @@ pub trait EmbeddingWorker: Send {
 }
 
 /// Adapts a mutable closure to [`EmbeddingWorker`], useful for tests and probes.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub struct ClosureWorker<F>(pub F);
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl<F> EmbeddingWorker for ClosureWorker<F>
 where
     F: FnMut(&[EmbeddingInput]) -> Result<Vec<Result<Embedding>>> + Send,

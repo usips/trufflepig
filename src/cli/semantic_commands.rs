@@ -1,8 +1,8 @@
 //! Semantic preparation and inference worker command handling.
 
 use super::Arguments;
+use crate::workspace;
 use crate::workspace::workspace_discovery::WorkspaceMembers;
-use crate::{semantic_preparation, workspace};
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
 use std::path::Path;
@@ -11,6 +11,7 @@ use tp_core::coded_error::CodedContext;
 use tp_core::{
     output::OutputBudget, query_deadline::QueryDeadline, workspace_config::WorkspaceConfig,
 };
+use tp_index::semantic_preparation;
 use tp_semantic::worker;
 
 /// Handles a root-scoped `semantic` command.

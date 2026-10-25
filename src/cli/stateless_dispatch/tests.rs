@@ -1,6 +1,7 @@
-use crate::{cli, store::Store};
+use crate::cli;
 use serde_json::Value;
 use std::{fs, path::Path};
+use tp_index::store::Store;
 
 fn args(root: &Path, cache: &Path, extra: &[&str]) -> Vec<String> {
     let mut args = vec![

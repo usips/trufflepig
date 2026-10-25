@@ -6,13 +6,7 @@ use super::{
     HomeIndexPolicy, HomeIndexSource, ParentIndexView, WorktreeHashes, is_reextracted_worktree_hit,
     resolve_home_index, worktree_reads::unextractable,
 };
-use crate::{
-    results::{Hit, ResultEntry},
-    search::{InvocationDirectory, Query},
-    source::{self, AcquiredSource, SourceSide, acquisition},
-    store::Store,
-    workspace::member_root::MemberRoot,
-};
+use crate::workspace::member_root::MemberRoot;
 use anyhow::{Result, ensure};
 use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
@@ -21,6 +15,12 @@ use tp_core::{
     coded_error::{ErrorCode, error_code},
     identity::{ByteSpan, ContentRevision},
     query_deadline::QueryDeadline,
+};
+use tp_index::{
+    results::{Hit, ResultEntry},
+    search::{InvocationDirectory, Query},
+    source::{self, AcquiredSource, SourceSide, acquisition},
+    store::Store,
 };
 
 /// How a parent-index `show` reached bytes other than the verified indexed ones.
@@ -115,7 +115,7 @@ fn maintain_worktree_index(
     deadline: &QueryDeadline,
     maintenance_deadline: &QueryDeadline,
     wait_for_writer: bool,
-) -> Result<Option<crate::store::Coverage>> {
+) -> Result<Option<tp_index::store::Coverage>> {
     ensure!(
         !deadline.expired(),
         coded!(TimedOut, "query deadline expired")
@@ -199,7 +199,7 @@ pub(crate) fn acquire_through_parent(
     }
     let store = &view.store;
     let query = Query::parse(target)?;
-    let mut found = crate::search::definitions(store, &query, origin)?;
+    let mut found = tp_index::search::definitions(store, &query, origin)?;
     let mut hashes = WorktreeHashes::default();
     let parent = std::mem::take(&mut found.hits);
     let symbols =

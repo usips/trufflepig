@@ -1,17 +1,17 @@
 //! Current-source workspace lookup with configured ownership and no persisted results.
 
 use super::{WorkspaceConfig, hashed_member_cache, member_root::MemberRoot};
+use crate::cli::Arguments;
 use crate::workspace::workspace_discovery::WorkspaceMembers;
-use crate::{
-    cli::Arguments,
-    results::ResultSet,
-    search::{InvocationDirectory, Query, stateless},
-    store::{is_index_cache_unavailable, preflight_results_cache},
-};
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
 use tp_core::coded_error::CodedContext;
 use tp_core::{output::OutputBudget, path_codec::encode_path, query_deadline::QueryDeadline};
+use tp_index::{
+    results::ResultSet,
+    search::{InvocationDirectory, Query, stateless},
+    store::{is_index_cache_unavailable, preflight_results_cache},
+};
 
 pub(super) fn eligible(options: &Arguments) -> bool {
     matches!(
@@ -43,7 +43,7 @@ pub(super) fn cursor_owner(
         if member.verify_identity().is_err() {
             continue;
         }
-        if crate::source::acquisition::cursor_matches_root(target, &member.root)? {
+        if tp_index::source::acquisition::cursor_matches_root(target, &member.root)? {
             ensure!(
                 owner.is_none(),
                 coded!(InvalidCursor, "ambiguous configured source owner")

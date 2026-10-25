@@ -1,8 +1,4 @@
 use super::*;
-use crate::{
-    results::{ChangeEntry, ResultEntry},
-    store::{Store, read_index_progress},
-};
 use anyhow::Result;
 use serde_json::{Value, json};
 use std::{
@@ -16,6 +12,10 @@ use tp_core::{
     output::{OutputBudget, OutputFormat},
     path_codec::encode_path,
     query_deadline::QueryDeadline,
+};
+use tp_index::{
+    results::{ChangeEntry, ResultEntry},
+    store::{Store, read_index_progress},
 };
 
 fn create_sources(root: &Path) -> Result<()> {

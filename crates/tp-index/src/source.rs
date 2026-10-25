@@ -114,14 +114,14 @@ fn current_span(bytes: &[u8], first: usize, last: usize) -> Result<(usize, usize
     ))
 }
 
-pub(crate) mod acquisition;
+pub mod acquisition;
 mod reextraction;
 mod show_lines;
-pub(crate) use acquisition::AcquiredSource;
+pub use acquisition::AcquiredSource;
 pub use acquisition::SourceSide;
 pub use reextraction::{reextract_definition, usable_extraction};
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn show(store: &Store, target: &str, budget: &OutputBudget) -> Result<String> {
     show_with_side(store, target, None, budget)
 }
@@ -140,7 +140,7 @@ fn render(source: AcquiredSource, budget: &OutputBudget) -> Result<String> {
     render_owned(source, budget, &json!({}))
 }
 
-pub(crate) fn render_owned(
+pub fn render_owned(
     source: AcquiredSource,
     budget: &OutputBudget,
     metadata: &serde_json::Value,

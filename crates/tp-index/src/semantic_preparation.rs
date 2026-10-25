@@ -7,8 +7,8 @@
 mod preparation_cache;
 mod preparation_worker;
 
-#[cfg(test)]
-pub(crate) use preparation_worker::ClosureWorker;
+#[cfg(any(test, feature = "test-support"))]
+pub use preparation_worker::ClosureWorker;
 pub use preparation_worker::{EmbeddingWorker, ForegroundWorker, SharedWorker};
 
 use anyhow::{Context, Result, bail};
@@ -105,7 +105,7 @@ pub struct PreparationWait {
 }
 
 impl PreparationWait {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn is_terminal(&self) -> bool {
         self.state.terminal()
     }

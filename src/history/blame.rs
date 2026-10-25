@@ -58,7 +58,7 @@ pub(super) fn blame(
         .span
         .unwrap_or(tp_core::identity::ByteSpan::new(0, bytes.len())?)
         .validate(bytes.len())?;
-    let (first, last) = crate::source::line_span(&bytes, span.start, span.end);
+    let (first, last) = tp_index::source::line_span(&bytes, span.start, span.end);
     let range = format!("{first},{last}");
     let mut args = vec![
         "blame",
@@ -194,7 +194,7 @@ fn ensure_captured_head(history: &History) -> Result<()> {
 fn published_source(
     store: &Store,
     target: &targets::Target,
-) -> Result<(Vec<u8>, String, crate::store::Publication)> {
+) -> Result<(Vec<u8>, String, tp_index::store::Publication)> {
     store.with_publication(|conn, publication| {
         let revision: Option<String> = conn
             .query_row(

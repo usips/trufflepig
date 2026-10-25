@@ -3,17 +3,17 @@
 //! file is changed when Git divergence lists it or its bytes no longer hash to
 //! the indexed revision ([`WorktreeHashes`]).
 use super::{ParentFallback, WorktreeDivergence, hit_verification::WorktreeHashes};
-use crate::{
-    results::{Hit, ResultSet},
-    search::{BoundPathFilter, InvocationDirectory, Query},
-    source,
-    store::Store,
-};
 use anyhow::{Result, ensure};
 use rusqlite::OptionalExtension;
 use std::collections::HashSet;
 use tp_core::{identity::ContentRevision, path_codec::decode_path, query_deadline::QueryDeadline};
 use tp_extract::Definition;
+use tp_index::{
+    results::{Hit, ResultSet},
+    search::{BoundPathFilter, InvocationDirectory, Query},
+    source,
+    store::Store,
+};
 
 /// Most changed files re-evaluated for one search query.
 const MAX_RECHECKED_FILES: usize = 64;
@@ -67,7 +67,7 @@ impl ParentFallback {
             let Some(target) = words.get(1) else {
                 return Ok(HashSet::new());
             };
-            let filter = crate::search::PathFilter::prefix(target);
+            let filter = tp_index::search::PathFilter::prefix(target);
             let Some(path) = filter
                 .resolve_single_file(&store.conn)?
                 .or_else(|| filter.includes().first().cloned())
@@ -130,7 +130,7 @@ impl ParentFallback {
         found: &mut ResultSet,
     ) -> Result<bool> {
         let Some(path) =
-            crate::search::PathFilter::prefix(target).resolve_single_file(&store.conn)?
+            tp_index::search::PathFilter::prefix(target).resolve_single_file(&store.conn)?
         else {
             return Ok(false);
         };
@@ -311,7 +311,7 @@ impl ParentFallback {
             }
         }
         if query.exact {
-            crate::search::rank_definitions(&mut hits, origin);
+            tp_index::search::rank_definitions(&mut hits, origin);
         }
         replaced.extend(unextractable_paths);
         Ok(WorktreeSymbols {
@@ -354,12 +354,13 @@ fn current_file_hits(
     let extraction = source::usable_extraction(path, tp_extract::extract(path, &bytes))?;
     check_deadline(deadline)?;
     let (mut hits, truncated) =
-        crate::search::search_current_file(store, query, path, &bytes, &extraction, deadline)?;
+        tp_index::search::search_current_file(store, query, path, &bytes, &extraction, deadline)?;
     let semantic = parent
         .iter()
         .any(|hit| hit.path == path && hit.provenance.as_deref() == Some("semantic"));
     if semantic
-        && let Some(hit) = crate::search::semantic_representative(query, path, &bytes, &extraction)
+        && let Some(hit) =
+            tp_index::search::semantic_representative(query, path, &bytes, &extraction)
     {
         hits.push(hit);
     }
@@ -393,7 +394,7 @@ fn reextracted_map(store: &Store, path: &str) -> Option<Vec<Hit>> {
     let revision = ContentRevision::of(&bytes).to_string();
     let extraction = source::usable_extraction(path, tp_extract::extract(path, &bytes));
     let mut definitions = extraction.ok()?.definitions;
-    crate::search::outline_extracted(&mut definitions);
+    tp_index::search::outline_extracted(&mut definitions);
     Some(
         definitions
             .into_iter()

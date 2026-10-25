@@ -3,12 +3,12 @@
 //! members; owners and member ranks travel with their entries, and fused
 //! position breaks ties. Its diagnostics event names the workspace, no member.
 use super::{WorkspaceQuery, member_fusion::FusedMembers, member_search::MemberCommand};
-use crate::{
-    diagnostics::{EventStage, Operation, Outcome, RequestEvent},
+use crate::diagnostics::{EventStage, Operation, Outcome, RequestEvent};
+use std::time::Instant;
+use tp_index::{
     results::ResultEntry,
     search::{MergedRerank, RerankOutcome, RerankScorer, telemetry::RetrievalTrace},
 };
-use std::time::Instant;
 
 #[cfg(test)]
 mod tests;

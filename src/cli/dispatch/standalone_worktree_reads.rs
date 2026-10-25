@@ -1,15 +1,15 @@
 //! Standalone linked-worktree read routing and immutable parent-result ownership.
 use super::Arguments;
-use crate::{
-    results, search, source,
-    store::{Store, is_index_cache_unavailable, is_index_cannot_open, is_index_warming},
-};
 use anyhow::{Result, bail, ensure};
 use std::{os::unix::fs::MetadataExt, path::Path};
 use tp_core::{
     coded_error::{CodeDetail, CodedContext, ErrorCode, coded_error, error_detail},
     output::OutputBudget,
     query_deadline::QueryDeadline,
+};
+use tp_index::{
+    results, search, source,
+    store::{Store, is_index_cache_unavailable, is_index_cannot_open, is_index_warming},
 };
 
 pub(super) fn retrieve_read(
@@ -22,7 +22,7 @@ pub(super) fn retrieve_read(
     session: &mut tp_semantic::SemanticSession,
     context: &tp_core::request_context::RequestContext,
     log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
-    preparation_manager: Option<&crate::semantic_preparation::PreparationManager>,
+    preparation_manager: Option<&tp_index::semantic_preparation::PreparationManager>,
     budget: &OutputBudget,
     deadline: &QueryDeadline,
 ) -> Result<String> {
@@ -141,7 +141,7 @@ pub(super) fn retrieve_read(
         bail!(map_miss.expect("map miss was just set"));
     }
     let id = results::save(store, set)
-        .map_err(|error| crate::store::index_cache_unavailable(store.results_cache(), error))?;
+        .map_err(|error| tp_index::store::index_cache_unavailable(store.results_cache(), error))?;
     results::page(store, &id, 0, options.limit, budget)
 }
 
@@ -412,7 +412,9 @@ fn save_parent_identity(
     set.coverage["parent_index"] = serde_json::to_value(identity)?;
     let new_set =
         results::save_entries(store, set.generation, set.coverage, set.hits, set.truncated)
-            .map_err(|error| crate::store::index_cache_unavailable(store.results_cache(), error))?;
+            .map_err(|error| {
+                tp_index::store::index_cache_unavailable(store.results_cache(), error)
+            })?;
     Ok(format!("{new_set}:{}", parsed.ordinal))
 }
 

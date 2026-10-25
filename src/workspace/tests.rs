@@ -1,8 +1,9 @@
 use super::test_fixture::{Fixture, git};
 use super::*;
-use crate::{cli, store::Store};
+use crate::cli;
 use std::fs;
 use tp_core::output::OutputBudget;
+use tp_index::store::Store;
 
 mod query_execution_deadline_tests;
 
@@ -320,7 +321,7 @@ fn member_slices_end_before_the_original_budget_and_later_members_get_the_remain
         .err()
         .expect("every writer-locked member remains unpublished");
         assert!(
-            crate::store::is_index_warming(&error),
+            tp_index::store::is_index_warming(&error),
             "published read remains warming for {root:?}: {error:#}"
         );
     }

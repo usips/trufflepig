@@ -6,18 +6,18 @@ use super::{
     member_search::{FoundMember, MemberAnswer, SearchedMember},
     timeout_without_member_answer,
 };
-use crate::{
-    results::ResultEntry,
-    search,
-    store::{Store, is_index_warming},
-    workspace::{
-        WorkspaceConfig,
-        member_root::MemberRoot,
-        result_cache::{OwnedEntry, WorkspaceSet},
-    },
+use crate::workspace::{
+    WorkspaceConfig,
+    member_root::MemberRoot,
+    result_cache::{OwnedEntry, WorkspaceSet},
 };
 use anyhow::{Result, ensure};
 use tp_core::coded_error::{CodeDetail, CodedError, ErrorCode};
+use tp_index::{
+    results::ResultEntry,
+    search,
+    store::{Store, is_index_warming},
+};
 
 /// Workspace results as members answer, before interleaving.
 pub(super) struct MemberFusion {
@@ -125,8 +125,8 @@ impl MemberFusion {
             store,
         } = answer;
         // A member cannot reserve the full workspace staging capacity before others run.
-        let byte_quota = crate::results::MAX_BYTES / members;
-        let hit_quota = crate::results::MAX_HITS / members;
+        let byte_quota = tp_index::results::MAX_BYTES / members;
+        let hit_quota = tp_index::results::MAX_HITS / members;
         owner.coverage = found.coverage.clone();
         let owner_index = self.set.owners.len();
         let mut bytes = 0;

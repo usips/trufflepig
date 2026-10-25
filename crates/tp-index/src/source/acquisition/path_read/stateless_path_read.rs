@@ -8,7 +8,7 @@ use tp_core::identity::{ByteSpan, ContentRevision};
 ///
 /// The cursor spans complete source lines so the existing continuation reader
 /// can validate it without result-cache storage.
-pub(crate) fn stateless_hit_handle(
+pub fn stateless_hit_handle(
     root: &Path,
     relative: &Path,
     bytes: &[u8],
@@ -34,7 +34,7 @@ pub(crate) fn stateless_hit_handle(
 }
 
 /// Whether an opaque current-path cursor is bound to `root`.
-pub(crate) fn cursor_matches_root(target: &str, root: &Path) -> Result<bool> {
+pub fn cursor_matches_root(target: &str, root: &Path) -> Result<bool> {
     let Some(cursor) = target.strip_prefix("read:path:") else {
         return Ok(false);
     };

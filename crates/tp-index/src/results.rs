@@ -4,11 +4,11 @@ use tp_core::coded_error::CodedContext;
 use tp_core::identity::ResultHandle;
 mod entries;
 mod page;
-pub(crate) mod result_lines;
+pub mod result_lines;
 mod result_set_store;
 use anyhow::{Result, bail, ensure};
 pub use entries::*;
-pub(crate) use page::{largest_fitting, snippet_page};
+pub use page::{largest_fitting, snippet_page};
 pub use page::{more, page};
 pub(crate) use page::{stateless_page, stateless_page_members};
 pub use result_set_store::{RESULTS_DATABASE, ResultSetStore};
@@ -90,7 +90,7 @@ const COMPACT_NAME_LIMIT: usize = 96;
 /// Optional parts of a compact hit, dropped (snippets first, then names) when a
 /// page would otherwise not fit its budget.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct HitDetail {
+pub struct HitDetail {
     pub names: bool,
     pub snippets: bool,
 }
@@ -150,7 +150,7 @@ pub(crate) fn compact_hit(
 }
 
 /// Render one persisted entry for a result page without changing its cache.
-pub(crate) fn compact_entry(
+pub fn compact_entry(
     entry: &ResultEntry,
     root: &Path,
     member: Option<&str>,

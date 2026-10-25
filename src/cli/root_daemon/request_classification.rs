@@ -1,7 +1,6 @@
 use crate::workspace::workspace_discovery::WorkspaceMembers;
 use crate::{
     cli::{Arguments, parse},
-    search::Query,
     workspace::member_root::MemberRoot,
 };
 use anyhow::{Result, ensure};
@@ -11,6 +10,7 @@ use tp_core::{
     request_pool::{RequestClass, RequestLane},
     workspace_config::WorkspaceConfig,
 };
+use tp_index::search::Query;
 
 pub(crate) struct ClassifiedDaemonRequest {
     pub class: RequestClass,

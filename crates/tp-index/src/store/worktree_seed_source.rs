@@ -7,7 +7,7 @@ use std::{
 
 /// Returns the main checkout of a linked worktree (`root/.git` is a file whose
 /// common directory is `<main>/.git`); `None` for plain roots and Git failures.
-pub(crate) fn linked_worktree_main_checkout(root: &Path, timeout: Duration) -> Option<PathBuf> {
+pub fn linked_worktree_main_checkout(root: &Path, timeout: Duration) -> Option<PathBuf> {
     if !root.join(".git").is_file() {
         return None;
     }

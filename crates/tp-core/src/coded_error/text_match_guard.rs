@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 const ALLOWED: &[(&str, &str)] = &[
     // SQLite reports these schema faults only as SQLITE_ERROR plus English text.
     (
-        "src/store/index_checkpoint/checkpoint_storage.rs",
+        "crates/tp-index/src/store/index_checkpoint/checkpoint_storage.rs",
         "cause.to_string().to_ascii_lowercase()",
     ),
     // BoardError flattens SQLite and OS causes into its wire message.
@@ -17,7 +17,7 @@ const ALLOWED: &[(&str, &str)] = &[
     ),
     // Provider and runtime failures arrive as text across the worker process boundary.
     (
-        "src/semantic_preparation/preparation_worker.rs",
+        "crates/tp-index/src/semantic_preparation/preparation_worker.rs",
         "format!(\"{error:#}\").to_ascii_lowercase()",
     ),
 ];

@@ -7,14 +7,14 @@ use tp_core::request_context::RequestContext;
 fn diff_and_later_pages_preserve_preimage_identity() {
     let root = tempfile::tempdir().unwrap();
     let cache = tempfile::tempdir().unwrap();
-    let store = crate::store::Store::open(root.path(), cache.path()).unwrap();
+    let store = tp_index::store::Store::open(root.path(), cache.path()).unwrap();
     let oid = tp_core::identity::GitOid::parse(&"a".repeat(40)).unwrap();
     let revision = tp_core::identity::ContentRevision::of(b"historical source");
     let id = results::save_entries(
         &store,
         1,
         json!({}),
-        vec![ResultEntry::Change(crate::results::ChangeEntry {
+        vec![ResultEntry::Change(tp_index::results::ChangeEntry {
             handle: String::new(),
             name: "alpha".into(),
             status: "modified".into(),
@@ -89,14 +89,14 @@ fn saved_handles_preserve_identity_and_report_unresolved_handles() {
     let root = tempfile::tempdir().unwrap();
     let cache = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("lib.rs"), "fn alpha() {}\n").unwrap();
-    let mut store = crate::store::Store::open(root.path(), cache.path()).unwrap();
+    let mut store = tp_index::store::Store::open(root.path(), cache.path()).unwrap();
     store.index().unwrap();
     let revision = tp_core::identity::ContentRevision::of(b"fn alpha() {}\n").to_string();
     let id = results::save_entries(
         &store,
         1,
         json!({}),
-        vec![ResultEntry::LiveSource(crate::results::Hit {
+        vec![ResultEntry::LiveSource(tp_index::results::Hit {
             handle: String::new(),
             path: "lib.rs".into(),
             revision: Some(revision.clone()),
@@ -156,7 +156,7 @@ fn source_entry(rank: usize) -> ResolvedEntry {
         owner_root: "/repo".into(),
         member: None,
         member_rank: rank,
-        entry: ResultEntry::LiveSource(crate::results::Hit {
+        entry: ResultEntry::LiveSource(tp_index::results::Hit {
             handle: String::new(),
             path: format!("src/{rank}.rs"),
             revision: Some("saved-revision".into()),
@@ -306,7 +306,7 @@ fn commit_handles_and_malformed_values_have_no_source_loss() {
             owner_root: "/repo".into(),
             member: None,
             member_rank: 1,
-            entry: ResultEntry::Commit(crate::results::CommitEntry {
+            entry: ResultEntry::Commit(tp_index::results::CommitEntry {
                 handle: String::new(),
                 repository: "/repo/.git".into(),
                 commit: oid,
