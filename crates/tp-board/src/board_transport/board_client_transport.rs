@@ -303,6 +303,9 @@ fn failed_request(
     }
 }
 
+/// How long a caller waits before resending a write whose preflight timed out.
+const PREFLIGHT_RETRY_AFTER_MS: u32 = 2000;
+
 #[derive(Debug)]
 struct BoardPreflightTimeout {
     timeout: tp_core::daemon_transport::DaemonReplyTimeout,
@@ -313,13 +316,14 @@ impl fmt::Display for BoardPreflightTimeout {
         write!(
             formatter,
             concat!(
-                "{}; board_write_outcome=not_dispatched board_preflight=system_status; ",
-                "Board write was not sent; verify the same actor/session and exact Board database ",
-                "before retrying with --no-daemon; local writes require filesystem write access ",
-                "to the database and its parent directory (SQLite WAL/SHM files), including ",
-                "sandbox permission when required outside the workspace"
+                "{}; board_write_outcome=not_dispatched board_preflight=system_status ",
+                "retry_after_ms={}; Board write was not sent; resend the same command after ",
+                "retry_after_ms; if the router stays unresponsive, verify the same actor/session ",
+                "and exact Board database before retrying with --no-daemon; local writes require ",
+                "filesystem write access to the database and its parent directory (SQLite WAL/SHM ",
+                "files), including sandbox permission when required outside the workspace"
             ),
-            self.timeout
+            self.timeout, PREFLIGHT_RETRY_AFTER_MS
         )
     }
 }

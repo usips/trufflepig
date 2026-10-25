@@ -71,7 +71,7 @@ fn unchanged_waiting_inbox_uses_sequence_gate_and_returns_empty_under_writer_loc
 #[test]
 fn board_waiter_capacity_releases_permits_on_drop() {
     let waiters = AtomicUsize::new(0);
-    let mut admitted: Vec<_> = (0..MAX_WAITERS)
+    let mut admitted: Vec<_> = (0..BOARD_INBOX_WAITER_LIMIT)
         .map(|_| BoardInboxWaiterPermit::acquire(&waiters).unwrap())
         .collect();
     assert!(BoardInboxWaiterPermit::acquire(&waiters).is_none());

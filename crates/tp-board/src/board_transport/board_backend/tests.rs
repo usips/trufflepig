@@ -1,4 +1,4 @@
-use super::board_wait::{BoardInboxWaiterPermit, MAX_WAITERS, waiter_transient};
+use super::board_wait::{BOARD_INBOX_WAITER_LIMIT, BoardInboxWaiterPermit, waiter_transient};
 use super::board_writer::lock_before;
 use super::*;
 use crate::board_protocol::{BoardOp, BoardResult, InboxWait};

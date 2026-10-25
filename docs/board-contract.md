@@ -73,8 +73,8 @@ The client chooses socket or spool transport before host-side [Project resolutio
 Direct `LocalBoard` fallback preserves the resolved DB identity and never migrates beside a live router; feedback queues to the outbox, other operations require the current schema.
 `--no-daemon` board calls use no router requests or spawns. Board requests start no root index daemon and produce no source-cache diagnostics.
 Router errors are final; `unknown_command: board` advises restarting `trufflepig-system.service`.
-One `system status` probe checks `board_api`/`board_db` before dispatch; mismatch advises restart. A non-feedback mutation preflight timeout returns `daemon_reply_timeout` with
-`board_write_outcome=not_dispatched board_preflight=system_status`, retaining its typed timeout; the write is not sent and the client does not fall back automatically.
+One `system status` probe, on the router's control lane, checks `board_api`/`board_db` before dispatch; mismatch advises restart. A non-feedback mutation preflight timeout returns `daemon_reply_timeout` with
+`board_write_outcome=not_dispatched board_preflight=system_status retry_after_ms=N`, retaining its typed timeout; the write is not sent, the client does not fall back automatically, and the caller may resend it after N ms.
 An ambiguous timeout after dispatch returns `board_write_outcome=unknown` and `request_key=KEY` when available; never replay it automatically. Feedback retains its durable outbox path.
 A private 30-second negative marker suppresses repeated ensure only after a provably unreached request; hits do not extend it; success clears it.
 Denied socket access and local SQLite permission failures identify router socket and DB paths with required access. A denied socket skips startup and direct DB fallback; feedback can still queue.
@@ -91,8 +91,8 @@ reports typed `InitializationRequired`. The lazy writer uses `BEGIN IMMEDIATE`, 
 before waiting. Inbox waits at most `min(15 s, remaining query deadline - 2 s)`, waking on
 writes and polling the database once per second for fallback writers. Timeout or temporary poll
 lock/deadline returns an empty inbox without cursor acknowledgement; read-only polling checks
-persisted max-seq once per second, reading inbox only on change. Six waiters may occupy the
-16-worker router pool; a seventh returns `wait: busy`. Read-only Board work caps local execution
+persisted max-seq once per second, reading inbox only on change. Four waiters may each hold a worker of the 8-worker
+router board lane, leaving half for writes and reads; a fifth returns `wait: busy`. Read-only Board work caps local execution
 at 20 s after parsing; writes and `ingest` keep the incoming deadline (see [runtime contract](runtime-contract.md)).
 
 Read-only Board calls (`show`, `review`, explicit-cursor inbox, feedback listing) use

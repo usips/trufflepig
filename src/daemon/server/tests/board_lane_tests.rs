@@ -1,4 +1,5 @@
 use super::*;
+use tp_board::board_backend::BOARD_INBOX_WAITER_LIMIT;
 
 /// Router lanes come from `lane_size`; the query pool is irrelevant here.
 fn router(handler: TestDaemon) -> Arc<Served> {
@@ -8,6 +9,83 @@ fn router(handler: TestDaemon) -> Arc<Served> {
         WIDE,
         handler,
     ))
+}
+
+/// Serves board argv from a real host on a scratch database, as the router
+/// does; waits are capped so parked waiters time out after about 4 s.
+fn board_router(host: tp_board::BoardHost) -> Arc<Served> {
+    router(TestDaemon {
+        reply: Box::new(move |request| {
+            let options = crate::cli::parse(&request.args)?;
+            let session = if options.words.get(1).is_some_and(|verb| verb == "hello") {
+                "writer"
+            } else {
+                "waiter"
+            };
+            let context = RequestContext::new(Some(session.into()), Some("codex".into()));
+            host.run(
+                &options.board_arguments(),
+                &context,
+                request.deadline.capped(Duration::from_secs(6)),
+            )
+        }),
+        reconcile: quiet(),
+    })
+}
+
+#[test]
+fn parked_inbox_waiters_leave_board_workers_for_writes() {
+    let scratch = scratch();
+    // The board creates its missing directory privately.
+    let config =
+        tp_board::BoardConfig::for_database(scratch.path().join("board").join("board.sqlite3"));
+    let host = tp_board::BoardHost::with_config(config);
+    // Create storage first so concurrent waiters never race its migration.
+    host.ensure_writer(QueryDeadline::after(Duration::from_secs(5)))
+        .unwrap();
+    let served = board_router(host.clone());
+    let wait = ["--format", "lines", "board", "inbox", "--wait", "--all"];
+    let waiters: Vec<_> = (0..BOARD_INBOX_WAITER_LIMIT)
+        .map(|_| {
+            let served = Arc::clone(&served);
+            std::thread::spawn(move || served.ask(&wait))
+        })
+        .collect();
+    let started = Instant::now();
+    while host.parked_inbox_waiters() < BOARD_INBOX_WAITER_LIMIT {
+        if let Some(index) = waiters.iter().position(|waiter| waiter.is_finished()) {
+            let mut waiters = waiters;
+            panic!(
+                "waiter returned before parking: {:?}",
+                waiters.remove(index).join()
+            );
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "waiters never parked"
+        );
+        std::thread::yield_now();
+    }
+
+    let extra = served.ask(&wait).unwrap().unwrap();
+    assert!(extra.contains("wait=busy"), "{extra}");
+    let root = scratch.path().display().to_string();
+    let hello = served
+        .ask(&[
+            "--format", "lines", "--root", &root, "board", "hello", "opus",
+        ])
+        .unwrap()
+        .unwrap();
+    assert!(hello.starts_with("hello "), "{hello}");
+    assert_eq!(
+        host.parked_inbox_waiters(),
+        BOARD_INBOX_WAITER_LIMIT,
+        "the write waited for parked inbox waiters to leave their workers"
+    );
+    for waiter in waiters {
+        waiter.join().unwrap().unwrap();
+    }
+    Arc::into_inner(served).unwrap().stop().unwrap();
 }
 
 #[test]

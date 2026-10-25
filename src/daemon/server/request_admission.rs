@@ -13,6 +13,10 @@ const ROUTER_BOARD_LANE: PoolSize = PoolSize {
     workers: 8,
     queue: 32,
 };
+// Parked inbox waiters hold board workers; at most half the lane may wait so
+// writes, reads, and feedback always find a free worker.
+const _: () =
+    assert!(2 * tp_board::board_backend::BOARD_INBOX_WAITER_LIMIT <= ROUTER_BOARD_LANE.workers);
 /// Bounds socket frame reads separately from request execution and routes work
 /// to tier-sized query, maintenance, regex, semantic, board, and control queues.
 pub(in crate::daemon) struct RequestAdmission {

@@ -58,7 +58,7 @@ fn assert_preflight_timeout(error: &anyhow::Error) {
         "{message}"
     );
     assert!(
-        message.contains("board_preflight=system_status"),
+        message.contains("board_preflight=system_status retry_after_ms=2000;"),
         "{message}"
     );
     assert!(message.contains("--no-daemon"), "{message}");
