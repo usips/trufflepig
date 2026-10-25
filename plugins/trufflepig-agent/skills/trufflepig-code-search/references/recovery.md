@@ -13,7 +13,7 @@ or `--root DIR`).
 - Workspace parent reads use the configured member cache under the workspace
   base; worktree results and divergence stay separate.
 - Index-based parent reads need a writable selected result cache. Explicit
-  current paths read bytes without a cache; `refs` stays index-only.
+  current paths read bytes without a cache; plain `refs` stays index-only.
 - While the worktree index warms, the footer reads like
   `lunatic@wt warming → served from lunatic index (3 files differ)`. Without a
   parent it says `warming (no parent index)`.
@@ -41,10 +41,14 @@ and [index contract](https://github.com/usips/trufflepig/blob/master/docs/index-
   current-file fallback after explicit `daemon_busy` retries, or immediately on
   pre-dispatch `index_cache_unavailable`. A busy retry reserves 250 ms for that
   fallback; other timeouts and database locks do not trigger it.
-- For cache-free discovery, use `--no-cache search 'sym:NAME'`,
-  `--no-cache search 'file:NAME kind:file'`, or `--no-cache map FILE`. These
-  bounded current-source reads write no cache and skip semantic/rerank lanes.
-- `--no-daemon search/map` also falls back on a typed pre-dispatch cache
+- For cache-free discovery (e.g. a read-only sandbox), use `--no-cache` with
+  `search 'sym:NAME'`, `search 'NAME kind:file'` (path matches first),
+  `refs NAME`, `map FILE`, or `map DIR/`. For `show sym:NAME`, run
+  `--no-cache search 'sym:NAME'` and `show` its handle. These bounded reads write
+  no cache and skip semantic/rerank lanes; run them one at a time, not in parallel.
+- A partial page keeps its hits; follow its `next:` command or `hint:` scope
+  (`file:DIR/`) instead of retrying the same query.
+- `--no-daemon search/refs/map` also falls back on a typed pre-dispatch cache
   refusal; `cache_fallback` names the selected cache and cause. Neither mode
   bypasses source permissions or root containment.
 - Current-source coverage names caps and unread files; partial coverage never

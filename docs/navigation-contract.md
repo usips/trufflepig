@@ -1,7 +1,8 @@
 # Definition, reference, and outline navigation
 
 By default, `show 'sym:'`, `refs`, and `map` answer from one published
-snapshot. `--no-cache map` outlines current bytes as described below. Every
+snapshot. `--no-cache map` and `--no-cache refs` read current bytes as
+described below. Every
 word after the verb belongs to the query, so `show sym:X file:src/` and
 `refs X lang:rust` need no quotes. `file:`/`-file:` values follow the
 [retrieval contract](retrieval-contract.md) path-filter rules; `map PATH` treats
@@ -61,12 +62,16 @@ same-basename files or the closest entries under the deepest existing ancestor.
 In a workspace, such a miss counts as no home hits; the error is returned only
 when no searched member has a row.
 
-With `--no-cache`, `map PATH` instead outlines the one current root-relative
-file at that path, without consulting an index or result cache. Its outline
-uses the same item ordering and exclusions. Each member handle is a
-revision-bound `read:path:` cursor, so `show` reads those current bytes without
-retaining a result set. A changed file returns `stale_source`; traversal and
-symlink escapes remain invalid.
+With `--no-cache`, `map PATH` instead outlines the current root-relative file
+at that path, or the per-file rows of up to 256 current files under a directory
+prefix, without consulting an index or result cache. Its outline uses the same
+item ordering and exclusions; a larger directory is partial and suggests a
+subdirectory. `refs NAME` reads only current files containing the name and
+resolves candidates among them, so cross-file targets are name candidates rather
+than indexed imports. Each handle is a revision-bound `read:path:` cursor, so
+`show` reads those current bytes without retaining a result set. A changed file
+returns `stale_source`; traversal and symlink escapes remain invalid. `show
+sym:NAME` stays index-only: run `--no-cache search 'sym:NAME'` and show its handle.
 
 Test sites are paths with a `tests/`, `test/`, `__tests__/`, `fixtures/`, or
 `testdata/` directory, `tests.rs`, `test.rs`, `*_test.*`, `*_tests.*`,

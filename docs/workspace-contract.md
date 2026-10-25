@@ -103,7 +103,7 @@ continuations bypass selected-cache creation, marker, and seed; they work while 
 unavailable. Index-based reads preflight the selected writable result cache before parent lookup;
 one at-most-2 s member slice covers cache registration, marker/seed, open, and indexing
 within the original query deadline. Skipped seeding does not block a usable published parent.
-`search`, `map`, `refs`, and `sym:` require an index; `refs` is index-only.
+Without `--no-cache`, `search`, `map`, `refs`, and `sym:` require an index; `refs` has no current-file fallback.
 
 Each member produces its existing ranked candidate list. Retrieval collapses
 each lane to one representative occurrence per file, then fuses file ranks with
@@ -126,9 +126,9 @@ counts. Unpublished members report `warming`; unavailable or timed-out members r
 
 The normal 600-token `o200k_base` budget applies once to the complete response, including provenance and coverage. Compact entries carry a percent-encoded `file` URI, line span, and owner-qualified handle; lines prefix paths with the member and name every member's `partial` and `truncated` state (`src/workspace/result_cache/coverage_lines.rs`). Labels cannot be removed to fit more hits; tiny budgets retain explicit insufficient-budget behavior. Pages freeze each member's publication generation for follow-up reads, not one atomic cross-repository snapshot.
 
-`--no-cache search` and `map FILE` inspect current bytes in selected members without cache access; normal member and root-relative path selection applies.
+`--no-cache search`, `refs NAME`, and `map PATH` inspect current bytes in selected members without cache access; normal member and root-relative path selection applies.
 The renderer round-robins member ranks under one budget and preserves every result or failure; partial scans or unavailable members cannot prove absence.
-Semantics and reranking are unavailable, `refs` remains index-only, and revision-bound `read:path:` handles resolve only against configured roots; `show` rejects edits.
+Semantics and reranking are unavailable, and revision-bound `read:path:` handles resolve only against configured roots; `show` rejects edits.
 
 ## Immutable navigation
 
