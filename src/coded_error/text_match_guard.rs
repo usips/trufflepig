@@ -17,7 +17,7 @@ const ALLOWED: &[(&str, &str)] = &[
     ),
     // Provider and runtime failures arrive as text across the worker process boundary.
     (
-        "src/semantic/preparation/worker.rs",
+        "src/semantic_preparation/preparation_worker.rs",
         "format!(\"{error:#}\").to_ascii_lowercase()",
     ),
 ];
