@@ -24,6 +24,7 @@ use tp_core::coded_error::CodedContext;
 use tp_core::{coded_error::ErrorCode, query_deadline::QueryDeadline};
 use tp_index::store::{Store, is_index_cache_unavailable, is_index_cannot_open, is_index_warming};
 pub(super) use worktree_divergence::WorktreeDivergence;
+pub(crate) use worktree_reads::ParentRerank;
 
 /// How long a daemon-backed query waits for the home member's first publication
 /// when no parent index can answer for it.

@@ -111,9 +111,10 @@ pub(super) fn apply(
     outcome.record(coverage);
 }
 
-/// One rerank of the top of a merged multi-root ranking, as a single scorer
-/// request whose budget is the query deadline's remainder, capped by the
-/// worker's rerank deadline.
+/// One rerank of the top of a ranking assembled outside one root's search (a
+/// merged multi-root ranking, or a parent-index answer after its worktree
+/// recheck), as a single scorer request whose budget is the query deadline's
+/// remainder, capped by the worker's rerank deadline.
 pub struct MergedRerank<'a> {
     pub query: &'a Query,
     /// Worker scheduling identity for the request.

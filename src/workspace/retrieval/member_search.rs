@@ -263,8 +263,14 @@ impl MemberSearch<'_> {
             Some(mut fallback) => {
                 let mut hashes = WorktreeHashes::default();
                 let call = (command.verb, command.words, &command.query, &origin);
-                let changed =
-                    fallback.complete_answer(&store, call, &mut found, &mut hashes, deadline)?;
+                let changed = fallback.complete_answer(
+                    &store,
+                    call,
+                    &mut found,
+                    &mut hashes,
+                    None,
+                    deadline,
+                )?;
                 let differing = fallback.check_hits(&store.root, &found.hits, &mut hashes, changed);
                 Some((fallback, differing))
             }

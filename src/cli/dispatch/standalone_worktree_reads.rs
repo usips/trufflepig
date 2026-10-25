@@ -44,6 +44,9 @@ pub(super) fn retrieve_read(
     } else {
         search::telemetry::RetrievalTrace::default()
     };
+    // A parent-index search reranks after its worktree recheck, so its
+    // diagnostics event waits for that stage.
+    let mut parent_search_trace = None;
     let mut set = match verb {
         "refs" => search::references(store, &search::reference_query(&text)?)?,
         "map" => {
@@ -66,7 +69,7 @@ pub(super) fn retrieve_read(
                 store,
                 &query,
                 options.sem,
-                options.rerank,
+                options.rerank && fallback.is_none(),
                 store.index_cache(),
                 session,
                 &mut trace,
@@ -75,27 +78,10 @@ pub(super) fn retrieve_read(
             if let (Some(error), Ok(set)) = (preparation_error, &mut result) {
                 set.coverage["semantic_preparation_error"] = error.to_string().into();
             }
-            let mut event = crate::diagnostics::RequestEvent::new(
-                context.clone(),
-                crate::diagnostics::Operation::Search,
-                if result.is_ok() {
-                    crate::diagnostics::Outcome::Success
-                } else {
-                    crate::diagnostics::Outcome::Failure
-                },
-            );
-            event.stage = crate::diagnostics::EventStage::Server;
-            event.retrieval = Some(trace);
-            if options.diagnostics != "off" {
-                if let Some(queue) = log_queue {
-                    queue.record(event);
-                } else {
-                    crate::diagnostics::best_effort_record(
-                        cache,
-                        crate::cli::emission::diagnostics_mode(options),
-                        event,
-                    );
-                }
+            if fallback.is_some() && result.is_ok() {
+                parent_search_trace = Some(trace);
+            } else {
+                record_search_event(options, context, log_queue, cache, trace, result.is_ok());
             }
             result?
         }
@@ -106,13 +92,25 @@ pub(super) fn retrieve_read(
         let empty_query = search::Query::default();
         let request_query = query.as_ref().unwrap_or(&empty_query);
         let mut hashes = crate::workspace::WorktreeHashes::default();
+        let rerank = parent_search_trace
+            .as_mut()
+            .filter(|_| options.rerank && request_query.semantic_eligible())
+            .map(|trace| crate::workspace::ParentRerank {
+                scorer: &*session,
+                trace,
+            });
         let changed = fallback.complete_answer(
             store,
             (verb, request_words, request_query, &origin),
             &mut set,
             &mut hashes,
+            rerank,
             deadline,
-        )?;
+        );
+        if let Some(trace) = parent_search_trace {
+            record_search_event(options, context, log_queue, cache, trace, changed.is_ok());
+        }
+        let changed = changed?;
         let differing = fallback.check_hits(&store.root, &set.hits, &mut hashes, changed);
         let differing_hits = set.hits.iter().filter(|hit| differing.flags(hit)).count();
         for hit in &mut set.hits {
@@ -143,6 +141,40 @@ pub(super) fn retrieve_read(
     let id = results::save(store, set)
         .map_err(|error| tp_index::store::index_cache_unavailable(store.results_cache(), error))?;
     results::page(store, &id, 0, options.limit, budget)
+}
+
+/// Records a search's server diagnostics event with its retrieval trace.
+fn record_search_event(
+    options: &Arguments,
+    context: &tp_core::request_context::RequestContext,
+    log_queue: Option<&crate::diagnostics::DiagnosticQueue>,
+    cache: &Path,
+    trace: search::telemetry::RetrievalTrace,
+    succeeded: bool,
+) {
+    if options.diagnostics == "off" {
+        return;
+    }
+    let mut event = crate::diagnostics::RequestEvent::new(
+        context.clone(),
+        crate::diagnostics::Operation::Search,
+        if succeeded {
+            crate::diagnostics::Outcome::Success
+        } else {
+            crate::diagnostics::Outcome::Failure
+        },
+    );
+    event.stage = crate::diagnostics::EventStage::Server;
+    event.retrieval = Some(trace);
+    if let Some(queue) = log_queue {
+        queue.record(event);
+    } else {
+        crate::diagnostics::best_effort_record(
+            cache,
+            crate::cli::emission::diagnostics_mode(options),
+            event,
+        );
+    }
 }
 
 pub(super) fn show_read(
