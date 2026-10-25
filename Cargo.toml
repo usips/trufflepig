@@ -5,7 +5,14 @@ edition = "2024"
 license = "GPL-3.0-only"
 
 [workspace]
-members = ["crates/tp-board", "crates/tp-core", "crates/tp-extract", "crates/tp-history", "crates/tp-index", "crates/tp-semantic"]
+members = [
+    "crates/tp-board",
+    "crates/tp-core",
+    "crates/tp-extract",
+    "crates/tp-history",
+    "crates/tp-index",
+    "crates/tp-semantic",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -53,28 +60,14 @@ anyhow.workspace = true
 blake3.workspace = true
 clap.workspace = true
 fs2.workspace = true
-ignore.workspace = true
-imara-diff.workspace = true
-quick-xml.workspace = true
 libc.workspace = true
 notify.workspace = true
-pulldown-cmark.workspace = true
-regex.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
-streaming-iterator.workspace = true
 tempfile.workspace = true
-toml.workspace = true
 tiktoken-rs.workspace = true
-tree-sitter.workspace = true
-tree-sitter-rust.workspace = true
-tree-sitter-typescript.workspace = true
-tree-sitter-javascript.workspace = true
-tree-sitter-luau.workspace = true
-tree-sitter-c-sharp.workspace = true
-tree-sitter-php.workspace = true
+toml.workspace = true
 uuid.workspace = true
 tp-board.workspace = true
 tp-core.workspace = true

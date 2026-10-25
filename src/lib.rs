@@ -1,3 +1,7 @@
+//! The trufflepig application layer: CLI, daemons, the system router,
+//! workspaces, and diagnostics over the library crates in `crates/`.
+//! Crate map: `docs/DESIGN.md#workspace-crates`.
+
 #[macro_use]
 extern crate tp_core;
 
