@@ -7,7 +7,9 @@ defines receipt lookup.
 ## Preflight timeout
 
 `board_write_outcome=not_dispatched board_preflight=system_status` means the mutation was not sent.
-No automatic retry or fallback occurred. Before a manual retry:
+No automatic retry or fallback occurred. First resend the same command through the router after the
+reported `retry_after_ms`; it is safe because nothing was written. If the router still does not
+answer, follow these steps before a manual direct retry:
 
 1. Preserve the original command and request body. Use the same user, host, harness, and session
    identity; do not switch to `human`, `cli`, or another session.

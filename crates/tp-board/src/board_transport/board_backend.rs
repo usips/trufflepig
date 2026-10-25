@@ -21,6 +21,7 @@ use crate::{
     repo_identity::RepoIdentityCache,
 };
 use anyhow::Result;
+pub use board_wait::BOARD_INBOX_WAITER_LIMIT;
 use board_writer::check_deadline;
 pub(crate) use board_writer::ensure_feedback_import;
 use std::{

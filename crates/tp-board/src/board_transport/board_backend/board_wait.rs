@@ -12,10 +12,18 @@ use std::{
 };
 use tp_core::query_deadline::QueryDeadline;
 
-pub(super) const MAX_WAITERS: usize = 6;
+/// Inbox waiters one host parks at once. Each holds its router worker, so the
+/// router board lane keeps at least as many workers again for other requests.
+pub const BOARD_INBOX_WAITER_LIMIT: usize = 4;
 const MAX_INBOX_WAIT: Duration = Duration::from_secs(15);
 
 impl BoardHost {
+    /// Inbox waiters currently holding a permit, for lane-capacity tests.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn parked_inbox_waiters(&self) -> usize {
+        self.inner.waiters.load(Ordering::Acquire)
+    }
+
     /// A one-shot rendezvous before the wait releases the sequence mutex.
     #[cfg(test)]
     pub(crate) fn next_inbox_wait_barrier(&self) -> std::sync::mpsc::Receiver<()> {
@@ -133,7 +141,7 @@ impl<'a> BoardInboxWaiterPermit<'a> {
     pub(super) fn acquire(waiters: &'a AtomicUsize) -> Option<Self> {
         waiters
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
-                (count < MAX_WAITERS).then_some(count + 1)
+                (count < BOARD_INBOX_WAITER_LIMIT).then_some(count + 1)
             })
             .ok()?;
         Some(Self(waiters))

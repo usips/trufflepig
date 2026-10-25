@@ -84,6 +84,7 @@ impl BoardHost {
                     | BoardOp::UnlinkCommit { .. }
                     | BoardOp::Pending { .. }
                     | BoardOp::Receipt { .. }
+                    | BoardOp::Bye
             ) {
             Ok(crate::repo_identity::RegistrationProbe {
                 registration: None,

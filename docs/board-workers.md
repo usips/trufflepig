@@ -28,7 +28,8 @@ for that worker's lifetime. End a worker with `done`, `failed`, or `stopped`; en
 all its active workers as `claim_ended`. The bound session sees each closure in `board pending`: an
 explicit end as its `worker_end` event, and a claim end as a `worker_end` entry addressed to it.
 `board bye` ends the caller's session, releases its claims to `todo`, and stops only its own
-non-done worker node.
+non-done worker node. A repeated bye, or one from a session that never said hello, writes nothing;
+its reply says so ([CLI contract](board-cli-contract.md#commands)).
 
 ## Task reads and addressed posts
 

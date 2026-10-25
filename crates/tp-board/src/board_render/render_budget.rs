@@ -173,6 +173,7 @@ pub(super) fn committed_receipt(result: &BoardResult) -> Option<String> {
         }
         BoardResult::Session(_) => "session registered".into(),
         BoardResult::Cursor(cursor) => format!("cursor {cursor}"),
+        BoardResult::Bye(bye) => super::render_lines::bye_line(bye),
         BoardResult::Registered(repository) => format!("registered {}", repository.repo_key),
         BoardResult::CommitsLinked(result) => format!("ingest inserted={}", result.inserted),
         BoardResult::Queued { .. } => "queued for import".into(),

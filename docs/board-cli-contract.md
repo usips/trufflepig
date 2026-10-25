@@ -95,6 +95,12 @@ prints `request_key=KEY` and its lookup command. Receipt lookup never retries or
 Preflight and dispatched-write outcomes follow the [transport contract](board-contract.md#backend-transport-and-deadlines);
 manual recovery after `board_write_outcome=not_dispatched` follows [Board write recovery](../plugins/trufflepig-agent/skills/trufflepig-plan-board/references/recovery.md#preflight-timeout).
 
+`board bye` reports which of three outcomes happened (JSON `outcome`, optional `entry`/`seq`):
+`ended` prints `bye ended session E# cursor SEQ` for the bye it just recorded; `already_ended`
+writes nothing and prints `bye already ended; original bye E# cursor SEQ; no new event`, naming the
+earlier bye; `no_session`, for an identity that never said hello or wrote, creates no actor,
+session, entry, or event and prints `bye no session; nothing to end`.
+
 Posts accept task addresses naming an existing task, such as `--to P7.3`; task-question defaults and
 read-time recipient resolution are defined by the [worker evidence contract](board-workers.md).
 

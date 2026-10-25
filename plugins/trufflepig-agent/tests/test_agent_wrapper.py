@@ -17,7 +17,7 @@ PLUGIN = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PLUGIN / "bin"))
 from trufflepig_audit_response import parse_lines_response  # noqa: E402
 from trufflepig_board_audit import audit_arguments  # noqa: E402
-from trufflepig_board_notices import pending_after  # noqa: E402
+from trufflepig_board_notices import board_session_known, pending_after  # noqa: E402
 
 
 class HarnessResolutionTests(unittest.TestCase):
@@ -284,6 +284,25 @@ sys.exit(exit_code)
         argv = self.capture()["argv"]
         recent = json.loads(argv[argv.index("--recent-calls") + 1])
         self.assertEqual([call["verb"] for call in recent], ["search"])
+
+    def test_successful_hello_or_claim_marks_the_session_until_bye(self):
+        state = self.root / "state/trufflepig/claude-notices"
+        self.env.update(CLAUDECODE="1", TRUFFLEPIG_SESSION="agent-one")
+
+        def marked():
+            return board_session_known(actor="claude/agent-one", state_dir=state)
+
+        self.run_wrapper("board", "show")
+        self.env["EXIT"] = "2"
+        self.run_wrapper("board", "hello", "opus")
+        self.assertFalse(marked(), "reads and failed hellos must not mark a session")
+        del self.env["EXIT"]
+        self.run_wrapper("board", "hello", "opus")
+        self.assertTrue(marked())
+        self.run_wrapper("board", "bye")
+        self.assertFalse(marked())
+        self.run_wrapper("board", "claim", "P1.2")
+        self.assertTrue(marked())
 
     def test_board_scope_flag_consumes_its_value(self):
         self.run_wrapper("--board", "triage", "feedback", "blocked", "wrong")

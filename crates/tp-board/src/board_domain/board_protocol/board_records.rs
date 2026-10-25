@@ -95,6 +95,7 @@ impl BoardReply {
 #[serde(tag = "result", content = "data", rename_all = "snake_case")]
 pub enum BoardResult {
     Session(SessionRecord),
+    Bye(ByeReply),
     Inbox(InboxReply),
     Cursor(EventSeq),
     Plan(PlanView),
@@ -123,6 +124,30 @@ pub enum BoardResult {
     Queued { import_key: FeedbackImportKey },
     ScanRecorded,
     RepoPathForgotten,
+}
+
+/// What `bye` did to the caller's agent session.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ByeOutcome {
+    /// This call ended a live session and recorded a bye entry and event.
+    Ended,
+    /// The session had already ended; nothing was written.
+    AlreadyEnded,
+    /// The identity never said hello or wrote; nothing was written.
+    NoSession,
+}
+
+/// A bye result; `entry`/`seq` name this call's bye for `Ended`, the original
+/// bye for `AlreadyEnded` when one exists, and are absent for `NoSession`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ByeReply {
+    pub outcome: ByeOutcome,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<crate::board_ids::EntryId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seq: Option<EventSeq>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

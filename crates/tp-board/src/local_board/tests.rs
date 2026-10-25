@@ -4,6 +4,7 @@ mod commit_transaction_tests;
 mod connection_lifecycle_tests;
 mod project_scope_read_tests;
 mod query_only_dispatch_tests;
+mod wal_checkpoint_tests;
 
 use super::*;
 use crate::board_actor::BoardRecipient;

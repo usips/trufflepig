@@ -96,7 +96,7 @@ Request work then enters bounded lanes (`crates/tp-core/src/request_pool.rs`,
 lanes have 16 router, 8 coordinator, and 4 root workers, each with a 64-request
 queue. Maintenance, regex, and semantic lanes have router widths/queues 16/32,
 16/32, and 8/16; coordinator 4/8, 4/8, and 2/8; and root 1/8, 2/8, and 1/8.
-`board`, `feedback`, and `system` bypass the query lane: board lane 4/32 router, else 1/8.
+`board`/`feedback` take a board lane (8/32 router, else 1/8); `system` takes a control lane (2/16, else 1/8).
 Admission refusals return `daemon_busy` except Semantic `search` root-limit refusals, which run once in bounded
 Query with semantic/rerank skipped. The fallback keeps the accepted deadline/cancellation and workspace settings;
 successful pages expose `semantic_status=skipped`, `semantic_reason=root_limit`, `rerank_status=skipped`, and counts.

@@ -7,6 +7,17 @@ mod tests;
 use super::*;
 
 impl LocalBoard {
+    /// Answers a bye that needs no write without taking the writer: an identity
+    /// with no recorded session, or a session that already ended.
+    pub(crate) fn settled_bye(&self, actor: &BoardActor) -> Result<Option<BoardReply>, BoardError> {
+        let conn = self.reader.as_ref().unwrap_or(&self.conn);
+        let mut reply = board_writes::task_claims::settled_bye(conn, actor)?;
+        if let Some(reply) = &mut reply {
+            reply.backend = format!("local:{}", self.path.display());
+        }
+        Ok(reply)
+    }
+
     pub(super) fn dispatch(
         &mut self,
         request: &BoardRequest,
@@ -46,6 +57,13 @@ impl LocalBoard {
             .conn
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(sql_error)?;
+        // A bye with nothing to end creates no actor, session, entry, or event.
+        if matches!(&request.op, BoardOp::Bye)
+            && let Some(mut reply) = board_writes::task_claims::settled_bye(&tx, &request.actor)?
+        {
+            reply.backend = format!("local:{}", self.path.display());
+            return Ok(reply);
+        }
         let now = unix_now()?;
         let actor_id = ensure_actor(&tx, &request.actor, now)?;
         if !matches!(&request.op, BoardOp::Bye) {

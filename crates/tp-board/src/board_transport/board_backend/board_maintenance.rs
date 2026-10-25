@@ -246,9 +246,22 @@ impl BoardHost {
         };
         if ingest_due && config.db_path.is_file() {
             let deadline = QueryDeadline::after(Duration::from_secs(15));
-            self.ingest(&actor, None, &deadline)
-                .map_err(BoardError::from)?;
+            let ingested = self.ingest(&actor, None, &deadline);
+            let checkpointed = self.checkpoint_board_wal();
+            ingested.map_err(BoardError::from)?;
+            checkpointed?;
         }
         Ok(summary)
+    }
+
+    /// Truncates the writer's WAL on the maintenance cadence. A request that
+    /// holds the writer, or a writer never opened, skips this round.
+    pub(super) fn checkpoint_board_wal(&self) -> std::result::Result<bool, BoardError> {
+        let Ok(backend) = self.inner.backend.try_lock() else {
+            return Ok(false);
+        };
+        backend
+            .as_ref()
+            .map_or(Ok(false), crate::local_board::LocalBoard::checkpoint_wal)
     }
 }

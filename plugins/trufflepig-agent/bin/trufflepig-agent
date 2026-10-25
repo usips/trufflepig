@@ -19,8 +19,9 @@ from pathlib import Path
 from trufflepig_runtime import client_environment, fallback_root, steering_mode
 from trufflepig_audit_response import coverage_summary, parse_lines_response
 from trufflepig_board_audit import BOARD_VERBS, FEEDBACK_REPORT_KINDS, PRIVATE_OPTIONS, audit_arguments, audit_options, error_prefix, recent_calls
-from trufflepig_board_notices import (claim_pending_notices, pending_after,
-                                     pending_metadata, pending_reply_from_json,
+from trufflepig_board_notices import (claim_pending_notices, forget_board_session,
+                                     pending_after, pending_metadata,
+                                     pending_reply_from_json, remember_board_session,
                                      should_poll_pending)
 
 SLOW_SECONDS = 3.0
@@ -40,6 +41,8 @@ FLAGS_WITH_VALUES = {
 HARNESS_LABEL = re.compile(r"[a-z][a-z0-9_-]{0,31}\Z")
 # Board subverbs the lifecycle hooks run; audited as "hook:VERB" so agent recent-call lists skip them.
 HOOK_BOARD_VERBS = {"pending", "bye"}
+# Successful subverbs that open a Board session whose bye a lifecycle hook may later send.
+SESSION_BOARD_VERBS = {"hello", "claim"}
 
 
 def state_dir() -> Path:
@@ -266,6 +269,20 @@ def successful_output(stdout: bytes, stderr: bytes, exit_code: int,
     return parsed
 
 
+def track_board_session(harness: str, session: str | None, verb: str,
+                        words: list[str], exit_code: int) -> None:
+    """Mark sessions that said hello or claimed; a successful bye clears the mark."""
+    subverb = words[1] if verb == "board" and len(words) > 1 else None
+    if not session or exit_code != 0 or subverb not in SESSION_BOARD_VERBS | {"bye"}:
+        return
+    actor = f"{harness}/{session}"
+    state = board_notice_state_dir(harness)
+    if subverb == "bye":
+        forget_board_session(actor=actor, state_dir=state)
+    else:
+        remember_board_session(actor=actor, state_dir=state)
+
+
 def poll_board_notices(harness: str, session: str,
                        explicit_session: str | None = None) -> tuple[dict, list[dict]] | None:
     """Make one bounded Pending request and reserve newly addressed notices."""
@@ -369,6 +386,7 @@ def main() -> int:
         stdout = b""
         stderr = f"trufflepig-agent: {TRUFFLEPIG} not found on PATH\n".encode()
     elapsed = time.monotonic() - started
+    track_board_session(harness, session, verb, words, exit_code)
 
     response: dict = {}
     if stdout.lstrip().startswith(b"{"):

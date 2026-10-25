@@ -21,6 +21,9 @@ use board_schema::{
     SCHEMA_V9, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V13,
 };
 
+/// Bytes a writable connection keeps of its WAL after a checkpoint resets it.
+pub(super) const BOARD_JOURNAL_SIZE_LIMIT: i64 = 64 * 1024 * 1024;
+
 #[cfg(test)]
 pub(super) fn open(path: &Path) -> Result<(Connection, PathBuf), BoardError> {
     open_with_timeout(path, Duration::from_secs(5))
@@ -183,7 +186,9 @@ pub(super) fn open_with_timeout(
         return Err(unavailable("database cannot enable WAL journal mode"));
     }
     retry_busy(&conn, deadline, || {
-        conn.execute_batch("PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;")
+        conn.execute_batch(&format!(
+            "PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA journal_size_limit={BOARD_JOURNAL_SIZE_LIMIT};"
+        ))
     })?;
     conn.busy_timeout(deadline.saturating_duration_since(Instant::now()))
         .map_err(sql_error)?;

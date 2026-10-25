@@ -20,15 +20,15 @@ pub use board_progress::{
 };
 pub use board_records::{
     BoardChange, BoardReceipt, BoardReceiptState, BoardReply, BoardResult, BoardSearchHit,
-    BoardSearchReply, BoardSearchSource, COAUTHOR_LIMIT, ClaimEndReason, ClaimRecord,
-    CommitClaimBasis, CommitClaimLink, CommitCoauthor, CommitLinkResult, CommitPlanLink,
-    EntryRecord, EntryState, EntryView, EventRecord, FeedbackMetadata, FeedbackRecord, FeedbackVia,
-    GrantRecord, GrantSource, InboxReply, InboxWait, LINK_LIMIT, LinkedCommit, ManualCommitLink,
-    PendingNotice, PendingNoticeKind, PendingNoticeReason, PendingReply, PlanLifecycleState,
-    PlanRecord, PlanView, ProjectMemberRecord, ProjectRecord, ProposalRecord, RecentCall,
-    RepoRegistration, RepoScanTarget, ReviewEvidence, RevisionDiff, RevisionRecord, RevisionSource,
-    SessionRecord, TaskRecord, TaskView, WORKER_FILE_LIMIT, WORKER_FILE_PATH_LIMIT,
-    WORKER_REF_LIMIT, WorkerRecord,
+    BoardSearchReply, BoardSearchSource, ByeOutcome, ByeReply, COAUTHOR_LIMIT, ClaimEndReason,
+    ClaimRecord, CommitClaimBasis, CommitClaimLink, CommitCoauthor, CommitLinkResult,
+    CommitPlanLink, EntryRecord, EntryState, EntryView, EventRecord, FeedbackMetadata,
+    FeedbackRecord, FeedbackVia, GrantRecord, GrantSource, InboxReply, InboxWait, LINK_LIMIT,
+    LinkedCommit, ManualCommitLink, PendingNotice, PendingNoticeKind, PendingNoticeReason,
+    PendingReply, PlanLifecycleState, PlanRecord, PlanView, ProjectMemberRecord, ProjectRecord,
+    ProposalRecord, RecentCall, RepoRegistration, RepoScanTarget, ReviewEvidence, RevisionDiff,
+    RevisionRecord, RevisionSource, SessionRecord, TaskRecord, TaskView, WORKER_FILE_LIMIT,
+    WORKER_FILE_PATH_LIMIT, WORKER_REF_LIMIT, WorkerRecord,
 };
 pub use board_requests::{
     AgentClaims, BoardOp, BoardRequest, BoardRequestKey, ClaimDelegate, ClaimResume, ReadScope,
@@ -37,7 +37,7 @@ pub use board_verdict::ReviewVerdict;
 
 use anyhow::{Result, bail};
 
-pub const BOARD_API: u32 = 13;
+pub const BOARD_API: u32 = 14;
 pub const BOARD_WRITE_RECEIPT_RETENTION_SECS: i64 = 600;
 
 fn validate_claim(value: &str, field: &str) -> Result<()> {

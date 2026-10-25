@@ -122,6 +122,32 @@ impl LocalBoard {
             .map_err(sql_error)
     }
 
+    /// Copies the WAL into the database, then truncates it, never waiting on a
+    /// busy handler: readers keep their snapshots, and a reader or writer that
+    /// still needs the WAL leaves it for the next attempt. Returns whether the
+    /// WAL was reset; read-only handles return `false`.
+    pub fn checkpoint_wal(&self) -> Result<bool, BoardError> {
+        if self.reader.is_none() {
+            return Ok(false);
+        }
+        self.conn.busy_timeout(Duration::ZERO).map_err(sql_error)?;
+        // PASSIVE copies frames beside live writers; TRUNCATE then has little
+        // left to copy while it briefly holds the write lock.
+        let checkpoint = self
+            .conn
+            .query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |_| Ok(()))
+            .and_then(|()| {
+                self.conn
+                    .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+                        row.get::<_, i64>(0)
+                    })
+            });
+        self.conn
+            .busy_timeout(Duration::from_secs(5))
+            .map_err(sql_error)?;
+        Ok(checkpoint.map_err(sql_error)? == 0)
+    }
+
     pub fn set_busy_timeout(&self, timeout: Duration) -> Result<(), BoardError> {
         let timeout = timeout.min(Duration::from_secs(5));
         self.conn.busy_timeout(timeout).map_err(sql_error)?;

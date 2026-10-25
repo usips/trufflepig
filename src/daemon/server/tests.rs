@@ -9,6 +9,7 @@ use tp_core::query_deadline::QueryDeadline;
 use tp_core::request_context::RequestContext;
 
 mod admission_refusal_tests;
+mod board_lane_tests;
 mod cross_root_admission_tests;
 mod failures;
 mod frame_ingress;
