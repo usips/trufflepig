@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn selected_read_only_worktree_cache_falls_back_without_parent_retrieval() -> Result<()> {
-    const CASE: &str = "cache_progress_tests::selected_read_only_worktree_cache_falls_back_without_parent_retrieval";
+    const CASE: &str = "standalone_cache_progress_tests::selected_read_only_worktree_cache_falls_back_without_parent_retrieval";
     if !in_isolated_child(CASE)? {
         return Ok(());
     }
