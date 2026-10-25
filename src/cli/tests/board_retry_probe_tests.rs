@@ -1,27 +1,28 @@
-use super::*;
+//! The real CLI retries a contended board read with one capability probe.
+use crate::board::BOARD_API;
+use crate::test_fixtures::scratch;
 use std::{
     io::{Read, Write},
     os::unix::net::{UnixListener, UnixStream},
+    path::PathBuf,
     process::{Command, Stdio},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 const CHILD_MODE: &str = "TRUFFLEPIG_BOARD_RETRY_PROBE_CHILD";
 
-/// Reuses the existing test in a child whose router/config paths are isolated.
-pub(super) fn run_isolated() -> bool {
+/// Runs the CLI in a child whose router, spool, and config paths are isolated.
+#[test]
+fn cli_board_retry_probes_router_once_with_fresh_request_ids() {
     if std::env::var_os(CHILD_MODE).is_some() {
         check_real_retry();
-        return true;
+        return;
     }
-    let directory = scratch();
+    let directory = scratch("cli-board-retry-");
     let log_path = directory.path().join("child.log");
     let log = std::fs::File::create(&log_path).unwrap();
     let module = module_path!().split_once("::").unwrap().1;
-    let module = module.strip_suffix("::cli_retry_probe").unwrap();
-    let test = format!(
-        "{module}::router_api_is_probed_once_before_dispatch_and_mismatch_never_falls_back"
-    );
+    let test = format!("{module}::cli_board_retry_probes_router_once_with_fresh_request_ids");
     let mut child = Command::new(std::env::current_exe().unwrap())
         .args(["--exact", &test, "--nocapture"])
         .env(CHILD_MODE, "1")
@@ -55,7 +56,6 @@ pub(super) fn run_isolated() -> bool {
         output.contains("real CLI retry: one probe, fresh request ids"),
         "{output}"
     );
-    false
 }
 
 fn check_real_retry() {

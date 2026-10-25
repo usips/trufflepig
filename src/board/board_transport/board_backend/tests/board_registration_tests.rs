@@ -15,7 +15,7 @@ fn configured_repository_identity_conflicts_block_reads_and_writes_before_mutati
         ];
         args.extend(words.iter().map(|word| (*word).to_owned()));
         host.run(
-            &crate::cli::parse(&args).unwrap(),
+            &crate::board::board_test_support::parse_board_arguments(&args).unwrap(),
             &RequestContext::new(None, None),
             QueryDeadline::start(),
         )
@@ -82,7 +82,7 @@ fn repository_failures_warn_once_for_writes_and_remain_visible_on_reads() {
             fixture.root.to_string_lossy().into_owned(),
         ];
         args.extend(words.iter().map(|word| (*word).to_owned()));
-        let options = crate::cli::parse(&args).unwrap();
+        let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
         host.run(
             &options,
             &RequestContext::new(None, None),

@@ -275,7 +275,7 @@ fn run_with_retry_deadline(
         && options.words.get(1).is_some_and(|word| word == "web");
     let args = if options.is_board() && !is_web {
         let parsed = super::parse(args)?;
-        prepared = crate::board::prepare_client(args, &parsed)?;
+        prepared = super::board_request_bridge::board_forwarded_args(&parsed)?;
         prepared.as_slice()
     } else {
         args

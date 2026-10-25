@@ -5,6 +5,7 @@ use super::{
 };
 use crate::coded_error::CodedContext;
 use crate::{
+    board::board_grammar::BoardArguments,
     board::{
         board_ids::{BoardRef, EntryId},
         board_protocol::{
@@ -13,13 +14,12 @@ use crate::{
         },
         board_vocabulary::{AuthorityRole, EntryKind, EntryText, WorkerEndReason, WorkerRole},
     },
-    cli::Arguments,
     identity::GitOid,
 };
 use anyhow::{Result, bail, ensure};
 
 pub(super) fn parse_v10(
-    options: &Arguments,
+    options: &BoardArguments,
     payload: &BoardTextPayload,
     verb: &str,
 ) -> Result<Option<BoardOp>> {
@@ -39,7 +39,7 @@ pub(super) fn parse_v10(
     Ok(Some(op))
 }
 
-fn parse_hello(options: &Arguments) -> Result<BoardOp> {
+fn parse_hello(options: &BoardArguments) -> Result<BoardOp> {
     check_flags(options, &["worker"])?;
     fixed_words(
         options,
@@ -59,7 +59,7 @@ fn parse_hello(options: &Arguments) -> Result<BoardOp> {
     })
 }
 
-fn parse_post(options: &Arguments, payload: &BoardTextPayload) -> Result<BoardOp> {
+fn parse_post(options: &BoardArguments, payload: &BoardTextPayload) -> Result<BoardOp> {
     check_flags(
         options,
         &[
@@ -99,7 +99,7 @@ fn parse_post(options: &Arguments, payload: &BoardTextPayload) -> Result<BoardOp
     })
 }
 
-fn progress_input(options: &Arguments) -> Result<Option<ProgressInput>> {
+fn progress_input(options: &BoardArguments) -> Result<Option<ProgressInput>> {
     let board = &options.board;
     let has_input = board.head.is_some()
         || board.step.is_some()
@@ -177,7 +177,7 @@ fn progress_input(options: &Arguments) -> Result<Option<ProgressInput>> {
     Ok(Some(input))
 }
 
-fn parse_grant(options: &Arguments, payload: &BoardTextPayload) -> Result<BoardOp> {
+fn parse_grant(options: &BoardArguments, payload: &BoardTextPayload) -> Result<BoardOp> {
     check_flags(options, &["board", "to", "for", "text"])?;
     let grantee = recipient(options)?
         .with_coded_context(|| coded!(InvalidOptions, "grant requires --to WHO"))?;
@@ -225,7 +225,7 @@ fn parse_grant(options: &Arguments, payload: &BoardTextPayload) -> Result<BoardO
     })
 }
 
-fn parse_revoke(options: &Arguments) -> Result<BoardOp> {
+fn parse_revoke(options: &BoardArguments) -> Result<BoardOp> {
     check_flags(options, &[])?;
     fixed_words(options, 3, 3, "board revoke E#")?;
     Ok(BoardOp::Revoke {
@@ -233,7 +233,7 @@ fn parse_revoke(options: &Arguments) -> Result<BoardOp> {
     })
 }
 
-fn parse_worker(options: &Arguments, payload: &BoardTextPayload) -> Result<BoardOp> {
+fn parse_worker(options: &BoardArguments, payload: &BoardTextPayload) -> Result<BoardOp> {
     let task = match word(options, 2, "board worker P7.3 add|end ...")?.parse::<BoardRef>()? {
         BoardRef::Task(task) => task,
         _ => bail!(coded!(InvalidReference, "worker requires a task P#.N")),

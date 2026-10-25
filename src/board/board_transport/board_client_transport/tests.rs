@@ -149,9 +149,10 @@ fn invoke_args_with_load_delay(
     deadline: QueryDeadline,
     load_delay: Duration,
 ) -> Result<String> {
-    let options = crate::cli::parse(args)?;
-    let args = crate::board::prepare_client(args, &options)?;
-    let options = crate::cli::parse(&args)?;
+    let options = crate::board::board_test_support::parse_board_arguments(args)?;
+    let options =
+        crate::board::board_test_support::round_trip(&crate::board::prepare_client(&options)?);
+    let args = crate::board::board_test_support::board_argv(&options);
     let command = board_grammar::parse(&options, None)?;
     transport.run_prepared(
         &args,
@@ -225,9 +226,11 @@ fn failed_outbox_persistence_is_returned_without_a_second_attempt() {
     let args: Vec<_> = ["feedback", "blocked", "unavailable outbox"]
         .map(str::to_owned)
         .into();
-    let options = crate::cli::parse(&args).unwrap();
-    let forwarded = crate::board::prepare_client(&args, &options).unwrap();
-    let options = crate::cli::parse(&forwarded).unwrap();
+    let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
+    let options = crate::board::board_test_support::round_trip(
+        &crate::board::prepare_client(&options).unwrap(),
+    );
+    let forwarded = crate::board::board_test_support::board_argv(&options);
     let command = board_grammar::parse(&options, None).unwrap();
     let mut gateway = FakeGateway {
         replies: VecDeque::from([Ok(None)]),

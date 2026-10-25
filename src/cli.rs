@@ -1,5 +1,6 @@
 //! Linux command dispatch; stdout contains one budgeted JSON response.
 mod board_api_probe;
+mod board_request_bridge;
 mod client_command;
 use crate::coded_error::CodedContext;
 use client_command::ClientCommand;

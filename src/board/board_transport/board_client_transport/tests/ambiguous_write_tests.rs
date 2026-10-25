@@ -178,7 +178,7 @@ fn client_post_key_matches_the_actual_host_receipt_with_claims_and_origin() {
         "note".to_owned(),
         "host-shaped request".to_owned(),
     ];
-    let mut options = crate::cli::parse(&words).unwrap();
+    let mut options = crate::board::board_test_support::parse_board_arguments(&words).unwrap();
     options.root = directory.path().to_path_buf();
     options.board.agent_model = Some("gpt-6-luna".into());
     options.board.agent_effort = Some("xhigh".into());
@@ -196,7 +196,8 @@ fn client_post_key_matches_the_actual_host_receipt_with_claims_and_origin() {
     .unwrap();
 
     let receipt_words = ["board".to_owned(), "receipt".to_owned(), key.to_string()];
-    let mut receipt_options = crate::cli::parse(&receipt_words).unwrap();
+    let mut receipt_options =
+        crate::board::board_test_support::parse_board_arguments(&receipt_words).unwrap();
     receipt_options.root = directory.path().to_path_buf();
     let result = host
         .run(

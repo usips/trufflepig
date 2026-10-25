@@ -74,7 +74,7 @@ impl ClientCommand {
         }
         if verb == "board" && options.words.get(1).is_some_and(|word| word == "web") {
             let crate::board::board_grammar::BoardCommand::Web { target } =
-                crate::board::board_grammar::parse(&options, None)?
+                crate::board::board_grammar::parse(&options.board_arguments(), None)?
             else {
                 unreachable!("web grammar produces a web command");
             };
@@ -82,7 +82,7 @@ impl ClientCommand {
         }
         if verb == "board" && options.words.get(1).is_some_and(|word| word == "pending") {
             let crate::board::board_grammar::BoardCommand::Op(_) =
-                crate::board::board_grammar::parse(&options, None)?
+                crate::board::board_grammar::parse(&options.board_arguments(), None)?
             else {
                 unreachable!("pending grammar produces an operation");
             };
@@ -95,7 +95,15 @@ impl ClientCommand {
             );
         }
         if matches!(verb, "board" | "feedback") {
-            return self.board.run(args, &options, context, deadline);
+            let forwarded = super::board_request_bridge::board_forwarded_args(&options)?;
+            let replay = parse(&forwarded)?;
+            return self.board.run(
+                &forwarded,
+                &replay.board_arguments(),
+                context,
+                crate::system::ensure_by,
+                deadline,
+            );
         }
         if options.no_cache {
             return super::direct_with_deadline(&options, context, deadline);

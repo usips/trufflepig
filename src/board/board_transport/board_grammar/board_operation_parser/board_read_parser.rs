@@ -7,16 +7,16 @@ use super::{
     BoardTextPayload,
     board_syntax_validation::{check_flags, fixed_words, word},
 };
+use crate::board::board_grammar::BoardArguments;
 use crate::board::board_ids::{BoardRef, EventSeq, PlanId};
 use crate::board::board_protocol::{
     BoardOp, BoardRequestKey, EntryCursor, OverviewCursor, TaskCursor, TaskOrder,
 };
 use crate::board::board_vocabulary::TaskColumn;
-use crate::cli::Arguments;
 use anyhow::{Result, bail, ensure};
 
 pub(super) fn parse_read(
-    options: &Arguments,
+    options: &BoardArguments,
     payload: &BoardTextPayload,
 ) -> Result<Option<BoardOp>> {
     let verb = options.words.get(1).map(String::as_str).unwrap_or("inbox");
@@ -206,7 +206,7 @@ pub(super) fn parse_read(
     Ok(Some(op))
 }
 
-pub(super) fn entry_after(options: &Arguments) -> Result<Option<EntryCursor>> {
+pub(super) fn entry_after(options: &BoardArguments) -> Result<Option<EntryCursor>> {
     options
         .board
         .after
@@ -223,7 +223,7 @@ pub(super) fn entry_after(options: &Arguments) -> Result<Option<EntryCursor>> {
         .transpose()
 }
 
-pub(super) fn through(options: &Arguments) -> Result<Option<EventSeq>> {
+pub(super) fn through(options: &BoardArguments) -> Result<Option<EventSeq>> {
     options
         .board
         .through
@@ -232,7 +232,7 @@ pub(super) fn through(options: &Arguments) -> Result<Option<EventSeq>> {
         .transpose()
 }
 
-fn event_after(options: &Arguments, positional: Option<&str>) -> Result<Option<EventSeq>> {
+fn event_after(options: &BoardArguments, positional: Option<&str>) -> Result<Option<EventSeq>> {
     ensure!(
         positional.is_none() || options.board.after.is_none(),
         coded!(InvalidOptions, "event cursor supplied twice")
@@ -243,7 +243,7 @@ fn event_after(options: &Arguments, positional: Option<&str>) -> Result<Option<E
         .transpose()
 }
 
-pub(super) fn bounded_limit(options: &Arguments, maximum: usize) -> Result<usize> {
+pub(super) fn bounded_limit(options: &BoardArguments, maximum: usize) -> Result<usize> {
     ensure!(
         (1..=maximum).contains(&options.limit),
         coded!(

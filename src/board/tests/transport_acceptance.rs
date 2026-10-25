@@ -10,16 +10,16 @@ fn normalized_markdown_and_body_preserve_client_context_and_ssot() {
     );
     let mut options = fixture.options(&["board", "new", "--", "- Edge", "plan"]);
     options.board.body = Some(PathBuf::from("client-only.md"));
-    options.client = Some("human".into());
-    options.session = Some("forged-session".into());
     let body = "# Edge acceptance\n\n- Keep markdown intact\n\u{001b}[31mtext\n";
-    let forwarded = board_grammar::normalize_args(&[], &options, Some(body)).unwrap();
-    assert!(!forwarded.iter().any(|arg| arg.contains("client-only.md")));
-    let router_options = cli::parse(&forwarded).unwrap();
+    let forwarded = board_grammar::normalize_args(&options, Some(body)).unwrap();
+    assert!(
+        !crate::board::board_test_support::board_argv(&forwarded)
+            .iter()
+            .any(|arg| arg.contains("client-only.md"))
+    );
+    let router_options = crate::board::board_test_support::round_trip(&forwarded);
     assert_eq!(router_options.words, ["board", "new"]);
     assert_eq!(router_options.board.body, None);
-    assert!(router_options.client.is_none());
-    assert!(router_options.session.is_none());
     fixture
         .host
         .run(
@@ -38,8 +38,8 @@ fn normalized_markdown_and_body_preserve_client_context_and_ssot() {
         "--to",
         "codex/actual-session",
     ]);
-    let forwarded = board_grammar::normalize_args(&[], &grant_options, None).unwrap();
-    let grant_options = cli::parse(&forwarded).unwrap();
+    let forwarded = board_grammar::normalize_args(&grant_options, None).unwrap();
+    let grant_options = crate::board::board_test_support::round_trip(&forwarded);
     let grant_context = RequestContext::with_origin(
         Some("grant-session".into()),
         Some("human".into()),
@@ -156,7 +156,9 @@ fn encoded_frame_measurement_includes_nested_body_escaping_and_audit_metadata() 
     let mut options = fixture.options(&["board", "new", "Escaped body"]);
     options.board.body = Some(PathBuf::from("body.md"));
     let body = "\u{001f}".repeat(crate::board::board_vocabulary::ENTRY_TEXT_LIMIT);
-    let escaped_args = board_grammar::normalize_args(&[], &options, Some(&body)).unwrap();
+    let escaped_args = crate::board::board_test_support::board_argv(
+        &board_grammar::normalize_args(&options, Some(&body)).unwrap(),
+    );
     let request_context = context("codex", "encoded-session");
     let escaped_size =
         crate::daemon_transport::request_encoded_size(&escaped_args, &request_context).unwrap();
@@ -172,7 +174,9 @@ fn encoded_frame_measurement_includes_nested_body_escaping_and_audit_metadata() 
         serde_json::to_vec(&expected_request).unwrap().len()
     );
     let plain_body = "x".repeat(crate::board::board_vocabulary::ENTRY_TEXT_LIMIT);
-    let plain_args = board_grammar::normalize_args(&[], &options, Some(&plain_body)).unwrap();
+    let plain_args = crate::board::board_test_support::board_argv(
+        &board_grammar::normalize_args(&options, Some(&plain_body)).unwrap(),
+    );
     let plain_size =
         crate::daemon_transport::request_encoded_size(&plain_args, &request_context).unwrap();
     assert_eq!(body.len(), crate::board::board_vocabulary::ENTRY_TEXT_LIMIT);

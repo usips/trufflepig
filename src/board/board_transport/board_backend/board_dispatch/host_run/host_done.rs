@@ -156,7 +156,7 @@ mod tests {
             let mut args = vec!["--root".to_owned(), root.to_string_lossy().into_owned()];
             args.extend(words.iter().map(|word| (*word).to_owned()));
             self.host.run(
-                &crate::cli::parse(&args).unwrap(),
+                &crate::board::board_test_support::parse_board_arguments(&args).unwrap(),
                 &RequestContext::new(None, None),
                 QueryDeadline::after(Duration::from_secs(2)),
             )

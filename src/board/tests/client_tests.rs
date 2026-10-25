@@ -17,12 +17,12 @@ fn captured_body_survives_file_changes_between_retries() {
         "new".into(),
         "Trial".into(),
     ];
-    let options = crate::cli::parse(&args).unwrap();
-    let prepared = prepare_client(&args, &options).unwrap();
+    let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
+    let prepared = prepare_client(&options).unwrap();
     std::fs::write(&body_path, "changed before replay").unwrap();
-    let prepared_options = crate::cli::parse(&prepared).unwrap();
-    let replay = prepare_client(&prepared, &prepared_options).unwrap();
-    let replay_options = crate::cli::parse(&replay).unwrap();
+    let prepared_options = crate::board::board_test_support::round_trip(&prepared);
+    let replay = prepare_client(&prepared_options).unwrap();
+    let replay_options = crate::board::board_test_support::round_trip(&replay);
     let BoardCommand::Op(BoardOp::New { body, .. }) =
         board_grammar::parse(&replay_options, None).unwrap()
     else {
@@ -44,8 +44,8 @@ fn body_preflight_precedes_file_reads_and_byte_limits_precede_utf8() {
     ]
     .map(str::to_owned)
     .into();
-    let options = crate::cli::parse(&args).unwrap();
-    let error = prepare_client(&args, &options).unwrap_err();
+    let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
+    let error = prepare_client(&options).unwrap_err();
     assert!(
         error.to_string().starts_with("invalid_reference:"),
         "{error:#}"
@@ -60,8 +60,8 @@ fn body_preflight_precedes_file_reads_and_byte_limits_precede_utf8() {
         "blocked".into(),
         "summary".into(),
     ];
-    let options = crate::cli::parse(&args).unwrap();
-    let error = prepare_client(&args, &options).unwrap_err();
+    let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
+    let error = prepare_client(&options).unwrap_err();
     assert!(
         error.to_string().contains("body exceeds 4096 bytes"),
         "{error:#}"
@@ -137,7 +137,7 @@ fn newer_schema_refusal_advises_upgrade() {
     let directory = crate::test_fixtures::scratch("board-schema-");
     let config = crate::board::BoardConfig::for_database(directory.path().join("board.sqlite3"));
     let args: Vec<String> = ["board", "inbox"].map(str::to_owned).into();
-    let options = crate::cli::parse(&args).unwrap();
+    let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
     let command = board_grammar::parse(&options, None).unwrap();
     let context = crate::request_context::RequestContext::new(None, None);
     let error = anyhow::Error::new(board_protocol::BoardError::new(
@@ -171,7 +171,7 @@ fn schema_words_in_transport_prose_do_not_advise_upgrade() {
     let directory = crate::test_fixtures::scratch("board-schema-prose-");
     let config = crate::board::BoardConfig::for_database(directory.path().join("board.sqlite3"));
     let args: Vec<String> = ["board", "inbox"].map(str::to_owned).into();
-    let options = crate::cli::parse(&args).unwrap();
+    let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
     let command = board_grammar::parse(&options, None).unwrap();
     let error = anyhow::anyhow!(coded!(
         BoardUnavailable,

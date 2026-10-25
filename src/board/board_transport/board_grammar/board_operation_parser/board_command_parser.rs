@@ -10,17 +10,20 @@ use super::{
 use crate::board::board_protocol::ReadScope;
 use crate::coded_error::CodedContext;
 use crate::{
+    board::board_grammar::BoardArguments,
     board::{
         board_ids::{BoardRef, EntryId, EventSeq, PlanRevision},
         board_protocol::BoardOp,
         board_vocabulary::{EntryText, PlanText, PlanTitle},
     },
-    cli::Arguments,
     request_context::HarnessLabel,
 };
 use anyhow::{Result, bail};
 
-pub(super) fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Result<BoardCommand> {
+pub(super) fn parse_board(
+    options: &BoardArguments,
+    payload: &BoardTextPayload,
+) -> Result<BoardCommand> {
     let words = &options.words;
     let verb = words.get(1).map(String::as_str).unwrap_or("inbox");
     if let Some(op) = board_read_parser::parse_read(options, payload)? {
@@ -176,7 +179,7 @@ pub(super) fn parse_board(options: &Arguments, payload: &BoardTextPayload) -> Re
     Ok(BoardCommand::Op(op))
 }
 
-fn parse_inbox(options: &Arguments, index: usize) -> Result<BoardCommand> {
+fn parse_inbox(options: &BoardArguments, index: usize) -> Result<BoardCommand> {
     check_flags(options, &["wait", "all", "project"])?;
     let minimum = if options.words.len() == 1 { 1 } else { index };
     fixed_words(

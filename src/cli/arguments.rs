@@ -1,6 +1,9 @@
 //! Parsed client options and explicit daemon argument forwarding.
 use crate::{
-    board::board_grammar::BoardOptions, output::MAX_BUDGET, output::OutputFormat, results,
+    board::board_grammar::{BoardArguments, BoardOptions},
+    output::MAX_BUDGET,
+    output::OutputFormat,
+    results,
 };
 use anyhow::{Result, bail};
 use clap::Parser;
@@ -250,29 +253,12 @@ pub fn parse(args: &[String]) -> Result<Arguments> {
                     !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
                 })
         });
-    if !explicit_limit {
-        match (
-            options.words.first().map(String::as_str),
-            options.words.get(1).map(String::as_str),
-        ) {
-            (Some("board"), Some("feed" | "attention" | "history" | "done"))
-            | (Some("feedback"), Some("ls")) => options.limit = 200,
-            (Some("board"), Some("show")) if options.words.len() == 2 => options.limit = 200,
-            (Some("board"), Some("search")) => options.limit = 50,
-            _ => {}
-        }
+    if !explicit_limit && let Some(limit) = BoardArguments::default_limit(&options.words) {
+        options.limit = limit;
     }
     if !options.explicit_budget {
         if options.is_board() {
-            options.budget = if options.words.first().map(String::as_str) == Some("board")
-                && matches!(
-                    options.words.get(1).map(String::as_str),
-                    Some("show" | "review")
-                ) {
-                4_000
-            } else {
-                1_500
-            };
+            options.budget = BoardArguments::default_budget(&options.words);
         } else if options.is_show() {
             options.budget = SHOW_BUDGET;
         }
@@ -342,7 +328,7 @@ pub(super) fn validate(options: &Arguments) -> Result<()> {
         bail!(coded!(InvalidOptions, "--listen requires board-serve"));
     }
     if verb == "board-serve" {
-        crate::board::board_grammar::validate_board_surface(options)?;
+        crate::board::board_grammar::validate_board_surface(&options.board_arguments())?;
         if options.words.len() != 1 {
             bail!(coded!(Usage, "board-serve [--listen 127.0.0.1:7341]"));
         }

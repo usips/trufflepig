@@ -5,7 +5,10 @@ use crate::board::{
     board_protocol::{AgentClaims, BoardOp},
 };
 use crate::coded_error::CodedContext;
-use crate::{cli::Arguments, query_deadline::QueryDeadline, request_context::RequestContext};
+use crate::{
+    board::board_grammar::BoardArguments, query_deadline::QueryDeadline,
+    request_context::RequestContext,
+};
 use anyhow::{Result, bail, ensure};
 use std::{
     error::Error as StdError,
@@ -38,7 +41,10 @@ trait BoardGateway {
     }
 }
 
-struct SystemGateway;
+/// Routes through the system router; `ensure_router` starts it when absent.
+struct SystemGateway {
+    ensure_router: fn(QueryDeadline) -> Result<()>,
+}
 impl BoardGateway for SystemGateway {
     fn request(
         &mut self,
@@ -49,22 +55,23 @@ impl BoardGateway for SystemGateway {
         crate::daemon_transport::router_request_by(args, context, deadline.clone())
     }
     fn ensure(&mut self, deadline: &QueryDeadline) -> Result<()> {
-        crate::system::ensure_by(deadline.clone())
+        (self.ensure_router)(deadline.clone())
     }
 }
 
 impl BoardClientTransport {
+    /// Sends a prepared request: `forwarded` is the router argv for `options`,
+    /// and `ensure_router` starts the system router when none answers.
     pub(crate) fn run(
         &mut self,
-        args: &[String],
-        options: &Arguments,
+        forwarded: &[String],
+        options: &BoardArguments,
         context: &RequestContext,
+        ensure_router: fn(QueryDeadline) -> Result<()>,
         deadline: QueryDeadline,
     ) -> Result<String> {
-        let forwarded = crate::board::prepare_client(args, options)?;
-        let options = crate::cli::parse(&forwarded)?;
-        let command = board_grammar::parse(&options, None)?;
-        let encoded = crate::daemon_transport::request_encoded_size(&forwarded, context)?;
+        let command = board_grammar::parse(options, None)?;
+        let encoded = crate::daemon_transport::request_encoded_size(forwarded, context)?;
         ensure!(
             encoded <= crate::daemon_transport::MAX_DAEMON_REQUEST_BYTES,
             coded!(
@@ -74,11 +81,11 @@ impl BoardClientTransport {
             )
         );
         self.run_prepared(
-            &forwarded,
-            &options,
+            forwarded,
+            options,
             &command,
             context,
-            &mut SystemGateway,
+            &mut SystemGateway { ensure_router },
             &mut BoardConfig::load,
             crate::runtime_paths::system_dir().as_deref(),
             &crate::runtime_paths::spool_dir(),
@@ -88,7 +95,7 @@ impl BoardClientTransport {
     fn run_prepared(
         &mut self,
         forwarded: &[String],
-        options: &Arguments,
+        options: &BoardArguments,
         command: &BoardCommand,
         context: &RequestContext,
         gateway: &mut dyn BoardGateway,
@@ -119,7 +126,7 @@ impl BoardClientTransport {
     fn run_prepared_inner(
         &mut self,
         forwarded: &[String],
-        options: &Arguments,
+        options: &BoardArguments,
         command: &BoardCommand,
         context: &RequestContext,
         gateway: &mut dyn BoardGateway,
@@ -267,7 +274,7 @@ fn check_deadline(deadline: &QueryDeadline) -> Result<()> {
 
 fn failed_request(
     command: &BoardCommand,
-    options: &Arguments,
+    options: &BoardArguments,
     context: &RequestContext,
     load: &mut dyn FnMut() -> Result<BoardConfig>,
     spool: &Path,
@@ -362,7 +369,7 @@ impl StdError for AmbiguousBoardWriteTimeout {
 
 fn request_receipt_key(
     command: &BoardCommand,
-    options: &Arguments,
+    options: &BoardArguments,
     context: &RequestContext,
     load: &mut dyn FnMut() -> Result<BoardConfig>,
 ) -> Result<Option<BoardRequestKey>> {
@@ -423,7 +430,7 @@ fn parse_probe(status: &str) -> Result<(u32, PathBuf)> {
 }
 
 fn local_reply(
-    options: &Arguments,
+    options: &BoardArguments,
     command: &BoardCommand,
     context: &RequestContext,
     load: &mut dyn FnMut() -> Result<BoardConfig>,
@@ -477,7 +484,7 @@ fn local_reply(
 /// without creating or migrating it; current files proceed to the local run.
 fn refuse_stale_storage_beside_router(
     command: &BoardCommand,
-    options: &Arguments,
+    options: &BoardArguments,
     context: &RequestContext,
     config: &BoardConfig,
     runtime: Option<&Path>,
@@ -512,7 +519,7 @@ fn refuse_stale_storage_beside_router(
 
 fn run_local(
     command: &BoardCommand,
-    options: &Arguments,
+    options: &BoardArguments,
     context: &RequestContext,
     config: &BoardConfig,
     runtime: Option<&Path>,

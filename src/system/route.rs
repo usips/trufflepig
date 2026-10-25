@@ -71,7 +71,7 @@ pub(super) fn route(
         return Ok(serde_json::to_string(&status)?);
     }
     if matches!(verb, Some("board" | "feedback")) {
-        return board.run(&options, &context, deadline);
+        return board.run(&options.board_arguments(), &context, deadline);
     }
     if let Some(config) = crate::workspace::resolve(&options)? {
         let cache = crate::workspace::cache_path(&config, options.cache.as_deref())?;

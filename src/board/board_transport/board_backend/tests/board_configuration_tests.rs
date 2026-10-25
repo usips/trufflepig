@@ -129,7 +129,12 @@ fn backend_rejects_client_only_web_before_opening_board_database() {
     let directory = crate::test_fixtures::scratch("board-web-client-only-");
     let database = directory.path().join("absent.sqlite3");
     let host = BoardHost::with_config(BoardConfig::for_database(&database));
-    let options = crate::cli::parse(&["board".into(), "web".into(), "P1".into()]).unwrap();
+    let options = crate::board::board_test_support::parse_board_arguments(&[
+        "board".into(),
+        "web".into(),
+        "P1".into(),
+    ])
+    .unwrap();
     let error = host
         .run(
             &options,

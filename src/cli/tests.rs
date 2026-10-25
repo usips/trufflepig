@@ -1,5 +1,6 @@
 //! CLI dispatch, normalization, and board grammar integration tests.
 
+mod board_retry_probe_tests;
 mod client_normalization_tests;
 mod daemon_routing_tests;
 mod grammar_tests;

@@ -11,6 +11,7 @@ use super::super::{
 use super::scope_read_repo_key;
 use crate::coded_error::CodedContext;
 use crate::{
+    board::board_grammar::BoardArguments,
     board::{
         board_grammar::{self, BoardCommand},
         board_protocol::{
@@ -19,7 +20,6 @@ use crate::{
         },
         board_render::{render_cli_reply, render_reply},
     },
-    cli::Arguments,
     output::OutputBudget,
     query_deadline::{QUERY_DEADLINE, QueryDeadline},
     request_context::RequestContext,
@@ -43,7 +43,7 @@ impl BoardHost {
     /// Dispatches concrete reads and writes, holding the writer only for backend work.
     pub fn run(
         &self,
-        options: &Arguments,
+        options: &BoardArguments,
         context: &RequestContext,
         deadline: QueryDeadline,
     ) -> Result<String> {

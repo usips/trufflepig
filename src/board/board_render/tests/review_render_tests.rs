@@ -162,7 +162,7 @@ fn review_recovery_hint_uses_the_accepted_cli_grammar() {
         .split_whitespace()
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    let options = crate::cli::parse(&args).unwrap();
+    let options = crate::board::board_test_support::parse_board_arguments(&args).unwrap();
     let command = crate::board::board_grammar::parse(&options, None).unwrap();
     assert!(
         matches!(command, crate::board::board_grammar::BoardCommand::Op(BoardOp::Review { base, agent: Some(agent) })

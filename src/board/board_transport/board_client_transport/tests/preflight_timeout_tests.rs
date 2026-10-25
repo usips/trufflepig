@@ -26,9 +26,10 @@ fn invoke_args_counted(
     runtime: Option<&Path>,
     loads: &mut usize,
 ) -> Result<String> {
-    let options = crate::cli::parse(args)?;
-    let forwarded = crate::board::prepare_client(args, &options)?;
-    let options = crate::cli::parse(&forwarded)?;
+    let options = crate::board::board_test_support::parse_board_arguments(args)?;
+    let options =
+        crate::board::board_test_support::round_trip(&crate::board::prepare_client(&options)?);
+    let forwarded = crate::board::board_test_support::board_argv(&options);
     let command = board_grammar::parse(&options, None)?;
     let spool = database.parent().unwrap().join("spool");
     BoardClientTransport::default().run_prepared(

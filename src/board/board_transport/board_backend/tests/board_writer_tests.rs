@@ -72,18 +72,28 @@ fn poisoned_writer_reopens_durable_board_and_recovers_other_locks() {
         directory.path().join("board.sqlite3"),
     ));
     let context = RequestContext::new(None, None);
-    let create =
-        crate::cli::parse(&["board".into(), "new".into(), "Survives panic".into()]).unwrap();
+    let create = crate::board::board_test_support::parse_board_arguments(&[
+        "board".into(),
+        "new".into(),
+        "Survives panic".into(),
+    ])
+    .unwrap();
     host.run(&create, &context, QueryDeadline::start()).unwrap();
     poison(&host.inner.backend);
     poison(&host.inner.config);
     poison(&host.inner.sequence);
     poison(&host.inner.ingestor);
-    let show = crate::cli::parse(&["board".into(), "show".into()]).unwrap();
+    let show =
+        crate::board::board_test_support::parse_board_arguments(&["board".into(), "show".into()])
+            .unwrap();
     let reply = host.run(&show, &context, QueryDeadline::start()).unwrap();
     assert!(reply.contains("Survives panic"));
-    let create =
-        crate::cli::parse(&["board".into(), "new".into(), "Recovered writer".into()]).unwrap();
+    let create = crate::board::board_test_support::parse_board_arguments(&[
+        "board".into(),
+        "new".into(),
+        "Recovered writer".into(),
+    ])
+    .unwrap();
     host.run(&create, &context, QueryDeadline::start()).unwrap();
     drop(lock_before(&host.inner.ingestor, &QueryDeadline::start(), "ingest").unwrap());
     assert!(!host.inner.backend.is_poisoned());
@@ -146,8 +156,12 @@ fn expired_board_mutation_never_creates_the_database() {
     let directory = crate::test_fixtures::scratch("board-transport-");
     let database = directory.path().join("data/board.sqlite3");
     let host = BoardHost::with_config(BoardConfig::for_database(&database));
-    let options =
-        crate::cli::parse(&["board".into(), "new".into(), "Never created".into()]).unwrap();
+    let options = crate::board::board_test_support::parse_board_arguments(&[
+        "board".into(),
+        "new".into(),
+        "Never created".into(),
+    ])
+    .unwrap();
     let error = host
         .run(
             &options,

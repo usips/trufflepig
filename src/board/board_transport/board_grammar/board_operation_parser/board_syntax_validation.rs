@@ -1,12 +1,12 @@
 //! Shared flag, word-count, recipient, and optional-text validation.
 use crate::coded_error::CodedContext;
 use crate::{
+    board::board_grammar::BoardArguments,
     board::{board_actor::BoardRecipient, board_vocabulary::EntryText},
-    cli::Arguments,
 };
 use anyhow::{Result, bail};
 
-pub(super) fn check_flags(options: &Arguments, allowed: &[&str]) -> Result<()> {
+pub(super) fn check_flags(options: &BoardArguments, allowed: &[&str]) -> Result<()> {
     let board = &options.board;
     for (name, present) in [
         ("body", board.body.is_some()),
@@ -52,7 +52,7 @@ pub(super) fn check_flags(options: &Arguments, allowed: &[&str]) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn recipient(options: &Arguments) -> Result<Option<BoardRecipient>> {
+pub(super) fn recipient(options: &BoardArguments) -> Result<Option<BoardRecipient>> {
     options
         .board
         .to
@@ -69,7 +69,7 @@ pub(super) fn optional_text(value: &str) -> Result<Option<EntryText>> {
     }
 }
 
-pub(super) fn word<'a>(options: &'a Arguments, index: usize, usage: &str) -> Result<&'a str> {
+pub(super) fn word<'a>(options: &'a BoardArguments, index: usize, usage: &str) -> Result<&'a str> {
     options
         .words
         .get(index)
@@ -78,7 +78,7 @@ pub(super) fn word<'a>(options: &'a Arguments, index: usize, usage: &str) -> Res
 }
 
 pub(super) fn fixed_words(
-    options: &Arguments,
+    options: &BoardArguments,
     minimum: usize,
     maximum: usize,
     usage: &str,
