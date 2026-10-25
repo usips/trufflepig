@@ -139,8 +139,9 @@ fn replaced_candidate_stays_unscored_after_current_source_recheck() {
     let result = rerank_search(&store, cache.path(), Some(&scorer));
     let documents = scorer.documents.borrow();
     assert!(
-        documents.iter().all(|document| !document.contains("stale")
-            && !document.contains("current text")),
+        documents
+            .iter()
+            .all(|document| !document.contains("stale") && !document.contains("current text")),
         "{documents:?}"
     );
     assert_eq!(documents.len(), 2, "{documents:?}");
@@ -162,7 +163,10 @@ fn unchanged_candidates_are_reranked_after_current_source_recheck() {
     let fused: Vec<_> = fused.hits.iter().map(|hit| hit.path.as_str()).collect();
     let low = fused.iter().position(|path| *path == "a.md").unwrap();
     let high = fused.iter().position(|path| *path == "b.md").unwrap();
-    assert!(low < high, "fixture expects a.md ahead in fused order: {fused:?}");
+    assert!(
+        low < high,
+        "fixture expects a.md ahead in fused order: {fused:?}"
+    );
 
     let scorer = recording(None);
     let result = rerank_search(&store, cache.path(), Some(&scorer));
@@ -293,8 +297,10 @@ fn current_search_timeout_under_another_coded_layer_still_propagates() {
         &mut false,
         &QueryDeadline::start(),
         |_, _, _, _, _, _| {
-            Err(anyhow::anyhow!(coded!(TimedOut, "current file search interrupted"))
-                .with_coded_context(|| coded!(SourceUnavailable, "current snapshot")))
+            Err(
+                anyhow::anyhow!(coded!(TimedOut, "current file search interrupted"))
+                    .with_coded_context(|| coded!(SourceUnavailable, "current snapshot")),
+            )
         },
     )
     .unwrap_err();

@@ -141,9 +141,7 @@ pub(super) fn request_status(
     protocol::write_request_with_deadline(&mut stream, &request, deadline)?;
     match protocol::read_reply_with_deadline(&mut stream, deadline)? {
         protocol::WorkerReply::Status(status) => Ok(status),
-        protocol::WorkerReply::Error { message } => {
-            Err(crate::coded_error::relayed_error(message))
-        }
+        protocol::WorkerReply::Error { message } => Err(crate::coded_error::relayed_error(message)),
         protocol::WorkerReply::Embeddings { .. } | protocol::WorkerReply::Scores { .. } => {
             bail!(coded!(SemanticWorker, "invalid status response"))
         }

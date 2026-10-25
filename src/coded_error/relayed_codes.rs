@@ -108,7 +108,10 @@ mod tests {
             named_codes(&relayed).collect::<Vec<_>>(),
             [ErrorCode::TimedOut, ErrorCode::IndexCacheUnavailable]
         );
-        assert_eq!(super::super::error_code(&relayed), Some(ErrorCode::TimedOut));
+        assert_eq!(
+            super::super::error_code(&relayed),
+            Some(ErrorCode::TimedOut)
+        );
         assert!(!ErrorCode::IndexCacheUnavailable.is_anywhere_in(&relayed));
 
         let uncoded = relayed_error("load page: budget_too_small: need 900".into());

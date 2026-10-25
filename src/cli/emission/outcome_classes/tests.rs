@@ -64,12 +64,18 @@ fn codes_inside_relayed_text_name_outcomes_by_precedence() {
             "daemon: semantic_fallback_output_too_large: does not fit: budget_too_small: need 900",
             Outcome::BudgetTooSmall,
         ),
-        ("load page: budget_too_small: need 900", Outcome::BudgetTooSmall),
+        (
+            "load page: budget_too_small: need 900",
+            Outcome::BudgetTooSmall,
+        ),
         (
             "search 'invalid_limit usage: stale_source' found nothing",
             Outcome::Stale,
         ),
-        ("daemon: internal_error: bad usage: x", Outcome::InvalidInput),
+        (
+            "daemon: internal_error: bad usage: x",
+            Outcome::InvalidInput,
+        ),
     ] {
         assert_eq!(error_outcome(&relayed(text)), outcome, "{text}");
     }
