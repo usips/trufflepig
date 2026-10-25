@@ -219,7 +219,7 @@ fn wait_if_semantic_prepare(
             .get(1)
             .is_some_and(|command| command == "prepare")
     {
-        crate::cli::semantic::wait_for_workspace(config, options, reply)
+        crate::cli::semantic_commands::wait_for_workspace(config, options, reply)
     } else {
         Ok(reply)
     }
@@ -325,7 +325,7 @@ pub(super) fn ensure_member(
         coded!(TimedOut, "query deadline expired")
     );
     // Resolve from the original override: default worktree history stays shared.
-    local.resolved_history_cache = crate::history::worker::resolve_cache(
+    local.resolved_history_cache = crate::history::history_worker::resolve_cache(
         &member.root,
         options.cache.as_deref().map(|_| cache.as_path()),
         options.history_cache.as_deref(),

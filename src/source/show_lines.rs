@@ -2,7 +2,7 @@
 //! header, then `LINE<TAB>text` rows, then the footer. Row text is the JSON `text` field,
 //! so byte-escaped lines keep their `\xNN` escapes and are flagged once.
 
-use crate::output::lines::{NextCommand, footer};
+use crate::output::lines_format::{NextCommand, footer};
 use serde_json::Value;
 use std::fmt::Write;
 

@@ -516,7 +516,7 @@ fn lines_format_prefixes_member_and_summarizes_coverage() {
         .lines()
         .filter(|line| !line.starts_with("  "))
         .collect();
-    let hits: Vec<_> = crate::output::lines::emitted_handles(&output).collect();
+    let hits: Vec<_> = crate::output::lines_format::emitted_handles(&output).collect();
     assert_eq!(hits.len(), 3, "{output}");
     for (line, member) in lines.iter().zip(["pack", "engine", "upstream"]) {
         let mut fields = line.split('\t');
@@ -714,7 +714,7 @@ fn member_navigation_reads_every_word_and_ranks_from_the_invocation_directory() 
         )
         .unwrap();
     assert_eq!(
-        crate::output::lines::emitted_handles(&refs).count(),
+        crate::output::lines_format::emitted_handles(&refs).count(),
         2,
         "{refs}"
     );

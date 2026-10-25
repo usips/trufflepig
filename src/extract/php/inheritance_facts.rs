@@ -3,9 +3,9 @@ use tree_sitter::Node;
 use crate::extract::php_markers::{ClassRole, Marker, ParentKind, Visibility, encode};
 
 use super::Extraction;
-use super::declarations::Catalog;
 use super::names::{canonical, final_segment, text};
-use super::scopes::{class_node, namespace_at};
+use super::php_declarations::Catalog;
+use super::php_scopes::{class_node, namespace_at};
 
 pub(super) fn collect(root: Node<'_>, source: &[u8], catalog: &Catalog, result: &mut Extraction) {
     let uncertain_file = result.status != "complete";

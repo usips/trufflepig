@@ -5,7 +5,7 @@ use tree_sitter::Node;
 
 use super::super::bindings::{Binding, text};
 use super::super::{Definition, Extraction, Occurrence};
-use super::scopes::{
+use super::csharp_scopes::{
     ancestor, binding_scope, display_name, has_conditional_ancestor, identifier_tokens, join,
 };
 

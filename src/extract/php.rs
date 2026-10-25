@@ -1,12 +1,12 @@
 //! Bounded PHP extraction from Tree-sitter's syntax tree.
 //! Namespaces and imports normalize names; dynamic dispatch stays unresolved.
 
-mod declarations;
 mod imports;
 mod inheritance_facts;
 mod names;
-mod references;
-mod scopes;
+mod php_declarations;
+mod php_references;
+mod php_scopes;
 #[cfg(test)]
 mod tests;
 
@@ -57,9 +57,9 @@ fn extract_with_deadline(source: &[u8], budget: Duration) -> Extraction {
         return result;
     }
 
-    let catalog = declarations::collect(tree.root_node(), source, &mut result);
+    let catalog = php_declarations::collect(tree.root_node(), source, &mut result);
     inheritance_facts::collect(tree.root_node(), source, &catalog, &mut result);
-    references::collect(tree.root_node(), source, &catalog, &mut result);
+    php_references::collect(tree.root_node(), source, &catalog, &mut result);
     result
         .occurrences
         .sort_by_key(|occurrence| (occurrence.start, occurrence.end));

@@ -169,7 +169,7 @@ fn local_dispatch(
         return Ok(rendered);
     }
     if verb == "semantic" {
-        return super::semantic::local(root, cache, options, preparation_manager);
+        return super::semantic_commands::local(root, cache, options, preparation_manager);
     }
     if verb == "semantic-check" {
         let path = options
@@ -286,7 +286,7 @@ fn local_dispatch(
             .clone()
             .map(Ok)
             .unwrap_or_else(|| {
-                crate::history::worker::resolve_cache(
+                crate::history::history_worker::resolve_cache(
                     root,
                     options.cache.as_deref(),
                     options.history_cache.as_deref(),
@@ -308,7 +308,7 @@ fn local_dispatch(
                     budget.render(&status)
                 } else {
                     let status = history.schedule()?;
-                    crate::history::worker::start(root, &history_cache)?;
+                    crate::history::history_worker::start(root, &history_cache)?;
                     budget.render(&status)
                 }
             }

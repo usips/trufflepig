@@ -2,8 +2,8 @@
 use crate::coded_error::CodedContext;
 use crate::{identity::ResultHandle, store::Store};
 mod entries;
-pub(crate) mod lines;
 mod page;
+pub(crate) mod result_lines;
 mod result_set_store;
 use anyhow::{Result, bail, ensure};
 pub use entries::*;

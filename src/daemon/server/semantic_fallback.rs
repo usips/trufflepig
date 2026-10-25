@@ -1,6 +1,6 @@
 use crate::{
     cli::{normalized_args, parse},
-    output::{OutputBudget, OutputFormat, lines::COVERAGE_KEY},
+    output::{OutputBudget, OutputFormat, lines_format::COVERAGE_KEY},
     search::Query,
 };
 use anyhow::{Context, Result, anyhow, bail, ensure};

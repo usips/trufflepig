@@ -1,6 +1,6 @@
 //! Standalone linked-worktree reads keep parent and child result identities separate.
 
-mod cache_progress_tests;
+mod standalone_cache_progress_tests;
 
 use anyhow::{Context, Result, ensure};
 use fs2::FileExt;

@@ -15,7 +15,7 @@ mod stateless_dispatch;
 pub(crate) use root_daemon::{ClassifiedDaemonRequest, classify_daemon_request};
 mod system_client_routing;
 use system_client_routing::{system_command, system_reply, system_routes};
-pub(crate) mod semantic;
+pub(crate) mod semantic_commands;
 use crate::{
     background_process::spawn_background,
     daemon_transport::CLIENT_REPLY_WAIT,
@@ -124,7 +124,7 @@ fn direct_with_deadline(
         seed_linked_worktree_cache(&root, &cache);
     }
     if verb == "history-serve" {
-        return crate::history::worker::serve(
+        return crate::history::history_worker::serve(
             options
                 .history_cache
                 .as_deref()
@@ -168,7 +168,7 @@ fn direct_with_deadline(
                     format!("cannot create root daemon cache {}", cache.display())
                 })?;
                 let history_cache = options.resolved_history_cache.clone().or_else(|| {
-                    crate::history::worker::resolve_cache(
+                    crate::history::history_worker::resolve_cache(
                         &root,
                         options.cache.as_deref(),
                         options.history_cache.as_deref(),
@@ -249,7 +249,7 @@ fn direct_with_deadline(
 fn root_reply(root: &Path, cache: &Path, options: &Arguments, response: String) -> Result<String> {
     let response = wait_for_history(root, options, response)?;
     if options.words.first().is_some_and(|verb| verb == "semantic") {
-        semantic::wait_for_schedule(root, cache, options, response)
+        semantic_commands::wait_for_schedule(root, cache, options, response)
     } else {
         Ok(response)
     }
@@ -307,7 +307,7 @@ fn wait_for_history(root: &Path, options: &Arguments, response: String) -> Resul
         .clone()
         .map(Ok)
         .unwrap_or_else(|| {
-            crate::history::worker::resolve_cache(
+            crate::history::history_worker::resolve_cache(
                 root,
                 options.cache.as_deref(),
                 options.history_cache.as_deref(),

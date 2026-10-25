@@ -1,5 +1,5 @@
 //! Versioned, typed board operations and evidence returned by the backend.
-mod board_authority;
+mod board_authority_codes;
 mod board_errors;
 mod board_identity;
 mod board_progress;
@@ -11,7 +11,7 @@ mod tests;
 
 pub use super::board_collections::*;
 pub use crate::board::board_vocabulary::{AuthorityRole, WorkerEndReason, WorkerRole};
-pub use board_authority::AuthoritySource;
+pub use board_authority_codes::AuthoritySource;
 pub use board_errors::{BoardError, BoardErrorCode};
 pub use board_identity::{WorkerAddress, WorkerHandle};
 pub use board_progress::{

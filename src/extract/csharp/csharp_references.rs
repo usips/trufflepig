@@ -6,7 +6,7 @@ use tree_sitter::Node;
 use super::super::binding_index::BindingIndex;
 use super::super::bindings::text;
 use super::super::{Extraction, Occurrence, Relationship};
-use super::scopes::ancestor;
+use super::csharp_scopes::ancestor;
 
 pub(super) fn observe(
     node: Node<'_>,

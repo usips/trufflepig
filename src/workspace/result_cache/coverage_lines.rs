@@ -5,7 +5,7 @@
 use super::OwnedEntry;
 use crate::results::{
     ResultEntry,
-    lines::{index_progress_summary, unconfigured},
+    result_lines::{index_progress_summary, unconfigured},
 };
 use serde_json::Value;
 use std::collections::HashSet;

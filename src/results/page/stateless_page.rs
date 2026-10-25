@@ -153,7 +153,7 @@ fn render_ephemeral(
                 let mut summary = if coverage.is_array() {
                     "workspace current-source coverage".to_owned()
                 } else {
-                    crate::results::lines::single_repo_coverage(&coverage)
+                    crate::results::result_lines::single_repo_coverage(&coverage)
                 };
                 if coverage["current_source"]["unsearched_unknown"] == true {
                     summary.push_str("; partial (current-source count unknown)");
@@ -164,7 +164,7 @@ fn render_ephemeral(
                 } else {
                     format!("{summary}; metadata={metadata_line}")
                 };
-                Ok(crate::results::lines::page_text(
+                Ok(crate::results::result_lines::page_text(
                     rendered_entries,
                     detail,
                     &coverage_line,

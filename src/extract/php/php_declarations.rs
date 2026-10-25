@@ -5,7 +5,9 @@ use tree_sitter::Node;
 
 use super::imports;
 use super::names::{Import, join, text};
-use super::scopes::{NamespaceRegion, class_node, function_scope, namespace_at, namespace_regions};
+use super::php_scopes::{
+    NamespaceRegion, class_node, function_scope, namespace_at, namespace_regions,
+};
 use super::{Definition, Extraction, Occurrence, Relationship};
 
 pub(super) struct Catalog {
@@ -423,7 +425,7 @@ fn add_definition(
 }
 
 fn namespace_scope(node: Node<'_>, catalog: &Catalog) -> Range<usize> {
-    super::scopes::namespace_region_at(&catalog.regions, node.start_byte())
+    super::php_scopes::namespace_region_at(&catalog.regions, node.start_byte())
         .map_or_else(|| node.byte_range(), |region| region.range.clone())
 }
 
@@ -484,7 +486,7 @@ fn is_variable_binding(node: Node<'_>, source: &[u8]) -> bool {
     }) {
         return true;
     }
-    if let Some(foreach) = super::scopes::ancestor(node, &["foreach_statement"])
+    if let Some(foreach) = super::php_scopes::ancestor(node, &["foreach_statement"])
         && let Some(target) = foreach.named_child(1)
     {
         return foreach_target_contains(target, node);

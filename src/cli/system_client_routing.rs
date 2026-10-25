@@ -95,14 +95,14 @@ pub(super) fn system_reply(
                 .get(1)
                 .is_some_and(|command| command == "prepare")
         {
-            return semantic::wait_for_workspace(config, options, reply);
+            return semantic_commands::wait_for_workspace(config, options, reply);
         }
         return Ok(reply);
     }
     let reply = wait_for_history(root, options, reply)?;
     if verb == "semantic" {
         let cache = cache_path(root, options.cache.as_deref())?;
-        semantic::wait_for_schedule(root, &cache, options, reply)
+        semantic_commands::wait_for_schedule(root, &cache, options, reply)
     } else {
         Ok(reply)
     }

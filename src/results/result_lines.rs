@@ -3,7 +3,9 @@
 //! text, so a lines page carries more hits than the JSON page for the same limit.
 
 use super::{HitDetail, ResultEntry, concise_name};
-use crate::output::lines::{COVERAGE_KEY, NextCommand, PAGE_BUDGET_HINT, PAGE_SIZE_HINT, footer};
+use crate::output::lines_format::{
+    COVERAGE_KEY, NextCommand, PAGE_BUDGET_HINT, PAGE_SIZE_HINT, footer,
+};
 use serde_json::Value;
 use std::fmt::Write;
 

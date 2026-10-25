@@ -32,7 +32,7 @@ const PROBE_INTERVAL: Duration = Duration::from_secs(30);
 /// schema and opens the diagnostics journal while reads answer `index_warming`.
 pub(super) fn serve(root: &Path, cache: &Path, options: &Arguments) -> Result<()> {
     let history_cache = options.resolved_history_cache.clone().or_else(|| {
-        crate::history::worker::resolve_cache(
+        crate::history::history_worker::resolve_cache(
             root,
             options.cache.as_deref(),
             options.history_cache.as_deref(),
@@ -41,7 +41,7 @@ pub(super) fn serve(root: &Path, cache: &Path, options: &Arguments) -> Result<()
     });
     let _heartbeat = history_cache
         .as_ref()
-        .and_then(|path| crate::history::worker::Heartbeat::start(root, path).ok());
+        .and_then(|path| crate::history::history_worker::Heartbeat::start(root, path).ok());
     daemon::serve(root, cache, RootDaemon::open(root, cache, options))
 }
 

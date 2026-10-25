@@ -3,8 +3,8 @@ mod coordinator;
 mod current_path_hints;
 mod home_index;
 pub mod member_root;
-mod navigation;
 mod owned_response;
+mod owner_navigation;
 mod result_cache;
 mod retrieval;
 mod stateless_queries;
@@ -188,7 +188,7 @@ fn member_options(
         member_cache(member, options.cache.as_deref())?
     };
     local.cache = Some(cache);
-    local.resolved_history_cache = crate::history::worker::resolve_cache(
+    local.resolved_history_cache = crate::history::history_worker::resolve_cache(
         &member.root,
         options
             .cache
@@ -324,7 +324,12 @@ pub(crate) fn local(
     }
     let budget = OutputBudget::new(options.budget)?;
     if verb == "semantic" {
-        return crate::cli::semantic::workspace(config, options, context, &incoming_deadline);
+        return crate::cli::semantic_commands::workspace(
+            config,
+            options,
+            context,
+            &incoming_deadline,
+        );
     }
     if verb == "ws" {
         return inspect(config, options, &budget, &local_deadline);
@@ -340,10 +345,10 @@ pub(crate) fn local(
             options.limit,
             &page_budget,
         ),
-        "show" => navigation::read(config, &results, options, &page_budget),
-        "ctx" => navigation::read(config, &results, options, &budget),
+        "show" => owner_navigation::read(config, &results, options, &page_budget),
+        "ctx" => owner_navigation::read(config, &results, options, &budget),
         "hist" | "since" | "diff" | "blame" => {
-            navigation::history(config, &results, options, &budget)
+            owner_navigation::history(config, &results, options, &budget)
         }
         "index" | "init" | "status" | "doctor" | "hist-index" | "hist-status" | "session"
         | "audit" | "forget-logs" | "semantic-check" => {

@@ -4,13 +4,13 @@ mod blame;
 mod command_tests;
 mod commands;
 mod comparison;
+pub mod history_worker;
 pub mod source_diff;
 mod staging;
 mod storage;
 mod targets;
 #[cfg(test)]
 mod tests;
-pub mod worker;
 mod working_tree;
 
 use crate::git_runner::GitRepository;

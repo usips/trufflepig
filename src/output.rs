@@ -1,5 +1,5 @@
 //! Complete-response accounting against the named o200k_base tokenizer.
-pub mod lines;
+pub mod lines_format;
 
 use anyhow::{Result, bail};
 use serde::Serialize;

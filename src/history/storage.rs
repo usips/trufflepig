@@ -85,7 +85,7 @@ pub(super) fn status(history: &History) -> Result<Value> {
         None,
     ));
     Ok(
-        json!({"tip":history.tip,"cutoff":cutoff,"max_visited":MAX_COMMITS,"visited":visited,"complete":complete,"coverage":boundary,"failure":failure,"traversal":"first_parent","changes":"computed_on_demand","source_archive":false,"worker_running":worker::is_running(&history.cache).unwrap_or(false)}),
+        json!({"tip":history.tip,"cutoff":cutoff,"max_visited":MAX_COMMITS,"visited":visited,"complete":complete,"coverage":boundary,"failure":failure,"traversal":"first_parent","changes":"computed_on_demand","source_archive":false,"worker_running":history_worker::is_running(&history.cache).unwrap_or(false)}),
     )
 }
 

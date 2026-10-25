@@ -1,7 +1,7 @@
 //! Bounded current-source discovery that does not open result or index caches.
 mod coverage;
 mod handles;
-mod scan;
+mod stateless_scan;
 #[cfg(test)]
 mod tests;
 
@@ -28,7 +28,7 @@ pub(crate) fn search(
     semantic_requested: bool,
     rerank_requested: bool,
 ) -> Result<ResultSet> {
-    scan::search_root(
+    stateless_scan::search_root(
         root,
         cache_exclusion,
         query,
@@ -46,7 +46,7 @@ pub(crate) fn map_file(
     path: &str,
     deadline: &QueryDeadline,
 ) -> Result<ResultSet> {
-    scan::map_current_file(root, cache_exclusion, path, deadline)
+    stateless_scan::map_current_file(root, cache_exclusion, path, deadline)
 }
 
 /// Renders one stateless page with caller-owned provenance metadata.

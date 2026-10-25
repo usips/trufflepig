@@ -361,7 +361,7 @@ fn lines_format_records_emitted_handles_and_token_receipt() {
     assert!(stderr.is_empty());
     let text = std::str::from_utf8(&stdout).unwrap();
     assert!(serde_json::from_str::<Value>(text).is_err());
-    let handles: Vec<_> = crate::output::lines::emitted_handles(text).collect();
+    let handles: Vec<_> = crate::output::lines_format::emitted_handles(text).collect();
     assert_eq!(handles.len(), 2, "{text}");
     let cache = fixture.member_cache("engine");
     let events = deliveries(&cache, 1);

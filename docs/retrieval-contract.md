@@ -115,7 +115,7 @@ control bytes, and non-ASCII bytes. `show` reports invalid source bytes as
 Output never injects ANSI control sequences through repository text. The CLI
 emits one JSON object plus newline by default; `--json` accepts that same format.
 `--format lines` selects the tab-separated renderer for result pages and `show`
-(`src/results/lines.rs`, `src/source/lines.rs`); it carries the same handles,
+(`src/results/result_lines.rs`, `src/source/show_lines.rs`); it carries the same handles,
 paths, line spans, cursors, and truncation flags with a one-line coverage summary,
 keeps byte-escaped text verbatim, and never applies to errors or other verbs.
 

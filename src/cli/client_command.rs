@@ -51,10 +51,10 @@ impl ClientCommand {
             .map(String::as_str)
             .unwrap_or("status");
         if verb == "semantic-worker-serve" {
-            return semantic::serve_worker(&options);
+            return semantic_commands::serve_worker(&options);
         }
         if verb == "semantic" && options.words.get(1).is_some_and(|verb| verb == "worker") {
-            return semantic::worker_command(&options);
+            return semantic_commands::worker_command(&options);
         }
         if verb == "ws" && options.words.get(1).is_some_and(|v| v == "discover") {
             return crate::workspace::discover_paths(&options.words[2..], options.budget);

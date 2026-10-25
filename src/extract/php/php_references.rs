@@ -2,9 +2,9 @@ use tree_sitter::Node;
 
 use crate::extract::php_markers::{Marker, encode};
 
-use super::declarations::Catalog;
 use super::names::{canonical, final_segment, terminal_name, text};
-use super::scopes::{ancestor, class_node, namespace_at};
+use super::php_declarations::Catalog;
+use super::php_scopes::{ancestor, class_node, namespace_at};
 use super::{Extraction, Occurrence, Relationship};
 
 pub(super) fn collect(root: Node<'_>, source: &[u8], catalog: &Catalog, result: &mut Extraction) {
@@ -414,7 +414,7 @@ fn observe_variable(node: Node<'_>, source: &[u8], catalog: &Catalog, result: &m
         return;
     }
     let name = text(node, source);
-    let scope = super::scopes::function_scope(node);
+    let scope = super::php_scopes::function_scope(node);
     let matching: Vec<_> = catalog
         .symbols
         .iter()

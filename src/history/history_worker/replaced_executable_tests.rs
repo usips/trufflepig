@@ -4,7 +4,7 @@ use crate::background_process::{BackgroundOwner, ReplacedExecutable};
 #[test]
 fn history_start_rejects_a_deleted_running_executable() {
     crate::test_fixtures::unlinked_executable::run_unlinked(
-        "history::worker::replaced_executable_tests::history_start_child_entry",
+        "history::history_worker::replaced_executable_tests::history_start_child_entry",
     );
 }
 
