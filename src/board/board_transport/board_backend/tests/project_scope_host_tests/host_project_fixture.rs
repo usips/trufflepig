@@ -4,7 +4,7 @@ use crate::board::{
     board_protocol::BOARD_API,
     board_vocabulary::{PlanText, PlanTitle},
 };
-use crate::workspace::config::WorkspaceConfig;
+use crate::workspace_config::WorkspaceConfig;
 use std::path::Path;
 
 pub(super) struct HostProjectFixture {

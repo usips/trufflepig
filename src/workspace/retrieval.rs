@@ -11,6 +11,7 @@ mod member_search;
 mod tests;
 
 use super::{WorkspaceConfig, home_index::HomeIndexPolicy, result_cache::WorkspaceResults};
+use crate::workspace::workspace_discovery::WorkspaceMembers;
 use crate::{
     cli::Arguments, output::OutputBudget, query_deadline::QueryDeadline,
     request_context::RequestContext, semantic::SemanticSession,

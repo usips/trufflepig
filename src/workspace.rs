@@ -1,5 +1,4 @@
 //! Explicit multi-root retrieval with persisted ownership and one final output budget.
-pub mod config;
 mod coordinator;
 mod current_path_hints;
 mod home_index;
@@ -11,15 +10,16 @@ mod retrieval;
 mod stateless_queries;
 #[cfg(test)]
 mod test_fixture;
+pub(crate) mod workspace_discovery;
 mod workspace_list;
 mod worktree_cache;
 use crate::coded_error::CodedContext;
+use crate::workspace_config::{self, WorkspaceConfig};
 use crate::{
     cli::Arguments, output::OutputBudget, path_codec::encode_path, query_deadline::QueryDeadline,
     request_context::RequestContext, search::InvocationDirectory, store::Store,
 };
 use anyhow::{Context, Result, bail, ensure};
-use config::WorkspaceConfig;
 pub use coordinator::run;
 pub(crate) use coordinator::{apply_config, run_with_deadline};
 pub(crate) use home_index::{
@@ -30,6 +30,7 @@ use member_root::MemberRoot;
 use result_cache::WorkspaceResults;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
+use workspace_discovery::WorkspaceMembers;
 pub(crate) use workspace_list::list;
 
 pub fn resolve(options: &Arguments) -> Result<Option<WorkspaceConfig>> {
@@ -37,14 +38,14 @@ pub fn resolve(options: &Arguments) -> Result<Option<WorkspaceConfig>> {
         .root
         .canonicalize()
         .with_coded_context(|| coded!(InvalidRoot, "cannot resolve workspace home"))?;
-    let config = config::discover(
+    let config = workspace_discovery::discover(
         &start,
         options.workspace.as_deref(),
         options.no_workspace,
         options.explicit_root,
     )?;
     if let (Some(config), Some(cache)) = (&config, &options.cache) {
-        let base = config::resolve_path(cache, &std::env::current_dir()?)?;
+        let base = workspace_config::resolve_path(cache, &std::env::current_dir()?)?;
         ensure!(
             config
                 .member_roots(&start)?
@@ -459,8 +460,8 @@ pub fn discover_paths(paths: &[String], budget: usize) -> Result<String> {
     );
     let mut members = toml::map::Map::new();
     for path in paths {
-        let root =
-            config::resolve_path(Path::new(path), &std::env::current_dir()?)?.canonicalize()?;
+        let root = workspace_config::resolve_path(Path::new(path), &std::env::current_dir()?)?
+            .canonicalize()?;
         ensure!(
             root.is_dir(),
             coded!(InvalidWorkspace, "member must be a directory")
@@ -470,7 +471,7 @@ pub fn discover_paths(paths: &[String], budget: usize) -> Result<String> {
             .and_then(|s| s.to_str())
             .with_coded_context(|| coded!(InvalidWorkspace, "choose a member name explicitly"))?;
         ensure!(
-            config::valid_name(name) && !members.contains_key(name),
+            workspace_config::valid_name(name) && !members.contains_key(name),
             coded!(
                 InvalidWorkspace,
                 "member name is invalid or duplicated; write named members explicitly"

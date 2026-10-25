@@ -29,3 +29,4 @@ pub mod system;
 #[cfg(test)]
 pub(crate) mod test_fixtures;
 pub mod workspace;
+pub mod workspace_config;

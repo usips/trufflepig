@@ -14,7 +14,7 @@ use super::{
 use crate::{
     git_runner::common_dir_bounded,
     query_deadline::QueryDeadline,
-    workspace::config::{
+    workspace_config::{
         RegisteredWorkspace, RegisteredWorkspaceMember, registered_workspaces_from,
     },
 };
@@ -88,7 +88,7 @@ impl ProjectResolver {
         let registry = self
             .registry
             .clone()
-            .or_else(crate::workspace::config::registry_path);
+            .or_else(crate::workspace_config::registry_path);
         let registry_stamp = registry
             .as_ref()
             .map(|path| (path.clone(), file_stamp(path)));

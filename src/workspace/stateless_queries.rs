@@ -2,6 +2,7 @@
 
 use super::{WorkspaceConfig, hashed_member_cache, member_root::MemberRoot};
 use crate::coded_error::CodedContext;
+use crate::workspace::workspace_discovery::WorkspaceMembers;
 use crate::{
     cli::Arguments,
     output::OutputBudget,

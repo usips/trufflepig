@@ -1,6 +1,6 @@
 use super::*;
 use crate::test_fixtures::GitFixture;
-use crate::workspace::config::WorkspaceConfig;
+use crate::workspace_config::WorkspaceConfig;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::Command;

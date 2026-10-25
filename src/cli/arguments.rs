@@ -1,11 +1,10 @@
 //! Parsed client options and explicit daemon argument forwarding.
-use crate::{board::board_grammar::BoardOptions, output::OutputFormat, results};
+use crate::{
+    board::board_grammar::BoardOptions, output::MAX_BUDGET, output::OutputFormat, results,
+};
 use anyhow::{Result, bail};
 use clap::Parser;
 use std::path::{Path, PathBuf};
-
-/// Largest serialized response budget in `o200k_base` tokens.
-pub const MAX_BUDGET: usize = 1_000_000;
 
 /// Query and navigation summary printed after the option list by `--help`.
 const QUERY_HELP: &str = "\

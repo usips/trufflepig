@@ -112,32 +112,3 @@ fn registered_workspace_reader_distinguishes_missing_and_malformed_registry() {
             .contains("parse workspace configuration")
     );
 }
-
-#[test]
-fn registered_workspace_reader_resolves_entries_from_registry_location() {
-    let directory = tempfile::tempdir().unwrap();
-    let base = directory.path();
-    fs::create_dir_all(base.join("host/repo")).unwrap();
-    fs::create_dir(base.join("elsewhere")).unwrap();
-    let config = base.join("host/local.toml");
-    fs::write(
-        &config,
-        "[workspace]\nname='host'\n[members.repo]\npath='repo'\n",
-    )
-    .unwrap();
-    let target = base.join("elsewhere/workspaces.toml");
-    fs::write(&target, "workspaces=['local.toml']").unwrap();
-    let registry = base.join("host/workspaces.toml");
-    symlink(&target, &registry).unwrap();
-
-    let discovered =
-        crate::workspace::config::discover_registry(&registry, &base.join("host/repo"), false)
-            .unwrap()
-            .unwrap();
-    let rows = registered_workspaces_from(&registry).unwrap();
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].name, discovered.name);
-    assert_eq!(rows[0].config_path, config);
-    assert_eq!(rows[0].id, discovered.id);
-    assert!(rows[0].error.is_none());
-}

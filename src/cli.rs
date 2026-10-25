@@ -28,7 +28,7 @@ use dispatch::local_with_session;
 mod arguments;
 pub(crate) use arguments::normalized_args;
 use arguments::validate;
-pub use arguments::{Arguments, MAX_BUDGET, SHOW_BUDGET, parse};
+pub use arguments::{Arguments, SHOW_BUDGET, parse};
 #[cfg(test)]
 mod emission_tests;
 #[cfg(test)]

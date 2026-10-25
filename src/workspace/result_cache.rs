@@ -1,11 +1,9 @@
 //! Bounded workspace snapshots retain immutable entries independently of member caches.
 mod index_progress_source;
 mod lines;
-use super::{
-    config::WorkspaceConfig,
-    member_root::{GIT_PROBE_TIMEOUT, MemberRoot, linked_root_of_member},
-};
+use super::member_root::{GIT_PROBE_TIMEOUT, MemberRoot, linked_root_of_member};
 use crate::coded_error::CodedContext;
+use crate::workspace_config::WorkspaceConfig;
 use crate::{
     identity::{ResultCursor, ResultHandle},
     output::{OutputBudget, OutputFormat},

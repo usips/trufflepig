@@ -1,5 +1,5 @@
 use super::super::run;
-use crate::workspace::config::CONFIG_NAME;
+use crate::workspace_config::CONFIG_NAME;
 use serde_json::Value;
 use std::{fs, path::PathBuf, process::Command};
 

@@ -1,6 +1,5 @@
-use super::super::{
-    config::WorkspaceConfig, hashed_member_cache, member_cache_until, member_root::MemberRoot,
-};
+use super::super::{hashed_member_cache, member_cache_until, member_root::MemberRoot};
+use crate::workspace_config::WorkspaceConfig;
 use crate::{
     query_deadline::QueryDeadline, system::sweep::CACHE_ROOT_MARKER,
     workspace::test_fixture::Fixture,

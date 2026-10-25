@@ -84,7 +84,7 @@ pub(super) fn system_reply(
     options: &Arguments,
     root: &Path,
     verb: &str,
-    config: Option<&crate::workspace::config::WorkspaceConfig>,
+    config: Option<&crate::workspace_config::WorkspaceConfig>,
     reply: String,
 ) -> Result<String> {
     if let Some(config) = config {

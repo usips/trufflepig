@@ -1,6 +1,6 @@
 use super::*;
 use crate::board::repo_identity::tests::FixtureRegistration;
-use crate::workspace::config::WorkspaceConfig;
+use crate::workspace_config::WorkspaceConfig;
 use crate::{board::board_ids::PlanId, test_fixtures::GitFixture};
 use serde_json::{Value, json};
 use std::fs;

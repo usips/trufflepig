@@ -9,7 +9,8 @@ use std::{
 use crate::query_deadline::QueryDeadline;
 use anyhow::Error;
 
-use super::{config::WorkspaceConfig, member_root::MemberRoot};
+use super::member_root::MemberRoot;
+use crate::workspace_config::WorkspaceConfig;
 
 const MAX_MEMBER_ROOT_CHECKS: usize = 32;
 
@@ -213,7 +214,7 @@ impl StdError for CurrentPathHelp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workspace::config::{Member, MemberIdentity, OutputConfig, SemanticConfig};
+    use crate::workspace_config::{Member, MemberIdentity, OutputConfig, SemanticConfig};
     use std::{
         fs,
         os::unix::fs::{MetadataExt, symlink},

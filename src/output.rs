@@ -4,6 +4,9 @@ pub mod lines;
 use anyhow::{Result, bail};
 use serde::Serialize;
 
+/// Largest serialized response budget in `o200k_base` tokens.
+pub const MAX_BUDGET: usize = 1_000_000;
+
 /// Serialization a page verb renders and budgets: JSON objects or tab lines.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum OutputFormat {

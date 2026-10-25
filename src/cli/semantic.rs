@@ -2,11 +2,13 @@
 
 use super::Arguments;
 use crate::coded_error::CodedContext;
+use crate::workspace::workspace_discovery::WorkspaceMembers;
 use crate::{
     output::OutputBudget,
     query_deadline::QueryDeadline,
     semantic::{preparation, worker},
-    workspace::{self, config::WorkspaceConfig},
+    workspace,
+    workspace_config::WorkspaceConfig,
 };
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};

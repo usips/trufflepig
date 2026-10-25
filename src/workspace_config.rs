@@ -8,8 +8,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
 
-use super::member_root::{self, MemberRoot};
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 
 mod workspace_registry;
@@ -129,8 +128,8 @@ struct SemanticSection {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RegistryDocument {
-    workspaces: Vec<PathBuf>,
+pub(crate) struct RegistryDocument {
+    pub(crate) workspaces: Vec<PathBuf>,
 }
 
 impl WorkspaceConfig {
@@ -219,134 +218,15 @@ impl WorkspaceConfig {
                 let budget = document.output.and_then(|output| output.budget);
                 if let Some(budget) = budget {
                     ensure!(
-                        (1..=crate::cli::MAX_BUDGET).contains(&budget),
+                        (1..=crate::output::MAX_BUDGET).contains(&budget),
                         "invalid workspace output budget: expected 1..{}",
-                        crate::cli::MAX_BUDGET
+                        crate::output::MAX_BUDGET
                     );
                 }
                 OutputConfig { budget }
             },
         })
     }
-
-    pub fn discover(
-        start: &Path,
-        explicit: Option<&Path>,
-        no_workspace: bool,
-        explicit_root: bool,
-    ) -> Result<Option<Self>> {
-        ensure!(
-            !(no_workspace && explicit.is_some()),
-            "--workspace conflicts with --no-workspace"
-        );
-        if no_workspace {
-            return Ok(None);
-        }
-        let start = resolve_path(start, &std::env::current_dir()?)?;
-        if let Some(path) = explicit {
-            let config = Self::load(path)?;
-            ensure!(
-                !explicit_root || config.accepts_explicit_root(&start)?,
-                "explicit root is not an exact workspace member; use --no-workspace for a subtree"
-            );
-            return Ok(Some(config));
-        }
-        for ancestor in start.ancestors() {
-            let path = ancestor.join(CONFIG_NAME);
-            if path
-                .try_exists()
-                .context("inspect ancestor workspace configuration")?
-            {
-                let config = Self::load(&path)?;
-                return config.accept_root(&start, explicit_root);
-            }
-        }
-        let Some(path) = registry_path() else {
-            return Ok(None);
-        };
-        discover_registry(&path, &start, explicit_root)
-    }
-
-    /// The member whose checkout or linked worktree contains `start`.
-    pub fn home_root(&self, start: &Path) -> Result<Option<MemberRoot>> {
-        let start = resolve_path(start, &std::env::current_dir()?)?;
-        Ok(
-            member_root::home_root(&self.members, &start, member_root::GIT_PROBE_TIMEOUT)?.map(
-                |mut home| {
-                    home.is_home = true;
-                    home
-                },
-            ),
-        )
-    }
-
-    /// Every member with its effective root for `start`; only home is substituted.
-    pub fn member_roots(&self, start: &Path) -> Result<Vec<MemberRoot>> {
-        let home = self.home_root(start)?;
-        Ok(self
-            .members
-            .iter()
-            .map(|member| match &home {
-                Some(home) if home.member.name == member.name => home.clone(),
-                _ => MemberRoot::configured(member),
-            })
-            .collect())
-    }
-
-    /// An explicit root must name a member root or a linked worktree of one.
-    fn accepts_explicit_root(&self, start: &Path) -> Result<bool> {
-        if self.members.iter().any(|member| member.root == start) {
-            return Ok(true);
-        }
-        Ok(self
-            .home_root(start)?
-            .is_some_and(|home| home.worktree.is_some() && home.root == start))
-    }
-
-    fn accept_root(self, start: &Path, explicit_root: bool) -> Result<Option<Self>> {
-        if explicit_root && !self.accepts_explicit_root(start)? {
-            return Ok(None);
-        }
-        Ok(Some(self))
-    }
-}
-
-fn discover_registry(
-    path: &Path,
-    start: &Path,
-    explicit_root: bool,
-) -> Result<Option<WorkspaceConfig>> {
-    if !path.try_exists().context("inspect workspace registry")? {
-        return Ok(None);
-    }
-    let registry: RegistryDocument = read_document(path)?;
-    let base = path.parent().context("workspace registry has no parent")?;
-    let mut matched = None;
-    let mut seen = BTreeSet::new();
-    for candidate in registry.workspaces {
-        let path = resolve_path(&candidate, base)?;
-        let config = WorkspaceConfig::load(&path).with_context(|| {
-            format!(
-                "invalid workspace registry entry {}; fix or remove it",
-                path.display()
-            )
-        })?;
-        if !seen.insert(config.id.clone()) || config.home_root(start)?.is_none() {
-            continue;
-        }
-        if let Some(config) = config.accept_root(start, explicit_root)? {
-            if let Some(previous) = &matched {
-                let previous: &WorkspaceConfig = previous;
-                bail!(
-                    "ambiguous workspace membership: {} and {}; select --workspace FILE",
-                    previous.path.display(),
-                    config.path.display()
-                );
-            }
-            matched = Some(config);
-        }
-    }
-    Ok(matched)
 }
 
 pub fn valid_name(name: &str) -> bool {
@@ -399,7 +279,7 @@ pub fn resolve_path(path: &Path, base: &Path) -> Result<PathBuf> {
     Ok(resolved)
 }
 
-fn read_document<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
+pub(crate) fn read_document<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
     let mut bytes = Vec::new();
     File::open(path)
         .with_context(|| format!("open {}", path.display()))?
@@ -422,15 +302,6 @@ fn config_id(path: &Path) -> String {
 
 pub fn load(path: &Path) -> Result<WorkspaceConfig> {
     WorkspaceConfig::load(path)
-}
-
-pub fn discover(
-    start: &Path,
-    explicit: Option<&Path>,
-    no_workspace: bool,
-    explicit_root: bool,
-) -> Result<Option<WorkspaceConfig>> {
-    WorkspaceConfig::discover(start, explicit, no_workspace, explicit_root)
 }
 
 #[cfg(test)]

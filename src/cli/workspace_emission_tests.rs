@@ -3,7 +3,8 @@ use crate::{
     diagnostics::{DiagnosticStore, DiagnosticsMode, EventStage, RequestEvent},
     path_codec::encode_path,
     store::Store,
-    workspace::{config::WorkspaceConfig, member_cache},
+    workspace::member_cache,
+    workspace_config::WorkspaceConfig,
 };
 use serde_json::Value;
 use std::{

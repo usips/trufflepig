@@ -141,7 +141,7 @@ fn budget_retry_hint_uses_effective_budget_and_respects_maximum() {
         "retry with -b 2000"
     );
 
-    let maximum = super::MAX_BUDGET;
+    let maximum = crate::output::MAX_BUDGET;
     assert_eq!(
         super::emission::retry_hint(maximum - 1),
         format!("retry with -b {maximum}")
