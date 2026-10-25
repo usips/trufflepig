@@ -1,6 +1,7 @@
 //! Per-user system daemon routing CLI requests to owning workspace or root daemons.
 //! Each request is proxied on its own worker, bounded by `tp_core::daemon_transport::PROXY_REPLY_WAIT`.
 
+pub(crate) mod daemon_scope;
 mod managed_unit;
 mod route;
 pub(crate) mod router_lifecycle;

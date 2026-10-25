@@ -133,6 +133,7 @@ fn direct_with_deadline(
         .map(|()| String::new());
     }
     if verb == "serve" {
+        crate::system::daemon_scope::enter_from_environment();
         return root_daemon::serve(&root, &cache, options).map(|()| String::new());
     }
     if verb == "stop" {

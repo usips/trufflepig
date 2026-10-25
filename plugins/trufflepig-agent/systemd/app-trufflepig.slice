@@ -1,0 +1,10 @@
+# Low-weight slice for daemons the trufflepig router spawns: root daemons,
+# workspace coordinators, and their history and inference workers. `install.sh
+# --systemd` copies it beside the router unit, which names it in
+# TRUFFLEPIG_DAEMON_SLICE. The router and board keep the default weight.
+[Unit]
+Description=trufflepig background index daemons
+
+[Slice]
+CPUWeight=10
+IOWeight=10

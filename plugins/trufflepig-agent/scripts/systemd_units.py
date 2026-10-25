@@ -8,6 +8,8 @@ import pwd
 import subprocess
 
 from router_identity import RouterIdentityConflict, require_router_exclusive, require_unit_owner
+from systemd_priority import (DAEMON_SLICE, legacy_drop_ins, reset_runtime_weights, runtime_weights,
+                              slice_text)
 
 PLUGIN = Path(__file__).resolve().parents[1]
 SUPPORTED_UNIT_STATES = frozenset(("enabled", "enabled-runtime", "disabled", "static", "not-found"))
@@ -128,7 +130,8 @@ class UnitRollback:
         return stopped
 
     def restore(self, unit_directory, previous_units, previous_active,
-                previous_enablement, activation_attempts, *, skip_active_restarts=False):
+                previous_enablement, activation_attempts, *, skip_active_restarts=False,
+                previous_weights=None):
         for name, previous in previous_units.items():
             path = unit_directory / name
             if previous is None:
@@ -136,6 +139,8 @@ class UnitRollback:
             else:
                 self.attempt(f"restore {path}", path.write_text, previous)
         self.systemctl("daemon-reload")
+        for name, weight in (previous_weights or {}).items():
+            self.systemctl("set-property", "--runtime", name, f"CPUWeight={weight}")
         for name, was_active in previous_active.items():
             if was_active:
                 if skip_active_restarts:
@@ -178,6 +183,15 @@ def apply_units(binary: str, unit_directory: Path, router_runtime: Path, managed
                 previous_units[name] = (unit_directory / name).read_text()
             except FileNotFoundError:
                 previous_units[name] = None
+    # The router keeps the default weight; spawned daemons get the low-weight slice.
+    previous_weights = {}
+    owned_drop_ins = legacy_drop_ins(unit_directory) if install_router or install_board else {}
+    previous_units.update(owned_drop_ins)
+    if install_router:
+        try:
+            previous_units[DAEMON_SLICE] = (unit_directory / DAEMON_SLICE).read_text()
+        except FileNotFoundError:
+            previous_units[DAEMON_SLICE] = None
     previous_enablement = {}
     for name, requested in (("trufflepig-system.service", install_router),
                             ("trufflepig-board.service", install_board)):
@@ -191,7 +205,16 @@ def apply_units(binary: str, unit_directory: Path, router_runtime: Path, managed
                            ("trufflepig-board.service", board_unit_text)):
             if text is not None:
                 (unit_directory / name).write_text(text)
+        if install_router:
+            (unit_directory / DAEMON_SLICE).write_text(slice_text())
+        for name in owned_drop_ins:
+            (unit_directory / name).unlink()
+            print(f"removed legacy priority drop-in: {unit_directory / name}")
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
+        if install_router or install_board:
+            weights = runtime_weights()
+            previous_weights.update(weights)
+            reset_runtime_weights(weights)
         if install_router:
             # Stop uses the newly loaded control-group policy, including old children.
             subprocess.run(["systemctl", "--user", "stop", "trufflepig-system.service"], check=True)
@@ -220,12 +243,14 @@ def apply_units(binary: str, unit_directory: Path, router_runtime: Path, managed
     except RouterIdentityConflict as error:
         rollback = UnitRollback()
         rollback.restore(unit_directory, previous_units, previous_active,
-                         previous_enablement, activation_attempts, skip_active_restarts=True)
+                         previous_enablement, activation_attempts, skip_active_restarts=True,
+                         previous_weights=previous_weights)
         error.rollback_errors = tuple(rollback.errors)
         raise
     except Exception as error:
         rollback = UnitRollback()
         rollback.restore(unit_directory, previous_units, previous_active,
-                         previous_enablement, activation_attempts)
+                         previous_enablement, activation_attempts,
+                         previous_weights=previous_weights)
         error.rollback_errors = tuple(rollback.errors)
         raise

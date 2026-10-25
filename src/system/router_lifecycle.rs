@@ -9,6 +9,7 @@ mod restart_guard;
 #[cfg(test)]
 mod tests;
 
+use super::daemon_scope::{self, DaemonPlacement};
 use binary_settle::{BinarySample, FileIdentity, SettleTracker};
 use restart_guard::{GuardVerdict, RESTART_LIMIT, RESTART_RECORD, RESTART_WINDOW, RestartGuard};
 use std::{
@@ -158,6 +159,7 @@ impl BinaryWatch {
 #[derive(Debug, Default)]
 pub(crate) struct RouterLifecycle {
     watch: Option<Mutex<BinaryWatch>>,
+    placement: Option<DaemonPlacement>,
     spawned: Mutex<Vec<PathBuf>>,
 }
 
@@ -182,6 +184,10 @@ impl RouterLifecycle {
         });
         Self {
             watch,
+            placement: DaemonPlacement::new(
+                std::env::var_os(daemon_scope::DAEMON_SLICE_ENV),
+                daemon_scope::own_cgroup(),
+            ),
             spawned: Mutex::default(),
         }
     }
@@ -191,9 +197,12 @@ impl RouterLifecycle {
         self.watch.as_ref()?.lock().ok()?.tick(now, wall)
     }
 
-    /// Prepares a daemon spawn: no supervisor marker.
+    /// Prepares a daemon spawn: placement for its slice, no supervisor marker.
     pub(crate) fn prepare_child(&self, command: &mut Command) {
         command.env_remove(SUPERVISOR_ENV);
+        if let Some(placement) = &self.placement {
+            placement.apply(command);
+        }
     }
 
     /// Remembers a daemon this router started, so a restart can stop it.
@@ -221,6 +230,7 @@ impl RouterLifecycle {
             "supervisor": "systemd",
             "binary_restart": phase,
             "recent_restarts": recent,
+            "daemon_slice": self.placement.is_some(),
         })
     }
 

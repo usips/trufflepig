@@ -214,6 +214,11 @@ fn detached_lifecycle_is_inert_and_children_lose_the_supervisor_marker() {
         .find(|(name, _)| *name == SUPERVISOR_ENV)
         .map(|(_, value)| value);
     assert_eq!(removed, Some(None), "the marker is removed for children");
+    assert!(
+        !command
+            .get_envs()
+            .any(|(name, _)| name == daemon_scope::SCOPE_FROM_ENV)
+    );
 }
 
 #[test]
