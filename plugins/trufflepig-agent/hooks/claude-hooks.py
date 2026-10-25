@@ -287,7 +287,7 @@ def board_bye(payload: dict[str, object], event: str) -> None:
         session = identity.payload_subagent_session(payload)
     else:
         session = payload_session(payload)
-    if not session:
+    if not session or not said_hello(f"claude/{session}"):
         return
     executable = wrapper_path()
     if not executable:
@@ -300,6 +300,23 @@ def board_bye(payload: dict[str, object], event: str) -> None:
                        text=True, timeout=BYE_TIMEOUT, check=False, env=env)
     except (OSError, subprocess.TimeoutExpired):
         pass
+    try:
+        from trufflepig_board_notices import forget_board_session
+        forget_board_session(actor=f"claude/{session}", state_dir=state_directory())
+    except ImportError:
+        pass
+
+
+def said_hello(actor: str) -> bool:
+    """Whether the wrapper marked this session after a successful hello or claim.
+
+    Most subagents never touch the Board, so their bye is skipped. Unreadable marker
+    state fails open: the router answers a bye with nothing to end without writing."""
+    try:
+        from trufflepig_board_notices import board_session_known
+        return board_session_known(actor=actor, state_dir=state_directory())
+    except (ImportError, OSError):
+        return True
 
 
 def main() -> int:

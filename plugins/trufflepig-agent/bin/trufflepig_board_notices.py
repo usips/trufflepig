@@ -5,7 +5,8 @@ Callers pass ``BoardReply.result.data`` from a successful ``board pending --json
 Each notice has ``seq``, ``kind``, ``reason``, and exactly one ``entry`` or ``event`` payload.
 Projections read only typed IDs, task refs, kind, model, and age; Board text and reason are omitted.
 State lives in ``notices.json`` under the caller's private state directory.
-Its notifier watermark is separate from the Board inbox cursor and keyed by full actor identity."""
+Its notifier watermark is separate from the Board inbox cursor and keyed by full actor identity.
+Session markers record actors that said hello or claimed, so hooks bye only those sessions."""
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -23,6 +24,7 @@ POLL_INTERVAL_SECONDS = 60
 NOTICE_TTL_SECONDS = 7 * 24 * 60 * 60
 MAX_SEEN_NOTICES = 128
 MAX_ACTORS = 64
+MAX_BOARD_SESSIONS = 128
 MAX_STATE_BYTES = 96 * 1024
 MAX_RENDERED_BYTES = 320
 MAX_METADATA_BYTES = 320
@@ -92,6 +94,42 @@ def should_poll_pending(*, actor: str, state_dir: Path,
             return True
     except OSError:
         return False
+
+
+def remember_board_session(*, actor: str, state_dir: Path,
+                           now: float | None = None) -> None:
+    """Record that this actor said hello or claimed, so lifecycle hooks may send its bye."""
+    if not _valid_actor(actor):
+        return
+    current = time.time() if now is None else now
+    try:
+        with _locked_state(state_dir) as state:
+            _prune_state(state, current)
+            state["sessions"].pop(actor, None)
+            state["sessions"][actor] = current
+            _trim_mapping(state["sessions"], MAX_BOARD_SESSIONS)
+    except OSError:
+        pass
+
+
+def board_session_known(*, actor: str, state_dir: Path) -> bool:
+    """Whether this actor said hello or claimed since its last bye; raises OSError when
+    the state is unreadable, so callers choose how to fail."""
+    if not _valid_actor(actor):
+        return False
+    with _locked_state(state_dir) as state:
+        return actor in state["sessions"]
+
+
+def forget_board_session(*, actor: str, state_dir: Path) -> None:
+    """Drop the session marker once its bye ran."""
+    if not _valid_actor(actor):
+        return
+    try:
+        with _locked_state(state_dir) as state:
+            state["sessions"].pop(actor, None)
+    except OSError:
+        pass
 
 
 def claim_pending_notices(*, actor: str, pending: dict,
@@ -262,6 +300,7 @@ def _write_state(directory: Path, state: dict) -> None:
         state["seen"] = state["seen"][-MAX_SEEN_NOTICES // 2:]
         _trim_mapping(state["polls"], MAX_ACTORS // 2)
         _trim_mapping(state["watermarks"], MAX_ACTORS // 2)
+        _trim_mapping(state["sessions"], MAX_BOARD_SESSIONS // 2)
         payload = _encode_state(state)
     if len(payload) > MAX_STATE_BYTES:
         raise OSError("notice state cache exceeds its size limit")
@@ -286,7 +325,7 @@ def _write_state(directory: Path, state: dict) -> None:
 
 
 def _normalize_state(state: dict) -> None:
-    for key in ("polls", "watermarks"):
+    for key in ("polls", "watermarks", "sessions"):
         if not isinstance(state.get(key), dict):
             state[key] = {}
     if not isinstance(state.get("seen"), list):
@@ -302,9 +341,10 @@ def _prune_state(state: dict, now: float) -> None:
         if not isinstance(row, dict) or not isinstance(row.get("updated_at"), (int, float)) \
                 or row["updated_at"] < cutoff:
             del state["watermarks"][actor]
-    for actor, timestamp in list(state["polls"].items()):
-        if not isinstance(timestamp, (int, float)) or timestamp < cutoff:
-            del state["polls"][actor]
+    for key in ("polls", "sessions"):
+        for actor, timestamp in list(state[key].items()):
+            if not isinstance(timestamp, (int, float)) or timestamp < cutoff:
+                del state[key][actor]
 
 
 def _trim_mapping(mapping: dict, maximum: int) -> None:

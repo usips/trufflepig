@@ -236,22 +236,41 @@ class ClaudeHookLifecycleTests(unittest.TestCase):
         run.assert_not_called()
         self.assertEqual(fake_stdout.value, "")
 
+    def notice_state(self):
+        import trufflepig_board_notices as notices
+        return notices, Path(self.env["XDG_STATE_HOME"]) / "trufflepig/claude-notices"
+
+    def run_lifecycle(self, payload):
+        proc = subprocess.CompletedProcess([], 0, "", "")
+        with mock.patch.object(self.hooks.subprocess, "run", return_value=proc) as run, \
+                mock.patch.object(self.hooks.sys, "stdin", mock.mock_open(read_data=json.dumps(payload))()), \
+                mock.patch.dict(os.environ, self.env, clear=True):
+            self.hooks.main()
+        return run
+
     def test_session_end_and_subagent_stop_bye_only_their_own_identity(self):
+        notices, state = self.notice_state()
         for event, payload, expected in (
             ("SessionEnd", {"session_id": "parent"}, "parent"),
             ("SubagentStop", {"session_id": "parent", "agent_id": "child"},
              self.hooks.identity.subagent_session("parent", "child")),
         ):
             with self.subTest(event=event):
-                proc = subprocess.CompletedProcess([], 0, "", "")
-                with mock.patch.object(self.hooks.subprocess, "run", return_value=proc) as run, \
-                        mock.patch.object(self.hooks.sys, "stdin", mock.mock_open(read_data=json.dumps(
-                            dict(payload, hook_event_name=event)))()), \
-                        mock.patch.dict(os.environ, self.env, clear=True):
-                    self.hooks.main()
+                notices.remember_board_session(actor=f"claude/{expected}", state_dir=state)
+                run = self.run_lifecycle(dict(payload, hook_event_name=event))
                 self.assertEqual(run.call_args.args[0][1:], ["board", "bye"])
                 self.assertEqual(run.call_args.kwargs["env"]["TRUFFLEPIG_SESSION"], expected)
                 self.assertEqual(run.call_args.kwargs["env"]["TRUFFLEPIG_AGENT_HOOK"], "1")
+                self.assertFalse(notices.board_session_known(actor=f"claude/{expected}", state_dir=state))
+
+    def test_bye_is_skipped_for_sessions_that_never_said_hello(self):
+        notices, state = self.notice_state()
+        notices.remember_board_session(actor="claude/other-session", state_dir=state)
+        for payload in ({"hook_event_name": "SessionEnd", "session_id": "quiet"},
+                        {"hook_event_name": "SubagentStop", "session_id": "quiet", "agent_id": "reader"}):
+            with self.subTest(event=payload["hook_event_name"]):
+                self.run_lifecycle(payload).assert_not_called()
+        self.assertTrue(notices.board_session_known(actor="claude/other-session", state_dir=state))
 
         payload = {"hook_event_name": "SubagentStop", "session_id": "parent"}
         with mock.patch.object(self.hooks.subprocess, "run") as run, \

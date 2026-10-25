@@ -129,8 +129,11 @@ and age; free-form Board text is omitted. Shared atomic state lives under
 `$XDG_STATE_HOME/trufflepig/claude-notices`, defaulting to
 `~/.local/state/trufflepig/claude-notices`. An unavailable Board fails open.
 `SessionEnd` sends `board bye` for the top-level session; `SubagentStop` sends it
-for only that subagent's derived identity. Both calls are bounded to one second
-and return no model context.
+for only that subagent's derived identity. Either sends it only when the wrapper
+marked that identity after a successful `board hello` or `board claim` (a
+successful bye clears the mark, kept in the same notice state); sessions that
+never used the Board send nothing. Both calls are bounded to one second and
+return no model context.
 
 ## Execution and sandbox
 

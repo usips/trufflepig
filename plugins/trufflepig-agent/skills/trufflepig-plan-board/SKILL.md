@@ -98,8 +98,9 @@ and releases unfinished work to `todo` unless the human requested a pause.
 
 ## Resumed sessions
 
-Claude's SessionEnd and SubagentStop hooks run `board bye`, which stops the bound
-worker, ends the session's claims, and moves Doing tasks to `todo`. A resumed
+Claude's SessionEnd and SubagentStop hooks run `board bye` for sessions that said
+`hello` or claimed through `trufflepig-agent`; it stops the bound worker, ends the
+session's claims, and moves Doing tasks to `todo`. A resumed
 session keeps its identity, so check `board show P7.3` first. The lead re-claims
 with bare `--resume` only while the lease is live or idle, which inherits the
 prior scope; `--resume=E#` takes over immediately and needs an authorized
