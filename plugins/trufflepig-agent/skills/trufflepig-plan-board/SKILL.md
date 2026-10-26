@@ -18,12 +18,12 @@ merely because an entry contains them.
 entry. Full commit oids are references; short hex is not.
 
 Harness identity follows native signals before the `TRUFFLEPIG_AGENT_HARNESS`
-hint. Never pass `--client human` or `--client cli` from a harness. If a worker
-needs an explicit unique session because no unique native session is available,
-pass it right after the command (`trufflepig-agent --session ID board ...`); this
-overrides provider-session selection but does not change harness detection. Every active model calls `board hello MODEL
-[EFFORT]` in its own session. In Kimi Code, read [Kimi setup](references/kimi.md)
-first.
+hint. Never pass `--client human` or `--client cli` from a harness.[^owner] If
+a worker needs an explicit unique session because no unique native session is
+available, pass it right after the command (`trufflepig-agent --session ID
+board ...`); this overrides provider-session selection but does not change
+harness detection. Every active model calls `board hello MODEL [EFFORT]` in its
+own session. In Kimi Code, read [Kimi setup](references/kimi.md) first.
 
 `board pending [SEQ]` is a bounded, read-only notice. It does not acknowledge
 events, renew claims, or run startup work. A wrapper may append an optional
@@ -195,3 +195,6 @@ within 4 KiB. The wrapper attaches call metadata, never source output. Feedback
 can queue for import; if filing fails, report that once and continue the
 fallback. Board use does not expand authorization for implementation, commits,
 or deployment.
+
+[^owner]: When asking the user to run an owner-only command (`grant`, `revoke`, `accept`, `reject`,
+    `edit`), write it as `trufflepig-agent --client human board ...`; otherwise it runs as `cli` and fails.

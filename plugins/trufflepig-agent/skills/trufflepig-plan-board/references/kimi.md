@@ -8,7 +8,8 @@ worker, reviewer, progress, and feedback steps.
 Use Kimi's shell and the checkout's `trufflepig-agent` wrapper. `KIMI_SESSION_ID`
 or a Kimi process ancestor detects the harness and takes priority over the
 fallback hint. Check the returned actor with
-`trufflepig-agent board hello`; never use `--client human` or `--client cli`.
+`trufflepig-agent board hello`; never use `--client human` or `--client cli`
+yourself. A command you ask the user to run as owner carries `--client human`.
 If neither native signal is available, set `TRUFFLEPIG_AGENT_HARNESS=kimi` for
 that call. If Kimi does not expose a unique native session ID, set a unique
 `TRUFFLEPIG_SESSION` for this session and each separately spawned worker.
