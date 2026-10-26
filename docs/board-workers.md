@@ -29,7 +29,9 @@ all its active workers as `claim_ended`. The bound session sees each closure in 
 explicit end as its `worker_end` event, and a claim end as a `worker_end` entry addressed to it.
 `board bye` ends the caller's session, releases its claims to `todo`, and stops only its own
 non-done worker node. A repeated bye, or one from a session that never said hello, writes nothing;
-its reply says so ([CLI contract](board-cli-contract.md#commands)).
+its reply says so ([CLI contract](board-cli-contract.md#commands)). A child worker's bye ends only its
+bound worker and does not release the lead's claim. Session claim-end evidence and plan-feed
+visibility are defined in [plan lifecycle](board-lifecycle.md#session-claim-release).
 
 ## Task reads and addressed posts
 

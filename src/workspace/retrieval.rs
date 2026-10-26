@@ -12,14 +12,18 @@ mod tests;
 
 use super::{WorkspaceConfig, home_index::HomeIndexPolicy, result_cache::WorkspaceResults};
 use crate::cli::Arguments;
+use crate::workspace::MemberRoot;
 use crate::workspace::workspace_discovery::WorkspaceMembers;
 use anyhow::Result;
 use member_fusion::MemberFusion;
 use member_scope::{Scope, scope};
-use member_search::{MemberCommand, search_member};
+use member_search::{MemberCommand, SearchedMember, search_member};
 use std::path::Path;
 use tp_core::{
-    output::OutputBudget, query_deadline::QueryDeadline, request_context::RequestContext,
+    coded_error::{CodedError, ErrorCode},
+    output::OutputBudget,
+    query_deadline::QueryDeadline,
+    request_context::RequestContext,
 };
 use tp_semantic::SemanticSession;
 
@@ -63,6 +67,35 @@ pub(super) fn search_with_policy(
     request: &WorkspaceQuery,
     session: &mut SemanticSession,
 ) -> Result<String> {
+    search_with_policy_using(request, session, search_member, |request, member| {
+        super::stateless_queries::run_after_router_replacement(
+            request.config,
+            request.options,
+            &request.deadline,
+            member,
+        )
+    })
+}
+
+fn search_with_policy_using<SearchMember, RouterFallback>(
+    request: &WorkspaceQuery,
+    session: &mut SemanticSession,
+    mut search_member: SearchMember,
+    mut router_fallback: RouterFallback,
+) -> Result<String>
+where
+    SearchMember: FnMut(
+        &WorkspaceQuery<'_>,
+        &MemberCommand<'_>,
+        &MemberRoot,
+        bool,
+        &mut Option<CodedError>,
+    ) -> Result<SearchedMember>,
+    RouterFallback: FnMut(
+        &WorkspaceQuery<'_>,
+        &MemberRoot,
+    ) -> Result<super::stateless_queries::RouterReplacementAnswer>,
+{
     let invocation_root = request.options.root.canonicalize()?;
     let roots = request.config.member_roots(&invocation_root)?;
     let Scope {
@@ -74,15 +107,70 @@ pub(super) fn search_with_policy(
     let mut fusion = MemberFusion::new(request.config, &roots);
     let mut map_miss = None;
     let mut position = 0;
+    let mut router_fallback_attempted = false;
+    let mut router_fallback_failure = None;
+    let mut answered_members = 0;
     while position < queue.len() {
         let index = queue[position];
         position += 1;
         let member = &roots[index];
         let searched = search_member(request, &command, member, position == 1, &mut map_miss)?;
+        let replaced_owner = searched
+            .answer
+            .as_ref()
+            .err()
+            .is_some_and(|error| ErrorCode::RouterBinaryReplaced.is_named_in(error));
+        if !router_fallback_attempted
+            && replaced_owner
+            && super::stateless_queries::eligible(request.options)
+        {
+            router_fallback_attempted = true;
+            match router_fallback(request, member) {
+                Ok(_) if request.deadline.cancelled() => {
+                    anyhow::bail!(coded!(TimedOut, "query was cancelled"));
+                }
+                Ok(answer) if answer.complete => return Ok(answer.output),
+                Ok(answer) => {
+                    router_fallback_failure = Some((
+                        member.name().to_owned(),
+                        answer
+                            .incomplete_reason
+                            .unwrap_or_else(|| "current-source coverage incomplete".to_owned()),
+                    ));
+                }
+                Err(error) if request.deadline.cancelled() => return Err(error),
+                Err(error) => {
+                    router_fallback_failure =
+                        Some((member.name().to_owned(), short_recovery_reason(&error)));
+                }
+            }
+        }
         let state = fusion.admit(member, searched, queue.len())?;
+        if state == "searched" {
+            answered_members += 1;
+        }
+        if let Some((failed_member, reason)) = &router_fallback_failure
+            && failed_member == member.name()
+        {
+            fusion.annotate_router_recovery_failure(member.name(), reason);
+        }
         if implicit_home && position == 1 && fusion.settle_home_scope(roots.len() - 1, state) {
             queue.extend((0..roots.len()).filter(|&i| i != index));
         }
+    }
+    if let Some((member, reason)) = &router_fallback_failure
+        && answered_members == 0
+    {
+        if request.deadline.cancelled() || request.deadline.time_expired() {
+            anyhow::bail!(coded!(
+                TimedOut,
+                "bounded current-source recovery did not answer workspace member {member}; absence=not_proven; recovery={reason}"
+            ));
+        }
+        anyhow::bail!(coded!(
+            WorkspaceUnavailable,
+            "no workspace member answered after bounded current-source recovery for {member}; absence=not_proven; recovery={reason}"
+        ));
     }
     let mut fused = fusion.interleave(map_miss, implicit_home)?;
     if command.rerank {
@@ -92,6 +180,15 @@ pub(super) fn search_with_policy(
     let options = request.options;
     let budget = OutputBudget::new(options.budget)?.with_format(options.output_format());
     request.results.page(&id, 0, options.limit, &budget)
+}
+
+fn short_recovery_reason(error: &anyhow::Error) -> String {
+    let reason = format!("{error:#}");
+    let mut short: String = reason.chars().take(120).collect();
+    if reason.chars().count() > 120 {
+        short.push('…');
+    }
+    short
 }
 
 fn timeout_without_member_answer(

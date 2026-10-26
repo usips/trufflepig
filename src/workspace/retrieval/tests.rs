@@ -2,6 +2,7 @@ use super::{member_coverage::*, timeout_without_member_answer};
 use serde_json::json;
 
 mod cache_progress_tests;
+mod router_recovery_tests;
 
 #[test]
 fn unavailable_lanes_surface_reasons_without_marking_lexical_coverage_partial() {

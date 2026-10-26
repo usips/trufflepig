@@ -69,10 +69,13 @@ class AgentRouterIdentityInstallTests(unittest.TestCase):
                 self.active[name] = False
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    def apply(self, check_router):
+    def apply(self, check_router, *, install_router=True, install_board=True):
         return systemd_units.apply_units(
             "/opt/trufflepig", self.unit_directory, self.runtime, True,
-            True, True, "new router unit\n", "new board unit\n", check_router,
+            install_router, install_board,
+            "new router unit\n" if install_router else None,
+            "new board unit\n" if install_board else None,
+            check_router,
         )
 
     def test_existing_duplicate_fails_before_unit_state_reads_or_mutations(self):
@@ -109,6 +112,68 @@ class AgentRouterIdentityInstallTests(unittest.TestCase):
                 patch.object(systemd_units.subprocess, "run", side_effect=self.run_systemctl):
             self.apply(lambda *_args, **_kwargs: None)
         self.assertEqual(self.router_unit.read_text(), "new router unit\n")
+        stop = ["systemctl", "--user", "stop", ROUTER]
+        enable_now = ["systemctl", "--user", "enable", "--now", ROUTER]
+        self.assertLess(self.commands.index(stop), self.commands.index(enable_now))
+        self.assertNotIn(["systemctl", "--user", "restart", ROUTER], self.commands)
+
+    def assert_router_activation_failure_recovers(self, failed_operation, *, install_router=True):
+        failed_once = False
+
+        def run(command, **kwargs):
+            nonlocal failed_once
+            command = list(command)
+            if command == ["systemctl", "--user", failed_operation, ROUTER] and not failed_once:
+                failed_once = True
+                self.commands.append(command)
+                error = subprocess.CalledProcessError(1, command, stderr=f"router {failed_operation} failed")
+                if kwargs.get("check"):
+                    raise error
+                return subprocess.CompletedProcess(command, 1, "", error.stderr)
+            return self.run_systemctl(command, **kwargs)
+
+        with patch.object(systemd_units.subprocess, "run", side_effect=run):
+            with self.assertRaises(subprocess.CalledProcessError) as caught:
+                self.apply(lambda *_args, **_kwargs: None,
+                           install_router=install_router, install_board=True)
+
+        self.assertIn(f"router {failed_operation} failed", caught.exception.stderr)
+        self.assertTrue(failed_once)
+        self.assertEqual(self.router_unit.read_text(), "previous router unit\n")
+        self.assertEqual(self.board_unit.read_text(), "previous board unit\n")
+        self.assertEqual(self.active, {ROUTER: True, BOARD: True})
+        router_stop = ["systemctl", "--user", "stop", ROUTER]
+        router_start = ["systemctl", "--user", "start", ROUTER]
+        self.assertGreaterEqual(self.commands.count(router_stop), 2, self.commands)
+        self.assertGreaterEqual(self.commands.count(router_start), 1)
+        recovery_stop = max(index for index, command in enumerate(self.commands)
+                            if command == router_stop)
+        recovery_start = max(index for index, command in enumerate(self.commands)
+                             if command == router_start)
+        self.assertLess(recovery_stop, recovery_start)
+        self.assertNotIn(["systemctl", "--user", "restart", ROUTER], self.commands)
+
+    def test_router_stop_failure_restores_previous_unit_and_running_state(self):
+        self.assert_router_activation_failure_recovers("stop", install_router=False)
+
+    def test_router_start_failure_restores_previous_unit_and_running_state(self):
+        self.assert_router_activation_failure_recovers("start", install_router=False)
+
+    def test_board_only_upgrade_stops_and_starts_router_before_restarting_board(self):
+        with patch.object(systemd_units.subprocess, "run", side_effect=self.run_systemctl):
+            self.apply(lambda *_args, **_kwargs: None, install_router=False, install_board=True)
+
+        router_stop = ["systemctl", "--user", "stop", ROUTER]
+        router_start = ["systemctl", "--user", "start", ROUTER]
+        board_stop = ["systemctl", "--user", "stop", BOARD]
+        board_enable = ["systemctl", "--user", "enable", "--now", BOARD]
+        self.assertLess(self.commands.index(board_stop), self.commands.index(router_stop))
+        self.assertLess(self.commands.index(router_stop), self.commands.index(router_start))
+        self.assertLess(self.commands.index(router_start), self.commands.index(board_enable))
+        self.assertTrue(self.active[ROUTER])
+        self.assertTrue(self.active[BOARD])
+        self.assertNotIn(["systemctl", "--user", "restart", ROUTER], self.commands)
+        self.assertNotIn(["systemctl", "--user", "restart", BOARD], self.commands)
 
     def test_postactivation_conflict_restores_config_without_restarting_active_units(self):
         conflict = RouterIdentityConflict("router identity changed during activation")
@@ -125,16 +190,17 @@ class AgentRouterIdentityInstallTests(unittest.TestCase):
         self.assertEqual(self.board_unit.read_text(), "previous board unit\n")
         self.assertEqual(self.enabled, {ROUTER: "disabled", BOARD: "disabled"})
         self.assertFalse(self.active[BOARD])
-        self.assertIn(
-            ["systemctl", "--user", "enable", "--now", ROUTER], self.commands,
-        )
+        stop = ["systemctl", "--user", "stop", ROUTER]
+        enable_now = ["systemctl", "--user", "enable", "--now", ROUTER]
+        self.assertLess(self.commands.index(stop), self.commands.index(enable_now))
         self.assertNotIn(["systemctl", "--user", "restart", ROUTER], self.commands)
         self.assertNotIn(["systemctl", "--user", "restart", BOARD], self.commands)
         diagnostics = "\n".join(caught.exception.rollback_errors)
         self.assertIn("after clearing the listed router PIDs", diagnostics)
-        for name in (ROUTER, BOARD):
-            self.assertIn(f"skipped restart of {name}", diagnostics)
-            self.assertIn(f"systemctl --user restart {name}", diagnostics)
+        self.assertIn(f"skipped restart of {ROUTER}", diagnostics)
+        self.assertIn(f"systemctl --user stop {ROUTER} && systemctl --user start {ROUTER}", diagnostics)
+        self.assertIn(f"skipped restart of {BOARD}", diagnostics)
+        self.assertIn(f"systemctl --user restart {BOARD}", diagnostics)
 
     def test_ordinary_readiness_failure_keeps_full_active_unit_rollback(self):
         def fail_readiness(*_args, **_kwargs):
@@ -148,7 +214,8 @@ class AgentRouterIdentityInstallTests(unittest.TestCase):
         self.assertEqual(self.router_unit.read_text(), "previous router unit\n")
         self.assertEqual(self.board_unit.read_text(), "previous board unit\n")
         self.assertEqual(self.enabled, {ROUTER: "disabled", BOARD: "disabled"})
-        self.assertIn(["systemctl", "--user", "restart", ROUTER], self.commands)
+        self.assertIn(["systemctl", "--user", "stop", ROUTER], self.commands)
+        self.assertIn(["systemctl", "--user", "start", ROUTER], self.commands)
         self.assertIn(["systemctl", "--user", "restart", BOARD], self.commands)
 
 

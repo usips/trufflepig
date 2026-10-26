@@ -83,10 +83,8 @@ pub(in crate::local_board) fn addressed_to_actor_sql(
     harness: &str,
     identity: &str,
 ) -> String {
-    let task_successors = task_successors_cte(&format!(
-        "SELECT task_source.plan_id,task_source.ordinal FROM tasks task_source \
-         WHERE {recipient}='P'||task_source.plan_id||'.'||task_source.ordinal"
-    ));
+    let anchor = task_address_lookup(recipient);
+    let task_successors = task_successors_cte(&anchor);
     format!(
         concat!(
             "({recipient} IN ({user},{harness},{identity}) OR ",
@@ -121,6 +119,19 @@ fn task_successors_cte(anchor: &str) -> String {
             "ON transfer.source_plan=current.plan_id AND transfer.source_ordinal=current.ordinal)"
         ),
         anchor = anchor
+    )
+}
+
+/// Decodes the canonical task recipient before looking up its composite key.
+fn task_address_lookup(recipient: &str) -> String {
+    format!(
+        concat!(
+            "SELECT task_source.plan_id,task_source.ordinal FROM tasks task_source ",
+            "WHERE task_source.plan_id=CAST(substr({recipient},2,instr({recipient},'.')-2) AS INTEGER) ",
+            "AND task_source.ordinal=CAST(substr({recipient},instr({recipient},'.')+1) AS INTEGER) ",
+            "AND {recipient}='P'||task_source.plan_id||'.'||task_source.ordinal"
+        ),
+        recipient = recipient,
     )
 }
 
@@ -220,16 +231,25 @@ pub(in crate::local_board) fn worker_event_to_actor_sql(
     harness: &str,
     identity: &str,
 ) -> String {
+    let subject = format!("{event}.subject");
+    let dot = format!("instr({subject},'.')");
+    let slash = format!("instr({subject},'/')");
     format!(
         concat!(
             "EXISTS(SELECT 1 FROM claim_workers task_worker JOIN claims task_claim ",
             "ON task_claim.id=task_worker.claim_id JOIN actors worker ON worker.id=task_worker.actor_id ",
-            "WHERE {event}.subject='P'||task_worker.plan_id||'.'||task_worker.task_ordinal||'/'||task_worker.handle ",
+            "WHERE task_worker.plan_id=CAST(substr({subject},2,{dot}-2) AS INTEGER) ",
+            "AND task_worker.task_ordinal=CAST(substr({subject},{dot}+1,{slash}-{dot}-1) AS INTEGER) ",
+            "AND task_worker.handle=substr({subject},{slash}+1) ",
+            "AND {subject}='P'||task_worker.plan_id||'.'||task_worker.task_ordinal||'/'||task_worker.handle ",
             "AND ({event}.kind='worker_end' OR (task_claim.ended_at IS NULL AND task_worker.ended_at IS NULL)) ",
             "AND worker.user||'@'||worker.host||'/'||worker.harness||'/'||worker.session={identity} ",
             "AND worker.user={user} AND worker.harness={harness})"
         ),
         event = event,
+        subject = subject,
+        dot = dot,
+        slash = slash,
         user = user,
         harness = harness,
         identity = identity,

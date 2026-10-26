@@ -5,6 +5,7 @@ use crate::cli::Arguments;
 use crate::workspace::workspace_discovery::WorkspaceMembers;
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
+use std::time::Duration;
 use tp_core::coded_error::CodedContext;
 use tp_core::{output::OutputBudget, path_codec::encode_path, query_deadline::QueryDeadline};
 use tp_index::{
@@ -12,6 +13,14 @@ use tp_index::{
     search::{InvocationDirectory, Query, stateless},
     store::{is_index_cache_unavailable, preflight_results_cache},
 };
+
+const ROUTER_REPLACEMENT_SOURCE_BUDGET: Duration = Duration::from_secs(4);
+
+pub(super) struct RouterReplacementAnswer {
+    pub output: String,
+    pub complete: bool,
+    pub incomplete_reason: Option<String>,
+}
 
 pub(super) fn eligible(options: &Arguments) -> bool {
     matches!(
@@ -98,6 +107,27 @@ pub(super) fn run(
     deadline: &QueryDeadline,
     fallback: Option<Value>,
 ) -> Result<String> {
+    Ok(run_query(config, options, deadline, fallback, None)?.output)
+}
+
+/// Repeats an indexed workspace read with bounded current-source coverage.
+pub(super) fn run_after_router_replacement(
+    config: &WorkspaceConfig,
+    options: &Arguments,
+    deadline: &QueryDeadline,
+    failed_member: &MemberRoot,
+) -> Result<RouterReplacementAnswer> {
+    let deadline = deadline.capped(ROUTER_REPLACEMENT_SOURCE_BUDGET);
+    run_query(config, options, &deadline, None, Some(failed_member.name()))
+}
+
+fn run_query(
+    config: &WorkspaceConfig,
+    options: &Arguments,
+    deadline: &QueryDeadline,
+    fallback: Option<Value>,
+    router_replaced_member: Option<&str>,
+) -> Result<RouterReplacementAnswer> {
     ensure!(
         !deadline.expired(),
         coded!(TimedOut, "query deadline expired")
@@ -130,6 +160,7 @@ pub(super) fn run(
         "selected"
     };
     let mut incomplete = false;
+    let mut source_coverage_complete = true;
     while position < queue.len() {
         let index = queue[position];
         position += 1;
@@ -163,6 +194,10 @@ pub(super) fn run(
         })();
         match found {
             Ok(set) => {
+                source_coverage_complete &= !set.truncated
+                    && set.coverage["current_source"]["complete"] == true
+                    && set.coverage["absence"] != "not_proven"
+                    && set.coverage["partial"] != true;
                 let complete =
                     !set.truncated && set.coverage.get("partial") != Some(&Value::Bool(true));
                 let widen = scope.implicit_home
@@ -184,6 +219,7 @@ pub(super) fn run(
                 }
             }
             Err(error) => {
+                source_coverage_complete = false;
                 if tp_core::coded_error::ErrorCode::TimedOut.is_code_of(&error)
                     && answers.is_empty()
                 {
@@ -211,12 +247,22 @@ pub(super) fn run(
             Value::Array(coverage.clone())
         )
     );
+    let complete = source_coverage_complete && !incomplete;
     let truncated = incomplete || answers.iter().any(|(_, set)| set.truncated);
+    let incomplete_reason = (!complete).then(|| current_source_incomplete_reason(&coverage));
     let mut metadata = json!({"workspace":config.name,"source":"current_source","cache":"unused",
         "home":roots.iter().find(|member| member.is_home).map(MemberRoot::name),
         "scope":scope_label,"coverage":coverage,"truncated":truncated});
     if let Some(fallback) = fallback {
         metadata["cache_fallback"] = fallback;
+    }
+    if let Some(member) = router_replaced_member {
+        metadata["router_fallback"] = json!({
+            "cause": "router_binary_replaced",
+            "member": member,
+            "mode": "no_cache",
+            "coverage": if complete { "complete" } else { "partial" },
+        });
     }
     let parts: Vec<_> = answers
         .iter()
@@ -229,7 +275,37 @@ pub(super) fn run(
         })
         .collect();
     let budget = OutputBudget::new(options.budget)?.with_format(options.output_format());
-    stateless::render_members(&parts, &metadata, options.limit, &budget)
+    let output = stateless::render_members(&parts, &metadata, options.limit, &budget)?;
+    Ok(RouterReplacementAnswer {
+        output,
+        complete,
+        incomplete_reason,
+    })
+}
+
+fn current_source_incomplete_reason(coverage: &[Value]) -> String {
+    let row = coverage
+        .iter()
+        .find(|row| row["state"] == "unavailable")
+        .or_else(|| {
+            coverage.iter().find(|row| {
+                row["coverage"]["current_source"]["complete"] == false
+                    || row["coverage"]["absence"] == "not_proven"
+            })
+        });
+    let Some(row) = row else {
+        return "current-source coverage incomplete".to_owned();
+    };
+    let member = row["member"].as_str().unwrap_or("unknown member");
+    let reason = row["reason"]
+        .as_str()
+        .or_else(|| row["coverage"]["current_source"]["limit"].as_str())
+        .unwrap_or("current-source coverage incomplete");
+    let mut summary: String = format!("{member}: {reason}").chars().take(120).collect();
+    if format!("{member}: {reason}").chars().count() > 120 {
+        summary.push('…');
+    }
+    summary
 }
 
 #[cfg(test)]

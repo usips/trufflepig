@@ -119,7 +119,7 @@ and source operations cap local execution at 20 s and honor the incoming expiry;
 read-only Board operations use the same local cap after parsing, while writes and
 `ingest` keep the incoming deadline
 (`crates/tp-board/src/board_transport/board_backend/board_dispatch/host_run.rs:local_read_deadline`). Query-only
-index reads cap lock waits and interrupt long SQL statements at expiry. Deadline
+index and Board reads cap lock waits and interrupt long SQL statements at expiry. Deadline
 checks are cooperative; a blocking system call can outlive the budget
 (`crates/tp-core/src/query_deadline.rs`).
 Inline index maintenance uses at most 2 s per root/member and reserves 250 ms from

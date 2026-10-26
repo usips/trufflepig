@@ -257,7 +257,7 @@ fn an_unavailable_owner_named_anywhere_leaves_the_router() {
 }
 
 #[test]
-fn a_replaced_binary_refusal_sends_reads_local_and_keeps_writes_refused() {
+fn a_replaced_binary_refusal_uses_bounded_retrieval_and_keeps_writes_refused() {
     let refusals = [
         relayed("daemon: router_binary_replaced: executable /opt/trufflepig (deleted)"),
         relayed(
@@ -265,10 +265,7 @@ fn a_replaced_binary_refusal_sends_reads_local_and_keeps_writes_refused() {
         ),
     ];
     for read in [
-        &["search", "sym:ClientCommand"][..],
         &["show", "sym:ClientCommand"][..],
-        &["refs", "ClientCommand"][..],
-        &["map", "src/cli.rs"][..],
         &["more", "8ec51b6c-ec5a-4f97-8fc0-dc90d4e1941a:1"][..],
         &["ctx", "8ec51b6c-ec5a-4f97-8fc0-dc90d4e1941a:1"][..],
         &["status"][..],
@@ -278,10 +275,25 @@ fn a_replaced_binary_refusal_sends_reads_local_and_keeps_writes_refused() {
             let local = replaced_binary_read_options(&options, refusal)
                 .unwrap_or_else(|| panic!("{read:?} should run locally after {refusal:#}"));
             assert!(local.no_daemon);
+            assert!(!local.no_cache);
             assert_eq!(local.words, options.words);
         }
         let other = relayed("daemon: invalid_query: empty prefixed query");
         assert!(replaced_binary_read_options(&options, &other).is_none());
+    }
+    for read in [
+        &["search", "sym:ClientCommand"][..],
+        &["refs", "ClientCommand"][..],
+        &["map", "src/cli.rs"][..],
+    ] {
+        let options = parse(&words(read)).unwrap();
+        for refusal in &refusals {
+            let local = replaced_binary_read_options(&options, refusal)
+                .unwrap_or_else(|| panic!("{read:?} should use current-source recovery"));
+            assert!(local.no_cache);
+            assert!(!local.no_daemon);
+            assert_eq!(local.words, options.words);
+        }
     }
     for write in [
         &["hist-index"][..],

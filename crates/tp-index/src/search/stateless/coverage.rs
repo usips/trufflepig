@@ -1,6 +1,9 @@
 //! Cache-free coverage: what the bounded walk and reads searched, why they
 //! stopped early, and the scoped follow-up command an incomplete page suggests.
-use crate::{results::ResultSet, search::Query};
+use crate::{
+    results::{MAX_HITS, ResultSet},
+    search::Query,
+};
 use serde_json::{Value, json};
 
 /// Why a scan stopped before searching every eligible file.
@@ -10,6 +13,8 @@ pub(super) const LIMIT_BYTES: &str = "byte_cap";
 pub(super) const LIMIT_FACTS: &str = "fact_cap";
 pub(super) const LIMIT_WALK: &str = "walk_cap";
 pub(super) const LIMIT_BODIES_SKIPPED: &str = "path_matches_first";
+pub(super) const LIMIT_HITS: &str = "hit_cap";
+pub(super) const LIMIT_SOURCE_FAILURES: &str = "source_failures";
 
 #[derive(Clone, Debug)]
 pub(super) struct CurrentCoverage {
@@ -173,6 +178,15 @@ fn follow_up_hint(
         current.unsearched_files.to_string()
     };
     let hint = match (limit, follow_up) {
+        (LIMIT_HITS, _) => {
+            format!("{limit}: live regex reached the {MAX_HITS}-hit cap; narrow with file:PREFIX")
+        }
+        (LIMIT_SOURCE_FAILURES, _) => {
+            let failed = current.read_failures.saturating_add(current.walk_failures);
+            format!(
+                "{limit}: {failed} source reads or walk entries failed; narrow with file:PREFIX"
+            )
+        }
         (LIMIT_BODIES_SKIPPED, _) => {
             "path matches filled the page, so file bodies were not searched; \
              use re:TEXT or drop kind:file for body matches"

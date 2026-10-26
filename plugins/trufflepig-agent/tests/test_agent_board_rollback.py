@@ -39,7 +39,7 @@ class AgentBoardRollbackTests(AgentInstallCase):
         self.assertEqual(self.enabled_units(),
                          {"trufflepig-system.service": True, "trufflepig-board.service": False})
 
-    def test_rollback_restarts_active_units_on_restored_files(self):
+    def test_rollback_restores_active_units_on_restored_files(self):
         self.service_shims()
         self.serve_router_status([CURRENT_ROUTER_STATUS])
         units = self.root / "config/systemd/user"
@@ -65,7 +65,7 @@ class AgentBoardRollbackTests(AgentInstallCase):
                          {"trufflepig-system.service": True, "trufflepig-board.service": True})
         self.assertEqual(self.loaded_unit_hashes(), previous_hashes)
 
-    def test_rollback_stops_new_units_after_restarting_existing_units(self):
+    def test_rollback_stops_new_units_after_restoring_existing_units(self):
         capture = self.service_shims()
         self.serve_router_status([CURRENT_ROUTER_STATUS])
         units = self.root / "config/systemd/user"
@@ -85,10 +85,13 @@ class AgentBoardRollbackTests(AgentInstallCase):
         self.assertEqual(self.enabled_state("trufflepig-board.service"), "disabled")
         self.assertEqual(self.loaded_unit_hashes()[router.name], previous_hashes[router.name])
         calls = [json.loads(line) for line in capture.read_text().splitlines()]
-        restored_restart = ["systemctl", "--user", "restart", router.name]
+        restored_stop = ["systemctl", "--user", "stop", router.name]
+        restored_start = ["systemctl", "--user", "start", router.name]
         cleanup = ["systemctl", "--user", "disable", "--now", "trufflepig-board.service"]
-        self.assertLess(calls.index(restored_restart, calls.index(restored_restart) + 1),
-                        calls.index(cleanup))
+        second_stop = calls.index(restored_stop, calls.index(restored_stop) + 1)
+        second_start = calls.index(restored_start, calls.index(restored_start) + 1)
+        self.assertLess(second_stop, second_start)
+        self.assertLess(second_start, calls.index(cleanup))
 
     def test_start_of_active_unit_preserves_its_loaded_definition(self):
         self.service_shims()

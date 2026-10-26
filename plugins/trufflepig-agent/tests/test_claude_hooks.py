@@ -240,11 +240,11 @@ class ClaudeHookLifecycleTests(unittest.TestCase):
         import trufflepig_board_notices as notices
         return notices, Path(self.env["XDG_STATE_HOME"]) / "trufflepig/claude-notices"
 
-    def run_lifecycle(self, payload):
+    def run_lifecycle(self, payload, env=None):
         proc = subprocess.CompletedProcess([], 0, "", "")
         with mock.patch.object(self.hooks.subprocess, "run", return_value=proc) as run, \
                 mock.patch.object(self.hooks.sys, "stdin", mock.mock_open(read_data=json.dumps(payload))()), \
-                mock.patch.dict(os.environ, self.env, clear=True):
+                mock.patch.dict(os.environ, self.env if env is None else dict(self.env, **env), clear=True):
             self.hooks.main()
         return run
 
@@ -252,6 +252,9 @@ class ClaudeHookLifecycleTests(unittest.TestCase):
         notices, state = self.notice_state()
         for event, payload, expected in (
             ("SessionEnd", {"session_id": "parent"}, "parent"),
+            ("SessionEnd", {"session_id": "parent", "agent_id": "child",
+                             "agent_type": "Explore"},
+             self.hooks.identity.subagent_session("parent", "child")),
             ("SubagentStop", {"session_id": "parent", "agent_id": "child"},
              self.hooks.identity.subagent_session("parent", "child")),
         ):
@@ -262,6 +265,52 @@ class ClaudeHookLifecycleTests(unittest.TestCase):
                 self.assertEqual(run.call_args.kwargs["env"]["TRUFFLEPIG_SESSION"], expected)
                 self.assertEqual(run.call_args.kwargs["env"]["TRUFFLEPIG_AGENT_HOOK"], "1")
                 self.assertFalse(notices.board_session_known(actor=f"claude/{expected}", state_dir=state))
+
+    def test_nested_session_end_prefers_child_over_inherited_parent_session(self):
+        notices, state = self.notice_state()
+        child = self.hooks.identity.subagent_session("parent", "coder")
+        self.assertIsNotNone(child)
+        notices.remember_board_session(actor="claude/lead", state_dir=state)
+        notices.remember_board_session(actor=f"claude/{child}", state_dir=state)
+
+        run = self.run_lifecycle(
+            {"hook_event_name": "SessionEnd", "session_id": "parent",
+             "agent_id": "coder", "agent_type": "Explore"},
+            {"TRUFFLEPIG_SESSION": "lead"},
+        )
+
+        self.assertEqual(run.call_args.args[0][1:], ["board", "bye"])
+        self.assertEqual(run.call_args.kwargs["env"]["TRUFFLEPIG_SESSION"], child)
+        self.assertFalse(notices.board_session_known(actor=f"claude/{child}", state_dir=state))
+        self.assertTrue(notices.board_session_known(actor="claude/lead", state_dir=state))
+
+    def test_ambiguous_subagent_session_end_skips_parent_override(self):
+        notices, state = self.notice_state()
+        notices.remember_board_session(actor="claude/lead", state_dir=state)
+
+        for payload in (
+            {"hook_event_name": "SessionEnd", "session_id": "parent",
+             "agent_type": "Explore"},
+            {"hook_event_name": "SessionEnd", "agent_id": "coder"},
+        ):
+            with self.subTest(payload=payload):
+                run = self.run_lifecycle(payload, {"TRUFFLEPIG_SESSION": "lead"})
+                run.assert_not_called()
+        self.assertTrue(notices.board_session_known(actor="claude/lead", state_dir=state))
+
+    def test_top_level_session_end_keeps_explicit_session_override(self):
+        notices, state = self.notice_state()
+        notices.remember_board_session(actor="claude/explicit", state_dir=state)
+        notices.remember_board_session(actor="claude/parent", state_dir=state)
+
+        run = self.run_lifecycle(
+            {"hook_event_name": "SessionEnd", "session_id": "parent"},
+            {"TRUFFLEPIG_SESSION": "explicit"},
+        )
+
+        self.assertEqual(run.call_args.kwargs["env"]["TRUFFLEPIG_SESSION"], "explicit")
+        self.assertFalse(notices.board_session_known(actor="claude/explicit", state_dir=state))
+        self.assertTrue(notices.board_session_known(actor="claude/parent", state_dir=state))
 
     def test_bye_is_skipped_for_sessions_that_never_said_hello(self):
         notices, state = self.notice_state()

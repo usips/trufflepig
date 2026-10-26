@@ -15,6 +15,7 @@ PLUGIN = Path(__file__).resolve().parents[1]
 SUPPORTED_UNIT_STATES = frozenset(("enabled", "enabled-runtime", "disabled", "static", "not-found"))
 MASKED_UNIT_STATES = frozenset(("masked", "masked-runtime"))
 ENABLED_UNIT_STATES = frozenset(("enabled", "enabled-runtime"))
+ROUTER_UNIT = "trufflepig-system.service"
 
 
 def board_database_path() -> Path:
@@ -81,6 +82,11 @@ def unit_enablement(name: str) -> str:
     return state
 
 
+def active_unit_recovery_operations(name: str) -> tuple[str, ...]:
+    """Return operations that restore an active unit after its definition changes."""
+    return ("stop", "start") if name == ROUTER_UNIT else ("restart",)
+
+
 class UnitRollback:
     """Attempt each recovery operation independently and retain its diagnostic."""
 
@@ -144,13 +150,17 @@ class UnitRollback:
         for name, was_active in previous_active.items():
             if was_active:
                 if skip_active_restarts:
-                    command = f"systemctl --user restart {name}"
+                    command = " && ".join(
+                        f"systemctl --user {operation} {name}"
+                        for operation in active_unit_recovery_operations(name)
+                    )
                     self.errors.append(
                         f"skipped restart of {name} while router identity is conflicted; "
                         f"after clearing the listed router PIDs, run `{command}`"
                     )
                 else:
-                    self.systemctl("restart", name)
+                    for operation in active_unit_recovery_operations(name):
+                        self.systemctl(operation, name)
         stopped_units = set()
         for name in activation_attempts:
             if self.restore_enablement(name, previous_enablement[name], previous_active[name]):
@@ -234,7 +244,8 @@ def apply_units(binary: str, unit_directory: Path, router_runtime: Path, managed
             subprocess.run(["systemctl", "--user", "stop", "trufflepig-board.service"], check=True)
             if not install_router and managed_router:
                 # The board shares the router's database; both must run the same binary.
-                subprocess.run(["systemctl", "--user", "restart", "trufflepig-system.service"], check=True)
+                subprocess.run(["systemctl", "--user", "stop", "trufflepig-system.service"], check=True)
+                subprocess.run(["systemctl", "--user", "start", "trufflepig-system.service"], check=True)
                 check_router(router_runtime, managed_restart=True)
             activation_attempts.append("trufflepig-board.service")
             subprocess.run(["systemctl", "--user", "enable", "--now", "trufflepig-board.service"], check=True)

@@ -196,15 +196,17 @@ def hook_output(event: str, **fields: object) -> None:
 
 
 def payload_session(payload: dict[str, object]) -> str | None:
-    explicit = os.environ.get("TRUFFLEPIG_SESSION")
-    if explicit:
-        return explicit
     child = identity.payload_subagent_session(payload)
     if child:
         return child
+    if "agent_id" in payload:
+        return None
     agent_type = payload.get("agent_type")
     if isinstance(agent_type, str) and agent_type.strip():
         return None
+    explicit = os.environ.get("TRUFFLEPIG_SESSION")
+    if explicit:
+        return explicit
     session_id = payload.get("session_id")
     if isinstance(session_id, str) and session_id.strip():
         return session_id

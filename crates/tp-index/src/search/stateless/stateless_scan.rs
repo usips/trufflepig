@@ -3,7 +3,10 @@
 //! text answers path matches first and reads bodies only for a short page.
 use super::{
     CurrentSearchOptions,
-    coverage::{self, CurrentCoverage, FollowUp, LIMIT_BODIES_SKIPPED, LIMIT_DEADLINE},
+    coverage::{
+        self, CurrentCoverage, FollowUp, LIMIT_BODIES_SKIPPED, LIMIT_DEADLINE, LIMIT_HITS,
+        LIMIT_SOURCE_FAILURES,
+    },
     current_walk::{self, MAX_WALK_ENTRIES},
     handles,
     literal_prefilter::LiteralPrefilter,
@@ -22,6 +25,9 @@ use std::{collections::HashMap, path::Path};
 use tp_core::{coded_error::ErrorCode, query_deadline::QueryDeadline};
 
 const MAX_SOURCE_BYTES_FOR_FILENAME_HITS: usize = 32 * 1024 * 1024;
+
+#[cfg(test)]
+mod tests;
 
 pub(super) fn search_root(
     root: &Path,
@@ -289,9 +295,16 @@ fn live_coverage(set: &ResultSet, query: &Query) -> CurrentCoverage {
         read_failures,
         walk_failures,
         unsearched_files: 0,
-        complete: read_failures == 0 && walk_failures == 0 && excluded == 0 && !set.truncated,
+        unsearched_unknown: walk_failures > 0,
+        complete: read_failures == 0 && walk_failures == 0 && !set.truncated,
         ..CurrentCoverage::default()
     };
+    if set.truncated {
+        current.limit = Some(LIMIT_HITS);
+        current.unsearched_unknown = true;
+    } else if read_failures > 0 || walk_failures > 0 {
+        current.limit = Some(LIMIT_SOURCE_FAILURES);
+    }
     if !query.kind.is_empty() {
         current.unsearched_unknown = true;
         current.complete = false;

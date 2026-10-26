@@ -197,8 +197,8 @@ fn leaves_router_for_direct_execution(error: &anyhow::Error) -> bool {
         || ErrorCode::DaemonUnavailable.is_named_in(error)
 }
 
-/// A read refused because an owner runs a replaced binary is a pre-dispatch
-/// refusal; it runs locally with `--no-daemon`. Writes keep the refusal.
+/// Indexed retrievals retry without cache access; other reads run locally with
+/// `--no-daemon`. Writes keep the refusal.
 fn replaced_binary_read_options(options: &Arguments, error: &anyhow::Error) -> Option<Arguments> {
     if super::retry::RetryScope::for_options(options) != super::retry::RetryScope::Read
         || !ErrorCode::RouterBinaryReplaced.is_named_in(error)
@@ -206,7 +206,15 @@ fn replaced_binary_read_options(options: &Arguments, error: &anyhow::Error) -> O
         return None;
     }
     let mut local = options.clone();
-    local.no_daemon = true;
+    if matches!(
+        local.words.first().map(String::as_str),
+        Some("search" | "refs" | "map")
+    ) {
+        local.no_cache = true;
+        local.no_daemon = false;
+    } else {
+        local.no_daemon = true;
+    }
     Some(local)
 }
 

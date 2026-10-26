@@ -6,6 +6,7 @@ mod board_evidence;
 mod board_feed;
 mod board_lifecycle;
 mod board_queries;
+mod board_query_deadline;
 mod board_writes;
 mod mutation_dispatch;
 #[cfg(test)]

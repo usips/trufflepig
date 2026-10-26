@@ -92,8 +92,8 @@ and commit attribution.
 includes the original BoardChange; `unknown` means no BoardChange receipt is available and cannot
 establish whether a write failed or is still pending. When available, an ambiguous mutation timeout
 prints `request_key=KEY` and its lookup command. Receipt lookup never retries or replays the mutation.
-Preflight and dispatched-write outcomes follow the [transport contract](board-contract.md#backend-transport-and-deadlines);
-manual recovery after `board_write_outcome=not_dispatched` follows [Board write recovery](../plugins/trufflepig-agent/skills/trufflepig-plan-board/references/recovery.md#preflight-timeout).
+Preflight, typed admission-refusal, and dispatched-write outcomes follow the [transport contract](board-contract.md#backend-transport-and-deadlines).
+Manual recovery after `board_write_outcome=not_dispatched` follows [Board write recovery](../plugins/trufflepig-agent/skills/trufflepig-plan-board/references/recovery.md#manual-direct-retry).
 
 `board bye` reports which of three outcomes happened (JSON `outcome`, optional `entry`/`seq`):
 `ended` prints `bye ended session E# cursor SEQ` for the bye it just recorded; `already_ended`

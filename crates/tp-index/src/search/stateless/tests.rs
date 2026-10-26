@@ -1,6 +1,7 @@
 mod filename_scan;
 mod page_budget;
 mod partial_scans;
+mod regex_coverage;
 mod scoped_lookup;
 
 use super::source_reads::MAX_CURRENT_FILE_BYTES;

@@ -96,8 +96,49 @@ pub(in crate::local_board) fn bye(
         tasks.push(TaskId::new(plan, ordinal).map_err(BoardError::from)?);
     }
 
+    let mut summary = String::from("ended session");
+    if let Some(worker) = &bound_worker {
+        summary.push_str(&format!("; stopped worker {}", worker.record.address));
+    }
+    if !tasks.is_empty() {
+        summary.push_str(&format!("; ended {} lead claim(s)", tasks.len()));
+    }
+    let bye_entry = insert_entry(
+        tx,
+        ctx,
+        &EntryDraft {
+            plan_id: None,
+            kind: EntryKind::Bye,
+            body: summary.clone(),
+            to_whom: None,
+            supersedes: None,
+            repo_key: None,
+            state: None,
+        },
+    )?;
+
     for task in &tasks {
-        end_claim(tx, ctx, *task, ClaimEndReason::SessionEnded)?;
+        if let Some(claim_start) = end_claim(tx, ctx, *task, ClaimEndReason::SessionEnded)? {
+            let body = format!(
+                "ended lead claim for {task}: reason={}; start {}; bye {}",
+                ClaimEndReason::SessionEnded.as_str(),
+                claim_start,
+                bye_entry
+            );
+            insert_entry(
+                tx,
+                ctx,
+                &EntryDraft {
+                    plan_id: Some(task.plan),
+                    kind: EntryKind::Claim,
+                    body,
+                    to_whom: None,
+                    supersedes: None,
+                    repo_key: None,
+                    state: None,
+                },
+            )?;
+        }
         tx.execute(
             "UPDATE tasks SET column_name=?3,seq=?4 WHERE plan_id=?1 AND ordinal=?2 AND column_name=?5",
             params![
@@ -116,34 +157,14 @@ pub(in crate::local_board) fn bye(
     )
     .map_err(sql_error)?;
 
-    let mut summary = String::from("ended session");
-    if let Some(worker) = &bound_worker {
-        summary.push_str(&format!("; stopped worker {}", worker.record.address));
-    }
-    if !tasks.is_empty() {
-        summary.push_str(&format!("; ended {} lead claim(s)", tasks.len()));
-    }
-    let entry = insert_entry(
-        tx,
-        ctx,
-        &EntryDraft {
-            plan_id: None,
-            kind: EntryKind::Bye,
-            body: summary.clone(),
-            to_whom: None,
-            supersedes: None,
-            repo_key: None,
-            state: None,
-        },
-    )?;
     insert_event(
         tx,
         ctx,
         None,
         EntryKind::Bye,
-        &entry.to_string(),
+        &bye_entry.to_string(),
         None,
         &summary,
     )?;
-    Ok(bye_reply(ByeOutcome::Ended, Some((entry, ctx.seq))))
+    Ok(bye_reply(ByeOutcome::Ended, Some((bye_entry, ctx.seq))))
 }

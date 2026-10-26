@@ -61,8 +61,12 @@ class AgentBoardRollbackErrorTests(AgentInstallCase):
                 self.assertIs(caught.exception, original)
                 for name, text in previous.items():
                     self.assertEqual((units / name).read_text(), text)
-                    self.assertIn(["systemctl", "--user", "restart", name],
-                                  [command for command, _ in attempts])
+                commands = [command for command, _ in attempts]
+                router_stop = ["systemctl", "--user", "stop", "trufflepig-system.service"]
+                router_start = ["systemctl", "--user", "start", "trufflepig-system.service"]
+                board_restart = ["systemctl", "--user", "restart", "trufflepig-board.service"]
+                self.assertLess(commands.index(router_stop), commands.index(router_start))
+                self.assertLess(commands.index(router_start), commands.index(board_restart))
                 self.assertIn(["systemctl", "--user", "daemon-reload"],
                               [command for command, _ in attempts])
                 self.assertTrue(all(kwargs.get("check") is False for _, kwargs in attempts))
@@ -148,8 +152,9 @@ class AgentBoardRollbackErrorTests(AgentInstallCase):
         self.assertEqual((units / UNIT_NAMES[0]).read_text(), previous[UNIT_NAMES[0]])
         self.assertEqual(self.loaded_unit_hashes()[UNIT_NAMES[0]], previous_hashes[UNIT_NAMES[0]])
         self.assertEqual(self.active_units(), dict.fromkeys(UNIT_NAMES, True))
-        for name in UNIT_NAMES:
-            self.assertIn(["systemctl", "--user", "restart", name], attempts)
+        self.assertIn(["systemctl", "--user", "stop", "trufflepig-system.service"], attempts)
+        self.assertIn(["systemctl", "--user", "start", "trufflepig-system.service"], attempts)
+        self.assertIn(["systemctl", "--user", "restart", "trufflepig-board.service"], attempts)
 
 
 if __name__ == "__main__":

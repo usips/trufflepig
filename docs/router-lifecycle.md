@@ -39,8 +39,8 @@ written never settles. A settled replacement makes the router:
 
 The unit has `Restart=on-failure`, `RestartSec=2`, and
 `RestartForceExitStatus=75`, so systemd starts the new binary two seconds later.
-`KillMode=control-group` and the daemon scopes' `BindsTo=` (below) end any old
-daemon that outlived step 4. Clients that connect during the drain or restart
+`KillMode=control-group` ends children still in the router cgroup; scope cleanup
+is described below. Clients that connect during the drain or restart
 follow the normal unreachable-router path: one `system ensure`, then per-root
 or local execution.
 
@@ -68,15 +68,22 @@ it with `trufflepig system stop` (or kill its PID), then run
 owner, restart its unit or stop its detached daemon with that root and cache
 before retrying. Stop detached daemons before replacing their binary.
 
+The installer stops the supervised router before starting the installed binary.
+An explicit stop initiates retirement of scopes bound to that router. A service
+restart can retain externally created scope
+processes, so restarting the router alone does not prove that workspace owners
+use the installed binary. Verify the named owner's executable after recovery.
+
 ## Client read fallback
 
-`router_binary_replaced` is refused before dispatch and has no side effects.
-When a routed read — `search`, `refs`, `map`, `show`, `more`, `ctx`, or
-`status` — gets it from the router, named in any layer or in relayed text
-(`tp_core::coded_error::named_codes`), the client reruns the request in the
-foreground with `--no-daemon` (`src/cli/client_command.rs`). Every other
-command, including `board`, `feedback`, `hist-index`, and `semantic prepare`,
-returns the refusal with its recovery hint.
+On a direct `router_binary_replaced` refusal, `search`, `refs`, and `map` retry
+with `--no-cache`, reading current source without indexing. A workspace member
+can return the same error inside an already accepted retrieval; that path retries
+the same selection under the original deadline. Complete coverage returns
+current-source handles; an incomplete retry preserves healthy indexed answers
+and marks the recovery issue, while no member answer returns `absence=not_proven`.
+Other reads (`show`, `more`, `ctx`, `status`) use local `--no-daemon` execution.
+Writes and other commands retain the refusal and its recovery hint.
 
 ## Process placement
 
@@ -91,10 +98,11 @@ A supervised router whose unit sets `TRUFFLEPIG_DAEMON_SLICE` passes that slice
 and its own cgroup to each daemon it spawns. Before binding, such a daemon,
 while still in the router's cgroup, calls the user manager's
 `StartTransientUnit` through `busctl --user` to move itself into
-`trufflepig-daemon-PID.scope` in that slice, bound with `BindsTo=` to the router
-unit. It waits up to 500 ms for the move so its own children inherit the scope.
-Grandchildren already in a scope never move. Without `busctl`, a user bus, or
-the variables, the daemon stays in the router's cgroup.
+`trufflepig-daemon-PID.scope` in that slice, with `BindsTo=` on the router unit
+so stopping the router also stops the scope. The daemon waits up to 500 ms
+for the move so its own children inherit the scope. Grandchildren already in a
+scope never move. Without `busctl`, a user bus, or the variables, the daemon
+stays in the router's cgroup.
 
 The installed `app-trufflepig.slice` sets `CPUWeight=10` and `IOWeight=10`; the
 router unit sets neither, so the router and board host keep the default weight.

@@ -103,7 +103,7 @@ continuations bypass selected-cache creation, marker, and seed; they work while 
 unavailable. Index-based reads preflight the selected writable result cache before parent lookup;
 one at-most-2 s member slice covers cache registration, marker/seed, open, and indexing
 within the original query deadline. Skipped seeding does not block a usable published parent.
-Without `--no-cache`, `search`, `map`, `refs`, and `sym:` require an index; `refs` has no current-file fallback.
+Without `--no-cache`, `search`, `map`, `refs`, and `sym:` require an index; ordinary indexed `refs` misses have no current-file fallback. Eligible `--no-cache` reads and bounded router-replacement recovery inspect current source.
 
 Each member produces its existing ranked candidate list. Retrieval collapses
 each lane to one representative occurrence per file, then fuses file ranks with
@@ -128,6 +128,11 @@ The normal 600-token `o200k_base` budget applies once to the complete response, 
 
 `--no-cache search`, `refs NAME`, and `map PATH` inspect current bytes in selected members without cache access; normal member and root-relative path selection applies.
 The renderer round-robins member ranks under one budget and preserves every result or failure; partial scans or unavailable members cannot prove absence.
+On `router_binary_replaced`, indexed workspace retrieval retries the same selection against
+current source with `--no-cache` (at most four seconds within the original deadline). Complete
+coverage returns current-source handles. Otherwise healthy indexed answers remain with the
+affected member's `issues.router_fallback`; absence stays unproven. With no answered members,
+the request fails with `absence=not_proven`.
 Semantics and reranking are unavailable, and revision-bound `read:path:` handles resolve only against configured roots; `show` rejects edits.
 
 ## Immutable navigation

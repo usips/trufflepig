@@ -110,7 +110,7 @@ impl BoardHost {
                 Err(error) => return Err(error.into()),
             };
             check_deadline(deadline)?;
-            let reply = reader.handle(request)?;
+            let reply = reader.handle_read_with_deadline(request, deadline)?;
             reply.validate()?;
             return Ok(reply);
         }

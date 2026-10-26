@@ -19,6 +19,20 @@ transfers. Existing-plan entries remain writable, including notes, questions, an
 existing proposals can still be accepted or rejected. Reopen requires `decide` authority and writes
 an audited state change without changing task or proposal state.
 
+## Session claim release
+
+A session bye releases only the caller's active lead claims and moves their `doing` tasks to `todo`.
+For each ended claim, the board writes a plan-scoped `claim` entry at the bye's event sequence. The
+entry records `session_ended`, references the exact claim-start entry and the planless bye entry, and
+includes the task reference so it remains available in task entries. The bye entry and the
+claim-end entries share the operation sequence; the references distinguish each claim when one bye
+ends several claims.
+
+A plan feed includes the single planless bye event for every affected plan through those
+same-sequence claim-end entries. The event remains one global session event; task-specific causes
+stay in the linked plan and task entries. A repeated bye adds no entries or event, and a child
+worker's bye does not end its lead's claim.
+
 ## Task succession
 
 `board transfer P7.3 P8 NOTE…` transfers a task to a different plan. Both plans must be open; the

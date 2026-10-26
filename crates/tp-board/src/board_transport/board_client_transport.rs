@@ -12,7 +12,7 @@ use std::{
     path::{Path, PathBuf},
     time::SystemTime,
 };
-use tp_core::coded_error::CodedContext;
+use tp_core::coded_error::{CodedContext, CodedError, ErrorCode};
 use tp_core::{query_deadline::QueryDeadline, request_context::RequestContext};
 
 mod local_access;
@@ -295,11 +295,96 @@ fn failed_request(
         }
         .into());
     }
+    if board_request_attempted
+        && let Some(retry_after_ms) = board_admission_retry_after_ms(command, &error)
+    {
+        return Err(BoardAdmissionBusyAdvice {
+            error,
+            retry_after_ms,
+        }
+        .into());
+    }
     if matches!(command, BoardCommand::Op(crate::BoardOp::Feedback { .. })) {
         let config = load()?;
         crate::unavailable_or_queue(command, options, context, &config, spool, deadline, error)
     } else {
         Err(crate::schema_upgrade_advice(error))
+    }
+}
+
+/// Returns a retry hint only for a typed refusal from the router Board queue.
+fn board_admission_retry_after_ms(command: &BoardCommand, error: &anyhow::Error) -> Option<u64> {
+    let BoardCommand::Op(op) = command else {
+        return None;
+    };
+    if op.is_read_only() || matches!(op, BoardOp::Feedback { .. }) {
+        return None;
+    }
+
+    error
+        .chain()
+        .filter_map(|cause| cause.downcast_ref::<CodedError>())
+        .filter(|coded| coded.code() == ErrorCode::DaemonBusy)
+        .find_map(|coded| router_board_queue_full_retry_after_ms(coded.message()))
+}
+
+/// Admission refusals cross the daemon boundary as coded text. Require every
+/// field emitted by `AdmissionRefusal` before treating `daemon_busy` as proof
+/// that a Board mutation was not dispatched.
+fn router_board_queue_full_retry_after_ms(message: &str) -> Option<u64> {
+    let field = |name| unique_admission_field(message, name);
+    if field("pool")? != "router-board"
+        || field("cause")? != "queue_full"
+        || field("hint")? != "retry_with_bounded_backoff"
+    {
+        return None;
+    }
+
+    let depth = field("queue_depth")?.parse::<usize>().ok()?;
+    let capacity = field("queue_capacity")?.parse::<usize>().ok()?;
+    if capacity == 0 || depth != capacity {
+        return None;
+    }
+
+    let retry_after_ms = field("retry_after_ms")?.parse::<u64>().ok()?;
+    (retry_after_ms > 0).then_some(retry_after_ms)
+}
+
+fn unique_admission_field<'a>(message: &'a str, name: &str) -> Option<&'a str> {
+    let mut values = message.split_ascii_whitespace().filter_map(|token| {
+        let (field, value) = token.split_once('=')?;
+        (field == name).then_some(value)
+    });
+    let value = values.next()?;
+    values.next().is_none().then_some(value)
+}
+
+#[derive(Debug)]
+struct BoardAdmissionBusyAdvice {
+    error: anyhow::Error,
+    retry_after_ms: u64,
+}
+
+impl fmt::Display for BoardAdmissionBusyAdvice {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            concat!(
+                "{}; board_write_outcome=not_dispatched; this router queue refusal proves the ",
+                "Board write was not applied; the bounded retry honors at least {} ms backoff; ",
+                "if it still fails, a manual --no-daemon retry requires the same command/body and ",
+                "actor/session, the exact router-published Board database, and database, ",
+                "parent-directory, SQLite WAL/SHM write access within the filesystem sandbox; ",
+                "no direct fallback occurs automatically"
+            ),
+            self.error, self.retry_after_ms
+        )
+    }
+}
+
+impl StdError for BoardAdmissionBusyAdvice {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        Some(self.error.as_ref())
     }
 }
 

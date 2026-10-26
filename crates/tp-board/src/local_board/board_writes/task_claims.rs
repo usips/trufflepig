@@ -230,7 +230,7 @@ pub(in crate::local_board) fn claim_task(
         } else {
             ClaimEndReason::TakenOver
         };
-        end_claim(tx, ctx, task, reason)?;
+        let _ = end_claim(tx, ctx, task, reason)?;
     }
     let entry = insert_entry(
         tx,
@@ -342,11 +342,30 @@ pub(in crate::local_board) fn end_claim(
     ctx: &WriteContext,
     task: TaskId,
     reason: ClaimEndReason,
-) -> Result<(), BoardError> {
+) -> Result<Option<EntryId>, BoardError> {
+    let claim_start = tx
+        .query_row(
+            "SELECT entry_id FROM claims WHERE plan_id=?1 AND task_ordinal=?2 AND ended_at IS NULL ORDER BY id DESC LIMIT 1",
+            params![sql_number(task.plan.get()), sql_number(task.ordinal)],
+            |row| row_number(row, 0),
+        )
+        .optional()
+        .map_err(sql_error)?
+        .map(EntryId::new)
+        .transpose()
+        .map_err(BoardError::from)?;
     end_workers_for_claim(tx, ctx, task)?;
-    tx.execute(
+    let ended = tx.execute(
         "UPDATE claims SET ended_at=?3,end_reason=?4 WHERE plan_id=?1 AND task_ordinal=?2 AND ended_at IS NULL",
         params![sql_number(task.plan.get()), sql_number(task.ordinal), ctx.now, reason.as_str()],
     ).map_err(sql_error)?;
-    Ok(())
+    if ended == 0 {
+        return Ok(None);
+    }
+    claim_start.map(Some).ok_or_else(|| {
+        invalid(
+            BoardErrorCode::BoardUnavailable,
+            "ended claim has no start entry",
+        )
+    })
 }

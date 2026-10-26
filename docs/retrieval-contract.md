@@ -178,15 +178,21 @@ first and read bodies only while the page has room (`body_lane`).
 The source walk remains inside the selected repository root, does not follow
 symlinks, excludes `.git`, `target`, `node_modules`, `.trufflepig`, and the
 selected cache, and observes shared file, byte, fact, walk, hit, and deadline
-limits. Reading stops at three quarters of the remaining deadline; the deadline,
-like any other limit, ends the scan with the hits found so far, `complete:
-false`, and `current_source.limit`. Partial pages carry a `hint` and, when a
-narrower scope exists, a `next_step` command. Every omitted or unreadable source
-is reflected in coverage. Empty results claim `absence: exhaustive` only when the
-bounded current-source coverage is complete; otherwise they report `absence:
-not_proven` and a truncated page. Coverage detail shrinks before hits do to fit
-the output budget. A cache-free hit carries a revision-bound `read:path:` handle
-that `show` can resolve from current bytes without a persisted result set.
+limits. Extraction stops at three quarters of the remaining deadline; a walk,
+read, or extraction limit returns the hits found so far with `complete: false`
+and `current_source.limit`. Live regex deadlines return `timed_out` and discard
+partial hits. Partial pages carry a `hint` and, when a narrower scope exists, a
+`next_step` command. Read and walk failures and hit caps remain incomplete and
+name their reason. Policy-excluded resources are counted in
+`current_source.excluded_files` but do not make the eligible source scope
+incomplete. `complete` and `absence: exhaustive` cover only files eligible for
+the query; unreadable eligible sources and files left unsearched remain
+incomplete. Empty results report `absence: not_proven` when that bounded scope is
+incomplete. Coverage detail shrinks before hits do to fit the output budget. A
+cache-free hit carries a revision-bound `read:path:` handle that `show` can
+resolve from current bytes without a persisted result set. Cache-free pages do
+not persist a continuation, so `next` stays null; page truncation is separate
+from source coverage completeness.
 
 An automatic cache-free retry occurs only when the selected cache is refused
 before ordinary dispatch with the typed cache-unavailable condition. The page

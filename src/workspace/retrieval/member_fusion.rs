@@ -112,6 +112,36 @@ impl MemberFusion {
         Ok(state)
     }
 
+    /// Records why a failed member's bounded current-source retry did not answer.
+    pub fn annotate_router_recovery_failure(&mut self, member: &str, reason: &str) {
+        let Some(row) = self
+            .set
+            .coverage
+            .iter_mut()
+            .rev()
+            .find(|row| row["member"] == member && row["state"] == "unavailable")
+        else {
+            return;
+        };
+        let original = row["reason"]
+            .as_str()
+            .unwrap_or("router_binary_replaced")
+            .to_owned();
+        let mut visible: String = original.chars().take(80).collect();
+        if original.chars().count() > 80 {
+            visible.push('…');
+        }
+        row["reason"] = format!("{visible}; --no-cache fallback incomplete").into();
+        if !row["issues"].is_object() {
+            row["issues"] = serde_json::json!({});
+        }
+        row["issues"]["router_fallback"] = serde_json::json!({
+            "mode": "no_cache",
+            "status": "incomplete",
+            "reason": reason,
+        });
+    }
+
     fn admit_found(
         &mut self,
         member: &MemberRoot,

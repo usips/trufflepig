@@ -189,7 +189,7 @@ pub(in crate::local_board) fn move_task(
             .map(|claim| BoardRecipient::for_actor(&claim.record.actor))
     });
     if assign || column != TaskColumn::Doing {
-        end_claim(
+        let _ = end_claim(
             tx,
             ctx,
             task,

@@ -1,5 +1,7 @@
 use super::*;
 
+mod claim_end_provenance_tests;
+
 struct ByeFixture {
     directory: tempfile::TempDir,
     database: std::path::PathBuf,

@@ -403,7 +403,8 @@ fn pending_candidates() -> String {
             "WHERE e.actor_id<>?1 AND e.seq<=?9 AND ",
             "({event_addressed} OR {worker_event} OR ({event_task_q} AND {event_task_recipient})) ",
             "AND e.seq>?8 AND NOT EXISTS(SELECT 1 FROM entries post ",
-            "WHERE e.subject='E'||post.id AND post.kind IN ('question','proposal','feedback'))"
+            "WHERE post.id=CAST(substr(e.subject,2) AS INTEGER) ",
+            "AND e.subject='E'||post.id AND post.kind IN ('question','proposal','feedback'))"
         ),
         question = question,
         proposal = proposal,
