@@ -140,6 +140,8 @@ pub fn write_slow_reconcile_fixture(root: &std::path::Path, name: &str) {
 
 #[cfg(test)]
 mod tests {
+    mod sqlite_vfs_lock_tests;
+
     use super::*;
     use crate::coded_error::ErrorCode;
 
