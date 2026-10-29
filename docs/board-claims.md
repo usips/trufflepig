@@ -23,8 +23,11 @@ across sessions and inherits omitted scope: a bare `--resume` refreshes your own
 (same entry, no new entry or event) or takes over another session's lease once idle ten minutes,
 while `--resume=E#` names the current unended claim
 entry and takes over immediately; takeover ends the prior lease as `resumed`. The space form
-`--resume E5` is refused: `use --resume=E5`. Stale claims remain claimable. Carve retries dedupe
-only while their lease remains owned; after release or takeover, another carve creates a fresh task.
+`--resume E5` is refused: `use --resume=E5`. Stale claims remain claimable. An ended claim has no
+lease to resume. If a session bye ended it, `--resume` reports the previous claim entry and directs
+the caller to start a fresh claim with a scope; use `board claim P7.3 "describe the work"` and
+register new worker handles for any stopped workers. Carve retries dedupe only while their lease
+remains owned; after release or takeover, another carve creates a fresh task.
 Claiming a `done` task or moving it to `doing` is denied. The current claim holder may move its own
 task. The actual delegator may release only a delegated claim, and any caller may release another
 actor's stale claim; these release paths may move only to `todo` or `blocked`. A `release` grant has

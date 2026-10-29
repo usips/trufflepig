@@ -128,12 +128,37 @@ pub(in crate::local_board) fn claim_task(
         require_assignee(&card, &ctx.actor, task)?;
     }
     if resume.is_resuming() {
-        let previous = holder.as_ref().ok_or_else(|| {
-            invalid(
-                BoardErrorCode::InvalidState,
-                format!("{task} has no claim to resume"),
-            )
-        })?;
+        let Some(previous) = holder.as_ref() else {
+            let previous: Option<(u64, Option<String>)> = tx
+                .query_row(
+                    concat!(
+                        "SELECT entry_id,end_reason FROM claims ",
+                        "WHERE plan_id=?1 AND task_ordinal=?2 AND ended_at IS NOT NULL ",
+                        "ORDER BY id DESC LIMIT 1"
+                    ),
+                    params![sql_number(task.plan.get()), sql_number(task.ordinal)],
+                    |row| Ok((row_number(row, 0)?, row.get(1)?)),
+                )
+                .optional()
+                .map_err(sql_error)?;
+            let message = match previous {
+                Some((entry, Some(reason))) if reason == ClaimEndReason::SessionEnded.as_str() => {
+                    format!(
+                        "{task} has no live claim to resume: previous claim E{entry} ended when its session ended. Start a fresh claim with a scope: board claim {task} \"describe the work\""
+                    )
+                }
+                Some((entry, Some(reason))) => format!(
+                    "{task} has no live claim to resume: previous claim E{entry} ended (reason={reason}). Start a fresh claim with a scope: board claim {task} \"describe the work\""
+                ),
+                Some((entry, None)) => format!(
+                    "{task} has no live claim to resume: previous claim E{entry} ended. Start a fresh claim with a scope: board claim {task} \"describe the work\""
+                ),
+                None => format!(
+                    "{task} has no claim to resume. Start a fresh claim with a scope: board claim {task} \"describe the work\""
+                ),
+            };
+            return Err(invalid(BoardErrorCode::InvalidState, message));
+        };
         if let ClaimResume::Entry(entry) = resume {
             if previous.record.entry != entry {
                 return Err(invalid(

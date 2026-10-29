@@ -135,7 +135,7 @@ pub struct Arguments {
     /// Override the cache directory.
     #[arg(long)]
     pub cache: Option<PathBuf>,
-    /// Search or map current source without reading or writing an index or result cache.
+    /// Read current source with search, refs, map, or show without using persistent caches.
     #[arg(long)]
     pub no_cache: bool,
     /// Maximum serialized output budget in o200k_base tokens.
@@ -272,6 +272,15 @@ impl Arguments {
         self.words.first().map(String::as_str) == Some("show")
     }
 
+    /// Whether source is selected by a current symbol query.
+    pub fn is_symbol_show(&self) -> bool {
+        self.is_show()
+            && self
+                .words
+                .get(1)
+                .is_some_and(|target| target.starts_with("sym:"))
+    }
+
     /// Foreground board HTTP binding; unsupported addresses are rejected before serving.
     pub fn board_listen_address(&self) -> std::net::SocketAddr {
         self.listen
@@ -307,6 +316,7 @@ pub(super) fn validate(options: &Arguments) -> Result<()> {
         .unwrap_or("status");
     if options.no_cache
         && !matches!(verb, "search" | "map" | "refs")
+        && !options.is_symbol_show()
         && !(verb == "show"
             && options.words.get(1).is_some_and(|target| {
                 tp_index::source::acquisition::is_current_path_target(target)
@@ -314,8 +324,7 @@ pub(super) fn validate(options: &Arguments) -> Result<()> {
     {
         bail!(coded!(
             InvalidOptions,
-            "--no-cache supports search, refs NAME, map PATH, and current-path show; \
-             for `show sym:NAME` run `--no-cache search 'sym:NAME'` and show its read:path: handle"
+            "--no-cache supports search, refs NAME, map PATH, current-path show, and show sym:NAME"
         ));
     }
     if options.no_daemon && (verb == "serve" || verb.ends_with("-serve")) {

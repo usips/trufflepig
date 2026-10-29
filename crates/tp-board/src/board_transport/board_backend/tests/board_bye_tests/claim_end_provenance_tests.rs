@@ -8,6 +8,8 @@ use crate::board_protocol::{
 use crate::board_vocabulary::{EntryKind, EntryText, PlanText, PlanTitle, WorkerRole};
 use std::time::Duration;
 
+mod nested_lifecycle_tests;
+
 fn call(fixture: &ByeFixture, actor: &BoardActor, op: BoardOp) -> BoardReply {
     fixture
         .host
@@ -66,6 +68,59 @@ fn claim(fixture: &ByeFixture, actor: &BoardActor, task: TaskId) -> EntryId {
         panic!("expected claim change");
     };
     change.entry
+}
+
+fn add_worker(
+    fixture: &ByeFixture,
+    manager: &BoardActor,
+    task: TaskId,
+    handle_text: &str,
+) -> WorkerAddress {
+    let handle = WorkerHandle::parse(handle_text).unwrap();
+    let address = WorkerAddress::new(task, handle.clone()).unwrap();
+    call(
+        fixture,
+        manager,
+        BoardOp::WorkerAdd {
+            task,
+            handle,
+            role: WorkerRole::Code,
+            model: "gpt-6-luna".into(),
+            effort: Some("xhigh".into()),
+            scope: EntryText::new("implement the assigned files").unwrap(),
+            files: vec!["crates/tp-board/src/lib.rs".into()],
+        },
+    );
+    address
+}
+
+fn claim_end_state(
+    conn: &rusqlite::Connection,
+    claim_start: EntryId,
+) -> (Option<i64>, Option<String>) {
+    conn.query_row(
+        "SELECT ended_at,end_reason FROM claims WHERE entry_id=?1",
+        [i64::try_from(claim_start.get()).unwrap()],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .unwrap()
+}
+
+fn worker_end_state(
+    conn: &rusqlite::Connection,
+    task: TaskId,
+    handle: &str,
+) -> (Option<i64>, Option<String>) {
+    conn.query_row(
+        "SELECT ended_at,end_reason FROM claim_workers WHERE plan_id=?1 AND task_ordinal=?2 AND handle=?3",
+        rusqlite::params![
+            i64::try_from(task.plan.get()).unwrap(),
+            i64::try_from(task.ordinal).unwrap(),
+            handle
+        ],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .unwrap()
 }
 
 #[test]

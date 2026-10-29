@@ -3,6 +3,7 @@ mod page_budget;
 mod partial_scans;
 mod regex_coverage;
 mod scoped_lookup;
+mod symbol_show;
 
 use super::source_reads::MAX_CURRENT_FILE_BYTES;
 use super::*;

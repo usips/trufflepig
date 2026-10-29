@@ -16,6 +16,7 @@ mod symbol;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use symbol::read_symbol_without_cache;
 pub use symbol::{SymbolSelection, read_symbol, show_target};
 mod stale_symbol;
 

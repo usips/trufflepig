@@ -54,7 +54,7 @@ pub fn run(args: &[String]) -> Result<String> {
 
 /// Runs a client command through its applicable router under a shared read deadline.
 /// Absent routers, unavailable owners and local spool timeouts reach direct execution.
-/// A pre-dispatch index-cache refusal may route a current-path show to local source.
+/// An index-cache refusal may route a current-path or symbol show to local source.
 /// Other router replies remain answers.
 #[cfg(test)]
 pub fn run_with_context(
@@ -115,6 +115,22 @@ fn direct_with_deadline(
     let cache = cache_path(&root, options.cache.as_deref())?;
     if options.no_cache && stateless_dispatch::eligible(options) {
         return stateless_dispatch::run(&root, &cache, options, &deadline.capped(QUERY_DEADLINE));
+    }
+    if options.is_symbol_show()
+        && let Err(error) = tp_index::store::preflight_results_cache(&cache, Some(&deadline))
+    {
+        let error = deadline.classify(error);
+        return if tp_index::store::is_index_cache_unavailable(&error) {
+            stateless_dispatch::run_fallback(
+                &root,
+                &cache,
+                options,
+                &deadline.capped(QUERY_DEADLINE),
+                &error,
+            )
+        } else {
+            Err(error)
+        };
     }
     let bounded_read = matches!(
         verb,
@@ -271,6 +287,22 @@ pub fn cache_path(root: &Path, explicit: Option<&Path>) -> Result<PathBuf> {
     }
     use std::os::unix::ffi::OsStrExt;
     Ok(cache_base()?.join(blake3::hash(root.as_os_str().as_bytes()).to_hex().as_str()))
+}
+
+/// Default member and workspace caches share a base. Exclude that base when
+/// it is stored inside the source tree so sibling caches cannot become source.
+pub(crate) fn symbol_scan_cache_exclusion(
+    root: &Path,
+    cache: &Path,
+    has_explicit_cache: bool,
+) -> PathBuf {
+    if !has_explicit_cache && let Some(base) = cache.parent() {
+        let base = base.canonicalize().unwrap_or_else(|_| base.to_path_buf());
+        if base.starts_with(root) {
+            return base;
+        }
+    }
+    cache.to_path_buf()
 }
 
 /// Warms an unindexed linked worktree's cache from its main checkout's default

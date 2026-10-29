@@ -1,9 +1,10 @@
 //! Bounded current-source discovery that does not open result or index caches.
-//! A deadline, cap, or path-first `kind:file` page limits coverage; the page
-//! stays successful and its coverage names the limit and a narrower follow-up.
+//! Search, refs, and map return partial pages with coverage; symbol reads require
+//! complete candidate coverage before showing the best-ranked source.
 mod coverage;
 mod current_map;
 mod current_refs;
+mod current_symbol;
 mod current_walk;
 mod handles;
 mod literal_prefilter;
@@ -16,12 +17,19 @@ mod tests;
 use crate::{
     results::ResultSet,
     search::{InvocationDirectory, Query},
+    source::acquisition::AcquiredSource,
 };
 use anyhow::Result;
 use read_cutoff::ReadCutoff;
 use serde_json::Value;
 use std::path::Path;
 use tp_core::{output::OutputBudget, query_deadline::QueryDeadline};
+
+/// A symbol read acquired from current source without a persistent cache.
+pub struct StatelessSymbolRead {
+    pub source: AcquiredSource,
+    pub coverage: Value,
+}
 
 /// Caller choices that shape one cache-free search.
 #[derive(Clone, Copy, Debug)]
@@ -54,6 +62,18 @@ pub fn search(
         options,
         cutoff,
     )
+}
+
+/// Reads the best-ranked current definition for `show sym:...` without opening
+/// or writing an index or result cache. Coverage describes the bounded source scan.
+pub fn show_symbol(
+    root: &Path,
+    cache_exclusion: &Path,
+    target: &str,
+    origin: &InvocationDirectory,
+    deadline: &QueryDeadline,
+) -> Result<StatelessSymbolRead> {
+    current_symbol::show_symbol_root(root, cache_exclusion, target, origin, deadline)
 }
 
 /// Occurrence sites of `refs` words (`NAME [file:P] [lang:L] [kind:K]`) from

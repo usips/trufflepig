@@ -30,6 +30,7 @@ pub(super) struct CurrentCoverage {
     pub unsearched_lower_bound: bool,
     pub unsearched_unknown: bool,
     pub path_catalog_truncated: bool,
+    pub prefilter_bytes: usize,
     pub bytes_read: usize,
     pub facts_indexed: usize,
     pub complete: bool,
@@ -55,6 +56,7 @@ impl Default for CurrentCoverage {
             unsearched_lower_bound: false,
             unsearched_unknown: false,
             path_catalog_truncated: false,
+            prefilter_bytes: 0,
             bytes_read: 0,
             facts_indexed: 0,
             complete: true,
@@ -91,6 +93,7 @@ impl CurrentCoverage {
             "unsearched_lower_bound": self.unsearched_lower_bound,
             "unsearched_unknown": self.unsearched_unknown,
             "path_catalog_truncated": self.path_catalog_truncated,
+            "prefilter_bytes": self.prefilter_bytes,
             "bytes_read": self.bytes_read,
             "facts_indexed": self.facts_indexed,
         });

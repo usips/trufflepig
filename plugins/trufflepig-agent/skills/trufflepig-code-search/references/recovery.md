@@ -43,8 +43,8 @@ and [index contract](https://github.com/usips/trufflepig/blob/master/docs/index-
   fallback; other timeouts and database locks do not trigger it.
 - For cache-free discovery (e.g. a read-only sandbox), use `--no-cache` with
   `search 'sym:NAME'`, `search 'NAME kind:file'` (path matches first),
-  `refs NAME`, `map FILE`, or `map DIR/`. For `show sym:NAME`, run
-  `--no-cache search 'sym:NAME'` and `show` its handle. These bounded reads write
+  `refs NAME`, `map FILE`, `map DIR/`, or `show sym:NAME`. Symbol reads also fall
+  back automatically when the selected cache refuses access. These bounded reads write
   no cache and skip semantic/rerank lanes; run them one at a time, not in parallel.
 - A partial page keeps its hits; follow its `next:` command or `hint:` scope
   (`file:DIR/`) instead of retrying the same query.

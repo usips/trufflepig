@@ -178,7 +178,7 @@ fn exhausted_busy_fallback_keeps_the_original_expired_deadline() {
 }
 
 #[test]
-fn cache_refusal_fallback_requires_an_exact_code_and_current_path_show() {
+fn cache_refusal_fallback_requires_an_exact_code_and_current_source_show() {
     let accepted =
         relayed("daemon: daemon: index_cache_unavailable: selected cache cannot be opened");
     let eligible = words(&["show", "path:src/lib.rs"]);
@@ -210,11 +210,13 @@ fn cache_refusal_fallback_requires_an_exact_code_and_current_path_show() {
     .with_coded_context(|| coded!(IndexCacheUnavailable, "misleading wrapper"));
     assert!(index_cache_fallback_options(&eligible, &typed_timeout).is_none());
 
-    let non_path = words(&["show", "sym:ClientCommand"]);
-    assert!(
-        index_cache_fallback_options(&non_path, &accepted).is_none(),
-        "cache refusal must not route symbol reads through the local current-file path"
-    );
+    let symbol = words(&["show", "sym:ClientCommand"]);
+    let options = index_cache_fallback_options(&symbol, &accepted)
+        .expect("symbol lookup can read current source without caching");
+    assert!(options.no_daemon && options.no_cache);
+    for error in [nested_timeout, typed_timeout] {
+        assert!(index_cache_fallback_options(&symbol, &error).is_none());
+    }
 }
 
 /// Types reply text as the daemon client boundary does.

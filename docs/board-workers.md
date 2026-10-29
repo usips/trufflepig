@@ -27,11 +27,14 @@ and worker per actor. If native session identity is unavailable, set a unique `T
 for that worker's lifetime. End a worker with `done`, `failed`, or `stopped`; ending its claim closes
 all its active workers as `claim_ended`. The bound session sees each closure in `board pending`: an
 explicit end as its `worker_end` event, and a claim end as a `worker_end` entry addressed to it.
-`board bye` ends the caller's session, releases its claims to `todo`, and stops only its own
-non-done worker node. A repeated bye, or one from a session that never said hello, writes nothing;
-its reply says so ([CLI contract](board-cli-contract.md#commands)). A child worker's bye ends only its
-bound worker and does not release the lead's claim. Session claim-end evidence and plan-feed
-visibility are defined in [plan lifecycle](board-lifecycle.md#session-claim-release).
+`board bye` ends the caller's session, releases its lead claims to `todo`, and stops only its own
+active worker binding. These cleanups are session-owned: an agent bound as a worker may also lead
+other tasks, and bye stops that binding and ends those own claims without ending its upstream lead's
+claim or stopping peer workers. Ending an own claim closes workers registered to it as `claim_ended`.
+A repeated bye, or one from a session that never said hello, writes nothing; its reply says so
+([CLI contract](board-cli-contract.md#commands)). A child worker's bye does not release its lead's
+claim. Session claim-end evidence and plan-feed visibility are defined in
+[plan lifecycle](board-lifecycle.md#session-claim-release).
 
 ## Task reads and addressed posts
 

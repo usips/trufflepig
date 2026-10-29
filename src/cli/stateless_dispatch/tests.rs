@@ -3,6 +3,8 @@ use serde_json::Value;
 use std::{fs, path::Path};
 use tp_index::store::Store;
 
+mod symbol_show_tests;
+
 fn args(root: &Path, cache: &Path, extra: &[&str]) -> Vec<String> {
     let mut args = vec![
         "--root".into(),
@@ -79,19 +81,21 @@ fn post_dispatch_result_corruption_does_not_start_current_source_fallback() {
     fs::write(root.join("lib.rs"), "pub fn indexed_locator() {}\n").unwrap();
     Store::open(&root, &cache).unwrap().index().unwrap();
     fs::write(cache.join("results.sqlite3"), b"invalid sqlite database").unwrap();
-    let error = cli::run(&args(
-        &root,
-        &cache,
-        &[
-            "--no-daemon",
-            "--diagnostics",
-            "off",
-            "search",
-            "sym:indexed_locator",
-        ],
-    ))
-    .unwrap_err();
-    assert!(format!("{error:#}").contains("not a database"), "{error:#}");
+    for verb in ["search", "show"] {
+        let error = cli::run(&args(
+            &root,
+            &cache,
+            &[
+                "--no-daemon",
+                "--diagnostics",
+                "off",
+                verb,
+                "sym:indexed_locator",
+            ],
+        ))
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("not a database"), "{error:#}");
+    }
     assert_eq!(
         fs::read(cache.join("results.sqlite3")).unwrap(),
         b"invalid sqlite database"
@@ -102,14 +106,14 @@ fn post_dispatch_result_corruption_does_not_start_current_source_fallback() {
 fn cache_free_option_rejects_index_only_commands_before_cache_access() {
     let scratch = tempfile::tempdir().unwrap();
     let cache = scratch.path().join("absent-cache");
-    for command in [vec!["show", "sym:identifier"], vec!["index"]] {
+    for command in [vec!["ctx", "saved:1"], vec!["index"]] {
         let mut extra = vec!["--no-cache"];
         extra.extend(command);
         let error = cli::run(&args(scratch.path(), &cache, &extra)).unwrap_err();
         assert!(error.to_string().contains("invalid_options"), "{error:#}");
         assert!(
-            error.to_string().contains("--no-cache search 'sym:NAME'"),
-            "the refusal names the cache-free alternative: {error:#}"
+            error.to_string().contains("show sym:NAME"),
+            "the refusal names the supported source reads: {error:#}"
         );
         assert!(!cache.exists());
     }

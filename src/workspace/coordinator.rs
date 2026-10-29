@@ -75,6 +75,11 @@ pub(crate) fn run_with_deadline(
     if let Some(rendered) = super::current_path_show(&config, &options, &path_deadline)? {
         return Ok(rendered);
     }
+    if let Some(rendered) =
+        super::stateless_symbol::read_if_cache_free(&config, &options, &path_deadline)?
+    {
+        return Ok(rendered);
+    }
     if options.no_cache && super::stateless_queries::eligible(&options) {
         return super::stateless_queries::run(&config, &options, &path_deadline, None);
     }

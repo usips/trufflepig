@@ -1,7 +1,7 @@
 # Definition, reference, and outline navigation
 
 By default, `show 'sym:'`, `refs`, and `map` answer from one published
-snapshot. `--no-cache map` and `--no-cache refs` read current bytes as
+snapshot. `--no-cache` symbol, map, and refs reads use current bytes as
 described below. Every
 word after the verb belongs to the query, so `show sym:X file:src/` and
 `refs X lang:rust` need no quotes. `file:`/`-file:` values follow the
@@ -34,6 +34,15 @@ imports)`, `also:` rows, and `via: re-export of a::b at PATH:LINE -> ... (1 of
 N)`, or `import of a::b at PATH:LINE (declaration not indexed)`. A missing name
 fails with `no_definition`, naming active filters and, when they excluded every
 candidate, the count and best match without them.
+
+`--no-cache show sym:NAME` selects from a bounded current-source snapshot without
+persistent caches. An unwritable selected cache triggers this fallback automatically;
+timeouts and corrupt caches remain errors. Name filters, ranking, and import following
+stay the same: the scan prefilters namesake files and reads import targets outside a
+`file:` filter when needed. It requires complete coverage to establish the best
+candidate; an incomplete scan returns `source_unavailable` with coverage. Its
+`read:path:` continuation binds the selected root and source revision; later reads
+return `stale_source` if the file changes.
 
 ## `refs NAME [file:P] [lang:L] [kind:K]`
 
@@ -70,8 +79,7 @@ subdirectory. `refs NAME` reads only current files containing the name and
 resolves candidates among them, so cross-file targets are name candidates rather
 than indexed imports. Each handle is a revision-bound `read:path:` cursor, so
 `show` reads those current bytes without retaining a result set. A changed file
-returns `stale_source`; traversal and symlink escapes remain invalid. `show
-sym:NAME` stays index-only: run `--no-cache search 'sym:NAME'` and show its handle.
+returns `stale_source`; traversal and symlink escapes remain invalid.
 
 Test sites are paths with a `tests/`, `test/`, `__tests__/`, `fixtures/`, or
 `testdata/` directory, `tests.rs`, `test.rs`, `*_test.*`, `*_tests.*`,

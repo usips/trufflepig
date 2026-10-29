@@ -24,6 +24,7 @@ pub mod telemetry;
 mod tests;
 pub use declarations::InvocationDirectory;
 pub(crate) use file_ranking::fuse_search_file_lanes as fuse_file_lanes;
+pub(crate) use import_trail::{IMPORT_HOPS, trace_import_with_target};
 pub use import_trail::{ImportHop, trace_import};
 pub use navigation::context_entry;
 pub use navigation::{

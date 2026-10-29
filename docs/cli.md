@@ -107,9 +107,9 @@ trufflepig show 'sym:refill_tokens file:src/'
 ```
 
 `show 'sym:NAME'` (optional `file:`, `lang:`, `kind:`, quoted or not) reads the best-ranked
-definition as a verified handle read. `refs` lists occurrence sites; `map` outlines a file or prefix.
-Ranking, filters, and JSON fields are in the
-[navigation contract](navigation-contract.md).
+definition as a verified handle read. `--no-cache show 'sym:NAME'` reads current bytes;
+an unwritable selected cache triggers that fallback automatically. Filters, ranking,
+import following and owner selection stay the same ([navigation contract](navigation-contract.md)).
 
 A handle is a 32-character result-set ID plus a one-based ordinal. A pagination
 cursor uses the same set ID and a zero-based next offset. Handles survive restart

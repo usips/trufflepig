@@ -8,6 +8,7 @@ mod owner_navigation;
 mod result_cache;
 mod retrieval;
 mod stateless_queries;
+mod stateless_symbol;
 #[cfg(test)]
 mod test_fixture;
 pub(crate) mod workspace_discovery;
@@ -322,6 +323,10 @@ pub(crate) fn local(
         .map(String::as_str)
         .unwrap_or("status");
     if let Some(rendered) = current_path_show(config, options, &local_deadline)? {
+        return Ok(rendered);
+    }
+    if let Some(rendered) = stateless_symbol::read_if_cache_free(config, options, &local_deadline)?
+    {
         return Ok(rendered);
     }
     let budget = OutputBudget::new(options.budget)?;

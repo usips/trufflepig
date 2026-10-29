@@ -103,7 +103,7 @@ continuations bypass selected-cache creation, marker, and seed; they work while 
 unavailable. Index-based reads preflight the selected writable result cache before parent lookup;
 one at-most-2 s member slice covers cache registration, marker/seed, open, and indexing
 within the original query deadline. Skipped seeding does not block a usable published parent.
-Without `--no-cache`, `search`, `map`, `refs`, and `sym:` require an index; ordinary indexed `refs` misses have no current-file fallback. Eligible `--no-cache` reads and bounded router-replacement recovery inspect current source.
+Indexed `search`, `map`, `refs`, and symbol reads use the index when its cache is usable; ordinary indexed `refs` misses have no current-file fallback. Eligible `--no-cache` reads and bounded router-replacement recovery inspect current source.
 
 Each member produces its existing ranked candidate list. Retrieval collapses
 each lane to one representative occurrence per file, then fuses file ranks with
@@ -126,7 +126,7 @@ counts. Unpublished members report `warming`; unavailable or timed-out members r
 
 The normal 600-token `o200k_base` budget applies once to the complete response, including provenance and coverage. Compact entries carry a percent-encoded `file` URI, line span, and owner-qualified handle; lines prefix paths with the member and name every member's `partial` and `truncated` state (`src/workspace/result_cache/coverage_lines.rs`). Labels cannot be removed to fit more hits; tiny budgets retain explicit insufficient-budget behavior. Pages freeze each member's publication generation for follow-up reads, not one atomic cross-repository snapshot.
 
-`--no-cache search`, `refs NAME`, and `map PATH` inspect current bytes in selected members without cache access; normal member and root-relative path selection applies.
+`--no-cache search`, `refs NAME`, `map PATH`, and `show sym:NAME` inspect current bytes without cache access; symbol reads keep their selected owner (`--member`, else home) and fall back automatically on cache refusal. Normal root-relative path selection applies.
 The renderer round-robins member ranks under one budget and preserves every result or failure; partial scans or unavailable members cannot prove absence.
 On `router_binary_replaced`, indexed workspace retrieval retries the same selection against
 current source with `--no-cache` (at most four seconds within the original deadline). Complete

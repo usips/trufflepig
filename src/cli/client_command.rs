@@ -218,7 +218,7 @@ fn replaced_binary_read_options(options: &Arguments, error: &anyhow::Error) -> O
     Some(local)
 }
 
-/// A cache refusal in any layer admits the local current-path reader, unless
+/// A cache refusal admits current-path reads or cache-free symbol lookup, unless
 /// any layer reports a timeout.
 fn index_cache_fallback_options(args: &[String], error: &anyhow::Error) -> Option<Arguments> {
     let timed_out = tp_core::daemon_transport::DaemonReplyTimeout::from_error(error).is_some()
@@ -227,7 +227,15 @@ fn index_cache_fallback_options(args: &[String], error: &anyhow::Error) -> Optio
     if timed_out || !ErrorCode::IndexCacheUnavailable.is_anywhere_in(error) {
         return None;
     }
-    local_path_show_fallback_options(args)
+    let mut options = parse(args).ok()?;
+    validate(&options).ok()?;
+    if options.is_symbol_show() {
+        options.no_cache = true;
+        options.no_daemon = true;
+        Some(options)
+    } else {
+        local_path_show_fallback_options(args)
+    }
 }
 
 #[cfg(test)]

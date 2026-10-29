@@ -63,6 +63,9 @@ pub(super) fn read(
     let deadline = results.deadline();
     read_within(config, results, options, budget, deadline)
         .map_err(|error| deadline.classify(error))
+        .or_else(|error| {
+            super::stateless_symbol::read_after_refusal(config, options, deadline, error)
+        })
 }
 fn read_within(
     config: &WorkspaceConfig,

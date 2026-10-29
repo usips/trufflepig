@@ -13,7 +13,7 @@ use rusqlite::{OptionalExtension, params};
 use std::collections::HashSet;
 
 /// Import rows followed before a trail stops as unresolved.
-const IMPORT_HOPS: usize = 4;
+pub(crate) const IMPORT_HOPS: usize = 4;
 
 /// One import passed through: `site` is `PATH:LINE`, `path` its spelled path.
 #[derive(Debug)]
@@ -38,13 +38,26 @@ pub fn trace_import(
     query: &Query,
     origin: &InvocationDirectory,
 ) -> Result<Option<ImportTrail>> {
+    Ok(trace_import_with_target(store, import, query, origin)?.map(|(trail, _)| trail))
+}
+
+/// Traces an import and returns the last qualified target examined. Stateless
+/// readers use that target to load declaration files omitted by name prefilters.
+pub(crate) fn trace_import_with_target(
+    store: &Store,
+    import: &Hit,
+    query: &Query,
+    origin: &InvocationDirectory,
+) -> Result<Option<(ImportTrail, Option<String>)>> {
     let mut hops = Vec::with_capacity(IMPORT_HOPS);
     let mut visited = HashSet::with_capacity(IMPORT_HOPS);
     let mut current = import.clone();
+    let mut resolved_target = None;
     while hops.len() < IMPORT_HOPS && visited.insert((current.path.clone(), current.start)) {
         let Some((hop, original)) = read_hop(store, &current)? else {
             break;
         };
+        resolved_target = Some(query_name(&original));
         hops.push(hop);
         let mut hits = qualified_hits(
             store,
@@ -62,11 +75,14 @@ pub fn trace_import(
                 .into_iter()
                 .filter(|hit| hit.kind != "import" && rank_key(hit, origin) == key)
                 .collect();
-            return Ok(Some(ImportTrail {
-                hops,
-                declaration: Some(declaration),
-                ties,
-            }));
+            return Ok(Some((
+                ImportTrail {
+                    hops,
+                    declaration: Some(declaration),
+                    ties,
+                },
+                resolved_target,
+            )));
         }
         match hits
             .into_iter()
@@ -76,11 +92,22 @@ pub fn trace_import(
             None => break,
         }
     }
-    Ok((!hops.is_empty()).then_some(ImportTrail {
-        hops,
-        declaration: None,
-        ties: Vec::new(),
-    }))
+    Ok((!hops.is_empty()).then_some((
+        ImportTrail {
+            hops,
+            declaration: None,
+            ties: Vec::new(),
+        },
+        resolved_target,
+    )))
+}
+
+fn query_name(name: &QualifiedName) -> String {
+    if name.qualifier.is_empty() {
+        name.name.clone()
+    } else {
+        format!("{}::{}", name.qualifier.join("::"), name.name)
+    }
 }
 
 /// Reads one import row's spelling and resolves its path in the importing module.

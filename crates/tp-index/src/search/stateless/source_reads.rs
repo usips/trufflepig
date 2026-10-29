@@ -11,6 +11,7 @@ use crate::{
     store::{self, Store},
 };
 use anyhow::Result;
+use std::collections::HashSet;
 use tp_core::coded_error::ErrorCode;
 
 /// Most files extracted by one scan.
@@ -25,11 +26,21 @@ const MAX_CURRENT_SOURCE_FACTS: usize = 250_000;
 pub(super) fn read_current_sources(
     store: &Store,
     paths: &[String],
-    mut prefilter: Option<&mut LiteralPrefilter>,
+    prefilter: Option<&mut LiteralPrefilter>,
     cutoff: &mut ReadCutoff,
     current: &mut CurrentCoverage,
 ) -> Result<()> {
-    let mut scanned_bytes = 0usize;
+    read_current_sources_tracked(store, paths, prefilter, cutoff, current, None)
+}
+
+pub(super) fn read_current_sources_tracked(
+    store: &Store,
+    paths: &[String],
+    mut prefilter: Option<&mut LiteralPrefilter>,
+    cutoff: &mut ReadCutoff,
+    current: &mut CurrentCoverage,
+    mut counted_prefiltered: Option<&mut HashSet<String>>,
+) -> Result<()> {
     for (index, encoded_path) in paths.iter().enumerate() {
         let remaining = paths.len() - index;
         if cutoff.reached() {
@@ -69,14 +80,27 @@ pub(super) fn read_current_sources(
             }
         };
         if let Some(prefilter) = prefilter.as_deref_mut() {
-            scanned_bytes = scanned_bytes.saturating_add(bytes.len());
+            let scanned_bytes = current.prefilter_bytes.saturating_add(bytes.len());
             if scanned_bytes > MAX_PREFILTER_BYTES {
                 current.stop(LIMIT_BYTES, remaining, Some(encoded_path));
                 break;
             }
+            current.prefilter_bytes = scanned_bytes;
             if !prefilter.admits(encoded_path, &bytes) {
-                current.prefiltered_files += 1;
+                let count = match counted_prefiltered.as_mut() {
+                    Some(paths) => paths.insert(encoded_path.clone()),
+                    None => true,
+                };
+                if count {
+                    current.prefiltered_files += 1;
+                }
                 continue;
+            }
+            let was_prefiltered = counted_prefiltered
+                .as_mut()
+                .is_some_and(|paths| paths.remove(encoded_path));
+            if was_prefiltered {
+                current.prefiltered_files = current.prefiltered_files.saturating_sub(1);
             }
         }
         if bytes.len() > MAX_CURRENT_FILE_BYTES {

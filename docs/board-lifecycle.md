@@ -21,7 +21,11 @@ an audited state change without changing task or proposal state.
 
 ## Session claim release
 
-A session bye releases only the caller's active lead claims and moves their `doing` tasks to `todo`.
+A session bye stops the caller's active worker binding, releases only the caller's active lead claims,
+and moves their `doing` tasks to `todo`. These effects follow the caller's session: an agent bound
+as a worker may also hold lead claims, and bye applies both cleanups without ending its upstream
+lead's claim or stopping peer workers. Ending one of the caller's claims closes workers registered
+to that claim as `claim_ended`.
 For each ended claim, the board writes a plan-scoped `claim` entry at the bye's event sequence. The
 entry records `session_ended`, references the exact claim-start entry and the planless bye entry, and
 includes the task reference so it remains available in task entries. The bye entry and the

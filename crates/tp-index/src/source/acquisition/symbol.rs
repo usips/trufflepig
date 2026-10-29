@@ -8,7 +8,7 @@ use crate::{
     search::{ImportHop, InvocationDirectory, Query},
     store::Store,
 };
-use anyhow::{Result, bail};
+use anyhow::{Result, bail, ensure};
 
 /// Other same-named definitions listed after a `sym:` read.
 const SYMBOL_ALTERNATIVES: usize = 5;
@@ -67,23 +67,84 @@ pub fn read_symbol(
     origin: &InvocationDirectory,
     read_first: impl FnOnce(&str, Hit) -> Result<AcquiredSource>,
 ) -> Result<AcquiredSource> {
-    if found.hits.is_empty() {
+    let generation = found.generation;
+    let coverage = found.coverage;
+    let truncated = found.truncated;
+    let chosen = choose_symbol(store, query, found.hits, origin)?;
+    let set = results::save_entries(
+        store,
+        generation,
+        coverage,
+        chosen
+            .shown
+            .into_iter()
+            .map(ResultEntry::LiveSource)
+            .collect(),
+        truncated,
+    )?;
+    let handle = format!("{set}:1");
+    let mut source = read_first(&handle, chosen.first)?;
+    source.definitions = Some(chosen.selection);
+    Ok(source)
+}
+
+/// Reads the chosen current definition without saving a result set.
+pub(crate) fn read_symbol_without_cache(
+    store: &Store,
+    query: &Query,
+    found: ResultSet,
+    origin: &InvocationDirectory,
+) -> Result<AcquiredSource> {
+    let chosen = choose_symbol(store, query, found.hits, origin)?;
+    let first = chosen.first;
+    let target = format!(
+        "path:{}:{}-{}",
+        first.path, first.start_line, first.end_line
+    );
+    let mut source = super::acquire_current_path_without_cache(store, &target, None, origin)?;
+    if let Some(expected) = first.revision {
+        ensure!(
+            expected == source.revision.to_string(),
+            coded!(
+                StaleSource,
+                "current file changed during cache-free symbol read; search again"
+            )
+        );
+    }
+    source.definitions = Some(chosen.selection);
+    Ok(source)
+}
+
+struct ChosenSymbol {
+    first: Hit,
+    shown: Vec<Hit>,
+    selection: SymbolSelection,
+}
+
+/// Applies the shared declaration ranking and import-following rules once.
+fn choose_symbol(
+    store: &Store,
+    query: &Query,
+    hits: Vec<Hit>,
+    origin: &InvocationDirectory,
+) -> Result<ChosenSymbol> {
+    if hits.is_empty() {
         bail!(coded!(
             NoDefinition,
             "{}",
             no_definition(store, query, origin)?
         ));
     }
-    let imports = found.hits.iter().filter(|hit| hit.kind == "import").count();
-    let declarations = found.hits.len() - imports;
-    let trail = if found.hits[0].kind == "import" {
-        crate::search::trace_import(store, &found.hits[0], query, origin)?
+    let imports = hits.iter().filter(|hit| hit.kind == "import").count();
+    let declarations = hits.len() - imports;
+    let trail = if hits[0].kind == "import" {
+        crate::search::trace_import(store, &hits[0], query, origin)?
     } else {
         None
     };
     // Saved order: the reached declaration and its ties (when followed), then
     // the ranked namesakes. `also:` skips the shown row and a followed import.
-    let mut shown: Vec<Hit> = Vec::with_capacity(found.hits.len() + 1);
+    let mut shown: Vec<Hit> = Vec::with_capacity(hits.len() + 1);
     let mut import = None;
     if let Some(trail) = trail {
         let followed = trail.declaration.is_some();
@@ -96,7 +157,7 @@ pub fn read_symbol(
         shown.extend(trail.ties);
     }
     let lead = shown.len();
-    shown.extend(found.hits);
+    shown.extend(hits);
     let also = shown
         .iter()
         .enumerate()
@@ -110,22 +171,16 @@ pub fn read_symbol(
         })
         .collect();
     let first = shown[0].clone();
-    let set = results::save_entries(
-        store,
-        found.generation,
-        found.coverage,
-        shown.into_iter().map(ResultEntry::LiveSource).collect(),
-        found.truncated,
-    )?;
-    let handle = format!("{set}:1");
-    let mut source = read_first(&handle, first)?;
-    source.definitions = Some(SymbolSelection {
-        declarations,
-        imports,
-        also,
-        import,
-    });
-    Ok(source)
+    Ok(ChosenSymbol {
+        first,
+        shown,
+        selection: SymbolSelection {
+            declarations,
+            imports,
+            also,
+            import,
+        },
+    })
 }
 
 /// The `no_definition` message naming the active filters and, when they excluded every

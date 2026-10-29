@@ -11,7 +11,7 @@ pub(super) fn eligible(options: &Arguments) -> bool {
     matches!(
         options.words.first().map(String::as_str),
         Some("search" | "map" | "refs")
-    )
+    ) || options.is_symbol_show()
 }
 
 pub(super) fn run(
@@ -53,6 +53,22 @@ fn run_with_metadata(
         !deadline.expired(),
         coded!(TimedOut, "query deadline expired")
     );
+    if options.is_symbol_show() {
+        ensure!(
+            options.side.is_none(),
+            coded!(InvalidSide, "symbol reads have no historical side")
+        );
+        let target = tp_index::source::acquisition::show_target(&options.words)
+            .expect("symbol show has a target");
+        let invocation = options.root.canonicalize()?;
+        let origin = InvocationDirectory::within(root, &invocation);
+        let exclusion = super::symbol_scan_cache_exclusion(root, cache, options.cache.is_some());
+        let read = stateless::show_symbol(root, &exclusion, &target, &origin, deadline)?;
+        let mut metadata = metadata.clone();
+        metadata["coverage"] = read.coverage;
+        let budget = OutputBudget::new(options.budget)?.with_format(options.output_format());
+        return tp_index::source::render_owned(read.source, &budget, &metadata);
+    }
     let text = options.words.get(1..).unwrap_or_default().join(" ");
     let invocation = options.root.canonicalize()?;
     let origin = InvocationDirectory::within(root, &invocation);

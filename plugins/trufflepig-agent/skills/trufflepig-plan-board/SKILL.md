@@ -99,16 +99,16 @@ and releases unfinished work to `todo` unless the human requested a pause.
 ## Resumed sessions
 
 Claude's SessionEnd and SubagentStop hooks run `board bye` for sessions that said
-`hello` or claimed through `trufflepig-agent`; it stops the bound worker, ends the
-session's claims, and moves Doing tasks to `todo`. A resumed
-session keeps its identity, so check `board show P7.3` first. The lead re-claims
-with bare `--resume` only while the lease is live or idle, which inherits the
-prior scope; `--resume=E#` takes over immediately and needs an authorized
-takeover. An ended claim has no lease to resume: bare `--resume` fails with
-`invalid_state`, such as `P7.3 has no claim to resume`. After a `bye`, the lead
-claims afresh with a scope. A worker asks the lead instead of re-claiming. A
-stopped worker cannot rebind (`has ended`) and keeps its handle, so the lead
-registers a new one, then the worker runs `board hello` with it:
+`hello` or claimed through `trufflepig-agent`; bye stops the caller's bound worker,
+ends the caller's lead claims, and moves their Doing tasks to `todo`. A worker may
+also lead its own tasks: its bye ends those claims and its worker binding while
+leaving its upstream lead's claim intact. A resumed session keeps its identity, so
+check `board show P7.3` first. The lead re-claims with bare `--resume` only while
+the lease is live or idle, which inherits the prior scope; `--resume=E#` takes
+over immediately and needs an authorized takeover. An ended claim has no lease:
+`--resume` reports the previous claim entry and directs the lead to claim afresh
+with a scope. A worker asks the lead instead of re-claiming. A stopped worker
+cannot rebind (`has ended`); the lead registers a new handle for the worker's `board hello`:
 
 ```sh
 trufflepig-agent board claim P7.3 "parser and tests"

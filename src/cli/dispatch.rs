@@ -57,8 +57,21 @@ pub(super) fn local_with_session(
         context,
         log_queue,
         preparation_manager,
-        deadline,
+        deadline.clone(),
     );
+    let result = match result {
+        Err(error) if options.is_symbol_show() => {
+            let error = deadline.classify(error);
+            if !tp_core::coded_error::ErrorCode::TimedOut.is_anywhere_in(&error)
+                && is_index_cache_unavailable(&error)
+            {
+                super::stateless_dispatch::run_fallback(root, cache, options, &deadline, &error)
+            } else {
+                Err(error)
+            }
+        }
+        result => result,
+    };
     let unexpected = tp_semantic::model_initializations().saturating_sub(initializations);
     if unexpected > 0
         && options.diagnostics != "off"
