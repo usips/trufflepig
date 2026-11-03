@@ -12,9 +12,10 @@ A single per-user inference worker owns the model and ONNX Runtime session. It
 selects CPU or CUDA from `$HOME/.config/trufflepig/inference.toml` (with model
 and runtime paths also accepted from their environment variables). CUDA
 configuration selects a GPU by UUID and resolves its current ordinal at worker
-startup. The CUDA target is an NVIDIA RTX 4090 with 24 GiB of VRAM. ORT arena
-bytes and the 16 GiB measurement target are recorded separately; neither is a
-hard total-memory bound for the worker or machine.
+startup. The CUDA target is an NVIDIA RTX 4090 with 24 GiB of VRAM. `arena_bytes`
+applies to each CUDA model session. Its arena grows to requested allocation
+sizes rather than reserving geometric slack. The separate 16 GiB measurement
+target and per-session arena setting do not cap total worker or machine memory.
 
 The runtime configuration uses absolute paths. `TRUFFLEPIG_INFERENCE_CONFIG`
 can select an isolated configuration for evaluation:
@@ -26,6 +27,7 @@ model_dir = "/absolute/path/to/verified/model"
 runtime_library = "/absolute/path/to/libonnxruntime.so"
 cuda_preload_library = "/absolute/path/to/libcudnn.so"
 arena_bytes = 10737418240
+idle_unload_seconds = 300
 rerank_model_dir = "/absolute/path/to/verified/reranker"
 rerank_gpu_uuid = "GPU-yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
 ```
