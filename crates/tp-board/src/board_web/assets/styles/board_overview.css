@@ -1,6 +1,20 @@
 :root{--lane-surface:#f5f7f8}
 
 .overview-page,.overview-layout>*,.needs-rail,.working-panel,.working-card,.task-card,.attention-card{min-width:0}
+.overview-page.has-plan-toc{display:grid;grid-template-columns:210px minmax(0,1fr);gap:1.25rem;align-items:start}
+.overview-page.has-plan-toc>.overview-content{min-width:0}
+.overview-page.has-plan-toc nav.plan-toc{position:sticky;top:1rem;align-self:start;display:flex;
+ flex-direction:column;align-items:stretch;gap:.55rem;flex:none;min-width:0;max-width:100%;
+ max-height:calc(100vh - 2rem);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;
+ padding:.8rem;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+.overview-page.has-plan-toc .plan-toc h2{margin:0;color:var(--muted);font-size:.9rem;line-height:1.3}
+.overview-page.has-plan-toc .plan-toc ul,.overview-page.has-plan-toc .plan-toc ol{
+ display:grid;gap:.15rem;list-style:none;margin:0;padding:0;min-width:0}
+.overview-page.has-plan-toc .plan-toc li{min-width:0;max-width:100%}
+.overview-page.has-plan-toc .plan-toc a.plan-toc-link{display:block;min-width:0;max-width:100%;
+ padding:.3rem .4rem;border-radius:5px;text-align:left;font-size:.8rem;line-height:1.4;
+ white-space:normal;overflow-wrap:anywhere;word-break:break-word}
+.overview-page.has-plan-toc .swimlane[id^="overview-plan-"]{scroll-margin-top:1rem}
 .overview-filter-tools{display:flex;align-items:center;gap:.8rem 1rem;flex-wrap:wrap;margin:.75rem 0 1rem}
 .overview-filter{position:relative}
 .overview-filter>summary{cursor:pointer;color:var(--accent);font-weight:600}
@@ -138,7 +152,10 @@
 
 @media(max-width:1200px){.overview-layout{grid-template-columns:minmax(0,1fr)}
 .needs-rail{order:-1}}
-@media(max-width:1000px){.lane-columns{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:1000px){
+.overview-page.has-plan-toc{grid-template-columns:minmax(0,1fr);gap:1rem}
+.overview-page.has-plan-toc nav.plan-toc{position:static;max-height:min(35vh,16rem)}
+.lane-columns{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:900px){.working-row-summary{display:flex;flex-wrap:wrap;gap:.15rem .5rem}
 .working-row-summary::after{content:"";flex-basis:100%;order:1}
 .working-row-task{flex:1 1 0}

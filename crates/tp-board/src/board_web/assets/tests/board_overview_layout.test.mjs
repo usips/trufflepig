@@ -4,6 +4,7 @@ import { installDomShim, resetDomShim } from "./support/dom_shim.mjs";
 import { createBoardDom } from "../board_dom.js";
 import { createBoardViews } from "../board_views.js";
 import { createBoardRenderLoop } from "../board_render_loop.js";
+import { revealRouteTarget } from "../board_route_target.js";
 
 installDomShim();
 beforeEach(() => resetDomShim());
@@ -125,6 +126,76 @@ it("the active-plan empty state leaves a visible recovery filter", () => {
   assert.equal(overview().querySelector(".empty").textContent, "No plans yet.");
 });
 
+it("the plan table of contents follows rendered lanes and resolves their focus targets", () => {
+  const { data, overview, main } = harness();
+  const plans = [
+    { id: "P7", title: "First visible plan" },
+    { id: "P9", title: "Second visible plan" },
+    { id: "P12", title: "Third visible plan" },
+  ];
+  data.plans = plans.map(({ id, title }) => ({
+    plan: { id, title, head_revision: 1 }, tasks: [], claims: [],
+  }));
+
+  const page = overview(), toc = page.querySelector("nav.plan-toc");
+  assert.ok(page.className.split(/\s+/).includes("has-plan-toc"));
+  assert.ok(toc, "rendered plans have a table of contents");
+  assert.equal(toc.attributes.get("aria-label"), "Plans on this page");
+  assert.equal(toc.querySelector("h2")?.textContent, "Plans");
+  const tocList = toc.querySelector("ol, ul");
+  assert.ok(tocList && ["OL", "UL"].includes(tocList.tagName), "plan links stay in a semantic list");
+  const lanes = page.querySelectorAll(".swimlane"), links = tocList.querySelectorAll(".plan-toc-link");
+  assert.equal(toc.querySelectorAll(".plan-toc-link").length, lanes.length);
+  assert.equal(links.length, lanes.length, "every TOC link belongs to the list");
+  assert.deepEqual(lanes.map(lane => lane.id), plans.map(plan => `overview-plan-${plan.id}`));
+  assert.deepEqual(links.map(link => link.dataset.focusKey), overview().querySelectorAll(".plan-toc-link")
+    .map(link => link.dataset.focusKey), "TOC focus keys remain stable across refresh renders");
+  assert.equal(new Set(links.map(link => link.dataset.focusKey)).size, plans.length,
+    "each plan link has its own stable focus key");
+
+  main.append(page);
+  for (const [index, link] of links.entries()) {
+    const lane = lanes[index], plan = plans[index];
+    assert.ok(link.textContent.includes(plan.id));
+    assert.ok(link.textContent.includes(plan.title));
+    const route = new URL(link.href, "https://board.test");
+    const focus = new URLSearchParams(route.hash.slice(route.hash.indexOf("?") + 1)).get("focus");
+    assert.equal(focus, lane.id, "the TOC link focuses its corresponding rendered lane");
+    assert.equal(revealRouteTarget(main, { focus }), lane, "the focus route resolves to that lane");
+  }
+});
+
+it("plan table of contents links preserve scoped, filtered, and paged overview state", () => {
+  const { state, data, overview } = harness();
+  const after = { seq: "80", plan: "P8" };
+  data.plans = [{ plan: { id: "P8", title: "Scoped plan", head_revision: 1 }, tasks: [], claims: [] }];
+  state.route = {
+    view: "overview", project: "project-3", showInactive: "1",
+    after: JSON.stringify(after), through: "100", heading: "main", focus: "old-target",
+  };
+
+  const page = overview(), link = page.querySelector(".plan-toc-link");
+  assert.ok(link, "the rendered plan has a TOC link");
+  const route = new URL(link.href, "https://board.test");
+  const [path, queryText = ""] = route.hash.slice(2).split("?");
+  const query = new URLSearchParams(queryText);
+  assert.equal(path, "", "TOC links stay on the overview route");
+  assert.equal(query.get("project"), "project-3");
+  assert.equal(query.get("showInactive"), "1");
+  assert.deepEqual(JSON.parse(query.get("after")), after);
+  assert.equal(query.get("through"), "100");
+  assert.equal(query.has("heading"), false, "the previous heading target is cleared");
+  assert.equal(query.get("focus"), "overview-plan-P8");
+});
+
+it("an empty overview omits the plan table of contents", () => {
+  const { data, overview } = harness();
+  data.plans = [];
+  const page = overview();
+  assert.equal(page.querySelector("nav.plan-toc"), null);
+  assert.ok(!page.className.split(/\s+/).includes("has-plan-toc"));
+});
+
 function visibleText(node) {
   return `${node.textContent || ""}${node.children.map(visibleText).join("")}`;
 }
@@ -145,8 +216,9 @@ it("Working now renders one dense row per claim with full detail in titles", () 
   data.plans[0].tasks = [{ id: claim.task, title: "Make active work readable", column: "doing" }];
   const page = overview(), row = page.querySelector(".working-row");
   const working = page.querySelector(".working-panel"), layout = page.querySelector(".overview-layout");
+  const content = page.querySelector(".overview-content");
   assert.ok(working, "Working now must have its own prominent panel");
-  assert.ok(page.children.indexOf(working) < page.children.indexOf(layout));
+  assert.ok(content.children.indexOf(working) < content.children.indexOf(layout));
   assert.equal(working.querySelector("h2").textContent, "Working now (1)");
   assert.equal(working.querySelector(".working-all").href, "/#/claims");
   assert.equal(row.tagName, "DETAILS");
@@ -242,6 +314,20 @@ it("latest activity renders newest first without mutating source events", () => 
     `event:${newest.seq}`, `event:${middle.seq}`, `event:${older.seq}`,
   ]);
   assert.deepEqual(data.events, [older, newest, middle]);
+});
+
+it("the plan table of contents keeps its scroll position across live refresh", async () => {
+  const { main, overview, loop } = harness();
+  main.append(overview());
+  const originalToc = main.querySelector(".plan-toc");
+  assert.ok(originalToc, "the rendered overview contains its plan table of contents");
+  originalToc.scrollTop = 180;
+
+  await loop.loadRoute(false);
+
+  const refreshedToc = main.querySelector(".plan-toc");
+  assert.notEqual(refreshedToc, originalToc, "refresh replaces the rendered TOC node");
+  assert.equal(refreshedToc.scrollTop, 180, "the reader's internal scroll position survives refresh");
 });
 
 it("Done choices survive refresh before a native toggle event is delivered", async () => {

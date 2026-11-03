@@ -47,6 +47,7 @@ export function createBoardViews(context) {
   }
   function renderOverview(data, attention, route, projects) {
     const page = el("div", "overview-page");
+    const content = el("div", "overview-content");
     const showInactive = route.showInactive === "1";
     // The 202 is only a queue receipt; the terminal result arrives as an
     // `ingest` stream frame carrying the 202's ticket (see board_web_main.js
@@ -86,7 +87,7 @@ export function createBoardViews(context) {
       }
     }, "compact"), "overview:ingest");
     if (state.ingestPending) { ingest.disabled = true; ingest.setAttribute("aria-busy", "true"); }
-    add(page, title("Board", "Shared plans and the work happening now.", ingest));
+    add(content, title("Board", "Shared plans and the work happening now.", ingest));
     const filter = el("details", "overview-filter");
     filter.open = state.overviewFiltersOpen === true;
     filter.addEventListener("toggle", () => { state.overviewFiltersOpen = filter.open; });
@@ -110,14 +111,14 @@ export function createBoardViews(context) {
         : "Showing plans with active tasks, sorted by most recently updated.");
     filterStatus.setAttribute("role", "status");
     filterStatus.setAttribute("aria-live", "polite");
-    add(page, add(el("div", "overview-filter-tools"), filter, filterStatus));
+    add(content, add(el("div", "overview-filter-tools"), filter, filterStatus));
     const plans = collection(data, "plans");
     const claims = (data.working || plans.flatMap(item => item.claims || [])).filter(claim => !claim.ended_at);
     const tasksById = new Map(plans.flatMap(item => (item.tasks || []).map(task => [task.id, task])));
     if (claims.length) {
       const rows = claims.slice().sort(workingClaimOrder)
         .map(claim => workingRow(claim, tasksById.get(claim.task)));
-      page.append(focusKey(add(el("section", "panel section working-panel"),
+      content.append(focusKey(add(el("section", "panel section working-panel"),
         add(el("div", "working-head"), el("h2", "", `Working now (${claims.length})`),
           link("all claims →", "claims", {}, "small working-all")),
         add(el("div", "working-list"), rows)), "section:Working now"));
@@ -129,6 +130,7 @@ export function createBoardViews(context) {
       const activeTasks = (item.tasks || []).filter(task => task.column !== "done");
       const activeCount = activeTasks.length + (item.tasks_omitted || 0);
       const lane = el("section", "swimlane");
+      lane.id = `overview-plan-${plan.id}`;
       focusKey(lane, `swimlane:${plan.id}`);
       const heading = add(el("div", "lane-heading"), refLink(plan.id),
         link(plan.title, "plan", { ref: plan.id }),
@@ -170,8 +172,28 @@ export function createBoardViews(context) {
       items.length ? link("View all", "attention", {}, "small") : empty("Nothing waiting for you."),
       omitted(attention?.entries_omitted, "entries")));
     rail.append(needs);
-    add(layout, lanes, rail); page.append(layout);
-    page.append(panel("Latest activity", eventList(data.events || []), "ticker"));
+    add(layout, lanes, rail); content.append(layout);
+    content.append(panel("Latest activity", eventList(data.events || []), "ticker"));
+    if (plans.length) {
+      const toc = el("nav", "plan-toc");
+      toc.setAttribute("aria-label", "Plans on this page");
+      toc.dataset.scrollKey = "overview-plan-toc";
+      toc.append(el("h2", "", "Plans"));
+      const tocList = el("ol");
+      for (const item of plans) {
+        const plan = item.plan || item;
+        const target = `overview-plan-${plan.id}`;
+        const tocLink = focusKey(link(`${plan.id} · ${plan.title}`, "overview", {
+          ...route, focus: target, heading: "",
+        }, "plan-toc-link"), `plan-toc:${plan.id}`);
+        tocList.append(add(el("li"), tocLink));
+      }
+      toc.append(tocList);
+      page.classList.toggle("has-plan-toc", true);
+      page.append(toc, content);
+    } else {
+      page.append(content);
+    }
     return page;
   }
   function renderAttention(data, route) {

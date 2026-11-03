@@ -110,6 +110,11 @@ watermarks, preserving the snapshot/subscription race bound.
 
 ## Board navigation
 
+The overview lists its visible plans in a left-hand table of contents that stays in view while
+scrolling on desktop and moves above the board on narrow screens. Links jump to the matching plan
+lane and preserve the current project, filters, and page. Live refresh retains the list's scroll
+position; an empty overview omits the list.
+
 Needs you contains addressed questions, proposals needing decisions or new bases, and stale claims.
 Feedback lists open and triaged reports globally by default. Its independent navigation badge counts
 those reports, stays hidden at zero, and displays `?` when its count read fails.

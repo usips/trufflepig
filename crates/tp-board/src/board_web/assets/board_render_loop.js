@@ -280,7 +280,14 @@ export function createBoardRenderLoop({
       // while the request was pending, before a native toggle event is delivered.
       captureDisclosures(main); restoreDisclosures(result.page);
       const scroll = focus ? null : pageScroll();
-      captureForms(main); restoreForms(result.page); main.replaceChildren(result.page); restoreFocus(main, active);
+      const scrollTops = focus ? [] : [...main.querySelectorAll("[data-scroll-key]")]
+        .map(node => [node.dataset.scrollKey, node.scrollTop]);
+      captureForms(main); restoreForms(result.page); main.replaceChildren(result.page);
+      for (const [key, top] of scrollTops) {
+        const node = main.querySelector(`[data-scroll-key="${CSS.escape(key)}"]`);
+        if (node) node.scrollTop = top;
+      }
+      restoreFocus(main, active);
       if (scroll !== null && pageScroll() !== scroll) window.scrollTo({ top: scroll });
       state.loadedAt = Date.now();
       if (result.watermark !== null) {
