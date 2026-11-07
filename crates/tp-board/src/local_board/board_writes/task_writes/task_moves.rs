@@ -32,24 +32,20 @@ pub(in crate::local_board) fn move_task(
         && release_column
         && card.column != column
         && task_created_by(tx, task, ctx.actor_id)?;
-    if stale_other && !release_column {
+    let decision_authority = super::super::super::board_authority::authority_for(
+        tx,
+        &ctx.actor,
+        Some(task.plan),
+        AuthorityRole::Decide,
+        ctx.now,
+    )?;
+    let owner_move = matches!(decision_authority, Some(AuthoritySource::Owner));
+    if stale_other && !release_column && !owner_move {
         return Err(invalid(
             BoardErrorCode::InvalidActor,
             format!("stale claim on {task} may only be released to todo or blocked"),
         ));
     }
-
-    let decision_authority = if card.column == TaskColumn::Done && column == TaskColumn::Todo {
-        super::super::super::board_authority::authority_for(
-            tx,
-            &ctx.actor,
-            Some(task.plan),
-            AuthorityRole::Decide,
-            ctx.now,
-        )?
-    } else {
-        None
-    };
     if card.column == TaskColumn::Done && column != TaskColumn::Done {
         if column != TaskColumn::Todo || decision_authority.is_none() {
             return Err(invalid(
@@ -96,10 +92,12 @@ pub(in crate::local_board) fn move_task(
             },
         ));
     }
-    if matches!(column, TaskColumn::Done | TaskColumn::Review) && !holder_is_actor {
+    if matches!(column, TaskColumn::Done | TaskColumn::Review) && !holder_is_actor && !owner_move {
         return Err(invalid(
             BoardErrorCode::InvalidActor,
-            format!("only the active claim holder may move {task} to {column}"),
+            format!(
+                "only the active claim holder or plan's human owner may move {task} to {column}"
+            ),
         ));
     }
 
@@ -126,7 +124,9 @@ pub(in crate::local_board) fn move_task(
     let delegated_release = holder_is_other && release_column && released_by_delegator;
     let bound_worker = is_bound_worker(tx, task, ctx.actor_id)?;
     let reopening_done = card.column == TaskColumn::Done && column == TaskColumn::Todo;
-    let task_authority = if to.is_some() {
+    let task_authority = if owner_move {
+        Some(AuthoritySource::Owner)
+    } else if to.is_some() {
         assign_authority
     } else if reopening_done {
         decision_authority
@@ -177,7 +177,13 @@ pub(in crate::local_board) fn move_task(
     }
 
     let assign = to.is_some();
-    if holder_is_other && !stale_other && !delegated_release && !has_release_authority && !assign {
+    if holder_is_other
+        && !stale_other
+        && !delegated_release
+        && !has_release_authority
+        && !assign
+        && !owner_move
+    {
         return Err(invalid(
             BoardErrorCode::InvalidActor,
             format!("cannot move {task} held by another actor"),

@@ -62,8 +62,11 @@ An unclaimed non-done task can move to `todo` or `blocked` under its assignee's 
 `assign` grant; a plain move under that grant preserves the assignee and cannot end another actor's
 active claim. Its creator can move an unassigned, unclaimed card between `todo` and `blocked`.
 Supplying `--to` changes the recipient and requires `assign` authority; a task address is refused as
-a recipient. Assign alone does not authorize moves into `review` or `done`; those moves require the
-active claim holder, and reopening `done` to `todo` requires `decide` authority.
+a recipient. Agents, including agents acting for the owner's user, need the active claim to move into
+`review` or `done`; grants do not bypass this requirement. The human plan owner may make those moves
+without a claim; the [claim rules](board-claims.md)
+define the owner authority and claim-release behavior. A `done` task can reopen only to `todo`, with
+`decide` authority.
 
 Transfer, close, and reopen each require a nonblank note. Their authority, task-state, and history
 rules are defined by the [lifecycle contract](board-lifecycle.md).

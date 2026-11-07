@@ -29,18 +29,24 @@ the caller to start a fresh claim with a scope; use `board claim P7.3 "describe 
 register new worker handles for any stopped workers. Carve retries dedupe only while their lease
 remains owned; after release or takeover, another carve creates a fresh task.
 Claiming a `done` task or moving it to `doing` is denied. The current claim holder may move its own
-task. The actual delegator may release only a delegated claim, and any caller may release another
-actor's stale claim; these release paths may move only to `todo` or `blocked`. A `release` grant has
+task. Moves into `review` or `done` require the caller to hold the task's active claim, except that the
+plan owner acting as human may move without a claim, including when another actor holds a live or
+stale claim. This records Owner authority and preserves the assignee unless `--to` is supplied. An
+agent, including one acting for the plan owner's user or holding an `assign` or `decide` grant, still
+needs the active claim. Moving out of `doing` ends the existing claim as `Released`; `--to` follows
+the normal reassignment and claim-ending rules. The actual delegator may release only a delegated
+claim, and any caller may release another actor's stale claim; these release paths may move only to
+`todo` or `blocked`. A `release` grant has
 the same limit and cannot move a delegated or stale claim to `review` or `done`. The plan owner acting
-as human has all roles intrinsically; an agent needs a `decide` grant to reopen a done task as todo
-and an `assign` grant to reassign a task, move an unclaimed non-done task to `todo` or `blocked` without
+as human has all roles intrinsically; a `done` task can reopen only to `todo`, and an agent needs a
+`decide` grant for that move. An `assign` grant lets an agent reassign a task, move an unclaimed
+non-done task to `todo` or `blocked` without
 changing its assignee, or manage its workers. A plain move under an assign grant cannot release
-another actor's active claim; an authorized `--to` reassignment can end it as reassigned. Assign
-authority alone does not authorize moves into `review` or `done`; those moves require the active claim
-holder. Task creation, assignment, and authorship alone grant no such authority. A task's creator may
-move only their own unassigned, unclaimed task between `todo` and `blocked` without `--to`; this records
-creator authority and grants no other permission. Moving out of `doing`
-ends the claim. Delegation never names the reserved `human`, `cli`, `system`, or `git:*` harnesses.
+another actor's active claim; an authorized `--to` reassignment can end it as reassigned. Task
+creation, assignment, and authorship alone grant no such authority. A task's creator may move only
+their own unassigned, unclaimed task between `todo` and `blocked` without `--to`; this records creator
+authority and grants no other permission. Delegation never names the reserved `human`, `cli`,
+`system`, or `git:*` harnesses.
 A delegated claim revives its holder's ended session, so the holder's `bye` releases that claim.
 Before handing work back, post progress and move the task to `todo`, unless the human requested a
 pause. `review` and `done` transitions retain their existing idempotent behavior.
