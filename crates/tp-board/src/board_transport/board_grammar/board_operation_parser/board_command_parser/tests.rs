@@ -1,5 +1,6 @@
 use crate::board_grammar::{BoardCommand, normalize_args, parse as board_parse};
 use crate::board_protocol::BoardOp;
+use tp_core::coded_error::{ErrorCode, coded_error};
 
 #[test]
 fn transfer_and_lifecycle_notes_survive_cli_forwarding() {
@@ -62,4 +63,92 @@ fn transfer_and_lifecycle_require_notes_and_reject_unrelated_options() {
         let options = crate::board_test_support::parse_board_arguments(&args).unwrap();
         assert!(board_parse(&options, None).is_err(), "{words:?}");
     }
+}
+
+#[test]
+fn reject_requires_a_nonblank_reason_with_usage_diagnostic() {
+    for words in [
+        vec!["board", "reject", "E485"],
+        vec!["board", "reject", "E485", ""],
+        vec!["board", "reject", "E485", " \t\n"],
+        vec!["board", "reject", "E485", "\u{2003}\u{3000}"],
+    ] {
+        let args = words
+            .iter()
+            .map(|word| (*word).to_owned())
+            .collect::<Vec<_>>();
+        let options = crate::board_test_support::parse_board_arguments(&args).unwrap();
+        let error = board_parse(&options, None).unwrap_err();
+        assert_usage_message(
+            &error,
+            "board reject requires a non-blank reason; usage: board reject E485 REASON...",
+        );
+    }
+}
+
+#[test]
+fn reject_missing_proposal_shows_mandatory_reason_usage() {
+    let args = ["board", "reject"]
+        .iter()
+        .map(|word| (*word).to_owned())
+        .collect::<Vec<_>>();
+    let options = crate::board_test_support::parse_board_arguments(&args).unwrap();
+    let error = board_parse(&options, None).unwrap_err();
+
+    assert_usage_message(&error, "board reject E485 REASON...");
+}
+
+#[test]
+fn accept_notes_stay_optional_and_reject_reasons_survive_cli_forwarding() {
+    let accept_args = ["board", "accept", "E485"]
+        .iter()
+        .map(|word| (*word).to_owned())
+        .collect::<Vec<_>>();
+    let accept_options = crate::board_test_support::parse_board_arguments(&accept_args).unwrap();
+    assert!(matches!(
+        board_parse(&accept_options, None).unwrap(),
+        BoardCommand::Op(BoardOp::Accept { note: None, .. })
+    ));
+
+    for (args, expected_reason) in [
+        (
+            vec![
+                "board", "reject", "E485", "Because", "the", "source", "changed.",
+            ],
+            "Because the source changed.",
+        ),
+        (
+            vec![
+                "board",
+                "reject",
+                "E485",
+                "--board-text=Client payload reason with spaces.",
+            ],
+            "Client payload reason with spaces.",
+        ),
+    ] {
+        let args = args
+            .iter()
+            .map(|word| (*word).to_owned())
+            .collect::<Vec<_>>();
+        let options = crate::board_test_support::parse_board_arguments(&args).unwrap();
+        let original = board_parse(&options, None).unwrap();
+        let forwarded = normalize_args(&options, None).unwrap();
+        assert_eq!(
+            board_parse(&crate::board_test_support::round_trip(&forwarded), None).unwrap(),
+            original
+        );
+        match original {
+            BoardCommand::Op(BoardOp::Reject { reason, .. }) => {
+                assert_eq!(reason.as_str(), expected_reason);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+}
+
+fn assert_usage_message(error: &anyhow::Error, expected_message: &str) {
+    let coded = coded_error(error).expect("expected a coded usage error");
+    assert_eq!(coded.code(), ErrorCode::Usage);
+    assert_eq!(coded.message(), expected_message);
 }

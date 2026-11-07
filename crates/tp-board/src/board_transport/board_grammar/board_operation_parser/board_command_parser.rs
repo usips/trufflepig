@@ -117,14 +117,24 @@ pub(super) fn parse_board(
         }
         "accept" | "reject" => {
             check_flags(options, &["text"])?;
-            let proposal =
-                word(options, 2, "board accept|reject E485 [NOTE]")?.parse::<EntryId>()?;
+            let syntax = if verb == "accept" {
+                "board accept E485 [NOTE...]"
+            } else {
+                "board reject E485 REASON..."
+            };
+            let proposal = word(options, 2, syntax)?.parse::<EntryId>()?;
             if verb == "accept" {
                 BoardOp::Accept {
                     proposal,
                     note: optional_text(&payload.text)?,
                 }
             } else {
+                if payload.text.trim().is_empty() {
+                    bail!(coded!(
+                        Usage,
+                        "board reject requires a non-blank reason; usage: board reject E485 REASON..."
+                    ));
+                }
                 BoardOp::Reject {
                     proposal,
                     reason: EntryText::new(payload.text.clone())?,
