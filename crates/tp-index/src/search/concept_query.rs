@@ -4,7 +4,8 @@
 //! occurrences (one identifier-shaped token), phrase and all-terms lanes (two
 //! or more terms), the any-term lane, and filenames.
 use super::{
-    BoundPathFilter, LaneHits, Query, declarations, file_hits, file_ranking, hit_row, lexical_hits,
+    BoundPathFilter, HitRowReader, LaneHits, Query, declarations, file_hits, file_ranking,
+    lexical_hits,
     qualified_name::QualifiedName,
     telemetry::{Lane, LaneOutcome, RetrievalTrace},
 };
@@ -213,7 +214,7 @@ fn occurrence_hits(
                AND (?4 IS NULL OR o.file_id IN (SELECT file_id FROM occurrences WHERE name=?4))
          )
          SELECT f.path,f.revision,m.start,m.end,m.name,m.kind,NULL,
-                'identifier_occurrence',c.bytes
+                'identifier_occurrence'
          FROM matched m
          JOIN files f ON f.id=m.file_id
          JOIN contents c ON c.revision=f.revision
@@ -222,6 +223,7 @@ fn occurrence_hits(
          LIMIT ?5",
         paths.sql_clause("f.path")
     ))?;
+    let mut reader = HitRowReader::new(store)?;
     let mut hits = statement
         .query_map(
             params![
@@ -231,7 +233,7 @@ fn occurrence_hits(
                 identifier.qualifier,
                 (file_ranking::FILE_CANDIDATE_LIMIT + 1) as i64
             ],
-            hit_row,
+            |row| reader.read(row),
         )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(super::cap_hits(

@@ -4,7 +4,9 @@
 use super::definition_target;
 use crate::{
     results::{self, MAX_HITS, ResultSet},
-    search::{Query, hit_row, path_class::is_test_path, qualified_name::QualifiedName, snippets},
+    search::{
+        HitRowReader, Query, path_class::is_test_path, qualified_name::QualifiedName, snippets,
+    },
     store::Store,
 };
 use anyhow::{Result, ensure};
@@ -37,7 +39,7 @@ fn references_with_limit(store: &Store, query: &Query, max_sites: usize) -> Resu
     let mut coverage = serde_json::to_value(store.coverage()?)?;
     let paths = query.path.bind(&store.conn)?;
     let mut stmt = store.conn.prepare(&format!(
-        "SELECT f.path,f.revision,o.start,o.end,o.name,o.role,NULL,o.provenance,c.bytes,
+        "SELECT f.path,f.revision,o.start,o.end,o.name,o.role,NULL,o.provenance,
                 o.target,o.candidates,
                 EXISTS(SELECT 1 FROM definitions t
                        WHERE t.file_id=o.file_id AND t.kind='module' AND t.name IN ('tests','test')
@@ -60,6 +62,7 @@ fn references_with_limit(store: &Store, query: &Query, max_sites: usize) -> Resu
          LIMIT ?4",
         paths.sql_clause("f.path")
     ))?;
+    let mut hit_rows = HitRowReader::new(store)?;
     let rows = stmt.query_map(
         params![
             name.name,
@@ -70,11 +73,11 @@ fn references_with_limit(store: &Store, query: &Query, max_sites: usize) -> Resu
         ],
         |r| {
             Ok(Site {
-                hit: hit_row(r)?,
-                target: r.get(9)?,
-                candidates: r.get(10)?,
-                in_test_module: r.get(11)?,
-                target_kind: r.get(12)?,
+                hit: hit_rows.read(r)?,
+                target: r.get(8)?,
+                candidates: r.get(9)?,
+                in_test_module: r.get(10)?,
+                target_kind: r.get(11)?,
                 candidate_ids: Vec::new(),
             })
         },

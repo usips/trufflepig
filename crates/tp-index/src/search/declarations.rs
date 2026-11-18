@@ -2,7 +2,7 @@
 //! kind tier, then non-test before test sites, then nearest to the invocation
 //! directory, then path; `A::b` names are filtered by [`QualifiedName`].
 use super::{
-    BoundPathFilter, LaneHits, Query, hit_row, path_class::is_test_path,
+    BoundPathFilter, HitRowReader, LaneHits, Query, path_class::is_test_path,
     qualified_name::QualifiedName,
 };
 use crate::{
@@ -139,7 +139,7 @@ fn qualified_hits_with_limit(
 ) -> Result<LaneHits> {
     let mut statement = store.conn.prepare(&format!(
         "SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container,
-                'exact_identifier',c.bytes
+                'exact_identifier'
          FROM definitions d
          JOIN files f ON f.id=d.file_id
          JOIN contents c ON c.revision=f.revision
@@ -163,11 +163,12 @@ fn qualified_hits_with_limit(
         name.owner_hint()
     ])?;
     let mut hits = Vec::with_capacity(max_hits.min(128));
+    let mut hit_rows = HitRowReader::new(store)?;
     let mut best = None;
     let mut truncated = false;
     let result_cap = max_hits.saturating_add(1);
     while let Some(row) = rows.next()? {
-        let hit = hit_row(row)?;
+        let hit = hit_rows.read(row)?;
         let Some(tier) = name.matches(&hit.path, hit.container.as_deref()) else {
             continue;
         };

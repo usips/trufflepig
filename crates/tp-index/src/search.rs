@@ -4,6 +4,7 @@ mod current_bytes;
 mod current_candidate_reads;
 mod declarations;
 mod file_ranking;
+mod hit_row_reader;
 mod import_trail;
 mod inheritance_context;
 pub mod language_filter;
@@ -24,6 +25,7 @@ pub mod telemetry;
 mod tests;
 pub use declarations::InvocationDirectory;
 pub(crate) use file_ranking::fuse_search_file_lanes as fuse_file_lanes;
+use hit_row_reader::HitRowReader;
 pub(crate) use import_trail::{IMPORT_HOPS, trace_import_with_target};
 pub use import_trail::{ImportHop, trace_import};
 pub use navigation::context_entry;
@@ -45,7 +47,7 @@ use crate::{
     store::Store,
 };
 use anyhow::{Result, bail};
-use rusqlite::{Row, params};
+use rusqlite::params;
 use std::{
     cmp::Ordering,
     collections::{BinaryHeap, HashSet},
@@ -98,32 +100,6 @@ impl Query {
     pub fn semantic_eligible(&self) -> bool {
         !self.text.is_empty() && !self.exact && !self.regex
     }
-}
-
-pub(super) fn hit_row(row: &Row<'_>) -> rusqlite::Result<Hit> {
-    let bytes: Vec<u8> = row.get(8)?;
-    let start = row.get::<_, i64>(2)? as usize;
-    let end = row.get::<_, i64>(3)? as usize;
-    let (start_line, end_line) = source::line_span(&bytes, start, end);
-    Ok(Hit {
-        handle: String::new(),
-        path: row.get(0)?,
-        revision: row.get(1)?,
-        start,
-        end,
-        start_line,
-        end_line,
-        name: row.get(4)?,
-        kind: row.get(5)?,
-        container: row.get(6)?,
-        provenance: Some(row.get(7)?),
-        resolution: None,
-        candidates: Vec::new(),
-        target: None,
-        repeats: None,
-        snippet: None,
-        differs: false,
-    })
 }
 
 #[cfg(test)]
@@ -398,7 +374,7 @@ fn exact_hits(store: &Store, query: &Query, paths: &BoundPathFilter) -> Result<L
     let mut statement = store.conn.prepare(&format!(
         "WITH ranked AS (
              SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container,
-                    'exact_identifier' AS provenance,c.bytes,d.id,
+                    'exact_identifier' AS provenance,d.id,
                     ROW_NUMBER() OVER (
                         PARTITION BY f.path ORDER BY d.start,d.end,d.id
                     ) AS file_rank
@@ -409,13 +385,14 @@ fn exact_hits(store: &Store, query: &Query, paths: &BoundPathFilter) -> Result<L
                AND (?2='' OR f.language=?2)
                AND (?3='' OR d.kind=?3)
          )
-         SELECT path,revision,start,end,name,kind,container,provenance,bytes
+         SELECT path,revision,start,end,name,kind,container,provenance
          FROM ranked
          WHERE file_rank=1
          ORDER BY path,start,end,id
          LIMIT ?4",
         paths.sql_clause("f.path")
     ))?;
+    let mut reader = HitRowReader::new(store)?;
     let hits = statement
         .query_map(
             params![
@@ -424,7 +401,7 @@ fn exact_hits(store: &Store, query: &Query, paths: &BoundPathFilter) -> Result<L
                 query.kind,
                 (file_ranking::FILE_CANDIDATE_LIMIT + 1) as i64
             ],
-            hit_row,
+            |row| reader.read(row),
         )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(cap_lane(hits))
@@ -439,7 +416,7 @@ fn lexical_hits(
     let mut statement = store.conn.prepare(&format!(
         "WITH ranked AS MATERIALIZED (
              SELECT f.path,f.revision,r.start,r.end,r.name,r.kind,NULL AS container,
-                    'lexical' AS provenance,c.bytes,
+                    'lexical' AS provenance,
                     bm25(documents,8.0,2.0,1.0,0.5) AS relevance,r.id
              FROM documents
              JOIN regions r ON r.id=documents.rowid
@@ -456,13 +433,14 @@ fn lexical_hits(
                     ) AS file_rank
              FROM ranked
          )
-         SELECT path,revision,start,end,name,kind,container,provenance,bytes
+         SELECT path,revision,start,end,name,kind,container,provenance
          FROM numbered
          WHERE file_rank=1
          ORDER BY relevance,path,start,end,id
          LIMIT ?4",
         paths.sql_clause("f.path")
     ))?;
+    let mut reader = HitRowReader::new(store)?;
     let hits = statement
         .query_map(
             params![
@@ -471,7 +449,7 @@ fn lexical_hits(
                 query.kind,
                 (file_ranking::FILE_CANDIDATE_LIMIT + 1) as i64
             ],
-            hit_row,
+            |row| reader.read(row),
         )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(cap_lane(hits))

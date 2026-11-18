@@ -7,8 +7,7 @@ use crate::{
     store::Store,
 };
 use anyhow::Result;
-use rusqlite::OptionalExtension;
-use std::{cmp::Reverse, collections::HashMap};
+use std::cmp::Reverse;
 
 /// Hits beyond this rank keep coordinates only; pages rarely reach them.
 const SNIPPET_HITS: usize = 200;
@@ -32,26 +31,26 @@ pub(super) fn preview_terms(text: &str) -> Vec<String> {
     terms
 }
 
-/// Attaches previews to the leading hits that lack one, reading each revision once.
+/// Attaches previews to leading hits that lack one, reading each revision once.
 pub(super) fn attach(store: &Store, terms: &[String], hits: &mut [Hit]) -> Result<()> {
+    let mut pending = Vec::with_capacity(hits.len().min(SNIPPET_HITS));
+    pending.extend(
+        hits.iter_mut()
+            .take(SNIPPET_HITS)
+            .filter(|hit| hit.snippet.is_none() && hit.revision.is_some()),
+    );
+    pending.sort_unstable_by(|a, b| a.revision.cmp(&b.revision));
+
     let mut statement = store
         .conn
         .prepare_cached("SELECT bytes FROM contents WHERE revision=?1")?;
-    let mut sources: HashMap<String, Option<Vec<u8>>> = HashMap::with_capacity(64);
-    for hit in hits.iter_mut().take(SNIPPET_HITS) {
-        if hit.snippet.is_some() {
-            continue;
-        }
-        let Some(revision) = hit.revision.clone() else {
+    for group in pending.chunk_by_mut(|a, b| a.revision == b.revision) {
+        let mut rows = statement.query([&group[0].revision])?;
+        let Some(row) = rows.next()? else {
             continue;
         };
-        if !sources.contains_key(&revision) {
-            let bytes = statement
-                .query_row([&revision], |row| row.get::<_, Vec<u8>>(0))
-                .optional()?;
-            sources.insert(revision.clone(), bytes);
-        }
-        if let Some(Some(bytes)) = sources.get(&revision) {
+        let bytes = row.get_ref(0)?.as_blob()?;
+        for hit in group {
             hit.snippet = preview(bytes, hit.start, hit.end, hit.start_line, terms, &hit.name);
         }
     }
@@ -144,6 +143,37 @@ fn snippet(line: usize, text: &str) -> Snippet {
 mod tests {
     use super::*;
 
+    fn hit(revision: Option<String>, start: usize, end: usize, start_line: usize) -> Hit {
+        Hit {
+            handle: String::new(),
+            path: String::new(),
+            revision,
+            start,
+            end,
+            start_line,
+            end_line: start_line,
+            name: String::new(),
+            kind: String::new(),
+            container: None,
+            provenance: None,
+            resolution: None,
+            candidates: Vec::new(),
+            target: None,
+            snippet: None,
+            repeats: None,
+            differs: false,
+        }
+    }
+
+    fn revision(store: &Store, path: &str) -> String {
+        store
+            .conn
+            .query_row("SELECT revision FROM files WHERE path=?1", [path], |row| {
+                row.get(0)
+            })
+            .unwrap()
+    }
+
     #[test]
     fn preview_prefers_a_term_line_then_the_name_then_the_first_line() {
         let source = b"/// Refills tokens.\n#[inline]\npub fn refill(&mut self) {\n    self.tokens = self.capacity;\n}\n";
@@ -208,5 +238,53 @@ mod tests {
         let source = b"// unknown item slot\nlet slot = item.slot();\n";
         let hit = preview(source, 0, source.len(), 1, &terms, "").unwrap();
         assert_eq!(hit.line, 2);
+    }
+
+    #[test]
+    fn attach_groups_interleaved_revisions_and_preserves_missing_or_prefilled_hits() {
+        let first = b"fn alpha() {}\nfn trailing() {}\n";
+        let second = b"fn beta() {}\n";
+        let (_root, _cache, store) =
+            crate::search::tests::fixture(&[("first.rs", first), ("second.rs", second)]);
+        let first_revision = revision(&store, "first.rs");
+        let second_revision = revision(&store, "second.rs");
+        let second_line = b"fn alpha() {}\n".len();
+        let mut prefilled = hit(Some(second_revision.clone()), 0, second.len(), 1);
+        prefilled.snippet = Some(Snippet {
+            line: 99,
+            text: "already attached".into(),
+        });
+        let mut hits = vec![
+            hit(Some(first_revision.clone()), 0, first.len(), 1),
+            hit(Some(second_revision.clone()), 0, second.len(), 1),
+            hit(Some("missing-revision".into()), 0, first.len(), 1),
+            hit(Some(first_revision), second_line, first.len(), 2),
+            prefilled,
+            hit(None, 0, first.len(), 1),
+        ];
+
+        attach(&store, &["alpha".into()], &mut hits).unwrap();
+
+        assert_eq!(hits[0].snippet.as_ref().unwrap().text, "fn alpha() {}");
+        assert_eq!(hits[1].snippet.as_ref().unwrap().text, "fn beta() {}");
+        assert!(hits[2].snippet.is_none());
+        assert_eq!(hits[3].snippet.as_ref().unwrap().text, "fn trailing() {}");
+        assert_eq!(hits[4].snippet.as_ref().unwrap().line, 99);
+        assert!(hits[5].snippet.is_none());
+    }
+
+    #[test]
+    fn attach_leaves_hits_beyond_the_limit_without_snippets() {
+        let source = b"fn capped() {}\n";
+        let (_root, _cache, store) = crate::search::tests::fixture(&[("capped.rs", source)]);
+        let revision = revision(&store, "capped.rs");
+        let mut hits = (0..=SNIPPET_HITS)
+            .map(|_| hit(Some(revision.clone()), 0, source.len(), 1))
+            .collect::<Vec<_>>();
+
+        attach(&store, &[], &mut hits).unwrap();
+
+        assert!(hits[..SNIPPET_HITS].iter().all(|hit| hit.snippet.is_some()));
+        assert!(hits[SNIPPET_HITS].snippet.is_none());
     }
 }

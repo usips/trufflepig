@@ -31,5 +31,6 @@ tp-extract.workspace = true
 tp-semantic.workspace = true
 
 [dev-dependencies]
+rusqlite = { workspace = true, features = ["limits"] }
 tp-core = { workspace = true, features = ["test-support"] }
 tp-semantic = { workspace = true, features = ["test-support"] }

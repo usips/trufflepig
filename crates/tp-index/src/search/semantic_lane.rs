@@ -151,11 +151,12 @@ fn retrieve(
     let mut ranked = heap.into_vec();
     ranked.sort_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.id.cmp(&b.id)));
     let mut statement = store.conn.prepare(
-        "SELECT f.path,f.revision,r.start,r.end,r.name,r.kind,NULL,'semantic',c.bytes
+        "SELECT f.path,f.revision,r.start,r.end,r.name,r.kind,NULL,'semantic'
          FROM regions r JOIN files f ON f.id=r.file_id JOIN contents c ON c.revision=f.revision WHERE r.id=?1")?;
+    let mut hit_rows = super::HitRowReader::new(store)?;
     hits.reserve(ranked.len());
     for hit in ranked {
-        hits.push(statement.query_row([hit.id as i64], super::hit_row)?);
+        hits.push(statement.query_row([hit.id as i64], |row| hit_rows.read(row))?);
     }
     coverage["semantic_files"] = complete_files.into();
     coverage["semantic_total_regions"] = (embedded + pending).into();

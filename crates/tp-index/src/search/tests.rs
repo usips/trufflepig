@@ -39,6 +39,32 @@ fn excluded_files_remain_visible_and_do_not_break_search() {
 }
 
 #[test]
+fn lexical_ranking_keeps_source_bodies_out_of_sort_records() {
+    let path = format!("{}/notes.txt", vec!["directory".repeat(16); 6].join("/"));
+    let body = format!("needle\n{}needle\n", "padding\n".repeat(2048));
+    let (_root, _cache, store) = fixture(&[(&path, body.as_bytes())]);
+
+    // The file body and path each fit. A sort record carrying both exceeds the limit.
+    store
+        .conn
+        .set_limit(
+            rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
+            i32::try_from(body.len() + 256).unwrap(),
+        )
+        .unwrap();
+    let query = Query::parse("needle").unwrap();
+    let paths = query.path.bind(&store.conn).unwrap();
+    let lane = lexical_hits(&store, &query, &paths, "\"needle\"").unwrap();
+    assert_eq!(lane.hits.len(), 1);
+    let hit = &lane.hits[0];
+    assert_eq!(hit.path, path);
+    assert_eq!(
+        (hit.start_line, hit.end_line),
+        source::line_span(body.as_bytes(), hit.start, hit.end)
+    );
+}
+
+#[test]
 fn lexical_search_covers_symbol_middles_gaps_docs_and_config() {
     let body = format!(
         "fn long_function() {{\n{}\nlet middle_needle=1;\n{}\n}}\n// gap_needle\n",

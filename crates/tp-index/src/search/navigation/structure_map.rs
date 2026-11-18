@@ -5,7 +5,7 @@
 //! indexed file fails with `no_indexed_path` and up to three nearest paths.
 use crate::{
     results::{Hit, MAX_HITS, ResultSet},
-    search::{BoundPathFilter, PathFilter, hit_row, snippets},
+    search::{BoundPathFilter, HitRowReader, PathFilter, snippets},
     store::Store,
 };
 use anyhow::Result;
@@ -103,7 +103,7 @@ pub fn outline_extracted(definitions: &mut Vec<Definition>) {
 
 fn file_outline(store: &Store, path: &str) -> Result<Vec<Hit>> {
     let mut stmt = store.conn.prepare(&format!(
-        "SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container,'structural_map',c.bytes
+        "SELECT f.path,f.revision,d.start,d.end,d.name,d.kind,d.container,'structural_map'
          FROM definitions d
          JOIN files f ON f.id=d.file_id
          JOIN contents c ON c.revision=f.revision
@@ -117,6 +117,7 @@ fn file_outline(store: &Store, path: &str) -> Result<Vec<Hit>> {
         sql_kinds(&OUTLINE_KINDS),
         sql_kinds(&FOLDED_KINDS)
     ))?;
+    let mut hit_rows = HitRowReader::new(store)?;
     let hits = stmt
         .query_map(
             params![
@@ -124,7 +125,7 @@ fn file_outline(store: &Store, path: &str) -> Result<Vec<Hit>> {
                 (MAX_HITS + 1) as i64,
                 tp_extract::FOREIGN_ITEM_CONTAINER
             ],
-            hit_row,
+            |row| hit_rows.read(row),
         )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(hits)

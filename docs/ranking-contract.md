@@ -2,6 +2,8 @@
 
 How ordinary (non-`sym:`, non-`re:`) search orders files. Fixed snapshot,
 query and options determine the order ([retrieval contract](retrieval-contract.md)).
+SQLite sorts candidate metadata. Selected hits read indexed source by revision
+for line coordinates and previews.
 
 ## Lanes and fusion
 
